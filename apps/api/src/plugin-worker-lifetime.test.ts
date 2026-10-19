@@ -36,7 +36,7 @@ describe("plugin worker lifetime", () => {
     const script = path.join(directory, "worker.mjs");
     if (source !== null) await writeFile(script, source);
     const host = new PluginWorkerLifetime<string>({
-      name: "Connector",
+      name: "Plugin",
       workerScriptUrl: pathToFileURL(script),
       requestTimeoutMs,
     });
@@ -120,7 +120,7 @@ describe("plugin worker lifetime", () => {
     expect(missing.activeOperationCount).toBe(0);
     const exiting = await lifetime("process.exit(3);");
     await expect(exiting.run("test", "sync", passThrough)).rejects.toThrow(
-      'Connector plugin "test" exited before returning a result (code 3).',
+      'Plugin "test" exited before returning a result (code 3).',
     );
     expect(exiting.activeOperationCount).toBe(0);
   });

@@ -1,5 +1,5 @@
 /**
- * Action sets for user-facing objects, from the action model in agents/ux-spec.md.
+ * Action sets for user-facing objects, from the action model in docs/agents/ux-spec.md.
  *
  * Every surface (right-click menu, "…" menu, editors) renders the same list in the
  * same order. Kind decides which actions are listed. State decides which are enabled:
@@ -75,6 +75,12 @@ export interface TimeEntryActionOptions {
   isEditing?: boolean;
   /** Set inside an editor whose draft cannot be saved yet. */
   invalidDraftReason?: string;
+  /**
+   * Set when the entry's week is submitted. Edit still opens it, read-only,
+   * Continue starts a new entry today, and Duplicate to… copies it to an open
+   * week; the rest are disabled with this reason.
+   */
+  lockedReason?: string;
 }
 
 const STOP_RUNNING_FIRST = "Stop the running entry first";
@@ -107,7 +113,11 @@ export function getTimeEntryActions(
           // Editors save the draft before continuing, so an invalid draft blocks it.
           disabledReason: options.invalidDraftReason,
         },
-    { id: "duplicate", label: "Duplicate", disabledReason: relocationReason },
+    {
+      id: "duplicate",
+      label: "Duplicate",
+      disabledReason: options.lockedReason ?? relocationReason,
+    },
     {
       id: "duplicate-to",
       label: "Duplicate to…",
@@ -116,14 +126,25 @@ export function getTimeEntryActions(
     {
       id: "move-to",
       label: "Move to…",
-      disabledReason: relocationReason,
+      disabledReason: options.lockedReason ?? relocationReason,
     },
     ...(state === "committed"
-      ? [{ id: "mark-not-committed" as const, label: "Mark as not committed" }]
+      ? [
+          {
+            id: "mark-not-committed" as const,
+            label: "Mark as not committed",
+            disabledReason: options.lockedReason,
+          },
+        ]
       : []),
     isRunning
       ? { id: "discard", label: "Discard", destructive: true }
-      : { id: "delete", label: "Delete", destructive: true },
+      : {
+          id: "delete",
+          label: "Delete",
+          destructive: true,
+          disabledReason: options.lockedReason,
+        },
   ];
 }
 
@@ -149,29 +170,42 @@ export const TIME_ENTRY_SELECTION_ACTION_IDS: ReadonlySet<TimeEntryActionId> =
  * Continue, Stop and Discard need one entry, so they are not listed. `saved`
  * counts the selected saved entries, without the running entry, which every
  * selection action skips; `committed` counts the committed ones among them.
+ * `lockedReason` is set when the selection is on a submitted week: it disables
+ * every action except Duplicate to….
  */
 export function getTimeEntrySelectionActions({
   saved,
   committed,
+  lockedReason,
 }: {
   saved: number;
   committed: number;
+  lockedReason?: string;
 }): ObjectAction<TimeEntryActionId>[] {
   const entries = formatEntryCount(saved);
   const reason = saved === 0 ? STOP_RUNNING_FIRST : undefined;
   return [
-    { id: "duplicate", label: `Duplicate ${entries}`, disabledReason: reason },
+    {
+      id: "duplicate",
+      label: `Duplicate ${entries}`,
+      disabledReason: reason ?? lockedReason,
+    },
     {
       id: "duplicate-to",
       label: `Duplicate ${entries} to…`,
       disabledReason: reason,
     },
-    { id: "move-to", label: `Move ${entries} to…`, disabledReason: reason },
+    {
+      id: "move-to",
+      label: `Move ${entries} to…`,
+      disabledReason: reason ?? lockedReason,
+    },
     ...(committed > 0
       ? [
           {
             id: "mark-not-committed" as const,
             label: `Mark ${formatEntryCount(committed)} as not committed`,
+            disabledReason: lockedReason,
           },
         ]
       : []),
@@ -179,7 +213,7 @@ export function getTimeEntrySelectionActions({
       id: "delete",
       label: `Delete ${entries}`,
       destructive: true,
-      disabledReason: reason,
+      disabledReason: reason ?? lockedReason,
     },
   ];
 }
@@ -312,7 +346,7 @@ function formatDeleteLabel(subitemCount: number) {
  * Pin/Unpin · Settle/Unsettle/Restore · Change source state… · Open in
  * source · Archive · Delete.
  *
- * Open in source is listed only when a connector provided the item's URL.
+ * Open in source is listed only when a plugin provided the item's URL.
  * Archive is listed only for synced items: it archives in Ajour and leaves the
  * source as it is. A manual item archives through Settle.
  */

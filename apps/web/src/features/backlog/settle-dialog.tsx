@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import type { ConnectorSettleState } from "@ajour/shared";
+import type { BacklogSettleState } from "@ajour/shared";
+import { MarkdownEditor } from "@/components/markdown-editor";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -21,13 +22,16 @@ import {
   settleArchivesWorkItem,
   type BacklogSettleChange,
 } from "@/domain/backlog/backlog-item-lifecycle";
+import { commentSourceOf } from "@/domain/backlog/comments";
 import { NO_PRIORITY_NAME, PRIORITY_LEVELS } from "@/domain/backlog/priority";
 import type { LocalWorkItem } from "@/domain/local-state";
 import { findSettleRule } from "@/domain/backlog/settle-rules";
 import {
   canWriteSettle,
+  releaseSettleComment,
   sendPendingSourceWrites,
 } from "@/features/backlog/backlog-source-writes";
+import { commentMentionSearch } from "@/features/backlog/comment-threads";
 import { resolveIncludeSubitems } from "@/features/backlog/backlog-item-moves";
 import { formatPriorityInput } from "@/features/backlog/backlog-task-editor";
 import {
@@ -36,8 +40,12 @@ import {
   isSettleStateDraftValid,
 } from "@/features/backlog/settle-draft";
 import { offerUndo } from "@/features/feedback/undo-toast";
-import { listConnectorSettleStates } from "@/lib/app-api";
+import {
+  getCachedPluginsOverview,
+  listBacklogSettleStates,
+} from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
+import { queueSettleComment } from "@/lib/settle-comments";
 import { useLocalState } from "@/lib/local-hooks";
 
 let requestListener:
@@ -56,7 +64,7 @@ export function requestSettle(
 }
 
 /**
- * How Settle behaves on an item. Items whose connector can't write settle
+ * How Settle behaves on an item. Items whose plugin can't write settle
  * locally. Others follow their source project's settle rule: Ask opens the
  * dialog, Apply settles with the rule's change. `ask`, from Shift+E or
  * Shift-click, opens the dialog prefilled with the rule instead.
@@ -105,11 +113,14 @@ export function settleBacklogItem(
 /**
  * Settles the item, with Undo in a toast. A parent with open subitems asks
  * whether they settle too, unless the user's setting answers. A change to the
- * source is sent when the toast closes, so Undo cancels it (ADR 0001).
+ * source is sent when the toast closes, so Undo cancels it (ADR 0001). A
+ * comment follows the change, or goes when the toast closes if nothing else
+ * is written (ADR 0008).
  */
 export async function settleBacklogItemWithUndo(
   workItem: LocalWorkItem,
   change?: BacklogSettleChange,
+  comment?: string,
 ) {
   const includeSubitems = await resolveIncludeSubitems(workItem, "settle");
   if (includeSubitems === null) return false;
@@ -121,22 +132,46 @@ export async function settleBacklogItemWithUndo(
   const settled = localStore
     .snapshot()
     .workItems.find((candidate) => candidate._id === workItem._id);
+  const body = comment?.trim();
+  const commentSource = body
+    ? commentSourceOf(workItem, getCachedPluginsOverview())
+    : undefined;
+  const commentId = crypto.randomUUID();
+  if (body && commentSource) {
+    queueSettleComment({
+      id: commentId,
+      settleId: settled?.settleId,
+      itemId: workItem._id,
+      pluginId: commentSource.pluginId,
+      connectionId: commentSource.connectionId,
+      sourceId: commentSource.sourceId,
+      body,
+      at: Date.now(),
+    });
+  }
   offerUndo(token, {
     title:
       settled?.status === "archived"
         ? "Backlog item archived"
         : "Backlog item settled",
     subject: "backlog item",
-    onWindowClosed: settled?.pendingSourceWrite
-      ? () => void sendPendingSourceWrites([workItem._id])
-      : undefined,
+    onWindowClosed:
+      settled?.pendingSourceWrite || commentSource
+        ? () => {
+            void sendPendingSourceWrites([workItem._id]);
+            // This settle's own comment only; it waits for the write above.
+            if (commentSource) {
+              void releaseSettleComment(commentId, workItem._id);
+            }
+          }
+        : undefined,
   });
   return true;
 }
 
 type StatesLoad =
   | { status: "loading" }
-  | { status: "ready"; states: ConnectorSettleState[] }
+  | { status: "ready"; states: BacklogSettleState[] }
   | { status: "failed"; message: string };
 
 /**
@@ -150,6 +185,7 @@ export function SettleDialogHost() {
   const [load, setLoad] = useState<StatesLoad>({ status: "loading" });
   const [stateName, setStateName] = useState("");
   const [priority, setPriority] = useState("");
+  const [comment, setComment] = useState("");
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
@@ -165,6 +201,7 @@ export function SettleDialogHost() {
           prefill?.priority ?? item.importedPriority ?? item.priority,
         ),
       );
+      setComment("");
       setLoad({ status: "loading" });
     };
     requestListener = listener;
@@ -176,7 +213,7 @@ export function SettleDialogHost() {
   useEffect(() => {
     if (!workItem?.sourceId || !workItem.sourceConnectionId) return;
     let cancelled = false;
-    listConnectorSettleStates(
+    listBacklogSettleStates(
       workItem.source,
       workItem.sourceConnectionId,
       workItem.sourceId,
@@ -219,12 +256,25 @@ export function SettleDialogHost() {
     currentItem &&
     settleArchivesWorkItem(state, currentItem, change ?? undefined),
   );
+  // Only an item whose plugin reads and posts comments offers one.
+  const commentSource = currentItem
+    ? commentSourceOf(currentItem, getCachedPluginsOverview())
+    : undefined;
+  const commentLimit = commentSource?.capability.maxLength;
+  const commentTooLong =
+    commentLimit !== undefined && comment.trim().length > commentLimit;
 
   async function settle() {
-    if (!currentItem || !change || pending) return;
+    if (!currentItem || !change || pending || commentTooLong) return;
     setPending(true);
     try {
-      if (await settleBacklogItemWithUndo(currentItem, change))
+      if (
+        await settleBacklogItemWithUndo(
+          currentItem,
+          change,
+          commentSource ? comment : undefined,
+        )
+      )
         setWorkItem(null);
     } finally {
       setPending(false);
@@ -318,12 +368,39 @@ export function SettleDialogHost() {
               />
               {change === null && stateDraftValid ? (
                 <FieldError>
-                  This connector cannot clear its source priority. Choose a
+                  This plugin cannot clear its source priority. Choose a
                   priority.
                 </FieldError>
               ) : null}
             </FieldContent>
           </Field>
+          {commentSource ? (
+            <Field>
+              <FieldLabel htmlFor="settle-comment">Comment</FieldLabel>
+              <FieldContent>
+                <MarkdownEditor
+                  id="settle-comment"
+                  aria-label="Comment"
+                  value={comment}
+                  onChange={setComment}
+                  onSubmit={() => void settle()}
+                  placeholder="Optional. Markdown supported."
+                  minLines={2}
+                  mentions={commentMentionSearch(commentSource)}
+                />
+                {commentTooLong ? (
+                  <FieldError>
+                    The source takes up to {commentLimit!.toLocaleString()}{" "}
+                    characters.
+                  </FieldError>
+                ) : (
+                  <FieldDescription>
+                    Posted on the item when the Undo toast closes.
+                  </FieldDescription>
+                )}
+              </FieldContent>
+            </Field>
+          ) : null}
           <DialogFooter>
             <Button
               type="button"
@@ -333,7 +410,10 @@ export function SettleDialogHost() {
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={change === null || pending}>
+            <Button
+              type="submit"
+              disabled={change === null || pending || commentTooLong}
+            >
               {archives ? "Archive" : "Settle"}
             </Button>
           </DialogFooter>

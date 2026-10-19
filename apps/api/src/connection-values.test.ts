@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { ConnectorPluginManifest } from "../../../packages/shared/connectors.ts";
+import type { PluginManifest } from "../../../packages/shared/plugins.ts";
 import { mergeConnectionConfigForSave } from "./connection-values.ts";
 
-const plugin: ConnectorPluginManifest = {
+const plugin: PluginManifest = {
   id: "azure_devops",
   version: "1.0.0",
   apiVersion: 3,

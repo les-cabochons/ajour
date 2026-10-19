@@ -14,12 +14,12 @@ Workflow states are the steps your backlog items go through. Ajour starts with f
 
 ## Map source states
 
-Each connector has its own states, such as Azure DevOps `New`, `Active` and `Resolved`, or Jira `To Do` and `In Progress`. Ajour maps each source state to one of your workflow states, so synced items land in the right group.
+Each backlog plugin has its own states, such as Azure DevOps `New`, `Active` and `Resolved`, or Jira `To Do` and `In Progress`. Ajour maps each source state to one of your workflow states, so synced items land in the right group.
 
 Ajour maps a source state on its own when:
 
 - Its name matches a workflow state, ignoring case.
-- The connector says it is a done state. It maps to your first done state.
+- The backlog plugin says it is a done state. It maps to your first done state.
 
 Map the others under **Source states**. Mappings apply to every source project of a connection by default. To map one project differently, change it under that project. Choose **No state (not mapped)** to leave a source state out.
 

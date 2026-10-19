@@ -1,4 +1,12 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { dataToolOutputSchemas } from "@ajour/shared/agent-tools";
 
 type DataToolName = keyof typeof dataToolOutputSchemas;
@@ -7,12 +15,12 @@ const {
   offerUndo,
   canWriteToSource,
   sendPendingSourceWrites,
-  listConnectorSettleStates,
+  listBacklogSettleStates,
 } = vi.hoisted(() => ({
   offerUndo: vi.fn(),
   canWriteToSource: vi.fn((_item: { title: string }) => false),
   sendPendingSourceWrites: vi.fn(),
-  listConnectorSettleStates: vi.fn(),
+  listBacklogSettleStates: vi.fn(),
 }));
 vi.mock("@/features/feedback/undo-toast", () => ({ offerUndo }));
 vi.mock("@/features/backlog/backlog-source-writes", async (importOriginal) => ({
@@ -23,7 +31,7 @@ vi.mock("@/features/backlog/backlog-source-writes", async (importOriginal) => ({
 }));
 vi.mock("@/lib/app-api", async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  listConnectorSettleStates,
+  listBacklogSettleStates,
 }));
 vi.mock("@/lib/plugin-project-properties", () => ({
   listProjectPropertyPlugins: async () => [],
@@ -117,7 +125,7 @@ beforeEach(() => {
   offerUndo.mockClear();
   sendPendingSourceWrites.mockClear();
   canWriteToSource.mockReturnValue(false);
-  listConnectorSettleStates.mockResolvedValue({
+  listBacklogSettleStates.mockResolvedValue({
     states: [
       { name: "Active", category: "In progress", done: false },
       { name: "Resolved", category: "Resolved", done: false },
@@ -131,7 +139,7 @@ beforeEach(() => {
 function importSyncedItem(
   localStore: Awaited<ReturnType<typeof setup>>["localStore"],
 ) {
-  localStore.importConnectorWorkItems([
+  localStore.importSyncedWorkItems([
     {
       id: "connector-1",
       source: "azure_devops",
@@ -592,6 +600,173 @@ describe("agent timer and entry tools", () => {
   });
 });
 
+describe("agent tools on submitted weeks", () => {
+  // Thursday, October 15, 2026: today is in the week of the 12th.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 9, 15, 15));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  /** One committed 90-minute entry on Tuesday the 13th. */
+  async function committedWeek() {
+    const context = await setup();
+    const created = await context.call("create_entry", {
+      date: "2026-10-13",
+      projectId: context.project._id,
+      taskId: context.task("Build")._id,
+      minutes: 90,
+      note: "Workshop",
+    });
+    const entryId = (created as { output: { entryId: string } }).output.entryId;
+    /** The version get_week_status returns now, for submit_week. */
+    const readVersion = async (weekOf = "2026-10-12") =>
+      (
+        (await context.call("get_week_status", { weekOf })) as {
+          output: { version: string };
+        }
+      ).output.version;
+    return { ...context, entryId, readVersion };
+  }
+
+  it("reports the status, and submits the week once every change is committed", async () => {
+    const { call, readChange, readVersion, entryId } = await committedWeek();
+
+    expect(
+      await call("get_week_status", { weekOf: "2026-10-18" }),
+    ).toMatchObject({
+      ok: true,
+      output: { weekOf: "2026-10-12", locked: false, uncommittedChanges: 1 },
+    });
+    expect(
+      await call("submit_week", {
+        weekOf: "2026-10-14",
+        version: await readVersion(),
+      }),
+    ).toMatchObject({
+      ok: false,
+      error:
+        "Commit your changes first. The week of 2026-10-12 has 1 change that is not committed.",
+    });
+
+    await call("mark_entries_committed", {
+      changes: [await readChange(entryId)],
+    });
+
+    expect(
+      await call("get_week_status", { weekOf: "2026-10-12" }),
+    ).toMatchObject({
+      ok: true,
+      output: {
+        uncommittedChanges: 0,
+        committedHoursByDay: expect.arrayContaining([
+          { date: "2026-10-13", hours: 1.5 },
+        ]),
+        committedEntries: [
+          {
+            entryId,
+            externalId: expect.stringMatching(/^ajour:[0-9a-f]{8}$/),
+            committed: { date: "2026-10-13", hours: 1.5, note: "Workshop" },
+          },
+        ],
+        pace: { loggedHours: 1.5, status: "under" },
+      },
+    });
+    // A Sunday locks its Monday's week.
+    expect(
+      await call("submit_week", {
+        weekOf: "2026-10-18",
+        version: await readVersion(),
+      }),
+    ).toMatchObject({
+      ok: true,
+      output: { weekOf: "2026-10-12", locked: true },
+    });
+    expect(offerUndo.mock.calls.at(-1)![1].title).toBe(
+      "Claude Code: Submitted the week",
+    );
+    expect(
+      await call("get_week_status", { weekOf: "2026-10-12" }),
+    ).toMatchObject({
+      ok: true,
+      output: { locked: true },
+    });
+  });
+
+  it("refuses to submit a week that changed since get_week_status", async () => {
+    const {
+      call,
+      readChange,
+      readVersion,
+      localStore,
+      project,
+      task,
+      entryId,
+    } = await committedWeek();
+    await call("mark_entries_committed", {
+      changes: [await readChange(entryId)],
+    });
+    const version = await readVersion();
+    // The user edits the entry and commits it again: still no change, but the
+    // committed values the agent compared are gone.
+    localStore.updateTimesheetEntry(entryId, {
+      projectId: project._id,
+      taskId: task("Build")._id,
+      note: "Workshop",
+      durationMs: 2 * 60 * 60 * 1000,
+    });
+    await call("mark_entries_committed", {
+      changes: [await readChange(entryId)],
+    });
+
+    expect(
+      await call("submit_week", { weekOf: "2026-10-12", version }),
+    ).toMatchObject({
+      ok: false,
+      error: "The week changed since you read it. Call get_week_status again.",
+    });
+    expect(localStore.snapshot().lockedWeeks).toEqual([]);
+  });
+
+  it("refuses every entry write to a submitted week, with the reason", async () => {
+    const { call, readChange, readVersion, localStore, project, entryId } =
+      await committedWeek();
+    await call("mark_entries_committed", {
+      changes: [await readChange(entryId)],
+    });
+    await call("submit_week", {
+      weekOf: "2026-10-12",
+      version: await readVersion(),
+    });
+    const reason = "The week of Oct 12 is submitted. Reopen it to change it.";
+
+    for (const [tool, input] of [
+      [
+        "create_entry",
+        { date: "2026-10-16", projectId: project._id, minutes: 30 },
+      ],
+      ["edit_entry", { entryId, minutes: 30 }],
+      ["move_entry", { entryId, date: "2026-10-20" }],
+      ["duplicate_entry", { entryId }],
+      [
+        "mark_entries_committed",
+        { changes: [{ entryId, version: "v:00000000" }] },
+      ],
+      ["start_timer", { projectId: project._id }],
+    ] as const) {
+      expect(await call(tool, input), tool).toMatchObject({
+        ok: false,
+        error: reason,
+      });
+    }
+    expect(localStore.snapshot().timers).toEqual([]);
+    // A copy to an open week leaves the submitted entry as it is.
+    expect(
+      await call("duplicate_entry", { entryId, date: "2026-10-20" }),
+    ).toMatchObject({ ok: true, output: { date: "2026-10-20" } });
+  });
+});
+
 describe("agent work item tools", () => {
   it("creates an item and moves it to a done state, which closes it", async () => {
     const { call, localStore } = await setup();
@@ -715,7 +890,7 @@ describe("agent work item tools", () => {
   it("settles a synced item locally, then unsettles it", async () => {
     const { call, localStore } = await setup();
     const workItemId = importSyncedItem(localStore);
-    // Its connector can't write, so Settle stays in Ajour.
+    // Its plugin can't write, so Settle stays in Ajour.
     canWriteToSource.mockReturnValue(false);
 
     expect(await call("settle_work_item", { workItemId })).toMatchObject({

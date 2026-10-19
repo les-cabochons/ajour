@@ -1,41 +1,41 @@
 import {
-  connectorBacklogStatusListResponseSchema,
-  connectorBacklogStatusUpsertRequestSchema,
-  connectorBacklogStatusUpsertResponseSchema,
-  connectorConnectionSaveResponseSchema,
-  connectorConnectionSaveRequestSchema,
-  connectorPluginActivationUpdateSchema,
+  backlogSourceStatusListResponseSchema,
+  backlogSourceStatusUpsertRequestSchema,
+  backlogSourceStatusUpsertResponseSchema,
+  pluginConnectionSaveResponseSchema,
+  pluginConnectionSaveRequestSchema,
+  pluginActivationUpdateSchema,
   pluginSystemActivationUpdateSchema,
-  connectorPluginInstallResponseSchema,
-  connectorPluginUninstallResponseSchema,
-  connectorSettleStatesRequestSchema,
-  connectorSettleStatesResultSchema,
-  connectorSettleWriteRequestSchema,
-  connectorSettleWriteResultSchema,
-  connectorSyncRequestSchema,
-  connectorSyncResultSchema,
-  type ConnectorSettleWriteRequest,
-  type ConnectorSyncRequest,
-  connectorImportCommitResponseSchema,
-  connectorImportDismissRequestSchema,
-  connectorImportDismissResponseSchema,
-  connectorImportListResponseSchema,
-  connectorImportRestoreRequestSchema,
-  connectorImportRestoreResponseSchema,
-  connectorImportSelectionResponseSchema,
-  connectorImportSelectionUpdateSchema,
-  connectorsOverviewSchema,
-  type ConnectorBacklogStatusInput,
-  type ConnectorConnectionSaveResponse,
-  type ConnectorFieldValues,
-  type ConnectorImportCandidate,
-  type ConnectorPluginInstallResponse,
-  type ConnectorSyncWorkItem,
-  type ConnectorsOverview,
-  type ConnectorSyncResult,
+  pluginInstallResponseSchema,
+  pluginUninstallResponseSchema,
+  backlogSettleStatesRequestSchema,
+  backlogSettleStatesResultSchema,
+  backlogSettleWriteRequestSchema,
+  backlogSettleWriteResultSchema,
+  backlogSyncRequestSchema,
+  backlogSyncResultSchema,
+  type BacklogSettleWriteRequest,
+  type BacklogSyncRequest,
+  backlogImportCommitResponseSchema,
+  backlogImportDismissRequestSchema,
+  backlogImportDismissResponseSchema,
+  backlogImportListResponseSchema,
+  backlogImportRestoreRequestSchema,
+  backlogImportRestoreResponseSchema,
+  backlogImportSelectionResponseSchema,
+  backlogImportSelectionUpdateSchema,
+  pluginsOverviewSchema,
+  type BacklogSourceStatusInput,
+  type PluginConnectionSaveResponse,
+  type PluginFieldValues,
+  type BacklogImportCandidate,
+  type PluginInstallResponse,
+  type BacklogSyncWorkItem,
+  type PluginsOverview,
+  type BacklogSyncResult,
 } from "@ajour/shared";
 import {
-  catalogConnectorDownloadResponseSchema,
+  catalogPluginDownloadResponseSchema,
   pluginCatalogResponseSchema,
   pluginCatalogSettingsSchema,
 } from "@ajour/shared";
@@ -66,6 +66,23 @@ import { localStore } from "@/lib/local-store";
 import {
   calendarListEventsResultSchema,
   type CalendarListEventsRequest,
+  backlogListItemCommentsResultSchema,
+  type BacklogListItemCommentsRequest,
+  type BacklogListItemCommentsResult,
+  backlogPostItemCommentResultSchema,
+  type BacklogPostItemCommentRequest,
+  type BacklogPostItemCommentResult,
+  backlogEditItemCommentResultSchema,
+  type BacklogEditItemCommentRequest,
+  type BacklogEditItemCommentResult,
+  backlogDeleteItemCommentResultSchema,
+  type BacklogDeleteItemCommentRequest,
+  backlogSetItemCommentReactionResultSchema,
+  type BacklogSetItemCommentReactionRequest,
+  type BacklogSetItemCommentReactionResult,
+  backlogSearchItemPeopleResultSchema,
+  type BacklogSearchItemPeopleRequest,
+  type BacklogSearchItemPeopleResult,
   teamCreateResultSchema,
   teamSyncResultSchema,
   type TeamCreateResult,
@@ -117,8 +134,8 @@ export function syncCodeHostConnection(
         [connectionId],
       ),
     );
-    await getConnectorsOverview();
-    const overview = getCachedConnectorsOverview()!;
+    await getPluginsOverview();
+    const overview = getCachedPluginsOverview()!;
     const group = overview.connectionGroups.find(
       (entry) => entry.plugin.id === pluginId,
     );
@@ -174,7 +191,7 @@ export function syncCodeHostConnection(
   return promise;
 }
 
-export type SyncConnectorConnectionResult = ConnectorSyncResult & {
+export type SyncBacklogConnectionResult = BacklogSyncResult & {
   backlogImportedCount: number;
   backlogUpdatedCount: number;
 };
@@ -184,22 +201,20 @@ const APP_API_BASE_URL = (
   import.meta.env.VITE_APP_API_BASE_URL ?? DEFAULT_INTERNAL_APP_API_BASE_URL
 ).replace(/\/+$/, "");
 const APP_API_RETRY_DELAYS_MS = [150, 350] as const;
-let cachedConnectorsOverview: ConnectorsOverview | null = null;
-let connectorsOverviewRevision = 0;
-let latestConnectorsOverviewRequest = 0;
-const connectorsOverviewListeners = new Set<
-  (overview: ConnectorsOverview) => void
->();
+let cachedPluginsOverview: PluginsOverview | null = null;
+let pluginsOverviewRevision = 0;
+let latestPluginsOverviewRequest = 0;
+const pluginsOverviewListeners = new Set<(overview: PluginsOverview) => void>();
 
 /**
- * Thrown when the local connector API cannot be reached at all, as in the web
- * build that runs without the desktop app. Pages use it to hide connector
+ * Thrown when the local app API cannot be reached at all, as in the web
+ * build that runs without the desktop app. Pages use it to hide plugin
  * features calmly instead of showing a failure.
  */
 class AppApiUnavailableError extends Error {
   constructor(cause: unknown) {
     super(
-      `Internal connector API unavailable. Restart the app. ${cause instanceof Error ? cause.message : ""}`.trim(),
+      `Internal app API unavailable. Restart the app. ${cause instanceof Error ? cause.message : ""}`.trim(),
       { cause },
     );
     this.name = "AppApiUnavailableError";
@@ -207,11 +222,11 @@ class AppApiUnavailableError extends Error {
 }
 
 /**
- * True when the connector API is unreachable because Ajour runs as a plain web
+ * True when the app API is unreachable because Ajour runs as a plain web
  * app. In the desktop app the API is internal, so an unreachable API stays a
  * real failure that the page reports.
  */
-export function isConnectorApiMissing(error: unknown) {
+export function isPluginApiMissing(error: unknown) {
   return (
     error instanceof AppApiUnavailableError &&
     (typeof window === "undefined" || !window.ajourDesktop)
@@ -340,10 +355,10 @@ export async function downloadCatalogPlugin(pluginId: string) {
       "Plugin downloads are available in the production desktop app.",
     );
   }
-  const result = catalogConnectorDownloadResponseSchema.parse(
+  const result = catalogPluginDownloadResponseSchema.parse(
     await download(pluginId),
   );
-  cacheConnectorsOverview(result.result.overview);
+  cachePluginsOverview(result.result.overview);
   return result;
 }
 
@@ -387,88 +402,88 @@ export function importProjectsWithDataShape(
   );
 }
 
-export function getCachedConnectorsOverview() {
-  return cachedConnectorsOverview;
+export function getCachedPluginsOverview() {
+  return cachedPluginsOverview;
 }
 
-export function cacheConnectorsOverview(overview: ConnectorsOverview) {
-  connectorsOverviewRevision += 1;
-  cachedConnectorsOverview = overview;
-  for (const listener of connectorsOverviewListeners) listener(overview);
+export function cachePluginsOverview(overview: PluginsOverview) {
+  pluginsOverviewRevision += 1;
+  cachedPluginsOverview = overview;
+  for (const listener of pluginsOverviewListeners) listener(overview);
   return overview;
 }
 
 /** Observes validated snapshots, including background sync refreshes. */
-export function subscribeConnectorsOverview(
-  listener: (overview: ConnectorsOverview) => void,
+export function subscribePluginsOverview(
+  listener: (overview: PluginsOverview) => void,
 ) {
-  connectorsOverviewListeners.add(listener);
+  pluginsOverviewListeners.add(listener);
   return () => {
-    connectorsOverviewListeners.delete(listener);
+    pluginsOverviewListeners.delete(listener);
   };
 }
 
-export async function getConnectorsOverview(): Promise<ConnectorsOverview> {
-  const requestRevision = connectorsOverviewRevision;
-  const requestId = ++latestConnectorsOverviewRequest;
+export async function getPluginsOverview(): Promise<PluginsOverview> {
+  const requestRevision = pluginsOverviewRevision;
+  const requestId = ++latestPluginsOverviewRequest;
   const overview = await appApiRequest(
-    "/api/connectors",
+    "/api/plugins",
     undefined,
-    connectorsOverviewSchema,
+    pluginsOverviewSchema,
   );
   if (
-    requestRevision !== connectorsOverviewRevision ||
-    requestId !== latestConnectorsOverviewRequest
+    requestRevision !== pluginsOverviewRevision ||
+    requestId !== latestPluginsOverviewRequest
   ) {
-    return cachedConnectorsOverview ?? overview;
+    return cachedPluginsOverview ?? overview;
   }
 
-  return cacheConnectorsOverview(overview);
+  return cachePluginsOverview(overview);
 }
 
 /** Turns the plugin on or off, or only `capability` when given. */
-export async function setConnectorPluginEnabled(
+export async function setPluginEnabled(
   pluginId: string,
   enabled: boolean,
   capability?: SwitchableCapability,
-): Promise<ConnectorsOverview> {
-  const payload = connectorPluginActivationUpdateSchema.parse({
+): Promise<PluginsOverview> {
+  const payload = pluginActivationUpdateSchema.parse({
     enabled,
     ...(capability ? { capability } : {}),
   });
-  return cacheConnectorsOverview(
+  return cachePluginsOverview(
     await appApiRequest(
-      `/api/connectors/${encodeURIComponent(pluginId)}/activation`,
+      `/api/plugins/${encodeURIComponent(pluginId)}/activation`,
       {
         method: "POST",
         body: JSON.stringify(payload),
       },
-      connectorsOverviewSchema,
+      pluginsOverviewSchema,
     ),
   );
 }
 
 export async function setPluginSystemEnabled(
   enabled: boolean,
-): Promise<ConnectorsOverview> {
+): Promise<PluginsOverview> {
   const payload = pluginSystemActivationUpdateSchema.parse({ enabled });
-  return cacheConnectorsOverview(
+  return cachePluginsOverview(
     await appApiRequest(
       "/api/plugins/activation",
       {
         method: "POST",
         body: JSON.stringify(payload),
       },
-      connectorsOverviewSchema,
+      pluginsOverviewSchema,
     ),
   );
 }
 
-export async function installConnectorPlugin(): Promise<ConnectorPluginInstallResponse | null> {
-  const install = window.ajourDesktop?.installConnectorPlugin;
+export async function installPlugin(): Promise<PluginInstallResponse | null> {
+  const install = window.ajourDesktop?.installPlugin;
   if (!install) {
     throw new Error(
-      "Connector plugin installation is only available in the desktop app.",
+      "Plugin installation is only available in the desktop app.",
     );
   }
 
@@ -477,63 +492,59 @@ export async function installConnectorPlugin(): Promise<ConnectorPluginInstallRe
     return null;
   }
 
-  const parsed = connectorPluginInstallResponseSchema.parse(result);
-  cacheConnectorsOverview(parsed.overview);
+  const parsed = pluginInstallResponseSchema.parse(result);
+  cachePluginsOverview(parsed.overview);
   return parsed;
 }
 
-export async function uninstallConnectorPlugin(pluginId: string) {
-  const uninstall = window.ajourDesktop?.uninstallConnectorPlugin;
+export async function uninstallPlugin(pluginId: string) {
+  const uninstall = window.ajourDesktop?.uninstallPlugin;
   if (!uninstall) {
     throw new Error(
-      "Connector plugin uninstall is only available in the production desktop app.",
+      "Plugin uninstall is only available in the production desktop app.",
     );
   }
 
-  const result = connectorPluginUninstallResponseSchema.parse(
-    await uninstall(pluginId),
-  );
-  cacheConnectorsOverview(result.overview);
+  const result = pluginUninstallResponseSchema.parse(await uninstall(pluginId));
+  cachePluginsOverview(result.overview);
   return result;
 }
 
-export function getConnectorBacklogStatuses() {
+export function getBacklogSourceStatuses() {
   return appApiRequest(
     "/api/backlog/source-statuses",
     undefined,
-    connectorBacklogStatusListResponseSchema,
+    backlogSourceStatusListResponseSchema,
   );
 }
 
-export function upsertConnectorBacklogStatuses(
-  items: ConnectorBacklogStatusInput[],
-) {
-  const payload = connectorBacklogStatusUpsertRequestSchema.parse({ items });
+export function upsertBacklogSourceStatuses(items: BacklogSourceStatusInput[]) {
+  const payload = backlogSourceStatusUpsertRequestSchema.parse({ items });
   return appApiRequest(
     "/api/backlog/source-statuses",
     {
       method: "POST",
       body: JSON.stringify(payload),
     },
-    connectorBacklogStatusUpsertResponseSchema,
+    backlogSourceStatusUpsertResponseSchema,
   );
 }
 
-export async function saveConnectorConnection(
+export async function savePluginConnection(
   pluginId: string,
-  values: ConnectorFieldValues,
+  values: PluginFieldValues,
   id?: string,
-): Promise<ConnectorConnectionSaveResponse> {
-  const payload = connectorConnectionSaveRequestSchema.parse({ id, values });
+): Promise<PluginConnectionSaveResponse> {
+  const payload = pluginConnectionSaveRequestSchema.parse({ id, values });
   const result = await appApiRequest(
-    `/api/connectors/${encodeURIComponent(pluginId)}/connections`,
+    `/api/plugins/${encodeURIComponent(pluginId)}/connections`,
     {
       method: "POST",
       body: JSON.stringify(payload),
     },
-    connectorConnectionSaveResponseSchema,
+    pluginConnectionSaveResponseSchema,
   );
-  cacheConnectorsOverview(result.overview);
+  cachePluginsOverview(result.overview);
   if (id) {
     const key = connectionKey(pluginId, id);
     connectionGenerations.set(key, (connectionGenerations.get(key) ?? 0) + 1);
@@ -541,25 +552,111 @@ export async function saveConnectorConnection(
   return result;
 }
 
-export async function deleteConnectorConnection(
+export async function deletePluginConnection(
   pluginId: string,
   connectionId: string,
-): Promise<ConnectorsOverview> {
+): Promise<PluginsOverview> {
   const key = connectionKey(pluginId, connectionId);
   connectionGenerations.set(key, (connectionGenerations.get(key) ?? 0) + 1);
-  const overview = cacheConnectorsOverview(
+  const overview = cachePluginsOverview(
     await appApiRequest(
-      `/api/connectors/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}`,
+      `/api/plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}`,
       {
         method: "DELETE",
       },
-      connectorsOverviewSchema,
+      pluginsOverviewSchema,
     ),
   );
   localStore.removeConnectionPullRequests(pluginId, connectionId);
   localStore.removeConnectionCalendarData(pluginId, connectionId);
   localStore.removeConnectionTeamData(connectionId);
   return overview;
+}
+
+/** A page of a synced item's comments, newest last (ADR 0008). */
+export function listItemComments(
+  pluginId: string,
+  connectionId: string,
+  request: BacklogListItemCommentsRequest,
+): Promise<BacklogListItemCommentsResult> {
+  return appApiRequest(
+    `/api/backlog-comments/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/listItemComments`,
+    { method: "POST", body: JSON.stringify(request) },
+    backlogListItemCommentsResultSchema,
+  );
+}
+
+/** Posts a comment on a synced item at once (ADR 0008). */
+export function postItemComment(
+  pluginId: string,
+  connectionId: string,
+  request: BacklogPostItemCommentRequest,
+): Promise<BacklogPostItemCommentResult> {
+  return appApiRequest(
+    `/api/backlog-comments/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/postItemComment`,
+    { method: "POST", body: JSON.stringify(request) },
+    backlogPostItemCommentResultSchema,
+  );
+}
+
+function commentOperationPath(
+  pluginId: string,
+  connectionId: string,
+  operation: string,
+) {
+  return `/api/backlog-comments/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/${operation}`;
+}
+
+/** Edits one of the user's comments at once (ADR 0008). */
+export function editItemComment(
+  pluginId: string,
+  connectionId: string,
+  request: BacklogEditItemCommentRequest,
+): Promise<BacklogEditItemCommentResult> {
+  return appApiRequest(
+    commentOperationPath(pluginId, connectionId, "editItemComment"),
+    { method: "POST", body: JSON.stringify(request) },
+    backlogEditItemCommentResultSchema,
+  );
+}
+
+/** Deletes one of the user's comments. Ajour calls it after the Undo window. */
+export async function deleteItemComment(
+  pluginId: string,
+  connectionId: string,
+  request: BacklogDeleteItemCommentRequest,
+): Promise<void> {
+  await appApiRequest(
+    commentOperationPath(pluginId, connectionId, "deleteItemComment"),
+    { method: "POST", body: JSON.stringify(request) },
+    backlogDeleteItemCommentResultSchema,
+  );
+}
+
+/** People the user can mention on the item, for the editor's @ suggestions. */
+export function searchItemPeople(
+  pluginId: string,
+  connectionId: string,
+  request: BacklogSearchItemPeopleRequest,
+): Promise<BacklogSearchItemPeopleResult> {
+  return appApiRequest(
+    commentOperationPath(pluginId, connectionId, "searchItemPeople"),
+    { method: "POST", body: JSON.stringify(request) },
+    backlogSearchItemPeopleResultSchema,
+  );
+}
+
+/** Adds or removes the user's reaction on a comment. */
+export function setItemCommentReaction(
+  pluginId: string,
+  connectionId: string,
+  request: BacklogSetItemCommentReactionRequest,
+): Promise<BacklogSetItemCommentReactionResult> {
+  return appApiRequest(
+    commentOperationPath(pluginId, connectionId, "setItemCommentReaction"),
+    { method: "POST", body: JSON.stringify(request) },
+    backlogSetItemCommentReactionResultSchema,
+  );
 }
 
 /** One connection's calendar events for a range of days (ADR 0005). */
@@ -603,12 +700,12 @@ export function runTeamSyncRound(
   );
 }
 
-export function syncConnectorConnection(
+export function syncBacklogConnection(
   pluginId: string,
   connectionId: string,
-  input?: Pick<ConnectorSyncRequest, "trigger">,
-): Promise<SyncConnectorConnectionResult> {
-  const connectorWorkItems = localStore
+  input?: Pick<BacklogSyncRequest, "trigger">,
+): Promise<SyncBacklogConnectionResult> {
+  const syncedWorkItems = localStore
     .snapshot()
     .workItems.filter(
       (workItem) =>
@@ -624,6 +721,11 @@ export function syncConnectorConnection(
           originalEstimateHours: workItem.originalEstimateHours,
           remainingEstimateHours: workItem.remainingEstimateHours,
           completedEstimateHours: workItem.completedEstimateHours,
+          // A settled item waits on someone; their comment brings it back.
+          commentsSince:
+            workItem.status === "settled" && workItem.settledAt
+              ? new Date(workItem.settledAt).toISOString()
+              : undefined,
           estimateSync: workItem.estimateSync
             ? {
                 originalEstimateHours: workItem.estimateSync
@@ -666,31 +768,74 @@ export function syncConnectorConnection(
                   : undefined,
               }
             : undefined,
-        }) satisfies ConnectorSyncWorkItem,
+        }) satisfies BacklogSyncWorkItem,
     );
-  const payload = connectorSyncRequestSchema.parse({
+  const payload = backlogSyncRequestSchema.parse({
     ...(input ?? { trigger: "manual" }),
-    workItems: connectorWorkItems,
+    workItems: syncedWorkItems,
   });
   return appApiRequest(
-    `/api/connectors/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/sync`,
+    `/api/plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/sync`,
     {
       method: "POST",
       body: JSON.stringify(payload),
     },
-    connectorSyncResultSchema,
+    backlogSyncResultSchema,
   ).then((result) => {
+    // The items still in the settle this sync asked about, before its answer
+    // changes any of them.
+    const asked = new Map(
+      payload.workItems.flatMap((workItem) =>
+        workItem.commentsSince
+          ? [
+              [
+                workItem.localWorkItemId,
+                Date.parse(workItem.commentsSince),
+              ] as const,
+            ]
+          : [],
+      ),
+    );
+    const stillSettled = new Set(
+      localStore
+        .snapshot()
+        .workItems.filter(
+          (workItem) =>
+            workItem.status === "settled" &&
+            asked.get(workItem._id) === workItem.settledAt,
+        )
+        .map((workItem) => workItem._id),
+    );
     // Done items go first, so a done item that left the open set is archived
     // as done rather than as missing from the sync.
-    localStore.archiveDoneConnectorWorkItems(result.doneItems);
+    localStore.archiveDoneSyncedWorkItems(result.doneItems);
     const importResult =
       result.mode === "backlog"
-        ? localStore.importConnectorWorkItems(result.items, {
+        ? localStore.importSyncedWorkItems(result.items, {
             archiveMissingFromConnectionId:
               payload.trigger === "auto" ? connectionId : undefined,
           })
         : { importedCount: 0, updatedCount: 0 };
-    localStore.applyConnectorSyncWorkItemUpdates(result.workItemUpdates);
+    localStore.applyBacklogSyncWorkItemUpdates(result.workItemUpdates);
+    if (result.viewer && result.commentFacts.length > 0) {
+      // Returned by this answer's import: settled before it, active after.
+      const returnedBySync = new Set(
+        localStore
+          .snapshot()
+          .workItems.filter(
+            (workItem) =>
+              stillSettled.has(workItem._id) &&
+              workItem.status === "active" &&
+              workItem.returnedAt !== undefined,
+          )
+          .map((workItem) => workItem._id),
+      );
+      localStore.returnItemsWithNewComments(
+        result.commentFacts,
+        result.viewer,
+        { settledSince: asked, returnedBySync },
+      );
+    }
 
     return {
       ...result,
@@ -701,111 +846,108 @@ export function syncConnectorConnection(
 }
 
 /** The states a backlog item can move to, for the settle dialog. */
-export function listConnectorSettleStates(
+export function listBacklogSettleStates(
   pluginId: string,
   connectionId: string,
   sourceId: string,
 ) {
   return appApiRequest(
-    `/api/connectors/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/settle-states`,
+    `/api/plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/settle-states`,
     {
       method: "POST",
       body: JSON.stringify(
-        connectorSettleStatesRequestSchema.parse({ sourceId }),
+        backlogSettleStatesRequestSchema.parse({ sourceId }),
       ),
     },
-    connectorSettleStatesResultSchema,
+    backlogSettleStatesResultSchema,
   );
 }
 
 /** Writes a settle's changed state and priority to the source. */
-export function writeConnectorSettle(
+export function writeBacklogSettle(
   pluginId: string,
   connectionId: string,
-  request: ConnectorSettleWriteRequest,
+  request: BacklogSettleWriteRequest,
 ) {
   return appApiRequest(
-    `/api/connectors/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/settle`,
+    `/api/plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/settle`,
     {
       method: "POST",
-      body: JSON.stringify(connectorSettleWriteRequestSchema.parse(request)),
+      body: JSON.stringify(backlogSettleWriteRequestSchema.parse(request)),
     },
-    connectorSettleWriteResultSchema,
+    backlogSettleWriteResultSchema,
   );
 }
 
-export function listConnectorImportCandidates() {
+export function listBacklogImportCandidates() {
   return appApiRequest(
     "/api/backlog/imports",
     undefined,
-    connectorImportListResponseSchema,
+    backlogImportListResponseSchema,
   );
 }
 
-export function updateConnectorImportSelection(
-  ids: string[],
-  selected: boolean,
-) {
-  const payload = connectorImportSelectionUpdateSchema.parse({ ids, selected });
+export function updateBacklogImportSelection(ids: string[], selected: boolean) {
+  const payload = backlogImportSelectionUpdateSchema.parse({ ids, selected });
   return appApiRequest(
     "/api/backlog/imports/selection",
     {
       method: "POST",
       body: JSON.stringify(payload),
     },
-    connectorImportSelectionResponseSchema,
+    backlogImportSelectionResponseSchema,
   );
 }
 
 /** Dismisses staged items. The response's `undoToken` restores them. */
-export function dismissConnectorImportCandidates(ids: string[]) {
-  const payload = connectorImportDismissRequestSchema.parse({ ids });
+export function dismissBacklogImportCandidates(ids: string[]) {
+  const payload = backlogImportDismissRequestSchema.parse({ ids });
   return appApiRequest(
     "/api/backlog/imports/dismiss",
     {
       method: "POST",
       body: JSON.stringify(payload),
     },
-    connectorImportDismissResponseSchema,
+    backlogImportDismissResponseSchema,
   );
 }
 
 /** Puts the staged items of the last dismissal back in review. */
-export async function restoreDismissedConnectorImports(undoToken: string) {
-  const payload = connectorImportRestoreRequestSchema.parse({ undoToken });
+export async function restoreDismissedBacklogImports(undoToken: string) {
+  const payload = backlogImportRestoreRequestSchema.parse({ undoToken });
   const { result } = await appApiRequest(
     "/api/backlog/imports/restore",
     {
       method: "POST",
       body: JSON.stringify(payload),
     },
-    connectorImportRestoreResponseSchema,
+    backlogImportRestoreResponseSchema,
   );
   return result;
 }
 
-export async function commitSelectedConnectorImportsToLocalStore() {
+export async function commitSelectedBacklogImportsToLocalStore() {
   const committed = await appApiRequest(
     "/api/backlog/imports/commit-selected",
     {
       method: "POST",
       body: JSON.stringify({}),
     },
-    connectorImportCommitResponseSchema,
+    backlogImportCommitResponseSchema,
   );
 
-  const importResult = localStore.importConnectorWorkItems(committed.items);
+  const importResult = localStore.importSyncedWorkItems(committed.items);
   return {
     ...importResult,
     committedCount: committed.committedCount,
   };
 }
 
-export function buildImportHierarchy(items: ConnectorImportCandidate[]) {
+export function buildImportHierarchy(items: BacklogImportCandidate[]) {
   const itemsBySourceId = new Map(
     items.map((item) => [item.sourceId, item] as const),
   );
-  const childrenByParent = new Map<string, ConnectorImportCandidate[]>();
+  const childrenByParent = new Map<string, BacklogImportCandidate[]>();
 
   for (const item of items) {
     if (!item.parentSourceId) {
@@ -848,7 +990,7 @@ export async function updateAgentRunnerSettings(
 export async function saveAgentTaskSettings(
   pluginId: string,
   taskId: string,
-  values: ConnectorFieldValues,
+  values: PluginFieldValues,
 ) {
   return appApiRequest(
     `/api/agents/tasks/${encodeURIComponent(pluginId)}/${encodeURIComponent(taskId)}/settings`,

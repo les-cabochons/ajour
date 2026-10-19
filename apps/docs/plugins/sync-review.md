@@ -1,6 +1,6 @@
 # Sync review
 
-Sync review is where connector items wait for your decision before they enter your backlog. It is also where Ajour asks you to resolve estimate conflicts.
+Sync review is where items from backlog plugins wait for your decision before they enter your backlog. It is also where Ajour asks you to resolve estimate conflicts.
 
 <Shot name="settings-sync-review" alt="Settings › Sync review with three staged Azure DevOps items" />
 
@@ -27,7 +27,7 @@ Turn on **Auto sync to backlog** on a connection to add new items straight to yo
 
 Ajour remembers each estimate's value at the last sync. At the next sync:
 
-- If you changed it in Ajour, the connector writes it to the source.
+- If you changed it in Ajour, the backlog plugin writes it to the source.
 - If it changed in the source, Ajour takes the new value.
 - If both changed, Ajour does not guess. The conflict shows here.
 

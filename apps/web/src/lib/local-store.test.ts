@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { lockedWeekMessage } from "@/domain/time/locked-weeks";
 
 function installMockWindow() {
   const storage = new Map<string, string>();
@@ -110,7 +111,7 @@ describe("localStore workflow state sync", () => {
         workflowStateId: doing,
       });
     }
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const id = localStore.snapshot().workItems[0]!._id;
     localStore.settleWorkItem(id, { state: { name: "Waiting", done: false } });
     localStore.updateWorkflowState(doing, { name: "Doing", done: true });
@@ -145,8 +146,8 @@ describe("localStore workflow state sync", () => {
         sourceStatusKey: "active",
         workflowStateId: doing,
       });
-      localStore.importConnectorWorkItems([buildImportCandidate()]);
-      localStore.importConnectorWorkItems([], {
+      localStore.importSyncedWorkItems([buildImportCandidate()]);
+      localStore.importSyncedWorkItems([], {
         archiveMissingFromConnectionId: "ado-1",
       });
       localStore.updateWorkflowState(doing, { name: "Doing", done: true });
@@ -162,7 +163,7 @@ describe("localStore workflow state sync", () => {
       );
       vi.resetModules();
       const reloaded = (await import("./local-store")).localStore;
-      reloaded.importConnectorWorkItems([buildImportCandidate()]);
+      reloaded.importSyncedWorkItems([buildImportCandidate()]);
       expect(reloaded.snapshot().workItems[0]).toMatchObject({
         status: "active",
         archivedByMissingSync: false,
@@ -234,7 +235,7 @@ describe("localStore workflow state sync", () => {
       state: "Closed",
       stateDone: true,
     });
-    localStore.importConnectorWorkItems([candidate]);
+    localStore.importSyncedWorkItems([candidate]);
     const closed = localStore.snapshot().workItems[0]!;
     expect(closed.status).toBe("archived");
     const token = localStore.moveWorkItemToState(closed._id, openId, {
@@ -243,10 +244,10 @@ describe("localStore workflow state sync", () => {
     const pending = localStore.snapshot().workItems[0]!;
     expect(pending.status).toBe("active");
     expect(pending.pendingSourceWrite?.state).toBe("Active");
-    localStore.importConnectorWorkItems([candidate]);
+    localStore.importSyncedWorkItems([candidate]);
     expect(localStore.snapshot().workItems[0]).toEqual(pending);
     expect(
-      localStore.archiveDoneConnectorWorkItems([
+      localStore.archiveDoneSyncedWorkItems([
         {
           source: candidate.source,
           connectionId: candidate.connectionId,
@@ -255,7 +256,7 @@ describe("localStore workflow state sync", () => {
         },
       ]),
     ).toBe(0);
-    localStore.importConnectorWorkItems([], {
+    localStore.importSyncedWorkItems([], {
       archiveMissingFromConnectionId: "ado-1",
     });
     expect(localStore.snapshot().workItems[0]).toEqual(pending);
@@ -286,7 +287,7 @@ describe("localStore workflow state sync", () => {
           sourceStatusKey,
           workflowStateId,
         });
-      localStore.importConnectorWorkItems([buildImportCandidate()]);
+      localStore.importSyncedWorkItems([buildImportCandidate()]);
       const parentId = localStore.snapshot().workItems[0]!._id;
       const childId = localStore.addSubtask(parentId, {
         title: "Manual child",
@@ -302,10 +303,12 @@ describe("localStore workflow state sync", () => {
         sourceWrites: { [parentId]: "Active" },
       });
       if (outcome === "independent edit")
-        localStore.updateWorkItem(parentId, { note: "Keep my later edit" });
+        localStore.updateWorkItem(parentId, {
+          description: "Keep my later edit",
+        });
       if (outcome === "failure")
         localStore.updateWorkItem(childId, {
-          note: "Keep the child's later edit",
+          description: "Keep the child's later edit",
         });
       const readyAt = localStore
         .snapshot()
@@ -333,7 +336,7 @@ describe("localStore workflow state sync", () => {
         expect(localStore.undo(token!)).toBe("stale");
         expect(
           localStore.snapshot().workItems.find((item) => item._id === parentId)
-            ?.note,
+            ?.description,
         ).toBe("Keep my later edit");
         return;
       }
@@ -348,7 +351,7 @@ describe("localStore workflow state sync", () => {
       expect(child).toEqual(
         outcome === "undo"
           ? closedChild
-          : { ...closedChild, note: "Keep the child's later edit" },
+          : { ...closedChild, description: "Keep the child's later edit" },
       );
     },
   );
@@ -374,7 +377,7 @@ describe("localStore workflow state sync", () => {
         ...mapping,
         workflowStateId: review,
       });
-      localStore.importConnectorWorkItems([buildImportCandidate()]);
+      localStore.importSyncedWorkItems([buildImportCandidate()]);
       const id = localStore.snapshot().workItems[0]!._id;
       localStore.moveWorkItemToState(id, review, {
         sourceWrites: { [id]: "In QA" },
@@ -456,7 +459,7 @@ describe("localStore workflow state sync", () => {
         sourceStatusKey: "In QA",
         workflowStateId: writing,
       });
-      localStore.importConnectorWorkItems([buildImportCandidate()]);
+      localStore.importSyncedWorkItems([buildImportCandidate()]);
       const id = localStore.snapshot().workItems[0]!._id;
       localStore.moveWorkItemToState(id, writing, {
         sourceWrites: { [id]: "In QA" },
@@ -528,7 +531,7 @@ describe("localStore workflow state sync", () => {
       sourceStatusKey: "Working",
       workflowStateId: working,
     });
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const id = localStore.snapshot().workItems[0]!._id;
     localStore.moveWorkItemToState(id, review, {
       sourceWrites: { [id]: "In QA" },
@@ -583,7 +586,7 @@ describe("localStore workflow state sync", () => {
       parentSourceId: parent.sourceId,
       depth: 1,
     });
-    localStore.importConnectorWorkItems([parent, child]);
+    localStore.importSyncedWorkItems([parent, child]);
     const parentId = localStore
       .snapshot()
       .workItems.find((item) => item.sourceId === parent.sourceId)!._id;
@@ -632,7 +635,7 @@ describe("localStore workflow state sync", () => {
       sourceStatusKey: "Active",
     };
     localStore.setWorkflowStateMapping({ ...mapping, workflowStateId: review });
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const id = localStore.snapshot().workItems[0]!._id;
     localStore.updateWorkItem(id, { workflowStateId: open });
     localStore.settleWorkItem(id, { priority: 1 });
@@ -677,7 +680,7 @@ describe("localStore workflow state sync", () => {
         parentSourceId: parent.sourceId,
         depth: 1,
       });
-      localStore.importConnectorWorkItems([parent, child]);
+      localStore.importSyncedWorkItems([parent, child]);
       const parentId = localStore
         .snapshot()
         .workItems.find((item) => item.sourceId === parent.sourceId)!._id;
@@ -691,7 +694,9 @@ describe("localStore workflow state sync", () => {
           ...(childWrites ? { [childId]: "Closed" } : {}),
         },
       });
-      localStore.updateWorkItem(childId, { note: "Later independent edit" });
+      localStore.updateWorkItem(childId, {
+        description: "Later independent edit",
+      });
       localStore.setWorkflowStateMapping({
         ...mapping,
         workflowStateId: review,
@@ -711,7 +716,7 @@ describe("localStore workflow state sync", () => {
       expect(recoveredChild).toMatchObject({
         status: childWrites ? "archived" : "active",
         workflowStateId: childWrites ? done : review,
-        note: "Later independent edit",
+        description: "Later independent edit",
       });
       if (childWrites) {
         expect(recoveredChild.pendingSourceWrite?.state).toBe("Closed");
@@ -723,7 +728,7 @@ describe("localStore workflow state sync", () => {
         status: "active",
         workflowStateId: review,
         importedWorkflowStateId: review,
-        note: "Later independent edit",
+        description: "Later independent edit",
       });
       expect(
         localStore.snapshot().workItems.find((item) => item._id === childId)
@@ -747,7 +752,7 @@ describe("localStore workflow state sync", () => {
       sourceStatusKey: "Active",
     };
     localStore.setWorkflowStateMapping({ ...mapping, workflowStateId: review });
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const id = localStore.snapshot().workItems[0]!._id;
     localStore.updateWorkItem(id, { workflowStateId: open });
     localStore.settleWorkItem(id, { priority: 1 });
@@ -802,7 +807,7 @@ describe("localStore workflow state sync", () => {
         parentSourceId: parent.sourceId,
         depth: 1,
       });
-      localStore.importConnectorWorkItems(
+      localStore.importSyncedWorkItems(
         includeSubitems ? [parent, child] : [parent],
       );
       const id = localStore
@@ -901,7 +906,7 @@ describe("localStore workflow state sync", () => {
         parentSourceId: parent.sourceId,
         depth: 1,
       });
-      localStore.importConnectorWorkItems(
+      localStore.importSyncedWorkItems(
         includeSubitems ? [parent, child] : [parent],
       );
       const id = localStore
@@ -995,9 +1000,9 @@ describe("localStore workflow state sync", () => {
         sourceStatusKey: "In QA",
         workflowStateId: review,
       });
-      localStore.importConnectorWorkItems([buildImportCandidate()]);
+      localStore.importSyncedWorkItems([buildImportCandidate()]);
       const id = localStore.snapshot().workItems[0]!._id;
-      localStore.importConnectorWorkItems([], {
+      localStore.importSyncedWorkItems([], {
         archiveMissingFromConnectionId: "ado-1",
       });
       expect(localStore.snapshot().workItems[0]).toMatchObject({
@@ -1063,7 +1068,7 @@ describe("localStore workflow state sync", () => {
         parentSourceId: parent.sourceId,
         depth: 1,
       });
-      localStore.importConnectorWorkItems(
+      localStore.importSyncedWorkItems(
         children === "synced" ? [parent, child] : [parent],
       );
       const id = localStore
@@ -1089,7 +1094,7 @@ describe("localStore workflow state sync", () => {
         });
       if (isMissing) {
         localStore.settleWorkItem(id, undefined, { includeSubitems: true });
-        localStore.importConnectorWorkItems([], {
+        localStore.importSyncedWorkItems([], {
           archiveMissingFromConnectionId: "ado-1",
         });
       } else {
@@ -1144,7 +1149,7 @@ describe("localStore workflow state sync", () => {
       vi.resetModules();
       const restarted = (await import("./local-store")).localStore;
       if (isMissing)
-        restarted.importConnectorWorkItems(
+        restarted.importSyncedWorkItems(
           children === "synced" ? [parent, child] : [parent],
         );
       else restarted.restoreWorkItem(id);
@@ -1166,7 +1171,7 @@ describe("localStore workflow state sync", () => {
 
   it("recovers the last successful priority write when its replacement fails", async () => {
     const { localStore } = await import("./local-store");
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const id = localStore.snapshot().workItems[0]!._id;
     localStore.settleWorkItem(id, { priority: 1 });
     const sentItems = localStore.snapshot().workItems;
@@ -1199,7 +1204,7 @@ describe("localStore workflow state sync", () => {
         sourceStatusKey: label,
         workflowStateId,
       });
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const id = localStore.snapshot().workItems[0]!._id;
     localStore.moveWorkItemToState(id, workingId, {
       sourceWrites: { [id]: "Working" },
@@ -1224,7 +1229,7 @@ describe("localStore workflow state sync", () => {
     async (path) => {
       const { localStore } = await import("./local-store");
       const candidate = buildImportCandidate({ state: "Resolved" });
-      localStore.importConnectorWorkItems([candidate]);
+      localStore.importSyncedWorkItems([candidate]);
       const item = localStore.snapshot().workItems[0]!;
       expect(item.workflowStateId).toBeUndefined();
       localStore.startTimer({
@@ -1241,12 +1246,12 @@ describe("localStore workflow state sync", () => {
           },
         ]);
       } else if (path === "import") {
-        localStore.importConnectorWorkItems([
+        localStore.importSyncedWorkItems([
           buildImportCandidate({ state: "Resolved", stateDone: true }),
         ]);
       } else {
         expect(
-          localStore.archiveDoneConnectorWorkItems([
+          localStore.archiveDoneSyncedWorkItems([
             {
               source: candidate.source,
               connectionId: candidate.connectionId,
@@ -1297,7 +1302,7 @@ describe("localStore workflow state sync", () => {
       depth: 1,
       parentSourceId: parent.sourceId,
     });
-    localStore.importConnectorWorkItems([parent, child]);
+    localStore.importSyncedWorkItems([parent, child]);
     const parentId = localStore
       .snapshot()
       .workItems.find((item) => item.sourceId === parent.sourceId)!._id;
@@ -1322,7 +1327,7 @@ describe("localStore workflow state sync", () => {
       status: "active",
       pendingSourceWrite: undefined,
     });
-    localStore.importConnectorWorkItems(
+    localStore.importSyncedWorkItems(
       [parent, child].map((item) => ({
         ...item,
         state: "Closed",
@@ -1330,7 +1335,7 @@ describe("localStore workflow state sync", () => {
       })),
     );
     expect(localStore.snapshot().workItems).toEqual(pending);
-    localStore.archiveDoneConnectorWorkItems(
+    localStore.archiveDoneSyncedWorkItems(
       [parent, child].map((item) => ({
         source: item.source,
         connectionId: item.connectionId,
@@ -1338,7 +1343,7 @@ describe("localStore workflow state sync", () => {
         state: "Closed",
       })),
     );
-    localStore.importConnectorWorkItems([], {
+    localStore.importSyncedWorkItems([], {
       archiveMissingFromConnectionId: "ado-1",
     });
     expect(localStore.snapshot().workItems).toEqual(pending);
@@ -1353,7 +1358,7 @@ describe("localStore workflow state sync", () => {
   it("preserves a local open-state override when automatic mapping discovers Done", async () => {
     const { localStore } = await import("./local-store");
     const candidate = buildImportCandidate({ state: "Resolved" });
-    localStore.importConnectorWorkItems([candidate]);
+    localStore.importSyncedWorkItems([candidate]);
     const item = localStore.snapshot().workItems[0]!;
     const openId = localStore
       .snapshot()
@@ -1504,7 +1509,7 @@ describe("localStore workflow state sync", () => {
       workflowStateId: todoStatusId,
     });
 
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const importedItem = localStore.snapshot().workItems[0];
     expect(importedItem).toMatchObject({
       workflowStateId: todoStatusId,
@@ -1531,7 +1536,7 @@ describe("localStore workflow state sync", () => {
 
   it("closes open items when their source state is mapped to a done state, with Undo", async () => {
     const { localStore } = await import("./local-store");
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const doneStateId = localStore
       .snapshot()
       .workflowStates.find((workflowState) => workflowState.done)!._id;
@@ -1769,7 +1774,10 @@ describe("localStore workflow state sync", () => {
       _id: "committed-meeting",
       sourceBlockIds: ["meeting:event-1"],
     });
-    expect(window.localStorage.setItem).toHaveBeenCalledTimes(1);
+    // The sanitized state once, and its new revision.
+    expect(
+      vi.mocked(window.localStorage.setItem).mock.calls.map(([key]) => key),
+    ).toEqual(["ajour.local-state.v2", "ajour.local-state.revision"]);
   });
 
   it("does not overwrite state changed by another tab during retired state migration", async () => {
@@ -1820,11 +1828,11 @@ describe("localStore workflow state sync", () => {
   it("archives imported work items that disappear during auto-sync reconciliation", async () => {
     const { localStore } = await import("./local-store");
 
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const importedItem = localStore.snapshot().workItems[0];
     expect(importedItem?.status).toBe("active");
 
-    const result = localStore.importConnectorWorkItems([], {
+    const result = localStore.importSyncedWorkItems([], {
       archiveMissingFromConnectionId: "ado-1",
     });
 
@@ -1837,7 +1845,7 @@ describe("localStore workflow state sync", () => {
 
   it("drops a settle's pending write when the settle is undone", async () => {
     const { localStore } = await import("./local-store");
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const workItemId = localStore.snapshot().workItems[0]!._id;
 
     const token = localStore.settleWorkItem(workItemId, {
@@ -1862,10 +1870,10 @@ describe("localStore workflow state sync", () => {
     const { localStore } = await import("./local-store");
 
     const candidate = buildImportCandidate();
-    localStore.importConnectorWorkItems([candidate]);
+    localStore.importSyncedWorkItems([candidate]);
     const importedItem = localStore.snapshot().workItems[0]!;
 
-    localStore.importConnectorWorkItems([], {
+    localStore.importSyncedWorkItems([], {
       archiveMissingFromConnectionId: "ado-1",
     });
 
@@ -1874,7 +1882,7 @@ describe("localStore workflow state sync", () => {
       status: "archived",
     });
 
-    const result = localStore.importConnectorWorkItems([candidate], {
+    const result = localStore.importSyncedWorkItems([candidate], {
       archiveMissingFromConnectionId: "ado-1",
     });
 
@@ -1889,7 +1897,7 @@ describe("localStore workflow state sync", () => {
   it("keeps opted-in imported work items during auto-sync reconciliation", async () => {
     const { localStore } = await import("./local-store");
 
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const importedItem = localStore.snapshot().workItems[0]!;
 
     expect(importedItem.keepWhenMissingFromSync).toBe(false);
@@ -1898,7 +1906,7 @@ describe("localStore workflow state sync", () => {
       keepWhenMissingFromSync: true,
     });
 
-    const result = localStore.importConnectorWorkItems([], {
+    const result = localStore.importSyncedWorkItems([], {
       archiveMissingFromConnectionId: "ado-1",
     });
 
@@ -1910,10 +1918,10 @@ describe("localStore workflow state sync", () => {
     });
   });
 
-  it("initializes imported estimate fields from connector candidates", async () => {
+  it("initializes imported estimate fields from backlog candidates", async () => {
     const { localStore } = await import("./local-store");
 
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
 
     expect(localStore.snapshot().workItems[0]).toMatchObject({
       originalEstimateHours: 12,
@@ -1928,7 +1936,7 @@ describe("localStore workflow state sync", () => {
     const projectId = localStore.snapshot().projects[0]!._id;
     localStore.addProjectTask(projectId, { name: "Imported task" });
     const taskId = localStore.snapshot().projects[0]!.tasks.at(-1)!._id;
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const workItem = localStore.snapshot().workItems[0]!;
     localStore.updateWorkItem(workItem._id, {
       projectId,
@@ -1954,7 +1962,7 @@ describe("localStore workflow state sync", () => {
     const projectId = localStore.snapshot().projects[0]!._id;
     localStore.addProjectTask(projectId, { name: "Overrun task" });
     const taskId = localStore.snapshot().projects[0]!.tasks.at(-1)!._id;
-    localStore.importConnectorWorkItems([
+    localStore.importSyncedWorkItems([
       buildImportCandidate({
         remainingEstimateHours: 1,
         completedEstimateHours: 0,
@@ -1982,7 +1990,7 @@ describe("localStore workflow state sync", () => {
   it("updates estimates for a backlog work item even when no project or task is mapped", async () => {
     const { localStore } = await import("./local-store");
 
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const workItem = localStore.snapshot().workItems[0]!;
 
     localStore.saveManualTimeEntry({
@@ -2130,7 +2138,7 @@ describe("localStore workflow state sync", () => {
   it("reverses unmapped backlog estimate deltas when the linked time entry is deleted", async () => {
     const { localStore } = await import("./local-store");
 
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const workItem = localStore.snapshot().workItems[0]!;
 
     localStore.saveManualTimeEntry({
@@ -2900,10 +2908,43 @@ describe("localStore subscriptions", () => {
       key: "ajour.local-state.v2",
     });
 
-    expect(window.localStorage.getItem).toHaveBeenCalledTimes(1);
+    expect(
+      vi
+        .mocked(window.localStorage.getItem)
+        .mock.calls.filter(([key]) => key === "ajour.local-state.v2"),
+    ).toHaveLength(1);
     expect(window.dispatchEvent).toHaveBeenCalledTimes(1);
     expect(localStore.snapshot()).not.toBe(before);
     expect(localStore.snapshot().updatedAt).toBe(before.updatedAt + 1);
+  });
+
+  it("takes the other window's revision with its state, so the next write goes through", async () => {
+    const { localStore } = await import("./local-store");
+    localStore.subscribe(vi.fn());
+    const before = localStore.snapshot();
+    window.localStorage.setItem(
+      "ajour.local-state.v2",
+      JSON.stringify({
+        ...before,
+        updatedAt: before.updatedAt + 1,
+        revision: "other-window",
+      }),
+    );
+    window.localStorage.setItem("ajour.local-state.revision", "other-window");
+    const storageListener = vi
+      .mocked(window.addEventListener)
+      .mock.calls.find(([type]) => type === "storage")![1];
+    (storageListener as unknown as (event: { key: string }) => void)({
+      key: "ajour.local-state.v2",
+    });
+    const parse = vi.spyOn(JSON, "parse");
+    try {
+      expect(() => localStore.addWorkItem({ title: "Ship it" })).not.toThrow();
+      // The reload took the revision from the state itself, so no reload now.
+      expect(parse).not.toHaveBeenCalled();
+    } finally {
+      parse.mockRestore();
+    }
   });
 });
 
@@ -3106,5 +3147,628 @@ describe("calendar suggestions in the store", () => {
     expect(localStore.snapshot().calendarDecisions).toEqual([]);
     expect(localStore.snapshot().calendarEventRules).toEqual([]);
     expect(localStore.snapshot().timesheetEntries).toHaveLength(1);
+  });
+});
+
+describe("submitted weeks in the store", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    installMockWindow();
+  });
+
+  const HOUR = 60 * 60 * 1000;
+  const reason = lockedWeekMessage("2026-10-05");
+
+  /** "API" on Tuesday, October 6, committed; the week is submitted when `locked`. */
+  function seedWeek({ locked }: { locked: boolean }) {
+    window.localStorage.setItem(
+      "ajour.local-state.v2",
+      JSON.stringify({
+        timesheetEntries: [
+          {
+            _id: "api",
+            localDate: "2026-10-06",
+            label: "",
+            note: "API",
+            durationMs: HOUR,
+            sourceBlockIds: [],
+            committedAt: 1,
+            commit: {
+              at: 1,
+              localDate: "2026-10-06",
+              note: "API",
+              durationMs: HOUR,
+            },
+          },
+        ],
+        lockedWeeks: locked ? [{ weekOf: "2026-10-05", lockedAt: 2 }] : [],
+      }),
+    );
+  }
+
+  it("refuses a write to a submitted week and persists nothing", async () => {
+    seedWeek({ locked: true });
+    const { localStore } = await import("./local-store");
+    const before = localStore.snapshot();
+    vi.mocked(window.localStorage.setItem).mockClear();
+
+    expect(() =>
+      localStore.updateTimesheetEntry("api", {
+        note: "Changed",
+        durationMs: HOUR,
+      }),
+    ).toThrow(reason);
+    expect(() => localStore.deleteTimesheetEntry("api")).toThrow(reason);
+    expect(window.localStorage.setItem).not.toHaveBeenCalled();
+    expect(localStore.snapshot()).toBe(before);
+  });
+
+  it("refuses to start a running entry when today is in a submitted week", async () => {
+    seedWeek({ locked: true });
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 9, 7, 9));
+    try {
+      const { localStore } = await import("./local-store");
+
+      expect(() => localStore.startTimer({})).toThrow(reason);
+      expect(localStore.snapshot().timers).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("submits a committed week with Undo, and reopens it with Undo", async () => {
+    seedWeek({ locked: false });
+    const { localStore } = await import("./local-store");
+
+    const { undoToken, result } = localStore.submitWeek("2026-10-08");
+    expect(result).toEqual({ ok: true, weekOf: "2026-10-05" });
+    expect(localStore.snapshot().lockedWeeks).toMatchObject([
+      { weekOf: "2026-10-05" },
+    ]);
+    expect(localStore.undo(undoToken!)).toBe("restored");
+    expect(localStore.snapshot().lockedWeeks).toEqual([]);
+
+    localStore.submitWeek("2026-10-05");
+    const reopenToken = localStore.reopenWeek("2026-10-05");
+    expect(localStore.snapshot().lockedWeeks).toEqual([]);
+    expect(localStore.undo(reopenToken!)).toBe("restored");
+    expect(localStore.snapshot().lockedWeeks).toMatchObject([
+      { weekOf: "2026-10-05" },
+    ]);
+  });
+
+  it("returns the refusal with no undo token", async () => {
+    seedWeek({ locked: true });
+    const { localStore } = await import("./local-store");
+
+    expect(localStore.submitWeek("2026-10-05")).toEqual({
+      undoToken: null,
+      result: {
+        ok: false,
+        kind: "already-submitted",
+        message: "The week of 2026-10-05 is already submitted.",
+      },
+    });
+    expect(localStore.reopenWeek("2026-10-12")).toBeNull();
+  });
+
+  /**
+   * Another window wrote the state and its revision; this window has not read
+   * the storage event yet.
+   */
+  function writeInAnotherWindow(change: Record<string, unknown>) {
+    const stored = JSON.parse(
+      window.localStorage.getItem("ajour.local-state.v2")!,
+    ) as Record<string, unknown>;
+    window.localStorage.setItem(
+      "ajour.local-state.v2",
+      JSON.stringify({ ...stored, ...change, revision: "other-window" }),
+    );
+    window.localStorage.setItem("ajour.local-state.revision", "other-window");
+  }
+
+  /** Another window submitted the week of October 5. */
+  function submitInAnotherWindow() {
+    writeInAnotherWindow({
+      lockedWeeks: [{ weekOf: "2026-10-05", lockedAt: 9 }],
+    });
+  }
+
+  const storedLocks = () =>
+    (
+      JSON.parse(window.localStorage.getItem("ajour.local-state.v2")!) as {
+        lockedWeeks: unknown[];
+      }
+    ).lockedWeeks;
+
+  it("refuses a stale Submit of another week and keeps the other window's lock", async () => {
+    seedWeek({ locked: false });
+    const { localStore, StaleWindowError } = await import("./local-store");
+    localStore.snapshot();
+    submitInAnotherWindow();
+
+    expect(() => localStore.submitWeek("2026-10-12")).toThrow(StaleWindowError);
+    expect(storedLocks()).toEqual([{ weekOf: "2026-10-05", lockedAt: 9 }]);
+    expect(localStore.snapshot().lockedWeeks).toEqual([
+      { weekOf: "2026-10-05", lockedAt: 9 },
+    ]);
+  });
+
+  it("refuses a stale Reopen", async () => {
+    seedWeek({ locked: true });
+    const { localStore, StaleWindowError } = await import("./local-store");
+    localStore.snapshot();
+    writeInAnotherWindow({
+      lockedWeeks: [
+        { weekOf: "2026-10-05", lockedAt: 2 },
+        { weekOf: "2026-10-12", lockedAt: 9 },
+      ],
+    });
+
+    expect(() => localStore.reopenWeek("2026-10-05")).toThrow(StaleWindowError);
+    expect(storedLocks()).toHaveLength(2);
+  });
+
+  it("refuses a stale Undo", async () => {
+    seedWeek({ locked: false });
+    const { localStore, StaleWindowError } = await import("./local-store");
+    const { undoToken } = localStore.submitWeek("2026-10-12");
+    writeInAnotherWindow({
+      lockedWeeks: [
+        { weekOf: "2026-10-05", lockedAt: 9 },
+        { weekOf: "2026-10-12", lockedAt: 1 },
+      ],
+    });
+
+    expect(() => localStore.undo(undoToken!)).toThrow(StaleWindowError);
+    expect(storedLocks()).toHaveLength(2);
+  });
+
+  it("never reads the stored state back on a write in a single window", async () => {
+    seedWeek({ locked: false });
+    const { localStore } = await import("./local-store");
+    // The seed has no revision key yet; the first write stores it.
+    localStore.saveManualTimeEntry({
+      localDate: "2026-10-14",
+      durationMs: HOUR,
+    });
+    const getItem = vi.mocked(window.localStorage.getItem);
+    getItem.mockClear();
+    const parse = vi.spyOn(JSON, "parse");
+    try {
+      localStore.saveManualTimeEntry({
+        localDate: "2026-10-13",
+        durationMs: HOUR,
+      });
+      const token = localStore.submitWeek("2026-10-12").undoToken;
+      localStore.undo(token!);
+
+      expect(parse).not.toHaveBeenCalled();
+      expect(getItem).not.toHaveBeenCalledWith("ajour.local-state.v2");
+      expect(getItem).toHaveBeenCalledWith("ajour.local-state.revision");
+    } finally {
+      parse.mockRestore();
+    }
+  });
+
+  // Each window loads its own module, so compare refusals by message.
+  const stale = "Ajour changed in another window. Try again.";
+
+  /** Loads the store again as a second window on the same storage. */
+  async function openAnotherWindow() {
+    vi.resetModules();
+    return (await import("./local-store")).localStore;
+  }
+
+  it("leaves no stale write possible when the revision key cannot be written", async () => {
+    seedWeek({ locked: false });
+    const { localStore: first } = await import("./local-store");
+    // Both windows start on the same revision, and the hint holds it.
+    first.saveManualTimeEntry({ localDate: "2026-10-14", durationMs: HOUR });
+    const second = await openAnotherWindow();
+    second.snapshot();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const setItem = vi.mocked(window.localStorage.setItem);
+    const write = setItem.getMockImplementation()!;
+    setItem.mockImplementation((key, value) => {
+      if (key === "ajour.local-state.revision") {
+        throw new DOMException("Quota exceeded", "QuotaExceededError");
+      }
+      write(key, value);
+    });
+    try {
+      first.submitWeek("2026-10-05");
+      expect(first.snapshot().lockedWeeks).toHaveLength(1);
+    } finally {
+      setItem.mockImplementation(write);
+    }
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+    expect(() =>
+      second.saveManualTimeEntry({ localDate: "2026-10-27", durationMs: HOUR }),
+    ).toThrow(stale);
+    expect(storedLocks()).toMatchObject([{ weekOf: "2026-10-05" }]);
+  });
+
+  it("never pairs an old state with a newer revision while loading", async () => {
+    seedWeek({ locked: false });
+    const { localStore: first } = await import("./local-store");
+    first.saveManualTimeEntry({ localDate: "2026-10-14", durationMs: HOUR });
+    const second = await openAnotherWindow();
+    // The first window submits right after the second one read the state.
+    const getItem = vi.mocked(window.localStorage.getItem);
+    const read = getItem.getMockImplementation()!;
+    let interleaved = false;
+    getItem.mockImplementation((key) => {
+      const value = read(key);
+      if (key === "ajour.local-state.v2" && !interleaved) {
+        interleaved = true;
+        first.submitWeek("2026-10-19");
+      }
+      return value;
+    });
+    try {
+      expect(second.snapshot().lockedWeeks).toEqual([]);
+    } finally {
+      getItem.mockImplementation(read);
+    }
+
+    expect(() =>
+      second.saveManualTimeEntry({ localDate: "2026-10-27", durationMs: HOUR }),
+    ).toThrow(stale);
+    expect(storedLocks()).toMatchObject([{ weekOf: "2026-10-19" }]);
+  });
+
+  it("reloads when the revision key is missing, and still writes on a fresh base", async () => {
+    seedWeek({ locked: false });
+    const { localStore } = await import("./local-store");
+    localStore.saveManualTimeEntry({
+      localDate: "2026-10-14",
+      durationMs: HOUR,
+    });
+    window.localStorage.removeItem("ajour.local-state.revision");
+    const parse = vi.spyOn(JSON, "parse");
+    try {
+      expect(() =>
+        localStore.saveManualTimeEntry({
+          localDate: "2026-10-15",
+          durationMs: HOUR,
+        }),
+      ).not.toThrow();
+      expect(parse).toHaveBeenCalled();
+    } finally {
+      parse.mockRestore();
+    }
+    expect(localStore.snapshot().timesheetEntries).toHaveLength(3);
+    expect(window.localStorage.getItem("ajour.local-state.revision")).toBe(
+      localStore.snapshot().revision,
+    );
+  });
+
+  it("keeps the Undo when a stale window refuses it, so a retry works", async () => {
+    seedWeek({ locked: false });
+    const { localStore, StaleWindowError } = await import("./local-store");
+    const { undoToken } = localStore.submitWeek("2026-10-12");
+    // Another window changes something unrelated to the submitted week.
+    writeInAnotherWindow({ dismissedSegmentIds: ["segment-1"] });
+
+    expect(() => localStore.undo(undoToken!)).toThrow(StaleWindowError);
+    expect(localStore.undo(undoToken!)).toBe("restored");
+    expect(localStore.snapshot().lockedWeeks).toEqual([]);
+    expect(localStore.snapshot().dismissedSegmentIds).toEqual(["segment-1"]);
+  });
+
+  it("does not submit a recovered week that holds the store's running entry", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      recoverFromDesktop(
+        {
+          timers: [
+            {
+              _id: "local-running",
+              startedAt: 1,
+              localDate: "2026-10-07",
+              accumulatedDurationMs: 0,
+            },
+          ],
+        },
+        [
+          { weekOf: "2026-10-05", lockedAt: 2 },
+          { weekOf: "2026-10-12", lockedAt: 3 },
+        ],
+      );
+      const { localStore } = await import("./local-store");
+
+      expect(localStore.snapshot().timers).toHaveLength(1);
+      expect(localStore.snapshot().lockedWeeks).toEqual([
+        { weekOf: "2026-10-12", lockedAt: 3 },
+      ]);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(
+        "Desktop recovery did not submit the week of 2026-10-05: the running entry is on it.",
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("refuses a stale window's write to a week another window submitted", async () => {
+    seedWeek({ locked: false });
+    const { localStore } = await import("./local-store");
+    localStore.snapshot();
+    submitInAnotherWindow();
+
+    expect(() =>
+      localStore.updateTimesheetEntry("api", {
+        note: "Changed",
+        durationMs: HOUR,
+      }),
+    ).toThrow(reason);
+    const stored = JSON.parse(
+      window.localStorage.getItem("ajour.local-state.v2")!,
+    ) as { lockedWeeks: unknown[]; timesheetEntries: { note: string }[] };
+    expect(stored.lockedWeeks).toEqual([{ weekOf: "2026-10-05", lockedAt: 9 }]);
+    expect(stored.timesheetEntries[0]!.note).toBe("API");
+    expect(localStore.snapshot().lockedWeeks).toEqual([
+      { weekOf: "2026-10-05", lockedAt: 9 },
+    ]);
+  });
+
+  it("refuses any other stale write once, then writes on the fresh state", async () => {
+    seedWeek({ locked: false });
+    const { localStore, StaleWindowError } = await import("./local-store");
+    localStore.snapshot();
+    submitInAnotherWindow();
+    const write = () =>
+      localStore.saveManualTimeEntry({
+        localDate: "2026-10-13",
+        durationMs: HOUR,
+      });
+
+    let refusal: unknown;
+    try {
+      write();
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(StaleWindowError);
+    expect((refusal as Error).message).toBe(
+      "Ajour changed in another window. Try again.",
+    );
+    expect(localStore.snapshot().timesheetEntries).toHaveLength(1);
+
+    // The refusal refreshed this window, so the next try writes.
+    expect(() => write()).not.toThrow();
+    expect(localStore.snapshot().timesheetEntries).toHaveLength(2);
+    expect(localStore.snapshot().lockedWeeks).toHaveLength(1);
+  });
+
+  /** A desktop recovery file with "api" on October 6 and "next" on October 13. */
+  function recoverFromDesktop(
+    current: Record<string, unknown>,
+    recoveredLockedWeeks: unknown[],
+    recoveredExtra: Record<string, unknown> = {},
+  ) {
+    const recovered = (_id: string, localDate: string) => ({
+      _id,
+      localDate,
+      label: "",
+      note: _id,
+      durationMs: HOUR,
+      sourceBlockIds: [],
+      committedAt: 1,
+    });
+    window.localStorage.setItem(
+      "ajour.local-state.v2",
+      JSON.stringify(current),
+    );
+    Object.assign(window, {
+      ajourDesktop: {
+        bootstrapLocalState: {
+          timesheetEntries: [
+            recovered("api", "2026-10-06"),
+            recovered("next", "2026-10-13"),
+          ],
+          lockedWeeks: recoveredLockedWeeks,
+          updatedAt: 5,
+          ...recoveredExtra,
+        },
+      },
+    });
+  }
+
+  it("does not submit again on reload a recovered week the user reopened", async () => {
+    const entry = (_id: string, localDate: string) => ({
+      _id,
+      localDate,
+      label: "",
+      note: _id,
+      durationMs: HOUR,
+      sourceBlockIds: [],
+      committedAt: 1,
+    });
+    // The store already holds what the recovery file holds.
+    recoverFromDesktop(
+      {
+        timesheetEntries: [
+          entry("api", "2026-10-06"),
+          entry("next", "2026-10-13"),
+        ],
+        lockedWeeks: [{ weekOf: "2026-10-12", lockedAt: 2 }],
+      },
+      [{ weekOf: "2026-10-12", lockedAt: 2 }],
+    );
+    const { localStore } = await import("./local-store");
+    localStore.reopenWeek("2026-10-12");
+
+    // Reload: the recovery file is offered again.
+    vi.resetModules();
+    const reloaded = (await import("./local-store")).localStore;
+
+    expect(reloaded.snapshot().lockedWeeks).toEqual([]);
+  });
+
+  it("redoes the recovery on the fresh state when storage changed while it ran", async () => {
+    recoverFromDesktop({ lockedWeeks: [] }, []);
+    // Another tab saves an entry right after this one read the state.
+    const getItem = vi.mocked(window.localStorage.getItem);
+    const read = getItem.getMockImplementation()!;
+    let interleaved = false;
+    getItem.mockImplementation((key) => {
+      const value = read(key);
+      if (key === "ajour.local-state.v2" && !interleaved) {
+        interleaved = true;
+        window.localStorage.setItem(
+          "ajour.local-state.v2",
+          JSON.stringify({
+            timesheetEntries: [
+              {
+                _id: "other-tab",
+                localDate: "2026-10-20",
+                label: "",
+                durationMs: HOUR,
+                sourceBlockIds: [],
+                committedAt: 1,
+              },
+            ],
+            revision: "other-tab",
+          }),
+        );
+        window.localStorage.setItem("ajour.local-state.revision", "other-tab");
+      }
+      return value;
+    });
+    try {
+      const { localStore } = await import("./local-store");
+      localStore.snapshot();
+    } finally {
+      getItem.mockImplementation(read);
+    }
+
+    const stored = JSON.parse(
+      window.localStorage.getItem("ajour.local-state.v2")!,
+    ) as { timesheetEntries: { _id: string }[] };
+    expect(stored.timesheetEntries.map((entry) => entry._id)).toEqual([
+      "other-tab",
+      "api",
+      "next",
+    ]);
+  });
+
+  it("keeps the submitted weeks of recovered entries", async () => {
+    recoverFromDesktop(
+      { lockedWeeks: [{ weekOf: "2026-10-19", lockedAt: 3 }] },
+      [{ weekOf: "2026-10-07", lockedAt: 2 }],
+    );
+    const { localStore } = await import("./local-store");
+
+    expect(
+      localStore.snapshot().timesheetEntries.map((entry) => entry._id),
+    ).toEqual(["api", "next"]);
+    expect(localStore.snapshot().lockedWeeks).toEqual([
+      { weekOf: "2026-10-05", lockedAt: 2 },
+      { weekOf: "2026-10-19", lockedAt: 3 },
+    ]);
+  });
+
+  it("leaves out recovered entries that land in a week this store submitted", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      recoverFromDesktop(
+        { lockedWeeks: [{ weekOf: "2026-10-05", lockedAt: 3 }] },
+        [],
+      );
+      const { localStore } = await import("./local-store");
+
+      expect(
+        localStore.snapshot().timesheetEntries.map((entry) => entry._id),
+      ).toEqual(["next"]);
+      expect(localStore.snapshot().lockedWeeks).toEqual([
+        { weekOf: "2026-10-05", lockedAt: 3 },
+      ]);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(
+        "Desktop recovery left out 1 entry in a submitted week.",
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("leaves out a recovered running entry in a week locked after the merge", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      recoverFromDesktop({}, [{ weekOf: "2026-10-05", lockedAt: 2 }], {
+        timers: [
+          {
+            _id: "running",
+            startedAt: 1,
+            localDate: "2026-10-07",
+            accumulatedDurationMs: 0,
+          },
+        ],
+      });
+      const { localStore } = await import("./local-store");
+
+      expect(localStore.snapshot().timers).toEqual([]);
+      expect(localStore.snapshot().lockedWeeks).toHaveLength(1);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(
+        "Desktop recovery left out 1 running entry in a submitted week.",
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("recovers submitted weeks alone, with no entry to recover", async () => {
+    recoverFromDesktop(
+      {
+        timesheetEntries: [
+          {
+            _id: "kept",
+            localDate: "2026-04-11",
+            label: "",
+            durationMs: HOUR,
+            sourceBlockIds: [],
+            committedAt: 1,
+          },
+        ],
+      },
+      [{ weekOf: "2026-10-05", lockedAt: 2 }],
+      { timesheetEntries: [] },
+    );
+    const { localStore } = await import("./local-store");
+
+    expect(localStore.snapshot().lockedWeeks).toEqual([
+      { weekOf: "2026-10-05", lockedAt: 2 },
+    ]);
+    expect(
+      localStore.snapshot().timesheetEntries.map((entry) => entry._id),
+    ).toEqual(["kept"]);
+  });
+
+  it("starts with no submitted week", async () => {
+    const { localStore } = await import("./local-store");
+    expect(localStore.snapshot().lockedWeeks).toEqual([]);
+  });
+
+  it("reads submitted weeks on their Monday and drops malformed ones", async () => {
+    window.localStorage.setItem(
+      "ajour.local-state.v2",
+      JSON.stringify({
+        lockedWeeks: [
+          { weekOf: "2026-10-07", lockedAt: 5 },
+          { weekOf: "soon", lockedAt: 6 },
+        ],
+      }),
+    );
+    const { localStore } = await import("./local-store");
+
+    expect(localStore.snapshot().lockedWeeks).toEqual([
+      { weekOf: "2026-10-05", lockedAt: 5 },
+    ]);
   });
 });

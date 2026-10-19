@@ -1,6 +1,6 @@
 # Manifest
 
-Every connector and code host plugin has a `plugin.json` file at its root. Ajour reads it when it installs or loads the plugin, and refuses the plugin if it does not match the schema below. Unknown keys are ignored.
+Every backlog and code host plugin has a `plugin.json` file at its root. Ajour reads it when it installs or loads the plugin, and refuses the plugin if it does not match the schema below. Unknown keys are ignored.
 
 For schema plugins, see [Schema API](/developers/schema-api#manifest).
 
@@ -55,7 +55,7 @@ For schema plugins, see [Schema API](/developers/schema-api#manifest).
 | `capabilities`     | object | At least one of `connector`, `codeHost`, `calendar`, `team`, `agentTask` and `projectProperties`. See below.                                                                       |
 | `connectionFields` | array  | 1 to 50 [connection fields](#connection-fields). Optional, and empty by default, for a plugin with only `agentTask`.                                                               |
 
-The `id` is permanent. It names the install folder, and it is the `source` of every item your connector syncs. Changing it orphans the user's connections and items.
+The `id` is permanent. It names the install folder, and it is the `source` of every item your plugin syncs. Changing it orphans the user's connections and items.
 
 ## Capabilities
 
@@ -68,13 +68,15 @@ The `id` is permanent. It names the install folder, and it is the `source` of ev
 
 | Capability          | Means                                                                                                                                                                       |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `connector`         | The plugin exports `syncConnection`. See [Connector API](/developers/connector-api).                                                                                        |
+| `connector`         | The backlog capability. The plugin exports `syncConnection`. See [Backlog API](/developers/backlog-api).                                                                    |
 | `connector.settle`  | Optional. `true` if the plugin exports `listSettleStates` and `writeSettle`, and can write states and priorities. Without it, Ajour settles items locally and never writes. |
 | `codeHost`          | The plugin exports `syncPullRequests`. See [Code host API](/developers/code-host-api).                                                                                      |
 | `calendar`          | The plugin exports `listCalendarEvents`. Read-only. See [Calendar API](/developers/calendar-api).                                                                           |
 | `team`              | `{ "apiVersion": 1 }`. The plugin exports `createTeam` and `syncTeamProjects`, and keeps a team's shared projects in step. See [Team API](/developers/team-api).            |
 | `agentTask`         | The plugin declares tasks that a coding agent runs from a prompt. No plugin code runs. See [Agent tasks](#agent-tasks).                                                     |
 | `projectProperties` | Text properties the plugin adds to every project. No plugin code runs. See [Project properties](#project-properties).                                                       |
+
+The backlog capability is declared under the `connector` key until plugin API 4.
 
 Ajour only calls the functions your capabilities declare.
 
@@ -102,15 +104,17 @@ An agent task is a Markdown prompt that Ajour gives to the user's coding agent, 
 }
 ```
 
-| Key               | Type   | Rules                                                                                                                         |
-| ----------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| `id`              | string | Unique in the plugin.                                                                                                         |
-| `label`           | string | The button label on the Commit page.                                                                                          |
-| `placement`       | string | `commit-week`, the only value: a button next to **Mark as committed** on the Commit page, for the week on screen.             |
-| `prompt`          | string | Relative path to a Markdown file in the package. A regular file, no symlinks, at most 64 KB.                                  |
-| `estimateMinutes` | number | How long a run usually takes. The agent panel uses it to tell a slow run from a stuck one.                                    |
-| `weekLink`        | string | Optional. A URL template for **Open the week in…**. Shown only when it fills to an `https:` URL.                              |
-| `settings`        | array  | Optional. Fields with the [connection field](#connection-fields) keys. The user fills them on the plugin's page, under Tasks. |
+| Key               | Type   | Rules                                                                                                                                                                                                              |
+| ----------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`              | string | Unique in the plugin.                                                                                                                                                                                              |
+| `label`           | string | The button label on the Commit page.                                                                                                                                                                               |
+| `placement`       | string | `commit-week`: a button next to **Mark as committed** on the Commit page. `submit-week`: a button in place of **Submit week**, greyed out like it until every change is committed. Both act on the week on screen. |
+| `prompt`          | string | Relative path to a Markdown file in the package. A regular file, no symlinks, at most 64 KB.                                                                                                                       |
+| `estimateMinutes` | number | How long a run usually takes. The agent panel uses it to tell a slow run from a stuck one.                                                                                                                         |
+| `weekLink`        | string | Optional. A URL template for **Open the week in…**. Shown only when it fills to an `https:` URL.                                                                                                                   |
+| `settings`        | array  | Optional. Fields with the [connection field](#connection-fields) keys. The user fills them on the plugin's page, under Tasks.                                                                                      |
+
+A `submit-week` task looks the same, such as `"id": "submit-week"`, `"label": "Check Workday and submit"`, `"placement": "submit-week"`, `"prompt": "prompts/submit-week.md"`. Its prompt ends with the `submit_week` tool.
 
 A plugin can declare up to 10 tasks.
 
@@ -130,7 +134,7 @@ The prompt and `weekLink` can use these slots. A slot Ajour does not know fails 
 
 ### What the agent gets
 
-Ajour puts its own rules before your prompt. The agent must report in its session, ask the user only when it cannot go on, mark each change as committed once the external tool saved it, and never type a password or a code. Your prompt describes the steps in the external tool. The agent can use the [MCP tools](/app/agents#what-agents-can-do), including `get_week_changes`, which lists the week's added, updated and deleted entries, each with a stable `externalId` and a `version`, and `mark_entries_committed`, which takes each applied change's `entryId` and `version`. Ajour refuses the call when the user changed an entry since the agent read it.
+Ajour puts its own rules before your prompt. The agent must report in its session, ask the user only when it cannot go on, mark each change as committed once the external tool saved it, and never type a password or a code. Your prompt describes the steps in the external tool. The agent can use the [MCP tools](/app/agents#what-agents-can-do), including `get_week_changes`, which lists the week's added, updated and deleted entries, each with a stable `externalId` and a `version`, and `mark_entries_committed`, which takes each applied change's `entryId` and `version`. Ajour refuses the call when the user changed an entry since the agent read it. `get_week_status` gives a week's lock state, uncommitted change count, committed hours and pace, with a `version`. `submit_week` takes that `version` and locks the week, which a `submit-week` task calls as its last step. Ajour refuses it when the week changed since the agent read its status.
 
 ## Project properties
 
@@ -198,11 +202,11 @@ Ajour handles four field IDs itself. Declare them so the form shows them, with y
 | `autoSync`                | checkbox | Sync on a timer while Ajour is open. Defaults to `false`.       |
 | `autoSyncIntervalMinutes` | number   | Minutes between automatic syncs, 1 to 1440. Defaults to 15.     |
 
-Ajour removes these from `config` before it calls your plugin. They reach you as properties of the [connection](/developers/connector-api#connection) instead.
+Ajour removes these from `config` before it calls your plugin. They reach you as properties of the [connection](/developers/backlog-api#connection) instead.
 
 ### Imported task icon
 
-A connector can also declare a `taskIconDisplayMode` select field. Ajour reads it to decide which icon an imported item shows:
+A backlog plugin can also declare a `taskIconDisplayMode` select field. Ajour reads it to decide which icon an imported item shows:
 
 | Value      | Icon                                                           |
 | ---------- | -------------------------------------------------------------- |

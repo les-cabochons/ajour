@@ -61,6 +61,7 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
     timesheetImportDrafts: [],
     commitPromptedWeeks: [],
     timesheetTombstones: [],
+    lockedWeeks: [],
     workItems: [
       {
         _id: "meetings-item",
@@ -169,6 +170,25 @@ const standupRule: LocalCalendarEventRule = {
 };
 
 describe("building suggestions", () => {
+  it("suggests nothing on the days of a submitted week", () => {
+    const suggestions = suggestionsFor(
+      createState({ lockedWeeks: [{ weekOf: "2026-10-12", lockedAt: 1 }] }),
+      [
+        event(),
+        event({
+          eventId: "next-week",
+          seriesId: undefined,
+          startsAt: at(19, 9),
+          endsAt: at(19, 10),
+        }),
+      ],
+    );
+
+    expect(suggestions.map((suggestion) => suggestion.localDate)).toEqual([
+      "2026-10-19",
+    ]);
+  });
+
   it("places events on their local day, rounds durations and orders by start", () => {
     const suggestions = suggestionsFor(createState(), [
       event({

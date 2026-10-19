@@ -33,6 +33,7 @@ import {
   type EntryPasteTarget,
   type EntrySelection,
 } from "@/domain/time/entry-selection";
+import { getDateLockReason } from "@/domain/time/locked-weeks";
 import { isTimesheetEntryCommitted } from "@/domain/time/timesheet-commit";
 import {
   formatToastDay,
@@ -70,7 +71,7 @@ function isSelectionDelete(actionId: TimeEntryActionId, key?: object) {
 
 /**
  * Selection, copy, cut and paste of entries on the Day list and the Week Days
- * cards. See "Selecting, copying and pasting entries" in agents/ux-spec.md.
+ * cards. See "Selecting, copying and pasting entries" in docs/agents/ux-spec.md.
  *
  * A click selects an entry, Cmd or Ctrl+click adds one, Shift+click selects a
  * range. A press on an unselected entry selects it at once, and opening an
@@ -181,8 +182,11 @@ export function useEntrySelection({
       getTimeEntrySelectionActions({
         saved: selectedEntries.length,
         committed: selectedEntries.filter(isTimesheetEntryCommitted).length,
+        lockedReason: selectedEntries
+          .map((entry) => getDateLockReason(state, entry.localDate))
+          .find((reason) => reason !== undefined),
       }),
-    [selectedEntries],
+    [selectedEntries, state],
   );
 
   function describeForText(entry: LocalTimesheetEntry) {

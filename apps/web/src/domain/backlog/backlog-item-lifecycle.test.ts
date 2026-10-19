@@ -43,6 +43,7 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
     timesheetImportDrafts: [],
     commitPromptedWeeks: [],
     timesheetTombstones: [],
+    lockedWeeks: [],
     workItems: [],
     workflowStates: [],
     workflowStateMappings: [],
@@ -114,6 +115,35 @@ const factories = {
 function find(state: LocalAppState, id: string) {
   return state.workItems.find((workItem) => workItem._id === id);
 }
+
+describe("settle ids", () => {
+  it("gives each settle an id that an archive keeps and a return to active clears", () => {
+    let next = 0;
+    const counting = {
+      createId: (prefix: string) => `${prefix}-${++next}`,
+      now: () => 1_000,
+    };
+    const settled = settleBacklogItem(
+      createState({ workItems: [synced("a")] }),
+      "a",
+      counting,
+    );
+    expect(find(settled, "a")?.status).toBe("settled");
+    const firstId = find(settled, "a")?.settleId;
+    expect(firstId).toMatch(/^settle-/);
+
+    const archived = archiveBacklogItem(settled, "a", counting);
+    expect(find(archived, "a")).toMatchObject({
+      status: "archived",
+      settleId: firstId,
+    });
+
+    const unsettled = unsettleBacklogItem(settled, "a");
+    expect(find(unsettled, "a")?.settleId).toBeUndefined();
+    const again = settleBacklogItem(unsettled, "a", counting);
+    expect(find(again, "a")?.settleId).not.toBe(firstId);
+  });
+});
 
 describe("enabling Done on an occupied workflow state", () => {
   it.each(["archived", "settled", "active"] as const)(
@@ -435,12 +465,12 @@ describe("settling with a change to the source", () => {
   });
 
   it.each([
-    { connectorDone: false, mappedState: "done", expectedStatus: "archived" },
-    { connectorDone: true, mappedState: "review", expectedStatus: "settled" },
-    { connectorDone: true, mappedState: undefined, expectedStatus: "settled" },
+    { sourceDone: false, mappedState: "done", expectedStatus: "archived" },
+    { sourceDone: true, mappedState: "review", expectedStatus: "settled" },
+    { sourceDone: true, mappedState: undefined, expectedStatus: "settled" },
   ])(
-    "uses mapping $mappedState rather than connector Done $connectorDone for Settle",
-    ({ connectorDone, mappedState, expectedStatus }) => {
+    "uses mapping $mappedState rather than source Done $connectorDone for Settle",
+    ({ sourceDone, mappedState, expectedStatus }) => {
       const before = createState({
         workflowStates: [
           { _id: "doing", name: "Doing", color: "#000000", createdAt: 1 },
@@ -475,7 +505,7 @@ describe("settling with a change to the source", () => {
         before,
         "a",
         factories,
-        { state: { name: "Resolved", done: connectorDone } },
+        { state: { name: "Resolved", done: sourceDone } },
         { includeSubitems: true },
       );
       expect(find(next, "a")).toMatchObject({
@@ -1194,10 +1224,10 @@ describe("writing a move to the source", () => {
     moved.workItems.splice(2, 0, item("new"));
     const edited = reorderWorkItems(moved, ["e", "d"]);
     const a = find(edited, "a")!;
-    a.note = "Keep this note";
+    a.description = "Keep this note";
     const failed = failSourceWrite(edited, "a");
     expect(ids(failed)).toEqual(["a", "untouched", "new", "b", "c", "e", "d"]);
-    expect(find(failed, "a")?.note).toBe("Keep this note");
+    expect(find(failed, "a")?.description).toBe("Keep this note");
   });
 
   it("preserves a later explicit reorder of the dragged range", () => {

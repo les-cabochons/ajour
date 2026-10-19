@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type {
-  ConnectorsOverview,
+  PluginsOverview,
   PluginCatalogResponse,
   ProjectDataShapePluginManifest,
 } from "@ajour/shared";
@@ -22,7 +22,7 @@ const plugin = {
   capabilities: { connector: {} },
   connectionFields: [],
 };
-const overview: ConnectorsOverview = {
+const overview: PluginsOverview = {
   pluginsEnabled: true,
   plugins: [plugin],
   connectionGroups: [{ plugin, enabled: true, connections: [] }],
@@ -57,43 +57,43 @@ function deferred<T>() {
 const missingApiError = new Error("Failed to fetch");
 
 function dependencies() {
-  let receiveConnectors: (value: ConnectorsOverview) => void = () => {};
+  let receivePlugins: (value: PluginsOverview) => void = () => {};
   const unused = vi.fn(async () => {
     throw new Error("Unexpected operation");
   });
   const deps: PluginSettingsDependencies = {
-    getCachedConnectorsOverview: () => overview,
-    getConnectorsOverview: vi.fn(async () => overview),
+    getCachedPluginsOverview: () => overview,
+    getPluginsOverview: vi.fn(async () => overview),
     getPluginCatalog: vi.fn(async () => catalog),
     getPluginCatalogSettings: vi.fn(async () => ({
       refreshMinutes: 15 as const,
     })),
     getProjectDataShapePlugins: vi.fn(async () => [shape]),
-    subscribeConnectorsOverview: vi.fn((listener) => {
-      receiveConnectors = listener;
+    subscribePluginsOverview: vi.fn((listener) => {
+      receivePlugins = listener;
       return () => {
-        receiveConnectors = () => {};
+        receivePlugins = () => {};
       };
     }),
     subscribeCatalog: () => () => {},
-    setConnectorPluginEnabled: unused,
-    saveConnectorConnection: unused,
-    deleteConnectorConnection: unused,
-    syncConnectorConnection: unused,
+    setPluginEnabled: unused,
+    savePluginConnection: unused,
+    deletePluginConnection: unused,
+    syncBacklogConnection: unused,
     syncTeamConnection: unused,
-    installConnectorPlugin: vi.fn(async () => null),
+    installPlugin: vi.fn(async () => null),
     setPluginSystemEnabled: vi.fn(async (enabled) => ({
       ...overview,
       pluginsEnabled: enabled,
     })),
     configurePluginCatalog: vi.fn(async (settings) => settings),
     downloadCatalogPlugin: unused,
-    uninstallConnectorPlugin: unused,
-    isConnectorApiMissing: (error) => error === missingApiError,
+    uninstallPlugin: unused,
+    isPluginApiMissing: (error) => error === missingApiError,
   };
   return {
     deps,
-    publish: (value: ConnectorsOverview) => receiveConnectors(value),
+    publish: (value: PluginsOverview) => receivePlugins(value),
   };
 }
 
@@ -114,7 +114,7 @@ describe("plugin settings workflow", () => {
     async ({ capabilities, expected, features }) => {
       const { deps } = dependencies();
       const installed = { ...plugin, capabilities };
-      deps.getConnectorsOverview = async () => ({
+      deps.getPluginsOverview = async () => ({
         ...overview,
         plugins: [installed],
         connectionGroups: [
@@ -166,7 +166,7 @@ describe("plugin settings workflow", () => {
         },
       },
     };
-    deps.getConnectorsOverview = async () => ({
+    deps.getPluginsOverview = async () => ({
       ...overview,
       plugins: [agentPlugin],
       connectionGroups: [
@@ -196,10 +196,10 @@ describe("plugin settings workflow", () => {
     expect(workflow.getSnapshot().catalogError).toBe("Offline");
   });
 
-  it("accepts background connector updates and ignores an older refresh response", async () => {
+  it("accepts background plugin updates and ignores an older refresh response", async () => {
     const { deps, publish } = dependencies();
-    const pending = deferred<ConnectorsOverview>();
-    deps.getConnectorsOverview = () => pending.promise;
+    const pending = deferred<PluginsOverview>();
+    deps.getPluginsOverview = () => pending.promise;
     const workflow = createPluginSettingsWorkflow(deps);
     const disconnect = workflow.connect();
     const refresh = workflow.refresh();
@@ -207,10 +207,10 @@ describe("plugin settings workflow", () => {
     publish(updated);
     pending.resolve(overview);
     await refresh;
-    expect(workflow.getSnapshot().connectors).toEqual(updated);
+    expect(workflow.getSnapshot().overview).toEqual(updated);
     disconnect();
     publish(overview);
-    expect(workflow.getSnapshot().connectors).toEqual(updated);
+    expect(workflow.getSnapshot().overview).toEqual(updated);
   });
 
   it("hides shapes immediately on master deactivation and rejects stale shape discovery", async () => {
@@ -233,10 +233,10 @@ describe("plugin settings workflow", () => {
   it("serializes mutations and clears pending state when the file picker is cancelled", async () => {
     const { deps } = dependencies();
     const pending = deferred<null>();
-    deps.installConnectorPlugin = () => pending.promise;
+    deps.installPlugin = () => pending.promise;
     const workflow = createPluginSettingsWorkflow(deps);
     const install = workflow.execute({ type: "install" });
-    expect(workflow.getSnapshot().isMutatingConnector).toBe(true);
+    expect(workflow.getSnapshot().isMutatingPlugin).toBe(true);
     await expect(
       workflow.execute({ type: "system", enabled: false }),
     ).resolves.toBe(false);
@@ -244,7 +244,7 @@ describe("plugin settings workflow", () => {
     pending.resolve(null);
     await expect(install).resolves.toBe(false);
     expect(workflow.getSnapshot()).toMatchObject({
-      isMutatingConnector: false,
+      isMutatingPlugin: false,
       statusMessage: null,
     });
   });
@@ -265,7 +265,7 @@ describe("plugin settings workflow", () => {
   it("changes the catalog interval while a plugin operation is running", async () => {
     const { deps } = dependencies();
     const pending = deferred<null>();
-    deps.installConnectorPlugin = () => pending.promise;
+    deps.installPlugin = () => pending.promise;
     const workflow = createPluginSettingsWorkflow(deps);
     const install = workflow.execute({ type: "install" });
     await workflow.setCatalogRefreshInterval(30);
@@ -283,29 +283,29 @@ describe("plugin settings workflow", () => {
     await expect(
       workflow.execute({ type: "system", enabled: false }),
     ).resolves.toBe(false);
-    expect(workflow.getSnapshot().connectorError).toBe(
+    expect(workflow.getSnapshot().pluginError).toBe(
       "Unable to update the plugin system.",
     );
   });
 
-  it("flags a missing connector API instead of reporting an error, and clears it once connectors load", async () => {
+  it("flags a missing app API instead of reporting an error, and clears it once the overview loads", async () => {
     const { deps, publish } = dependencies();
-    deps.getConnectorsOverview = vi.fn(async () => {
+    deps.getPluginsOverview = vi.fn(async () => {
       throw missingApiError;
     });
     const workflow = createPluginSettingsWorkflow(deps);
     await workflow.refresh();
     expect(workflow.getSnapshot()).toMatchObject({
-      connectorApiMissing: true,
-      connectorError: null,
+      pluginApiMissing: true,
+      pluginError: null,
     });
     const disconnect = workflow.connect();
     publish(overview);
-    expect(workflow.getSnapshot().connectorApiMissing).toBe(false);
+    expect(workflow.getSnapshot().pluginApiMissing).toBe(false);
     disconnect();
   });
 
-  it("flags a missing connector API when a command cannot reach it", async () => {
+  it("flags a missing app API when a command cannot reach it", async () => {
     const { deps } = dependencies();
     deps.setPluginSystemEnabled = vi.fn(async () => {
       throw missingApiError;
@@ -315,16 +315,16 @@ describe("plugin settings workflow", () => {
       workflow.execute({ type: "system", enabled: false }),
     ).resolves.toBe(false);
     expect(workflow.getSnapshot()).toMatchObject({
-      connectorApiMissing: true,
-      connectorError: null,
+      pluginApiMissing: true,
+      pluginError: null,
     });
   });
 
-  it("uses the cached connector overview on mount instead of requesting it again", () => {
+  it("uses the cached plugin overview on mount instead of requesting it again", () => {
     const { deps } = dependencies();
     const workflow = createPluginSettingsWorkflow(deps);
     const disconnect = workflow.connect();
-    expect(deps.getConnectorsOverview).not.toHaveBeenCalled();
+    expect(deps.getPluginsOverview).not.toHaveBeenCalled();
     disconnect();
   });
 });
@@ -345,7 +345,7 @@ describe("saving a connection", () => {
       configSummary: {},
       editableValues: {},
     };
-    deps.saveConnectorConnection = vi.fn(async () => ({
+    deps.savePluginConnection = vi.fn(async () => ({
       overview,
       connection,
     }));

@@ -1,4 +1,4 @@
-import { normalizeConnectorStatusKey } from "@ajour/shared";
+import { normalizeSourceStatusKey } from "@ajour/shared";
 import type {
   BacklogSortMode,
   LocalAppState,
@@ -29,7 +29,7 @@ import { saveTimer } from "@/domain/time/timer-transitions";
 
 /**
  * Settle, snooze and their counterparts, from "Backlog sidebar" in
- * agents/ux-spec.md. Terms follow agents/GLOSSARY.md.
+ * docs/agents/ux-spec.md. Terms follow GLOSSARY.md.
  */
 
 /** Whether a settle or close also takes the parent's open subitems. */
@@ -55,6 +55,7 @@ function moveSnapshot(item: LocalWorkItem): LocalWorkItemMoveSnapshot {
     archivedByMissingSync: item.archivedByMissingSync,
     archivedSourceStatusKey: item.archivedSourceStatusKey,
     settledAt: item.settledAt,
+    settleId: item.settleId,
     settledWithParentId: item.settledWithParentId,
     settledSourceStatusKey: item.settledSourceStatusKey,
     settledImportedPriority: item.settledImportedPriority,
@@ -81,7 +82,7 @@ function withMoveSourceWrite(
   now?: number,
 ): LocalWorkItem {
   const sourceStatusKey = sourceStatusLabel
-    ? normalizeConnectorStatusKey(sourceStatusLabel)
+    ? normalizeSourceStatusKey(sourceStatusLabel)
     : undefined;
   if (
     !sourceStatusLabel ||
@@ -225,7 +226,7 @@ function saveRunningEntries(
 }
 
 /**
- * Applies the done rules after settings, mapping or connector changes. Every
+ * Applies the done rules after settings, mapping or source changes. Every
  * open item in a done state closes, including items reactivated without a
  * workflow change, with its running entry saved.
  * Archived items keep their done state: a mapping edit never reopens history.
@@ -577,7 +578,7 @@ function getSourceWrite(
 
   const state =
     change.state &&
-    normalizeConnectorStatusKey(change.state.name) !== workItem.sourceStatusKey
+    normalizeSourceStatusKey(change.state.name) !== workItem.sourceStatusKey
       ? change.state.name
       : undefined;
   const priority =
@@ -615,7 +616,7 @@ function getSettleWorkflowStateId(
         state.workflowStateMappings,
         workItem.source,
         workItem.sourceConnectionId,
-        normalizeConnectorStatusKey(change.state.name),
+        normalizeSourceStatusKey(change.state.name),
         workItem.sourceProjectName,
       )
     : undefined;
@@ -687,18 +688,24 @@ export function settleBacklogItem(
     factories,
   );
   // A snooze ends with the settle, so the item never comes back as returned.
+  // Each settle has its own id; a later archive keeps it.
   const settle = (workItem: LocalWorkItem): LocalWorkItem =>
     archives
-      ? closeWorkItem(
-          workItem,
-          selectedWorkflowStateId ?? getClosingWorkflowStateId(state, workItem),
-          state.workflowStates,
-          now,
-        )
+      ? {
+          ...closeWorkItem(
+            workItem,
+            selectedWorkflowStateId ??
+              getClosingWorkflowStateId(state, workItem),
+            state.workflowStates,
+            now,
+          ),
+          settleId: factories.createId("settle"),
+        }
       : {
           ...workItem,
           status: "settled",
           settledAt: now,
+          settleId: factories.createId("settle"),
           settledSourceStatusKey: workItem.sourceStatusKey,
           settledImportedPriority: workItem.importedPriority,
           snoozedUntil: undefined,
@@ -744,7 +751,7 @@ function withSourceWrite(
     pendingSourceWrite: sourceWrite,
     ...(sourceWrite.state !== undefined
       ? {
-          sourceStatusKey: normalizeConnectorStatusKey(sourceWrite.state),
+          sourceStatusKey: normalizeSourceStatusKey(sourceWrite.state),
           sourceStatusLabel: sourceWrite.state,
         }
       : {}),
@@ -1063,6 +1070,7 @@ function reactivate(
             ...workItem,
             status: "active",
             settledAt: undefined,
+            settleId: undefined,
             settledWithParentId: undefined,
             settledSourceStatusKey: undefined,
             settledImportedPriority: undefined,
@@ -1196,6 +1204,7 @@ export function markBacklogItemOpened(
   return updateOne(state, workItemId, (workItem) => ({
     ...workItem,
     returnedAt: undefined,
+    returnedByComment: undefined,
     snoozedUntil: undefined,
   }));
 }

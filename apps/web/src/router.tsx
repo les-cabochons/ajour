@@ -50,7 +50,7 @@ const SettingsGeneralPage = lazy(async () => {
   return { default: module.SettingsGeneralPage };
 });
 const SettingsPluginsPage = lazy(async () => {
-  const module = await import("@/features/settings/settings-connectors-page");
+  const module = await import("@/features/settings/settings-plugins-page");
   return { default: module.SettingsPluginsPage };
 });
 const SettingsMcpPage = lazy(async () => {

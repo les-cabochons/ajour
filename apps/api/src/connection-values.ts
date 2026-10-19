@@ -1,10 +1,10 @@
 import type {
-  ConnectorFieldValue,
-  ConnectorFieldValues,
-  ConnectorPluginManifest,
-} from "../../../packages/shared/connectors.ts";
+  PluginFieldValue,
+  PluginFieldValues,
+  PluginManifest,
+} from "../../../packages/shared/plugins.ts";
 
-function isEmptySecretValue(value: ConnectorFieldValue | undefined) {
+function isEmptySecretValue(value: PluginFieldValue | undefined) {
   return (
     value === undefined ||
     value === null ||
@@ -13,15 +13,15 @@ function isEmptySecretValue(value: ConnectorFieldValue | undefined) {
 }
 
 export function mergeConnectionConfigForSave(
-  plugin: ConnectorPluginManifest,
-  submittedConfig: ConnectorFieldValues,
-  existingConfig?: ConnectorFieldValues,
-): ConnectorFieldValues {
+  plugin: PluginManifest,
+  submittedConfig: PluginFieldValues,
+  existingConfig?: PluginFieldValues,
+): PluginFieldValues {
   if (!existingConfig) {
     return submittedConfig;
   }
 
-  const mergedConfig: ConnectorFieldValues = { ...submittedConfig };
+  const mergedConfig: PluginFieldValues = { ...submittedConfig };
 
   for (const field of plugin.connectionFields) {
     if (!field.secret) {

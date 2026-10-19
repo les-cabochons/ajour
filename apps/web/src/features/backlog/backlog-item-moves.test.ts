@@ -21,7 +21,7 @@ vi.mock("@/lib/local-store", () => ({
     changeWorkItemSourceState: mocks.change,
   },
 }));
-vi.mock("@/lib/app-api", () => ({ listConnectorSettleStates: mocks.states }));
+vi.mock("@/lib/app-api", () => ({ listBacklogSettleStates: mocks.states }));
 vi.mock("./backlog-source-writes", () => ({
   canWriteToSource: () => true,
   sendPendingSourceWrites: vi.fn(),

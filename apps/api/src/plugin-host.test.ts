@@ -14,8 +14,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { codeHostOperations } from "../../../packages/shared/code-host.ts";
 import { calendarOperations } from "../../../packages/shared/calendar.ts";
 import type { TeamProjectChange } from "../../../packages/shared/team-sync.ts";
-import { capabilityOfMethod, ConnectorPluginManager } from "./plugin-host.ts";
-import { readConnectorPlugin } from "./plugin-package.ts";
+import { capabilityOfMethod, PluginManager } from "./plugin-host.ts";
+import { readPlugin } from "./plugin-package.ts";
 
 const ICON = "<svg viewBox='0 0 16 16'><path d='M0 0h16v16H0z' /></svg>";
 
@@ -25,7 +25,7 @@ function pluginManifest(id: string, overrides: Record<string, unknown> = {}) {
     version: "1.0.0",
     apiVersion: 3,
     displayName: id === "jira" ? "Jira" : id,
-    description: "Test connector plugin.",
+    description: "Test plugin.",
     iconSvg: ICON,
     entrypoint: "plugin.mjs",
     capabilities: { connector: {} },
@@ -123,9 +123,9 @@ function agentTaskPluginFiles(overrides: { prompt?: string } = {}) {
   };
 }
 
-describe("ConnectorPluginManager", () => {
+describe("PluginManager", () => {
   const tempDirs: string[] = [];
-  const managers: ConnectorPluginManager[] = [];
+  const managers: PluginManager[] = [];
 
   async function tempDir(prefix = "ajour-plugin-host-") {
     const directory = await mkdtemp(path.join(os.tmpdir(), prefix));
@@ -133,10 +133,8 @@ describe("ConnectorPluginManager", () => {
     return directory;
   }
 
-  function manager(
-    options: ConstructorParameters<typeof ConnectorPluginManager>[0],
-  ) {
-    const pluginManager = new ConnectorPluginManager(options);
+  function manager(options: ConstructorParameters<typeof PluginManager>[0]) {
+    const pluginManager = new PluginManager(options);
     managers.push(pluginManager);
     return pluginManager;
   }
@@ -287,7 +285,7 @@ describe("ConnectorPluginManager", () => {
     expect((error as Error).message.endsWith("…")).toBe(true);
   });
 
-  it("installs and replaces one packaged connector archive", async () => {
+  it("installs and replaces one packaged plugin archive", async () => {
     const root = await tempDir();
     const sourceRoot = path.join(root, "source");
     const pluginDirectory = await createPluginDirectory(
@@ -368,6 +366,7 @@ describe("ConnectorPluginManager", () => {
     await expect(duringInstall).resolves.toEqual({
       items: [],
       workItemUpdates: [],
+      commentFacts: [],
     });
     expect(events).toEqual(["after-install finished", "operation ran"]);
   });
@@ -488,7 +487,7 @@ describe("ConnectorPluginManager", () => {
     });
     expect(await operationResult).toEqual(
       expect.objectContaining({
-        message: 'Connector plugin "jira" was uninstalled.',
+        message: 'Plugin "jira" was uninstalled.',
       }),
     );
     await expect(pluginManager.listPlugins()).resolves.toEqual([]);
@@ -619,9 +618,9 @@ describe("ConnectorPluginManager", () => {
       allowDevelopmentPlugins: true,
     });
 
-    await expect(
-      readConnectorPlugin(pluginDirectory, "development"),
-    ).rejects.toThrow("must not traverse symbolic links");
+    await expect(readPlugin(pluginDirectory, "development")).rejects.toThrow(
+      "must not traverse symbolic links",
+    );
     await expect(pluginManager.listPlugins()).resolves.toEqual([]);
   });
 
@@ -655,14 +654,10 @@ describe("ConnectorPluginManager", () => {
       source,
       { capabilities: { codeHost: {} } },
     );
-    const connectorDirectory = await createPluginDirectory(
-      root,
-      "jira",
-      source,
-    );
+    const pluginDirectory = await createPluginDirectory(root, "jira", source);
     const pluginManager = manager({
       installedPluginDirectory: path.join(root, "installed"),
-      developmentPluginDirectories: [codeHostDirectory, connectorDirectory],
+      developmentPluginDirectories: [codeHostDirectory, pluginDirectory],
       allowDevelopmentPlugins: true,
     });
     const connection = {
@@ -725,14 +720,10 @@ describe("ConnectorPluginManager", () => {
     const teamDirectory = await createPluginDirectory(root, "team", source, {
       capabilities: { team: { apiVersion: 1 } },
     });
-    const connectorDirectory = await createPluginDirectory(
-      root,
-      "jira",
-      source,
-    );
+    const pluginDirectory = await createPluginDirectory(root, "jira", source);
     const pluginManager = manager({
       installedPluginDirectory: path.join(root, "installed"),
-      developmentPluginDirectories: [teamDirectory, connectorDirectory],
+      developmentPluginDirectories: [teamDirectory, pluginDirectory],
       allowDevelopmentPlugins: true,
     });
     const connection = {
@@ -902,7 +893,7 @@ describe("ConnectorPluginManager", () => {
     ).rejects.toThrow("Pull requests are off.");
     await expect(
       pluginManager.syncConnection("github", connection),
-    ).resolves.toEqual({ items: [], workItemUpdates: [] });
+    ).resolves.toEqual({ items: [], workItemUpdates: [], commentFacts: [] });
   });
 
   it("dispatches every code host operation in the worker", async () => {
@@ -933,14 +924,10 @@ describe("ConnectorPluginManager", () => {
       source,
       { capabilities: { calendar: {} } },
     );
-    const connectorDirectory = await createPluginDirectory(
-      root,
-      "jira",
-      source,
-    );
+    const pluginDirectory = await createPluginDirectory(root, "jira", source);
     const pluginManager = manager({
       installedPluginDirectory: path.join(root, "installed"),
-      developmentPluginDirectories: [calendarDirectory, connectorDirectory],
+      developmentPluginDirectories: [calendarDirectory, pluginDirectory],
       allowDevelopmentPlugins: true,
     });
     const connection = {

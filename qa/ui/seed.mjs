@@ -1,6 +1,6 @@
 // A realistic workspace for screenshots and measurements, written into
 // localStorage before the app loads. `large` adds 600 backlog items and
-// 1,800 entries, the workspace the progress tracker's budgets are measured on;
+// 1,800 entries, the workspace the performance budgets in docs/agents/code-standards.md are measured on;
 // `empty` leaves storage clear, as on a fresh install.
 export function seedScript(options = {}) {
   return `(() => {
@@ -95,14 +95,17 @@ export function seedScript(options = {}) {
   // An empty workspace: nothing persisted, so the app starts as on a fresh install.
   if (options.empty) return;
   const timesheetTombstones = [{ entryId: "e0", commit: { at: t0 - 4e5, localDate: monday(0), projectId: "p-atlas", taskId: "t-atlas-meet", note: "Sprint retro", durationMs: h(0.5) } }];
-  localStorage.setItem("ajour.local-state.v2", JSON.stringify({ projects, workflowStates, workItems, timesheetEntries, timesheetTombstones, timers, userPreferences }));
+  // A store this version wrote holds its revision inside the state and in the
+  // hint key; without them the first write reloads the state once.
+  localStorage.setItem("ajour.local-state.v2", JSON.stringify({ projects, workflowStates, workItems, timesheetEntries, timesheetTombstones, timers, userPreferences, revision: "seed" }));
+  localStorage.setItem("ajour.local-state.revision", "seed");
   if (options.backlogLayout) localStorage.setItem("ajour.backlog-view", JSON.stringify({ layout: options.backlogLayout }));
   if (options.sidebar) localStorage.setItem("ajour.app-sidebar", options.sidebar);
 })()`;
 }
 
-/** The connector overview the mocked API returns: plugins on, nothing connected. */
-export const emptyConnectorsOverview = {
+/** The plugin overview the mocked API returns: plugins on, nothing connected. */
+export const emptyPluginsOverview = {
   pluginsEnabled: true,
   plugins: [],
   connectionGroups: [],

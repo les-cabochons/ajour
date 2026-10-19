@@ -124,6 +124,7 @@ export function normalizePersistedWorkItem(
   const {
     backlogStatusId: legacyWorkflowStateId,
     importedBacklogStatusId: legacyImportedWorkflowStateId,
+    note: legacyDescription,
     ...persisted
   } = workItem;
   // Source priorities were raw source values before plugins sent levels. A
@@ -136,6 +137,7 @@ export function normalizePersistedWorkItem(
   return {
     ...persisted,
     title: workItem.title.trim(),
+    description: workItem.description ?? legacyDescription,
     status,
     source: isRetiredBuiltInSource ? "manual" : (workItem.source ?? "manual"),
     sourceId: isRetiredBuiltInSource ? undefined : workItem.sourceId,
@@ -244,7 +246,7 @@ function createManualWorkItem(
     inheritsParentMapping: isSubtask
       ? workItem.inheritsParentMapping
       : undefined,
-    note: workItem.note?.trim() || undefined,
+    description: workItem.description?.trim() || undefined,
     originalEstimateHours: normalizeWorkItemEstimateValue(
       workItem.originalEstimateHours,
     ),
@@ -489,12 +491,12 @@ export function updateWorkItem(
     ...target,
     ...patch,
     title: nextTitle,
-    note:
-      typeof patch.note === "string"
-        ? patch.note.trim() || undefined
-        : "note" in patch
-          ? patch.note
-          : target.note,
+    description:
+      typeof patch.description === "string"
+        ? patch.description.trim() || undefined
+        : "description" in patch
+          ? patch.description
+          : target.description,
     parentWorkItemId: nextParentWorkItemId,
     parentSourceId: nextParentWorkItemId ? undefined : nextParentSourceId,
     hierarchyLevel:

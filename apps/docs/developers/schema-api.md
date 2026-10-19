@@ -2,7 +2,7 @@
 
 A schema maps Ajour's projects and tasks to the columns of another tool's files, and back. Ajour owns the files: it reads and writes the Excel workbook. The schema only declares datasets and their columns, and converts between projects and rows. It never sees a file and never stores anything.
 
-The schema API is version 1, separate from the connector API.
+The schema API is version 1, separate from plugin API version 3.
 
 ::: warning Not installable yet
 Ajour cannot install packaged schema plugins yet. It loads them only from the `plugins/` folder at the root of an Ajour checkout, in development. The [Workday](/plugins/workday) schema is the only one so far, and it is not released. Expect this page to change when installation lands.
@@ -49,7 +49,7 @@ Ajour cannot install packaged schema plugins yet. It loads them only from the `p
 }
 ```
 
-- `id` follows the same rules as a connector's. `default` is reserved for Ajour's built-in schema.
+- `id` follows the same rules as for other plugins. `default` is reserved for Ajour's built-in schema.
 - `datasets`: 1 to 10. Each becomes a worksheet named after `displayName`.
 - `columns`: 1 to 100 per dataset. `key` starts with a letter and holds letters, digits and `_`. `header` is the column title in the file. `type` is `string`, `number` or `boolean`. `width` is the column width in characters, 8 to 80.
 

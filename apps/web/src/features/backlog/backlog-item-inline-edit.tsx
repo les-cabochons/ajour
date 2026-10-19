@@ -1,10 +1,13 @@
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useRef, useState } from "react";
 import { RiAddLine as AddIcon } from "@remixicon/react";
 import { Markdown } from "@/components/markdown";
+import {
+  MarkdownEditor,
+  preloadMarkdownEditor,
+} from "@/components/markdown-editor";
 import { SectionHeading } from "@/components/section-heading";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Figure } from "@/components/ui/value";
 import type {
   LocalWorkItem,
@@ -204,10 +207,10 @@ export function EstimateFigure({
 }
 
 /**
- * The note section. The rendered markdown has a subtle Edit beside its
- * heading that swaps it for the raw markdown in a text area.
+ * The description section. The rendered markdown has a subtle Edit beside its
+ * heading that swaps it for the Markdown editor.
  */
-export function NoteSection({
+export function DescriptionSection({
   item,
   readOnly,
 }: {
@@ -218,9 +221,9 @@ export function NoteSection({
   const closer = useCloseOnce(() => setEditing(false));
 
   const save = (value: string) => {
-    const note = value.trim() || undefined;
-    if (note !== item.note) {
-      patchBacklogItemWithUndo(item, { note }, "Note changed");
+    const description = value.trim() || undefined;
+    if (description !== item.description) {
+      patchBacklogItemWithUndo(item, { description }, "Description changed");
     }
   };
   return (
@@ -231,6 +234,8 @@ export function NoteSection({
             <button
               type="button"
               className="backlog-item-subtle-action"
+              onPointerEnter={preloadMarkdownEditor}
+              onFocus={preloadMarkdownEditor}
               onClick={() => {
                 closer.reset();
                 setEditing(true);
@@ -241,38 +246,23 @@ export function NoteSection({
           ) : undefined
         }
       >
-        Note
+        Description
       </SectionHeading>
       {editing ? (
-        <Textarea
+        <MarkdownEditor
           autoFocus
-          aria-label="Note"
-          defaultValue={item.note ?? ""}
-          placeholder="Description, markdown supported"
-          rows={Math.max(4, (item.note ?? "").split("\n").length + 1)}
-          className="font-mono text-xs"
-          onBlur={(event) => {
-            const { value } = event.currentTarget;
-            closer.close(() => save(value));
-          }}
-          onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              closer.close();
-            } else if (
-              event.key === "Enter" &&
-              (event.metaKey || event.ctrlKey)
-            ) {
-              event.preventDefault();
-              const { value } = event.currentTarget;
-              closer.close(() => save(value));
-            }
-          }}
+          aria-label="Description"
+          defaultValue={item.description ?? ""}
+          placeholder="Markdown supported"
+          minLines={4}
+          onBlur={(value) => closer.close(() => save(value))}
+          onSubmit={(value) => closer.close(() => save(value))}
+          onCancel={() => closer.close()}
         />
-      ) : item.note ? (
-        <Markdown>{item.note}</Markdown>
+      ) : item.description ? (
+        <Markdown>{item.description}</Markdown>
       ) : (
-        <p className="text-sm text-muted-foreground">No note.</p>
+        <p className="text-sm text-muted-foreground">No description.</p>
       )}
     </>
   );

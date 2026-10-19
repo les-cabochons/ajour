@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 
 /**
  * How the expanded sidebar lays out its backlog items, per device. See "Layout
- * options" and "Width" under "Backlog sidebar" in agents/ux-spec.md. Like the
+ * options" and "Width" under "Backlog sidebar" in docs/agents/ux-spec.md. Like the
  * sidebar state, it lives outside the local app state so it is never exported.
  */
 export type SidebarDensity = "comfortable" | "compact";

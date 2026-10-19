@@ -32,6 +32,7 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
     timesheetImportDrafts: [],
     commitPromptedWeeks: [],
     timesheetTombstones: [],
+    lockedWeeks: [],
     workItems: [],
     workflowStates: [],
     workflowStateMappings: [],
@@ -105,6 +106,36 @@ describe("work item transitions", () => {
     expect(workItem.sourceConnectionId).toBeUndefined();
     expect(workItem.sourceConnectionLabel).toBeUndefined();
     expect(workItem.parentSourceId).toBeUndefined();
+  });
+
+  it("reads a stored note as the description", () => {
+    const stored = {
+      _id: "item",
+      title: "Item",
+      source: "manual",
+      note: "Context",
+      createdAt: 1,
+    };
+    const workItem = normalizePersistedWorkItem(stored, () => 100);
+
+    expect(workItem.description).toBe("Context");
+    expect(workItem).not.toHaveProperty("note");
+  });
+
+  it("keeps the description when a stored item has both fields", () => {
+    const workItem = normalizePersistedWorkItem(
+      {
+        _id: "item",
+        title: "Item",
+        source: "manual",
+        description: "Current",
+        note: "Old",
+        createdAt: 1,
+      },
+      () => 100,
+    );
+
+    expect(workItem.description).toBe("Current");
   });
 
   it("creates a subtask that follows its parent mapping", () => {

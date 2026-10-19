@@ -1,14 +1,14 @@
 import { listProjectPropertyPlugins } from "@/lib/plugin-project-properties";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getConnectorsOverview, isConnectorApiMissing } = vi.hoisted(() => ({
-  getConnectorsOverview: vi.fn(),
-  isConnectorApiMissing: vi.fn(),
+const { getPluginsOverview, isPluginApiMissing } = vi.hoisted(() => ({
+  getPluginsOverview: vi.fn(),
+  isPluginApiMissing: vi.fn(),
 }));
 
 vi.mock("@/lib/app-api", () => ({
-  getConnectorsOverview,
-  isConnectorApiMissing,
+  getPluginsOverview,
+  isPluginApiMissing,
 }));
 
 const capability = {
@@ -36,12 +36,12 @@ function group(
 
 describe("listProjectPropertyPlugins", () => {
   beforeEach(() => {
-    getConnectorsOverview.mockReset();
-    isConnectorApiMissing.mockReset();
+    getPluginsOverview.mockReset();
+    isPluginApiMissing.mockReset();
   });
 
   it("keeps only active plugins that add project properties", async () => {
-    getConnectorsOverview.mockResolvedValue({
+    getPluginsOverview.mockResolvedValue({
       pluginsEnabled: true,
       connectionGroups: [
         group("kept", { projectProperties: capability }),
@@ -60,7 +60,7 @@ describe("listProjectPropertyPlugins", () => {
   });
 
   it("returns nothing when plugins are turned off", async () => {
-    getConnectorsOverview.mockResolvedValue({
+    getPluginsOverview.mockResolvedValue({
       pluginsEnabled: false,
       connectionGroups: [group("kept", { projectProperties: capability })],
     });
@@ -70,15 +70,15 @@ describe("listProjectPropertyPlugins", () => {
 
   it("returns nothing when the local API is missing", async () => {
     const error = new Error("no api");
-    getConnectorsOverview.mockRejectedValue(error);
-    isConnectorApiMissing.mockReturnValue(true);
+    getPluginsOverview.mockRejectedValue(error);
+    isPluginApiMissing.mockReturnValue(true);
 
     await expect(listProjectPropertyPlugins()).resolves.toEqual([]);
   });
 
   it("rethrows other errors", async () => {
-    getConnectorsOverview.mockRejectedValue(new Error("boom"));
-    isConnectorApiMissing.mockReturnValue(false);
+    getPluginsOverview.mockRejectedValue(new Error("boom"));
+    isPluginApiMissing.mockReturnValue(false);
 
     await expect(listProjectPropertyPlugins()).rejects.toThrow("boom");
   });

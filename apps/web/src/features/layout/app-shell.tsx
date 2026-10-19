@@ -75,8 +75,8 @@ import { formatClockDuration } from "@/domain/time/duration";
 import { formatElapsedDuration } from "@/domain/time/running-entry";
 import { findPinnedTask } from "@/domain/projects/project-transitions";
 import {
-  getConnectorsOverview,
-  syncConnectorConnection,
+  getPluginsOverview,
+  syncBacklogConnection,
   syncCodeHostConnection,
 } from "@/lib/app-api";
 import { syncTeamConnection } from "@/lib/team-sync";
@@ -88,7 +88,12 @@ import {
 } from "@/lib/timer-totals";
 import { useAppSidebar } from "@/lib/app-sidebar";
 import { resolveSidebarWidth, useSidebarLayout } from "@/lib/sidebar-layout";
-import { sendPendingSourceWrites } from "@/features/backlog/backlog-source-writes";
+import {
+  flushSettleComments,
+  sendPendingSourceWrites,
+  watchSettleEnds,
+} from "@/features/backlog/backlog-source-writes";
+import { flushPendingCommentDeletes } from "@/lib/comment-deletes";
 import { CloseSubitemsDialogHost } from "@/features/backlog/close-subitems-dialog";
 import { SourceStateDialogHost } from "@/features/backlog/source-state-dialog";
 import { SettleDialogHost } from "@/features/backlog/settle-dialog";
@@ -204,18 +209,22 @@ function PageHeaderSlot({
  * again shows nothing new until the connection syncs or fails differently.
  */
 /**
- * Sends the settle writes left from a session that quit during their Undo
- * window (ADR 0001). There is no offline queue beyond that: a write that fails
+ * Sends the settle writes and comment deletes left from a session that quit
+ * during their Undo window (ADR 0001, ADR 0008). There is no offline queue beyond that: a write that fails
  * here puts its item back to active.
  */
 function PendingSourceWritesFlush() {
   useEffect(() => {
     void sendPendingSourceWrites();
+    void flushPendingCommentDeletes();
+    void flushSettleComments();
   }, []);
+  // A settle that ends turns its waiting comments into drafts.
+  useEffect(() => watchSettleEnds(), []);
   return null;
 }
 
-function ConnectorAutoSyncScheduler() {
+function BacklogAutoSyncScheduler() {
   const loopStateRef = useRef({
     cancelled: false,
     running: false,
@@ -246,7 +255,7 @@ function ConnectorAutoSyncScheduler() {
 
       loopState.running = true;
       try {
-        const overview = await getConnectorsOverview();
+        const overview = await getPluginsOverview();
         const now = Date.now();
         // Each capability has its own automatic sync: auto sync imports work
         // items straight to the backlog, pull requests have their own, and a
@@ -296,7 +305,7 @@ function ConnectorAutoSyncScheduler() {
             capability,
             run: () =>
               capability === "connector"
-                ? syncConnectorConnection(
+                ? syncBacklogConnection(
                     dueConnection.pluginId,
                     dueConnection.connection.id,
                     { trigger: "auto" },
@@ -319,7 +328,7 @@ function ConnectorAutoSyncScheduler() {
               loopState.shownFailures.delete(failureKey);
             } catch (error) {
               console.error(
-                `Connector auto sync failed for "${dueConnection.pluginId}".`,
+                `Backlog auto sync failed for "${dueConnection.pluginId}".`,
                 error,
               );
               const message =
@@ -335,7 +344,7 @@ function ConnectorAutoSyncScheduler() {
           }
         }
       } catch (error) {
-        console.error("Connector auto sync failed.", error);
+        console.error("Backlog auto sync failed.", error);
       } finally {
         loopState.running = false;
         scheduleNext();
@@ -756,7 +765,7 @@ export function AppShell() {
       )}
     >
       <RunningEntryWindowTitle />
-      <ConnectorAutoSyncScheduler />
+      <BacklogAutoSyncScheduler />
       <PendingSourceWritesFlush />
       <ShortcutOverlay />
       <AgentBridgeHost />

@@ -14,7 +14,7 @@ function changeRow(page: Page, kind: string) {
 }
 
 Given("I have a committed week of entries", async ({ page }) => {
-  await page.route("http://127.0.0.1:8787/api/connectors", (route) =>
+  await page.route("http://127.0.0.1:8787/api/plugins", (route) =>
     route.fulfill({
       json: {
         pluginsEnabled: true,
@@ -123,7 +123,8 @@ Then("the Commit page says everything is committed", async ({ page }) => {
 When(
   "I change Monday's {string} entry to {string} hours",
   async ({ page }, note: string, hours: string) => {
-    await page.goto("/time/2026-10-05");
+    // The Time page opens the last view shown, so ask for Day.
+    await page.goto("/time/2026-10-05?view=day");
     const row = page.locator(".time-entry-row").filter({ hasText: note });
     await row.dblclick();
     await page.getByRole("textbox", { name: "Hours", exact: true }).fill(hours);

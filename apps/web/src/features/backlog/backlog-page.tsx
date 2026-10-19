@@ -30,6 +30,10 @@ import {
 } from "@/features/backlog/backlog-display";
 import { BacklogPeek } from "@/features/backlog/backlog-peek";
 import {
+  captureReturnNotice,
+  type BacklogItemReturnNotice,
+} from "@/features/backlog/backlog-item-notice";
+import {
   BacklogItemEditorForm,
   type BacklogItemEditorFormHandle,
 } from "@/features/backlog/backlog-item-editor-form";
@@ -169,7 +173,13 @@ export function BacklogPage() {
     draft.current = null;
   }, []);
   const closePeek = useCallback(() => setPeekId(null), []);
+  const [peekReturnNotice, setPeekReturnNotice] =
+    useState<BacklogItemReturnNotice | null>(null);
   function showPeek(itemId: string) {
+    const opened = state.workItems.find((workItem) => workItem._id === itemId);
+    setPeekReturnNotice(
+      opened ? captureReturnNotice(opened, Date.now()) : null,
+    );
     localStore.markWorkItemOpened(itemId);
     setPeekId(itemId);
   }
@@ -549,7 +559,7 @@ export function BacklogPage() {
                 <EmptyDescription>
                   {view.filters.length
                     ? "Change the filters to see more items."
-                    : "Create a backlog item or import items from a connector."}
+                    : "Create a backlog item or import items from a plugin."}
                 </EmptyDescription>
               </EmptyHeader>
               {!view.filters.length && (
@@ -735,6 +745,7 @@ export function BacklogPage() {
                   item={peek}
                   state={state}
                   now={now}
+                  returnNotice={peekReturnNotice}
                   onClose={closePeek}
                   onOpen={() => openPage(peek)}
                   onAction={(id) => action(peek, id)}

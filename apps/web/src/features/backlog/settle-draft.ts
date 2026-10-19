@@ -1,6 +1,6 @@
 import {
-  normalizeConnectorStatusKey,
-  type ConnectorSettleState,
+  normalizeSourceStatusKey,
+  type BacklogSettleState,
 } from "@ajour/shared";
 import type { BacklogSettleChange } from "@/domain/backlog/backlog-item-lifecycle";
 import type { PriorityLevel } from "@/domain/backlog/priority";
@@ -8,12 +8,12 @@ import { parsePriorityInput } from "@/features/backlog/backlog-task-editor";
 
 export interface SettleStateGroup {
   category: string;
-  states: ConnectorSettleState[];
+  states: BacklogSettleState[];
 }
 
-/** Groups states by category, in the order the connector listed them. */
+/** Groups states by category, in the order the plugin listed them. */
 export function groupSettleStates(
-  states: ConnectorSettleState[],
+  states: BacklogSettleState[],
 ): SettleStateGroup[] {
   const groups: SettleStateGroup[] = [];
   for (const state of states) {
@@ -30,37 +30,35 @@ export function groupSettleStates(
 }
 
 export function findSettleState(
-  states: ConnectorSettleState[],
+  states: BacklogSettleState[],
   name: string | undefined,
 ) {
   if (!name?.trim()) return undefined;
-  const key = normalizeConnectorStatusKey(name);
-  return states.find(
-    (state) => normalizeConnectorStatusKey(state.name) === key,
-  );
+  const key = normalizeSourceStatusKey(name);
+  return states.find((state) => normalizeSourceStatusKey(state.name) === key);
 }
 
 export function isSettleStateDraftValid(
-  states: ConnectorSettleState[],
+  states: BacklogSettleState[],
   stateName: string,
   sourceStatusLabel: string | undefined,
 ) {
   return (
     Boolean(findSettleState(states, stateName)) ||
-    normalizeConnectorStatusKey(stateName) ===
-      normalizeConnectorStatusKey(sourceStatusLabel ?? "")
+    normalizeSourceStatusKey(stateName) ===
+      normalizeSourceStatusKey(sourceStatusLabel ?? "")
   );
 }
 
 /**
  * Turns the settle dialog's fields into a change. A new priority level is
  * written only when it differs from the level the source reports; the
- * connector plugin picks the source value. The domain keeps only the fields
+ * plugin picks the source value. The domain keeps only the fields
  * that differ from the item. Returns null for an unsupported changed state,
- * an invalid level, or a priority clear, which connectors cannot write.
+ * an invalid level, or a priority clear, which plugins cannot write.
  */
 export function buildSettleChange(
-  states: ConnectorSettleState[],
+  states: BacklogSettleState[],
   stateName: string,
   priorityInput: string,
   current: {

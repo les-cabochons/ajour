@@ -2,13 +2,13 @@
 
 A calendar provides the user's calendar events for a range of days, as facts: when each event starts and ends, its title, and how the user answered it. Ajour shows them in the Time view as suggestions, and the user adds the ones they want as time entries. The capability is read-only. Ajour never writes to the calendar and never stores the events it receives. This page is the reference for plugin API version 3.
 
-Declare `"calendar": {}` in the manifest's [capabilities](/developers/manifest#capabilities), and export `validateConnection`, as for a connector, and `listCalendarEvents`.
+Declare `"calendar": {}` in the manifest's [capabilities](/developers/manifest#capabilities), and export `validateConnection`, as for a backlog plugin, and `listCalendarEvents`.
 
 ## listCalendarEvents
 
 ```ts
 export async function listCalendarEvents(
-  connection: ConnectorPluginConnection,
+  connection: PluginConnection,
   request: { from: string; to: string; timeZone: string },
 ): Promise<CalendarListEventsResult>;
 ```

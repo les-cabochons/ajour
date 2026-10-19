@@ -29,17 +29,17 @@ The desktop app runs a local API inside its main process, on `127.0.0.1:8787`. T
 
 ## Limits
 
-| Limit                                 | Value                                                                                      |
-| ------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Time per call                         | 30 seconds, for the whole call, every request included.                                    |
-| Calls running at once                 | 4 per host. A fifth fails with "Too many connector plugin operations are already running." |
-| Result size                           | 8 MiB. Results must be plain data that can be cloned.                                      |
-| Memory                                | 128 MB of old-generation heap, 32 MB young generation.                                     |
-| Error message                         | 4,096 characters.                                                                          |
-| Items Ajour sends to `syncConnection` | 1,000.                                                                                     |
-| Package archive                       | 25 MiB, 2,000 entries, 100 MiB once extracted.                                             |
+| Limit                                 | Value                                                                            |
+| ------------------------------------- | -------------------------------------------------------------------------------- |
+| Time per call                         | 30 seconds, for the whole call, every request included.                          |
+| Calls running at once                 | 4 per host. A fifth fails with "Too many plugin operations are already running." |
+| Result size                           | 8 MiB. Results must be plain data that can be cloned.                            |
+| Memory                                | 128 MB of old-generation heap, 32 MB young generation.                           |
+| Error message                         | 4,096 characters.                                                                |
+| Items Ajour sends to `syncConnection` | 1,000.                                                                           |
+| Package archive                       | 25 MiB, 2,000 entries, 100 MiB once extracted.                                   |
 
-When a call times out, Ajour ends the worker and reports `Connector plugin "<id>" timed out while handling <function>.` Page through large result sets within the time budget, and prefer one search to many single-item requests.
+When a call times out, Ajour ends the worker and reports `Plugin "<id>" timed out while handling <function>.` Page through large result sets within the time budget, and prefer one search to many single-item requests.
 
 ## Security model
 
@@ -59,7 +59,7 @@ As a plugin author:
 
 ## API versions
 
-Ajour accepts a connector or code host plugin only if its `apiVersion` equals Ajour's plugin API version, today `3`. There is no range. When the version changes:
+Ajour accepts a backlog or code host plugin only if its `apiVersion` equals Ajour's plugin API version, today `3`. There is no range. When the version changes:
 
 - Installed plugins with another version stay installed but show as unavailable, with the reason. Their connections and items stay.
 - The catalog offers an update once a release with the new version exists.

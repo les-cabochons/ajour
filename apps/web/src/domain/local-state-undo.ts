@@ -5,16 +5,20 @@ import type {
   LocalTimesheetEntry,
   LocalWorkItem,
 } from "@/domain/local-state";
+import { recordsEqual } from "@/domain/records-equal";
+import { getSubmitWeekRefusal } from "@/domain/time/locked-weeks";
 
 /**
  * The local state lists that undoable actions change. A project's tasks live
  * inside the project record, so archiving a task changes its project. Deleting
  * a committed entry adds a tombstone, so Undo takes it back with the entry.
+ * Submitting or reopening a week changes `lockedWeeks`.
  */
 const UNDO_COLLECTIONS = [
   "projects",
   "timesheetEntries",
   "timesheetTombstones",
+  "lockedWeeks",
   "timers",
   "timesheetImportDrafts",
   "workItems",
@@ -45,6 +49,7 @@ const recordKeys: {
   projects: (project) => project._id,
   timesheetEntries: (entry) => entry._id,
   timesheetTombstones: (tombstone) => tombstone.entryId,
+  lockedWeeks: (week) => week.weekOf,
   timers: (timer) => timer._id,
   timesheetImportDrafts: (draft) => draft._id,
   workItems: (workItem) => workItem._id,
@@ -119,34 +124,6 @@ export function completeSourceWriteInUndo(
   };
 }
 
-/**
- * Compares two records field by field. A missing field equals `undefined`, so a
- * record read back from storage matches the one the action wrote.
- */
-function recordsEqual(left: unknown, right: unknown): boolean {
-  if (Object.is(left, right)) return true;
-  if (
-    typeof left !== "object" ||
-    typeof right !== "object" ||
-    left === null ||
-    right === null
-  ) {
-    return false;
-  }
-  if (Array.isArray(left) !== Array.isArray(right)) return false;
-
-  const leftRecord = left as Record<string, unknown>;
-  const rightRecord = right as Record<string, unknown>;
-  const keys = new Set([
-    ...Object.keys(leftRecord),
-    ...Object.keys(rightRecord),
-  ]);
-  for (const key of keys) {
-    if (!recordsEqual(leftRecord[key], rightRecord[key])) return false;
-  }
-  return true;
-}
-
 function diffRecords<T>(
   before: T[],
   after: T[],
@@ -209,6 +186,7 @@ export function captureUndo(
     timers: diffCollection("timers", before, after),
     timesheetEntries: diffCollection("timesheetEntries", before, after),
     timesheetTombstones: diffCollection("timesheetTombstones", before, after),
+    lockedWeeks: diffCollection("lockedWeeks", before, after),
     timesheetImportDrafts: diffCollection(
       "timesheetImportDrafts",
       before,
@@ -317,7 +295,7 @@ function loggedTime(entry: LocalTimesheetEntry, sign: 1 | -1) {
 /**
  * Takes back a time entry action's effect on work item estimates. A work item
  * still as the action left it returns to its exact old values. One edited
- * since, for example by a connector sync, gets the inverse logged time instead,
+ * since, for example by a backlog sync, gets the inverse logged time instead,
  * so the later edit is kept. Work items the action did not change stay as they
  * are.
  */
@@ -359,7 +337,8 @@ function restoreLoggedTime(
 /**
  * Undoes one action. Every record it changed returns to its `before` value, and
  * records it created are removed. If any of those records changed again since
- * the action, nothing is restored.
+ * the action, nothing is restored. Nothing is restored either when Undo would
+ * lock again a week that could not be submitted now.
  *
  * Time entry actions are the exception for work items: their work item changes
  * are logged time, so a work item edited since gets the inverse logged time
@@ -402,37 +381,55 @@ export function restoreUndo(
       (left, right) => indexes.get(left._id)! - indexes.get(right._id)!,
     );
   }
-  return {
-    state: {
-      ...state,
-      projects: restoreCollection("projects", state, undo),
-      timesheetEntries: restoreCollection("timesheetEntries", state, undo),
-      timesheetTombstones: restoreCollection(
-        "timesheetTombstones",
-        state,
-        undo,
-      ),
-      timers,
-      timesheetImportDrafts: restoreCollection(
-        "timesheetImportDrafts",
-        state,
-        undo,
-      ),
-      workItems,
-      workflowStates: restoreCollection("workflowStates", state, undo),
-      workflowStateMappings: restoreCollection(
-        "workflowStateMappings",
-        state,
-        undo,
-      ),
-      workflowStateWriteRules: restoreCollection(
-        "workflowStateWriteRules",
-        state,
-        undo,
-      ),
-      calendarDecisions: restoreCollection("calendarDecisions", state, undo),
-      calendarEventRules: restoreCollection("calendarEventRules", state, undo),
-    },
-    result: "restored",
+  const restored: LocalAppState = {
+    ...state,
+    projects: restoreCollection("projects", state, undo),
+    timesheetEntries: restoreCollection("timesheetEntries", state, undo),
+    timesheetTombstones: restoreCollection("timesheetTombstones", state, undo),
+    lockedWeeks: restoreCollection("lockedWeeks", state, undo),
+    timers,
+    timesheetImportDrafts: restoreCollection(
+      "timesheetImportDrafts",
+      state,
+      undo,
+    ),
+    workItems,
+    workflowStates: restoreCollection("workflowStates", state, undo),
+    workflowStateMappings: restoreCollection(
+      "workflowStateMappings",
+      state,
+      undo,
+    ),
+    workflowStateWriteRules: restoreCollection(
+      "workflowStateWriteRules",
+      state,
+      undo,
+    ),
+    calendarDecisions: restoreCollection("calendarDecisions", state, undo),
+    calendarEventRules: restoreCollection("calendarEventRules", state, undo),
   };
+  if (relocksWeekThatCannotSubmit(state, restored)) {
+    return { state, result: "stale" };
+  }
+  return { state: restored, result: "restored" };
+}
+
+/**
+ * True when Undo would lock a week again (the Undo of Reopen) that could not
+ * be submitted now: a running entry or a change that is not committed is in
+ * it since. Locking it would freeze that change, so the Undo is stale.
+ */
+function relocksWeekThatCannotSubmit(
+  state: LocalAppState,
+  restored: LocalAppState,
+) {
+  const lockedBefore = new Set(state.lockedWeeks.map((week) => week.weekOf));
+  return restored.lockedWeeks.some(
+    (week) =>
+      !lockedBefore.has(week.weekOf) &&
+      getSubmitWeekRefusal(
+        { ...restored, lockedWeeks: state.lockedWeeks },
+        week.weekOf,
+      ) !== undefined,
+  );
 }

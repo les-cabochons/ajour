@@ -23,6 +23,7 @@ import {
   type LocalTimer,
   type LocalTimesheetEntry,
 } from "@/domain/local-state";
+import { getDateLockReason } from "@/domain/time/locked-weeks";
 import { isTimesheetEntryCommitted } from "@/domain/time/timesheet-commit";
 import { syncBacklogWorkItemToSource } from "@/features/backlog/work-item-source-sync";
 import {
@@ -38,6 +39,7 @@ import {
   useTimeEntryActions,
   type TimeEntryActionTarget,
 } from "@/features/time/time-entry-actions";
+import { WeekLockChip } from "@/features/time/week-lock";
 import { TimeEntryFields } from "@/features/time/time-entry-fields";
 import { useOpenEntryEditor } from "@/lib/entry-editor-presence";
 import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
@@ -134,7 +136,7 @@ function seedEditor(target: TimeEntryEditorTarget): {
  * and the note. Footer: Cancel · Save. Save: the Save button, Enter in Hours or Note,
  * or Cmd/Ctrl+Enter. A new entry with no hours cannot be saved; those keys press
  * Start. Escape, Cancel or × discard the draft. Save on the running entry keeps it
- * running.
+ * running. An entry of a submitted week opens read-only, with the lock under Date.
  *
  * Keep the host remount keyed by target: the draft is seeded once, on mount.
  * A host that can swap containers mid-edit (side panel and dialog across a
@@ -181,8 +183,14 @@ export function TimeEntryEditorForm({
   const rootRef = useRef<HTMLDivElement>(null);
   // Pinned task digits do nothing while any entry editor is on screen.
   useOpenEntryEditor();
+  // A submitted week's entry opens read-only, and a draft on one of its days
+  // cannot be saved. The running entry is never on a submitted day.
+  const lockReasonFor = (localDate: string) =>
+    getDateLockReason(state, localDate);
+  const lockReason = entry ? lockReasonFor(entry.localDate) : undefined;
   const editor = evaluateTimeEntryEditor(fields, {
     original,
+    lockReasonFor: runningTimer ? undefined : lockReasonFor,
     allowEmptyDuration: target.kind === "create",
     isRunning: Boolean(runningTimer),
     // A switch drops a new entry the user left as it opened, prefilled task included.
@@ -327,7 +335,7 @@ export function TimeEntryEditorForm({
       return;
     }
     entryActions.runAction(actionTarget, actionId, {
-      resolveValues: editor.relocationValues,
+      resolveValues: lockReason ? undefined : editor.relocationValues,
     });
   }
 
@@ -378,9 +386,10 @@ export function TimeEntryEditorForm({
             <ObjectActionsButton
               actions={entryActions.getActions(actionTarget, {
                 isEditing: true,
-                invalidDraftReason: editor.canSave
-                  ? undefined
-                  : "Enter a valid duration first",
+                invalidDraftReason:
+                  lockReason || editor.canSave
+                    ? undefined
+                    : "Enter a valid duration first",
               })}
               onAction={handleAction}
               label="Entry actions"
@@ -407,6 +416,8 @@ export function TimeEntryEditorForm({
         <div className="time-entry-editor-meta">
           {runningTimer ? (
             <Chip tone="success">Running</Chip>
+          ) : lockReason ? (
+            <WeekLockChip />
           ) : entry && isTimesheetEntryCommitted(entry) ? (
             <Chip>Committed</Chip>
           ) : null}
@@ -460,29 +471,35 @@ export function TimeEntryEditorForm({
         ) : null}
       </div>
 
-      <TimeEntryFields
-        idPrefix={`time-entry-editor-${entry?._id ?? runningTimer?._id ?? "new"}`}
-        projects={projects}
-        projectId={fields.projectId}
-        taskId={fields.taskId}
-        note={fields.note}
-        durationHours={fields.durationHours}
-        durationError={editor.durationError ?? commitError}
-        durationHint={editor.isTimerMode ? START_OR_ENTER_HOURS_HINT : null}
-        localDate={runningTimer ? undefined : fields.localDate}
-        dateError={editor.dateError}
-        onProjectTaskChange={(selection) =>
-          updateFields({
-            projectId: selection.projectId,
-            taskId: selection.taskId,
-          })
-        }
-        onNoteChange={(note) => updateFields({ note })}
-        onNoteKeyDown={submitOnEnter}
-        onDurationChange={(durationHours) => updateFields({ durationHours })}
-        onDurationKeyDown={submitOnEnter}
-        onDateChange={(localDate) => updateFields({ localDate })}
-      />
+      {/* A disabled fieldset disables every field, picker and calendar button inside. */}
+      <fieldset
+        disabled={lockReason !== undefined}
+        className="m-0 min-w-0 border-0 p-0"
+      >
+        <TimeEntryFields
+          idPrefix={`time-entry-editor-${entry?._id ?? runningTimer?._id ?? "new"}`}
+          projects={projects}
+          projectId={fields.projectId}
+          taskId={fields.taskId}
+          note={fields.note}
+          durationHours={fields.durationHours}
+          durationError={editor.durationError ?? commitError}
+          durationHint={editor.isTimerMode ? START_OR_ENTER_HOURS_HINT : null}
+          localDate={runningTimer ? undefined : fields.localDate}
+          dateError={editor.dateError}
+          onProjectTaskChange={(selection) =>
+            updateFields({
+              projectId: selection.projectId,
+              taskId: selection.taskId,
+            })
+          }
+          onNoteChange={(note) => updateFields({ note })}
+          onNoteKeyDown={submitOnEnter}
+          onDurationChange={(durationHours) => updateFields({ durationHours })}
+          onDurationKeyDown={submitOnEnter}
+          onDateChange={(localDate) => updateFields({ localDate })}
+        />
+      </fieldset>
 
       <footer className="flex items-center justify-end gap-2 border-t pt-3">
         <Button type="button" variant="ghost" onClick={onClose}>

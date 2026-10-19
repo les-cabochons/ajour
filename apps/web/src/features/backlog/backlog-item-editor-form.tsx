@@ -14,6 +14,7 @@ import {
   RiRefreshLine as RotateCcw,
   RiSaveLine as Save,
 } from "@remixicon/react";
+import { MarkdownEditor } from "@/components/markdown-editor";
 import { ObjectActionsButton } from "@/components/object-actions-menu";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
@@ -27,7 +28,6 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
@@ -536,13 +536,16 @@ export function BacklogItemEditorForm({
         </Field>
 
         <Field>
-          <FieldLabel htmlFor={`${idPrefix}-note`}>Note</FieldLabel>
-          <Textarea
-            id={`${idPrefix}-note`}
-            value={fields.note}
-            onChange={(event) => updateFields({ note: event.target.value })}
-            placeholder="Description, markdown supported (optional)"
-            rows={4}
+          <FieldLabel htmlFor={`${idPrefix}-description`}>
+            Description
+          </FieldLabel>
+          <MarkdownEditor
+            id={`${idPrefix}-description`}
+            aria-label="Description"
+            value={fields.description}
+            onChange={(description) => updateFields({ description })}
+            placeholder="Markdown supported (optional)"
+            minLines={4}
           />
         </Field>
 

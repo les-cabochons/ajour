@@ -1,6 +1,6 @@
 /**
  * The window widths that change the app layout, in CSS pixels. See
- * "Breakpoints" in agents/ux-spec.md.
+ * "Breakpoints" in docs/agents/ux-spec.md.
  *
  * - Below DESKTOP_MIN_WIDTH: the narrow view, with no sidebars.
  * - From DESKTOP_MIN_WIDTH: the sidebar the user chose, beside the page.

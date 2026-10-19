@@ -1,6 +1,6 @@
 # Ajour - Ajour
 
-Ajour is a local-first time-tracking workspace with a web app, an Electron desktop shell, shared domain logic, and an optional local API for connector-driven imports.
+Ajour is a local-first time-tracking workspace with a web app, an Electron desktop shell, shared domain logic, and an optional local API for plugin-driven imports.
 
 ## What Exists Today
 
@@ -147,21 +147,21 @@ just desktop-make
 
 ### Local API
 
-The optional local API lives in `apps/api` and defaults to `127.0.0.1:8787`. It supports connector configuration, sync, and local import review flows.
+The optional local API lives in `apps/api` and defaults to `127.0.0.1:8787`. It supports plugin configuration, sync, and local import review flows.
 
-### Connector plugins
+### Plugins
 
-Connector implementations live in standalone repositories. They compile to
+Plugin implementations live in standalone repositories. They compile to
 self-contained JavaScript and do not import API, desktop, web, or shared
 application source at runtime.
 
-Each standalone connector repository owns its compilation and watch process.
+Each standalone plugin repository owns its compilation and watch process.
 Run `just install` there, then keep `just dev` running while developing the
-connector. In Ajour, set `AJOUR_DEV_PLUGIN_DIRS` to a platform-delimited
+plugin. In Ajour, set `AJOUR_DEV_PLUGIN_DIRS` to a platform-delimited
 list of development plugin directories, or choose a directory from Settings →
 Debug in the development desktop app. A selected directory must contain
 `plugin.json` and its compiled manifest entrypoint. Ajour loads that output but
-does not compile or watch the external connector. The Debug setting is persisted
+does not compile or watch the external plugin. The Debug setting is persisted
 for future development launches and is ignored by production builds. An explicit
 `AJOUR_DEV_PLUGIN_DIRS` value overrides the saved Debug setting for that
 launch.
@@ -173,15 +173,15 @@ AJOUR_DEV_PLUGIN_DIRS=/absolute/path/to/plugin just desktop-start
 Production desktop installs use one local `.ajour-connector` archive at a time
 through Settings → Plugins. Archive installation is available only through the
 desktop bridge and its native file chooser, not the loopback HTTP API. Official
-connector implementations and their versioned builds are maintained in:
+plugin implementations and their versioned builds are maintained in:
 
 - [`les-cabochons/ajc-azure-devops`](https://github.com/les-cabochons/ajc-azure-devops)
 - [`les-cabochons/ajc-jira`](https://github.com/les-cabochons/ajc-jira)
 
 Each archive contains `plugin.json` and the compiled `dist/` tree. The manifest
-declares the connector version, host API version, entrypoint, icon, and
-connection fields. Production builds do not preinstall connector archives.
-Uninstalling removes the managed archive contents and connector configuration
+declares the plugin version, host API version, entrypoint, icon, and
+connection fields. Production builds do not preinstall plugin archives.
+Uninstalling removes the managed archive contents and plugin configuration
 while retaining backlog items that were already imported.
 
 ## Verification
@@ -199,16 +199,17 @@ just build
 ```text
 apps/web/        React + Vite app for the main time-tracking UI
 apps/desktop/    Electron shell and packaging scripts
-apps/api/        local API for connectors and import flows
+apps/api/        local API for plugins and import flows
 packages/shared/ shared schemas, rules, and domain logic
 packages/example/ copy-me template for a new deep-module package
-docs/            architecture and logging notes
+docs/            project context (docs/agents), ADRs, frozen specs, architecture and logging notes
 ```
 
 ## Related Docs
 
 - [docs/local-first-architecture.md](./docs/local-first-architecture.md)
 - [docs/logging-strategy.md](./docs/logging-strategy.md)
+- [AGENTS.md](./AGENTS.md) and [docs/agents/](./docs/agents/) for project context, conventions and the planning workflow
 
 <!-- testing-shell:start -->
 
@@ -239,54 +240,10 @@ Generate and run the Gherkin acceptance shell:
 just acceptance-test
 ```
 
-This command runs `bddgen` and then Playwright in Chromium. The Vite server uses `127.0.0.1:4173` in test mode, and the step binding supplies an empty local connector fixture so acceptance does not depend on live services or credentials.
+This command runs `bddgen` and then Playwright in Chromium. The Vite server uses `127.0.0.1:4173` in test mode, and the step binding supplies an empty local plugin fixture so acceptance does not depend on live services or credentials.
 
 QA routines are manual Markdown procedures under `qa/routines/`; testers follow them directly rather than invoking a QA command.
 
-### Added and modified paths
-
-| Path                                                         | Change and ownership                                                                                                                                         |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `.gitignore`                                                 | Ignores Playwright-BDD's generated `.features-gen` specifications while keeping authored features and steps tracked.                                         |
-| `Justfile`                                                   | Adds `acceptance-install` for the managed Chromium prerequisite, `acceptance-test` as the public Gherkin command, and a private isolated Vite server recipe. |
-| `apps/web/package.json`                                      | Adds the `acceptance-test` script and the web-owned testing dependencies `@playwright/test` and `playwright-bdd`.                                            |
-| `pnpm-lock.yaml`                                             | Locks `@playwright/test` 1.62.0, `playwright-bdd` 9.2.0, and their transitive testing dependencies.                                                          |
-| `apps/web/vite.config.ts`                                    | Extends Vitest's default exclusions with `.features-gen/` so generated Playwright specifications cannot enter the unit suite.                                |
-| `apps/web/playwright.config.ts`                              | Configures feature/step discovery, generated tests, Chromium, diagnostics, retries, and the isolated web server.                                             |
-| `apps/web/tests/acceptance/features/local-workspace.feature` | Describes the user-visible local daily-workspace smoke behavior in Gherkin.                                                                                  |
-| `apps/web/tests/acceptance/steps/local-workspace.steps.ts`   | Binds the scenario to Playwright using accessible UI roles, clean browser state, and a controlled connector fixture.                                         |
-| `qa/routines/local-workspace-smoke.md`                       | Gives a human tester prerequisites, data, observable actions and results, cleanup, evidence, and pass/fail fields.                                           |
-| `docs/testing-shell-plan.md`                                 | Records the non-overlapping layout, runner choices, commands, and verification plan.                                                                         |
-| `agents.md`                                                  | Preserves the repository's operational agent instructions and explains every context file under `agents/`.                                                   |
-| `agents/architecture.md`                                     | Records developer-maintained runtime, persistence, dependency, and privacy boundaries.                                                                       |
-| `agents/project-overview.md`                                 | Records developer-maintained product scope, users, workflows, and local-first intent.                                                                        |
-| `agents/code-standards.md`                                   | Records developer-maintained implementation and testing conventions.                                                                                         |
-| `agents/library-docs.md`                                     | Indexes canonical libraries and local module ownership.                                                                                                      |
-| `agents/writing-plan.md`                                     | Provides the planning checklist and default verification path.                                                                                               |
-| `agents/progress-tracker.md`                                 | Records the implemented shell and actual verification results.                                                                                               |
-| `agents/ui-tokens.md`                                        | Documents semantic design tokens for this UI project.                                                                                                        |
-| `agents/ui-rules.md`                                         | Defines the UI project's interaction, accessibility, layout, and visual rules.                                                                               |
-| `agents/ui-registry.md`                                      | Catalogs reusable UI patterns and component ownership.                                                                                                       |
-| `README.md`                                                  | Provides this bounded, rerunnable testing-shell inventory and usage guide.                                                                                   |
-
 `@playwright/test` owns browser lifecycle, assertions, isolation, screenshots, and traces. `playwright-bdd` compiles `.feature` files into Playwright tests and binds their steps through `createBdd`. Both are development-only dependencies of `apps/web`.
 
-### Context files
-
-All project context now lives under `agents/`, with `agents.md` at the repository root as its index. The files were moved without replacing their existing content:
-
-- developers maintain `agents/architecture.md`, `agents/project-overview.md`, `agents/code-standards.md`, and `agents/library-docs.md`
-- developers and coding agents maintain the active guidance in `agents/writing-plan.md` and status in `agents/progress-tracker.md`
-- developers maintain `agents/ui-tokens.md` and `agents/ui-rules.md`; UI workflows maintain `agents/ui-registry.md`
-
-No context file intentionally starts empty in this repository because all required files already existed with project-authored content. UI context files are included because Ajour ships React web and Electron interfaces.
-
-### Verification status
-
-- `just test`: passed, 29 files and 198 tests
-- `just acceptance-test`: passed, 1 Chromium scenario
-- `just typecheck`: passed across the workspace
-- `just build`: passed across the workspace
-
-The only remaining `TBD` is the owner field in `qa/routines/local-workspace-smoke.md`. The manual routine remains `Not run` until a tester records evidence and a result.
 <!-- testing-shell:end -->

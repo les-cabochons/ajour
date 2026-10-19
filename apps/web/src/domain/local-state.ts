@@ -4,7 +4,7 @@ import type {
   AssignmentSource,
   BucketEvidenceItem,
   CaptureSettings,
-  ConnectorBacklogSource,
+  BacklogSource,
   ImportedDraftStatus,
   RuleRecord,
   TeamProject,
@@ -197,7 +197,7 @@ export interface LocalTimerDraft {
 
 /**
  * An entry as it was last committed: the copy the external timesheet holds.
- * See docs/superpowers/specs/2026-10-15-commit-week-design.md.
+ * See docs/specs/2026-10-15-commit-week-design.md.
  */
 export interface LocalTimesheetEntryCommit {
   /** When the copy was saved. */
@@ -222,6 +222,17 @@ export interface LocalTimesheetEntryCommit {
 export interface LocalTimesheetTombstone {
   entryId: string;
   commit: LocalTimesheetEntryCommit;
+}
+
+/**
+ * A submitted week: its entries are read-only, for agents too, until the user
+ * reopens it. See docs/specs/2026-10-15-commit-week-design.md.
+ */
+export interface LocalLockedWeek {
+  /** The week's Monday, `YYYY-MM-DD`. */
+  weekOf: string;
+  /** When the week was submitted. */
+  lockedAt: number;
 }
 
 export interface LocalTimesheetEntry {
@@ -372,7 +383,7 @@ export interface LocalWorkflowState {
  * its own.
  */
 export interface LocalWorkflowStateMapping {
-  source: ConnectorBacklogSource;
+  source: BacklogSource;
   connectionId: string;
   sourceProjectName?: string;
   sourceStatusKey: string;
@@ -393,7 +404,7 @@ export type LocalWorkflowStateWrite =
  * rule, a move writes the first source state mapped to the workflow state.
  */
 export interface LocalWorkflowStateWriteRule {
-  source: ConnectorBacklogSource;
+  source: BacklogSource;
   connectionId: string;
   sourceProjectName?: string;
   workflowStateId: string;
@@ -405,14 +416,14 @@ export interface LocalWorkItem {
   title: string;
   /**
    * Active items are on the user's plate. Settled items wait on someone else
-   * (synced items only). Archived items are done. See agents/GLOSSARY.md.
+   * (synced items only). Archived items are done. See GLOSSARY.md.
    */
   status: "active" | "settled" | "archived";
-  source: "manual" | ConnectorBacklogSource;
+  source: "manual" | BacklogSource;
   sourceId?: string;
   sourceConnectionId?: string;
   sourceConnectionLabel?: string;
-  /** Link to the item in its source tool, when the connector provides one. `sourceId` is an opaque identity, not a URL. */
+  /** Link to the item in its source tool, when the plugin provides one. `sourceId` is an opaque identity, not a URL. */
   sourceUrl?: string;
   sourceProjectName?: string;
   sourceWorkItemType?: string;
@@ -421,7 +432,7 @@ export interface LocalWorkItem {
   parentSourceId?: string;
   /** Ajour's level. A synced item follows its source value until the user sets one. */
   priority?: PriorityLevel;
-  /** The level the source reports. The connector plugin maps its own values to levels. */
+  /** The level the source reports. The plugin maps its own values to levels. */
   importedPriority?: PriorityLevel;
   workflowStateId?: string;
   importedWorkflowStateId?: string;
@@ -430,7 +441,8 @@ export interface LocalWorkItem {
   projectId?: string;
   taskId?: string;
   inheritsParentMapping?: boolean;
-  note?: string;
+  /** Markdown that explains the item. A synced item's comes from its source tool. */
+  description?: string;
   originalEstimateHours?: number;
   remainingEstimateHours?: number;
   remainingEstimateOverrunHours?: number;
@@ -446,11 +458,22 @@ export interface LocalWorkItem {
   /** Set when a sync brings a settled item back. Cleared when the user opens it. */
   returnedAt?: number;
   /**
+   * Set when a comment brought the item back, with the same `at` as
+   * `returnedAt`, so its notice can name the person. Never the comment text.
+   */
+  returnedByComment?: { author: string; at: number };
+  /**
    * When the user pinned the item to the top of the sidebar list. Local: a
    * sync keeps it and never writes it to the source.
    */
   pinnedAt?: number;
   settledAt?: number;
+  /**
+   * Which settle the item is in: new at each settle, kept when a settled item
+   * is archived, cleared when the item is active again. A comment queued with
+   * a settle goes only while its item is still in that settle.
+   */
+  settleId?: string;
   /**
    * The parent whose settle or close carried this subitem along, so they come
    * back together.
@@ -494,6 +517,7 @@ export type LocalWorkItemMoveSnapshot = Pick<
   | "archivedByMissingSync"
   | "archivedSourceStatusKey"
   | "settledAt"
+  | "settleId"
   | "settledWithParentId"
   | "settledSourceStatusKey"
   | "settledImportedPriority"
@@ -526,6 +550,7 @@ export interface LocalPendingSourceWrite {
       LocalWorkItem,
       | "status"
       | "settledAt"
+      | "settleId"
       | "archivedAt"
       | "archivedByMissingSync"
       | "archivedSourceStatusKey"
@@ -550,7 +575,7 @@ export type PersistedLocalWorkItem = Omit<
 > & {
   /** Any whole number before priority had levels. */
   priority?: number;
-  /** A raw source value before connector plugins sent levels. */
+  /** A raw source value before plugins sent levels. */
   importedPriority?: number;
   settledImportedPriority?: number;
   pendingSourceWrite?: Omit<
@@ -572,11 +597,13 @@ export type PersistedLocalWorkItem = Omit<
   /** Workflow states were called backlog statuses before. */
   backlogStatusId?: string;
   importedBacklogStatusId?: string;
+  /** The description was called the note before. */
+  note?: string;
 };
 
 export interface LocalWorkItemDraft {
   title: string;
-  note?: string;
+  description?: string;
   projectId?: string;
   taskId?: string;
   inheritsParentMapping?: boolean;
@@ -640,6 +667,8 @@ export interface LocalAppState {
   timesheetEntries: LocalTimesheetEntry[];
   /** Committed entries deleted since. See `LocalTimesheetTombstone`. */
   timesheetTombstones: LocalTimesheetTombstone[];
+  /** Submitted weeks, in week order. See `LocalLockedWeek`. */
+  lockedWeeks: LocalLockedWeek[];
   timesheetImportDrafts: LocalTimesheetImportDraft[];
   /**
    * The Mondays of the weeks Ajour already asked to commit when they reached
@@ -671,6 +700,11 @@ export interface LocalAppState {
   extensionBridgeStatus?: ExtensionBridgeStatus;
   userPreferences: UserPreferences;
   desktopBootstrapAppliedAt?: number;
+  /**
+   * Changes with every write. It is saved inside the state, so the state and
+   * its revision always go together; see `writeState` in lib/local-store.ts.
+   */
+  revision?: string;
   updatedAt: number;
 }
 

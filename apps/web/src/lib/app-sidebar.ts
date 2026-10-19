@@ -7,7 +7,7 @@ import { useIsNarrowView } from "@/lib/use-narrow-view";
  * the work list, resizable, see `lib/sidebar-layout.ts`) or hidden. There is no
  * icon rail. It shows beside the page at every desktop width; when it is
  * hidden, the timer dock floats instead. See "App shell" and "Backlog sidebar"
- * in agents/ux-spec.md.
+ * in docs/agents/ux-spec.md.
  */
 export type AppSidebarState = "expanded" | "hidden";
 

@@ -17,15 +17,15 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { showToast, showUndoToast } from "@/components/ui/toast";
 import {
   buildImportHierarchy,
-  commitSelectedConnectorImportsToLocalStore,
-  dismissConnectorImportCandidates,
-  getConnectorsOverview,
-  isConnectorApiMissing,
-  listConnectorImportCandidates,
-  restoreDismissedConnectorImports,
-  updateConnectorImportSelection,
+  commitSelectedBacklogImportsToLocalStore,
+  dismissBacklogImportCandidates,
+  getPluginsOverview,
+  isPluginApiMissing,
+  listBacklogImportCandidates,
+  restoreDismissedBacklogImports,
+  updateBacklogImportSelection,
 } from "@/lib/app-api";
-import { useRetryWhileConnectorApiMissing } from "@/lib/use-connector-api-retry";
+import { useRetryWhilePluginApiMissing } from "@/lib/use-plugin-api-retry";
 import { useLocalWorkItems } from "@/lib/local-hooks";
 import {
   hasWorkItemEstimateSyncIssue,
@@ -33,21 +33,18 @@ import {
   type LocalWorkItemEstimateFieldKey,
 } from "@/domain/local-state";
 import { localStore } from "@/lib/local-store";
-import type {
-  ConnectorImportCandidate,
-  ConnectorsOverview,
-} from "@ajour/shared";
+import type { BacklogImportCandidate, PluginsOverview } from "@ajour/shared";
 import { cn } from "@/lib/utils";
 
 interface ImportConnectionGroup {
   connectionId: string;
   connectionLabel: string;
   tenantLabel: string;
-  items: ConnectorImportCandidate[];
+  items: BacklogImportCandidate[];
 }
 
 function groupImportCandidatesByConnection(
-  items: ConnectorImportCandidate[],
+  items: BacklogImportCandidate[],
 ): ImportConnectionGroup[] {
   const groups = new Map<string, ImportConnectionGroup>();
 
@@ -73,7 +70,7 @@ function groupImportCandidatesByConnection(
   );
 }
 
-function formatImportMeta(item: ConnectorImportCandidate) {
+function formatImportMeta(item: BacklogImportCandidate) {
   const parts = [
     typeof item.priority === "number" ? `P${item.priority}` : undefined,
     item.projectName,
@@ -93,20 +90,20 @@ const ESTIMATE_FIELD_LABELS: Record<LocalWorkItemEstimateFieldKey, string> = {
 
 export function SettingsImportReviewPage() {
   const localWorkItems = useLocalWorkItems();
-  const [overview, setOverview] = useState<ConnectorsOverview | null>(null);
-  const [items, setItems] = useState<ConnectorImportCandidate[]>([]);
+  const [overview, setOverview] = useState<PluginsOverview | null>(null);
+  const [items, setItems] = useState<BacklogImportCandidate[]>([]);
   const [selectedCount, setSelectedCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isMutating, setIsMutating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  // Staged imports live in the connector API, so the web build hides them.
-  const [connectorApiMissing, setConnectorApiMissing] = useState(false);
+  // Staged imports live in the app API, so the web build hides them.
+  const [pluginApiMissing, setPluginApiMissing] = useState(false);
 
-  /** Shows an operation error inline, or hides the connector sections when the API is missing. */
+  /** Shows an operation error inline, or hides the plugin sections when the API is missing. */
   const showFailure = (nextError: unknown, fallback: string) => {
-    if (isConnectorApiMissing(nextError)) {
-      setConnectorApiMissing(true);
+    if (isPluginApiMissing(nextError)) {
+      setPluginApiMissing(true);
       setError(null);
       return;
     }
@@ -117,13 +114,13 @@ export function SettingsImportReviewPage() {
     setIsLoading(true);
     try {
       const [nextOverview, nextImports] = await Promise.all([
-        getConnectorsOverview(),
-        listConnectorImportCandidates(),
+        getPluginsOverview(),
+        listBacklogImportCandidates(),
       ]);
       setOverview(nextOverview);
       setItems(nextImports.items);
       setSelectedCount(nextImports.selectedCount);
-      setConnectorApiMissing(false);
+      setPluginApiMissing(false);
       setError(null);
     } catch (nextError) {
       showFailure(nextError, "Unable to load staged imports.");
@@ -136,7 +133,7 @@ export function SettingsImportReviewPage() {
     void refresh();
   }, []);
 
-  useRetryWhileConnectorApiMissing(connectorApiMissing, refresh);
+  useRetryWhilePluginApiMissing(pluginApiMissing, refresh);
 
   const connectionGroups = useMemo(
     () => groupImportCandidatesByConnection(items),
@@ -182,7 +179,7 @@ export function SettingsImportReviewPage() {
     setStatusMessage(null);
     setError(null);
     try {
-      await updateConnectorImportSelection(ids, selected);
+      await updateBacklogImportSelection(ids, selected);
       await refresh();
     } catch (nextError) {
       showFailure(nextError, "Unable to update staged import selection.");
@@ -194,7 +191,7 @@ export function SettingsImportReviewPage() {
   /** Puts the items of the last dismissal back in review, for its Undo toast. */
   const undoDismissal = async (undoToken: string) => {
     try {
-      if ((await restoreDismissedConnectorImports(undoToken)) !== "restored") {
+      if ((await restoreDismissedBacklogImports(undoToken)) !== "restored") {
         showToast("Can't undo. The staged items changed after that action.");
       }
       await refresh();
@@ -214,7 +211,7 @@ export function SettingsImportReviewPage() {
     setError(null);
     try {
       const { dismissedCount, undoToken } =
-        await dismissConnectorImportCandidates(ids);
+        await dismissBacklogImportCandidates(ids);
       await refresh();
       if (undoToken) {
         showUndoToast({
@@ -234,7 +231,7 @@ export function SettingsImportReviewPage() {
     setStatusMessage(null);
     setError(null);
     try {
-      const result = await commitSelectedConnectorImportsToLocalStore();
+      const result = await commitSelectedBacklogImportsToLocalStore();
       await refresh();
       const parts = [];
       if (result.importedCount > 0) {
@@ -261,7 +258,7 @@ export function SettingsImportReviewPage() {
       <section className="settings-section">
         <h2 className="settings-section-title">Sync review</h2>
         <p className="settings-section-desc">
-          Review staged connector imports and resolve estimate conflicts before
+          Review staged backlog imports and resolve estimate conflicts before
           the next sync pass. Child items stay one level deep and inherit their
           parent context when needed.
         </p>
@@ -342,11 +339,11 @@ export function SettingsImportReviewPage() {
               </div>
             ))}
           </AppPanel>
-        ) : connectorApiMissing ? (
+        ) : pluginApiMissing ? (
           <p className="text-sm text-muted-foreground">Nothing to review.</p>
         ) : null}
 
-        {connectorApiMissing ? null : (
+        {pluginApiMissing ? null : (
           <div className="flex flex-col gap-3">
             <p className="text-[13px] leading-5 text-muted-foreground">
               <span className="font-medium text-foreground">
@@ -359,7 +356,7 @@ export function SettingsImportReviewPage() {
                 (sum, group) => sum + group.connections.length,
                 0,
               ) ?? 0}{" "}
-              connector connections
+              plugin connections
             </p>
 
             <div className="flex flex-wrap gap-2">
@@ -439,7 +436,7 @@ export function SettingsImportReviewPage() {
         ) : null}
         {error ? <MessagePanel tone="warning">{error}</MessagePanel> : null}
 
-        {connectorApiMissing ? null : isLoading ? (
+        {pluginApiMissing ? null : isLoading ? (
           <p className="text-sm text-muted-foreground">
             Loading staged imports…
           </p>
@@ -453,7 +450,7 @@ export function SettingsImportReviewPage() {
             >
               Plugins
             </Link>{" "}
-            and sync one of your connector connections first.
+            and sync one of your plugin connections first.
           </p>
         ) : (
           <div className="import-review-groups">

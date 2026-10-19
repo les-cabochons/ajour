@@ -25,7 +25,7 @@ Ajour has a few objects, and each one has one job. This page names them and show
 ## Backlog
 
 **Backlog item**
-: A piece of planned work, such as a bug or a user story. A backlog item can point at a project and task, so starting it logs time in the right place. An item is **manual**, created in Ajour, or **synced** from a connector such as Azure DevOps or Jira.
+: A piece of planned work, such as a bug or a user story. A backlog item can point at a project and task, so starting it logs time in the right place. An item is **manual**, created in Ajour, or **synced** from a backlog plugin such as Azure DevOps or Jira.
 
 **Subitem**
 : A backlog item one level under another. Subitems cannot have subitems.
@@ -37,7 +37,7 @@ Ajour has a few objects, and each one has one job. This page names them and show
 : The state an item has in its source tool, such as Azure DevOps `Active`. Each source state maps to one of your workflow states.
 
 **Priority**
-: One of `Urgent`, `High`, `Medium` or `Low`, or no priority. Connectors translate their tool's priorities to these four levels.
+: One of `Urgent`, `High`, `Medium` or `Low`, or no priority. Backlog plugins translate their tool's priorities to these four levels.
 
 **Lifecycle**
 : Where an item stands for you: **active** (on your plate), **settled** (nothing to do for now, waiting on someone else) or **archived** (done).
@@ -53,7 +53,7 @@ Ajour has a few objects, and each one has one job. This page names them and show
 **Plugin**
 : An installable extension. Each plugin has one or more capabilities.
 
-**Connector**
+**Backlog capability**
 : A plugin capability that syncs backlog items and their estimates with a tool such as Azure DevOps or Jira.
 
 **Code host**

@@ -5,7 +5,7 @@ import { z } from "zod";
  * between the workspaces of its members. Each sync sends the team-owned fields
  * that changed since the last sync, then receives the team's changes since a
  * cursor, so the later write to a field wins. See ADR 0006 and
- * docs/superpowers/specs/2026-10-16-team-project-sync-design.md.
+ * docs/specs/2026-10-16-team-project-sync-design.md.
  *
  * Only team-owned fields cross this boundary. Time entries, tracked totals,
  * notes, budget consumption, pinned slots, plugin properties, order and the

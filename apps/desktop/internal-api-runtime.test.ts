@@ -71,15 +71,15 @@ async function runtime(port: number, ownedServer: Server | null = null) {
     internalAppApiStopPromise: null,
     internalAppApiModulePromise: Promise.resolve({
       startAppApiServer: start,
-      installConnectorPluginForServer: install,
-      uninstallConnectorPluginForServer: uninstall,
+      installPluginForServer: install,
+      uninstallPluginForServer: uninstall,
     }),
     internalAppApiEntryPath: "fixture/server.ts",
     existsSync: () => true,
     app: { isPackaged: true, getPath: () => "/fixture" },
     mainWindow: { webContents: "active-window" },
     dialog: {},
-    selectConnectorPluginArchive: async () => archive,
+    selectPluginArchive: async () => archive,
     assertActiveDesktopWindow: () => {},
     pluginCatalogService: { downloadPluginArchive: async () => archive },
     ipcMain: {
@@ -93,15 +93,15 @@ async function runtime(port: number, ownedServer: Server | null = null) {
   vm.runInContext(
     section("function delay(ms)", "async function stopInternalAppApi()") +
       section(
-        'ipcMain.handle("ajour:install-connector-plugin"',
+        'ipcMain.handle("ajour:install-plugin"',
         'ipcMain.handle("ajour:get-plugin-catalog"',
       ) +
       section(
         'ipcMain.handle("ajour:download-catalog-plugin"',
-        'ipcMain.handle("ajour:uninstall-connector-plugin"',
+        'ipcMain.handle("ajour:uninstall-plugin"',
       ) +
       section(
-        'ipcMain.handle("ajour:uninstall-connector-plugin"',
+        'ipcMain.handle("ajour:uninstall-plugin"',
         'ipcMain.handle("ajour:get-development-plugin-settings"',
       ),
     context,
@@ -122,8 +122,8 @@ async function runtime(port: number, ownedServer: Server | null = null) {
 describe("desktop plugin runtime ownership", () => {
   it.each([
     "ajour:download-catalog-plugin",
-    "ajour:install-connector-plugin",
-    "ajour:uninstall-connector-plugin",
+    "ajour:install-plugin",
+    "ajour:uninstall-plugin",
   ])(
     "reports an occupied port instead of adopting a development API for %s",
     async (channel) => {
@@ -157,7 +157,7 @@ describe("desktop plugin runtime ownership", () => {
     await new Promise<void>((resolve) => foreign.close(() => resolve()));
 
     await expect(app.invoke("ajour:download-catalog-plugin")).resolves.toEqual({
-      type: "connector",
+      type: "plugin",
       result: { installed: true },
     });
     expect(app.install.mock.calls[0]?.[0]).toBe(
@@ -170,7 +170,7 @@ describe("desktop plugin runtime ownership", () => {
     const app = await runtime(portOf(owned), owned);
 
     await expect(app.invoke("ajour:download-catalog-plugin")).resolves.toEqual({
-      type: "connector",
+      type: "plugin",
       result: { installed: true },
     });
     expect(app.start).not.toHaveBeenCalled();

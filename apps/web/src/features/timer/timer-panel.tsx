@@ -18,6 +18,7 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { DisabledReason } from "@/components/disabled-reason";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { Value } from "@/components/ui/value";
@@ -34,6 +35,7 @@ import {
   type TimeEntryActionId,
 } from "@/domain/actions/object-actions";
 import { formatClockDuration } from "@/domain/time/duration";
+import { getDateLockReason, isDateLocked } from "@/domain/time/locked-weeks";
 import { isTimesheetEntryCommitted } from "@/domain/time/timesheet-commit";
 import { placeRunningRow } from "@/domain/time/timesheet-entry";
 import {
@@ -158,7 +160,8 @@ function EntryMain({
  * entry editor through `onOpenEntry`. An empty target means a new entry on
  * `date`. Dragging selected rows drags them all; dropped on the list they land
  * together at the drop line, and dropped on another day in the day strip they
- * move to the end of that day.
+ * move to the end of that day. A day of a submitted week lists its rows
+ * read-only, and a submitted day's tab in the strip takes no drop.
  */
 export function TimerPanel({
   date,
@@ -190,6 +193,8 @@ export function TimerPanel({
   );
 
   const currentTimer = state.timers[0] ?? null;
+  // A submitted day's rows do not drag or reorder, and New entry is disabled.
+  const lockReason = getDateLockReason(state, date);
   const now = useRunningClock(currentTimer?.localDate === date);
   const entryActions = useTimeEntryActions({
     onEdit: (target) =>
@@ -405,6 +410,7 @@ export function TimerPanel({
     event: React.PointerEvent<HTMLTableRowElement>,
   ) {
     if (
+      lockReason !== undefined ||
       !isSortableRow(entry) ||
       // A lone row can still go to another day in the strip.
       (!canReorderEntries && !dayDropTargets?.size) ||
@@ -427,13 +433,21 @@ export function TimerPanel({
     setPressedEntryId(entry._id);
 
     const { clientX, clientY, pointerId, pointerType } = event;
-    /** Where a drop would go, with the list's top read now. */
-    const locateDrop = (pointer: { clientX: number; clientY: number }) =>
-      getDayStripDrop(
+    /**
+     * Where a drop would go, with the list's top read now. A submitted day's
+     * tab takes no drop: it counts as above the list, where a drop changes
+     * nothing.
+     */
+    const locateDrop = (pointer: { clientX: number; clientY: number }) => {
+      const drop = getDayStripDrop(
         pointer,
         dayDropTargets,
         selection.scopeRef.current?.getBoundingClientRect().top,
       );
+      return drop.dayDropDate && isDateLocked(state, drop.dayDropDate)
+        ? { dayDropDate: null, aboveList: true }
+        : drop;
+    };
     /**
      * Measures the drop again where the pointer last was, for a scroll that
      * moved the list and the strip under a still pointer, and before a drop.
@@ -589,10 +603,16 @@ export function TimerPanel({
                     </EmptyDescription>
                   </EmptyHeader>
                   <EmptyContent>
-                    <Button variant="outline" onClick={() => onOpenEntry({})}>
-                      <Plus data-icon="inline-start" />
-                      New entry
-                    </Button>
+                    <DisabledReason label="New entry" reason={lockReason}>
+                      <Button
+                        variant="outline"
+                        disabled={lockReason !== undefined}
+                        onClick={() => onOpenEntry({})}
+                      >
+                        <Plus data-icon="inline-start" />
+                        New entry
+                      </Button>
+                    </DisabledReason>
                   </EmptyContent>
                 </Empty>
               </td>
@@ -697,7 +717,7 @@ export function TimerPanel({
                           onAction: runRowAction,
                           // A new running entry stays last.
                           onReorder:
-                            draggableIndex === -1
+                            lockReason !== undefined || draggableIndex === -1
                               ? undefined
                               : (step) => reorderEntry(entry._id, step),
                         })
@@ -784,15 +804,28 @@ export function TimerPanel({
           {visibleEntries.length === 0 ? null : (
             <tr className="time-entries-add-row">
               <td colSpan={2}>
-                <TooltipButton
-                  label="New entry"
-                  shortcut="entry.new"
-                  className="time-entries-add"
-                  onClick={() => onOpenEntry({})}
-                >
-                  <Plus />
-                  <span>New entry</span>
-                </TooltipButton>
+                {lockReason ? (
+                  <DisabledReason
+                    label="New entry"
+                    reason={lockReason}
+                    className="flex w-full"
+                  >
+                    <button type="button" className="time-entries-add" disabled>
+                      <Plus />
+                      <span>New entry</span>
+                    </button>
+                  </DisabledReason>
+                ) : (
+                  <TooltipButton
+                    label="New entry"
+                    shortcut="entry.new"
+                    className="time-entries-add"
+                    onClick={() => onOpenEntry({})}
+                  >
+                    <Plus />
+                    <span>New entry</span>
+                  </TooltipButton>
+                )}
               </td>
             </tr>
           )}
