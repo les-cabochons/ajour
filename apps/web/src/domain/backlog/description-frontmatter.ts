@@ -250,6 +250,10 @@ function splitKey(text: string): { key: string; value: string } | null {
   }
   const colon = /:(?=[ \t]|$)/.exec(text);
   if (!colon) return null;
+  // A comment runs to the end of the line, so a colon after it is not the
+  // key's; `Owner#1` without a space before `#` is still a key.
+  const comment = /[ \t]#/.exec(text);
+  if (comment && comment.index < colon.index) return null;
   const key = text.slice(0, colon.index).trim();
   if (!key || !isPlainScalar(key)) return null;
   return { key, value: withoutComment(text.slice(colon.index + 1)) };

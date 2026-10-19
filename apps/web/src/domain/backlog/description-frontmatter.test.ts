@@ -275,6 +275,25 @@ describe("splitDescription", () => {
     ).toEqual([{ kind: "list", key: "Owners", values: ["Ada", "Grace"] }]);
   });
 
+  it("is not frontmatter when a comment hides a key's colon", () => {
+    const description = [
+      "---",
+      "Owner # note: Ada",
+      "timelog:",
+      "  project: Acme",
+      "---",
+      "Body",
+    ].join("\n");
+    expect(splitDescription(description)).toEqual({
+      frontmatter: null,
+      body: description,
+    });
+    expect(getDescriptionTimelog(description)).toBeUndefined();
+    expect(
+      splitDescription("---\nOwner#1: Ada\n---").frontmatter?.fields,
+    ).toEqual([{ kind: "value", key: "Owner#1", value: "Ada" }]);
+  });
+
   it("is not frontmatter when a key starts with a YAML indicator", () => {
     for (const line of ["? Owner: Ada", ",Owner: Ada", "- Owner: Ada"]) {
       expect(splitDescription(`---\n${line}\n---`).frontmatter).toBeNull();
