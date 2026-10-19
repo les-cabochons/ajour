@@ -9,7 +9,7 @@ The Day view lists the entries of one day. Ajour opens on today, in the view you
 - **The header** has the previous and next day buttons, the date, and **Day** and **Week**. Click the date to pick another day from a calendar.
 - **The week strip** shows the seven days of the week with their totals, and the week total on the right. Click a day to open it.
 - **The rows** are the day's entries. Each row shows the project, the task, the note and the duration. The running entry shows a green dot and counts up. A check marks an entry your timesheet tool has as it is.
-- **The totals** at the top right show the total of the day you are on. Click them for the day and week totals, and **Commit**.
+- **The totals** at the top right show the total of the day you are on, with **Today** in front on today. Click them for the day and week totals. To commit the week, see [Commit your week](/time/commit).
 
 ## Move between days
 

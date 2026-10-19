@@ -16,7 +16,7 @@ From top to bottom, the sidebar has:
 - **Your work list**: active backlog items, with pinned items first.
 - **Pull requests** that need you, when a code host is connected.
 - **Snoozed** and **Settled** sections, collapsed by default.
-- **Settings** at the bottom.
+- **Settings** at the bottom left, and **Commit** at the bottom right, which opens the [Commit page](/time/commit) for the week on screen.
 
 ## Switch views
 
