@@ -188,7 +188,11 @@ const dismissedMention = StateField.define<{
       ? dismissed
       : {
           ...dismissed,
-          from: transaction.changes.mapPos(dismissed.from, 1, MapMode.TrackDel),
+          from: transaction.changes.mapPos(
+            dismissed.from,
+            1,
+            MapMode.TrackAfter,
+          ),
         };
   },
 });

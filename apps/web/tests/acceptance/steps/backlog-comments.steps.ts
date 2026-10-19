@@ -596,6 +596,11 @@ Then(
   },
 );
 
+When("I select all and type {string}", async ({ page }, text: string) => {
+  await page.keyboard.press("ControlOrMeta+A");
+  await page.keyboard.type(text);
+});
+
 When("I pick Ana from the suggestions", async ({ page }) => {
   await page.getByRole("option", { name: "Ana Silva" }).click();
 });
