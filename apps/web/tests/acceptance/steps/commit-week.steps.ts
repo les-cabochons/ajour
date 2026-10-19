@@ -274,3 +274,191 @@ Then("the clipboard holds {string}", async ({ page }, text: string) => {
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
     .toBe(text);
 });
+
+function totalsTrigger(page: Page) {
+  return page.getByRole("button", { name: "Show day and week totals" });
+}
+
+Then("the titlebar totals read {string}", async ({ page }, text: string) => {
+  // The label and the value are separate spans with no text between them.
+  await expect
+    .poll(async () =>
+      (await totalsTrigger(page).locator("span").allInnerTexts()).join(" "),
+    )
+    .toBe(text);
+});
+
+Then("the totals popover has no Commit button", async ({ page }) => {
+  await totalsTrigger(page).click();
+  const popover = page.getByLabel("Current time totals");
+  await expect(popover).toContainText("Week total");
+  await expect(popover.getByRole("button")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+});
+
+When("I open today's Day list", async ({ page }) => {
+  await page.goto("/time/today");
+  await expect(page.locator(".time-page-stack")).toBeVisible({
+    timeout: 15_000,
+  });
+});
+
+Given(
+  "my weekly target is {int} hours, all on Monday",
+  async ({ page }, hours: number) => {
+    // Runs after the week's seed, once, so later loads keep what the app saved.
+    await page.addInitScript(
+      (targetMs: number) => {
+        if (sessionStorage.getItem("weekly-target-ready")) return;
+        sessionStorage.setItem("weekly-target-ready", "true");
+        const state = JSON.parse(
+          localStorage.getItem("ajour.local-state.v2") ?? "{}",
+        );
+        state.userPreferences = {
+          ...state.userPreferences,
+          weeklyCapacityTargets: {
+            monday: targetMs,
+            tuesday: 0,
+            wednesday: 0,
+            thursday: 0,
+            friday: 0,
+            saturday: 0,
+            sunday: 0,
+          },
+        };
+        localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+      },
+      hours * 60 * 60 * 1000,
+    );
+  },
+);
+
+Then("Monday's {string} entry is back", async ({ page }, note: string) => {
+  await expect(page).toHaveURL(/\/time\/2026-10-05/);
+  await expect(page.getByText(note, { exact: true })).toHaveCount(1);
+});
+
+When("I press Commit week in the top bar", async ({ page }) => {
+  await expect(
+    page.getByRole("navigation", { name: "Primary navigation" }),
+  ).toHaveCount(0);
+  await page
+    .locator(".ajour-nav")
+    .getByRole("button", { name: "Commit week", exact: true })
+    .click();
+});
+
+function weekCompleteDialog(page: Page) {
+  return page.getByRole("alertdialog", { name: "Week complete" });
+}
+
+Then(
+  "Ajour asks {string}: {string}",
+  async ({ page }, title: string, description: string) => {
+    const dialog = page.getByRole("alertdialog", { name: title });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText(description);
+  },
+);
+
+When("I answer {string}", async ({ page }, answer: string) => {
+  await weekCompleteDialog(page)
+    .getByRole("button", { name: answer, exact: true })
+    .click();
+});
+
+Then(
+  "the Commit page for the week of {word} is open",
+  async ({ page }, weekOf: string) => {
+    await expect(page).toHaveURL(new RegExp(`/time/${weekOf}/commit`));
+    await expect(weekCompleteDialog(page)).toHaveCount(0);
+    await expect(changeList(page).getByRole("listitem")).toHaveCount(1, {
+      timeout: 15_000,
+    });
+  },
+);
+
+Then("Ajour does not ask again", async ({ page }) => {
+  await expect(weekCompleteDialog(page)).toHaveCount(0);
+  const prompted = await page.evaluate(
+    () =>
+      JSON.parse(localStorage.getItem("ajour.local-state.v2") ?? "{}")
+        .commitPromptedWeeks,
+  );
+  expect(prompted).toEqual(["2026-10-05"]);
+});
+
+Given(
+  "an entry has run for {int} hours today",
+  async ({ page }, hours: number) => {
+    // Runs after the week's seed, once, so later loads keep what the app saved.
+    await page.addInitScript(
+      (accumulatedDurationMs: number) => {
+        if (sessionStorage.getItem("running-entry-ready")) return;
+        sessionStorage.setItem("running-entry-ready", "true");
+        const state = JSON.parse(
+          localStorage.getItem("ajour.local-state.v2") ?? "{}",
+        );
+        state.timers = [
+          {
+            _id: "timer-today",
+            startedAt: Date.now(),
+            localDate: new Intl.DateTimeFormat("en-CA").format(new Date()),
+            projectId: "project-atlas",
+            taskId: "task-dev",
+            note: "Long session",
+            accumulatedDurationMs,
+          },
+        ];
+        localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+      },
+      hours * 60 * 60 * 1000,
+    );
+  },
+);
+
+When(
+  "I change the note of Monday's {string} entry to {string} without saving",
+  async ({ page }, note: string, draft: string) => {
+    await page.goto("/time/2026-10-05");
+    await page.locator(".time-entry-row").filter({ hasText: note }).dblclick();
+    await page.getByRole("textbox", { name: "Note", exact: true }).fill(draft);
+  },
+);
+
+When("I stop the running entry from the sidebar", async ({ page }) => {
+  await page
+    .getByRole("navigation", { name: "Primary navigation" })
+    .getByRole("region", { name: "Running entry" })
+    .getByRole("button", { name: "Stop", exact: true })
+    .click();
+  await expect(weekCompleteDialog(page)).toBeVisible();
+});
+
+Then("the Commit page for the current week is open", async ({ page }) => {
+  const monday = await page.evaluate(() => {
+    const date = new Date();
+    date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
+    return new Intl.DateTimeFormat("en-CA").format(date);
+  });
+  await expect(page).toHaveURL(new RegExp(`/time/${monday}/commit`));
+  await expect(weekCompleteDialog(page)).toHaveCount(0);
+});
+
+Then(
+  "Monday's {string} entry has the note {string}",
+  async ({ page }, _note: string, saved: string) => {
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            JSON.parse(
+              localStorage.getItem("ajour.local-state.v2") ?? "{}",
+            ).timesheetEntries.find(
+              (entry: { _id: string }) => entry._id === "mon-api",
+            )?.note,
+        ),
+      )
+      .toBe(saved);
+  },
+);

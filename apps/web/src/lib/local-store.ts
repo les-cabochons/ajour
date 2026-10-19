@@ -99,6 +99,10 @@ import {
 } from "@/domain/time/timesheet-entry";
 import { normalizeTimesheetTombstones } from "@/domain/time/timesheet-commit";
 import {
+  markCommitPrompted as applyMarkCommitPrompted,
+  normalizeCommitPromptedWeeks,
+} from "@/domain/time/week-target-prompt";
+import {
   assertNoLockedWeekWrite,
   LockedWeekError,
   findLockedWeekWrite,
@@ -269,6 +273,20 @@ const STORAGE_KEY = "ajour.local-state.v2";
  */
 const REVISION_KEY = "ajour.local-state.revision";
 const STATE_CHANGE_EVENT = "ajour-local-state";
+
+/**
+ * What a state change event says. `local` is true for a write in this window
+ * and false for one another window made, which this window only reloads.
+ */
+export interface LocalStateChange {
+  local: boolean;
+}
+
+function announceStateChange(change: LocalStateChange) {
+  window.dispatchEvent(
+    new CustomEvent<LocalStateChange>(STATE_CHANGE_EVENT, { detail: change }),
+  );
+}
 const RETIRED_AUTH_CACHE_PREFIX = "msal.";
 
 const defaultCapture: CaptureSettings = {
@@ -350,6 +368,7 @@ function createDefaultState(): LocalAppState {
     timesheetTombstones: [],
     lockedWeeks: [],
     timesheetImportDrafts: [],
+    commitPromptedWeeks: [],
     workItems: [],
     pullRequests: [],
     calendarDecisions: [],
@@ -479,6 +498,9 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
       timesheetImportDrafts: arrayOrDefault(
         persistedState.timesheetImportDrafts,
         defaults.timesheetImportDrafts,
+      ),
+      commitPromptedWeeks: normalizeCommitPromptedWeeks(
+        persistedState.commitPromptedWeeks,
       ),
       workItems,
       pullRequests: normalizePullRequests(persistedState.pullRequests),
@@ -1110,7 +1132,7 @@ function assertFreshCache(cached: LocalAppState, next: LocalAppState) {
     return;
   }
 
-  window.dispatchEvent(new Event(STATE_CHANGE_EVENT));
+  announceStateChange({ local: false });
   // Judge what this write changes against the fresh locks.
   const weekOf = findLockedWeekWrite(
     { ...cached, lockedWeeks: fresh.lockedWeeks },
@@ -1130,7 +1152,7 @@ function writeState(state: LocalAppState) {
   const nextState = persistState({ ...state, updatedAt: Date.now() });
   cachedRevision = nextState.revision;
   cachedState = nextState;
-  window.dispatchEvent(new Event(STATE_CHANGE_EVENT));
+  announceStateChange({ local: true });
 }
 
 /** The part of the state the team sync rules read and write. */
@@ -1280,7 +1302,7 @@ function listenForOtherWindowWrites() {
   window.addEventListener("storage", (event: StorageEvent) => {
     if (event.key === STORAGE_KEY || event.key === null) {
       refreshState();
-      window.dispatchEvent(new Event(STATE_CHANGE_EVENT));
+      announceStateChange({ local: false });
     }
   });
 }
@@ -1290,10 +1312,20 @@ function listenForOtherWindowWrites() {
  * `LockedWeekError` and writes nothing.
  */
 export const localStore = {
-  subscribe(callback: () => void) {
+  /**
+   * Calls `callback` after each change, from this window or another. The
+   * change says which, for listeners that act on their own window's writes.
+   */
+  subscribe(callback: (change: LocalStateChange) => void) {
     listenForOtherWindowWrites();
-    window.addEventListener(STATE_CHANGE_EVENT, callback);
-    return () => window.removeEventListener(STATE_CHANGE_EVENT, callback);
+    const listener = (event?: Event) =>
+      callback({
+        local:
+          (event as CustomEvent<LocalStateChange> | undefined)?.detail
+            ?.local === true,
+      });
+    window.addEventListener(STATE_CHANGE_EVENT, listener);
+    return () => window.removeEventListener(STATE_CHANGE_EVENT, listener);
   },
   snapshot: readState,
   syncPullRequests(
@@ -2390,6 +2422,13 @@ export const localStore = {
     updateState((state) =>
       applySaveTimer(state, timerId, { createId, now: Date.now }),
     );
+  },
+  /**
+   * Remembers that Ajour asked to commit the week of `weekOf`, so it never asks
+   * again. Undo leaves it. See `domain/time/week-target-prompt.ts`.
+   */
+  markCommitPrompted(weekOf: string) {
+    updateState((state) => applyMarkCommitPrompted(state, weekOf));
   },
   /**
    * Commits the changes of `entryIds`. See `markTimesheetEntriesCommitted`.

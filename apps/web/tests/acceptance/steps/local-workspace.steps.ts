@@ -1678,14 +1678,12 @@ Then(
 );
 
 Then("the week can be committed", async ({ page }) => {
-  await page.getByRole("button", { name: "Show day and week totals" }).click();
   const commitWeek = page
-    .getByLabel("Current time totals")
-    .getByRole("button", { name: "Commit", exact: true });
+    .getByRole("navigation", { name: "Primary navigation" })
+    .getByRole("button", { name: "Commit week", exact: true });
 
   await expect(commitWeek).toBeVisible();
   await expect(commitWeek).toBeEnabled();
-  await page.keyboard.press("Escape");
 });
 
 Then(
@@ -2113,60 +2111,50 @@ Given("I have a week of saved entries", async ({ page }) => {
 });
 
 When(
-  "I open the Commit page from the Week totals dropdown",
+  "I open the Commit page from the sidebar on the Week view",
   async ({ page }) => {
     await page.goto("/time/2026-10-05?view=week");
     await expect(page.locator(".time-page-stack")).toBeVisible({
       timeout: 15_000,
     });
-    await expect(page.getByRole("button", { name: "Commit", exact: true })).toHaveCount(
-      0,
-    );
     await page
-      .getByRole("button", { name: "Show day and week totals" })
+      .getByRole("button", { name: "Commit week", exact: true })
       .click();
-    await expect(page.getByLabel("Current time totals")).toContainText("5:00");
-    await page
-      .getByLabel("Current time totals")
-      .getByRole("button", { name: "Commit", exact: true })
-      .click();
-    await expect(page).toHaveURL(/\/time\/2026-10-05\/commit/);
+    await expect(page).toHaveURL(/\/time\/2026-10-05\/commit\?view=week/);
   },
 );
 
-When(
-  "I open the Commit page from the narrow totals dropdown",
-  async ({ page }) => {
-    await page.setViewportSize({ width: 420, height: 860 });
-    await page.goto("/time/2026-10-05");
-    await expect(page.locator(".time-page-stack")).toBeVisible({
-      timeout: 15_000,
-    });
-    await expect(page.getByRole("button", { name: "Commit", exact: true })).toHaveCount(
-      0,
-    );
-    await page
-      .getByRole("button", { name: "Show day and week totals" })
-      .click();
-    await page.getByRole("button", { name: "Commit", exact: true }).click();
-    await expect(page).toHaveURL(/\/time\/2026-10-05\/commit/);
-  },
-);
-
-When("I open the Commit page from Settings totals", async ({ page }) => {
+When("I open the Commit page from the narrow bottom row", async ({ page }) => {
+  await page.setViewportSize({ width: 420, height: 860 });
   await page.goto("/time/2026-10-05");
   await expect(page.locator(".time-page-stack")).toBeVisible({
     timeout: 15_000,
   });
-  // The development router launcher covers the sidebar footer's pointer target.
-  await page.getByRole("link", { name: "Settings", exact: true }).focus();
-  await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/settings\/general$/);
-  await page.getByRole("button", { name: "Show day and week totals" }).click();
-  await expect(page.getByLabel("Current time totals")).toContainText("5:00");
-  await page.getByRole("button", { name: "Commit", exact: true }).click();
+  const commitWeek = page
+    .getByRole("navigation", { name: "Primary navigation" })
+    .getByRole("button", { name: "Commit week", exact: true });
+  // An action, not a section: it never shows as the current page.
+  await expect(commitWeek).not.toHaveAttribute("aria-current", /.*/);
+  await commitWeek.click();
   await expect(page).toHaveURL(/\/time\/2026-10-05\/commit/);
 });
+
+When(
+  "I open the Commit page from the sidebar on the Backlog",
+  async ({ page }) => {
+    await page.goto("/time/2026-10-05");
+    await expect(page.locator(".time-page-stack")).toBeVisible({
+      timeout: 15_000,
+    });
+    await viewSwitcher(page).press("Enter");
+    await page.getByRole("menuitem", { name: /^Backlog/ }).press("Enter");
+    await expect(page).toHaveURL(/\/backlog$/);
+    await page
+      .getByRole("button", { name: "Commit week", exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/time\/2026-10-05\/commit/);
+  },
+);
 
 When(
   "I open the Commit page with {string} hours in an open entry",
@@ -2177,11 +2165,7 @@ When(
       .fill("Unsaved submission note");
     await page.getByRole("textbox", { name: "Hours", exact: true }).fill(hours);
     await page
-      .getByRole("button", { name: "Show day and week totals" })
-      .click();
-    await page
-      .getByLabel("Current time totals")
-      .getByRole("button", { name: "Commit", exact: true })
+      .getByRole("button", { name: "Commit week", exact: true })
       .click();
   },
 );
@@ -2320,7 +2304,7 @@ Then("the Commit page merges Monday's task entries", async ({ page }) => {
   const monday = page.getByRole("region", { name: "Monday, Oct 5" });
   await expect(monday.getByRole("listitem")).toHaveCount(2);
   await expect(
-    monday.getByRole("button", { name: "Copy hours: 3.00" }),
+    monday.getByRole("button", { name: "Copy hours: 3,00" }),
   ).toHaveText("3:00");
 });
 
@@ -2332,7 +2316,7 @@ Then(
     const readClipboard = () =>
       page.evaluate(() => navigator.clipboard.readText());
 
-    await monday.getByRole("button", { name: "Copy hours: 3.00" }).click();
+    await monday.getByRole("button", { name: "Copy hours: 3,00" }).click();
     await expect.poll(readClipboard).toBe("3,00");
     await monday
       .getByRole("button", { name: "Copy comments: Login form | API" })

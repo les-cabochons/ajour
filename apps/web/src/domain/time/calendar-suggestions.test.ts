@@ -59,6 +59,7 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
     timers: [],
     timesheetEntries: [],
     timesheetImportDrafts: [],
+    commitPromptedWeeks: [],
     timesheetTombstones: [],
     lockedWeeks: [],
     workItems: [

@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import {
   RiArrowLeftLine as ArrowLeft,
+  RiCalendarCheckLine as CommitIcon,
   RiListCheck3 as ListTodo,
   RiSettings3Line as Settings,
   RiTimerLine as Timer,
@@ -12,6 +13,7 @@ import {
   getNarrowBackLink,
   isNarrowSettingsSection,
 } from "@/features/layout/narrow-navigation";
+import { useOpenCommitPage } from "@/features/time/use-open-commit-page";
 import { cn } from "@/lib/utils";
 
 const sections = [
@@ -42,7 +44,9 @@ const sections = [
 /**
  * The narrow view's primary navigation: a segmented toggle for Time, Backlog
  * and Settings that floats at the bottom left. The active section shows its
- * label, the others only their icon.
+ * label, the others only their icon. After a hairline, Commit week opens the
+ * Commit page for the week on screen. It is an action, not a section, so it is
+ * never active.
  */
 export function NarrowSectionSwitcher({
   pathname,
@@ -51,6 +55,7 @@ export function NarrowSectionSwitcher({
   pathname: string;
   selectedTimeDate: string;
 }) {
+  const openCommitPage = useOpenCommitPage(selectedTimeDate);
   return (
     <nav className="ajour-narrow-switcher" aria-label="Primary navigation">
       {sections.map((section) => {
@@ -87,6 +92,16 @@ export function NarrowSectionSwitcher({
           </TooltipButton>
         );
       })}
+      <span className="ajour-narrow-switcher-divider" aria-hidden="true" />
+      <TooltipButton
+        label="Commit"
+        aria-label="Commit week"
+        side="top"
+        className="ajour-narrow-switcher-item"
+        onClick={() => openCommitPage()}
+      >
+        <CommitIcon />
+      </TooltipButton>
     </nav>
   );
 }

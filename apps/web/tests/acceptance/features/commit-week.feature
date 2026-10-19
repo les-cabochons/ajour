@@ -58,3 +58,46 @@ Feature: Commit the week
     Then the clipboard holds "CA004 Tech & Design Development"
     When I open the Commit page for the week of 2026-10-05
     Then Monday's "Development" line shows "CA004 Tech & Design / Development"
+
+  Scenario: Open the Commit page from the sidebar
+    Given I have a committed week of entries
+    When I open Monday's Day list
+    And I press "Commit week"
+    Then the Commit page says everything is committed
+
+  Scenario: Open the Commit page from the top bar while the sidebar is hidden
+    Given I have a committed week of entries
+    When I open Monday's Day list
+    And I hide the app sidebar with its button
+    And I press Commit week in the top bar
+    Then the Commit page says everything is committed
+
+  Scenario: The totals show the day total and no Commit button
+    Given I have a committed week of entries
+    When I open Monday's Day list
+    Then the titlebar totals read "3:00"
+    And the totals popover has no Commit button
+    When I open today's Day list
+    Then the titlebar totals read "Today 0:00"
+
+  Scenario: Ask to commit once the week reaches its target
+    Given I have a committed week of entries
+    And my weekly target is 5 hours, all on Monday
+    When I duplicate Tuesday's "Spec review" entry
+    Then Ajour asks "Week complete": "You logged 5:00 of 5:00 for the week of Oct 5 to 11. Commit and lock it now?"
+    When I answer "Commit"
+    Then the Commit page for the week of 2026-10-05 is open
+    When I delete Monday's "Login form" entry
+    And I undo with the toast button
+    Then Monday's "Login form" entry is back
+    And Ajour does not ask again
+
+  Scenario: Commit from the question saves the entry draft open in the side panel
+    Given I have a committed week of entries
+    And my weekly target is 5 hours, all on Monday
+    And an entry has run for 5 hours today
+    When I change the note of Monday's "API" entry to "API draft" without saving
+    And I stop the running entry from the sidebar
+    And I answer "Commit"
+    Then the Commit page for the current week is open
+    And Monday's "API" entry has the note "API draft"

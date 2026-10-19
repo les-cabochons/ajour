@@ -670,6 +670,11 @@ export interface LocalAppState {
   /** Submitted weeks, in week order. See `LocalLockedWeek`. */
   lockedWeeks: LocalLockedWeek[];
   timesheetImportDrafts: LocalTimesheetImportDraft[];
+  /**
+   * The Mondays of the weeks Ajour already asked to commit when they reached
+   * their target. See `domain/time/week-target-prompt.ts`. Undo leaves it.
+   */
+  commitPromptedWeeks: string[];
   workItems: LocalWorkItem[];
   pullRequests?: LocalPullRequest[];
   /** Decisions about calendar event occurrences. See ADR 0005. */

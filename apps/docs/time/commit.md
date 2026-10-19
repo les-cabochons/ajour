@@ -6,7 +6,9 @@ Committing copies your week's changes into your company's timesheet tool, such a
 
 ## Open the page
 
-Click the totals at the top right, such as `Today 3:47`, and press **Commit**. This works on every page and at every window size.
+Click the **Commit** button, a calendar with a check mark, at the bottom right of the sidebar. While the sidebar is hidden on a Time page, it sits at the left of the title bar. In a [narrow window](/app/narrow-windows), it sits at the end of the toggle at the bottom left. It opens the Commit page for the week on screen: the week of the day you are on, or the last day you picked on the Time page.
+
+When your saved time reaches the week's target, Ajour asks **Week complete**, such as "You logged 37:30 of 37:30 for the week of Oct 12 to 18. Commit and lock it now?". Press **Commit** to open the Commit page, or **Later** to close the question. Ajour asks once per week, whatever you answer. A running entry counts once you stop it. The target is the sum of your **Time capacity** in [Settings](/app/settings), and a week with no capacity never asks. A [submitted week](#submit-the-week) never asks either.
 
 ## Review the week
 

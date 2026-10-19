@@ -5,20 +5,14 @@ import {
   RiSideBarLine as SidebarIcon,
 } from "@remixicon/react";
 import { BrandLogo } from "@/components/brand-logo";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import {
-  ShortcutTooltipLabel,
-  TooltipButton,
-} from "@/components/tooltip-button";
+import { TooltipButton } from "@/components/tooltip-button";
 import { selectSidebarBacklogItems } from "@/domain/backlog/backlog-item-lifecycle";
 import { createSidebarMatcher } from "@/domain/backlog/sidebar-filter";
 import { isPullRequestReturned } from "@/domain/pull-requests/pull-request-lifecycle";
@@ -42,6 +36,7 @@ import {
   TimerDock,
   TodayTotal,
 } from "@/features/layout/timer-dock";
+import { CommitWeekButton } from "@/features/time/commit-week-button";
 import type { AppSidebarState } from "@/lib/app-sidebar";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
@@ -165,7 +160,8 @@ export function SidebarToggleButton({
  * The app sidebar on desktop widths, from the top: the sidebar toggle and the
  * logo beside the macOS traffic lights (in the corner elsewhere), the view
  * switcher with Search, the project filter and New entry, the
- * timer dock, then the work list, narrowed by the search and the filter. Search
+ * timer dock, the work list, narrowed by the search and the filter, then a foot
+ * row with Settings and Commit week, icons only. Search
  * expands into a search box in place of the switcher. It shows beside the
  * page. `useAppSidebar` owns whether it shows.
  */
@@ -281,34 +277,28 @@ export function AppNavigationSidebar({
         </SidebarBacklogList>
       </SidebarContent>
 
-      <SidebarFooter>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              className="ajour-app-sidebar-button"
-              tooltip={{
-                children: (
-                  <ShortcutTooltipLabel
-                    label="Settings"
-                    shortcut="app.settings"
-                  />
-                ),
-              }}
-              render={
-                <Link
-                  // The sidebar is wide-only, where /settings only redirects.
-                  to="/settings/general"
-                  aria-label="Settings"
-                  aria-current={isSettingsActive ? "page" : undefined}
-                />
-              }
-              isActive={isSettingsActive}
-            >
-              <Settings />
-              <span>Settings</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+      {/* One row: Settings at the left, Commit week at the right. */}
+      <SidebarFooter className="flex-row items-center justify-between">
+        <TooltipButton
+          label="Settings"
+          shortcut="app.settings"
+          side="top"
+          render={
+            <Link
+              // The sidebar is wide-only, where /settings only redirects.
+              to="/settings/general"
+              aria-current={isSettingsActive ? "page" : undefined}
+              data-active={isSettingsActive}
+              className={cn(
+                buttonVariants({ variant: "ghost", size: "icon" }),
+                "ajour-app-sidebar-toggle",
+              )}
+            />
+          }
+        >
+          <Settings />
+        </TooltipButton>
+        <CommitWeekButton selectedTimeDate={selectedTimeDate} side="top" />
       </SidebarFooter>
       <SidebarResizeHandle onStateChange={onStateChange} />
     </Sidebar>
