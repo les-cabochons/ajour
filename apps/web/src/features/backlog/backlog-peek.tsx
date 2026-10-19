@@ -6,13 +6,13 @@ import {
   RiPlayLine,
   RiStopLine,
 } from "@remixicon/react";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { TooltipButton } from "@/components/tooltip-button";
-import { Markdown } from "@/components/markdown";
 import { SectionHeading } from "@/components/section-heading";
 import { Figure, FigureRow, Value } from "@/components/ui/value";
+import { splitDescription } from "@/domain/backlog/description-frontmatter";
 import { getDirectChildWorkItems } from "@/domain/backlog/work-item-hierarchy";
 import {
   getLocalProjectDisplayName,
@@ -22,6 +22,7 @@ import {
 import type { BacklogItemActionId } from "@/domain/actions/object-actions";
 import { getBacklogSurfaceActions } from "@/features/backlog/backlog-item-surface";
 import { BacklogItemProperties } from "@/features/backlog/backlog-item-properties";
+import { DescriptionText } from "@/features/backlog/description-links";
 import {
   ESTIMATE_FIGURES,
   formatHours,
@@ -70,7 +71,7 @@ export function BacklogPeek({
         e.key === "Escape" &&
         !e.defaultPrevented &&
         !document.querySelector(
-          '[data-slot="dropdown-menu-content"], [data-slot="popover-content"], [role="dialog"]',
+          '[data-slot="dropdown-menu-content"], [data-slot="popover-content"], [role="dialog"], [role="alertdialog"]',
         )
       ) {
         e.preventDefault();
@@ -81,6 +82,11 @@ export function BacklogPeek({
     return () => window.removeEventListener("keydown", close);
   }, [onClose]);
   const iconData = useWorkItemIconData(state.projects);
+  // The properties show the frontmatter, so the description shows the rest.
+  const descriptionBody = useMemo(
+    () => (item.description ? splitDescription(item.description).body : ""),
+    [item.description],
+  );
   const project = state.projects.find((p) => p._id === item.projectId);
   const actions = getBacklogSurfaceActions(item, state, now);
   const startAction = actions.find((action) => action.id === "start-entry");
@@ -208,10 +214,10 @@ export function BacklogPeek({
       <section aria-label="Properties">
         <BacklogItemProperties item={item} state={state} />
       </section>
-      {item.description ? (
+      {descriptionBody ? (
         <section>
           <SectionHeading>Description</SectionHeading>
-          <Markdown>{item.description}</Markdown>
+          <DescriptionText body={descriptionBody} />
         </section>
       ) : null}
       {children.length > 0 ? (

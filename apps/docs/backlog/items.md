@@ -27,6 +27,31 @@ Changes on the page save when you press <kbd>Enter</kbd> or leave the field, wit
 
 Set the item's **Project** and **Task** so the time you log on it lands on the right task. Synced items cannot know your tasks, so map them once after they arrive. Starting an item with no task starts an entry with no task, which the Commit page then flags.
 
+## Frontmatter
+
+A description can start with a block of fields between two `---` lines. Ajour reads it and shows its fields in the item's properties instead of the description; **Edit** shows the block.
+
+```md
+---
+Teamwork: https://acme.teamwork.com/app/tasks/123
+Links:
+  - https://figma.com/file/hero
+timelog:
+  project: Acme website
+  task: Development
+---
+
+The description text.
+```
+
+- **Fields** such as `Teamwork` show in the properties, after the item's own. A list, or a field with fields under it, is a section that starts closed; click its name to open it. Ajour remembers the sections you open, on every item.
+- **`timelog`** sets the item's **Project** and **Task** when you save it, or when a synced item arrives with one. The project is matched by name, display name or code. A task the project lacks is created, and an archived one is restored, except in a shared project: your team would get the task too, so Ajour leaves it to you. If you pick another project or task afterwards, Ajour keeps your pick.
+- While the item's project or task differs from its timelog, an icon follows **Project**. A warning icon means the project or task doesn't exist or is archived: click it to create or restore it, and Ajour sets it on the item. A back arrow means you picked something else: click it to go back to the timelog's project and task.
+
+Web links in a description, in its text or its fields, show their full address and ask before they open. Check **Don't ask again** to open them at once, and turn the question back on in **Settings › Backlog › Descriptions**.
+
+This works in synced descriptions too, so you can map items in the source tool once.
+
 ## Estimates
 
 | Estimate      | Meaning                                    |

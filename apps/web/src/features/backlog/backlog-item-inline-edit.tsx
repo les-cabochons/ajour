@@ -1,5 +1,4 @@
-import { useRef, useState } from "react";
-import { Markdown } from "@/components/markdown";
+import { useMemo, useRef, useState } from "react";
 import {
   MarkdownEditor,
   preloadMarkdownEditor,
@@ -7,12 +6,14 @@ import {
 import { SectionHeading } from "@/components/section-heading";
 import { Input } from "@/components/ui/input";
 import { Figure } from "@/components/ui/value";
+import { splitDescription } from "@/domain/backlog/description-frontmatter";
 import type {
   LocalWorkItem,
   LocalWorkItemEstimateFieldKey,
 } from "@/domain/local-state";
 import { formatHours } from "@/features/backlog/backlog-estimates";
 import { patchBacklogItemWithUndo } from "@/features/backlog/backlog-item-surface";
+import { DescriptionText } from "@/features/backlog/description-links";
 import {
   buildBacklogTaskDraft,
   createBacklogTaskEditorSeed,
@@ -206,7 +207,8 @@ export function EstimateFigure({
 
 /**
  * The description section. The rendered markdown has a subtle Edit beside its
- * heading that swaps it for the Markdown editor.
+ * heading that swaps it for the Markdown editor. The rendered text leaves out
+ * the frontmatter, which the properties card shows and the editor keeps.
  */
 export function DescriptionSection({
   item,
@@ -217,6 +219,10 @@ export function DescriptionSection({
 }) {
   const [editing, setEditing] = useState(false);
   const closer = useCloseOnce(() => setEditing(false));
+  const body = useMemo(
+    () => (item.description ? splitDescription(item.description).body : ""),
+    [item.description],
+  );
 
   const save = (value: string) => {
     const description = value.trim() || undefined;
@@ -257,8 +263,8 @@ export function DescriptionSection({
           onSubmit={(value) => closer.close(() => save(value))}
           onCancel={() => closer.close()}
         />
-      ) : item.description ? (
-        <Markdown>{item.description}</Markdown>
+      ) : body ? (
+        <DescriptionText body={body} />
       ) : (
         <p className="text-sm text-muted-foreground">No description.</p>
       )}

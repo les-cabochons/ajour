@@ -13,12 +13,14 @@ const mocks = vi.hoisted(() => ({
   choose: vi.fn(),
   error: vi.fn(),
   offerUndo: vi.fn(),
+  update: vi.fn(),
 }));
 vi.mock("@/lib/local-store", () => ({
   localStore: {
     snapshot: mocks.snapshot,
     moveWorkItemToState: mocks.move,
     changeWorkItemSourceState: mocks.change,
+    updateWorkItem: mocks.update,
   },
 }));
 vi.mock("@/lib/app-api", () => ({ listBacklogSettleStates: mocks.states }));
@@ -79,6 +81,25 @@ it("loads the actual item's workflow before choosing a default move write", asyn
     sourceWrites: { a: "In QA" },
   });
   expect(mocks.choose).not.toHaveBeenCalled();
+});
+
+it("saves an editor's other fields with its move, in the store's one call", async () => {
+  mocks.move.mockReturnValue("move-token");
+
+  await moveBacklogItemWithUndo(item, "review", {
+    patch: { description: "New text" },
+  });
+
+  expect(mocks.move).toHaveBeenCalledWith("a", "review", {
+    includeSubitems: false,
+    sourceWrites: { a: "In QA" },
+    edits: { description: "New text" },
+  });
+  expect(mocks.update).not.toHaveBeenCalled();
+  expect(mocks.offerUndo).toHaveBeenCalledWith(
+    "move-token",
+    expect.objectContaining({ title: "Moved to Review" }),
+  );
 });
 
 it("cancels the move when source state discovery fails", async () => {

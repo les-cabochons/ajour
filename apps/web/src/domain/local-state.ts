@@ -357,6 +357,8 @@ export interface UserPreferences {
   warnWhenSubmittingUnderCapacity: boolean;
   changesEndSnoozeEarly?: boolean;
   closeParentSubitems: CloseParentSubitems;
+  /** Ask before a link in a description or its frontmatter opens. Default true. */
+  askBeforeOpeningDescriptionLinks?: boolean;
   /** How far the week may run ahead of or behind its targets before an agent asks. Default 20. */
   paceTolerancePercent?: number;
   /**
@@ -750,6 +752,13 @@ export function hasWorkItemEstimateSyncIssue(workItem: LocalWorkItem) {
     const fieldState = getWorkItemEstimateFieldState(workItem, fieldKey);
     return Boolean(fieldState?.conflict || fieldState?.error);
   });
+}
+
+/** Whether a description link asks before it opens. On unless turned off. */
+export function asksBeforeOpeningDescriptionLinks(
+  preferences: Pick<UserPreferences, "askBeforeOpeningDescriptionLinks">,
+) {
+  return preferences.askBeforeOpeningDescriptionLinks !== false;
 }
 
 export function getLocalProjectDisplayName(

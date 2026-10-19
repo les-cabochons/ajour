@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ProjectPropertyField } from "@ajour/shared";
 import {
   RiArchiveLine as ArchiveIcon,
-  RiArrowRightSLine as ChevronIcon,
   RiDownloadLine as Download,
   RiInboxUnarchiveLine as RestoreIcon,
 } from "@remixicon/react";
@@ -11,6 +10,7 @@ import {
   PropertyActions,
   PropertyList,
   PropertyRow,
+  PropertySection,
 } from "@/components/property-list";
 import { Button } from "@/components/ui/button";
 import { ColorField } from "@/components/ui/color-field";
@@ -262,42 +262,30 @@ function PluginPropertySection({
   readOnly: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const contentId = `${project._id}-${plugin.pluginId}-properties`;
   return (
-    <div className="flex flex-col gap-2.5 border-t pt-3">
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={contentId}
-        className="flex items-center gap-1 text-left text-xs font-medium text-muted-foreground hover:text-foreground"
-        onClick={() => setOpen(!open)}
-      >
-        <ChevronIcon
-          aria-hidden="true"
-          className={cn("size-4", open && "rotate-90")}
-        />
-        {plugin.capability.section}
-      </button>
-      {open ? (
-        <PropertyList id={contentId}>
-          {resolvePluginProperties(project, plugin).map((property) => (
-            <PropertyRow key={property.field.id} label={property.field.label}>
-              <InlineText
-                value={property.isDefault ? "" : property.value}
-                defaultValue={property.defaultValue}
-                label={property.field.label}
-                placeholder="None"
-                readOnly={readOnly}
-                maxLength={PLUGIN_PROPERTY_MAX_LENGTH}
-                onSave={(value) =>
-                  patchPluginProperty(project, plugin, property.field, value)
-                }
-              />
-            </PropertyRow>
-          ))}
-        </PropertyList>
-      ) : null}
-    </div>
+    <PropertySection
+      title={plugin.capability.section}
+      open={open}
+      onOpenChange={setOpen}
+    >
+      <PropertyList>
+        {resolvePluginProperties(project, plugin).map((property) => (
+          <PropertyRow key={property.field.id} label={property.field.label}>
+            <InlineText
+              value={property.isDefault ? "" : property.value}
+              defaultValue={property.defaultValue}
+              label={property.field.label}
+              placeholder="None"
+              readOnly={readOnly}
+              maxLength={PLUGIN_PROPERTY_MAX_LENGTH}
+              onSave={(value) =>
+                patchPluginProperty(project, plugin, property.field, value)
+              }
+            />
+          </PropertyRow>
+        ))}
+      </PropertyList>
+    </PropertySection>
   );
 }
 

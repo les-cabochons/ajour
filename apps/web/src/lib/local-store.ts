@@ -63,6 +63,10 @@ import {
   normalizeSettleRules,
 } from "@/domain/backlog/settle-rules";
 import {
+  applyDescriptionTimelogs,
+  applyItemTimelog,
+} from "@/domain/backlog/description-timelog";
+import {
   acceptRemoteEstimateValue as applyAcceptRemoteEstimateValue,
   addWorkItem as applyAddWorkItem,
   deleteWorkItem as applyDeleteWorkItem,
@@ -1229,6 +1233,49 @@ function updateStateWithUndo(
   return token;
 }
 
+/**
+ * Sets the project and task of each backlog item whose description timelog
+ * the write changed. See domain/backlog/description-timelog.ts.
+ */
+function withDescriptionTimelogs(
+  previous: LocalAppState,
+  next: LocalAppState,
+  mappedIds?: ReadonlySet<string>,
+) {
+  return applyDescriptionTimelogs(
+    previous.workItems,
+    next,
+    { createId, now: Date.now },
+    mappedIds,
+  );
+}
+
+/**
+ * Updates a backlog item, then applies its description's timelog if the
+ * patch changed it, unless the patch sets the project or task itself.
+ */
+function updateWorkItemState(
+  state: LocalAppState,
+  workItemId: string,
+  patch: Parameters<typeof applyUpdateWorkItem>[2],
+) {
+  return withDescriptionTimelogs(
+    state,
+    applyUpdateWorkItem(state, workItemId, patch),
+    getMappedIds(workItemId, patch),
+  );
+}
+
+/** The item, when the patch sets its project or task itself. */
+function getMappedIds(
+  workItemId: string,
+  patch: Parameters<typeof applyUpdateWorkItem>[2],
+) {
+  return "projectId" in patch || "taskId" in patch
+    ? new Set([workItemId])
+    : undefined;
+}
+
 /** How long a team sync in another window waits for an open Undo, at most. */
 const TEAM_PUSH_HOLD_MS = 60_000;
 
@@ -1915,12 +1962,13 @@ export const localStore = {
     );
   },
   addWorkItem(workItem: LocalWorkItemDraft) {
-    return updateStateWithResult((state) =>
-      applyAddWorkItem(state, workItem, {
+    return updateStateWithResult((state) => {
+      const added = applyAddWorkItem(state, workItem, {
         createId,
         now: Date.now,
-      }),
-    );
+      });
+      return { ...added, state: withDescriptionTimelogs(state, added.state) };
+    });
   },
   addSubtask(
     parentWorkItemId: string,
@@ -1938,8 +1986,8 @@ export const localStore = {
       archiveMissingFromConnectionId?: string;
     },
   ) {
-    return updateStateWithResult((state) =>
-      applySyncedWorkItemImport(
+    return updateStateWithResult((state) => {
+      const imported = applySyncedWorkItemImport(
         applyWorkflowStateLifecycle(
           state,
           autoMapSourceStates(
@@ -1966,8 +2014,13 @@ export const localStore = {
           createId,
           now: Date.now,
         },
-      ),
-    );
+      );
+      // A new item whose description has a timelog arrives mapped.
+      return {
+        ...imported,
+        state: withDescriptionTimelogs(state, imported.state),
+      };
+    });
   },
   /** Archives the synced items a sync reports in a done category. */
   archiveDoneSyncedWorkItems(doneItems: BacklogDoneWorkItem[]) {
@@ -2073,17 +2126,75 @@ export const localStore = {
     workItemId: string,
     patch: Partial<Omit<LocalWorkItem, "_id" | "createdAt" | "source">>,
   ) {
-    updateState((state) => applyUpdateWorkItem(state, workItemId, patch));
+    updateState((state) => updateWorkItemState(state, workItemId, patch));
   },
+  /**
+   * Updates a backlog item. A description whose timelog changed also sets the
+   * item's project and task, in the same Undo. Returns an undo token, or null
+   * when nothing changed.
+   */
   updateWorkItemWithUndo(
     workItemId: string,
     patch: Parameters<typeof applyUpdateWorkItem>[2],
     orderedIds?: string[],
   ) {
     return updateStateWithUndo((state) => {
-      const updated = applyUpdateWorkItem(state, workItemId, patch);
+      const updated = updateWorkItemState(state, workItemId, patch);
       return orderedIds ? applyReorderWorkItems(updated, orderedIds) : updated;
     });
+  },
+  /**
+   * Saves the backlog editor's changes, which have no Undo. What the
+   * description's timelog then sets or creates gets its own Undo, which keeps
+   * the saved text; the token is null when the timelog changed nothing.
+   */
+  saveWorkItemEdits(
+    workItemId: string,
+    patch: Parameters<typeof applyUpdateWorkItem>[2],
+  ): string | null {
+    const before = readState();
+    updateState((state) => applyUpdateWorkItem(state, workItemId, patch));
+    return updateStateWithUndo((state) =>
+      withDescriptionTimelogs(before, state, getMappedIds(workItemId, patch)),
+    );
+  },
+  /**
+   * Creates the backlog editor's new item, which has no Undo, then applies
+   * its description's timelog and, for an item made in a done state, closes
+   * it, under one Undo. Undo leaves the item and its description, and takes
+   * back what the timelog set and created and the close. The token is null
+   * when neither happened.
+   */
+  saveNewWorkItem(draft: LocalWorkItemDraft, closeIn?: string) {
+    const factories = { createId, now: Date.now };
+    const current = readState();
+    const added = applyAddWorkItem(current, draft, factories);
+    writeState(added.state);
+    const workItemId = added.result;
+    const undoToken = updateStateWithUndo((state) => {
+      // Compared with the state before the item existed, so it reads as new.
+      const mapped = withDescriptionTimelogs(current, state);
+      return closeIn
+        ? applyMoveBacklogItemToState(mapped, workItemId, closeIn, factories, {
+            includeSubitems: false,
+            sourceWrites: {},
+          })
+        : mapped;
+    });
+    return { workItemId, undoToken };
+  },
+  /**
+   * Sets the item's project and task from its description's timelog, creating
+   * or restoring the project and the task it needs, in a shared project too.
+   * Returns an undo token, or null when nothing changed.
+   */
+  applyTimelogWithUndo(workItemId: string) {
+    return updateStateWithUndo((state) =>
+      applyItemTimelog(state, workItemId, {
+        createId,
+        now: Date.now,
+      }),
+    );
   },
   /** Restores an archived backlog item, with the subitems its settle carried. */
   restoreWorkItem(workItemId: string) {
@@ -2111,20 +2222,36 @@ export const localStore = {
   },
   /**
    * Moves a backlog item to a workflow state. A done state closes it and
-   * leaving one reopens it. Returns an undo token, or null when nothing changed.
+   * leaving one reopens it. `edits` are the backlog editor's other changes,
+   * saved first and kept by Undo; what the description's timelog then sets
+   * or creates shares the move's Undo. Returns an undo token, or null when
+   * nothing changed.
    */
   moveWorkItemToState(
     workItemId: string,
     workflowStateId: string | undefined,
-    options?: MoveBacklogItemOptions,
+    options?: MoveBacklogItemOptions & {
+      edits?: Parameters<typeof applyUpdateWorkItem>[2];
+    },
   ) {
+    const { edits, ...moveOptions } = options ?? {};
+    const before = readState();
+    if (edits) {
+      updateState((state) => applyUpdateWorkItem(state, workItemId, edits));
+    }
     return updateStateWithUndo((state) =>
       applyMoveBacklogItemToState(
-        state,
+        edits
+          ? withDescriptionTimelogs(
+              before,
+              state,
+              getMappedIds(workItemId, edits),
+            )
+          : state,
         workItemId,
         workflowStateId,
         { createId, now: Date.now },
-        options,
+        moveOptions,
       ),
     );
   },

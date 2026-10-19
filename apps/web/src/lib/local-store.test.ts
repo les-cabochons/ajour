@@ -3772,3 +3772,198 @@ describe("submitted weeks in the store", () => {
     ]);
   });
 });
+
+describe("localStore description timelog", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubGlobal("crypto", {
+      randomUUID: vi.fn(() => `uuid-${Math.random().toString(16).slice(2)}`),
+    });
+    installMockWindow();
+  });
+
+  const description = [
+    "---",
+    "timelog:",
+    "  project: Acme",
+    "  task: Development",
+    "---",
+    "Build the page.",
+  ].join("\n");
+
+  it("maps the item and creates its task in the description's Undo", async () => {
+    const { localStore } = await import("./local-store");
+    const projectId = localStore.addProject({ name: "Acme", color: "#111111" });
+    const itemId = localStore.addWorkItem({ title: "Landing page" });
+    const before = localStore.snapshot();
+
+    const token = localStore.updateWorkItemWithUndo(itemId, { description });
+
+    const project = localStore
+      .snapshot()
+      .projects.find((candidate) => candidate._id === projectId)!;
+    const created = project.tasks.find((task) => task.name === "Development");
+    expect(created?.status).toBe("active");
+    expect(localStore.snapshot().workItems[0]).toMatchObject({
+      projectId,
+      taskId: created?._id,
+      description,
+    });
+
+    expect(localStore.undo(token!)).toBe("restored");
+    expect(localStore.snapshot().projects).toEqual(before.projects);
+    expect(localStore.snapshot().workItems).toEqual(before.workItems);
+  });
+
+  it("keeps a project the same update sets, even the one the item had", async () => {
+    const { localStore } = await import("./local-store");
+    localStore.addProject({ name: "Acme", color: "#111111" });
+    const otherId = localStore.addProject({ name: "Other", color: "#222222" });
+    const itemId = localStore.addWorkItem({
+      title: "Landing page",
+      projectId: otherId,
+    });
+
+    localStore.updateWorkItemWithUndo(itemId, {
+      projectId: otherId,
+      description,
+    });
+
+    expect(localStore.snapshot().workItems[0]?.projectId).toBe(otherId);
+  });
+
+  it("offers Undo for an editor save only when its timelog changed the mapping", async () => {
+    const { localStore } = await import("./local-store");
+    const projectId = localStore.addProject({ name: "Acme", color: "#111111" });
+    const itemId = localStore.addWorkItem({ title: "Landing page" });
+
+    expect(localStore.saveWorkItemEdits(itemId, { title: "Hero" })).toBeNull();
+    expect(localStore.snapshot().workItems[0]?.title).toBe("Hero");
+
+    const before = localStore.snapshot();
+    const token = localStore.saveWorkItemEdits(itemId, { description });
+    expect(token).not.toBeNull();
+    expect(localStore.snapshot().workItems[0]?.projectId).toBe(projectId);
+
+    // Undo takes back what the timelog did and keeps the saved text.
+    expect(localStore.undo(token!)).toBe("restored");
+    expect(localStore.snapshot().projects).toEqual(before.projects);
+    expect(localStore.snapshot().workItems[0]).toMatchObject({
+      title: "Hero",
+      description,
+    });
+    expect(localStore.snapshot().workItems[0]?.projectId).toBeUndefined();
+  });
+
+  it("undoes a move with what its editor save's timelog did, and keeps the save", async () => {
+    const { localStore } = await import("./local-store");
+    localStore.addProject({ name: "Acme", color: "#111111" });
+    const itemId = localStore.addWorkItem({ title: "Landing page" });
+    const before = localStore.snapshot();
+    const doneId = before.workflowStates.find((state) => state.done)!._id;
+
+    const token = localStore.moveWorkItemToState(itemId, doneId, {
+      edits: { title: "Hero", description },
+    });
+    expect(localStore.snapshot().workItems[0]).toMatchObject({
+      status: "archived",
+      title: "Hero",
+    });
+    expect(localStore.snapshot().workItems[0]?.projectId).toBeDefined();
+
+    expect(localStore.undo(token!)).toBe("restored");
+    const restored = localStore.snapshot().workItems[0];
+    expect(restored).toMatchObject({
+      status: "active",
+      title: "Hero",
+      description,
+    });
+    expect(restored?.projectId).toBeUndefined();
+    expect(localStore.snapshot().projects).toEqual(before.projects);
+  });
+
+  it("gives a new editor item's timelog its own Undo, which keeps the item", async () => {
+    const { localStore } = await import("./local-store");
+    const projectId = localStore.addProject({ name: "Acme", color: "#111111" });
+    const before = localStore.snapshot();
+
+    expect(localStore.saveNewWorkItem({ title: "Plain" }).undoToken).toBeNull();
+
+    const { workItemId, undoToken } = localStore.saveNewWorkItem({
+      title: "Landing page",
+      description,
+    });
+    const created = localStore
+      .snapshot()
+      .workItems.find((item) => item._id === workItemId);
+    expect(created?.projectId).toBe(projectId);
+    expect(undoToken).not.toBeNull();
+
+    expect(localStore.undo(undoToken!)).toBe("restored");
+    const after = localStore.snapshot();
+    expect(after.projects).toEqual(before.projects);
+    expect(
+      after.workItems.find((item) => item._id === workItemId),
+    ).toMatchObject({ title: "Landing page", description });
+    expect(
+      after.workItems.find((item) => item._id === workItemId)?.projectId,
+    ).toBeUndefined();
+  });
+
+  it("undoes a new editor item's timelog with its close in a done state", async () => {
+    const { localStore } = await import("./local-store");
+    localStore.addProject({ name: "Acme", color: "#111111" });
+    const before = localStore.snapshot();
+    const doneId = before.workflowStates.find((state) => state.done)!._id;
+
+    const { workItemId, undoToken } = localStore.saveNewWorkItem(
+      { title: "Landing page", description },
+      doneId,
+    );
+    expect(
+      localStore.snapshot().workItems.find((item) => item._id === workItemId),
+    ).toMatchObject({ status: "archived", workflowStateId: doneId });
+
+    expect(localStore.undo(undoToken!)).toBe("restored");
+    const restored = localStore
+      .snapshot()
+      .workItems.find((item) => item._id === workItemId);
+    expect(restored).toMatchObject({ status: "active", description });
+    expect(restored?.projectId).toBeUndefined();
+    expect(localStore.snapshot().projects).toEqual(before.projects);
+  });
+
+  it("maps a synced item whose description arrives with a timelog", async () => {
+    const { localStore } = await import("./local-store");
+    const projectId = localStore.addProject({ name: "Acme", color: "#111111" });
+
+    localStore.importSyncedWorkItems([
+      buildImportCandidate({ note: description }),
+    ]);
+
+    expect(localStore.snapshot().workItems[0]?.projectId).toBe(projectId);
+    expect(localStore.snapshot().workItems[0]?.taskId).toBeDefined();
+  });
+
+  it("creates the missing project with Undo", async () => {
+    const { localStore } = await import("./local-store");
+    const itemId = localStore.addWorkItem({
+      title: "Landing page",
+      description,
+    });
+    const before = localStore.snapshot();
+    expect(before.workItems[0]?.projectId).toBeUndefined();
+
+    const token = localStore.applyTimelogWithUndo(itemId);
+
+    const project = localStore.snapshot().projects.at(-1)!;
+    expect(project).toMatchObject({ name: "Acme", status: "active" });
+    expect(localStore.snapshot().workItems[0]).toMatchObject({
+      projectId: project._id,
+      taskId: project.tasks[0]?._id,
+    });
+    expect(localStore.undo(token!)).toBe("restored");
+    expect(localStore.snapshot().projects).toEqual(before.projects);
+    expect(localStore.snapshot().workItems).toEqual(before.workItems);
+  });
+});

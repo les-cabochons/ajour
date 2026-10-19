@@ -69,6 +69,7 @@ import {
   useLocalState,
   useLocalWorkItems,
 } from "@/lib/local-hooks";
+import { offerUndo } from "@/features/feedback/undo-toast";
 import { localStore } from "@/lib/local-store";
 import { cn } from "@/lib/utils";
 import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
@@ -250,25 +251,30 @@ export function BacklogItemEditorForm({
         setShowErrors(true);
         return false;
       case "create": {
-        // A new item created in a done state closes like a moved one.
-        const closes = isDoneWorkflowState(
-          localStore.snapshot().workflowStates,
+        // A new item created in a done state closes like a moved one. A new
+        // manual item has no subitems and no source, so nothing needs asking.
+        const { workflowStates } = localStore.snapshot();
+        const closeIn = isDoneWorkflowState(
+          workflowStates,
           result.draft.workflowStateId,
-        );
-        const createdId = localStore.addWorkItem(
-          closes
+        )
+          ? result.draft.workflowStateId
+          : undefined;
+        const { undoToken } = localStore.saveNewWorkItem(
+          closeIn
             ? { ...result.draft, workflowStateId: undefined }
             : result.draft,
+          closeIn,
         );
-        const created = localStore
-          .snapshot()
-          .workItems.find((item) => item._id === createdId);
-        if (closes && created && result.draft.workflowStateId) {
-          return await moveBacklogItemWithUndo(
-            created,
-            result.draft.workflowStateId,
-          );
-        }
+        const doneName = workflowStates.find(
+          (state) => state._id === closeIn,
+        )?.name;
+        offerUndo(undoToken, {
+          title: doneName
+            ? `Closed in ${doneName}`
+            : "Project and task set from the description",
+          subject: "backlog item",
+        });
         return true;
       }
       case "update":
@@ -287,7 +293,12 @@ export function BacklogItemEditorForm({
               patch,
             });
           }
-          localStore.updateWorkItem(workItem._id, result.patch);
+          // A save has no Undo, unless the description's timelog also set
+          // the project or task.
+          offerUndo(localStore.saveWorkItemEdits(workItem._id, result.patch), {
+            title: "Project and task set from the description",
+            subject: "backlog item",
+          });
         }
         return true;
       case "unchanged":

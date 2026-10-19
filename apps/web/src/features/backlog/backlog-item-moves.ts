@@ -215,7 +215,11 @@ async function resolveSourceWrite(
  */
 export type BacklogMoveResult =
   | { kind: "cancelled" }
-  | { kind: "unchanged" }
+  | {
+      kind: "unchanged";
+      /** Set when the editor's other fields changed the item through its timelog. */
+      undoToken?: string | null;
+    }
   | {
       kind: "moved";
       undoToken: string | null;
@@ -253,8 +257,12 @@ export async function moveBacklogItem(
   );
   if (workflowStateId !== undefined && !destination) return cancelled;
   if (workItem.workflowStateId === workflowStateId) {
-    if (patch) localStore.updateWorkItem(workItem._id, patch);
-    return { kind: "unchanged" };
+    return {
+      kind: "unchanged",
+      undoToken: patch
+        ? localStore.saveWorkItemEdits(workItem._id, patch)
+        : null,
+    };
   }
   const name = destination?.name ?? "No state";
   const stillCurrent = () => {
@@ -340,14 +348,20 @@ export async function moveBacklogItem(
       return cancelled;
   }
   // Save the editor's other fields only after every move prompt succeeds.
-  if (patch) localStore.updateWorkItem(workItem._id, patch);
-  return {
-    kind: "moved",
-    undoToken: localStore.moveWorkItemToState(workItem._id, workflowStateId, {
+  // Undo keeps them, and takes back what their timelog set with the move.
+  const undoToken = localStore.moveWorkItemToState(
+    workItem._id,
+    workflowStateId,
+    {
       includeSubitems,
       sourceWrites,
       orderedIds,
-    }),
+      ...(patch ? { edits: patch } : {}),
+    },
+  );
+  return {
+    kind: "moved",
+    undoToken,
     title: closes
       ? `Closed in ${name}`
       : reopens
@@ -387,7 +401,13 @@ export async function moveBacklogItemWithUndo(
     return false;
   }
   if (result.kind === "cancelled") return false;
-  if (result.kind === "unchanged") return true;
+  if (result.kind === "unchanged") {
+    offerUndo(result.undoToken ?? null, {
+      title: "Project and task set from the description",
+      subject: "backlog item",
+    });
+    return true;
+  }
   const { sourceWriteIds } = result;
   offerUndo(result.undoToken, {
     title: result.title,
