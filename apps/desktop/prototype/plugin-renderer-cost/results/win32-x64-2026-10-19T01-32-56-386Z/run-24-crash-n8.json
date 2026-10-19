@@ -1,0 +1,671 @@
+{
+  "spec": {
+    "sharedPartition": false,
+    "noThrottle": false,
+    "mode": "crash",
+    "plugins": 8
+  },
+  "userDataDir": "C:\\Users\\alext\\AppData\\Local\\Temp\\ajour-spike-renderer-cost-kfbrca",
+  "mainPid": 264924,
+  "knownPids": [
+    264924,
+    291144,
+    26988,
+    271404,
+    284788,
+    276792,
+    290212,
+    290300,
+    290460,
+    274612,
+    280088,
+    291068
+  ],
+  "events": {
+    "app-ready": {
+      "event": "app-ready",
+      "t": 144.9993,
+      "mode": "crash",
+      "plugins": 8,
+      "pid": 264924,
+      "uptimeMs": 129.601,
+      "electron": "41.3.0",
+      "chrome": "146.0.7680.188",
+      "arch": "x64",
+      "runningUnderARM64Translation": false,
+      "userData": "C:\\Users\\alext\\AppData\\Local\\Temp\\ajour-spike-renderer-cost-kfbrca",
+      "rendererProcessLimit": null,
+      "sharedPartition": false,
+      "sameSite": false,
+      "backgroundThrottling": true,
+      "harnessMs": 174.05
+    },
+    "ready": {
+      "event": "ready",
+      "t": 302.4533,
+      "plugins": [
+        {
+          "id": "plugin-1",
+          "pid": 26988,
+          "readyMs": 152.166,
+          "firstAnswerMs": 153.872,
+          "firstCallMs": 1.5662,
+          "selfCheck": {
+            "origin": "ajour-ext://plugin-1",
+            "require": "undefined",
+            "process": "undefined",
+            "bridgeKeys": [
+              "invoke"
+            ]
+          }
+        },
+        {
+          "id": "plugin-2",
+          "pid": 271404,
+          "readyMs": 136.829,
+          "firstAnswerMs": 137.807,
+          "firstCallMs": 0.964,
+          "selfCheck": {
+            "origin": "ajour-ext://plugin-2",
+            "require": "undefined",
+            "process": "undefined",
+            "bridgeKeys": [
+              "invoke"
+            ]
+          }
+        },
+        {
+          "id": "plugin-3",
+          "pid": 284788,
+          "readyMs": 131.668,
+          "firstAnswerMs": 133.673,
+          "firstCallMs": 1.9912,
+          "selfCheck": {
+            "origin": "ajour-ext://plugin-3",
+            "require": "undefined",
+            "process": "undefined",
+            "bridgeKeys": [
+              "invoke"
+            ]
+          }
+        },
+        {
+          "id": "plugin-4",
+          "pid": 276792,
+          "readyMs": 130.107,
+          "firstAnswerMs": 130.954,
+          "firstCallMs": 0.8382,
+          "selfCheck": {
+            "origin": "ajour-ext://plugin-4",
+            "require": "undefined",
+            "process": "undefined",
+            "bridgeKeys": [
+              "invoke"
+            ]
+          }
+        },
+        {
+          "id": "plugin-5",
+          "pid": 290212,
+          "readyMs": 126.751,
+          "firstAnswerMs": 127.584,
+          "firstCallMs": 0.8212,
+          "selfCheck": {
+            "origin": "ajour-ext://plugin-5",
+            "require": "undefined",
+            "process": "undefined",
+            "bridgeKeys": [
+              "invoke"
+            ]
+          }
+        },
+        {
+          "id": "plugin-6",
+          "pid": 290300,
+          "readyMs": 122.386,
+          "firstAnswerMs": 123.232,
+          "firstCallMs": 0.8358,
+          "selfCheck": {
+            "origin": "ajour-ext://plugin-6",
+            "require": "undefined",
+            "process": "undefined",
+            "bridgeKeys": [
+              "invoke"
+            ]
+          }
+        },
+        {
+          "id": "plugin-7",
+          "pid": 290460,
+          "readyMs": 118.402,
+          "firstAnswerMs": 119.085,
+          "firstCallMs": 0.6674,
+          "selfCheck": {
+            "origin": "ajour-ext://plugin-7",
+            "require": "undefined",
+            "process": "undefined",
+            "bridgeKeys": [
+              "invoke"
+            ]
+          }
+        },
+        {
+          "id": "plugin-8",
+          "pid": 274612,
+          "readyMs": 114.895,
+          "firstAnswerMs": 115.468,
+          "firstCallMs": 0.5613,
+          "selfCheck": {
+            "origin": "ajour-ext://plugin-8",
+            "require": "undefined",
+            "process": "undefined",
+            "bridgeKeys": [
+              "invoke"
+            ]
+          }
+        }
+      ],
+      "sharing": {
+        "distinctPids": 8,
+        "plugins": 8,
+        "shared": []
+      },
+      "pids": [
+        264924,
+        291144,
+        26988,
+        271404,
+        284788,
+        276792,
+        290212,
+        290300,
+        290460,
+        274612
+      ],
+      "rendererPids": [
+        26988,
+        271404,
+        284788,
+        276792,
+        290212,
+        290300,
+        290460,
+        274612
+      ],
+      "metrics": [
+        {
+          "pid": 264924,
+          "type": "Browser",
+          "sandboxed": false,
+          "integrityLevel": "medium",
+          "workingSetKB": 111636,
+          "peakWorkingSetKB": 111636,
+          "privateKB": 90092
+        },
+        {
+          "pid": 291144,
+          "type": "Utility",
+          "serviceName": "network.mojom.NetworkService",
+          "name": "Network Service",
+          "sandboxed": false,
+          "integrityLevel": "medium",
+          "workingSetKB": 51224,
+          "peakWorkingSetKB": 51224,
+          "privateKB": 16664
+        },
+        {
+          "pid": 26988,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 63716,
+          "peakWorkingSetKB": 63716,
+          "privateKB": 23856
+        },
+        {
+          "pid": 271404,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 64012,
+          "peakWorkingSetKB": 64012,
+          "privateKB": 23680
+        },
+        {
+          "pid": 284788,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 63980,
+          "peakWorkingSetKB": 63980,
+          "privateKB": 23676
+        },
+        {
+          "pid": 276792,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 63980,
+          "peakWorkingSetKB": 63980,
+          "privateKB": 23676
+        },
+        {
+          "pid": 290212,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 64372,
+          "peakWorkingSetKB": 64372,
+          "privateKB": 24032
+        },
+        {
+          "pid": 290300,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 66996,
+          "peakWorkingSetKB": 66996,
+          "privateKB": 26656
+        },
+        {
+          "pid": 290460,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 64376,
+          "peakWorkingSetKB": 64376,
+          "privateKB": 24008
+        },
+        {
+          "pid": 274612,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 64052,
+          "peakWorkingSetKB": 64052,
+          "privateKB": 23672
+        }
+      ],
+      "harnessMs": 331.4
+    },
+    "render-process-gone": {
+      "event": "render-process-gone",
+      "t": 304.7415,
+      "id": "plugin-1",
+      "reason": "crashed",
+      "exitCode": 2,
+      "harnessMs": 333.6
+    },
+    "crashed": {
+      "event": "crashed",
+      "t": 306.0816,
+      "victim": "plugin-1",
+      "victimPid": 26988,
+      "reason": "crashed",
+      "exitCode": 2,
+      "crashToGoneEventMs": 2.274,
+      "crashToProcessExitMs": 2.435,
+      "victimPidAliveInMain": false,
+      "victimCall": "Error: plugin-1 is not waiting.",
+      "othersAfterCrash": [
+        {
+          "id": "plugin-2",
+          "answered": true,
+          "ms": 0.3451
+        },
+        {
+          "id": "plugin-3",
+          "answered": true,
+          "ms": 0.5349
+        },
+        {
+          "id": "plugin-4",
+          "answered": true,
+          "ms": 0.6322
+        },
+        {
+          "id": "plugin-5",
+          "answered": true,
+          "ms": 0.4396
+        },
+        {
+          "id": "plugin-6",
+          "answered": true,
+          "ms": 0.5705
+        },
+        {
+          "id": "plugin-7",
+          "answered": true,
+          "ms": 0.6048
+        },
+        {
+          "id": "plugin-8",
+          "answered": true,
+          "ms": 0.4844
+        }
+      ],
+      "pids": [
+        264924,
+        291144,
+        271404,
+        284788,
+        276792,
+        290212,
+        290300,
+        290460,
+        274612
+      ],
+      "metrics": [
+        {
+          "pid": 264924,
+          "type": "Browser",
+          "sandboxed": false,
+          "integrityLevel": "medium",
+          "workingSetKB": 111800,
+          "peakWorkingSetKB": 111800,
+          "privateKB": 90100
+        },
+        {
+          "pid": 291144,
+          "type": "Utility",
+          "serviceName": "network.mojom.NetworkService",
+          "name": "Network Service",
+          "sandboxed": false,
+          "integrityLevel": "medium",
+          "workingSetKB": 51224,
+          "peakWorkingSetKB": 51224,
+          "privateKB": 16664
+        },
+        {
+          "pid": 271404,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 64012,
+          "peakWorkingSetKB": 64012,
+          "privateKB": 23680
+        },
+        {
+          "pid": 284788,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 63980,
+          "peakWorkingSetKB": 63980,
+          "privateKB": 23676
+        },
+        {
+          "pid": 276792,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 63980,
+          "peakWorkingSetKB": 63980,
+          "privateKB": 23680
+        },
+        {
+          "pid": 290212,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 64372,
+          "peakWorkingSetKB": 64372,
+          "privateKB": 24032
+        },
+        {
+          "pid": 290300,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 67004,
+          "peakWorkingSetKB": 67004,
+          "privateKB": 26660
+        },
+        {
+          "pid": 290460,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 64376,
+          "peakWorkingSetKB": 64376,
+          "privateKB": 24008
+        },
+        {
+          "pid": 274612,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 64052,
+          "peakWorkingSetKB": 64052,
+          "privateKB": 23672
+        }
+      ],
+      "harnessMs": 334.98
+    },
+    "restarted": {
+      "event": "restarted",
+      "t": 7372.5879,
+      "victim": "plugin-1",
+      "oldPid": 26988,
+      "newPid": 291068,
+      "restartToFirstAnswerMs": 54.234,
+      "sharing": {
+        "distinctPids": 8,
+        "plugins": 8,
+        "shared": []
+      },
+      "pids": [
+        264924,
+        280088,
+        291144,
+        291068,
+        271404,
+        284788,
+        276792,
+        290212,
+        290300,
+        290460,
+        274612
+      ],
+      "harnessMs": 7401.51
+    },
+    "quitting": {
+      "event": "quitting",
+      "t": 7873.8328,
+      "harnessMs": 7902.74
+    }
+  },
+  "log": [
+    {
+      "event": "render-process-gone",
+      "t": 304.7415,
+      "id": "plugin-1",
+      "reason": "crashed",
+      "exitCode": 2,
+      "harnessMs": 333.6
+    }
+  ],
+  "stderr": "",
+  "checks": {
+    "afterCrash": {
+      "label": "after renderer crash, app still running",
+      "startedAfterMs": 335,
+      "finishedAfterMs": 5398.1,
+      "count": 10,
+      "processes": [
+        {
+          "pid": 264924,
+          "ppid": 12860,
+          "name": "electron.exe",
+          "type": "browser",
+          "why": [
+            "recorded-pid",
+            "user-data-dir"
+          ],
+          "rssBytes": 114749440,
+          "privateBytes": 92377088,
+          "command": "C:\\Users\\alext\\Repos\\harday\\.claude\\worktrees\\agent-a7ae0a9265c18514c\\node_modules\\electron\\dist\\electron.exe C:\\Users\\alext\\Repos\\harday\\.claude\\worktrees\\agent-a7ae0a9265c18514c\\apps\\desktop\\prototype\\plugin-renderer-cost\\main.cjs --user-data-dir=C:\\Users\\alext\\AppData\\Local\\Temp\\ajour-spike-renderer-cost-kfbrca --spike-mode=crash --spike-plugins=8 --spike-hold-ms=7000"
+        },
+        {
+          "pid": 280088,
+          "ppid": 264924,
+          "name": "electron.exe",
+          "type": "gpu-process",
+          "why": [
+            "child-of-recorded-pid",
+            "user-data-dir"
+          ],
+          "rssBytes": 79208448,
+          "privateBytes": 69656576,
+          "command": "\"C:\\Users\\alext\\Repos\\harday\\.claude\\worktrees\\agent-a7ae0a9265c18514c\\node_modules\\electron\\dist\\electron.exe\" --type=gpu-process --user-data-dir=\"C:\\Users\\alext\\AppData\\Local\\Temp\\ajour-spike-renderer-cost-kfbrca\" --gpu-preferences=SAAAAAAAAADgAAAEAAAAAAAAAAAAAGAAAQAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAQAAAAAAAAABAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAA== --field-trial-handle=1836,i,14902989496922383"
+        },
+        {
+          "pid": 291144,
+          "ppid": 264924,
+          "name": "electron.exe",
+          "type": "utility",
+          "why": [
+            "recorded-pid",
+            "child-of-recorded-pid",
+            "user-data-dir"
+          ],
+          "rssBytes": 52453376,
+          "privateBytes": 17063936,
+          "command": "\"C:\\Users\\alext\\Repos\\harday\\.claude\\worktrees\\agent-a7ae0a9265c18514c\\node_modules\\electron\\dist\\electron.exe\" --type=utility --utility-sub-type=network.mojom.NetworkService --lang=en-GB --service-sandbox-type=none --user-data-dir=\"C:\\Users\\alext\\AppData\\Local\\Temp\\ajour-spike-renderer-cost-kfbrca\" --standard-schemes=ajour-ext --secure-schemes=ajour-ext --field-trial-handle=1836,i,149029894969223"
+        },
+        {
+          "pid": 271404,
+          "ppid": 264924,
+          "name": "electron.exe",
+          "type": "renderer",
+          "why": [
+            "recorded-pid",
+            "child-of-recorded-pid",
+            "user-data-dir"
+          ],
+          "rssBytes": 65839104,
+          "privateBytes": 24289280,
+          "command": "\"C:\\Users\\alext\\Repos\\harday\\.claude\\worktrees\\agent-a7ae0a9265c18514c\\node_modules\\electron\\dist\\electron.exe\" --type=renderer --user-data-dir=\"C:\\Users\\alext\\AppData\\Local\\Temp\\ajour-spike-renderer-cost-kfbrca\" --standard-schemes=ajour-ext --secure-schemes=ajour-ext --app-path=\"C:\\Users\\alext\\Repos\\harday\\.claude\\worktrees\\agent-a7ae0a9265c18514c\\apps\\desktop\\prototype\\plugin-renderer-cost\" --en"
+        },
+        {
+          "pid": 284788,
+          "ppid": 264924,
+          "name": "electron.exe",
+          "type": "renderer",
+          "why": [
+            "recorded-pid",
+            "child-of-recorded-pid",
+            "user-data-dir"
+          ],
+          "rssBytes": 65806336,
+          "privateBytes": 24285184,
+          "command": "\"C:\\Users\\alext\\Repos\\harday\\.claude\\worktrees\\agent-a7ae0a9265c18514c\\node_modules\\electron\\dist\\electron.exe\" --type=renderer --user-data-dir=\"C:\\Users\\alext\\AppData\\Local\\Temp\\ajour-spike-renderer-cost-kfbrca\" --standard-schemes=ajour-ext --secure-schemes=ajour-ext --app-path=\"C:\\Users\\alext\\Repos\\harday\\.claude\\worktrees\\agent-a7ae0a9265c18514c\\apps\\desktop\\prototype\\plugin-renderer-cost\" --en"
+        },
+        {
+          "pid": 276792,
+          "ppid": 264924,
+          "name": "electron.exe",
+          "type": "renderer",
+          "why": [
+            "recorded-pid",
+            "child-of-recorded-pid",
+            "user-data-dir"
+          ],
+          "rssBytes": 65806336,
+          "privateBytes": 24289280,
+          "command": "\"C:\\Users\\alext\\Repos\\harday\\.claude\\worktrees\\agent-a7ae0a9265c18514c\\node_modules\\electron\\dist\\electron.exe\" --type=renderer --user-data-dir=\"C:\\Users\\alext\\AppData\\Local\\Temp\\ajour-spike-renderer-cost-kfbrca\" --standard-schemes=ajour-ext --secure-schemes=ajour-ext --app-path=\"C:\\Users\\alext\\Repos\\harday\\.claude\\worktrees\\agent-a7ae0a9265c18514c\\apps\\desktop\\prototype\\plugin-renderer-cost\" --en"
+        },
+        {
+          "pid": 290212,
+          "ppid": 264924,
+          "name": "electron.exe",
+          "type": "renderer",
+          "why": [
+            "recorded-pid",
+            "child-of-recorded-pid",
+            "user-data-dir"
+          ],
+          "rssBytes": 66203648,
+          "privateBytes": 24645632,
+          "command": "\"C:\\Users\\alext\\Repos\\harday\\.claude\\worktrees\\agent-a7ae0a9265c18514c\\node_modules\\electron\\dist\\electron.exe\" --type=renderer --user-data-dir=\"C:\\Users\\alext\\AppData\\Local\\Temp\\ajour-spike-renderer-cost-kfbrca\" --standard-schemes=ajour-ext --secure-schemes=ajour-ext --app-path=\"C:\\Users\\alext\\Repos\\harday\\.claude\\worktrees\\agent-a7ae0a9265c18514c\\apps\\desktop\\prototype\\plugin-renderer-cost\" --en"
+        },
+        {
+          "pid": 290300,
+          "ppid": 264924,
+          "name": "electron.exe",
+          "type": "renderer",
+          "why": [
+            "recorded-pid",
+            "child-of-recorded-pid",
+            "user-data-dir"
+          ],
+          "rssBytes": 68902912,
+          "privateBytes": 27340800,
+          "command": "\"C:\\Users\\alext\\Repos\\harday\\.claude\\worktrees\\agent-a7ae0a9265c18514c\\node_modules\\electron\\dist\\electron.exe\" --type=renderer --user-data-dir=\"C:\\Users\\alext\\AppData\\Local\\Temp\\ajour-spike-renderer-cost-kfbrca\" --standard-schemes=ajour-ext --secure-schemes=ajour-ext --app-path=\"C:\\Users\\alext\\Repos\\harday\\.claude\\worktrees\\agent-a7ae0a9265c18514c\\apps\\desktop\\prototype\\plugin-renderer-cost\" --en"
+        },
+        {
+          "pid": 290460,
+          "ppid": 264924,
+          "name": "electron.exe",
+          "type": "renderer",
+          "why": [
+            "recorded-pid",
+            "child-of-recorded-pid",
+            "user-data-dir"
+          ],
+          "rssBytes": 66199552,
+          "privateBytes": 24612864,
+          "command": "\"C:\\Users\\alext\\Repos\\harday\\.claude\\worktrees\\agent-a7ae0a9265c18514c\\node_modules\\electron\\dist\\electron.exe\" --type=renderer --user-data-dir=\"C:\\Users\\alext\\AppData\\Local\\Temp\\ajour-spike-renderer-cost-kfbrca\" --standard-schemes=ajour-ext --secure-schemes=ajour-ext --app-path=\"C:\\Users\\alext\\Repos\\harday\\.claude\\worktrees\\agent-a7ae0a9265c18514c\\apps\\desktop\\prototype\\plugin-renderer-cost\" --en"
+        },
+        {
+          "pid": 274612,
+          "ppid": 264924,
+          "name": "electron.exe",
+          "type": "renderer",
+          "why": [
+            "recorded-pid",
+            "child-of-recorded-pid",
+            "user-data-dir"
+          ],
+          "rssBytes": 65875968,
+          "privateBytes": 24276992,
+          "command": "\"C:\\Users\\alext\\Repos\\harday\\.claude\\worktrees\\agent-a7ae0a9265c18514c\\node_modules\\electron\\dist\\electron.exe\" --type=renderer --user-data-dir=\"C:\\Users\\alext\\AppData\\Local\\Temp\\ajour-spike-renderer-cost-kfbrca\" --standard-schemes=ajour-ext --secure-schemes=ajour-ext --app-path=\"C:\\Users\\alext\\Repos\\harday\\.claude\\worktrees\\agent-a7ae0a9265c18514c\\apps\\desktop\\prototype\\plugin-renderer-cost\" --en"
+        }
+      ]
+    },
+    "quitToExitMs": 151.6,
+    "deadAfterMainMs": {
+      "26988": 0.1,
+      "264924": 0.1,
+      "271404": 0.1,
+      "274612": 0.1,
+      "276792": 0.1,
+      "280088": 0.1,
+      "284788": 0.1,
+      "290212": 0.1,
+      "290300": 0.1,
+      "290460": 0.1,
+      "291068": 0.1,
+      "291144": 0.1
+    },
+    "afterEnd": {
+      "label": "right after main ended",
+      "startedAfterMs": 0.4,
+      "finishedAfterMs": 4952.1,
+      "count": 0,
+      "processes": []
+    },
+    "afterWait": {
+      "label": "5 s after main ended",
+      "startedAfterMs": 5011.1,
+      "finishedAfterMs": 9948.4,
+      "count": 0,
+      "processes": []
+    }
+  },
+  "exit": {
+    "code": 0,
+    "signal": null
+  },
+  "leftovers": []
+}

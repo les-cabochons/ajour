@@ -1,0 +1,554 @@
+{
+  "spec": {
+    "mode": "measure",
+    "plugins": 4,
+    "noThrottle": true
+  },
+  "userDataDir": "C:\\Users\\alext\\AppData\\Local\\Temp\\ajour-spike-renderer-cost-KXoK33",
+  "mainPid": 291560,
+  "knownPids": [
+    291560,
+    263776,
+    269480,
+    292892,
+    277340,
+    289700,
+    10648
+  ],
+  "events": {
+    "app-ready": {
+      "event": "app-ready",
+      "t": 146.5778,
+      "mode": "measure",
+      "plugins": 4,
+      "pid": 291560,
+      "uptimeMs": 131.217,
+      "electron": "41.3.0",
+      "chrome": "146.0.7680.188",
+      "arch": "x64",
+      "runningUnderARM64Translation": false,
+      "userData": "C:\\Users\\alext\\AppData\\Local\\Temp\\ajour-spike-renderer-cost-KXoK33",
+      "rendererProcessLimit": null,
+      "sharedPartition": false,
+      "sameSite": false,
+      "backgroundThrottling": false,
+      "harnessMs": 174.59
+    },
+    "first-answers": {
+      "event": "first-answers",
+      "t": 266.6738,
+      "plugins": [
+        {
+          "id": "plugin-1",
+          "pid": 292892,
+          "readyMs": 118.565,
+          "firstAnswerMs": 119.532,
+          "firstCallMs": 0.9515,
+          "selfCheck": {
+            "origin": "ajour-ext://plugin-1",
+            "require": "undefined",
+            "process": "undefined",
+            "bridgeKeys": [
+              "invoke"
+            ]
+          }
+        },
+        {
+          "id": "plugin-2",
+          "pid": 277340,
+          "readyMs": 100.529,
+          "firstAnswerMs": 102.214,
+          "firstCallMs": 1.5505,
+          "selfCheck": {
+            "origin": "ajour-ext://plugin-2",
+            "require": "undefined",
+            "process": "undefined",
+            "bridgeKeys": [
+              "invoke"
+            ]
+          }
+        },
+        {
+          "id": "plugin-3",
+          "pid": 289700,
+          "readyMs": 99.146,
+          "firstAnswerMs": 99.535,
+          "firstCallMs": 0.3793,
+          "selfCheck": {
+            "origin": "ajour-ext://plugin-3",
+            "require": "undefined",
+            "process": "undefined",
+            "bridgeKeys": [
+              "invoke"
+            ]
+          }
+        },
+        {
+          "id": "plugin-4",
+          "pid": 10648,
+          "readyMs": 96.345,
+          "firstAnswerMs": 97.385,
+          "firstCallMs": 1.0302,
+          "selfCheck": {
+            "origin": "ajour-ext://plugin-4",
+            "require": "undefined",
+            "process": "undefined",
+            "bridgeKeys": [
+              "invoke"
+            ]
+          }
+        }
+      ],
+      "sharing": {
+        "distinctPids": 4,
+        "plugins": 4,
+        "shared": []
+      },
+      "harnessMs": 294.58
+    },
+    "hold": {
+      "event": "hold",
+      "t": 1729.4415,
+      "pids": [
+        291560,
+        263776,
+        269480,
+        292892,
+        277340,
+        289700,
+        10648
+      ],
+      "rendererPids": [
+        292892,
+        277340,
+        289700,
+        10648
+      ],
+      "metrics": [
+        {
+          "pid": 291560,
+          "type": "Browser",
+          "sandboxed": false,
+          "integrityLevel": "medium",
+          "workingSetKB": 114220,
+          "peakWorkingSetKB": 114220,
+          "privateKB": 89180
+        },
+        {
+          "pid": 263776,
+          "type": "GPU",
+          "serviceName": "GPU",
+          "sandboxed": true,
+          "integrityLevel": "low",
+          "workingSetKB": 76940,
+          "peakWorkingSetKB": 76940,
+          "privateKB": 67816
+        },
+        {
+          "pid": 269480,
+          "type": "Utility",
+          "serviceName": "network.mojom.NetworkService",
+          "name": "Network Service",
+          "sandboxed": false,
+          "integrityLevel": "medium",
+          "workingSetKB": 50456,
+          "peakWorkingSetKB": 50456,
+          "privateKB": 15420
+        },
+        {
+          "pid": 292892,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 67624,
+          "peakWorkingSetKB": 67624,
+          "privateKB": 28424
+        },
+        {
+          "pid": 277340,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 67500,
+          "peakWorkingSetKB": 67500,
+          "privateKB": 28240
+        },
+        {
+          "pid": 289700,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 70096,
+          "peakWorkingSetKB": 70096,
+          "privateKB": 30884
+        },
+        {
+          "pid": 10648,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 67548,
+          "peakWorkingSetKB": 67548,
+          "privateKB": 28252
+        }
+      ],
+      "harnessMs": 1757.33
+    },
+    "result": {
+      "event": "result",
+      "t": 4937.8204,
+      "plugins": [
+        {
+          "id": "plugin-1",
+          "pid": 292892,
+          "readyMs": 118.565,
+          "firstAnswerMs": 119.532,
+          "firstCallMs": 0.9515,
+          "selfCheck": {
+            "origin": "ajour-ext://plugin-1",
+            "require": "undefined",
+            "process": "undefined",
+            "bridgeKeys": [
+              "invoke"
+            ]
+          }
+        },
+        {
+          "id": "plugin-2",
+          "pid": 277340,
+          "readyMs": 100.529,
+          "firstAnswerMs": 102.214,
+          "firstCallMs": 1.5505,
+          "selfCheck": {
+            "origin": "ajour-ext://plugin-2",
+            "require": "undefined",
+            "process": "undefined",
+            "bridgeKeys": [
+              "invoke"
+            ]
+          }
+        },
+        {
+          "id": "plugin-3",
+          "pid": 289700,
+          "readyMs": 99.146,
+          "firstAnswerMs": 99.535,
+          "firstCallMs": 0.3793,
+          "selfCheck": {
+            "origin": "ajour-ext://plugin-3",
+            "require": "undefined",
+            "process": "undefined",
+            "bridgeKeys": [
+              "invoke"
+            ]
+          }
+        },
+        {
+          "id": "plugin-4",
+          "pid": 10648,
+          "readyMs": 96.345,
+          "firstAnswerMs": 97.385,
+          "firstCallMs": 1.0302,
+          "selfCheck": {
+            "origin": "ajour-ext://plugin-4",
+            "require": "undefined",
+            "process": "undefined",
+            "bridgeKeys": [
+              "invoke"
+            ]
+          }
+        }
+      ],
+      "sharing": {
+        "distinctPids": 4,
+        "plugins": 4,
+        "shared": []
+      },
+      "latency": {
+        "sequentialPooled": {
+          "count": 2000,
+          "medianMs": 0.1647,
+          "p95Ms": 0.2095,
+          "minMs": 0.1375,
+          "maxMs": 0.8742
+        },
+        "sequential": {
+          "plugin-1": {
+            "count": 500,
+            "medianMs": 0.1685,
+            "p95Ms": 0.2048,
+            "minMs": 0.1415,
+            "maxMs": 0.8742
+          },
+          "plugin-2": {
+            "count": 500,
+            "medianMs": 0.1766,
+            "p95Ms": 0.2392,
+            "minMs": 0.1407,
+            "maxMs": 0.8076
+          },
+          "plugin-3": {
+            "count": 500,
+            "medianMs": 0.1616,
+            "p95Ms": 0.19,
+            "minMs": 0.1376,
+            "maxMs": 0.6282
+          },
+          "plugin-4": {
+            "count": 500,
+            "medianMs": 0.1561,
+            "p95Ms": 0.1789,
+            "minMs": 0.1375,
+            "maxMs": 0.638
+          }
+        },
+        "concurrentCalls": {
+          "count": 800,
+          "medianMs": 0.2086,
+          "p95Ms": 0.2657,
+          "minMs": 0.1543,
+          "maxMs": 0.7336
+        },
+        "concurrentRounds": {
+          "count": 200,
+          "medianMs": 0.2359,
+          "p95Ms": 0.3143,
+          "minMs": 0.2117,
+          "maxMs": 0.7384
+        }
+      },
+      "metricsBefore": [
+        {
+          "pid": 291560,
+          "type": "Browser",
+          "sandboxed": false,
+          "integrityLevel": "medium",
+          "workingSetKB": 114220,
+          "peakWorkingSetKB": 114220,
+          "privateKB": 89180
+        },
+        {
+          "pid": 263776,
+          "type": "GPU",
+          "serviceName": "GPU",
+          "sandboxed": true,
+          "integrityLevel": "low",
+          "workingSetKB": 76940,
+          "peakWorkingSetKB": 76940,
+          "privateKB": 67816
+        },
+        {
+          "pid": 269480,
+          "type": "Utility",
+          "serviceName": "network.mojom.NetworkService",
+          "name": "Network Service",
+          "sandboxed": false,
+          "integrityLevel": "medium",
+          "workingSetKB": 50456,
+          "peakWorkingSetKB": 50456,
+          "privateKB": 15420
+        },
+        {
+          "pid": 292892,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 67624,
+          "peakWorkingSetKB": 67624,
+          "privateKB": 28424
+        },
+        {
+          "pid": 277340,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 67500,
+          "peakWorkingSetKB": 67500,
+          "privateKB": 28240
+        },
+        {
+          "pid": 289700,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 70096,
+          "peakWorkingSetKB": 70096,
+          "privateKB": 30884
+        },
+        {
+          "pid": 10648,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 67548,
+          "peakWorkingSetKB": 67548,
+          "privateKB": 28252
+        }
+      ],
+      "metricsAfter": [
+        {
+          "pid": 291560,
+          "type": "Browser",
+          "sandboxed": false,
+          "integrityLevel": "medium",
+          "workingSetKB": 114284,
+          "peakWorkingSetKB": 114284,
+          "privateKB": 89180
+        },
+        {
+          "pid": 263776,
+          "type": "GPU",
+          "serviceName": "GPU",
+          "sandboxed": true,
+          "integrityLevel": "low",
+          "workingSetKB": 76940,
+          "peakWorkingSetKB": 76940,
+          "privateKB": 67816
+        },
+        {
+          "pid": 269480,
+          "type": "Utility",
+          "serviceName": "network.mojom.NetworkService",
+          "name": "Network Service",
+          "sandboxed": false,
+          "integrityLevel": "medium",
+          "workingSetKB": 50456,
+          "peakWorkingSetKB": 50456,
+          "privateKB": 15420
+        },
+        {
+          "pid": 292892,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 67648,
+          "peakWorkingSetKB": 67648,
+          "privateKB": 28432
+        },
+        {
+          "pid": 277340,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 67520,
+          "peakWorkingSetKB": 67520,
+          "privateKB": 28244
+        },
+        {
+          "pid": 289700,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 70120,
+          "peakWorkingSetKB": 70120,
+          "privateKB": 30892
+        },
+        {
+          "pid": 10648,
+          "type": "Tab",
+          "sandboxed": true,
+          "integrityLevel": "untrusted",
+          "workingSetKB": 67572,
+          "peakWorkingSetKB": 67572,
+          "privateKB": 28260
+        }
+      ],
+      "perCallCycles": [
+        {
+          "id": "fresh-1",
+          "pid": 281276,
+          "createToFirstAnswerMs": 57.138,
+          "closeToProcessExitMs": 4.826,
+          "closeCallMs": 4.878
+        },
+        {
+          "id": "fresh-2",
+          "pid": 290112,
+          "createToFirstAnswerMs": 58.788,
+          "closeToProcessExitMs": 20.419,
+          "closeCallMs": 20.433
+        },
+        {
+          "id": "fresh-3",
+          "pid": 23524,
+          "createToFirstAnswerMs": 54.675,
+          "closeToProcessExitMs": 7.454,
+          "closeCallMs": 7.467
+        }
+      ],
+      "harnessMs": 4965.78
+    },
+    "quitting": {
+      "event": "quitting",
+      "t": 4937.9607,
+      "harnessMs": 4965.85
+    }
+  },
+  "log": [],
+  "stderr": "",
+  "checks": {
+    "holdMemory": {
+      "tookMs": 660.9,
+      "processes": [
+        {
+          "pid": 10648,
+          "rssBytes": 69185536,
+          "privateBytes": 28938240
+        },
+        {
+          "pid": 263776,
+          "rssBytes": 78786560,
+          "privateBytes": 69443584
+        },
+        {
+          "pid": 269480,
+          "rssBytes": 51666944,
+          "privateBytes": 15790080
+        },
+        {
+          "pid": 277340,
+          "rssBytes": 69132288,
+          "privateBytes": 28921856
+        },
+        {
+          "pid": 289700,
+          "rssBytes": 71794688,
+          "privateBytes": 31633408
+        },
+        {
+          "pid": 291560,
+          "rssBytes": 116973568,
+          "privateBytes": 91320320
+        },
+        {
+          "pid": 292892,
+          "rssBytes": 69246976,
+          "privateBytes": 29106176
+        }
+      ]
+    },
+    "quitToExitMs": 153.8,
+    "deadAfterMainMs": {
+      "10648": 0.1,
+      "263776": 0.1,
+      "269480": 0.1,
+      "277340": 0.1,
+      "289700": 0.1,
+      "291560": 0.1,
+      "292892": 0.1
+    },
+    "afterEnd": null,
+    "afterWait": {
+      "label": "5 s after main ended",
+      "startedAfterMs": 5002,
+      "finishedAfterMs": 9901.5,
+      "count": 0,
+      "processes": []
+    }
+  },
+  "exit": {
+    "code": 0,
+    "signal": null
+  },
+  "leftovers": []
+}

@@ -15,7 +15,7 @@ From the repo root, after `corepack pnpm install`:
 corepack pnpm --filter @ajour/desktop prototype:renderer-cost --mode all
 ```
 
-That runs the full suite in about 7 minutes. No single Electron process lives
+That runs the full suite in about 8 minutes. No single Electron process lives
 longer than about 20 seconds. Smaller runs:
 
 ```sh
@@ -69,9 +69,26 @@ Modes:
   later.
 - `crash`: start, `webContents.forcefullyCrashRenderer()` on one plugin, check
   that the others still answer and the crashed PID is gone, reload it, quit.
-- `sharing`: 8 plugins with `--renderer-process-limit=1`, once with one
-  partition per plugin and once with a shared partition as a control.
+- `sharing`: 8 plugins with `--renderer-process-limit=1` in four setups: one
+  partition per plugin or one shared partition, crossed with one site per plugin
+  or one shared site (`plugin-N.vendor.ajour`).
 - `throttle`: 4 plugins with `backgroundThrottling` on, then off.
+
+## Windows results (#230)
+
+`results/win32-x64-2026-10-19T01-32-56-386Z/` holds the full suite and
+`results/win32-x64-2026-10-19T01-41-30-419Z/` the throttling comparison. The
+resolution comment on #230 has the table.
+
+Two Windows quirks:
+
+- `Get-CimInstance Win32_Process` took about 4 s on that machine, and
+  `taskkill /F /PID` took about 4.5 s before it terminated anything. So the
+  harness polls each recorded PID every 20 ms and times deaths from main's
+  observed death, not from the command.
+- With Node 26.7, Electron's install script exited 0 without extracting the
+  binary. If `node_modules/electron/dist` has no Electron binary, extract the
+  cached zip from the Electron cache into `dist` and write `path.txt`.
 
 ## Notes for the macOS run (#260)
 

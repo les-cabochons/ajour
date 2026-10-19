@@ -1,0 +1,1120 @@
+{
+  "machine": {
+    "platform": "win32",
+    "release": "10.0.26200",
+    "osVersion": "Windows 11 Home",
+    "cpu": "AMD Ryzen 7 5800X 8-Core Processor             ",
+    "logicalCpus": 16,
+    "totalMemoryGB": 31.9,
+    "nodeArch": "x64",
+    "electronBinary": "C:\\Users\\alext\\Repos\\harday\\.claude\\worktrees\\agent-a7ae0a9265c18514c\\node_modules\\electron\\dist\\electron.exe",
+    "os": "Microsoft Windows 11 Home",
+    "version": "10.0.26200",
+    "build": "26200",
+    "cores": 8,
+    "threads": 16
+  },
+  "electron": {
+    "event": "app-ready",
+    "t": 164.9963,
+    "mode": "measure",
+    "plugins": 1,
+    "pid": 278060,
+    "uptimeMs": 148.192,
+    "electron": "41.3.0",
+    "chrome": "146.0.7680.188",
+    "arch": "x64",
+    "runningUnderARM64Translation": false,
+    "userData": "C:\\Users\\alext\\AppData\\Local\\Temp\\ajour-spike-renderer-cost-f29YTX",
+    "rendererProcessLimit": null,
+    "sharedPartition": false,
+    "sameSite": false,
+    "backgroundThrottling": true,
+    "harnessMs": 203.89
+  },
+  "measure": {
+    "1": {
+      "runs": 5,
+      "succeeded": 5,
+      "launchToFirstAnswerMs": 308,
+      "viewColdMedianMs": 104,
+      "viewColdMaxMs": 104,
+      "firstCallMs": 0.98,
+      "warmMedianMs": 0.172,
+      "warmP95Ms": 0.226,
+      "concurrentMedianMs": 0.166,
+      "concurrentRoundMedianMs": 0.174,
+      "rendererWorkingSetMB": 66.8,
+      "rendererPrivateMB": 27.7,
+      "osRendererWorkingSetMB": 66.8,
+      "osRendererPrivateMB": 27.7,
+      "nonRendererWorkingSetMB": 220.8,
+      "totalWorkingSetMB": 287.3,
+      "osTotalWorkingSetMB": 287.3,
+      "perCallCreateMs": 58,
+      "perCallCloseToExitMs": 18,
+      "quitToExitMs": 143,
+      "distinctRendererPidsEveryRun": [
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "sharedPidsAnyRun": false,
+      "sandboxedEveryRun": true,
+      "integrityLevels": "untrusted",
+      "processTypes": "Browser,GPU,Tab,Utility",
+      "leftoversAfterQuit": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "perRun": [
+        {
+          "launchToFirstAnswerMs": 308.16,
+          "viewColdMedianMs": 103.847,
+          "viewColdMaxMs": 103.847,
+          "firstCallMs": 0.9811,
+          "warmMedianMs": 0.1643,
+          "warmP95Ms": 0.2131,
+          "concurrentMedianMs": 0.1635,
+          "concurrentRoundMedianMs": 0.1706,
+          "rendererWorkingSetMB": 65.57421875,
+          "rendererPrivateMB": 27.59375,
+          "osRendererWorkingSetMB": 65.57421875,
+          "osRendererPrivateMB": 27.59375,
+          "nonRendererWorkingSetMB": 220.75390625,
+          "totalWorkingSetMB": 286.328125,
+          "osTotalWorkingSetMB": 286.3359375,
+          "processCount": 4,
+          "processTypes": "Browser,GPU,Tab,Utility",
+          "distinctRendererPids": 1,
+          "sharedPids": [],
+          "sandboxed": true,
+          "integrityLevels": "untrusted",
+          "perCallCreateMs": 54.47,
+          "perCallCloseToExitMs": 7.616,
+          "quitToExitMs": 145.1,
+          "leftoverAfterWait": 0
+        },
+        {
+          "launchToFirstAnswerMs": 287.42,
+          "viewColdMedianMs": 96.909,
+          "viewColdMaxMs": 96.909,
+          "firstCallMs": 1.0737,
+          "warmMedianMs": 0.1786,
+          "warmP95Ms": 0.2312,
+          "concurrentMedianMs": 0.1754,
+          "concurrentRoundMedianMs": 0.1834,
+          "rendererWorkingSetMB": 66.8046875,
+          "rendererPrivateMB": 27.65234375,
+          "osRendererWorkingSetMB": 66.8046875,
+          "osRendererPrivateMB": 27.65234375,
+          "nonRendererWorkingSetMB": 220.46484375,
+          "totalWorkingSetMB": 287.26953125,
+          "osTotalWorkingSetMB": 287.27734375,
+          "processCount": 4,
+          "processTypes": "Browser,GPU,Tab,Utility",
+          "distinctRendererPids": 1,
+          "sharedPids": [],
+          "sandboxed": true,
+          "integrityLevels": "untrusted",
+          "perCallCreateMs": 56.065,
+          "perCallCloseToExitMs": 19.984,
+          "quitToExitMs": 49.7,
+          "leftoverAfterWait": 0
+        },
+        {
+          "launchToFirstAnswerMs": 264.17,
+          "viewColdMedianMs": 93.062,
+          "viewColdMaxMs": 93.062,
+          "firstCallMs": 0.8981,
+          "warmMedianMs": 0.1647,
+          "warmP95Ms": 0.1959,
+          "concurrentMedianMs": 0.1641,
+          "concurrentRoundMedianMs": 0.1722,
+          "rendererWorkingSetMB": 65.62890625,
+          "rendererPrivateMB": 27.6875,
+          "osRendererWorkingSetMB": 65.62890625,
+          "osRendererPrivateMB": 27.6875,
+          "nonRendererWorkingSetMB": 221.18359375,
+          "totalWorkingSetMB": 286.8125,
+          "osTotalWorkingSetMB": 286.8203125,
+          "processCount": 4,
+          "processTypes": "Browser,GPU,Tab,Utility",
+          "distinctRendererPids": 1,
+          "sharedPids": [],
+          "sandboxed": true,
+          "integrityLevels": "untrusted",
+          "perCallCreateMs": 59.11,
+          "perCallCloseToExitMs": 18.995,
+          "quitToExitMs": 60.4,
+          "leftoverAfterWait": 0
+        },
+        {
+          "launchToFirstAnswerMs": 314.57,
+          "viewColdMedianMs": 110.256,
+          "viewColdMaxMs": 110.256,
+          "firstCallMs": 0.9609,
+          "warmMedianMs": 0.2219,
+          "warmP95Ms": 0.8312,
+          "concurrentMedianMs": 0.2402,
+          "concurrentRoundMedianMs": 0.2506,
+          "rendererWorkingSetMB": 66.9609375,
+          "rendererPrivateMB": 27.66015625,
+          "osRendererWorkingSetMB": 66.9765625,
+          "osRendererPrivateMB": 27.66796875,
+          "nonRendererWorkingSetMB": 221.296875,
+          "totalWorkingSetMB": 288.2578125,
+          "osTotalWorkingSetMB": 288.28125,
+          "processCount": 4,
+          "processTypes": "Browser,GPU,Tab,Utility",
+          "distinctRendererPids": 1,
+          "sharedPids": [],
+          "sandboxed": true,
+          "integrityLevels": "untrusted",
+          "perCallCreateMs": 61.825,
+          "perCallCloseToExitMs": 13.755,
+          "quitToExitMs": 143.1,
+          "leftoverAfterWait": 0
+        },
+        {
+          "launchToFirstAnswerMs": 314.3,
+          "viewColdMedianMs": 108.723,
+          "viewColdMaxMs": 108.723,
+          "firstCallMs": 1.0728,
+          "warmMedianMs": 0.1718,
+          "warmP95Ms": 0.2262,
+          "concurrentMedianMs": 0.1663,
+          "concurrentRoundMedianMs": 0.1738,
+          "rendererWorkingSetMB": 69.52734375,
+          "rendererPrivateMB": 30.31640625,
+          "osRendererWorkingSetMB": 69.52734375,
+          "osRendererPrivateMB": 30.31640625,
+          "nonRendererWorkingSetMB": 220.7578125,
+          "totalWorkingSetMB": 290.28515625,
+          "osTotalWorkingSetMB": 290.29296875,
+          "processCount": 4,
+          "processTypes": "Browser,GPU,Tab,Utility",
+          "distinctRendererPids": 1,
+          "sharedPids": [],
+          "sandboxed": true,
+          "integrityLevels": "untrusted",
+          "perCallCreateMs": 58.242,
+          "perCallCloseToExitMs": 18.261,
+          "quitToExitMs": 147.2,
+          "leftoverAfterWait": 0
+        }
+      ]
+    },
+    "4": {
+      "runs": 5,
+      "succeeded": 5,
+      "launchToFirstAnswerMs": 302,
+      "viewColdMedianMs": 104,
+      "viewColdMaxMs": 121,
+      "firstCallMs": 1.09,
+      "warmMedianMs": 0.168,
+      "warmP95Ms": 0.216,
+      "concurrentMedianMs": 0.214,
+      "concurrentRoundMedianMs": 0.244,
+      "rendererWorkingSetMB": 66,
+      "rendererPrivateMB": 27.6,
+      "osRendererWorkingSetMB": 66,
+      "osRendererPrivateMB": 27.6,
+      "nonRendererWorkingSetMB": 235.8,
+      "totalWorkingSetMB": 501.8,
+      "osTotalWorkingSetMB": 501.8,
+      "perCallCreateMs": 55,
+      "perCallCloseToExitMs": 8,
+      "quitToExitMs": 149,
+      "distinctRendererPidsEveryRun": [
+        4,
+        4,
+        4,
+        4,
+        4
+      ],
+      "sharedPidsAnyRun": false,
+      "sandboxedEveryRun": true,
+      "integrityLevels": "untrusted",
+      "processTypes": "Browser,GPU,Tab,Tab,Tab,Tab,Utility",
+      "leftoversAfterQuit": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "perRun": [
+        {
+          "launchToFirstAnswerMs": 315.27,
+          "viewColdMedianMs": 108.172,
+          "viewColdMaxMs": 125.118,
+          "firstCallMs": 0.942,
+          "warmMedianMs": 0.1702,
+          "warmP95Ms": 0.2174,
+          "concurrentMedianMs": 0.2262,
+          "concurrentRoundMedianMs": 0.2556,
+          "rendererWorkingSetMB": 67.228515625,
+          "rendererPrivateMB": 28.8984375,
+          "osRendererWorkingSetMB": 67.2421875,
+          "osRendererPrivateMB": 28.904296875,
+          "nonRendererWorkingSetMB": 238.26171875,
+          "totalWorkingSetMB": 507.15234375,
+          "osTotalWorkingSetMB": 507.20703125,
+          "processCount": 7,
+          "processTypes": "Browser,GPU,Tab,Tab,Tab,Tab,Utility",
+          "distinctRendererPids": 4,
+          "sharedPids": [],
+          "sandboxed": true,
+          "integrityLevels": "untrusted",
+          "perCallCreateMs": 56.075,
+          "perCallCloseToExitMs": 6.296,
+          "quitToExitMs": 152.6,
+          "leftoverAfterWait": 0
+        },
+        {
+          "launchToFirstAnswerMs": 308.74,
+          "viewColdMedianMs": 107.9375,
+          "viewColdMaxMs": 125.722,
+          "firstCallMs": 1.0800999999999998,
+          "warmMedianMs": 0.1683,
+          "warmP95Ms": 0.226,
+          "concurrentMedianMs": 0.2141,
+          "concurrentRoundMedianMs": 0.244,
+          "rendererWorkingSetMB": 65.927734375,
+          "rendererPrivateMB": 27.609375,
+          "osRendererWorkingSetMB": 65.943359375,
+          "osRendererPrivateMB": 27.6171875,
+          "nonRendererWorkingSetMB": 235.83203125,
+          "totalWorkingSetMB": 499.546875,
+          "osTotalWorkingSetMB": 499.6015625,
+          "processCount": 7,
+          "processTypes": "Browser,GPU,Tab,Tab,Tab,Tab,Utility",
+          "distinctRendererPids": 4,
+          "sharedPids": [],
+          "sandboxed": true,
+          "integrityLevels": "untrusted",
+          "perCallCreateMs": 55.249,
+          "perCallCloseToExitMs": 6.193,
+          "quitToExitMs": 149,
+          "leftoverAfterWait": 0
+        },
+        {
+          "launchToFirstAnswerMs": 294.96,
+          "viewColdMedianMs": 102.7985,
+          "viewColdMaxMs": 118.95,
+          "firstCallMs": 1.08715,
+          "warmMedianMs": 0.1705,
+          "warmP95Ms": 0.2148,
+          "concurrentMedianMs": 0.2179,
+          "concurrentRoundMedianMs": 0.2473,
+          "rendererWorkingSetMB": 65.955078125,
+          "rendererPrivateMB": 27.62109375,
+          "osRendererWorkingSetMB": 65.970703125,
+          "osRendererPrivateMB": 27.626953125,
+          "nonRendererWorkingSetMB": 235.75390625,
+          "totalWorkingSetMB": 502.15234375,
+          "osTotalWorkingSetMB": 502.21875,
+          "processCount": 7,
+          "processTypes": "Browser,GPU,Tab,Tab,Tab,Tab,Utility",
+          "distinctRendererPids": 4,
+          "sharedPids": [],
+          "sandboxed": true,
+          "integrityLevels": "untrusted",
+          "perCallCreateMs": 53.827,
+          "perCallCloseToExitMs": 7.989,
+          "quitToExitMs": 147.9,
+          "leftoverAfterWait": 0
+        },
+        {
+          "launchToFirstAnswerMs": 294.52,
+          "viewColdMedianMs": 102.4015,
+          "viewColdMaxMs": 119.752,
+          "firstCallMs": 1.10515,
+          "warmMedianMs": 0.1646,
+          "warmP95Ms": 0.2162,
+          "concurrentMedianMs": 0.2079,
+          "concurrentRoundMedianMs": 0.236,
+          "rendererWorkingSetMB": 65.9765625,
+          "rendererPrivateMB": 27.634765625,
+          "osRendererWorkingSetMB": 65.984375,
+          "osRendererPrivateMB": 27.63671875,
+          "nonRendererWorkingSetMB": 235.3984375,
+          "totalWorkingSetMB": 501.78125,
+          "osTotalWorkingSetMB": 501.8359375,
+          "processCount": 7,
+          "processTypes": "Browser,GPU,Tab,Tab,Tab,Tab,Utility",
+          "distinctRendererPids": 4,
+          "sharedPids": [],
+          "sandboxed": true,
+          "integrityLevels": "untrusted",
+          "perCallCreateMs": 63.54,
+          "perCallCloseToExitMs": 12.219,
+          "quitToExitMs": 363.7,
+          "leftoverAfterWait": 0
+        },
+        {
+          "launchToFirstAnswerMs": 301.87,
+          "viewColdMedianMs": 103.652,
+          "viewColdMaxMs": 120.829,
+          "firstCallMs": 1.2159499999999999,
+          "warmMedianMs": 0.1677,
+          "warmP95Ms": 0.2158,
+          "concurrentMedianMs": 0.2113,
+          "concurrentRoundMedianMs": 0.2404,
+          "rendererWorkingSetMB": 65.935546875,
+          "rendererPrivateMB": 27.607421875,
+          "osRendererWorkingSetMB": 65.9453125,
+          "osRendererPrivateMB": 27.615234375,
+          "nonRendererWorkingSetMB": 237.92578125,
+          "totalWorkingSetMB": 501.6484375,
+          "osTotalWorkingSetMB": 501.703125,
+          "processCount": 7,
+          "processTypes": "Browser,GPU,Tab,Tab,Tab,Tab,Utility",
+          "distinctRendererPids": 4,
+          "sharedPids": [],
+          "sandboxed": true,
+          "integrityLevels": "untrusted",
+          "perCallCreateMs": 54.841,
+          "perCallCloseToExitMs": 8.098,
+          "quitToExitMs": 148.5,
+          "leftoverAfterWait": 0
+        }
+      ]
+    },
+    "8": {
+      "runs": 5,
+      "succeeded": 5,
+      "launchToFirstAnswerMs": 358,
+      "viewColdMedianMs": 137,
+      "viewColdMaxMs": 162,
+      "firstCallMs": 1.4,
+      "warmMedianMs": 0.173,
+      "warmP95Ms": 0.224,
+      "concurrentMedianMs": 0.266,
+      "concurrentRoundMedianMs": 0.317,
+      "rendererWorkingSetMB": 66,
+      "rendererPrivateMB": 27.6,
+      "osRendererWorkingSetMB": 66,
+      "osRendererPrivateMB": 27.6,
+      "nonRendererWorkingSetMB": 247.3,
+      "totalWorkingSetMB": 777.5,
+      "osTotalWorkingSetMB": 777.6,
+      "perCallCreateMs": 62,
+      "perCallCloseToExitMs": 14,
+      "quitToExitMs": 162,
+      "distinctRendererPidsEveryRun": [
+        8,
+        8,
+        8,
+        8,
+        8
+      ],
+      "sharedPidsAnyRun": false,
+      "sandboxedEveryRun": true,
+      "integrityLevels": "untrusted",
+      "processTypes": "Browser,GPU,Tab,Tab,Tab,Tab,Tab,Tab,Tab,Tab,Utility",
+      "leftoversAfterQuit": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "perRun": [
+        {
+          "launchToFirstAnswerMs": 363.17,
+          "viewColdMedianMs": 141.99,
+          "viewColdMaxMs": 165.925,
+          "firstCallMs": 1.40225,
+          "warmMedianMs": 0.1745,
+          "warmP95Ms": 0.225,
+          "concurrentMedianMs": 0.2732,
+          "concurrentRoundMedianMs": 0.3238,
+          "rendererWorkingSetMB": 65.935546875,
+          "rendererPrivateMB": 27.60546875,
+          "osRendererWorkingSetMB": 65.935546875,
+          "osRendererPrivateMB": 27.60546875,
+          "nonRendererWorkingSetMB": 247.69140625,
+          "totalWorkingSetMB": 775.25,
+          "osTotalWorkingSetMB": 775.26171875,
+          "processCount": 11,
+          "processTypes": "Browser,GPU,Tab,Tab,Tab,Tab,Tab,Tab,Tab,Tab,Utility",
+          "distinctRendererPids": 8,
+          "sharedPids": [],
+          "sandboxed": true,
+          "integrityLevels": "untrusted",
+          "perCallCreateMs": 60.351,
+          "perCallCloseToExitMs": 17.633,
+          "quitToExitMs": 174,
+          "leftoverAfterWait": 0
+        },
+        {
+          "launchToFirstAnswerMs": 380.59,
+          "viewColdMedianMs": 146.796,
+          "viewColdMaxMs": 173.681,
+          "firstCallMs": 1.61855,
+          "warmMedianMs": 0.1732,
+          "warmP95Ms": 0.2237,
+          "concurrentMedianMs": 0.2662,
+          "concurrentRoundMedianMs": 0.3168,
+          "rendererWorkingSetMB": 66.015625,
+          "rendererPrivateMB": 27.681640625,
+          "osRendererWorkingSetMB": 66.015625,
+          "osRendererPrivateMB": 27.681640625,
+          "nonRendererWorkingSetMB": 249.2890625,
+          "totalWorkingSetMB": 785.265625,
+          "osTotalWorkingSetMB": 785.27734375,
+          "processCount": 11,
+          "processTypes": "Browser,GPU,Tab,Tab,Tab,Tab,Tab,Tab,Tab,Tab,Utility",
+          "distinctRendererPids": 8,
+          "sharedPids": [],
+          "sandboxed": true,
+          "integrityLevels": "untrusted",
+          "perCallCreateMs": 61.711,
+          "perCallCloseToExitMs": 15.41,
+          "quitToExitMs": 153,
+          "leftoverAfterWait": 0
+        },
+        {
+          "launchToFirstAnswerMs": 332.2,
+          "viewColdMedianMs": 133.59750000000003,
+          "viewColdMaxMs": 155.473,
+          "firstCallMs": 1.17935,
+          "warmMedianMs": 0.1654,
+          "warmP95Ms": 0.2054,
+          "concurrentMedianMs": 0.251,
+          "concurrentRoundMedianMs": 0.3019,
+          "rendererWorkingSetMB": 65.919921875,
+          "rendererPrivateMB": 27.642578125,
+          "osRendererWorkingSetMB": 65.919921875,
+          "osRendererPrivateMB": 27.642578125,
+          "nonRendererWorkingSetMB": 247.33203125,
+          "totalWorkingSetMB": 777.2421875,
+          "osTotalWorkingSetMB": 777.25390625,
+          "processCount": 11,
+          "processTypes": "Browser,GPU,Tab,Tab,Tab,Tab,Tab,Tab,Tab,Tab,Utility",
+          "distinctRendererPids": 8,
+          "sharedPids": [],
+          "sandboxed": true,
+          "integrityLevels": "untrusted",
+          "perCallCreateMs": 62.382,
+          "perCallCloseToExitMs": 14.278,
+          "quitToExitMs": 151.4,
+          "leftoverAfterWait": 0
+        },
+        {
+          "launchToFirstAnswerMs": 357.65,
+          "viewColdMedianMs": 136.7755,
+          "viewColdMaxMs": 161.712,
+          "firstCallMs": 1.45675,
+          "warmMedianMs": 0.1765,
+          "warmP95Ms": 0.2292,
+          "concurrentMedianMs": 0.2798,
+          "concurrentRoundMedianMs": 0.3336,
+          "rendererWorkingSetMB": 68.5,
+          "rendererPrivateMB": 30.18359375,
+          "osRendererWorkingSetMB": 68.5,
+          "osRendererPrivateMB": 30.18359375,
+          "nonRendererWorkingSetMB": 246.83984375,
+          "totalWorkingSetMB": 787.4375,
+          "osTotalWorkingSetMB": 787.44921875,
+          "processCount": 11,
+          "processTypes": "Browser,GPU,Tab,Tab,Tab,Tab,Tab,Tab,Tab,Tab,Utility",
+          "distinctRendererPids": 8,
+          "sharedPids": [],
+          "sandboxed": true,
+          "integrityLevels": "untrusted",
+          "perCallCreateMs": 62.314,
+          "perCallCloseToExitMs": 13.911,
+          "quitToExitMs": 162.3,
+          "leftoverAfterWait": 0
+        },
+        {
+          "launchToFirstAnswerMs": 342.81,
+          "viewColdMedianMs": 137.313,
+          "viewColdMaxMs": 161.465,
+          "firstCallMs": 1.21935,
+          "warmMedianMs": 0.1648,
+          "warmP95Ms": 0.2041,
+          "concurrentMedianMs": 0.266,
+          "concurrentRoundMedianMs": 0.3161,
+          "rendererWorkingSetMB": 65.962890625,
+          "rendererPrivateMB": 27.63671875,
+          "osRendererWorkingSetMB": 65.962890625,
+          "osRendererPrivateMB": 27.63671875,
+          "nonRendererWorkingSetMB": 247.26953125,
+          "totalWorkingSetMB": 777.54296875,
+          "osTotalWorkingSetMB": 777.5546875,
+          "processCount": 11,
+          "processTypes": "Browser,GPU,Tab,Tab,Tab,Tab,Tab,Tab,Tab,Tab,Utility",
+          "distinctRendererPids": 8,
+          "sharedPids": [],
+          "sandboxed": true,
+          "integrityLevels": "untrusted",
+          "perCallCreateMs": 56.32,
+          "perCallCloseToExitMs": 4.708,
+          "quitToExitMs": 161.9,
+          "leftoverAfterWait": 0
+        }
+      ]
+    }
+  },
+  "quit": [
+    {
+      "mode": "quit",
+      "plugins": 8,
+      "mainPid": 28996,
+      "knownPids": 11,
+      "quitToExitMs": 152.8,
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "whileRunning": {
+        "count": 11,
+        "takenMs": "353.6-5380.8",
+        "types": [
+          "browser:28996",
+          "gpu-process:287736",
+          "utility:5036",
+          "renderer:274240",
+          "renderer:290752",
+          "renderer:292204",
+          "renderer:264808",
+          "renderer:281816",
+          "renderer:274508",
+          "renderer:30736",
+          "renderer:26820"
+        ]
+      },
+      "whileRunningWhy": [
+        "browser:recorded-pid+user-data-dir",
+        "gpu-process:child-of-recorded-pid+user-data-dir",
+        "utility:recorded-pid+child-of-recorded-pid+user-data-dir",
+        "renderer:recorded-pid+child-of-recorded-pid+user-data-dir"
+      ],
+      "probeWhileRunning": [
+        "alive"
+      ],
+      "lastRecordedPidGoneAfterMainMs": 0.1,
+      "deadAfterMainMs": "utility:5036=0.1 renderer:26820=0.1 browser:28996=0.1 renderer:30736=0.1 renderer:264808=0.1 renderer:274240=0.1 renderer:274508=0.1 renderer:281816=0.1 gpu-process:287736=0.1 renderer:290752=0.1 renderer:292204=0.1",
+      "afterCrash": null,
+      "afterEnd": {
+        "count": 0,
+        "takenMs": "0.2-5043.6",
+        "types": []
+      },
+      "afterWait": {
+        "count": 0,
+        "takenMs": "5043.6-10187.6",
+        "types": []
+      },
+      "leftovers": [],
+      "problems": []
+    },
+    {
+      "mode": "quit",
+      "plugins": 8,
+      "mainPid": 289864,
+      "knownPids": 11,
+      "quitToExitMs": 154.3,
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "whileRunning": {
+        "count": 11,
+        "takenMs": "364.4-5932",
+        "types": [
+          "browser:289864",
+          "gpu-process:292220",
+          "utility:4708",
+          "renderer:283612",
+          "renderer:23916",
+          "renderer:270432",
+          "renderer:5268",
+          "renderer:286652",
+          "renderer:274676",
+          "renderer:286600",
+          "renderer:289052"
+        ]
+      },
+      "whileRunningWhy": [
+        "browser:recorded-pid+user-data-dir",
+        "gpu-process:child-of-recorded-pid+user-data-dir",
+        "utility:recorded-pid+child-of-recorded-pid+user-data-dir",
+        "renderer:recorded-pid+child-of-recorded-pid+user-data-dir"
+      ],
+      "probeWhileRunning": [
+        "alive"
+      ],
+      "lastRecordedPidGoneAfterMainMs": 0.1,
+      "deadAfterMainMs": "utility:4708=0.1 renderer:5268=0.1 renderer:23916=0.1 renderer:270432=0.1 renderer:274676=0.1 renderer:283612=0.1 renderer:286600=0.1 renderer:286652=0.1 renderer:289052=0.1 browser:289864=0.1 gpu-process:292220=0.1",
+      "afterCrash": null,
+      "afterEnd": {
+        "count": 0,
+        "takenMs": "0.3-5355.6",
+        "types": []
+      },
+      "afterWait": {
+        "count": 0,
+        "takenMs": "5355.6-10415.1",
+        "types": []
+      },
+      "leftovers": [],
+      "problems": []
+    },
+    {
+      "mode": "quit",
+      "plugins": 8,
+      "mainPid": 285816,
+      "knownPids": 11,
+      "quitToExitMs": 164.1,
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "whileRunning": {
+        "count": 11,
+        "takenMs": "333.9-5429.5",
+        "types": [
+          "browser:285816",
+          "gpu-process:263612",
+          "utility:288852",
+          "renderer:265792",
+          "renderer:30812",
+          "renderer:277748",
+          "renderer:249332",
+          "renderer:285800",
+          "renderer:292800",
+          "renderer:293424",
+          "renderer:285384"
+        ]
+      },
+      "whileRunningWhy": [
+        "browser:recorded-pid+user-data-dir",
+        "gpu-process:child-of-recorded-pid+user-data-dir",
+        "utility:recorded-pid+child-of-recorded-pid+user-data-dir",
+        "renderer:recorded-pid+child-of-recorded-pid+user-data-dir"
+      ],
+      "probeWhileRunning": [
+        "alive"
+      ],
+      "lastRecordedPidGoneAfterMainMs": 0.1,
+      "deadAfterMainMs": "renderer:30812=0.1 renderer:249332=0.1 gpu-process:263612=0.1 renderer:265792=0.1 renderer:277748=0.1 renderer:285384=0.1 renderer:285800=0.1 browser:285816=0.1 utility:288852=0.1 renderer:292800=0.1 renderer:293424=0.1",
+      "afterCrash": null,
+      "afterEnd": {
+        "count": 0,
+        "takenMs": "0.3-5449.5",
+        "types": []
+      },
+      "afterWait": {
+        "count": 0,
+        "takenMs": "5449.5-11024.8",
+        "types": []
+      },
+      "leftovers": [],
+      "problems": []
+    }
+  ],
+  "kill": [
+    {
+      "mode": "kill",
+      "plugins": 8,
+      "mainPid": 30068,
+      "knownPids": 11,
+      "killOutput": "SUCCESS: The process with PID 30068 has been terminated.",
+      "exit": {
+        "code": 1,
+        "signal": null
+      },
+      "whileRunning": {
+        "count": 11,
+        "takenMs": "1952.8-7129.3",
+        "types": [
+          "browser:30068",
+          "gpu-process:287088",
+          "utility:292528",
+          "renderer:271940",
+          "renderer:20056",
+          "renderer:274420",
+          "renderer:278696",
+          "renderer:275544",
+          "renderer:29220",
+          "renderer:292740",
+          "renderer:285436"
+        ]
+      },
+      "whileRunningWhy": [
+        "browser:recorded-pid+user-data-dir",
+        "gpu-process:recorded-pid+child-of-recorded-pid+user-data-dir",
+        "utility:recorded-pid+child-of-recorded-pid+user-data-dir",
+        "renderer:recorded-pid+child-of-recorded-pid+user-data-dir"
+      ],
+      "killCommandMs": 4579.6,
+      "probeWhileRunning": [
+        "alive"
+      ],
+      "lastRecordedPidGoneAfterMainMs": 0,
+      "deadAfterMainMs": "renderer:20056=0 renderer:29220=0 browser:30068=0 renderer:271940=0 renderer:274420=0 renderer:275544=0 renderer:278696=0 renderer:285436=0 gpu-process:287088=0 utility:292528=0 renderer:292740=0",
+      "afterCrash": null,
+      "afterEnd": {
+        "count": 0,
+        "takenMs": "0-5067.2",
+        "types": []
+      },
+      "afterWait": {
+        "count": 0,
+        "takenMs": "5067.3-9942.7",
+        "types": []
+      },
+      "leftovers": [],
+      "problems": []
+    },
+    {
+      "mode": "kill",
+      "plugins": 8,
+      "mainPid": 284784,
+      "knownPids": 11,
+      "killOutput": "SUCCESS: The process with PID 284784 has been terminated.",
+      "exit": {
+        "code": 1,
+        "signal": null
+      },
+      "whileRunning": {
+        "count": 11,
+        "takenMs": "333.3-5422.6",
+        "types": [
+          "browser:284784",
+          "gpu-process:263188",
+          "utility:287008",
+          "renderer:9108",
+          "renderer:258304",
+          "renderer:293844",
+          "renderer:278672",
+          "renderer:286016",
+          "renderer:27612",
+          "renderer:293972",
+          "renderer:293472"
+        ]
+      },
+      "whileRunningWhy": [
+        "browser:recorded-pid+user-data-dir",
+        "gpu-process:child-of-recorded-pid+user-data-dir",
+        "utility:recorded-pid+child-of-recorded-pid+user-data-dir",
+        "renderer:recorded-pid+child-of-recorded-pid+user-data-dir"
+      ],
+      "killCommandMs": 4474.2,
+      "probeWhileRunning": [
+        "alive"
+      ],
+      "lastRecordedPidGoneAfterMainMs": 19.6,
+      "deadAfterMainMs": "renderer:9108=19.6 renderer:27612=19.6 renderer:258304=19.6 gpu-process:263188=19.6 renderer:278672=19.6 browser:284784=0 renderer:286016=19.6 utility:287008=19.6 renderer:293472=19.6 renderer:293844=19.6 renderer:293972=19.6",
+      "afterCrash": null,
+      "afterEnd": {
+        "count": 0,
+        "takenMs": "0-5153.5",
+        "types": []
+      },
+      "afterWait": {
+        "count": 0,
+        "takenMs": "5153.5-10642",
+        "types": []
+      },
+      "leftovers": [],
+      "problems": []
+    },
+    {
+      "mode": "kill",
+      "plugins": 8,
+      "mainPid": 293072,
+      "knownPids": 11,
+      "killOutput": "SUCCESS: The process with PID 293072 has been terminated.",
+      "exit": {
+        "code": 1,
+        "signal": null
+      },
+      "whileRunning": {
+        "count": 11,
+        "takenMs": "376.5-5678.1",
+        "types": [
+          "browser:293072",
+          "gpu-process:291452",
+          "utility:288704",
+          "renderer:289964",
+          "renderer:620",
+          "renderer:274960",
+          "renderer:291272",
+          "renderer:285088",
+          "renderer:267284",
+          "renderer:284892",
+          "renderer:230972"
+        ]
+      },
+      "whileRunningWhy": [
+        "browser:recorded-pid+user-data-dir",
+        "gpu-process:child-of-recorded-pid+user-data-dir",
+        "utility:recorded-pid+child-of-recorded-pid+user-data-dir",
+        "renderer:recorded-pid+child-of-recorded-pid+user-data-dir"
+      ],
+      "killCommandMs": 4476.8,
+      "probeWhileRunning": [
+        "alive"
+      ],
+      "lastRecordedPidGoneAfterMainMs": 20.9,
+      "deadAfterMainMs": "renderer:620=20.9 renderer:230972=20.9 renderer:267284=20.9 renderer:274960=20.9 renderer:284892=20.9 renderer:285088=20.9 utility:288704=20.9 renderer:289964=20.9 renderer:291272=20.9 gpu-process:291452=20.9 browser:293072=0",
+      "afterCrash": null,
+      "afterEnd": {
+        "count": 0,
+        "takenMs": "0-5185.5",
+        "types": []
+      },
+      "afterWait": {
+        "count": 0,
+        "takenMs": "5185.5-10255",
+        "types": []
+      },
+      "leftovers": [],
+      "problems": []
+    }
+  ],
+  "crash": [
+    {
+      "mode": "crash",
+      "plugins": 8,
+      "mainPid": 291904,
+      "knownPids": 12,
+      "quitToExitMs": 151.8,
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "whileRunning": null,
+      "whileRunningWhy": [],
+      "probeWhileRunning": [],
+      "lastRecordedPidGoneAfterMainMs": 0.1,
+      "deadAfterMainMs": "?:27676=0.1 renderer:28540=0.1 renderer:28840=0.1 renderer:263528=0.1 renderer:271020=0.1 gpu-process:285376=0.1 renderer:285520=0.1 utility:286040=0.1 renderer:286960=0.1 browser:291904=0.1 renderer:293532=0.1 Tab:293904=0.1",
+      "afterCrash": {
+        "count": 10,
+        "takenMs": "343.6-5308.5",
+        "types": [
+          "browser:291904",
+          "gpu-process:285376",
+          "utility:286040",
+          "renderer:286960",
+          "renderer:28540",
+          "renderer:293532",
+          "renderer:285520",
+          "renderer:263528",
+          "renderer:271020",
+          "renderer:28840"
+        ]
+      },
+      "afterEnd": {
+        "count": 0,
+        "takenMs": "0.3-5270.3",
+        "types": []
+      },
+      "afterWait": {
+        "count": 0,
+        "takenMs": "5270.3-10614.8",
+        "types": []
+      },
+      "leftovers": [],
+      "crash": {
+        "reason": "crashed",
+        "exitCode": 2,
+        "crashToGoneEventMs": 2.068,
+        "crashToProcessExitMs": 2.233,
+        "victimPidInOsList": false,
+        "othersAnswered": 7,
+        "others": 7,
+        "victimCall": "Error: plugin-1 is not waiting.",
+        "restartToFirstAnswerMs": 55.85,
+        "restartSharing": {
+          "distinctPids": 8,
+          "plugins": 8,
+          "shared": []
+        }
+      },
+      "problems": []
+    },
+    {
+      "mode": "crash",
+      "plugins": 8,
+      "mainPid": 273096,
+      "knownPids": 12,
+      "quitToExitMs": 162.2,
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "whileRunning": null,
+      "whileRunningWhy": [],
+      "probeWhileRunning": [],
+      "lastRecordedPidGoneAfterMainMs": 0.1,
+      "deadAfterMainMs": "renderer:37520=0.1 ?:106464=0.1 utility:263696=0.1 renderer:271928=0.1 browser:273096=0.1 renderer:274928=0.1 Tab:277768=0.1 gpu-process:281544=0.1 renderer:285568=0.1 renderer:289216=0.1 renderer:290376=0.1 renderer:291776=0.1",
+      "afterCrash": {
+        "count": 10,
+        "takenMs": "353.2-5523.8",
+        "types": [
+          "browser:273096",
+          "gpu-process:281544",
+          "utility:263696",
+          "renderer:289216",
+          "renderer:271928",
+          "renderer:285568",
+          "renderer:274928",
+          "renderer:37520",
+          "renderer:291776",
+          "renderer:290376"
+        ]
+      },
+      "afterEnd": {
+        "count": 0,
+        "takenMs": "0.3-5070.6",
+        "types": []
+      },
+      "afterWait": {
+        "count": 0,
+        "takenMs": "5070.6-10140.1",
+        "types": []
+      },
+      "leftovers": [],
+      "crash": {
+        "reason": "crashed",
+        "exitCode": 2,
+        "crashToGoneEventMs": 2.544,
+        "crashToProcessExitMs": 2.716,
+        "victimPidInOsList": false,
+        "othersAnswered": 7,
+        "others": 7,
+        "victimCall": "Error: plugin-1 is not waiting.",
+        "restartToFirstAnswerMs": 55.443,
+        "restartSharing": {
+          "distinctPids": 8,
+          "plugins": 8,
+          "shared": []
+        }
+      },
+      "problems": []
+    },
+    {
+      "mode": "crash",
+      "plugins": 8,
+      "mainPid": 264924,
+      "knownPids": 12,
+      "quitToExitMs": 151.6,
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "whileRunning": null,
+      "whileRunningWhy": [],
+      "probeWhileRunning": [],
+      "lastRecordedPidGoneAfterMainMs": 0.1,
+      "deadAfterMainMs": "Tab:26988=0.1 browser:264924=0.1 renderer:271404=0.1 renderer:274612=0.1 renderer:276792=0.1 gpu-process:280088=0.1 renderer:284788=0.1 renderer:290212=0.1 renderer:290300=0.1 renderer:290460=0.1 ?:291068=0.1 utility:291144=0.1",
+      "afterCrash": {
+        "count": 10,
+        "takenMs": "335-5398.1",
+        "types": [
+          "browser:264924",
+          "gpu-process:280088",
+          "utility:291144",
+          "renderer:271404",
+          "renderer:284788",
+          "renderer:276792",
+          "renderer:290212",
+          "renderer:290300",
+          "renderer:290460",
+          "renderer:274612"
+        ]
+      },
+      "afterEnd": {
+        "count": 0,
+        "takenMs": "0.4-4952.1",
+        "types": []
+      },
+      "afterWait": {
+        "count": 0,
+        "takenMs": "5011.1-9948.4",
+        "types": []
+      },
+      "leftovers": [],
+      "crash": {
+        "reason": "crashed",
+        "exitCode": 2,
+        "crashToGoneEventMs": 2.274,
+        "crashToProcessExitMs": 2.435,
+        "victimPidInOsList": false,
+        "othersAnswered": 7,
+        "others": 7,
+        "victimCall": "Error: plugin-1 is not waiting.",
+        "restartToFirstAnswerMs": 54.234,
+        "restartSharing": {
+          "distinctPids": 8,
+          "plugins": 8,
+          "shared": []
+        }
+      },
+      "problems": []
+    }
+  ],
+  "sharing": [
+    {
+      "processLimit": "1",
+      "sharedPartition": false,
+      "sameSiteIds": false,
+      "plugins": 8,
+      "sharing": {
+        "distinctPids": 8,
+        "plugins": 8,
+        "shared": []
+      },
+      "problems": []
+    },
+    {
+      "processLimit": "1",
+      "sharedPartition": true,
+      "sameSiteIds": false,
+      "plugins": 8,
+      "sharing": {
+        "distinctPids": 8,
+        "plugins": 8,
+        "shared": []
+      },
+      "problems": []
+    },
+    {
+      "processLimit": "1",
+      "sharedPartition": false,
+      "sameSiteIds": true,
+      "plugins": 8,
+      "sharing": {
+        "distinctPids": 8,
+        "plugins": 8,
+        "shared": []
+      },
+      "problems": []
+    },
+    {
+      "processLimit": "1",
+      "sharedPartition": true,
+      "sameSiteIds": true,
+      "plugins": 8,
+      "sharing": {
+        "distinctPids": 8,
+        "plugins": 8,
+        "shared": []
+      },
+      "problems": []
+    }
+  ],
+  "leftoversAnyRun": []
+}
