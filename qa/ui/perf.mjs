@@ -3,7 +3,7 @@
 // and the work per second while a timer runs. Run it on the base branch and on
 // the change, with `just ui-perf`, and compare the two: the dev server serves
 // unbundled modules and React's development build, so the absolute numbers sit
-// well above the production figures in the progress tracker. Medians of `RUNS`
+// well above the production figures in docs/agents/code-standards.md. Medians of `RUNS`
 // runs; compare runs on the same machine, with nothing else running.
 import { chromium } from "playwright";
 import { emptyPluginsOverview, seedScript } from "./seed.mjs";

@@ -18,7 +18,7 @@ import { isShortcutSequencePending } from "@/lib/shortcut-handlers";
 
 /**
  * Keys on the focused row, card or Grid cell. See "Focused rows and cards" in
- * agents/ux-spec.md.
+ * docs/agents/ux-spec.md.
  *
  * Focusable items carry `data-focus-column` (the day index in the Week view,
  * "0" in lists) inside an element with `data-focus-scope`. The arrows move

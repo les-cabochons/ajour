@@ -4,7 +4,7 @@ import { z } from "zod";
  * The calendar capability: a plugin provides the user's calendar events for a
  * date range, as provider-neutral facts. Read-only. Ajour turns them into
  * suggestions in the Time view and never stores them. See ADR 0005 and
- * docs/superpowers/specs/2026-10-15-calendar-suggestions-design.md.
+ * docs/specs/2026-10-15-calendar-suggestions-design.md.
  *
  * Times are Unix milliseconds. A local date is YYYY-MM-DD.
  */

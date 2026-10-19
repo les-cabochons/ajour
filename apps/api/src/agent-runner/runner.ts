@@ -34,7 +34,7 @@ import { buildPrompt } from "./prompts.ts";
 /**
  * Runs one plugin agent task at a time: a per-run MCP client, a session the
  * runner begins, the CLI in an empty temp folder, and cleanup on every exit.
- * See docs/superpowers/specs/2026-10-15-ajour-agent-runner-design.md.
+ * See docs/specs/2026-10-15-ajour-agent-runner-design.md.
  */
 
 const STALL_LIMIT_MS = 10 * 60_000;

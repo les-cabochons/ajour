@@ -165,7 +165,7 @@ Declare the features your tool supports under `capabilities.connector.comments`:
 - Convert each comment to Markdown. Write a mention as `[@Display Name](mention:<id>)`, where the id is yours and stays opaque to Ajour. Ajour shows it as a chip and never follows it.
 - Return the user as `viewer`, in the same id space as comment authors, so Ajour can tell which comments are theirs.
 - Set `restrictedTo` to the group or role that may read a restricted comment, such as a Jira role.
-- Ajour never stores comment text. It holds the newest page in memory for a few minutes, so throw rather than return a partial page. See [ADR 0008](https://github.com/les-cabochons/ajour/blob/main/agents/adr/0008-backlog-comments-are-fetched-and-written-at-once.md).
+- Ajour never stores comment text. It holds the newest page in memory for a few minutes, so throw rather than return a partial page. See [ADR 0008](https://github.com/les-cabochons/ajour/blob/main/docs/adr/0008-backlog-comments-are-fetched-and-written-at-once.md).
 
 ## postItemComment
 

@@ -3,8 +3,8 @@
 - Date: 2026-10-11
 - Status: Agreed in a grilling session, ready for slicing
 - Scope: plugin capabilities, code host contract, pull request list and lifecycle, sidebar, review client, content cache, time tracking
-- Decisions: [ADR 0002](../../../agents/adr/0002-pull-request-writes-are-immediate.md), [ADR 0003](../../../agents/adr/0003-code-host-review-client-is-host-rendered.md)
-- Terms: `agents/GLOSSARY.md`, sections "Code review" and "Extensions"
+- Decisions: [ADR 0002](../adr/0002-pull-request-writes-are-immediate.md), [ADR 0003](../adr/0003-code-host-review-client-is-host-rendered.md)
+- Terms: `GLOSSARY.md`, sections "Code review" and "Extensions"
 
 ## Summary
 
@@ -155,7 +155,7 @@ Writes go to the code host as soon as the user acts (ADR 0002). A failed write k
 
 ### Keyboard
 
-The review client is keyboard-first: next and previous file, next and previous thread, mark viewed, comment on the selected line, submit, open the submit dialog. The keys go in `agents/ux-spec.md` and must not collide with the existing keyboard model.
+The review client is keyboard-first: next and previous file, next and previous thread, mark viewed, comment on the selected line, submit, open the submit dialog. The keys go in `docs/agents/ux-spec.md` and must not collide with the existing keyboard model.
 
 ## Content cache
 

@@ -15,7 +15,7 @@ import { localStore } from "@/lib/local-store";
  * Runs a team sync: plans a round from the local projects, sends it, applies
  * the answer, and goes on while the page bounds left changes or the team has
  * more pages. The rules live in domain/projects/team-sync.ts. See
- * docs/superpowers/specs/2026-10-16-team-project-sync-design.md.
+ * docs/specs/2026-10-16-team-project-sync-design.md.
  */
 
 /** Rounds in one sync. A larger backlog goes on at the next interval. */

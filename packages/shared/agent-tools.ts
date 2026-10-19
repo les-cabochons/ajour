@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /**
  * Contracts between the local API's MCP endpoint and the renderer that runs
- * Ajour's data tools. See docs/superpowers/specs/2026-10-14-ajour-mcp-design.md.
+ * Ajour's data tools. See docs/specs/2026-10-14-ajour-mcp-design.md.
  */
 
 const ISO_DATE_SHAPE = /^\d{4}-\d{2}-\d{2}$/;

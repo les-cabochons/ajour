@@ -1,5 +1,5 @@
 /**
- * The application menu. See "Menu bar" under "Keyboard" in agents/ux-spec.md.
+ * The application menu. See "Menu bar" under "Keyboard" in docs/agents/ux-spec.md.
  *
  * `getAppMenuModel` describes the menus as plain data, so the preload can hand
  * the same menus to the renderer, which draws them in the Windows title bar.

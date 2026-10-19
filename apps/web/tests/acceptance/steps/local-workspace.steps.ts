@@ -1517,7 +1517,7 @@ async function expectAppSidebarWidth(page: Page, width: number) {
 }
 
 Then("the app sidebar is expanded", async ({ page }) => {
-  // The Comfortable density's default width. See "Width" in agents/ux-spec.md.
+  // The Comfortable density's default width. See "Width" in docs/agents/ux-spec.md.
   await expectAppSidebarWidth(page, 272);
   await expect(viewSwitcher(page)).toBeVisible();
 });

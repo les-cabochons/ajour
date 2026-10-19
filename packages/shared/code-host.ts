@@ -4,7 +4,7 @@ import { z } from "zod";
  * The code host capability: a plugin provides the user's pull requests as
  * provider-neutral facts and carries out the user's reviews, comments and
  * merges. Ajour derives the pull request lifecycle from the facts. See ADR
- * 0002 and ADR 0003, and docs/superpowers/specs/2026-10-11-code-host-pull-requests-design.md.
+ * 0002 and ADR 0003, and docs/specs/2026-10-11-code-host-pull-requests-design.md.
  *
  * Times are Unix milliseconds. A repository is its full name in the code
  * host, such as "acme/api".

@@ -1,5 +1,5 @@
 /**
- * Action sets for user-facing objects, from the action model in agents/ux-spec.md.
+ * Action sets for user-facing objects, from the action model in docs/agents/ux-spec.md.
  *
  * Every surface (right-click menu, "…" menu, editors) renders the same list in the
  * same order. Kind decides which actions are listed. State decides which are enabled:

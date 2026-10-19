@@ -5,7 +5,7 @@ import { isoDateSchema } from "./agent-tools.ts";
 /**
  * Contracts for the agent runner: Settings > Agents, the agent tasks
  * plugins declare, and runs. See
- * docs/superpowers/specs/2026-10-15-ajour-agent-runner-design.md.
+ * docs/specs/2026-10-15-ajour-agent-runner-design.md.
  */
 
 export const agentCliIdSchema = z.enum(["claude-code", "codex", "opencode"]);
