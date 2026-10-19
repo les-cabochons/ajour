@@ -337,6 +337,16 @@ Then("Monday's {string} entry is back", async ({ page }, note: string) => {
   await expect(page.getByText(note, { exact: true })).toHaveCount(1);
 });
 
+When("I press Commit week in the top bar", async ({ page }) => {
+  await expect(
+    page.getByRole("navigation", { name: "Primary navigation" }),
+  ).toHaveCount(0);
+  await page
+    .locator(".ajour-nav")
+    .getByRole("button", { name: "Commit week", exact: true })
+    .click();
+});
+
 function weekCompleteDialog(page: Page) {
   return page.getByRole("alertdialog", { name: "Week complete" });
 }

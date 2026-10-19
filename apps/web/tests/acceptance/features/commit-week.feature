@@ -65,6 +65,13 @@ Feature: Commit the week
     And I press "Commit week"
     Then the Commit page says everything is committed
 
+  Scenario: Open the Commit page from the top bar while the sidebar is hidden
+    Given I have a committed week of entries
+    When I open Monday's Day list
+    And I hide the app sidebar with its button
+    And I press Commit week in the top bar
+    Then the Commit page says everything is committed
+
   Scenario: The totals show the day total and no Commit button
     Given I have a committed week of entries
     When I open Monday's Day list

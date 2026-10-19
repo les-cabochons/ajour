@@ -66,6 +66,7 @@ import {
 } from "@/features/time/new-entry-request";
 import { TimeEntryModal } from "@/features/timer/time-entry-modal";
 import { WeekTargetPromptHost } from "@/features/time/week-target-prompt";
+import { CommitWeekButton } from "@/features/time/commit-week-button";
 import {
   SettingsNavigation,
   getSettingsPages,
@@ -829,6 +830,15 @@ export function AppShell() {
                   <SidebarToggleButton
                     label="Show sidebar"
                     onToggle={appSidebar.toggle}
+                    className={cn(isDesktopShell && "desktop-no-drag")}
+                  />
+                )}
+                {/* Commit week lives in the sidebar foot. While that foot is
+                    not on screen (sidebar hidden, or Settings in its place),
+                    it sits here, after Show sidebar. */}
+                {isNarrowView || isSidebarInline ? null : (
+                  <CommitWeekButton
+                    selectedTimeDate={selectedTimeDate}
                     className={cn(isDesktopShell && "desktop-no-drag")}
                   />
                 )}

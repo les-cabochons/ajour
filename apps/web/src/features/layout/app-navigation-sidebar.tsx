@@ -1,7 +1,6 @@
 import { useMemo, useRef, type KeyboardEvent, type PointerEvent } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
-  RiCalendarCheckLine as CommitIcon,
   RiSettings3Line as Settings,
   RiSideBarLine as SidebarIcon,
 } from "@remixicon/react";
@@ -37,7 +36,7 @@ import {
   TimerDock,
   TodayTotal,
 } from "@/features/layout/timer-dock";
-import { useOpenCommitPage } from "@/features/time/use-open-commit-page";
+import { CommitWeekButton } from "@/features/time/commit-week-button";
 import type { AppSidebarState } from "@/lib/app-sidebar";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
@@ -181,7 +180,6 @@ export function AppNavigationSidebar({
   const now = useNow();
   const layout = useSidebarLayout();
   const isSettingsActive = getAppSection(pathname) === "settings";
-  const openCommitPage = useOpenCommitPage(selectedTimeDate);
   // A backlog item opened from Time or Projects keeps that view selected.
   const sectionPathname = useRouterState({
     select: (router) =>
@@ -300,21 +298,7 @@ export function AppNavigationSidebar({
         >
           <Settings />
         </TooltipButton>
-        <TooltipButton
-          label="Commit"
-          aria-label="Commit week"
-          side="top"
-          render={
-            <Button
-              variant="ghost"
-              size="icon"
-              className="ajour-app-sidebar-toggle"
-              onClick={openCommitPage}
-            />
-          }
-        >
-          <CommitIcon />
-        </TooltipButton>
+        <CommitWeekButton selectedTimeDate={selectedTimeDate} side="top" />
       </SidebarFooter>
       <SidebarResizeHandle onStateChange={onStateChange} />
     </Sidebar>
