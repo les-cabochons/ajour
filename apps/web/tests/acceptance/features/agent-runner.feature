@@ -19,14 +19,15 @@ Feature: Agent tasks from plugins
     When I open the Commit page for the week of 2026-10-12
     Then "Enter in Workday" is disabled with the reason "Fill in Workday timesheet URL in Settings > Plugins > Workday"
 
-  Scenario: I fill in the task settings on the plugin's page
+  Scenario: I fill in the settings a plugin's tasks share, once
     Given the Workday plugin is installed without its timesheet URL
     When I open the Workday plugin settings
-    Then the task says "Fill in Workday timesheet URL in Settings > Plugins > Workday"
+    Then both tasks say "Fill in Workday timesheet URL in Settings > Plugins > Workday"
+    And the page asks for "Workday timesheet URL" once
     When I fill in "Workday timesheet URL" with "https://wd.example/t"
     And I press "Save"
     Then the timesheet URL "https://wd.example/t" is saved
-    And the task says "Ready to run from the Commit page."
+    And both tasks say "Ready to run from the Commit page."
 
   Scenario: A plugin's submit task replaces Submit week
     Given the local API reports a ready "Check Workday and submit" submit task

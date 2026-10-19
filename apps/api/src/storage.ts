@@ -140,8 +140,8 @@ function normalizeMcpState(raw: unknown): StoredMcpState {
 
 interface StoredAgentRunnerState {
   settings: AgentRunnerSettings;
-  /** Task setting values by plugin ID, then task ID. */
-  taskValues: Record<string, Record<string, PluginFieldValues>>;
+  /** Agent task setting values by plugin ID, shared by the plugin's tasks. */
+  pluginValues: Record<string, PluginFieldValues>;
 }
 
 function defaultAgentRunnerSettings(): AgentRunnerSettings {
@@ -169,25 +169,35 @@ function normalizeAgentRunnerState(raw: unknown): StoredAgentRunnerState {
       ? (raw as Record<string, unknown>)
       : {};
   const settings = agentRunnerSettingsSchema.safeParse(record.settings);
-  const taskValues: StoredAgentRunnerState["taskValues"] = Object.create(null);
+  const pluginValues: StoredAgentRunnerState["pluginValues"] =
+    Object.create(null);
+  const merge = (pluginId: string, values: unknown) => {
+    if (UNSAFE_KEYS.has(pluginId)) return;
+    const parsed = pluginFieldValuesSchema.safeParse(values);
+    if (!parsed.success) return;
+    const merged = (pluginValues[pluginId] ??= Object.create(null));
+    for (const [key, value] of Object.entries(safeValues(parsed.data))) {
+      if (merged[key] === undefined || merged[key] === "") merged[key] = value;
+    }
+  };
+  if (typeof record.pluginValues === "object" && record.pluginValues !== null) {
+    for (const [pluginId, values] of Object.entries(record.pluginValues)) {
+      merge(pluginId, values);
+    }
+  }
+  // Before a plugin's tasks shared their settings, each task kept its own
+  // values. The first non-empty value of each setting wins.
   if (typeof record.taskValues === "object" && record.taskValues !== null) {
     for (const [pluginId, tasks] of Object.entries(record.taskValues)) {
-      if (UNSAFE_KEYS.has(pluginId)) continue;
       if (typeof tasks !== "object" || tasks === null) continue;
       for (const [taskId, values] of Object.entries(tasks)) {
-        if (UNSAFE_KEYS.has(taskId)) continue;
-        const parsed = pluginFieldValuesSchema.safeParse(values);
-        if (parsed.success) {
-          (taskValues[pluginId] ??= Object.create(null))[taskId] = safeValues(
-            parsed.data,
-          );
-        }
+        if (!UNSAFE_KEYS.has(taskId)) merge(pluginId, values);
       }
     }
   }
   return {
     settings: settings.success ? settings.data : defaultAgentRunnerSettings(),
-    taskValues,
+    pluginValues,
   };
 }
 
@@ -267,7 +277,7 @@ function createDefaultState(): AppApiState {
     disabledCapabilities: {},
     pluginsEnabled: true,
     mcp: { enabled: false, clients: [] },
-    agentRunner: { settings: defaultAgentRunnerSettings(), taskValues: {} },
+    agentRunner: { settings: defaultAgentRunnerSettings(), pluginValues: {} },
   };
 }
 
@@ -686,7 +696,7 @@ function normalizeState(
       disabledCapabilities: defaults.disabledCapabilities,
       pluginsEnabled: defaults.pluginsEnabled,
       mcp: { enabled: false, clients: [] },
-      agentRunner: { settings: defaultAgentRunnerSettings(), taskValues: {} },
+      agentRunner: { settings: defaultAgentRunnerSettings(), pluginValues: {} },
     };
   }
 
@@ -964,35 +974,26 @@ export class AppApiStorage {
     });
   }
 
-  /** The values the user filled in for one agent task, or none. */
-  async getAgentTaskValues(
-    pluginId: string,
-    taskId: string,
-  ): Promise<PluginFieldValues> {
-    return (
-      (await this.readState()).agentRunner.taskValues[pluginId]?.[taskId] ?? {}
-    );
+  /** The agent task settings the user filled in for a plugin, or none. */
+  async getAgentTaskValues(pluginId: string): Promise<PluginFieldValues> {
+    if (UNSAFE_KEYS.has(pluginId)) return {};
+    return (await this.readState()).agentRunner.pluginValues[pluginId] ?? {};
   }
 
   async setAgentTaskValues(
     pluginId: string,
-    taskId: string,
     values: PluginFieldValues,
   ): Promise<void> {
-    if (UNSAFE_KEYS.has(pluginId) || UNSAFE_KEYS.has(taskId)) return;
+    if (UNSAFE_KEYS.has(pluginId)) return;
     await this.mutate((state) => {
-      const taskValues: StoredAgentRunnerState["taskValues"] =
+      const pluginValues: StoredAgentRunnerState["pluginValues"] =
         Object.create(null);
-      Object.assign(taskValues, state.agentRunner.taskValues);
-      taskValues[pluginId] = Object.assign(
-        Object.create(null),
-        taskValues[pluginId],
-        { [taskId]: safeValues(values) },
-      );
+      Object.assign(pluginValues, state.agentRunner.pluginValues);
+      pluginValues[pluginId] = safeValues(values);
       return {
         nextState: {
           ...state,
-          agentRunner: { ...state.agentRunner, taskValues },
+          agentRunner: { ...state.agentRunner, pluginValues },
         },
         result: undefined,
       };
@@ -1105,8 +1106,8 @@ export class AppApiStorage {
         ),
         agentRunner: {
           ...state.agentRunner,
-          taskValues: Object.fromEntries(
-            Object.entries(state.agentRunner.taskValues).filter(
+          pluginValues: Object.fromEntries(
+            Object.entries(state.agentRunner.pluginValues).filter(
               ([candidate]) => candidate !== pluginId,
             ),
           ),

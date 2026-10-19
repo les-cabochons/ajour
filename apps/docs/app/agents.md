@@ -59,7 +59,7 @@ In **Settings › Agents**, pick:
 - **Browser**: **Ajour's Chrome window** opens Chrome with a profile only Ajour uses. **My Chrome** uses your own Chrome profile through Playwright's Chrome extension, with every site you are signed in to.
 - **Model**: leave it empty for the agent's default model.
 
-Each task's own settings are on its plugin's page in **Settings › Plugins**. One task runs at a time. Its session shows in the agent panel with **Stop**.
+A plugin's task settings are on its page in **Settings › Plugins**, once for all its tasks. One task runs at a time. Its session shows in the agent panel with **Stop**.
 
 ## Watch your agents
 

@@ -701,20 +701,51 @@ describe("AppApiStorage", () => {
       model: "",
     });
     await storage.updateAgentRunnerSettings({ cli: "claude-code" });
-    await storage.setAgentTaskValues("ajp-workday", "enter-week", {
+    await storage.setAgentTaskValues("ajp-workday", {
       timesheetUrl: "https://wd.example/t",
     });
     const reloaded = new AppApiStorage(statePath);
     expect((await reloaded.getAgentRunnerSettings()).cli).toBe("claude-code");
-    expect(
-      await reloaded.getAgentTaskValues("ajp-workday", "enter-week"),
-    ).toEqual({
+    expect(await reloaded.getAgentTaskValues("ajp-workday")).toEqual({
       timesheetUrl: "https://wd.example/t",
     });
     await reloaded.removePluginData("ajp-workday");
-    expect(
-      await reloaded.getAgentTaskValues("ajp-workday", "enter-week"),
-    ).toEqual({});
+    expect(await reloaded.getAgentTaskValues("ajp-workday")).toEqual({});
+  });
+
+  it("merges values saved per task into one set for the plugin", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
+    tempDirs.push(tempDir);
+    const statePath = path.join(tempDir, "app-api-state.json");
+    // Before tasks shared their settings, each task kept its own values.
+    await writeFile(
+      statePath,
+      `${JSON.stringify({
+        version: 7,
+        connections: [],
+        agentRunner: {
+          taskValues: {
+            "workday-agent": {
+              "commit-week": {
+                timesheetUrl: "https://wd.example/t",
+                username: "",
+              },
+              "submit-week": {
+                timesheetUrl: "https://wd.example/old",
+                username: "me",
+              },
+            },
+          },
+        },
+      })}\n`,
+      "utf8",
+    );
+    const storage = new AppApiStorage(statePath);
+    // The first non-empty value of each setting wins.
+    expect(await storage.getAgentTaskValues("workday-agent")).toEqual({
+      timesheetUrl: "https://wd.example/t",
+      username: "me",
+    });
   });
 
   it("ignores stored keys that would write to Object.prototype", async () => {
@@ -724,18 +755,21 @@ describe("AppApiStorage", () => {
     // JSON.parse gives the state an own "__proto__" key, as a file on disk can.
     await writeFile(
       statePath,
-      `{"version":7,"connections":[],"agentRunner":{"taskValues":{"__proto__":{"x":{"a":"b"}},"ajp":{"constructor":{"a":"b"},"task":{"__proto__":"y","url":"https://wd.example/t"}}}}}\n`,
+      `{"version":7,"connections":[],"agentRunner":{"taskValues":{"__proto__":{"x":{"a":"b"}},"ajp":{"constructor":{"a":"b"},"task":{"__proto__":"y","url":"https://wd.example/t"}}},"pluginValues":{"__proto__":{"x":"b"},"other":{"constructor":"z","url":"https://wd.example/o"}}}}\n`,
       "utf8",
     );
     const storage = new AppApiStorage(statePath);
-    expect(await storage.getAgentTaskValues("ajp", "task")).toEqual({
+    expect(await storage.getAgentTaskValues("ajp")).toEqual({
       url: "https://wd.example/t",
     });
-    await storage.setAgentTaskValues("__proto__", "x", { a: "b" });
-    await storage.setAgentTaskValues("ajp", "prototype", { a: "b" });
-    await storage.getAgentTaskValues("__proto__", "x");
+    expect(await storage.getAgentTaskValues("other")).toEqual({
+      url: "https://wd.example/o",
+    });
+    await storage.setAgentTaskValues("__proto__", { x: "b" });
+    await storage.setAgentTaskValues("ajp", { a: "b" });
+    await storage.getAgentTaskValues("__proto__");
     expect(({} as Record<string, unknown>).x).toBeUndefined();
-    expect(await storage.getAgentTaskValues("ajp", "constructor")).toEqual({});
-    expect(await storage.getAgentTaskValues("ajp", "prototype")).toEqual({});
+    expect(await storage.getAgentTaskValues("ajp")).toEqual({ a: "b" });
+    expect(await storage.getAgentTaskValues("constructor")).toEqual({});
   });
 });

@@ -66,10 +66,7 @@ export class AgentRunError extends Error {
 interface RunnerStorage {
   getMcpSettings(): Promise<{ enabled: boolean }>;
   getAgentRunnerSettings(): Promise<AgentRunnerSettings>;
-  getAgentTaskValues(
-    pluginId: string,
-    taskId: string,
-  ): Promise<PluginFieldValues>;
+  getAgentTaskValues(pluginId: string): Promise<PluginFieldValues>;
   createMcpClient(name: string): Promise<McpClientCreateResponse>;
   revokeMcpClient(clientId: string): Promise<boolean>;
 }
@@ -222,6 +219,8 @@ export class AgentRunner {
     const cli = clis.find((candidate) => candidate.id === settings.cli);
     for (const plugin of await this.options.plugins.listPlugins()) {
       if (!(await this.options.plugins.isPluginEnabled(plugin.id))) continue;
+      // The plugin's tasks share their settings by ID.
+      const saved = await this.options.storage.getAgentTaskValues(plugin.id);
       for (const task of plugin.capabilities.agentTask?.tasks ?? []) {
         // A setting the user never saved falls back to its manifest default.
         const values = {
@@ -232,10 +231,7 @@ export class AgentRunner {
                 : [[field.id, field.defaultValue]],
             ),
           ),
-          ...(await this.options.storage.getAgentTaskValues(
-            plugin.id,
-            task.id,
-          )),
+          ...saved,
         };
         const blockers = [
           ...(mcpEnabled ? [] : ["Turn on MCP in Settings > MCP"]),
