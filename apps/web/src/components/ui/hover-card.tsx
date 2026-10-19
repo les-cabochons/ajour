@@ -32,11 +32,12 @@ function HoverCardContent({
   alignOffset = 0,
   side = "top",
   sideOffset = 10,
+  anchor,
   ...props
 }: PopoverPrimitive.Popup.Props &
   Pick<
     PopoverPrimitive.Positioner.Props,
-    "align" | "alignOffset" | "side" | "sideOffset"
+    "align" | "alignOffset" | "side" | "sideOffset" | "anchor"
   > & {
     positionerClassName?: string;
   }) {
@@ -47,6 +48,7 @@ function HoverCardContent({
         alignOffset={alignOffset}
         side={side}
         sideOffset={sideOffset}
+        anchor={anchor}
         className={cn("isolate", positionerClassName ?? "z-50")}
       >
         <PopoverPrimitive.Popup

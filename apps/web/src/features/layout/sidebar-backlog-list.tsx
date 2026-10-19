@@ -51,6 +51,7 @@ import {
 } from "@/domain/local-state";
 import { formatCompactDuration } from "@/domain/time/duration";
 import { findWorkItemTimer } from "@/domain/time/running-entry";
+import { BacklogItemHoverCard } from "@/features/backlog/backlog-item-hover-card";
 import { settleOpensDialog } from "@/features/backlog/settle-dialog";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
 import { getBacklogItemOriginFor } from "@/features/backlog/backlog-item-search";
@@ -733,7 +734,6 @@ const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
           data-focus-column="0"
           data-backlog-item-id={workItem._id}
           aria-current={isActive ? "page" : undefined}
-          title={parentTitle ? `${workItem.title} · ${parentTitle}` : undefined}
           {...reveal.props}
           className={cn(
             "group flex h-[26px] shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-sm outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
@@ -904,6 +904,7 @@ export function SidebarBacklogList({
   const layout = useSidebarLayout();
   const iconData = useWorkItemIconData(state.projects);
   const [settledShown, setSettledShown] = useState(SETTLED_PAGE_SIZE);
+  const listRef = useRef<HTMLDivElement>(null);
   const activeItemId = pathname.startsWith("/backlog/")
     ? decodeURIComponent(pathname.slice("/backlog/".length))
     : undefined;
@@ -1044,6 +1045,7 @@ export function SidebarBacklogList({
 
   return (
     <div
+      ref={listRef}
       className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2 scrollbar-on-hover"
       aria-label="Backlog items"
       data-focus-scope
@@ -1126,6 +1128,13 @@ export function SidebarBacklogList({
           {settledRows}
         </>
       ) : null}
+
+      <BacklogItemHoverCard
+        container={listRef}
+        state={state}
+        now={now}
+        iconData={iconData}
+      />
 
       {dragging ? (
         <div
