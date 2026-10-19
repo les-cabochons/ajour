@@ -111,13 +111,12 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
 
   /**
    * Edit and Add subitem have no panel here: they open the inline fields. Add
-   * subitem opens the Subitems card first, and it stays open on this device.
+   * subitem opens the Subitems card while its name field is open.
    */
   function runHosted(action: "edit" | "add-subitem") {
     if (action === "edit") {
       setEditingTitle(true);
     } else {
-      updateBacklogItemCards({ subitemsOpen: true });
       setAddingSubitem(true);
     }
   }
@@ -497,9 +496,13 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                   }
                   readOnly={readOnly}
                   adding={addingSubitem}
-                  onAddingChange={(adding) =>
-                    adding ? runHosted("add-subitem") : setAddingSubitem(false)
-                  }
+                  onAdd={() => runHosted("add-subitem")}
+                  onAddingClose={(escaped) => {
+                    setAddingSubitem(false);
+                    // Escape gives the keys back to the page, as on the title.
+                    if (escaped)
+                      focusRef.current?.focus({ preventScroll: true });
+                  }}
                 />
               ) : null}
               <TimeEntriesCard

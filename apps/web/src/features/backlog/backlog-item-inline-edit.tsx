@@ -275,11 +275,12 @@ export function DescriptionSection({
 export function AddSubitemRow({
   parent,
   adding,
-  onAddingChange,
+  onClose,
 }: {
   parent: LocalWorkItem;
   adding: boolean;
-  onAddingChange: (adding: boolean) => void;
+  /** `escaped` when Escape closed it, so the caller can take focus back. */
+  onClose: (escaped: boolean) => void;
 }) {
   const [title, setTitle] = useState("");
 
@@ -304,7 +305,7 @@ export function AddSubitemRow({
       className="mt-1"
       onChange={(event) => setTitle(event.target.value)}
       onBlur={() => {
-        if (!title.trim()) onAddingChange(false);
+        if (!title.trim()) onClose(false);
       }}
       onKeyDown={(event) => {
         if (event.nativeEvent.isComposing) return;
@@ -314,7 +315,7 @@ export function AddSubitemRow({
         } else if (event.key === "Escape") {
           event.preventDefault();
           setTitle("");
-          onAddingChange(false);
+          onClose(true);
         }
       }}
     />

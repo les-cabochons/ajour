@@ -20,9 +20,11 @@ describe("parseBacklogItemCards", () => {
       subitemsOpen: false,
       timeEntriesOpen: false,
     });
-    expect(parseBacklogItemCards("not json")).toEqual({
-      subitemsOpen: false,
-      timeEntriesOpen: false,
-    });
+    for (const broken of ["not json", "null", "[true]", '"open"']) {
+      expect(parseBacklogItemCards(broken)).toEqual({
+        subitemsOpen: false,
+        timeEntriesOpen: false,
+      });
+    }
   });
 });

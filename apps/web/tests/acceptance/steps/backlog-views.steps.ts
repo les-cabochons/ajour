@@ -2234,3 +2234,101 @@ Then(
     ).toBe("archived");
   },
 );
+
+/** A folding card on the item page and the title button that folds it. */
+function sideCard(page: Page, name: "Subitems" | "Time entries") {
+  const card = page.getByRole("region", { name, exact: true });
+  return {
+    card,
+    toggle: card.getByRole("button", { name: new RegExp(`^${name}`) }),
+  };
+}
+Then(
+  "the Subitems and Time entries cards are closed on their summary",
+  async ({ page }) => {
+    const subitems = sideCard(page, "Subitems");
+    await expect(subitems.toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(subitems.toggle).toContainText("0 of 1 done");
+    await expect(
+      subitems.card.getByRole("link", { name: "Backlog subitem" }),
+    ).toHaveCount(0);
+    const timeEntries = sideCard(page, "Time entries");
+    await expect(timeEntries.toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(timeEntries.card).toContainText("No time logged yet.");
+  },
+);
+When("I press Escape in the subitem name field", async ({ page }) => {
+  await page.getByRole("textbox", { name: "New subitem name" }).press("Escape");
+});
+Then(
+  "the Subitems card is closed on {string} and the page has the focus",
+  async ({ page }, progress: string) => {
+    const subitems = sideCard(page, "Subitems");
+    await expect(subitems.toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(subitems.toggle).toContainText(progress);
+    await expect(page.locator(".backlog-item-page")).toBeFocused();
+    // Adding opened the card for the name field only; nothing was saved.
+    expect(
+      await page.evaluate(() =>
+        localStorage.getItem("ajour.backlog-item-cards"),
+      ),
+    ).toBeNull();
+  },
+);
+When("I open the Subitems card", async ({ page }) => {
+  await sideCard(page, "Subitems").toggle.click();
+});
+When("I reload the item page", async ({ page }) => {
+  await page.reload();
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+});
+Then(
+  "the Subitems card is still open and Time entries is still closed",
+  async ({ page }) => {
+    const subitems = sideCard(page, "Subitems");
+    await expect(subitems.toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(
+      subitems.card.getByRole("link", { name: "Folded subitem" }),
+    ).toBeVisible();
+    await expect(sideCard(page, "Time entries").toggle).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+  },
+);
+When("I set When missing to Keep on its properties card", async ({ page }) => {
+  await page
+    .locator(".backlog-item-properties-card")
+    .getByRole("button", { name: "When missing from sync: Archive" })
+    .click();
+  await page.getByRole("menuitemradio", { name: "Keep" }).click();
+});
+/** The parent's saved choice, false when it was never set. */
+async function readKeepWhenMissing(page: Page) {
+  const { workItems } = await readBacklogState(page);
+  return (
+    workItems.find((item: { _id: string }) => item._id === "parent")
+      .keepWhenMissingFromSync ?? false
+  );
+}
+Then("the Backlog parent is kept when missing from sync", async ({ page }) => {
+  await expect.poll(() => readKeepWhenMissing(page)).toBe(true);
+  await expect(
+    page.getByRole("button", { name: "When missing from sync: Keep" }),
+  ).toBeVisible();
+});
+When("I undo the When missing change", async ({ page }) => {
+  await page
+    .getByRole("region", { name: "Notifications" })
+    .getByRole("button", { name: "Undo", exact: true })
+    .click();
+});
+Then(
+  "the Backlog parent is archived when missing from sync",
+  async ({ page }) => {
+    await expect.poll(() => readKeepWhenMissing(page)).toBe(false);
+    await expect(
+      page.getByRole("button", { name: "When missing from sync: Archive" }),
+    ).toBeVisible();
+  },
+);

@@ -51,7 +51,7 @@ Semantic variables, light and dark under `:root` and `:root.dark`:
 - `--scrollbar-thumb`: the scrollbar thumb, on native scrollers and `ScrollArea`. The track is transparent. The sidebar backlog list shows the thumb only on hover or when focus is inside it.
 - Workflow states and projects carry their own colors.
 
-App-level aliases: `--surface-lowest`, `--surface-low` (the sidebar), `--surface`, `--surface-raised` (the item page's side cards: one small step above the page, under a hairline border), `--surface-high`, `--surface-highest`, `--text`, `--text-secondary`, `--text-tertiary`, `--hover-bg`, `--highlight-bg`, `--field-bg`, `--field-border`, `--success-bg`, `--warning-bg`, `--danger-muted`, `--indigo-muted`.
+App-level aliases: `--surface-lowest`, `--surface-tint` (the item page's side cards: one small step off the page toward the sidebar, under a hairline border; the sidebar's color in dark), `--surface-low` (the sidebar), `--surface`, `--surface-high`, `--surface-highest`, `--text`, `--text-secondary`, `--text-tertiary`, `--hover-bg`, `--highlight-bg`, `--field-bg`, `--field-border`, `--success-bg`, `--warning-bg`, `--danger-muted`, `--indigo-muted`.
 
 The comment header's reaction and actions buttons use `foreground/10` for hover and `foreground/20` while pressed or while their menu is open. These tints apply in both themes.
 

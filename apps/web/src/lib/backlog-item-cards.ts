@@ -20,12 +20,12 @@ const DEFAULT_CARDS: BacklogItemCards = {
 /** Unknown or broken values fall back to closed, card by card. */
 export function parseBacklogItemCards(value: string | null): BacklogItemCards {
   try {
-    const parsed = value
-      ? (JSON.parse(value) as Partial<BacklogItemCards>)
-      : {};
+    const parsed: unknown = value ? JSON.parse(value) : null;
+    if (!parsed || typeof parsed !== "object") return DEFAULT_CARDS;
     return {
-      subitemsOpen: parsed.subitemsOpen === true,
-      timeEntriesOpen: parsed.timeEntriesOpen === true,
+      subitemsOpen: "subitemsOpen" in parsed && parsed.subitemsOpen === true,
+      timeEntriesOpen:
+        "timeEntriesOpen" in parsed && parsed.timeEntriesOpen === true,
     };
   } catch {
     return DEFAULT_CARDS;

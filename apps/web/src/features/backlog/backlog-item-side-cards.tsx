@@ -4,8 +4,13 @@ import {
   RiAddLine as AddIcon,
   RiArrowRightSLine as ChevronIcon,
 } from "@remixicon/react";
+import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { Value } from "@/components/ui/value";
+import {
+  getSubitemHoursLeft,
+  getSubitemProgress,
+} from "@/domain/backlog/backlog-view";
 import type { LocalTimesheetEntry, LocalWorkItem } from "@/domain/local-state";
 import { formatClockDuration } from "@/domain/time/duration";
 import { formatHours } from "@/features/backlog/backlog-estimates";
@@ -77,16 +82,19 @@ function FoldingCard({
           </button>
         </h2>
         {onAdd ? (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-muted-foreground"
-            aria-label={addLabel}
-            title={addLabel}
+          <TooltipButton
+            label={addLabel}
+            render={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="text-muted-foreground"
+              />
+            }
             onClick={(event) => onAdd(event.currentTarget)}
           >
             <AddIcon className="size-4" />
-          </Button>
+          </TooltipButton>
         ) : null}
       </div>
       <div
@@ -103,7 +111,8 @@ function FoldingCard({
 
 /**
  * The item's subitems. Closed, it shows one segment per subitem, filled when
- * done, and the hours left on the open ones.
+ * done, and the hours left on the open ones. Adding opens it until the name
+ * field closes, without changing the saved open state.
  */
 export function SubitemsCard({
   parent,
@@ -114,7 +123,8 @@ export function SubitemsCard({
   onOpenChange,
   readOnly,
   adding,
-  onAddingChange,
+  onAdd,
+  onAddingClose,
 }: {
   parent: LocalWorkItem;
   subitems: LocalWorkItem[];
@@ -125,47 +135,48 @@ export function SubitemsCard({
   onOpenChange: (open: boolean) => void;
   readOnly: boolean;
   adding: boolean;
-  onAddingChange: (adding: boolean) => void;
+  onAdd: () => void;
+  /** `escaped` when Escape closed the name field, rather than a blur or a fold. */
+  onAddingClose: (escaped: boolean) => void;
 }) {
-  const done = subitems.filter((subitem) => subitem.status === "archived");
-  const estimates = subitems
-    .filter((subitem) => subitem.status !== "archived")
-    .map((subitem) => subitem.remainingEstimateHours)
-    .filter((hours): hours is number => hours !== undefined);
-  const hoursLeft = estimates.length
-    ? estimates.reduce((sum, hours) => sum + hours, 0)
-    : undefined;
+  const progress = getSubitemProgress(subitems);
+  const hoursLeft = getSubitemHoursLeft(subitems);
   const empty = <p className="text-xs text-muted-foreground">No subitems.</p>;
 
   return (
     <FoldingCard
       label="Subitems"
       trailing={
-        subitems.length
-          ? `${done.length} of ${subitems.length} done`
-          : undefined
+        progress ? (
+          <>
+            <Value>{progress.closed}</Value> of <Value>{progress.total}</Value>{" "}
+            done
+          </>
+        ) : undefined
       }
-      open={open}
+      open={open || adding}
       onOpenChange={(next) => {
-        if (!next) onAddingChange(false);
+        if (!next && adding) onAddingClose(false);
         onOpenChange(next);
       }}
       addLabel="Add subitem"
-      onAdd={readOnly ? undefined : () => onAddingChange(true)}
+      onAdd={readOnly ? undefined : onAdd}
       summary={
-        subitems.length ? (
+        progress ? (
           <>
             <div
               aria-hidden="true"
               className="backlog-item-card-progress"
               data-continuous={
-                subitems.length > MAX_PROGRESS_SEGMENTS || undefined
+                progress.total > MAX_PROGRESS_SEGMENTS || undefined
               }
             >
-              {subitems.length > MAX_PROGRESS_SEGMENTS ? (
+              {progress.total > MAX_PROGRESS_SEGMENTS ? (
                 <i
                   data-done=""
-                  style={{ width: `${(done.length / subitems.length) * 100}%` }}
+                  style={{
+                    width: `${(progress.closed / progress.total) * 100}%`,
+                  }}
                 />
               ) : (
                 subitems.map((subitem) => (
@@ -177,7 +188,9 @@ export function SubitemsCard({
               )}
             </div>
             {hoursLeft !== undefined ? (
-              <span>{formatHours(hoursLeft)} left</span>
+              <span>
+                <Value tone="muted">{formatHours(hoursLeft)}</Value> left
+              </span>
             ) : null}
           </>
         ) : (
@@ -220,7 +233,7 @@ export function SubitemsCard({
         <AddSubitemRow
           parent={parent}
           adding={adding}
-          onAddingChange={onAddingChange}
+          onClose={onAddingClose}
         />
       ) : null}
     </FoldingCard>
@@ -265,8 +278,9 @@ export function TimeEntriesCard({
       summary={
         last ? (
           <span>
-            {entries.length} {entries.length === 1 ? "entry" : "entries"} · last
-            on {formatEntryDay(last.localDate)}
+            <Value tone="muted">{entries.length}</Value>{" "}
+            {entries.length === 1 ? "entry" : "entries"} · last on{" "}
+            {formatEntryDay(last.localDate)}
           </span>
         ) : (
           empty
