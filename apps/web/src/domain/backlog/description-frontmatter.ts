@@ -251,7 +251,7 @@ function splitKey(text: string): { key: string; value: string } | null {
   const colon = /:(?=[ \t]|$)/.exec(text);
   if (!colon) return null;
   const key = text.slice(0, colon.index).trim();
-  if (!key || /^[[\]{}#&*!|>%@`]/.test(key)) return null;
+  if (!key || !isPlainScalar(key)) return null;
   return { key, value: withoutComment(text.slice(colon.index + 1)) };
 }
 
@@ -290,7 +290,7 @@ function parseInlineValue(text: string): YamlValue | null {
       // plain item, as in `Bob's`, is text.
       quote = char;
       current += char;
-    } else if (char === "[" || char === "{") {
+    } else if (char === "[" || char === "{" || char === "}") {
       return null;
     } else if (char === "#" && /[ \t]/.test(text[index - 1] ?? "")) {
       // A comment runs to the end of the line, so the list never closes.
@@ -306,7 +306,12 @@ function parseInlineValue(text: string): YamlValue | null {
     }
   }
   if (closed < 0 || !isEmptyOrComment(text.slice(closed + 1))) return null;
-  if (current.trim() || items.length > 0) items.push(current);
+  items.push(current);
+  // `[]` has no items, and one comma may follow the last item; any other
+  // empty item is invalid YAML.
+  if (items.length === 1 && !items[0]!.trim()) items.pop();
+  else if (items.length > 1 && !items.at(-1)!.trim()) items.pop();
+  if (items.some((item) => !item.trim())) return null;
 
   const values: string[] = [];
   for (const item of items) {

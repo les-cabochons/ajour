@@ -252,6 +252,35 @@ describe("splitDescription", () => {
     ).toEqual([{ kind: "list", key: "Owners", values: ["Ada", "Grace"] }]);
   });
 
+  it("is not frontmatter when an inline list has an empty entry or a stray brace", () => {
+    for (const list of [
+      "[Ada,, Grace]",
+      "[, Ada]",
+      "[,]",
+      "[Ada,,]",
+      "[Ada, Grace}]",
+    ]) {
+      expect(
+        getDescriptionTimelog(
+          `---\nOwners: ${list}\ntimelog:\n  project: Acme\n---`,
+        ),
+      ).toBeUndefined();
+    }
+  });
+
+  it("allows one trailing comma and an empty inline list", () => {
+    expect(
+      splitDescription("---\nOwners: [Ada, Grace,]\nNone: []\n---").frontmatter
+        ?.fields,
+    ).toEqual([{ kind: "list", key: "Owners", values: ["Ada", "Grace"] }]);
+  });
+
+  it("is not frontmatter when a key starts with a YAML indicator", () => {
+    for (const line of ["? Owner: Ada", ",Owner: Ada", "- Owner: Ada"]) {
+      expect(splitDescription(`---\n${line}\n---`).frontmatter).toBeNull();
+    }
+  });
+
   it("reads quotes inside a plain inline-list item as text", () => {
     expect(
       splitDescription(
