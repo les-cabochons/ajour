@@ -3832,6 +3832,24 @@ describe("localStore description timelog", () => {
     expect(localStore.snapshot().workItems[0]?.projectId).toBe(otherId);
   });
 
+  it("offers Undo for an editor save only when its timelog changed the mapping", async () => {
+    const { localStore } = await import("./local-store");
+    const projectId = localStore.addProject({ name: "Acme", color: "#111111" });
+    const itemId = localStore.addWorkItem({ title: "Landing page" });
+
+    expect(localStore.saveWorkItemEdits(itemId, { title: "Hero" })).toBeNull();
+    expect(localStore.snapshot().workItems[0]?.title).toBe("Hero");
+
+    const before = localStore.snapshot();
+    const token = localStore.saveWorkItemEdits(itemId, { description });
+    expect(token).not.toBeNull();
+    expect(localStore.snapshot().workItems[0]?.projectId).toBe(projectId);
+
+    expect(localStore.undo(token!)).toBe("restored");
+    expect(localStore.snapshot().projects).toEqual(before.projects);
+    expect(localStore.snapshot().workItems).toEqual(before.workItems);
+  });
+
   it("maps a synced item whose description arrives with a timelog", async () => {
     const { localStore } = await import("./local-store");
     const projectId = localStore.addProject({ name: "Acme", color: "#111111" });

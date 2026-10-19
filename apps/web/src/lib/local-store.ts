@@ -1259,15 +1259,21 @@ function updateWorkItemState(
   workItemId: string,
   patch: Parameters<typeof applyUpdateWorkItem>[2],
 ) {
-  const mapped =
-    "projectId" in patch || "taskId" in patch
-      ? new Set([workItemId])
-      : undefined;
   return withDescriptionTimelogs(
     state,
     applyUpdateWorkItem(state, workItemId, patch),
-    mapped,
+    getMappedIds(workItemId, patch),
   );
+}
+
+/** The item, when the patch sets its project or task itself. */
+function getMappedIds(
+  workItemId: string,
+  patch: Parameters<typeof applyUpdateWorkItem>[2],
+) {
+  return "projectId" in patch || "taskId" in patch
+    ? new Set([workItemId])
+    : undefined;
 }
 
 /** How long a team sync in another window waits for an open Undo, at most. */
@@ -2136,6 +2142,33 @@ export const localStore = {
       const updated = updateWorkItemState(state, workItemId, patch);
       return orderedIds ? applyReorderWorkItems(updated, orderedIds) : updated;
     });
+  },
+  /**
+   * Saves the backlog editor's changes, which have no Undo. When the
+   * description's timelog also changed the item's project or task, the whole
+   * save becomes undoable, like an inline edit, and the token is returned so
+   * the editor can offer Undo; otherwise null.
+   */
+  saveWorkItemEdits(
+    workItemId: string,
+    patch: Parameters<typeof applyUpdateWorkItem>[2],
+  ): string | null {
+    const current = readState();
+    const patched = applyUpdateWorkItem(current, workItemId, patch);
+    const next = withDescriptionTimelogs(
+      current,
+      patched,
+      getMappedIds(workItemId, patch),
+    );
+    if (next === current) return null;
+    writeState(next);
+    // The timelog returns the patched state itself when it changed nothing.
+    if (next === patched) return null;
+    const undo = captureUndo(current, next);
+    if (!undo) return null;
+    const token = createId("undo");
+    rememberUndo(token, undo);
+    return token;
   },
   /**
    * Sets the item's project and task from its description's timelog, creating

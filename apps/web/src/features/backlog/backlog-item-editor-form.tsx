@@ -69,6 +69,7 @@ import {
   useLocalState,
   useLocalWorkItems,
 } from "@/lib/local-hooks";
+import { offerUndo } from "@/features/feedback/undo-toast";
 import { localStore } from "@/lib/local-store";
 import { cn } from "@/lib/utils";
 import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
@@ -287,7 +288,12 @@ export function BacklogItemEditorForm({
               patch,
             });
           }
-          localStore.updateWorkItem(workItem._id, result.patch);
+          // A save has no Undo, unless the description's timelog also set
+          // the project or task.
+          offerUndo(localStore.saveWorkItemEdits(workItem._id, result.patch), {
+            title: "Project and task set from the description",
+            subject: "backlog item",
+          });
         }
         return true;
       case "unchanged":
