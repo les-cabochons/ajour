@@ -1731,8 +1731,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             commentRequest,
             admit,
           );
-          // A read's text leaves only while the agent may still read.
-          if (!(await agentAllowed())) {
+          // A read's text leaves only while the agent may still read. A
+          // change was allowed at admission and has happened: it stands.
+          if (agentNeed === "read" && !(await agentAllowed())) {
             refuseAgent();
             return;
           }

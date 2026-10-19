@@ -1908,6 +1908,12 @@ describe("backlog comment routes", () => {
     "  return { people: [{ id: 'ana', displayName: 'Ana Silva ' + request.query }] };",
     "}",
     "export async function postItemComment(connection, request) {",
+    "  if (request.body.startsWith('slow|')) {",
+    "    const [, entered, release] = request.body.split('|');",
+    "    const fs = await import('node:fs/promises');",
+    "    await fs.writeFile(entered, '');",
+    "    while (!(await fs.access(release).then(() => true, () => false))) await new Promise((resolve) => setTimeout(resolve, 10));",
+    "  }",
     "  return { comment: { id: 'c2', author: { id: 'me', displayName: 'Me' }, body: request.body, createdAt: '2026-10-17T10:00:00Z' } };",
     "}",
   ].join("\n");
@@ -2140,6 +2146,26 @@ describe("backlog comment routes", () => {
     const refused = events.filter((event) => event.outcome === "refused");
     expect(refused).toHaveLength(3);
     expect(refused.every((event) => event.agent === true)).toBe(true);
+
+    // A post allowed at admission stands, even if access drops meanwhile.
+    await setAccess("readWrite");
+    const posting = path.join(root, "posting");
+    const posted = path.join(root, "posted");
+    const post = call("postItemComment", {
+      sourceId: "4821",
+      body: `slow|${posting}|${posted}`,
+    });
+    await expect
+      .poll(() =>
+        access(posting).then(
+          () => true,
+          () => false,
+        ),
+      )
+      .toBe(true);
+    await setAccess("read");
+    await writeFile(posted, "");
+    expect(await post).toMatchObject({ status: 200 });
   });
 
   it("lists an item's comments and logs no text or author", async () => {
