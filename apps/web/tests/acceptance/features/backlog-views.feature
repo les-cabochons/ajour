@@ -561,6 +561,26 @@ Feature: Backlog list and board views
     And I mention Ana in a new comment and send it
     Then the comment went out with Ana's mention, shown as a chip
 
+  Scenario: Mention someone by their first and last name
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people and records posted comments
+    When I open the Backlog parent page
+    And I type "@Ana Sil" in a new comment
+    Then Ana is suggested and no status shows
+    When I pick Ana from the suggestions
+    Then the new comment mentions Ana as a chip
+
+  Scenario: Writing on after a name closes the suggestions without a status
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people and records posted comments
+    When I open the Backlog parent page
+    And I type "@Ana" in a new comment
+    Then Ana is suggested and no status shows
+    When I keep typing " thanks" until the search for "Ana thanks" answers
+    Then nothing is suggested and no status shows
+
   Scenario: Mention suggestions say when no one matches
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit
@@ -571,6 +591,17 @@ Feature: Backlog list and board views
     When I keep typing "Zoe"
     Then the mention suggestions say no one was found
     When I keep typing " "
+    Then the mention suggestions are closed
+
+  Scenario: No one found goes once the cursor leaves the name it answers
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people and records posted comments
+    When I open the Backlog parent page
+    And I type "@Zoe thanks" in a new comment
+    And I move back 7 characters and ask for suggestions
+    Then the mention suggestions say no one was found
+    When I move forward 2 characters
     Then the mention suggestions are closed
 
   Scenario: A failed people search reads as no one found
