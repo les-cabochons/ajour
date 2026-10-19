@@ -12,7 +12,7 @@ Ajour is an operational desktop/web app. Build interfaces for scanning, repeated
 
 ## Layout
 
-- The 48px top bar is the page header. List pages (Time, Backlog, Commit, Settings pages) put their title there with `PageHeader`. Projects leaves the top bar title empty. Detail pages (backlog item, project) keep a small muted "Back to" link above the object's title in the content at 20px. Page actions sit after the title; the global entry controls and the day total stay at the right end.
+- The 48px top bar is the page header. List pages (Time, Backlog, Commit, Settings pages) put their title there with `PageHeader`. Projects leaves the top bar title empty. Detail pages (backlog item, project) keep a small muted "Back to" link above the object's title in the content at 20px. The backlog item page also puts a breadcrumb in the top bar: its project (or Backlog), then its title. Page actions sit after the title; the global entry controls and the day total stay at the right end.
 - No second title band under the top bar. A page may have one toolbar row (filters, a week strip) at most.
 - Cardless everywhere except dialogs, popovers, the timer dock and the properties cards of the backlog item page and the project page. Stats are a `FigureRow`, object properties a `PropertyList`, lists are bordered rows with no outer frame, and sections are separated by a `SectionHeading` and space.
 - Settings pages: sections 3rem apart under a 16px heading; each setting is a `SettingRow` (13px label, 12px description, control trailing) with no border or background between rows.

@@ -675,6 +675,7 @@ Syncs move synced items between states:
 ### Backlog item page
 
 - The page lives at `/backlog/$itemId`. Clicking a row in the sidebar or on the Backlog page, or pressing Enter on it, opens it.
+- The top bar shows where the item sits: its project's icon and name, then the item's title, such as "ajour / Build latest main". The project opens the project page. An item without a project shows "Backlog" instead. The breadcrumb is the same whichever page the item was opened from, so an item opened from Time offers both the way back to Time and the way to its project.
 - Its back link returns to the page it was opened from. Opened from the sidebar while Time, Projects or Pull requests showed, it reads "Back to Time" (or Projects, Pull requests) and returns to that page with its search, such as the Week view. Moving to a parent or subitem keeps that page. Otherwise it reads "Back to Backlog". The page keeps its origin in `?from=`.
 - V1 shows only what Ajour stores: title, type and external id with Open in source, source state and workflow state, project and task mapping, priority, estimates with their sync state, description, parent and subitems, and the time entries logged on it.
 - Layout, from the prototype: variant C's header over variant A's body.
