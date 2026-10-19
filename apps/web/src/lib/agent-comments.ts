@@ -38,9 +38,8 @@ const isPendingComment = (value: unknown): value is PendingAgentComment => {
   );
 };
 
-const queue = createDeviceQueue(
-  PENDING_AGENT_COMMENTS_STORAGE_KEY,
-  isPendingComment,
+const queue = createDeviceQueue(PENDING_AGENT_COMMENTS_STORAGE_KEY, (value) =>
+  isPendingComment(value) ? value : undefined,
 );
 
 /** Broken entries are dropped. */
