@@ -357,8 +357,8 @@ export interface UserPreferences {
   warnWhenSubmittingUnderCapacity: boolean;
   changesEndSnoozeEarly?: boolean;
   closeParentSubitems: CloseParentSubitems;
-  /** Ask before a link in a description's frontmatter opens. Default true. */
-  askBeforeOpeningFrontmatterLinks?: boolean;
+  /** Ask before a link in a description or its frontmatter opens. Default true. */
+  askBeforeOpeningDescriptionLinks?: boolean;
   /** How far the week may run ahead of or behind its targets before an agent asks. Default 20. */
   paceTolerancePercent?: number;
   /**

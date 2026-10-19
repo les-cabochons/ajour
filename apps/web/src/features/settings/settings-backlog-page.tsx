@@ -8,7 +8,7 @@ import { localStore } from "@/lib/local-store";
 
 /**
  * Settings > Backlog: how closing and settling treat a parent's subitems, and
- * whether frontmatter links ask before they open.
+ * whether description links ask before they open.
  */
 export function SettingsBacklogPage() {
   const state = useLocalState();
@@ -55,23 +55,23 @@ export function SettingsBacklogPage() {
       <section className="settings-section">
         <h2 className="settings-section-title">Descriptions</h2>
         <p className="settings-section-desc">
-          How Ajour treats the frontmatter at the start of a description.
+          How Ajour treats links in a description and its frontmatter.
         </p>
 
         <AppPanel>
           <SettingRow
-            label="Ask before opening frontmatter links"
-            labelFor="ask-before-frontmatter-links"
-            description="Show a link's full address before it opens in your browser."
+            label="Ask before opening description links"
+            labelFor="ask-before-description-links"
+            description="Show a link's full address before it opens in your browser. Descriptions often come from other people in the source tool."
           >
             <Switch
-              id="ask-before-frontmatter-links"
+              id="ask-before-description-links"
               checked={
-                state.userPreferences.askBeforeOpeningFrontmatterLinks !== false
+                state.userPreferences.askBeforeOpeningDescriptionLinks !== false
               }
               onCheckedChange={(checked) =>
                 localStore.setUserPreferences({
-                  askBeforeOpeningFrontmatterLinks: checked,
+                  askBeforeOpeningDescriptionLinks: checked,
                 })
               }
             />

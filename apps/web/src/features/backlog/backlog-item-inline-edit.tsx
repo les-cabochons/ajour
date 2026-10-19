@@ -1,6 +1,5 @@
 import { useMemo, useRef, useState } from "react";
 import { RiAddLine as AddIcon } from "@remixicon/react";
-import { Markdown } from "@/components/markdown";
 import {
   MarkdownEditor,
   preloadMarkdownEditor,
@@ -16,6 +15,7 @@ import type {
 } from "@/domain/local-state";
 import { formatHours } from "@/features/backlog/backlog-estimates";
 import { patchBacklogItemWithUndo } from "@/features/backlog/backlog-item-surface";
+import { DescriptionText } from "@/features/backlog/description-links";
 import {
   buildBacklogTaskDraft,
   createBacklogTaskEditorSeed,
@@ -266,7 +266,7 @@ export function DescriptionSection({
           onCancel={() => closer.close()}
         />
       ) : body ? (
-        <Markdown>{body}</Markdown>
+        <DescriptionText body={body} />
       ) : (
         <p className="text-sm text-muted-foreground">No description.</p>
       )}
