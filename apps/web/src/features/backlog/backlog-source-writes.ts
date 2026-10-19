@@ -122,9 +122,12 @@ async function sendSourceWrite(
     void sendSettleComments(workItem._id);
   } catch (error) {
     if (!stillCurrent()) return;
+    // Counted first: recovery may make the item active, and the settle-end
+    // watcher then turns them into drafts itself.
+    const kept = settleCommentsOf(workItem._id).length;
     localStore.failSourceWrite(workItem._id);
     // The settle didn't stand, whatever state the item went back to.
-    const kept = keepSettleCommentsAsDrafts(workItem._id);
+    keepSettleCommentsAsDrafts(workItem._id);
     showErrorToast({
       title: `Couldn't update "${workItem.title}" in its source`,
       description: `${error instanceof Error ? error.message : "Unknown error"} The item returned to its previous state.${kept ? " Your comment is kept as a draft on it." : ""}`,
@@ -135,16 +138,17 @@ async function sendSourceWrite(
   }
 }
 
-/** Keeps every comment waiting on the item's settle as its draft. */
-function keepSettleCommentsAsDrafts(workItemId: string) {
-  let kept = 0;
-  for (const { id } of settleCommentsOf(workItemId)) {
+/**
+ * Keeps the comments waiting on the item's settle as its draft: every one,
+ * or with `queuedBy` only those queued by then, so a newer settle's comment
+ * queued meanwhile, such as in another window, keeps waiting.
+ */
+function keepSettleCommentsAsDrafts(workItemId: string, queuedBy?: number) {
+  for (const { id, at } of settleCommentsOf(workItemId)) {
+    if (queuedBy !== undefined && at > queuedBy) continue;
     const entry = takeSettleComment(id);
-    if (!entry) continue;
-    keepCommentAsDraft(workItemId, entry.body);
-    kept += 1;
+    if (entry) keepCommentAsDraft(workItemId, entry.body);
   }
-  return kept;
 }
 
 /**
@@ -252,6 +256,8 @@ export function watchSettleEnds() {
     );
   let before = statusesOf();
   return localStore.subscribe(() => {
+    // The comments of the settle that ended were queued by the time it ended.
+    const seenAt = Date.now();
     const now = statusesOf();
     const ended = [...now].filter(
       ([id, status]) =>
@@ -263,7 +269,7 @@ export function watchSettleEnds() {
     if (ended.length === 0) return;
     const queued = new Set(settleCommentItemIds());
     for (const [id] of ended) {
-      if (queued.has(id)) keepSettleCommentsAsDrafts(id);
+      if (queued.has(id)) keepSettleCommentsAsDrafts(id, seenAt);
     }
   });
 }
