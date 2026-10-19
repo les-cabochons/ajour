@@ -56,7 +56,7 @@ The Day list and the Week Days cards select entries like a file explorer:
 - **Duplicate** puts each copy at the end of its own day.
 - **Duplicate to…** and **Move to…** ask for one day, and every entry goes to the end of that day.
 - Moved entries stay selected. Copies become the new selection.
-- The running entry can be selected, but every one of these actions skips it.
+- The running entry can be selected, but every one of these actions skips it. A continued running entry can still be dragged on its own to reorder it within its day.
 
 ### Copy and paste
 
