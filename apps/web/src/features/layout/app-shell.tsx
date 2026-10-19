@@ -833,10 +833,10 @@ export function AppShell() {
                     className={cn(isDesktopShell && "desktop-no-drag")}
                   />
                 )}
-                {/* Commit week lives in the sidebar foot. While that foot is
-                    not on screen (sidebar hidden, or Settings in its place),
-                    it sits here, after Show sidebar. */}
-                {isNarrowView || isSidebarInline ? null : (
+                {/* Commit week lives in the sidebar foot. While the sidebar
+                    is hidden on a Time page, it sits here, after Show
+                    sidebar. Other pages do without it. */}
+                {isNarrowView || isSidebarInline || !isTimeActive ? null : (
                   <CommitWeekButton
                     selectedTimeDate={selectedTimeDate}
                     className={cn(isDesktopShell && "desktop-no-drag")}
