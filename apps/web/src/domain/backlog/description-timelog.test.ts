@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   applyDescriptionTimelogs,
-  createTimelogProject,
-  getMissingTimelogProject,
+  applyItemTimelog,
+  getTimelogMismatch,
 } from "@/domain/backlog/description-timelog";
 import type {
   LocalAppState,
@@ -130,6 +130,13 @@ const acme = project({
   tasks: [task("design", "Design"), task("old", "Support", "archived")],
 });
 
+const shared = project({
+  _id: "shared",
+  name: "Team site",
+  team: { connectionId: "team-1" },
+  tasks: [task("build", "Build"), task("qa", "QA", "archived")],
+});
+
 /** The state before a write and the state the write produced. */
 function write(
   before: Partial<LocalAppState>,
@@ -223,6 +230,20 @@ describe("applyDescriptionTimelogs", () => {
       archivedAt: undefined,
     });
     expect(result.workItems[0]?.taskId).toBe("old");
+  });
+
+  it("keeps the item's task when the timelog names only its project", () => {
+    const { previous, next } = write(
+      {
+        projects: [acme],
+        workItems: [item({ projectId: "acme", taskId: "design" })],
+      },
+      (state) => withDescription(state, timelog("Acme")),
+    );
+
+    expect(
+      applyDescriptionTimelogs(previous.workItems, next, createFactories()),
+    ).toBe(next);
   });
 
   it("sets the project and clears the task when the timelog names no task", () => {
@@ -374,6 +395,30 @@ describe("applyDescriptionTimelogs", () => {
     });
   });
 
+  it("leaves adding or restoring a shared project's task to the user", () => {
+    for (const name of ["Deploy", "QA"]) {
+      const { previous, next } = write(
+        { projects: [shared], workItems: [item()] },
+        (state) => withDescription(state, timelog("Team site", name)),
+      );
+      expect(
+        applyDescriptionTimelogs(previous.workItems, next, createFactories()),
+      ).toBe(next);
+    }
+  });
+
+  it("maps a shared project's existing task", () => {
+    const { previous, next } = write(
+      { projects: [shared], workItems: [item()] },
+      (state) => withDescription(state, timelog("Team site", "build")),
+    );
+
+    expect(
+      applyDescriptionTimelogs(previous.workItems, next, createFactories())
+        .workItems[0],
+    ).toMatchObject({ projectId: "shared", taskId: "build" });
+  });
+
   it("returns the same state when no description changed", () => {
     const state = createState({
       projects: [acme],
@@ -390,47 +435,125 @@ describe("applyDescriptionTimelogs", () => {
   });
 });
 
-describe("getMissingTimelogProject", () => {
-  it("names the project and task when no active project matches", () => {
+describe("getTimelogMismatch", () => {
+  it("names a missing project, or an archived one of that name", () => {
     expect(
-      getMissingTimelogProject(
+      getTimelogMismatch(
         [acme],
         item({ description: timelog("Beta", "Build") }),
       ),
-    ).toEqual({ projectName: "Beta", taskName: "Build" });
-  });
-
-  it("points to an archived project of that name", () => {
+    ).toEqual({
+      kind: "missing-project",
+      projectName: "Beta",
+      taskName: "Build",
+    });
     expect(
-      getMissingTimelogProject(
+      getTimelogMismatch(
         [project({ _id: "beta", name: "Beta", status: "archived" })],
         item({ description: timelog("beta") }),
       ),
-    ).toEqual({ projectName: "beta", archivedProjectId: "beta" });
+    ).toEqual({
+      kind: "missing-project",
+      projectName: "beta",
+      archivedProjectId: "beta",
+    });
   });
 
-  it("is null when the project exists or the timelog names none", () => {
+  it("names a missing or archived task, and whether the team gets it", () => {
     expect(
-      getMissingTimelogProject([acme], item({ description: timelog("Acme") })),
+      getTimelogMismatch(
+        [shared],
+        item({ description: timelog("Team site", "Deploy") }),
+      ),
+    ).toEqual({
+      kind: "missing-task",
+      projectId: "shared",
+      projectName: "Team site",
+      taskName: "Deploy",
+      shared: true,
+    });
+    expect(
+      getTimelogMismatch(
+        [acme],
+        item({ projectId: "acme", description: timelog(undefined, "support") }),
+      ),
+    ).toEqual({
+      kind: "missing-task",
+      projectId: "acme",
+      projectName: "Acme",
+      taskName: "support",
+      archivedTaskId: "old",
+      shared: false,
+    });
+  });
+
+  it("names the timelog's project and task when the item has others", () => {
+    expect(
+      getTimelogMismatch(
+        [acme],
+        item({ projectId: "acme", description: timelog("Acme", "Design") }),
+      ),
+    ).toEqual({
+      kind: "different",
+      projectId: "acme",
+      projectName: "Acme",
+      taskId: "design",
+      taskName: "Design",
+    });
+    expect(
+      getTimelogMismatch(
+        [acme, project({ _id: "other", name: "Other" })],
+        item({
+          projectId: "other",
+          taskId: "x",
+          description: timelog("Acme"),
+        }),
+      ),
+    ).toEqual({ kind: "different", projectId: "acme", projectName: "Acme" });
+  });
+
+  it("accepts any task of the project when the timelog names none", () => {
+    expect(
+      getTimelogMismatch(
+        [acme],
+        item({
+          projectId: "acme",
+          taskId: "design",
+          description: timelog("Acme"),
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("is null when the item matches its timelog or has none", () => {
+    expect(
+      getTimelogMismatch(
+        [acme],
+        item({
+          projectId: "acme",
+          taskId: "design",
+          description: timelog("Acme", "Design"),
+        }),
+      ),
     ).toBeNull();
     expect(
-      getMissingTimelogProject(
+      getTimelogMismatch(
         [acme],
         item({ description: timelog(undefined, "Design") }),
       ),
     ).toBeNull();
-    expect(getMissingTimelogProject([acme], item())).toBeNull();
+    expect(getTimelogMismatch([acme], item())).toBeNull();
   });
 });
 
-describe("createTimelogProject", () => {
+describe("applyItemTimelog", () => {
   it("creates the project with the task and maps the item", () => {
     const state = createState({
       projects: [acme],
       workItems: [item({ description: timelog("Beta", "Build") })],
     });
 
-    const result = createTimelogProject(state, "item", createFactories());
+    const result = applyItemTimelog(state, "item", createFactories());
 
     expect(result.projects[1]).toMatchObject({
       _id: "project-1",
@@ -458,7 +581,7 @@ describe("createTimelogProject", () => {
       workItems: [item({ description: timelog("Beta", "Build") })],
     });
 
-    const result = createTimelogProject(state, "item", createFactories());
+    const result = applyItemTimelog(state, "item", createFactories());
 
     expect(result.projects).toHaveLength(1);
     expect(result.projects[0]?.status).toBe("active");
@@ -468,16 +591,61 @@ describe("createTimelogProject", () => {
     });
   });
 
-  it("changes nothing when the project exists or the item has no timelog", () => {
-    const mapped = createState({
-      projects: [acme],
-      workItems: [item({ description: timelog("Acme") })],
+  it("adds or restores a shared project's task when the user asks", () => {
+    const added = applyItemTimelog(
+      createState({
+        projects: [shared],
+        workItems: [item({ description: timelog("Team site", "Deploy") })],
+      }),
+      "item",
+      createFactories(),
+    );
+    expect(added.projects[0]?.tasks.at(-1)).toMatchObject({
+      _id: "task-1",
+      name: "Deploy",
     });
-    expect(createTimelogProject(mapped, "item", createFactories())).toBe(
-      mapped,
+    expect(added.workItems[0]?.taskId).toBe("task-1");
+
+    const restored = applyItemTimelog(
+      createState({
+        projects: [shared],
+        workItems: [item({ description: timelog("Team site", "qa") })],
+      }),
+      "item",
+      createFactories(),
+    );
+    expect(restored.projects[0]?.tasks[1]?.status).toBe("active");
+    expect(restored.workItems[0]?.taskId).toBe("qa");
+  });
+
+  it("sets the timelog's project and task over the item's own", () => {
+    const result = applyItemTimelog(
+      createState({
+        projects: [acme, project({ _id: "other", name: "Other" })],
+        workItems: [
+          item({ projectId: "other", description: timelog("Acme", "Design") }),
+        ],
+      }),
+      "item",
+      createFactories(),
+    );
+
+    expect(result.workItems[0]).toMatchObject({
+      projectId: "acme",
+      taskId: "design",
+    });
+  });
+
+  it("changes nothing when the item matches its timelog or has none", () => {
+    const matching = createState({
+      projects: [acme],
+      workItems: [item({ projectId: "acme", description: timelog("Acme") })],
+    });
+    expect(applyItemTimelog(matching, "item", createFactories())).toBe(
+      matching,
     );
 
     const plain = createState({ workItems: [item()] });
-    expect(createTimelogProject(plain, "item", createFactories())).toBe(plain);
+    expect(applyItemTimelog(plain, "item", createFactories())).toBe(plain);
   });
 });

@@ -1,5 +1,8 @@
 import { useState } from "react";
-import { RiErrorWarningLine as WarningIcon } from "@remixicon/react";
+import {
+  RiErrorWarningLine as WarningIcon,
+  RiFileTextLine as DescriptionIcon,
+} from "@remixicon/react";
 import { TooltipButton } from "@/components/tooltip-button";
 import {
   AlertDialog,
@@ -12,37 +15,70 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import type { MissingTimelogProject } from "@/domain/backlog/description-timelog";
+import type { TimelogMismatch } from "@/domain/backlog/description-timelog";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { localStore } from "@/lib/local-store";
 
 /**
- * The warning beside the Project property when the description's timelog
- * names a project that does not exist (#281). It asks, then creates the
- * project, or restores an archived one of that name, with the timelog's task
- * and sets both on the item.
+ * The button after the Project property while the item's project or task
+ * differs from its description's timelog (#281). A missing project or task
+ * shows an amber warning that asks, then creates or restores it; in a shared
+ * project the team gets the task too. When both exist, a quiet button sets
+ * them at once. Every change has Undo.
  */
-export function TimelogProjectButton({
+export function TimelogButton({
   workItemId,
-  missing,
+  mismatch,
 }: {
   workItemId: string;
-  missing: MissingTimelogProject;
+  mismatch: TimelogMismatch;
 }) {
   const [open, setOpen] = useState(false);
-  const restores = Boolean(missing.archivedProjectId);
-  const verb = restores ? "Restore" : "Create";
-  const { projectName, taskName } = missing;
 
-  return (
-    <>
+  function apply(title: string) {
+    offerUndo(localStore.applyTimelogWithUndo(workItemId), {
+      title,
+      subject: "backlog item",
+    });
+  }
+
+  if (mismatch.kind === "different") {
+    const target = mismatch.taskName
+      ? `${mismatch.projectName} › ${mismatch.taskName}`
+      : mismatch.projectName;
+    return (
       <TooltipButton
-        label={`${verb} project ${projectName}`}
+        label={`Use ${target} from the description`}
         render={
           <Button
             variant="ghost"
             size="icon-sm"
-            className="timelog-project-button shrink-0 text-[var(--warning)]"
+            className="timelog-button shrink-0 text-muted-foreground"
+            onClick={() =>
+              apply(
+                mismatch.taskName
+                  ? "Project and task set from the description"
+                  : "Project set from the description",
+              )
+            }
+          />
+        }
+      >
+        <DescriptionIcon />
+      </TooltipButton>
+    );
+  }
+
+  const question = describeMissing(mismatch);
+  return (
+    <>
+      <TooltipButton
+        label={question.label}
+        render={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="timelog-button shrink-0 text-[var(--warning)]"
             onClick={() => setOpen(true)}
           />
         }
@@ -52,31 +88,61 @@ export function TimelogProjectButton({
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              {verb} project {projectName}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {restores
-                ? `The description's timelog names ${projectName}, an archived project. Ajour restores it${taskName ? `, adds the task ${taskName} if it's missing,` : ""} and sets it on this backlog item.`
-                : `The description's timelog names ${projectName}, which doesn't exist. Ajour creates it${taskName ? ` with the task ${taskName}` : ""} and sets it on this backlog item.`}
-            </AlertDialogDescription>
+            <AlertDialogTitle>{question.title}</AlertDialogTitle>
+            <AlertDialogDescription>{question.body}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 setOpen(false);
-                offerUndo(localStore.createTimelogProjectWithUndo(workItemId), {
-                  title: restores ? "Project restored" : "Project created",
-                  subject: "project",
-                });
+                apply(question.done);
               }}
             >
-              {verb} project
+              {question.action}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </>
   );
+}
+
+/** The question for a missing project or task, and the toast once done. */
+function describeMissing(
+  mismatch: Exclude<TimelogMismatch, { kind: "different" }>,
+) {
+  if (mismatch.kind === "missing-project") {
+    const { projectName, taskName } = mismatch;
+    const restores = Boolean(mismatch.archivedProjectId);
+    const verb = restores ? "Restore" : "Create";
+    return {
+      label: `${verb} project ${projectName}`,
+      title: `${verb} project ${projectName}?`,
+      body: restores
+        ? `The description's timelog names ${projectName}, an archived project. Ajour restores it${taskName ? `, adds the task ${taskName} if it's missing,` : ""} and sets it on this backlog item.`
+        : `The description's timelog names ${projectName}, which doesn't exist. Ajour creates it${taskName ? ` with the task ${taskName}` : ""} and sets it on this backlog item.`,
+      action: `${verb} project`,
+      done: restores ? "Project restored" : "Project created",
+    };
+  }
+
+  const { projectName, taskName, shared } = mismatch;
+  const restores = Boolean(mismatch.archivedTaskId);
+  const team = shared
+    ? ` ${projectName} is shared, so your team gets the task too.`
+    : "";
+  return {
+    label: restores
+      ? `Restore task ${taskName}`
+      : `Add task ${taskName} to ${projectName}`,
+    title: restores
+      ? `Restore task ${taskName} in ${projectName}?`
+      : `Add task ${taskName} to ${projectName}?`,
+    body: restores
+      ? `The description's timelog names ${taskName}, which is archived in ${projectName}. Ajour restores it and sets it on this backlog item.${team}`
+      : `The description's timelog names ${taskName}, which ${projectName} doesn't have. Ajour adds it and sets it on this backlog item.${team}`,
+    action: restores ? "Restore task" : "Add task",
+    done: restores ? "Task restored" : "Task added",
+  };
 }

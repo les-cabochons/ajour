@@ -3,7 +3,7 @@ import { PropertyList, PropertyRow } from "@/components/property-list";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Switch } from "@/components/ui/switch";
-import { getMissingTimelogProject } from "@/domain/backlog/description-timelog";
+import { getTimelogMismatch } from "@/domain/backlog/description-timelog";
 import {
   getLocalProjectDisplayName,
   type LocalAppState,
@@ -23,7 +23,7 @@ import {
   FrontmatterSections,
   useFrontmatterFields,
 } from "@/features/backlog/frontmatter-properties";
-import { TimelogProjectButton } from "@/features/backlog/timelog-project-button";
+import { TimelogButton } from "@/features/backlog/timelog-button";
 
 /** Project and task lists outgrow their narrow fields, so names fit. */
 const LONG_NAME_LIST_WIDTH = 320;
@@ -33,9 +33,9 @@ const LONG_NAME_LIST_WIDTH = 320;
  * state, priority, project and task, then the "Keep when missing from sync"
  * switch for synced items. The peek and the item page show the same rows;
  * `children` adds rows before the switch. The description's frontmatter
- * follows: plain values as rows, lists and nested keys as closed sections. A
- * warning beside Project offers to create the project the description's
- * timelog names when it does not exist.
+ * follows: plain values as rows, lists and nested keys as sections. A button
+ * after Project offers the description's timelog while the item's project or
+ * task differs from it.
  */
 export function BacklogItemProperties({
   item,
@@ -47,10 +47,11 @@ export function BacklogItemProperties({
   children?: ReactNode;
 }) {
   const project = state.projects.find((p) => p._id === item.projectId);
-  const description = item.description;
-  const missingTimelogProject = useMemo(
-    () => getMissingTimelogProject(state.projects, { description }),
-    [state.projects, description],
+  const { description, projectId, taskId } = item;
+  const timelogMismatch = useMemo(
+    () =>
+      getTimelogMismatch(state.projects, { description, projectId, taskId }),
+    [state.projects, description, projectId, taskId],
   );
   const frontmatterFields = useFrontmatterFields(description);
   return (
@@ -100,11 +101,8 @@ export function BacklogItemProperties({
               );
             }}
           />
-          {missingTimelogProject && item.status !== "archived" ? (
-            <TimelogProjectButton
-              workItemId={item._id}
-              missing={missingTimelogProject}
-            />
+          {timelogMismatch && item.status !== "archived" ? (
+            <TimelogButton workItemId={item._id} mismatch={timelogMismatch} />
           ) : null}
         </PropertyRow>
         <PropertyRow label="Task">

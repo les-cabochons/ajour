@@ -64,7 +64,7 @@ import {
 } from "@/domain/backlog/settle-rules";
 import {
   applyDescriptionTimelogs,
-  createTimelogProject as applyCreateTimelogProject,
+  applyItemTimelog,
 } from "@/domain/backlog/description-timelog";
 import {
   acceptRemoteEstimateValue as applyAcceptRemoteEstimateValue,
@@ -2120,13 +2120,13 @@ export const localStore = {
     });
   },
   /**
-   * Creates the project the item's description timelog names, or restores an
-   * archived one of that name, with its task, and maps the item to them.
+   * Sets the item's project and task from its description's timelog, creating
+   * or restoring the project and the task it needs, in a shared project too.
    * Returns an undo token, or null when nothing changed.
    */
-  createTimelogProjectWithUndo(workItemId: string) {
+  applyTimelogWithUndo(workItemId: string) {
     return updateStateWithUndo((state) =>
-      applyCreateTimelogProject(state, workItemId, {
+      applyItemTimelog(state, workItemId, {
         createId,
         now: Date.now,
       }),

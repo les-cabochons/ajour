@@ -36,7 +36,7 @@ Pick the coding agent, the browser and the model Ajour uses for plugin tasks, su
 
 - **Subitems**: when you close a parent with open subitems, **Ask** (default), **Include them** or **Leave them**.
 - **Settle rules**: per source project, ask with the settle dialog or apply a fixed state and priority. See [Settle and snooze](/backlog/settle-and-snooze#settle-rules).
-- **Descriptions**: **Ask before opening frontmatter links**, on by default. See [Frontmatter](/backlog/items#frontmatter).
+- **Descriptions**: **Ask before opening description links**, on by default. See [Frontmatter](/backlog/items#frontmatter).
 
 ## Workflow
 

@@ -3836,7 +3836,7 @@ describe("localStore description timelog", () => {
     const before = localStore.snapshot();
     expect(before.workItems[0]?.projectId).toBeUndefined();
 
-    const token = localStore.createTimelogProjectWithUndo(itemId);
+    const token = localStore.applyTimelogWithUndo(itemId);
 
     const project = localStore.snapshot().projects.at(-1)!;
     expect(project).toMatchObject({ name: "Acme", status: "active" });
