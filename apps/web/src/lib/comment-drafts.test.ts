@@ -97,4 +97,32 @@ describe("drafts without storage", () => {
 
     expect(drafts.getCommentDraft("item")).toBe("Waiting on the client");
   });
+
+  it("saves the session's drafts once storage takes writes again", async () => {
+    const values = new Map<string, string>();
+    let full = true;
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => {
+          if (full) throw new Error("QuotaExceededError");
+          values.set(key, value);
+        },
+      },
+    });
+    vi.resetModules();
+    const drafts = await import("@/lib/comment-drafts");
+
+    drafts.keepCommentAsDraft("item", "Waiting on the client");
+    full = false;
+    drafts.setCommentDraft("other", "Second");
+
+    expect(JSON.parse(values.get(drafts.COMMENT_DRAFTS_STORAGE_KEY)!)).toEqual({
+      item: expect.objectContaining({ text: "Waiting on the client" }),
+      other: expect.objectContaining({ text: "Second" }),
+    });
+    values.delete(drafts.COMMENT_DRAFTS_STORAGE_KEY);
+    // Storage is the source again: nothing is left in the session copy.
+    expect(drafts.getCommentDraft("item")).toBeUndefined();
+  });
 });

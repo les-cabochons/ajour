@@ -690,7 +690,7 @@ describe("backlog sync of comments on settled items", () => {
   // The settle time the sync asked about, and when it asked.
   const sync = {
     settledSince: new Map([["work-item-1", settledAt]]),
-    requestedAt: 700,
+    returnedBySync: new Set(["work-item-1"]),
   };
 
   function settledItem() {
@@ -782,7 +782,7 @@ describe("backlog sync of comments on settled items", () => {
         active,
         facts,
         viewer,
-        { settledSince: new Map(), requestedAt: 700 },
+        { settledSince: new Map(), returnedBySync: new Set<string>() },
         () => 900,
       ),
     ).toBe(active);
@@ -927,10 +927,55 @@ describe("backlog sync of comments on settled items", () => {
           },
         ],
         viewer,
-        { settledSince: new Map([[childId, settledAt]]), requestedAt: 700 },
+        {
+          settledSince: new Map([[childId, settledAt]]),
+          returnedBySync: new Set<string>(),
+        },
         () => 900,
       ),
     ).toBe(settled);
+  });
+
+  it("leaves the name another sync's answer gave", () => {
+    // A later sync returned the item and named Ana; this older answer
+    // didn't return it, so its earlier comment by Bob names no one.
+    const named = {
+      ...createState(),
+      workItems: importSyncedWorkItems(
+        createState(),
+        [createCandidate()],
+        undefined,
+        atSettle,
+      ).state.workItems.map((workItem) => ({
+        ...workItem,
+        returnedAt: 950,
+        returnedByComment: { author: "Ana Silva", at: 950 },
+      })),
+    };
+
+    expect(
+      returnItemsWithNewComments(
+        named,
+        [
+          {
+            localWorkItemId: "work-item-1",
+            comments: [
+              comment(
+                "c1",
+                { id: "bo", displayName: "Bob" },
+                "2026-10-18T10:30:00Z",
+              ),
+            ],
+          },
+        ],
+        viewer,
+        {
+          settledSince: new Map([["work-item-1", settledAt]]),
+          returnedBySync: new Set<string>(),
+        },
+        () => 900,
+      ),
+    ).toBe(named);
   });
 
   it("names no one for an item returned before the sync asked", () => {
@@ -954,7 +999,7 @@ describe("backlog sync of comments on settled items", () => {
           },
         ],
         viewer,
-        sync,
+        { ...sync, returnedBySync: new Set<string>() },
         () => 900,
       ),
     ).toBe(returnedEarlier);
