@@ -118,12 +118,16 @@ async function sendSourceWrite(
     void sendSettleComments(workItem._id);
   } catch (error) {
     if (!stillCurrent()) return;
-    // Counted first: recovery may make the item active, and the settle-end
-    // watcher then turns them into drafts itself.
-    const kept = settleCommentsOf(workItem._id).length;
+    // The comments of the settle whose write failed, taken before recovery:
+    // the settle-end watcher may draft them itself, and a newer settle's
+    // comments queued meanwhile, in another window, keep waiting.
+    const ofThisSettle = settleCommentsOf(workItem._id).filter((entry) =>
+      isOfSettle(entry, workItem.settleId),
+    );
+    const kept = ofThisSettle.length;
     localStore.failSourceWrite(workItem._id);
     // The settle didn't stand, whatever state the item went back to.
-    keepSettleCommentsAsDrafts(workItem._id);
+    keepAsDrafts(workItem._id, ofThisSettle);
     showErrorToast({
       title: `Couldn't update "${workItem.title}" in its source`,
       description: `${error instanceof Error ? error.message : "Unknown error"} The item returned to its previous state.${kept ? " Your comment is kept as a draft on it." : ""}`,
@@ -134,14 +138,17 @@ async function sendSourceWrite(
   }
 }
 
-/**
- * Keeps the comments waiting on the item's settle as its draft: every one,
- * or with `queuedBy` only those queued by then, so a newer settle's comment
- * queued meanwhile, such as in another window, keeps waiting.
- */
-function keepSettleCommentsAsDrafts(workItemId: string, queuedBy?: number) {
-  for (const { id, at } of settleCommentsOf(workItemId)) {
-    if (queuedBy !== undefined && at > queuedBy) continue;
+/** Whether a queued comment came with that settle. Older entries name none. */
+function isOfSettle(entry: PendingSettleComment, settleId: string | undefined) {
+  return entry.settleId === undefined || entry.settleId === settleId;
+}
+
+/** Keeps these queued comments as the item's draft, each at most once. */
+function keepAsDrafts(
+  workItemId: string,
+  entries: readonly Pick<PendingSettleComment, "id">[],
+) {
+  for (const { id } of entries) {
     const entry = takeSettleComment(id);
     if (entry) keepCommentAsDraft(workItemId, entry.body);
   }
@@ -190,12 +197,15 @@ export async function sendSettleComments(workItemId: string) {
 
 /**
  * Whether the settle a comment was typed with still stands: the item is
- * settled, or archived since, and still comes from the comment's thread. A
- * settle that ended already turned its comments into drafts, see
- * `watchSettleEnds`.
+ * still in that settle, settled or archived since, and comes from the
+ * comment's thread.
  */
 function settleStands(item: LocalWorkItem, entry: PendingSettleComment) {
-  return item.status !== "active" && isCommentSourceOf(item, entry);
+  return (
+    item.status !== "active" &&
+    isCommentSourceOf(item, entry) &&
+    isOfSettle(entry, item.settleId)
+  );
 }
 
 /**
@@ -206,28 +216,36 @@ function settleStands(item: LocalWorkItem, entry: PendingSettleComment) {
  * it, never finds an earlier settle's comment. Returns the unsubscribe.
  */
 export function watchSettleEnds() {
-  const statusesOf = () =>
+  const lifecyclesOf = () =>
     new Map(
       localStore
         .snapshot()
-        .workItems.map((workItem) => [workItem._id, workItem.status]),
+        .workItems.map((workItem) => [
+          workItem._id,
+          { status: workItem.status, settleId: workItem.settleId },
+        ]),
     );
-  let before = statusesOf();
+  let before = lifecyclesOf();
   return localStore.subscribe(() => {
-    // The comments of the settle that ended were queued by the time it ended.
-    const seenAt = Date.now();
-    const now = statusesOf();
-    const ended = [...now].filter(
-      ([id, status]) =>
-        status === "active" &&
-        before.get(id) !== undefined &&
-        before.get(id) !== "active",
-    );
+    const now = lifecyclesOf();
+    // The settles that ended: the item was settled or archived, now active.
+    const ended = [...now].flatMap(([id, { status }]) => {
+      const previous = before.get(id);
+      return status === "active" && previous && previous.status !== "active"
+        ? [{ id, settleId: previous.settleId }]
+        : [];
+    });
     before = now;
     if (ended.length === 0) return;
     const queued = new Set(settleCommentItemIds());
-    for (const [id] of ended) {
-      if (queued.has(id)) keepSettleCommentsAsDrafts(id, seenAt);
+    for (const { id, settleId } of ended) {
+      if (!queued.has(id)) continue;
+      // Only that settle's: a newer one's comments, queued meanwhile in
+      // another window, keep waiting.
+      keepAsDrafts(
+        id,
+        settleCommentsOf(id).filter((entry) => isOfSettle(entry, settleId)),
+      );
     }
   });
 }
