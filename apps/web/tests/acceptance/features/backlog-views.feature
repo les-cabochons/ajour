@@ -496,6 +496,17 @@ Feature: Backlog list and board views
     And the Undo toast closes on its own
     Then the delete was sent once
 
+  Scenario Outline: Comment controls show hover and pressed feedback
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    When I open the Backlog parent page
+    Then my comment controls show hover and pressed feedback in the "<theme>" theme
+
+    Examples:
+      | theme |
+      | light |
+      | dark  |
+
   Scenario: React to a comment
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit
