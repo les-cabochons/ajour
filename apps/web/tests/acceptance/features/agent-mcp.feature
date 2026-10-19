@@ -14,6 +14,19 @@ Feature: Agents through MCP
     And a toast reads "Claude Code: Started an entry"
     And the bridge received a successful result
 
+  Scenario: An agent's comment goes out when its Undo toast closes
+    Given MCP is on and "Claude Code" comments "Fixed in 1.2" on a synced item whose connection allows "readWrite"
+    When I open the app
+    Then a toast reads "Claude Code: Commented on a backlog item"
+    And the bridge received the queued comment
+    When the agent's Undo toast closes on its own
+    Then the source received the comment "Fixed in 1.2"
+
+  Scenario: An agent can't read comments the user didn't allow
+    Given MCP is on and "Claude Code" reads the comments of a synced item whose connection allows "none"
+    When I open the app
+    Then the bridge received a refusal naming the "Work" connection
+
   Scenario: The indicator stays hidden while MCP is off
     Given MCP is off
     When I open the app

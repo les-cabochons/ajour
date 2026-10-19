@@ -32,9 +32,20 @@ Create one client per agent, so you can revoke one without the others. **Revoke*
 | Read         | The running entry, time entries, projects, backlog items, and the week's changes since its last commit.      |
 | Time         | Start, stop and edit the running entry. Create, edit, move and duplicate entries. Mark changes as committed. |
 | Backlog      | Create, edit and move items. Settle, snooze, archive and restore them.                                       |
+| Comments     | Read a synced item's comments, and post one, only where you allow it. See below.                             |
 | Conversation | Report what they are doing, and ask you a question.                                                          |
 
 Agents cannot delete anything. Their changes go through the same actions as yours, with the same Undo toast.
+
+### Comments
+
+A synced item's comments are other people's words, often a client's, so agents get none of them until you allow it. Set **Agent access to comments** on each connection, in **Settings › Plugins**:
+
+- **None**, the default: agents can't read or post comments on the connection's items.
+- **Read**: agents can read the comments. What they read goes to their model provider, like the rest of your data.
+- **Read and post**: agents can also post a comment, or settle an item with one. The comment waits for its Undo toast, like a comment you delete, and goes to the source when the toast closes. **Undo** cancels it. If the source refuses it, Ajour keeps it as a draft on the item.
+
+The connection's row shows **Agents read comments** or **Agents read and post comments** while you allow it.
 
 ## Agent tasks
 

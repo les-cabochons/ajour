@@ -92,6 +92,7 @@ import {
   sendPendingSourceWrites,
 } from "@/features/backlog/backlog-source-writes";
 import { flushPendingCommentDeletes } from "@/lib/comment-deletes";
+import { flushAgentComments } from "@/features/agents/agent-comment-tools";
 import { CloseSubitemsDialogHost } from "@/features/backlog/close-subitems-dialog";
 import { SourceStateDialogHost } from "@/features/backlog/source-state-dialog";
 import { SettleDialogHost } from "@/features/backlog/settle-dialog";
@@ -216,6 +217,7 @@ function PendingSourceWritesFlush() {
     void sendPendingSourceWrites();
     void flushPendingCommentDeletes();
     void flushSettleComments();
+    void flushAgentComments();
   }, []);
   return null;
 }

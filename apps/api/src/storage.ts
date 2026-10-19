@@ -9,6 +9,10 @@ import {
   pluginHasCapability,
   switchableCapabilitySchema,
   syncsPullRequestsAutomatically,
+  AGENT_ACCESS_FIELD_ID,
+  agentAccessSchema,
+  connectionAgentAccess,
+  type AgentAccess,
   type BacklogSourceStatus,
   type BacklogSourceStatusInput,
   type PluginConnectionSummary,
@@ -36,6 +40,8 @@ interface StoredConnection {
   autoSyncIntervalMinutes: number;
   /** Absent until saved; see `syncsPullRequestsAutomatically`. */
   pullRequestAutoSync?: boolean;
+  /** Absent means None; see `connectionAgentAccess`. */
+  agentAccess?: AgentAccess;
   config: PluginFieldValues;
   configSummary: PluginSummaryValues;
   connectedAt: number;
@@ -374,6 +380,9 @@ function toEditableValues(
     autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
     pullRequestAutoSync: syncsPullRequestsAutomatically(connection),
   };
+  if (plugin.capabilities.connector?.comments) {
+    editableValues[AGENT_ACCESS_FIELD_ID] = connectionAgentAccess(connection);
+  }
 
   for (const field of plugin.connectionFields) {
     if (field.secret) {
@@ -408,6 +417,7 @@ function buildConnectionSummary(
     ...(connection.pullRequestAutoSync !== undefined
       ? { pullRequestAutoSync: connection.pullRequestAutoSync }
       : {}),
+    ...(connection.agentAccess ? { agentAccess: connection.agentAccess } : {}),
     connectedAt: connection.connectedAt,
     lastSyncAt: connection.lastSyncAt,
     lastError: connection.lastError,
@@ -508,10 +518,14 @@ function normalizeState(
             connection.connectedAt,
           ),
         )
-        .map(({ pullRequestAutoSync, ...connection }) => ({
+        .map(({ pullRequestAutoSync, agentAccess, ...connection }) => ({
           ...connection,
           ...(typeof pullRequestAutoSync === "boolean"
             ? { pullRequestAutoSync }
+            : {}),
+          // Anything else than a known level is None.
+          ...(agentAccessSchema.safeParse(agentAccess).success
+            ? { agentAccess }
             : {}),
         }))
         .sort(compareConnections),
@@ -1132,6 +1146,8 @@ export class AppApiStorage {
       autoSyncIntervalMinutes: number;
       /** Undefined keeps the saved value. */
       pullRequestAutoSync?: boolean;
+      /** Undefined keeps the saved value. */
+      agentAccess?: AgentAccess;
       config: PluginFieldValues;
       configSummary: PluginSummaryValues;
     },
@@ -1156,6 +1172,9 @@ export class AppApiStorage {
               pullRequestAutoSync:
                 input.pullRequestAutoSync ?? existing?.pullRequestAutoSync,
             }
+          : {}),
+        ...((input.agentAccess ?? existing?.agentAccess)
+          ? { agentAccess: input.agentAccess ?? existing?.agentAccess }
           : {}),
         config: input.config,
         configSummary: input.configSummary,

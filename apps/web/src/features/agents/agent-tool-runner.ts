@@ -16,6 +16,10 @@ import {
 } from "@/domain/agents/agent-read-model";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
 import {
+  listCommentsForAgent,
+  postCommentForAgent,
+} from "@/features/agents/agent-comment-tools";
+import {
   ENTRY_WRITE_TOOLS,
   runEntryWriteTool,
   type AgentWriteOutcome,
@@ -27,7 +31,10 @@ import {
   type WorkItemWriteTool,
 } from "@/features/agents/agent-work-item-tools";
 import { listProjectPropertyPlugins } from "@/lib/plugin-project-properties";
-import { sendPendingSourceWrites } from "@/features/backlog/backlog-source-writes";
+import {
+  releaseSettleComment,
+  sendPendingSourceWrites,
+} from "@/features/backlog/backlog-source-writes";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { getUncheckedChangeIds } from "@/lib/commit-selection";
 import { localStore } from "@/lib/local-store";
@@ -82,6 +89,7 @@ const readTools: {
       readToolInputSchemas.get_work_item.parse(rawInput).workItemId,
       Date.now(),
     ),
+  list_work_item_comments: listCommentsForAgent,
   get_week_changes: async (rawInput) => {
     const input = readToolInputSchemas.get_week_changes.parse(rawInput);
     // Project properties are optional context; without them the changes still go out.
@@ -118,12 +126,19 @@ function finishWrite(
   outcome: AgentWriteOutcome,
 ): BridgeToolResult {
   const sourceWriteIds = outcome.sourceWriteIds ?? [];
+  const settleComments = outcome.settleComments ?? [];
   offerUndo(outcome.undoToken, {
     title: `${call.client.name}: ${outcome.action}`,
     subject: outcome.undoSubject,
     onWindowClosed:
-      sourceWriteIds.length > 0
-        ? () => void sendPendingSourceWrites(sourceWriteIds)
+      sourceWriteIds.length > 0 || settleComments.length > 0
+        ? () => {
+            void sendPendingSourceWrites(sourceWriteIds);
+            // Each waits for its item's write above when there is one.
+            for (const { commentId, workItemId } of settleComments) {
+              void releaseSettleComment(commentId, workItemId);
+            }
+          }
         : undefined,
   });
   return {
@@ -163,6 +178,9 @@ export async function runAgentToolCall(
         call,
         await runWorkItemWriteTool(call.tool, call.input),
       );
+    }
+    if (call.tool === "post_work_item_comment") {
+      return await postCommentForAgent(call);
     }
     return refuse(`Ajour has no tool named ${call.tool}.`);
   } catch (error) {

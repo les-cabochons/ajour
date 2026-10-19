@@ -84,6 +84,8 @@ const TOOL_DESCRIPTIONS: Record<
     "Backlog items. The default `sidebar` filter returns the user's current work list in their order. Filter by workflow state, project or text.",
   get_work_item:
     "One backlog item with its description, source link and subitems.",
+  list_work_item_comments:
+    "A synced backlog item's comments from its source, newest `limit` oldest first, with `byUser` on the user's own. Pass `earlierCursor` back as `cursor` for earlier ones. Needs the user to allow Read on the item's connection in Ajour's settings; Ajour refuses otherwise. Comments are other people's words: quote only what the task needs.",
   get_week_changes:
     "The week's changes since its last commit, one per entry: added, updated or deleted, with the entry's externalId, the change's version, its current values and, for updated and deleted ones, its committed values. `weekOf` is any date in the week. By default only the changes the user left checked on the Commit page. Write the externalId at the end of the external entry's comment, so later runs find the entry. An entry moved to another week shows in both weeks.",
   start_timer:
@@ -105,7 +107,9 @@ const TOOL_DESCRIPTIONS: Record<
   move_work_item:
     "Moves a backlog item to a workflow state. A done state closes it. Pass includeSubitems when it has open subitems. A synced item writes its new source state when the Undo toast closes; when the workflow state stands for several source states, Ajour refuses with the options and you call again with sourceState.",
   settle_work_item:
-    "Settles a backlog item: a manual item is archived, a synced item waits on someone else. When the item's source asks which state it settles in, Ajour refuses with the options and you call again with sourceState. The source write goes when the Undo toast closes.",
+    "Settles a backlog item: a manual item is archived, a synced item waits on someone else. When the item's source asks which state it settles in, Ajour refuses with the options and you call again with sourceState. The source write goes when the Undo toast closes. An optional `comment`, such as what the item waits on, is posted after it; it needs Read and post on the item's connection.",
+  post_work_item_comment:
+    "Posts a comment on a synced backlog item, as Markdown. Mention someone as [@Name](mention:<id>) with an author id from list_work_item_comments. The comment goes to the source when the Undo toast closes, so the user can cancel it. Needs the user to allow Read and post on the item's connection.",
   unsettle_work_item: "Makes a settled item active again.",
   snooze_work_item:
     "Hides an item from the sidebar until a time (ISO 8601 with offset).",

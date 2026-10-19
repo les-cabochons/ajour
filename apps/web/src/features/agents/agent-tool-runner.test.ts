@@ -8,11 +8,21 @@ const {
   canWriteToSource,
   sendPendingSourceWrites,
   listBacklogSettleStates,
+  getPluginsOverview,
+  listItemComments,
+  postItemComment,
+  showUndoToast,
+  showErrorToast,
 } = vi.hoisted(() => ({
   offerUndo: vi.fn(),
   canWriteToSource: vi.fn((_item: { title: string }) => false),
   sendPendingSourceWrites: vi.fn(),
   listBacklogSettleStates: vi.fn(),
+  getPluginsOverview: vi.fn(),
+  listItemComments: vi.fn(),
+  postItemComment: vi.fn(),
+  showUndoToast: vi.fn(),
+  showErrorToast: vi.fn(),
 }));
 vi.mock("@/features/feedback/undo-toast", () => ({ offerUndo }));
 vi.mock("@/features/backlog/backlog-source-writes", async (importOriginal) => ({
@@ -24,6 +34,14 @@ vi.mock("@/features/backlog/backlog-source-writes", async (importOriginal) => ({
 vi.mock("@/lib/app-api", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   listBacklogSettleStates,
+  getPluginsOverview,
+  listItemComments,
+  postItemComment,
+}));
+vi.mock("@/components/ui/toast", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  showUndoToast,
+  showErrorToast,
 }));
 vi.mock("@/lib/plugin-project-properties", () => ({
   listProjectPropertyPlugins: async () => [],
@@ -847,5 +865,302 @@ describe("agent work item tools", () => {
       ok: false,
       error: expect.stringContaining("done state"),
     });
+  });
+});
+
+/** The synced item's plugin, with comments, and its connection's agent access. */
+function pluginsOverview(agentAccess?: "none" | "read" | "readWrite") {
+  const plugin = {
+    id: "azure_devops",
+    version: "1.0.0",
+    apiVersion: 3,
+    displayName: "Azure DevOps",
+    iconSvg: "<svg />",
+    entrypoint: "plugin.js",
+    capabilities: { connector: { settle: true, comments: { maxLength: 40 } } },
+    connectionFields: [],
+  };
+  return {
+    pluginsEnabled: true,
+    plugins: [plugin],
+    connectionGroups: [
+      {
+        plugin,
+        enabled: true,
+        connections: [
+          {
+            id: "ado-1",
+            pluginId: "azure_devops",
+            label: "Main connection",
+            tenantLabel: "Contoso",
+            autoSync: false,
+            autoSyncIntervalMinutes: 15,
+            connectedAt: 1,
+            pendingImportCount: 0,
+            selectedImportCount: 0,
+            configSummary: {},
+            editableValues: {},
+            ...(agentAccess ? { agentAccess } : {}),
+          },
+        ],
+      },
+    ],
+    totalPendingImportCount: 0,
+    totalSelectedImportCount: 0,
+  };
+}
+
+const me = { id: "me", displayName: "Alex" };
+const ana = { id: "ana", displayName: "Ana Silva" };
+
+describe("agent comment tools", () => {
+  beforeEach(() => {
+    getPluginsOverview.mockReset();
+    listItemComments.mockReset();
+    postItemComment.mockReset();
+    showUndoToast.mockClear();
+    showErrorToast.mockClear();
+  });
+
+  it("refuses comments until the user allows agents on the connection", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importSyncedItem(localStore);
+    getPluginsOverview.mockResolvedValue(pluginsOverview());
+
+    expect(await call("list_work_item_comments", { workItemId })).toMatchObject(
+      {
+        ok: false,
+        error: expect.stringContaining(
+          'The user hasn\'t allowed agents to read comments on the "Main connection" connection.',
+        ),
+      },
+    );
+
+    getPluginsOverview.mockResolvedValue(pluginsOverview("read"));
+    listItemComments.mockResolvedValue({ viewer: me, comments: [] });
+    expect(await call("list_work_item_comments", { workItemId })).toMatchObject(
+      { ok: true, output: { comments: [] } },
+    );
+    expect(
+      await call("post_work_item_comment", { workItemId, body: "Done" }),
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("hasn't allowed agents to post comments"),
+    });
+    expect(showUndoToast).not.toHaveBeenCalled();
+  });
+
+  it("lists comments oldest first, marking the user's own and leaving out deleted ones", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importSyncedItem(localStore);
+    getPluginsOverview.mockResolvedValue(pluginsOverview("read"));
+    window.localStorage.setItem(
+      "ajour.pending-comment-deletes",
+      JSON.stringify([
+        {
+          itemId: workItemId,
+          pluginId: "azure_devops",
+          connectionId: "ado-1",
+          sourceId: "101",
+          commentId: "c3",
+          at: 1,
+        },
+      ]),
+    );
+    listItemComments.mockResolvedValue({
+      viewer: me,
+      total: 9,
+      earlierCursor: "page-2",
+      comments: [
+        {
+          id: "c1",
+          author: ana,
+          body: "Can you look?",
+          createdAt: "2026-10-17T09:00:00Z",
+        },
+        {
+          id: "c2",
+          author: me,
+          body: "On it",
+          createdAt: "2026-10-17T10:00:00Z",
+          updatedAt: "2026-10-17T10:05:00Z",
+          reactions: [{ reaction: "like", count: 2, viewerReacted: true }],
+        },
+        {
+          id: "c3",
+          author: me,
+          body: "Deleted",
+          createdAt: "2026-10-17T11:00:00Z",
+        },
+      ],
+    });
+
+    const result = await call("list_work_item_comments", {
+      workItemId,
+      limit: 5,
+      cursor: "page-1",
+    });
+
+    expect(listItemComments).toHaveBeenCalledWith("azure_devops", "ado-1", {
+      sourceId: "101",
+      limit: 5,
+      cursor: "page-1",
+    });
+    expect(result).toEqual({
+      requestId: expect.any(String),
+      ok: true,
+      output: {
+        total: 9,
+        earlierCursor: "page-2",
+        comments: [
+          {
+            commentId: "c1",
+            author: { id: "ana", name: "Ana Silva" },
+            byUser: false,
+            body: "Can you look?",
+            createdAt: "2026-10-17T09:00:00Z",
+          },
+          {
+            commentId: "c2",
+            author: { id: "me", name: "Alex" },
+            byUser: true,
+            body: "On it",
+            createdAt: "2026-10-17T10:00:00Z",
+            updatedAt: "2026-10-17T10:05:00Z",
+            reactions: [{ reaction: "like", count: 2, byUser: true }],
+          },
+        ],
+      },
+    });
+  });
+
+  it("posts a comment when its Undo toast closes, and drops it on Undo", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importSyncedItem(localStore);
+    getPluginsOverview.mockResolvedValue(pluginsOverview("readWrite"));
+    postItemComment.mockResolvedValue({
+      comment: {
+        id: "c9",
+        author: me,
+        body: "Fixed in 1.2",
+        createdAt: "2026-10-18T10:00:00Z",
+      },
+    });
+
+    expect(
+      await call("post_work_item_comment", {
+        workItemId,
+        body: "Fixed in 1.2",
+      }),
+    ).toMatchObject({
+      ok: true,
+      output: { workItemId, queued: true },
+      activity: {
+        action: "Commented on a backlog item",
+        objectId: workItemId,
+        objectTitle: "Synced",
+      },
+    });
+    const toast = showUndoToast.mock.calls.at(-1)![0];
+    expect(toast.title).toBe("Claude Code: Commented on a backlog item");
+    expect(postItemComment).not.toHaveBeenCalled();
+    toast.onClose();
+    await vi.waitFor(() =>
+      expect(postItemComment).toHaveBeenCalledExactlyOnceWith(
+        "azure_devops",
+        "ado-1",
+        { sourceId: "101", body: "Fixed in 1.2" },
+      ),
+    );
+    toast.onClose();
+
+    await call("post_work_item_comment", { workItemId, body: "Never mind" });
+    const undone = showUndoToast.mock.calls.at(-1)![0];
+    undone.onUndo();
+    undone.onClose();
+    expect(postItemComment).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a refused agent comment as the item's draft", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importSyncedItem(localStore);
+    getPluginsOverview.mockResolvedValue(pluginsOverview("readWrite"));
+    postItemComment.mockRejectedValue(new Error("No access."));
+
+    await call("post_work_item_comment", { workItemId, body: "Fixed in 1.2" });
+    showUndoToast.mock.calls.at(-1)![0].onClose();
+
+    await vi.waitFor(() =>
+      expect(showErrorToast).toHaveBeenCalledWith({
+        title: `Couldn't post Claude Code's comment on "Synced"`,
+        description: "No access. It's kept as a draft on the item.",
+      }),
+    );
+    const { getCommentDraft } = await import("@/lib/comment-drafts");
+    expect(getCommentDraft(workItemId)).toBe("Fixed in 1.2");
+  });
+
+  it("refuses a comment longer than the source takes", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importSyncedItem(localStore);
+    getPluginsOverview.mockResolvedValue(pluginsOverview("readWrite"));
+
+    expect(
+      await call("post_work_item_comment", {
+        workItemId,
+        body: "x".repeat(41),
+      }),
+    ).toMatchObject({
+      ok: false,
+      error:
+        "The item's source takes comments of at most 40 characters. This one has 41.",
+    });
+  });
+
+  it("settles with a comment that waits for the settle's write", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importSyncedItem(localStore);
+    getPluginsOverview.mockResolvedValue(pluginsOverview("read"));
+
+    expect(
+      await call("settle_work_item", {
+        workItemId,
+        sourceState: "In QA",
+        comment: "Waiting on QA",
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("hasn't allowed agents to post comments"),
+    });
+    const { settleCommentsOf } = await import("@/lib/settle-comments");
+    expect(
+      localStore.snapshot().workItems.find((item) => item._id === workItemId)
+        ?.status,
+    ).toBe("active");
+
+    getPluginsOverview.mockResolvedValue(pluginsOverview("readWrite"));
+    expect(
+      await call("settle_work_item", {
+        workItemId,
+        sourceState: "In QA",
+        comment: "Waiting on QA",
+      }),
+    ).toMatchObject({ ok: true, output: { status: "settled" } });
+    expect(settleCommentsOf(workItemId)).toEqual([
+      expect.objectContaining({
+        pluginId: "azure_devops",
+        connectionId: "ado-1",
+        sourceId: "101",
+        body: "Waiting on QA",
+      }),
+    ]);
+    expect(settleCommentsOf(workItemId)[0]?.ready).toBeUndefined();
+    closeUndoWindow();
+    expect(sendPendingSourceWrites).toHaveBeenCalledWith([workItemId]);
+    // Its window closed, but the settle's write hasn't landed: it waits for it.
+    expect(postItemComment).not.toHaveBeenCalled();
+    expect(settleCommentsOf(workItemId)).toEqual([
+      expect.objectContaining({ ready: true }),
+    ]);
   });
 });

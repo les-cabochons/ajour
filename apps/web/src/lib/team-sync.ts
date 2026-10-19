@@ -1,4 +1,5 @@
 import {
+  AGENT_ACCESS_FIELD_ID,
   isCapabilityActive,
   type PluginConnectionSummary,
   type PluginOverviewGroup,
@@ -28,6 +29,7 @@ const HOST_FIELDS = new Set([
   "autoSync",
   "autoSyncIntervalMinutes",
   "pullRequestAutoSync",
+  AGENT_ACCESS_FIELD_ID,
 ]);
 
 export interface TeamSyncOutcome {

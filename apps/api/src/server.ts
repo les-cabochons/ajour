@@ -53,6 +53,9 @@ import {
   backlogImportSelectionUpdateSchema,
   pluginsOverviewSchema,
   teamCreateRouteRequestSchema,
+  AGENT_ACCESS_FIELD_ID,
+  agentAccessSchema,
+  type AgentAccess,
 } from "../../../packages/shared/plugins.ts";
 import {
   codeHostOperationSchema,
@@ -142,6 +145,7 @@ const RESERVED_CONNECTION_FIELDS = new Set([
   "autoSync",
   "autoSyncIntervalMinutes",
   "pullRequestAutoSync",
+  AGENT_ACCESS_FIELD_ID,
 ]);
 
 function materializeAutoSyncCandidates(
@@ -420,6 +424,9 @@ function parseConnectionValues(values: PluginFieldValues) {
           parsedValues.pullRequestAutoSync,
           "pullRequestAutoSync",
         );
+  const agentAccess = parseAgentAccessValue(
+    parsedValues[AGENT_ACCESS_FIELD_ID],
+  );
 
   const config = Object.fromEntries(
     Object.entries(parsedValues).filter(
@@ -433,8 +440,19 @@ function parseConnectionValues(values: PluginFieldValues) {
     autoSync,
     autoSyncIntervalMinutes,
     pullRequestAutoSync,
+    agentAccess,
     config,
   };
+}
+
+/** Undefined keeps the saved value; a connection never saved with it has None. */
+function parseAgentAccessValue(value: unknown): AgentAccess | undefined {
+  if (value === undefined) return undefined;
+  const parsed = agentAccessSchema.safeParse(value);
+  if (parsed.success) return parsed.data;
+  throw new Error(
+    'Plugin field "agentAccess" must be "none", "read" or "readWrite".',
+  );
 }
 
 function isHttpUrl(value: unknown): boolean {
@@ -1200,6 +1218,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             autoSync: parsedValues.autoSync,
             autoSyncIntervalMinutes: parsedValues.autoSyncIntervalMinutes,
             pullRequestAutoSync: parsedValues.pullRequestAutoSync,
+            agentAccess: parsedValues.agentAccess,
             config: validation.normalizedConfig,
             configSummary: validation.connectionSummary,
           });

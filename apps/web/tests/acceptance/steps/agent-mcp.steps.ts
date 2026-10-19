@@ -1,5 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 import { viewSwitcher } from "../../fixtures/sidebar";
+import { commentsOverview } from "../../fixtures/backlog-comments";
 import { createBdd } from "playwright-bdd";
 
 const { Given, When, Then } = createBdd();
@@ -553,3 +554,152 @@ Then("the question toast is gone", async ({ page }) => {
     page.getByText("Claude Code asks: Which project gets the 2 hours?"),
   ).toHaveCount(0);
 });
+
+/** Comments the plugin received, in order. */
+let postedComments: string[] = [];
+
+/**
+ * A synced item on the comments fixture's connection, whose agent access is
+ * `agentAccess`, and an agent calling `tool` on it once the bridge opens.
+ */
+async function agentCommentFixture(
+  page: Page,
+  clientName: string,
+  agentAccess: string,
+  tool: string,
+  input: Record<string, unknown>,
+) {
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem("agent-comment-fixture")) return;
+    localStorage.clear();
+    sessionStorage.setItem("agent-comment-fixture", "true");
+    localStorage.setItem(
+      "ajour.local-state.v2",
+      JSON.stringify({
+        workItems: [
+          {
+            _id: "synced",
+            title: "Synced item",
+            source: "example",
+            sourceId: "source-1",
+            sourceConnectionId: "fixture",
+            sourceStatusLabel: "Active",
+            status: "active",
+            createdAt: 1,
+          },
+        ],
+      }),
+    );
+  });
+  mcp = await mockMcp(page, {
+    bridgeEvents: [
+      {
+        event: "tool-call",
+        data: {
+          requestId: "call-1",
+          tool,
+          input: { workItemId: "synced", ...input },
+          client: { id: "client-1", name: clientName },
+        },
+      },
+    ],
+  });
+  // Registered last, so it answers instead of the MCP mock's empty overview.
+  await page.route(`${apiUrl}/api/plugins`, (route) =>
+    route.fulfill({
+      json: {
+        ...commentsOverview,
+        connectionGroups: commentsOverview.connectionGroups.map((group) => ({
+          ...group,
+          connections: group.connections.map((connection) => ({
+            ...connection,
+            agentAccess,
+          })),
+        })),
+      },
+      headers: cors,
+    }),
+  );
+  postedComments = [];
+  await page.route(
+    `${apiUrl}/api/backlog-comments/example/connections/fixture/postItemComment`,
+    async (route) => {
+      const { body } = route.request().postDataJSON() as { body: string };
+      postedComments.push(body);
+      await route.fulfill({
+        json: {
+          comment: {
+            id: "c1",
+            author: { id: "me", displayName: "Alex" },
+            body,
+            createdAt: new Date().toISOString(),
+          },
+        },
+        headers: cors,
+      });
+    },
+  );
+}
+
+Given(
+  "MCP is on and {string} comments {string} on a synced item whose connection allows {string}",
+  async ({ page }, clientName: string, body: string, agentAccess: string) => {
+    await agentCommentFixture(
+      page,
+      clientName,
+      agentAccess,
+      "post_work_item_comment",
+      { body },
+    );
+  },
+);
+
+Given(
+  "MCP is on and {string} reads the comments of a synced item whose connection allows {string}",
+  async ({ page }, clientName: string, agentAccess: string) => {
+    await agentCommentFixture(
+      page,
+      clientName,
+      agentAccess,
+      "list_work_item_comments",
+      {},
+    );
+  },
+);
+
+Then("the bridge received the queued comment", async () => {
+  await expect
+    .poll(() => mcp.postedResults[0])
+    .toMatchObject({
+      requestId: "call-1",
+      ok: true,
+      output: { workItemId: "synced", queued: true },
+    });
+  expect(postedComments).toEqual([]);
+});
+
+When("the agent's Undo toast closes on its own", async ({ page }) => {
+  await page.mouse.move(0, 0);
+  await expect(
+    page.getByRole("button", { name: "Undo", exact: true }),
+  ).toHaveCount(0, { timeout: 15_000 });
+});
+
+Then("the source received the comment {string}", async ({}, body: string) => {
+  await expect.poll(() => postedComments).toEqual([body]);
+});
+
+Then(
+  "the bridge received a refusal naming the {string} connection",
+  async ({}, label: string) => {
+    await expect
+      .poll(() => mcp.postedResults[0])
+      .toMatchObject({
+        requestId: "call-1",
+        ok: false,
+        error: expect.stringContaining(
+          `The user hasn't allowed agents to read comments on the "${label}" connection.`,
+        ),
+      });
+  },
+);

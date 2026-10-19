@@ -1958,11 +1958,71 @@ describe("backlog comment routes", () => {
     const connectionId = (
       connectionResponse.body as { connection: { id: string } }
     ).connection.id;
-    return { server, connectionId, events };
+    return { server, connectionId, events, root };
   }
 
   const listPath = (connectionId: string, operation = "listItemComments") =>
     `/api/backlog-comments/jira/connections/${connectionId}/${operation}`;
+
+  it("keeps agent access to comments as Ajour's setting, None until the user changes it", async () => {
+    const { server, connectionId, root } = await createServer({
+      connector: { comments: {} },
+    });
+    const connection = async () =>
+      (
+        (
+          await dispatchJsonRequest(server, {
+            method: "GET",
+            path: "/api/plugins",
+          })
+        ).body as {
+          connectionGroups: {
+            connections: {
+              agentAccess?: string;
+              editableValues: Record<string, unknown>;
+            }[];
+          }[];
+        }
+      ).connectionGroups[0]!.connections[0]!;
+    const save = (values: Record<string, unknown>) =>
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: "/api/plugins/jira/connections",
+        body: JSON.stringify({
+          id: connectionId,
+          values: {
+            label: "Work",
+            tenantLabel: "Contoso",
+            autoSyncIntervalMinutes: 10,
+            token: TOKEN,
+            ...values,
+          },
+        }),
+      });
+
+    expect(await connection()).toMatchObject({
+      editableValues: { agentAccess: "none" },
+    });
+    expect((await connection()).agentAccess).toBeUndefined();
+
+    expect((await save({ agentAccess: "read" })).status).toBe(200);
+    expect(await connection()).toMatchObject({
+      agentAccess: "read",
+      editableValues: { agentAccess: "read" },
+    });
+
+    // A save without it keeps it; an unknown level is refused.
+    await save({});
+    expect((await connection()).agentAccess).toBe("read");
+    expect((await save({ agentAccess: "everything" })).status).toBe(400);
+    expect((await connection()).agentAccess).toBe("read");
+
+    // The plugin never receives the setting with its config.
+    const stored = JSON.parse(
+      await readFile(path.join(root, "state.json"), "utf8"),
+    ) as { connections: { config: Record<string, unknown> }[] };
+    expect(stored.connections[0]!.config).not.toHaveProperty("agentAccess");
+  });
 
   it("lists an item's comments and logs no text or author", async () => {
     const { server, connectionId, events } = await createServer({
