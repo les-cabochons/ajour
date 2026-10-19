@@ -581,13 +581,37 @@ Feature: Backlog list and board views
     When I keep typing " thanks" until the search for "Ana thanks" answers
     Then nothing is suggested and no status shows
 
-  Scenario: Typing @ inside a word suggests people, as in an email
+  Scenario Outline: Typing an email does not start a mention search
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people and records posted comments
+    And I watch people search requests
+    When I open the Backlog parent page
+    And I type "<text>" in a new comment
+    Then no mention suggestions or searches appear
+    And nothing is suggested and the new comment stays open with "<text>"
+
+    Examples:
+      | text                                      |
+      | alex@                                     |
+      | alex@gmail.com                            |
+      | write to first.last+tag@example.com        |
+      | write to team@Ana                         |
+
+  Scenario Outline: Standalone mentions still open the people picker
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit
     And its plugin finds people and records posted comments
     When I open the Backlog parent page
-    And I type "write to team@Ana" in a new comment
+    And I type "<text>" in a new comment
     Then Ana is suggested once the search is done
+
+    Examples:
+      | text                              |
+      | @Ana                              |
+      | Hello @Ana                        |
+      | (@Ana                             |
+      | Email alex@gmail.com then @Ana     |
 
   Scenario: Escape closes the mention suggestions before the editor
     Given the Backlog parent is synced

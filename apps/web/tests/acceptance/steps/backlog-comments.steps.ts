@@ -562,6 +562,23 @@ When("I move forward {int} characters", async ({ page }, count: number) => {
 /** People searches each page has sent, to tell whether Escape stopped them. */
 const peopleSearches = new WeakMap<Page, { count: number; atEscape: number }>();
 
+Given("I watch people search requests", async ({ page }) => {
+  const counter = { count: 0, atEscape: 0 };
+  peopleSearches.set(page, counter);
+  page.on("request", (request) => {
+    if (request.url() === peopleSearchUrl && request.method() === "POST") {
+      counter.count += 1;
+    }
+  });
+});
+
+Then("no mention suggestions or searches appear", async ({ page }) => {
+  // Observe longer than the mention search debounce, including late requests.
+  await page.waitForTimeout(400);
+  expect(peopleSearches.get(page)?.count).toBe(0);
+  await expect(mentionPicker(page)).toHaveCount(0);
+});
+
 When("I press Escape in the new comment", async ({ page }) => {
   let searches = peopleSearches.get(page);
   if (!searches) {
