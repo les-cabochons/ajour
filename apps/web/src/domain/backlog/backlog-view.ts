@@ -412,3 +412,20 @@ export function getSubitemProgress(subitems: readonly LocalWorkItem[]) {
     total: subitems.length,
   };
 }
+
+/**
+ * The remaining estimate left on a parent's open subitems, in hours. Closed
+ * subitems count for nothing; undefined when no open subitem has an estimate.
+ */
+export function getSubitemHoursLeft(subitems: readonly LocalWorkItem[]) {
+  let hoursLeft: number | undefined;
+  for (const subitem of subitems) {
+    if (
+      subitem.status !== "archived" &&
+      subitem.remainingEstimateHours !== undefined
+    ) {
+      hoursLeft = (hoursLeft ?? 0) + subitem.remainingEstimateHours;
+    }
+  }
+  return hoursLeft;
+}

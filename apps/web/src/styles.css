@@ -118,6 +118,7 @@
     --sidebar-ring: var(--ring);
     --bg: var(--background);
     --surface-lowest: var(--background);
+    --surface-tint: oklch(0.985 0.002 285);
     --surface-low: var(--sidebar);
     --surface: var(--card);
     --surface-high: var(--secondary);
@@ -252,6 +253,7 @@
     --sidebar-ring: var(--ring);
     --surface-lowest: var(--background);
     --surface-low: var(--sidebar);
+    --surface-tint: var(--surface-low);
     --surface: oklch(0.215 0.004 285);
     --surface-high: oklch(0.25 0.004 285);
     --surface-highest: oklch(0.29 0.004 285);

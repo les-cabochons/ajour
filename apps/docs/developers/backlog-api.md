@@ -87,7 +87,7 @@ Ajour calls it with the [connection](#connection) and every item it tracks for t
 
 - **Items with `stateDone: true`** are archived in Ajour if it tracks them. They never go to review.
 - **Other items**, on a manual sync, wait in [Sync review](/plugins/sync-review) until the user imports them. On an automatic sync, new items go straight to the backlog. An item the user dismissed in review stays dismissed.
-- **Tracked items missing from the result** of an automatic sync are archived, unless the user turned on **Keep when missing from sync**.
+- **Tracked items missing from the result** of an automatic sync are archived, unless the user set the item's **When missing** to **Keep**.
 - **After a time entry save**, Ajour keeps only your estimate results. It imports and stages nothing.
 - **Every `state`** you report is added to the source states the user maps in **Settings › Workflow**.
 
