@@ -2144,31 +2144,44 @@ export const localStore = {
     });
   },
   /**
-   * Saves the backlog editor's changes, which have no Undo. When the
-   * description's timelog also changed the item's project or task, the whole
-   * save becomes undoable, like an inline edit, and the token is returned so
-   * the editor can offer Undo; otherwise null.
+   * Saves the backlog editor's changes, which have no Undo. What the
+   * description's timelog then sets or creates gets its own Undo, which keeps
+   * the saved text; the token is null when the timelog changed nothing.
    */
   saveWorkItemEdits(
     workItemId: string,
     patch: Parameters<typeof applyUpdateWorkItem>[2],
   ): string | null {
-    const current = readState();
-    const patched = applyUpdateWorkItem(current, workItemId, patch);
-    const next = withDescriptionTimelogs(
-      current,
-      patched,
-      getMappedIds(workItemId, patch),
+    const before = readState();
+    updateState((state) => applyUpdateWorkItem(state, workItemId, patch));
+    return updateStateWithUndo((state) =>
+      withDescriptionTimelogs(before, state, getMappedIds(workItemId, patch)),
     );
-    if (next === current) return null;
-    writeState(next);
-    // The timelog returns the patched state itself when it changed nothing.
-    if (next === patched) return null;
-    const undo = captureUndo(current, next);
-    if (!undo) return null;
-    const token = createId("undo");
-    rememberUndo(token, undo);
-    return token;
+  },
+  /**
+   * Creates the backlog editor's new item, which has no Undo, then applies
+   * its description's timelog and, for an item made in a done state, closes
+   * it, under one Undo. Undo leaves the item and its description, and takes
+   * back what the timelog set and created and the close. The token is null
+   * when neither happened.
+   */
+  saveNewWorkItem(draft: LocalWorkItemDraft, closeIn?: string) {
+    const factories = { createId, now: Date.now };
+    const current = readState();
+    const added = applyAddWorkItem(current, draft, factories);
+    writeState(added.state);
+    const workItemId = added.result;
+    const undoToken = updateStateWithUndo((state) => {
+      // Compared with the state before the item existed, so it reads as new.
+      const mapped = withDescriptionTimelogs(current, state);
+      return closeIn
+        ? applyMoveBacklogItemToState(mapped, workItemId, closeIn, factories, {
+            includeSubitems: false,
+            sourceWrites: {},
+          })
+        : mapped;
+    });
+    return { workItemId, undoToken };
   },
   /**
    * Sets the item's project and task from its description's timelog, creating
@@ -2209,20 +2222,36 @@ export const localStore = {
   },
   /**
    * Moves a backlog item to a workflow state. A done state closes it and
-   * leaving one reopens it. Returns an undo token, or null when nothing changed.
+   * leaving one reopens it. `edits` are the backlog editor's other changes,
+   * saved first and kept by Undo; what the description's timelog then sets
+   * or creates shares the move's Undo. Returns an undo token, or null when
+   * nothing changed.
    */
   moveWorkItemToState(
     workItemId: string,
     workflowStateId: string | undefined,
-    options?: MoveBacklogItemOptions,
+    options?: MoveBacklogItemOptions & {
+      edits?: Parameters<typeof applyUpdateWorkItem>[2];
+    },
   ) {
+    const { edits, ...moveOptions } = options ?? {};
+    const before = readState();
+    if (edits) {
+      updateState((state) => applyUpdateWorkItem(state, workItemId, edits));
+    }
     return updateStateWithUndo((state) =>
       applyMoveBacklogItemToState(
-        state,
+        edits
+          ? withDescriptionTimelogs(
+              before,
+              state,
+              getMappedIds(workItemId, edits),
+            )
+          : state,
         workItemId,
         workflowStateId,
         { createId, now: Date.now },
-        options,
+        moveOptions,
       ),
     );
   },

@@ -347,20 +347,18 @@ export async function moveBacklogItem(
     )
       return cancelled;
   }
-  const move = () =>
-    localStore.moveWorkItemToState(workItem._id, workflowStateId, {
+  // Save the editor's other fields only after every move prompt succeeds.
+  // Undo keeps them, and takes back what their timelog set with the move.
+  const undoToken = localStore.moveWorkItemToState(
+    workItem._id,
+    workflowStateId,
+    {
       includeSubitems,
       sourceWrites,
       orderedIds,
-    });
-  // Save the editor's other fields only after every move prompt succeeds,
-  // in the move's Undo, so it also undoes what the description's timelog set.
-  const undoToken = patch
-    ? localStore.runWithUndo(() => {
-        localStore.updateWorkItem(workItem._id, patch);
-        return move();
-      }).undoToken
-    : move();
+      ...(patch ? { edits: patch } : {}),
+    },
+  );
   return {
     kind: "moved",
     undoToken,

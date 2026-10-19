@@ -3845,9 +3845,92 @@ describe("localStore description timelog", () => {
     expect(token).not.toBeNull();
     expect(localStore.snapshot().workItems[0]?.projectId).toBe(projectId);
 
+    // Undo takes back what the timelog did and keeps the saved text.
     expect(localStore.undo(token!)).toBe("restored");
     expect(localStore.snapshot().projects).toEqual(before.projects);
-    expect(localStore.snapshot().workItems).toEqual(before.workItems);
+    expect(localStore.snapshot().workItems[0]).toMatchObject({
+      title: "Hero",
+      description,
+    });
+    expect(localStore.snapshot().workItems[0]?.projectId).toBeUndefined();
+  });
+
+  it("undoes a move with what its editor save's timelog did, and keeps the save", async () => {
+    const { localStore } = await import("./local-store");
+    localStore.addProject({ name: "Acme", color: "#111111" });
+    const itemId = localStore.addWorkItem({ title: "Landing page" });
+    const before = localStore.snapshot();
+    const doneId = before.workflowStates.find((state) => state.done)!._id;
+
+    const token = localStore.moveWorkItemToState(itemId, doneId, {
+      edits: { title: "Hero", description },
+    });
+    expect(localStore.snapshot().workItems[0]).toMatchObject({
+      status: "archived",
+      title: "Hero",
+    });
+    expect(localStore.snapshot().workItems[0]?.projectId).toBeDefined();
+
+    expect(localStore.undo(token!)).toBe("restored");
+    const restored = localStore.snapshot().workItems[0];
+    expect(restored).toMatchObject({
+      status: "active",
+      title: "Hero",
+      description,
+    });
+    expect(restored?.projectId).toBeUndefined();
+    expect(localStore.snapshot().projects).toEqual(before.projects);
+  });
+
+  it("gives a new editor item's timelog its own Undo, which keeps the item", async () => {
+    const { localStore } = await import("./local-store");
+    const projectId = localStore.addProject({ name: "Acme", color: "#111111" });
+    const before = localStore.snapshot();
+
+    expect(localStore.saveNewWorkItem({ title: "Plain" }).undoToken).toBeNull();
+
+    const { workItemId, undoToken } = localStore.saveNewWorkItem({
+      title: "Landing page",
+      description,
+    });
+    const created = localStore
+      .snapshot()
+      .workItems.find((item) => item._id === workItemId);
+    expect(created?.projectId).toBe(projectId);
+    expect(undoToken).not.toBeNull();
+
+    expect(localStore.undo(undoToken!)).toBe("restored");
+    const after = localStore.snapshot();
+    expect(after.projects).toEqual(before.projects);
+    expect(
+      after.workItems.find((item) => item._id === workItemId),
+    ).toMatchObject({ title: "Landing page", description });
+    expect(
+      after.workItems.find((item) => item._id === workItemId)?.projectId,
+    ).toBeUndefined();
+  });
+
+  it("undoes a new editor item's timelog with its close in a done state", async () => {
+    const { localStore } = await import("./local-store");
+    localStore.addProject({ name: "Acme", color: "#111111" });
+    const before = localStore.snapshot();
+    const doneId = before.workflowStates.find((state) => state.done)!._id;
+
+    const { workItemId, undoToken } = localStore.saveNewWorkItem(
+      { title: "Landing page", description },
+      doneId,
+    );
+    expect(
+      localStore.snapshot().workItems.find((item) => item._id === workItemId),
+    ).toMatchObject({ status: "archived", workflowStateId: doneId });
+
+    expect(localStore.undo(undoToken!)).toBe("restored");
+    const restored = localStore
+      .snapshot()
+      .workItems.find((item) => item._id === workItemId);
+    expect(restored).toMatchObject({ status: "active", description });
+    expect(restored?.projectId).toBeUndefined();
+    expect(localStore.snapshot().projects).toEqual(before.projects);
   });
 
   it("maps a synced item whose description arrives with a timelog", async () => {

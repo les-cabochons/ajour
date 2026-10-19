@@ -14,7 +14,6 @@ const mocks = vi.hoisted(() => ({
   error: vi.fn(),
   offerUndo: vi.fn(),
   update: vi.fn(),
-  runWithUndo: vi.fn(),
 }));
 vi.mock("@/lib/local-store", () => ({
   localStore: {
@@ -22,7 +21,6 @@ vi.mock("@/lib/local-store", () => ({
     moveWorkItemToState: mocks.move,
     changeWorkItemSourceState: mocks.change,
     updateWorkItem: mocks.update,
-    runWithUndo: mocks.runWithUndo,
   },
 }));
 vi.mock("@/lib/app-api", () => ({ listBacklogSettleStates: mocks.states }));
@@ -85,26 +83,21 @@ it("loads the actual item's workflow before choosing a default move write", asyn
   expect(mocks.choose).not.toHaveBeenCalled();
 });
 
-it("undoes an editor save's other fields with its move, as one action", async () => {
-  const order: string[] = [];
-  mocks.update.mockImplementation(() => order.push("save"));
-  mocks.move.mockImplementation(() => {
-    order.push("move");
-    return "move-token";
-  });
-  mocks.runWithUndo.mockImplementation((run: () => unknown) => {
-    run();
-    return { undoToken: "save-and-move-token" };
-  });
+it("saves an editor's other fields with its move, in the store's one call", async () => {
+  mocks.move.mockReturnValue("move-token");
 
   await moveBacklogItemWithUndo(item, "review", {
     patch: { description: "New text" },
   });
 
-  expect(order).toEqual(["save", "move"]);
-  expect(mocks.update).toHaveBeenCalledWith("a", { description: "New text" });
+  expect(mocks.move).toHaveBeenCalledWith("a", "review", {
+    includeSubitems: false,
+    sourceWrites: { a: "In QA" },
+    edits: { description: "New text" },
+  });
+  expect(mocks.update).not.toHaveBeenCalled();
   expect(mocks.offerUndo).toHaveBeenCalledWith(
-    "save-and-move-token",
+    "move-token",
     expect.objectContaining({ title: "Moved to Review" }),
   );
 });
