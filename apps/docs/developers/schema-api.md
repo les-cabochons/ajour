@@ -50,18 +50,24 @@ Ajour cannot install packaged schema plugins yet. It loads them only from the `p
 ```
 
 - `id` follows the same rules as for other plugins. `default` is reserved for Ajour's built-in schema.
-- `datasets`: 1 to 10. Each becomes a worksheet named after `displayName`.
-- `columns`: 1 to 100 per dataset. `key` starts with a letter and holds letters, digits and `_`. `header` is the column title in the file. `type` is `string`, `number` or `boolean`. `width` is the column width in characters, 8 to 80.
+- `datasets`: 1 to 10. Each becomes a worksheet named after `displayName`. Its `id` starts with a letter and holds letters, digits, `_` and `-`, unique in the schema.
+- `columns`: 1 to 100 per dataset. `key` starts with a letter and holds letters, digits and `_`, unique in the dataset. `header` is the column title in the file. `type` is `string`, `number` or `boolean`. `required` defaults to `false`. `width` is the column width in characters, 8 to 80.
 
 ## Functions
 
 ```ts
 export async function exportProjects(projects: ExportProject[]): Promise<{
-  datasets: { id: string; rows: Record<string, string | number | boolean>[] }[];
+  datasets: {
+    id: string;
+    rows: Record<string, string | number | boolean | null>[];
+  }[];
 }>;
 
 export async function importProjects(
-  datasets: { id: string; rows: Record<string, string | number | boolean>[] }[],
+  datasets: {
+    id: string;
+    rows: Record<string, string | number | boolean | null>[];
+  }[],
 ): Promise<{ projects: ImportProject[] }>;
 ```
 
@@ -75,8 +81,9 @@ interface ExportProject {
     name: string;
     status: "active" | "archived";
     billable: boolean;
-    /** Milliseconds. */
+    /** Whole milliseconds. */
     budgetMs?: number;
+    /** Whole milliseconds, can be negative. */
     adjustmentMs?: number;
   }[];
 }
@@ -99,10 +106,10 @@ interface ImportProject {
 
 Ajour checks your datasets against the manifest:
 
-- On export, every declared dataset must be present, with no unknown dataset or column. Required columns must have a value, and every value must have the declared type.
+- On export, every declared dataset must be present once, with no unknown dataset or column. Required columns must have a value, and every value must have the declared type. An empty string or `null` counts as no value.
 - On import, unknown datasets and columns are refused. Types are not checked, since files hold anything. Convert and validate values yourself, and throw a message with the row number, such as `Row 4 is invalid. A project name is required.`
 
-Each dataset holds at most 100,000 rows.
+Each dataset holds at most 100,000 rows. Ajour exports at most 10,000 projects, each with at most 10,000 tasks.
 
 ## Example
 

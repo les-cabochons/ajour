@@ -4,7 +4,7 @@ Ajour exports your projects and tasks to an Excel file, and imports them back. U
 
 <Shot name="settings-projects" alt="Settings › Projects with the schema, export and import" />
 
-Open **Settings › Projects**, or choose **Import and export…** in the **…** menu of the Projects page.
+Open **Settings › Projects**, or choose **Import and export…** in the **…** menu of the Projects page. In the narrow view, press **Import and export** above the Projects list.
 
 ## Schema
 
@@ -26,8 +26,8 @@ A schema plugin, such as [Workday](/plugins/workday), can map the same data to a
 
 ## Export
 
-Select the projects to export, then press **Export to Excel**. Ajour saves a file named `projects-YYYY-MM-DD.xlsx`, with one row per task.
+Select the projects to export, or press **Select all**, then press **Export to Excel**. Ajour saves a file named `projects-YYYY-MM-DD.xlsx`, with one row per task. A project without tasks gets one row of its own, so you can import it again.
 
 ## Import
 
-Under **Import projects**, choose a `.xlsx` file with a `Projects` sheet and press **Import workbook**. Ajour merges projects by name, so a project that already exists is updated instead of copied.
+Under **Import projects**, choose a `.xlsx` file with a `Projects` sheet and press **Import workbook**. Ajour merges projects by name, so a project that already exists is updated instead of copied, and its missing tasks are added.

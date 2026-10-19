@@ -15,7 +15,7 @@ A new workspace has two projects, **Internal** and **Client Work**, and no tasks
 Time is recorded against a task, and every task belongs to a project. Create the project you will work on first.
 
 1. Press <kbd>G</kbd> then <kbd>P</kbd> to open **Projects**.
-2. Press **New project**. Enter a full name, a short display name and a code such as `ATL`, then pick a color.
+2. Press **New project**. Enter a full name, a short display name and a code such as `ATL`, pick a color, and press **Create project**.
 3. Open the project and press **New task**. Name it, for example `Development`, and press **Save**.
 
 Add a task for each kind of work you report on your timesheet, such as `Meetings` or `Code review`. See [Projects](/projects/) and [Tasks](/projects/tasks).
@@ -26,10 +26,10 @@ Give a task a number with **Assign shortcut…**. Press that number anywhere to 
 
 ## 2. Track time as you work
 
-1. Press <kbd>S</kbd>, or **Start** at the top of the sidebar. A running entry starts and its editor opens.
-2. Pick a project and task, type a note, and close the editor.
+1. Press **Start** at the top of the sidebar. A running entry starts and its editor opens. <kbd>S</kbd> starts one too; click it in the sidebar to open its editor.
+2. Pick a project and task, type a note, and press **Save**. The entry keeps running.
 3. Keep working. The running entry counts up in the sidebar and in the window title.
-4. Press <kbd>S</kbd> again to stop. The time is saved as an entry on today.
+4. Press <kbd>S</kbd> again to stop. The time is saved as an entry on the day it started.
 
 <Shot name="timer-dock" alt="The running entry at the top of the sidebar, with its time and estimate" />
 
@@ -47,7 +47,7 @@ Double-click any row of the day to open it in the side panel. Change the task, t
 
 ## 5. Commit the week
 
-At the end of the week, click **Commit** at the bottom right of the sidebar. Ajour also asks you once when your saved time reaches the week's target. Ajour lists the entries you added, changed or deleted, and groups the week into lines with the project, the task, the hours and your notes. Copy them into your company's timesheet tool, then press **Mark as committed**.
+At the end of the week, click **Commit**, the calendar with a check mark at the bottom left of the sidebar. Ajour also asks you once when your saved time reaches the week's target. Ajour lists the entries you added, changed or deleted, and groups the week into lines with the project, the task, the hours and your notes. Copy them into your company's timesheet tool, then press **Mark as committed**. When the whole week is in, press **Submit week** to lock it.
 
 <Shot name="commit-week" alt="The Commit week page with the changes and the lines to copy" />
 

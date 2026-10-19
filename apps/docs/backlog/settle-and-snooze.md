@@ -18,12 +18,12 @@ Settling a synced item can also write a change to its source, such as moving the
 
 If you pick a done state, the button reads **Archive**, and the item is archived instead of settled.
 
-If the item's plugin reads comments, the dialog also has a **Comment** field, such as "Waiting on the client's answer". Ajour posts it on the item after the change, and you see it in the item's comments.
+If the item has [comments](/backlog/comments), the dialog also has a **Comment** field, such as "Waiting on the client's answer". Write it in Markdown, and type **@** to mention someone. <kbd>⌘</kbd> <kbd>Enter</kbd> settles. Ajour posts the comment after the change, and it joins the item's comments.
 
 ::: info Writes wait for the Undo toast
 Ajour does not write to Azure DevOps or Jira right away. It sends the change, then the comment, when the Undo toast closes, after 8 seconds. If you press **Undo**, nothing is written, and the comment waits as a draft on the item's page. If you quit Ajour first, it sends them at the next launch.
 
-If the write fails, Ajour restores the item, keeps the comment as a draft, and shows an error that stays until you dismiss it.
+If the write fails, Ajour restores the item. If the write or the comment fails, Ajour keeps the comment as a draft on the item and shows an error that stays until you dismiss it.
 :::
 
 ### Settle rules
@@ -39,7 +39,7 @@ Run a backlog sync before you set rules. The source projects appear after the fi
 
 A settled item comes back to your plate on its own when a sync shows a state or priority other than the ones it had when you settled it. Its page then says **Changed in the source since you settled it**.
 
-It also comes back when someone else comments on it after you settled it, if its plugin reads comments. Its page then names them, such as **Ana Silva commented since you settled it**. Your own comments don't bring it back.
+It also comes back when someone else comments on it after you settled it, if it has [comments](/backlog/comments). Its page then names them, such as **Ana Silva commented since you settled it**. Your own comments don't bring it back.
 
 To bring it back yourself, press **Unsettle**.
 

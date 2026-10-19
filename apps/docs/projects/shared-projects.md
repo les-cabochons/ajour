@@ -16,27 +16,31 @@ You need a team plugin and a connection to a team. Both are set up in **Settings
 
 When two people change the same field, the change that reaches the team last wins. Changes to different fields both stand. Archiving a shared project or task archives it for the whole team. Nothing is ever deleted from a team.
 
+A team connection syncs on its interval while Ajour is open. Press **Sync** on the connection to sync now. It reads **Sync projects** when the plugin also syncs backlog items.
+
 ## Join a team
 
 1. Open the team plugin in **Settings › Plugins** and press **Add a connection**.
 2. Enter the deployment URL you were given.
-3. To start a team, enter its name and press **Create a team**. Ajour fills in the team ID and secret. To join one instead, paste the team ID and secret a teammate gave you.
+3. To start a team, type its name under **New team** and press **Create a team**. Ajour fills in the team ID and secret. To join one instead, paste the team ID and secret a teammate gave you.
 4. Press **Add connection**.
 
 Ajour syncs right away, then asks what to do with your projects:
 
-- **The team already has these** lists the team's projects that share a name with one of yours. **Link to your project** makes yours the shared one, so its time entries stay where they are. **Add as its own project** keeps both.
-- **Share your projects** lists your other projects. Check the ones the team should have.
+- **The team already has these** lists the team's projects that share a name with one of yours. **Link to your** and your project's name, the default, makes yours the shared one, so its time entries stay where they are. **Add as its own project** keeps both.
+- **Share your projects** lists your other active projects. Check the ones the team should have.
 
-Press **Apply**. Projects you don't share stay local. You can share them later.
+Press **Apply**, or **Not now** to decide later with **Choose projects** on the connection. Projects you don't share stay local. You can share them later.
 
 Pass the team secret privately. Anyone with the team ID and secret sees the team's shared projects.
 
 ## Share a project
 
-On the project's page, press **Share with team** in the properties card. The project goes to the team when the Undo toast closes. If you have several teams, pick one.
+On the project's page, press **Share with team** in the properties card. The project goes to the team when the Undo toast closes. If you have several teams, press **Share with team…** and pick one.
 
-A shared project shows a team mark in the Projects list, and a **Team** row in its properties card.
+A shared project shows a team mark in the Projects list, and a **Team** row in its properties card. Until it reaches the team, the row says it sends at the next sync.
+
+If the team already has a shared project with the same name, rename yours to share it.
 
 ## When a teammate shares a project
 

@@ -14,7 +14,7 @@ Below 768 pixels wide, Ajour switches to a narrow layout made for a window snapp
 - **The toggle** at the bottom left switches between **Time**, **Backlog** and **Settings**. **Commit**, at its right end, opens the [Commit page](/time/commit) for the week on screen.
 - **The sidebar** is gone.
 - **Editors** open full width instead of in a side panel.
-- **Rows** always show their **…** button.
+- **Backlog rows** always show their **…** button. Day rows show **Continue**, or **Stop** on the running entry. On a touch screen, a long press opens a row's right-click menu.
 - **New backlog items** start from the **+** of a group header.
 - **Projects** and **Pull requests** open from the Settings list.
 
@@ -22,5 +22,6 @@ Below 768 pixels wide, Ajour switches to a narrow layout made for a window snapp
 
 - The Week view. Ajour shows the Day view instead.
 - The backlog board and the peek. Tapping an item opens its page.
+- The **Calendar** button and panel. The Day view still lists **From your calendar**. See [Calendar suggestions](/time/calendar-suggestions).
 
 Widen the window to get them back. Ajour switches layouts as you resize.

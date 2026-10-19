@@ -18,9 +18,13 @@ Open a project and press **New task**. The task editor opens in the side panel.
 
 Press **Save** or <kbd>⌘</kbd> <kbd>Enter</kbd>.
 
+Each row of the task list shows the task's shortcut, whether it is billable, and its time used against its budget. Drag a row, or press <kbd>Alt</kbd> <kbd>↑</kbd> and <kbd>Alt</kbd> <kbd>↓</kbd>, to reorder the active tasks.
+
+In a [shared project](/projects/shared-projects), the name, billable, budget and status follow your team. The adjustment and the shortcut stay yours.
+
 ## Pin a task
 
-Give the tasks you use every day a number from <kbd>1</kbd> to <kbd>0</kbd>. Choose **Assign shortcut…** in the task's actions, or press **Assign shortcut…** in its editor, and press a free number. A number already in use shows the task that holds it. Assigning it moves it to this task.
+Give the tasks you use every day a number from <kbd>1</kbd> to <kbd>0</kbd>. Choose **Assign shortcut…** in the task's actions, or press **Assign shortcut…** in its editor, and press a free number. A number already in use shows the task that holds it. Assigning it moves it to this task. **Clear shortcut** removes it.
 
 Then, anywhere in Ajour:
 
@@ -28,6 +32,8 @@ Then, anywhere in Ajour:
 - Press <kbd>Shift</kbd> and the number to start the task.
 
 ## Task actions
+
+Right-click a task, or press its **…** button.
 
 | Action               | What it does                                   |
 | -------------------- | ---------------------------------------------- |
@@ -37,7 +43,7 @@ Then, anywhere in Ajour:
 | **Assign shortcut…** | Gives the task a number key.                   |
 | **Archive**          | Hides the task from pickers. Its entries stay. |
 
-Tasks are archived, never deleted. Press <kbd>Backspace</kbd> on a focused task to archive it. The **Archived** tab of the task list shows archived tasks, with **Restore**.
+Tasks are archived, never deleted. Press <kbd>Backspace</kbd> on a focused task to archive it. An Undo toast follows. The **Archived** tab of the task list shows archived tasks, with **Restore**.
 
 ## Import tasks from Excel
 

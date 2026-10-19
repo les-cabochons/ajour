@@ -1,18 +1,19 @@
 // A realistic workspace for screenshots and measurements, written into
 // localStorage before the app loads. `large` adds 600 backlog items and
 // 1,800 entries, the workspace the performance budgets in docs/agents/code-standards.md are measured on;
-// `empty` leaves storage clear, as on a fresh install.
+// `empty` leaves storage clear, as on a fresh install. `now`, in Unix
+// milliseconds, places the workspace around that time instead of the clock's.
 export function seedScript(options = {}) {
   return `(() => {
   const options = ${JSON.stringify(options)};
-  const now = new Date();
+  const now = options.now === undefined ? new Date() : new Date(options.now);
   const iso = (d) => [d.getFullYear(), String(d.getMonth()+1).padStart(2,"0"), String(d.getDate()).padStart(2,"0")].join("-");
   const dayOffset = (n) => { const d = new Date(now); d.setDate(d.getDate()+n); return iso(d); };
   const today = iso(now);
   const dow = (now.getDay()+6)%7;
   const monday = (n) => dayOffset(n - dow);
   const h = (x) => Math.round(x*3600000);
-  const t0 = Date.now();
+  const t0 = now.getTime();
   const projects = [
     { _id:"p-atlas", name:"Atlas platform", displayName:"Atlas platform", code:"ATL", color:"#2563eb", icon:{kind:"preset",name:"dot"}, status:"active", tasks:[
       { _id:"t-atlas-dev", name:"Development", status:"active", createdAt:t0-9e6, billable:true, budgetMs:h(120), pinnedSlot:"1" },

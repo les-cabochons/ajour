@@ -14,7 +14,7 @@ The desktop app keeps everything in one folder:
 The folder holds:
 
 - **Your workspace**: projects, tasks, entries, backlog items, workflow and preferences, in the app's local storage.
-- **`app-api-state.json`**: plugin connections, items waiting in Sync review, and MCP clients.
+- **`app-api-state.json`**: plugin connections, items waiting in Sync review, MCP clients and agent task settings.
 - **`plugins/`**: installed plugins.
 - **`plugin-catalog/`**: a cache of the plugin catalog.
 
@@ -28,12 +28,12 @@ Connection tokens, such as an Azure DevOps personal access token, are stored in 
 
 Ajour never sends your time entries anywhere. It connects to the network for these, some of them on a timer:
 
-- **GitHub releases**, to check for updates on startup and every 4 hours in the desktop app.
+- **GitHub releases**, to check for updates on startup, every 4 hours and when you ask, in the desktop app. Updates download only when you choose to update.
 - **The plugin catalog** on GitHub, at launch and every 15 minutes, and GitHub releases when you download a plugin.
-- **The tools you connect**, such as Azure DevOps, Jira or GitHub, when you press **Sync** or on the connection's timer.
+- **The tools you connect**, such as Azure DevOps, Jira, GitHub or your calendar, when you press **Sync**, on the connection's timer, and when you open a week or an item's comments.
 
-Your time entries stay on your machine, unless you export them or [turn on MCP](/app/agents) for an agent.
+Your time entries stay on your machine, unless you export them or let an agent read them, through [MCP](/app/agents) or an [agent task](/app/agents#agent-tasks).
 
 ## What plugins can see
 
-A plugin sees the connection settings you give it, and the backlog items of its own connections. It does not see your time entries, your projects or other plugins' data. Plugins do run with your user's permissions, like any app you install, so install plugins you trust. See [Plugins](/plugins/#trust).
+A plugin sees the connection settings you give it, and the data of its own connections, such as their backlog items. A team plugin also gets the projects and tasks you share with the team. No plugin sees your time entries or other plugins' data. Plugins do run with your user's permissions, like any app you install, so install plugins you trust. See [Plugins](/plugins/#trust).

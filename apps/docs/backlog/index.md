@@ -36,7 +36,7 @@ Press **Filter** and pick a property, then a value. You can filter by state, pri
 
 ## Peek at an item
 
-Click a row, or focus it and press <kbd>Space</kbd>, to open the peek: the item's estimates, properties, description and subitems in a side panel, next to the list. Press <kbd>Space</kbd> again to close it. Double-click a row, or press **Open page** in the peek, to go to the item's page.
+Click a row, or focus it and press <kbd>Space</kbd>, to open the peek: the item's estimates, properties, description and subitems in a side panel, next to the list. Press **Edit** to edit the item in the same panel. Press <kbd>Space</kbd> again, or <kbd>Esc</kbd>, to close it. Double-click a row, or press **Open page** in the peek, to go to the item's page, where its [comments](/backlog/comments) are.
 
 <Shot name="backlog-peek" alt="The peek next to the backlog list" />
 

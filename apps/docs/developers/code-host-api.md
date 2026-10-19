@@ -13,13 +13,13 @@ export async function syncPullRequests(
 ): Promise<CodeHostSyncResult>;
 ```
 
-Ajour calls it when the user presses **Sync** on the Pull requests page, and on the connection's timer. Return:
+Ajour calls it when the user presses **Sync** on the Pull requests page, and on the connection's timer while automatic pull request sync is on. See `pullRequestAutoSync` in [Reserved fields](/developers/manifest#reserved-fields). Return:
 
 - `viewer`: the user the token belongs to.
-- `instanceUrl`: optional, the code host's URL, such as `https://github.com`. Never secret.
+- `instanceUrl`: optional, the code host's URL, such as `https://github.com`. Never secret. With `viewer`, it lets a new connection to the same account take over the pull requests of a removed one.
 - `pullRequests`: every open pull request the user wrote, was asked to review, or reviewed. At most 1,000.
 
-`tracked` lists the pull requests Ajour already tracks. Return a tracked pull request that closed or merged, even if your searches no longer find it, so Ajour sees it close. A tracked open pull request missing from the result means it no longer passes the connection's filters.
+`tracked` lists the pull requests Ajour already tracks, at most 1,000. Return a tracked pull request that closed or merged, even if your searches no longer find it, so Ajour sees it close. A tracked open pull request missing from the result means it no longer passes the connection's filters.
 
 ### What to report
 

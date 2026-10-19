@@ -1,6 +1,6 @@
 # GitHub
 
-The GitHub plugin brings your open pull requests into Ajour: the ones you wrote, and the ones you were asked to review. Ajour then tracks which ones need you. See [Pull requests](/pull-requests/). It can also sync the issues assigned to you into your backlog. See [Issues](#issues).
+The GitHub plugin brings your open pull requests into Ajour: the ones you wrote, and the ones you were asked to review. Ajour then tracks which ones need you. See [Pull requests](/pull-requests/). It also syncs the issues assigned to you into your backlog. See [Issues](#issues).
 
 <Shot name="pull-requests" alt="Pull requests from GitHub in Ajour" />
 
@@ -12,7 +12,7 @@ The GitHub plugin brings your open pull requests into Ajour: the ones you wrote,
    - **Classic token**: the `repo` and `read:org` scopes.
 3. In Ajour, open the plugin and press **Add a connection**. Fill in the fields below, and press **Add connection**.
 
-Pull requests sync every 5 minutes while Ajour is open. Change it with **Sync interval (minutes)**, or turn off **Sync pull requests automatically**. **Pull requests** then shows in the sidebar.
+**Pull requests** then shows in the sidebar's view switcher. Pull requests sync every 5 minutes while Ajour is open. Change it with **Sync interval (minutes)**, or turn off **Sync pull requests automatically**.
 
 ## Connection fields
 
@@ -24,11 +24,11 @@ Pull requests sync every 5 minutes while Ajour is open. Change it with **Sync in
 | **Personal access token**                     | The token from step 2. Ajour never shows it again.                                                                   |
 | **Only these organizations or repositories**  | Optional, comma-separated, for issues and pull requests. `acme` is an organization or user, `acme/api` a repository. |
 | **Never these organizations or repositories** | Optional, same format.                                                                                               |
-| **Hide drafts**                               | Leave out draft pull requests. Off by default.                                                                       |
-| **Include team review requests**              | Include reviews requested from your teams. On by default. Needs the `read:org` permission.                           |
+| **Hide drafts**                               | Pull requests only. Leave out draft pull requests. Off by default.                                                   |
+| **Include team review requests**              | Pull requests only. Include reviews requested from your teams. On by default. Needs the `read:org` permission.       |
 | **Auto sync to backlog**                      | Issues only. Add issues straight to the backlog instead of staging them for review. Off by default.                  |
 | **Sync pull requests automatically**          | Pull requests only. On by default. Connections saved before this setting keep their previous automatic sync choice.  |
-| **Sync interval (minutes)**                   | Defaults to 5.                                                                                                       |
+| **Sync interval (minutes)**                   | How often to sync, from 1 to 1440. Defaults to 5.                                                                    |
 
 ## What it syncs
 
@@ -44,12 +44,15 @@ For each pull request, Ajour gets the facts it needs to decide if it needs you: 
 
 ## Issues
 
-Issues start off. Turn on **Backlog items** under **Capabilities** on the plugin's page. Then press **Sync** on the connection: open issues assigned to you wait in [Sync review](/plugins/sync-review), or go straight to the backlog with **Auto sync to backlog**.
+Press **Sync** on the connection: open issues assigned to you wait in [Sync review](/plugins/sync-review), or go straight to the backlog with **Auto sync to backlog**.
 
 - Each issue brings its title, repository and description.
 - When an issue closes on GitHub, Ajour archives it.
 - When you settle an issue, Ajour can close it, as completed or as not planned, or reopen it.
 - GitHub issues have no estimates or priorities, so Ajour writes none back.
+- Comments stay on GitHub. The item page shows none for an issue.
+
+To use only pull requests, turn off **Backlog items** under **Capabilities** on the plugin's page. If you had the plugin before it brought issues, the update added them turned off: turn on **Backlog items** there.
 
 ## Source
 

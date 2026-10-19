@@ -31,7 +31,7 @@ Create one client per agent, so you can revoke one without the others. **Revoke*
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Read         | The running entry, time entries, projects, backlog items, the week's changes since its last commit, and whether the week is submitted, with its committed hours and pace. |
 | Time         | Start, stop and edit the running entry. Create, edit, move and duplicate entries. Mark changes as committed, and submit a week.                                           |
-| Backlog      | Create, edit and move items. Settle, snooze, archive and restore them.                                                                                                    |
+| Backlog      | Create, edit and move items. Settle and unsettle, snooze and unsnooze, archive and restore them.                                                                          |
 | Comments     | Read a synced item's comments, and post one, only where you allow it. See below.                                                                                          |
 | Conversation | Report what they are doing, and ask you a question.                                                                                                                       |
 
@@ -41,11 +41,11 @@ A submitted week is read-only for agents too: Ajour refuses their writes to it w
 
 ### Comments
 
-A synced item's comments are other people's words, often a client's, so agents get none of them until you allow it. Set **Agent access to comments** on each connection, in **Settings › Plugins**:
+A synced item's [comments](/backlog/comments) are other people's words, often a client's, so agents get none of them until you allow it. Set **Agent access to comments** on each connection, in **Settings › Plugins**:
 
 - **None**, the default: agents can't read or post comments on the connection's items.
 - **Read**: agents can read the comments. What they read goes to their model provider, like the rest of your data.
-- **Read and post**: agents can also post a comment, or settle an item with one. The comment waits for its Undo toast, like a comment you delete, and goes to the source when the toast closes. **Undo** cancels it. If you take back the access before it goes, or the source refuses it, Ajour keeps it as a draft on the item. A comment on an item you deleted goes with it.
+- **Read and post**: agents can also post a comment, or settle an item with one. The comment waits for its Undo toast, such as **Claude Code on this Mac: Commented on a backlog item**, and goes to the source when the toast closes. **Undo** cancels it. If you take back the access before it goes, or the source refuses it, Ajour keeps it as a draft on the item. A comment on an item you deleted goes with it.
 
 The connection's row shows **Agents read comments** or **Agents read and post comments** while you allow it.
 
@@ -55,7 +55,7 @@ A plugin can also ask Ajour to start an agent for a task, such as [Workday (agen
 
 In **Settings › Agents**, pick:
 
-- **Agent**: Claude Code, Codex or OpenCode. Ajour lists the ones installed on this computer, with their version.
+- **Agent**: Claude Code, Codex or OpenCode. Ajour shows the version of each one installed on this computer, and greys out the others.
 - **Browser**: **Ajour's Chrome window** opens Chrome with a profile only Ajour uses. **My Chrome** uses your own Chrome profile through Playwright's Chrome extension, with every site you are signed in to.
 - **Model**: leave it empty for the agent's default model.
 
@@ -63,7 +63,7 @@ A plugin's task settings are on its page in **Settings › Plugins**, once for a
 
 ## Watch your agents
 
-While MCP is on, an indicator at the bottom right shows what agents are doing: **Agents idle**, **Working**, or **Needs input** when one asks you a question. Click it for the agent panel, with each session's activity and a field to answer questions.
+While MCP is on, an indicator at the bottom right of the window shows what agents are doing: **Working**, **Needs input** when one asks you a question, or **Error**, **Failed** or **Stalled** when something goes wrong. **Agents idle** shows as a dot until you point at it. Click the indicator for the agent panel, with each session's activity and a field to answer questions.
 
 ## Limits
 

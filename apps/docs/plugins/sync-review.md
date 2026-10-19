@@ -13,11 +13,11 @@ When you press **Sync** on a connection, the items it finds wait here, grouped b
 1. Check the items you want, or press **Select all** or **Select connection**.
 2. Press **Sync selected to backlog**.
 
-The other items stay staged. Press **Dismiss selected** or **Dismiss connection** to hide items you never want. A dismissed item does not come back at the next sync.
+The other items stay staged. Press **Dismiss selected** or **Dismiss connection** to hide items you never want. A dismissed item does not come back at the next sync. **Undo** in the toast brings it back.
 
 A parent marked **Context parent** is not yours to import. It is there so its subitems keep their context.
 
-Items already in your backlog show **Update existing task**. Importing them again updates them.
+Items already in your backlog show **Existing task**, and **Update existing task** once checked. Importing them again updates them.
 
 ::: tip Skip the review
 Turn on **Auto sync to backlog** on a connection to add new items straight to your backlog on a timer. See [Plugins](/plugins/#add-a-connection).
@@ -37,4 +37,6 @@ Each conflict shows the **Local**, **Remote** and **Last synced** values. Choose
 - **Accept remote** to take the source's value.
 - **Dismiss** to leave it for now.
 
-A conflict on one estimate never blocks the other estimates of the item. A backlog item with a conflict shows a warning on its row.
+A conflict on one estimate never blocks the other estimates of the item. A backlog item with a conflict shows a warning on its row. Staged again here, it shows **Needs review**.
+
+An estimate that failed to sync also shows here, with the plugin's message. Press **Dismiss** to clear it.

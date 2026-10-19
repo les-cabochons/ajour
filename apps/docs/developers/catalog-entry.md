@@ -54,10 +54,14 @@ tags:
 | `status`                         | `available`, `coming-soon` or `deprecated`.                                                                                                |
 | `compatibility.pluginApiVersion` | The plugin API version of your latest release.                                                                                             |
 | `capabilities`                   | 1 to 3 of `connector`, `codeHost`, `calendar`, `team`, `agentTask` and `schema`. The backlog capability is `connector` until plugin API 4. |
-| `features`                       | 1 to 12 slugs, such as `work-item-sync`.                                                                                                   |
+| `features`                       | 1 to 12 slugs, such as `work-item-sync`. See below.                                                                                        |
 | `tags`                           | 1 to 12 slugs.                                                                                                                             |
 | `install`                        | Required when `status` is `available`, refused for `coming-soon`. See below.                                                               |
 | `images`                         | Optional thumbnail and hero image.                                                                                                         |
+
+### features
+
+Ajour shows each feature with a title made from its slug and a line of text. It has its own text for `work-item-sync`, `estimate-update`, `pull-requests`, `calendar-events`, `project-sync` and `project-data-shape`. Any other slug gets a generic line, such as "Adds my feature support to Ajour." for `my-feature`.
 
 ### install
 
@@ -75,6 +79,10 @@ Put image files next to `plugin.yaml`, as PNG, JPEG, WebP or AVIF, under 1 MB ea
 
 - **Thumbnail**: square, at least 512 by 512 pixels.
 - **Hero**: 16:9, at least 1600 by 900 pixels.
+
+## Compatibility
+
+Ajour skips an entry it cannot read, such as one that names a capability it does not know, and names it on the Plugins page. The rest of the catalog still shows. Ajour cannot install packaged schema plugins yet, so **Download** stays off for an entry whose only capability is `schema`.
 
 ## Validate
 

@@ -13,7 +13,9 @@ export async function createTeam(
 ): Promise<{ values: Record<string, string | number | boolean> }>;
 ```
 
-Ajour calls it from the connection form, before the connection is saved. `config` holds the form's values as they stand, such as the deployment URL. Return the connection values that join the new team, such as its ID and secret, and Ajour fills them into the form. Your plugin names its own fields. Make the secret on the user's machine where you can, so the backend only ever sees its hash.
+Ajour calls it from the connection form, before the connection is saved. `config` holds the form's values as they stand, such as the deployment URL. `name` is 1 to 120 characters. Return the connection values that join the new team, such as its ID and secret, and Ajour fills them into the form. Your plugin names its own fields. Make the secret on the user's machine where you can, so the backend only ever sees its hash.
+
+Ajour tells teams apart by your plugin's non-secret connection fields, other than the [reserved ones](/developers/manifest#reserved-fields). A new secret keeps the team, but a new value in any of those fields names another team: the connection's shared projects turn local and sharing starts over. Mark the team's secret `secret: true`, and keep other non-secret fields to what names the team, such as the deployment URL and team ID.
 
 ## syncTeamProjects
 
@@ -59,8 +61,9 @@ interface TeamSyncRequest {
 }
 
 interface TeamProjectChange {
+  /** Up to 200 characters. */
   localId: string;
-  /** Absent for a project new to the team. */
+  /** Absent for a project new to the team. Up to 100 characters. */
   remoteId?: string;
   name?: string;
   displayName?: string;
@@ -78,7 +81,7 @@ interface TeamTaskChange {
   name?: string;
   status?: "active" | "archived";
   billable?: boolean;
-  /** Milliseconds. null clears it. */
+  /** Whole milliseconds, above 0. null clears it. */
   budgetMs?: number | null;
 }
 
@@ -86,12 +89,14 @@ type TeamProjectIcon =
   | { kind: "preset"; name: string }
   | {
       kind: "upload";
+      /** A base64 PNG data URL, up to 16,384 characters. */
       src: string;
       maskSrc?: string;
       colorMode?: "tinted" | "native";
     };
 
 interface TeamSyncResult {
+  /** Up to 2,000 characters. */
   cursor: string;
   /** At most 25 projects and 2,000 tasks. */
   projects: TeamProject[];

@@ -12,11 +12,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import {
-  pluginsOverview,
+  NOW,
+  calendarEvents,
   desktopBridgeScript,
+  itemComments,
+  itemPeople,
   mcpSettings,
+  pluginsOverview,
   pullRequestsScript,
   quietEventSourceScript,
+  rememberedScript,
   settleStates,
   sourceStatuses,
   stagedImports,
@@ -41,7 +46,25 @@ const api = {
   "/api/backlog/source-statuses": sourceStatuses,
   "/api/mcp/settings": () => mcpSettings(false),
   "/api/project-data-shapes": () => ({ shapes: [] }),
+  "/api/backlog-comments/azure_devops/connections/ado-work/listItemComments":
+    itemComments,
+  "/api/backlog-comments/azure_devops/connections/ado-work/searchItemPeople":
+    itemPeople,
+  "/api/calendars/ics/connections/ics-work/listCalendarEvents": calendarEvents,
 };
+
+/** Connects the ICS calendar plugin, for the calendar shots. */
+const withCalendar = {
+  "/api/plugins": () => pluginsOverview({ calendar: true }),
+};
+
+/** Opens the Calendar panel from the Time page header. */
+async function openCalendarPanel(page) {
+  await page
+    .getByRole("button", { name: /^Calendar( · \d+)?$/ })
+    .first()
+    .click();
+}
 
 async function go(page, route) {
   await page.goto(BASE_URL + route, { waitUntil: "networkidle" });
@@ -56,8 +79,8 @@ async function scrollToTop(locator) {
 
 /**
  * Every shot. `run` opens the surface and may return a locator: the shot is
- * then cropped to it, with some margin. `seed` passes options to seed.mjs,
- * and `api` replaces mocked API responses.
+ * then cropped to it, with `margin` around it and `marginBottom` below it.
+ * `seed` passes options to seed.mjs, and `api` replaces mocked API responses.
  */
 const shots = [
   // Time
@@ -113,6 +136,26 @@ const shots = [
     },
   },
   { name: "commit-week", run: (page) => go(page, "/time/today/commit") },
+  // Calendar suggestions
+  {
+    name: "time-calendar-day",
+    api: withCalendar,
+    run: (page) => go(page, "/time/today"),
+  },
+  {
+    name: "time-calendar-panel",
+    api: withCalendar,
+    run: async (page) => {
+      await go(page, "/time/today");
+      await openCalendarPanel(page);
+    },
+  },
+  {
+    name: "time-calendar-week-days",
+    api: withCalendar,
+    seed: { weekStyle: "days" },
+    run: (page) => go(page, "/time/today?view=week"),
+  },
   // Backlog
   { name: "backlog-list", run: (page) => go(page, "/backlog") },
   {
@@ -151,6 +194,23 @@ const shots = [
     },
   },
   { name: "backlog-item", run: (page) => go(page, "/backlog/w2") },
+  {
+    name: "backlog-comments",
+    // Tall enough that the whole thread shows above the comment field.
+    height: 1200,
+    run: async (page) => {
+      await go(page, "/backlog/w2");
+      await page.getByRole("button", { name: "Leave a comment…" }).click();
+      // Type only once the editor has focus, or the keys reach the page.
+      const editor = page.getByRole("textbox", { name: "New comment" });
+      await editor.click();
+      await editor.pressSequentially("On it with @jo");
+      await page.getByRole("option", { name: /Joanna Brooks/ }).waitFor();
+      return page.getByRole("region", { name: "Comments" });
+    },
+    // Room for the people picker, which hangs below the comment field.
+    marginBottom: 72,
+  },
   {
     name: "backlog-item-menu",
     run: async (page) => {
@@ -229,12 +289,16 @@ const shots = [
     "backlog",
     "workflow",
     "projects",
+    "calendar",
     "time-entries",
     "sync-review",
   ].map((settingsPage) => ({
     name: `settings-${settingsPage}`,
     run: (page) => go(page, `/settings/${settingsPage}`),
-    api: settingsPage === "mcp" ? { "/api/mcp/settings": mcpSettings } : {},
+    api: {
+      mcp: { "/api/mcp/settings": mcpSettings },
+      calendar: withCalendar,
+    }[settingsPage],
   })),
   {
     name: "settings-plugin-azure-devops",
@@ -387,10 +451,18 @@ async function capture(browser, encoder, shot, theme) {
       body: JSON.stringify(handler ? handler() : { error: "Not mocked" }),
     });
   });
-  await context.addInitScript(seedScript({ ...shot.seed, theme }));
-  await context.addInitScript(pullRequestsScript());
-  await context.addInitScript(desktopBridgeScript());
-  await context.addInitScript(quietEventSourceScript());
+  await context.clock.setSystemTime(NOW);
+  // One script, because Playwright runs several init scripts in no set
+  // order, and the later parts read the workspace the seed writes.
+  await context.addInitScript(
+    [
+      seedScript({ ...shot.seed, theme, now: NOW }),
+      pullRequestsScript(),
+      rememberedScript(),
+      desktopBridgeScript(),
+      quietEventSourceScript(),
+    ].join("\n;\n"),
+  );
   const page = await context.newPage();
   const file = path.join(OUT, `${shot.name}-${theme}.webp`);
   let png;
@@ -402,6 +474,7 @@ async function capture(browser, encoder, shot, theme) {
       const box = await target.first().boundingBox();
       if (!box) throw new Error("The element to crop to is not visible.");
       const margin = shot.margin ?? 24;
+      const below = shot.marginBottom ?? margin;
       const x = Math.max(0, box.x - margin);
       const y = Math.max(0, box.y - margin);
       png = await page.screenshot({
@@ -409,7 +482,7 @@ async function capture(browser, encoder, shot, theme) {
           x,
           y,
           width: Math.min(viewport.width - x, box.width + margin * 2),
-          height: Math.min(viewport.height - y, box.height + margin * 2),
+          height: Math.min(viewport.height - y, box.height + margin + below),
         },
       });
     } else {

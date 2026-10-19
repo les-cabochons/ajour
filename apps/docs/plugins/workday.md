@@ -1,7 +1,7 @@
 # Workday
 
 ::: info Coming soon
-The Workday plugin is not available yet. The catalog lists it as **Coming soon**.
+The Workday plugin is not available yet. The catalog lists it under **Schemas** as **Coming soon**.
 :::
 
 The Workday plugin is a schema. It maps your projects and tasks to the column layout Workday imports and exports, so you can move your project list between Ajour and Workday as an Excel file.

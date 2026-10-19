@@ -4,7 +4,7 @@
 This plugin types your hours into Workday's web page. It does not use a Workday API, so it breaks when Workday changes that page. A plugin that uses Workday's API may replace it.
 :::
 
-The Workday (agent) plugin adds a **Commit to Workday** button to the [Commit page](/time/commit). Ajour starts a coding agent, Claude Code, Codex or OpenCode, which reads your week's changes from Ajour and applies them to your Workday timesheet in a Chrome window. You watch it work, and it asks you when it cannot go on. Once the week is committed, **Check Workday and submit** replaces **Submit week**: the agent checks the week in Workday, fixes or asks, then submits it in Ajour.
+The Workday (agent) plugin adds a **Commit to Workday** button to the [Commit page](/time/commit). Ajour starts a coding agent, Claude Code, Codex or OpenCode, which reads your week's changes from Ajour and applies them to your Workday timesheet in a Chrome window. You watch it work, and it asks you when it cannot go on. Once the week is committed, **Check Workday and submit**, beside **Submit week**, has the agent check the week in Workday, fix it or ask, then submit it in Ajour.
 
 It is a different plugin from [Workday](/plugins/workday), the schema for importing and exporting projects.
 
@@ -16,7 +16,7 @@ It is a different plugin from [Workday](/plugins/workday), the schema for import
 
 ## Set it up
 
-1. In **Settings › Plugins**, find **Workday (agent)** and press **Download**. Version 0.5.0 or later has both tasks.
+1. In **Settings › Plugins**, find **Workday (agent)** under **Agent tasks**, press **Download**, and turn it on. Version 0.5.0 or later has both tasks.
 2. In **Settings › Agents**, pick the agent. Leave **Browser** on **Ajour's Chrome window** unless you want the agent to use your own Chrome profile.
 3. Open **Settings › Plugins › Workday (agent)**. Under **Tasks**, fill in, once for both tasks:
    - **Workday timesheet URL**: open Enter Time in Workday and copy the address.
@@ -33,11 +33,11 @@ On the Commit page, press **Commit to Workday**. The agent panel opens with the 
 
 1. Reads the week's checked changes.
 2. Opens Workday and goes to the week.
-3. Applies each change: adds an added entry, updates an updated one, deletes a deleted one. The comment is the note, then `·` and the entry's ID, such as `Code review · ajour:1a2b3c4d`, so the agent finds its own entries again. It marks each change as committed in Ajour right after Workday saves it.
+3. Applies each change: adds an added entry, updates an updated one, deletes a deleted one. The comment is the note, then `·` and the entry's ID, such as `Code review · ajour:1a2b3c4d`, so the agent finds its own entries again. It marks each change as committed in Ajour right after Workday saves it. It never changes or deletes a Workday entry without one of these IDs, unless you tell it the entry is the same.
 
 The panel ends with a summary. Press **Stop** in the panel to end a run at any time.
 
-**Open the week in Workday**, under the week summary, opens the timesheet in your browser.
+**Open the week in Workday (agent)**, under the week summary, opens the timesheet in your browser.
 
 ### Run it again
 
@@ -45,7 +45,7 @@ Each entry keeps its ID whatever you edit, so a later run finds the entries an e
 
 ## Submit a week
 
-When every change is committed, press **Check Workday and submit** on the Commit page. It replaces **Submit week**, and is greyed out like it while a change is not committed or an entry runs in the week. The agent:
+When every change is committed, press **Check Workday and submit** on the Commit page. It sits beside **Submit week**, and is greyed out like it while a change is not committed or an entry runs in the week. **Submit week** still locks the week in Ajour without the agent, and checks nothing in Workday. It waits while an agent task runs. The agent:
 
 1. Checks the week in Ajour. When the week is behind or over its targets, it asks **Submit anyway** or **Stop**.
 2. Opens Workday and compares each day with what Ajour committed.
@@ -62,8 +62,8 @@ The first run always asks you to sign in. Ajour's Chrome window keeps its own pr
 
 ## What it asks you
 
-- An updated or deleted change has no Workday entry with its ID, and no single entry on that day and time type has its hours: **Skip** or **Stop**.
-- A re-add failed after the old entry was deleted, for an updated change that moved day or time type: **Retry** or **Stop**. **Stop** ends the session as cancelled.
+- An updated change has no Workday entry with its ID, but an entry without an ID on that day and time type could be it: **Yes, it is the same**, **Skip** or **Stop**. When none could be it: **Skip** or **Stop**. The agent never picks an entry by its hours alone.
+- A step of a move failed, for an updated change that moved day or time type: **Retry** or **Stop**. **Stop** ends the session as cancelled.
 - Workday has several close matches for a task: pick one, or **Skip**.
 - The week is off pace when you submit it: **Submit anyway** or **Stop**.
 - Workday differs from what Ajour committed: **Update Workday**, **I'll fix Ajour** or **Leave it**.

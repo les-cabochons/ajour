@@ -61,6 +61,8 @@ Your plugin's logs are discarded. Errors are what you see:
 - **Saving a connection** shows the error from `validateConnection` in the form.
 - **A sync** shows it on the connection's row in **Settings › Plugins**, and in a toast for automatic syncs.
 - **A settle write** shows it in a toast that stays until dismissed.
+- **A comment call** shows it with the comments, in the editor, or in a toast.
+- **A calendar** shows it on the connection's row and in the Time view.
 
 While you debug, put what you need into the error message, then take it out before you release. Never put a token in a message.
 
