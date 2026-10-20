@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useSearch } from "@tanstack/react-router";
 import {
   RiAlarmWarningLine as AlertTriangle,
   RiArrowRightLine as ArrowRight,
@@ -35,6 +35,9 @@ import {
 import { localStore } from "@/lib/local-store";
 import type { BacklogImportCandidate, PluginsOverview } from "@ajour/shared";
 import { cn } from "@/lib/utils";
+import { DescriptionText } from "@/features/backlog/description-links";
+import type { SyncReviewSearch } from "@/features/backlog/sync-conflicts";
+import { offerUndo } from "@/features/feedback/undo-toast";
 
 interface ImportConnectionGroup {
   connectionId: string;
@@ -154,6 +157,22 @@ export function SettingsImportReviewPage() {
       ),
     [localWorkItems],
   );
+  // Opened from an item's conflict mark or a toast: that item's issues
+  // come into view, highlighted.
+  const { item: focusedItemId } = useSearch({
+    strict: false,
+  }) as SyncReviewSearch;
+  const descriptionConflicts = useMemo(
+    () =>
+      localWorkItems.filter((workItem) => workItem.descriptionSync?.conflict),
+    [localWorkItems],
+  );
+  useEffect(() => {
+    if (!focusedItemId) return;
+    document
+      .querySelector(`[data-sync-issue-item="${CSS.escape(focusedItemId)}"]`)
+      ?.scrollIntoView({ block: "center" });
+  }, [focusedItemId, descriptionConflicts.length, syncIssues.length]);
   const existingWorkItemsByImportKey = useMemo(
     () =>
       new Map(
@@ -258,10 +277,85 @@ export function SettingsImportReviewPage() {
       <section className="settings-section">
         <h2 className="settings-section-title">Sync review</h2>
         <p className="settings-section-desc">
-          Review staged backlog imports and resolve estimate conflicts before
-          the next sync pass. Child items stay one level deep and inherit their
-          parent context when needed.
+          Review staged backlog imports and resolve description and estimate
+          conflicts before the next sync pass. Child items stay one level deep
+          and inherit their parent context when needed.
         </p>
+
+        {descriptionConflicts.length > 0 ? (
+          <AppPanel>
+            <h3 className="settings-subsection-title">
+              {descriptionConflicts.length} description conflict
+              {descriptionConflicts.length === 1 ? "" : "s"}
+            </h3>
+            {descriptionConflicts.map((workItem) => {
+              const conflict = workItem.descriptionSync!.conflict!;
+              return (
+                <section
+                  key={workItem._id}
+                  aria-label={`Description conflict on ${workItem.title}`}
+                  data-sync-issue-item={workItem._id}
+                  data-highlighted={
+                    workItem._id === focusedItemId ? "" : undefined
+                  }
+                  className={cn(
+                    "flex flex-col gap-3 rounded-md p-2",
+                    workItem._id === focusedItemId && "bg-[var(--hover-bg)]",
+                  )}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <Link
+                      to="/backlog/$itemId"
+                      params={{ itemId: workItem._id }}
+                      className="text-sm font-medium break-words text-foreground"
+                    >
+                      {workItem.title}
+                    </Link>
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        offerUndo(
+                          localStore.takeSourceDescriptionWithUndo(
+                            workItem._id,
+                          ),
+                          {
+                            title: "Took the source's description",
+                            subject: workItem.title,
+                          },
+                        )
+                      }
+                    >
+                      Take source
+                    </Button>
+                  </div>
+                  <div className="grid gap-3 desktop:grid-cols-2">
+                    <div className="min-w-0 space-y-1">
+                      <div className="text-xs text-muted-foreground">
+                        In Ajour
+                      </div>
+                      {/* The text as it is now, edited since the conflict or not. */}
+                      {workItem.description ? (
+                        <DescriptionText body={workItem.description} />
+                      ) : (
+                        <p className="text-sm text-muted-foreground">Empty</p>
+                      )}
+                    </div>
+                    <div className="min-w-0 space-y-1">
+                      <div className="text-xs text-muted-foreground">
+                        In {workItem.sourceConnectionLabel ?? "the source"}
+                      </div>
+                      {conflict.remoteText ? (
+                        <DescriptionText body={conflict.remoteText} />
+                      ) : (
+                        <p className="text-sm text-muted-foreground">Empty</p>
+                      )}
+                    </div>
+                  </div>
+                </section>
+              );
+            })}
+          </AppPanel>
+        ) : null}
 
         {syncIssues.length > 0 ? (
           <AppPanel>
@@ -272,7 +366,12 @@ export function SettingsImportReviewPage() {
             {syncIssues.map(({ workItem, fieldKey, fieldState }) => (
               <div
                 key={`${workItem._id}:${fieldKey}`}
-                className="flex flex-col gap-3 desktop:flex-row desktop:items-start desktop:justify-between"
+                data-sync-issue-item={workItem._id}
+                className={cn(
+                  "flex flex-col gap-3 desktop:flex-row desktop:items-start desktop:justify-between",
+                  workItem._id === focusedItemId &&
+                    "rounded-md bg-[var(--hover-bg)] p-2",
+                )}
               >
                 <div className="flex min-w-0 items-start gap-3">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
@@ -339,7 +438,7 @@ export function SettingsImportReviewPage() {
               </div>
             ))}
           </AppPanel>
-        ) : pluginApiMissing ? (
+        ) : pluginApiMissing && descriptionConflicts.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nothing to review.</p>
         ) : null}
 

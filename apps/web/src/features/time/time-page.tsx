@@ -36,6 +36,7 @@ import {
   getTimerContributionMs,
   getTimerDurationsMs,
 } from "@/lib/timer-totals";
+import { setOpenDraftGuard } from "@/lib/open-draft";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { useRunningClock } from "@/lib/use-now";
 import { addDaysIsoDate, cn, getIsoWeekDates, todayIsoDate } from "@/lib/utils";
@@ -242,6 +243,14 @@ export function TimePage({ date }: { date: string }) {
   function leaveEditorDraft() {
     return editorFormRef.current?.commitBeforeSwitch() ?? true;
   }
+  // Leaving from elsewhere, as Sync review's toast does, saves the draft too.
+  useEffect(
+    () =>
+      setOpenDraftGuard(
+        () => editorFormRef.current?.commitBeforeSwitch() ?? true,
+      ),
+    [],
+  );
 
   function clearGridCells() {
     setGridCell(null);

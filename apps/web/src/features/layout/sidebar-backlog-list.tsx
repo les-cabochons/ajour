@@ -10,6 +10,8 @@ import {
   type PointerEvent,
   type ReactNode,
 } from "react";
+import { hasWorkItemSyncIssue } from "@/domain/local-state";
+import { SyncConflictButton } from "@/features/backlog/sync-conflicts";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import {
   RiArrowDownSLine as ChevronDown,
@@ -638,6 +640,10 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
           <span className="min-w-0 flex-1 truncate">
             {project ? getLocalProjectDisplayName(project) : "No project"}
           </span>
+          {/* A sync conflict stays in view on hover, so it can be clicked. */}
+          {hasWorkItemSyncIssue(workItem) ? (
+            <SyncConflictButton item={workItem} />
+          ) : null}
           <span className="flex shrink-0 items-center gap-1.5 group-focus-within:hidden group-hover:hidden">
             <Markers
               workItem={workItem}
@@ -766,6 +772,10 @@ const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
           </span>
         ) : null}
       </span>
+      {/* A sync conflict stays in view on hover, so it can be clicked. */}
+      {hasWorkItemSyncIssue(workItem) ? (
+        <SyncConflictButton item={workItem} />
+      ) : null}
       <span className="flex shrink-0 items-center gap-1.5 group-focus-within:hidden group-hover:hidden">
         <Markers
           workItem={workItem}
@@ -860,6 +870,10 @@ const OffListRow = memo(function OffListRow({
       <span data-row-title className="min-w-0 flex-1 truncate">
         {workItem.title}
       </span>
+      {/* A sync conflict stays in view on hover, so it can be clicked. */}
+      {hasWorkItemSyncIssue(workItem) ? (
+        <SyncConflictButton item={workItem} />
+      ) : null}
       {detail ? (
         <span className="shrink-0 text-xs group-focus-within:hidden group-hover:hidden">
           {detail}

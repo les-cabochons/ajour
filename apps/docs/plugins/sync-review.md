@@ -1,6 +1,6 @@
 # Sync review
 
-Sync review is where items from backlog plugins wait for your decision before they enter your backlog. It is also where Ajour asks you to resolve estimate conflicts.
+Sync review is where items from backlog plugins wait for your decision before they enter your backlog. It is also where Ajour asks you to resolve description and estimate conflicts.
 
 <Shot name="settings-sync-review" alt="Settings › Sync review with three staged Azure DevOps items" />
 
@@ -23,6 +23,14 @@ Items already in your backlog show **Existing task**, and **Update existing task
 Turn on **Auto sync to backlog** on a connection to add new items straight to your backlog on a timer. See [Plugins](/plugins/#add-a-connection).
 :::
 
+## Resolve description conflicts
+
+A synced item's description is kept in step with its source when the backlog plugin sends it in full. Ajour remembers the text both sides last agreed on. At each sync, a change in the source comes to Ajour, and your own edit stays. If both changed, the conflict shows here, with your text and the source's side by side.
+
+- **Take source** replaces your text with the source's. **Undo** in the toast puts yours back.
+
+When a sync finds a description conflict, a toast says so, with **Resolve**. The item also shows a conflict mark on its row in the sidebar and the backlog, and beside its description. The mark and **Resolve** open Sync review on that item's conflict.
+
 ## Resolve estimate conflicts
 
 Ajour remembers each estimate's value at the last sync. At the next sync:
@@ -37,6 +45,6 @@ Each conflict shows the **Local**, **Remote** and **Last synced** values. Choose
 - **Accept remote** to take the source's value.
 - **Dismiss** to leave it for now.
 
-A conflict on one estimate never blocks the other estimates of the item. A backlog item with a conflict shows a warning on its row. Staged again here, it shows **Needs review**.
+A conflict on one estimate never blocks the other estimates of the item. A backlog item with a conflict shows the conflict mark on its row, which opens its conflicts here. Staged again here, it shows **Needs review**.
 
 An estimate that failed to sync also shows here, with the plugin's message. Press **Dismiss** to clear it.

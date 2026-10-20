@@ -540,6 +540,53 @@ Feature: Backlog list and board views
     Then its description reads "The first part"
     And the description is read-only because it is cut, with Edit in source
 
+  Scenario: A sync that finds a description conflict says so and leads to Sync review
+    Given the Backlog parent is synced
+    And its description was edited here to "My notes" since its last sync of "Original"
+    And its plugin, which writes descriptions, sends the description "Their notes" on its next sync
+    When I reload the app
+    Then a toast says "Description conflict on Backlog parent"
+    When I choose Resolve in the toast
+    Then Sync review shows the parent's conflict highlighted, with "My notes" here and "Their notes" in the source
+    When I take the source's description
+    Then the parent's description is "Their notes" and its conflict is gone
+
+  Scenario: The conflict mark leads to Sync review from the sidebar, the backlog and the item page
+    Given the Backlog parent is synced
+    And its description is in conflict between "My notes" here and "Their notes" in the source
+    When I reload the app
+    And I follow the conflict mark on the parent's sidebar row
+    Then Sync review opens on the parent's conflict
+    When I follow the conflict mark on the parent's backlog row
+    Then Sync review opens on the parent's conflict
+    When I follow the conflict mark beside the parent's description
+    Then Sync review opens on the parent's conflict
+
+  Scenario: An estimate conflict on a snoozed item still leads to Sync review
+    Given the Backlog parent is synced
+    And the parent is snoozed with its remaining estimate in conflict
+    When I reload the app
+    And I follow the conflict mark on the parent's snoozed sidebar row
+    Then Sync review opens on the parent's estimate conflict
+    When I follow the conflict mark beside the parent's remaining estimate
+    Then Sync review opens on the parent's estimate conflict
+
+  Scenario: Sync review compares the description as it is now
+    Given the Backlog parent is synced
+    And its description is in conflict with "Their notes" in the source, and was edited here since to "My newer notes"
+    When I open Sync review on the parent
+    Then Sync review shows "My newer notes" here, not the text from when the conflict began
+
+  Scenario: Following a conflict mark saves the side panel's draft first
+    Given the Backlog parent is synced
+    And its description is in conflict between "My notes" here and "Their notes" in the source
+    When I open the Backlog workspace
+    And I edit the parent item from the Backlog peek
+    And I rename the parent to "Renamed in the panel" in the side panel without saving
+    And I follow the conflict mark on the parent's sidebar row
+    Then Sync review opens on the parent's conflict
+    And the parent's title is "Renamed in the panel", saved on the way
+
   Scenario: Settle a synced item with a comment
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit

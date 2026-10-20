@@ -3966,6 +3966,33 @@ describe("localStore description timelog", () => {
     });
   });
 
+  it("takes the source's side of a description conflict, with Undo", async () => {
+    const { localStore } = await import("./local-store");
+    localStore.importSyncedWorkItems([
+      buildImportCandidate({ description: { text: "Original" } }),
+    ]);
+    const itemId = localStore.snapshot().workItems[0]!._id;
+    localStore.updateWorkItemWithUndo(itemId, { description: "Mine" });
+    localStore.importSyncedWorkItems([
+      buildImportCandidate({ description: { text: "Theirs" } }),
+    ]);
+    expect(
+      localStore.snapshot().workItems[0]?.descriptionSync?.conflict,
+    ).toBeDefined();
+
+    const token = localStore.takeSourceDescriptionWithUndo(itemId);
+
+    expect(localStore.snapshot().workItems[0]).toMatchObject({
+      description: "Theirs",
+      descriptionSync: { baseline: "Theirs", remote: "Theirs" },
+    });
+    expect(
+      localStore.snapshot().workItems[0]?.descriptionSync?.conflict,
+    ).toBeUndefined();
+    expect(localStore.undo(token!)).toBe("restored");
+    expect(localStore.snapshot().workItems[0]?.description).toBe("Mine");
+  });
+
   it("keeps a code block's indentation when a description is saved", async () => {
     const { localStore } = await import("./local-store");
     const itemId = localStore.addWorkItem({

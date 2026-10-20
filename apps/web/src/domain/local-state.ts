@@ -765,6 +765,17 @@ export function getWorkItemEstimateFieldState(
   return workItem.estimateSync?.[fieldKey];
 }
 
+/**
+ * Whether a sync left something on the item for the user to resolve in Sync
+ * review: an estimate's conflict or error, or a description's conflict.
+ */
+export function hasWorkItemSyncIssue(workItem: LocalWorkItem) {
+  return (
+    hasWorkItemEstimateSyncIssue(workItem) ||
+    Boolean(workItem.descriptionSync?.conflict)
+  );
+}
+
 export function hasWorkItemEstimateSyncIssue(workItem: LocalWorkItem) {
   return (
     [

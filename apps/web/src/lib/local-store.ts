@@ -5,6 +5,7 @@ import {
   type CaptureSettings,
   type TeamSettings,
 } from "@ajour/shared";
+import { takeSourceDescription } from "@/domain/backlog/description-sync";
 import { todayIsoDate } from "@/lib/utils";
 import { StaleWindowError } from "@/lib/stale-window-error";
 import {
@@ -2094,6 +2095,25 @@ export const localStore = {
     updateState((state) =>
       applyKeepLocalEstimateConflict(state, workItemId, fieldKey),
     );
+  },
+  /**
+   * Resolves a description conflict with the source's text, which both sides
+   * then agree on. Returns the Undo token.
+   */
+  takeSourceDescriptionWithUndo(workItemId: string) {
+    return updateStateWithUndo((state) => {
+      const target = state.workItems.find((item) => item._id === workItemId);
+      if (!target?.descriptionSync?.conflict) return state;
+      const next = {
+        ...state,
+        workItems: state.workItems.map((item) =>
+          item._id === workItemId
+            ? { ...item, ...takeSourceDescription(item) }
+            : item,
+        ),
+      };
+      return withDescriptionTimelogs(state, next);
+    });
   },
   acceptRemoteEstimateValue(
     workItemId: string,

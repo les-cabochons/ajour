@@ -210,3 +210,66 @@ describe("comment returns through a sync", () => {
     expect(item().returnedByComment).toBeUndefined();
   });
 });
+
+describe("description conflicts a sync or a review import finds", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    installWindow();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  async function conflictedSetup() {
+    const { localStore } = await import("@/lib/local-store");
+    const api = await import("@/lib/app-api");
+    const { subscribeDescriptionConflicts } =
+      await import("@/lib/sync-conflict-events");
+    localStore.importSyncedWorkItems([
+      { ...candidate, description: { text: "Original" } },
+    ]);
+    const itemId = localStore.snapshot().workItems[0]!._id;
+    localStore.updateWorkItemWithUndo(itemId, { description: "Mine" });
+    const announced: string[][] = [];
+    subscribeDescriptionConflicts((items) =>
+      announced.push(items.map((item) => item._id)),
+    );
+    return { api, itemId, announced };
+  }
+
+  it("announces an item a sync puts in conflict, once", async () => {
+    const { api, itemId, announced } = await conflictedSetup();
+    const theirs = {
+      ...answer({ author: "me", at: "2026-10-18T10:00:00Z" }),
+      mode: "backlog" as const,
+      items: [{ ...candidate, description: { text: "Theirs" } }],
+      commentFacts: [],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json(theirs)),
+    );
+
+    await api.syncBacklogConnection("azure_devops", "c1");
+    await api.syncBacklogConnection("azure_devops", "c1");
+
+    expect(announced).toEqual([[itemId]]);
+  });
+
+  it("announces an item a review import puts in conflict", async () => {
+    const { api, itemId, announced } = await conflictedSetup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          items: [{ ...candidate, description: { text: "Theirs" } }],
+          committedCount: 1,
+        }),
+      ),
+    );
+
+    await api.commitSelectedBacklogImportsToLocalStore();
+
+    expect(announced).toEqual([[itemId]]);
+  });
+});

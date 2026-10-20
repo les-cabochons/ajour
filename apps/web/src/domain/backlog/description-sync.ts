@@ -166,3 +166,32 @@ export function descriptionCapabilityOf(
   }
   return group.plugin.capabilities.connector?.description;
 }
+
+/**
+ * The description after the user took the source's side of a conflict:
+ * the source's text, which both sides then agree on.
+ */
+export function takeSourceDescription(item: Described): Described {
+  const sync = item.descriptionSync;
+  if (!sync?.conflict) return item;
+  const { conflict: _conflict, ...rest } = sync;
+  return {
+    description: sync.remote || undefined,
+    descriptionSync: { ...rest, baseline: sync.remote },
+  };
+}
+
+/** The items whose description a change put in conflict, oldest first. */
+export function newDescriptionConflicts(
+  before: readonly LocalWorkItem[],
+  after: readonly LocalWorkItem[],
+): LocalWorkItem[] {
+  const conflicted = new Set(
+    before
+      .filter((item) => item.descriptionSync?.conflict)
+      .map((item) => item._id),
+  );
+  return after.filter(
+    (item) => item.descriptionSync?.conflict && !conflicted.has(item._id),
+  );
+}
