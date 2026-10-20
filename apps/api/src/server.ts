@@ -1387,13 +1387,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             });
             return;
           }
+          const plugins = await pluginManager.listPlugins();
           const inactive = await inactiveCapabilityError(
             storage,
             pluginId,
             "connector",
-            new Set(
-              (await pluginManager.listPlugins()).map((plugin) => plugin.id),
-            ),
+            new Set(plugins.map((plugin) => plugin.id)),
             "syncing descriptions",
           );
           if (inactive) {
@@ -1457,7 +1456,19 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               );
             }
           } catch (error) {
-            writeJson(response, 502, { error: errorMessage(error) });
+            // The message reaches the user and is stored with the item.
+            const plugin = plugins.find(
+              (candidate) => candidate.id === pluginId,
+            );
+            writeJson(response, 502, {
+              error: boundConnectionError(
+                redactSecretValues(
+                  errorMessage(error),
+                  plugin ?? { connectionFields: [] },
+                  connection.config,
+                ),
+              ),
+            });
           }
           return;
         }

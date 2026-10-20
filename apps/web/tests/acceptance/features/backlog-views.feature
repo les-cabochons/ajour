@@ -540,6 +540,14 @@ Feature: Backlog list and board views
     Then its description reads "The first part"
     And the description is read-only because it is cut, with Edit in source
 
+  Scenario: A description whose conversion lost formatting is read-only
+    Given the Backlog parent is synced
+    And its plugin, which writes descriptions, sends the description "Underlined in the source", which lost its underline, on its next sync
+    When I reload the app
+    And I open the Backlog parent page
+    Then its description reads "Underlined in the source"
+    And the description is read-only because editing would lose its underline, with Edit in source
+
   Scenario: A sync that finds a description conflict says so and leads to Sync review
     Given the Backlog parent is synced
     And its description was edited here to "My notes" since its last sync of "Original"
@@ -607,6 +615,18 @@ Feature: Backlog list and board views
     Then the editor says saving will merge the changes
     When I save the description
     Then the source and the parent both hold "Their goal\n\nMy steps"
+
+  Scenario: A sync during an edit joins the draft, so saving keeps both changes
+    Given the Backlog parent is synced
+    And its description "Goal\n\nSteps" is synced through a plugin that writes descriptions
+    When I reload the app
+    And I open the Backlog parent page
+    And I start editing the description
+    And I change the description to "My goal\n\nSteps"
+    And a sync brings "Goal\n\nNew steps" while I edit
+    Then the description editor holds both "My goal" and "New steps"
+    When I save the description
+    Then the source and the parent both hold "My goal\n\nNew steps"
 
   Scenario: Saving over a source change to the same lines is a conflict to resolve
     Given the Backlog parent is synced

@@ -123,7 +123,7 @@ Declare `connector.description` and return the item's full description in `descr
 - `lost`: short names of what the conversion dropped, such as `"text colour"` or `"underline"`. Leave it out when nothing was lost. Images never count as lost.
 - `cut`: `true` when the source's text was longer and you cut it to 64,000 characters.
 
-Ajour keeps the text both sides last agreed on. On each sync, a description only the source changed follows the source, one only the user changed keeps the user's edit, and one changed on both sides becomes a conflict for the user to resolve. A newly imported item takes your text. Without `connector.description.write`, the description is read-only in Ajour, with a link to edit it in your tool. A `cut` description is always read-only, so a shortened copy is never written back.
+Ajour keeps the text both sides last agreed on. On each sync, a description only the source changed follows the source, one only the user changed keeps the user's edit, and one changed on both sides becomes a conflict for the user to resolve. A newly imported item takes your text. Without `connector.description.write`, the description is read-only in Ajour, with a link to edit it in your tool. A `cut` description is always read-only, so a shortened copy is never written back, and so is one with `lost`, so an edit in Ajour never erases formatting your tool keeps.
 
 With `connector.description.write`, the user edits the description in Ajour, and Ajour writes it back through [writeDescription](#writedescription). Set `maxLength` to your tool's limit, measured as your tool measures it; the editor then stops at the smaller of it and 64,000 characters.
 

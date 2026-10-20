@@ -200,28 +200,32 @@ describe("saving a synced description", () => {
     });
   });
 
-  it("merges what a sync brought under an open edit, from where the edit began", async () => {
-    // The edit began on BASE; a sync then brought "New steps" into the item.
-    const theirs = "Goal\n\nNew steps\n\nDone when";
+  it("records a conflict, writing nothing, for a draft a sync changed in the user's lines", async () => {
+    const theirs = "Their goal\n\nSteps\n\nDone when";
     const mine = "My goal\n\nSteps\n\nDone when";
-    const { localStore, itemId, item } = await setup(theirs);
+    const { localStore, itemId, item, announced, save } = await setup(theirs);
+    // A sync brought "Their goal" while the draft had "My goal".
     localStore.updateSyncedDescription(itemId, () => ({
       description: theirs,
       descriptionSync: { baseline: theirs, remote: theirs },
     }));
+    const { markDescriptionDraftConflict } =
+      await import("@/lib/description-save");
+    markDescriptionDraftConflict(itemId);
     localStore.saveWorkItemEdits(itemId, { description: mine });
     const writes = stubSource(theirs);
-    const { saveSyncedDescription } = await import("@/lib/description-save");
 
-    expect(await saveSyncedDescription(itemId, "save", BASE)).toEqual({
-      kind: "written",
-      merged: true,
+    expect(await save()).toEqual({ kind: "conflict" });
+    expect(writes).toEqual([]);
+    expect(item().descriptionSync?.conflict).toMatchObject({
+      localText: mine,
+      remoteText: theirs,
     });
-    const merged = "My goal\n\nNew steps\n\nDone when";
-    expect(writes).toEqual([
-      { sourceId: "s1", text: merged, expected: theirs },
-    ]);
-    expect(item().description).toBe(merged);
+    expect(announced).toEqual([itemId]);
+    // The mark is used once: a retry after resolving reads and writes again.
+    localStore.takeSourceDescriptionWithUndo(itemId);
+    localStore.saveWorkItemEdits(itemId, { description: mine });
+    expect(await save()).toEqual({ kind: "written", merged: false });
   });
 
   it("keeps what the first of two saves merged when the second is written", async () => {
@@ -273,6 +277,29 @@ describe("saving a synced description", () => {
     expect(writes).toEqual([]);
     expect(item().descriptionSync?.writeError?.message).toContain(
       "longer in Work than Ajour keeps",
+    );
+  });
+
+  it("writes nothing over a source text whose conversion lost formatting", async () => {
+    const { item, save } = await setup("Goal\n\nMy steps\n\nDone when");
+    const writes: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.endsWith("/description")) {
+          return Response.json({
+            description: { text: BASE, lost: ["underline"] },
+          });
+        }
+        writes.push(init?.body);
+        return Response.json({});
+      }),
+    );
+
+    expect((await save()).kind).toBe("failed");
+    expect(writes).toEqual([]);
+    expect(item().descriptionSync?.writeError?.message).toContain(
+      "lose its underline in Work",
     );
   });
 

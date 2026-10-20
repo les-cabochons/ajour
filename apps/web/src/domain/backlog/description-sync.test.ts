@@ -8,9 +8,10 @@ import {
   descriptionLimit,
   descriptionSaved,
   descriptionWriteFailed,
-  followDraftBaseline,
+  rebaseDescriptionDraft,
   hasUnwrittenDescription,
   latestDescription,
+  lostFormatting,
   newDescriptionConflicts,
   planDescriptionSave,
   planKeepMine,
@@ -302,6 +303,21 @@ describe("who may edit a description", () => {
         writable,
       ),
     ).toEqual({ editable: false, reason: "cut" });
+  });
+
+  it("keeps a description whose conversion lost formatting read-only", () => {
+    expect(
+      descriptionAccess(
+        item({
+          descriptionSync: { baseline: "A", remote: "A", lost: ["underline"] },
+        }),
+        writable,
+      ),
+    ).toEqual({ editable: false, reason: "lossy" });
+    expect(lostFormatting(["colour", "underline", "tables"])).toBe(
+      "colour, underline and tables",
+    );
+    expect(lostFormatting(["underline"])).toBe("underline");
   });
 });
 
@@ -611,29 +627,29 @@ describe("after a save", () => {
   });
 });
 
-describe("the agreed text an open draft builds on", () => {
-  it("follows the item while the draft is untouched", () => {
-    const first = followDraftBaseline(undefined, synced("A", "A"), false);
-    expect(followDraftBaseline(first, synced("B", "B"), false).baseline).toBe(
-      "B",
-    );
+describe("an open draft when the text changes under it", () => {
+  it("takes the new text while untouched", () => {
+    expect(rebaseDescriptionDraft("A", "A", "B")).toEqual({ text: "B" });
   });
 
-  it("stays where the edit began once a sync changes the text under it", () => {
-    const first = followDraftBaseline(undefined, synced("A", "A"), true);
-    const moved = followDraftBaseline(first, synced("B", "B"), true);
-    expect(moved.baseline).toBe("A");
-    // It keeps it even after the item settles on the new text.
-    expect(followDraftBaseline(moved, synced("B", "B"), true).baseline).toBe(
-      "A",
-    );
-  });
-
-  it("follows a sync that agrees with the text the draft began from", () => {
-    const first = followDraftBaseline(undefined, synced("Mine", "Old"), true);
+  it("takes in a change to other lines than the user's", () => {
     expect(
-      followDraftBaseline(first, synced("Mine", "Mine"), true).baseline,
-    ).toBe("Mine");
+      rebaseDescriptionDraft(
+        "Title\nSteps",
+        "My title\nSteps",
+        "Title\nNew steps",
+      ),
+    ).toEqual({ text: "My title\nNew steps" });
+  });
+
+  it("is a conflict when the change is to the user's lines", () => {
+    expect(
+      rebaseDescriptionDraft(
+        "Title\nSteps",
+        "My title\nSteps",
+        "Their title\nSteps",
+      ),
+    ).toEqual({ conflict: true });
   });
 });
 

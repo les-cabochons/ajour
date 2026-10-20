@@ -14,7 +14,7 @@ const cors = { "access-control-allow-origin": "*" };
 async function syncParentDescription(
   page: Page,
   capability: BacklogDescriptionCapability,
-  description: { text: string; cut?: boolean },
+  description: { text: string; cut?: boolean; lost?: string[] },
 ) {
   await page.route(`${apiUrl}/api/plugins`, (route) =>
     route.fulfill({ json: descriptionOverview(capability), headers: cors }),
@@ -40,6 +40,29 @@ Given(
   "its plugin, which writes descriptions, sends a description cut to {string} on its next sync",
   async ({ page }, text: string) => {
     await syncParentDescription(page, { write: true }, { text, cut: true });
+  },
+);
+
+Given(
+  "its plugin, which writes descriptions, sends the description {string}, which lost its underline, on its next sync",
+  async ({ page }, text: string) => {
+    await syncParentDescription(
+      page,
+      { write: true },
+      { text, lost: ["underline"] },
+    );
+  },
+);
+
+Then(
+  "the description is read-only because editing would lose its underline, with Edit in source",
+  async ({ page }) => {
+    await expect(
+      page.getByText("Editing here would lose its underline.", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expectReadOnlyWithEditInSource(page);
   },
 );
 
@@ -531,6 +554,36 @@ Then(
     await expect(
       page.locator("main").getByRole("button", { name: "Retry", exact: true }),
     ).toBeVisible();
+  },
+);
+
+When("a sync brings {string} while I edit", async ({ page }, text: string) => {
+  const synced = lines(text);
+  const source = sources.get(page)!;
+  source.synced = synced;
+  source.text = synced;
+  // As a sync applies it, announced like a write from another window.
+  await page.evaluate((synced) => {
+    const key = "ajour.local-state.v2";
+    const state = JSON.parse(localStorage.getItem(key)!);
+    const parent = state.workItems.find(
+      (item: { _id: string }) => item._id === "parent",
+    );
+    Object.assign(parent, {
+      description: synced,
+      descriptionSync: { baseline: synced, remote: synced },
+    });
+    localStorage.setItem(key, JSON.stringify(state));
+    window.dispatchEvent(new StorageEvent("storage", { key }));
+  }, synced);
+});
+
+Then(
+  "the description editor holds both {string} and {string}",
+  async ({ page }, mine: string, theirs: string) => {
+    await expect(descriptionEditor(page)).toContainText(mine);
+    await expect(descriptionEditor(page)).toContainText(theirs);
+    await expect(descriptionEditor(page)).toBeFocused();
   },
 );
 

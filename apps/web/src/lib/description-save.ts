@@ -4,6 +4,7 @@ import {
   descriptionInConflict,
   descriptionSaved,
   descriptionWriteFailed,
+  lostFormatting,
   planDescriptionSave,
   planKeepMine,
 } from "@/domain/backlog/description-sync";
@@ -51,21 +52,21 @@ function findItem(itemId: string) {
 
 /**
  * Writes the item's description, already saved locally, to its source.
- * `keepMine` resolves a conflict with the user's text. `draftBaseline` is
- * the agreed text the user's edit began from, when a sync has since moved
- * the item's own, so the save merges what the source changed meanwhile.
- * Saves of one item run one after another, so each reads what the one
- * before wrote.
+ * `keepMine` resolves a conflict with the user's text. A draft a sync put in
+ * conflict while it was open records that conflict instead. Saves of one item
+ * run one after another, so each reads what the one before wrote.
  */
 export function saveSyncedDescription(
   itemId: string,
   mode: "save" | "keepMine" = "save",
-  draftBaseline?: string,
 ): Promise<DescriptionSaveOutcome> {
+  const draftInConflict = mode === "save" && conflictedDrafts.delete(itemId);
   const previous = saving.get(itemId);
   const run = (previous ?? Promise.resolve())
     .catch(() => undefined)
-    .then(() => runSave(itemId, mode, draftBaseline));
+    .then(() =>
+      draftInConflict ? recordDraftConflict(itemId) : runSave(itemId, mode),
+    );
   saving.set(itemId, run);
   notify();
   void run.finally(() => {
@@ -76,10 +77,36 @@ export function saveSyncedDescription(
   return run;
 }
 
+/**
+ * Open drafts a sync changed in the lines the user edited, so the draft
+ * cannot take the change in. Kept outside the editor, so a draft carried to
+ * another container keeps it too.
+ */
+const conflictedDrafts = new Set<string>();
+
+/** Marks the item's open draft as in conflict with what a sync brought. */
+export function markDescriptionDraftConflict(itemId: string) {
+  conflictedDrafts.add(itemId);
+}
+
+/** A new draft of the item's description starts without a conflict. */
+export function clearDescriptionDraftConflict(itemId: string) {
+  conflictedDrafts.delete(itemId);
+}
+
+function recordDraftConflict(itemId: string): DescriptionSaveOutcome {
+  const sync = findItem(itemId)?.descriptionSync;
+  if (!sync) return { kind: "agreed" };
+  return recordConflict(itemId, {
+    text: sync.remote,
+    ...(sync.lost ? { lost: sync.lost } : {}),
+    ...(sync.cut ? { cut: true } : {}),
+  });
+}
+
 async function runSave(
   itemId: string,
   mode: "save" | "keepMine",
-  draftBaseline: string | undefined,
 ): Promise<DescriptionSaveOutcome> {
   const item = findItem(itemId);
   if (
@@ -109,11 +136,17 @@ async function runSave(
         `It is now longer in ${item.sourceConnectionLabel ?? "the source"} than Ajour keeps. Edit it there.`,
       );
     }
+    // Nor is a text that lost formatting: writing it would erase that.
+    if (current.lost?.length) {
+      throw new Error(
+        `Writing it would now lose its ${lostFormatting(current.lost)} in ${item.sourceConnectionLabel ?? "the source"}. Edit it there.`,
+      );
+    }
     const plan =
       mode === "keepMine"
         ? planKeepMine(item, current.text)
         : planDescriptionSave(
-            draftBaseline ?? now.descriptionSync.baseline,
+            now.descriptionSync.baseline,
             saved,
             current.text,
           );

@@ -20,6 +20,7 @@ import {
   formatEstimateInput,
   parseEstimateInput,
 } from "@/features/backlog/backlog-task-editor";
+import { clearDescriptionDraftConflict } from "@/lib/description-save";
 import { localStore } from "@/lib/local-store";
 import { cn } from "@/lib/utils";
 import {
@@ -31,7 +32,7 @@ import {
   saveDescriptionToSource,
   useDescriptionAccess,
   useDescriptionLimit,
-  useDraftBaseline,
+  followDescriptionDraft,
   useSourceDescriptionCheck,
   writesToSource,
 } from "@/features/backlog/synced-description";
@@ -241,22 +242,26 @@ export function DescriptionSection({
   const current = item.description ?? "";
   const [base, setBase] = useState(current);
   const [draft, setDraft] = useState(current);
+  const access = useDescriptionAccess(item);
+  const writes = writesToSource(item, access);
   useEffect(() => {
     if (!editing || current === base) return;
-    setDraft((text) => (text === base ? current : text));
+    // A description written to its source takes the source's change in, so
+    // saving it never reverts that change.
+    setDraft((text) =>
+      text === base
+        ? current
+        : writes
+          ? followDescriptionDraft(item._id, base, text, current)
+          : text,
+    );
     setBase(current);
-  }, [editing, current, base]);
-  const access = useDescriptionAccess(item);
+  }, [editing, current, base, writes, item._id]);
   const editable = !readOnly && access.editable;
   const limit = useDescriptionLimit(item, access);
   const latest = useSourceDescriptionCheck(
     item,
     editing && editable && writesToSource(item, access),
-  );
-  const draftBaseline = useDraftBaseline(
-    item,
-    editing && editable && writesToSource(item, access),
-    draft !== base,
   );
   const wrapperRef = useRef<HTMLDivElement>(null);
   const body = useMemo(
@@ -270,7 +275,7 @@ export function DescriptionSection({
     const description = normalizeDescriptionText(value) || undefined;
     if (description === item.description) return;
     if (writesToSource(item, access)) {
-      saveDescriptionToSource(item._id, description, draftBaseline);
+      saveDescriptionToSource(item._id, description);
     } else {
       patchBacklogItemWithUndo(item, { description }, "Description changed");
     }
@@ -299,6 +304,7 @@ export function DescriptionSection({
                 onFocus={preloadMarkdownEditor}
                 onClick={() => {
                   closer.reset();
+                  clearDescriptionDraftConflict(item._id);
                   setBase(current);
                   setDraft(current);
                   setEditing(true);

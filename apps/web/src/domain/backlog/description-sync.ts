@@ -230,25 +230,27 @@ export function descriptionSaved(
 }
 
 /**
- * The agreed text an open description draft builds on, for its save to merge
- * from. It follows the item while the draft is untouched, or while the item
- * keeps the text the draft began from. Once a sync changes that text under the
- * user's edit, it stays where the edit began, so the save merges in what the
- * source changed. `previous` is what it was at the last render.
+ * An open draft of a description after the item's text changed under it,
+ * from `base` to `current`, as when a sync brings the source's edit: an
+ * untouched draft takes the new text, and a touched one takes in the change,
+ * so saving it keeps both. A change to the lines the user edited is a
+ * conflict, and the draft stays as it is.
  */
-export function followDraftBaseline(
-  previous: { text: string; baseline?: string; kept: boolean } | undefined,
-  item: Described,
-  touched: boolean,
-): { text: string; baseline?: string; kept: boolean } {
-  const text = normalizeText(item.description);
-  const baseline = item.descriptionSync?.baseline;
-  if (!previous || !touched) return { text, baseline, kept: false };
-  if (previous.kept) return previous;
-  if (text !== previous.text) return { ...previous, kept: true };
-  return previous.baseline === baseline
-    ? previous
-    : { text, baseline, kept: false };
+export function rebaseDescriptionDraft(
+  base: string,
+  draft: string,
+  current: string,
+): { text: string } | { conflict: true } {
+  if (draft === base) return { text: current };
+  const merge = mergeTexts(base, draft, current);
+  return "conflict" in merge ? merge : { text: merge.merged };
+}
+
+/** What the conversion lost, as words: "colour, underline and tables". */
+export function lostFormatting(lost: readonly string[]) {
+  return lost.length < 2
+    ? (lost[0] ?? "")
+    : `${lost.slice(0, -1).join(", ")} and ${lost.at(-1)}`;
 }
 
 /** The description after a save that could not write it, with why. */
@@ -319,13 +321,18 @@ export function descriptionLimit(
 
 export type DescriptionAccess =
   | { editable: true }
-  | { editable: false; reason: "archived" | "notWritable" | "cut" };
+  | {
+      editable: false;
+      reason: "archived" | "notWritable" | "cut" | "lossy";
+    };
 
 /**
  * Whether the user may edit an item's description, wherever it is edited.
  * A synced description is read-only unless its plugin writes descriptions
- * back, and a cut one always is, so a shortened copy is never written.
- * `capability` is the plugin's, or undefined while it is unknown.
+ * back, and a cut one always is, so a shortened copy is never written. One
+ * whose conversion to Markdown lost something is too, so an edit never
+ * erases the source's formatting. `capability` is the plugin's, or undefined
+ * while it is unknown.
  */
 export function descriptionAccess(
   item: Pick<LocalWorkItem, "status" | "descriptionSync">,
@@ -337,6 +344,7 @@ export function descriptionAccess(
   if (!sync) return { editable: true };
   if (sync.cut) return { editable: false, reason: "cut" };
   if (!capability?.write) return { editable: false, reason: "notWritable" };
+  if (sync.lost?.length) return { editable: false, reason: "lossy" };
   return { editable: true };
 }
 

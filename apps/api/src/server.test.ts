@@ -2441,6 +2441,9 @@ describe("backlog description routes", () => {
     "let text = 'Held by the source';",
     "export async function readDescription(connection, request) {",
     "  if (request.sourceId === 'FAIL-1') throw new Error('Item not found.');",
+    "  if (request.sourceId === 'LEAK-1') {",
+    "    throw new Error(`Refused token ${connection.config.apiToken}`);",
+    "  }",
     "  return { description: { text } };",
     "}",
     "export async function writeDescription(connection, request) {",
@@ -2461,7 +2464,28 @@ describe("backlog description routes", () => {
       path.join(root, "source"),
       descriptionPluginSource,
       "plugin.mjs",
-      description ? { capabilities: { connector: { description } } } : {},
+      {
+        ...(description
+          ? { capabilities: { connector: { description } } }
+          : {}),
+        connectionFields: [
+          { id: "label", label: "Label", type: "text", required: true },
+          {
+            id: "tenantLabel",
+            label: "Workspace",
+            type: "text",
+            required: true,
+          },
+          { id: "baseUrl", label: "Site URL", type: "url", required: true },
+          {
+            id: "apiToken",
+            label: "API token",
+            type: "password",
+            required: true,
+            secret: true,
+          },
+        ],
+      },
     );
     const server = createAppApiServer({
       statePath: path.join(root, "state.json"),
@@ -2480,6 +2504,7 @@ describe("backlog description routes", () => {
           autoSync: false,
           autoSyncIntervalMinutes: 15,
           baseUrl: "https://acme.atlassian.net",
+          apiToken: "tok-12345",
         },
       }),
     });
@@ -2537,6 +2562,15 @@ describe("backlog description routes", () => {
     await expect(post("description", { sourceId: "FAIL-1" })).resolves.toEqual({
       status: 502,
       body: { error: "Item not found." },
+    });
+  });
+
+  it("hides the connection's secrets in a plugin's error", async () => {
+    const { post } = await createServer({ write: true });
+
+    await expect(post("description", { sourceId: "LEAK-1" })).resolves.toEqual({
+      status: 502,
+      body: { error: "Refused token [secret]" },
     });
   });
 

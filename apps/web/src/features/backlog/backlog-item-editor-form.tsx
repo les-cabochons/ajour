@@ -82,11 +82,14 @@ import {
   SyncedDescriptionNote,
   useDescriptionAccess,
   useDescriptionLimit,
-  useDraftBaseline,
+  followDescriptionDraft,
   useSourceDescriptionCheck,
   writesToSource,
 } from "@/features/backlog/synced-description";
-import { saveSyncedDescription } from "@/lib/description-save";
+import {
+  clearDescriptionDraftConflict,
+  saveSyncedDescription,
+} from "@/lib/description-save";
 import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 
 /** Lets a host save the draft before it loads another item into the same form. */
@@ -216,9 +219,44 @@ export function BacklogItemEditorForm({
       currentFields,
     ) as (keyof BacklogTaskEditorFields)[];
     if (keys.every((key) => currentFields[key] === base[key])) return;
-    setFields((current) => followChangedItem(current, base, currentFields));
+    // A description written to its source takes the source's change in, so
+    // saving it never reverts that change.
+    const draftDescription = fields.description;
+    const description =
+      descriptionWritesToSource &&
+      workItem &&
+      draftDescription !== base.description &&
+      currentFields.description !== base.description
+        ? followDescriptionDraft(
+            workItem._id,
+            base.description,
+            draftDescription,
+            currentFields.description,
+          )
+        : undefined;
+    setFields((current) => {
+      const next = followChangedItem(current, base, currentFields);
+      return description !== undefined &&
+        current.description === draftDescription
+        ? { ...next, description }
+        : next;
+    });
     setBase(currentFields);
-  }, [currentFields, base]);
+  }, [
+    currentFields,
+    base,
+    fields.description,
+    descriptionWritesToSource,
+    workItem,
+  ]);
+  // A new draft starts without a conflict; a draft carried here keeps its own.
+  const startedFresh = useRef(!initialFields);
+  const openedItemId = useRef(workItem?._id);
+  useEffect(() => {
+    if (startedFresh.current && openedItemId.current) {
+      clearDescriptionDraftConflict(openedItemId.current);
+    }
+  }, []);
   const onFieldsChangeRef = useRef(onFieldsChange);
   onFieldsChangeRef.current = onFieldsChange;
   useEffect(() => {
@@ -241,11 +279,6 @@ export function BacklogItemEditorForm({
     descriptionLimit,
   });
   const { validation } = editor;
-  const descriptionDraftBaseline = useDraftBaseline(
-    currentItem,
-    descriptionWritesToSource,
-    fields.description !== base.description,
-  );
 
   const projectOptions = useMemo(
     () =>
@@ -380,11 +413,7 @@ export function BacklogItemEditorForm({
     patch: Partial<Pick<LocalWorkItem, "description">>,
   ) {
     if (workItem && "description" in patch && descriptionWritesToSource) {
-      void saveSyncedDescription(
-        workItem._id,
-        "save",
-        descriptionDraftBaseline,
-      );
+      void saveSyncedDescription(workItem._id);
     }
   }
 

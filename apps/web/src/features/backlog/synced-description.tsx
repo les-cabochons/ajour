@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { RiExternalLinkLine as ExternalIcon } from "@remixicon/react";
 import type { BacklogSyncedDescription } from "@ajour/shared";
 import { Value } from "@/components/ui/value";
@@ -7,10 +7,11 @@ import {
   descriptionAccess,
   descriptionCapabilityOf,
   descriptionLimit,
-  followDraftBaseline,
   hasUnwrittenDescription,
   latestDescription,
+  lostFormatting,
   normalizeDescriptionText,
+  rebaseDescriptionDraft,
   sourceDescriptionChanged,
   type DescriptionAccess,
 } from "@/domain/backlog/description-sync";
@@ -20,6 +21,7 @@ import { offerUndo } from "@/features/feedback/undo-toast";
 import { readBacklogDescription } from "@/lib/app-api";
 import {
   isSavingDescription,
+  markDescriptionDraftConflict,
   saveSyncedDescription,
   subscribeDescriptionSaving,
 } from "@/lib/description-save";
@@ -44,18 +46,27 @@ const READ_ONLY_REASONS = {
   cut: "Longer than Ajour keeps, so it shows cut off.",
 } as const;
 
+function readOnlyReason(
+  item: Pick<LocalWorkItem, "descriptionSync">,
+  reason: keyof typeof READ_ONLY_REASONS | "lossy",
+) {
+  return reason === "lossy"
+    ? `Editing here would lose its ${lostFormatting(item.descriptionSync?.lost ?? [])}.`
+    : READ_ONLY_REASONS[reason];
+}
+
 /** Why a synced description is read-only, with a link to edit it in the source. */
 export function SyncedDescriptionNote({
   item,
   access,
 }: {
-  item: Pick<LocalWorkItem, "sourceUrl">;
+  item: Pick<LocalWorkItem, "sourceUrl" | "descriptionSync">;
   access: DescriptionAccess;
 }) {
   if (access.editable || access.reason === "archived") return null;
   return (
     <p className="mt-2 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-      <span>{READ_ONLY_REASONS[access.reason]}</span>
+      <span>{readOnlyReason(item, access.reason)}</span>
       {item.sourceUrl ? (
         <a
           href={item.sourceUrl}
@@ -149,31 +160,29 @@ export function DescriptionLength({
 export function saveDescriptionToSource(
   itemId: string,
   description: string | undefined,
-  draftBaseline: string | undefined,
 ) {
   offerUndo(localStore.saveWorkItemEdits(itemId, { description }), {
     title: "Project and task set from the description",
     subject: "backlog item",
   });
-  void saveSyncedDescription(itemId, "save", draftBaseline);
+  void saveSyncedDescription(itemId);
 }
 
 /**
- * The agreed text an open draft of the item's description builds on, for its
- * save: where the user's edit began when a sync changed the text under it.
+ * Takes a change the item's text got under an open draft into the draft, as
+ * `rebaseDescriptionDraft` does, and returns the draft to show. A draft the
+ * change conflicts with stays, and its save records the conflict.
  */
-export function useDraftBaseline(
-  item: SyncedItem | undefined,
-  open: boolean,
-  touched: boolean,
+export function followDescriptionDraft(
+  itemId: string,
+  base: string,
+  draft: string,
+  current: string,
 ) {
-  const followed = useRef<ReturnType<typeof followDraftBaseline>>(undefined);
-  if (!open || !item) {
-    followed.current = undefined;
-    return undefined;
-  }
-  followed.current = followDraftBaseline(followed.current, item, touched);
-  return followed.current.baseline;
+  const rebased = rebaseDescriptionDraft(base, draft, current);
+  if ("text" in rebased) return rebased.text;
+  markDescriptionDraftConflict(itemId);
+  return draft;
 }
 
 /** Whether a save of the item's description is on its way to the source. */
