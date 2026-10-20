@@ -9,7 +9,11 @@ import {
 } from "../../../packages/shared/plugins.ts";
 import { AppApiStorage } from "./storage.ts";
 
-function buildPlugin(id: string, displayName: string): PluginManifest {
+function buildPlugin(
+  id: string,
+  displayName: string,
+  extraFields: PluginManifest["connectionFields"] = [],
+): PluginManifest {
   return {
     id,
     version: "1.0.0",
@@ -34,8 +38,14 @@ function buildPlugin(id: string, displayName: string): PluginManifest {
         required: true,
         secret: false,
       },
+      ...extraFields,
     ],
   };
+}
+
+/** A non-secret field, for a config value the plugin declares. */
+function plainField(id: string): PluginManifest["connectionFields"][number] {
+  return { id, label: id, type: "text", required: false, secret: false };
 }
 
 function buildImportCandidate(
@@ -309,8 +319,11 @@ describe("AppApiStorage", () => {
     tempDirs.push(tempDir);
 
     const storage = new AppApiStorage(path.join(tempDir, "app-api-state.json"));
-    const azurePlugin = buildPlugin("azure_devops", "Azure DevOps");
-    const jiraPlugin = buildPlugin("jira", "Jira");
+    const azurePlugin = buildPlugin("azure_devops", "Azure DevOps", [
+      plainField("organizationUrl"),
+      plainField("queryScope"),
+    ]);
+    const jiraPlugin = buildPlugin("jira", "Jira", [plainField("baseUrl")]);
 
     await storage.upsertConnection("azure_devops", {
       label: "Main Azure",

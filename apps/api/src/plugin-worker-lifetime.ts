@@ -4,6 +4,16 @@ import { Worker } from "node:worker_threads";
 const MAX_CONCURRENT_OPERATIONS_PER_HOST = 4;
 const MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS = 4_096;
 
+/**
+ * Cuts a plugin error the way plugin-worker.mjs does, ending it with "…". The
+ * cut may split a secret, and the mark is how the host's redaction knows.
+ */
+function cutErrorMessage(message: string) {
+  return message.length <= MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS
+    ? message
+    : `${message.slice(0, MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS - 1)}…`;
+}
+
 interface WorkerInvocation<T> {
   workerData: unknown;
   parse(value: unknown): T;
@@ -116,6 +126,21 @@ export class PluginWorkerLifetime<TMethod extends string> {
     return this.shutdownPromise;
   }
 
+  /**
+   * The error a failed plugin call ends with, for both ways a worker fails:
+   * a message it posts, or an uncaught throw. The plugin's message is trimmed
+   * and cut, ending in "…". A message that is missing or blank becomes
+   * "Unknown plugin error.", so a failure is never shown as no error at all.
+   */
+  private pluginFailure(message: unknown): Error {
+    const text = typeof message === "string" ? message.trim() : "";
+    return new Error(
+      text
+        ? cutErrorMessage(text)
+        : `Unknown ${this.options.name.toLowerCase()} error.`,
+    );
+  }
+
   private invoke<T>(
     operation: Operation,
     method: TMethod,
@@ -160,8 +185,14 @@ export class PluginWorkerLifetime<TMethod extends string> {
         return finalizationPromise;
       };
       operation.cancelWorker = (error) => finalize(error);
-      worker.once("error", (error) => {
-        void finalize(error);
+      // An uncaught asynchronous throw in plugin code arrives here, past the
+      // worker's own cut, and may be any value.
+      worker.once("error", (error: unknown) => {
+        void finalize(
+          this.pluginFailure(
+            error instanceof Error ? error.message : undefined,
+          ),
+        );
       });
       worker.once(
         "message",
@@ -171,13 +202,7 @@ export class PluginWorkerLifetime<TMethod extends string> {
           if (message?.ok === true) {
             void finalize(undefined, message.result);
           } else {
-            const detail =
-              typeof message?.error === "string" && message.error.trim()
-                ? message.error
-                    .trim()
-                    .slice(0, MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS)
-                : `Unknown ${this.options.name.toLowerCase()} error.`;
-            void finalize(new Error(detail));
+            void finalize(this.pluginFailure(message?.error));
           }
         },
       );

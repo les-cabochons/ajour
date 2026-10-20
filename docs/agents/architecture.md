@@ -84,9 +84,48 @@ form hides it while that capability is off. `validateConnection` receives the
 capabilities that are on as its second argument and checks only their access.
 A calendar is read-only: `listCalendarEvents` returns event facts for a date
 range through `POST /api/calendars/:pluginId/connections/:connectionId/:operation`,
-and Ajour never stores the events (ADR 0005). The route replaces secret
-connection values in plugin error messages and logs one `calendar.operation`
-wide event with ids, range, count and outcome, never a title.
+and Ajour never stores the events (ADR 0005). The route logs one
+`calendar.operation` wide event with ids, range, count and outcome, never a
+title.
+A plugin may echo a secret connection value in an error. Every route that runs
+a plugin operation turns the error into a message with `pluginErrorMessage` in
+`apps/api/src/plugin-errors.ts`: each secret value of the connection becomes
+`[secret]`, then the message is cut to 1,000 characters. A stored config key
+the manifest no longer declares counts as secret, except Ajour's own fields,
+and a value with spaces at its ends counts trimmed as well, because the host
+trims the message. All matches are found in the original message, so secrets
+that overlap go whole, and a `[secret]` already there stays as it is. The
+worker host cuts a long error before redaction, an uncaught asynchronous
+throw included, and marks the cut with "…", so the start of a secret that the
+cut split becomes `[secret]` too. No response, stored last error or log
+carries a plugin's raw error. Redaction follows the secret fields of the
+package the call ran: the plugin host hands each route the manifest it
+admitted the call with. An update that lands while a request waits counts, so
+one that marks a field secret tightens redaction, and one that drops
+`secret: true` loosens it, as it does for every later call. A request builds
+one redaction per connection and reuses it for every text, so each secret's
+table is built once. Each text has a work budget, counting one step per
+secret it is checked against and the characters read, and is dropped as soon
+as it passes it. The request has a total budget that counts every text's
+work, a dropped text's included. Once that is spent, every later text that
+could hold a secret is dropped at once. A text shorter than every secret and
+not cut needs only one comparison to redact, but if it is longer than 1,000
+characters it is still cut, which reads up to 1,000 characters per secret and
+counts like any other work, and once the request is spent it is dropped
+instead of cut. So a request costs at most its budget, plus a constant per
+text. A dropped text, whether its own length or
+the connection's secrets made it too costly, is replaced whole by "Hidden
+because it couldn't be checked for secrets.", and such a summary is dropped.
+Text the plugin writes itself in a successful result is redacted the same
+way: a field's sync message, and the connection summary. A save redacts the
+summary before storing it, against the submitted, previous and normalized
+configs, because normalization may drop a value the plugin swapped out. It
+drops an entry whose key holds a secret, and a summary of more than 50
+entries. The overview redacts the stored summary and last error again each
+time it returns them. Content the plugin copies from its source tool, such as
+titles, descriptions and comments, passes as it is. When the plugin is no
+longer installed, nothing says which stored values are secret, so it shows
+"Hidden because this plugin is no longer installed." instead, and no summary.
 The rules in this section apply to every such plugin, which must remain
 physically and logically separate from the application. A plugin owns its external-system
 authentication, transport, field discovery, and remote read/write behavior. It

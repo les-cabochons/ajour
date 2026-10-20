@@ -114,6 +114,69 @@ describe("plugin worker lifetime", () => {
     expect(invalid.activeOperationCount).toBe(0);
   });
 
+  it("marks an error it cuts with an ellipsis, so the host can tell a cut secret", async () => {
+    const host = await lifetime(
+      "import {parentPort} from 'node:worker_threads'; parentPort.postMessage({ok:false,error:'x'.repeat(5000)});",
+    );
+
+    const error = await host
+      .run("test", "sync", passThrough)
+      .catch((thrown: unknown) => thrown);
+    expect((error as Error).message).toBe(`${"x".repeat(4_095)}…`);
+  });
+
+  it("cuts an uncaught asynchronous throw the same way, however long", async () => {
+    const host = await lifetime(
+      "setTimeout(() => { throw new Error('x'.repeat(100_000)); });",
+    );
+
+    const error = await host
+      .run("test", "sync", passThrough)
+      .catch((thrown: unknown) => thrown);
+    expect((error as Error).message).toBe(`${"x".repeat(4_095)}…`);
+  });
+
+  it.each([
+    [
+      "an uncaught Error with an empty message",
+      "setTimeout(() => { throw new Error(''); });",
+    ],
+    [
+      "an uncaught Error with a blank message",
+      "setTimeout(() => { throw new Error('   '); });",
+    ],
+    [
+      "an uncaught AbortError",
+      "setTimeout(() => { throw new DOMException('', 'AbortError'); });",
+    ],
+    [
+      "a posted blank error",
+      "import {parentPort} from 'node:worker_threads'; parentPort.postMessage({ok:false,error:'  '});",
+    ],
+  ])("never fails with a blank message: %s", async (_, source) => {
+    const host = await lifetime(source);
+
+    const error = await host
+      .run("test", "sync", passThrough)
+      .catch((thrown: unknown) => thrown);
+    expect((error as Error).message).toBe("Unknown plugin error.");
+  });
+
+  it.each(["'x'.repeat(100_000)", "undefined", "0", "null", "false", "''"])(
+    "fails an uncaught asynchronous throw of %s that isn't an Error",
+    async (thrown) => {
+      const host = await lifetime(`setTimeout(() => { throw ${thrown}; });`);
+
+      const error = await host.run("test", "sync", passThrough).then(
+        (result) => ({ resolvedWith: result }),
+        (caught: unknown) => caught,
+      );
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe("Unknown plugin error.");
+      expect(host.activeOperationCount).toBe(0);
+    },
+  );
+
   it("releases capacity when the worker fails to start or exits before replying", async () => {
     const missing = await lifetime(null);
     await expect(missing.run("test", "sync", passThrough)).rejects.toThrow();

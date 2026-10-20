@@ -312,7 +312,7 @@ export async function writeSettle(
 }
 ```
 
-The error message reaches the user as it is, in a toast. Write it as an instruction.
+The error message reaches the user in a toast, with secret connection values replaced by `[secret]` and cut at 1,000 characters. Write it as an instruction, with the useful part first.
 
 ## 7. Run it in Ajour
 

@@ -83,14 +83,14 @@ export async function searchItemPeople(
 ): Promise<BacklogSearchItemPeopleResult>;
 ```
 
-To fail, throw an `Error`. Its message reaches the user as it is. See [Errors](#errors).
+To fail, throw an `Error`. Its message reaches the user, with secret connection values replaced by `[secret]`. See [Errors](#errors).
 
 ## validateConnection
 
 Ajour calls it with the form's values, without the [reserved fields](/developers/manifest#reserved-fields). Saved secrets the user did not retype are filled in. The second argument, `context`, lists in `capabilities` the capabilities the user has on, such as `["connector"]`, so you check only the access they need. Check the credentials against the tool, then return:
 
-- `normalizedConfig`: the values to store. Ajour stores exactly this, so a field you leave out is lost. Trim strings and fix URLs here.
-- `connectionSummary`: optional facts shown on the connection's row, such as the account name. Never secrets.
+- `normalizedConfig`: the values to store. Ajour stores them without its own [reserved fields](/developers/manifest#reserved-fields), so a field you leave out is lost. Trim strings and fix URLs here. Declare every key you return in the manifest: Ajour treats a key the manifest doesn't declare as secret, and replaces its value with `[secret]` in your errors, messages and summary.
+- `connectionSummary`: optional facts shown on the connection's row, such as the account name. Never secrets. Ajour replaces secret connection values in it with `[secret]`, drops an entry whose key holds one, and drops a summary of more than 50 entries.
 
 ## syncConnection
 
@@ -146,7 +146,7 @@ For each field, compare Ajour's value, the tool's value and the baseline:
 
 When the user picks **Keep local** in Sync review, the field comes with `resolution: "keep_local"`. Write Ajour's value and return `pushed`.
 
-Return each field's result in `workItemUpdates`, with `nextBaselineValue` set to the value both sides now agree on. If a write fails, return `status: "error"` and a `message`, and leave out `nextBaselineValue`. Do not throw: the other fields and items still sync.
+Return each field's result in `workItemUpdates`, with `nextBaselineValue` set to the value both sides now agree on. If a write fails, return `status: "error"` and a `message`, and leave out `nextBaselineValue`. Ajour replaces secret connection values in the message with `[secret]`. Do not throw: the other fields and items still sync.
 
 Skip fields the user did not map. The official plugins ship this logic in `src/estimate-sync.ts`. Copy it from [ajc-jira](https://github.com/les-cabochons/ajc-jira/blob/main/src/estimate-sync.ts).
 
@@ -235,7 +235,7 @@ With `mentions: true`, Ajour suggests people when the user types `@` in a commen
 
 - Throw an `Error` whose message tells the user what to do, such as `Set a priority field on the Azure DevOps connection to write priority.`
 - Prefix HTTP failures with the tool's name and status, such as `Jira request failed (401): …`.
-- Ajour shows the message on the connection's row, in a toast, or in the settle error. It cuts messages at 4,096 characters, and at 1,000 on the connection's row, so put the useful part first.
+- Ajour shows the message on the connection's row, in a toast, or in the settle error. It replaces secret connection values with `[secret]`, and cuts messages at 1,000 characters, so put the useful part first.
 - A result that does not match the types below fails the whole call with a validation message. Test your results against the limits.
 
 ## Types

@@ -32,6 +32,11 @@ import {
   agentRunnerSettingsSchema,
   type AgentRunnerSettings,
 } from "../../../packages/shared/agent-runs.ts";
+import {
+  boundConnectionError,
+  ConnectionRedaction,
+  connectionSecretValues,
+} from "./plugin-errors.ts";
 
 interface StoredConnection {
   id: string;
@@ -353,6 +358,10 @@ function compactFieldValues(
   );
 }
 
+/** What the overview shows instead of a last error whose plugin is gone. */
+const UNINSTALLED_PLUGIN_LAST_ERROR =
+  "Hidden because this plugin is no longer installed.";
+
 function createMissingPluginManifest(pluginId: string): PluginOverviewItem {
   return {
     id: pluginId,
@@ -424,13 +433,22 @@ function toEditableValues(
   return editableValues;
 }
 
+/** `installed` is false when the plugin is gone and `plugin` only stands in for it. */
 function buildConnectionSummary(
   state: AppApiState,
   connection: StoredConnection,
   plugin: PluginManifest,
+  installed: boolean,
 ): PluginConnectionSummary {
   const connectionItems = state.stagedImports.filter(
     (item) => item.connectionId === connection.id,
+  );
+  // The plugin wrote the last error and the summary, and either may hold a
+  // secret: an error stored before every route redacted plugin errors, or a
+  // summary stored before saves redacted it. A stand-in says nothing about
+  // which stored values are secret, so then none of their text is shown.
+  const redaction = new ConnectionRedaction(
+    installed ? connectionSecretValues(plugin, [connection.config]) : [],
   );
 
   return {
@@ -447,11 +465,15 @@ function buildConnectionSummary(
     ...(connection.allowLossyConversion ? { allowLossyConversion: true } : {}),
     connectedAt: connection.connectedAt,
     lastSyncAt: connection.lastSyncAt,
-    lastError: connection.lastError,
+    lastError:
+      connection.lastError &&
+      (installed
+        ? redaction.text(connection.lastError)
+        : UNINSTALLED_PLUGIN_LAST_ERROR),
     lastErrorAt: connection.lastErrorAt,
     pendingImportCount: connectionItems.length,
     selectedImportCount: connectionItems.filter((item) => item.selected).length,
-    configSummary: connection.configSummary,
+    configSummary: installed ? redaction.summary(connection.configSummary) : {},
     editableValues: toEditableValues(connection, plugin),
   };
 }
@@ -725,20 +747,6 @@ function normalizeState(
   return migrateLegacyState(raw as AppApiStateV1);
 }
 
-/** The longest last error a connection keeps, as its summary schema allows. */
-export const MAX_CONNECTION_ERROR_CHARACTERS = 1_000;
-
-/**
- * Cuts a connection error to the length its summary allows. A plugin result
- * that breaks the contract can give a validation error of many kilobytes, and
- * storing it whole would make the overview fail to load.
- */
-export function boundConnectionError(message: string) {
-  return message.length <= MAX_CONNECTION_ERROR_CHARACTERS
-    ? message
-    : `${message.slice(0, MAX_CONNECTION_ERROR_CHARACTERS - 1)}…`;
-}
-
 export class AppApiStorage {
   private readonly statePath: string;
   private cache?: AppApiState;
@@ -786,8 +794,10 @@ export class AppApiStorage {
       }
     }
 
+    const missingPluginIds = new Set<string>();
     for (const connection of state.connections) {
       if (!pluginMap.has(connection.pluginId)) {
+        missingPluginIds.add(connection.pluginId);
         pluginMap.set(
           connection.pluginId,
           createMissingPluginManifest(connection.pluginId),
@@ -809,7 +819,14 @@ export class AppApiStorage {
       ).filter((capability) => pluginHasCapability(plugin, capability)),
       connections: state.connections
         .filter((connection) => connection.pluginId === plugin.id)
-        .map((connection) => buildConnectionSummary(state, connection, plugin)),
+        .map((connection) =>
+          buildConnectionSummary(
+            state,
+            connection,
+            plugin,
+            !missingPluginIds.has(plugin.id),
+          ),
+        ),
     }));
 
     return {
