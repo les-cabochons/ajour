@@ -577,6 +577,16 @@ Feature: Backlog list and board views
     When I open Sync review on the parent
     Then Sync review shows "My newer notes" here, not the text from when the conflict began
 
+  Scenario: Following a conflict mark saves the side panel's draft first
+    Given the Backlog parent is synced
+    And its description is in conflict between "My notes" here and "Their notes" in the source
+    When I open the Backlog workspace
+    And I edit the parent item from the Backlog peek
+    And I rename the parent to "Renamed in the panel" in the side panel without saving
+    And I follow the conflict mark on the parent's sidebar row
+    Then Sync review opens on the parent's conflict
+    And the parent's title is "Renamed in the panel", saved on the way
+
   Scenario: Settle a synced item with a comment
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit

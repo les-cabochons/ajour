@@ -347,9 +347,7 @@ export function BacklogItemSurface({
           aria-label="Snoozed"
         />
       )}
-      {hasWorkItemSyncIssue(item) && (
-        <SyncConflictButton item={item} beforeChange={beforeChange} />
-      )}
+      {hasWorkItemSyncIssue(item) && <SyncConflictButton item={item} />}
     </>
   );
   const progressLabel = progress && (

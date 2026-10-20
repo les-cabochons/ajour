@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { setOpenDraftGuard } from "@/features/backlog/open-draft";
 import {
   RiAddLine,
   RiErrorWarningLine,
@@ -195,6 +196,14 @@ export function BacklogPage() {
   async function leaveDraft() {
     return editorRef.current?.commitBeforeSwitch() ?? true;
   }
+  // Leaving from elsewhere, as Sync review's toast does, saves the draft too.
+  useEffect(
+    () =>
+      setOpenDraftGuard(
+        async () => (await editorRef.current?.commitBeforeSwitch()) ?? true,
+      ),
+    [],
+  );
   function showEditor(request: EditorRequest) {
     draft.current = null;
     setEditor(request);

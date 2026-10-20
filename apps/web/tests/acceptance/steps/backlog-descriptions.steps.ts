@@ -210,7 +210,10 @@ When(
 
 Then("Sync review opens on the parent's conflict", async ({ page }) => {
   await expect(page).toHaveURL(/\/settings\/sync-review\?item=parent/);
-  await expect(conflictSection(page)).toHaveAttribute("data-highlighted", "");
+  // Found by the item, whose title the scenario may have changed.
+  await expect(
+    page.locator('section[data-sync-issue-item="parent"]'),
+  ).toHaveAttribute("data-highlighted", "");
 });
 
 Given(
@@ -298,5 +301,29 @@ Then(
     const section = conflictSection(page);
     await expect(section.getByText(local, { exact: true })).toBeVisible();
     await expect(section.getByText("My first notes")).toHaveCount(0);
+  },
+);
+
+When(
+  "I rename the parent to {string} in the side panel without saving",
+  async ({ page }, title: string) => {
+    await page
+      .getByRole("complementary", { name: "Backlog item editor" })
+      .getByRole("textbox", { name: "Item", exact: true })
+      .fill(title);
+  },
+);
+
+Then(
+  "the parent's title is {string}, saved on the way",
+  async ({ page }, title: string) => {
+    const saved = await page.evaluate(
+      () =>
+        JSON.parse(
+          localStorage.getItem("ajour.local-state.v2")!,
+        ).workItems.find((item: { _id: string }) => item._id === "parent")
+          .title,
+    );
+    expect(saved).toBe(title);
   },
 );

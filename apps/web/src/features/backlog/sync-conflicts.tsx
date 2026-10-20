@@ -4,6 +4,7 @@ import { RiAlarmWarningLine } from "@remixicon/react";
 import { TooltipButton } from "@/components/tooltip-button";
 import { showActionToast } from "@/components/ui/toast";
 import type { LocalWorkItem } from "@/domain/local-state";
+import { leaveOpenDraft } from "@/features/backlog/open-draft";
 import { subscribeDescriptionConflicts } from "@/lib/sync-conflict-events";
 import { cn } from "@/lib/utils";
 
@@ -20,14 +21,19 @@ export function parseSyncReviewSearch(
     : {};
 }
 
-/** Opens Sync review on an item's issues. */
+/**
+ * Opens Sync review on an item's issues, once an open backlog draft is
+ * saved; a draft that cannot be saved keeps the user where they are.
+ */
 export function useOpenSyncReview() {
   const navigate = useNavigate();
-  return (itemId?: string) =>
+  return async (itemId?: string) => {
+    if (!(await leaveOpenDraft())) return;
     void navigate({
       to: "/settings/sync-review",
       search: (itemId ? { item: itemId } : {}) as never,
     });
+  };
 }
 
 /**
@@ -37,12 +43,9 @@ export function useOpenSyncReview() {
 export function SyncConflictButton({
   item,
   className,
-  beforeChange,
 }: {
   item: Pick<LocalWorkItem, "_id" | "title">;
   className?: string;
-  /** Saves or keeps an open draft first; false stays put. */
-  beforeChange?: () => boolean | Promise<boolean>;
 }) {
   const openSyncReview = useOpenSyncReview();
   return (
@@ -53,10 +56,9 @@ export function SyncConflictButton({
         "flex size-4 shrink-0 items-center justify-center text-destructive",
         className,
       )}
-      onClick={async (event) => {
+      onClick={(event) => {
         event.stopPropagation();
-        if ((await beforeChange?.()) === false) return;
-        openSyncReview(item._id);
+        void openSyncReview(item._id);
       }}
     >
       <RiAlarmWarningLine className="size-3.5" aria-hidden="true" />
@@ -76,7 +78,7 @@ export function SyncConflictToasts() {
             ? `Description conflict on ${only.title}`
             : `${items.length} description conflicts`,
           actionLabel: "Resolve",
-          onAction: () => openSyncReview.current(only?._id),
+          onAction: () => void openSyncReview.current(only?._id),
         });
       }),
     [],
