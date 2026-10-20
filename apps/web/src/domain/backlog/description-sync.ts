@@ -118,9 +118,18 @@ export function descriptionInConflict(
   item: Described,
   source: BacklogSyncedDescription,
   now: number,
+  /**
+   * The text the local edit began from, when a sync has since moved the
+   * agreed text past it: kept as the agreed text, so a later sync of the
+   * same source text keeps the conflict instead of clearing it.
+   */
+  ancestor?: string,
 ): Described {
   const remote = storedText(source.text);
-  const baseline = item.descriptionSync?.baseline;
+  const baseline =
+    ancestor === undefined
+      ? item.descriptionSync?.baseline
+      : storedText(ancestor);
   const previous = item.descriptionSync?.conflict;
   const sameConflict =
     previous !== undefined &&

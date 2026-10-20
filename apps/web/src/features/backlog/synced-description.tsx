@@ -181,7 +181,7 @@ export function followDescriptionDraft(
 ) {
   const rebased = rebaseDescriptionDraft(base, draft, current);
   if ("text" in rebased) return rebased.text;
-  markDescriptionDraftConflict(itemId);
+  markDescriptionDraftConflict(itemId, base);
   return draft;
 }
 

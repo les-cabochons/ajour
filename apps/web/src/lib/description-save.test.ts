@@ -211,7 +211,7 @@ describe("saving a synced description", () => {
     }));
     const { markDescriptionDraftConflict } =
       await import("@/lib/description-save");
-    markDescriptionDraftConflict(itemId);
+    markDescriptionDraftConflict(itemId, BASE);
     localStore.saveWorkItemEdits(itemId, { description: mine });
     const writes = stubSource(theirs);
 
@@ -222,6 +222,17 @@ describe("saving a synced description", () => {
       remoteText: theirs,
     });
     expect(announced).toEqual([itemId]);
+    // It keeps where the draft began, so a sync of the same source text keeps
+    // the conflict, and a save cannot write over it.
+    expect(item().descriptionSync?.baseline).toBe(BASE);
+    const { reconcileDescription } =
+      await import("@/domain/backlog/description-sync");
+    localStore.updateSyncedDescription(itemId, (latest) =>
+      reconcileDescription(latest, { text: theirs }, Date.now()),
+    );
+    expect(item().descriptionSync?.conflict).toBeDefined();
+    expect(await save()).toEqual({ kind: "conflict" });
+    expect(writes).toEqual([]);
     // The mark is used once: a retry after resolving reads and writes again.
     localStore.takeSourceDescriptionWithUndo(itemId);
     localStore.saveWorkItemEdits(itemId, { description: mine });

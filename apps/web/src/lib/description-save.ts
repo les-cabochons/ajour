@@ -60,12 +60,16 @@ export function saveSyncedDescription(
   itemId: string,
   mode: "save" | "keepMine" = "save",
 ): Promise<DescriptionSaveOutcome> {
-  const draftInConflict = mode === "save" && conflictedDrafts.delete(itemId);
+  const draftAncestor =
+    mode === "save" ? conflictedDrafts.get(itemId) : undefined;
+  conflictedDrafts.delete(itemId);
   const previous = saving.get(itemId);
   const run = (previous ?? Promise.resolve())
     .catch(() => undefined)
     .then(() =>
-      draftInConflict ? recordDraftConflict(itemId) : runSave(itemId, mode),
+      draftAncestor !== undefined
+        ? recordDraftConflict(itemId, draftAncestor)
+        : runSave(itemId, mode),
     );
   saving.set(itemId, run);
   notify();
@@ -82,11 +86,14 @@ export function saveSyncedDescription(
  * cannot take the change in. Kept outside the editor, so a draft carried to
  * another container keeps it too.
  */
-const conflictedDrafts = new Set<string>();
+const conflictedDrafts = new Map<string, string>();
 
-/** Marks the item's open draft as in conflict with what a sync brought. */
-export function markDescriptionDraftConflict(itemId: string) {
-  conflictedDrafts.add(itemId);
+/**
+ * Marks the item's open draft as in conflict with what a sync brought, with
+ * `ancestor`, the item's text the draft began from. The first mark keeps it.
+ */
+export function markDescriptionDraftConflict(itemId: string, ancestor: string) {
+  if (!conflictedDrafts.has(itemId)) conflictedDrafts.set(itemId, ancestor);
 }
 
 /** A new draft of the item's description starts without a conflict. */
@@ -94,14 +101,21 @@ export function clearDescriptionDraftConflict(itemId: string) {
   conflictedDrafts.delete(itemId);
 }
 
-function recordDraftConflict(itemId: string): DescriptionSaveOutcome {
+function recordDraftConflict(
+  itemId: string,
+  ancestor: string,
+): DescriptionSaveOutcome {
   const sync = findItem(itemId)?.descriptionSync;
   if (!sync) return { kind: "agreed" };
-  return recordConflict(itemId, {
-    text: sync.remote,
-    ...(sync.lost ? { lost: sync.lost } : {}),
-    ...(sync.cut ? { cut: true } : {}),
-  });
+  return recordConflict(
+    itemId,
+    {
+      text: sync.remote,
+      ...(sync.lost ? { lost: sync.lost } : {}),
+      ...(sync.cut ? { cut: true } : {}),
+    },
+    ancestor,
+  );
 }
 
 async function runSave(
@@ -189,10 +203,11 @@ async function runSave(
 function recordConflict(
   itemId: string,
   source: BacklogSyncedDescription,
+  ancestor?: string,
 ): DescriptionSaveOutcome {
   const before = findItem(itemId);
   localStore.updateSyncedDescription(itemId, (latest) =>
-    descriptionInConflict(latest, source, Date.now()),
+    descriptionInConflict(latest, source, Date.now(), ancestor),
   );
   const after = findItem(itemId);
   // A conflict the item already had keeps its toast from when it began.
