@@ -73,19 +73,21 @@ const SECRET_MARK = "[secret]";
 const CUT_MARK = "…";
 
 /**
- * The most one text may cost to redact, counted in characters read: the
- * text's length once for each secret that could be in it whole, and in a cut
- * text, its end once for each longer secret. Every step is linear in that
- * count. A text that would cost more is replaced whole by `UNCHECKED_TEXT`,
- * which is safe.
+ * The most one text may cost to redact: one step for each secret it is
+ * checked against, plus the characters read, which are the text's length for
+ * each secret that could be in it whole and, in a cut text, the text before
+ * the "…" for each longer secret. A text is dropped as soon as its count
+ * passes this, and replaced whole by `UNCHECKED_TEXT`, which is safe.
  */
 export const TEXT_WORK_BUDGET = 250_000;
 
 /**
- * The most one `ConnectionRedaction` may cost, across all the texts of a
- * request and the secrets' tables, so a request's time stays bounded however
- * many texts it carries. Once it is spent, every later text that needs
- * checking is replaced by `UNCHECKED_TEXT`.
+ * The most one `ConnectionRedaction` may cost across all the texts of a
+ * request: their steps and reads, a dropped text's steps included, and the
+ * secrets' tables. Once it is spent, every later text that could hold a
+ * secret is replaced by `UNCHECKED_TEXT` at once. A text no secret can be in,
+ * shorter than every secret and not cut, costs one comparison and passes. So a
+ * request costs at most this much, plus a constant per text.
  */
 export const REQUEST_WORK_BUDGET = 5_000_000;
 
@@ -169,13 +171,16 @@ function cutStart(pattern: Pattern, matched: number) {
  * Redacts the texts of one connection within one request, such as its field
  * messages, its summary and its last error. Build one per connection and
  * request, and reuse it for every text. Each secret's table is built once,
- * when a text first needs it, and a secret that can't be in a text costs that
- * text nothing. Each text has its own budget, `TEXT_WORK_BUDGET`, and all of
- * them together `REQUEST_WORK_BUDGET`.
+ * when a text first needs it. A text shorter than every secret and not cut
+ * costs one comparison, and a secret longer than a text is read only for the
+ * cut rule. Each text has its own budget, `TEXT_WORK_BUDGET`, and all of them
+ * together `REQUEST_WORK_BUDGET`.
  */
 export class ConnectionRedaction {
   /** The connection's secrets, shortest first, without empty ones or repeats. */
   private readonly secrets: string[];
+  /** The shortest secret's length, so a text shorter than it is skipped at once. */
+  private readonly shortest: number;
   private readonly patterns = new Map<string, Pattern>();
   private work = 0;
   private spent = false;
@@ -184,24 +189,16 @@ export class ConnectionRedaction {
     this.secrets = [...new Set(secrets)]
       .filter((secret) => secret.length > 0)
       .sort((left, right) => left.length - right.length);
+    this.shortest = this.secrets[0]?.length ?? Infinity;
   }
 
-  /**
-   * Charges a text's reads, and the tables of `needed` not built yet. False
-   * when the text would pass its own budget, and from then on once the
-   * request would pass its.
-   */
-  private charge(reads: number, needed: readonly string[]) {
-    if (reads > TEXT_WORK_BUDGET) return false;
-    const tables = needed.reduce(
-      (sum, secret) => sum + (this.patterns.has(secret) ? 0 : secret.length),
-      0,
-    );
-    if (this.spent || this.work + reads + tables > REQUEST_WORK_BUDGET) {
+  /** Charges `work` to the request. False, from then on, once it would pass its budget. */
+  private spend(work: number) {
+    if (this.spent || this.work + work > REQUEST_WORK_BUDGET) {
       this.spent = true;
       return false;
     }
-    this.work += reads + tables;
+    this.work += work;
     return true;
   }
 
@@ -219,24 +216,36 @@ export class ConnectionRedaction {
     const keptLength = message.endsWith(CUT_MARK)
       ? message.length - CUT_MARK.length
       : -1;
+    // No secret fits in the text, and no cut can have split one.
+    if (message.length < this.shortest && keptLength <= 0) return message;
+    if (this.spent) return undefined;
     // A secret longer than the text can't be in it whole. It matters only
-    // where a cut may have split it, and only the text's end can hold that.
+    // where a cut may have split it, and then the whole text before the "…"
+    // is read.
     const whole: string[] = [];
     const cutOnly: string[] = [];
+    let steps = 0;
     let reads = 0;
+    let tables = 0;
     for (const secret of this.secrets) {
       if (secret.length <= message.length) {
         whole.push(secret);
         reads += message.length;
       } else if (keptLength > 0) {
         cutOnly.push(secret);
-        reads += Math.min(secret.length - 1, keptLength);
+        reads += keptLength;
       } else {
         break;
       }
+      steps += 1;
+      if (!this.patterns.has(secret)) tables += secret.length;
+      if (steps + reads > TEXT_WORK_BUDGET) {
+        this.spend(steps);
+        return undefined;
+      }
     }
     if (whole.length === 0 && cutOnly.length === 0) return message;
-    if (!this.charge(reads, [...whole, ...cutOnly])) return undefined;
+    if (!this.spend(steps + reads + tables)) return undefined;
     // The start of the mark that covers each character, or -1.
     const markAt = new Int32Array(message.length).fill(-1);
     for (
@@ -269,14 +278,11 @@ export class ConnectionRedaction {
         }
       });
     }
+    const kept = message.slice(0, keptLength);
     for (const secret of cutOnly) {
       const pattern = this.pattern(secret);
-      const tail = message.slice(
-        keptLength - Math.min(secret.length - 1, keptLength),
-        keptLength,
-      );
       let matched = 0;
-      scan(pattern, tail, (_, state) => {
+      scan(pattern, kept, (_, state) => {
         matched = state;
       });
       cutLength = Math.max(cutLength, cutStart(pattern, matched));
@@ -303,11 +309,20 @@ export class ConnectionRedaction {
    */
   bound(message: string): string | undefined {
     if (message.length <= MAX_CONNECTION_ERROR_CHARACTERS) return message;
+    if (this.spent) return undefined;
     const limit = MAX_CONNECTION_ERROR_CHARACTERS - CUT_MARK.length;
     // A secret of any length can start right before the cut.
-    if (!this.charge(limit * this.secrets.length, this.secrets)) {
+    const steps = this.secrets.length;
+    const reads = limit * steps;
+    if (steps + reads > TEXT_WORK_BUDGET) {
+      this.spend(1);
       return undefined;
     }
+    let tables = 0;
+    for (const secret of this.secrets) {
+      if (!this.patterns.has(secret)) tables += secret.length;
+    }
+    if (!this.spend(steps + reads + tables)) return undefined;
     // Where the cut may not fall: inside a mark, or right after the start
     // of a secret.
     const blocked = new Uint8Array(limit + 1);

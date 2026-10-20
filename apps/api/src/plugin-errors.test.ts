@@ -167,7 +167,7 @@ describe("plugin error messages", () => {
     ).toEqual({ site: "https://acme.example" });
   });
 
-  it("drops a summary of more than 50 entries, or one too costly to check, quickly", () => {
+  it("drops a summary of more than 50 entries, and keeps one no secret can be in, quickly", () => {
     const manySecrets = connectionSecretValues(plugin, [
       Object.fromEntries(
         Array.from({ length: 20_000 }, (_, index) => [
@@ -377,6 +377,40 @@ describe("one redaction per connection and request", () => {
 
     expect(redaction.text("x".repeat(300_000))).toBe(UNCHECKED);
     expect(redaction.text("Bad s3cret.")).toBe("Bad [secret].");
+  });
+
+  it("stays quick when 20,000 stored values meet 20,000 cut messages", () => {
+    const started = performance.now();
+    const redaction = new ConnectionRedaction(
+      Array.from(
+        { length: 20_000 },
+        (_, index) => `stored-value-${index}-abcdefgh`,
+      ),
+    );
+    const results = Array.from({ length: 20_000 }, () =>
+      redaction.text("Estimate rejected…"),
+    );
+
+    expect(performance.now() - started).toBeLessThan(300);
+    // Each needs the cut rule against all 20,000, past its own budget.
+    expect(results.every((result) => result === UNCHECKED)).toBe(true);
+  });
+
+  it("stays quick when 100,000 short secrets meet 100,000 messages", () => {
+    const started = performance.now();
+    const redaction = new ConnectionRedaction(
+      Array.from(
+        { length: 100_000 },
+        (_, index) => `s${index.toString(36).padStart(5, "0")}`,
+      ),
+    );
+    const results = Array.from({ length: 100_000 }, () =>
+      redaction.text("Estimate rejected."),
+    );
+
+    expect(performance.now() - started).toBeLessThan(300);
+    // Every secret could be in each message, past its own budget.
+    expect(results.every((result) => result === UNCHECKED)).toBe(true);
   });
 
   it("hides the rest once the request's budget is spent, but not a text no secret can be in", () => {

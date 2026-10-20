@@ -104,11 +104,15 @@ admitted the call with. An update that lands while a request waits counts, so
 one that marks a field secret tightens redaction, and one that drops
 `secret: true` loosens it, as it does for every later call. A request builds
 one redaction per connection and reuses it for every text, so each secret's
-table is built once. Each text has a work budget, and the request a total
-one, so the time stays bounded per request. A text that can't be checked
-within them, because of its own length or the connection's secrets, is
-replaced whole by "Hidden because it couldn't be checked for secrets.", and
-such a summary is dropped.
+table is built once. Each text has a work budget, counting one step per
+secret it is checked against and the characters read, and is dropped as soon
+as it passes it. The request has a total budget that counts every text's
+work, a dropped text's included. Once that is spent, every later text that
+could hold a secret is dropped at once, and a text shorter than every secret
+and not cut passes after one comparison. So a request costs at most its
+budget, plus a constant per text. A dropped text, whether its own length or
+the connection's secrets made it too costly, is replaced whole by "Hidden
+because it couldn't be checked for secrets.", and such a summary is dropped.
 Text the plugin writes itself in a successful result is redacted the same
 way: a field's sync message, and the connection summary. A save redacts the
 summary before storing it, against the submitted, previous and normalized
