@@ -8,13 +8,68 @@ const CRASH_PERIOD_MS = 60_000;
  * in a loop. A hung page gets Wait and Reload, and a failed load gets Try
  * again and Quit. Call `load` instead of `window.loadURL`.
  *
- * These handlers are where the wide-events work (#308) emits `process.gone`,
- * `window.unresponsive` and the window load event.
+ * One recovery dialog shows at a time. A newer recovery closes the open one,
+ * and an answer from a closed dialog is ignored.
  */
 function watchWindow(window, { url, dialog, quit, now = Date.now }) {
   let recentCrashes = [];
-  let latestLoad = 0;
-  let hangQuestion = null;
+  let loadGeneration = 0;
+  /** The open dialog: its kind, and the controller that closes it. */
+  let openQuestion = null;
+  /** Set while Reload from the not-responding dialog kills the page. */
+  let killingHungPage = false;
+
+  function closeOpenQuestion() {
+    openQuestion?.controller.abort();
+    openQuestion = null;
+  }
+
+  /**
+   * Shows a recovery dialog in place of any open one. Resolves the chosen
+   * button's label, or null when a newer recovery closed the dialog or the
+   * window closed. Rejects when the dialog cannot show.
+   */
+  async function ask(kind, { buttons, ...options }) {
+    closeOpenQuestion();
+    const question = { kind, controller: new AbortController() };
+    openQuestion = question;
+    try {
+      const { response } = await dialog.showMessageBox(window, {
+        title: "Ajour",
+        buttons,
+        defaultId: 0,
+        noLink: true,
+        signal: question.controller.signal,
+        ...options,
+      });
+      return openQuestion === question && !window.isDestroyed()
+        ? buttons[response]
+        : null;
+    } finally {
+      if (openQuestion === question) {
+        openQuestion = null;
+      }
+    }
+  }
+
+  /**
+   * Asks to retry or quit. Its first button runs `retry`. When the dialog
+   * cannot show, Ajour quits rather than leave a blank window.
+   */
+  async function askToRetryOrQuit(options, retry) {
+    const [retryLabel, quitLabel] = options.buttons;
+    let choice;
+    try {
+      choice = await ask("retry", { ...options, cancelId: 1 });
+    } catch {
+      choice = quitLabel;
+    }
+    if (choice === retryLabel) {
+      retry();
+    } else if (choice === quitLabel) {
+      quit();
+    }
+  }
 
   /**
    * Loads the app. Never rejects: a failure offers Try again and Quit. Only
@@ -22,14 +77,14 @@ function watchWindow(window, { url, dialog, quit, now = Date.now }) {
    * since a newer navigation replaced it.
    */
   async function load() {
-    latestLoad += 1;
-    const thisLoad = latestLoad;
+    loadGeneration += 1;
+    const thisLoad = loadGeneration;
     try {
       await window.loadURL(url);
     } catch (error) {
       if (
         window.isDestroyed() ||
-        thisLoad !== latestLoad ||
+        thisLoad !== loadGeneration ||
         error?.code === "ERR_ABORTED"
       ) {
         return;
@@ -46,40 +101,12 @@ function watchWindow(window, { url, dialog, quit, now = Date.now }) {
     }
   }
 
-  /**
-   * Shows a Retry-or-Quit dialog. Its first button runs `retry`. When the
-   * dialog cannot show, Ajour quits rather than leave a blank window.
-   */
-  async function askToRetryOrQuit(options, retry) {
-    let response;
-    try {
-      ({ response } = await dialog.showMessageBox(window, {
-        title: "Ajour",
-        defaultId: 0,
-        cancelId: 1,
-        noLink: true,
-        ...options,
-      }));
-    } catch {
-      response = 1;
-    }
-    if (window.isDestroyed()) {
-      return;
-    }
-    if (response === 0) {
-      retry();
-    } else {
-      quit();
-    }
-  }
-
   function askAfterRepeatedCrashes() {
     void askToRetryOrQuit(
       {
         type: "error",
         message: "Ajour keeps crashing",
-        detail:
-          "The window crashed three times within a minute, so Ajour stopped reloading it.",
+        detail: `The window crashed ${CRASH_LIMIT} times within ${CRASH_PERIOD_MS / 1000} seconds, so Ajour stopped reloading it.`,
         buttons: ["Reload", "Quit"],
       },
       () => {
@@ -89,62 +116,52 @@ function watchWindow(window, { url, dialog, quit, now = Date.now }) {
     );
   }
 
-  /** Closes the not-responding dialog, which answers Wait. */
-  function closeHangQuestion() {
-    hangQuestion?.abort();
-    hangQuestion = null;
-  }
-
   // Reload kills the hung renderer, as Electron documents for this event, and
   // the crash handler below loads the app in a fresh one.
   window.webContents.on("unresponsive", async () => {
-    if (window.isDestroyed() || hangQuestion) {
+    if (window.isDestroyed() || openQuestion?.kind === "hang") {
       return;
     }
 
-    const question = new AbortController();
-    hangQuestion = question;
-    let response = 0;
-    try {
-      ({ response } = await dialog.showMessageBox(window, {
-        type: "warning",
-        title: "Ajour",
-        message: "Ajour is not responding",
-        detail:
-          "Wait for it to recover, or reload the window. Reloading loses changes that are not saved yet.",
-        buttons: ["Wait", "Reload"],
-        defaultId: 0,
-        cancelId: 0,
-        noLink: true,
-        signal: question.signal,
-      }));
-    } catch {
-      // Without the dialog, Ajour waits: the page may still recover.
-    }
-    if (hangQuestion === question) {
-      hangQuestion = null;
-    }
-    if (response === 1 && !question.signal.aborted && !window.isDestroyed()) {
+    const choice = await ask("hang", {
+      type: "warning",
+      message: "Ajour is not responding",
+      detail:
+        "Wait for it to recover, or reload the window. Reloading loses changes that are not saved yet.",
+      buttons: ["Wait", "Reload"],
+      cancelId: 0,
+    }).catch(() => "Wait");
+    if (choice === "Reload") {
+      killingHungPage = true;
       window.webContents.forcefullyCrashRenderer();
     }
   });
 
-  window.webContents.on("responsive", closeHangQuestion);
+  window.webContents.on("responsive", () => {
+    if (openQuestion?.kind === "hang") {
+      closeOpenQuestion();
+    }
+  });
 
   window.webContents.on("render-process-gone", () => {
-    closeHangQuestion();
+    // The crash starts a new recovery: earlier dialogs and loads are outdated.
+    closeOpenQuestion();
+    loadGeneration += 1;
+    const killedOnPurpose = killingHungPage;
+    killingHungPage = false;
     if (window.isDestroyed()) {
       return;
     }
 
-    // The crash ends any load in progress, so its failure is not reported.
-    latestLoad += 1;
-    const time = now();
-    recentCrashes = [
-      ...recentCrashes.filter((crash) => time - crash < CRASH_PERIOD_MS),
-      time,
-    ];
-    const repeated = recentCrashes.length >= CRASH_LIMIT;
+    let repeated = false;
+    if (!killedOnPurpose) {
+      const time = now();
+      recentCrashes = [
+        ...recentCrashes.filter((crash) => time - crash < CRASH_PERIOD_MS),
+        time,
+      ];
+      repeated = recentCrashes.length >= CRASH_LIMIT;
+    }
 
     // Navigating while Electron still reports the crash fails a Chromium check
     // that ends the main process, so the reload, or the dialog that may lead

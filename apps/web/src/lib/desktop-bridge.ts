@@ -93,15 +93,17 @@ export interface DesktopAppMenu {
 declare global {
   interface Window {
     ajourDesktop?: {
+      // The synchronous answers below are null when the main process could
+      // not produce them.
       bootstrapLocalState?: Partial<LocalAppState> | null;
       runtime?: {
         automaticUpdatesEnabled: boolean;
         developmentBuild: boolean;
         platform: string;
         version: string;
-      };
+      } | null;
       /** The app menu. Windows draws it in the title bar. */
-      appMenu?: DesktopAppMenu[];
+      appMenu?: DesktopAppMenu[] | null;
       /** Runs `callback` with the action id of each app menu item the user picks. */
       onMenuAction?: (callback: (action: string) => void) => () => void;
       /** Runs a role item of the app menu, such as Copy, in the main process. */

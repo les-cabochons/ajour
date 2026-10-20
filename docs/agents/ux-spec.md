@@ -598,17 +598,20 @@ Decided in [Sidebar footer actions and user-controlled application updates](http
 - The button reports checking, confirmation, download progress, and restart without resizing the footer. It ignores repeated actions while busy. Errors offer another check. Settings shares the same state and offers Check again and, while available, Update and restart.
 - Changing release track invalidates the old candidate and cancels its download. Once installation starts, the track is locked through shutdown and restart. Late results from the old track cannot trigger installation. A temporary check failure retains a previously discovered candidate on the same track.
 - Desktop platforms without in-place installation open the release page for manual installation. The browser app has no footer update button. Hidden sidebars and the narrow view keep their existing layout; Settings and the desktop menu remain available.
-- Update and restart waits at most ten seconds for plugins to stop, as quitting does (see Desktop window and quitting).
+- Update and restart waits at most ten seconds for plugins to stop, then installs, even when they failed to stop, as quitting does (see Desktop window and quitting).
 
 ## Desktop window and quitting
 
 Decided in [#331](https://github.com/les-cabochons/ajour/issues/331).
 
 - When the window crashes, Ajour reloads it at its start page. The third crash within a minute stops the reloads, and a dialog says "Ajour keeps crashing" and offers Reload and Quit. Reload starts the count again.
-- When the window stops responding, a dialog says "Ajour is not responding" and offers Wait, the default, and Reload. It closes by itself when the window responds again. Reload restarts the page, and changes that are not saved yet are lost.
-- When the window cannot load Ajour, a dialog says "Ajour could not load its window", gives the reason, and offers Try again and Quit. Any other startup failure shows "Ajour could not start" with the reason, and Ajour quits.
+- When the window stops responding, a dialog says "Ajour is not responding" and offers Wait, the default, and Reload. It closes by itself when the window responds again. Reload restarts the page, and changes that are not saved yet are lost. That restart does not count as a crash.
+- When the window cannot load Ajour, a dialog says "Ajour could not load its window", gives the reason, and offers Try again and Quit.
+- When the window itself cannot open, Ajour shows "Ajour could not start" with the reason, and quits.
+- A local API that cannot start, for example because another app holds its port, is not a startup failure. The window opens and Ajour works without plugins (see Settings).
+- One of these dialogs shows at a time. A crash or a newer dialog closes an open one, and the closed dialog's answer does nothing.
 - Web and mail links open in the system browser or mail app. Any other link does nothing, including links to local files or to another app.
-- Quitting waits at most ten seconds for plugins and a running agent to stop, then quits anyway.
+- Quitting waits at most ten seconds for plugins and a running agent to stop, then quits anyway. It also quits when they fail to stop.
 
 ## Backlog sidebar
 

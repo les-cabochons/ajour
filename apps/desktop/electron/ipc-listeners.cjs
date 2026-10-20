@@ -3,8 +3,6 @@
  * the main process. A throw in a plain `ipcMain.on` listener is an uncaught
  * exception there; `ipcMain.handle` handlers need no wrapper, since Electron
  * turns their throws into rejected invokes.
- *
- * The catch blocks are where the wide-events work (#308) emits the failure.
  */
 function createIpcListeners(ipcMain) {
   return {

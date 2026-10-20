@@ -34,8 +34,11 @@ interface FakeDialog {
   ) => Promise<{ response: number }>;
   /** Every message box shown, in order. */
   shown: MessageBoxOptions[];
-  /** Answers the latest open message box with the button labelled `label`. */
-  choose: (label: string) => Promise<void>;
+  /**
+   * Answers a message box, the latest unless `which` gives its index, with the
+   * button labelled `label`.
+   */
+  choose: (label: string, which?: number) => Promise<void>;
 }
 
 type FakeWindow = ReturnType<typeof fakeWindow>;
@@ -64,7 +67,11 @@ function fakeWindow() {
   };
 }
 
-function fakeDialog(): FakeDialog {
+/**
+ * As in Electron, an aborted message box answers its cancel button, unless
+ * `closesOnAbort` is false, which stands for a box the system could not close.
+ */
+function fakeDialog({ closesOnAbort = true } = {}): FakeDialog {
   const shown: MessageBoxOptions[] = [];
   const pending: Array<(response: number) => void> = [];
   return {
@@ -74,14 +81,16 @@ function fakeDialog(): FakeDialog {
       return new Promise<{ response: number }>((resolve) => {
         const answer = (response: number) => resolve({ response });
         pending.push(answer);
-        options.signal?.addEventListener("abort", () =>
-          answer(options.cancelId ?? 0),
-        );
+        if (closesOnAbort) {
+          options.signal?.addEventListener("abort", () =>
+            answer(options.cancelId ?? 0),
+          );
+        }
       });
     }),
-    async choose(label) {
-      const options = shown.at(-1);
-      const answer = pending.at(-1);
+    async choose(label, which = shown.length - 1) {
+      const options = shown[which];
+      const answer = pending[which];
       if (!options || !answer) throw new Error("No message box is open.");
       const response = options.buttons.indexOf(label);
       if (response < 0) throw new Error(`No "${label}" button.`);
@@ -107,9 +116,9 @@ function crash(window: FakeWindow, reason = "crashed") {
   window.webContents.emit("render-process-gone", {}, { reason, exitCode: 1 });
 }
 
-function setUp() {
+function setUp({ closesOnAbort = true } = {}) {
   const window = fakeWindow();
-  const dialog = fakeDialog();
+  const dialog = fakeDialog({ closesOnAbort });
   const quit = vi.fn();
   let time = 0;
   const recovery = watchWindow(window, {
@@ -194,6 +203,8 @@ describe("window recovery", () => {
     expect(dialog.shown).toHaveLength(1);
     expect(dialog.shown[0]).toMatchObject({
       message: "Ajour keeps crashing",
+      detail:
+        "The window crashed 3 times within 60 seconds, so Ajour stopped reloading it.",
       buttons: ["Reload", "Quit"],
     });
   });
@@ -293,6 +304,62 @@ describe("window recovery", () => {
     expect(quit).toHaveBeenCalledOnce();
   });
 
+  it("closes a failed-load dialog when the page crashes, and ignores its answer", async () => {
+    const { window, dialog, quit, recovery } = setUp();
+    window.loadURL.mockRejectedValueOnce(
+      loadError("ERR_FAILED", "(-2) loading 'app://local/'"),
+    );
+    await recovery.load();
+    await flush();
+
+    crash(window);
+    await flush();
+
+    expect(dialog.shown[0]?.signal?.aborted).toBe(true);
+    expect(quit).not.toHaveBeenCalled();
+    expect(window.loadURL).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["Try again", "Quit"])(
+    "ignores %s from a failed-load dialog that a crash made outdated",
+    async (label) => {
+      const { window, dialog, quit, recovery } = setUp({
+        closesOnAbort: false,
+      });
+      window.loadURL.mockRejectedValueOnce(
+        loadError("ERR_FAILED", "(-2) loading 'app://local/'"),
+      );
+      await recovery.load();
+      await flush();
+      crash(window);
+      await flush();
+
+      await dialog.choose(label, 0);
+
+      // The first load and the crash's reload, nothing more.
+      expect(window.loadURL).toHaveBeenCalledTimes(2);
+      expect(quit).not.toHaveBeenCalled();
+    },
+  );
+
+  it("replaces an open not-responding dialog with a failed-load one", async () => {
+    const { window, dialog, recovery } = setUp({ closesOnAbort: false });
+    await recovery.load();
+    window.webContents.emit("unresponsive");
+    await flush();
+    window.loadURL.mockRejectedValueOnce(
+      loadError("ERR_FAILED", "(-2) loading 'app://local/'"),
+    );
+
+    await recovery.load();
+    await flush();
+    await dialog.choose("Reload", 0);
+
+    expect(dialog.shown[0]?.signal?.aborted).toBe(true);
+    expect(dialog.shown[1]?.message).toBe("Ajour could not load its window");
+    expect(window.webContents.forcefullyCrashRenderer).not.toHaveBeenCalled();
+  });
+
   it("stays quiet when a newer navigation aborts the load", async () => {
     const { window, dialog, recovery } = setUp();
     window.loadURL.mockRejectedValueOnce(
@@ -354,6 +421,25 @@ describe("window recovery", () => {
     await flush();
     expect(window.webContents.forcefullyCrashRenderer).toHaveBeenCalledOnce();
     expect(window.loadURL).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not count a Reload from the not-responding dialog as a crash", async () => {
+    const { window, dialog, recovery } = setUp();
+    await recovery.load();
+    crash(window);
+    crash(window);
+    await flush();
+
+    window.webContents.emit("unresponsive");
+    await flush();
+    await dialog.choose("Reload");
+    await flush();
+    expect(window.loadURL).toHaveBeenCalledTimes(4);
+    expect(dialog.shown).toHaveLength(1);
+
+    crash(window);
+    await flush();
+    expect(dialog.shown.at(-1)?.message).toBe("Ajour keeps crashing");
   });
 
   it("leaves the page alone when the user chooses Wait", async () => {

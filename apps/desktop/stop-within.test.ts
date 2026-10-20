@@ -6,7 +6,7 @@ const { stopWithin } = require("./electron/stop-within.cjs") as {
   stopWithin: (
     stopping: Promise<unknown>,
     timeoutMs: number,
-  ) => Promise<"stopped" | "timed-out">;
+  ) => Promise<"stopped" | "failed" | "timed-out">;
 };
 
 beforeEach(() => {
@@ -34,13 +34,13 @@ describe("stopping within a time limit", () => {
     expect(settled).toHaveBeenCalledWith("timed-out");
   });
 
-  it("passes on a stop that fails in time", async () => {
+  it("reports a stop that fails, without rejecting", async () => {
     const outcome = stopWithin(
-      Promise.reject(new Error("plugin hung")),
+      Promise.reject(new Error("plugin manager refused to stop")),
       10_000,
     );
 
-    await expect(outcome).rejects.toThrow("plugin hung");
+    await expect(outcome).resolves.toBe("failed");
   });
 
   it("leaves no timer behind once the stop finishes", async () => {

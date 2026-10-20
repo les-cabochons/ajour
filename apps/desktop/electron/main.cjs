@@ -101,7 +101,7 @@ let internalAppApiServer = null;
 let internalAppApiStartPromise = null;
 let internalAppApiStopPromise = null;
 let internalAppApiModulePromise = null;
-let desktopBootstrapLocalState = null;
+let desktopBootstrapLocalState;
 let developmentPluginDirectoriesOverride;
 let mainWindow = null;
 let gracefulQuitStarted = false;
@@ -130,13 +130,8 @@ const automaticUpdateController = createAutomaticUpdateController({
   },
   dialog,
   getMainWindow: () => mainWindow,
-  prepareToInstall: async () => {
-    await stopInternalAppApiWithinTimeout();
-    gracefulQuitStarted = true;
-  },
-  resetInstallPreparation: () => {
-    gracefulQuitStarted = false;
-  },
+  prepareToInstall: prepareToInstallUpdate,
+  resetInstallPreparation: cancelUpdateInstallPreparation,
 });
 
 const developmentPluginSettingsPath = path.join(
@@ -191,11 +186,16 @@ function schedulePluginCatalogRefresh() {
 // the main process. A failed synchronous request answers null.
 const ipc = createIpcListeners(ipcMain);
 
+// Read once per launch. A read that finds nothing or fails stays null until
+// the next launch, even when a crashed window reloads and asks again.
 ipc.answerSync("ajour:get-bootstrap-local-state", () => {
-  desktopBootstrapLocalState ??= loadDesktopBootstrapLocalState({
-    appDataPath: app.getPath("appData"),
-    currentUserDataPath: app.getPath("userData"),
-  });
+  if (desktopBootstrapLocalState === undefined) {
+    desktopBootstrapLocalState = null;
+    desktopBootstrapLocalState = loadDesktopBootstrapLocalState({
+      appDataPath: app.getPath("appData"),
+      currentUserDataPath: app.getPath("userData"),
+    });
+  }
   return desktopBootstrapLocalState;
 });
 
@@ -727,11 +727,26 @@ async function stopInternalAppApi() {
 const INTERNAL_APP_API_STOP_TIMEOUT_MS = 10_000;
 
 /**
- * Stops the local API for a quit or an update. Resolves "timed-out" when it is
- * still stopping after the timeout, so quitting never hangs on it.
+ * Stops the local API for a quit or an update, and never rejects. Resolves
+ * "stopped", "failed", or "timed-out" when it is still stopping after the
+ * timeout, so quitting never hangs on it.
  */
 function stopInternalAppApiWithinTimeout() {
   return stopWithin(stopInternalAppApi(), INTERNAL_APP_API_STOP_TIMEOUT_MS);
+}
+
+/**
+ * Runs before an update installs, which quits Ajour. Like an ordinary quit, it
+ * goes ahead whether the local API stopped, failed to stop or timed out.
+ */
+async function prepareToInstallUpdate() {
+  await stopInternalAppApiWithinTimeout();
+  gracefulQuitStarted = true;
+}
+
+/** The update did not install, so the next quit stops the local API again. */
+function cancelUpdateInstallPreparation() {
+  gracefulQuitStarted = false;
 }
 
 async function resolveRendererUrl() {
@@ -837,7 +852,7 @@ async function applyDevelopmentPluginDirectories(directories) {
 
 /**
  * Opens a web or mail link in the system's browser or mail app. A link the
- * system cannot open is dropped; the wide-events work (#308) emits it here.
+ * system cannot open is dropped.
  */
 function openExternalLink(url) {
   shell.openExternal(url).catch(() => {});
@@ -846,7 +861,8 @@ function openExternalLink(url) {
 /**
  * Startup failed before the window could load, as when the window cannot be
  * created. Says why and quits, so no windowless process keeps the instance
- * lock. The wide-events work (#308) emits `app.error` here.
+ * lock. A local API that cannot start is not such a failure: Ajour opens
+ * without plugins.
  */
 function quitAfterStartupFailure(error) {
   dialog.showErrorBox(
@@ -888,9 +904,7 @@ async function createMainWindow() {
     }
   });
 
-  // Reloads a crashed page, asks about a hung one or a failed load, and is
-  // where the wide-events work (#308) emits `process.gone` and
-  // `window.unresponsive`.
+  // Reloads a crashed page, and asks about a hung one or a failed load.
   const recovery = watchWindow(window, {
     url: rendererUrl,
     dialog,
@@ -993,20 +1007,17 @@ if (!hasSingleInstanceLock) {
     }
     event.preventDefault();
     automaticUpdateController.dispose();
-    // A failed stop still quits. The wide-events work (#308) emits the quit's
-    // outcome here.
-    stopInternalAppApiWithinTimeout()
-      .catch(() => "failed")
-      .then((outcome) => {
-        gracefulQuitStarted = true;
-        if (outcome === "timed-out") {
-          // Skips the window and quit events, which could wait again. Plugin
-          // workers are threads, so they end with the process.
-          app.exit(0);
-          return;
-        }
-        app.quit();
-      });
+    // A failed stop still quits.
+    void stopInternalAppApiWithinTimeout().then((outcome) => {
+      gracefulQuitStarted = true;
+      if (outcome === "timed-out") {
+        // Skips the window and quit events, which could wait again. Plugin
+        // workers are threads, so they end with the process.
+        app.exit(0);
+        return;
+      }
+      app.quit();
+    });
   });
 
   app.on("window-all-closed", () => {

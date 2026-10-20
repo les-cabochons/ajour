@@ -47,35 +47,13 @@ describe("desktop plugin lifecycle", () => {
     expect(source).not.toContain("resolveBundledPluginArchives()");
     expect(source).toContain("installedPluginDirectory:");
     expect(source).not.toContain("installPendingUpdate");
-    // main-process-errors.test.ts runs this handler: a stop that hangs or
-    // fails still ends the process.
-    const beforeQuit = source.slice(source.indexOf('app.on("before-quit"'));
-    expect(beforeQuit).toContain("stopInternalAppApiWithinTimeout()");
-  });
-
-  it("does not poison graceful quit state when update preparation fails", async () => {
-    const source = await readFile(
-      new URL("./electron/main.cjs", import.meta.url),
-      "utf8",
+    // main-process-errors.test.ts runs the quit and update preparation: a stop
+    // that hangs or fails still ends the process, and a cancelled update
+    // leaves the next quit stopping the API again.
+    expect(source).toContain("prepareToInstall: prepareToInstallUpdate");
+    expect(source).toContain(
+      "resetInstallPreparation: cancelUpdateInstallPreparation",
     );
-
-    const preparationStart = source.indexOf("prepareToInstall: async () => {");
-    const stopIndex = source.indexOf(
-      "await stopInternalAppApiWithinTimeout();",
-      preparationStart,
-    );
-    const quitFlagIndex = source.indexOf(
-      "gracefulQuitStarted = true;",
-      preparationStart,
-    );
-    const preparationEnd = source.indexOf("},", preparationStart);
-
-    expect(preparationStart).toBeGreaterThan(-1);
-    expect(stopIndex).toBeGreaterThan(preparationStart);
-    expect(quitFlagIndex).toBeGreaterThan(stopIndex);
-    expect(quitFlagIndex).toBeLessThan(preparationEnd);
-    expect(source).toContain("resetInstallPreparation: () => {");
-    expect(source).toContain("gracefulQuitStarted = false;");
   });
 
   it("keeps plugin installation behind the active desktop window IPC bridge", async () => {

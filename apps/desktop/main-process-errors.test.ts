@@ -4,6 +4,10 @@ import { createRequire } from "node:module";
 import vm from "node:vm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// main.cjs runs only inside Electron, so these tests run its wiring, statement
+// by statement, in a VM context with Electron replaced. The rules themselves
+// live in the electron/*.cjs modules and have their own tests.
+
 const require = createRequire(import.meta.url);
 const { classifyNavigation } = require("./electron/navigation.cjs");
 const { createIpcListeners } = require("./electron/ipc-listeners.cjs");
@@ -15,14 +19,34 @@ const source = await readFile(
   "utf8",
 );
 
-/** The part of main.cjs from `start` up to `end`, or to the end of the file. */
-function section(start: string, end?: string) {
-  const startIndex = source.indexOf(start);
-  expect(startIndex, start).toBeGreaterThanOrEqual(0);
-  if (end === undefined) return source.slice(startIndex);
-  const endIndex = source.indexOf(end, startIndex);
-  expect(endIndex, end).toBeGreaterThan(startIndex);
-  return source.slice(startIndex, endIndex);
+/**
+ * The whole statement of main.cjs whose first line starts with `opening`: a
+ * one-line statement, or everything up to the bracket that closes it at the
+ * same indentation. Independent of what comes before or after it.
+ */
+function statement(opening: string) {
+  const start = source.indexOf(opening);
+  expect(start, opening).toBeGreaterThanOrEqual(0);
+  const lineStart = source.lastIndexOf("\n", start) + 1;
+  const indent = source.slice(lineStart, start);
+  const firstLineEnd = source.indexOf("\n", start);
+  if (!/[{([]\s*$/.test(source.slice(start, firstLineEnd))) {
+    return source.slice(lineStart, firstLineEnd + 1);
+  }
+
+  const closing = new RegExp(`\\n${indent}[})\\]][^\\n]*`, "g");
+  closing.lastIndex = firstLineEnd;
+  for (let match = closing.exec(source); match; match = closing.exec(source)) {
+    // `} else {` closes one branch and opens the next.
+    if (!/[{([]\s*$/.test(match[0])) {
+      return `${source.slice(lineStart, match.index + match[0].length)}\n`;
+    }
+  }
+  throw new Error(`No end for: ${opening}`);
+}
+
+function run(context: vm.Context, ...openings: string[]) {
+  vm.runInContext(openings.map(statement).join("\n"), context);
 }
 
 async function flush() {
@@ -37,7 +61,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("quitting", () => {
+describe("quitting and installing an update", () => {
   function quitRuntime(stopInternalAppApi: () => Promise<void>) {
     const handlers = new Map<string, (event: unknown) => void>();
     const app = {
@@ -48,7 +72,6 @@ describe("quitting", () => {
     };
     const context = vm.createContext({
       app,
-      process: { platform: "win32" },
       clearInterval,
       gracefulQuitStarted: false,
       pluginCatalogRefreshTimer: null,
@@ -56,12 +79,13 @@ describe("quitting", () => {
       stopInternalAppApi,
       stopWithin,
     });
-    vm.runInContext(
-      section(
-        "const INTERNAL_APP_API_STOP_TIMEOUT_MS",
-        "async function resolveRendererUrl()",
-      ) + section('app.on("before-quit"', 'app.on("window-all-closed"'),
+    run(
       context,
+      "const INTERNAL_APP_API_STOP_TIMEOUT_MS",
+      "function stopInternalAppApiWithinTimeout(",
+      "async function prepareToInstallUpdate(",
+      "function cancelUpdateInstallPreparation(",
+      'app.on("before-quit"',
     );
     return {
       app,
@@ -70,8 +94,17 @@ describe("quitting", () => {
         handlers.get("before-quit")?.(event);
         return event;
       },
+      prepareToInstallUpdate: () =>
+        context.prepareToInstallUpdate() as Promise<void>,
+      cancelUpdateInstallPreparation: () =>
+        context.cancelUpdateInstallPreparation(),
     };
   }
+
+  const hangs = () => new Promise<void>(() => {});
+  const fails = async () => {
+    throw new Error("plugin manager refused to stop");
+  };
 
   it("quits once the local API has stopped", async () => {
     const runtime = quitRuntime(async () => {});
@@ -85,9 +118,7 @@ describe("quitting", () => {
   });
 
   it("still quits when stopping the local API fails", async () => {
-    const runtime = quitRuntime(async () => {
-      throw new Error("plugin manager refused to stop");
-    });
+    const runtime = quitRuntime(fails);
 
     runtime.quit();
     await flush();
@@ -96,7 +127,7 @@ describe("quitting", () => {
   });
 
   it("exits after ten seconds when stopping the local API hangs", async () => {
-    const runtime = quitRuntime(() => new Promise(() => {}));
+    const runtime = quitRuntime(hangs);
 
     runtime.quit();
     await vi.advanceTimersByTimeAsync(9_999);
@@ -106,13 +137,50 @@ describe("quitting", () => {
     expect(runtime.app.exit).toHaveBeenCalledWith(0);
     expect(runtime.app.quit).not.toHaveBeenCalled();
   });
+
+  it("installs the update when stopping the local API fails, as quitting does", async () => {
+    const runtime = quitRuntime(fails);
+
+    await expect(runtime.prepareToInstallUpdate()).resolves.toBeUndefined();
+    // The updater's own quit then goes straight through.
+    const event = runtime.quit();
+
+    expect(event.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it("installs the update after ten seconds when stopping the local API hangs", async () => {
+    const runtime = quitRuntime(hangs);
+    const prepared = vi.fn();
+
+    void runtime.prepareToInstallUpdate().then(prepared);
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(prepared).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(prepared).toHaveBeenCalledOnce();
+    expect(runtime.quit().preventDefault).not.toHaveBeenCalled();
+  });
+
+  it("stops the local API again on the next quit when the update is cancelled", async () => {
+    const runtime = quitRuntime(async () => {});
+    await runtime.prepareToInstallUpdate();
+
+    runtime.cancelUpdateInstallPreparation();
+    const event = runtime.quit();
+    await flush();
+
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(runtime.app.quit).toHaveBeenCalledOnce();
+  });
 });
 
 describe("IPC listeners", () => {
   function ipcRuntime({
-    loadDesktopBootstrapLocalState = () => ({ updatedAt: 1 }),
+    loadDesktopBootstrapLocalState = vi.fn(
+      (): Record<string, unknown> | null => ({ updatedAt: 1 }),
+    ),
   } = {}) {
-    const ipcMain = Object.assign(new EventEmitter(), { handle: vi.fn() });
+    const ipcMain = new EventEmitter();
     const nativeTheme = { themeSource: "system" };
     const mainWindow = {
       webContents: "active-window",
@@ -121,7 +189,6 @@ describe("IPC listeners", () => {
     const context = vm.createContext({
       app: { getPath: () => "/fixture" },
       ipc: createIpcListeners(ipcMain),
-      ipcMain,
       nativeTheme,
       mainWindow,
       appMenuModel: { menus: [] },
@@ -130,20 +197,29 @@ describe("IPC listeners", () => {
       process: { platform: "win32" },
       getWindowsTitleBarOverlay: () => ({}),
       loadDesktopBootstrapLocalState,
-      desktopBootstrapLocalState: null,
     });
-    vm.runInContext(
-      section(
-        'ipc.answerSync("ajour:get-bootstrap-local-state"',
-        'ipcMain.handle("ajour:check-for-updates"',
-      ) +
-        section(
-          "function assertActiveDesktopWindow(",
-          "function assertDevelopmentBuild(",
-        ),
+    run(
       context,
+      "let desktopBootstrapLocalState",
+      'ipc.answerSync("ajour:get-bootstrap-local-state"',
+      'ipc.onMessage("ajour:run-menu-item"',
+      'ipc.onMessage("ajour:run-edit-command"',
+      'ipc.onMessage("ajour:set-theme-source"',
+      'ipc.onMessage("ajour:set-window-chrome-theme"',
+      "function assertActiveDesktopWindow(",
     );
-    return { ipcMain, nativeTheme, mainWindow };
+    return {
+      ipcMain,
+      nativeTheme,
+      mainWindow,
+      requestBootstrapState() {
+        const event: { sender: string; returnValue?: unknown } = {
+          sender: "active-window",
+        };
+        ipcMain.emit("ajour:get-bootstrap-local-state", event);
+        return event.returnValue;
+      },
+    };
   }
 
   it.each([
@@ -175,19 +251,37 @@ describe("IPC listeners", () => {
 
   it("answers the bootstrap request with null when the read fails", () => {
     const runtime = ipcRuntime({
-      loadDesktopBootstrapLocalState: () => {
+      loadDesktopBootstrapLocalState: vi.fn(() => {
+        throw new Error("EPERM: operation not permitted");
+      }),
+    });
+
+    expect(runtime.requestBootstrapState()).toBeNull();
+  });
+
+  // A reload after a crash asks again; recovery must still wait for the next
+  // launch.
+  it.each([
+    ["finds nothing", () => null],
+    [
+      "fails",
+      () => {
         throw new Error("EPERM: operation not permitted");
       },
-    });
-    const event: { sender: string; returnValue?: unknown } = {
-      sender: "active-window",
-    };
+    ],
+  ])(
+    "reads the bootstrap state once per launch when the read %s",
+    (_outcome, read) => {
+      const loadDesktopBootstrapLocalState = vi.fn(read);
+      const runtime = ipcRuntime({ loadDesktopBootstrapLocalState });
 
-    expect(() =>
-      runtime.ipcMain.emit("ajour:get-bootstrap-local-state", event),
-    ).not.toThrow();
-    expect(event.returnValue).toBeNull();
-  });
+      runtime.requestBootstrapState();
+      const second = runtime.requestBootstrapState();
+
+      expect(second).toBeNull();
+      expect(loadDesktopBootstrapLocalState).toHaveBeenCalledOnce();
+    },
+  );
 });
 
 describe("the main window", () => {
@@ -236,16 +330,10 @@ describe("the main window", () => {
       showEditContextMenu: vi.fn(),
       watchWindow,
     });
-    vm.runInContext(
-      section(
-        "function openExternalLink(",
-        "function quitAfterStartupFailure(",
-      ) +
-        section(
-          "async function createMainWindow()",
-          "if (!hasSingleInstanceLock)",
-        ),
+    run(
       context,
+      "function openExternalLink(",
+      "async function createMainWindow()",
     );
     return {
       shell,
@@ -285,21 +373,18 @@ describe("the main window", () => {
     );
   });
 
-  it.each(["http://[::1", "file:///C:/Windows/System32/calc.exe"])(
-    "blocks navigation to %s without throwing",
-    async (url) => {
-      const runtime = windowRuntime();
-      await runtime.createMainWindow();
+  it("blocks a malformed URL without throwing", async () => {
+    const runtime = windowRuntime();
+    await runtime.createMainWindow();
 
-      let event: { preventDefault: ReturnType<typeof vi.fn> } | undefined;
-      expect(() => {
-        event = runtime.navigate(url);
-      }).not.toThrow();
+    let event: { preventDefault: ReturnType<typeof vi.fn> } | undefined;
+    expect(() => {
+      event = runtime.navigate("http://[::1");
+    }).not.toThrow();
 
-      expect(event?.preventDefault).toHaveBeenCalled();
-      expect(runtime.shell.openExternal).not.toHaveBeenCalled();
-    },
-  );
+    expect(event?.preventDefault).toHaveBeenCalled();
+    expect(runtime.shell.openExternal).not.toHaveBeenCalled();
+  });
 
   it("opens new-window links in the system browser only when they are web links", async () => {
     const runtime = windowRuntime();
@@ -339,7 +424,13 @@ describe("the main window", () => {
 });
 
 describe("startup", () => {
-  function startupRuntime(createMainWindow: () => Promise<void>) {
+  function startupRuntime({
+    createMainWindow = vi.fn(async () => {}),
+    ensureInternalAppApiRunning = async () => {},
+  }: {
+    createMainWindow?: () => Promise<void>;
+    ensureInternalAppApiRunning?: () => Promise<void>;
+  } = {}) {
     const app = {
       on: vi.fn(),
       whenReady: () => Promise.resolve(),
@@ -353,7 +444,7 @@ describe("startup", () => {
       console: { error: vi.fn() },
       createMainWindow,
       dialog,
-      ensureInternalAppApiRunning: async () => {},
+      ensureInternalAppApiRunning,
       hasSingleInstanceLock: true,
       Menu: { setApplicationMenu: vi.fn(), buildFromTemplate: vi.fn() },
       process: { platform: "win32", env: {} },
@@ -362,19 +453,19 @@ describe("startup", () => {
       schedulePluginCatalogRefresh: vi.fn(),
       sendMenuAction: vi.fn(),
     });
-    vm.runInContext(
-      section(
-        "function quitAfterStartupFailure(",
-        "async function createMainWindow()",
-      ) + section("if (!hasSingleInstanceLock)"),
+    run(
       context,
+      "function quitAfterStartupFailure(",
+      "if (!hasSingleInstanceLock)",
     );
-    return { app, dialog };
+    return { app, dialog, createMainWindow };
   }
 
   it("says why and quits when the window cannot be created", async () => {
-    const runtime = startupRuntime(async () => {
-      throw new Error("The GPU process could not start.");
+    const runtime = startupRuntime({
+      createMainWindow: async () => {
+        throw new Error("The GPU process could not start.");
+      },
     });
     await flush();
 
@@ -386,9 +477,24 @@ describe("startup", () => {
   });
 
   it("starts without asking anything when the window opens", async () => {
-    const runtime = startupRuntime(async () => {});
+    const runtime = startupRuntime();
     await flush();
 
+    expect(runtime.dialog.showErrorBox).not.toHaveBeenCalled();
+    expect(runtime.app.quit).not.toHaveBeenCalled();
+  });
+
+  // Ajour is local-first and plugins are optional: another app holding the
+  // port must not lock the user out of their timesheet.
+  it("opens the window without plugins when the local API cannot start", async () => {
+    const runtime = startupRuntime({
+      ensureInternalAppApiRunning: async () => {
+        throw new Error("port 8787 is already in use");
+      },
+    });
+    await flush();
+
+    expect(runtime.createMainWindow).toHaveBeenCalledOnce();
     expect(runtime.dialog.showErrorBox).not.toHaveBeenCalled();
     expect(runtime.app.quit).not.toHaveBeenCalled();
   });
