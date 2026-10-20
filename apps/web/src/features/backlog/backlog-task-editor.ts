@@ -291,7 +291,12 @@ function parseEditorEstimates(fields: BacklogTaskEditorFields) {
 export function buildBacklogTaskPatch(
   workItem: LocalWorkItem,
   fields: BacklogTaskEditorFields,
-  options: { isSubtask: boolean; descriptionReadOnly?: boolean },
+  options: {
+    isSubtask: boolean;
+    descriptionReadOnly?: boolean;
+    /** The description the draft started from, when a sync may have changed the item since. */
+    descriptionBase?: string;
+  },
 ): WorkItemPatch | null {
   const saved = createBacklogTaskEditorFields(workItem);
   const patch: WorkItemPatch = {};
@@ -304,10 +309,13 @@ export function buildBacklogTaskPatch(
     patch.title = title;
   }
 
-  // A read-only description follows its source, so a draft never writes it.
+  // A read-only description follows its source, so a draft never writes it,
+  // and only a description the user changed is written, never an old copy a
+  // sync replaced under an open draft.
   if (
     !options.descriptionReadOnly &&
-    fields.description !== saved.description
+    fields.description !== saved.description &&
+    fields.description !== (options.descriptionBase ?? saved.description)
   ) {
     patch.description = fields.description.trim() || undefined;
   }
@@ -400,6 +408,8 @@ export function evaluateBacklogTaskEditor(
     subitemTotals?: SubitemEstimateTotals | null;
     /** The description follows its source; the draft's copy is ignored. */
     descriptionReadOnly?: boolean;
+    /** The description the draft started from. */
+    descriptionBase?: string;
   } = {},
 ): BacklogTaskEditorState {
   const original = target.kind === "edit" ? target.workItem : undefined;
@@ -456,6 +466,7 @@ export function evaluateBacklogTaskEditor(
         ? buildBacklogTaskPatch(original, fields, {
             isSubtask: isSubitem,
             descriptionReadOnly: options.descriptionReadOnly,
+            descriptionBase: options.descriptionBase,
           })
         : null,
   };

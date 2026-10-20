@@ -101,6 +101,28 @@ describe("backlog task editor", () => {
     ).toEqual({ title: "Renamed" });
   });
 
+  it("keeps a description a sync replaced under an untouched draft", () => {
+    const synced = createWorkItem({ description: "Updated by a colleague" });
+    const fields = createBacklogTaskEditorFields(
+      createWorkItem({ description: "Before" }),
+      { title: "Renamed" },
+    );
+
+    expect(
+      buildBacklogTaskPatch(synced, fields, {
+        isSubtask: false,
+        descriptionBase: "Before",
+      }),
+    ).toEqual({ title: "Renamed" });
+    expect(
+      buildBacklogTaskPatch(
+        synced,
+        { ...fields, description: "My edit" },
+        { isSubtask: false, descriptionBase: "Before" },
+      ),
+    ).toEqual({ title: "Renamed", description: "My edit" });
+  });
+
   it("changes project and task together", () => {
     const workItem = createWorkItem();
     const fields = createBacklogTaskEditorFields(workItem, {

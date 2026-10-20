@@ -1192,6 +1192,32 @@ describe("backlog sync of done items", () => {
     });
   });
 
+  it("keeps syncing the description of an item archived on an earlier sync", () => {
+    const imported = importSyncedWorkItems(
+      createState(),
+      [createCandidate({ description: { text: "Before" } })],
+      undefined,
+      factories,
+    ).state;
+    const closed = archiveDoneSyncedWorkItems(
+      imported,
+      [{ ...done(), description: { text: "First summary" } }],
+      factories,
+    ).state;
+
+    const result = archiveDoneSyncedWorkItems(
+      closed,
+      [{ ...done(), description: { text: "Corrected summary" } }],
+      factories,
+    );
+
+    expect(result.archivedCount).toBe(0);
+    expect(result.state.workItems[0]).toMatchObject({
+      status: "archived",
+      description: "Corrected summary",
+    });
+  });
+
   it("archives a settled item with the subitems its settle carried", () => {
     let id = 0;
     const idFactories = { createId: () => `work-item-${++id}`, now: () => 500 };

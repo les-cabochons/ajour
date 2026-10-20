@@ -644,9 +644,28 @@ export function archiveDoneSyncedWorkItems(
         getWorkItemSourceKey({ ...workItem, sourceId: workItem.sourceId }) ===
           key,
     );
-    if (!target || pendingMoveItemIds.has(target._id)) {
-      continue;
+    if (!target) continue;
+    // The description syncs whatever the item's lifecycle does with it, even
+    // for an item archived on an earlier sync or with a write pending.
+    const doneDescription = doneItem.description;
+    if (doneDescription) {
+      nextState = {
+        ...nextState,
+        workItems: nextState.workItems.map((workItem) =>
+          workItem._id === target._id
+            ? {
+                ...workItem,
+                ...reconcileDescription(
+                  workItem,
+                  doneDescription,
+                  factories.now(),
+                ),
+              }
+            : workItem,
+        ),
+      };
     }
+    if (pendingMoveItemIds.has(target._id)) continue;
 
     const stateLabel = doneItem.state?.trim();
     const sourceStatusKey = stateLabel
@@ -672,28 +691,9 @@ export function archiveDoneSyncedWorkItems(
           sourceStatusKey !== undefined &&
           sourceStatusKey !== target.archivedSourceStatusKey));
     if (target.status === "archived" && !reopens) continue;
-    const reopened = reopens
+    const restored = reopens
       ? restoreBacklogItem(nextState, target._id)
       : nextState;
-    // The description syncs whether the item closes or stays open.
-    const doneDescription = doneItem.description;
-    const restored = doneDescription
-      ? {
-          ...reopened,
-          workItems: reopened.workItems.map((workItem) =>
-            workItem._id === target._id
-              ? {
-                  ...workItem,
-                  ...reconcileDescription(
-                    workItem,
-                    doneDescription,
-                    factories.now(),
-                  ),
-                }
-              : workItem,
-          ),
-        }
-      : reopened;
     const withSourceState = stateLabel
       ? {
           ...restored,

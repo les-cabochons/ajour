@@ -178,6 +178,21 @@ export function BacklogItemEditorForm({
   const [fields, setFields] = useState(
     () => initialFields ?? createBacklogTaskEditorSeed(target),
   );
+  // The description the draft started from. A sync can change the item under
+  // an open draft; a description the user has not touched follows it.
+  const [descriptionBase, setDescriptionBase] = useState(
+    () => createBacklogTaskEditorSeed(target).description,
+  );
+  const syncedDescription = currentItem?.description ?? "";
+  useEffect(() => {
+    if (!currentItem || syncedDescription === descriptionBase) return;
+    setFields((current) =>
+      current.description === descriptionBase
+        ? { ...current, description: syncedDescription }
+        : current,
+    );
+    setDescriptionBase(syncedDescription);
+  }, [currentItem, syncedDescription, descriptionBase]);
   const onFieldsChangeRef = useRef(onFieldsChange);
   onFieldsChangeRef.current = onFieldsChange;
   useEffect(() => {
@@ -196,6 +211,7 @@ export function BacklogItemEditorForm({
   const editor = evaluateBacklogTaskEditor(fields, target, {
     subitemTotals: subitems.length > 0 ? sumSubitemEstimates(subitems) : null,
     descriptionReadOnly: !descriptionEditable,
+    descriptionBase,
   });
   const { validation } = editor;
 
