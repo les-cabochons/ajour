@@ -111,16 +111,36 @@ describe("backlog task editor", () => {
     expect(
       buildBacklogTaskPatch(synced, fields, {
         isSubtask: false,
-        descriptionBase: "Before",
+        base: createBacklogTaskEditorFields(
+          createWorkItem({ description: "Before" }),
+        ),
       }),
     ).toEqual({ title: "Renamed" });
     expect(
       buildBacklogTaskPatch(
         synced,
         { ...fields, description: "My edit" },
-        { isSubtask: false, descriptionBase: "Before" },
+        {
+          isSubtask: false,
+          base: createBacklogTaskEditorFields(
+            createWorkItem({ description: "Before" }),
+          ),
+        },
       ),
     ).toEqual({ title: "Renamed", description: "My edit" });
+  });
+
+  it("keeps a mapping a sync changed under an untouched draft", () => {
+    const before = createWorkItem({ projectId: "project-1", taskId: "task-1" });
+    const synced = createWorkItem({ projectId: "project-2", taskId: "task-2" });
+    const fields = createBacklogTaskEditorFields(before, { title: "Renamed" });
+
+    expect(
+      buildBacklogTaskPatch(synced, fields, {
+        isSubtask: false,
+        base: createBacklogTaskEditorFields(before),
+      }),
+    ).toEqual({ title: "Renamed" });
   });
 
   it("changes project and task together", () => {

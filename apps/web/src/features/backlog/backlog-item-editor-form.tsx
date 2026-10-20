@@ -53,6 +53,7 @@ import { OptionSelect } from "@/components/ui/option-select";
 import {
   BACKLOG_ESTIMATE_FIELD_KEYS,
   commitBacklogTaskDraft,
+  createBacklogTaskEditorFields,
   createBacklogTaskEditorSeed,
   evaluateBacklogTaskEditor,
   sumSubitemEstimates,
@@ -178,21 +179,34 @@ export function BacklogItemEditorForm({
   const [fields, setFields] = useState(
     () => initialFields ?? createBacklogTaskEditorSeed(target),
   );
-  // The description the draft started from. A sync can change the item under
-  // an open draft; a description the user has not touched follows it.
-  const [descriptionBase, setDescriptionBase] = useState(
-    () => createBacklogTaskEditorSeed(target).description,
+  // The item's fields when the draft started. A sync can change the item under
+  // an open draft: a field the user has not touched follows it, and only the
+  // fields the user changed are saved.
+  const [base, setBase] = useState(() => createBacklogTaskEditorSeed(target));
+  const currentFields = useMemo(
+    () =>
+      target.kind === "edit" && currentItem
+        ? createBacklogTaskEditorFields(currentItem)
+        : undefined,
+    [target.kind, currentItem],
   );
-  const syncedDescription = currentItem?.description ?? "";
   useEffect(() => {
-    if (!currentItem || syncedDescription === descriptionBase) return;
-    setFields((current) =>
-      current.description === descriptionBase
-        ? { ...current, description: syncedDescription }
-        : current,
-    );
-    setDescriptionBase(syncedDescription);
-  }, [currentItem, syncedDescription, descriptionBase]);
+    if (!currentFields) return;
+    const keys = Object.keys(
+      currentFields,
+    ) as (keyof BacklogTaskEditorFields)[];
+    if (keys.every((key) => currentFields[key] === base[key])) return;
+    setFields((current) => {
+      const next = { ...current };
+      for (const key of keys) {
+        if (current[key] === base[key]) {
+          (next as Record<string, unknown>)[key] = currentFields[key];
+        }
+      }
+      return next;
+    });
+    setBase(currentFields);
+  }, [currentFields, base]);
   const onFieldsChangeRef = useRef(onFieldsChange);
   onFieldsChangeRef.current = onFieldsChange;
   useEffect(() => {
@@ -211,7 +225,7 @@ export function BacklogItemEditorForm({
   const editor = evaluateBacklogTaskEditor(fields, target, {
     subitemTotals: subitems.length > 0 ? sumSubitemEstimates(subitems) : null,
     descriptionReadOnly: !descriptionEditable,
-    descriptionBase,
+    base,
   });
   const { validation } = editor;
 

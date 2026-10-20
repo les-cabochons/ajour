@@ -295,14 +295,21 @@ export function buildBacklogTaskPatch(
   options: {
     isSubtask: boolean;
     descriptionReadOnly?: boolean;
-    /** The description the draft started from, when a sync may have changed the item since. */
-    descriptionBase?: string;
+    /**
+     * The item's fields when the draft started. A sync can change the item
+     * under an open draft; only a field the user changed is written, never
+     * an old value a sync replaced.
+     */
+    base?: BacklogTaskEditorFields;
   },
 ): WorkItemPatch | null {
   const saved = createBacklogTaskEditorFields(workItem);
   const patch: WorkItemPatch = {};
+  const changed = (key: keyof BacklogTaskEditorFields) =>
+    fields[key] !== saved[key] &&
+    (!options.base || fields[key] !== options.base[key]);
 
-  if (fields.title !== saved.title) {
+  if (changed("title")) {
     const title = fields.title.trim();
     if (!title) {
       return null;
@@ -310,19 +317,13 @@ export function buildBacklogTaskPatch(
     patch.title = title;
   }
 
-  // A read-only description follows its source, so a draft never writes it,
-  // and only a description the user changed is written, never an old copy a
-  // sync replaced under an open draft.
-  if (
-    !options.descriptionReadOnly &&
-    fields.description !== saved.description &&
-    fields.description !== (options.descriptionBase ?? saved.description)
-  ) {
+  // A read-only description follows its source, so a draft never writes it.
+  if (!options.descriptionReadOnly && changed("description")) {
     patch.description =
       normalizeDescriptionText(fields.description) || undefined;
   }
 
-  if (!options.isSubtask && fields.priority !== saved.priority) {
+  if (!options.isSubtask && changed("priority")) {
     const priority = parsePriorityInput(fields.priority);
     if (priority === null) {
       return null;
@@ -330,18 +331,18 @@ export function buildBacklogTaskPatch(
     patch.priority = priority;
   }
 
-  if (fields.workflowStateId !== saved.workflowStateId) {
+  if (changed("workflowStateId")) {
     patch.workflowStateId = fields.workflowStateId || undefined;
   }
 
   // Project and task change together so the parent mapping is inferred from both.
-  if (fields.projectId !== saved.projectId || fields.taskId !== saved.taskId) {
+  if (changed("projectId") || changed("taskId")) {
     patch.projectId = fields.projectId || undefined;
     patch.taskId = fields.taskId || undefined;
   }
 
   for (const key of BACKLOG_ESTIMATE_FIELD_KEYS) {
-    if (fields[key] === saved[key]) {
+    if (!changed(key)) {
       continue;
     }
 
@@ -352,7 +353,7 @@ export function buildBacklogTaskPatch(
     patch[key] = value;
   }
 
-  if (fields.keepWhenMissingFromSync !== saved.keepWhenMissingFromSync) {
+  if (changed("keepWhenMissingFromSync")) {
     patch.keepWhenMissingFromSync = fields.keepWhenMissingFromSync;
   }
 
@@ -410,8 +411,8 @@ export function evaluateBacklogTaskEditor(
     subitemTotals?: SubitemEstimateTotals | null;
     /** The description follows its source; the draft's copy is ignored. */
     descriptionReadOnly?: boolean;
-    /** The description the draft started from. */
-    descriptionBase?: string;
+    /** The item's fields when the draft started. */
+    base?: BacklogTaskEditorFields;
   } = {},
 ): BacklogTaskEditorState {
   const original = target.kind === "edit" ? target.workItem : undefined;
@@ -468,7 +469,7 @@ export function evaluateBacklogTaskEditor(
         ? buildBacklogTaskPatch(original, fields, {
             isSubtask: isSubitem,
             descriptionReadOnly: options.descriptionReadOnly,
-            descriptionBase: options.descriptionBase,
+            base: options.base,
           })
         : null,
   };
