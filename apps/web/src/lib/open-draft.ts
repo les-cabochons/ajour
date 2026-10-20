@@ -1,13 +1,14 @@
 /**
- * The backlog page's side panel draft, for code that leaves the page from
+ * The open page's side panel draft, for code that leaves the page from
  * elsewhere, such as a toast or a sidebar mark: it saves a valid draft
- * first, and a draft it cannot save keeps the user where they are.
+ * first, and a draft it cannot save keeps the user where they are. The
+ * Backlog and Time pages set it while they are open.
  */
 type Guard = () => boolean | Promise<boolean>;
 
 let guard: Guard | undefined;
 
-/** The backlog page sets its guard while it is open. */
+/** A page sets its guard while it is open. */
 export function setOpenDraftGuard(next: Guard) {
   guard = next;
   return () => {

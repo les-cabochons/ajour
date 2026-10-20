@@ -4,7 +4,7 @@ import { RiAlarmWarningLine } from "@remixicon/react";
 import { TooltipButton } from "@/components/tooltip-button";
 import { showActionToast } from "@/components/ui/toast";
 import type { LocalWorkItem } from "@/domain/local-state";
-import { leaveOpenDraft } from "@/features/backlog/open-draft";
+import { leaveOpenDraft } from "@/lib/open-draft";
 import { subscribeDescriptionConflicts } from "@/lib/sync-conflict-events";
 import { cn } from "@/lib/utils";
 

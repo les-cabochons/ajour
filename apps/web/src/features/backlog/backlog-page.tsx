@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { setOpenDraftGuard } from "@/features/backlog/open-draft";
+import { setOpenDraftGuard } from "@/lib/open-draft";
 import {
   RiAddLine,
   RiErrorWarningLine,
