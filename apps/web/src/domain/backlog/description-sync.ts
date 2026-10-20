@@ -19,20 +19,16 @@ type Described = Pick<LocalWorkItem, "description" | "descriptionSync">;
 
 /**
  * A description as Ajour stores and compares it: Unix line endings, without
- * blank lines or spaces around it, but with a first line's indentation of
- * four spaces or more, which Markdown reads as an indented code block. Every
- * place that saves a description uses it, so texts compare equal when they
- * read the same.
+ * blank lines or trailing spaces, but with its first line's indentation as
+ * written: an indented code block needs it, and indented list items or code
+ * fences read differently without it. Every place that saves a description
+ * uses it, so texts compare equal when they read the same.
  */
 export function normalizeDescriptionText(text: string | undefined) {
-  return (
-    (text ?? "")
-      .replace(/\r\n?/g, "\n")
-      .replace(/^(?:[ \t]*\n)+/, "")
-      // One to three leading spaces mean nothing in Markdown; four start code.
-      .replace(/^ {1,3}(?=\S)/, "")
-      .trimEnd()
-  );
+  return (text ?? "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/^(?:[ \t]*\n)+/, "")
+    .trimEnd();
 }
 
 const storedText = normalizeDescriptionText;

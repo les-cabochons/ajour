@@ -150,6 +150,15 @@ describe("reconciling a synced description", () => {
     });
   });
 
+  it("keeps an indented list's and code fence's first line as written", () => {
+    const list = "  - First\n  - Second";
+    expect(importedDescription({ text: list }).description).toBe(list);
+    const fence = "  ```\n  code\n  ```";
+    expect(importedDescription({ text: `\n${fence}\n` }).description).toBe(
+      fence,
+    );
+  });
+
   it("counts a change to a first line's indentation as an edit", () => {
     const code = "    echo hi";
     expect(

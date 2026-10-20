@@ -182,7 +182,7 @@ describe("backlog task editor", () => {
       buildBacklogTaskDraft(rootFields, { isSubtask: false }),
     ).toMatchObject({
       title: "Root task",
-      description: "Description",
+      description: "  Description",
       priority: 3,
       parentWorkItemId: undefined,
     });
