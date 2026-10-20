@@ -126,6 +126,21 @@ export class PluginWorkerLifetime<TMethod extends string> {
     return this.shutdownPromise;
   }
 
+  /**
+   * The error a failed plugin call ends with, for both ways a worker fails:
+   * a message it posts, or an uncaught throw. The plugin's message is trimmed
+   * and cut, ending in "…". A message that is missing or blank becomes
+   * "Unknown plugin error.", so a failure is never shown as no error at all.
+   */
+  private pluginFailure(message: unknown): Error {
+    const text = typeof message === "string" ? message.trim() : "";
+    return new Error(
+      text
+        ? cutErrorMessage(text)
+        : `Unknown ${this.options.name.toLowerCase()} error.`,
+    );
+  }
+
   private invoke<T>(
     operation: Operation,
     method: TMethod,
@@ -170,16 +185,13 @@ export class PluginWorkerLifetime<TMethod extends string> {
         return finalizationPromise;
       };
       operation.cancelWorker = (error) => finalize(error);
-      // An uncaught asynchronous throw in plugin code arrives here at any
-      // length, past the worker's own cut, so it is cut the same way. Plugin
-      // code may throw any value, even a falsy one, which must still fail.
+      // An uncaught asynchronous throw in plugin code arrives here, past the
+      // worker's own cut, and may be any value.
       worker.once("error", (error: unknown) => {
         void finalize(
-          !(error instanceof Error)
-            ? new Error(`Unknown ${this.options.name.toLowerCase()} error.`)
-            : error.message.length > MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS
-              ? new Error(cutErrorMessage(error.message))
-              : error,
+          this.pluginFailure(
+            error instanceof Error ? error.message : undefined,
+          ),
         );
       });
       worker.once(
@@ -190,11 +202,7 @@ export class PluginWorkerLifetime<TMethod extends string> {
           if (message?.ok === true) {
             void finalize(undefined, message.result);
           } else {
-            const detail =
-              typeof message?.error === "string" && message.error.trim()
-                ? cutErrorMessage(message.error.trim())
-                : `Unknown ${this.options.name.toLowerCase()} error.`;
-            void finalize(new Error(detail));
+            void finalize(this.pluginFailure(message?.error));
           }
         },
       );

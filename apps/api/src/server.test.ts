@@ -3245,6 +3245,102 @@ describe("plugin errors that echo a secret", () => {
     expect(await shownLastError(server)).toBe(`${"[secret] ".repeat(111)}…`);
   });
 
+  /** The overview, timed after a first request has warmed the server up. */
+  async function timedOverview(server: Server) {
+    await dispatchJsonRequest(server, { method: "GET", path: "/api/plugins" });
+    const started = performance.now();
+    const overview = await dispatchJsonRequest(server, {
+      method: "GET",
+      path: "/api/plugins",
+    });
+    const connection = (
+      overview.body as {
+        connectionGroups: {
+          connections: {
+            lastError?: string;
+            configSummary: Record<string, unknown>;
+          }[];
+        }[];
+      }
+    ).connectionGroups[0]?.connections[0];
+    return {
+      status: overview.status,
+      body: JSON.stringify(overview.body),
+      connection,
+      milliseconds: performance.now() - started,
+    };
+  }
+
+  it("answers the overview quickly when many stored values grow into one another", async () => {
+    // 1,000 undeclared values, "a" to "a".repeat(1000).
+    const { server } = await createServer(
+      savedState({
+        config: {
+          baseUrl: SITE,
+          token: TOKEN,
+          ...Object.fromEntries(
+            Array.from({ length: 1_000 }, (_, index) => [
+              `old${index}`,
+              "a".repeat(index + 1),
+            ]),
+          ),
+        },
+        configSummary: Object.fromEntries(
+          Array.from({ length: 50 }, (_, index) => [
+            `key${index}`,
+            "a".repeat(1_000),
+          ]),
+        ),
+        lastError: "a".repeat(1_000),
+      }),
+    );
+
+    const overview = await timedOverview(server);
+
+    expect(overview.status).toBe(200);
+    expect(overview.milliseconds).toBeLessThan(200);
+    expect(overview.connection).toMatchObject({
+      lastError: "Hidden because it was too long to check for secrets.",
+      configSummary: {},
+    });
+    expect(overview.body).not.toContain("a".repeat(50));
+  });
+
+  it("answers the overview quickly when long stored values almost match a cut summary", async () => {
+    // 20 undeclared values of "a".repeat(3990) and an id.
+    const { server } = await createServer(
+      savedState({
+        config: {
+          baseUrl: SITE,
+          token: TOKEN,
+          ...Object.fromEntries(
+            Array.from({ length: 20 }, (_, index) => [
+              `old${index}`,
+              `${"a".repeat(3_990)}${index}`,
+            ]),
+          ),
+        },
+        configSummary: Object.fromEntries(
+          Array.from({ length: 50 }, (_, index) => [
+            `key${index}`,
+            `${"a".repeat(998)}b…`,
+          ]),
+        ),
+        lastError: `x ${"a".repeat(997)}…`,
+      }),
+    );
+
+    const overview = await timedOverview(server);
+
+    expect(overview.status).toBe(200);
+    expect(overview.milliseconds).toBeLessThan(200);
+    expect(overview.connection).toMatchObject({
+      lastError: "x [secret]…",
+      configSummary: {},
+    });
+    expect(overview.body).not.toContain("a".repeat(50));
+  });
+
   it("hides a stored value whose field a plugin update dropped", async () => {
     // The fixture declares token but no longer apiKey.
     const { server } = await createServer(

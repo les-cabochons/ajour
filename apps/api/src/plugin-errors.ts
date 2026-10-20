@@ -72,55 +72,180 @@ const SECRET_MARK = "[secret]";
  */
 const CUT_MARK = "…";
 
-interface Span {
-  start: number;
-  end: number;
+/**
+ * The most work one redaction call may do, counted in characters: each
+ * secret's length once, then each text's length once per secret. Every step
+ * is linear in that count, so it bounds the time. A text that would cost more
+ * is replaced whole by `TOO_LONG_TO_CHECK`, which is safe.
+ */
+export const REDACTION_WORK_BUDGET = 1_000_000;
+
+/** What replaces a text too long to check against a connection's secrets. */
+export const TOO_LONG_TO_CHECK =
+  "Hidden because it was too long to check for secrets.";
+
+/**
+ * A secret and its KMP prefix function: `fail[i]` is the length of the
+ * longest start of `secret.slice(0, i + 1)` that is also its end, short of
+ * all of it.
+ */
+interface Pattern {
+  secret: string;
+  fail: Int32Array;
 }
 
-/** Every place `text` occurs in `message`, overlapping ones included. */
-function occurrences(message: string, text: string): Span[] {
-  const spans: Span[] = [];
-  for (
-    let at = message.indexOf(text);
-    at !== -1;
-    at = message.indexOf(text, at + 1)
-  ) {
-    spans.push({ start: at, end: at + text.length });
+function compilePattern(secret: string): Pattern {
+  const fail = new Int32Array(secret.length);
+  for (let index = 1, matched = 0; index < secret.length; index += 1) {
+    while (
+      matched > 0 &&
+      secret.charCodeAt(index) !== secret.charCodeAt(matched)
+    ) {
+      matched = fail[matched - 1]!;
+    }
+    if (secret.charCodeAt(index) === secret.charCodeAt(matched)) matched += 1;
+    fail[index] = matched;
   }
-  return spans;
-}
-
-/** The first index of `spans`, which are in order, from which `isPast` holds. */
-function firstIndex(spans: readonly Span[], isPast: (span: Span) => boolean) {
-  let low = 0;
-  let high = spans.length;
-  while (low < high) {
-    const middle = (low + high) >>> 1;
-    if (isPast(spans[middle]!)) high = middle;
-    else low = middle + 1;
-  }
-  return low;
+  return { secret, fail };
 }
 
 /**
- * The length of the longest end of `text` that starts a secret without being
- * all of it, which is what a cut through that secret leaves. Zero if none.
+ * Reads `text` through the pattern's automaton, in time linear in `text`.
+ * After each character, `visit` gets how many characters were read and the
+ * longest start of the secret that the text read so far ends with, which is
+ * the whole secret where a match ends.
  */
-function cutSecretLength(text: string, secrets: readonly string[]): number {
-  let longest = 0;
-  for (const secret of secrets) {
-    for (
-      let length = Math.min(secret.length - 1, text.length);
-      length > longest;
-      length -= 1
+function scan(
+  pattern: Pattern,
+  text: string,
+  visit: (read: number, matched: number) => void,
+) {
+  const { secret, fail } = pattern;
+  let matched = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    while (
+      matched > 0 &&
+      (matched === secret.length || code !== secret.charCodeAt(matched))
     ) {
-      if (text.endsWith(secret.slice(0, length))) {
-        longest = length;
-        break;
-      }
+      matched = fail[matched - 1]!;
     }
+    if (code === secret.charCodeAt(matched)) matched += 1;
+    visit(index + 1, matched);
   }
-  return longest;
+}
+
+/**
+ * The longest start of the secret, short of all of it, that a text ends
+ * with when the automaton stands at `matched`: what a cut through the secret
+ * would leave.
+ */
+function cutStart(pattern: Pattern, matched: number) {
+  return matched === pattern.secret.length
+    ? pattern.fail[matched - 1]!
+    : matched;
+}
+
+/**
+ * Redacts texts against one connection's secrets within one work budget.
+ * Building it reads each secret once, and each text then costs its length
+ * once per secret. `redact` and `bound` give undefined once the budget is
+ * spent, and from then on.
+ */
+class SecretRedaction {
+  private readonly patterns: Pattern[];
+  private work: number;
+
+  constructor(secrets: readonly string[]) {
+    const values = [...new Set(secrets)].filter((secret) => secret.length > 0);
+    this.work = values.reduce((sum, secret) => sum + secret.length, 0);
+    this.patterns =
+      this.work <= REDACTION_WORK_BUDGET ? values.map(compilePattern) : [];
+  }
+
+  /** Charges a read of `length` characters per secret. */
+  private spend(length: number) {
+    this.work += length * this.patterns.length;
+    return this.work <= REDACTION_WORK_BUDGET;
+  }
+
+  redact(message: string): string | undefined {
+    if (!this.spend(message.length)) return undefined;
+    if (this.patterns.length === 0) return message;
+    // The start of the mark that covers each character, or -1.
+    const markAt = new Int32Array(message.length).fill(-1);
+    for (
+      let at = message.indexOf(SECRET_MARK);
+      at !== -1;
+      at = message.indexOf(SECRET_MARK, at + SECRET_MARK.length)
+    ) {
+      markAt.fill(at, at, at + SECRET_MARK.length);
+    }
+    // +1 where a range to replace starts, -1 where it ends.
+    const coverage = new Int32Array(message.length + 1);
+    const cover = (start: number, end: number) => {
+      const first = markAt[start]!;
+      const last = markAt[end - 1]!;
+      // A match inside one mark leaves it as it is.
+      if (first !== -1 && first === last) return;
+      // A match across a mark's edge takes the whole mark in.
+      const from = first === -1 ? start : first;
+      const to = last === -1 ? end : last + SECRET_MARK.length;
+      coverage[from] = coverage[from]! + 1;
+      coverage[to] = coverage[to]! - 1;
+    };
+    const keptLength = message.endsWith(CUT_MARK)
+      ? message.length - CUT_MARK.length
+      : -1;
+    let cutLength = 0;
+    for (const pattern of this.patterns) {
+      scan(pattern, message, (read, matched) => {
+        if (matched === pattern.secret.length) cover(read - matched, read);
+        if (read === keptLength) {
+          cutLength = Math.max(cutLength, cutStart(pattern, matched));
+        }
+      });
+    }
+    if (cutLength > 0) cover(keptLength - cutLength, keptLength);
+    let redacted = "";
+    let depth = 0;
+    let from = 0;
+    for (let index = 0; index <= message.length; index += 1) {
+      const next = depth + coverage[index]!;
+      if (depth === 0 && next > 0) {
+        redacted += `${message.slice(from, index)}${SECRET_MARK}`;
+      } else if (depth > 0 && next === 0) {
+        from = index;
+      }
+      depth = next;
+    }
+    return `${redacted}${message.slice(from)}`;
+  }
+
+  bound(message: string): string | undefined {
+    if (message.length <= MAX_CONNECTION_ERROR_CHARACTERS) return message;
+    const limit = MAX_CONNECTION_ERROR_CHARACTERS - CUT_MARK.length;
+    if (!this.spend(limit)) return undefined;
+    // Where the cut may not fall: inside a mark, or right after the start
+    // of a secret.
+    const blocked = new Uint8Array(limit + 1);
+    for (
+      let at = message.indexOf(SECRET_MARK);
+      at !== -1 && at < limit;
+      at = message.indexOf(SECRET_MARK, at + SECRET_MARK.length)
+    ) {
+      blocked.fill(1, at + 1, Math.min(at + SECRET_MARK.length, limit + 1));
+    }
+    const head = message.slice(0, limit);
+    for (const pattern of this.patterns) {
+      scan(pattern, head, (read, matched) => {
+        if (cutStart(pattern, matched) > 0) blocked[read] = 1;
+      });
+    }
+    let end = limit;
+    while (blocked[end]) end -= 1;
+    return `${message.slice(0, end)}${CUT_MARK}`;
+  }
 }
 
 /**
@@ -132,55 +257,14 @@ function cutSecretLength(text: string, secrets: readonly string[]): number {
  * changes nothing. The one exception is a secret that can match across the
  * edge of a `[secret]`: one that starts with its end, such as `]` or `t]`,
  * ends with its start, such as `[`, or holds `…`. A second pass then takes in
- * a little more. Nothing leaks either way.
+ * a little more. Nothing leaks either way. A message too long to check within
+ * `REDACTION_WORK_BUDGET` becomes `TOO_LONG_TO_CHECK`.
  */
 export function redactSecretValues(
   message: string,
   secrets: readonly string[],
 ): string {
-  const values = secrets.filter((secret) => secret.length > 0);
-  const spans = values.flatMap((secret) => occurrences(message, secret));
-  if (message.endsWith(CUT_MARK)) {
-    const end = message.length - CUT_MARK.length;
-    const length = cutSecretLength(message.slice(0, end), values);
-    if (length > 0) spans.push({ start: end - length, end });
-  }
-  // In order and never overlapping, so a binary search finds the marks a
-  // match touches, and the whole scan stays n log n.
-  const marks = occurrences(message, SECRET_MARK);
-  const kept: Span[] = [];
-  for (const span of spans) {
-    const first = firstIndex(marks, (mark) => mark.end > span.start);
-    const last = firstIndex(marks, (mark) => mark.start >= span.end) - 1;
-    const firstMark = marks[first];
-    const lastMark = marks[last];
-    if (!firstMark || !lastMark || first > last) {
-      kept.push(span);
-    } else if (span.start < firstMark.start || span.end > firstMark.end) {
-      // A match across a mark's edge takes the whole mark in.
-      kept.push({
-        start: Math.min(span.start, firstMark.start),
-        end: Math.max(span.end, lastMark.end),
-      });
-    }
-    // Otherwise the match sits inside one mark, which stays as it is.
-  }
-  const merged: Span[] = [];
-  for (const span of kept.sort((left, right) => left.start - right.start)) {
-    const previous = merged.at(-1);
-    if (previous && span.start <= previous.end) {
-      previous.end = Math.max(previous.end, span.end);
-    } else {
-      merged.push({ ...span });
-    }
-  }
-  let redacted = "";
-  let at = 0;
-  for (const span of merged) {
-    redacted += `${message.slice(at, span.start)}${SECRET_MARK}`;
-    at = span.end;
-  }
-  return `${redacted}${message.slice(at)}`;
+  return new SecretRedaction(secrets).redact(message) ?? TOO_LONG_TO_CHECK;
 }
 
 /**
@@ -194,23 +278,7 @@ export function boundConnectionError(
   message: string,
   secrets: readonly string[] = [],
 ): string {
-  if (message.length <= MAX_CONNECTION_ERROR_CHARACTERS) return message;
-  let end = MAX_CONNECTION_ERROR_CHARACTERS - CUT_MARK.length;
-  for (;;) {
-    const markStart = message.lastIndexOf(SECRET_MARK, end - 1);
-    if (
-      markStart !== -1 &&
-      markStart < end &&
-      markStart + SECRET_MARK.length > end
-    ) {
-      end = markStart;
-      continue;
-    }
-    const length = cutSecretLength(message.slice(0, end), secrets);
-    if (length === 0) break;
-    end -= length;
-  }
-  return `${message.slice(0, end)}${CUT_MARK}`;
+  return new SecretRedaction(secrets).bound(message) ?? TOO_LONG_TO_CHECK;
 }
 
 /** The message of a thrown value, which need not be an `Error`. */
@@ -228,7 +296,12 @@ export function redactPluginText(
   text: string,
   secrets: readonly string[],
 ): string {
-  return boundConnectionError(redactSecretValues(text, secrets), secrets);
+  const redaction = new SecretRedaction(secrets);
+  const redacted = redaction.redact(text);
+  return (
+    (redacted === undefined ? undefined : redaction.bound(redacted)) ??
+    TOO_LONG_TO_CHECK
+  );
 }
 
 /**
@@ -242,7 +315,8 @@ export const MAX_CONNECTION_SUMMARY_ENTRIES = 50;
  * The summary a plugin wrote for a connection, with every value that holds a
  * secret redacted. A value that is all secret, such as a number, becomes
  * `[secret]`. An entry whose key holds a secret goes, so no two keys can
- * collide once redacted.
+ * collide once redacted. The whole summary shares one work budget, and goes
+ * if it is too long to check.
  */
 export function redactConnectionSummary<
   Value extends string | number | boolean,
@@ -252,14 +326,20 @@ export function redactConnectionSummary<
 ): Record<string, Value | string> {
   const entries = Object.entries(summary);
   if (entries.length > MAX_CONNECTION_SUMMARY_ENTRIES) return {};
-  return Object.fromEntries(
-    entries
-      .filter(([key]) => redactSecretValues(key, secrets) === key)
-      .map(([key, value]) => {
-        const redacted = redactPluginText(String(value), secrets);
-        return [key, redacted === String(value) ? value : redacted];
-      }),
-  );
+  const redaction = new SecretRedaction(secrets);
+  const kept: [string, Value | string][] = [];
+  for (const [key, value] of entries) {
+    const redactedKey = redaction.redact(key);
+    if (redactedKey === undefined) return {};
+    if (redactedKey !== key) continue;
+    const text = String(value);
+    const redacted = redaction.redact(text);
+    const bounded =
+      redacted === undefined ? undefined : redaction.bound(redacted);
+    if (bounded === undefined) return {};
+    kept.push([key, bounded === text ? value : bounded]);
+  }
+  return Object.fromEntries(kept);
 }
 
 /**

@@ -98,9 +98,14 @@ that overlap go whole, and a `[secret]` already there stays as it is. The
 worker host cuts a long error before redaction, an uncaught asynchronous
 throw included, and marks the cut with "…", so the start of a secret that the
 cut split becomes `[secret]` too. No response, stored last error or log
-carries a plugin's raw error. Redaction uses the secret fields of the package
-the call ran: the plugin host hands each route the manifest it admitted the
-call with, so an update that lands while a request waits can't loosen it.
+carries a plugin's raw error. Redaction follows the secret fields of the
+package the call ran: the plugin host hands each route the manifest it
+admitted the call with. An update that lands while a request waits counts, so
+one that marks a field secret tightens redaction, and one that drops
+`secret: true` loosens it, as it does for every later call. Each redaction
+has a work budget, so its time stays bounded. A text that would take more is
+replaced whole by "Hidden because it was too long to check for secrets.", and
+a summary that would take more is dropped.
 Text the plugin writes itself in a successful result is redacted the same
 way: a field's sync message, and the connection summary. A save redacts the
 summary before storing it, against the submitted, previous and normalized

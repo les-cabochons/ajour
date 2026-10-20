@@ -136,6 +136,32 @@ describe("plugin worker lifetime", () => {
     expect((error as Error).message).toBe(`${"x".repeat(4_095)}…`);
   });
 
+  it.each([
+    [
+      "an uncaught Error with an empty message",
+      "setTimeout(() => { throw new Error(''); });",
+    ],
+    [
+      "an uncaught Error with a blank message",
+      "setTimeout(() => { throw new Error('   '); });",
+    ],
+    [
+      "an uncaught AbortError",
+      "setTimeout(() => { throw new DOMException('', 'AbortError'); });",
+    ],
+    [
+      "a posted blank error",
+      "import {parentPort} from 'node:worker_threads'; parentPort.postMessage({ok:false,error:'  '});",
+    ],
+  ])("never fails with a blank message: %s", async (_, source) => {
+    const host = await lifetime(source);
+
+    const error = await host
+      .run("test", "sync", passThrough)
+      .catch((thrown: unknown) => thrown);
+    expect((error as Error).message).toBe("Unknown plugin error.");
+  });
+
   it.each(["'x'.repeat(100_000)", "undefined", "0", "null", "false", "''"])(
     "fails an uncaught asynchronous throw of %s that isn't an Error",
     async (thrown) => {

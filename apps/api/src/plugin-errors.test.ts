@@ -4,6 +4,7 @@ import {
   connectionlessPluginErrorMessage,
   pluginErrorMessage,
   redactConnectionSummary,
+  redactPluginText,
   redactSecretValues,
 } from "./plugin-errors.ts";
 
@@ -165,7 +166,7 @@ describe("plugin error messages", () => {
     ).toEqual({ site: "https://acme.example" });
   });
 
-  it("drops a summary of more than 50 entries, and stays quick with many secrets", () => {
+  it("drops a summary of more than 50 entries, or one too costly to check, quickly", () => {
     const manySecrets = connectionSecretValues(plugin, [
       Object.fromEntries(
         Array.from({ length: 20_000 }, (_, index) => [
@@ -183,11 +184,15 @@ describe("plugin error messages", () => {
       );
 
     const started = performance.now();
-    expect(redactConnectionSummary(summaryOf(20_000), manySecrets)).toEqual({});
-    expect(redactConnectionSummary(summaryOf(50), manySecrets)).toEqual(
+    expect(redactConnectionSummary(summaryOf(20_000), summarySecrets)).toEqual(
+      {},
+    );
+    expect(redactConnectionSummary(summaryOf(50), summarySecrets)).toEqual(
       summaryOf(50),
     );
-    expect(performance.now() - started).toBeLessThan(2_000);
+    // 50 short entries against 20,000 secrets is past the work budget.
+    expect(redactConnectionSummary(summaryOf(50), manySecrets)).toEqual({});
+    expect(performance.now() - started).toBeLessThan(200);
   });
 
   it("only bounds the error of an operation with no connection", () => {
@@ -265,5 +270,59 @@ describe("redacting in one pass on the original message", () => {
       const once = pluginErrorMessage(new Error(raw), plugin, config);
       expect(pluginErrorMessage(new Error(once), plugin, config)).toBe(once);
     }
+  });
+});
+
+describe("the redaction's work budget", () => {
+  const TOO_LONG = "Hidden because it was too long to check for secrets.";
+  const undeclared = (values: string[]) =>
+    connectionSecretValues(plugin, [
+      Object.fromEntries(values.map((value, index) => [`old${index}`, value])),
+    ]);
+  const summaryOf = (value: string) =>
+    Object.fromEntries(
+      Array.from({ length: 50 }, (_, index) => [`key${index}`, value]),
+    );
+  // 1,000 undeclared values, "a" to "a".repeat(1000).
+  const growingSecrets = undeclared(
+    Array.from({ length: 1_000 }, (_, index) => "a".repeat(index + 1)),
+  );
+  // 20 undeclared values of "a".repeat(3990) and an id.
+  const longSecrets = undeclared(
+    Array.from({ length: 20 }, (_, index) => `${"a".repeat(3_990)}${index}`),
+  );
+
+  it("drops a summary too costly to check, quickly", () => {
+    const started = performance.now();
+    expect(
+      redactConnectionSummary(summaryOf("a".repeat(1_000)), growingSecrets),
+    ).toEqual({});
+    expect(performance.now() - started).toBeLessThan(200);
+
+    const restarted = performance.now();
+    expect(
+      redactConnectionSummary(summaryOf(`${"a".repeat(998)}b…`), longSecrets),
+    ).toEqual({});
+    expect(performance.now() - restarted).toBeLessThan(200);
+  });
+
+  it("hides a text too costly to check behind a fixed message", () => {
+    expect(redactPluginText("a".repeat(1_000), growingSecrets)).toBe(TOO_LONG);
+    expect(redactSecretValues("a".repeat(1_000), growingSecrets)).toBe(
+      TOO_LONG,
+    );
+  });
+
+  it("finds the start of a cut secret in time linear in the secret", () => {
+    const started = performance.now();
+    for (let round = 0; round < 50; round += 1) {
+      expect(redactSecretValues(`${"a".repeat(998)}b…`, longSecrets)).toBe(
+        `${"a".repeat(998)}b…`,
+      );
+    }
+    expect(redactSecretValues(`x ${"a".repeat(997)}…`, longSecrets)).toBe(
+      "x [secret]…",
+    );
+    expect(performance.now() - started).toBeLessThan(200);
   });
 });
