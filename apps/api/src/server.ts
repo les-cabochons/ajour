@@ -121,12 +121,12 @@ import { AgentRunError, AgentRunner } from "./agent-runner/runner.ts";
 import { capabilityOfMethod, PluginManager } from "./plugin-host.ts";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
 import {
+  ConnectionRedaction,
   connectionlessPluginErrorMessage,
   connectionSecretValues,
   errorMessage,
   pluginErrorMessage,
   redactConnectionSummary,
-  redactPluginText,
 } from "./plugin-errors.ts";
 import { AppApiStorage } from "./storage.ts";
 
@@ -226,12 +226,13 @@ function admittedCall(manifest: PluginManifest) {
 }
 
 /**
- * A sync's field updates with `secrets` redacted from each message the plugin
- * wrote. The web stores a message as the field's sync error and shows it.
+ * A sync's field updates with the connection's secrets redacted from each
+ * message the plugin wrote, through one `redaction` for the whole sync. The
+ * web stores a message as the field's sync error and shows it.
  */
 function redactFieldUpdateMessages(
   updates: BacklogSyncWorkItemUpdate[],
-  secrets: readonly string[],
+  redaction: ConnectionRedaction,
 ): BacklogSyncWorkItemUpdate[] {
   return updates.map((update) => ({
     ...update,
@@ -240,7 +241,7 @@ function redactFieldUpdateMessages(
         field,
         value?.message === undefined
           ? value
-          : { ...value, message: redactPluginText(value.message, secrets) },
+          : { ...value, message: redaction.text(value.message) },
       ]),
     ) as BacklogSyncWorkItemUpdate["fields"],
   }));
@@ -1711,7 +1712,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
                 skippedCount: stageResult.skippedCount,
                 workItemUpdates: redactFieldUpdateMessages(
                   fetched.workItemUpdates,
-                  connectionSecretValues(call.manifest, [connection.config]),
+                  new ConnectionRedaction(
+                    connectionSecretValues(call.manifest, [connection.config]),
+                  ),
                 ),
                 doneItems,
                 viewer: fetched.viewer,

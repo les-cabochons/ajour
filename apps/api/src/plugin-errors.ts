@@ -4,7 +4,7 @@
  * secret. Every response, stored last error and log that carries a plugin
  * error takes its message from `pluginErrorMessage`. Text the plugin writes
  * in a successful result, such as a field's sync message or the connection
- * summary, goes through `redactPluginText` or `redactConnectionSummary`.
+ * summary, goes through one `ConnectionRedaction` per connection and request.
  *
  * `redactSecretValues` and the helpers it calls use nothing outside this
  * file, so the wide-event error scrubber (#305) can move them as they are,
@@ -73,16 +73,35 @@ const SECRET_MARK = "[secret]";
 const CUT_MARK = "…";
 
 /**
- * The most work one redaction call may do, counted in characters: each
- * secret's length once, then each text's length once per secret. Every step
- * is linear in that count, so it bounds the time. A text that would cost more
- * is replaced whole by `TOO_LONG_TO_CHECK`, which is safe.
+ * The most one text may cost to redact, counted in characters read: the
+ * text's length once for each secret that could be in it whole, and in a cut
+ * text, its end once for each longer secret. Every step is linear in that
+ * count. A text that would cost more is replaced whole by `UNCHECKED_TEXT`,
+ * which is safe.
  */
-export const REDACTION_WORK_BUDGET = 1_000_000;
+export const TEXT_WORK_BUDGET = 250_000;
 
-/** What replaces a text too long to check against a connection's secrets. */
-export const TOO_LONG_TO_CHECK =
-  "Hidden because it was too long to check for secrets.";
+/**
+ * The most one `ConnectionRedaction` may cost, across all the texts of a
+ * request and the secrets' tables, so a request's time stays bounded however
+ * many texts it carries. Once it is spent, every later text that needs
+ * checking is replaced by `UNCHECKED_TEXT`.
+ */
+export const REQUEST_WORK_BUDGET = 5_000_000;
+
+/**
+ * What replaces a text that couldn't be checked for a connection's secrets
+ * within the budgets, whether the text or the secrets made it too costly.
+ */
+export const UNCHECKED_TEXT =
+  "Hidden because it couldn't be checked for secrets.";
+
+/**
+ * The most entries a connection summary keeps. A summary is a few facts, such
+ * as the account name, so a longer one is dropped rather than redacted entry
+ * by entry against every secret.
+ */
+export const MAX_CONNECTION_SUMMARY_ENTRIES = 50;
 
 /**
  * A secret and its KMP prefix function: `fail[i]` is the length of the
@@ -147,31 +166,77 @@ function cutStart(pattern: Pattern, matched: number) {
 }
 
 /**
- * Redacts texts against one connection's secrets within one work budget.
- * Building it reads each secret once, and each text then costs its length
- * once per secret. `redact` and `bound` give undefined once the budget is
- * spent, and from then on.
+ * Redacts the texts of one connection within one request, such as its field
+ * messages, its summary and its last error. Build one per connection and
+ * request, and reuse it for every text. Each secret's table is built once,
+ * when a text first needs it, and a secret that can't be in a text costs that
+ * text nothing. Each text has its own budget, `TEXT_WORK_BUDGET`, and all of
+ * them together `REQUEST_WORK_BUDGET`.
  */
-class SecretRedaction {
-  private readonly patterns: Pattern[];
-  private work: number;
+export class ConnectionRedaction {
+  /** The connection's secrets, shortest first, without empty ones or repeats. */
+  private readonly secrets: string[];
+  private readonly patterns = new Map<string, Pattern>();
+  private work = 0;
+  private spent = false;
 
   constructor(secrets: readonly string[]) {
-    const values = [...new Set(secrets)].filter((secret) => secret.length > 0);
-    this.work = values.reduce((sum, secret) => sum + secret.length, 0);
-    this.patterns =
-      this.work <= REDACTION_WORK_BUDGET ? values.map(compilePattern) : [];
+    this.secrets = [...new Set(secrets)]
+      .filter((secret) => secret.length > 0)
+      .sort((left, right) => left.length - right.length);
   }
 
-  /** Charges a read of `length` characters per secret. */
-  private spend(length: number) {
-    this.work += length * this.patterns.length;
-    return this.work <= REDACTION_WORK_BUDGET;
+  /**
+   * Charges a text's reads, and the tables of `needed` not built yet. False
+   * when the text would pass its own budget, and from then on once the
+   * request would pass its.
+   */
+  private charge(reads: number, needed: readonly string[]) {
+    if (reads > TEXT_WORK_BUDGET) return false;
+    const tables = needed.reduce(
+      (sum, secret) => sum + (this.patterns.has(secret) ? 0 : secret.length),
+      0,
+    );
+    if (this.spent || this.work + reads + tables > REQUEST_WORK_BUDGET) {
+      this.spent = true;
+      return false;
+    }
+    this.work += reads + tables;
+    return true;
   }
 
+  private pattern(secret: string) {
+    let pattern = this.patterns.get(secret);
+    if (!pattern) {
+      pattern = compilePattern(secret);
+      this.patterns.set(secret, pattern);
+    }
+    return pattern;
+  }
+
+  /** `message` with each secret replaced, or undefined past a budget. */
   redact(message: string): string | undefined {
-    if (!this.spend(message.length)) return undefined;
-    if (this.patterns.length === 0) return message;
+    const keptLength = message.endsWith(CUT_MARK)
+      ? message.length - CUT_MARK.length
+      : -1;
+    // A secret longer than the text can't be in it whole. It matters only
+    // where a cut may have split it, and only the text's end can hold that.
+    const whole: string[] = [];
+    const cutOnly: string[] = [];
+    let reads = 0;
+    for (const secret of this.secrets) {
+      if (secret.length <= message.length) {
+        whole.push(secret);
+        reads += message.length;
+      } else if (keptLength > 0) {
+        cutOnly.push(secret);
+        reads += Math.min(secret.length - 1, keptLength);
+      } else {
+        break;
+      }
+    }
+    if (whole.length === 0 && cutOnly.length === 0) return message;
+    if (!this.charge(reads, [...whole, ...cutOnly])) return undefined;
     // The start of the mark that covers each character, or -1.
     const markAt = new Int32Array(message.length).fill(-1);
     for (
@@ -194,17 +259,27 @@ class SecretRedaction {
       coverage[from] = coverage[from]! + 1;
       coverage[to] = coverage[to]! - 1;
     };
-    const keptLength = message.endsWith(CUT_MARK)
-      ? message.length - CUT_MARK.length
-      : -1;
     let cutLength = 0;
-    for (const pattern of this.patterns) {
+    for (const secret of whole) {
+      const pattern = this.pattern(secret);
       scan(pattern, message, (read, matched) => {
         if (matched === pattern.secret.length) cover(read - matched, read);
         if (read === keptLength) {
           cutLength = Math.max(cutLength, cutStart(pattern, matched));
         }
       });
+    }
+    for (const secret of cutOnly) {
+      const pattern = this.pattern(secret);
+      const tail = message.slice(
+        keptLength - Math.min(secret.length - 1, keptLength),
+        keptLength,
+      );
+      let matched = 0;
+      scan(pattern, tail, (_, state) => {
+        matched = state;
+      });
+      cutLength = Math.max(cutLength, cutStart(pattern, matched));
     }
     if (cutLength > 0) cover(keptLength - cutLength, keptLength);
     let redacted = "";
@@ -222,10 +297,17 @@ class SecretRedaction {
     return `${redacted}${message.slice(from)}`;
   }
 
+  /**
+   * `message` cut to 1,000 characters, never inside a `[secret]` or right
+   * after the start of a secret, or undefined past a budget.
+   */
   bound(message: string): string | undefined {
     if (message.length <= MAX_CONNECTION_ERROR_CHARACTERS) return message;
     const limit = MAX_CONNECTION_ERROR_CHARACTERS - CUT_MARK.length;
-    if (!this.spend(limit)) return undefined;
+    // A secret of any length can start right before the cut.
+    if (!this.charge(limit * this.secrets.length, this.secrets)) {
+      return undefined;
+    }
     // Where the cut may not fall: inside a mark, or right after the start
     // of a secret.
     const blocked = new Uint8Array(limit + 1);
@@ -237,7 +319,8 @@ class SecretRedaction {
       blocked.fill(1, at + 1, Math.min(at + SECRET_MARK.length, limit + 1));
     }
     const head = message.slice(0, limit);
-    for (const pattern of this.patterns) {
+    for (const secret of this.secrets) {
+      const pattern = this.pattern(secret);
       scan(pattern, head, (read, matched) => {
         if (cutStart(pattern, matched) > 0) blocked[read] = 1;
       });
@@ -245,6 +328,43 @@ class SecretRedaction {
     let end = limit;
     while (blocked[end]) end -= 1;
     return `${message.slice(0, end)}${CUT_MARK}`;
+  }
+
+  /**
+   * A text as it may be shown, stored or returned: each secret replaced,
+   * then cut to 1,000 characters, or `UNCHECKED_TEXT` past a budget.
+   */
+  text(text: string): string {
+    return this.checked(text) ?? UNCHECKED_TEXT;
+  }
+
+  /**
+   * A summary with each value that holds a secret redacted. A value that is
+   * all secret, such as a number, becomes `[secret]`. An entry whose key
+   * holds a secret goes, so no two keys can collide once redacted. A summary
+   * of more than 50 entries, or one that can't be checked, goes whole.
+   */
+  summary<Value extends string | number | boolean>(
+    summary: Readonly<Record<string, Value>>,
+  ): Record<string, Value | string> {
+    const entries = Object.entries(summary);
+    if (entries.length > MAX_CONNECTION_SUMMARY_ENTRIES) return {};
+    const kept: [string, Value | string][] = [];
+    for (const [key, value] of entries) {
+      const redactedKey = this.redact(key);
+      if (redactedKey === undefined) return {};
+      if (redactedKey !== key) continue;
+      const text = String(value);
+      const checked = this.checked(text);
+      if (checked === undefined) return {};
+      kept.push([key, checked === text ? value : checked]);
+    }
+    return Object.fromEntries(kept);
+  }
+
+  private checked(text: string): string | undefined {
+    const redacted = this.redact(text);
+    return redacted === undefined ? undefined : this.bound(redacted);
   }
 }
 
@@ -257,14 +377,14 @@ class SecretRedaction {
  * changes nothing. The one exception is a secret that can match across the
  * edge of a `[secret]`: one that starts with its end, such as `]` or `t]`,
  * ends with its start, such as `[`, or holds `…`. A second pass then takes in
- * a little more. Nothing leaks either way. A message too long to check within
- * `REDACTION_WORK_BUDGET` becomes `TOO_LONG_TO_CHECK`.
+ * a little more. Nothing leaks either way. A message that can't be checked
+ * within `TEXT_WORK_BUDGET` becomes `UNCHECKED_TEXT`.
  */
 export function redactSecretValues(
   message: string,
   secrets: readonly string[],
 ): string {
-  return new SecretRedaction(secrets).redact(message) ?? TOO_LONG_TO_CHECK;
+  return new ConnectionRedaction(secrets).redact(message) ?? UNCHECKED_TEXT;
 }
 
 /**
@@ -278,7 +398,7 @@ export function boundConnectionError(
   message: string,
   secrets: readonly string[] = [],
 ): string {
-  return new SecretRedaction(secrets).bound(message) ?? TOO_LONG_TO_CHECK;
+  return new ConnectionRedaction(secrets).bound(message) ?? UNCHECKED_TEXT;
 }
 
 /** The message of a thrown value, which need not be an `Error`. */
@@ -290,33 +410,19 @@ export function errorMessage(error: unknown): string {
  * Text a plugin wrote for a connection, such as an error or a status message,
  * as it may be shown, stored or returned: every secret value of the
  * connection replaced, then the length bounded to 1,000 characters. Bounding
- * comes last because a short secret grows into `[secret]`.
+ * comes last because a short secret grows into `[secret]`. For several texts
+ * of one connection, build one `ConnectionRedaction` and reuse it.
  */
 export function redactPluginText(
   text: string,
   secrets: readonly string[],
 ): string {
-  const redaction = new SecretRedaction(secrets);
-  const redacted = redaction.redact(text);
-  return (
-    (redacted === undefined ? undefined : redaction.bound(redacted)) ??
-    TOO_LONG_TO_CHECK
-  );
+  return new ConnectionRedaction(secrets).text(text);
 }
 
 /**
- * The most entries a connection summary keeps. A summary is a few facts, such
- * as the account name, so a longer one is dropped rather than redacted entry
- * by entry against every secret.
- */
-export const MAX_CONNECTION_SUMMARY_ENTRIES = 50;
-
-/**
- * The summary a plugin wrote for a connection, with every value that holds a
- * secret redacted. A value that is all secret, such as a number, becomes
- * `[secret]`. An entry whose key holds a secret goes, so no two keys can
- * collide once redacted. The whole summary shares one work budget, and goes
- * if it is too long to check.
+ * The summary a plugin wrote for a connection, redacted as
+ * `ConnectionRedaction.summary` does.
  */
 export function redactConnectionSummary<
   Value extends string | number | boolean,
@@ -324,22 +430,7 @@ export function redactConnectionSummary<
   summary: Readonly<Record<string, Value>>,
   secrets: readonly string[],
 ): Record<string, Value | string> {
-  const entries = Object.entries(summary);
-  if (entries.length > MAX_CONNECTION_SUMMARY_ENTRIES) return {};
-  const redaction = new SecretRedaction(secrets);
-  const kept: [string, Value | string][] = [];
-  for (const [key, value] of entries) {
-    const redactedKey = redaction.redact(key);
-    if (redactedKey === undefined) return {};
-    if (redactedKey !== key) continue;
-    const text = String(value);
-    const redacted = redaction.redact(text);
-    const bounded =
-      redacted === undefined ? undefined : redaction.bound(redacted);
-    if (bounded === undefined) return {};
-    kept.push([key, bounded === text ? value : bounded]);
-  }
-  return Object.fromEntries(kept);
+  return new ConnectionRedaction(secrets).summary(summary);
 }
 
 /**

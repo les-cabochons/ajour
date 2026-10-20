@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ConnectionRedaction,
   connectionSecretValues,
   connectionlessPluginErrorMessage,
   pluginErrorMessage,
@@ -190,8 +191,10 @@ describe("plugin error messages", () => {
     expect(redactConnectionSummary(summaryOf(50), summarySecrets)).toEqual(
       summaryOf(50),
     );
-    // 50 short entries against 20,000 secrets is past the work budget.
-    expect(redactConnectionSummary(summaryOf(50), manySecrets)).toEqual({});
+    // Every secret is longer than every entry, so none can match one.
+    expect(redactConnectionSummary(summaryOf(50), manySecrets)).toEqual(
+      summaryOf(50),
+    );
     expect(performance.now() - started).toBeLessThan(200);
   });
 
@@ -237,13 +240,17 @@ describe("redacting in one pass on the original message", () => {
 
   it("redacts large adversarial messages quickly", () => {
     const started = performance.now();
-    // 50,000 marks, each with a one-character secret beside it.
-    expect(redactSecretValues("[secret]1".repeat(50_000), ["1"])).toBe(
-      "[secret]".repeat(100_000),
+    // 25,000 marks, each with a one-character secret beside it.
+    expect(redactSecretValues("[secret]1".repeat(25_000), ["1"])).toBe(
+      "[secret]".repeat(50_000),
     );
     // Every match crosses two marks, so every match widens.
-    expect(redactSecretValues("[secret]1".repeat(50_000), ["]1["])).toBe(
+    expect(redactSecretValues("[secret]1".repeat(25_000), ["]1["])).toBe(
       "[secret]1",
+    );
+    // Twice as long is past one text's budget, so it is hidden whole.
+    expect(redactSecretValues("[secret]1".repeat(50_000), ["1"])).toBe(
+      "Hidden because it couldn't be checked for secrets.",
     );
     // A long secret whose every start almost matches the end of a cut message.
     expect(
@@ -274,7 +281,7 @@ describe("redacting in one pass on the original message", () => {
 });
 
 describe("the redaction's work budget", () => {
-  const TOO_LONG = "Hidden because it was too long to check for secrets.";
+  const UNCHECKED = "Hidden because it couldn't be checked for secrets.";
   const undeclared = (values: string[]) =>
     connectionSecretValues(plugin, [
       Object.fromEntries(values.map((value, index) => [`old${index}`, value])),
@@ -292,24 +299,26 @@ describe("the redaction's work budget", () => {
     Array.from({ length: 20 }, (_, index) => `${"a".repeat(3_990)}${index}`),
   );
 
-  it("drops a summary too costly to check, quickly", () => {
+  it("drops a summary too costly to check, and keeps one quickly checked", () => {
     const started = performance.now();
     expect(
       redactConnectionSummary(summaryOf("a".repeat(1_000)), growingSecrets),
     ).toEqual({});
     expect(performance.now() - started).toBeLessThan(200);
 
+    // Every secret is longer than every value, so only the cut rule reads
+    // them, and none starts where a value is cut.
     const restarted = performance.now();
     expect(
       redactConnectionSummary(summaryOf(`${"a".repeat(998)}b…`), longSecrets),
-    ).toEqual({});
+    ).toEqual(summaryOf(`${"a".repeat(998)}b…`));
     expect(performance.now() - restarted).toBeLessThan(200);
   });
 
-  it("hides a text too costly to check behind a fixed message", () => {
-    expect(redactPluginText("a".repeat(1_000), growingSecrets)).toBe(TOO_LONG);
+  it("hides a text it can't check behind a fixed message", () => {
+    expect(redactPluginText("a".repeat(1_000), growingSecrets)).toBe(UNCHECKED);
     expect(redactSecretValues("a".repeat(1_000), growingSecrets)).toBe(
-      TOO_LONG,
+      UNCHECKED,
     );
   });
 
@@ -324,5 +333,62 @@ describe("the redaction's work budget", () => {
       "x [secret]…",
     );
     expect(performance.now() - started).toBeLessThan(200);
+  });
+});
+
+describe("one redaction per connection and request", () => {
+  const UNCHECKED = "Hidden because it couldn't be checked for secrets.";
+  // A short token, and `count` undeclared values of 4,000 characters.
+  const secretsWith = (count: number) =>
+    connectionSecretValues(plugin, [
+      {
+        token: "key-7",
+        ...Object.fromEntries(
+          Array.from({ length: count }, (_, index) => [
+            `old${index}`,
+            `${"k".repeat(3_990)}${index}`,
+          ]),
+        ),
+      },
+    ]);
+  const messages = Array.from({ length: 20_000 }, (_, index) =>
+    index === 7 ? "PATCH failed with key-7." : "Estimate rejected.",
+  );
+
+  it.each([20, 240])(
+    "redacts 20,000 field messages against %i long secrets quickly, as one call per message would",
+    (count) => {
+      const secrets = secretsWith(count);
+      const redaction = new ConnectionRedaction(secrets);
+
+      const started = performance.now();
+      const redacted = messages.map((message) => redaction.text(message));
+      expect(performance.now() - started).toBeLessThan(500);
+
+      expect(redacted[7]).toBe("PATCH failed with [secret].");
+      expect(redacted).toEqual(
+        messages.map((message) => redactPluginText(message, secrets)),
+      );
+    },
+  );
+
+  it("hides a text past its own budget, and goes on with the next", () => {
+    const redaction = new ConnectionRedaction(["s3cret"]);
+
+    expect(redaction.text("x".repeat(300_000))).toBe(UNCHECKED);
+    expect(redaction.text("Bad s3cret.")).toBe("Bad [secret].");
+  });
+
+  it("hides the rest once the request's budget is spent, but not a text no secret can be in", () => {
+    const redaction = new ConnectionRedaction(["s3cret"]);
+    const big = `${"x".repeat(199_993)}s3cret!`;
+
+    const results = Array.from({ length: 40 }, () => redaction.text(big));
+
+    expect(results[0]).toBe(`${"x".repeat(999)}…`);
+    expect(results.at(-1)).toBe(UNCHECKED);
+    expect(redaction.text("Bad s3cret.")).toBe(UNCHECKED);
+    // Shorter than the secret and not cut, so no secret can be in it.
+    expect(redaction.text("Bad")).toBe("Bad");
   });
 });

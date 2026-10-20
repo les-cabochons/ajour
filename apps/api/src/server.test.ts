@@ -2785,6 +2785,14 @@ describe("plugin errors that echo a secret", () => {
     "  throw new Error(`${what} failed with token ${connection.config.token}.`);",
     "};",
     "export async function syncConnection(connection, workItems) {",
+    "  if (workItems.some((workItem) => workItem.localWorkItemId === 'many')) {",
+    "    return { items: [], workItemUpdates: Array.from({ length: 20000 }, (_, index) => ({",
+    "      localWorkItemId: `w${index}`, sourceId: `S-${index}`, fields: { remainingEstimateHours: {",
+    "        status: 'error',",
+    "        message: index === 0 ? `PATCH failed with token ${connection.config.token}.` : 'Estimate rejected…',",
+    "      } },",
+    "    })) };",
+    "  }",
     "  if (workItems.some((workItem) => workItem.localWorkItemId === 'estimate')) {",
     "    return { items: [], workItemUpdates: [{ localWorkItemId: 'estimate', sourceId: 'OPEN-1', fields: {",
     "      remainingEstimateHours: { status: 'error', message: `PATCH failed with token ${connection.config.token}` },",
@@ -2956,6 +2964,55 @@ describe("plugin errors that echo a secret", () => {
       body: { error: "Settling failed with token [secret]." },
     });
   });
+
+  it("redacts 20,000 field messages of one sync against long secrets in one go", async () => {
+    // 20 undeclared values of 4,000 characters, and every message cut, so
+    // each one needs the cut rule against every long value.
+    const { server, connectionId } = await createConnection(
+      Object.fromEntries(
+        Array.from({ length: 20 }, (_, index) => [
+          `old${index}`,
+          `${"k".repeat(3_990)}${index}`,
+        ]),
+      ),
+    );
+
+    const started = performance.now();
+    const synced = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: `/api/plugins/jira/connections/${connectionId}/sync`,
+      body: JSON.stringify({
+        trigger: "manual",
+        workItems: [{ localWorkItemId: "many", sourceId: "OPEN-1" }],
+      }),
+    });
+    const milliseconds = performance.now() - started;
+
+    expect(synced.status).toBe(200);
+    expect(milliseconds).toBeLessThan(2_000);
+    const messages = (
+      synced.body as {
+        workItemUpdates: {
+          fields: { remainingEstimateHours: { message: string } };
+        }[];
+      }
+    ).workItemUpdates.map(
+      (update) => update.fields.remainingEstimateHours.message,
+    );
+    expect(messages).toHaveLength(20_000);
+    expect(messages[0]).toBe("PATCH failed with token [secret].");
+    // Once the request's budget is spent, the rest are hidden.
+    expect(
+      messages
+        .slice(1)
+        .every(
+          (message) =>
+            message === "Estimate rejected…" ||
+            message === "Hidden because it couldn't be checked for secrets.",
+        ),
+    ).toBe(true);
+    expect(JSON.stringify(synced.body)).not.toContain(TOKEN);
+  }, 30_000);
 
   it("keeps the token out of the field messages of a successful sync", async () => {
     const { server, connectionId } = await createConnection();
@@ -3300,7 +3357,7 @@ describe("plugin errors that echo a secret", () => {
     expect(overview.status).toBe(200);
     expect(overview.milliseconds).toBeLessThan(200);
     expect(overview.connection).toMatchObject({
-      lastError: "Hidden because it was too long to check for secrets.",
+      lastError: "Hidden because it couldn't be checked for secrets.",
       configSummary: {},
     });
     expect(overview.body).not.toContain("a".repeat(50));
@@ -3336,9 +3393,17 @@ describe("plugin errors that echo a secret", () => {
     expect(overview.milliseconds).toBeLessThan(200);
     expect(overview.connection).toMatchObject({
       lastError: "x [secret]…",
-      configSummary: {},
+      // Every value is shorter than every secret and ends in "b…", which no
+      // secret starts with, so the summary stays as it is.
+      configSummary: Object.fromEntries(
+        Array.from({ length: 50 }, (_, index) => [
+          `key${index}`,
+          `${"a".repeat(998)}b…`,
+        ]),
+      ),
     });
-    expect(overview.body).not.toContain("a".repeat(50));
+    // Each secret holds 3,990 "a"s, and no text shows more than 998.
+    expect(overview.body).not.toContain("a".repeat(999));
   });
 
   it("hides a stored value whose field a plugin update dropped", async () => {

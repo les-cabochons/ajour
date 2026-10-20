@@ -102,10 +102,13 @@ carries a plugin's raw error. Redaction follows the secret fields of the
 package the call ran: the plugin host hands each route the manifest it
 admitted the call with. An update that lands while a request waits counts, so
 one that marks a field secret tightens redaction, and one that drops
-`secret: true` loosens it, as it does for every later call. Each redaction
-has a work budget, so its time stays bounded. A text that would take more is
-replaced whole by "Hidden because it was too long to check for secrets.", and
-a summary that would take more is dropped.
+`secret: true` loosens it, as it does for every later call. A request builds
+one redaction per connection and reuses it for every text, so each secret's
+table is built once. Each text has a work budget, and the request a total
+one, so the time stays bounded per request. A text that can't be checked
+within them, because of its own length or the connection's secrets, is
+replaced whole by "Hidden because it couldn't be checked for secrets.", and
+such a summary is dropped.
 Text the plugin writes itself in a successful result is redacted the same
 way: a field's sync message, and the connection summary. A save redacts the
 summary before storing it, against the submitted, previous and normalized

@@ -34,9 +34,8 @@ import {
 } from "../../../packages/shared/agent-runs.ts";
 import {
   boundConnectionError,
+  ConnectionRedaction,
   connectionSecretValues,
-  redactConnectionSummary,
-  redactPluginText,
 } from "./plugin-errors.ts";
 
 interface StoredConnection {
@@ -448,9 +447,9 @@ function buildConnectionSummary(
   // secret: an error stored before every route redacted plugin errors, or a
   // summary stored before saves redacted it. A stand-in says nothing about
   // which stored values are secret, so then none of their text is shown.
-  const secrets = installed
-    ? connectionSecretValues(plugin, [connection.config])
-    : [];
+  const redaction = new ConnectionRedaction(
+    installed ? connectionSecretValues(plugin, [connection.config]) : [],
+  );
 
   return {
     id: connection.id,
@@ -469,14 +468,12 @@ function buildConnectionSummary(
     lastError:
       connection.lastError &&
       (installed
-        ? redactPluginText(connection.lastError, secrets)
+        ? redaction.text(connection.lastError)
         : UNINSTALLED_PLUGIN_LAST_ERROR),
     lastErrorAt: connection.lastErrorAt,
     pendingImportCount: connectionItems.length,
     selectedImportCount: connectionItems.filter((item) => item.selected).length,
-    configSummary: installed
-      ? redactConnectionSummary(connection.configSummary, secrets)
-      : {},
+    configSummary: installed ? redaction.summary(connection.configSummary) : {},
     editableValues: toEditableValues(connection, plugin),
   };
 }
