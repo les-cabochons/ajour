@@ -1011,8 +1011,10 @@ if (!hasSingleInstanceLock) {
     void stopInternalAppApiWithinTimeout().then((outcome) => {
       gracefulQuitStarted = true;
       if (outcome === "timed-out") {
-        // Skips the window and quit events, which could wait again. Plugin
-        // workers are threads, so they end with the process.
+        // Ends the process with the stop still running. Plugin workers are
+        // threads, so they end with it. Nothing holds close, beforeunload or
+        // will-quit, so app.quit would end it too, as it does when an update
+        // installs after a timed-out stop.
         app.exit(0);
         return;
       }

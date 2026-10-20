@@ -110,7 +110,7 @@ The backlog editor module is feature-local because its vocabulary and commands b
 - Catalog refresh persistence: `apps/desktop/electron/plugin-catalog-settings.cjs`
 - Main-process failures:
   - Every `ipcMain.on` listener registers through `apps/desktop/electron/ipc-listeners.cjs`, so none can throw into main, and a failed `sendSync` request answers null.
-  - `apps/desktop/electron/window-recovery.cjs` reloads a crashed window, three times a minute at most, and asks about a hung window or a failed load.
+  - `apps/desktop/electron/window-recovery.cjs` reloads a crashed window, but the third crash within a minute asks Reload or Quit instead. It also asks about a hung window or a failed load.
   - `apps/desktop/electron/navigation.cjs` decides whether a navigation stays in the app, opens in the system browser, or is blocked.
   - `apps/desktop/electron/stop-within.cjs` bounds the local API stop before a quit or an update.
 - Application menu per platform and build type: `apps/desktop/electron/app-menu.cjs`.

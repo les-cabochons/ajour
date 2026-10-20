@@ -3,9 +3,9 @@ const CRASH_PERIOD_MS = 60_000;
 
 /**
  * Keeps the Ajour window usable when its page crashes, hangs or cannot load.
- * A crashed page loads again, up to the third crash within a minute; then a
- * dialog offers Reload and Quit, so a page that keeps crashing does not reload
- * in a loop. A hung page gets Wait and Reload, and a failed load gets Try
+ * A crashed page loads again, except at the third crash within a minute,
+ * which shows a dialog with Reload and Quit instead, so a page that keeps
+ * crashing does not reload in a loop. A hung page gets Wait and Reload, and a failed load gets Try
  * again and Quit. Call `load` instead of `window.loadURL`.
  *
  * One recovery dialog shows at a time. A newer recovery closes the open one,
