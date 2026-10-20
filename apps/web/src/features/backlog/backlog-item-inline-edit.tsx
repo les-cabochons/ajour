@@ -31,6 +31,7 @@ import {
   saveDescriptionToSource,
   useDescriptionAccess,
   useDescriptionLimit,
+  useDraftBaseline,
   useSourceDescriptionCheck,
   writesToSource,
 } from "@/features/backlog/synced-description";
@@ -252,6 +253,11 @@ export function DescriptionSection({
     item,
     editing && editable && writesToSource(item, access),
   );
+  const draftBaseline = useDraftBaseline(
+    item,
+    editing && editable && writesToSource(item, access),
+    draft !== base,
+  );
   const wrapperRef = useRef<HTMLDivElement>(null);
   const body = useMemo(
     () => (item.description ? splitDescription(item.description).body : ""),
@@ -264,7 +270,7 @@ export function DescriptionSection({
     const description = normalizeDescriptionText(value) || undefined;
     if (description === item.description) return;
     if (writesToSource(item, access)) {
-      saveDescriptionToSource(item._id, description);
+      saveDescriptionToSource(item._id, description, draftBaseline);
     } else {
       patchBacklogItemWithUndo(item, { description }, "Description changed");
     }

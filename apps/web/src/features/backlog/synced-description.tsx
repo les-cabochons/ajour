@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { RiExternalLinkLine as ExternalIcon } from "@remixicon/react";
 import type { BacklogSyncedDescription } from "@ajour/shared";
 import { Value } from "@/components/ui/value";
@@ -7,6 +7,7 @@ import {
   descriptionAccess,
   descriptionCapabilityOf,
   descriptionLimit,
+  followDraftBaseline,
   hasUnwrittenDescription,
   latestDescription,
   normalizeDescriptionText,
@@ -145,12 +146,34 @@ export function DescriptionLength({
  * background. There is no Undo for the text, which the source then holds;
  * a timelog the text sets a project or task from keeps its own.
  */
-export function saveDescriptionToSource(itemId: string, description?: string) {
+export function saveDescriptionToSource(
+  itemId: string,
+  description: string | undefined,
+  draftBaseline: string | undefined,
+) {
   offerUndo(localStore.saveWorkItemEdits(itemId, { description }), {
     title: "Project and task set from the description",
     subject: "backlog item",
   });
-  void saveSyncedDescription(itemId);
+  void saveSyncedDescription(itemId, "save", draftBaseline);
+}
+
+/**
+ * The agreed text an open draft of the item's description builds on, for its
+ * save: where the user's edit began when a sync changed the text under it.
+ */
+export function useDraftBaseline(
+  item: SyncedItem | undefined,
+  open: boolean,
+  touched: boolean,
+) {
+  const followed = useRef<ReturnType<typeof followDraftBaseline>>(undefined);
+  if (!open || !item) {
+    followed.current = undefined;
+    return undefined;
+  }
+  followed.current = followDraftBaseline(followed.current, item, touched);
+  return followed.current.baseline;
 }
 
 /** Whether a save of the item's description is on its way to the source. */

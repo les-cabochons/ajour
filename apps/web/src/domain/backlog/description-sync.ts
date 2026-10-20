@@ -192,21 +192,63 @@ export function planKeepMine(
 /**
  * The description once the source holds `source`, after a save of `saved`.
  * Both sides agree on it, and the item shows it, merged text included. A text
- * the user changed again meanwhile stays, for the next save.
+ * the user changed again meanwhile takes in what the save merged from the
+ * source, for the next save to write; when both touched the same lines, it
+ * stays as it is, in conflict with the source.
  */
 export function descriptionSaved(
   item: Described,
   saved: string | undefined,
   source: BacklogSyncedDescription,
+  now: number,
 ): Described {
   const remote = storedText(source.text);
-  if (normalizeText(item.description) === normalizeText(saved)) {
-    return agreed(source, remote);
+  const before = normalizeText(saved);
+  const mine = normalizeText(item.description);
+  if (mine === before) return agreed(source, remote);
+  const merge = mergeTexts(before, mine, normalizeText(remote));
+  if ("conflict" in merge) {
+    return {
+      description: item.description,
+      descriptionSync: {
+        // What the later edit began from, so a sync keeps the conflict.
+        baseline: before,
+        ...sourceFacts(source, remote),
+        conflict: {
+          detectedAt: now,
+          localText: item.description ?? "",
+          remoteText: remote,
+        },
+      },
+    };
   }
+  const rebased = normalizeText(merge.merged);
   return {
-    description: item.description,
+    description: rebased || undefined,
     descriptionSync: { baseline: remote, ...sourceFacts(source, remote) },
   };
+}
+
+/**
+ * The agreed text an open description draft builds on, for its save to merge
+ * from. It follows the item while the draft is untouched, or while the item
+ * keeps the text the draft began from. Once a sync changes that text under the
+ * user's edit, it stays where the edit began, so the save merges in what the
+ * source changed. `previous` is what it was at the last render.
+ */
+export function followDraftBaseline(
+  previous: { text: string; baseline?: string; kept: boolean } | undefined,
+  item: Described,
+  touched: boolean,
+): { text: string; baseline?: string; kept: boolean } {
+  const text = normalizeText(item.description);
+  const baseline = item.descriptionSync?.baseline;
+  if (!previous || !touched) return { text, baseline, kept: false };
+  if (previous.kept) return previous;
+  if (text !== previous.text) return { ...previous, kept: true };
+  return previous.baseline === baseline
+    ? previous
+    : { text, baseline, kept: false };
 }
 
 /** The description after a save that could not write it, with why. */

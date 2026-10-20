@@ -82,6 +82,7 @@ import {
   SyncedDescriptionNote,
   useDescriptionAccess,
   useDescriptionLimit,
+  useDraftBaseline,
   useSourceDescriptionCheck,
   writesToSource,
 } from "@/features/backlog/synced-description";
@@ -240,6 +241,11 @@ export function BacklogItemEditorForm({
     descriptionLimit,
   });
   const { validation } = editor;
+  const descriptionDraftBaseline = useDraftBaseline(
+    currentItem,
+    descriptionWritesToSource,
+    fields.description !== base.description,
+  );
 
   const projectOptions = useMemo(
     () =>
@@ -374,7 +380,11 @@ export function BacklogItemEditorForm({
     patch: Partial<Pick<LocalWorkItem, "description">>,
   ) {
     if (workItem && "description" in patch && descriptionWritesToSource) {
-      void saveSyncedDescription(workItem._id);
+      void saveSyncedDescription(
+        workItem._id,
+        "save",
+        descriptionDraftBaseline,
+      );
     }
   }
 

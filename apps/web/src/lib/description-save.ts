@@ -51,17 +51,21 @@ function findItem(itemId: string) {
 
 /**
  * Writes the item's description, already saved locally, to its source.
- * `keepMine` resolves a conflict with the user's text. Saves of one item run
- * one after another, so each reads what the one before wrote.
+ * `keepMine` resolves a conflict with the user's text. `draftBaseline` is
+ * the agreed text the user's edit began from, when a sync has since moved
+ * the item's own, so the save merges what the source changed meanwhile.
+ * Saves of one item run one after another, so each reads what the one
+ * before wrote.
  */
 export function saveSyncedDescription(
   itemId: string,
   mode: "save" | "keepMine" = "save",
+  draftBaseline?: string,
 ): Promise<DescriptionSaveOutcome> {
   const previous = saving.get(itemId);
   const run = (previous ?? Promise.resolve())
     .catch(() => undefined)
-    .then(() => runSave(itemId, mode));
+    .then(() => runSave(itemId, mode, draftBaseline));
   saving.set(itemId, run);
   notify();
   void run.finally(() => {
@@ -75,6 +79,7 @@ export function saveSyncedDescription(
 async function runSave(
   itemId: string,
   mode: "save" | "keepMine",
+  draftBaseline: string | undefined,
 ): Promise<DescriptionSaveOutcome> {
   const item = findItem(itemId);
   if (
@@ -97,17 +102,24 @@ async function runSave(
     );
     const now = findItem(itemId);
     if (!now?.descriptionSync) return { kind: "agreed" };
+    // Text cut to fit Ajour is not the source's text: a merge with it would
+    // write the cut copy back.
+    if (current.cut) {
+      throw new Error(
+        `It is now longer in ${item.sourceConnectionLabel ?? "the source"} than Ajour keeps. Edit it there.`,
+      );
+    }
     const plan =
       mode === "keepMine"
         ? planKeepMine(item, current.text)
         : planDescriptionSave(
-            now.descriptionSync.baseline,
+            draftBaseline ?? now.descriptionSync.baseline,
             saved,
             current.text,
           );
     if (plan.kind === "agreed") {
       localStore.updateSyncedDescription(itemId, (latest) =>
-        descriptionSaved(latest, saved, current),
+        descriptionSaved(latest, saved, current, Date.now()),
       );
       return plan;
     }
@@ -122,7 +134,7 @@ async function runSave(
       return recordConflict(itemId, result.description);
     }
     localStore.updateSyncedDescription(itemId, (latest) =>
-      descriptionSaved(latest, saved, result.description),
+      descriptionSaved(latest, saved, result.description, Date.now()),
     );
     return { kind: "written", merged: plan.merged };
   } catch (error) {

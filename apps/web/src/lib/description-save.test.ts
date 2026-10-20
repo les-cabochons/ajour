@@ -200,6 +200,82 @@ describe("saving a synced description", () => {
     });
   });
 
+  it("merges what a sync brought under an open edit, from where the edit began", async () => {
+    // The edit began on BASE; a sync then brought "New steps" into the item.
+    const theirs = "Goal\n\nNew steps\n\nDone when";
+    const mine = "My goal\n\nSteps\n\nDone when";
+    const { localStore, itemId, item } = await setup(theirs);
+    localStore.updateSyncedDescription(itemId, () => ({
+      description: theirs,
+      descriptionSync: { baseline: theirs, remote: theirs },
+    }));
+    localStore.saveWorkItemEdits(itemId, { description: mine });
+    const writes = stubSource(theirs);
+    const { saveSyncedDescription } = await import("@/lib/description-save");
+
+    expect(await saveSyncedDescription(itemId, "save", BASE)).toEqual({
+      kind: "written",
+      merged: true,
+    });
+    const merged = "My goal\n\nNew steps\n\nDone when";
+    expect(writes).toEqual([
+      { sourceId: "s1", text: merged, expected: theirs },
+    ]);
+    expect(item().description).toBe(merged);
+  });
+
+  it("keeps what the first of two saves merged when the second is written", async () => {
+    const { localStore, itemId, item, save } = await setup(
+      "My title\n\nSteps\n\nDone when",
+    );
+    const source = { text: "Goal\n\nNew steps\n\nDone when" };
+    // The second edit lands while the first save's write is on its way.
+    stubSource(source.text, (request) => {
+      if (request.expected === "Goal\n\nNew steps\n\nDone when") {
+        localStore.saveWorkItemEdits(itemId, {
+          description: "My newer title\n\nSteps\n\nDone when",
+        });
+      }
+      return Response.json({
+        outcome: "written",
+        description: { text: request.text },
+      });
+    });
+    void save();
+    await vi.waitFor(() =>
+      expect(item().descriptionSync?.baseline).toBe(
+        "My title\n\nNew steps\n\nDone when",
+      ),
+    );
+    const writes = stubSource("My title\n\nNew steps\n\nDone when");
+
+    await save();
+    expect(writes.at(-1)?.text).toBe(
+      "My newer title\n\nNew steps\n\nDone when",
+    );
+  });
+
+  it("writes nothing over a source text cut to fit Ajour", async () => {
+    const { item, save } = await setup("Goal\n\nMy steps\n\nDone when");
+    const writes: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.endsWith("/description")) {
+          return Response.json({ description: { text: BASE, cut: true } });
+        }
+        writes.push(init?.body);
+        return Response.json({});
+      }),
+    );
+
+    expect((await save()).kind).toBe("failed");
+    expect(writes).toEqual([]);
+    expect(item().descriptionSync?.writeError?.message).toContain(
+      "longer in Work than Ajour keeps",
+    );
+  });
+
   it("writes the user's side of a conflict with Keep mine", async () => {
     const mine = "Goal\n\nMy steps\n\nDone when";
     const theirs = "Goal\n\nTheir steps\n\nDone when";

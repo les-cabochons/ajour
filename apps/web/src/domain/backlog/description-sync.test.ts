@@ -8,6 +8,7 @@ import {
   descriptionLimit,
   descriptionSaved,
   descriptionWriteFailed,
+  followDraftBaseline,
   hasUnwrittenDescription,
   latestDescription,
   newDescriptionConflicts,
@@ -492,9 +493,12 @@ describe("keeping the user's side of a conflict", () => {
 
 describe("after a save", () => {
   it("agrees on what the source holds, and shows it", () => {
-    const saved = descriptionSaved(synced("Mine", "Old"), "Mine", {
-      text: "Mine, merged",
-    });
+    const saved = descriptionSaved(
+      synced("Mine", "Old"),
+      "Mine",
+      { text: "Mine, merged" },
+      NOW,
+    );
     expect(saved).toEqual({
       description: "Mine, merged",
       descriptionSync: { baseline: "Mine, merged", remote: "Mine, merged" },
@@ -503,16 +507,63 @@ describe("after a save", () => {
 
   it("keeps a text the user changed again meanwhile, for the next save", () => {
     expect(
-      descriptionSaved(synced("Mine, later", "Old"), "Mine", { text: "Mine" }),
+      descriptionSaved(
+        synced("Mine, later", "Old"),
+        "Mine",
+        { text: "Mine" },
+        NOW,
+      ),
     ).toEqual({
       description: "Mine, later",
       descriptionSync: { baseline: "Mine", remote: "Mine" },
     });
   });
 
+  it("takes what the save merged from the source into a text changed meanwhile", () => {
+    expect(
+      descriptionSaved(
+        synced("My newer title\nSteps", "Title\nSteps"),
+        "My title\nSteps",
+        { text: "My title\nNew steps" },
+        NOW,
+      ),
+    ).toEqual({
+      description: "My newer title\nNew steps",
+      descriptionSync: {
+        baseline: "My title\nNew steps",
+        remote: "My title\nNew steps",
+      },
+    });
+  });
+
+  it("puts a text changed meanwhile in the same lines in conflict, and a sync keeps it", () => {
+    const saved = descriptionSaved(
+      synced("My title\nMy steps", "Title\nSteps"),
+      "My title\nSteps",
+      { text: "My title\nNew steps" },
+      NOW,
+    );
+    expect(saved).toEqual({
+      description: "My title\nMy steps",
+      descriptionSync: {
+        baseline: "My title\nSteps",
+        remote: "My title\nNew steps",
+        conflict: {
+          detectedAt: NOW,
+          localText: "My title\nMy steps",
+          remoteText: "My title\nNew steps",
+        },
+      },
+    });
+    expect(
+      reconcileDescription(saved, { text: "My title\nNew steps" }, NOW + 1)
+        .descriptionSync?.conflict?.detectedAt,
+    ).toBe(NOW);
+  });
+
   it("clears a write error and a conflict", () => {
     const failed = descriptionWriteFailed(synced("Mine", "Old"), "No", NOW);
-    expect(descriptionSaved(failed, "Mine", { text: "Mine" })).toEqual({
+    expect(descriptionSaved(failed, "Mine", { text: "Mine" }, NOW)).toEqual({
       description: "Mine",
       descriptionSync: { baseline: "Mine", remote: "Mine" },
     });
@@ -557,6 +608,32 @@ describe("after a save", () => {
   it("leaves an item without description sync alone", () => {
     const local = { description: "Mine" };
     expect(descriptionWriteFailed(local, "No", NOW)).toBe(local);
+  });
+});
+
+describe("the agreed text an open draft builds on", () => {
+  it("follows the item while the draft is untouched", () => {
+    const first = followDraftBaseline(undefined, synced("A", "A"), false);
+    expect(followDraftBaseline(first, synced("B", "B"), false).baseline).toBe(
+      "B",
+    );
+  });
+
+  it("stays where the edit began once a sync changes the text under it", () => {
+    const first = followDraftBaseline(undefined, synced("A", "A"), true);
+    const moved = followDraftBaseline(first, synced("B", "B"), true);
+    expect(moved.baseline).toBe("A");
+    // It keeps it even after the item settles on the new text.
+    expect(followDraftBaseline(moved, synced("B", "B"), true).baseline).toBe(
+      "A",
+    );
+  });
+
+  it("follows a sync that agrees with the text the draft began from", () => {
+    const first = followDraftBaseline(undefined, synced("Mine", "Old"), true);
+    expect(
+      followDraftBaseline(first, synced("Mine", "Mine"), true).baseline,
+    ).toBe("Mine");
   });
 });
 
