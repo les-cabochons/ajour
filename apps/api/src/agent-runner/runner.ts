@@ -32,7 +32,6 @@ import type {
   RunnerEvent,
   StdioServerSpec,
 } from "./adapter.ts";
-import { killProcessTree, processTreeSpawnOptions } from "./process-tree.ts";
 import { buildPrompt } from "./prompts.ts";
 
 /**
@@ -111,8 +110,6 @@ export interface AgentRunnerOptions {
   now?: () => number;
   /** Time between SIGTERM and SIGKILL. Tests shorten it. Defaults to 5 seconds. */
   killGraceMs?: number;
-  /** Ends the CLI and everything it started. Defaults to `killProcessTree`. */
-  killProcessTree?: (pid: number, signal: "SIGTERM" | "SIGKILL") => void;
 }
 
 /** The steps of a launch, in order. agent.run names the one that failed. */
@@ -171,10 +168,14 @@ interface ActiveRun {
   stalledSince?: number;
   /** When tick first saw the session ended while the CLI still ran. */
   endedSince?: number;
+  /** Set when the CLI's process exits. Its output can stay open longer. */
+  exited?: { code: number | null };
   /** Resolves when the CLI closes, which may be never. */
   closed: Promise<void>;
   /** Set by the first finalize() call, which later calls return. */
   finalized?: Promise<void>;
+  /** Set by the first Stop or shutdown: ends the run, closed or not. */
+  finishing?: Promise<void>;
 }
 
 /** How the runner ends a session that is still open when its run ends. */
@@ -485,7 +486,6 @@ export class AgentRunner {
         cwd: workDirectory,
         env: invocation.env,
         stdio: ["ignore", "pipe", "pipe"],
-        ...processTreeSpawnOptions,
       });
       const run: AgentRun = {
         id: runId,
@@ -509,7 +509,7 @@ export class AgentRunner {
       this.active = active;
       return run;
     } catch (error) {
-      if (child?.pid !== undefined) this.killTree(child.pid, "SIGKILL");
+      child?.kill("SIGKILL");
       const cleanupFailures = client
         ? await this.cleanUp(
             client,
@@ -551,6 +551,9 @@ export class AgentRunner {
         // Node gives no pid to a process that never started.
         if (child.pid === undefined) active.spawnError = error;
       });
+      child.on("exit", (code) => {
+        active.exited = { code };
+      });
       child.on("close", (code) => {
         void this.finalize(active, code);
         resolve();
@@ -559,6 +562,8 @@ export class AgentRunner {
   }
 
   private onEvent(active: ActiveRun, event: RunnerEvent) {
+    // A run that is ending already has its outcome.
+    if (active.finalized) return;
     switch (event.kind) {
       case "tool-call":
         active.toolCalls += 1;
@@ -601,6 +606,8 @@ export class AgentRunner {
   /** Ends the session, cleans up and emits the run's one agent.run event. */
   private async endRun(active: ActiveRun, code: number | null) {
     clearTimeout(active.killTimer);
+    // The outcome is decided here, so the stop reason that led to it is too.
+    const { stopReason } = active;
     const session = this.options.sessions.get(active.run.sessionId);
     const open = session?.state === "active" || session?.state === "stalled";
     // A session the agent ended itself keeps its outcome.
@@ -619,7 +626,7 @@ export class AgentRunner {
         durationMs: this.now() - active.run.startedAt,
         outcome,
         exitCode: code,
-        stopReason: active.stopReason,
+        stopReason,
         toolCalls: active.toolCalls,
         ...(active.spawnError
           ? { launchFailure: { step: "spawn", error: active.spawnError } }
@@ -669,32 +676,56 @@ export class AgentRunner {
   }
 
   /**
-   * Ends the CLI and everything it started: SIGTERM now, SIGKILL after the
-   * grace period if the CLI has still not closed.
+   * SIGTERM now, SIGKILL after the grace period if the CLI is still running.
+   * Only the CLI itself: ending what it started is #341.
    */
   private terminate(active: ActiveRun) {
-    const { pid } = active.child;
     // No pid: the CLI never started, and its error and close are on the way.
-    if (pid === undefined) return;
-    this.killTree(pid, "SIGTERM");
+    // Killing it would throw.
+    if (active.child.pid === undefined) return;
+    active.child.kill("SIGTERM");
     if (active.killTimer) return;
     active.killTimer = setTimeout(
-      () => this.killTree(pid, "SIGKILL"),
+      () => active.child.kill("SIGKILL"),
       this.options.killGraceMs ?? DEFAULT_KILL_GRACE_MS,
     );
     active.killTimer.unref();
   }
 
-  private killTree(pid: number, signal: "SIGTERM" | "SIGKILL") {
-    (this.options.killProcessTree ?? killProcessTree)(pid, signal);
+  /**
+   * The user pressed Stop. False when that run is not going. A run that is
+   * already ending, or whose CLI already exited, keeps its own outcome: Stop
+   * then only makes sure it ends.
+   */
+  stop(runId: string): boolean {
+    const active = this.active;
+    if (!active || active.run.id !== runId) return false;
+    if (active.finalized) return true;
+    if (!active.exited) {
+      active.stopReason ??= "user";
+      this.terminate(active);
+    }
+    void this.finishWithinGrace(active);
+    return true;
   }
 
-  /** The user pressed Stop. False when that run is not going. */
-  stop(runId: string): boolean {
-    if (!this.active || this.active.run.id !== runId) return false;
-    this.active.stopReason ??= "user";
-    this.terminate(this.active);
-    return true;
+  /**
+   * Ends the run when the CLI closes, or after the kill grace period plus a
+   * second if it never does: something the CLI started can hold its output
+   * open (#341). Stop and shutdown share it.
+   */
+  private finishWithinGrace(active: ActiveRun): Promise<void> {
+    active.finishing ??= new Promise<void>((resolve) => {
+      const giveUp = setTimeout(
+        resolve,
+        (this.options.killGraceMs ?? DEFAULT_KILL_GRACE_MS) + 1000,
+      );
+      void active.closed.then(() => {
+        clearTimeout(giveUp);
+        resolve();
+      });
+    }).then(() => this.finalize(active, active.exited?.code ?? null));
+    return active.finishing;
   }
 
   /**
@@ -703,7 +734,9 @@ export class AgentRunner {
    */
   tick() {
     const active = this.active;
-    if (!active || active.stopReason) return;
+    if (!active || active.stopReason || active.finalized || active.exited) {
+      return;
+    }
     const session = this.options.sessions.get(active.run.sessionId);
     const open = session?.state === "active" || session?.state === "stalled";
     if (session && !open) {
@@ -730,27 +763,20 @@ export class AgentRunner {
   }
 
   /**
-   * Ajour is quitting: wait for a start in progress, stop its run's whole
-   * process tree and wait for the CLI to close. If it still has not closed
-   * after the kill grace period plus a second, end the run without it, so
-   * Ajour can quit. A close that arrives later changes nothing.
+   * Ajour is quitting: wait for a start in progress, stop its run and wait
+   * for the CLI to close. If it still has not closed after the kill grace
+   * period plus a second, end the run without it, so Ajour can quit. A close
+   * that arrives later changes nothing.
    */
   async shutdown() {
     if (this.starting) await this.starting.catch(() => undefined);
     const active = this.active;
     if (!active) return;
-    active.stopReason ??= "shutdown";
-    this.terminate(active);
-    let giveUp: NodeJS.Timeout | undefined;
-    const gaveUp = new Promise<void>((resolve) => {
-      giveUp = setTimeout(
-        resolve,
-        (this.options.killGraceMs ?? DEFAULT_KILL_GRACE_MS) + 1000,
-      );
-    });
-    await Promise.race([active.closed, gaveUp]);
-    clearTimeout(giveUp);
-    await this.finalize(active, null);
+    if (!active.finalized && !active.exited) {
+      active.stopReason ??= "shutdown";
+      this.terminate(active);
+    }
+    await this.finishWithinGrace(active);
   }
 }
 

@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { mkdtemp, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -13,7 +12,6 @@ import type {
   PluginField,
 } from "../../../../packages/shared/plugins.ts";
 import type { AgentCliAdapter } from "./adapter.ts";
-import { killProcessTree } from "./process-tree.ts";
 import { AgentRunner } from "./runner.ts";
 
 const FAKE_CLI = fileURLToPath(new URL("./fake-cli.mjs", import.meta.url));
@@ -63,11 +61,13 @@ function fakeStorage({
   values,
   revoked,
   revokeError,
+  whileRevoking,
 }: {
   cli: AgentCliId;
   values: Record<string, string>;
   revoked: string[];
   revokeError?: Error;
+  whileRevoking?: () => Promise<void>;
 }) {
   return {
     getMcpSettings: async () => ({ enabled: true, clients: [] }),
@@ -82,6 +82,7 @@ function fakeStorage({
       token: "ajour_test-token",
     }),
     revokeMcpClient: async (clientId: string) => {
+      await whileRevoking?.();
       if (revokeError) throw revokeError;
       revoked.push(clientId);
       return true;
@@ -121,14 +122,6 @@ function fakePlugins(
   };
 }
 
-function killOnlyTheCli(pid: number, signal: "SIGTERM" | "SIGKILL") {
-  try {
-    process.kill(pid, signal);
-  } catch {
-    // Already gone.
-  }
-}
-
 async function setup(
   script: unknown[],
   options: {
@@ -144,12 +137,8 @@ async function setup(
     findExecutable?: (name: string) => Promise<string | null>;
     readPrompt?: () => Promise<string>;
     revokeError?: Error;
-    /**
-     * Kills the CLI's whole tree, as Ajour does. Off, only the CLI is killed:
-     * `taskkill` reads the process list through WMI, which takes seconds on
-     * some Windows machines, and most tests start no grandchild.
-     */
-    killTree?: boolean;
+    /** Runs while the client is revoked, before the revoke answers. */
+    whileRevoking?: () => Promise<void>;
     /** Replaces the sink that collects `events`. */
     logEvent?: (event: Record<string, unknown>) => void;
     /** What `<cli> --version` prints. */
@@ -172,6 +161,7 @@ async function setup(
       values: options.values ?? { url: "https://wd.example/t" },
       revoked,
       revokeError: options.revokeError,
+      whileRevoking: options.whileRevoking,
     }),
     sessions,
     plugins: {
@@ -197,7 +187,6 @@ async function setup(
     ...(options.killGraceMs === undefined
       ? {}
       : { killGraceMs: options.killGraceMs }),
-    killProcessTree: options.killTree ? killProcessTree : killOnlyTheCli,
   });
   return { runner, sessions, revoked, events, work, report };
 }
@@ -208,14 +197,11 @@ const request = {
   weekOf: "2026-10-12",
 };
 
-/**
- * Waits until the run is gone from the runner. Stopping a run on Windows waits
- * for `taskkill`, which takes several seconds on a machine with a slow WMI.
- */
+/** Waits until the run is gone from the runner. */
 async function settled(runner: AgentRunner) {
   await vi.waitFor(
     async () => expect((await runner.overview()).currentRun).toBeNull(),
-    { timeout: 15_000 },
+    { timeout: 5000 },
   );
 }
 
@@ -255,6 +241,19 @@ async function waitForGrandchild(report: string): Promise<number> {
   return pid;
 }
 
+/** Waits for the fake CLI's first report line and returns its pid. */
+async function waitForCliPid(report: string): Promise<number> {
+  return await vi.waitFor(
+    async () => {
+      const [first] = (await readFile(report, "utf8")).split("\n");
+      const pid = (JSON.parse(first!) as { pid?: number }).pid;
+      expect(pid).toBeDefined();
+      return pid!;
+    },
+    { timeout: 5000 },
+  );
+}
+
 function isAlive(pid: number) {
   try {
     process.kill(pid, 0);
@@ -267,7 +266,7 @@ function isAlive(pid: number) {
 const runEvents = (events: Record<string, unknown>[]) =>
   events.filter((event) => event.event === "agent.run");
 
-describe("AgentRunner", { timeout: 30_000 }, () => {
+describe("AgentRunner", () => {
   it("runs a selected Codex adapter and retains its final summary", async () => {
     const fake = fakeAdapter(
       [
@@ -825,38 +824,6 @@ describe("AgentRunner", { timeout: 30_000 }, () => {
     expect(runner.currentRun()).toBeNull();
   });
 
-  it("stops the CLI's whole process tree, so nothing it started holds the run open", async () => {
-    const { runner, sessions, events, report } = await setup(
-      [{ grandchild: true }, { hang: true }],
-      { killTree: true },
-    );
-    const run = await runner.start(request);
-    const grandchild = await waitForGrandchild(report);
-    expect(runner.stop(run.id)).toBe(true);
-    await settled(runner);
-    await vi.waitFor(() => expect(isAlive(grandchild)).toBe(false));
-    expect(sessions.get(run.sessionId)!.state).toBe("cancelled");
-    expect(runEvents(events)).toEqual([
-      expect.objectContaining({ run_id: run.id, outcome: "cancelled" }),
-    ]);
-  });
-
-  it("leaves nothing the CLI started running when Ajour quits", async () => {
-    const { runner, sessions, events, report } = await setup(
-      [{ grandchild: true }, { hang: true }],
-      { killTree: true },
-    );
-    const run = await runner.start(request);
-    const grandchild = await waitForGrandchild(report);
-    await runner.shutdown();
-    await vi.waitFor(() => expect(isAlive(grandchild)).toBe(false));
-    expect(runner.currentRun()).toBeNull();
-    expect(sessions.get(run.sessionId)!.state).toBe("cancelled");
-    expect(runEvents(events)).toEqual([
-      expect.objectContaining({ run_id: run.id, stop_reason: "shutdown" }),
-    ]);
-  });
-
   it("ends a run exactly once when shutdown gives up on a CLI that never closes", async () => {
     // The escapee is outside the CLI's tree and keeps its output open, so
     // the CLI's close never comes while it lives.
@@ -877,6 +844,8 @@ describe("AgentRunner", { timeout: 30_000 }, () => {
         stop_reason: "shutdown",
       }),
     ]);
+    // The escapee survives: ending what the CLI started is #341.
+    expect(isAlive(escapee)).toBe(true);
     // With the escapee gone the close arrives late. It must not end the run
     // a second time.
     process.kill(escapee, "SIGKILL");
@@ -886,22 +855,79 @@ describe("AgentRunner", { timeout: 30_000 }, () => {
     expect(revoked).toHaveLength(1);
   });
 
-  it("never kills a process the runner did not start, such as the user's Chrome", async () => {
-    const usersChrome = spawn(
-      process.execPath,
-      ["-e", "setInterval(() => {}, 1000)"],
-      { stdio: "ignore" },
-    );
-    grandchildren.push(usersChrome.pid!);
-    const { runner, report } = await setup(
-      [{ grandchild: true }, { hang: true }],
-      { killTree: true },
+  it("ends a stopped run within the grace period even when its output never closes", async () => {
+    const { runner, sessions, events, report } = await setup(
+      [{ escapee: true }, { hang: true }],
+      { killGraceMs: 50 },
     );
     const run = await runner.start(request);
     await waitForGrandchild(report);
-    runner.stop(run.id);
+    expect(runner.stop(run.id)).toBe(true);
+    // The kill grace period plus a second, as at quit.
     await settled(runner);
-    expect(isAlive(usersChrome.pid!)).toBe(true);
+    expect(sessions.get(run.sessionId)!.state).toBe("cancelled");
+    expect(runEvents(events)).toEqual([
+      expect.objectContaining({
+        run_id: run.id,
+        outcome: "cancelled",
+        stop_reason: "user",
+      }),
+    ]);
+  });
+
+  it("ignores Stop once the CLI has exited, so its own outcome stands", async () => {
+    const { runner, sessions, events, report } = await setup(
+      [{ escapee: true }, { exit: 0 }],
+      { killGraceMs: 50 },
+    );
+    const run = await runner.start(request);
+    await waitForGrandchild(report);
+    const cli = await waitForCliPid(report);
+    await vi.waitFor(() => expect(isAlive(cli)).toBe(false));
+    // Lets Node report the exit to the runner.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(runner.stop(run.id)).toBe(true);
+    await settled(runner);
+    expect(sessions.get(run.sessionId)!.state).toBe("done");
+    expect(runEvents(events)).toEqual([
+      expect.objectContaining({
+        outcome: "done",
+        exit_code: 0,
+        stop_reason: undefined,
+      }),
+    ]);
+  });
+
+  it("ignores Stop and the stall timer while the run is ending", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      let release!: () => void;
+      const released = new Promise<void>((resolve) => (release = resolve));
+      let revoking!: () => void;
+      const revokeStarted = new Promise<void>(
+        (resolve) => (revoking = resolve),
+      );
+      const { runner, events } = await setup([{ exit: 0 }], {
+        whileRevoking: async () => {
+          revoking();
+          await released;
+        },
+      });
+      const run = await runner.start(request);
+      // The outcome is set and the session ended; the cleanup is waiting.
+      await revokeStarted;
+      runner.tick();
+      vi.setSystemTime(Date.now() + 3 * 60_000);
+      runner.tick();
+      expect(runner.stop(run.id)).toBe(true);
+      release();
+      await settled(runner);
+      expect(runEvents(events)).toEqual([
+        expect.objectContaining({ outcome: "done", stop_reason: undefined }),
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("cleans up when the invocation cannot be built", async () => {
