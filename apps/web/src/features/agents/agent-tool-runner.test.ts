@@ -21,6 +21,8 @@ const {
   postItemComment,
   showUndoToast,
   showErrorToast,
+  readBacklogDescription,
+  writeBacklogDescription,
 } = vi.hoisted(() => ({
   offerUndo: vi.fn(),
   canWriteToSource: vi.fn((_item: { title: string }) => false),
@@ -31,6 +33,8 @@ const {
   postItemComment: vi.fn(),
   showUndoToast: vi.fn(),
   showErrorToast: vi.fn(),
+  readBacklogDescription: vi.fn(),
+  writeBacklogDescription: vi.fn(),
 }));
 vi.mock("@/features/feedback/undo-toast", () => ({ offerUndo }));
 vi.mock("@/features/backlog/backlog-source-writes", async (importOriginal) => ({
@@ -45,6 +49,8 @@ vi.mock("@/lib/app-api", async (importOriginal) => ({
   fetchPluginsOverview,
   listItemComments,
   postItemComment,
+  readBacklogDescription,
+  writeBacklogDescription,
 }));
 vi.mock("@/components/ui/toast", async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -156,6 +162,7 @@ beforeEach(() => {
 /** Imports one synced Azure DevOps item, in source state Active. */
 function importSyncedItem(
   localStore: Awaited<ReturnType<typeof setup>>["localStore"],
+  description?: { text: string; lost?: string[] },
 ) {
   localStore.importSyncedWorkItems([
     {
@@ -176,6 +183,7 @@ function importSyncedItem(
       selected: true,
       childCount: 0,
       pushedAt: 1,
+      ...(description ? { description } : {}),
     },
   ]);
   canWriteToSource.mockReturnValue(true);
@@ -1420,5 +1428,285 @@ describe("agent comment tools", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(postItemComment).not.toHaveBeenCalled();
+  });
+});
+
+/** The synced item's plugin writing descriptions, with the connection's settings. */
+function descriptionOverview(
+  agentAccess?: "none" | "read" | "readWrite",
+  options: { write?: boolean; allowLossy?: boolean } = {},
+) {
+  const overview = pluginsOverview(agentAccess);
+  const group = overview.connectionGroups[0]!;
+  (group.plugin.capabilities.connector as Record<string, unknown>).description =
+    {
+      write: options.write ?? true,
+    };
+  if (options.allowLossy) {
+    (group.connections[0] as Record<string, unknown>).allowLossyConversion =
+      true;
+  }
+  return overview;
+}
+
+/** A synced item whose description syncs both ways, last agreed on `text`. */
+function importDescribedItem(
+  localStore: Awaited<ReturnType<typeof setup>>["localStore"],
+  text: string,
+  lost?: string[],
+) {
+  return importSyncedItem(localStore, { text, ...(lost ? { lost } : {}) });
+}
+
+describe("an agent's change to a synced description", () => {
+  const BASE = "Goal\n\nSteps\n\nDone when";
+  beforeEach(() => {
+    fetchPluginsOverview.mockReset();
+    readBacklogDescription.mockReset();
+    writeBacklogDescription.mockReset();
+    showErrorToast.mockClear();
+  });
+
+  /** The source holds `text`, and writes what it is asked to unless `answer` says otherwise. */
+  function source(text: string, lost?: string[]) {
+    readBacklogDescription.mockResolvedValue({
+      description: { text, ...(lost ? { lost } : {}) },
+    });
+    writeBacklogDescription.mockImplementation(
+      async (
+        _plugin: string,
+        _connection: string,
+        request: { text: string },
+      ) => ({
+        outcome: "written",
+        description: { text: request.text },
+      }),
+    );
+  }
+
+  it("writes it to the source through the user's save, marked as an agent's", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importDescribedItem(localStore, BASE);
+    fetchPluginsOverview.mockResolvedValue(descriptionOverview("readWrite"));
+    source(BASE);
+
+    const mine = "Goal\n\nMy steps\n\nDone when";
+    expect(
+      await call("edit_work_item", { workItemId, description: mine }),
+    ).toMatchObject({
+      ok: true,
+      output: { descriptionSave: { outcome: "written" } },
+    });
+    expect(readBacklogDescription).toHaveBeenCalledWith(
+      "azure_devops",
+      "ado-1",
+      "101",
+      true,
+    );
+    expect(writeBacklogDescription).toHaveBeenCalledWith(
+      "azure_devops",
+      "ado-1",
+      { sourceId: "101", text: mine, expected: BASE },
+      true,
+    );
+    expect(
+      localStore.snapshot().workItems.find((item) => item._id === workItemId)
+        ?.descriptionSync,
+    ).toMatchObject({ baseline: mine, remote: mine });
+  });
+
+  it("gives the other fields and what the timelog sets one Undo, which keeps the text", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importDescribedItem(localStore, BASE);
+    fetchPluginsOverview.mockResolvedValue(descriptionOverview("readWrite"));
+    source(BASE);
+
+    const mine = "---\ntimelog:\n  project: Acme\n  task: Build\n---\nMine";
+    const result = await call("edit_work_item", {
+      workItemId,
+      title: "Renamed",
+      description: mine,
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      output: { descriptionSave: { outcome: "written" } },
+    });
+    const find = () =>
+      localStore.snapshot().workItems.find((item) => item._id === workItemId)!;
+    expect(find()).toMatchObject({ title: "Renamed", description: mine });
+    expect(find().projectId).toBeDefined();
+
+    expect(localStore.undo(offerUndo.mock.calls.at(-1)![0])).toBe("restored");
+    expect(find()).toMatchObject({ title: "Synced", description: mine });
+    expect(find().projectId).toBeUndefined();
+  });
+
+  it("merges with a change in the source to other lines", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importDescribedItem(localStore, BASE);
+    fetchPluginsOverview.mockResolvedValue(descriptionOverview("readWrite"));
+    source("Their goal\n\nSteps\n\nDone when");
+
+    expect(
+      await call("edit_work_item", {
+        workItemId,
+        description: "Goal\n\nMy steps\n\nDone when",
+      }),
+    ).toMatchObject({
+      ok: true,
+      output: { descriptionSave: { outcome: "merged" } },
+    });
+    expect(
+      localStore.snapshot().workItems.find((item) => item._id === workItemId)
+        ?.description,
+    ).toBe("Their goal\n\nMy steps\n\nDone when");
+  });
+
+  it("reports a conflict to the agent, writing nothing", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importDescribedItem(localStore, BASE);
+    fetchPluginsOverview.mockResolvedValue(descriptionOverview("readWrite"));
+    source("Goal\n\nTheir steps\n\nDone when");
+
+    expect(
+      await call("edit_work_item", {
+        workItemId,
+        description: "Goal\n\nMy steps\n\nDone when",
+      }),
+    ).toMatchObject({
+      ok: true,
+      output: {
+        descriptionSave: {
+          outcome: "conflict",
+          message: expect.stringContaining(
+            "The user resolves the conflict in Sync review.",
+          ),
+        },
+      },
+    });
+    expect(writeBacklogDescription).not.toHaveBeenCalled();
+  });
+
+  it("refuses without Read and write on the connection, changing nothing", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importDescribedItem(localStore, BASE);
+    source(BASE);
+    for (const access of [undefined, "read"] as const) {
+      fetchPluginsOverview.mockResolvedValue(descriptionOverview(access));
+      expect(
+        await call("edit_work_item", {
+          workItemId,
+          title: "Renamed",
+          description: "Mine",
+        }),
+      ).toMatchObject({
+        ok: false,
+        error: expect.stringContaining(
+          'The user hasn\'t allowed agents to change descriptions on the "Main connection" connection.',
+        ),
+      });
+    }
+    const item = localStore
+      .snapshot()
+      .workItems.find((entry) => entry._id === workItemId);
+    expect(item).toMatchObject({ title: "Synced", description: BASE });
+    expect(readBacklogDescription).not.toHaveBeenCalled();
+  });
+
+  it("refuses a description the plugin cannot write, or one that is cut", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importDescribedItem(localStore, BASE);
+    fetchPluginsOverview.mockResolvedValue(
+      descriptionOverview("readWrite", { write: false }),
+    );
+    expect(
+      await call("edit_work_item", { workItemId, description: "Mine" }),
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("Ajour can't write to"),
+    });
+
+    fetchPluginsOverview.mockResolvedValue(descriptionOverview("readWrite"));
+    localStore.updateSyncedDescription(workItemId, (item) => ({
+      description: item.description,
+      descriptionSync: { ...item.descriptionSync!, cut: true },
+    }));
+    expect(
+      await call("edit_work_item", { workItemId, description: "Mine" }),
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("longer than Ajour keeps"),
+    });
+  });
+
+  it("refuses lossy text unless the connection allows lossy conversion, then writes the loss it allows", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importDescribedItem(localStore, BASE, ["underline"]);
+    source(BASE, ["underline"]);
+
+    fetchPluginsOverview.mockResolvedValue(descriptionOverview("readWrite"));
+    expect(
+      await call("edit_work_item", { workItemId, description: "Mine" }),
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("lose its underline"),
+    });
+
+    fetchPluginsOverview.mockResolvedValue(
+      descriptionOverview("readWrite", { allowLossy: true }),
+    );
+    expect(
+      await call("edit_work_item", { workItemId, description: "Mine" }),
+    ).toMatchObject({
+      ok: true,
+      output: { descriptionSave: { outcome: "written" } },
+    });
+    expect(writeBacklogDescription).toHaveBeenCalledWith(
+      "azure_devops",
+      "ado-1",
+      expect.objectContaining({ text: "Mine", allowedLoss: ["underline"] }),
+      true,
+    );
+  });
+
+  it("keeps the text in Ajour and says why when the write fails", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importDescribedItem(localStore, BASE);
+    fetchPluginsOverview.mockResolvedValue(descriptionOverview("readWrite"));
+    source(BASE);
+    writeBacklogDescription.mockRejectedValue(new Error("The token expired."));
+
+    expect(
+      await call("edit_work_item", { workItemId, description: "Mine" }),
+    ).toMatchObject({
+      ok: true,
+      output: {
+        descriptionSave: {
+          outcome: "failed",
+          message: expect.stringContaining("The token expired."),
+        },
+      },
+    });
+    expect(
+      localStore.snapshot().workItems.find((item) => item._id === workItemId)
+        ?.description,
+    ).toBe("Mine");
+  });
+
+  it("leaves a description that is not synced to the usual edit, with Undo", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importSyncedItem(localStore);
+    fetchPluginsOverview.mockResolvedValue(descriptionOverview("readWrite"));
+
+    expect(
+      await call("edit_work_item", { workItemId, description: "Local notes" }),
+    ).toMatchObject({
+      ok: true,
+    });
+    expect(readBacklogDescription).not.toHaveBeenCalled();
+    expect(
+      localStore.snapshot().workItems.find((item) => item._id === workItemId)
+        ?.description,
+    ).toBe("Local notes");
   });
 });

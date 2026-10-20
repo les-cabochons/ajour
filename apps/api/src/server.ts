@@ -1441,6 +1441,20 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           const writeRequest = writes
             ? backlogWriteDescriptionRequestSchema.parse(body)
             : undefined;
+          // An agent's call says so; it needs Read to read the description
+          // and Read and write to change it, whatever the page asks.
+          if (
+            requestUrl.searchParams.get("agent") === "1" &&
+            !agentAccessAllows(
+              connectionAgentAccess(connection),
+              writes ? "readWrite" : "read",
+            )
+          ) {
+            writeJson(response, 409, {
+              error: `The user hasn't allowed agents to ${writes ? "change" : "read"} descriptions on the "${connection.label}" connection.`,
+            });
+            return;
+          }
           // Only a connection that allows lossy conversion writes with losses,
           // whatever a client asks.
           if (

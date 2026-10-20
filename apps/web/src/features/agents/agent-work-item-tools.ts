@@ -35,7 +35,22 @@ import {
   requireProjectTask,
   type AgentWriteOutcome,
 } from "@/features/agents/agent-write-tools";
-import { listBacklogSettleStates } from "@/lib/app-api";
+import { fetchPluginsOverview, listBacklogSettleStates } from "@/lib/app-api";
+import {
+  agentAccessAllows,
+  connectionAgentAccess,
+  connectionAllowsLossyConversion,
+} from "@ajour/shared";
+import {
+  descriptionAccess,
+  descriptionCapabilityOf,
+  descriptionLimit,
+  descriptionLosses,
+  hasUnwrittenDescription,
+  lostFormatting,
+  normalizeDescriptionText,
+} from "@/domain/backlog/description-sync";
+import { saveSyncedDescription } from "@/lib/description-save";
 import { localStore } from "@/lib/local-store";
 import { queueSettleComment } from "@/lib/settle-comments";
 
@@ -157,6 +172,107 @@ async function resolveSettleChange(
   };
 }
 
+/**
+ * Checks an agent's change to a synced description as the user's save is
+ * checked: Read and write on the connection, the read-only rule, and the
+ * source's length limit. Lossy text needs the connection to allow lossy
+ * conversion, which stands for the user's confirmation. Returns the text to
+ * save and the losses it may write.
+ */
+async function prepareAgentDescription(
+  item: LocalWorkItem,
+  text: string,
+): Promise<{
+  description: string | undefined;
+  allowedLoss: readonly string[];
+}> {
+  let overview;
+  try {
+    overview = await fetchPluginsOverview();
+  } catch (error) {
+    throw new AgentToolRefusal(
+      `Ajour couldn't read its plugin settings: ${error instanceof Error ? error.message : "unknown error"}`,
+    );
+  }
+  const connection = overview.connectionGroups
+    .find((group) => group.plugin.id === item.source)
+    ?.connections.find((candidate) => candidate.id === item.sourceConnectionId);
+  const connectionName =
+    connection?.label ?? item.sourceConnectionLabel ?? "item's";
+  if (
+    !connection ||
+    !agentAccessAllows(connectionAgentAccess(connection), "readWrite")
+  ) {
+    throw new AgentToolRefusal(
+      `The user hasn't allowed agents to change descriptions on the "${connectionName}" connection. They can set "Agent access" to "Read and write" on it in Ajour's Settings, under Plugins.`,
+    );
+  }
+  const capability = descriptionCapabilityOf(item, overview);
+  const allowLossy = connectionAllowsLossyConversion(connection);
+  const access = descriptionAccess(item, capability, allowLossy);
+  if (!access.editable) {
+    throw new AgentToolRefusal(
+      {
+        archived: "The item is archived. Restore it first.",
+        notWritable:
+          "This description follows its source, which Ajour can't write to. Change it in the source.",
+        cut: "This description is longer than Ajour keeps, so Ajour can't write it back. Change it in the source.",
+        lossy: `Changing it here would lose its ${lostFormatting(descriptionLosses(item))} in the source, and the "${connectionName}" connection doesn't allow lossy conversion. Change it in the source, or ask the user to turn on "Allow lossy conversion".`,
+      }[access.reason],
+    );
+  }
+  const description = normalizeDescriptionText(text) || undefined;
+  const limit = descriptionLimit(capability);
+  if ((description?.length ?? 0) > limit) {
+    throw new AgentToolRefusal(
+      `The item's source takes descriptions of at most ${limit.toLocaleString("en-US")} characters. This one has ${description!.length.toLocaleString("en-US")}.`,
+    );
+  }
+  return {
+    description,
+    allowedLoss: allowLossy ? descriptionLosses(item) : [],
+  };
+}
+
+/**
+ * Writes the agent's description, saved in Ajour, to the source as the user's
+ * save does, and says what came of it. An unchanged text is written only when
+ * the source lacks it.
+ */
+async function saveAgentDescription(
+  itemId: string,
+  allowedLoss: readonly string[],
+  unchanged: boolean,
+) {
+  const saved = findWorkItemOrRefuse(localStore.snapshot(), itemId);
+  if (unchanged && !hasUnwrittenDescription(saved)) {
+    return { outcome: "unchanged" as const };
+  }
+  const result = await saveSyncedDescription(itemId, "save", allowedLoss, true);
+  const sourceName = saved.sourceConnectionLabel ?? "the source";
+  switch (result.kind) {
+    case "written":
+      return result.merged
+        ? {
+            outcome: "merged" as const,
+            message: `Merged with a change in ${sourceName}; read the item again for the text now.`,
+          }
+        : { outcome: "written" as const };
+    case "agreed":
+      return { outcome: "unchanged" as const };
+    case "conflict":
+      return {
+        outcome: "conflict" as const,
+        message: `Saved in Ajour, but a change in ${sourceName} touches the same lines, so nothing was written there. The user resolves the conflict in Sync review.`,
+      };
+    case "failed":
+      return {
+        outcome: "failed" as const,
+        message: `Saved in Ajour, but not in ${sourceName}: ${result.message}`,
+      };
+  }
+}
+
 /** Reads the item back after the write, so the agent sees its new state. */
 function outcome(
   workItemId: string,
@@ -239,7 +355,13 @@ export async function runWorkItemWriteTool(
 
       const patch: WorkItemPatch = {};
       if (input.title !== undefined) patch.title = input.title;
-      if (input.description !== undefined) {
+      // A synced description goes to its source through the user's own save,
+      // checked first so a refusal changes nothing.
+      const syncedDescription =
+        input.description !== undefined && item.descriptionSync
+          ? await prepareAgentDescription(item, input.description)
+          : undefined;
+      if (input.description !== undefined && !syncedDescription) {
         patch.description = input.description;
       }
       if (input.priority !== undefined) {
@@ -266,11 +388,38 @@ export async function runWorkItemWriteTool(
         patch.projectId = projectId;
         patch.taskId = taskId;
       }
-      if (Object.keys(patch).length === 0) {
+      if (Object.keys(patch).length === 0 && !syncedDescription) {
         throw new AgentToolRefusal("Pass at least one field to change.");
       }
-      const undoToken = localStore.updateWorkItemWithUndo(item._id, patch);
-      return outcome(item._id, undoToken, "Edited a backlog item");
+      if (!syncedDescription) {
+        const undoToken = localStore.updateWorkItemWithUndo(item._id, patch);
+        return outcome(item._id, undoToken, "Edited a backlog item");
+      }
+      // The text has no Undo: like the user's, it is written at once. The
+      // other fields, and what its timelog sets, share one Undo, taken after
+      // the write, which would leave an earlier one stale.
+      // Compared with the item now, which a sync may have changed meanwhile.
+      const unchanged =
+        syncedDescription.description ===
+        findWorkItemOrRefuse(localStore.snapshot(), item._id).description;
+      const before = unchanged
+        ? localStore.snapshot()
+        : localStore.saveWorkItemDescriptionText(
+            item._id,
+            syncedDescription.description,
+          );
+      const descriptionSave = await saveAgentDescription(
+        item._id,
+        syncedDescription.allowedLoss,
+        unchanged,
+      );
+      const undoToken = localStore.applyWorkItemEditsSince(
+        item._id,
+        patch,
+        before,
+      );
+      const edited = outcome(item._id, undoToken, "Edited a backlog item");
+      return { ...edited, output: { ...edited.output, descriptionSave } };
     }
 
     case "move_work_item": {

@@ -406,7 +406,10 @@ function toEditableValues(
     }
   }
   // Ajour's own setting, set last so no plugin field or config can stand in.
-  if (plugin.capabilities.connector?.comments) {
+  if (
+    plugin.capabilities.connector?.comments ||
+    plugin.capabilities.connector?.description?.write
+  ) {
     editableValues[AGENT_ACCESS_FIELD_ID] = connectionAgentAccess(connection);
   } else {
     delete editableValues[AGENT_ACCESS_FIELD_ID];

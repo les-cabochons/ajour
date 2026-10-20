@@ -244,10 +244,10 @@ export const writeToolInputSchemas = {
     includeSubitems: z.boolean().optional(),
     /** For a synced item: the source state it settles in. */
     sourceState: sourceStateInputSchema.optional(),
-    /** Posted after the settle. Needs Read and post on the item's connection. */
+    /** Posted after the settle. Needs Read and write on the item's connection. */
     comment: commentBodySchema.optional(),
   }),
-  /** Needs Read and post on the item's connection. */
+  /** Needs Read and write on the item's connection. */
   post_work_item_comment: z.object({
     workItemId: z.string(),
     body: commentBodySchema,
@@ -462,7 +462,25 @@ export const dataToolOutputSchemas = {
   mark_entries_committed: z.object({ committed: z.number() }),
   submit_week: z.object({ weekOf: z.string(), locked: z.literal(true) }),
   create_work_item: agentWorkItemSchema,
-  edit_work_item: agentWorkItemSchema,
+  edit_work_item: agentWorkItemSchema.extend({
+    /**
+     * For a synced description written to its source: written, merged with
+     * the source's change, already there, in conflict for the user to
+     * resolve, or failed. The text is saved in Ajour in every case.
+     */
+    descriptionSave: z
+      .object({
+        outcome: z.enum([
+          "written",
+          "merged",
+          "unchanged",
+          "conflict",
+          "failed",
+        ]),
+        message: z.string().optional(),
+      })
+      .optional(),
+  }),
   move_work_item: agentWorkItemSchema,
   settle_work_item: agentWorkItemSchema,
   post_work_item_comment: z.object({

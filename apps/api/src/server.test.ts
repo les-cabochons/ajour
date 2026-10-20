@@ -2580,6 +2580,23 @@ describe("backlog description routes", () => {
         path: `/api/plugins/jira/connections/${connectionId}/${action}`,
         body: JSON.stringify(body),
       });
+    const saveSettings = (settings: Record<string, unknown>) =>
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: "/api/plugins/jira/connections",
+        body: JSON.stringify({
+          id: connectionId,
+          values: {
+            label: "Main Jira",
+            tenantLabel: "Acme",
+            autoSync: false,
+            autoSyncIntervalMinutes: 15,
+            baseUrl: "https://acme.atlassian.net",
+            apiToken: "tok-12345",
+            ...settings,
+          },
+        }),
+      });
     const allowLossy = (on: boolean) =>
       dispatchJsonRequest(server, {
         method: "POST",
@@ -2597,7 +2614,7 @@ describe("backlog description routes", () => {
           },
         }),
       });
-    return { post, allowLossy };
+    return { post, allowLossy, saveSettings };
   }
 
   it("reads a description, and writes one only over the text it expects", async () => {
@@ -2652,6 +2669,38 @@ describe("backlog description routes", () => {
       status: 502,
       body: { error: "Refused token [secret]" },
     });
+  });
+
+  it("checks an agent's description calls against the connection's Agent access", async () => {
+    const { post, saveSettings } = await createServer({ write: true });
+    const read = () => post("description?agent=1", { sourceId: "OPEN-1" });
+    const write = () =>
+      post("description-write?agent=1", {
+        sourceId: "OPEN-1",
+        text: "Mine",
+        expected: "Held by the source",
+      });
+
+    await expect(read()).resolves.toEqual({
+      status: 409,
+      body: {
+        error: `The user hasn't allowed agents to read descriptions on the "Main Jira" connection.`,
+      },
+    });
+    expect((await saveSettings({ agentAccess: "read" })).status).toBe(200);
+    expect((await read()).status).toBe(200);
+    await expect(write()).resolves.toEqual({
+      status: 409,
+      body: {
+        error: `The user hasn't allowed agents to change descriptions on the "Main Jira" connection.`,
+      },
+    });
+    expect((await saveSettings({ agentAccess: "readWrite" })).status).toBe(200);
+    expect((await write()).status).toBe(200);
+    // Ajour's own pages are not agents.
+    expect((await post("description", { sourceId: "OPEN-1" })).status).toBe(
+      200,
+    );
   });
 
   it("writes with losses only through a connection that allows lossy conversion", async () => {

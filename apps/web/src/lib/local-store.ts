@@ -2206,6 +2206,40 @@ export const localStore = {
     );
   },
   /**
+   * Saves an item's description text, which has no Undo, and leaves what its
+   * timelog sets to `applyWorkItemEditsSince`. Returns the state before.
+   */
+  saveWorkItemDescriptionText(
+    workItemId: string,
+    description: string | undefined,
+  ): LocalAppState {
+    const before = readState();
+    updateState((state) =>
+      applyUpdateWorkItem(state, workItemId, { description }),
+    );
+    return before;
+  },
+  /**
+   * Updates a backlog item and applies the timelogs of the descriptions saved
+   * since `before`, under one Undo. Returns an undo token, or null when
+   * nothing changed.
+   */
+  applyWorkItemEditsSince(
+    workItemId: string,
+    patch: Parameters<typeof applyUpdateWorkItem>[2],
+    before: LocalAppState,
+  ): string | null {
+    return updateStateWithUndo((state) =>
+      withDescriptionTimelogs(
+        before,
+        Object.keys(patch).length > 0
+          ? applyUpdateWorkItem(state, workItemId, patch)
+          : state,
+        getMappedIds(workItemId, patch),
+      ),
+    );
+  },
+  /**
    * Creates the backlog editor's new item, which has no Undo, then applies
    * its description's timelog and, for an item made in a done state, closes
    * it, under one Undo. Undo leaves the item and its description, and takes

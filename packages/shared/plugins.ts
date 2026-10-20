@@ -397,10 +397,11 @@ export const pluginManifestSchema = pluginManifestObjectSchema.superRefine(
 export type PluginManifest = z.infer<typeof pluginManifestSchema>;
 
 /**
- * What connected agents may do with a connection's comments (map #234): None,
- * the default, Read, or Read and post. Agents' models run at their provider,
- * so comments they read leave the machine (ADR 0004). Ajour owns the setting:
- * a plugin cannot declare it or set its default.
+ * What connected agents may do with a connection's comments and synced
+ * descriptions (map #234, spec #301): None, the default, Read, or Read and
+ * write. Agents' models run at their provider, so what they read leaves the
+ * machine (ADR 0004). Ajour owns the setting: a plugin cannot declare it or
+ * set its default.
  */
 export const agentAccessSchema = z.enum(["none", "read", "readWrite"]);
 export type AgentAccess = z.infer<typeof agentAccessSchema>;
@@ -409,17 +410,17 @@ export const AGENT_ACCESS_FIELD_ID = "agentAccess";
 
 const agentAccessField: PluginField = {
   id: AGENT_ACCESS_FIELD_ID,
-  label: "Agent access to comments",
+  label: "Agent access",
   type: "select",
   helpText:
-    "What connected agents may do with this connection's comments. Comments an agent reads go to its model provider.",
+    "What connected agents may do with this connection's comments and synced descriptions. What an agent reads goes to its model provider.",
   required: true,
   secret: false,
   defaultValue: "none",
   options: [
     { value: "none", label: "None" },
     { value: "read", label: "Read" },
-    { value: "readWrite", label: "Read and post" },
+    { value: "readWrite", label: "Read and write" },
   ],
   capability: "connector",
 };
@@ -462,7 +463,10 @@ export function pluginConnectionFormFields(
   );
   return [
     ...fields,
-    ...(plugin.capabilities.connector?.comments ? [agentAccessField] : []),
+    ...(plugin.capabilities.connector?.comments ||
+    plugin.capabilities.connector?.description?.write
+      ? [agentAccessField]
+      : []),
     ...(plugin.capabilities.connector?.description?.write
       ? [allowLossyField]
       : []),
