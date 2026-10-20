@@ -67,6 +67,26 @@ Throwaway work never merges. Research findings go in `docs/research/<slug>.md`
 on a `research/<slug>` branch, and prototypes go on a `prototype/<slug>`
 branch. Push the branch, open no PR, and link it from the ticket.
 
+### Presenting a plan
+
+A map, a spec or a set of tickets is built and shown this way:
+
+1. **Map before designing.** Run parallel read-only passes, one per runtime
+   or layer. Each returns an inventory with `file:line` facts. Done when
+   every part the plan touches is in an inventory.
+2. **Ask only what the user owns,** in one batch of multiple-choice questions
+   with the recommended option first. Decide the rest yourself.
+3. **Show it as one page** in the thread, readable on a phone: in T3 Code,
+   `html_preview`, then `html_render`. Include what applies:
+   - one worked example traced through the system
+   - what covers what, with counts
+   - the scope by area, with counts
+   - the rules that constrain it
+   - the tickets in levels (Start, Then, Last), with links and blockers
+4. **Reply with only what the page leaves out:** links to what you published,
+   the decisions you took alone, and findings outside the scope, offered as
+   their own issues.
+
 ### Issue tracker
 
 Track work in GitHub Issues for `les-cabochons/ajour`. Before reading,
