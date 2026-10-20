@@ -4,7 +4,18 @@ import type { LocalWorkItem } from "@/domain/local-state";
 import {
   descriptionAccess,
   descriptionCapabilityOf,
+  descriptionInConflict,
+  descriptionLimit,
+  descriptionSaved,
+  descriptionWriteFailed,
+  rebaseDescriptionDraft,
+  hasUnwrittenDescription,
+  latestDescription,
+  lostFormatting,
   newDescriptionConflicts,
+  planDescriptionSave,
+  planKeepMine,
+  sourceDescriptionChanged,
   takeSourceDescription,
   importedDescription,
   reconcileDescription,
@@ -293,6 +304,21 @@ describe("who may edit a description", () => {
       ),
     ).toEqual({ editable: false, reason: "cut" });
   });
+
+  it("keeps a description whose conversion lost formatting read-only", () => {
+    expect(
+      descriptionAccess(
+        item({
+          descriptionSync: { baseline: "A", remote: "A", lost: ["underline"] },
+        }),
+        writable,
+      ),
+    ).toEqual({ editable: false, reason: "lossy" });
+    expect(lostFormatting(["colour", "underline", "tables"])).toBe(
+      "colour, underline and tables",
+    );
+    expect(lostFormatting(["underline"])).toBe("underline");
+  });
 });
 
 describe("the plugin's description support", () => {
@@ -379,5 +405,292 @@ describe("resolving a description conflict", () => {
         [item("a", conflict), item("b", conflict), item("c")],
       ).map((entry) => entry._id),
     ).toEqual(["b"]);
+  });
+});
+
+describe("planning the save of an edited description", () => {
+  const base = "Goal\n\nSteps\n\nDone when";
+
+  it("writes the user's text when the source did not change", () => {
+    expect(
+      planDescriptionSave(base, "Goal\n\nNew steps\n\nDone when", base),
+    ).toEqual({
+      kind: "write",
+      text: "Goal\n\nNew steps\n\nDone when",
+      merged: false,
+    });
+  });
+
+  it("merges changes to different lines, and writes the result", () => {
+    expect(
+      planDescriptionSave(
+        base,
+        "Goal\n\nNew steps\n\nDone when",
+        "New goal\n\nSteps\n\nDone when",
+      ),
+    ).toEqual({
+      kind: "write",
+      text: "New goal\n\nNew steps\n\nDone when",
+      merged: true,
+    });
+  });
+
+  it("is a conflict when both changed the same lines", () => {
+    expect(
+      planDescriptionSave(
+        base,
+        "Goal\n\nMy steps\n\nDone when",
+        "Goal\n\nTheir steps\n\nDone when",
+      ),
+    ).toEqual({ kind: "conflict" });
+  });
+
+  it("writes nothing when the source already holds the result", () => {
+    expect(planDescriptionSave(base, "Same", "Same\r\n")).toEqual({
+      kind: "agreed",
+    });
+    // The user's change is part of the source's.
+    expect(
+      planDescriptionSave(
+        "One\nTwo",
+        "One\nTwo\nThree",
+        "Zero\nOne\nTwo\nThree",
+      ),
+    ).toEqual({ kind: "agreed" });
+  });
+
+  it("writes an emptied description, and merges into an empty one", () => {
+    expect(planDescriptionSave("Old", "", "Old")).toEqual({
+      kind: "write",
+      text: "",
+      merged: false,
+    });
+    expect(planDescriptionSave("", "Mine", "")).toEqual({
+      kind: "write",
+      text: "Mine",
+      merged: false,
+    });
+    expect(planDescriptionSave("", "Mine", "Theirs")).toEqual({
+      kind: "conflict",
+    });
+  });
+
+  it("is a conflict for any difference before both sides first agreed", () => {
+    expect(planDescriptionSave(undefined, "Mine", "Theirs")).toEqual({
+      kind: "conflict",
+    });
+    expect(planDescriptionSave(undefined, "Same", "Same")).toEqual({
+      kind: "agreed",
+    });
+  });
+});
+
+describe("keeping the user's side of a conflict", () => {
+  const conflicted = reconcileDescription(
+    synced("Mine", "Old"),
+    { text: "Theirs" },
+    NOW,
+  );
+
+  it("writes the user's text over the source's text they saw", () => {
+    expect(planKeepMine(conflicted, "Theirs")).toEqual({
+      kind: "write",
+      text: "Mine",
+      merged: false,
+    });
+  });
+
+  it("is a new conflict when the source changed again since", () => {
+    expect(planKeepMine(conflicted, "Theirs, again")).toEqual({
+      kind: "conflict",
+    });
+  });
+});
+
+describe("after a save", () => {
+  it("agrees on what the source holds, and shows it", () => {
+    const saved = descriptionSaved(
+      synced("Mine", "Old"),
+      "Mine",
+      { text: "Mine, merged" },
+      NOW,
+    );
+    expect(saved).toEqual({
+      description: "Mine, merged",
+      descriptionSync: { baseline: "Mine, merged", remote: "Mine, merged" },
+    });
+  });
+
+  it("keeps a text the user changed again meanwhile, for the next save", () => {
+    expect(
+      descriptionSaved(
+        synced("Mine, later", "Old"),
+        "Mine",
+        { text: "Mine" },
+        NOW,
+      ),
+    ).toEqual({
+      description: "Mine, later",
+      descriptionSync: { baseline: "Mine", remote: "Mine" },
+    });
+  });
+
+  it("takes what the save merged from the source into a text changed meanwhile", () => {
+    expect(
+      descriptionSaved(
+        synced("My newer title\nSteps", "Title\nSteps"),
+        "My title\nSteps",
+        { text: "My title\nNew steps" },
+        NOW,
+      ),
+    ).toEqual({
+      description: "My newer title\nNew steps",
+      descriptionSync: {
+        baseline: "My title\nNew steps",
+        remote: "My title\nNew steps",
+      },
+    });
+  });
+
+  it("puts a text changed meanwhile in the same lines in conflict, and a sync keeps it", () => {
+    const saved = descriptionSaved(
+      synced("My title\nMy steps", "Title\nSteps"),
+      "My title\nSteps",
+      { text: "My title\nNew steps" },
+      NOW,
+    );
+    expect(saved).toEqual({
+      description: "My title\nMy steps",
+      descriptionSync: {
+        baseline: "My title\nSteps",
+        remote: "My title\nNew steps",
+        conflict: {
+          detectedAt: NOW,
+          localText: "My title\nMy steps",
+          remoteText: "My title\nNew steps",
+        },
+      },
+    });
+    expect(
+      reconcileDescription(saved, { text: "My title\nNew steps" }, NOW + 1)
+        .descriptionSync?.conflict?.detectedAt,
+    ).toBe(NOW);
+  });
+
+  it("clears a write error and a conflict", () => {
+    const failed = descriptionWriteFailed(synced("Mine", "Old"), "No", NOW);
+    expect(descriptionSaved(failed, "Mine", { text: "Mine" }, NOW)).toEqual({
+      description: "Mine",
+      descriptionSync: { baseline: "Mine", remote: "Mine" },
+    });
+  });
+
+  it("records a conflict with the source's text, keeping the user's", () => {
+    expect(
+      descriptionInConflict(synced("Mine", "Old"), { text: "Theirs" }, NOW),
+    ).toEqual({
+      description: "Mine",
+      descriptionSync: {
+        baseline: "Old",
+        remote: "Theirs",
+        conflict: { detectedAt: NOW, localText: "Mine", remoteText: "Theirs" },
+      },
+    });
+  });
+
+  it("keeps why a write failed until a sync or a save settles the text", () => {
+    const failed = descriptionWriteFailed(
+      synced("Mine", "Old"),
+      "The token expired.",
+      NOW,
+    );
+    expect(failed.descriptionSync?.writeError).toEqual({
+      at: NOW,
+      message: "The token expired.",
+    });
+    expect(hasUnwrittenDescription(failed)).toBe(true);
+    // A sync while the source is unchanged keeps the unwritten edit and why.
+    expect(
+      reconcileDescription(failed, { text: "Old" }, NOW + 1).descriptionSync
+        ?.writeError,
+    ).toEqual({ at: NOW, message: "The token expired." });
+    // One that brings the source to the same text settles it.
+    expect(
+      reconcileDescription(failed, { text: "Mine" }, NOW + 1).descriptionSync
+        ?.writeError,
+    ).toBeUndefined();
+  });
+
+  it("leaves an item without description sync alone", () => {
+    const local = { description: "Mine" };
+    expect(descriptionWriteFailed(local, "No", NOW)).toBe(local);
+  });
+});
+
+describe("an open draft when the text changes under it", () => {
+  it("takes the new text while untouched", () => {
+    expect(rebaseDescriptionDraft("A", "A", "B")).toEqual({ text: "B" });
+  });
+
+  it("takes in a change to other lines than the user's", () => {
+    expect(
+      rebaseDescriptionDraft(
+        "Title\nSteps",
+        "My title\nSteps",
+        "Title\nNew steps",
+      ),
+    ).toEqual({ text: "My title\nNew steps" });
+  });
+
+  it("is a conflict when the change is to the user's lines", () => {
+    expect(
+      rebaseDescriptionDraft(
+        "Title\nSteps",
+        "My title\nSteps",
+        "Their title\nSteps",
+      ),
+    ).toEqual({ conflict: true });
+  });
+});
+
+describe("the editor's view of the source", () => {
+  it("sees a change since both sides last agreed", () => {
+    expect(
+      sourceDescriptionChanged(synced("Old", "Old"), { text: "New" }),
+    ).toBe(true);
+    expect(
+      sourceDescriptionChanged(synced("Mine", "Old"), { text: "Old\r\n" }),
+    ).toBe(false);
+    // Before both sides first agreed, a sync shows the conflict instead.
+    expect(
+      sourceDescriptionChanged(synced("Mine", undefined), { text: "New" }),
+    ).toBe(false);
+  });
+
+  it("loads the latest text, which both sides then agree on", () => {
+    expect(latestDescription({ text: "New\n", lost: ["colour"] })).toEqual({
+      description: "New",
+      descriptionSync: { baseline: "New", remote: "New", lost: ["colour"] },
+    });
+  });
+
+  it("finds a local edit not written yet, but not a conflict", () => {
+    expect(hasUnwrittenDescription(synced("Mine", "Old"))).toBe(true);
+    expect(hasUnwrittenDescription(synced("Old", "Old"))).toBe(false);
+    expect(
+      hasUnwrittenDescription(
+        reconcileDescription(synced("Mine", "Old"), { text: "Theirs" }, NOW),
+      ),
+    ).toBe(false);
+    expect(hasUnwrittenDescription({ description: "Local" })).toBe(false);
+  });
+
+  it("limits the editor to what Ajour stores, or less when the source takes less", () => {
+    expect(descriptionLimit(undefined)).toBe(64_000);
+    expect(descriptionLimit({ write: true })).toBe(64_000);
+    expect(descriptionLimit({ write: true, maxLength: 1_000_000 })).toBe(
+      64_000,
+    );
+    expect(descriptionLimit({ write: true, maxLength: 4_000 })).toBe(4_000);
   });
 });

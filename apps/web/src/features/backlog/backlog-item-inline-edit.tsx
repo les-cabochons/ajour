@@ -20,11 +20,21 @@ import {
   formatEstimateInput,
   parseEstimateInput,
 } from "@/features/backlog/backlog-task-editor";
+import { clearDescriptionDraftConflict } from "@/lib/description-save";
 import { localStore } from "@/lib/local-store";
 import { cn } from "@/lib/utils";
 import {
+  DescriptionLength,
+  DescriptionSaveStatus,
+  SourceChangedWarning,
   SyncedDescriptionNote,
+  isOverDescriptionLimit,
+  saveDescriptionToSource,
   useDescriptionAccess,
+  useDescriptionLimit,
+  followDescriptionDraft,
+  useSourceDescriptionCheck,
+  writesToSource,
 } from "@/features/backlog/synced-description";
 import { normalizeDescriptionText } from "@/domain/backlog/description-sync";
 import { SyncConflictButton } from "@/features/backlog/sync-conflicts";
@@ -232,13 +242,28 @@ export function DescriptionSection({
   const current = item.description ?? "";
   const [base, setBase] = useState(current);
   const [draft, setDraft] = useState(current);
+  const access = useDescriptionAccess(item);
+  const writes = writesToSource(item, access);
   useEffect(() => {
     if (!editing || current === base) return;
-    setDraft((text) => (text === base ? current : text));
+    // A description written to its source takes the source's change in, so
+    // saving it never reverts that change.
+    setDraft((text) =>
+      text === base
+        ? current
+        : writes
+          ? followDescriptionDraft(item._id, base, text, current)
+          : text,
+    );
     setBase(current);
-  }, [editing, current, base]);
-  const access = useDescriptionAccess(item);
+  }, [editing, current, base, writes, item._id]);
   const editable = !readOnly && access.editable;
+  const limit = useDescriptionLimit(item, access);
+  const latest = useSourceDescriptionCheck(
+    item,
+    editing && editable && writesToSource(item, access),
+  );
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const body = useMemo(
     () => (item.description ? splitDescription(item.description).body : ""),
     [item.description],
@@ -248,9 +273,17 @@ export function DescriptionSection({
     if (normalizeDescriptionText(value) === normalizeDescriptionText(base))
       return;
     const description = normalizeDescriptionText(value) || undefined;
-    if (description !== item.description) {
+    if (description === item.description) return;
+    if (writesToSource(item, access)) {
+      saveDescriptionToSource(item._id, description);
+    } else {
       patchBacklogItemWithUndo(item, { description }, "Description changed");
     }
+  };
+  // Text over the limit is not saved, so the editor stays open on it.
+  const leave = (value: string) => {
+    if (isOverDescriptionLimit(value, limit)) return;
+    closer.close(() => save(value));
   };
   return (
     <>
@@ -271,6 +304,7 @@ export function DescriptionSection({
                 onFocus={preloadMarkdownEditor}
                 onClick={() => {
                   closer.reset();
+                  clearDescriptionDraftConflict(item._id);
                   setBase(current);
                   setDraft(current);
                   setEditing(true);
@@ -285,22 +319,46 @@ export function DescriptionSection({
         Description
       </SectionHeading>
       {editing && editable ? (
-        <MarkdownEditor
-          autoFocus
-          aria-label="Description"
-          value={draft}
-          onChange={setDraft}
-          placeholder="Markdown supported"
-          minLines={4}
-          onBlur={(value) => closer.close(() => save(value))}
-          onSubmit={(value) => closer.close(() => save(value))}
-          onCancel={() => closer.close()}
-        />
+        <div
+          ref={wrapperRef}
+          // Leaving the warning's button for outside leaves the editor too.
+          onBlur={(event) => {
+            if (
+              event.target instanceof HTMLButtonElement &&
+              !wrapperRef.current?.contains(event.relatedTarget)
+            ) {
+              leave(draft);
+            }
+          }}
+        >
+          <MarkdownEditor
+            autoFocus
+            aria-label="Description"
+            value={draft}
+            onChange={setDraft}
+            placeholder="Markdown supported"
+            minLines={4}
+            onBlur={(value, next) => {
+              // Focus moving to the warning's Load latest keeps it open.
+              if (next && wrapperRef.current?.contains(next)) return;
+              leave(value);
+            }}
+            onSubmit={leave}
+            onCancel={() => closer.close()}
+          />
+          <DescriptionLength text={draft} limit={limit} />
+          <SourceChangedWarning
+            item={item}
+            latest={latest}
+            typed={draft !== base}
+          />
+        </div>
       ) : body ? (
         <DescriptionText body={body} />
       ) : (
         <p className="text-sm text-muted-foreground">No description.</p>
       )}
+      <DescriptionSaveStatus item={item} access={access} />
       <SyncedDescriptionNote item={item} access={access} />
     </>
   );

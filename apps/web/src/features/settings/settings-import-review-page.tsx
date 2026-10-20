@@ -38,6 +38,13 @@ import { cn } from "@/lib/utils";
 import { DescriptionText } from "@/features/backlog/description-links";
 import type { SyncReviewSearch } from "@/features/backlog/sync-conflicts";
 import { offerUndo } from "@/features/feedback/undo-toast";
+import {
+  descriptionAccess,
+  descriptionCapabilityOf,
+} from "@/domain/backlog/description-sync";
+import { usePluginsOverview } from "@/features/backlog/plugins-overview";
+import { useDescriptionSaving } from "@/features/backlog/synced-description";
+import { saveSyncedDescription } from "@/lib/description-save";
 
 interface ImportConnectionGroup {
   connectionId: string;
@@ -311,22 +318,7 @@ export function SettingsImportReviewPage() {
                     >
                       {workItem.title}
                     </Link>
-                    <Button
-                      variant="outline"
-                      onClick={() =>
-                        offerUndo(
-                          localStore.takeSourceDescriptionWithUndo(
-                            workItem._id,
-                          ),
-                          {
-                            title: "Took the source's description",
-                            subject: workItem.title,
-                          },
-                        )
-                      }
-                    >
-                      Take source
-                    </Button>
+                    <DescriptionConflictActions workItem={workItem} />
                   </div>
                   <div className="grid gap-3 desktop:grid-cols-2">
                     <div className="min-w-0 space-y-1">
@@ -781,6 +773,44 @@ export function SettingsImportReviewPage() {
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+/**
+ * Keep mine writes the user's text to the source, when its plugin writes
+ * descriptions; Take source applies the source's, with Undo.
+ */
+function DescriptionConflictActions({ workItem }: { workItem: LocalWorkItem }) {
+  const overview = usePluginsOverview();
+  const saving = useDescriptionSaving(workItem._id);
+  const canWrite = descriptionAccess(
+    workItem,
+    descriptionCapabilityOf(workItem, overview),
+  ).editable;
+  return (
+    <div className="flex flex-wrap gap-2">
+      {canWrite ? (
+        <Button
+          variant="outline"
+          disabled={saving}
+          onClick={() => void saveSyncedDescription(workItem._id, "keepMine")}
+        >
+          {saving ? "Saving…" : "Keep mine"}
+        </Button>
+      ) : null}
+      <Button
+        variant="outline"
+        disabled={saving}
+        onClick={() =>
+          offerUndo(localStore.takeSourceDescriptionWithUndo(workItem._id), {
+            title: "Took the source's description",
+            subject: workItem.title,
+          })
+        }
+      >
+        Take source
+      </Button>
     </div>
   );
 }

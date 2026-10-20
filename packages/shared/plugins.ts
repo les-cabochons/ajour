@@ -735,6 +735,45 @@ export type BacklogSyncedDescription = z.infer<
   typeof backlogSyncedDescriptionSchema
 >;
 
+export const backlogReadDescriptionRequestSchema = z.object({
+  sourceId: z.string().trim().min(1).max(400),
+});
+export type BacklogReadDescriptionRequest = z.infer<
+  typeof backlogReadDescriptionRequestSchema
+>;
+
+export const backlogReadDescriptionResultSchema = z.object({
+  /** The item's description as the source holds it now. */
+  description: backlogSyncedDescriptionSchema,
+});
+export type BacklogReadDescriptionResult = z.infer<
+  typeof backlogReadDescriptionResultSchema
+>;
+
+export const backlogWriteDescriptionRequestSchema = z.object({
+  sourceId: z.string().trim().min(1).max(400),
+  /** The Markdown to write. */
+  text: z.string().max(BACKLOG_DESCRIPTION_MAX_LENGTH),
+  /**
+   * The text Ajour expects the source to hold, as it just read it. A source
+   * that holds anything else answers with a conflict and writes nothing.
+   */
+  expected: z.string().max(BACKLOG_DESCRIPTION_MAX_LENGTH),
+});
+export type BacklogWriteDescriptionRequest = z.infer<
+  typeof backlogWriteDescriptionRequestSchema
+>;
+
+export const backlogWriteDescriptionResultSchema = z.object({
+  /** `conflict` when the source no longer held the expected text. */
+  outcome: z.enum(["written", "conflict"]),
+  /** The source's description after the write, or as it is in a conflict. */
+  description: backlogSyncedDescriptionSchema,
+});
+export type BacklogWriteDescriptionResult = z.infer<
+  typeof backlogWriteDescriptionResultSchema
+>;
+
 export const backlogImportCandidateInputSchema = z.object({
   source: backlogSourceSchema,
   connectionId: z.string().trim().min(1).max(120),

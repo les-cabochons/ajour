@@ -11,6 +11,10 @@ import {
   backlogSettleStatesResultSchema,
   backlogSettleWriteRequestSchema,
   backlogSettleWriteResultSchema,
+  backlogReadDescriptionRequestSchema,
+  backlogReadDescriptionResultSchema,
+  backlogWriteDescriptionRequestSchema,
+  backlogWriteDescriptionResultSchema,
   backlogSyncWorkItemSchema,
   pluginValidationContextSchema,
   type PluginFieldValues,
@@ -21,6 +25,10 @@ import {
   type BacklogSettleStatesResult,
   type BacklogSettleWriteRequest,
   type BacklogSettleWriteResult,
+  type BacklogReadDescriptionRequest,
+  type BacklogReadDescriptionResult,
+  type BacklogWriteDescriptionRequest,
+  type BacklogWriteDescriptionResult,
   type BacklogSyncWorkItem,
   type PluginValidationContext,
   type SwitchableCapability,
@@ -104,6 +112,8 @@ export type PluginMethod =
   | "syncConnection"
   | "listSettleStates"
   | "writeSettle"
+  | "readDescription"
+  | "writeDescription"
   | CodeHostOperation
   | CalendarOperation
   | BacklogCommentOperation
@@ -122,6 +132,8 @@ export function capabilityOfMethod(
     method === "syncConnection" ||
     method === "listSettleStates" ||
     method === "writeSettle" ||
+    method === "readDescription" ||
+    method === "writeDescription" ||
     method in backlogCommentOperations
   ) {
     return "connector";
@@ -554,6 +566,53 @@ export class PluginManager {
         `Plugin "${pluginId}" ${missingCapabilityMessages[capability]}.`,
       );
     }
+  }
+
+  /** Whether the plugin syncs descriptions, and writes them with `write`. */
+  async supportsDescriptions(pluginId: string, write = false) {
+    const description = (await this.getPlugin(pluginId)).manifest.capabilities
+      .connector?.description;
+    return Boolean(description && (!write || description.write));
+  }
+
+  /** The item's description as the source holds it now. */
+  async readDescription(
+    pluginId: string,
+    connection: PluginInvocationConnection,
+    request: BacklogReadDescriptionRequest,
+  ): Promise<BacklogReadDescriptionResult> {
+    if (!(await this.supportsDescriptions(pluginId))) {
+      throw new Error(`Plugin "${pluginId}" does not sync descriptions.`);
+    }
+    return await this.invokePlugin(
+      pluginId,
+      "readDescription",
+      {
+        connection: pluginInvocationConnectionSchema.parse(connection),
+        request: backlogReadDescriptionRequestSchema.parse(request),
+      },
+      backlogReadDescriptionResultSchema,
+    );
+  }
+
+  /** Writes an item's description, unless the source changed since Ajour read it. */
+  async writeDescription(
+    pluginId: string,
+    connection: PluginInvocationConnection,
+    request: BacklogWriteDescriptionRequest,
+  ): Promise<BacklogWriteDescriptionResult> {
+    if (!(await this.supportsDescriptions(pluginId, true))) {
+      throw new Error(`Plugin "${pluginId}" does not write descriptions.`);
+    }
+    return await this.invokePlugin(
+      pluginId,
+      "writeDescription",
+      {
+        connection: pluginInvocationConnectionSchema.parse(connection),
+        request: backlogWriteDescriptionRequestSchema.parse(request),
+      },
+      backlogWriteDescriptionResultSchema,
+    );
   }
 
   private async assertSupportsSettle(pluginId: string) {

@@ -12,9 +12,14 @@ import {
   backlogSettleStatesResultSchema,
   backlogSettleWriteRequestSchema,
   backlogSettleWriteResultSchema,
+  backlogReadDescriptionRequestSchema,
+  backlogReadDescriptionResultSchema,
+  backlogWriteDescriptionRequestSchema,
+  backlogWriteDescriptionResultSchema,
   backlogSyncRequestSchema,
   backlogSyncResultSchema,
   type BacklogSettleWriteRequest,
+  type BacklogWriteDescriptionRequest,
   type BacklogSyncRequest,
   backlogImportCommitResponseSchema,
   backlogImportDismissRequestSchema,
@@ -902,6 +907,40 @@ export function writeBacklogSettle(
       body: JSON.stringify(backlogSettleWriteRequestSchema.parse(request)),
     },
     backlogSettleWriteResultSchema,
+  );
+}
+
+/** An item's description as its source holds it now. */
+export function readBacklogDescription(
+  pluginId: string,
+  connectionId: string,
+  sourceId: string,
+) {
+  return appApiRequest(
+    `/api/plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/description`,
+    {
+      method: "POST",
+      body: JSON.stringify(
+        backlogReadDescriptionRequestSchema.parse({ sourceId }),
+      ),
+    },
+    backlogReadDescriptionResultSchema,
+  );
+}
+
+/** Writes an item's description, unless the source changed since it was read. */
+export function writeBacklogDescription(
+  pluginId: string,
+  connectionId: string,
+  request: BacklogWriteDescriptionRequest,
+) {
+  return appApiRequest(
+    `/api/plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/description-write`,
+    {
+      method: "POST",
+      body: JSON.stringify(backlogWriteDescriptionRequestSchema.parse(request)),
+    },
+    backlogWriteDescriptionResultSchema,
   );
 }
 

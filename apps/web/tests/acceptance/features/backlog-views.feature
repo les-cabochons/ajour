@@ -540,6 +540,14 @@ Feature: Backlog list and board views
     Then its description reads "The first part"
     And the description is read-only because it is cut, with Edit in source
 
+  Scenario: A description whose conversion lost formatting is read-only
+    Given the Backlog parent is synced
+    And its plugin, which writes descriptions, sends the description "Underlined in the source", which lost its underline, on its next sync
+    When I reload the app
+    And I open the Backlog parent page
+    Then its description reads "Underlined in the source"
+    And the description is read-only because editing would lose its underline, with Edit in source
+
   Scenario: A sync that finds a description conflict says so and leads to Sync review
     Given the Backlog parent is synced
     And its description was edited here to "My notes" since its last sync of "Original"
@@ -576,6 +584,80 @@ Feature: Backlog list and board views
     And its description is in conflict with "Their notes" in the source, and was edited here since to "My newer notes"
     When I open Sync review on the parent
     Then Sync review shows "My newer notes" here, not the text from when the conflict began
+
+  Scenario: Editing a synced description warns when the source changed, and loads the latest
+    Given the Backlog parent is synced
+    And its description "Original" is synced through a plugin that writes descriptions
+    And someone changes it in the source to "Their newer notes" after the sync
+    When I reload the app
+    And I open the Backlog parent page
+    And I start editing the description
+    Then the editor warns that the description changed in the source, with Load latest
+    When I load the latest description
+    Then the description editor holds "Their newer notes", and the warning is gone
+
+  Scenario: Saving a synced description writes it to the source
+    Given the Backlog parent is synced
+    And its description "Original" is synced through a plugin that writes descriptions
+    When I reload the app
+    And I open the Backlog parent page
+    And I write "My notes" as its description and press Mod+Enter
+    Then the source and the parent both hold "My notes"
+
+  Scenario: Saving merges a source change to other lines
+    Given the Backlog parent is synced
+    And its description "Goal\n\nSteps" is synced through a plugin that writes descriptions
+    And someone changes it in the source to "Their goal\n\nSteps" after the sync
+    When I reload the app
+    And I open the Backlog parent page
+    And I start editing the description
+    And I change the description to "Goal\n\nMy steps"
+    Then the editor says saving will merge the changes
+    When I save the description
+    Then the source and the parent both hold "Their goal\n\nMy steps"
+
+  Scenario: A sync during an edit joins the draft, so saving keeps both changes
+    Given the Backlog parent is synced
+    And its description "Goal\n\nSteps" is synced through a plugin that writes descriptions
+    When I reload the app
+    And I open the Backlog parent page
+    And I start editing the description
+    And I change the description to "My goal\n\nSteps"
+    And a sync brings "Goal\n\nNew steps" while I edit
+    Then the description editor holds both "My goal" and "New steps"
+    When I save the description
+    Then the source and the parent both hold "My goal\n\nNew steps"
+
+  Scenario: Saving over a source change to the same lines is a conflict to resolve
+    Given the Backlog parent is synced
+    And its description "Goal" is synced through a plugin that writes descriptions
+    And someone changes it in the source to "Their goal" after the sync
+    When I reload the app
+    And I open the Backlog parent page
+    And I write "My goal" as its description and press Mod+Enter
+    Then the description says it changed in the source too, with Resolve
+    And the source still holds "Their goal", and the parent "My goal"
+    When I choose Resolve beside the description
+    Then Sync review opens on the parent's conflict
+
+  Scenario: Keep mine writes the user's description to the source
+    Given the Backlog parent is synced
+    And its description is in conflict between "My notes" here and "Their notes" in a source that writes descriptions
+    When I reload the app
+    And I open Sync review on the parent
+    And I keep my description
+    Then the parent's description is "My notes" and its conflict is gone
+    And the source and the parent both hold "My notes"
+
+  Scenario: A description the source refuses stays, with why and Retry
+    Given the Backlog parent is synced
+    And its description "Original" is synced through a plugin that writes descriptions
+    And the source refuses description writes with "The token expired."
+    When I reload the app
+    And I open the Backlog parent page
+    And I write "My notes" as its description and press Mod+Enter
+    Then the description says it is not saved to the source because "The token expired.", with Retry
+    And the source still holds "Original", and the parent "My notes"
 
   Scenario: Following a conflict mark saves the side panel's draft first
     Given the Backlog parent is synced

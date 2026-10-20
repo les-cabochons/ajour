@@ -14,7 +14,7 @@ const cors = { "access-control-allow-origin": "*" };
 async function syncParentDescription(
   page: Page,
   capability: BacklogDescriptionCapability,
-  description: { text: string; cut?: boolean },
+  description: { text: string; cut?: boolean; lost?: string[] },
 ) {
   await page.route(`${apiUrl}/api/plugins`, (route) =>
     route.fulfill({ json: descriptionOverview(capability), headers: cors }),
@@ -40,6 +40,29 @@ Given(
   "its plugin, which writes descriptions, sends a description cut to {string} on its next sync",
   async ({ page }, text: string) => {
     await syncParentDescription(page, { write: true }, { text, cut: true });
+  },
+);
+
+Given(
+  "its plugin, which writes descriptions, sends the description {string}, which lost its underline, on its next sync",
+  async ({ page }, text: string) => {
+    await syncParentDescription(
+      page,
+      { write: true },
+      { text, lost: ["underline"] },
+    );
+  },
+);
+
+Then(
+  "the description is read-only because editing would lose its underline, with Edit in source",
+  async ({ page }) => {
+    await expect(
+      page.getByText("Editing here would lose its underline.", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expectReadOnlyWithEditInSource(page);
   },
 );
 
@@ -327,3 +350,245 @@ Then(
     expect(saved).toBe(title);
   },
 );
+
+/** A source that holds a description, and answers reads and writes of it. */
+interface DescriptionSource {
+  /** The text the sync brings. */
+  synced: string;
+  /** The text the source holds now. */
+  text: string;
+  /** Why it refuses writes, when it does. */
+  refusal?: string;
+}
+
+const sources = new WeakMap<Page, DescriptionSource>();
+const lines = (text: string) => text.replaceAll("\\n", "\n");
+
+async function stubDescriptionSource(page: Page, source: DescriptionSource) {
+  sources.set(page, source);
+  const connection = `${apiUrl}/api/plugins/example/connections/fixture`;
+  await page.route(`${apiUrl}/api/plugins`, (route) =>
+    route.fulfill({
+      json: descriptionOverview({ write: true }),
+      headers: cors,
+    }),
+  );
+  await page.route(`${connection}/sync`, (route) =>
+    route.fulfill({
+      json: syncWithParentDescription({ text: source.synced }),
+      headers: cors,
+    }),
+  );
+  await page.route(`${connection}/description`, (route) =>
+    route.fulfill({
+      json: { description: { text: source.text } },
+      headers: cors,
+    }),
+  );
+  await page.route(`${connection}/description-write`, (route) => {
+    if (source.refusal) {
+      return route.fulfill({
+        status: 502,
+        json: { error: source.refusal },
+        headers: cors,
+      });
+    }
+    const request = route.request().postDataJSON() as {
+      text: string;
+      expected: string;
+    };
+    if (request.expected !== source.text) {
+      return route.fulfill({
+        json: { outcome: "conflict", description: { text: source.text } },
+        headers: cors,
+      });
+    }
+    source.text = request.text;
+    return route.fulfill({
+      json: { outcome: "written", description: { text: source.text } },
+      headers: cors,
+    });
+  });
+}
+
+Given(
+  "its description {string} is synced through a plugin that writes descriptions",
+  async ({ page }, text: string) => {
+    const synced = lines(text);
+    await seedParentDescription(page, synced, {
+      baseline: synced,
+      remote: synced,
+    });
+    await stubDescriptionSource(page, { synced, text: synced });
+  },
+);
+
+Given(
+  "its description is in conflict between {string} here and {string} in a source that writes descriptions",
+  async ({ page }, local: string, remote: string) => {
+    await seedParentDescription(page, local, {
+      baseline: "Original",
+      remote,
+      conflict: { detectedAt: 1, localText: local, remoteText: remote },
+    });
+    await stubDescriptionSource(page, { synced: remote, text: remote });
+  },
+);
+
+Given(
+  "someone changes it in the source to {string} after the sync",
+  async ({ page }, text: string) => {
+    sources.get(page)!.text = lines(text);
+  },
+);
+
+Given(
+  "the source refuses description writes with {string}",
+  async ({ page }, refusal: string) => {
+    sources.get(page)!.refusal = refusal;
+  },
+);
+
+const descriptionEditor = (page: Page) =>
+  page.getByRole("textbox", { name: "Description", exact: true });
+
+When("I start editing the description", async ({ page }) => {
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await expect(descriptionEditor(page)).toBeFocused();
+});
+
+When("I change the description to {string}", async ({ page }, text: string) => {
+  await descriptionEditor(page).fill(lines(text));
+});
+
+When("I save the description", async ({ page }) => {
+  await page.keyboard.press("ControlOrMeta+Enter");
+  await expect(descriptionEditor(page)).toHaveCount(0);
+});
+
+Then(
+  "the editor warns that the description changed in the source, with Load latest",
+  async ({ page }) => {
+    await expect(
+      page.getByText("Changed in Work since the last sync.", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Load latest", exact: true }),
+    ).toBeVisible();
+  },
+);
+
+When("I load the latest description", async ({ page }) => {
+  await page.getByRole("button", { name: "Load latest", exact: true }).click();
+});
+
+Then(
+  "the description editor holds {string}, and the warning is gone",
+  async ({ page }, text: string) => {
+    await expect(descriptionEditor(page)).toHaveText(lines(text));
+    await expect(descriptionEditor(page)).toBeFocused();
+    await expect(page.getByText(/^Changed in Work since/)).toHaveCount(0);
+  },
+);
+
+Then("the editor says saving will merge the changes", async ({ page }) => {
+  await expect(
+    page.getByText(
+      "Changed in Work since the last sync. Saving will merge the changes.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Load latest", exact: true }),
+  ).toHaveCount(0);
+});
+
+const parentDescription = (page: Page) =>
+  page.evaluate(
+    () =>
+      JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.find(
+        (item: { _id: string }) => item._id === "parent",
+      ).description as string | undefined,
+  );
+
+Then(
+  "the source and the parent both hold {string}",
+  async ({ page }, text: string) => {
+    await expect.poll(() => sources.get(page)!.text).toBe(lines(text));
+    await expect.poll(() => parentDescription(page)).toBe(lines(text));
+  },
+);
+
+Then(
+  "the source still holds {string}, and the parent {string}",
+  async ({ page }, remote: string, local: string) => {
+    await expect.poll(() => parentDescription(page)).toBe(lines(local));
+    expect(sources.get(page)!.text).toBe(lines(remote));
+  },
+);
+
+Then(
+  "the description says it changed in the source too, with Resolve",
+  async ({ page }) => {
+    await expect(
+      page.getByText("Changed in Work too, in the same lines.", {
+        exact: true,
+      }),
+    ).toBeVisible();
+  },
+);
+
+When("I choose Resolve beside the description", async ({ page }) => {
+  await page
+    .locator("main")
+    .getByRole("button", { name: "Resolve", exact: true })
+    .click();
+});
+
+Then(
+  "the description says it is not saved to the source because {string}, with Retry",
+  async ({ page }, reason: string) => {
+    await expect(
+      page.getByText(`Not saved to Work: ${reason}`, { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.locator("main").getByRole("button", { name: "Retry", exact: true }),
+    ).toBeVisible();
+  },
+);
+
+When("a sync brings {string} while I edit", async ({ page }, text: string) => {
+  const synced = lines(text);
+  const source = sources.get(page)!;
+  source.synced = synced;
+  source.text = synced;
+  // As a sync applies it, announced like a write from another window.
+  await page.evaluate((synced) => {
+    const key = "ajour.local-state.v2";
+    const state = JSON.parse(localStorage.getItem(key)!);
+    const parent = state.workItems.find(
+      (item: { _id: string }) => item._id === "parent",
+    );
+    Object.assign(parent, {
+      description: synced,
+      descriptionSync: { baseline: synced, remote: synced },
+    });
+    localStorage.setItem(key, JSON.stringify(state));
+    window.dispatchEvent(new StorageEvent("storage", { key }));
+  }, synced);
+});
+
+Then(
+  "the description editor holds both {string} and {string}",
+  async ({ page }, mine: string, theirs: string) => {
+    await expect(descriptionEditor(page)).toContainText(mine);
+    await expect(descriptionEditor(page)).toContainText(theirs);
+    await expect(descriptionEditor(page)).toBeFocused();
+  },
+);
+
+When("I keep my description", async ({ page }) => {
+  await conflictSection(page)
+    .getByRole("button", { name: "Keep mine", exact: true })
+    .click();
+});

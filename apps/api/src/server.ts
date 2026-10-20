@@ -35,6 +35,10 @@ import {
   backlogSettleStatesResultSchema,
   backlogSettleWriteRequestSchema,
   backlogSettleWriteResultSchema,
+  backlogReadDescriptionRequestSchema,
+  backlogReadDescriptionResultSchema,
+  backlogWriteDescriptionRequestSchema,
+  backlogWriteDescriptionResultSchema,
   backlogSyncRequestSchema,
   backlogSyncResultSchema,
   type PluginField,
@@ -313,7 +317,7 @@ function errorMessage(error: unknown) {
 
 function matchPluginRoute(pathname: string) {
   return pathname.match(
-    /^\/api\/plugins\/([^/]+)\/connections(?:\/([^/]+)(?:\/(sync|settle-states|settle))?)?$/,
+    /^\/api\/plugins\/([^/]+)\/connections(?:\/([^/]+)(?:\/(sync|settle-states|settle|description|description-write))?)?$/,
   );
 }
 
@@ -1365,6 +1369,106 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             }
           } catch (error) {
             writeJson(response, 502, { error: errorMessage(error) });
+          }
+          return;
+        }
+
+        if (
+          request.method === "POST" &&
+          (action === "description" || action === "description-write")
+        ) {
+          const connection = await storage.getConnection(
+            pluginId,
+            connectionId,
+          );
+          if (!connection) {
+            writeJson(response, 404, {
+              error: "Plugin connection not found.",
+            });
+            return;
+          }
+          const plugins = await pluginManager.listPlugins();
+          const inactive = await inactiveCapabilityError(
+            storage,
+            pluginId,
+            "connector",
+            new Set(plugins.map((plugin) => plugin.id)),
+            "syncing descriptions",
+          );
+          if (inactive) {
+            writeJson(response, 409, { error: inactive });
+            return;
+          }
+          const writes = action === "description-write";
+          if (!(await pluginManager.supportsDescriptions(pluginId, writes))) {
+            writeJson(response, 409, {
+              error: writes
+                ? "This plugin does not write descriptions."
+                : "This plugin does not sync descriptions.",
+            });
+            return;
+          }
+
+          const body = await readJsonBody(request);
+          const pluginConnection = {
+            id: connection.id,
+            pluginId: connection.pluginId,
+            label: connection.label,
+            tenantLabel: connection.tenantLabel,
+            autoSync: connection.autoSync,
+            autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
+            connectedAt: connection.connectedAt,
+            lastSyncAt: connection.lastSyncAt,
+            lastError: connection.lastError,
+            config: connection.config,
+          };
+          // A malformed body fails here, outside the try, as a 400.
+          const readRequest = writes
+            ? undefined
+            : backlogReadDescriptionRequestSchema.parse(body);
+          const writeRequest = writes
+            ? backlogWriteDescriptionRequestSchema.parse(body)
+            : undefined;
+          try {
+            if (readRequest) {
+              const result = await pluginManager.readDescription(
+                pluginId,
+                pluginConnection,
+                readRequest,
+              );
+              writeJson(
+                response,
+                200,
+                backlogReadDescriptionResultSchema.parse(result),
+              );
+              return;
+            }
+            if (writeRequest) {
+              const result = await pluginManager.writeDescription(
+                pluginId,
+                pluginConnection,
+                writeRequest,
+              );
+              writeJson(
+                response,
+                200,
+                backlogWriteDescriptionResultSchema.parse(result),
+              );
+            }
+          } catch (error) {
+            // The message reaches the user and is stored with the item.
+            const plugin = plugins.find(
+              (candidate) => candidate.id === pluginId,
+            );
+            writeJson(response, 502, {
+              error: boundConnectionError(
+                redactSecretValues(
+                  errorMessage(error),
+                  plugin ?? { connectionFields: [] },
+                  connection.config,
+                ),
+              ),
+            });
           }
           return;
         }

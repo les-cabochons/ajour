@@ -12,6 +12,8 @@ Export these as named functions from your entry point. Each can be `async`.
 | `syncConnection`         | `capabilities.connector`                    | The user presses **Sync**, the connection's timer fires, or the user saves time on one of your items, so estimate changes get written. |
 | `listSettleStates`       | `capabilities.connector.settle`             | The settle dialog opens for one of your items.                                                                                         |
 | `writeSettle`            | `capabilities.connector.settle`             | A settle or move is due, after the Undo toast closes.                                                                                  |
+| `readDescription`        | `capabilities.connector.description`        | The user opens the description editor, and before each save of the description.                                                        |
+| `writeDescription`       | `capabilities.connector.description.write`  | The user saves an edited description, or picks Keep mine in Sync review.                                                               |
 | `listItemComments`       | `capabilities.connector.comments`           | The user opens one of your items, and again for each "Show earlier comments".                                                          |
 | `postItemComment`        | `capabilities.connector.comments`           | The user sends a comment on one of your items. A settle's or an agent's comment comes once its Undo toast closes.                      |
 | `editItemComment`        | `capabilities.connector.comments.edit`      | The user edits one of their own comments.                                                                                              |
@@ -39,6 +41,16 @@ export async function writeSettle(
   connection: PluginConnection,
   request: BacklogSettleWriteRequest,
 ): Promise<BacklogSettleWriteResult>;
+
+export async function readDescription(
+  connection: PluginConnection,
+  request: BacklogReadDescriptionRequest,
+): Promise<BacklogReadDescriptionResult>;
+
+export async function writeDescription(
+  connection: PluginConnection,
+  request: BacklogWriteDescriptionRequest,
+): Promise<BacklogWriteDescriptionResult>;
 
 export async function listItemComments(
   connection: PluginConnection,
@@ -111,7 +123,9 @@ Declare `connector.description` and return the item's full description in `descr
 - `lost`: short names of what the conversion dropped, such as `"text colour"` or `"underline"`. Leave it out when nothing was lost. Images never count as lost.
 - `cut`: `true` when the source's text was longer and you cut it to 64,000 characters.
 
-Ajour keeps the text both sides last agreed on. On each sync, a description only the source changed follows the source, one only the user changed keeps the user's edit, and one changed on both sides becomes a conflict for the user to resolve. A newly imported item takes your text. Without `connector.description.write`, the description is read-only in Ajour, with a link to edit it in your tool. A `cut` description is always read-only, so a shortened copy is never written back.
+Ajour keeps the text both sides last agreed on. On each sync, a description only the source changed follows the source, one only the user changed keeps the user's edit, and one changed on both sides becomes a conflict for the user to resolve. A newly imported item takes your text. Without `connector.description.write`, the description is read-only in Ajour, with a link to edit it in your tool. A `cut` description is always read-only, so a shortened copy is never written back, and so is one with `lost`, so an edit in Ajour never erases formatting your tool keeps.
+
+With `connector.description.write`, the user edits the description in Ajour, and Ajour writes it back through [writeDescription](#writedescription). Set `maxLength` to your tool's limit, measured as your tool measures it; the editor then stops at the smaller of it and 64,000 characters.
 
 A plugin that returns only `note`, up to 4,000 characters, keeps the older behaviour: Ajour takes it when the item first arrives, later syncs leave the description in Ajour as it is, and Ajour never writes it back. When `description` is present, `note` is ignored.
 
@@ -159,6 +173,21 @@ Ajour sends the write once the Undo toast closes, about 8 seconds after the user
 ::: tip Check the target
 `sourceId` comes from your own sync, but treat it as input. Before you send a credential to a URL built from it, check that it points at the connection's site. The Azure DevOps plugin refuses work item URLs outside the configured organization.
 :::
+
+## readDescription
+
+Return the item's description as your tool holds it now, converted as in a sync: `text`, `lost` and `cut`. Ajour calls it in the background when the user starts editing, to warn when the description changed since the last sync, and before every save, to merge with what changed.
+
+## writeDescription
+
+Ajour sends the Markdown to write in `text`, and in `expected` the `text` your `readDescription` returned just before. Convert the item's current description as you do in `readDescription`:
+
+- If it is still `expected`, write `text`, converted to your tool's format, and return `outcome: "written"` with the description as your tool now holds it, converted back.
+- If it is not, someone changed it in between. Write nothing, and return `outcome: "conflict"` with the description as it is. Ajour records a conflict for the user to resolve.
+
+Ajour has already merged the user's edit with what changed in your tool, line by line, so write `text` as it is. Keep images and mentions as the sync sent them. If the converted text is too long for your tool, or the write fails, throw: Ajour keeps the user's text and shows your message with Retry.
+
+Ajour writes at once, with no Undo toast, and one write at a time per item.
 
 ## listItemComments
 
@@ -389,6 +418,30 @@ export interface BacklogSettleWriteRequest {
   sourceId: string;
   state?: string;
   priority?: BacklogPriorityLevel;
+}
+
+export interface BacklogReadDescriptionRequest {
+  sourceId: string;
+}
+
+export interface BacklogReadDescriptionResult {
+  /** As in a sync's `description`. */
+  description: { text: string; lost?: string[]; cut?: boolean };
+}
+
+export interface BacklogWriteDescriptionRequest {
+  sourceId: string;
+  /** The Markdown to write. Up to 64,000 characters. */
+  text: string;
+  /** The text `readDescription` returned before the write. */
+  expected: string;
+}
+
+export interface BacklogWriteDescriptionResult {
+  /** `conflict` when the tool no longer held `expected`, and nothing was written. */
+  outcome: "written" | "conflict";
+  /** The description as the tool holds it after the write, or as it is. */
+  description: { text: string; lost?: string[]; cut?: boolean };
 }
 
 /** The item's values in the tool after the write. */

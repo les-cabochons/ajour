@@ -116,6 +116,7 @@ function normalizeDescriptionSync(
   const sync = value as Record<string, unknown>;
   if (typeof sync.remote !== "string") return undefined;
   const conflict = sync.conflict as Record<string, unknown> | undefined;
+  const writeError = sync.writeError as Record<string, unknown> | undefined;
   const lost = Array.isArray(sync.lost)
     ? sync.lost.filter((entry): entry is string => typeof entry === "string")
     : [];
@@ -135,6 +136,11 @@ function normalizeDescriptionSync(
             remoteText: conflict.remoteText,
           },
         }
+      : {}),
+    ...(writeError &&
+    typeof writeError.at === "number" &&
+    typeof writeError.message === "string"
+      ? { writeError: { at: writeError.at, message: writeError.message } }
       : {}),
   };
 }

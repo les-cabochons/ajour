@@ -30,7 +30,16 @@ While the page itself has focus, as when it opens, the item's keys work: <kbd>En
 
 The description says what the work is, in Markdown. Press **Edit** next to **Description** to change it. The editor keeps your Markdown as you type and styles it, such as headings, bold text and links. Press <kbd>⌘</kbd> <kbd>Enter</kbd> or click outside the editor to save, with an Undo toast, or <kbd>Esc</kbd> to cancel.
 
-A synced item's description comes from its source when the item first arrives. After that, syncs leave it as it is, and your edits stay in Ajour: they don't go back to the source.
+A synced item's description comes from its source when the item first arrives. When its backlog plugin sends descriptions in full, each sync brings the source's changes too, and keeps yours.
+
+When the plugin also writes descriptions, saving sends your edit to the source at once, with no Undo toast:
+
+- **Editing** starts at once. Ajour checks the source in the background, and if the description changed there since the last sync, a line under the editor says so. Press **Load latest** to start from the source's text, or keep typing: saving merges both.
+- **Saving** reads the source again. Changes to other lines than yours are merged, and the editor shows the result. Changes to the same lines write nothing: the description says so, with **Resolve**, which opens [Sync review](/plugins/sync-review#resolve-description-conflicts).
+- **A failed save** keeps your text, with the reason and **Retry**.
+- **The editor** stops at 64,000 characters, or the source's limit when it is lower. A count shows as you near it.
+
+Otherwise the description is read-only, with **Edit in source**: when the plugin does not write descriptions, when the description was too long for Ajour and shows cut off, or when its formatting, such as an underline, has no Markdown form, so an edit here would erase it. A plugin that sends only a short note keeps the older behaviour: the note arrives once, and your edits stay in Ajour.
 
 Web links in a description, in its text or its [frontmatter](#frontmatter), show their full address and ask before they open. Check **Don't ask again** to open them at once, and turn the question back on in **Settings › Backlog › Descriptions**.
 

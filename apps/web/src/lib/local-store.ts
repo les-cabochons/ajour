@@ -2115,6 +2115,29 @@ export const localStore = {
       return withDescriptionTimelogs(state, next);
     });
   },
+  /**
+   * Applies a step of a synced description's save to the item, without Undo:
+   * a description written to its source stays written. A text that changed
+   * applies its timelog, as any description edit does.
+   */
+  updateSyncedDescription(
+    workItemId: string,
+    change: (
+      item: LocalWorkItem,
+    ) => Pick<LocalWorkItem, "description" | "descriptionSync">,
+  ) {
+    updateState((state) => {
+      const target = state.workItems.find((item) => item._id === workItemId);
+      if (!target?.descriptionSync) return state;
+      const next = {
+        ...state,
+        workItems: state.workItems.map((item) =>
+          item._id === workItemId ? { ...item, ...change(item) } : item,
+        ),
+      };
+      return withDescriptionTimelogs(state, next);
+    });
+  },
   acceptRemoteEstimateValue(
     workItemId: string,
     fieldKey: LocalWorkItemEstimateFieldKey,

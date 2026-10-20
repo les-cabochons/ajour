@@ -157,6 +157,8 @@ export interface LocalWorkItemDescriptionSync {
   cut?: boolean;
   /** Both sides changed since they last agreed. */
   conflict?: { detectedAt: number; localText: string; remoteText: string };
+  /** Why the last save could not write the local text to the source. */
+  writeError?: { at: number; message: string };
 }
 
 export interface LocalProjectDraft {

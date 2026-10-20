@@ -30,6 +30,7 @@ export interface BacklogTaskEditorValidation {
   originalEstimateError: string | null;
   remainingEstimateError: string | null;
   completedEstimateError: string | null;
+  descriptionError: string | null;
   canSave: boolean;
 }
 
@@ -215,6 +216,8 @@ export function validateBacklogTaskEditor(
   options: {
     isSubtask: boolean;
     requireParent?: boolean;
+    /** The most characters the description saves, when it has a limit. */
+    descriptionLimit?: number;
   },
 ): BacklogTaskEditorValidation {
   const titleError = fields.title.trim() ? null : "Enter an item name";
@@ -238,6 +241,12 @@ export function validateBacklogTaskEditor(
     parseEstimateInput(fields.completedEstimateHours) === null
       ? "Enter a non-negative number"
       : null;
+  const descriptionLength = normalizeDescriptionText(fields.description).length;
+  const descriptionError =
+    options.descriptionLimit !== undefined &&
+    descriptionLength > options.descriptionLimit
+      ? `Shorten the description to ${options.descriptionLimit.toLocaleString()} characters`
+      : null;
   const canSave = ![
     titleError,
     parentError,
@@ -245,6 +254,7 @@ export function validateBacklogTaskEditor(
     originalEstimateError,
     remainingEstimateError,
     completedEstimateError,
+    descriptionError,
   ].some(Boolean);
 
   return {
@@ -254,6 +264,7 @@ export function validateBacklogTaskEditor(
     originalEstimateError,
     remainingEstimateError,
     completedEstimateError,
+    descriptionError,
     canSave,
   };
 }
@@ -437,6 +448,11 @@ export function evaluateBacklogTaskEditor(
     descriptionReadOnly?: boolean;
     /** The item's fields when the draft started. */
     base?: BacklogTaskEditorFields;
+    /**
+     * The most characters a description written to its source saves. Only
+     * a changed description is held to it.
+     */
+    descriptionLimit?: number;
   } = {},
 ): BacklogTaskEditorState {
   const original = target.kind === "edit" ? target.workItem : undefined;
@@ -444,9 +460,16 @@ export function evaluateBacklogTaskEditor(
     ? isSubtaskWorkItem(original)
     : Boolean(target.kind === "create" && target.parent);
   const isSynced = Boolean(original && original.source !== "manual");
+  const descriptionChanged =
+    fields.description !==
+    (options.base ?? createBacklogTaskEditorSeed(target)).description;
   const validation = validateBacklogTaskEditor(fields, {
     isSubtask: isSubitem,
     requireParent: !original && isSubitem,
+    descriptionLimit:
+      options.descriptionReadOnly || !descriptionChanged
+        ? undefined
+        : options.descriptionLimit,
   });
 
   const estimateResets: Partial<Record<BacklogEstimateFieldKey, string>> = {};
@@ -507,6 +530,7 @@ function getFirstValidationError(validation: BacklogTaskEditorValidation) {
     validation.originalEstimateError ??
     validation.remainingEstimateError ??
     validation.completedEstimateError ??
+    validation.descriptionError ??
     "Check the highlighted fields"
   );
 }

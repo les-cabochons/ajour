@@ -1,4 +1,5 @@
 import {
+  BACKLOG_DESCRIPTION_MAX_LENGTH,
   isCapabilityActive,
   type BacklogDescriptionCapability,
   type BacklogSyncedDescription,
@@ -8,6 +9,7 @@ import type {
   LocalWorkItem,
   LocalWorkItemDescriptionSync,
 } from "@/domain/local-state";
+import { mergeTexts } from "@/domain/backlog/text-merge";
 
 /**
  * Two-way descriptions of synced backlog items (ADR 0009). Ajour keeps the
@@ -92,17 +94,47 @@ export function reconcileDescription(
   if (takesSource) return agreed(source, remote);
 
   if (baseline !== undefined && comparedRemote === comparedBaseline) {
+    const writeError = item.descriptionSync?.writeError;
     return {
       description: item.description,
-      descriptionSync: { baseline, ...sourceFacts(source, remote) },
+      // A local edit the last save could not write still waits, with why.
+      descriptionSync: {
+        baseline,
+        ...sourceFacts(source, remote),
+        ...(writeError ? { writeError } : {}),
+      },
     };
   }
 
+  return descriptionInConflict(item, source, now);
+}
+
+/**
+ * The description once both sides changed it differently: the local text
+ * stays, and the conflict keeps when it was first seen while its texts stay
+ * the same.
+ */
+export function descriptionInConflict(
+  item: Described,
+  source: BacklogSyncedDescription,
+  now: number,
+  /**
+   * The text the local edit began from, when a sync has since moved the
+   * agreed text past it: kept as the agreed text, so a later sync of the
+   * same source text keeps the conflict instead of clearing it.
+   */
+  ancestor?: string,
+): Described {
+  const remote = storedText(source.text);
+  const baseline =
+    ancestor === undefined
+      ? item.descriptionSync?.baseline
+      : storedText(ancestor);
   const previous = item.descriptionSync?.conflict;
   const sameConflict =
     previous !== undefined &&
-    normalizeText(previous.localText) === local &&
-    normalizeText(previous.remoteText) === comparedRemote;
+    normalizeText(previous.localText) === normalizeText(item.description) &&
+    normalizeText(previous.remoteText) === normalizeText(remote);
   return {
     description: item.description,
     descriptionSync: {
@@ -117,15 +149,199 @@ export function reconcileDescription(
   };
 }
 
+/** What saving an edited synced description does, given the source's text now. */
+export type DescriptionSavePlan =
+  /** The source already holds the result, so nothing is written. */
+  | { kind: "agreed" }
+  /** `merged` when the text joins the user's edit with the source's. */
+  | { kind: "write"; text: string; merged: boolean }
+  | { kind: "conflict" };
+
+/**
+ * Plans the save of `local`, the user's text, by a three-way merge with the
+ * text both sides last agreed on and the source's text now. Without an agreed
+ * text, any difference is a conflict.
+ */
+export function planDescriptionSave(
+  baseline: string | undefined,
+  local: string | undefined,
+  source: string,
+): DescriptionSavePlan {
+  const mine = normalizeText(local);
+  const theirs = normalizeText(source);
+  if (mine === theirs) return { kind: "agreed" };
+  if (baseline === undefined) return { kind: "conflict" };
+  const base = normalizeText(baseline);
+  if (theirs === base) return { kind: "write", text: mine, merged: false };
+  const merge = mergeTexts(base, mine, theirs);
+  if ("conflict" in merge) return { kind: "conflict" };
+  const merged = normalizeText(merge.merged);
+  return merged === theirs
+    ? { kind: "agreed" }
+    : { kind: "write", text: merged, merged: true };
+}
+
+/**
+ * Plans Keep mine on a conflict: the user's text wins over the source's text
+ * they saw. A source that changed again since is a new conflict, to see first.
+ */
+export function planKeepMine(
+  item: Described,
+  source: string,
+): DescriptionSavePlan {
+  const sync = item.descriptionSync;
+  const mine = normalizeText(item.description);
+  if (mine === normalizeText(source)) return { kind: "agreed" };
+  if (!sync || normalizeText(sync.remote) !== normalizeText(source)) {
+    return { kind: "conflict" };
+  }
+  return { kind: "write", text: mine, merged: false };
+}
+
+/**
+ * The description once the source holds `source`, after a save of `saved`.
+ * Both sides agree on it, and the item shows it, merged text included. A text
+ * the user changed again meanwhile takes in what the save merged from the
+ * source, for the next save to write; when both touched the same lines, it
+ * stays as it is, in conflict with the source.
+ */
+export function descriptionSaved(
+  item: Described,
+  saved: string | undefined,
+  source: BacklogSyncedDescription,
+  now: number,
+): Described {
+  const remote = storedText(source.text);
+  const before = normalizeText(saved);
+  const mine = normalizeText(item.description);
+  if (mine === before) return agreed(source, remote);
+  const merge = mergeTexts(before, mine, normalizeText(remote));
+  if ("conflict" in merge) {
+    return {
+      description: item.description,
+      descriptionSync: {
+        // What the later edit began from, so a sync keeps the conflict.
+        baseline: before,
+        ...sourceFacts(source, remote),
+        conflict: {
+          detectedAt: now,
+          localText: item.description ?? "",
+          remoteText: remote,
+        },
+      },
+    };
+  }
+  const rebased = normalizeText(merge.merged);
+  return {
+    description: rebased || undefined,
+    descriptionSync: { baseline: remote, ...sourceFacts(source, remote) },
+  };
+}
+
+/**
+ * An open draft of a description after the item's text changed under it,
+ * from `base` to `current`, as when a sync brings the source's edit: an
+ * untouched draft takes the new text, and a touched one takes in the change,
+ * so saving it keeps both. A change to the lines the user edited is a
+ * conflict, and the draft stays as it is.
+ */
+export function rebaseDescriptionDraft(
+  base: string,
+  draft: string,
+  current: string,
+): { text: string } | { conflict: true } {
+  if (draft === base) return { text: current };
+  const merge = mergeTexts(base, draft, current);
+  return "conflict" in merge ? merge : { text: merge.merged };
+}
+
+/** What the conversion lost, as words: "colour, underline and tables". */
+export function lostFormatting(lost: readonly string[]) {
+  return lost.length < 2
+    ? (lost[0] ?? "")
+    : `${lost.slice(0, -1).join(", ")} and ${lost.at(-1)}`;
+}
+
+/** The description after a save that could not write it, with why. */
+export function descriptionWriteFailed(
+  item: Described,
+  message: string,
+  now: number,
+): Described {
+  if (!item.descriptionSync) return item;
+  return {
+    description: item.description,
+    descriptionSync: {
+      ...item.descriptionSync,
+      writeError: { at: now, message },
+    },
+  };
+}
+
+/**
+ * Load latest in the editor: the source's text replaces the item's, and both
+ * sides agree on it.
+ */
+export function latestDescription(source: BacklogSyncedDescription): Described {
+  return agreed(source, storedText(source.text));
+}
+
+/**
+ * Whether the item holds a local edit not written to the source yet, as after
+ * a save that failed. A conflict is shown as one instead.
+ */
+export function hasUnwrittenDescription(item: Described) {
+  const sync = item.descriptionSync;
+  return Boolean(
+    sync &&
+    !sync.conflict &&
+    sync.baseline !== undefined &&
+    normalizeText(item.description) !== normalizeText(sync.baseline),
+  );
+}
+
+/**
+ * Whether the source's text, read when the editor opened, differs from the
+ * text both sides last agreed on.
+ */
+export function sourceDescriptionChanged(
+  item: Described,
+  source: BacklogSyncedDescription,
+) {
+  const baseline = item.descriptionSync?.baseline;
+  return (
+    baseline !== undefined &&
+    normalizeText(source.text) !== normalizeText(baseline)
+  );
+}
+
+/**
+ * The most characters the editor saves: what Ajour stores, or less when the
+ * source takes less.
+ */
+export function descriptionLimit(
+  capability: BacklogDescriptionCapability | undefined,
+) {
+  return Math.min(
+    BACKLOG_DESCRIPTION_MAX_LENGTH,
+    capability?.maxLength ?? BACKLOG_DESCRIPTION_MAX_LENGTH,
+  );
+}
+
 export type DescriptionAccess =
   | { editable: true }
-  | { editable: false; reason: "archived" | "notWritable" | "cut" };
+  | {
+      editable: false;
+      reason: "archived" | "notWritable" | "cut" | "lossy";
+    };
 
 /**
  * Whether the user may edit an item's description, wherever it is edited.
  * A synced description is read-only unless its plugin writes descriptions
- * back, and a cut one always is, so a shortened copy is never written.
- * `capability` is the plugin's, or undefined while it is unknown.
+ * back, and a cut one always is, so a shortened copy is never written. One
+ * whose conversion to Markdown lost something is too, so an edit never
+ * erases the source's formatting. `capability` is the plugin's, or undefined
+ * while it is unknown.
  */
 export function descriptionAccess(
   item: Pick<LocalWorkItem, "status" | "descriptionSync">,
@@ -137,6 +353,7 @@ export function descriptionAccess(
   if (!sync) return { editable: true };
   if (sync.cut) return { editable: false, reason: "cut" };
   if (!capability?.write) return { editable: false, reason: "notWritable" };
+  if (sync.lost?.length) return { editable: false, reason: "lossy" };
   return { editable: true };
 }
 
@@ -174,7 +391,7 @@ export function descriptionCapabilityOf(
 export function takeSourceDescription(item: Described): Described {
   const sync = item.descriptionSync;
   if (!sync?.conflict) return item;
-  const { conflict: _conflict, ...rest } = sync;
+  const { conflict: _conflict, writeError: _writeError, ...rest } = sync;
   return {
     description: sync.remote || undefined,
     descriptionSync: { ...rest, baseline: sync.remote },
