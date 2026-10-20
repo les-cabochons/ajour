@@ -71,3 +71,25 @@ Feature: Submit the week
     And I choose the greyed-out "Delete" in the menu
     Then a toast shows the whole sentence "The week of Oct 5 is submitted. Reopen it to change it."
     And the Day list reads "Login form", "API"
+
+  Scenario: Moving a submitted week's entry with the keys says why
+    Given I have a committed week of entries
+    When I open the Commit page for the week of 2026-10-05
+    And I press "Submit week"
+    And I press "Submit anyway"
+    And I open Monday's Day list
+    And I click the "Login form" entry
+    And I press the "Alt+ArrowDown" key
+    Then a toast shows the whole sentence "The week of Oct 5 is submitted. Reopen it to change it."
+    And the Day list reads "Login form", "API"
+
+  Scenario: Cutting a submitted week's entry says why
+    Given I have a committed week of entries
+    When I open the Commit page for the week of 2026-10-05
+    And I press "Submit week"
+    And I press "Submit anyway"
+    And I open Monday's Day list
+    And I click the "Login form" entry
+    And I press the "ControlOrMeta+x" key
+    Then a toast shows the whole sentence "The week of Oct 5 is submitted. Reopen it to change it."
+    And no Day row is dimmed as cut

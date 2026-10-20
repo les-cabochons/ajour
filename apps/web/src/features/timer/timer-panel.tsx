@@ -720,6 +720,7 @@ export function TimerPanel({
                             lockReason !== undefined || draggableIndex === -1
                               ? undefined
                               : (step) => reorderEntry(entry._id, step),
+                          reorderLockedReason: lockReason,
                         })
                       }
                       onPointerDown={(event) => {

@@ -313,7 +313,8 @@ const platform = getShortcutPlatform();
  * Alt+arrows call `onReorder` when the item is sortable, ".", Shift+F10 and the
  * context menu key open its menu, and the other keys run the action that
  * `keys` maps them to. A disabled action swallows its key and does nothing,
- * except a locked one, which shows the submitted week's reason as a toast.
+ * except a locked one, which shows the submitted week's reason as a toast, as
+ * Alt+arrows do with `reorderLockedReason`.
  * After Delete removes the item, focus moves to the next item that is still
  * there, or the previous one at the end.
  */
@@ -324,6 +325,7 @@ export function handleItemKeyDown<Id extends string>(
     keys,
     onAction,
     onReorder,
+    reorderLockedReason,
   }: {
     actions: readonly ObjectAction<Id>[];
     keys: ActionKeys<Id>;
@@ -331,6 +333,8 @@ export function handleItemKeyDown<Id extends string>(
     onAction: (actionId: Id, key: { shortcutId: ShortcutActionId }) => void;
     /** Present only where drag reorder exists. -1 is Move up, 1 is Move down. */
     onReorder?: (step: -1 | 1) => void;
+    /** Set instead of `onReorder` when a submitted week keeps the item in place. */
+    reorderLockedReason?: string;
   },
 ) {
   const item = event.currentTarget;
@@ -359,6 +363,9 @@ export function handleItemKeyDown<Id extends string>(
         onReorder(command.step);
         // Moving a focused node in the DOM can drop its focus.
         refocusAfterRender(item);
+      } else if (reorderLockedReason) {
+        event.preventDefault();
+        showToast(reorderLockedReason);
       }
       return;
     case "open-menu":

@@ -72,6 +72,11 @@ When(
   },
 );
 
+Then("no Day row is dimmed as cut", async ({ page }) => {
+  await expect(page.locator(".time-entry-row")).not.toHaveCount(0);
+  await expect(page.locator(".time-entry-row.is-cut")).toHaveCount(0);
+});
+
 Then("the Week view shows the week is submitted", async ({ page }) => {
   const week = page.getByRole("region", { name: "Week", exact: true });
   await expect(week.getByText("Submitted", { exact: true })).toBeVisible();

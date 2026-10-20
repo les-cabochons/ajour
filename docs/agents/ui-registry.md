@@ -246,7 +246,9 @@ through `DisabledReason` or the action's `disabledReason`. An action it
 disables also carries `locked`, set by `markLockedActions` in
 `domain/actions/object-actions.ts`: `ObjectActionItems` and the command
 palette grey it without the reason but let it be chosen, which shows the
-reason as a toast, and `handleItemKeyDown` does the same for its key. Native
+reason as a toast, and `handleItemKeyDown` does the same for its key and,
+through `reorderLockedReason`, for Alt+arrows. Cmd+X on its entries shows the
+reason from `use-entry-selection.ts` and cuts nothing. Native
 right-click menus only grey it, since a native item cannot be greyed and
 chosen. The Move to and
 Duplicate to calendars grey out its days, and it gets no calendar suggestion. Writes without a control of their own, such as Cmd+V, show the

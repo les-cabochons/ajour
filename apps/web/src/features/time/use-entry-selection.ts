@@ -8,6 +8,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { showToast } from "@/components/ui/toast";
 import {
   addTimeEntryClipboardActions,
   formatEntryCount,
@@ -289,6 +290,7 @@ export function useEntrySelection({
     paste,
     pasteTarget,
     selectAll,
+    selectionLockedReason,
   });
   useEffect(() => {
     latest.current = {
@@ -296,6 +298,7 @@ export function useEntrySelection({
       paste,
       pasteTarget,
       selectAll,
+      selectionLockedReason,
     };
   });
 
@@ -305,6 +308,15 @@ export function useEntrySelection({
       // Text selected outside the entries, such as in a dialog, copies as text.
       const focusOnEntry = document.activeElement?.closest("[data-entry-id]");
       if (!focusOnEntry && window.getSelection()?.type === "Range") return;
+
+      // Cut moves the entries, which a submitted week refuses, like its menu
+      // item. Copy changes nothing, so it still works.
+      const lockedReason = latest.current.selectionLockedReason;
+      if (event.type === "cut" && lockedReason) {
+        event.preventDefault();
+        showToast(lockedReason);
+        return;
+      }
 
       const text = latest.current.putOnClipboard(
         event.type === "cut" ? "cut" : "copy",

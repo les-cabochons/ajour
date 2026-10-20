@@ -896,6 +896,7 @@ export function WeeklyTimeView({
                                         entry._id,
                                         step,
                                       ),
+                                reorderLockedReason: lockReason,
                               });
                             }}
                             onPointerDown={(event) => {
