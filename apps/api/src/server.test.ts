@@ -2811,6 +2811,7 @@ describe("plugin errors that echo a secret", () => {
     "}",
     "export const syncPullRequests = leak('Pull request sync');",
     "export const getPullRequestContent = leak('Reading the pull request');",
+    "export const readDescription = leak('Reading the description');",
   ].join("\n");
 
   /** The fixture's fields; `token` is secret unless a test says otherwise. */
@@ -2842,7 +2843,10 @@ describe("plugin errors that echo a secret", () => {
       plugin.source ?? leakingPluginSource,
       "plugin.mjs",
       {
-        capabilities: { connector: { settle: true }, codeHost: {} },
+        capabilities: {
+          connector: { settle: true, description: {} },
+          codeHost: {},
+        },
         connectionFields: plugin.connectionFields ?? leakingFields(),
       },
     );
@@ -3093,8 +3097,12 @@ describe("plugin errors that echo a secret", () => {
     });
   });
 
-  it("redacts with the manifest the call ran with, when an update lands while the request waits", async () => {
-    // The token starts out not secret.
+  /**
+   * Saves a connection whose token is not secret yet, posts `body` to the
+   * connection's `action`, and marks the token secret in an update while the
+   * route waits for the body.
+   */
+  async function postWhileTheTokenTurnsSecret(action: string, body: object) {
     const { server, pluginDirectory } = await createServer(undefined, {
       connectionFields: leakingFields(false),
     });
@@ -3110,14 +3118,13 @@ describe("plugin errors that echo a secret", () => {
       release = resolve;
     });
 
-    const settling = dispatchJsonRequest(server, {
+    const posting = dispatchJsonRequest(server, {
       method: "POST",
-      path: `/api/plugins/jira/connections/${connectionId}/settle-states`,
-      body: JSON.stringify({ sourceId: "OPEN-1" }),
+      path: `/api/plugins/jira/connections/${connectionId}/${action}`,
+      body: JSON.stringify(body),
       bodyGate: { reached, release: bodyReleased },
     });
     await bodyRequested;
-    // An update marks the token secret while the route waits for the body.
     const manifestPath = path.join(pluginDirectory, "plugin.json");
     const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
     await writeFile(
@@ -3125,10 +3132,24 @@ describe("plugin errors that echo a secret", () => {
       JSON.stringify({ ...manifest, connectionFields: leakingFields(true) }),
     );
     release();
+    return await posting;
+  }
 
-    await expect(settling).resolves.toEqual({
+  it("redacts with the manifest the call ran with, when an update lands while the request waits", async () => {
+    await expect(
+      postWhileTheTokenTurnsSecret("settle-states", { sourceId: "OPEN-1" }),
+    ).resolves.toEqual({
       status: 502,
       body: { error: "Listing states failed with token [secret]." },
+    });
+  });
+
+  it("redacts a description call with the manifest it ran with, too", async () => {
+    await expect(
+      postWhileTheTokenTurnsSecret("description", { sourceId: "OPEN-1" }),
+    ).resolves.toEqual({
+      status: 502,
+      body: { error: "Reading the description failed with token [secret]." },
     });
   });
 

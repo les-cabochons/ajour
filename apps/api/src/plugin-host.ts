@@ -587,6 +587,7 @@ export class PluginManager {
     pluginId: string,
     connection: PluginInvocationConnection,
     request: BacklogReadDescriptionRequest,
+    admit?: PluginAdmission,
   ): Promise<BacklogReadDescriptionResult> {
     if (!(await this.supportsDescriptions(pluginId))) {
       throw new Error(`Plugin "${pluginId}" does not sync descriptions.`);
@@ -599,6 +600,7 @@ export class PluginManager {
         request: backlogReadDescriptionRequestSchema.parse(request),
       },
       backlogReadDescriptionResultSchema,
+      admit,
     );
   }
 
@@ -607,6 +609,7 @@ export class PluginManager {
     pluginId: string,
     connection: PluginInvocationConnection,
     request: BacklogWriteDescriptionRequest,
+    admit?: PluginAdmission,
   ): Promise<BacklogWriteDescriptionResult> {
     if (!(await this.supportsDescriptions(pluginId, true))) {
       throw new Error(`Plugin "${pluginId}" does not write descriptions.`);
@@ -619,6 +622,7 @@ export class PluginManager {
         request: backlogWriteDescriptionRequestSchema.parse(request),
       },
       backlogWriteDescriptionResultSchema,
+      admit,
     );
   }
 

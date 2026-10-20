@@ -1483,12 +1483,15 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             });
             return;
           }
-          const plugins = await pluginManager.listPlugins();
+          const { plugin, pluginIds } = await findPlugin(
+            pluginManager,
+            pluginId,
+          );
           const inactive = await inactiveCapabilityError(
             storage,
             pluginId,
             "connector",
-            new Set(plugins.map((plugin) => plugin.id)),
+            pluginIds,
             "syncing descriptions",
           );
           if (inactive) {
@@ -1496,7 +1499,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             return;
           }
           const writes = action === "description-write";
-          if (!(await pluginManager.supportsDescriptions(pluginId, writes))) {
+          const description = plugin?.capabilities.connector?.description;
+          if (!plugin || !description || (writes && !description.write)) {
             writeJson(response, 409, {
               error: writes
                 ? "This plugin does not write descriptions."
@@ -1550,12 +1554,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             });
             return;
           }
+          const call = admittedCall(plugin);
           try {
             if (readRequest) {
               const result = await pluginManager.readDescription(
                 pluginId,
                 pluginConnection,
                 readRequest,
+                call.admit,
               );
               writeJson(
                 response,
@@ -1569,6 +1575,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
                 pluginId,
                 pluginConnection,
                 writeRequest,
+                call.admit,
               );
               writeJson(
                 response,
@@ -1578,16 +1585,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             }
           } catch (error) {
             // The message reaches the user and is stored with the item.
-            const plugin = plugins.find(
-              (candidate) => candidate.id === pluginId,
-            );
             writeJson(response, 502, {
-              error: boundConnectionError(
-                redactSecretValues(
-                  errorMessage(error),
-                  plugin ?? { connectionFields: [] },
-                  connection.config,
-                ),
+              error: pluginErrorMessage(
+                error,
+                call.manifest,
+                connection.config,
               ),
             });
           }
