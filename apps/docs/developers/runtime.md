@@ -35,7 +35,7 @@ The desktop app runs a local API inside its main process, on `127.0.0.1:8787`. T
 | Calls running at once                 | 4 per host. A fifth fails with "Too many plugin operations are already running." |
 | Result size                           | 8 MiB. Results must be plain data that can be cloned.                            |
 | Memory                                | 128 MB of old-generation heap, 32 MB young generation.                           |
-| Error message                         | 4,096 characters, and 1,000 on the connection's row.                             |
+| Error message                         | 1,000 characters, after secret connection values are replaced with `[secret]`.   |
 | Items Ajour sends to `syncConnection` | 1,000.                                                                           |
 | Package archive                       | 25 MiB, 2,000 entries, 100 MiB once extracted.                                   |
 

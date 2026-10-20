@@ -2812,6 +2812,7 @@ describe("plugin errors that echo a secret", () => {
     "export const syncPullRequests = leak('Pull request sync');",
     "export const getPullRequestContent = leak('Reading the pull request');",
     "export const readDescription = leak('Reading the description');",
+    "export const writeDescription = leak('Writing the description');",
   ].join("\n");
 
   /** The fixture's fields; `token` is secret unless a test says otherwise. */
@@ -2844,7 +2845,7 @@ describe("plugin errors that echo a secret", () => {
       "plugin.mjs",
       {
         capabilities: {
-          connector: { settle: true, description: {} },
+          connector: { settle: true, description: { write: true } },
           codeHost: {},
         },
         connectionFields: plugin.connectionFields ?? leakingFields(),
@@ -3150,6 +3151,19 @@ describe("plugin errors that echo a secret", () => {
     ).resolves.toEqual({
       status: 502,
       body: { error: "Reading the description failed with token [secret]." },
+    });
+  });
+
+  it("redacts a description write with the manifest it ran with, too", async () => {
+    await expect(
+      postWhileTheTokenTurnsSecret("description-write", {
+        sourceId: "OPEN-1",
+        text: "New text",
+        expected: "Old text",
+      }),
+    ).resolves.toEqual({
+      status: 502,
+      body: { error: "Writing the description failed with token [secret]." },
     });
   });
 
