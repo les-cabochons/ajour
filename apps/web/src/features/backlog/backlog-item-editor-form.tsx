@@ -53,8 +53,10 @@ import { OptionSelect } from "@/components/ui/option-select";
 import {
   BACKLOG_ESTIMATE_FIELD_KEYS,
   commitBacklogTaskDraft,
+  createBacklogTaskEditorFields,
   createBacklogTaskEditorSeed,
   evaluateBacklogTaskEditor,
+  followChangedItem,
   sumSubitemEstimates,
   type BacklogEstimateFieldKey,
   type BacklogTaskDraftCommitReason,
@@ -72,6 +74,11 @@ import {
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { localStore } from "@/lib/local-store";
 import { cn } from "@/lib/utils";
+import { DescriptionText } from "@/features/backlog/description-links";
+import {
+  SyncedDescriptionNote,
+  useDescriptionAccess,
+} from "@/features/backlog/synced-description";
 import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 
 /** Lets a host save the draft before it loads another item into the same form. */
@@ -159,10 +166,40 @@ export function BacklogItemEditorForm({
   const projects = useLocalProjects();
   const workItems = useLocalWorkItems();
   const workItem = target.kind === "edit" ? target.workItem : undefined;
+  // The item as it is now, which a sync may have changed since the draft began.
+  const currentItem =
+    (workItem && workItems.find((item) => item._id === workItem._id)) ??
+    workItem;
+  const currentDescription = currentItem?.description;
+  const descriptionAccessState = useDescriptionAccess(currentItem);
+  // An archived item's form is read-only elsewhere; its description field stays as it was.
+  const descriptionEditable =
+    descriptionAccessState.editable ||
+    descriptionAccessState.reason === "archived";
   const parent = target.kind === "create" ? target.parent : undefined;
   const [fields, setFields] = useState(
     () => initialFields ?? createBacklogTaskEditorSeed(target),
   );
+  // The item's fields when the draft started. A sync can change the item under
+  // an open draft: a field the user has not touched follows it, and only the
+  // fields the user changed are saved.
+  const [base, setBase] = useState(() => createBacklogTaskEditorSeed(target));
+  const currentFields = useMemo(
+    () =>
+      target.kind === "edit" && currentItem
+        ? createBacklogTaskEditorFields(currentItem)
+        : undefined,
+    [target.kind, currentItem],
+  );
+  useEffect(() => {
+    if (!currentFields) return;
+    const keys = Object.keys(
+      currentFields,
+    ) as (keyof BacklogTaskEditorFields)[];
+    if (keys.every((key) => currentFields[key] === base[key])) return;
+    setFields((current) => followChangedItem(current, base, currentFields));
+    setBase(currentFields);
+  }, [currentFields, base]);
   const onFieldsChangeRef = useRef(onFieldsChange);
   onFieldsChangeRef.current = onFieldsChange;
   useEffect(() => {
@@ -180,6 +217,8 @@ export function BacklogItemEditorForm({
   );
   const editor = evaluateBacklogTaskEditor(fields, target, {
     subitemTotals: subitems.length > 0 ? sumSubitemEstimates(subitems) : null,
+    descriptionReadOnly: !descriptionEditable,
+    base,
   });
   const { validation } = editor;
 
@@ -550,14 +589,30 @@ export function BacklogItemEditorForm({
           <FieldLabel htmlFor={`${idPrefix}-description`}>
             Description
           </FieldLabel>
-          <MarkdownEditor
-            id={`${idPrefix}-description`}
-            aria-label="Description"
-            value={fields.description}
-            onChange={(description) => updateFields({ description })}
-            placeholder="Markdown supported (optional)"
-            minLines={4}
-          />
+          {descriptionEditable ? (
+            <MarkdownEditor
+              id={`${idPrefix}-description`}
+              aria-label="Description"
+              value={fields.description}
+              onChange={(description) => updateFields({ description })}
+              placeholder="Markdown supported (optional)"
+              minLines={4}
+            />
+          ) : (
+            <div id={`${idPrefix}-description`}>
+              {currentDescription ? (
+                <DescriptionText body={currentDescription} />
+              ) : (
+                <p className="text-sm text-muted-foreground">No description.</p>
+              )}
+              {workItem ? (
+                <SyncedDescriptionNote
+                  item={currentItem ?? workItem}
+                  access={descriptionAccessState}
+                />
+              ) : null}
+            </div>
+          )}
         </Field>
 
         <div className="grid grid-cols-3 gap-3">

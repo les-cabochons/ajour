@@ -1,4 +1,5 @@
 import type { LocalWorkItem, LocalWorkItemDraft } from "@/domain/local-state";
+import { normalizeDescriptionText } from "@/domain/backlog/description-sync";
 import type { WorkItemPatch } from "@/domain/backlog/work-item-transitions";
 import { isSubtaskWorkItem } from "@/domain/backlog/work-item-hierarchy";
 import { isPriorityLevel, type PriorityLevel } from "@/domain/backlog/priority";
@@ -284,6 +285,30 @@ function parseEditorEstimates(fields: BacklogTaskEditorFields) {
 }
 
 /**
+ * The draft after the item changed under it, as a sync can change it: each
+ * field the user has not touched since `base` takes the item's new value.
+ * Project and task move as one pair, so a draft never holds one mapping's
+ * project with another's task.
+ */
+export function followChangedItem(
+  draft: BacklogTaskEditorFields,
+  base: BacklogTaskEditorFields,
+  current: BacklogTaskEditorFields,
+): BacklogTaskEditorFields {
+  const next = { ...draft };
+  const mappingTouched =
+    draft.projectId !== base.projectId || draft.taskId !== base.taskId;
+  for (const key of Object.keys(current) as (keyof BacklogTaskEditorFields)[]) {
+    if (key === "projectId" || key === "taskId") {
+      if (!mappingTouched) next[key] = current[key];
+    } else if (draft[key] === base[key]) {
+      (next as Record<string, unknown>)[key] = current[key];
+    }
+  }
+  return next;
+}
+
+/**
  * Builds the patch for a saved item from the fields the user changed. Unchanged fields
  * stay out of the patch, so saving never rewrites a description, title or precise estimate the
  * user did not touch. Returns `null` when a changed field does not parse.
@@ -291,12 +316,24 @@ function parseEditorEstimates(fields: BacklogTaskEditorFields) {
 export function buildBacklogTaskPatch(
   workItem: LocalWorkItem,
   fields: BacklogTaskEditorFields,
-  options: { isSubtask: boolean },
+  options: {
+    isSubtask: boolean;
+    descriptionReadOnly?: boolean;
+    /**
+     * The item's fields when the draft started. A sync can change the item
+     * under an open draft; only a field the user changed is written, never
+     * an old value a sync replaced.
+     */
+    base?: BacklogTaskEditorFields;
+  },
 ): WorkItemPatch | null {
   const saved = createBacklogTaskEditorFields(workItem);
   const patch: WorkItemPatch = {};
+  const changed = (key: keyof BacklogTaskEditorFields) =>
+    fields[key] !== saved[key] &&
+    (!options.base || fields[key] !== options.base[key]);
 
-  if (fields.title !== saved.title) {
+  if (changed("title")) {
     const title = fields.title.trim();
     if (!title) {
       return null;
@@ -304,11 +341,13 @@ export function buildBacklogTaskPatch(
     patch.title = title;
   }
 
-  if (fields.description !== saved.description) {
-    patch.description = fields.description.trim() || undefined;
+  // A read-only description follows its source, so a draft never writes it.
+  if (!options.descriptionReadOnly && changed("description")) {
+    patch.description =
+      normalizeDescriptionText(fields.description) || undefined;
   }
 
-  if (!options.isSubtask && fields.priority !== saved.priority) {
+  if (!options.isSubtask && changed("priority")) {
     const priority = parsePriorityInput(fields.priority);
     if (priority === null) {
       return null;
@@ -316,18 +355,18 @@ export function buildBacklogTaskPatch(
     patch.priority = priority;
   }
 
-  if (fields.workflowStateId !== saved.workflowStateId) {
+  if (changed("workflowStateId")) {
     patch.workflowStateId = fields.workflowStateId || undefined;
   }
 
   // Project and task change together so the parent mapping is inferred from both.
-  if (fields.projectId !== saved.projectId || fields.taskId !== saved.taskId) {
+  if (changed("projectId") || changed("taskId")) {
     patch.projectId = fields.projectId || undefined;
     patch.taskId = fields.taskId || undefined;
   }
 
   for (const key of BACKLOG_ESTIMATE_FIELD_KEYS) {
-    if (fields[key] === saved[key]) {
+    if (!changed(key)) {
       continue;
     }
 
@@ -338,7 +377,7 @@ export function buildBacklogTaskPatch(
     patch[key] = value;
   }
 
-  if (fields.keepWhenMissingFromSync !== saved.keepWhenMissingFromSync) {
+  if (changed("keepWhenMissingFromSync")) {
     patch.keepWhenMissingFromSync = fields.keepWhenMissingFromSync;
   }
 
@@ -364,7 +403,7 @@ export function buildBacklogTaskDraft(
 
   return {
     title: fields.title.trim(),
-    description: fields.description.trim() || undefined,
+    description: normalizeDescriptionText(fields.description) || undefined,
     parentWorkItemId: fields.parentWorkItemId || undefined,
     priority: options.isSubtask
       ? undefined
@@ -394,6 +433,10 @@ export function evaluateBacklogTaskEditor(
   target: BacklogTaskEditorTarget,
   options: {
     subitemTotals?: SubitemEstimateTotals | null;
+    /** The description follows its source; the draft's copy is ignored. */
+    descriptionReadOnly?: boolean;
+    /** The item's fields when the draft started. */
+    base?: BacklogTaskEditorFields;
   } = {},
 ): BacklogTaskEditorState {
   const original = target.kind === "edit" ? target.workItem : undefined;
@@ -425,7 +468,12 @@ export function evaluateBacklogTaskEditor(
     isSubitem,
     isSynced,
     validation,
-    hasChanges: !hasSameFields(fields, createBacklogTaskEditorSeed(target)),
+    hasChanges: !hasSameFields(
+      options.descriptionReadOnly ? { ...fields, description: "" } : fields,
+      options.descriptionReadOnly
+        ? { ...createBacklogTaskEditorSeed(target), description: "" }
+        : createBacklogTaskEditorSeed(target),
+    ),
     estimateResets,
     priorityReset:
       isSynced && !isSubitem && fields.priority.trim() !== syncedPriority
@@ -442,7 +490,11 @@ export function evaluateBacklogTaskEditor(
         : null,
     patch:
       original && validation.canSave
-        ? buildBacklogTaskPatch(original, fields, { isSubtask: isSubitem })
+        ? buildBacklogTaskPatch(original, fields, {
+            isSubtask: isSubitem,
+            descriptionReadOnly: options.descriptionReadOnly,
+            base: options.base,
+          })
         : null,
   };
 }

@@ -31,6 +31,10 @@ import {
   normalizeWorkItemEstimateValue,
 } from "@/domain/backlog/work-item-estimates";
 import { priorityLevelFromSource } from "@/domain/backlog/priority";
+import {
+  importedDescription,
+  reconcileDescription,
+} from "@/domain/backlog/description-sync";
 
 export interface SyncedWorkItemFactories {
   createId: (prefix: string) => string;
@@ -88,7 +92,9 @@ function createSyncedWorkItem(
     sourceStatusLabel,
     projectId: undefined,
     taskId: undefined,
-    description: workItem.note?.trim() || undefined,
+    ...(workItem.description
+      ? importedDescription(workItem.description)
+      : { description: workItem.note?.trim() || undefined }),
     originalEstimateHours: normalizeWorkItemEstimateValue(
       workItem.originalEstimateHours,
     ),
@@ -209,7 +215,18 @@ function mergeSyncedWorkItem(
       factories.now(),
     ),
     title: nextImportedState.title,
-    description: existingWorkItem.description,
+    // A plugin that sends the full description syncs it both ways; one that
+    // sends only a note leaves the local copy alone.
+    ...(importedWorkItem.description
+      ? reconcileDescription(
+          existingWorkItem,
+          importedWorkItem.description,
+          factories.now(),
+        )
+      : {
+          description: existingWorkItem.description,
+          descriptionSync: existingWorkItem.descriptionSync,
+        }),
     sourceId: nextImportedState.sourceId,
     sourceUrl: nextImportedState.sourceUrl,
     sourceExternalId: nextImportedState.sourceExternalId,
@@ -627,9 +644,28 @@ export function archiveDoneSyncedWorkItems(
         getWorkItemSourceKey({ ...workItem, sourceId: workItem.sourceId }) ===
           key,
     );
-    if (!target || pendingMoveItemIds.has(target._id)) {
-      continue;
+    if (!target) continue;
+    // The description syncs whatever the item's lifecycle does with it, even
+    // for an item archived on an earlier sync or with a write pending.
+    const doneDescription = doneItem.description;
+    if (doneDescription) {
+      nextState = {
+        ...nextState,
+        workItems: nextState.workItems.map((workItem) =>
+          workItem._id === target._id
+            ? {
+                ...workItem,
+                ...reconcileDescription(
+                  workItem,
+                  doneDescription,
+                  factories.now(),
+                ),
+              }
+            : workItem,
+        ),
+      };
     }
+    if (pendingMoveItemIds.has(target._id)) continue;
 
     const stateLabel = doneItem.state?.trim();
     const sourceStatusKey = stateLabel

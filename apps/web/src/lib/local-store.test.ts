@@ -3945,6 +3945,43 @@ describe("localStore description timelog", () => {
     expect(localStore.snapshot().workItems[0]?.taskId).toBeDefined();
   });
 
+  it("maps a synced item whose description arrives with a timelog as it closes", async () => {
+    const { localStore } = await import("./local-store");
+    const projectId = localStore.addProject({ name: "Acme", color: "#111111" });
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
+
+    localStore.archiveDoneSyncedWorkItems([
+      {
+        source: "azure_devops",
+        connectionId: "ado-1",
+        sourceId: "https://dev.azure.com/contoso/project/_workitems/edit/101",
+        state: "Closed",
+        description: { text: description },
+      },
+    ]);
+
+    expect(localStore.snapshot().workItems[0]).toMatchObject({
+      description,
+      projectId,
+    });
+  });
+
+  it("keeps a code block's indentation when a description is saved", async () => {
+    const { localStore } = await import("./local-store");
+    const itemId = localStore.addWorkItem({
+      title: "Script",
+      description: "    echo hi",
+    });
+
+    localStore.updateWorkItemWithUndo(itemId, {
+      description: "\n    echo hello  \n",
+    });
+
+    expect(localStore.snapshot().workItems[0]?.description).toBe(
+      "    echo hello",
+    );
+  });
+
   it("creates the missing project with Undo", async () => {
     const { localStore } = await import("./local-store");
     const itemId = localStore.addWorkItem({

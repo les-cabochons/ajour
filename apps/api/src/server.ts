@@ -210,6 +210,7 @@ function splitDoneItems(items: BacklogImportCandidateInput[]) {
         connectionId: item.connectionId,
         sourceId: item.sourceId,
         state: item.state,
+        ...(item.description ? { description: item.description } : {}),
       })),
   };
 }

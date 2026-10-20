@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LocalWorkItem } from "@/domain/local-state";
 import {
+  followChangedItem,
   buildBacklogTaskDraft,
   buildBacklogTaskPatch,
   commitBacklogTaskDraft,
@@ -86,6 +87,92 @@ describe("backlog task editor", () => {
     });
   });
 
+  it("never writes a read-only description, even when a sync changed it under the draft", () => {
+    const synced = createWorkItem({ description: "Changed by a sync" });
+    const fields = createBacklogTaskEditorFields(
+      createWorkItem({ description: "From before the sync" }),
+      { title: "Renamed" },
+    );
+
+    expect(
+      buildBacklogTaskPatch(synced, fields, {
+        isSubtask: false,
+        descriptionReadOnly: true,
+      }),
+    ).toEqual({ title: "Renamed" });
+  });
+
+  it("keeps a description a sync replaced under an untouched draft", () => {
+    const synced = createWorkItem({ description: "Updated by a colleague" });
+    const fields = createBacklogTaskEditorFields(
+      createWorkItem({ description: "Before" }),
+      { title: "Renamed" },
+    );
+
+    expect(
+      buildBacklogTaskPatch(synced, fields, {
+        isSubtask: false,
+        base: createBacklogTaskEditorFields(
+          createWorkItem({ description: "Before" }),
+        ),
+      }),
+    ).toEqual({ title: "Renamed" });
+    expect(
+      buildBacklogTaskPatch(
+        synced,
+        { ...fields, description: "My edit" },
+        {
+          isSubtask: false,
+          base: createBacklogTaskEditorFields(
+            createWorkItem({ description: "Before" }),
+          ),
+        },
+      ),
+    ).toEqual({ title: "Renamed", description: "My edit" });
+  });
+
+  it("keeps a mapping a sync changed under an untouched draft", () => {
+    const before = createWorkItem({ projectId: "project-1", taskId: "task-1" });
+    const synced = createWorkItem({ projectId: "project-2", taskId: "task-2" });
+    const fields = createBacklogTaskEditorFields(before, { title: "Renamed" });
+
+    expect(
+      buildBacklogTaskPatch(synced, fields, {
+        isSubtask: false,
+        base: createBacklogTaskEditorFields(before),
+      }),
+    ).toEqual({ title: "Renamed" });
+  });
+
+  it("lets untouched fields follow a sync, and moves project and task as a pair", () => {
+    const base = createBacklogTaskEditorFields(
+      createWorkItem({
+        projectId: "project-a",
+        taskId: "task-a1",
+        description: "Before",
+      }),
+    );
+    const current = createBacklogTaskEditorFields(
+      createWorkItem({
+        projectId: "project-b",
+        taskId: "task-b1",
+        description: "After",
+      }),
+    );
+
+    // The user picked another task: their pair stays whole.
+    const pickedTask = { ...base, taskId: "task-a2", title: "Renamed" };
+    expect(followChangedItem(pickedTask, base, current)).toEqual({
+      ...current,
+      projectId: "project-a",
+      taskId: "task-a2",
+      title: "Renamed",
+    });
+
+    // An untouched draft takes the whole new mapping.
+    expect(followChangedItem(base, base, current)).toEqual(current);
+  });
+
   it("changes project and task together", () => {
     const workItem = createWorkItem();
     const fields = createBacklogTaskEditorFields(workItem, {
@@ -145,7 +232,7 @@ describe("backlog task editor", () => {
       buildBacklogTaskDraft(rootFields, { isSubtask: false }),
     ).toMatchObject({
       title: "Root task",
-      description: "Description",
+      description: "  Description",
       priority: 3,
       parentWorkItemId: undefined,
     });

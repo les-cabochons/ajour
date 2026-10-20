@@ -40,15 +40,13 @@ import {
   type CommentSource,
 } from "@/domain/backlog/comments";
 import {
-  getCachedPluginsOverview,
-  getPluginsOverview,
   isPluginApiMissing,
   editItemComment,
   listItemComments,
   postItemComment,
   setItemCommentReaction,
-  subscribePluginsOverview,
 } from "@/lib/app-api";
+import { usePluginsOverview } from "@/features/backlog/plugins-overview";
 import {
   cancelCommentDelete,
   pendingCommentDeleteIds,
@@ -158,31 +156,13 @@ export function formatCommentTime(iso: string, now = new Date()) {
   });
 }
 
-/**
- * Where the item's comments come from, kept current as plugins and
- * connections change. Asks for the plugin overview when none is cached yet.
- */
+/** Where the item's comments come from, kept current as plugins and connections change. */
 export function useCommentSource(
   item:
     | Pick<LocalWorkItem, "source" | "sourceId" | "sourceConnectionId">
     | undefined,
 ) {
-  const [overview, setOverview] = useState(getCachedPluginsOverview);
-  useEffect(() => {
-    let active = true;
-    const unsubscribe = subscribePluginsOverview((next) => {
-      if (active) setOverview(next);
-    });
-    if (!getCachedPluginsOverview()) {
-      void getPluginsOverview()
-        .then((next) => active && setOverview(next))
-        .catch(() => undefined);
-    }
-    return () => {
-      active = false;
-      unsubscribe();
-    };
-  }, []);
+  const overview = usePluginsOverview();
   return item ? commentSourceOf(item, overview) : undefined;
 }
 

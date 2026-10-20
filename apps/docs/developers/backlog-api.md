@@ -105,7 +105,15 @@ Ajour supports one level of hierarchy. Return a child with `depth: 1`, `parentSo
 
 ### Descriptions
 
-Return the item's description in `note`, converted to Markdown, up to 4,000 characters. Ajour takes it when the item first arrives. Later syncs leave the description in Ajour as it is, and Ajour never writes it back.
+Declare `connector.description` and return the item's full description in `description` on every sync:
+
+- `text`: the description converted to Markdown, up to 64,000 characters. Write a mention as `[@Display Name](mention:<id>)`, as in comments. Keep each image as a Markdown image whose address holds everything you need to restore it.
+- `lost`: short names of what the conversion dropped, such as `"text colour"` or `"underline"`. Leave it out when nothing was lost. Images never count as lost.
+- `cut`: `true` when the source's text was longer and you cut it to 64,000 characters.
+
+Ajour keeps the text both sides last agreed on. On each sync, a description only the source changed follows the source, one only the user changed keeps the user's edit, and one changed on both sides becomes a conflict for the user to resolve. A newly imported item takes your text. Without `connector.description.write`, the description is read-only in Ajour, with a link to edit it in your tool. A `cut` description is always read-only, so a shortened copy is never written back.
+
+A plugin that returns only `note`, up to 4,000 characters, keeps the older behaviour: Ajour takes it when the item first arrives, later syncs leave the description in Ajour as it is, and Ajour never writes it back. When `description` is present, `note` is ignored.
 
 A description can start with a [frontmatter](/backlog/items#frontmatter) block, YAML between two `---` lines, whose `timelog` sets the item's project and task in Ajour. When you convert your tool's text, keep such a block at the very start, as written.
 
@@ -255,8 +263,17 @@ export interface BacklogImportCandidateInput {
   sourceUrl?: string;
   /** 1 to 240 characters. */
   title: string;
-  /** The item's description, in Markdown. Up to 4,000 characters. */
+  /** The item's description, in Markdown. Up to 4,000 characters. Ignored with `description`. */
   note?: string;
+  /** The full description, synced both ways. See Descriptions. */
+  description?: {
+    /** Markdown. Up to 64,000 characters. */
+    text: string;
+    /** What the conversion to Markdown dropped. Up to 20 names. */
+    lost?: string[];
+    /** The source's text was longer, and you cut it. */
+    cut?: boolean;
+  };
   /** Up to 120 characters. */
   projectName?: string;
   /** Such as "Bug" or "User Story". Up to 120 characters. */

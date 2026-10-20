@@ -496,6 +496,101 @@ describe("synced work item imports", () => {
     });
   });
 
+  it("syncs a full description both ways when the plugin sends one", () => {
+    const imported = importSyncedWorkItems(
+      createState(),
+      [
+        createCandidate({
+          note: "Short note",
+          description: { text: "Full text" },
+        }),
+      ],
+      undefined,
+      factories,
+    ).state;
+    expect(imported.workItems[0]).toMatchObject({
+      description: "Full text",
+      descriptionSync: { baseline: "Full text", remote: "Full text" },
+    });
+
+    const followed = importSyncedWorkItems(
+      imported,
+      [createCandidate({ description: { text: "Changed in the source" } })],
+      undefined,
+      { createId: vi.fn(() => "unused"), now: () => 500 },
+    ).state;
+    expect(followed.workItems[0]).toMatchObject({
+      description: "Changed in the source",
+      descriptionSync: { baseline: "Changed in the source" },
+    });
+
+    followed.workItems[0]!.description = "Changed in Ajour";
+    const conflicted = importSyncedWorkItems(
+      followed,
+      [
+        createCandidate({
+          description: { text: "Changed again in the source" },
+        }),
+      ],
+      undefined,
+      { createId: vi.fn(() => "unused"), now: () => 600 },
+    ).state;
+    expect(conflicted.workItems[0]).toMatchObject({
+      description: "Changed in Ajour",
+      descriptionSync: {
+        baseline: "Changed in the source",
+        conflict: {
+          detectedAt: 600,
+          localText: "Changed in Ajour",
+          remoteText: "Changed again in the source",
+        },
+      },
+    });
+  });
+
+  it("turns an item's local note into a conflict when descriptions start syncing", () => {
+    const imported = importSyncedWorkItems(
+      createState(),
+      [createCandidate({ note: "Remote note" })],
+      undefined,
+      factories,
+    ).state;
+    imported.workItems[0]!.description = "My own notes";
+
+    const refreshed = importSyncedWorkItems(
+      imported,
+      [createCandidate({ description: { text: "Remote description" } })],
+      undefined,
+      { createId: vi.fn(() => "unused"), now: () => 700 },
+    ).state;
+    expect(refreshed.workItems[0]).toMatchObject({
+      description: "My own notes",
+      descriptionSync: {
+        remote: "Remote description",
+        conflict: { detectedAt: 700, localText: "My own notes" },
+      },
+    });
+  });
+
+  it("returns the same state when a synced description is unchanged", () => {
+    const candidate = createCandidate({
+      description: { text: "Full text", lost: ["underline"] },
+    });
+    const imported = importSyncedWorkItems(
+      createState(),
+      [candidate],
+      undefined,
+      factories,
+    ).state;
+    const refreshed = importSyncedWorkItems(
+      imported,
+      [candidate],
+      undefined,
+      factories,
+    );
+    expect(refreshed.state).toBe(imported);
+  });
+
   it("preserves a user archive and reactivates only sync-archived items", () => {
     const imported = importSyncedWorkItems(
       createState(),
@@ -1073,6 +1168,53 @@ describe("backlog sync of done items", () => {
       archivedByMissingSync: false,
       sourceStatusKey: "closed",
       sourceStatusLabel: "Closed",
+    });
+  });
+
+  it("syncs the description of an item that reached a done category", () => {
+    const imported = importSyncedWorkItems(
+      createState(),
+      [createCandidate({ description: { text: "Before" } })],
+      undefined,
+      factories,
+    ).state;
+
+    const result = archiveDoneSyncedWorkItems(
+      imported,
+      [{ ...done(), description: { text: "Closed with a summary" } }],
+      factories,
+    );
+
+    expect(result.state.workItems[0]).toMatchObject({
+      status: "archived",
+      description: "Closed with a summary",
+      descriptionSync: { baseline: "Closed with a summary" },
+    });
+  });
+
+  it("keeps syncing the description of an item archived on an earlier sync", () => {
+    const imported = importSyncedWorkItems(
+      createState(),
+      [createCandidate({ description: { text: "Before" } })],
+      undefined,
+      factories,
+    ).state;
+    const closed = archiveDoneSyncedWorkItems(
+      imported,
+      [{ ...done(), description: { text: "First summary" } }],
+      factories,
+    ).state;
+
+    const result = archiveDoneSyncedWorkItems(
+      closed,
+      [{ ...done(), description: { text: "Corrected summary" } }],
+      factories,
+    );
+
+    expect(result.archivedCount).toBe(0);
+    expect(result.state.workItems[0]).toMatchObject({
+      status: "archived",
+      description: "Corrected summary",
     });
   });
 
