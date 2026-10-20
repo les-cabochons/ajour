@@ -4,6 +4,8 @@ import type { LocalWorkItem } from "@/domain/local-state";
 import {
   descriptionAccess,
   descriptionCapabilityOf,
+  newDescriptionConflicts,
+  takeSourceDescription,
   importedDescription,
   reconcileDescription,
 } from "@/domain/backlog/description-sync";
@@ -340,5 +342,42 @@ describe("the plugin's description support", () => {
       descriptionCapabilityOf(item, overview({ write: true }, true)),
     ).toBeUndefined();
     expect(descriptionCapabilityOf(item, undefined)).toBeUndefined();
+  });
+});
+
+describe("resolving a description conflict", () => {
+  const conflicted = reconcileDescription(
+    synced("Mine", "Old"),
+    { text: "Theirs", lost: ["underline"] },
+    NOW,
+  );
+
+  it("takes the source's text, which both sides then agree on", () => {
+    expect(takeSourceDescription(conflicted)).toEqual({
+      description: "Theirs",
+      descriptionSync: {
+        baseline: "Theirs",
+        remote: "Theirs",
+        lost: ["underline"],
+      },
+    });
+  });
+
+  it("leaves a description without a conflict alone", () => {
+    const agreed = synced("Same", "Same");
+    expect(takeSourceDescription(agreed)).toBe(agreed);
+  });
+
+  it("finds the items a sync newly put in conflict", () => {
+    const item = (id: string, sync?: LocalWorkItem["descriptionSync"]) =>
+      ({ _id: id, descriptionSync: sync }) as LocalWorkItem;
+    const conflict = conflicted.descriptionSync;
+
+    expect(
+      newDescriptionConflicts(
+        [item("a", conflict), item("b"), item("c")],
+        [item("a", conflict), item("b", conflict), item("c")],
+      ).map((entry) => entry._id),
+    ).toEqual(["b"]);
   });
 });

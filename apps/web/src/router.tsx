@@ -6,6 +6,7 @@ import {
   createRoute,
   createRouter,
 } from "@tanstack/react-router";
+import { parseSyncReviewSearch } from "@/features/backlog/sync-conflicts";
 import { lazy, Suspense, type ReactNode } from "react";
 import { PageSkeleton } from "@/components/page-skeleton";
 import { parseBacklogItemSearch } from "@/features/backlog/backlog-item-search";
@@ -362,6 +363,7 @@ const settingsTimeEntriesRoute = createRoute({
 const settingsSyncReviewRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/sync-review",
+  validateSearch: parseSyncReviewSearch,
   component: () => (
     <RouteSuspense>
       <SettingsSyncReviewPage />

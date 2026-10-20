@@ -34,6 +34,8 @@ import {
   type PluginsOverview,
   type BacklogSyncResult,
 } from "@ajour/shared";
+import { newDescriptionConflicts } from "@/domain/backlog/description-sync";
+import { announceDescriptionConflicts } from "@/lib/sync-conflict-events";
 import {
   catalogPluginDownloadResponseSchema,
   pluginCatalogResponseSchema,
@@ -824,6 +826,9 @@ export function syncBacklogConnection(
         )
         .map((workItem) => workItem._id),
     );
+    // Items in a description conflict before the answer, so the app can tell
+    // which ones it put there.
+    const beforeSync = localStore.snapshot().workItems;
     // Done items go first, so a done item that left the open set is archived
     // as done rather than as missing from the sync.
     localStore.archiveDoneSyncedWorkItems(result.doneItems);
@@ -835,6 +840,9 @@ export function syncBacklogConnection(
           })
         : { importedCount: 0, updatedCount: 0 };
     localStore.applyBacklogSyncWorkItemUpdates(result.workItemUpdates);
+    announceDescriptionConflicts(
+      newDescriptionConflicts(beforeSync, localStore.snapshot().workItems),
+    );
     if (result.viewer && result.commentFacts.length > 0) {
       // Returned by this answer's import: settled before it, active after.
       const returnedBySync = new Set(

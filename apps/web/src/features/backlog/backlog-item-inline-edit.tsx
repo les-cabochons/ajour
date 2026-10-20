@@ -27,6 +27,7 @@ import {
   useDescriptionAccess,
 } from "@/features/backlog/synced-description";
 import { normalizeDescriptionText } from "@/domain/backlog/description-sync";
+import { SyncConflictButton } from "@/features/backlog/sync-conflicts";
 
 /*
  * The backlog item page edits in place: each field below saves on Enter or
@@ -254,22 +255,30 @@ export function DescriptionSection({
     <>
       <SectionHeading
         trailing={
-          !editing && editable ? (
-            <button
-              type="button"
-              className="backlog-item-subtle-action"
-              onPointerEnter={preloadMarkdownEditor}
-              onFocus={preloadMarkdownEditor}
-              onClick={() => {
-                closer.reset();
-                setBase(current);
-                setDraft(current);
-                setEditing(true);
-              }}
-            >
-              Edit
-            </button>
-          ) : undefined
+          <>
+            {item.descriptionSync?.conflict ? (
+              <span className="flex items-center gap-1 text-xs text-destructive">
+                Conflict
+                <SyncConflictButton item={item} />
+              </span>
+            ) : null}
+            {!editing && editable ? (
+              <button
+                type="button"
+                className="backlog-item-subtle-action"
+                onPointerEnter={preloadMarkdownEditor}
+                onFocus={preloadMarkdownEditor}
+                onClick={() => {
+                  closer.reset();
+                  setBase(current);
+                  setDraft(current);
+                  setEditing(true);
+                }}
+              >
+                Edit
+              </button>
+            ) : null}
+          </>
         }
       >
         Description

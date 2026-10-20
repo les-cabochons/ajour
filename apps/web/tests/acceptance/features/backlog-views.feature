@@ -540,6 +540,28 @@ Feature: Backlog list and board views
     Then its description reads "The first part"
     And the description is read-only because it is cut, with Edit in source
 
+  Scenario: A sync that finds a description conflict says so and leads to Sync review
+    Given the Backlog parent is synced
+    And its description was edited here to "My notes" since its last sync of "Original"
+    And its plugin, which writes descriptions, sends the description "Their notes" on its next sync
+    When I reload the app
+    Then a toast says "Description conflict on Backlog parent"
+    When I choose Resolve in the toast
+    Then Sync review shows the parent's conflict highlighted, with "My notes" here and "Their notes" in the source
+    When I take the source's description
+    Then the parent's description is "Their notes" and its conflict is gone
+
+  Scenario: The conflict mark leads to Sync review from the sidebar, the backlog and the item page
+    Given the Backlog parent is synced
+    And its description is in conflict between "My notes" here and "Their notes" in the source
+    When I reload the app
+    And I follow the conflict mark on the parent's sidebar row
+    Then Sync review opens on the parent's conflict
+    When I follow the conflict mark on the parent's backlog row
+    Then Sync review opens on the parent's conflict
+    When I follow the conflict mark beside the parent's description
+    Then Sync review opens on the parent's conflict
+
   Scenario: Settle a synced item with a comment
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit

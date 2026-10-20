@@ -1,9 +1,9 @@
 import {
-  RiAlarmWarningLine,
   RiPlayLine,
   RiStopLine,
   RiTimeLine,
 } from "@remixicon/react";
+import { SyncConflictButton } from "@/features/backlog/sync-conflicts";
 import { openModifiedSourceClick } from "@/lib/source-navigation";
 import type { KeyboardEvent, PointerEvent } from "react";
 import {
@@ -36,7 +36,7 @@ import {
 } from "@/domain/backlog/priority";
 import {
   getLocalProjectDisplayName,
-  hasWorkItemEstimateSyncIssue,
+  hasWorkItemSyncIssue,
   type LocalAppState,
   type LocalWorkItem,
 } from "@/domain/local-state";
@@ -351,12 +351,7 @@ export function BacklogItemSurface({
           aria-label="Snoozed"
         />
       )}
-      {hasWorkItemEstimateSyncIssue(item) && (
-        <RiAlarmWarningLine
-          className="size-3.5 text-destructive"
-          aria-label="Estimate sync issue"
-        />
-      )}
+      {hasWorkItemSyncIssue(item) && <SyncConflictButton item={item} />}
     </>
   );
   const progressLabel = progress && (
