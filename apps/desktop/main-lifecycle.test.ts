@@ -14,7 +14,7 @@ describe("desktop plugin lifecycle", () => {
     );
 
     const lockIndex = source.indexOf("app.requestSingleInstanceLock()");
-    const readyIndex = source.indexOf("app.whenReady()");
+    const readyIndex = source.indexOf(".whenReady()");
 
     expect(lockIndex).toBeGreaterThan(-1);
     expect(readyIndex).toBeGreaterThan(lockIndex);
@@ -29,7 +29,7 @@ describe("desktop plugin lifecycle", () => {
 
     const assignmentIndex = source.indexOf("mainWindow = window;");
     const closedListenerIndex = source.indexOf('window.once("closed"');
-    const loadIndex = source.indexOf("await window.loadURL(rendererUrl);");
+    const loadIndex = source.indexOf("await recovery.load();");
 
     expect(assignmentIndex).toBeGreaterThan(-1);
     expect(closedListenerIndex).toBeGreaterThan(assignmentIndex);
@@ -46,9 +46,11 @@ describe("desktop plugin lifecycle", () => {
     expect(source).toContain("bundledPluginArchives: []");
     expect(source).not.toContain("resolveBundledPluginArchives()");
     expect(source).toContain("installedPluginDirectory:");
-    expect(source).toContain('app.on("before-quit"');
     expect(source).not.toContain("installPendingUpdate");
-    expect(source).toContain("stopInternalAppApi().finally(() => {");
+    // main-process-errors.test.ts runs this handler: a stop that hangs or
+    // fails still ends the process.
+    const beforeQuit = source.slice(source.indexOf('app.on("before-quit"'));
+    expect(beforeQuit).toContain("stopInternalAppApiWithinTimeout()");
   });
 
   it("does not poison graceful quit state when update preparation fails", async () => {
@@ -59,7 +61,7 @@ describe("desktop plugin lifecycle", () => {
 
     const preparationStart = source.indexOf("prepareToInstall: async () => {");
     const stopIndex = source.indexOf(
-      "await stopInternalAppApi();",
+      "await stopInternalAppApiWithinTimeout();",
       preparationStart,
     );
     const quitFlagIndex = source.indexOf(
@@ -166,10 +168,11 @@ describe("desktop plugin lifecycle", () => {
       "utf8",
     );
 
-    const readyIndex = source.indexOf("app.whenReady()");
+    const readyIndex = source.indexOf(".whenReady()");
     const menuIndex = source.indexOf("Menu.setApplicationMenu(", readyIndex);
     const windowIndex = source.indexOf("await createMainWindow();", readyIndex);
 
+    expect(readyIndex).toBeGreaterThan(-1);
     expect(menuIndex).toBeGreaterThan(readyIndex);
     expect(windowIndex).toBeGreaterThan(menuIndex);
     expect(source).toContain("developmentBuild: !app.isPackaged");

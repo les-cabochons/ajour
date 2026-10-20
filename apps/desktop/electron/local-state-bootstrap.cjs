@@ -125,7 +125,21 @@ function readLatestLocalStateFromLevelDb(levelDbPath) {
   return latestState;
 }
 
+/**
+ * The newest local state left in the recovery file or a legacy profile, or
+ * null. A profile that cannot be read gives null too: the renderer recovers
+ * nothing this launch and asks again at the next one, instead of merging a
+ * state older than the one it could not read.
+ */
 function loadDesktopBootstrapLocalState(options = {}) {
+  try {
+    return readNewestLocalState(options);
+  } catch {
+    return null;
+  }
+}
+
+function readNewestLocalState(options) {
   const appDataPath = options.appDataPath;
   const currentUserDataPath = options.currentUserDataPath;
   if (!appDataPath) {

@@ -42,13 +42,17 @@ const {
   saveDevelopmentPluginDirectories,
   selectDevelopmentPluginDirectory,
 } = require("./development-plugin-settings.cjs");
+const { createIpcListeners } = require("./ipc-listeners.cjs");
 const {
   loadDesktopBootstrapLocalState,
 } = require("./local-state-bootstrap.cjs");
+const { classifyNavigation } = require("./navigation.cjs");
+const { stopWithin } = require("./stop-within.cjs");
 const {
   getPlatformWindowChromeOptions,
   getWindowsTitleBarOverlay,
 } = require("./window-chrome.cjs");
+const { watchWindow } = require("./window-recovery.cjs");
 const {
   createUpdateCheckCoordinator,
   isAllowedReleaseUrl,
@@ -127,7 +131,7 @@ const automaticUpdateController = createAutomaticUpdateController({
   dialog,
   getMainWindow: () => mainWindow,
   prepareToInstall: async () => {
-    await stopInternalAppApi();
+    await stopInternalAppApiWithinTimeout();
     gracefulQuitStarted = true;
   },
   resetInstallPreparation: () => {
@@ -183,30 +187,30 @@ function schedulePluginCatalogRefresh() {
   pluginCatalogRefreshTimer.unref?.();
 }
 
-ipcMain.on("ajour:get-bootstrap-local-state", (event) => {
+// Every `ipcMain.on` listener registers through `ipc`, so none can throw into
+// the main process. A failed synchronous request answers null.
+const ipc = createIpcListeners(ipcMain);
+
+ipc.answerSync("ajour:get-bootstrap-local-state", () => {
   desktopBootstrapLocalState ??= loadDesktopBootstrapLocalState({
     appDataPath: app.getPath("appData"),
     currentUserDataPath: app.getPath("userData"),
   });
-  event.returnValue = desktopBootstrapLocalState;
+  return desktopBootstrapLocalState;
 });
 
-ipcMain.on("ajour:get-runtime-info", (event) => {
-  event.returnValue = {
-    automaticUpdatesEnabled,
-    developmentBuild: !app.isPackaged,
-    platform: process.platform,
-    version: app.getVersion(),
-  };
-});
+ipc.answerSync("ajour:get-runtime-info", () => ({
+  automaticUpdatesEnabled,
+  developmentBuild: !app.isPackaged,
+  platform: process.platform,
+  version: app.getVersion(),
+}));
 
-ipcMain.on("ajour:get-app-menu", (event) => {
-  event.returnValue = appMenuModel;
-});
+ipc.answerSync("ajour:get-app-menu", () => appMenuModel);
 
 // The Windows title bar menus run role items (Copy, Zoom in, Exit) through the
 // hidden native menu, so they behave like the macOS menu bar.
-ipcMain.on("ajour:run-menu-item", (event, itemId) => {
+ipc.onMessage("ajour:run-menu-item", (event, itemId) => {
   assertActiveDesktopWindow(event, "run a menu item");
   if (!findAppMenuRoleItem(appMenuModel, itemId)) {
     return;
@@ -252,7 +256,7 @@ ipcMain.handle("ajour:show-context-menu", (event, items, position) => {
 
 // Cut and Copy from an object menu run the page's own commands, which fire
 // the cut and copy events the renderer listens to, as the Edit menu does.
-ipcMain.on("ajour:run-edit-command", (event, command) => {
+ipc.onMessage("ajour:run-edit-command", (event, command) => {
   assertActiveDesktopWindow(event, "run an edit command");
   if (command === "cut") {
     event.sender.cut();
@@ -263,14 +267,14 @@ ipcMain.on("ajour:run-edit-command", (event, command) => {
 
 // Native menus and macOS window chrome follow the app's theme, not only the
 // system's.
-ipcMain.on("ajour:set-theme-source", (event, mode) => {
+ipc.onMessage("ajour:set-theme-source", (event, mode) => {
   assertActiveDesktopWindow(event, "update the theme");
   if (mode === "system" || mode === "dark" || mode === "light") {
     nativeTheme.themeSource = mode;
   }
 });
 
-ipcMain.on("ajour:set-window-chrome-theme", (event, theme) => {
+ipc.onMessage("ajour:set-window-chrome-theme", (event, theme) => {
   assertActiveDesktopWindow(event, "update the window chrome theme");
   if (process.platform !== "win32") {
     return;
@@ -717,6 +721,19 @@ async function stopInternalAppApi() {
   return await internalAppApiStopPromise;
 }
 
+// Quitting waits this long for the local API to stop. The agent runner gives a
+// running agent's CLI 5 seconds to exit, then 1 more to clean up, so a healthy
+// stop always fits.
+const INTERNAL_APP_API_STOP_TIMEOUT_MS = 10_000;
+
+/**
+ * Stops the local API for a quit or an update. Resolves "timed-out" when it is
+ * still stopping after the timeout, so quitting never hangs on it.
+ */
+function stopInternalAppApiWithinTimeout() {
+  return stopWithin(stopInternalAppApi(), INTERNAL_APP_API_STOP_TIMEOUT_MS);
+}
+
 async function resolveRendererUrl() {
   if (process.env.AJOUR_DESKTOP_RENDERER_URL) {
     return process.env.AJOUR_DESKTOP_RENDERER_URL;
@@ -818,9 +835,29 @@ async function applyDevelopmentPluginDirectories(directories) {
   }
 }
 
+/**
+ * Opens a web or mail link in the system's browser or mail app. A link the
+ * system cannot open is dropped; the wide-events work (#308) emits it here.
+ */
+function openExternalLink(url) {
+  shell.openExternal(url).catch(() => {});
+}
+
+/**
+ * Startup failed before the window could load, as when the window cannot be
+ * created. Says why and quits, so no windowless process keeps the instance
+ * lock. The wide-events work (#308) emits `app.error` here.
+ */
+function quitAfterStartupFailure(error) {
+  dialog.showErrorBox(
+    "Ajour could not start",
+    typeof error?.message === "string" ? error.message : String(error),
+  );
+  app.quit();
+}
+
 async function createMainWindow() {
   const rendererUrl = await resolveRendererUrl();
-  const allowedOrigin = new URL(rendererUrl).origin;
   const platformChromeOptions = getPlatformWindowChromeOptions(
     process.platform,
     nativeTheme.shouldUseDarkColors ? "dark" : "light",
@@ -851,8 +888,19 @@ async function createMainWindow() {
     }
   });
 
+  // Reloads a crashed page, asks about a hung one or a failed load, and is
+  // where the wide-events work (#308) emits `process.gone` and
+  // `window.unresponsive`.
+  const recovery = watchWindow(window, {
+    url: rendererUrl,
+    dialog,
+    quit: () => app.quit(),
+  });
+
   window.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    if (classifyNavigation(url, rendererUrl) === "external") {
+      openExternalLink(url);
+    }
     return { action: "deny" };
   });
 
@@ -861,14 +909,18 @@ async function createMainWindow() {
   });
 
   window.webContents.on("will-navigate", (event, navigationUrl) => {
-    const destination = new URL(navigationUrl);
-    if (destination.origin !== allowedOrigin) {
-      event.preventDefault();
-      void shell.openExternal(navigationUrl);
+    const destination = classifyNavigation(navigationUrl, rendererUrl);
+    if (destination === "app") {
+      return;
+    }
+
+    event.preventDefault();
+    if (destination === "external") {
+      openExternalLink(navigationUrl);
     }
   });
 
-  await window.loadURL(rendererUrl);
+  await recovery.load();
 }
 
 if (!hasSingleInstanceLock) {
@@ -884,47 +936,50 @@ if (!hasSingleInstanceLock) {
     mainWindow.focus();
   });
 
-  app.whenReady().then(async () => {
-    if (process.platform === "darwin") {
-      app.dock.setIcon(nativeImage.createFromPath(iconPath));
-    }
-
-    if (!process.env.AJOUR_DESKTOP_RENDERER_URL) {
-      registerStaticProtocol();
-    }
-
-    // Replaces Electron's default menu, which keeps Reload and DevTools in
-    // packaged builds. Windows hides it under the title bar overlay. The
-    // renderer can draw the same menus in the title bar, but that is turned
-    // off for now.
-    Menu.setApplicationMenu(
-      Menu.buildFromTemplate(
-        buildAppMenuTemplate(appMenuModel, {
-          platform: process.platform,
-          sendAction: sendMenuAction,
-        }),
-      ),
-    );
-
-    void refreshPluginCatalog().catch((error) => {
-      console.error("Unable to refresh the plugin catalog.", error);
-    });
-    schedulePluginCatalogRefresh();
-
-    try {
-      await ensureInternalAppApiRunning();
-    } catch (error) {
-      console.error("Failed to start internal app API.", error);
-    }
-
-    await createMainWindow();
-
-    app.on("activate", async () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        await createMainWindow();
+  app
+    .whenReady()
+    .then(async () => {
+      if (process.platform === "darwin") {
+        app.dock.setIcon(nativeImage.createFromPath(iconPath));
       }
-    });
-  });
+
+      if (!process.env.AJOUR_DESKTOP_RENDERER_URL) {
+        registerStaticProtocol();
+      }
+
+      // Replaces Electron's default menu, which keeps Reload and DevTools in
+      // packaged builds. Windows hides it under the title bar overlay. The
+      // renderer can draw the same menus in the title bar, but that is turned
+      // off for now.
+      Menu.setApplicationMenu(
+        Menu.buildFromTemplate(
+          buildAppMenuTemplate(appMenuModel, {
+            platform: process.platform,
+            sendAction: sendMenuAction,
+          }),
+        ),
+      );
+
+      void refreshPluginCatalog().catch((error) => {
+        console.error("Unable to refresh the plugin catalog.", error);
+      });
+      schedulePluginCatalogRefresh();
+
+      try {
+        await ensureInternalAppApiRunning();
+      } catch (error) {
+        console.error("Failed to start internal app API.", error);
+      }
+
+      await createMainWindow();
+
+      app.on("activate", () => {
+        if (BrowserWindow.getAllWindows().length === 0) {
+          createMainWindow().catch(quitAfterStartupFailure);
+        }
+      });
+    })
+    .catch(quitAfterStartupFailure);
 
   app.on("before-quit", (event) => {
     if (gracefulQuitStarted) {
@@ -938,10 +993,20 @@ if (!hasSingleInstanceLock) {
     }
     event.preventDefault();
     automaticUpdateController.dispose();
-    void stopInternalAppApi().finally(() => {
-      gracefulQuitStarted = true;
-      app.quit();
-    });
+    // A failed stop still quits. The wide-events work (#308) emits the quit's
+    // outcome here.
+    stopInternalAppApiWithinTimeout()
+      .catch(() => "failed")
+      .then((outcome) => {
+        gracefulQuitStarted = true;
+        if (outcome === "timed-out") {
+          // Skips the window and quit events, which could wait again. Plugin
+          // workers are threads, so they end with the process.
+          app.exit(0);
+          return;
+        }
+        app.quit();
+      });
   });
 
   app.on("window-all-closed", () => {
