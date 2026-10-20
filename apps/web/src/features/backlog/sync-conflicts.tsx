@@ -37,9 +37,12 @@ export function useOpenSyncReview() {
 export function SyncConflictButton({
   item,
   className,
+  beforeChange,
 }: {
   item: Pick<LocalWorkItem, "_id" | "title">;
   className?: string;
+  /** Saves or keeps an open draft first; false stays put. */
+  beforeChange?: () => boolean | Promise<boolean>;
 }) {
   const openSyncReview = useOpenSyncReview();
   return (
@@ -50,8 +53,9 @@ export function SyncConflictButton({
         "flex size-4 shrink-0 items-center justify-center text-destructive",
         className,
       )}
-      onClick={(event) => {
+      onClick={async (event) => {
         event.stopPropagation();
+        if ((await beforeChange?.()) === false) return;
         openSyncReview(item._id);
       }}
     >

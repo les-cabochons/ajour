@@ -272,3 +272,31 @@ Then(
     ).toBeVisible();
   },
 );
+
+Given(
+  "its description is in conflict with {string} in the source, and was edited here since to {string}",
+  async ({ page }, remote: string, local: string) => {
+    await seedParentDescription(page, local, {
+      baseline: "Original",
+      remote,
+      conflict: {
+        detectedAt: 1,
+        localText: "My first notes",
+        remoteText: remote,
+      },
+    });
+  },
+);
+
+When("I open Sync review on the parent", async ({ page }) => {
+  await page.goto("/settings/sync-review?item=parent");
+});
+
+Then(
+  "Sync review shows {string} here, not the text from when the conflict began",
+  async ({ page }, local: string) => {
+    const section = conflictSection(page);
+    await expect(section.getByText(local, { exact: true })).toBeVisible();
+    await expect(section.getByText("My first notes")).toHaveCount(0);
+  },
+);

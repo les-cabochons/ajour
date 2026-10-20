@@ -571,6 +571,12 @@ Feature: Backlog list and board views
     When I follow the conflict mark beside the parent's remaining estimate
     Then Sync review opens on the parent's estimate conflict
 
+  Scenario: Sync review compares the description as it is now
+    Given the Backlog parent is synced
+    And its description is in conflict with "Their notes" in the source, and was edited here since to "My newer notes"
+    When I open Sync review on the parent
+    Then Sync review shows "My newer notes" here, not the text from when the conflict began
+
   Scenario: Settle a synced item with a comment
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit

@@ -1,8 +1,4 @@
-import {
-  RiPlayLine,
-  RiStopLine,
-  RiTimeLine,
-} from "@remixicon/react";
+import { RiPlayLine, RiStopLine, RiTimeLine } from "@remixicon/react";
 import { SyncConflictButton } from "@/features/backlog/sync-conflicts";
 import { openModifiedSourceClick } from "@/lib/source-navigation";
 import type { KeyboardEvent, PointerEvent } from "react";
@@ -351,7 +347,9 @@ export function BacklogItemSurface({
           aria-label="Snoozed"
         />
       )}
-      {hasWorkItemSyncIssue(item) && <SyncConflictButton item={item} />}
+      {hasWorkItemSyncIssue(item) && (
+        <SyncConflictButton item={item} beforeChange={beforeChange} />
+      )}
     </>
   );
   const progressLabel = progress && (

@@ -333,8 +333,9 @@ export function SettingsImportReviewPage() {
                       <div className="text-xs text-muted-foreground">
                         In Ajour
                       </div>
-                      {conflict.localText ? (
-                        <DescriptionText body={conflict.localText} />
+                      {/* The text as it is now, edited since the conflict or not. */}
+                      {workItem.description ? (
+                        <DescriptionText body={workItem.description} />
                       ) : (
                         <p className="text-sm text-muted-foreground">Empty</p>
                       )}
