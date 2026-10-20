@@ -78,4 +78,4 @@ Ajour has a few objects, and each one has one job. This page names them and show
 : Work a plugin asks a coding agent to do for you, such as entering your week in Workday. See [Agent tasks](/app/agents#agent-tasks).
 
 **Connection**
-: One account or site a plugin talks to, with its own credentials and settings. A plugin can have several connections, for example one per client.
+: One site or organisation a plugin talks to, with its own credentials and settings. A plugin can have several connections, for example one per client.

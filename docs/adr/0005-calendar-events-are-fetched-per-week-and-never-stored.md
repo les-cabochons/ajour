@@ -22,3 +22,5 @@ The plugin contract carries only the fields a suggestion needs: ids, start, end,
 - Removing a connection deletes its decisions and remembered meetings. Uninstalling the plugin keeps them, so a reinstall restores the user's choices.
 - The ICS calendar address is a bearer secret stored as a secret connection value. It never appears in logs, wide events or error messages.
 - A later OAuth plugin changes how a connection authenticates, not what Ajour stores.
+
+Partly superseded by ADR 0007: plugins now run as sandboxed renderers instead of workers. They stay stateless and store nothing, so this decision holds.

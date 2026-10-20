@@ -11,3 +11,5 @@ Ajour includes a full pull request review experience: file tree, diff, comments,
 
 - Plugin capabilities replace plugin kinds. One package can be a connector and a code host, and the catalog lists capabilities instead of a single type.
 - Pull request content is too large for browser storage. The local API caches it on disk, with a size limit set by the user.
+
+Partly superseded by ADR 0007: plugins move from the stateless worker sandbox to sandboxed renderers. Ajour still renders every screen.
