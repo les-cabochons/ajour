@@ -798,11 +798,12 @@ export const backlogWriteDescriptionRequestSchema = z.object({
    */
   expected: z.string().max(BACKLOG_DESCRIPTION_MAX_LENGTH),
   /**
-   * The user saw what the conversion loses and saved anyway, on a connection
-   * that allows lossy conversion. Without it, a plugin writes nothing over a
-   * description whose conversion lost something.
+   * What the user saw the conversion lose and saved anyway, on a connection
+   * that allows lossy conversion, by the names the plugin gave in `lost`. A
+   * plugin writes nothing over a description whose conversion loses anything
+   * not named here.
    */
-  allowLoss: z.boolean().optional(),
+  allowedLoss: z.array(z.string().max(120)).max(50).optional(),
 });
 export type BacklogWriteDescriptionRequest = z.infer<
   typeof backlogWriteDescriptionRequestSchema

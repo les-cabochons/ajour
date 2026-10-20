@@ -318,7 +318,7 @@ describe("saving a synced description", () => {
     const mine = "Goal\n\nMy steps\n\nDone when";
     const { saveSyncedDescription } = await import("@/lib/description-save");
     const { item, itemId } = await setup(mine);
-    const writes: { allowLoss?: boolean }[] = [];
+    const writes: { allowedLoss?: string[] }[] = [];
     let lost = ["underline"];
     vi.stubGlobal(
       "fetch",
@@ -340,7 +340,7 @@ describe("saving a synced description", () => {
       merged: false,
     });
     expect(writes).toEqual([
-      expect.objectContaining({ text: mine, allowLoss: true }),
+      expect.objectContaining({ text: mine, allowedLoss: ["underline"] }),
     ]);
 
     // A colleague added colour since the user confirmed: that loss was not seen.

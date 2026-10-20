@@ -364,7 +364,7 @@ interface DescriptionSource {
   /** The connection allows lossy conversion. */
   allowLossy?: boolean;
   /** The writes it was asked for. */
-  writes?: { text: string; allowLoss?: boolean }[];
+  writes?: { text: string; allowedLoss?: string[] }[];
 }
 
 const sources = new WeakMap<Page, DescriptionSource>();
@@ -413,11 +413,11 @@ async function stubDescriptionSource(page: Page, source: DescriptionSource) {
     const request = route.request().postDataJSON() as {
       text: string;
       expected: string;
-      allowLoss?: boolean;
+      allowedLoss?: string[];
     };
     (source.writes ??= []).push({
       text: request.text,
-      ...(request.allowLoss ? { allowLoss: true } : {}),
+      ...(request.allowedLoss ? { allowedLoss: request.allowedLoss } : {}),
     });
     if (request.expected !== source.text) {
       return route.fulfill({
@@ -667,7 +667,7 @@ Then(
   async ({ page }) => {
     await expect
       .poll(() => sources.get(page)!.writes?.at(-1))
-      .toEqual({ text: "My notes", allowLoss: true });
+      .toEqual({ text: "My notes", allowedLoss: ["underline"] });
   },
 );
 

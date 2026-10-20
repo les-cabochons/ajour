@@ -183,7 +183,7 @@ async function runSave(
       sourceId,
       text: plan.text,
       expected: current.text,
-      ...(current.lost?.length ? { allowLoss: true } : {}),
+      ...(allowedLoss.length > 0 ? { allowedLoss: [...allowedLoss] } : {}),
     });
     if (result.outcome === "conflict") {
       return recordConflict(itemId, result.description);
