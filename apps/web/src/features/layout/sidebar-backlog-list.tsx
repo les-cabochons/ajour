@@ -870,6 +870,10 @@ const OffListRow = memo(function OffListRow({
       <span data-row-title className="min-w-0 flex-1 truncate">
         {workItem.title}
       </span>
+      {/* A sync conflict stays in view on hover, so it can be clicked. */}
+      {hasWorkItemSyncIssue(workItem) ? (
+        <SyncConflictButton item={workItem} />
+      ) : null}
       {detail ? (
         <span className="shrink-0 text-xs group-focus-within:hidden group-hover:hidden">
           {detail}

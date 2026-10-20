@@ -212,3 +212,63 @@ Then("Sync review opens on the parent's conflict", async ({ page }) => {
   await expect(page).toHaveURL(/\/settings\/sync-review\?item=parent/);
   await expect(conflictSection(page)).toHaveAttribute("data-highlighted", "");
 });
+
+Given(
+  "the parent is snoozed with its remaining estimate in conflict",
+  async ({ page }) => {
+    await page.evaluate(() => {
+      const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
+      const parent = state.workItems.find(
+        (item: { _id: string }) => item._id === "parent",
+      );
+      Object.assign(parent, {
+        snoozedUntil: Date.now() + 86_400_000,
+        estimateSync: {
+          remainingEstimateHours: {
+            baselineValue: 2,
+            remoteValue: 5,
+            conflict: {
+              detectedAt: 1,
+              localValue: 3,
+              remoteValue: 5,
+              baselineValue: 2,
+            },
+          },
+        },
+      });
+      localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+    });
+  },
+);
+
+When(
+  "I follow the conflict mark on the parent's snoozed sidebar row",
+  async ({ page }) => {
+    const sidebar = page.getByRole("navigation", {
+      name: "Primary navigation",
+    });
+    await sidebar.getByRole("button", { name: /^Snoozed/ }).click();
+    await conflictMark(
+      sidebar.locator('[data-backlog-item-id="parent"]'),
+    ).click();
+  },
+);
+
+When(
+  "I follow the conflict mark beside the parent's remaining estimate",
+  async ({ page }) => {
+    await page.goto("/backlog/parent");
+    await expect(page.getByText("Conflict", { exact: true })).toBeVisible();
+    await conflictMark(page.locator("main")).click();
+  },
+);
+
+Then(
+  "Sync review opens on the parent's estimate conflict",
+  async ({ page }) => {
+    await expect(page).toHaveURL(/\/settings\/sync-review\?item=parent/);
+    await expect(
+      page.locator('[data-sync-issue-item="parent"]').getByText("Remaining"),
+    ).toBeVisible();
+  },
+);

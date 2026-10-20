@@ -203,8 +203,9 @@ export function EstimateFigure({
         />
       )}
       {conflict ? (
-        <span className="ml-1.5 font-sans text-xs font-normal text-destructive">
+        <span className="ml-1.5 inline-flex items-center gap-1 font-sans text-xs font-normal text-destructive">
           Conflict
+          <SyncConflictButton item={item} />
         </span>
       ) : null}
     </Figure>

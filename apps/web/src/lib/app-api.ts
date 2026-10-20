@@ -962,7 +962,12 @@ export async function commitSelectedBacklogImportsToLocalStore() {
     backlogImportCommitResponseSchema,
   );
 
+  const beforeImport = localStore.snapshot().workItems;
   const importResult = localStore.importSyncedWorkItems(committed.items);
+  // Updating an item from review can put its description in conflict too.
+  announceDescriptionConflicts(
+    newDescriptionConflicts(beforeImport, localStore.snapshot().workItems),
+  );
   return {
     ...importResult,
     committedCount: committed.committedCount,
