@@ -27,6 +27,7 @@ Turn on **Auto sync to backlog** on a connection to add new items straight to yo
 
 A synced item's description is kept in step with its source when the backlog plugin sends it in full. Ajour remembers the text both sides last agreed on. At each sync, a change in the source comes to Ajour, and your own edit stays. If both changed, the conflict shows here, with your text and the source's side by side.
 
+- **Keep mine** writes your text to the source, when the backlog plugin writes descriptions. If the source changed again since, the conflict stays with its new text.
 - **Take source** replaces your text with the source's. **Undo** in the toast puts yours back.
 
 When a sync finds a description conflict, a toast says so, with **Resolve**. The item also shows a conflict mark on its row in the sidebar and the backlog, and beside its description. The mark and **Resolve** open Sync review on that item's conflict.

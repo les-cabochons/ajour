@@ -76,9 +76,16 @@ import { localStore } from "@/lib/local-store";
 import { cn } from "@/lib/utils";
 import { DescriptionText } from "@/features/backlog/description-links";
 import {
+  DescriptionLength,
+  DescriptionSaveStatus,
+  SourceChangedWarning,
   SyncedDescriptionNote,
   useDescriptionAccess,
+  useDescriptionLimit,
+  useSourceDescriptionCheck,
+  writesToSource,
 } from "@/features/backlog/synced-description";
+import { saveSyncedDescription } from "@/lib/description-save";
 import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 
 /** Lets a host save the draft before it loads another item into the same form. */
@@ -176,6 +183,17 @@ export function BacklogItemEditorForm({
   const descriptionEditable =
     descriptionAccessState.editable ||
     descriptionAccessState.reason === "archived";
+  const descriptionWritesToSource = Boolean(
+    currentItem && writesToSource(currentItem, descriptionAccessState),
+  );
+  const descriptionLimit = useDescriptionLimit(
+    currentItem,
+    descriptionAccessState,
+  );
+  const latestDescription = useSourceDescriptionCheck(
+    currentItem,
+    descriptionWritesToSource,
+  );
   const parent = target.kind === "create" ? target.parent : undefined;
   const [fields, setFields] = useState(
     () => initialFields ?? createBacklogTaskEditorSeed(target),
@@ -219,6 +237,7 @@ export function BacklogItemEditorForm({
     subitemTotals: subitems.length > 0 ? sumSubitemEstimates(subitems) : null,
     descriptionReadOnly: !descriptionEditable,
     base,
+    descriptionLimit,
   });
   const { validation } = editor;
 
@@ -328,9 +347,13 @@ export function BacklogItemEditorForm({
             .workItems.find((item) => item._id === workItem._id);
           if (!saved) return false;
           if (changesLifecycle) {
-            return await moveBacklogItemWithUndo(saved, workflowStateId, {
-              patch,
-            });
+            const moved = await moveBacklogItemWithUndo(
+              saved,
+              workflowStateId,
+              { patch },
+            );
+            if (moved) writeDescription(patch);
+            return moved;
           }
           // A save has no Undo, unless the description's timelog also set
           // the project or task.
@@ -338,10 +361,20 @@ export function BacklogItemEditorForm({
             title: "Project and task set from the description",
             subject: "backlog item",
           });
+          writeDescription(result.patch);
         }
         return true;
       case "unchanged":
         return true;
+    }
+  }
+
+  /** Writes a saved description to its source, in the background. */
+  function writeDescription(
+    patch: Partial<Pick<LocalWorkItem, "description">>,
+  ) {
+    if (workItem && "description" in patch && descriptionWritesToSource) {
+      void saveSyncedDescription(workItem._id);
     }
   }
 
@@ -598,7 +631,25 @@ export function BacklogItemEditorForm({
               placeholder="Markdown supported (optional)"
               minLines={4}
             />
-          ) : (
+          ) : null}
+          {descriptionEditable && currentItem ? (
+            <>
+              <DescriptionLength
+                text={fields.description}
+                limit={descriptionLimit}
+              />
+              <SourceChangedWarning
+                item={currentItem}
+                latest={latestDescription}
+                typed={fields.description !== base.description}
+              />
+              <DescriptionSaveStatus
+                item={currentItem}
+                access={descriptionAccessState}
+              />
+            </>
+          ) : null}
+          {descriptionEditable ? null : (
             <div id={`${idPrefix}-description`}>
               {currentDescription ? (
                 <DescriptionText body={currentDescription} />

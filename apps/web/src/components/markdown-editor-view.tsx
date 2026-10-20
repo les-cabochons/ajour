@@ -31,8 +31,8 @@ export interface MarkdownEditorProps {
   /** The starting text of an uncontrolled editor. */
   defaultValue?: string;
   onChange?: (value: string) => void;
-  /** Called with the text when the editor loses focus. */
-  onBlur?: (value: string) => void;
+  /** Called with the text, and where focus went, when the editor loses focus. */
+  onBlur?: (value: string, next: Element | null) => void;
   /** ⌘/Ctrl+Enter. Without it the keys reach the surrounding form. */
   onSubmit?: (value: string) => void;
   /** Escape. Without it the key reaches the surrounding form. */
@@ -222,10 +222,15 @@ export default function MarkdownEditorView({
             }
           }),
           EditorView.domEventHandlers({
-            blur: (_event, target) => {
+            blur: (event, target) => {
               // Removing a focused editor blurs it; that is not the user leaving.
               if (viewRef.current !== target) return false;
-              handlers.current.onBlur?.(target.state.doc.toString());
+              handlers.current.onBlur?.(
+                target.state.doc.toString(),
+                event.relatedTarget instanceof Element
+                  ? event.relatedTarget
+                  : null,
+              );
               return false;
             },
           }),

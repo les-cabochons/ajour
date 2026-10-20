@@ -2415,3 +2415,155 @@ describe("backlog comment routes", () => {
     expect(JSON.stringify(response.body)).not.toContain(TOKEN);
   });
 });
+
+describe("backlog description routes", () => {
+  const tempDirs: string[] = [];
+  const servers: Server[] = [];
+
+  afterEach(async () => {
+    for (const server of servers.splice(0)) {
+      server.emit("close");
+    }
+    await Promise.all(
+      tempDirs
+        .splice(0)
+        .map((directory) => rm(directory, { recursive: true, force: true })),
+    );
+  });
+
+  const descriptionPluginSource = [
+    "export async function validateConnection(config) {",
+    "  return { normalizedConfig: config, connectionSummary: {} };",
+    "}",
+    "export async function syncConnection() {",
+    "  return { items: [], workItemUpdates: [] };",
+    "}",
+    "let text = 'Held by the source';",
+    "export async function readDescription(connection, request) {",
+    "  if (request.sourceId === 'FAIL-1') throw new Error('Item not found.');",
+    "  return { description: { text } };",
+    "}",
+    "export async function writeDescription(connection, request) {",
+    "  if (request.expected !== text) {",
+    "    return { outcome: 'conflict', description: { text } };",
+    "  }",
+    "  text = request.text;",
+    "  return { outcome: 'written', description: { text } };",
+    "}",
+  ].join("\n");
+
+  async function createServer(description?: { write?: boolean }) {
+    const root = await mkdtemp(
+      path.join(os.tmpdir(), "ajour-description-api-"),
+    );
+    tempDirs.push(root);
+    const pluginDirectory = await createPlugin(
+      path.join(root, "source"),
+      descriptionPluginSource,
+      "plugin.mjs",
+      description ? { capabilities: { connector: { description } } } : {},
+    );
+    const server = createAppApiServer({
+      statePath: path.join(root, "state.json"),
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [pluginDirectory],
+      allowDevelopmentPlugins: true,
+    });
+    servers.push(server);
+    const connectionResponse = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: "/api/plugins/jira/connections",
+      body: JSON.stringify({
+        values: {
+          label: "Main Jira",
+          tenantLabel: "Acme",
+          autoSync: false,
+          autoSyncIntervalMinutes: 15,
+          baseUrl: "https://acme.atlassian.net",
+        },
+      }),
+    });
+    const connectionId = (
+      connectionResponse.body as { connection: { id: string } }
+    ).connection.id;
+    const post = (action: string, body: unknown) =>
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/plugins/jira/connections/${connectionId}/${action}`,
+        body: JSON.stringify(body),
+      });
+    return { post };
+  }
+
+  it("reads a description, and writes one only over the text it expects", async () => {
+    const { post } = await createServer({ write: true });
+
+    await expect(post("description", { sourceId: "OPEN-1" })).resolves.toEqual({
+      status: 200,
+      body: { description: { text: "Held by the source" } },
+    });
+    await expect(
+      post("description-write", {
+        sourceId: "OPEN-1",
+        text: "Mine",
+        expected: "Something older",
+      }),
+    ).resolves.toEqual({
+      status: 200,
+      body: {
+        outcome: "conflict",
+        description: { text: "Held by the source" },
+      },
+    });
+    await expect(
+      post("description-write", {
+        sourceId: "OPEN-1",
+        text: "Mine",
+        expected: "Held by the source",
+      }),
+    ).resolves.toEqual({
+      status: 200,
+      body: { outcome: "written", description: { text: "Mine" } },
+    });
+  });
+
+  it("rejects a malformed write and reports a failed read as a gateway error", async () => {
+    const { post } = await createServer({ write: true });
+
+    expect(
+      (await post("description-write", { sourceId: "OPEN-1", text: "Mine" }))
+        .status,
+    ).toBe(400);
+    await expect(post("description", { sourceId: "FAIL-1" })).resolves.toEqual({
+      status: 502,
+      body: { error: "Item not found." },
+    });
+  });
+
+  it("refuses to write through a plugin that only reads descriptions", async () => {
+    const { post } = await createServer({});
+
+    expect((await post("description", { sourceId: "OPEN-1" })).status).toBe(
+      200,
+    );
+    await expect(
+      post("description-write", {
+        sourceId: "OPEN-1",
+        text: "Mine",
+        expected: "Held by the source",
+      }),
+    ).resolves.toEqual({
+      status: 409,
+      body: { error: "This plugin does not write descriptions." },
+    });
+  });
+
+  it("refuses descriptions through a plugin that does not sync them", async () => {
+    const { post } = await createServer();
+
+    await expect(post("description", { sourceId: "OPEN-1" })).resolves.toEqual({
+      status: 409,
+      body: { error: "This plugin does not sync descriptions." },
+    });
+  });
+});

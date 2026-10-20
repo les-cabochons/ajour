@@ -65,6 +65,8 @@ async function run() {
   if (
     workerData.method === "listSettleStates" ||
     workerData.method === "writeSettle" ||
+    workerData.method === "readDescription" ||
+    workerData.method === "writeDescription" ||
     CODE_HOST_METHODS.has(workerData.method) ||
     CALENDAR_METHODS.has(workerData.method) ||
     BACKLOG_COMMENT_METHODS.has(workerData.method) ||
