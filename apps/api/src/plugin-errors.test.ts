@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { pluginErrorMessage } from "./plugin-errors.ts";
+import {
+  connectionlessPluginErrorMessage,
+  pluginErrorMessage,
+  redactSecretValues,
+} from "./plugin-errors.ts";
 
 const plugin = {
   connectionFields: [
@@ -88,19 +92,83 @@ describe("plugin error messages", () => {
     ).toBe("Too many requests");
   });
 
-  it("treats every stored string and number as secret when the manifest is gone", () => {
+  it("treats a stored value the manifest no longer declares as secret, but not Ajour's own fields", () => {
     expect(
       pluginErrorMessage(
-        new Error("https://acme.example failed 3 times, verbose true."),
-        undefined,
-        { siteUrl: "https://acme.example", retries: 3, verbose: true },
+        new Error(
+          "Old key old-key-4f2a failed for Acme (Main) at https://acme.example after 15 minutes.",
+        ),
+        plugin,
+        {
+          siteUrl: "https://acme.example",
+          apiKey: "old-key-4f2a",
+          label: "Main",
+          tenantLabel: "Acme",
+          autoSyncIntervalMinutes: 15,
+        },
       ),
-    ).toBe("[secret] failed [secret] times, verbose true.");
+    ).toBe(
+      "Old key [secret] failed for Acme (Main) at https://acme.example after 15 minutes.",
+    );
+  });
+
+  it("only bounds the error of an operation with no connection", () => {
+    expect(
+      connectionlessPluginErrorMessage(new Error("Row 3 has no project.")),
+    ).toBe("Row 3 has no project.");
+    expect(connectionlessPluginErrorMessage(new Error("x".repeat(1_500)))).toBe(
+      `${"x".repeat(999)}…`,
+    );
   });
 
   it("says Unknown error for a thrown value that isn't an Error", () => {
     expect(pluginErrorMessage("pat-7c1e9a2b4d6f8a0c", plugin)).toBe(
       "Unknown error",
     );
+  });
+});
+
+describe("redacting in one pass on the original message", () => {
+  it("finds a cut secret's start even when a shorter secret sits inside it", () => {
+    expect(redactSecretValues("Failed ABCD…", ["ABCDEF", "CD"])).toBe(
+      "Failed [secret]…",
+    );
+    expect(
+      redactSecretValues("token pat-7c1e9a…", ["pat-7c1e9a2b4d6f8a0c", "7c1e"]),
+    ).toBe("token [secret]…");
+  });
+
+  it("replaces overlapping secrets as one", () => {
+    expect(redactSecretValues("abc123xyz9", ["abc123", "123xyz9"])).toBe(
+      "[secret]",
+    );
+    expect(redactSecretValues("abc123xyz…", ["abc123", "123xyz9"])).toBe(
+      "[secret]…",
+    );
+  });
+
+  it("leaves the [secret] marks already in a message alone", () => {
+    expect(redactSecretValues("Bad [secret]", ["secret"])).toBe("Bad [secret]");
+    expect(redactSecretValues("Bad [secret]", ["e"])).toBe("Bad [secret]");
+  });
+
+  it("gives the same text when it redacts its own result", () => {
+    const config = {
+      token: "secret",
+      pin: 4829,
+      teamSecret: "pat-7c1e9a2b4d6f8a0c",
+    };
+    for (const raw of [
+      "Token secret and PIN 4829 were refused.",
+      // Split by the worker's cut.
+      `${"x".repeat(20)} pat-7c1e9a…`,
+      // The bound falls inside the [secret] that replaces "secret".
+      `${"x".repeat(995)}secret${"y".repeat(20)}`,
+      // The bound leaves "pat", which starts a secret, before its ellipsis.
+      `${"x".repeat(996)}patrol`,
+    ]) {
+      const once = pluginErrorMessage(new Error(raw), plugin, config);
+      expect(pluginErrorMessage(new Error(once), plugin, config)).toBe(once);
+    }
   });
 });

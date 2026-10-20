@@ -90,12 +90,16 @@ title.
 A plugin may echo a secret connection value in an error. Every route that runs
 a plugin operation turns the error into a message with `pluginErrorMessage` in
 `apps/api/src/plugin-errors.ts`: each secret value of the connection becomes
-`[secret]`, then the message is cut to 1,000 characters. The worker cuts a long
+`[secret]`, then the message is cut to 1,000 characters. A stored config key
+the manifest no longer declares counts as secret, except Ajour's own fields.
+All matches are found in the original message, so secrets that overlap go
+whole, and a `[secret]` already there stays as it is. The worker cuts a long
 error before the host sees it and marks the cut with "…", so the start of a
 secret that the cut split becomes `[secret]` too. No response, stored last
 error or log carries the raw message. The overview redacts a stored last error
-again before it returns it, and when the plugin is no longer installed it
-treats every stored string and number value of the connection as secret.
+again before it returns it. When the plugin is no longer installed, nothing
+says which stored values are secret, so it shows "Hidden because this plugin
+is no longer installed." instead.
 The rules in this section apply to every such plugin, which must remain
 physically and logically separate from the application. A plugin owns its external-system
 authentication, transport, field discovery, and remote read/write behavior. It

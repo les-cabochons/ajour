@@ -322,13 +322,6 @@ export class PluginManager {
     );
   }
 
-  /** Whether the plugin declares the settle capability. */
-  async supportsSettle(pluginId: string): Promise<boolean> {
-    this.assertRunning();
-    const plugin = (await this.discoverPlugins()).plugins.get(pluginId);
-    return plugin?.manifest.capabilities.connector?.settle ?? false;
-  }
-
   /** Whether the plugin declares the given capability. */
   async hasCapability(
     pluginId: string,

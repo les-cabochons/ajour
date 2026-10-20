@@ -2876,6 +2876,28 @@ describe("plugin errors that echo a secret", () => {
     });
   });
 
+  it("refuses to save a connection for a plugin that is not installed", async () => {
+    const { server } = await createServer();
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: "/api/plugins/gone/connections",
+        body: JSON.stringify({
+          values: {
+            label: "Old",
+            tenantLabel: "Acme",
+            baseUrl: SITE,
+            token: TOKEN,
+          },
+        }),
+      }),
+    ).resolves.toEqual({
+      status: 400,
+      body: { error: 'Plugin "gone" is not installed.' },
+    });
+  });
+
   async function createConnection(values: Record<string, unknown> = {}) {
     const { server, statePath } = await createServer();
     const saved = await saveConnection(server, {
@@ -3003,27 +3025,34 @@ describe("plugin errors that echo a secret", () => {
     );
   });
 
+  /** A state file holding one saved connection with a last error. */
+  const savedState = (connection: Record<string, unknown>) => ({
+    version: 7,
+    connections: [
+      {
+        id: "saved-jira",
+        pluginId: "jira",
+        label: "Main Jira",
+        tenantLabel: "Acme",
+        autoSync: false,
+        autoSyncIntervalMinutes: 15,
+        connectedAt: 1,
+        configSummary: {},
+        lastErrorAt: 2,
+        ...connection,
+      },
+    ],
+    disabledPluginIds: [],
+    pluginsEnabled: true,
+  });
+
   it("hides the token in a last error stored before errors were redacted", async () => {
-    const { server } = await createServer({
-      version: 7,
-      connections: [
-        {
-          id: "saved-jira",
-          pluginId: "jira",
-          label: "Main Jira",
-          tenantLabel: "Acme",
-          autoSync: false,
-          autoSyncIntervalMinutes: 15,
-          connectedAt: 1,
-          config: { baseUrl: SITE, token: TOKEN },
-          configSummary: {},
-          lastError: `Sync failed with token ${TOKEN}.`,
-          lastErrorAt: 2,
-        },
-      ],
-      disabledPluginIds: [],
-      pluginsEnabled: true,
-    });
+    const { server } = await createServer(
+      savedState({
+        config: { baseUrl: SITE, token: TOKEN },
+        lastError: `Sync failed with token ${TOKEN}.`,
+      }),
+    );
 
     const overview = await dispatchJsonRequest(server, {
       method: "GET",
@@ -3036,54 +3065,56 @@ describe("plugin errors that echo a secret", () => {
     );
   });
 
+  it("shows a redacted stored error as it is, even when the token's value is secret", async () => {
+    const { server } = await createServer(
+      savedState({
+        config: { baseUrl: SITE, token: "secret" },
+        lastError: "Sync failed with token [secret].",
+      }),
+    );
+
+    expect(await shownLastError(server)).toBe(
+      "Sync failed with token [secret].",
+    );
+  });
+
   it("keeps a stored error within the overview's limit when a short secret grows into [secret]", async () => {
-    const { server } = await createServer({
-      version: 7,
-      connections: [
-        {
-          id: "saved-jira",
-          pluginId: "jira",
-          label: "Main Jira",
-          tenantLabel: "Acme",
-          autoSync: false,
-          autoSyncIntervalMinutes: 15,
-          connectedAt: 1,
-          config: { baseUrl: SITE, token: "k9x" },
-          configSummary: {},
-          // 1,000 characters, the most a last error keeps.
-          lastError: "k9x ".repeat(250),
-          lastErrorAt: 2,
-        },
-      ],
-      disabledPluginIds: [],
-      pluginsEnabled: true,
-    });
+    const { server } = await createServer(
+      savedState({
+        config: { baseUrl: SITE, token: "k9x" },
+        // 1,000 characters, the most a last error keeps.
+        lastError: "k9x ".repeat(250),
+      }),
+    );
 
     // 111 replacements of 9 characters fill 999, then the ellipsis.
     expect(await shownLastError(server)).toBe(`${"[secret] ".repeat(111)}…`);
   });
 
-  it("hides every stored value in the last error of an uninstalled plugin's connection", async () => {
-    const { server } = await createServer({
-      version: 7,
-      connections: [
-        {
-          id: "saved-gitea",
-          pluginId: "gitea",
-          label: "Old Gitea",
-          tenantLabel: "Acme",
-          autoSync: false,
-          autoSyncIntervalMinutes: 15,
-          connectedAt: 1,
-          config: { baseUrl: SITE, token: TOKEN, pin: PIN, archived: true },
-          configSummary: {},
-          lastError: `Sync of ${SITE} failed with token ${TOKEN} and PIN ${PIN}: true.`,
-          lastErrorAt: 2,
-        },
-      ],
-      disabledPluginIds: [],
-      pluginsEnabled: true,
-    });
+  it("hides a stored value whose field a plugin update dropped", async () => {
+    // The fixture declares token but no longer apiKey.
+    const { server } = await createServer(
+      savedState({
+        config: { baseUrl: SITE, token: TOKEN, apiKey: "old-key-4f2a" },
+        lastError: `Old key old-key-4f2a failed for Acme at ${SITE}.`,
+      }),
+    );
+
+    expect(await shownLastError(server)).toBe(
+      `Old key [secret] failed for Acme at ${SITE}.`,
+    );
+  });
+
+  it("hides the whole last error of an uninstalled plugin's connection", async () => {
+    const { server } = await createServer(
+      savedState({
+        id: "saved-gitea",
+        pluginId: "gitea",
+        label: "Old Gitea",
+        config: { baseUrl: SITE, token: TOKEN, pin: PIN },
+        lastError: `Sync of ${SITE} failed with token ${TOKEN} and PIN ${PIN}.`,
+      }),
+    );
 
     const overview = await dispatchJsonRequest(server, {
       method: "GET",
@@ -3091,6 +3122,7 @@ describe("plugin errors that echo a secret", () => {
     });
 
     expect(overview.status).toBe(200);
+    expect(JSON.stringify(overview.body)).not.toContain(TOKEN);
     const gitea = (
       overview.body as {
         connectionGroups: {
@@ -3099,10 +3131,9 @@ describe("plugin errors that echo a secret", () => {
         }[];
       }
     ).connectionGroups.find((group) => group.plugin.id === "gitea");
-    // Without its manifest, no field is known to be secret, so every
-    // string and number value goes.
+    // Without its manifest, nothing says which stored values are secret.
     expect(gitea?.connections[0]?.lastError).toBe(
-      "Sync of [secret] failed with token [secret] and PIN [secret]: true.",
+      "Hidden because this plugin is no longer installed.",
     );
   });
 

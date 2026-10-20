@@ -60,7 +60,6 @@ import {
   pluginsOverviewSchema,
   teamCreateRouteRequestSchema,
   AGENT_ACCESS_FIELD_ID,
-  AJOUR_CONNECTION_FIELD_IDS,
   ALLOW_LOSSY_FIELD_ID,
   agentAccessAllows,
   agentAccessSchema,
@@ -100,7 +99,10 @@ import {
   mcpClientCreateRequestSchema,
   mcpSettingsUpdateSchema,
 } from "../../../packages/shared/agent-tools.ts";
-import { mergeConnectionConfigForSave } from "./connection-values.ts";
+import {
+  mergeConnectionConfigForSave,
+  RESERVED_CONNECTION_FIELD_IDS,
+} from "./connection-values.ts";
 import { AgentSessions } from "./agent-sessions.ts";
 import { McpBridge } from "./mcp-bridge.ts";
 import { createMcpClient } from "./mcp-clients.ts";
@@ -117,7 +119,11 @@ import { playwrightMcpServer } from "./agent-runner/playwright-mcp.ts";
 import { AgentRunError, AgentRunner } from "./agent-runner/runner.ts";
 import { capabilityOfMethod, PluginManager } from "./plugin-host.ts";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
-import { errorMessage, pluginErrorMessage } from "./plugin-errors.ts";
+import {
+  connectionlessPluginErrorMessage,
+  errorMessage,
+  pluginErrorMessage,
+} from "./plugin-errors.ts";
 import { AppApiStorage } from "./storage.ts";
 
 interface AppApiServerOptions {
@@ -149,15 +155,6 @@ interface AppApiRuntime {
 
 const appApiRuntimesByServer = new WeakMap<Server, AppApiRuntime>();
 const MAX_JSON_BODY_BYTES = 16 * 1024 * 1024;
-
-const RESERVED_CONNECTION_FIELDS = new Set([
-  "label",
-  "tenantLabel",
-  "autoSync",
-  "autoSyncIntervalMinutes",
-  "pullRequestAutoSync",
-  ...AJOUR_CONNECTION_FIELD_IDS,
-]);
 
 function materializeAutoSyncCandidates(
   items: BacklogImportCandidateInput[],
@@ -422,7 +419,7 @@ function parseConnectionValues(values: PluginFieldValues) {
 
   const config = Object.fromEntries(
     Object.entries(parsedValues).filter(
-      ([key]) => !RESERVED_CONNECTION_FIELDS.has(key),
+      ([key]) => !RESERVED_CONNECTION_FIELD_IDS.has(key),
     ),
   );
 
@@ -442,7 +439,7 @@ function parseConnectionValues(values: PluginFieldValues) {
 function withoutReservedFields(config: PluginFieldValues): PluginFieldValues {
   return Object.fromEntries(
     Object.entries(config).filter(
-      ([key]) => !RESERVED_CONNECTION_FIELDS.has(key),
+      ([key]) => !RESERVED_CONNECTION_FIELD_IDS.has(key),
     ),
   );
 }
@@ -528,12 +525,19 @@ async function getOverview(
   );
 }
 
-/** The installed plugin with `pluginId`, if any, and every installed plugin's id. */
+/**
+ * The installed plugin with `pluginId`, if any, and every installed plugin's
+ * id. When the plugin is installed but can't run, such as one built for
+ * another plugin API, `unavailableReason` says why.
+ */
 async function findPlugin(pluginManager: PluginManager, pluginId: string) {
-  const plugins = await pluginManager.listPlugins();
+  const { plugins, unavailable } = await pluginManager.inspectPlugins();
   return {
     plugin: plugins.find((candidate) => candidate.id === pluginId),
     pluginIds: new Set(plugins.map((candidate) => candidate.id)),
+    unavailableReason: unavailable.find(
+      (candidate) => candidate.manifest.id === pluginId,
+    )?.reason,
   };
 }
 
@@ -1107,8 +1111,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             );
           }
         } catch (error) {
-          // A data shape plugin has no connection, so no secret to replace.
-          writeJson(response, 400, { error: pluginErrorMessage(error) });
+          writeJson(response, 400, {
+            error: connectionlessPluginErrorMessage(error),
+          });
         }
         return;
       }
@@ -1209,26 +1214,34 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             await readJsonBody(request),
           );
           const parsedValues = parseConnectionValues(payload.values);
-          const { plugin } = await findPlugin(pluginManager, pluginId);
+          const { plugin, unavailableReason } = await findPlugin(
+            pluginManager,
+            pluginId,
+          );
+          if (!plugin) {
+            // The host runs no code of a plugin it can't load, and would
+            // refuse with this reason.
+            writeJson(response, 400, {
+              error:
+                unavailableReason ?? `Plugin "${pluginId}" is not installed.`,
+            });
+            return;
+          }
           const existingConnection = payload.id
             ? await storage.getConnection(pluginId, payload.id)
             : null;
           // A config saved before Ajour kept its own fields out may hold one.
           const configForSave = withoutReservedFields(
-            plugin
-              ? mergeConnectionConfigForSave(
-                  plugin,
-                  parsedValues.config,
-                  existingConnection?.config,
-                )
-              : parsedValues.config,
+            mergeConnectionConfigForSave(
+              plugin,
+              parsedValues.config,
+              existingConnection?.config,
+            ),
           );
-          const capabilities = plugin
-            ? await storage.listEnabledCapabilities(
-                pluginId,
-                pluginSwitchableCapabilities(plugin),
-              )
-            : [];
+          const capabilities = await storage.listEnabledCapabilities(
+            pluginId,
+            pluginSwitchableCapabilities(plugin),
+          );
           let validation: PluginValidationResult;
           try {
             validation = await pluginManager.validateConnection(
@@ -1331,7 +1344,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             writeJson(response, 409, { error: inactive });
             return;
           }
-          if (!(await pluginManager.supportsSettle(pluginId))) {
+          if (!plugin?.capabilities.connector?.settle) {
             writeJson(response, 409, {
               error: "This plugin does not support settling.",
             });
@@ -1524,7 +1537,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             pluginManager,
             pluginId,
           );
-          if (!(await pluginManager.hasCapability(pluginId, "connector"))) {
+          if (!plugin?.capabilities.connector) {
             writeJson(response, 409, {
               error: "This plugin does not sync backlog items.",
             });

@@ -357,6 +357,10 @@ function compactFieldValues(
   );
 }
 
+/** What the overview shows instead of a last error whose plugin is gone. */
+const UNINSTALLED_PLUGIN_LAST_ERROR =
+  "Hidden because this plugin is no longer installed.";
+
 function createMissingPluginManifest(pluginId: string): PluginOverviewItem {
   return {
     id: pluginId,
@@ -454,15 +458,15 @@ function buildConnectionSummary(
     connectedAt: connection.connectedAt,
     lastSyncAt: connection.lastSyncAt,
     // A last error stored before every route redacted plugin errors may
-    // still hold a secret. A stand-in declares no secret field, so then
-    // every stored value is treated as one.
+    // still hold a secret. A stand-in says nothing about which stored values
+    // are secret, so then none of the text is shown.
     lastError:
       connection.lastError &&
-      redactConnectionError(
-        connection.lastError,
-        installed ? plugin : undefined,
-        [connection.config],
-      ),
+      (installed
+        ? redactConnectionError(connection.lastError, plugin, [
+            connection.config,
+          ])
+        : UNINSTALLED_PLUGIN_LAST_ERROR),
     lastErrorAt: connection.lastErrorAt,
     pendingImportCount: connectionItems.length,
     selectedImportCount: connectionItems.filter((item) => item.selected).length,
