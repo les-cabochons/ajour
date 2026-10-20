@@ -81,6 +81,7 @@ async function scrollToTop(locator) {
  * Every shot. `run` opens the surface and may return a locator: the shot is
  * then cropped to it, with `margin` around it and `marginBottom` below it.
  * `seed` passes options to seed.mjs, and `api` replaces mocked API responses.
+ * `keepPointer` leaves the mouse where `run` put it, for hover states.
  */
 const shots = [
   // Time
@@ -259,6 +260,19 @@ const shots = [
       await go(page, "/time/today");
       await page.getByRole("button", { name: /^Time/ }).first().click();
       return page.getByRole("menu");
+    },
+  },
+  {
+    name: "sidebar-hover-card",
+    keepPointer: true,
+    run: async (page) => {
+      await go(page, "/time/today");
+      await page
+        .locator(".ajour-app-navigation-sidebar [data-backlog-item-id='w2']")
+        .first()
+        .hover();
+      // The card opens once the pointer rests on the row for 800ms.
+      await page.waitForTimeout(1200);
     },
   },
   // Pull requests
@@ -468,7 +482,9 @@ async function capture(browser, encoder, shot, theme) {
   let png;
   try {
     const target = await shot.run(page);
-    await page.mouse.move(viewport.width - 2, viewport.height - 2);
+    if (!shot.keepPointer) {
+      await page.mouse.move(viewport.width - 2, viewport.height - 2);
+    }
     await page.waitForTimeout(500);
     if (target) {
       const box = await target.first().boundingBox();
