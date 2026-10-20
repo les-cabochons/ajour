@@ -1,5 +1,6 @@
 import {
   BACKLOG_DESCRIPTION_MAX_LENGTH,
+  connectionAllowsLossyConversion,
   isCapabilityActive,
   type BacklogDescriptionCapability,
   type BacklogSyncedDescription,
@@ -340,12 +341,14 @@ export type DescriptionAccess =
  * A synced description is read-only unless its plugin writes descriptions
  * back, and a cut one always is, so a shortened copy is never written. One
  * whose conversion to Markdown lost something is too, so an edit never
- * erases the source's formatting. `capability` is the plugin's, or undefined
- * while it is unknown.
+ * erases the source's formatting, unless its connection allows lossy
+ * conversion: each save then names the loss and asks first. `capability` is
+ * the plugin's, or undefined while it is unknown.
  */
 export function descriptionAccess(
   item: Pick<LocalWorkItem, "status" | "descriptionSync">,
   capability: BacklogDescriptionCapability | undefined,
+  allowLossy = false,
 ): DescriptionAccess {
   if (item.status === "archived")
     return { editable: false, reason: "archived" };
@@ -353,7 +356,8 @@ export function descriptionAccess(
   if (!sync) return { editable: true };
   if (sync.cut) return { editable: false, reason: "cut" };
   if (!capability?.write) return { editable: false, reason: "notWritable" };
-  if (sync.lost?.length) return { editable: false, reason: "lossy" };
+  if (sync.lost?.length && !allowLossy)
+    return { editable: false, reason: "lossy" };
   return { editable: true };
 }
 
@@ -396,6 +400,33 @@ export function takeSourceDescription(item: Described): Described {
     description: sync.remote || undefined,
     descriptionSync: { ...rest, baseline: sync.remote },
   };
+}
+
+/**
+ * Whether the connection serving a synced item allows lossy conversion. False
+ * when the item is manual, its connection is gone, or the overview is not
+ * known yet.
+ */
+export function lossyConversionAllowedFor(
+  item: Pick<LocalWorkItem, "source" | "sourceConnectionId">,
+  overview: PluginsOverview | null | undefined,
+) {
+  if (item.source === "manual" || !item.sourceConnectionId || !overview)
+    return false;
+  const connection = overview.connectionGroups
+    .find((group) => group.plugin.id === item.source)
+    ?.connections.find((candidate) => candidate.id === item.sourceConnectionId);
+  return Boolean(connection && connectionAllowsLossyConversion(connection));
+}
+
+/**
+ * What saving the item's description would lose, which the user confirms
+ * first: the conversion's losses, when its connection lets them edit it.
+ */
+export function descriptionLosses(
+  item: Pick<LocalWorkItem, "descriptionSync">,
+) {
+  return item.descriptionSync?.lost ?? [];
 }
 
 /** The items whose description a change put in conflict, oldest first. */

@@ -7,7 +7,9 @@ import {
   descriptionAccess,
   descriptionCapabilityOf,
   descriptionLimit,
+  descriptionLosses,
   hasUnwrittenDescription,
+  lossyConversionAllowedFor,
   latestDescription,
   lostFormatting,
   normalizeDescriptionText,
@@ -15,6 +17,7 @@ import {
   sourceDescriptionChanged,
   type DescriptionAccess,
 } from "@/domain/backlog/description-sync";
+import { confirmLossySave } from "@/features/backlog/lossy-save-dialog";
 import { usePluginsOverview } from "@/features/backlog/plugins-overview";
 import { useOpenSyncReview } from "@/features/backlog/sync-conflicts";
 import { offerUndo } from "@/features/feedback/undo-toast";
@@ -38,7 +41,32 @@ export function useDescriptionAccess(
 ): DescriptionAccess {
   const overview = usePluginsOverview();
   if (!item) return { editable: true };
-  return descriptionAccess(item, descriptionCapabilityOf(item, overview));
+  return descriptionAccess(
+    item,
+    descriptionCapabilityOf(item, overview),
+    lossyConversionAllowedFor(item, overview),
+  );
+}
+
+/**
+ * Before a save of a description whose conversion lost something, the user
+ * sees each loss and confirms. The losses they allowed, none when there are
+ * none, or undefined when they did not save.
+ */
+export async function confirmDescriptionLoss(
+  item: Pick<
+    LocalWorkItem,
+    "descriptionSync" | "sourceConnectionLabel" | "sourceUrl"
+  >,
+): Promise<readonly string[] | undefined> {
+  const lost = descriptionLosses(item);
+  if (lost.length === 0) return [];
+  const save = await confirmLossySave({
+    lost,
+    sourceName: item.sourceConnectionLabel ?? "the source",
+    ...(item.sourceUrl ? { sourceUrl: item.sourceUrl } : {}),
+  });
+  return save ? lost : undefined;
 }
 
 const READ_ONLY_REASONS = {
@@ -90,6 +118,7 @@ type SyncedItem = Pick<
   | "sourceId"
   | "sourceConnectionId"
   | "sourceConnectionLabel"
+  | "sourceUrl"
   | "description"
   | "descriptionSync"
 >;
@@ -160,12 +189,13 @@ export function DescriptionLength({
 export function saveDescriptionToSource(
   itemId: string,
   description: string | undefined,
+  allowedLoss: readonly string[] = [],
 ) {
   offerUndo(localStore.saveWorkItemEdits(itemId, { description }), {
     title: "Project and task set from the description",
     subject: "backlog item",
   });
-  void saveSyncedDescription(itemId);
+  void saveSyncedDescription(itemId, "save", allowedLoss);
 }
 
 /**
@@ -333,7 +363,11 @@ export function DescriptionSaveStatus({
         <button
           type="button"
           className={actionClass}
-          onClick={() => void saveSyncedDescription(item._id)}
+          onClick={async () => {
+            const allowedLoss = await confirmDescriptionLoss(item);
+            if (allowedLoss)
+              void saveSyncedDescription(item._id, "save", allowedLoss);
+          }}
         >
           Retry
         </button>

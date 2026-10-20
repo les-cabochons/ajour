@@ -359,6 +359,12 @@ interface DescriptionSource {
   text: string;
   /** Why it refuses writes, when it does. */
   refusal?: string;
+  /** What its conversion to Markdown loses. */
+  lost?: string[];
+  /** The connection allows lossy conversion. */
+  allowLossy?: boolean;
+  /** The writes it was asked for. */
+  writes?: { text: string; allowLoss?: boolean }[];
 }
 
 const sources = new WeakMap<Page, DescriptionSource>();
@@ -367,21 +373,32 @@ const lines = (text: string) => text.replaceAll("\\n", "\n");
 async function stubDescriptionSource(page: Page, source: DescriptionSource) {
   sources.set(page, source);
   const connection = `${apiUrl}/api/plugins/example/connections/fixture`;
-  await page.route(`${apiUrl}/api/plugins`, (route) =>
-    route.fulfill({
-      json: descriptionOverview({ write: true }),
-      headers: cors,
-    }),
-  );
+  await page.route(`${apiUrl}/api/plugins`, (route) => {
+    const overview = descriptionOverview({ write: true });
+    for (const group of overview.connectionGroups) {
+      for (const entry of group.connections) {
+        if (source.allowLossy) entry.allowLossyConversion = true;
+      }
+    }
+    return route.fulfill({ json: overview, headers: cors });
+  });
   await page.route(`${connection}/sync`, (route) =>
     route.fulfill({
-      json: syncWithParentDescription({ text: source.synced }),
+      json: syncWithParentDescription({
+        text: source.synced,
+        ...(source.lost ? { lost: source.lost } : {}),
+      }),
       headers: cors,
     }),
   );
   await page.route(`${connection}/description`, (route) =>
     route.fulfill({
-      json: { description: { text: source.text } },
+      json: {
+        description: {
+          text: source.text,
+          ...(source.lost ? { lost: source.lost } : {}),
+        },
+      },
       headers: cors,
     }),
   );
@@ -396,7 +413,12 @@ async function stubDescriptionSource(page: Page, source: DescriptionSource) {
     const request = route.request().postDataJSON() as {
       text: string;
       expected: string;
+      allowLoss?: boolean;
     };
+    (source.writes ??= []).push({
+      text: request.text,
+      ...(request.allowLoss ? { allowLoss: true } : {}),
+    });
     if (request.expected !== source.text) {
       return route.fulfill({
         json: { outcome: "conflict", description: { text: source.text } },
@@ -592,3 +614,75 @@ When("I keep my description", async ({ page }) => {
     .getByRole("button", { name: "Keep mine", exact: true })
     .click();
 });
+
+Given(
+  "its description {string}, which lost its underline, is synced through a connection that allows lossy conversion",
+  async ({ page }, text: string) => {
+    const synced = lines(text);
+    await seedParentDescription(page, synced, {
+      baseline: synced,
+      remote: synced,
+      lost: ["underline"],
+    });
+    await stubDescriptionSource(page, {
+      synced,
+      text: synced,
+      lost: ["underline"],
+      allowLossy: true,
+    });
+  },
+);
+
+When(
+  "I write {string} as its description and save it",
+  async ({ page }, description: string) => {
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    await descriptionEditor(page).fill(description);
+    await page.keyboard.press("ControlOrMeta+Enter");
+  },
+);
+
+const lossDialog = (page: Page) =>
+  page.getByRole("alertdialog", { name: "Save and lose formatting?" });
+
+Then("a dialog names the underline that saving loses", async ({ page }) => {
+  await expect(lossDialog(page)).toBeVisible();
+  await expect(
+    lossDialog(page).getByText("Underline", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    lossDialog(page).getByRole("link", { name: "Edit in source" }),
+  ).toHaveAttribute("href", "https://example.test/items/42");
+});
+
+When("I choose {string} in the dialog", async ({ page }, choice: string) => {
+  await lossDialog(page)
+    .getByRole("button", { name: choice, exact: true })
+    .click();
+  await expect(lossDialog(page)).toHaveCount(0);
+});
+
+Then(
+  "the source was asked to write with the loss allowed",
+  async ({ page }) => {
+    await expect
+      .poll(() => sources.get(page)!.writes?.at(-1))
+      .toEqual({ text: "My notes", allowLoss: true });
+  },
+);
+
+Then(
+  "nothing was written, and the editor still holds {string}",
+  async ({ page }, text: string) => {
+    await expect(descriptionEditor(page)).toHaveText(text);
+    expect(sources.get(page)!.writes ?? []).toEqual([]);
+    const description = await page.evaluate(
+      () =>
+        JSON.parse(
+          localStorage.getItem("ajour.local-state.v2")!,
+        ).workItems.find((item: { _id: string }) => item._id === "parent")
+          .description,
+    );
+    expect(description).toBe("Original");
+  },
+);

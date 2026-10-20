@@ -80,6 +80,7 @@ import {
   DescriptionSaveStatus,
   SourceChangedWarning,
   SyncedDescriptionNote,
+  confirmDescriptionLoss,
   useDescriptionAccess,
   useDescriptionLimit,
   followDescriptionDraft,
@@ -376,6 +377,17 @@ export function BacklogItemEditorForm({
       }
       case "update":
         if (workItem) {
+          // A description written with losses asks first; Cancel keeps the draft.
+          let allowedLoss: readonly string[] = [];
+          if (
+            "description" in result.patch &&
+            descriptionWritesToSource &&
+            currentItem
+          ) {
+            const confirmed = await confirmDescriptionLoss(currentItem);
+            if (!confirmed) return false;
+            allowedLoss = confirmed;
+          }
           // Every state edit uses the move workflow, including source writes.
           const { workflowStateId, ...patch } = result.patch;
           const changesLifecycle =
@@ -391,7 +403,7 @@ export function BacklogItemEditorForm({
               workflowStateId,
               { patch },
             );
-            if (moved) writeDescription(patch);
+            if (moved) writeDescription(patch, allowedLoss);
             return moved;
           }
           // A save has no Undo, unless the description's timelog also set
@@ -400,7 +412,7 @@ export function BacklogItemEditorForm({
             title: "Project and task set from the description",
             subject: "backlog item",
           });
-          writeDescription(result.patch);
+          writeDescription(result.patch, allowedLoss);
         }
         return true;
       case "unchanged":
@@ -411,9 +423,10 @@ export function BacklogItemEditorForm({
   /** Writes a saved description to its source, in the background. */
   function writeDescription(
     patch: Partial<Pick<LocalWorkItem, "description">>,
+    allowedLoss: readonly string[],
   ) {
     if (workItem && "description" in patch && descriptionWritesToSource) {
-      void saveSyncedDescription(workItem._id);
+      void saveSyncedDescription(workItem._id, "save", allowedLoss);
     }
   }
 

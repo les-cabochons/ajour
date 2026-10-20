@@ -204,14 +204,15 @@ Ajour stores connection values, secrets included, in a JSON file that only the u
 
 Ajour handles these field IDs itself. Declare the ones that apply, so the form shows them with your labels.
 
-| ID                        | Type     | Meaning                                                                                                               |
-| ------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------- |
-| `label`                   | text     | Required. The connection's name in Ajour.                                                                             |
-| `tenantLabel`             | text     | Required. The account, site or client, shown next to the label.                                                       |
-| `autoSync`                | checkbox | Sync backlog items on a timer while Ajour is open, straight into the backlog. Defaults to `false`.                    |
-| `autoSyncIntervalMinutes` | number   | Minutes between automatic syncs, 1 to 1440. Defaults to 15. A team syncs on it whenever **Projects** is on.           |
-| `pullRequestAutoSync`     | checkbox | Sync pull requests on the timer. Without this field, pull requests follow `autoSync`.                                 |
-| `agentAccess`             | select   | Do not declare it. Ajour adds **Agent access to comments** to a plugin with comments, and drops a field with this ID. |
+| ID                        | Type     | Meaning                                                                                                                        |
+| ------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `label`                   | text     | Required. The connection's name in Ajour.                                                                                      |
+| `tenantLabel`             | text     | Required. The account, site or client, shown next to the label.                                                                |
+| `autoSync`                | checkbox | Sync backlog items on a timer while Ajour is open, straight into the backlog. Defaults to `false`.                             |
+| `autoSyncIntervalMinutes` | number   | Minutes between automatic syncs, 1 to 1440. Defaults to 15. A team syncs on it whenever **Projects** is on.                    |
+| `pullRequestAutoSync`     | checkbox | Sync pull requests on the timer. Without this field, pull requests follow `autoSync`.                                          |
+| `agentAccess`             | select   | Do not declare it. Ajour adds **Agent access to comments** to a plugin with comments, and drops a field with this ID.          |
+| `allowLossyConversion`    | checkbox | Do not declare it. Ajour adds **Allow lossy conversion** to a plugin that writes descriptions, and drops a field with this ID. |
 
 Ajour removes these from `config` before it calls your plugin, and from the `normalizedConfig` you return. The first four reach you as properties of the [connection](/developers/backlog-api#types) instead.
 

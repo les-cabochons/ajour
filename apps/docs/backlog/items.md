@@ -39,7 +39,7 @@ When the plugin also writes descriptions, saving sends your edit to the source a
 - **A failed save** keeps your text, with the reason and **Retry**.
 - **The editor** stops at 64,000 characters, or the source's limit when it is lower. A count shows as you near it.
 
-Otherwise the description is read-only, with **Edit in source**: when the plugin does not write descriptions, when the description was too long for Ajour and shows cut off, or when its formatting, such as an underline, has no Markdown form, so an edit here would erase it. A plugin that sends only a short note keeps the older behaviour: the note arrives once, and your edits stay in Ajour.
+Otherwise the description is read-only, with **Edit in source**: when the plugin does not write descriptions, when the description was too long for Ajour and shows cut off, or when its formatting, such as an underline, has no Markdown form, so an edit here would erase it. That last one becomes editable when the connection allows it: turn on **Allow lossy conversion** in **Settings › Plugins**. Each save then names what will be lost, with **Save anyway**, **Edit in source** and **Cancel**. A plugin that sends only a short note keeps the older behaviour: the note arrives once, and your edits stay in Ajour.
 
 Web links in a description, in its text or its [frontmatter](#frontmatter), show their full address and ask before they open. Check **Don't ask again** to open them at once, and turn the question back on in **Settings › Backlog › Descriptions**.
 

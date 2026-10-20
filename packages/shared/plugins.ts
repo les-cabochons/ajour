@@ -425,6 +425,31 @@ const agentAccessField: PluginField = {
 };
 
 /**
+ * Whether the user may edit a synced description whose conversion to Markdown
+ * lost something (ADR 0009): off by default, and every save then names what
+ * will be lost and asks first. Ajour owns the setting, as it does agent access.
+ */
+export const ALLOW_LOSSY_FIELD_ID = "allowLossyConversion";
+
+const allowLossyField: PluginField = {
+  id: ALLOW_LOSSY_FIELD_ID,
+  label: "Allow lossy conversion",
+  type: "checkbox",
+  helpText:
+    "Lets you edit descriptions with formatting Markdown cannot hold, such as text colour. Saving one names what will be lost and asks first.",
+  required: false,
+  secret: false,
+  defaultValue: false,
+  capability: "connector",
+};
+
+/** The connection fields Ajour owns, which a plugin cannot declare. */
+export const AJOUR_CONNECTION_FIELD_IDS: ReadonlySet<string> = new Set([
+  AGENT_ACCESS_FIELD_ID,
+  ALLOW_LOSSY_FIELD_ID,
+]);
+
+/**
  * The connection form's fields: the plugin's own, then the ones Ajour adds
  * for what the plugin provides. A plugin field with an id Ajour owns is
  * dropped.
@@ -433,11 +458,22 @@ export function pluginConnectionFormFields(
   plugin: Pick<PluginManifest, "connectionFields" | "capabilities">,
 ): PluginField[] {
   const fields = plugin.connectionFields.filter(
-    (field) => field.id !== AGENT_ACCESS_FIELD_ID,
+    (field) => !AJOUR_CONNECTION_FIELD_IDS.has(field.id),
   );
-  return plugin.capabilities.connector?.comments
-    ? [...fields, agentAccessField]
-    : fields;
+  return [
+    ...fields,
+    ...(plugin.capabilities.connector?.comments ? [agentAccessField] : []),
+    ...(plugin.capabilities.connector?.description?.write
+      ? [allowLossyField]
+      : []),
+  ];
+}
+
+/** Whether the user allowed editing descriptions whose conversion lost something. */
+export function connectionAllowsLossyConversion(
+  connection: Pick<PluginConnectionSummary, "allowLossyConversion">,
+) {
+  return connection.allowLossyConversion === true;
 }
 
 export const pluginConnectionSummarySchema = z.object({
@@ -451,6 +487,8 @@ export const pluginConnectionSummarySchema = z.object({
   pullRequestAutoSync: z.boolean().optional(),
   /** Absent means None. See `connectionAgentAccess`. */
   agentAccess: agentAccessSchema.optional(),
+  /** Absent means off. See `connectionAllowsLossyConversion`. */
+  allowLossyConversion: z.boolean().optional(),
   connectedAt: z.number().int().positive(),
   lastSyncAt: z.number().int().positive().optional(),
   lastError: z.string().max(1000).optional(),
@@ -759,6 +797,12 @@ export const backlogWriteDescriptionRequestSchema = z.object({
    * that holds anything else answers with a conflict and writes nothing.
    */
   expected: z.string().max(BACKLOG_DESCRIPTION_MAX_LENGTH),
+  /**
+   * The user saw what the conversion loses and saved anyway, on a connection
+   * that allows lossy conversion. Without it, a plugin writes nothing over a
+   * description whose conversion lost something.
+   */
+  allowLoss: z.boolean().optional(),
 });
 export type BacklogWriteDescriptionRequest = z.infer<
   typeof backlogWriteDescriptionRequestSchema

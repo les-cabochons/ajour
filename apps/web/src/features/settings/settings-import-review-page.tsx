@@ -41,9 +41,13 @@ import { offerUndo } from "@/features/feedback/undo-toast";
 import {
   descriptionAccess,
   descriptionCapabilityOf,
+  lossyConversionAllowedFor,
 } from "@/domain/backlog/description-sync";
 import { usePluginsOverview } from "@/features/backlog/plugins-overview";
-import { useDescriptionSaving } from "@/features/backlog/synced-description";
+import {
+  confirmDescriptionLoss,
+  useDescriptionSaving,
+} from "@/features/backlog/synced-description";
 import { saveSyncedDescription } from "@/lib/description-save";
 
 interface ImportConnectionGroup {
@@ -787,6 +791,7 @@ function DescriptionConflictActions({ workItem }: { workItem: LocalWorkItem }) {
   const canWrite = descriptionAccess(
     workItem,
     descriptionCapabilityOf(workItem, overview),
+    lossyConversionAllowedFor(workItem, overview),
   ).editable;
   return (
     <div className="flex flex-wrap gap-2">
@@ -794,7 +799,12 @@ function DescriptionConflictActions({ workItem }: { workItem: LocalWorkItem }) {
         <Button
           variant="outline"
           disabled={saving}
-          onClick={() => void saveSyncedDescription(workItem._id, "keepMine")}
+          onClick={async () => {
+            // Writing the user's text loses what its conversion lost: ask first.
+            const allowedLoss = await confirmDescriptionLoss(workItem);
+            if (allowedLoss)
+              void saveSyncedDescription(workItem._id, "keepMine", allowedLoss);
+          }}
         >
           {saving ? "Saving…" : "Keep mine"}
         </Button>
