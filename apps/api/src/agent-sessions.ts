@@ -34,6 +34,31 @@ export function sessionWindowMs(minutes: number) {
   );
 }
 
+/**
+ * The `mcp.session_ended` wide event: IDs, outcome, counts and durations only.
+ * Messages hold what the agent and the user wrote, so they stay out of the
+ * log. `run_id` joins a session the runner began to its `agent.run` event.
+ */
+export function sessionEndedEvent(
+  session: AgentSession,
+  now: number,
+): Record<string, unknown> {
+  return {
+    event: "mcp.session_ended",
+    client_id: session.client.id,
+    session_id: session.id,
+    run_id: session.runId,
+    outcome: session.state,
+    duration_ms: (session.endedAt ?? now) - session.startedAt,
+    update_count: session.messages.filter(
+      (message) => message.kind === "update",
+    ).length,
+    question_count: session.messages.filter(
+      (message) => message.kind === "question",
+    ).length,
+  };
+}
+
 /** A session or question call Ajour refuses. The message goes to the agent. */
 
 /** An activity entry as a tool call reports it, before Ajour files it. */

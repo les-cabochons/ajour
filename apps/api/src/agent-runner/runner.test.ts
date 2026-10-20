@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { AgentSessions } from "../agent-sessions.ts";
+import { AgentSessions, sessionEndedEvent } from "../agent-sessions.ts";
 import { claudeCodeAdapter } from "./adapters/claude-code.ts";
 import { codexAdapter } from "./adapters/codex.ts";
 import type { AgentCliId } from "../../../../packages/shared/agent-runs.ts";
@@ -60,10 +60,12 @@ function fakeStorage({
   cli,
   values,
   revoked,
+  revokeError,
 }: {
   cli: AgentCliId;
   values: Record<string, string>;
   revoked: string[];
+  revokeError?: Error;
 }) {
   return {
     getMcpSettings: async () => ({ enabled: true, clients: [] }),
@@ -78,6 +80,7 @@ function fakeStorage({
       token: "ajour_test-token",
     }),
     revokeMcpClient: async (clientId: string) => {
+      if (revokeError) throw revokeError;
       revoked.push(clientId);
       return true;
     },
@@ -126,33 +129,49 @@ async function setup(
     values?: Record<string, string>;
     weekLink?: string;
     otherTasks?: AgentTask[];
+    /** Where runs make their folder, under the test's folder. */
+    tempRoot?: string;
+    findExecutable?: (name: string) => Promise<string | null>;
+    readPrompt?: () => Promise<string>;
+    revokeError?: Error;
   } = {},
 ) {
   const work = await mkdtemp(path.join(tmpdir(), "ajour-runner-test-"));
   const report = path.join(work, "report.jsonl");
-  const sessions = options.sessions ?? new AgentSessions();
-  const revoked: string[] = [];
   const events: Record<string, unknown>[] = [];
+  // Logs session ends into the same list, as the server does.
+  const sessions =
+    options.sessions ??
+    new AgentSessions({
+      onEnded: (session) => events.push(sessionEndedEvent(session, Date.now())),
+    });
+  const revoked: string[] = [];
   const runner = new AgentRunner({
     storage: fakeStorage({
       cli: options.adapter?.id ?? "claude-code",
       values: options.values ?? { url: "https://wd.example/t" },
       revoked,
+      revokeError: options.revokeError,
     }),
     sessions,
-    plugins: fakePlugins(
-      "Enter week {{weekOf}} in {{settings.url}}.",
-      options.weekLink ?? "{{settings.url}}?date={{weekOf}}",
-      options.otherTasks,
-    ),
+    plugins: {
+      ...fakePlugins(
+        "Enter week {{weekOf}} in {{settings.url}}.",
+        options.weekLink ?? "{{settings.url}}?date={{weekOf}}",
+        options.otherTasks,
+      ),
+      ...(options.readPrompt
+        ? { readAgentTaskPrompt: options.readPrompt }
+        : {}),
+    },
     adapters: [options.adapter ?? fakeAdapter(script, report)],
-    findExecutable: async () => "/fake/claude",
+    findExecutable: options.findExecutable ?? (async () => "/fake/claude"),
     readVersion: async () => "1.0.0",
     loginShellPath: async () => process.env.PATH ?? "",
     chromeInstalled: async () => options.chrome ?? true,
     playwright: () => ({ command: "node", args: [], env: {} }),
     profileDirectory: path.join(work, "profile"),
-    tempRoot: work,
+    tempRoot: options.tempRoot ? path.join(work, options.tempRoot) : work,
     ajourMcpUrl: "http://127.0.0.1:8787/mcp/ajour",
     logEvent: (event) => events.push(event),
     ...(options.killGraceMs === undefined
@@ -376,6 +395,221 @@ describe("AgentRunner", () => {
     expect(JSON.stringify(events)).not.toContain("Enter week");
   });
 
+  it("names the run, its session and its client in agent.run", async () => {
+    const { runner, sessions, events } = await setup([{ exit: 0 }]);
+    const run = await runner.start(request);
+    await settled(runner);
+    const ids = {
+      run_id: run.id,
+      session_id: run.sessionId,
+      client_id: "c-Enter in Workday run",
+    };
+    expect(sessions.get(run.sessionId)!.client.id).toBe(ids.client_id);
+    // The session's end joins the run on the same three IDs.
+    expect(events).toEqual([
+      expect.objectContaining({ event: "mcp.session_ended", ...ids }),
+      expect.objectContaining({
+        event: "agent.run",
+        ...ids,
+        outcome: "done",
+        cleanup_outcome: "ok",
+      }),
+    ]);
+    expect(events[1]!.launch_failed_step).toBeUndefined();
+  });
+
+  it("logs a launch that fails after its session began, with the step", async () => {
+    const { runner, sessions, events } = await setup([], {
+      tempRoot: "no-such-folder",
+    });
+    await expect(runner.start(request)).rejects.toThrow();
+    const [session] = sessions.snapshot().sessions;
+    expect(session!.state).toBe("failed");
+    const runEvents = events.filter(
+      (candidate) => candidate.event === "agent.run",
+    );
+    expect(runEvents).toEqual([
+      expect.objectContaining({
+        run_id: session!.runId,
+        session_id: session!.id,
+        client_id: "c-Enter in Workday run",
+        plugin_id: "ajp-test",
+        task_id: "enter-week",
+        outcome: "failed",
+        launch_failed_step: "create_work_folder",
+        error_type: "Error",
+        error_code: "ENOENT",
+      }),
+    ]);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        event: "mcp.session_ended",
+        run_id: session!.runId,
+        outcome: "failed",
+      }),
+    );
+    // The error message names the folder, and paths stay out of the log.
+    expect(JSON.stringify(events)).not.toContain("no-such-folder");
+  });
+
+  it("logs a CLI that could not be spawned as a launch failure", async () => {
+    const missing = path.join(tmpdir(), "ajour-no-such-cli", "claude");
+    const adapter: AgentCliAdapter = {
+      ...fakeAdapter([], ""),
+      buildInvocation: (input) => ({
+        command: missing,
+        args: [],
+        env: input.baseEnv,
+        files: {},
+      }),
+    };
+    const { runner, sessions, events } = await setup([], { adapter });
+    const run = await runner.start(request);
+    await settled(runner);
+    expect(sessions.get(run.sessionId)!.state).toBe("failed");
+    expect(
+      events.filter((candidate) => candidate.event === "agent.run"),
+    ).toEqual([
+      expect.objectContaining({
+        run_id: run.id,
+        session_id: run.sessionId,
+        outcome: "failed",
+        launch_failed_step: "spawn",
+        error_code: "ENOENT",
+      }),
+    ]);
+    expect(JSON.stringify(events)).not.toContain("ajour-no-such-cli");
+  });
+
+  it("logs a spawn that throws as a launch failure", async () => {
+    const adapter: AgentCliAdapter = {
+      ...fakeAdapter([], ""),
+      buildInvocation: (input) => ({
+        command: process.execPath,
+        args: ["no\0null"],
+        env: input.baseEnv,
+        files: {},
+      }),
+    };
+    const { runner, events, revoked } = await setup([], { adapter });
+    await expect(runner.start(request)).rejects.toThrow();
+    expect(revoked).toHaveLength(1);
+    expect(
+      events.filter((candidate) => candidate.event === "agent.run"),
+    ).toEqual([
+      expect.objectContaining({
+        outcome: "failed",
+        launch_failed_step: "spawn",
+        error_type: "TypeError",
+        error_code: "ERR_INVALID_ARG_VALUE",
+      }),
+    ]);
+  });
+
+  it("logs a launch that fails before its session, with the run ID only", async () => {
+    const { runner, events, revoked } = await setup([], {
+      readPrompt: async () => {
+        throw Object.assign(
+          new Error("ENOENT: no such file, open 'C:\\Users\\someone\\p.md'"),
+          { code: "ENOENT" },
+        );
+      },
+    });
+    await expect(runner.start(request)).rejects.toThrow("ENOENT");
+    expect(revoked).toEqual([]);
+    const runEvents = events.filter(
+      (candidate) => candidate.event === "agent.run",
+    );
+    expect(runEvents).toEqual([
+      expect.objectContaining({
+        plugin_id: "ajp-test",
+        task_id: "enter-week",
+        outcome: "failed",
+        launch_failed_step: "read_prompt",
+        error_type: "Error",
+        error_code: "ENOENT",
+      }),
+    ]);
+    expect(runEvents[0]!.run_id).toEqual(expect.any(String));
+    expect(runEvents[0]!.session_id).toBeUndefined();
+    expect(runEvents[0]!.client_id).toBeUndefined();
+    expect(events.map((event) => event.event)).toEqual(["agent.run"]);
+    expect(JSON.stringify(events)).not.toContain("someone");
+  });
+
+  it("logs a CLI that went missing since the overview as a launch failure", async () => {
+    // The overview finds `claude`; the fake adapter's launch looks for `node`.
+    const { runner, events } = await setup([], {
+      findExecutable: async (name) => (name === "node" ? null : "/fake/claude"),
+    });
+    await expect(runner.start(request)).rejects.toMatchObject({ status: 400 });
+    expect(
+      events.filter((candidate) => candidate.event === "agent.run"),
+    ).toEqual([
+      expect.objectContaining({
+        outcome: "failed",
+        launch_failed_step: "find_executable",
+        error_type: "AgentRunError",
+      }),
+    ]);
+  });
+
+  it("folds a failed revoke into agent.run without its message", async () => {
+    const { runner, events, work } = await setup([{ exit: 0 }], {
+      revokeError: Object.assign(
+        new Error("EPERM: operation not permitted, 'C:\\Users\\someone\\x'"),
+        { code: "EPERM" },
+      ),
+    });
+    await runner.start(request);
+    await settled(runner);
+    expect(events.map((event) => event.event)).toEqual([
+      "mcp.session_ended",
+      "agent.run",
+    ]);
+    expect(events[1]).toMatchObject({
+      outcome: "done",
+      cleanup_outcome: "failed",
+      cleanup_failed_step: "revoke_client",
+      cleanup_error_type: "Error",
+      cleanup_error_code: "EPERM",
+    });
+    // The folder still goes away.
+    expect(
+      (await readdir(work)).filter((name) => name.startsWith("run-")),
+    ).toEqual([]);
+    expect(JSON.stringify(events)).not.toContain("someone");
+  });
+
+  it("folds a session that could not be ended into agent.run", async () => {
+    const sessions = new AgentSessions();
+    const { runner, events, revoked } = await setup([{ exit: 0 }], {
+      sessions,
+    });
+    const run = await runner.start(request);
+    vi.spyOn(sessions, "end").mockImplementation(() => {
+      throw new Error("C:\\Users\\someone\\state.json is locked");
+    });
+    await settled(runner);
+    expect(revoked).toHaveLength(1);
+    expect(events).toEqual([
+      expect.objectContaining({
+        event: "agent.run",
+        run_id: run.id,
+        cleanup_outcome: "failed",
+        cleanup_failed_step: "end_session",
+        cleanup_error_type: "Error",
+      }),
+    ]);
+    expect(JSON.stringify(events)).not.toContain("someone");
+  });
+
+  it("logs no agent.run for a start it refuses", async () => {
+    const { runner, events } = await setup([], { chrome: false });
+    await expect(runner.start(request)).rejects.toMatchObject({ status: 400 });
+    expect(events).toEqual([]);
+  });
+
   it("shutdown kills the process and revokes the client", async () => {
     const { runner, revoked } = await setup([{ hang: true }]);
     await runner.start(request);
@@ -457,7 +691,9 @@ describe("AgentRunner", () => {
         throw new Error("no invocation");
       },
     };
-    const { runner, sessions, revoked, work } = await setup([], { adapter });
+    const { runner, sessions, revoked, work, events } = await setup([], {
+      adapter,
+    });
     await expect(runner.start(request)).rejects.toThrow("no invocation");
     expect(revoked).toHaveLength(1);
     const left = (await readdir(work)).filter((name) =>
@@ -467,6 +703,16 @@ describe("AgentRunner", () => {
     expect(runner.currentRun()).toBeNull();
     const [session] = sessions.snapshot().sessions;
     expect(session!.state).toBe("failed");
+    expect(
+      events.filter((candidate) => candidate.event === "agent.run"),
+    ).toEqual([
+      expect.objectContaining({
+        session_id: session!.id,
+        launch_failed_step: "build_invocation",
+        cleanup_outcome: "ok",
+      }),
+    ]);
+    expect(JSON.stringify(events)).not.toContain("no invocation");
   });
 
   it("fails the session when an MCP server did not start", async () => {

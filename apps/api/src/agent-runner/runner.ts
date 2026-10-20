@@ -110,6 +110,25 @@ export interface AgentRunnerOptions {
   killGraceMs?: number;
 }
 
+/** The steps of a launch, in order. agent.run names the one that failed. */
+type LaunchStep =
+  | "find_executable"
+  | "read_prompt"
+  | "create_client"
+  | "begin_session"
+  | "create_work_folder"
+  | "build_invocation"
+  | "write_files"
+  | "spawn";
+
+/** What ends a run. A failure here never stops the others. */
+type CleanupStep = "end_session" | "revoke_client" | "remove_work_folder";
+
+interface StepFailure<Step extends string> {
+  step: Step;
+  error: unknown;
+}
+
 interface ActiveRun {
   run: AgentRun;
   client: AgentClientRef;
@@ -124,6 +143,8 @@ interface ActiveRun {
   mcpFailure?: string;
   finalSummary?: string;
   failure?: string;
+  /** Why the CLI never started, such as a missing executable. */
+  spawnError?: Error;
   errorLines: string[];
   toolCalls: number;
   stalledSince?: number;
@@ -316,18 +337,6 @@ export class AgentRunner {
       (candidate) => candidate.id === settings.cli,
     )!;
     const cliStatus = clis.find((candidate) => candidate.id === settings.cli)!;
-    const pathValue = await this.options.loginShellPath();
-    const executable = await this.options.findExecutable(
-      adapter.executableName,
-      pathValue,
-    );
-    if (!executable)
-      throw new AgentRunError(`${adapter.label} is not installed.`, 400);
-
-    const taskPrompt = await this.options.plugins.readAgentTaskPrompt(
-      request.pluginId,
-      request.taskId,
-    );
     // Every declared field has a slot: an unset optional one fills as "".
     const settingValues = Object.fromEntries(
       task.settings.map((field) => [
@@ -345,15 +354,37 @@ export class AgentRunner {
         )
       : undefined;
 
-    const created = await this.options.storage.createMcpClient(
-      `${task.label} run`,
-    );
-    const client = { id: created.client.id, name: created.client.name };
+    // From here on the start is a run, and a launch failure still logs its
+    // agent.run, with the step that failed.
     const runId = randomUUID();
+    const launchedAt = this.now();
+    let step: LaunchStep = "find_executable";
+    let client: AgentClientRef | undefined;
     let session: AgentSession | undefined;
     let workDirectory: string | undefined;
     let child: ChildProcess | undefined;
     try {
+      const pathValue = await this.options.loginShellPath();
+      const executable = await this.options.findExecutable(
+        adapter.executableName,
+        pathValue,
+      );
+      if (!executable)
+        throw new AgentRunError(`${adapter.label} is not installed.`, 400);
+
+      step = "read_prompt";
+      const taskPrompt = await this.options.plugins.readAgentTaskPrompt(
+        request.pluginId,
+        request.taskId,
+      );
+
+      step = "create_client";
+      const created = await this.options.storage.createMcpClient(
+        `${task.label} run`,
+      );
+      client = { id: created.client.id, name: created.client.name };
+
+      step = "begin_session";
       session = this.options.sessions.begin(
         client,
         {
@@ -372,7 +403,11 @@ export class AgentRunner {
             : {}),
         },
       );
+
+      step = "create_work_folder";
       workDirectory = await mkdtemp(path.join(this.options.tempRoot, "run-"));
+
+      step = "build_invocation";
       const invocation = adapter.buildInvocation({
         executable,
         workDirectory,
@@ -393,11 +428,17 @@ export class AgentRunner {
         baseEnv: { ...childEnv(process.env), PATH: pathValue },
         token: created.token,
       });
+
+      step = "write_files";
       for (const [name, content] of Object.entries(invocation.files)) {
         await writeFile(path.join(workDirectory, name), content, {
           mode: 0o600,
         });
       }
+
+      // A spawn that fails later, such as a missing executable, reaches
+      // finish() through the child's error and close events.
+      step = "spawn";
       child = spawn(invocation.command, invocation.args, {
         cwd: workDirectory,
         env: invocation.env,
@@ -428,14 +469,39 @@ export class AgentRunner {
       return run;
     } catch (error) {
       child?.kill("SIGKILL");
-      await this.cleanUp(client, workDirectory);
-      if (session) {
-        this.options.sessions.end(client, {
-          sessionId: session.id,
-          outcome: "failed",
-          summary: "Ajour could not start the agent.",
-        });
+      let cleanupFailure: StepFailure<CleanupStep> | undefined;
+      if (client) {
+        if (session) {
+          try {
+            this.options.sessions.end(client, {
+              sessionId: session.id,
+              outcome: "failed",
+              summary: "Ajour could not start the agent.",
+            });
+          } catch (endError) {
+            cleanupFailure = { step: "end_session", error: endError };
+          }
+        }
+        const cleanedUp = await this.cleanUp(client, workDirectory);
+        cleanupFailure ??= cleanedUp;
       }
+      this.options.logEvent(
+        agentRunEvent({
+          runId,
+          sessionId: session?.id,
+          clientId: client?.id,
+          pluginId: request.pluginId,
+          taskId: request.taskId,
+          cli: adapter.id,
+          version: cliStatus.version,
+          browserMode: settings.browserMode,
+          durationMs: this.now() - launchedAt,
+          outcome: "failed",
+          toolCalls: 0,
+          launchFailure: { step, error },
+          cleanupFailure,
+        }),
+      );
       throw error;
     }
   }
@@ -453,17 +519,12 @@ export class AgentRunner {
     return new Promise((resolve) => {
       child.on("error", (error) => {
         active.failure = error.message;
+        // Node gives no pid to a process that never started.
+        if (child.pid === undefined) active.spawnError = error;
       });
       child.on("close", (code) => {
-        void this.finish(active, code)
-          .catch((error: unknown) =>
-            this.options.logEvent({
-              event: "agent.run_cleanup_failed",
-              run_id: active.run.id,
-              error: error instanceof Error ? error.message : String(error),
-            }),
-          )
-          .finally(resolve);
+        // finish() reports its own failures in the run's agent.run event.
+        void this.finish(active, code).finally(resolve);
       });
     });
   }
@@ -491,6 +552,7 @@ export class AgentRunner {
     const { sessions } = this.options;
     clearTimeout(active.killTimer);
     let outcome: AgentSessionOutcome | undefined;
+    let cleanupFailure: StepFailure<CleanupStep> | undefined;
     try {
       const session = sessions.get(active.run.sessionId);
       const open =
@@ -507,34 +569,59 @@ export class AgentRunner {
           summary: ending.summary,
         });
       }
-    } finally {
-      // Whatever went wrong above, the client and the folder go away and the
-      // runner accepts a new run.
-      await this.cleanUp(active.client, active.workDirectory);
-      if (this.active === active) this.active = null;
-      this.options.logEvent({
-        event: "agent.run",
-        plugin_id: active.run.pluginId,
-        task_id: active.run.taskId,
-        cli: active.cli,
-        cli_version: active.version,
-        browser_mode: active.browserMode,
-        duration_ms: this.now() - active.run.startedAt,
-        outcome,
-        exit_code: code,
-        stop_reason: active.stopReason,
-        tool_call_count: active.toolCalls,
-      });
+    } catch (error) {
+      cleanupFailure = { step: "end_session", error };
     }
+    // Whatever went wrong above, the client and the folder go away and the
+    // runner accepts a new run.
+    const cleanedUp = await this.cleanUp(active.client, active.workDirectory);
+    cleanupFailure ??= cleanedUp;
+    if (this.active === active) this.active = null;
+    this.options.logEvent(
+      agentRunEvent({
+        runId: active.run.id,
+        sessionId: active.run.sessionId,
+        clientId: active.client.id,
+        pluginId: active.run.pluginId,
+        taskId: active.run.taskId,
+        cli: active.cli,
+        version: active.version,
+        browserMode: active.browserMode,
+        durationMs: this.now() - active.run.startedAt,
+        outcome,
+        exitCode: code,
+        stopReason: active.stopReason,
+        toolCalls: active.toolCalls,
+        ...(active.spawnError
+          ? { launchFailure: { step: "spawn", error: active.spawnError } }
+          : {}),
+        cleanupFailure,
+      }),
+    );
   }
 
-  private async cleanUp(client: AgentClientRef, workDirectory?: string) {
-    await this.options.storage.revokeMcpClient(client.id).catch(() => false);
-    if (workDirectory) {
-      await rm(workDirectory, { recursive: true, force: true }).catch(
-        () => undefined,
-      );
+  /**
+   * Revokes the client and removes the folder, each whatever the other did.
+   * Returns the first step that failed, for the run's agent.run event.
+   */
+  private async cleanUp(
+    client: AgentClientRef,
+    workDirectory?: string,
+  ): Promise<StepFailure<CleanupStep> | undefined> {
+    let failure: StepFailure<CleanupStep> | undefined;
+    try {
+      await this.options.storage.revokeMcpClient(client.id);
+    } catch (error) {
+      failure = { step: "revoke_client", error };
     }
+    if (workDirectory) {
+      try {
+        await rm(workDirectory, { recursive: true, force: true });
+      } catch (error) {
+        failure ??= { step: "remove_work_folder", error };
+      }
+    }
+    return failure;
   }
 
   /** SIGTERM now, SIGKILL after the grace period if the CLI is still running. */
@@ -650,6 +737,70 @@ function describeEnding(
     outcome: "failed",
     summary,
     error: errorOutput ? `${summary}\n${errorOutput}` : summary,
+  };
+}
+
+/**
+ * The run's one agent.run wide event, however it ended. An error gives its
+ * type and code only: messages can hold paths with the user's name, and the
+ * CLI's output can hold the week's lines.
+ */
+function agentRunEvent(run: {
+  runId: string;
+  sessionId: string | undefined;
+  clientId: string | undefined;
+  pluginId: string;
+  taskId: string;
+  cli: AgentCliStatus["id"];
+  version: string | undefined;
+  browserMode: AgentRunnerSettings["browserMode"];
+  durationMs: number;
+  outcome: AgentSessionOutcome | undefined;
+  exitCode?: number | null;
+  stopReason?: ActiveRun["stopReason"];
+  toolCalls: number;
+  launchFailure?: StepFailure<LaunchStep>;
+  cleanupFailure?: StepFailure<CleanupStep>;
+}): Record<string, unknown> {
+  const launchError =
+    run.launchFailure && describeError(run.launchFailure.error);
+  const cleanupError =
+    run.cleanupFailure && describeError(run.cleanupFailure.error);
+  return {
+    event: "agent.run",
+    run_id: run.runId,
+    session_id: run.sessionId,
+    client_id: run.clientId,
+    plugin_id: run.pluginId,
+    task_id: run.taskId,
+    cli: run.cli,
+    cli_version: run.version,
+    browser_mode: run.browserMode,
+    duration_ms: run.durationMs,
+    outcome: run.outcome,
+    exit_code: run.exitCode,
+    stop_reason: run.stopReason,
+    tool_call_count: run.toolCalls,
+    launch_failed_step: run.launchFailure?.step,
+    error_type: launchError?.type,
+    error_code: launchError?.code,
+    cleanup_outcome: run.cleanupFailure ? "failed" : "ok",
+    cleanup_failed_step: run.cleanupFailure?.step,
+    cleanup_error_type: cleanupError?.type,
+    cleanup_error_code: cleanupError?.code,
+  };
+}
+
+/** An error's type name and its Node code, such as ENOENT. Never its message. */
+function describeError(error: unknown): {
+  type: string;
+  code: string | undefined;
+} {
+  if (!(error instanceof Error)) return { type: typeof error, code: undefined };
+  const { code } = error as { code?: unknown };
+  return {
+    type: error.name,
+    code: typeof code === "string" ? code : undefined,
   };
 }
 
