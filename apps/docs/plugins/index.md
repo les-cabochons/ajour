@@ -70,6 +70,8 @@ Press **Remove** to delete a connection and its credentials. For a plugin with p
 
 When the plugin provides comments, the form ends with Ajour's own **Agent access to comments**: **None**, the default, **Read** or **Read and post**. See [Agents and MCP](/app/agents#comments).
 
+When the plugin writes descriptions back, the form also has Ajour's own **Allow lossy conversion**, off by default. A description whose formatting has no Markdown form, such as text colour, is read-only until you turn it on. Then every save of such a description names what will be lost and asks first. See [Backlog items](/backlog/items#description).
+
 ## Update a plugin
 
 When Ajour changes its plugin API, a plugin built for the old API shows as **Unavailable**, with the reason. Press **Update** to download the version for the new API from the catalog. Your connections, imported items and activation stay.

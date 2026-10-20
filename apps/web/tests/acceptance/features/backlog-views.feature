@@ -548,6 +548,40 @@ Feature: Backlog list and board views
     Then its description reads "Underlined in the source"
     And the description is read-only because editing would lose its underline, with Edit in source
 
+  Scenario: With lossy conversion allowed, saving a lossy description asks first, then writes
+    Given the Backlog parent is synced
+    And its description "Original", which lost its underline, is synced through a connection that allows lossy conversion
+    When I reload the app
+    And I open the Backlog parent page
+    And I write "My notes" as its description and save it
+    Then a dialog names the underline that saving loses
+    When I choose "Save anyway" in the dialog
+    Then the source was asked to write with the loss allowed
+    And the source and the parent both hold "My notes"
+
+  Scenario: Save anyway after a sync during the dialog keeps the colleague's change
+    Given the Backlog parent is synced
+    And its description "Goal\n\nSteps", which lost its underline, is synced through a connection that allows lossy conversion
+    When I reload the app
+    And I open the Backlog parent page
+    And I start editing the description
+    And I change the description to "My goal\n\nSteps"
+    And I save the description without waiting
+    Then a dialog names the underline that saving loses
+    When a sync brings "Goal\n\nNew steps" while I edit
+    And I choose "Save anyway" in the dialog
+    Then the source and the parent both hold "My goal\n\nNew steps"
+
+  Scenario: Cancel in the lossy save dialog writes nothing and keeps the edit
+    Given the Backlog parent is synced
+    And its description "Original", which lost its underline, is synced through a connection that allows lossy conversion
+    When I reload the app
+    And I open the Backlog parent page
+    And I write "My notes" as its description and save it
+    Then a dialog names the underline that saving loses
+    When I choose "Cancel" in the dialog
+    Then nothing was written, and the editor still holds "My notes"
+
   Scenario: A sync that finds a description conflict says so and leads to Sync review
     Given the Backlog parent is synced
     And its description was edited here to "My notes" since its last sync of "Original"

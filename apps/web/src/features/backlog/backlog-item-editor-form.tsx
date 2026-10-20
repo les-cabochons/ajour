@@ -80,12 +80,14 @@ import {
   DescriptionSaveStatus,
   SourceChangedWarning,
   SyncedDescriptionNote,
+  confirmDescriptionLoss,
   useDescriptionAccess,
   useDescriptionLimit,
   followDescriptionDraft,
   useSourceDescriptionCheck,
   writesToSource,
 } from "@/features/backlog/synced-description";
+import { descriptionLosses } from "@/domain/backlog/description-sync";
 import {
   clearDescriptionDraftConflict,
   saveSyncedDescription,
@@ -341,7 +343,15 @@ export function BacklogItemEditorForm({
     return pending;
   }
 
-  async function commitDraft(reason: BacklogTaskDraftCommitReason) {
+  // The commit of the latest render, for a commit that waited on the user.
+  const latestCommit = useRef(commitDraft);
+  latestCommit.current = commitDraft;
+
+  async function commitDraft(
+    reason: BacklogTaskDraftCommitReason,
+    /** Losses the user already allowed in a save that asked. */
+    allowedBefore: readonly string[] = [],
+  ): Promise<boolean> {
     const result = commitBacklogTaskDraft(editor, reason);
     switch (result.kind) {
       case "invalid":
@@ -376,6 +386,23 @@ export function BacklogItemEditorForm({
       }
       case "update":
         if (workItem) {
+          // A description written with losses asks first; Cancel keeps the draft.
+          let allowedLoss: readonly string[] = [];
+          if (
+            "description" in result.patch &&
+            descriptionWritesToSource &&
+            currentItem
+          ) {
+            const losses = descriptionLosses(currentItem);
+            if (losses.some((loss) => !allowedBefore.includes(loss))) {
+              const confirmed = await confirmDescriptionLoss(currentItem);
+              if (!confirmed) return false;
+              // A sync can change the draft and the item while the dialog
+              // is open: commit them as they are now.
+              return await latestCommit.current(reason, confirmed);
+            }
+            allowedLoss = allowedBefore;
+          }
           // Every state edit uses the move workflow, including source writes.
           const { workflowStateId, ...patch } = result.patch;
           const changesLifecycle =
@@ -391,7 +418,7 @@ export function BacklogItemEditorForm({
               workflowStateId,
               { patch },
             );
-            if (moved) writeDescription(patch);
+            if (moved) writeDescription(patch, allowedLoss);
             return moved;
           }
           // A save has no Undo, unless the description's timelog also set
@@ -400,7 +427,7 @@ export function BacklogItemEditorForm({
             title: "Project and task set from the description",
             subject: "backlog item",
           });
-          writeDescription(result.patch);
+          writeDescription(result.patch, allowedLoss);
         }
         return true;
       case "unchanged":
@@ -411,9 +438,10 @@ export function BacklogItemEditorForm({
   /** Writes a saved description to its source, in the background. */
   function writeDescription(
     patch: Partial<Pick<LocalWorkItem, "description">>,
+    allowedLoss: readonly string[],
   ) {
     if (workItem && "description" in patch && descriptionWritesToSource) {
-      void saveSyncedDescription(workItem._id);
+      void saveSyncedDescription(workItem._id, "save", allowedLoss);
     }
   }
 

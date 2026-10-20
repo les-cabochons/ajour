@@ -59,6 +59,8 @@ import {
   pluginsOverviewSchema,
   teamCreateRouteRequestSchema,
   AGENT_ACCESS_FIELD_ID,
+  AJOUR_CONNECTION_FIELD_IDS,
+  ALLOW_LOSSY_FIELD_ID,
   agentAccessAllows,
   agentAccessSchema,
   connectionAgentAccess,
@@ -152,7 +154,7 @@ const RESERVED_CONNECTION_FIELDS = new Set([
   "autoSync",
   "autoSyncIntervalMinutes",
   "pullRequestAutoSync",
-  AGENT_ACCESS_FIELD_ID,
+  ...AJOUR_CONNECTION_FIELD_IDS,
 ]);
 
 function materializeAutoSyncCandidates(
@@ -435,6 +437,14 @@ function parseConnectionValues(values: PluginFieldValues) {
   const agentAccess = parseAgentAccessValue(
     parsedValues[AGENT_ACCESS_FIELD_ID],
   );
+  // Undefined keeps the saved value.
+  const allowLossyConversion =
+    parsedValues[ALLOW_LOSSY_FIELD_ID] === undefined
+      ? undefined
+      : parseBooleanValue(
+          parsedValues[ALLOW_LOSSY_FIELD_ID],
+          ALLOW_LOSSY_FIELD_ID,
+        );
 
   const config = Object.fromEntries(
     Object.entries(parsedValues).filter(
@@ -449,6 +459,7 @@ function parseConnectionValues(values: PluginFieldValues) {
     autoSyncIntervalMinutes,
     pullRequestAutoSync,
     agentAccess,
+    allowLossyConversion,
     config,
   };
 }
@@ -1239,6 +1250,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             autoSyncIntervalMinutes: parsedValues.autoSyncIntervalMinutes,
             pullRequestAutoSync: parsedValues.pullRequestAutoSync,
             agentAccess: parsedValues.agentAccess,
+            allowLossyConversion: parsedValues.allowLossyConversion,
             // The plugin's answer can't set a field Ajour owns.
             config: withoutReservedFields(validation.normalizedConfig),
             configSummary: validation.connectionSummary,
@@ -1429,6 +1441,17 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           const writeRequest = writes
             ? backlogWriteDescriptionRequestSchema.parse(body)
             : undefined;
+          // Only a connection that allows lossy conversion writes with losses,
+          // whatever a client asks.
+          if (
+            writeRequest?.allowedLoss?.length &&
+            connection.allowLossyConversion !== true
+          ) {
+            writeJson(response, 409, {
+              error: "This connection does not allow lossy conversion.",
+            });
+            return;
+          }
           try {
             if (readRequest) {
               const result = await pluginManager.readDescription(

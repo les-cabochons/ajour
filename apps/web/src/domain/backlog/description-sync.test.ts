@@ -6,6 +6,8 @@ import {
   descriptionCapabilityOf,
   descriptionInConflict,
   descriptionLimit,
+  descriptionLosses,
+  lossyConversionAllowedFor,
   descriptionSaved,
   descriptionWriteFailed,
   rebaseDescriptionDraft,
@@ -314,6 +316,37 @@ describe("who may edit a description", () => {
         writable,
       ),
     ).toEqual({ editable: false, reason: "lossy" });
+    // A connection that allows lossy conversion lets the user edit it.
+    expect(
+      descriptionAccess(
+        item({
+          descriptionSync: { baseline: "A", remote: "A", lost: ["underline"] },
+        }),
+        writable,
+        true,
+      ),
+    ).toEqual({ editable: true });
+    // It never makes a cut description editable.
+    expect(
+      descriptionAccess(
+        item({
+          descriptionSync: {
+            baseline: "A",
+            remote: "A",
+            cut: true,
+            lost: ["underline"],
+          },
+        }),
+        writable,
+        true,
+      ),
+    ).toEqual({ editable: false, reason: "cut" });
+    expect(
+      descriptionLosses({
+        descriptionSync: { remote: "A", lost: ["underline"] },
+      }),
+    ).toEqual(["underline"]);
+    expect(descriptionLosses({})).toEqual([]);
     expect(lostFormatting(["colour", "underline", "tables"])).toBe(
       "colour, underline and tables",
     );
@@ -344,6 +377,26 @@ describe("the plugin's description support", () => {
     } as unknown as PluginsOverview;
   }
   const item = { source: "azure_devops", sourceConnectionId: "conn-1" };
+
+  it("tells whether the item's connection allows lossy conversion", () => {
+    const allowing = overview({ write: true });
+    (
+      allowing.connectionGroups[0]!.connections[0] as {
+        allowLossyConversion?: boolean;
+      }
+    ).allowLossyConversion = true;
+    expect(lossyConversionAllowedFor(item, allowing)).toBe(true);
+    expect(lossyConversionAllowedFor(item, overview({ write: true }))).toBe(
+      false,
+    );
+    expect(
+      lossyConversionAllowedFor(
+        { source: "manual", sourceConnectionId: undefined },
+        allowing,
+      ),
+    ).toBe(false);
+    expect(lossyConversionAllowedFor(item, undefined)).toBe(false);
+  });
 
   it("is the plugin's declared description support", () => {
     expect(

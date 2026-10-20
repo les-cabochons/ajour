@@ -10,6 +10,8 @@ import {
   switchableCapabilitySchema,
   syncsPullRequestsAutomatically,
   AGENT_ACCESS_FIELD_ID,
+  AJOUR_CONNECTION_FIELD_IDS,
+  ALLOW_LOSSY_FIELD_ID,
   agentAccessSchema,
   connectionAgentAccess,
   type AgentAccess,
@@ -42,6 +44,8 @@ interface StoredConnection {
   pullRequestAutoSync?: boolean;
   /** Absent means None; see `connectionAgentAccess`. */
   agentAccess?: AgentAccess;
+  /** Absent means off; see `connectionAllowsLossyConversion`. */
+  allowLossyConversion?: boolean;
   config: PluginFieldValues;
   configSummary: PluginSummaryValues;
   connectedAt: number;
@@ -407,6 +411,12 @@ function toEditableValues(
   } else {
     delete editableValues[AGENT_ACCESS_FIELD_ID];
   }
+  if (plugin.capabilities.connector?.description?.write) {
+    editableValues[ALLOW_LOSSY_FIELD_ID] =
+      connection.allowLossyConversion === true;
+  } else {
+    delete editableValues[ALLOW_LOSSY_FIELD_ID];
+  }
 
   return editableValues;
 }
@@ -431,6 +441,7 @@ function buildConnectionSummary(
       ? { pullRequestAutoSync: connection.pullRequestAutoSync }
       : {}),
     ...(connection.agentAccess ? { agentAccess: connection.agentAccess } : {}),
+    ...(connection.allowLossyConversion ? { allowLossyConversion: true } : {}),
     connectedAt: connection.connectedAt,
     lastSyncAt: connection.lastSyncAt,
     lastError: connection.lastError,
@@ -531,22 +542,30 @@ function normalizeState(
             connection.connectedAt,
           ),
         )
-        .map(({ pullRequestAutoSync, agentAccess, ...connection }) => ({
-          ...connection,
-          // Ajour's own setting never lives in the plugin's config.
-          config: Object.fromEntries(
-            Object.entries(connection.config).filter(
-              ([key]) => key !== AGENT_ACCESS_FIELD_ID,
+        .map(
+          ({
+            pullRequestAutoSync,
+            agentAccess,
+            allowLossyConversion,
+            ...connection
+          }) => ({
+            ...connection,
+            // Ajour's own settings never live in the plugin's config.
+            config: Object.fromEntries(
+              Object.entries(connection.config).filter(
+                ([key]) => !AJOUR_CONNECTION_FIELD_IDS.has(key),
+              ),
             ),
-          ),
-          ...(typeof pullRequestAutoSync === "boolean"
-            ? { pullRequestAutoSync }
-            : {}),
-          // Anything else than a known level is None.
-          ...(agentAccessSchema.safeParse(agentAccess).success
-            ? { agentAccess }
-            : {}),
-        }))
+            ...(allowLossyConversion === true ? { allowLossyConversion } : {}),
+            ...(typeof pullRequestAutoSync === "boolean"
+              ? { pullRequestAutoSync }
+              : {}),
+            // Anything else than a known level is None.
+            ...(agentAccessSchema.safeParse(agentAccess).success
+              ? { agentAccess }
+              : {}),
+          }),
+        )
         .sort(compareConnections),
       stagedImports: (raw.stagedImports ?? defaults.stagedImports)
         .filter((item): item is BacklogImportCandidate =>
@@ -1158,6 +1177,8 @@ export class AppApiStorage {
       pullRequestAutoSync?: boolean;
       /** Undefined keeps the saved value. */
       agentAccess?: AgentAccess;
+      /** Undefined keeps the saved value. */
+      allowLossyConversion?: boolean;
       config: PluginFieldValues;
       configSummary: PluginSummaryValues;
     },
@@ -1185,6 +1206,9 @@ export class AppApiStorage {
           : {}),
         ...((input.agentAccess ?? existing?.agentAccess)
           ? { agentAccess: input.agentAccess ?? existing?.agentAccess }
+          : {}),
+        ...((input.allowLossyConversion ?? existing?.allowLossyConversion)
+          ? { allowLossyConversion: true }
           : {}),
         config: input.config,
         configSummary: input.configSummary,

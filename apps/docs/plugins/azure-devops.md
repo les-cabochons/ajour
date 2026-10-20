@@ -21,27 +21,28 @@ Set an expiry date on the token. When it expires, the connection shows an error,
 
 ## Connection fields
 
-| Field                                            | What to enter                                                                                                             |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| **Connection label**                             | A name for this connection, such as `Contoso`.                                                                            |
-| **Tenant**                                       | The organization or client, shown next to the label.                                                                      |
-| **Organization URL**                             | `https://dev.azure.com/your-org`.                                                                                         |
-| **Personal Access Token**                        | The token from step 2. Ajour never shows it again.                                                                        |
-| **Import scope**                                 | **Assigned to me** (default), or **Open tasks across organization**.                                                      |
-| **Imported task icon**                           | Whether imported items show the Azure DevOps icon, or their project's icon.                                               |
-| **Priority field**                               | The field that holds priority, such as `Microsoft.VSTS.Common.Priority`. Required to write priorities.                    |
-| **Urgent / High / Medium / Low priority values** | Which values of the priority field mean each level. See below.                                                            |
-| **Original estimate field**                      | The field for the original estimate, such as `Microsoft.VSTS.Scheduling.OriginalEstimate`.                                |
-| **Remaining field**                              | The field for remaining work, such as `Microsoft.VSTS.Scheduling.RemainingWork`.                                          |
-| **Completed field**                              | The field for completed work, such as `Microsoft.VSTS.Scheduling.CompletedWork`.                                          |
-| **Auto sync to backlog**                         | Sync on a timer while Ajour is open, and add items straight to the backlog.                                               |
-| **Sync pull requests automatically**             | Pull requests only. Sync them on the interval while Ajour is open. On by default.                                         |
-| **Only these projects or repositories**          | Pull requests only. Optional, comma-separated. `Fabrikam` is a project, `Fabrikam/api` a repository.                      |
-| **Never these projects or repositories**         | Pull requests only. Optional, same format.                                                                                |
-| **Hide draft pull requests**                     | Pull requests only. Off by default.                                                                                       |
-| **Include team review requests**                 | Pull requests only. On by default. Needs **Project and Team › Read**.                                                     |
-| **Sync interval (minutes)**                      | How often to sync, from 1 to 1440. Defaults to 15.                                                                        |
-| **Agent access to comments**                     | Ajour's own. What agents may do with the comments of this connection's items. See [Agents and MCP](/app/agents#comments). |
+| Field                                            | What to enter                                                                                                                          |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **Connection label**                             | A name for this connection, such as `Contoso`.                                                                                         |
+| **Tenant**                                       | The organization or client, shown next to the label.                                                                                   |
+| **Organization URL**                             | `https://dev.azure.com/your-org`.                                                                                                      |
+| **Personal Access Token**                        | The token from step 2. Ajour never shows it again.                                                                                     |
+| **Import scope**                                 | **Assigned to me** (default), or **Open tasks across organization**.                                                                   |
+| **Imported task icon**                           | Whether imported items show the Azure DevOps icon, or their project's icon.                                                            |
+| **Priority field**                               | The field that holds priority, such as `Microsoft.VSTS.Common.Priority`. Required to write priorities.                                 |
+| **Urgent / High / Medium / Low priority values** | Which values of the priority field mean each level. See below.                                                                         |
+| **Original estimate field**                      | The field for the original estimate, such as `Microsoft.VSTS.Scheduling.OriginalEstimate`.                                             |
+| **Remaining field**                              | The field for remaining work, such as `Microsoft.VSTS.Scheduling.RemainingWork`.                                                       |
+| **Completed field**                              | The field for completed work, such as `Microsoft.VSTS.Scheduling.CompletedWork`.                                                       |
+| **Auto sync to backlog**                         | Sync on a timer while Ajour is open, and add items straight to the backlog.                                                            |
+| **Sync pull requests automatically**             | Pull requests only. Sync them on the interval while Ajour is open. On by default.                                                      |
+| **Only these projects or repositories**          | Pull requests only. Optional, comma-separated. `Fabrikam` is a project, `Fabrikam/api` a repository.                                   |
+| **Never these projects or repositories**         | Pull requests only. Optional, same format.                                                                                             |
+| **Hide draft pull requests**                     | Pull requests only. Off by default.                                                                                                    |
+| **Include team review requests**                 | Pull requests only. On by default. Needs **Project and Team › Read**.                                                                  |
+| **Sync interval (minutes)**                      | How often to sync, from 1 to 1440. Defaults to 15.                                                                                     |
+| **Agent access to comments**                     | Ajour's own. What agents may do with the comments of this connection's items. See [Agents and MCP](/app/agents#comments).              |
+| **Allow lossy conversion**                       | Ajour's own. Off by default. Lets you edit descriptions with formatting Markdown cannot hold; each save names the loss and asks first. |
 
 Leave an estimate field empty to never sync that estimate.
 

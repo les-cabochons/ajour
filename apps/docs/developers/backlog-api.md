@@ -184,6 +184,7 @@ Ajour sends the Markdown to write in `text`, and in `expected` the `text` your `
 
 - If it is still `expected`, write `text`, converted to your tool's format, and return `outcome: "written"` with the description as your tool now holds it, converted back.
 - If it is not, someone changed it in between. Write nothing, and return `outcome: "conflict"` with the description as it is. Ajour records a conflict for the user to resolve.
+- If it is, but its conversion now has `lost` entries, write only when each of them is in the request's `allowedLoss`. Ajour sends the names the user saw, on a connection with **Allow lossy conversion** on, before choosing **Save anyway**. Otherwise throw a message naming the loss. A `cut` description is never written.
 
 Ajour has already merged the user's edit with what changed in your tool, line by line, so write `text` as it is. Keep images and mentions as the sync sent them. If the converted text is too long for your tool, or the write fails, throw: Ajour keeps the user's text and shows your message with Retry.
 
@@ -435,6 +436,8 @@ export interface BacklogWriteDescriptionRequest {
   text: string;
   /** The text `readDescription` returned before the write. */
   expected: string;
+  /** The `lost` names the user saw and saved anyway. */
+  allowedLoss?: string[];
 }
 
 export interface BacklogWriteDescriptionResult {

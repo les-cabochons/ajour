@@ -59,6 +59,8 @@ function findItem(itemId: string) {
 export function saveSyncedDescription(
   itemId: string,
   mode: "save" | "keepMine" = "save",
+  /** What the user saw the conversion lose and saved anyway. */
+  allowedLoss: readonly string[] = [],
 ): Promise<DescriptionSaveOutcome> {
   const draftAncestor =
     mode === "save" ? conflictedDrafts.get(itemId) : undefined;
@@ -69,7 +71,7 @@ export function saveSyncedDescription(
     .then(() =>
       draftAncestor !== undefined
         ? recordDraftConflict(itemId, draftAncestor)
-        : runSave(itemId, mode),
+        : runSave(itemId, mode, allowedLoss),
     );
   saving.set(itemId, run);
   notify();
@@ -121,6 +123,7 @@ function recordDraftConflict(
 async function runSave(
   itemId: string,
   mode: "save" | "keepMine",
+  allowedLoss: readonly string[],
 ): Promise<DescriptionSaveOutcome> {
   const item = findItem(itemId);
   if (
@@ -150,10 +153,14 @@ async function runSave(
         `It is now longer in ${item.sourceConnectionLabel ?? "the source"} than Ajour keeps. Edit it there.`,
       );
     }
-    // Nor is a text that lost formatting: writing it would erase that.
-    if (current.lost?.length) {
+    // Nor is a text that lost formatting, which writing it would erase,
+    // unless the user saw that loss and saved anyway.
+    const unconfirmed = (current.lost ?? []).filter(
+      (loss) => !allowedLoss.includes(loss),
+    );
+    if (unconfirmed.length > 0) {
       throw new Error(
-        `Writing it would now lose its ${lostFormatting(current.lost)} in ${item.sourceConnectionLabel ?? "the source"}. Edit it there.`,
+        `Writing it would now lose its ${lostFormatting(unconfirmed)} in ${item.sourceConnectionLabel ?? "the source"}. Edit it there.`,
       );
     }
     const plan =
@@ -176,6 +183,7 @@ async function runSave(
       sourceId,
       text: plan.text,
       expected: current.text,
+      ...(allowedLoss.length > 0 ? { allowedLoss: [...allowedLoss] } : {}),
     });
     if (result.outcome === "conflict") {
       return recordConflict(itemId, result.description);

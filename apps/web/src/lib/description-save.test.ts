@@ -314,6 +314,46 @@ describe("saving a synced description", () => {
     );
   });
 
+  it("writes over losses the user saw and allowed, but not over new ones", async () => {
+    const mine = "Goal\n\nMy steps\n\nDone when";
+    const { saveSyncedDescription } = await import("@/lib/description-save");
+    const { item, itemId } = await setup(mine);
+    const writes: { allowedLoss?: string[] }[] = [];
+    let lost = ["underline"];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.endsWith("/description")) {
+          return Response.json({ description: { text: BASE, lost } });
+        }
+        const request = JSON.parse(String(init?.body));
+        writes.push(request);
+        return Response.json({
+          outcome: "written",
+          description: { text: request.text },
+        });
+      }),
+    );
+
+    expect(await saveSyncedDescription(itemId, "save", ["underline"])).toEqual({
+      kind: "written",
+      merged: false,
+    });
+    expect(writes).toEqual([
+      expect.objectContaining({ text: mine, allowedLoss: ["underline"] }),
+    ]);
+
+    // A colleague added colour since the user confirmed: that loss was not seen.
+    lost = ["underline", "text colour"];
+    expect(
+      (await saveSyncedDescription(itemId, "save", ["underline"])).kind,
+    ).toBe("failed");
+    expect(writes).toHaveLength(1);
+    expect(item().descriptionSync?.writeError?.message).toContain(
+      "lose its text colour",
+    );
+  });
+
   it("writes the user's side of a conflict with Keep mine", async () => {
     const mine = "Goal\n\nMy steps\n\nDone when";
     const theirs = "Goal\n\nTheir steps\n\nDone when";

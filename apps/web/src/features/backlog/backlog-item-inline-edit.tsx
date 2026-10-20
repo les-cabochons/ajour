@@ -29,6 +29,7 @@ import {
   SourceChangedWarning,
   SyncedDescriptionNote,
   isOverDescriptionLimit,
+  confirmDescriptionLoss,
   saveDescriptionToSource,
   useDescriptionAccess,
   useDescriptionLimit,
@@ -36,7 +37,10 @@ import {
   useSourceDescriptionCheck,
   writesToSource,
 } from "@/features/backlog/synced-description";
-import { normalizeDescriptionText } from "@/domain/backlog/description-sync";
+import {
+  descriptionLosses,
+  normalizeDescriptionText,
+} from "@/domain/backlog/description-sync";
 import { SyncConflictButton } from "@/features/backlog/sync-conflicts";
 
 /*
@@ -269,20 +273,44 @@ export function DescriptionSection({
     [item.description],
   );
 
-  const save = (value: string) => {
+  const save = (value: string, allowedLoss: readonly string[] = []) => {
     if (normalizeDescriptionText(value) === normalizeDescriptionText(base))
       return;
     const description = normalizeDescriptionText(value) || undefined;
     if (description === item.description) return;
     if (writesToSource(item, access)) {
-      saveDescriptionToSource(item._id, description);
+      saveDescriptionToSource(item._id, description, allowedLoss);
     } else {
       patchBacklogItemWithUndo(item, { description }, "Description changed");
     }
   };
-  // Text over the limit is not saved, so the editor stays open on it.
-  const leave = (value: string) => {
-    if (isOverDescriptionLimit(value, limit)) return;
+  // A save that would lose formatting asks first; the editor stays open
+  // while it does, and after Cancel. A sync can change the draft meanwhile,
+  // so Save anyway saves the draft as it is then, with the save of then.
+  const confirming = useRef(false);
+  const latestSave = useRef({ draft, save, limit });
+  latestSave.current = { draft, save, limit };
+  const leave = async (value: string) => {
+    // Text over the limit is not saved, so the editor stays open on it.
+    if (isOverDescriptionLimit(value, limit) || confirming.current) return;
+    const changed =
+      normalizeDescriptionText(value) !== normalizeDescriptionText(base);
+    if (
+      changed &&
+      writesToSource(item, access) &&
+      descriptionLosses(item).length > 0
+    ) {
+      confirming.current = true;
+      const allowedLoss = await confirmDescriptionLoss(item);
+      confirming.current = false;
+      // A draft that took in a sync meanwhile can be over the limit now: it
+      // stays open, unsaved.
+      const now = latestSave.current;
+      if (allowedLoss && !isOverDescriptionLimit(now.draft, now.limit)) {
+        closer.close(() => now.save(now.draft, allowedLoss));
+      }
+      return;
+    }
     closer.close(() => save(value));
   };
   return (

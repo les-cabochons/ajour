@@ -2020,6 +2020,69 @@ describe("backlog comment routes", () => {
   const listPath = (connectionId: string, operation = "listItemComments") =>
     `/api/backlog-comments/jira/connections/${connectionId}/${operation}`;
 
+  it("keeps Allow lossy conversion as Ajour's setting, off until the user turns it on", async () => {
+    const { server, connectionId, root } = await createServer({
+      connector: { description: { write: true } },
+    });
+    const connection = async () =>
+      (
+        (
+          await dispatchJsonRequest(server, {
+            method: "GET",
+            path: "/api/plugins",
+          })
+        ).body as {
+          connectionGroups: {
+            connections: {
+              allowLossyConversion?: boolean;
+              editableValues: Record<string, unknown>;
+            }[];
+          }[];
+        }
+      ).connectionGroups[0]!.connections[0]!;
+    const save = (values: Record<string, unknown>) =>
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: "/api/plugins/jira/connections",
+        body: JSON.stringify({
+          id: connectionId,
+          values: {
+            label: "Work",
+            tenantLabel: "Contoso",
+            autoSyncIntervalMinutes: 10,
+            token: TOKEN,
+            ...values,
+          },
+        }),
+      });
+
+    expect(await connection()).toMatchObject({
+      editableValues: { allowLossyConversion: false },
+    });
+    expect((await connection()).allowLossyConversion).toBeUndefined();
+
+    expect((await save({ allowLossyConversion: true })).status).toBe(200);
+    expect(await connection()).toMatchObject({
+      allowLossyConversion: true,
+      editableValues: { allowLossyConversion: true },
+    });
+
+    // A save without it keeps it; a value that is not a boolean is refused.
+    await save({});
+    expect((await connection()).allowLossyConversion).toBe(true);
+    expect((await save({ allowLossyConversion: "yes" })).status).toBe(400);
+    expect((await save({ allowLossyConversion: false })).status).toBe(200);
+    expect((await connection()).allowLossyConversion).toBeUndefined();
+
+    // The plugin never receives the setting with its config.
+    const stored = JSON.parse(
+      await readFile(path.join(root, "state.json"), "utf8"),
+    ) as { connections: { config: Record<string, unknown> }[] };
+    expect(stored.connections[0]!.config).not.toHaveProperty(
+      "allowLossyConversion",
+    );
+  });
+
   it("keeps agent access to comments as Ajour's setting, None until the user changes it", async () => {
     const { server, connectionId, root } = await createServer({
       connector: { comments: {} },
@@ -2517,7 +2580,24 @@ describe("backlog description routes", () => {
         path: `/api/plugins/jira/connections/${connectionId}/${action}`,
         body: JSON.stringify(body),
       });
-    return { post };
+    const allowLossy = (on: boolean) =>
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: "/api/plugins/jira/connections",
+        body: JSON.stringify({
+          id: connectionId,
+          values: {
+            label: "Main Jira",
+            tenantLabel: "Acme",
+            autoSync: false,
+            autoSyncIntervalMinutes: 15,
+            baseUrl: "https://acme.atlassian.net",
+            apiToken: "tok-12345",
+            allowLossyConversion: on,
+          },
+        }),
+      });
+    return { post, allowLossy };
   }
 
   it("reads a description, and writes one only over the text it expects", async () => {
@@ -2572,6 +2652,24 @@ describe("backlog description routes", () => {
       status: 502,
       body: { error: "Refused token [secret]" },
     });
+  });
+
+  it("writes with losses only through a connection that allows lossy conversion", async () => {
+    const { post, allowLossy } = await createServer({ write: true });
+    const write = () =>
+      post("description-write", {
+        sourceId: "OPEN-1",
+        text: "Mine",
+        expected: "Held by the source",
+        allowedLoss: ["underline"],
+      });
+
+    await expect(write()).resolves.toEqual({
+      status: 409,
+      body: { error: "This connection does not allow lossy conversion." },
+    });
+    expect((await allowLossy(true)).status).toBe(200);
+    expect((await write()).status).toBe(200);
   });
 
   it("refuses to write through a plugin that only reads descriptions", async () => {
