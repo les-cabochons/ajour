@@ -222,6 +222,14 @@ _Avoid_: Authentication, SSO, identity provider, account (for the capability)
 One person's sign-in with a service such as Microsoft or Google, which Ajour holds for them. Plugins use an account only through a grant.
 _Avoid_: Login, identity, credential, token, session
 
+**Vault**:
+Where Ajour keeps the secrets you give it, such as tokens, secret addresses and accounts, protected by the operating system. No plugin can read it, and Ajour never shows a stored value.
+_Avoid_: Keychain, password manager, secret store
+
+**Token**:
+A secret you paste into a connection, such as an API token or a personal access token, that lets a plugin reach a service without a sign-in. It belongs to that one connection.
+_Avoid_: Key, password, PAT (in user-facing text)
+
 **Grant**:
 The user's approval for one plugin to use one account, for what that plugin says it needs, such as reading work items. The user approves it once, and is asked again only when the plugin asks for more.
 _Avoid_: Share, authorization, token (in user-facing text, say "Used by" and "Allow")
