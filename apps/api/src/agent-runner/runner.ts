@@ -553,6 +553,9 @@ export class AgentRunner {
       });
       child.on("exit", (code) => {
         active.exited = { code };
+        // Something the CLI started can hold its output open, and then
+        // close never comes (#341).
+        void this.finishWithinGrace(active);
       });
       child.on("close", (code) => {
         void this.finalize(active, code);
@@ -680,6 +683,8 @@ export class AgentRunner {
    * Only the CLI itself: ending what it started is #341.
    */
   private terminate(active: ActiveRun) {
+    // The run ends on time even if the CLI's exit never comes.
+    void this.finishWithinGrace(active);
     // No pid: the CLI never started, and its error and close are on the way.
     // Killing it would throw.
     if (active.child.pid === undefined) return;
@@ -712,7 +717,8 @@ export class AgentRunner {
   /**
    * Ends the run when the CLI closes, or after the kill grace period plus a
    * second if it never does: something the CLI started can hold its output
-   * open (#341). Stop and shutdown share it.
+   * open (#341). Every ending starts it: the CLI's exit, each kill, Stop and
+   * shutdown. The first call sets the deadline.
    */
   private finishWithinGrace(active: ActiveRun): Promise<void> {
     active.finishing ??= new Promise<void>((resolve) => {

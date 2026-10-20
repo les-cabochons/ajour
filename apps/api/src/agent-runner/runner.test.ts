@@ -1,3 +1,4 @@
+import { ChildProcess } from "node:child_process";
 import { mkdtemp, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -147,6 +148,7 @@ async function setup(
 ) {
   const work = await mkdtemp(path.join(tmpdir(), "ajour-runner-test-"));
   const report = path.join(work, "report.jsonl");
+  reports.push(report);
   const events: Record<string, unknown>[] = [];
   // Logs session ends into the same list, as the server does.
   const sessions =
@@ -214,31 +216,73 @@ async function waitForCli(report: string) {
   );
 }
 
-/** Processes the fake CLI started. Each test's leftovers are killed after it. */
-const grandchildren: number[] = [];
+/** Each test's reports, so the escapees its fake CLIs started are killed after it. */
+const reports: string[] = [];
 
-afterEach(() => {
-  for (const pid of grandchildren.splice(0)) {
-    if (isAlive(pid)) process.kill(pid, "SIGKILL");
+afterEach(async () => {
+  vi.restoreAllMocks();
+  for (const report of reports.splice(0)) {
+    for (const pid of await grandchildPids(report)) {
+      if (isAlive(pid)) process.kill(pid, "SIGKILL");
+    }
   }
 });
 
-/** Waits for the fake CLI's grandchild and returns its pid. */
+async function grandchildPids(report: string): Promise<number[]> {
+  return (await readFile(report, "utf8").catch(() => ""))
+    .split("\n")
+    .filter(Boolean)
+    .map(
+      (text) => (JSON.parse(text) as { grandchildPid?: number }).grandchildPid,
+    )
+    .filter((pid): pid is number => pid !== undefined);
+}
+
+/** Waits for the fake CLI's first grandchild and returns its pid. */
 async function waitForGrandchild(report: string): Promise<number> {
-  const pid = await vi.waitFor(
+  return await vi.waitFor(
     async () => {
-      const line = (await readFile(report, "utf8"))
-        .split("\n")
-        .filter(Boolean)
-        .map((text) => JSON.parse(text) as { grandchildPid?: number })
-        .find((entry) => entry.grandchildPid !== undefined);
-      expect(line).toBeDefined();
-      return line!.grandchildPid!;
+      const [pid] = await grandchildPids(report);
+      expect(pid).toBeDefined();
+      return pid!;
     },
     { timeout: 5000 },
   );
-  grandchildren.push(pid);
-  return pid;
+}
+
+/**
+ * Records the pid of each child process that emits "exit" in this test
+ * process. The runner listens on the same emitter, so a pid listed here is an
+ * exit the runner has already handled.
+ */
+function recordExits(): number[] {
+  const exited: number[] = [];
+  const emit = ChildProcess.prototype.emit;
+  vi.spyOn(ChildProcess.prototype, "emit").mockImplementation(function (
+    this: ChildProcess,
+    event: string | symbol,
+    ...rest: unknown[]
+  ) {
+    const handled = Reflect.apply(emit, this, [event, ...rest]) as boolean;
+    if (event === "exit" && this.pid !== undefined) exited.push(this.pid);
+    return handled;
+  });
+  return exited;
+}
+
+/**
+ * Starts and stops one more run, which the runner refuses while a run is
+ * going. Its escapee is reported before Stop, so the cleanup finds it.
+ */
+async function expectNextRunStarts(runner: AgentRunner, report: string) {
+  const before = (await grandchildPids(report)).length;
+  const next = await runner.start(request);
+  await vi.waitFor(
+    async () => expect((await grandchildPids(report)).length).toBe(before + 1),
+    { timeout: 5000 },
+  );
+  runner.stop(next.id);
+  await settled(runner);
 }
 
 /** Waits for the fake CLI's first report line and returns its pid. */
@@ -875,17 +919,99 @@ describe("AgentRunner", () => {
     ]);
   });
 
-  it("ignores Stop once the CLI has exited, so its own outcome stands", async () => {
-    const { runner, sessions, events, report } = await setup(
+  it("ends a run whose CLI exits on its own while something it started holds its output", async () => {
+    const { runner, sessions, events, revoked, report } = await setup(
       [{ escapee: true }, { exit: 0 }],
       { killGraceMs: 50 },
     );
     const run = await runner.start(request);
     await waitForGrandchild(report);
+    // No Stop: the kill grace period plus a second after the exit.
+    await settled(runner);
+    expect(sessions.get(run.sessionId)!.state).toBe("done");
+    expect(runEvents(events)).toEqual([
+      expect.objectContaining({
+        run_id: run.id,
+        outcome: "done",
+        exit_code: 0,
+        stop_reason: undefined,
+      }),
+    ]);
+    expect(revoked).toEqual(["c-Enter in Workday run"]);
+    const next = await runner.start(request);
+    await settled(runner);
+    expect(runEvents(events).map((event) => event.run_id)).toEqual([
+      run.id,
+      next.id,
+    ]);
+  });
+
+  it("ends a run Ajour stops after its session ended, even when its output never closes", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const { runner, sessions, events, revoked, report } = await setup(
+        [{ escapee: true }, { hang: true }],
+        { killGraceMs: 50 },
+      );
+      const run = await runner.start(request);
+      await waitForGrandchild(report);
+      sessions.end(sessions.get(run.sessionId)!.client, {
+        sessionId: run.sessionId,
+        outcome: "done",
+        summary: "Entered 9 lines.",
+      });
+      runner.tick();
+      vi.setSystemTime(Date.now() + 2 * 60_000);
+      runner.tick();
+      await settled(runner);
+      expect(runEvents(events)).toEqual([
+        expect.objectContaining({
+          run_id: run.id,
+          outcome: "done",
+          stop_reason: "ended",
+        }),
+      ]);
+      expect(revoked).toHaveLength(1);
+      await expectNextRunStarts(runner, report);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ends a run Ajour stops for a failed MCP server, even when its output never closes", async () => {
+    const init = JSON.stringify({
+      type: "system",
+      subtype: "init",
+      mcp_servers: [{ name: "playwright", status: "failed" }],
+    });
+    const { runner, sessions, events, revoked, report } = await setup(
+      [{ escapee: true }, { stdout: init }, { hang: true }],
+      { killGraceMs: 50 },
+    );
+    const run = await runner.start(request);
+    await waitForGrandchild(report);
+    await settled(runner);
+    expect(sessions.get(run.sessionId)!.state).toBe("failed");
+    expect(runEvents(events)).toEqual([
+      expect.objectContaining({
+        run_id: run.id,
+        outcome: "failed",
+        stop_reason: "mcp",
+      }),
+    ]);
+    expect(revoked).toHaveLength(1);
+    await expectNextRunStarts(runner, report);
+  });
+
+  it("ignores Stop once the CLI has exited, so its own outcome stands", async () => {
+    const exits = recordExits();
+    const { runner, sessions, events, report } = await setup(
+      [{ escapee: true }, { exit: 0 }],
+      { killGraceMs: 50 },
+    );
+    const run = await runner.start(request);
     const cli = await waitForCliPid(report);
-    await vi.waitFor(() => expect(isAlive(cli)).toBe(false));
-    // Lets Node report the exit to the runner.
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await vi.waitFor(() => expect(exits).toContain(cli), { timeout: 5000 });
     expect(runner.stop(run.id)).toBe(true);
     await settled(runner);
     expect(sessions.get(run.sessionId)!.state).toBe("done");
