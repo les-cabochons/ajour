@@ -124,6 +124,57 @@ describe("work item transitions", () => {
     expect(workItem).not.toHaveProperty("note");
   });
 
+  it("keeps a synced item's description sync state and drops a malformed one", () => {
+    const kept = normalizePersistedWorkItem(
+      {
+        _id: "item",
+        title: "Item",
+        source: "azure_devops",
+        sourceId: "https://dev.azure.com/contoso/Portal/_workitems/edit/1",
+        description: "Mine",
+        descriptionSync: {
+          baseline: "Old",
+          remote: "Theirs",
+          lost: ["underline", 4],
+          conflict: { detectedAt: 5, localText: "Mine", remoteText: "Theirs" },
+          stray: true,
+        },
+        createdAt: 1,
+      } as never,
+      () => 100,
+    );
+    expect(kept.descriptionSync).toEqual({
+      baseline: "Old",
+      remote: "Theirs",
+      lost: ["underline"],
+      conflict: { detectedAt: 5, localText: "Mine", remoteText: "Theirs" },
+    });
+
+    const dropped = normalizePersistedWorkItem(
+      {
+        _id: "item",
+        title: "Item",
+        source: "azure_devops",
+        descriptionSync: { baseline: "A" },
+        createdAt: 1,
+      } as never,
+      () => 100,
+    );
+    expect(dropped.descriptionSync).toBeUndefined();
+
+    const manual = normalizePersistedWorkItem(
+      {
+        _id: "item",
+        title: "Item",
+        source: "manual",
+        descriptionSync: { remote: "A" },
+        createdAt: 1,
+      } as never,
+      () => 100,
+    );
+    expect(manual.descriptionSync).toBeUndefined();
+  });
+
   it("keeps the description when a stored item has both fields", () => {
     const workItem = normalizePersistedWorkItem(
       {

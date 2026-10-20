@@ -2,6 +2,7 @@ import type {
   BacklogSortMode,
   LocalAppState,
   LocalWorkItem,
+  LocalWorkItemDescriptionSync,
   LocalWorkItemDraft,
   LocalWorkItemEstimateFieldKey,
   PersistedLocalWorkItem,
@@ -106,6 +107,37 @@ export function normalizeSourceWriteRecovery(workItems: LocalWorkItem[]) {
   });
 }
 
+/** A stored description sync state, or nothing when it is not one. */
+function normalizeDescriptionSync(
+  value: unknown,
+): LocalWorkItemDescriptionSync | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const sync = value as Record<string, unknown>;
+  if (typeof sync.remote !== "string") return undefined;
+  const conflict = sync.conflict as Record<string, unknown> | undefined;
+  const lost = Array.isArray(sync.lost)
+    ? sync.lost.filter((entry): entry is string => typeof entry === "string")
+    : [];
+  return {
+    ...(typeof sync.baseline === "string" ? { baseline: sync.baseline } : {}),
+    remote: sync.remote,
+    ...(lost.length > 0 ? { lost } : {}),
+    ...(sync.cut === true ? { cut: true } : {}),
+    ...(conflict &&
+    typeof conflict.detectedAt === "number" &&
+    typeof conflict.localText === "string" &&
+    typeof conflict.remoteText === "string"
+      ? {
+          conflict: {
+            detectedAt: conflict.detectedAt,
+            localText: conflict.localText,
+            remoteText: conflict.remoteText,
+          },
+        }
+      : {}),
+  };
+}
+
 export function normalizePersistedWorkItem(
   workItem: PersistedLocalWorkItem,
   now: () => number,
@@ -205,6 +237,10 @@ export function normalizePersistedWorkItem(
       workItem.completedEstimateHours,
     ),
     estimateSync: isRetiredBuiltInSource ? undefined : workItem.estimateSync,
+    descriptionSync:
+      isRetiredBuiltInSource || workItem.source === "manual"
+        ? undefined
+        : normalizeDescriptionSync(workItem.descriptionSync),
     keepWhenMissingFromSync: isRetiredBuiltInSource
       ? false
       : (workItem.keepWhenMissingFromSync ?? false),

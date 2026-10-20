@@ -22,6 +22,10 @@ import {
 } from "@/features/backlog/backlog-task-editor";
 import { localStore } from "@/lib/local-store";
 import { cn } from "@/lib/utils";
+import {
+  SyncedDescriptionNote,
+  useDescriptionAccess,
+} from "@/features/backlog/synced-description";
 
 /*
  * The backlog item page edits in place: each field below saves on Enter or
@@ -219,6 +223,8 @@ export function DescriptionSection({
 }) {
   const [editing, setEditing] = useState(false);
   const closer = useCloseOnce(() => setEditing(false));
+  const access = useDescriptionAccess(item);
+  const editable = !readOnly && access.editable;
   const body = useMemo(
     () => (item.description ? splitDescription(item.description).body : ""),
     [item.description],
@@ -234,7 +240,7 @@ export function DescriptionSection({
     <>
       <SectionHeading
         trailing={
-          !editing && !readOnly ? (
+          !editing && editable ? (
             <button
               type="button"
               className="backlog-item-subtle-action"
@@ -252,7 +258,7 @@ export function DescriptionSection({
       >
         Description
       </SectionHeading>
-      {editing ? (
+      {editing && editable ? (
         <MarkdownEditor
           autoFocus
           aria-label="Description"
@@ -268,6 +274,7 @@ export function DescriptionSection({
       ) : (
         <p className="text-sm text-muted-foreground">No description.</p>
       )}
+      <SyncedDescriptionNote item={item} access={access} />
     </>
   );
 }

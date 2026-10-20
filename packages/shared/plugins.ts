@@ -8,6 +8,19 @@ import {
 } from "./backlog-comments.ts";
 
 export const PLUGIN_API_VERSION = 3;
+
+/**
+ * A backlog plugin's description support. Its sync sends each item's
+ * `description`; with `write`, Ajour writes the user's edits back.
+ */
+export const backlogDescriptionCapabilitySchema = z.object({
+  write: z.boolean().optional(),
+  /** The longest description the source accepts, measured as the source measures it. */
+  maxLength: z.number().int().min(1).max(10_000_000).optional(),
+});
+export type BacklogDescriptionCapability = z.infer<
+  typeof backlogDescriptionCapabilitySchema
+>;
 export const PLUGIN_ARCHIVE_EXTENSION = ".ajour-connector";
 
 export const backlogSourceSchema = z.string().trim().min(1).max(120);
@@ -253,6 +266,8 @@ export const pluginCapabilitiesSchema = z
         settle: z.boolean().optional(),
         /** Comments on synced items. See ADR 0008. */
         comments: backlogCommentsCapabilitySchema.optional(),
+        /** Two-way descriptions. See ADR 0009. */
+        description: backlogDescriptionCapabilitySchema.optional(),
       })
       .optional(),
     codeHost: z.object({}).optional(),
@@ -704,6 +719,22 @@ export type TeamCreateRouteRequest = z.infer<
   typeof teamCreateRouteRequestSchema
 >;
 
+/** The most of a description Ajour stores. See ADR 0009. */
+export const BACKLOG_DESCRIPTION_MAX_LENGTH = 64_000;
+
+/** A synced description, as the plugin converted it from its source tool. */
+export const backlogSyncedDescriptionSchema = z.object({
+  /** Markdown. Mentions are `[@Name](mention:<id>)`. */
+  text: z.string().max(BACKLOG_DESCRIPTION_MAX_LENGTH),
+  /** What the conversion to Markdown dropped, such as "text colour". */
+  lost: z.array(z.string().trim().min(1).max(120)).max(20).optional(),
+  /** The source's text was longer, and the plugin cut it. */
+  cut: z.boolean().optional(),
+});
+export type BacklogSyncedDescription = z.infer<
+  typeof backlogSyncedDescriptionSchema
+>;
+
 export const backlogImportCandidateInputSchema = z.object({
   source: backlogSourceSchema,
   connectionId: z.string().trim().min(1).max(120),
@@ -714,6 +745,8 @@ export const backlogImportCandidateInputSchema = z.object({
   sourceUrl: z.string().url().optional(),
   title: z.string().trim().min(1).max(240),
   note: z.string().trim().max(4000).optional(),
+  /** The full description, synced both ways. When present, `note` is ignored. */
+  description: backlogSyncedDescriptionSchema.optional(),
   projectName: z.string().trim().max(120).optional(),
   workItemType: z.string().trim().min(1).max(120),
   state: z.string().trim().max(120).optional(),

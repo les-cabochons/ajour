@@ -142,6 +142,23 @@ export interface LocalWorkItemEstimateSyncState {
   completedEstimateHours?: LocalWorkItemEstimateFieldState;
 }
 
+/**
+ * A synced description's state, beside the estimates' (ADR 0009). Ajour keeps
+ * the text both sides last agreed on, so it can tell which side changed.
+ */
+export interface LocalWorkItemDescriptionSync {
+  /** The text both sides last agreed on; absent until they first agree. */
+  baseline?: string;
+  /** The source's text at the last sync. */
+  remote: string;
+  /** What the plugin's conversion to Markdown dropped. */
+  lost?: string[];
+  /** The source's text was longer than Ajour stores. */
+  cut?: boolean;
+  /** Both sides changed since they last agreed. */
+  conflict?: { detectedAt: number; localText: string; remoteText: string };
+}
+
 export interface LocalProjectDraft {
   name: string;
   displayName?: string;
@@ -456,6 +473,7 @@ export interface LocalWorkItem {
   remainingEstimateOverrunHours?: number;
   completedEstimateHours?: number;
   estimateSync?: LocalWorkItemEstimateSyncState;
+  descriptionSync?: LocalWorkItemDescriptionSync;
   keepWhenMissingFromSync?: boolean;
   archivedByMissingSync?: boolean;
   /**

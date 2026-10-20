@@ -524,6 +524,22 @@ Feature: Backlog list and board views
     When I open the Backlog parent page
     Then its page says Ana commented, and still does once the mark is cleared
 
+  Scenario: A synced description follows its source, read-only when the plugin cannot write it
+    Given the Backlog parent is synced
+    And its plugin, which does not write descriptions, sends the description "Written in the source" on its next sync
+    When I reload the app
+    And I open the Backlog parent page
+    Then its description reads "Written in the source"
+    And the description is read-only because the source keeps it, with Edit in source
+
+  Scenario: A description cut to fit Ajour is read-only
+    Given the Backlog parent is synced
+    And its plugin, which writes descriptions, sends a description cut to "The first part" on its next sync
+    When I reload the app
+    And I open the Backlog parent page
+    Then its description reads "The first part"
+    And the description is read-only because it is cut, with Edit in source
+
   Scenario: Settle a synced item with a comment
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit

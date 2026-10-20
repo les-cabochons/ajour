@@ -72,6 +72,11 @@ import {
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { localStore } from "@/lib/local-store";
 import { cn } from "@/lib/utils";
+import { DescriptionText } from "@/features/backlog/description-links";
+import {
+  SyncedDescriptionNote,
+  useDescriptionAccess,
+} from "@/features/backlog/synced-description";
 import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 
 /** Lets a host save the draft before it loads another item into the same form. */
@@ -159,6 +164,11 @@ export function BacklogItemEditorForm({
   const projects = useLocalProjects();
   const workItems = useLocalWorkItems();
   const workItem = target.kind === "edit" ? target.workItem : undefined;
+  const descriptionAccessState = useDescriptionAccess(workItem);
+  // An archived item's form is read-only elsewhere; its description field stays as it was.
+  const descriptionEditable =
+    descriptionAccessState.editable ||
+    descriptionAccessState.reason === "archived";
   const parent = target.kind === "create" ? target.parent : undefined;
   const [fields, setFields] = useState(
     () => initialFields ?? createBacklogTaskEditorSeed(target),
@@ -550,14 +560,30 @@ export function BacklogItemEditorForm({
           <FieldLabel htmlFor={`${idPrefix}-description`}>
             Description
           </FieldLabel>
-          <MarkdownEditor
-            id={`${idPrefix}-description`}
-            aria-label="Description"
-            value={fields.description}
-            onChange={(description) => updateFields({ description })}
-            placeholder="Markdown supported (optional)"
-            minLines={4}
-          />
+          {descriptionEditable ? (
+            <MarkdownEditor
+              id={`${idPrefix}-description`}
+              aria-label="Description"
+              value={fields.description}
+              onChange={(description) => updateFields({ description })}
+              placeholder="Markdown supported (optional)"
+              minLines={4}
+            />
+          ) : (
+            <div id={`${idPrefix}-description`}>
+              {fields.description ? (
+                <DescriptionText body={fields.description} />
+              ) : (
+                <p className="text-sm text-muted-foreground">No description.</p>
+              )}
+              {workItem ? (
+                <SyncedDescriptionNote
+                  item={workItem}
+                  access={descriptionAccessState}
+                />
+              ) : null}
+            </div>
+          )}
         </Field>
 
         <div className="grid grid-cols-3 gap-3">
