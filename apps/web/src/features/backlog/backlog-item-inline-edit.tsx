@@ -288,8 +288,8 @@ export function DescriptionSection({
   // while it does, and after Cancel. A sync can change the draft meanwhile,
   // so Save anyway saves the draft as it is then, with the save of then.
   const confirming = useRef(false);
-  const latestSave = useRef({ draft, save });
-  latestSave.current = { draft, save };
+  const latestSave = useRef({ draft, save, limit });
+  latestSave.current = { draft, save, limit };
   const leave = async (value: string) => {
     // Text over the limit is not saved, so the editor stays open on it.
     if (isOverDescriptionLimit(value, limit) || confirming.current) return;
@@ -303,10 +303,11 @@ export function DescriptionSection({
       confirming.current = true;
       const allowedLoss = await confirmDescriptionLoss(item);
       confirming.current = false;
-      if (allowedLoss) {
-        closer.close(() =>
-          latestSave.current.save(latestSave.current.draft, allowedLoss),
-        );
+      // A draft that took in a sync meanwhile can be over the limit now: it
+      // stays open, unsaved.
+      const now = latestSave.current;
+      if (allowedLoss && !isOverDescriptionLimit(now.draft, now.limit)) {
+        closer.close(() => now.save(now.draft, allowedLoss));
       }
       return;
     }
