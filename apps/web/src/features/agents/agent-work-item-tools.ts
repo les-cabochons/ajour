@@ -178,9 +178,14 @@ async function resolveSettleChange(
  * source's length limit. Lossy text needs the connection to allow lossy
  * conversion, which stands for the user's confirmation. Returns the text to
  * save and the losses it may write.
+ *
+ * The checks run on the item as it is after reading the settings. A sync or
+ * an edit of the description meanwhile refuses the change: the agent's text
+ * was written against the text it saw, and saving it over newer text would
+ * erase that text without a merge.
  */
 async function prepareAgentDescription(
-  item: LocalWorkItem,
+  seen: LocalWorkItem,
   text: string,
 ): Promise<{
   description: string | undefined;
@@ -192,6 +197,21 @@ async function prepareAgentDescription(
   } catch (error) {
     throw new AgentToolRefusal(
       `Ajour couldn't read its plugin settings: ${error instanceof Error ? error.message : "unknown error"}`,
+    );
+  }
+  const state = localStore.snapshot();
+  const item = findWorkItemOrRefuse(state, seen._id);
+  assertAllowed(
+    getBacklogItemActions(item, backlogActionOptions(state, item, Date.now())),
+    "edit",
+  );
+  if (
+    item.description !== seen.description ||
+    JSON.stringify(item.descriptionSync) !==
+      JSON.stringify(seen.descriptionSync)
+  ) {
+    throw new AgentToolRefusal(
+      "The description changed while Ajour checked the edit. Read the item again, then retry.",
     );
   }
   const connection = overview.connectionGroups
@@ -245,11 +265,17 @@ async function saveAgentDescription(
   unchanged: boolean,
 ) {
   const saved = findWorkItemOrRefuse(localStore.snapshot(), itemId);
+  const sourceName = saved.sourceConnectionLabel ?? "the source";
+  if (unchanged && saved.descriptionSync?.conflict) {
+    return {
+      outcome: "conflict" as const,
+      message: `The description already conflicts with a change in ${sourceName}, so nothing was written there. The user resolves the conflict in Sync review.`,
+    };
+  }
   if (unchanged && !hasUnwrittenDescription(saved)) {
     return { outcome: "unchanged" as const };
   }
   const result = await saveSyncedDescription(itemId, "save", allowedLoss, true);
-  const sourceName = saved.sourceConnectionLabel ?? "the source";
   switch (result.kind) {
     case "written":
       return result.merged
@@ -398,10 +424,7 @@ export async function runWorkItemWriteTool(
       // The text has no Undo: like the user's, it is written at once. The
       // other fields, and what its timelog sets, share one Undo, taken after
       // the write, which would leave an earlier one stale.
-      // Compared with the item now, which a sync may have changed meanwhile.
-      const unchanged =
-        syncedDescription.description ===
-        findWorkItemOrRefuse(localStore.snapshot(), item._id).description;
+      const unchanged = syncedDescription.description === item.description;
       const before = unchanged
         ? localStore.snapshot()
         : localStore.saveWorkItemDescriptionText(

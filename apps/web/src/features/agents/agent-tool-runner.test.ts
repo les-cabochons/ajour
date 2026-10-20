@@ -1669,6 +1669,86 @@ describe("an agent's change to a synced description", () => {
     );
   });
 
+  it("refuses when a sync changes the description while the settings are read", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importDescribedItem(localStore, BASE);
+    const theirs = "Goal\n\nTheir steps\n\nDone when";
+    fetchPluginsOverview.mockImplementation(async () => {
+      localStore.updateSyncedDescription(workItemId, () => ({
+        description: theirs,
+        descriptionSync: { baseline: theirs, remote: theirs },
+      }));
+      return descriptionOverview("readWrite");
+    });
+    source(theirs);
+
+    expect(
+      await call("edit_work_item", {
+        workItemId,
+        title: "Renamed",
+        description: "Goal\n\nMy steps\n\nDone when",
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringContaining(
+        "The description changed while Ajour checked the edit.",
+      ),
+    });
+    expect(
+      localStore.snapshot().workItems.find((item) => item._id === workItemId),
+    ).toMatchObject({ title: "Synced", description: theirs });
+    expect(writeBacklogDescription).not.toHaveBeenCalled();
+  });
+
+  it("refuses an item archived while the settings are read", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importDescribedItem(localStore, BASE);
+    fetchPluginsOverview.mockImplementation(async () => {
+      localStore.archiveWorkItem(workItemId);
+      return descriptionOverview("readWrite");
+    });
+    source(BASE);
+
+    expect(
+      await call("edit_work_item", { workItemId, description: "Mine" }),
+    ).toMatchObject({
+      ok: false,
+    });
+    expect(
+      localStore.snapshot().workItems.find((item) => item._id === workItemId)
+        ?.description,
+    ).toBe(BASE);
+    expect(readBacklogDescription).not.toHaveBeenCalled();
+  });
+
+  it("reports a conflict the description already has, for its own text", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importDescribedItem(localStore, BASE);
+    localStore.updateSyncedDescription(workItemId, (item) => ({
+      description: "Mine",
+      descriptionSync: {
+        ...item.descriptionSync!,
+        remote: "Theirs",
+        conflict: { detectedAt: 1, localText: "Mine", remoteText: "Theirs" },
+      },
+    }));
+    fetchPluginsOverview.mockResolvedValue(descriptionOverview("readWrite"));
+    source("Theirs");
+
+    expect(
+      await call("edit_work_item", { workItemId, description: "Mine" }),
+    ).toMatchObject({
+      ok: true,
+      output: {
+        descriptionSave: {
+          outcome: "conflict",
+          message: expect.stringContaining("already conflicts"),
+        },
+      },
+    });
+    expect(writeBacklogDescription).not.toHaveBeenCalled();
+  });
+
   it("keeps the text in Ajour and says why when the write fails", async () => {
     const { call, localStore } = await setup();
     const workItemId = importDescribedItem(localStore, BASE);
