@@ -10,6 +10,7 @@ import {
   CommandList,
   CommandShortcut,
 } from "@/components/ui/command";
+import { showToast } from "@/components/ui/toast";
 import { settleOpensDialog } from "@/features/backlog/settle-dialog";
 import {
   buildPaletteSections,
@@ -314,7 +315,14 @@ export function CommandPalette() {
   }
 
   function choose(item: PaletteItem) {
-    if (item.disabledReason) return;
+    if (item.disabledReason) {
+      // Like the menus: a locked item says why when it is chosen.
+      if (item.locked) {
+        setIsOpen(false);
+        showToast(item.disabledReason);
+      }
+      return;
+    }
     if (item.command.kind === "show") {
       setView(item.command.view);
       setQuery("");
@@ -346,6 +354,7 @@ export function CommandPalette() {
         projects: state.projects,
         workItems: state.workItems,
         timesheetEntries: state.timesheetEntries,
+        lockedWeeks: state.lockedWeeks,
         timer,
         shortcuts: SHORTCUTS.filter((shortcut) =>
           shortcutRunner.isAvailable(shortcut.id),
@@ -406,9 +415,17 @@ export function CommandPalette() {
                   <CommandItem
                     key={item.id}
                     value={item.id}
-                    disabled={Boolean(item.disabledReason)}
+                    disabled={Boolean(item.disabledReason) && !item.locked}
+                    // cmdk sets aria-disabled from `disabled` alone, so a
+                    // locked item gives its reason to assistive tech here.
+                    aria-description={
+                      item.locked ? item.disabledReason : undefined
+                    }
                     onSelect={() => choose(item)}
-                    className={cn(item.destructive && "text-destructive")}
+                    className={cn(
+                      item.destructive && "text-destructive",
+                      item.locked && "opacity-50",
+                    )}
                   >
                     <span className="flex min-w-0 flex-1 flex-col">
                       <span className="truncate">
@@ -420,7 +437,7 @@ export function CommandPalette() {
                         ) : null}
                       </span>
                       {/* Like the "…" menus: why it is disabled, else what it changes. */}
-                      {item.disabledReason || item.hint ? (
+                      {!item.locked && (item.disabledReason || item.hint) ? (
                         <span className="text-xs font-normal text-muted-foreground">
                           {item.disabledReason ?? item.hint}
                         </span>

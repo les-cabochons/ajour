@@ -59,6 +59,24 @@ Then(
   },
 );
 
+When(
+  "I choose the greyed-out {string} in the menu",
+  async ({ page }, label: string) => {
+    // Playwright waits forever on an aria-disabled item. A locked item takes
+    // the click, so skip that wait.
+    await page
+      .getByRole("menu")
+      .getByRole("menuitem")
+      .filter({ hasText: label })
+      .click({ force: true });
+  },
+);
+
+Then("no Day row is dimmed as cut", async ({ page }) => {
+  await expect(page.locator(".time-entry-row")).not.toHaveCount(0);
+  await expect(page.locator(".time-entry-row.is-cut")).toHaveCount(0);
+});
+
 Then("the Week view shows the week is submitted", async ({ page }) => {
   const week = page.getByRole("region", { name: "Week", exact: true });
   await expect(week.getByText("Submitted", { exact: true })).toBeVisible();

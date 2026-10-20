@@ -1,4 +1,5 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { showToast } from "@/components/ui/toast";
 import type {
   BacklogItemActionId,
   CalendarSuggestionActionId,
@@ -94,8 +95,16 @@ export type ItemKeyCommand<Id extends string> =
   | { kind: "focus"; direction: FocusDirection }
   | { kind: "reorder"; step: -1 | 1 }
   | { kind: "open-menu" }
-  /** `action` is undefined when the key's action is listed but disabled. */
-  | { kind: "action"; shortcutId: ShortcutActionId; action?: ObjectAction<Id> };
+  /**
+   * `action` is undefined when the key's action is listed but disabled, and
+   * `lockedReason` is then set when a submitted week disables it.
+   */
+  | {
+      kind: "action";
+      shortcutId: ShortcutActionId;
+      action?: ObjectAction<Id>;
+      lockedReason?: string;
+    };
 
 /**
  * Keys that run another key's action in a different way: Shift+E settles with
@@ -150,10 +159,14 @@ export function getItemKeyCommand<Id extends string>(
     return null;
   }
 
+  const action = listed.find((candidate) => !candidate.disabledReason);
   return {
     kind: "action",
     shortcutId,
-    action: listed.find((action) => !action.disabledReason),
+    action,
+    lockedReason: action
+      ? undefined
+      : listed.find((candidate) => candidate.locked)?.disabledReason,
   };
 }
 
@@ -299,7 +312,9 @@ const platform = getShortcutPlatform();
  * Runs the item shortcuts for the element that has focus: arrows move focus,
  * Alt+arrows call `onReorder` when the item is sortable, ".", Shift+F10 and the
  * context menu key open its menu, and the other keys run the action that
- * `keys` maps them to. A disabled action swallows its key and does nothing.
+ * `keys` maps them to. A disabled action swallows its key and does nothing,
+ * except a locked one, which shows the submitted week's reason as a toast, as
+ * Alt+arrows do with `reorderLockedReason`.
  * After Delete removes the item, focus moves to the next item that is still
  * there, or the previous one at the end.
  */
@@ -310,6 +325,7 @@ export function handleItemKeyDown<Id extends string>(
     keys,
     onAction,
     onReorder,
+    reorderLockedReason,
   }: {
     actions: readonly ObjectAction<Id>[];
     keys: ActionKeys<Id>;
@@ -317,6 +333,8 @@ export function handleItemKeyDown<Id extends string>(
     onAction: (actionId: Id, key: { shortcutId: ShortcutActionId }) => void;
     /** Present only where drag reorder exists. -1 is Move up, 1 is Move down. */
     onReorder?: (step: -1 | 1) => void;
+    /** Set instead of `onReorder` when a submitted week keeps the item in place. */
+    reorderLockedReason?: string;
   },
 ) {
   const item = event.currentTarget;
@@ -345,6 +363,9 @@ export function handleItemKeyDown<Id extends string>(
         onReorder(command.step);
         // Moving a focused node in the DOM can drop its focus.
         refocusAfterRender(item);
+      } else if (reorderLockedReason) {
+        event.preventDefault();
+        showToast(reorderLockedReason);
       }
       return;
     case "open-menu":
@@ -355,6 +376,7 @@ export function handleItemKeyDown<Id extends string>(
       // Swallow the key even when disabled, so Cmd+D never bookmarks the page.
       event.preventDefault();
       if (!command.action) {
+        if (command.lockedReason) showToast(command.lockedReason);
         return;
       }
 

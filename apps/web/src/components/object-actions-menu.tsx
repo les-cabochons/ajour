@@ -6,6 +6,7 @@ import {
 } from "@/domain/actions/object-actions";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
+import { showToast } from "@/components/ui/toast";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -81,7 +82,9 @@ function getActionKeyLabel<Id extends string>(
  * Renders one action set as menu items, with a line between its sections (see
  * `getObjectActionSections`). Shared by the "…" menu and the browser's
  * right-click menu; the desktop app draws right-click menus natively. A
- * disabled action is greyed out; only screen readers hear its reason.
+ * disabled action is greyed out; only screen readers hear its reason. A locked
+ * one can still be chosen, and choosing it shows the submitted week's reason
+ * as a toast instead of running it.
  */
 export function ObjectActionItems<Id extends string>({
   actions,
@@ -98,14 +101,20 @@ export function ObjectActionItems<Id extends string>({
           <DropdownMenuItem
             key={action.id}
             variant={action.destructive ? "destructive" : "default"}
-            disabled={Boolean(action.disabledReason)}
+            disabled={Boolean(action.disabledReason) && !action.locked}
+            aria-disabled={action.locked || undefined}
             aria-description={action.disabledReason}
             aria-keyshortcuts={keyLabel?.aria}
             onClick={(event) => {
               event.stopPropagation();
-              onAction(action.id);
+              // Only a locked item can be clicked while it has a reason.
+              if (action.disabledReason) showToast(action.disabledReason);
+              else onAction(action.id);
             }}
-            className="flex-col items-stretch gap-0"
+            className={cn(
+              "flex-col items-stretch gap-0",
+              action.locked && "opacity-50",
+            )}
           >
             <span className="flex items-center gap-6">
               <span>{action.label}</span>

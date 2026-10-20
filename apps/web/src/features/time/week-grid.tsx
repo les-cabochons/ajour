@@ -31,9 +31,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type {
-  ObjectAction,
-  TimeEntryActionId,
+import {
+  markLockedActions,
+  type ObjectAction,
+  type TimeEntryActionId,
 } from "@/domain/actions/object-actions";
 import type { LocalProject, LocalTimesheetEntry } from "@/domain/local-state";
 import { formatClockDuration } from "@/domain/time/duration";
@@ -559,7 +560,10 @@ export function WeekGrid({
         : target
           ? [addEntry, ...entryActions.getActions(target)]
           : [addEntry];
-    return [...cellActions, getDeleteRowAction(row, lockReason)];
+    return markLockedActions(
+      [...cellActions, getDeleteRowAction(row, lockReason)],
+      lockReason,
+    );
   }
 
   function handleCellKeyDown(
@@ -906,7 +910,12 @@ export function WeekGrid({
       {/* Keep this root outside the table so cell menus are not nested under it. */}
       <ObjectContextMenu
         actions={
-          nameMenuRow ? [getDeleteRowAction(nameMenuRow, lockReason)] : []
+          nameMenuRow
+            ? markLockedActions(
+                [getDeleteRowAction(nameMenuRow, lockReason)],
+                lockReason,
+              )
+            : []
         }
         onAction={() => {
           if (nameMenuRow) requestDeleteRow(nameMenuRow);

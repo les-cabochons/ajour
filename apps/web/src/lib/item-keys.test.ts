@@ -4,6 +4,7 @@ import {
   getTaskActions,
   getTimeEntryActions,
 } from "@/domain/actions/object-actions";
+import { lockedWeekMessage } from "@/domain/time/locked-weeks";
 import {
   BACKLOG_ITEM_ACTION_KEYS,
   TASK_ACTION_KEYS,
@@ -164,6 +165,28 @@ describe("getItemKeyCommand", () => {
         TIME_ENTRY_ACTION_KEYS,
       ),
     ).toMatchObject({ action: { id: "discard" } });
+  });
+
+  it("gives the key of an action locked by a submitted week its reason", () => {
+    const reason = lockedWeekMessage("2026-10-05");
+    const locked = getTimeEntryActions("committed", { lockedReason: reason });
+
+    expect(
+      getItemKeyCommand(
+        press("Backspace"),
+        "mac",
+        locked,
+        TIME_ENTRY_ACTION_KEYS,
+      ),
+    ).toEqual({
+      kind: "action",
+      shortcutId: "item.delete",
+      lockedReason: reason,
+    });
+    // Edit still opens the entry, read-only.
+    expect(
+      getItemKeyCommand(press("Enter"), "mac", locked, TIME_ENTRY_ACTION_KEYS),
+    ).toMatchObject({ action: { id: "edit" }, lockedReason: undefined });
   });
 
   it("archives tasks, deletes backlog items, and leaves unknown keys alone", () => {
