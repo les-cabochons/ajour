@@ -34,8 +34,7 @@ import {
 } from "../../../packages/shared/agent-runs.ts";
 import {
   boundConnectionError,
-  connectionSecretValues,
-  redactSecretValues,
+  redactConnectionError,
 } from "./plugin-errors.ts";
 
 interface StoredConnection {
@@ -429,10 +428,12 @@ function toEditableValues(
   return editableValues;
 }
 
+/** `installed` is false when the plugin is gone and `plugin` only stands in for it. */
 function buildConnectionSummary(
   state: AppApiState,
   connection: StoredConnection,
   plugin: PluginManifest,
+  installed: boolean,
 ): PluginConnectionSummary {
   const connectionItems = state.stagedImports.filter(
     (item) => item.connectionId === connection.id,
@@ -453,12 +454,14 @@ function buildConnectionSummary(
     connectedAt: connection.connectedAt,
     lastSyncAt: connection.lastSyncAt,
     // A last error stored before every route redacted plugin errors may
-    // still hold a secret.
+    // still hold a secret. A stand-in declares no secret field, so then
+    // every stored value is treated as one.
     lastError:
       connection.lastError &&
-      redactSecretValues(
+      redactConnectionError(
         connection.lastError,
-        connectionSecretValues(plugin, [connection.config]),
+        installed ? plugin : undefined,
+        [connection.config],
       ),
     lastErrorAt: connection.lastErrorAt,
     pendingImportCount: connectionItems.length,
@@ -784,8 +787,10 @@ export class AppApiStorage {
       }
     }
 
+    const missingPluginIds = new Set<string>();
     for (const connection of state.connections) {
       if (!pluginMap.has(connection.pluginId)) {
+        missingPluginIds.add(connection.pluginId);
         pluginMap.set(
           connection.pluginId,
           createMissingPluginManifest(connection.pluginId),
@@ -807,7 +812,14 @@ export class AppApiStorage {
       ).filter((capability) => pluginHasCapability(plugin, capability)),
       connections: state.connections
         .filter((connection) => connection.pluginId === plugin.id)
-        .map((connection) => buildConnectionSummary(state, connection, plugin)),
+        .map((connection) =>
+          buildConnectionSummary(
+            state,
+            connection,
+            plugin,
+            !missingPluginIds.has(plugin.id),
+          ),
+        ),
     }));
 
     return {

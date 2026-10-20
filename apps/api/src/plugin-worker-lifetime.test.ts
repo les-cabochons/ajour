@@ -114,6 +114,16 @@ describe("plugin worker lifetime", () => {
     expect(invalid.activeOperationCount).toBe(0);
   });
 
+  it("marks an error it cuts with an ellipsis, so the host can tell a cut secret", async () => {
+    const host = await lifetime(
+      "import {parentPort} from 'node:worker_threads'; parentPort.postMessage({ok:false,error:'x'.repeat(5000)});",
+    );
+
+    await expect(host.run("test", "sync", passThrough)).rejects.toThrow(
+      new Error(`${"x".repeat(4_095)}…`),
+    );
+  });
+
   it("releases capacity when the worker fails to start or exits before replying", async () => {
     const missing = await lifetime(null);
     await expect(missing.run("test", "sync", passThrough)).rejects.toThrow();

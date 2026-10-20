@@ -2754,6 +2754,7 @@ describe("plugin errors that echo a secret", () => {
   const tempDirs: string[] = [];
   const servers: Server[] = [];
   const TOKEN = "pat-7c1e9a2b4d6f8a0c";
+  const PIN = 482913;
   const SITE = "https://acme.atlassian.net";
 
   afterEach(async () => {
@@ -2776,8 +2777,13 @@ describe("plugin errors that echo a secret", () => {
     "const leak = (what) => async (connection) => {",
     "  throw new Error(`${what} failed with token ${connection.config.token}.`);",
     "};",
-    "export const syncConnection = leak('Sync');",
-    "export const listSettleStates = leak('Listing states');",
+    "export async function syncConnection(connection) {",
+    "  throw new Error(`Sync failed with token ${connection.config.token} and PIN ${connection.config.pin}.`);",
+    "}",
+    "export async function listSettleStates(connection, request) {",
+    "  if (request.sourceId === 'LONG') throw new Error(`${connection.config.token} `.repeat(11));",
+    "  return leak('Listing states')(connection);",
+    "}",
     "export const writeSettle = leak('Settling');",
     "export const syncPullRequests = leak('Pull request sync');",
     "export const getPullRequestContent = leak('Reading the pull request');",
@@ -2786,12 +2792,9 @@ describe("plugin errors that echo a secret", () => {
   async function createServer(savedState?: object) {
     const root = await mkdtemp(path.join(os.tmpdir(), "ajour-leak-api-"));
     tempDirs.push(root);
+    const statePath = path.join(root, "state.json");
     if (savedState) {
-      await writeFile(
-        path.join(root, "state.json"),
-        JSON.stringify(savedState),
-        "utf8",
-      );
+      await writeFile(statePath, JSON.stringify(savedState), "utf8");
     }
     const pluginDirectory = await createPlugin(
       path.join(root, "source"),
@@ -2809,17 +2812,18 @@ describe("plugin errors that echo a secret", () => {
             type: "password",
             secret: true,
           },
+          { id: "pin", label: "PIN", type: "number", secret: true },
         ],
       },
     );
     const server = createAppApiServer({
-      statePath: path.join(root, "state.json"),
+      statePath,
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
       allowDevelopmentPlugins: true,
     });
     servers.push(server);
-    return server;
+    return { server, statePath };
   }
 
   const saveConnection = (
@@ -2844,7 +2848,7 @@ describe("plugin errors that echo a secret", () => {
     });
 
   it("keeps the submitted and the stored token out of a refused save", async () => {
-    const server = await createServer();
+    const { server } = await createServer();
 
     await expect(
       saveConnection(server, {
@@ -2872,12 +2876,16 @@ describe("plugin errors that echo a secret", () => {
     });
   });
 
-  async function createConnection() {
-    const server = await createServer();
-    const saved = await saveConnection(server, { token: TOKEN });
+  async function createConnection(values: Record<string, unknown> = {}) {
+    const { server, statePath } = await createServer();
+    const saved = await saveConnection(server, {
+      token: TOKEN,
+      pin: PIN,
+      ...values,
+    });
     const connectionId = (saved.body as { connection: { id: string } })
       .connection.id;
-    return { server, connectionId };
+    return { server, statePath, connectionId };
   }
 
   it("keeps the token out of a failed settle", async () => {
@@ -2905,11 +2913,43 @@ describe("plugin errors that echo a secret", () => {
     });
   });
 
-  async function storedLastError(server: Server) {
+  it("keeps out the start of a token that the worker's cut splits", async () => {
+    const longToken = `pat-${"7c1e9a2b".repeat(50)}`;
+    const { server, connectionId } = await createConnection({
+      token: longToken,
+    });
+
+    // 11 copies of 405 characters: the worker keeps 4,095 of them, 10 whole
+    // copies and the first 45 characters of the 11th, then adds "…".
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/plugins/jira/connections/${connectionId}/settle-states`,
+        body: JSON.stringify({ sourceId: "LONG" }),
+      }),
+    ).resolves.toEqual({
+      status: 502,
+      body: { error: `${"[secret] ".repeat(10)}[secret]…` },
+    });
+  });
+
+  /** The last error as saved, read from the state file rather than the overview, which redacts again. */
+  async function storedLastError(statePath: string, connectionId: string) {
+    const state = JSON.parse(await readFile(statePath, "utf8")) as {
+      connections: { id: string; lastError?: string }[];
+    };
+    return state.connections.find(
+      (connection) => connection.id === connectionId,
+    )?.lastError;
+  }
+
+  /** The last error as `GET /api/plugins` shows it. */
+  async function shownLastError(server: Server) {
     const overview = await dispatchJsonRequest(server, {
       method: "GET",
       path: "/api/plugins",
     });
+    expect(overview.status).toBe(200);
     return (
       overview.body as {
         connectionGroups: { connections: { lastError?: string }[] }[];
@@ -2917,8 +2957,8 @@ describe("plugin errors that echo a secret", () => {
     ).connectionGroups[0]?.connections[0]?.lastError;
   }
 
-  it("keeps the token out of a failed backlog sync and its stored error", async () => {
-    const { server, connectionId } = await createConnection();
+  it("keeps the token and the numeric PIN out of a failed backlog sync and its stored error", async () => {
+    const { server, statePath, connectionId } = await createConnection();
 
     const synced = await dispatchJsonRequest(server, {
       method: "POST",
@@ -2926,21 +2966,17 @@ describe("plugin errors that echo a secret", () => {
       body: JSON.stringify({ trigger: "manual", workItems: [] }),
     });
 
+    const redacted = "Sync failed with token [secret] and PIN [secret].";
     expect(synced).toMatchObject({
       status: 502,
-      body: {
-        error: "Sync failed with token [secret].",
-        connection: { lastError: "Sync failed with token [secret]." },
-      },
+      body: { error: redacted, connection: { lastError: redacted } },
     });
     expect(JSON.stringify(synced.body)).not.toContain(TOKEN);
-    expect(await storedLastError(server)).toBe(
-      "Sync failed with token [secret].",
-    );
+    expect(await storedLastError(statePath, connectionId)).toBe(redacted);
   });
 
   it("keeps the token out of failed pull request calls and the stored error", async () => {
-    const { server, connectionId } = await createConnection();
+    const { server, statePath, connectionId } = await createConnection();
 
     await expect(
       dispatchJsonRequest(server, {
@@ -2962,13 +2998,13 @@ describe("plugin errors that echo a secret", () => {
       status: 502,
       body: { error: "Pull request sync failed with token [secret]." },
     });
-    expect(await storedLastError(server)).toBe(
+    expect(await storedLastError(statePath, connectionId)).toBe(
       "Pull request sync failed with token [secret].",
     );
   });
 
   it("hides the token in a last error stored before errors were redacted", async () => {
-    const server = await createServer({
+    const { server } = await createServer({
       version: 7,
       connections: [
         {
@@ -2995,8 +3031,78 @@ describe("plugin errors that echo a secret", () => {
     });
 
     expect(JSON.stringify(overview.body)).not.toContain(TOKEN);
-    expect(await storedLastError(server)).toBe(
+    expect(await shownLastError(server)).toBe(
       "Sync failed with token [secret].",
+    );
+  });
+
+  it("keeps a stored error within the overview's limit when a short secret grows into [secret]", async () => {
+    const { server } = await createServer({
+      version: 7,
+      connections: [
+        {
+          id: "saved-jira",
+          pluginId: "jira",
+          label: "Main Jira",
+          tenantLabel: "Acme",
+          autoSync: false,
+          autoSyncIntervalMinutes: 15,
+          connectedAt: 1,
+          config: { baseUrl: SITE, token: "k9x" },
+          configSummary: {},
+          // 1,000 characters, the most a last error keeps.
+          lastError: "k9x ".repeat(250),
+          lastErrorAt: 2,
+        },
+      ],
+      disabledPluginIds: [],
+      pluginsEnabled: true,
+    });
+
+    // 111 replacements of 9 characters fill 999, then the ellipsis.
+    expect(await shownLastError(server)).toBe(`${"[secret] ".repeat(111)}…`);
+  });
+
+  it("hides every stored value in the last error of an uninstalled plugin's connection", async () => {
+    const { server } = await createServer({
+      version: 7,
+      connections: [
+        {
+          id: "saved-gitea",
+          pluginId: "gitea",
+          label: "Old Gitea",
+          tenantLabel: "Acme",
+          autoSync: false,
+          autoSyncIntervalMinutes: 15,
+          connectedAt: 1,
+          config: { baseUrl: SITE, token: TOKEN, pin: PIN, archived: true },
+          configSummary: {},
+          lastError: `Sync of ${SITE} failed with token ${TOKEN} and PIN ${PIN}: true.`,
+          lastErrorAt: 2,
+        },
+      ],
+      disabledPluginIds: [],
+      pluginsEnabled: true,
+    });
+
+    const overview = await dispatchJsonRequest(server, {
+      method: "GET",
+      path: "/api/plugins",
+    });
+
+    expect(overview.status).toBe(200);
+    const gitea = (
+      overview.body as {
+        connectionGroups: {
+          plugin: { id: string };
+          connections: { lastError?: string }[];
+        }[];
+      }
+    ).connectionGroups.find((group) => group.plugin.id === "gitea");
+    // Without its manifest, no field is known to be secret, so every
+    // string and number value goes.
+    expect(gitea?.connections[0]?.lastError).toBe(
+      "Sync of [secret] failed with token [secret] and PIN [secret]: true.",
     );
   });
 

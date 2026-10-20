@@ -117,7 +117,7 @@ import { playwrightMcpServer } from "./agent-runner/playwright-mcp.ts";
 import { AgentRunError, AgentRunner } from "./agent-runner/runner.ts";
 import { capabilityOfMethod, PluginManager } from "./plugin-host.ts";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
-import { pluginErrorMessage } from "./plugin-errors.ts";
+import { errorMessage, pluginErrorMessage } from "./plugin-errors.ts";
 import { AppApiStorage } from "./storage.ts";
 
 interface AppApiServerOptions {
@@ -313,10 +313,6 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   }
 
   return JSON.parse(rawBody);
-}
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Unknown error";
 }
 
 function matchPluginRoute(pathname: string) {
@@ -530,6 +526,15 @@ async function getOverview(
   return pluginsOverviewSchema.parse(
     await storage.getPluginsOverview(plugins, unavailable),
   );
+}
+
+/** The installed plugin with `pluginId`, if any, and every installed plugin's id. */
+async function findPlugin(pluginManager: PluginManager, pluginId: string) {
+  const plugins = await pluginManager.listPlugins();
+  return {
+    plugin: plugins.find((candidate) => candidate.id === pluginId),
+    pluginIds: new Set(plugins.map((candidate) => candidate.id)),
+  };
 }
 
 async function findConnectionSummary(
@@ -1204,9 +1209,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             await readJsonBody(request),
           );
           const parsedValues = parseConnectionValues(payload.values);
-          const plugin = (await pluginManager.listPlugins()).find(
-            (candidate) => candidate.id === pluginId,
-          );
+          const { plugin } = await findPlugin(pluginManager, pluginId);
           const existingConnection = payload.id
             ? await storage.getConnection(pluginId, payload.id)
             : null;
@@ -1313,13 +1316,15 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             });
             return;
           }
-          const plugins = await pluginManager.listPlugins();
-          const plugin = plugins.find((candidate) => candidate.id === pluginId);
+          const { plugin, pluginIds } = await findPlugin(
+            pluginManager,
+            pluginId,
+          );
           const inactive = await inactiveCapabilityError(
             storage,
             pluginId,
             "connector",
-            new Set(plugins.map((candidate) => candidate.id)),
+            pluginIds,
             "settling",
           );
           if (inactive) {
@@ -1515,10 +1520,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         }
 
         if (request.method === "POST" && action === "sync") {
-          const plugins = await pluginManager.listPlugins();
-          const plugin = plugins.find((candidate) => candidate.id === pluginId);
-          const availablePluginIds = new Set(
-            plugins.map((candidate) => candidate.id),
+          const { plugin, pluginIds: availablePluginIds } = await findPlugin(
+            pluginManager,
+            pluginId,
           );
           if (!(await pluginManager.hasCapability(pluginId, "connector"))) {
             writeJson(response, 409, {
@@ -1683,8 +1687,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           writeJson(response, 404, { error: "Unknown code host operation." });
           return;
         }
-        const plugins = await pluginManager.listPlugins();
-        const plugin = plugins.find((candidate) => candidate.id === pluginId);
+        const { plugin, pluginIds } = await findPlugin(pluginManager, pluginId);
         if (!plugin || !pluginHasCodeHost(plugin)) {
           writeJson(response, 404, {
             error: "This plugin does not provide pull requests.",
@@ -1695,7 +1698,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           storage,
           pluginId,
           "codeHost",
-          new Set(plugins.map((candidate) => candidate.id)),
+          pluginIds,
           "using its pull requests",
         );
         if (inactive) {
@@ -1765,8 +1768,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           writeJson(response, 404, { error: "Unknown comment operation." });
           return;
         }
-        const plugins = await pluginManager.listPlugins();
-        const plugin = plugins.find((candidate) => candidate.id === pluginId);
+        const { plugin, pluginIds } = await findPlugin(pluginManager, pluginId);
         if (!plugin?.capabilities.connector?.comments) {
           writeJson(response, 404, {
             error: "This plugin does not provide comments.",
@@ -1777,7 +1779,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           storage,
           pluginId,
           "connector",
-          new Set(plugins.map((candidate) => candidate.id)),
+          pluginIds,
           "using its comments",
         );
         if (inactive) {
@@ -1925,8 +1927,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           writeJson(response, 404, { error: "Unknown calendar operation." });
           return;
         }
-        const plugins = await pluginManager.listPlugins();
-        const plugin = plugins.find((candidate) => candidate.id === pluginId);
+        const { plugin, pluginIds } = await findPlugin(pluginManager, pluginId);
         if (!plugin || !pluginHasCalendar(plugin)) {
           writeJson(response, 404, {
             error: "This plugin does not provide calendar events.",
@@ -1937,7 +1938,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           storage,
           pluginId,
           "calendar",
-          new Set(plugins.map((candidate) => candidate.id)),
+          pluginIds,
           "using its calendar",
         );
         if (inactive) {
@@ -2015,8 +2016,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         const pluginId = pluginIdSchema.parse(
           decodeURIComponent(rawPluginId ?? ""),
         );
-        const plugins = await pluginManager.listPlugins();
-        const plugin = plugins.find((candidate) => candidate.id === pluginId);
+        const { plugin, pluginIds } = await findPlugin(pluginManager, pluginId);
         if (!plugin || !pluginHasTeam(plugin)) {
           writeJson(response, 404, {
             error: "This plugin does not sync a team's projects.",
@@ -2027,7 +2027,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           storage,
           pluginId,
           "team",
-          new Set(plugins.map((candidate) => candidate.id)),
+          pluginIds,
           create ? "creating a team" : "syncing its projects",
         );
         if (inactive) {

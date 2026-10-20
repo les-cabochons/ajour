@@ -123,6 +123,7 @@ The backlog editor module is feature-local because its vocabulary and commands b
 - Plugin discovery, request/reply validation, and package mutation coordination: `apps/api/src/plugin-host.ts`
 - Shared ephemeral worker admission, cancellation, timeout, termination, and shutdown drain: `apps/api/src/plugin-worker-lifetime.ts`. Each plugin/data-shape manager owns a separate four-operation quota and its own worker script.
 - Worker entrypoint bridge: `apps/api/src/plugin-worker.mjs`
+- Plugin error messages: `apps/api/src/plugin-errors.ts`. Every route that runs a plugin operation answers, stores a last error and logs with `pluginErrorMessage`, which replaces each secret connection value with `[secret]`, including one a cut split, then bounds the message. The overview redacts a stored last error with `redactConnectionError`. `connectionSecretValues` and `redactSecretValues` import nothing, for the wide-event error scrubber (#305).
 - Project data-shape manifest and dataset contracts: `packages/shared/project-data-shapes.ts`
 - Project data-shape discovery and worker orchestration: `apps/api/src/project-data-shape-plugin.ts` and `apps/api/src/project-data-shape-host.ts`
 - Standalone Workday shape plugin: `les-cabochons/ajp-workday`

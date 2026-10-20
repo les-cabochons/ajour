@@ -90,9 +90,12 @@ title.
 A plugin may echo a secret connection value in an error. Every route that runs
 a plugin operation turns the error into a message with `pluginErrorMessage` in
 `apps/api/src/plugin-errors.ts`: each secret value of the connection becomes
-`[secret]`, then the message is cut to 1,000 characters. No response, stored
-last error or log carries the raw message, and the overview redacts a stored
-last error again before it returns it.
+`[secret]`, then the message is cut to 1,000 characters. The worker cuts a long
+error before the host sees it and marks the cut with "…", so the start of a
+secret that the cut split becomes `[secret]` too. No response, stored last
+error or log carries the raw message. The overview redacts a stored last error
+again before it returns it, and when the plugin is no longer installed it
+treats every stored string and number value of the connection as secret.
 The rules in this section apply to every such plugin, which must remain
 physically and logically separate from the application. A plugin owns its external-system
 authentication, transport, field discovery, and remote read/write behavior. It

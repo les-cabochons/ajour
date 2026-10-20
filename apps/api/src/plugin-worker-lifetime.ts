@@ -4,6 +4,16 @@ import { Worker } from "node:worker_threads";
 const MAX_CONCURRENT_OPERATIONS_PER_HOST = 4;
 const MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS = 4_096;
 
+/**
+ * Cuts a plugin error the way plugin-worker.mjs does, ending it with "…". The
+ * cut may split a secret, and the mark is how the host's redaction knows.
+ */
+function cutErrorMessage(message: string) {
+  return message.length <= MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS
+    ? message
+    : `${message.slice(0, MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS - 1)}…`;
+}
+
 interface WorkerInvocation<T> {
   workerData: unknown;
   parse(value: unknown): T;
@@ -173,9 +183,7 @@ export class PluginWorkerLifetime<TMethod extends string> {
           } else {
             const detail =
               typeof message?.error === "string" && message.error.trim()
-                ? message.error
-                    .trim()
-                    .slice(0, MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS)
+                ? cutErrorMessage(message.error.trim())
                 : `Unknown ${this.options.name.toLowerCase()} error.`;
             void finalize(new Error(detail));
           }
