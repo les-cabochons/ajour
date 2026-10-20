@@ -108,9 +108,12 @@ table is built once. Each text has a work budget, counting one step per
 secret it is checked against and the characters read, and is dropped as soon
 as it passes it. The request has a total budget that counts every text's
 work, a dropped text's included. Once that is spent, every later text that
-could hold a secret is dropped at once, and a text shorter than every secret
-and not cut passes after one comparison. So a request costs at most its
-budget, plus a constant per text. A dropped text, whether its own length or
+could hold a secret is dropped at once. A text shorter than every secret and
+not cut needs only one comparison to redact, but if it is longer than 1,000
+characters it is still cut, which reads up to 1,000 characters per secret and
+counts like any other work, and once the request is spent it is dropped
+instead of cut. So a request costs at most its budget, plus a constant per
+text. A dropped text, whether its own length or
 the connection's secrets made it too costly, is replaced whole by "Hidden
 because it couldn't be checked for secrets.", and such a summary is dropped.
 Text the plugin writes itself in a successful result is redacted the same

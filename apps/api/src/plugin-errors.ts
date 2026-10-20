@@ -86,7 +86,10 @@ export const TEXT_WORK_BUDGET = 250_000;
  * request: their steps and reads, a dropped text's steps included, and the
  * secrets' tables. Once it is spent, every later text that could hold a
  * secret is replaced by `UNCHECKED_TEXT` at once. A text no secret can be in,
- * shorter than every secret and not cut, costs one comparison and passes. So a
+ * shorter than every secret and not cut, costs `redact` one comparison. Such a
+ * text longer than 1,000 characters is still cut, which reads up to 1,000
+ * characters per secret and is charged like any other work, and once the
+ * request is spent it becomes `UNCHECKED_TEXT` instead of being cut. So a
  * request costs at most this much, plus a constant per text.
  */
 export const REQUEST_WORK_BUDGET = 5_000_000;
@@ -172,9 +175,10 @@ function cutStart(pattern: Pattern, matched: number) {
  * messages, its summary and its last error. Build one per connection and
  * request, and reuse it for every text. Each secret's table is built once,
  * when a text first needs it. A text shorter than every secret and not cut
- * costs one comparison, and a secret longer than a text is read only for the
- * cut rule. Each text has its own budget, `TEXT_WORK_BUDGET`, and all of them
- * together `REQUEST_WORK_BUDGET`.
+ * costs `redact` one comparison, though cutting it to 1,000 characters, when
+ * it is longer, still reads each secret. A secret longer than a text is read
+ * only for the cut rule. Each text has its own budget, `TEXT_WORK_BUDGET`, and
+ * all of them together `REQUEST_WORK_BUDGET`.
  */
 export class ConnectionRedaction {
   /** The connection's secrets, shortest first, without empty ones or repeats. */
