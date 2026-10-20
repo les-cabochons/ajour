@@ -1,4 +1,5 @@
 import type { LocalWorkItem, LocalWorkItemDraft } from "@/domain/local-state";
+import { normalizeDescriptionText } from "@/domain/backlog/description-sync";
 import type { WorkItemPatch } from "@/domain/backlog/work-item-transitions";
 import { isSubtaskWorkItem } from "@/domain/backlog/work-item-hierarchy";
 import { isPriorityLevel, type PriorityLevel } from "@/domain/backlog/priority";
@@ -317,7 +318,8 @@ export function buildBacklogTaskPatch(
     fields.description !== saved.description &&
     fields.description !== (options.descriptionBase ?? saved.description)
   ) {
-    patch.description = fields.description.trim() || undefined;
+    patch.description =
+      normalizeDescriptionText(fields.description) || undefined;
   }
 
   if (!options.isSubtask && fields.priority !== saved.priority) {
@@ -376,7 +378,7 @@ export function buildBacklogTaskDraft(
 
   return {
     title: fields.title.trim(),
-    description: fields.description.trim() || undefined,
+    description: normalizeDescriptionText(fields.description) || undefined,
     parentWorkItemId: fields.parentWorkItemId || undefined,
     priority: options.isSubtask
       ? undefined

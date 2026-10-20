@@ -18,21 +18,25 @@ import type {
 type Described = Pick<LocalWorkItem, "description" | "descriptionSync">;
 
 /**
- * The source's text as Ajour stores it: Unix line endings, without blank
- * lines around it, but with its first line's indentation, which Markdown
- * can need, as for an indented code block.
+ * A description as Ajour stores and compares it: Unix line endings, without
+ * blank lines or spaces around it, but with a first line's indentation of
+ * four spaces or more, which Markdown reads as an indented code block. Every
+ * place that saves a description uses it, so texts compare equal when they
+ * read the same.
  */
-function storedText(text: string) {
-  return text
-    .replace(/\r\n?/g, "\n")
-    .replace(/^(?:[ \t]*\n)+/, "")
-    .trimEnd();
+export function normalizeDescriptionText(text: string | undefined) {
+  return (
+    (text ?? "")
+      .replace(/\r\n?/g, "\n")
+      .replace(/^(?:[ \t]*\n)+/, "")
+      // One to three leading spaces mean nothing in Markdown; four start code.
+      .replace(/^ {1,3}(?=\S)/, "")
+      .trimEnd()
+  );
 }
 
-/** Texts compare without their outer whitespace or line endings. */
-function normalizeText(text: string | undefined) {
-  return (text ?? "").replace(/\r\n?/g, "\n").trim();
-}
+const storedText = normalizeDescriptionText;
+const normalizeText = normalizeDescriptionText;
 
 /** The 4,000-character note an item's description was once imported as. */
 function oldImportedNote(text: string) {
@@ -86,7 +90,8 @@ export function reconcileDescription(
     comparedBaseline === undefined
       ? !local ||
         local === comparedRemote ||
-        local === oldImportedNote(comparedRemote)
+        // The old note was trimmed whole, indentation included.
+        local.trim() === oldImportedNote(comparedRemote.trim())
       : local === comparedRemote || local === comparedBaseline;
   if (takesSource) return agreed(source, remote);
 

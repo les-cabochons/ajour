@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   MarkdownEditor,
   preloadMarkdownEditor,
@@ -26,6 +26,7 @@ import {
   SyncedDescriptionNote,
   useDescriptionAccess,
 } from "@/features/backlog/synced-description";
+import { normalizeDescriptionText } from "@/domain/backlog/description-sync";
 
 /*
  * The backlog item page edits in place: each field below saves on Enter or
@@ -223,6 +224,17 @@ export function DescriptionSection({
 }) {
   const [editing, setEditing] = useState(false);
   const closer = useCloseOnce(() => setEditing(false));
+  // The text the editor opened on, and what it holds now. A sync can change
+  // the description under an open editor; an untouched draft follows it, and
+  // one the user did not change is never saved over it.
+  const current = item.description ?? "";
+  const [base, setBase] = useState(current);
+  const [draft, setDraft] = useState(current);
+  useEffect(() => {
+    if (!editing || current === base) return;
+    setDraft((text) => (text === base ? current : text));
+    setBase(current);
+  }, [editing, current, base]);
   const access = useDescriptionAccess(item);
   const editable = !readOnly && access.editable;
   const body = useMemo(
@@ -231,7 +243,9 @@ export function DescriptionSection({
   );
 
   const save = (value: string) => {
-    const description = value.trim() || undefined;
+    if (normalizeDescriptionText(value) === normalizeDescriptionText(base))
+      return;
+    const description = normalizeDescriptionText(value) || undefined;
     if (description !== item.description) {
       patchBacklogItemWithUndo(item, { description }, "Description changed");
     }
@@ -248,6 +262,8 @@ export function DescriptionSection({
               onFocus={preloadMarkdownEditor}
               onClick={() => {
                 closer.reset();
+                setBase(current);
+                setDraft(current);
                 setEditing(true);
               }}
             >
@@ -262,7 +278,8 @@ export function DescriptionSection({
         <MarkdownEditor
           autoFocus
           aria-label="Description"
-          defaultValue={item.description ?? ""}
+          value={draft}
+          onChange={setDraft}
           placeholder="Markdown supported"
           minLines={4}
           onBlur={(value) => closer.close(() => save(value))}

@@ -150,6 +150,16 @@ describe("reconciling a synced description", () => {
     });
   });
 
+  it("counts a change to a first line's indentation as an edit", () => {
+    const code = "    echo hi";
+    expect(
+      reconcileDescription(synced("echo hi", code), { text: code }, NOW),
+    ).toEqual({
+      description: "echo hi",
+      descriptionSync: { baseline: code, remote: code },
+    });
+  });
+
   it("refreshes what was lost and cut on every sync", () => {
     expect(
       reconcileDescription(
