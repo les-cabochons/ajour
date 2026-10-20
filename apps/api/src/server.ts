@@ -1441,6 +1441,17 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           const writeRequest = writes
             ? backlogWriteDescriptionRequestSchema.parse(body)
             : undefined;
+          // Only a connection that allows lossy conversion writes with losses,
+          // whatever a client asks.
+          if (
+            writeRequest?.allowedLoss?.length &&
+            connection.allowLossyConversion !== true
+          ) {
+            writeJson(response, 409, {
+              error: "This connection does not allow lossy conversion.",
+            });
+            return;
+          }
           try {
             if (readRequest) {
               const result = await pluginManager.readDescription(
