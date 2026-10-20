@@ -291,7 +291,7 @@ function parseEditorEstimates(fields: BacklogTaskEditorFields) {
 export function buildBacklogTaskPatch(
   workItem: LocalWorkItem,
   fields: BacklogTaskEditorFields,
-  options: { isSubtask: boolean },
+  options: { isSubtask: boolean; descriptionReadOnly?: boolean },
 ): WorkItemPatch | null {
   const saved = createBacklogTaskEditorFields(workItem);
   const patch: WorkItemPatch = {};
@@ -304,7 +304,11 @@ export function buildBacklogTaskPatch(
     patch.title = title;
   }
 
-  if (fields.description !== saved.description) {
+  // A read-only description follows its source, so a draft never writes it.
+  if (
+    !options.descriptionReadOnly &&
+    fields.description !== saved.description
+  ) {
     patch.description = fields.description.trim() || undefined;
   }
 
@@ -394,6 +398,8 @@ export function evaluateBacklogTaskEditor(
   target: BacklogTaskEditorTarget,
   options: {
     subitemTotals?: SubitemEstimateTotals | null;
+    /** The description follows its source; the draft's copy is ignored. */
+    descriptionReadOnly?: boolean;
   } = {},
 ): BacklogTaskEditorState {
   const original = target.kind === "edit" ? target.workItem : undefined;
@@ -425,7 +431,12 @@ export function evaluateBacklogTaskEditor(
     isSubitem,
     isSynced,
     validation,
-    hasChanges: !hasSameFields(fields, createBacklogTaskEditorSeed(target)),
+    hasChanges: !hasSameFields(
+      options.descriptionReadOnly ? { ...fields, description: "" } : fields,
+      options.descriptionReadOnly
+        ? { ...createBacklogTaskEditorSeed(target), description: "" }
+        : createBacklogTaskEditorSeed(target),
+    ),
     estimateResets,
     priorityReset:
       isSynced && !isSubitem && fields.priority.trim() !== syncedPriority
@@ -442,7 +453,10 @@ export function evaluateBacklogTaskEditor(
         : null,
     patch:
       original && validation.canSave
-        ? buildBacklogTaskPatch(original, fields, { isSubtask: isSubitem })
+        ? buildBacklogTaskPatch(original, fields, {
+            isSubtask: isSubitem,
+            descriptionReadOnly: options.descriptionReadOnly,
+          })
         : null,
   };
 }

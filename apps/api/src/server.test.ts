@@ -740,6 +740,7 @@ describe("backlog settle routes", () => {
     "  source: 'jira', connectionId: 'ignored', connectionLabel: 'Main Jira',",
     "  tenantLabel: 'Acme', sourceId, externalId: sourceId, title: sourceId,",
     "  workItemType: 'Task', state, stateDone, depth: 0, selectable: true, childCount: 0,",
+    "  description: { text: `About ${sourceId}` },",
     "});",
     "export async function syncConnection(connection, workItems) {",
     "  return {",
@@ -886,7 +887,13 @@ describe("backlog settle routes", () => {
       body: {
         stagedCount: 1,
         doneItems: [
-          { source: "jira", connectionId, sourceId: "DONE-1", state: "Done" },
+          {
+            source: "jira",
+            connectionId,
+            sourceId: "DONE-1",
+            state: "Done",
+            description: { text: "About DONE-1" },
+          },
         ],
       },
     });

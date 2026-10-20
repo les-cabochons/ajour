@@ -17,6 +17,18 @@ import type {
 
 type Described = Pick<LocalWorkItem, "description" | "descriptionSync">;
 
+/**
+ * The source's text as Ajour stores it: Unix line endings, without blank
+ * lines around it, but with its first line's indentation, which Markdown
+ * can need, as for an indented code block.
+ */
+function storedText(text: string) {
+  return text
+    .replace(/\r\n?/g, "\n")
+    .replace(/^(?:[ \t]*\n)+/, "")
+    .trimEnd();
+}
+
 /** Texts compare without their outer whitespace or line endings. */
 function normalizeText(text: string | undefined) {
   return (text ?? "").replace(/\r\n?/g, "\n").trim();
@@ -46,7 +58,7 @@ function agreed(source: BacklogSyncedDescription, text: string): Described {
 export function importedDescription(
   source: BacklogSyncedDescription,
 ): Described & { descriptionSync: LocalWorkItemDescriptionSync } {
-  const text = normalizeText(source.text);
+  const text = storedText(source.text);
   return agreed(source, text) as Described & {
     descriptionSync: LocalWorkItemDescriptionSync;
   };
@@ -63,17 +75,22 @@ export function reconcileDescription(
   source: BacklogSyncedDescription,
   now: number,
 ): Described {
-  const local = normalizeText(item.description);
-  const remote = normalizeText(source.text);
+  const remote = storedText(source.text);
   const baseline = item.descriptionSync?.baseline;
+  const local = normalizeText(item.description);
+  const comparedRemote = normalizeText(remote);
+  const comparedBaseline =
+    baseline === undefined ? undefined : normalizeText(baseline);
 
   const takesSource =
-    baseline === undefined
-      ? !local || local === remote || local === oldImportedNote(remote)
-      : local === remote || local === baseline;
+    comparedBaseline === undefined
+      ? !local ||
+        local === comparedRemote ||
+        local === oldImportedNote(comparedRemote)
+      : local === comparedRemote || local === comparedBaseline;
   if (takesSource) return agreed(source, remote);
 
-  if (baseline !== undefined && remote === baseline) {
+  if (baseline !== undefined && comparedRemote === comparedBaseline) {
     return {
       description: item.description,
       descriptionSync: { baseline, ...sourceFacts(source, remote) },
@@ -82,7 +99,9 @@ export function reconcileDescription(
 
   const previous = item.descriptionSync?.conflict;
   const sameConflict =
-    previous?.localText === local && previous.remoteText === remote;
+    previous !== undefined &&
+    normalizeText(previous.localText) === local &&
+    normalizeText(previous.remoteText) === comparedRemote;
   return {
     description: item.description,
     descriptionSync: {
@@ -90,7 +109,7 @@ export function reconcileDescription(
       ...sourceFacts(source, remote),
       conflict: {
         detectedAt: sameConflict ? previous.detectedAt : now,
-        localText: local,
+        localText: item.description ?? "",
         remoteText: remote,
       },
     },

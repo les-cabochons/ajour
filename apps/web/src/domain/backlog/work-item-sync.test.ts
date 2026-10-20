@@ -1171,6 +1171,27 @@ describe("backlog sync of done items", () => {
     });
   });
 
+  it("syncs the description of an item that reached a done category", () => {
+    const imported = importSyncedWorkItems(
+      createState(),
+      [createCandidate({ description: { text: "Before" } })],
+      undefined,
+      factories,
+    ).state;
+
+    const result = archiveDoneSyncedWorkItems(
+      imported,
+      [{ ...done(), description: { text: "Closed with a summary" } }],
+      factories,
+    );
+
+    expect(result.state.workItems[0]).toMatchObject({
+      status: "archived",
+      description: "Closed with a summary",
+      descriptionSync: { baseline: "Closed with a summary" },
+    });
+  });
+
   it("archives a settled item with the subitems its settle carried", () => {
     let id = 0;
     const idFactories = { createId: () => `work-item-${++id}`, now: () => 500 };

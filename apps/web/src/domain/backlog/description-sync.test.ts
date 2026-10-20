@@ -24,10 +24,19 @@ function synced(
 
 describe("importing a synced description", () => {
   it("takes the source's text, which both sides then agree on", () => {
-    expect(importedDescription({ text: "  Fix the login\r\n" })).toEqual({
+    expect(importedDescription({ text: "\nFix the login\r\n" })).toEqual({
       description: "Fix the login",
       descriptionSync: { baseline: "Fix the login", remote: "Fix the login" },
     });
+  });
+
+  it("keeps the first line's indentation, as an indented code block needs", () => {
+    const code = "    first line\n    second line";
+    expect(importedDescription({ text: code }).description).toBe(code);
+    expect(
+      reconcileDescription(synced("Old", "Old"), { text: `\n${code}\n` }, NOW)
+        .description,
+    ).toBe(code);
   });
 
   it("keeps what the conversion lost and whether the text was cut", () => {

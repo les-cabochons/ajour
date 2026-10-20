@@ -86,6 +86,21 @@ describe("backlog task editor", () => {
     });
   });
 
+  it("never writes a read-only description, even when a sync changed it under the draft", () => {
+    const synced = createWorkItem({ description: "Changed by a sync" });
+    const fields = createBacklogTaskEditorFields(
+      createWorkItem({ description: "From before the sync" }),
+      { title: "Renamed" },
+    );
+
+    expect(
+      buildBacklogTaskPatch(synced, fields, {
+        isSubtask: false,
+        descriptionReadOnly: true,
+      }),
+    ).toEqual({ title: "Renamed" });
+  });
+
   it("changes project and task together", () => {
     const workItem = createWorkItem();
     const fields = createBacklogTaskEditorFields(workItem, {

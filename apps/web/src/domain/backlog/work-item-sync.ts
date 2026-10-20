@@ -672,9 +672,28 @@ export function archiveDoneSyncedWorkItems(
           sourceStatusKey !== undefined &&
           sourceStatusKey !== target.archivedSourceStatusKey));
     if (target.status === "archived" && !reopens) continue;
-    const restored = reopens
+    const reopened = reopens
       ? restoreBacklogItem(nextState, target._id)
       : nextState;
+    // The description syncs whether the item closes or stays open.
+    const doneDescription = doneItem.description;
+    const restored = doneDescription
+      ? {
+          ...reopened,
+          workItems: reopened.workItems.map((workItem) =>
+            workItem._id === target._id
+              ? {
+                  ...workItem,
+                  ...reconcileDescription(
+                    workItem,
+                    doneDescription,
+                    factories.now(),
+                  ),
+                }
+              : workItem,
+          ),
+        }
+      : reopened;
     const withSourceState = stateLabel
       ? {
           ...restored,

@@ -164,7 +164,12 @@ export function BacklogItemEditorForm({
   const projects = useLocalProjects();
   const workItems = useLocalWorkItems();
   const workItem = target.kind === "edit" ? target.workItem : undefined;
-  const descriptionAccessState = useDescriptionAccess(workItem);
+  // The item as it is now, which a sync may have changed since the draft began.
+  const currentItem =
+    (workItem && workItems.find((item) => item._id === workItem._id)) ??
+    workItem;
+  const currentDescription = currentItem?.description;
+  const descriptionAccessState = useDescriptionAccess(currentItem);
   // An archived item's form is read-only elsewhere; its description field stays as it was.
   const descriptionEditable =
     descriptionAccessState.editable ||
@@ -190,6 +195,7 @@ export function BacklogItemEditorForm({
   );
   const editor = evaluateBacklogTaskEditor(fields, target, {
     subitemTotals: subitems.length > 0 ? sumSubitemEstimates(subitems) : null,
+    descriptionReadOnly: !descriptionEditable,
   });
   const { validation } = editor;
 
@@ -571,14 +577,14 @@ export function BacklogItemEditorForm({
             />
           ) : (
             <div id={`${idPrefix}-description`}>
-              {fields.description ? (
-                <DescriptionText body={fields.description} />
+              {currentDescription ? (
+                <DescriptionText body={currentDescription} />
               ) : (
                 <p className="text-sm text-muted-foreground">No description.</p>
               )}
               {workItem ? (
                 <SyncedDescriptionNote
-                  item={workItem}
+                  item={currentItem ?? workItem}
                   access={descriptionAccessState}
                 />
               ) : null}
