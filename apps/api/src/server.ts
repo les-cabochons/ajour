@@ -122,8 +122,10 @@ import { capabilityOfMethod, PluginManager } from "./plugin-host.ts";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
 import {
   connectionlessPluginErrorMessage,
+  connectionSecretValues,
   errorMessage,
   pluginErrorMessage,
+  redactConnectionSummary,
   redactPluginText,
 } from "./plugin-errors.ts";
 import { AppApiStorage } from "./storage.ts";
@@ -207,12 +209,29 @@ function collectAutoSyncItems(
 }
 
 /**
- * A sync's field updates with `redact` applied to each message the plugin
+ * The manifest a plugin call ran with. An update can land while a request
+ * waits, so the plugin host hands over, at admission, the manifest of the
+ * package it runs, and the call's error and result are redacted with that
+ * package's secret fields. Until then no plugin code has run, and the
+ * manifest the route read stands in.
+ */
+function admittedCall(manifest: PluginManifest) {
+  const call = {
+    manifest,
+    admit: (admitted: PluginManifest) => {
+      call.manifest = admitted;
+    },
+  };
+  return call;
+}
+
+/**
+ * A sync's field updates with `secrets` redacted from each message the plugin
  * wrote. The web stores a message as the field's sync error and shows it.
  */
 function redactFieldUpdateMessages(
   updates: BacklogSyncWorkItemUpdate[],
-  redact: (message: string) => string,
+  secrets: readonly string[],
 ): BacklogSyncWorkItemUpdate[] {
   return updates.map((update) => ({
     ...update,
@@ -221,7 +240,7 @@ function redactFieldUpdateMessages(
         field,
         value?.message === undefined
           ? value
-          : { ...value, message: redact(value.message) },
+          : { ...value, message: redactPluginText(value.message, secrets) },
       ]),
     ) as BacklogSyncWorkItemUpdate["fields"],
   }));
@@ -1265,18 +1284,20 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             pluginId,
             pluginSwitchableCapabilities(plugin),
           );
+          const call = admittedCall(plugin);
           let validation: PluginValidationResult;
           try {
             validation = await pluginManager.validateConnection(
               pluginId,
               configForSave,
               { capabilities },
+              call.admit,
             );
           } catch (error) {
             writeJson(response, 400, {
               error: pluginErrorMessage(
                 error,
-                plugin,
+                call.manifest,
                 configForSave,
                 existingConnection?.config,
               ),
@@ -1294,7 +1315,17 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             allowLossyConversion: parsedValues.allowLossyConversion,
             // The plugin's answer can't set a field Ajour owns.
             config: withoutReservedFields(validation.normalizedConfig),
-            configSummary: validation.connectionSummary,
+            // Redacted before it is stored: the normalized config may no
+            // longer hold a value the plugin swapped out, such as a password
+            // it traded for a token, so the overview couldn't find it later.
+            configSummary: redactConnectionSummary(
+              validation.connectionSummary,
+              connectionSecretValues(call.manifest, [
+                configForSave,
+                existingConnection?.config,
+                validation.normalizedConfig,
+              ]),
+            ),
           });
           const { overview, summary } = await findConnectionSummary(
             storage,
@@ -1396,12 +1427,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             action === "settle"
               ? backlogSettleWriteRequestSchema.parse(body)
               : undefined;
+          const call = admittedCall(plugin);
           try {
             if (statesRequest) {
               const result = await pluginManager.listSettleStates(
                 pluginId,
                 pluginConnection,
                 statesRequest,
+                call.admit,
               );
               writeJson(
                 response,
@@ -1415,6 +1448,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
                 pluginId,
                 pluginConnection,
                 writeRequest,
+                call.admit,
               );
               writeJson(
                 response,
@@ -1424,7 +1458,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             }
           } catch (error) {
             writeJson(response, 502, {
-              error: pluginErrorMessage(error, plugin, connection.config),
+              error: pluginErrorMessage(
+                error,
+                call.manifest,
+                connection.config,
+              ),
             });
           }
           return;
@@ -1596,6 +1634,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           const shouldAutoSyncToBacklog =
             connection.autoSync && payload.trigger === "auto";
 
+          const call = admittedCall(plugin);
           try {
             const fetched = await pluginManager.syncConnection(
               pluginId,
@@ -1612,6 +1651,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
                 config: connection.config,
               },
               payload.workItems,
+              call.admit,
             );
             const { openItems, doneItems } = splitDoneItems(fetched.items);
             if (
@@ -1671,8 +1711,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
                 skippedCount: stageResult.skippedCount,
                 workItemUpdates: redactFieldUpdateMessages(
                   fetched.workItemUpdates,
-                  (message) =>
-                    redactPluginText(message, plugin, [connection.config]),
+                  connectionSecretValues(call.manifest, [connection.config]),
                 ),
                 doneItems,
                 viewer: fetched.viewer,
@@ -1682,7 +1721,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           } catch (error) {
             const message = pluginErrorMessage(
               error,
-              plugin,
+              call.manifest,
               connection.config,
             );
             await storage.recordConnectionError(
@@ -1755,6 +1794,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         const codeHostRequest = codeHostOperations[
           operation.data
         ].request.parse(await readJsonBody(request));
+        const call = admittedCall(plugin);
         try {
           const result = await pluginManager.runCodeHostOperation(
             pluginId,
@@ -1772,6 +1812,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               config: connection.config,
             },
             codeHostRequest,
+            call.admit,
           );
           if (operation.data === "syncPullRequests") {
             await storage.recordConnectionSyncSuccess(
@@ -1782,7 +1823,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           }
           writeJson(response, 200, result);
         } catch (error) {
-          const message = pluginErrorMessage(error, plugin, connection.config);
+          const message = pluginErrorMessage(
+            error,
+            call.manifest,
+            connection.config,
+          );
           if (operation.data === "syncPullRequests") {
             await storage.recordConnectionError(
               pluginId,
@@ -1902,7 +1947,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         // Checked again at the plugin's admission, after the host's own
         // waits, so a revocation saved meanwhile stops a post.
         let refusedAtAdmission = false;
-        const admit = async () => {
+        const call = admittedCall(plugin);
+        const admit = async (manifest: PluginManifest) => {
+          call.admit(manifest);
           if (await agentAllowed()) return;
           refusedAtAdmission = true;
           throw new Error(agentRefusal);
@@ -1948,7 +1995,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             refuseAgent();
             return;
           }
-          const message = pluginErrorMessage(error, plugin, connection.config);
+          const message = pluginErrorMessage(
+            error,
+            call.manifest,
+            connection.config,
+          );
           logCommentEvent("error");
           writeJson(response, 502, { error: message });
         }
@@ -2016,6 +2067,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             outcome,
             duration_ms: Date.now() - startedAt,
           });
+        const call = admittedCall(plugin);
         try {
           const result = await pluginManager.runCalendarOperation(
             pluginId,
@@ -2033,6 +2085,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               config: connection.config,
             },
             calendarRequest,
+            call.admit,
           );
           await storage.recordConnectionSyncSuccess(
             pluginId,
@@ -2042,7 +2095,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           logCalendarEvent("ok", result.events.length);
           writeJson(response, 200, result);
         } catch (error) {
-          const message = pluginErrorMessage(error, plugin, connection.config);
+          const message = pluginErrorMessage(
+            error,
+            call.manifest,
+            connection.config,
+          );
           await storage.recordConnectionError(pluginId, connectionId, message);
           logCalendarEvent("error");
           writeJson(response, 502, { error: message });
@@ -2080,6 +2137,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           const payload = teamCreateRouteRequestSchema.parse(
             await readJsonBody(request),
           );
+          const call = admittedCall(plugin);
           try {
             writeJson(
               response,
@@ -2088,11 +2146,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
                 pluginId,
                 payload.values,
                 payload.team,
+                call.admit,
               ),
             );
           } catch (error) {
             writeJson(response, 502, {
-              error: pluginErrorMessage(error, plugin, payload.values),
+              error: pluginErrorMessage(error, call.manifest, payload.values),
             });
           }
           return;
@@ -2107,6 +2166,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         const syncRequest = teamSyncRequestSchema.parse(
           await readJsonBody(request),
         );
+        const call = admittedCall(plugin);
         try {
           const result = await pluginManager.syncTeamProjects(
             pluginId,
@@ -2123,6 +2183,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               config: connection.config,
             },
             syncRequest,
+            call.admit,
           );
           await storage.recordConnectionSyncSuccess(
             pluginId,
@@ -2131,7 +2192,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           );
           writeJson(response, 200, result);
         } catch (error) {
-          const message = pluginErrorMessage(error, plugin, connection.config);
+          const message = pluginErrorMessage(
+            error,
+            call.manifest,
+            connection.config,
+          );
           await storage.recordConnectionError(pluginId, connectionId, message);
           writeJson(response, 502, { error: message });
         }

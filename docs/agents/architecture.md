@@ -98,14 +98,19 @@ that overlap go whole, and a `[secret]` already there stays as it is. The
 worker host cuts a long error before redaction, an uncaught asynchronous
 throw included, and marks the cut with "…", so the start of a secret that the
 cut split becomes `[secret]` too. No response, stored last error or log
-carries a plugin's raw error. Text the plugin writes itself in a successful
-result is redacted the same way: a field's sync message, and the connection
-summary, which the overview redacts each time it returns it. Content the
-plugin copies from its source tool, such as titles, descriptions and comments,
-passes as it is. The overview redacts a stored last error again before it
-returns it. When the plugin is no longer installed, nothing says which stored
-values are secret, so it shows "Hidden because this plugin is no longer
-installed." instead, and no summary.
+carries a plugin's raw error. Redaction uses the secret fields of the package
+the call ran: the plugin host hands each route the manifest it admitted the
+call with, so an update that lands while a request waits can't loosen it.
+Text the plugin writes itself in a successful result is redacted the same
+way: a field's sync message, and the connection summary. A save redacts the
+summary before storing it, against the submitted, previous and normalized
+configs, because normalization may drop a value the plugin swapped out. It
+drops an entry whose key holds a secret, and a summary of more than 50
+entries. The overview redacts the stored summary and last error again each
+time it returns them. Content the plugin copies from its source tool, such as
+titles, descriptions and comments, passes as it is. When the plugin is no
+longer installed, nothing says which stored values are secret, so it shows
+"Hidden because this plugin is no longer installed." instead, and no summary.
 The rules in this section apply to every such plugin, which must remain
 physically and logically separate from the application. A plugin owns its external-system
 authentication, transport, field discovery, and remote read/write behavior. It

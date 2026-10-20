@@ -34,6 +34,7 @@ import {
 } from "../../../packages/shared/agent-runs.ts";
 import {
   boundConnectionError,
+  connectionSecretValues,
   redactConnectionSummary,
   redactPluginText,
 } from "./plugin-errors.ts";
@@ -443,6 +444,13 @@ function buildConnectionSummary(
   const connectionItems = state.stagedImports.filter(
     (item) => item.connectionId === connection.id,
   );
+  // The plugin wrote the last error and the summary, and either may hold a
+  // secret: an error stored before every route redacted plugin errors, or a
+  // summary stored before saves redacted it. A stand-in says nothing about
+  // which stored values are secret, so then none of their text is shown.
+  const secrets = installed
+    ? connectionSecretValues(plugin, [connection.config])
+    : [];
 
   return {
     id: connection.id,
@@ -458,22 +466,16 @@ function buildConnectionSummary(
     ...(connection.allowLossyConversion ? { allowLossyConversion: true } : {}),
     connectedAt: connection.connectedAt,
     lastSyncAt: connection.lastSyncAt,
-    // The plugin wrote both, and either may hold a secret: a last error
-    // stored before every route redacted plugin errors, or a summary that
-    // shows a value. A stand-in says nothing about which stored values are
-    // secret, so then none of their text is shown.
     lastError:
       connection.lastError &&
       (installed
-        ? redactPluginText(connection.lastError, plugin, [connection.config])
+        ? redactPluginText(connection.lastError, secrets)
         : UNINSTALLED_PLUGIN_LAST_ERROR),
     lastErrorAt: connection.lastErrorAt,
     pendingImportCount: connectionItems.length,
     selectedImportCount: connectionItems.filter((item) => item.selected).length,
     configSummary: installed
-      ? redactConnectionSummary(connection.configSummary, plugin, [
-          connection.config,
-        ])
+      ? redactConnectionSummary(connection.configSummary, secrets)
       : {},
     editableValues: toEditableValues(connection, plugin),
   };

@@ -156,11 +156,7 @@ export function redactSecretValues(
     const lastMark = marks[last];
     if (!firstMark || !lastMark || first > last) {
       kept.push(span);
-    } else if (
-      first < last ||
-      span.start < firstMark.start ||
-      span.end > firstMark.end
-    ) {
+    } else if (span.start < firstMark.start || span.end > firstMark.end) {
       // A match across a mark's edge takes the whole mark in.
       kept.push({
         start: Math.min(span.start, firstMark.start),
@@ -230,30 +226,39 @@ export function errorMessage(error: unknown): string {
  */
 export function redactPluginText(
   text: string,
-  plugin: SecretConnectionFields,
-  configs: readonly (ConnectionValues | undefined)[],
+  secrets: readonly string[],
 ): string {
-  const secrets = connectionSecretValues(plugin, configs);
   return boundConnectionError(redactSecretValues(text, secrets), secrets);
 }
 
 /**
+ * The most entries a connection summary keeps. A summary is a few facts, such
+ * as the account name, so a longer one is dropped rather than redacted entry
+ * by entry against every secret.
+ */
+export const MAX_CONNECTION_SUMMARY_ENTRIES = 50;
+
+/**
  * The summary a plugin wrote for a connection, with every value that holds a
  * secret redacted. A value that is all secret, such as a number, becomes
- * `[secret]`.
+ * `[secret]`. An entry whose key holds a secret goes, so no two keys can
+ * collide once redacted.
  */
 export function redactConnectionSummary<
   Value extends string | number | boolean,
 >(
   summary: Readonly<Record<string, Value>>,
-  plugin: SecretConnectionFields,
-  configs: readonly (ConnectionValues | undefined)[],
+  secrets: readonly string[],
 ): Record<string, Value | string> {
+  const entries = Object.entries(summary);
+  if (entries.length > MAX_CONNECTION_SUMMARY_ENTRIES) return {};
   return Object.fromEntries(
-    Object.entries(summary).map(([key, value]) => {
-      const redacted = redactPluginText(String(value), plugin, configs);
-      return [key, redacted === String(value) ? value : redacted];
-    }),
+    entries
+      .filter(([key]) => redactSecretValues(key, secrets) === key)
+      .map(([key, value]) => {
+        const redacted = redactPluginText(String(value), secrets);
+        return [key, redacted === String(value) ? value : redacted];
+      }),
   );
 }
 
@@ -268,7 +273,10 @@ export function pluginErrorMessage(
   plugin: SecretConnectionFields,
   ...configs: (ConnectionValues | undefined)[]
 ): string {
-  return redactPluginText(errorMessage(error), plugin, configs);
+  return redactPluginText(
+    errorMessage(error),
+    connectionSecretValues(plugin, configs),
+  );
 }
 
 /**

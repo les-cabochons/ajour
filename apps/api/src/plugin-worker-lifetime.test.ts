@@ -134,15 +134,22 @@ describe("plugin worker lifetime", () => {
       .run("test", "sync", passThrough)
       .catch((thrown: unknown) => thrown);
     expect((error as Error).message).toBe(`${"x".repeat(4_095)}…`);
-
-    const thrownString = await lifetime(
-      "setTimeout(() => { throw 'x'.repeat(100_000); });",
-    );
-    await expect(thrownString.run("test", "sync", passThrough)).rejects.toBe(
-      "x".repeat(100_000),
-    );
-    expect(thrownString.activeOperationCount).toBe(0);
   });
+
+  it.each(["'x'.repeat(100_000)", "undefined", "0", "null", "false", "''"])(
+    "fails an uncaught asynchronous throw of %s that isn't an Error",
+    async (thrown) => {
+      const host = await lifetime(`setTimeout(() => { throw ${thrown}; });`);
+
+      const error = await host.run("test", "sync", passThrough).then(
+        (result) => ({ resolvedWith: result }),
+        (caught: unknown) => caught,
+      );
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe("Unknown plugin error.");
+      expect(host.activeOperationCount).toBe(0);
+    },
+  );
 
   it("releases capacity when the worker fails to start or exits before replying", async () => {
     const missing = await lifetime(null);

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  connectionSecretValues,
   connectionlessPluginErrorMessage,
   pluginErrorMessage,
   redactConnectionSummary,
@@ -126,6 +127,10 @@ describe("plugin error messages", () => {
     );
   });
 
+  const summarySecrets = connectionSecretValues(plugin, [
+    { siteUrl: "https://acme.example", token: "pat-abc", pin: 482913 },
+  ]);
+
   it("redacts a connection summary and keeps values without a secret as they are", () => {
     expect(
       redactConnectionSummary(
@@ -136,8 +141,7 @@ describe("plugin error messages", () => {
           projects: 3,
           verified: true,
         },
-        plugin,
-        [{ siteUrl: "https://acme.example", token: "pat-abc", pin: 482913 }],
+        summarySecrets,
       ),
     ).toEqual({
       site: "https://acme.example",
@@ -146,6 +150,44 @@ describe("plugin error messages", () => {
       projects: 3,
       verified: true,
     });
+  });
+
+  it("drops a summary entry whose key holds a secret, so no two keys collide", () => {
+    expect(
+      redactConnectionSummary(
+        {
+          "pat-abc": "Connected",
+          "Signed in with pat-abc": "yes",
+          site: "https://acme.example",
+        },
+        summarySecrets,
+      ),
+    ).toEqual({ site: "https://acme.example" });
+  });
+
+  it("drops a summary of more than 50 entries, and stays quick with many secrets", () => {
+    const manySecrets = connectionSecretValues(plugin, [
+      Object.fromEntries(
+        Array.from({ length: 20_000 }, (_, index) => [
+          `old${index}`,
+          `old-value-${index}`,
+        ]),
+      ),
+    ]);
+    const summaryOf = (entries: number) =>
+      Object.fromEntries(
+        Array.from({ length: entries }, (_, index) => [
+          `key${index}`,
+          `value ${index}`,
+        ]),
+      );
+
+    const started = performance.now();
+    expect(redactConnectionSummary(summaryOf(20_000), manySecrets)).toEqual({});
+    expect(redactConnectionSummary(summaryOf(50), manySecrets)).toEqual(
+      summaryOf(50),
+    );
+    expect(performance.now() - started).toBeLessThan(2_000);
   });
 
   it("only bounds the error of an operation with no connection", () => {

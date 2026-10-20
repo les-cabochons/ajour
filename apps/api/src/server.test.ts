@@ -124,6 +124,8 @@ async function dispatchJsonRequest(
     path: string;
     headers?: Record<string, string>;
     body?: Uint8Array | string;
+    /** Holds the body back: `reached` runs when the route asks for it, and the body arrives once `release` settles. */
+    bodyGate?: { reached: () => void; release: Promise<void> };
   },
 ) {
   return await new Promise<{ status: number; body: unknown }>((resolve) => {
@@ -145,6 +147,8 @@ async function dispatchJsonRequest(
         ]),
       ),
       async *[Symbol.asyncIterator]() {
+        options.bodyGate?.reached();
+        await options.bodyGate?.release;
         yield* requestBody;
       },
     } as unknown as IncomingMessage;
@@ -2774,6 +2778,7 @@ describe("plugin errors that echo a secret", () => {
     "  if (config.baseUrl.endsWith('/refused')) throw new Error(`Token ${config.token} was refused.`);",
     "  const connectionSummary = { site: config.baseUrl, auth: `Bearer ${config.token}` };",
     "  if (config.pin !== undefined) connectionSummary.pin = config.pin;",
+    "  if (config.token?.length <= 120) connectionSummary[config.token] = 'Connected';",
     "  return { normalizedConfig: config, connectionSummary };",
     "}",
     "const leak = (what) => async (connection) => {",
@@ -2800,7 +2805,24 @@ describe("plugin errors that echo a secret", () => {
     "export const getPullRequestContent = leak('Reading the pull request');",
   ].join("\n");
 
-  async function createServer(savedState?: object) {
+  /** The fixture's fields; `token` is secret unless a test says otherwise. */
+  const leakingFields = (tokenSecret = true) => [
+    { id: "label", label: "Label", type: "text", required: true },
+    { id: "tenantLabel", label: "Site", type: "text", required: true },
+    { id: "baseUrl", label: "Site URL", type: "url", required: true },
+    {
+      id: "token",
+      label: "API token",
+      type: "password",
+      secret: tokenSecret,
+    },
+    { id: "pin", label: "PIN", type: "number", secret: true },
+  ];
+
+  async function createServer(
+    savedState?: object,
+    plugin: { source?: string; connectionFields?: object[] } = {},
+  ) {
     const root = await mkdtemp(path.join(os.tmpdir(), "ajour-leak-api-"));
     tempDirs.push(root);
     const statePath = path.join(root, "state.json");
@@ -2809,22 +2831,11 @@ describe("plugin errors that echo a secret", () => {
     }
     const pluginDirectory = await createPlugin(
       path.join(root, "source"),
-      leakingPluginSource,
+      plugin.source ?? leakingPluginSource,
       "plugin.mjs",
       {
         capabilities: { connector: { settle: true }, codeHost: {} },
-        connectionFields: [
-          { id: "label", label: "Label", type: "text", required: true },
-          { id: "tenantLabel", label: "Site", type: "text", required: true },
-          { id: "baseUrl", label: "Site URL", type: "url", required: true },
-          {
-            id: "token",
-            label: "API token",
-            type: "password",
-            secret: true,
-          },
-          { id: "pin", label: "PIN", type: "number", secret: true },
-        ],
+        connectionFields: plugin.connectionFields ?? leakingFields(),
       },
     );
     const server = createAppApiServer({
@@ -2834,7 +2845,7 @@ describe("plugin errors that echo a secret", () => {
       allowDevelopmentPlugins: true,
     });
     servers.push(server);
-    return { server, statePath };
+    return { server, statePath, pluginDirectory };
   }
 
   const saveConnection = (
@@ -2996,6 +3007,72 @@ describe("plugin errors that echo a secret", () => {
         }
       ).connectionGroups[0]?.connections[0]?.configSummary,
     ).toEqual({ site: SITE, auth: "Bearer [secret]", pin: "[secret]" });
+  });
+
+  it("keeps a password the plugin swapped for a token out of the stored summary", async () => {
+    const { server, statePath } = await createServer(undefined, {
+      source: [
+        "export async function validateConnection(config) {",
+        "  return {",
+        "    normalizedConfig: { baseUrl: config.baseUrl, accessToken: 'access-7f3e' },",
+        "    connectionSummary: { signedIn: `Signed in with ${config.password}` },",
+        "  };",
+        "}",
+      ].join("\n"),
+      connectionFields: [
+        ...leakingFields().slice(0, 3),
+        { id: "password", label: "Password", type: "password", secret: true },
+      ],
+    });
+
+    const saved = await saveConnection(server, { password: "hunter2-pw" });
+
+    expect(saved.status).toBe(200);
+    expect(JSON.stringify(saved.body)).not.toContain("hunter2-pw");
+    const state = await readFile(statePath, "utf8");
+    expect(state).not.toContain("hunter2-pw");
+    expect(JSON.parse(state).connections[0].configSummary).toEqual({
+      signedIn: "Signed in with [secret]",
+    });
+  });
+
+  it("redacts with the manifest the call ran with, when an update lands while the request waits", async () => {
+    // The token starts out not secret.
+    const { server, pluginDirectory } = await createServer(undefined, {
+      connectionFields: leakingFields(false),
+    });
+    const saved = await saveConnection(server, { token: TOKEN, pin: PIN });
+    const connectionId = (saved.body as { connection: { id: string } })
+      .connection.id;
+    let reached!: () => void;
+    const bodyRequested = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    let release!: () => void;
+    const bodyReleased = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const settling = dispatchJsonRequest(server, {
+      method: "POST",
+      path: `/api/plugins/jira/connections/${connectionId}/settle-states`,
+      body: JSON.stringify({ sourceId: "OPEN-1" }),
+      bodyGate: { reached, release: bodyReleased },
+    });
+    await bodyRequested;
+    // An update marks the token secret while the route waits for the body.
+    const manifestPath = path.join(pluginDirectory, "plugin.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    await writeFile(
+      manifestPath,
+      JSON.stringify({ ...manifest, connectionFields: leakingFields(true) }),
+    );
+    release();
+
+    await expect(settling).resolves.toEqual({
+      status: 502,
+      body: { error: "Listing states failed with token [secret]." },
+    });
   });
 
   it("keeps out a token with a space in front, which the host's trim takes off", async () => {

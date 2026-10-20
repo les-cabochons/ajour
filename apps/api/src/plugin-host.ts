@@ -107,6 +107,15 @@ const pluginInvocationConnectionSchema = z.object({
 type PluginInvocationConnection = z.infer<
   typeof pluginInvocationConnectionSchema
 >;
+/**
+ * Runs at admission, right before the worker starts, with the manifest of the
+ * package the call runs, and throws to refuse the call. The local API keeps
+ * that manifest to redact the call's error and result with the secret fields
+ * of the package that ran, even when an update landed while it waited.
+ */
+export type PluginAdmission = (
+  manifest: PluginManifest,
+) => Promise<void> | void;
 export type PluginMethod =
   | "validateConnection"
   | "syncConnection"
@@ -287,6 +296,7 @@ export class PluginManager {
     pluginId: string,
     config: PluginFieldValues,
     context?: PluginValidationContext,
+    admit?: PluginAdmission,
   ): Promise<PluginValidationResult> {
     return await this.invokePlugin(
       pluginId,
@@ -298,6 +308,7 @@ export class PluginManager {
           : {}),
       },
       pluginValidationResultSchema,
+      admit,
     );
   }
 
@@ -305,6 +316,7 @@ export class PluginManager {
     pluginId: string,
     connection: PluginInvocationConnection,
     workItems: BacklogSyncWorkItem[] = [],
+    admit?: PluginAdmission,
   ): Promise<BacklogPluginSyncResult> {
     await this.assertCapability(pluginId, "connector");
     const payload = {
@@ -319,6 +331,7 @@ export class PluginManager {
       "syncConnection",
       payload,
       backlogPluginSyncResultSchema,
+      admit,
     );
   }
 
@@ -346,6 +359,7 @@ export class PluginManager {
     operation: Operation,
     connection: PluginInvocationConnection,
     request: CodeHostOperationRequest<Operation>,
+    admit?: PluginAdmission,
   ): Promise<CodeHostOperationResult<Operation>> {
     await this.assertCapability(pluginId, "codeHost");
     const contract = codeHostOperations[operation];
@@ -360,6 +374,7 @@ export class PluginManager {
         request: contract.request.parse(request),
       },
       resultSchema,
+      admit,
     );
   }
 
@@ -372,8 +387,7 @@ export class PluginManager {
     operation: Operation,
     connection: PluginInvocationConnection,
     request: BacklogCommentOperationRequest<Operation>,
-    /** Throws to refuse the call at the last moment before the plugin runs. */
-    admit?: () => Promise<void>,
+    admit?: PluginAdmission,
   ): Promise<BacklogCommentOperationResult<Operation>> {
     await this.assertCapability(pluginId, "connector");
     const plugin = await this.getPlugin(pluginId);
@@ -402,6 +416,7 @@ export class PluginManager {
     operation: Operation,
     connection: PluginInvocationConnection,
     request: CalendarOperationRequest<Operation>,
+    admit?: PluginAdmission,
   ): Promise<CalendarOperationResult<Operation>> {
     await this.assertCapability(pluginId, "calendar");
     const contract = calendarOperations[operation];
@@ -416,6 +431,7 @@ export class PluginManager {
         request: contract.request.parse(request),
       },
       resultSchema,
+      admit,
     );
   }
 
@@ -427,6 +443,7 @@ export class PluginManager {
     pluginId: string,
     config: PluginFieldValues,
     request: TeamCreateRequest,
+    admit?: PluginAdmission,
   ): Promise<TeamCreateResult> {
     await this.assertCapability(pluginId, "team");
     return await this.invokePlugin(
@@ -437,6 +454,7 @@ export class PluginManager {
         request: teamCreateRequestSchema.parse(request),
       },
       teamCreateResultSchema,
+      admit,
     );
   }
 
@@ -445,6 +463,7 @@ export class PluginManager {
     pluginId: string,
     connection: PluginInvocationConnection,
     request: TeamSyncRequest,
+    admit?: PluginAdmission,
   ): Promise<TeamSyncResult> {
     await this.assertCapability(pluginId, "team");
     return await this.invokePlugin(
@@ -455,6 +474,7 @@ export class PluginManager {
         request: teamSyncRequestSchema.parse(request),
       },
       teamSyncResultSchema,
+      admit,
     );
   }
 
@@ -462,6 +482,7 @@ export class PluginManager {
     pluginId: string,
     connection: PluginInvocationConnection,
     request: BacklogSettleStatesRequest,
+    admit?: PluginAdmission,
   ): Promise<BacklogSettleStatesResult> {
     await this.assertSupportsSettle(pluginId);
     return await this.invokePlugin(
@@ -472,6 +493,7 @@ export class PluginManager {
         request: backlogSettleStatesRequestSchema.parse(request),
       },
       backlogSettleStatesResultSchema,
+      admit,
     );
   }
 
@@ -479,6 +501,7 @@ export class PluginManager {
     pluginId: string,
     connection: PluginInvocationConnection,
     request: BacklogSettleWriteRequest,
+    admit?: PluginAdmission,
   ): Promise<BacklogSettleWriteResult> {
     await this.assertSupportsSettle(pluginId);
     return await this.invokePlugin(
@@ -489,6 +512,7 @@ export class PluginManager {
         request: backlogSettleWriteRequestSchema.parse(request),
       },
       backlogSettleWriteResultSchema,
+      admit,
     );
   }
 
@@ -515,7 +539,7 @@ export class PluginManager {
     method: PluginMethod,
     params: Record<string, unknown>,
     schema: { parse: (value: unknown) => T },
-    admit?: () => Promise<void>,
+    admit?: PluginAdmission,
   ): Promise<T> {
     this.assertCanInvoke();
     return await this.workers.run(pluginId, method, async () => {
@@ -526,7 +550,7 @@ export class PluginManager {
         throw new Error(`Plugin "${pluginId}" runs no code.`);
       }
       await this.operationGate?.(pluginId, method);
-      await admit?.();
+      await admit?.(plugin.manifest);
       return {
         workerData: {
           apiVersion: PLUGIN_API_VERSION,
