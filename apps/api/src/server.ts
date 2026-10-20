@@ -47,6 +47,7 @@ import {
   type PluginValidationResult,
   type BacklogImportCandidate,
   type BacklogImportCandidateInput,
+  type BacklogSyncWorkItemUpdate,
   backlogImportCommitResponseSchema,
   backlogImportDismissRequestSchema,
   backlogImportDismissResponseSchema,
@@ -123,6 +124,7 @@ import {
   connectionlessPluginErrorMessage,
   errorMessage,
   pluginErrorMessage,
+  redactPluginText,
 } from "./plugin-errors.ts";
 import { AppApiStorage } from "./storage.ts";
 
@@ -202,6 +204,27 @@ function collectAutoSyncItems(
   }
 
   return candidates.filter((item) => committedIds.has(item.id));
+}
+
+/**
+ * A sync's field updates with `redact` applied to each message the plugin
+ * wrote. The web stores a message as the field's sync error and shows it.
+ */
+function redactFieldUpdateMessages(
+  updates: BacklogSyncWorkItemUpdate[],
+  redact: (message: string) => string,
+): BacklogSyncWorkItemUpdate[] {
+  return updates.map((update) => ({
+    ...update,
+    fields: Object.fromEntries(
+      Object.entries(update.fields).map(([field, value]) => [
+        field,
+        value?.message === undefined
+          ? value
+          : { ...value, message: redact(value.message) },
+      ]),
+    ) as BacklogSyncWorkItemUpdate["fields"],
+  }));
 }
 
 /** Done items go back as `doneItems` so Ajour archives them, never to review. */
@@ -1646,7 +1669,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
                 stagedCount: stageResult.queuedCount,
                 updatedCount: stageResult.updatedCount,
                 skippedCount: stageResult.skippedCount,
-                workItemUpdates: fetched.workItemUpdates,
+                workItemUpdates: redactFieldUpdateMessages(
+                  fetched.workItemUpdates,
+                  (message) =>
+                    redactPluginText(message, plugin, [connection.config]),
+                ),
                 doneItems,
                 viewer: fetched.viewer,
                 commentFacts: fetched.commentFacts,

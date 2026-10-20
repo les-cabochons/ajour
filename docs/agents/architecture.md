@@ -91,15 +91,21 @@ A plugin may echo a secret connection value in an error. Every route that runs
 a plugin operation turns the error into a message with `pluginErrorMessage` in
 `apps/api/src/plugin-errors.ts`: each secret value of the connection becomes
 `[secret]`, then the message is cut to 1,000 characters. A stored config key
-the manifest no longer declares counts as secret, except Ajour's own fields.
-All matches are found in the original message, so secrets that overlap go
-whole, and a `[secret]` already there stays as it is. The worker cuts a long
-error before the host sees it and marks the cut with "…", so the start of a
-secret that the cut split becomes `[secret]` too. No response, stored last
-error or log carries the raw message. The overview redacts a stored last error
-again before it returns it. When the plugin is no longer installed, nothing
-says which stored values are secret, so it shows "Hidden because this plugin
-is no longer installed." instead.
+the manifest no longer declares counts as secret, except Ajour's own fields,
+and a value with spaces at its ends counts trimmed as well, because the host
+trims the message. All matches are found in the original message, so secrets
+that overlap go whole, and a `[secret]` already there stays as it is. The
+worker host cuts a long error before redaction, an uncaught asynchronous
+throw included, and marks the cut with "…", so the start of a secret that the
+cut split becomes `[secret]` too. No response, stored last error or log
+carries a plugin's raw error. Text the plugin writes itself in a successful
+result is redacted the same way: a field's sync message, and the connection
+summary, which the overview redacts each time it returns it. Content the
+plugin copies from its source tool, such as titles, descriptions and comments,
+passes as it is. The overview redacts a stored last error again before it
+returns it. When the plugin is no longer installed, nothing says which stored
+values are secret, so it shows "Hidden because this plugin is no longer
+installed." instead, and no summary.
 The rules in this section apply to every such plugin, which must remain
 physically and logically separate from the application. A plugin owns its external-system
 authentication, transport, field discovery, and remote read/write behavior. It

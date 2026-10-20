@@ -2772,19 +2772,30 @@ describe("plugin errors that echo a secret", () => {
   const leakingPluginSource = [
     "export async function validateConnection(config) {",
     "  if (config.baseUrl.endsWith('/refused')) throw new Error(`Token ${config.token} was refused.`);",
-    "  return { normalizedConfig: config, connectionSummary: {} };",
+    "  const connectionSummary = { site: config.baseUrl, auth: `Bearer ${config.token}` };",
+    "  if (config.pin !== undefined) connectionSummary.pin = config.pin;",
+    "  return { normalizedConfig: config, connectionSummary };",
     "}",
     "const leak = (what) => async (connection) => {",
     "  throw new Error(`${what} failed with token ${connection.config.token}.`);",
     "};",
-    "export async function syncConnection(connection) {",
+    "export async function syncConnection(connection, workItems) {",
+    "  if (workItems.some((workItem) => workItem.localWorkItemId === 'estimate')) {",
+    "    return { items: [], workItemUpdates: [{ localWorkItemId: 'estimate', sourceId: 'OPEN-1', fields: {",
+    "      remainingEstimateHours: { status: 'error', message: `PATCH failed with token ${connection.config.token}` },",
+    "      originalEstimateHours: { status: 'pushed', localValue: 3 },",
+    "    } }] };",
+    "  }",
     "  throw new Error(`Sync failed with token ${connection.config.token} and PIN ${connection.config.pin}.`);",
     "}",
     "export async function listSettleStates(connection, request) {",
     "  if (request.sourceId === 'LONG') throw new Error(`${connection.config.token} `.repeat(11));",
     "  return leak('Listing states')(connection);",
     "}",
-    "export const writeSettle = leak('Settling');",
+    "export async function writeSettle(connection, request) {",
+    "  if (request.sourceId === 'EDGE') throw new Error(`${connection.config.token} failed`);",
+    "  return leak('Settling')(connection);",
+    "}",
     "export const syncPullRequests = leak('Pull request sync');",
     "export const getPullRequestContent = leak('Reading the pull request');",
   ].join("\n");
@@ -2933,6 +2944,72 @@ describe("plugin errors that echo a secret", () => {
       status: 502,
       body: { error: "Settling failed with token [secret]." },
     });
+  });
+
+  it("keeps the token out of the field messages of a successful sync", async () => {
+    const { server, connectionId } = await createConnection();
+
+    const synced = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: `/api/plugins/jira/connections/${connectionId}/sync`,
+      body: JSON.stringify({
+        trigger: "manual",
+        workItems: [{ localWorkItemId: "estimate", sourceId: "OPEN-1" }],
+      }),
+    });
+
+    expect(synced).toMatchObject({
+      status: 200,
+      body: {
+        workItemUpdates: [
+          {
+            localWorkItemId: "estimate",
+            fields: {
+              remainingEstimateHours: {
+                status: "error",
+                message: "PATCH failed with token [secret]",
+              },
+              originalEstimateHours: { status: "pushed", localValue: 3 },
+            },
+          },
+        ],
+      },
+    });
+    expect(JSON.stringify(synced.body)).not.toContain(TOKEN);
+  });
+
+  it("keeps the token and the PIN out of the connection summary the plugin wrote", async () => {
+    const { server } = await createConnection();
+
+    const overview = await dispatchJsonRequest(server, {
+      method: "GET",
+      path: "/api/plugins",
+    });
+
+    expect(JSON.stringify(overview.body)).not.toContain(TOKEN);
+    expect(
+      (
+        overview.body as {
+          connectionGroups: {
+            connections: { configSummary: Record<string, unknown> }[];
+          }[];
+        }
+      ).connectionGroups[0]?.connections[0]?.configSummary,
+    ).toEqual({ site: SITE, auth: "Bearer [secret]", pin: "[secret]" });
+  });
+
+  it("keeps out a token with a space in front, which the host's trim takes off", async () => {
+    const { server, connectionId } = await createConnection({
+      token: " pat-edge-7c1e",
+    });
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/plugins/jira/connections/${connectionId}/settle`,
+        body: JSON.stringify({ sourceId: "EDGE", state: "Done" }),
+      }),
+    ).resolves.toEqual({ status: 502, body: { error: "[secret] failed" } });
   });
 
   it("keeps out the start of a token that the worker's cut splits", async () => {
@@ -3112,6 +3189,7 @@ describe("plugin errors that echo a secret", () => {
         pluginId: "gitea",
         label: "Old Gitea",
         config: { baseUrl: SITE, token: TOKEN, pin: PIN },
+        configSummary: { auth: `Bearer ${TOKEN}` },
         lastError: `Sync of ${SITE} failed with token ${TOKEN} and PIN ${PIN}.`,
       }),
     );

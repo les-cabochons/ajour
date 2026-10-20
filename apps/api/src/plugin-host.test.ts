@@ -745,9 +745,6 @@ describe("PluginManager", () => {
       pullRequests: [],
     });
     await expect(
-      pluginManager.hasCapability("github", "connector"),
-    ).resolves.toBe(false);
-    await expect(
       pluginManager.syncConnection("github", connection),
     ).rejects.toThrow('Plugin "github" does not sync backlog items.');
     await expect(
@@ -826,9 +823,6 @@ describe("PluginManager", () => {
       assigned: [{ localId: "project-1", remoteId: "r-project-1" }],
       hasMore: false,
     });
-    await expect(pluginManager.hasCapability("team", "team")).resolves.toBe(
-      true,
-    );
     await expect(
       pluginManager.syncTeamProjects("jira", connection, { changes: [] }),
     ).rejects.toThrow('Plugin "jira" does not sync a team\'s projects.');
@@ -1027,9 +1021,6 @@ describe("PluginManager", () => {
         },
       ],
     });
-    await expect(
-      pluginManager.hasCapability("outlook", "calendar"),
-    ).resolves.toBe(true);
     await expect(
       pluginManager.runCalendarOperation(
         "jira",

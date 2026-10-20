@@ -170,8 +170,16 @@ export class PluginWorkerLifetime<TMethod extends string> {
         return finalizationPromise;
       };
       operation.cancelWorker = (error) => finalize(error);
-      worker.once("error", (error) => {
-        void finalize(error);
+      // An uncaught asynchronous throw in plugin code arrives here at any
+      // length, past the worker's own cut, so it is cut the same way.
+      // Plugin code may throw a value that isn't an Error.
+      worker.once("error", (error: unknown) => {
+        void finalize(
+          error instanceof Error &&
+            error.message.length > MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS
+            ? new Error(cutErrorMessage(error.message))
+            : (error as Error),
+        );
       });
       worker.once(
         "message",

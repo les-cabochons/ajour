@@ -1,12 +1,15 @@
 /**
- * How a plugin's error leaves the plugin host. A plugin may echo the values it
- * was given in an error, and some are secrets: an API token, a calendar
- * address, a team secret. Every response, stored last error and log that
- * carries a plugin error takes its message from `pluginErrorMessage`, and the
- * overview shows a stored one through `redactConnectionError`.
+ * How a plugin's text leaves the plugin host. A plugin may echo the values it
+ * was given, and some are secrets: an API token, a calendar address, a team
+ * secret. Every response, stored last error and log that carries a plugin
+ * error takes its message from `pluginErrorMessage`. Text the plugin writes
+ * in a successful result, such as a field's sync message or the connection
+ * summary, goes through `redactPluginText` or `redactConnectionSummary`.
  *
- * `redactSecretValues` depends on nothing else, so the wide-event error
- * scrubber (#305) can reuse it, or move it, in the browser and in Node.
+ * `redactSecretValues` and the helpers it calls use nothing outside this
+ * file, so the wide-event error scrubber (#305) can move them as they are,
+ * into a package that runs in the browser and in Node. The module itself
+ * imports connection-values.ts, which brings in zod.
  * `connectionSecretValues` gives it a connection's secret values.
  */
 
@@ -28,6 +31,8 @@ type ConnectionValues = Readonly<Record<string, unknown>>;
  * A stored key the manifest no longer declares counts as secret too: a plugin
  * update renamed or dropped its field, which may have been secret, and the
  * value stays until the connection is saved again. Ajour's own fields don't.
+ * A value with spaces at its ends counts trimmed as well, because the host
+ * trims a plugin's message before it is redacted.
  */
 export function connectionSecretValues(
   plugin: SecretConnectionFields,
@@ -49,7 +54,9 @@ export function connectionSecretValues(
           typeof value === "boolean")
       ) {
         const text = String(value);
-        if (text.length > 0) values.add(text);
+        for (const form of [text, text.trim()]) {
+          if (form.length > 0) values.add(form);
+        }
       }
     }
   }
@@ -83,6 +90,18 @@ function occurrences(message: string, text: string): Span[] {
   return spans;
 }
 
+/** The first index of `spans`, which are in order, from which `isPast` holds. */
+function firstIndex(spans: readonly Span[], isPast: (span: Span) => boolean) {
+  let low = 0;
+  let high = spans.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (isPast(spans[middle]!)) high = middle;
+    else low = middle + 1;
+  }
+  return low;
+}
+
 /**
  * The length of the longest end of `text` that starts a secret without being
  * all of it, which is what a cut through that secret leaves. Zero if none.
@@ -110,7 +129,10 @@ function cutSecretLength(text: string, secrets: readonly string[]): number {
  * sit inside each other go whole. A cut may split a secret, so in a message
  * that ends with "…" the longest end before it that starts a secret goes too.
  * A `[secret]` already in the message stays as it is, so redacting twice
- * changes nothing.
+ * changes nothing. The one exception is a secret that can match across the
+ * edge of a `[secret]`: one that starts with its end, such as `]` or `t]`,
+ * ends with its start, such as `[`, or holds `…`. A second pass then takes in
+ * a little more. Nothing leaks either way.
  */
 export function redactSecretValues(
   message: string,
@@ -123,32 +145,38 @@ export function redactSecretValues(
     const length = cutSecretLength(message.slice(0, end), values);
     if (length > 0) spans.push({ start: end - length, end });
   }
+  // In order and never overlapping, so a binary search finds the marks a
+  // match touches, and the whole scan stays n log n.
   const marks = occurrences(message, SECRET_MARK);
-  const overlaps = (left: Span, right: Span) =>
-    left.start < right.end && right.start < left.end;
+  const kept: Span[] = [];
+  for (const span of spans) {
+    const first = firstIndex(marks, (mark) => mark.end > span.start);
+    const last = firstIndex(marks, (mark) => mark.start >= span.end) - 1;
+    const firstMark = marks[first];
+    const lastMark = marks[last];
+    if (!firstMark || !lastMark || first > last) {
+      kept.push(span);
+    } else if (
+      first < last ||
+      span.start < firstMark.start ||
+      span.end > firstMark.end
+    ) {
+      // A match across a mark's edge takes the whole mark in.
+      kept.push({
+        start: Math.min(span.start, firstMark.start),
+        end: Math.max(span.end, lastMark.end),
+      });
+    }
+    // Otherwise the match sits inside one mark, which stays as it is.
+  }
   const merged: Span[] = [];
-  for (const span of spans
-    .filter(
-      (span) =>
-        !marks.some((mark) => mark.start <= span.start && span.end <= mark.end),
-    )
-    // A match across a mark's edge takes the whole mark in.
-    .map((span) =>
-      marks.reduce(
-        (wide, mark) =>
-          overlaps(wide, mark)
-            ? {
-                start: Math.min(wide.start, mark.start),
-                end: Math.max(wide.end, mark.end),
-              }
-            : wide,
-        span,
-      ),
-    )
-    .sort((left, right) => left.start - right.start)) {
-    const last = merged.at(-1);
-    if (last && span.start <= last.end) last.end = Math.max(last.end, span.end);
-    else merged.push({ ...span });
+  for (const span of kept.sort((left, right) => left.start - right.start)) {
+    const previous = merged.at(-1);
+    if (previous && span.start <= previous.end) {
+      previous.end = Math.max(previous.end, span.end);
+    } else {
+      merged.push({ ...span });
+    }
   }
   let redacted = "";
   let at = 0;
@@ -195,17 +223,38 @@ export function errorMessage(error: unknown): string {
 }
 
 /**
- * A connection error as it may be shown or stored: every secret value of the
- * connection replaced, then the length bounded. Bounding comes last because a
- * short secret grows into `[secret]`.
+ * Text a plugin wrote for a connection, such as an error or a status message,
+ * as it may be shown, stored or returned: every secret value of the
+ * connection replaced, then the length bounded to 1,000 characters. Bounding
+ * comes last because a short secret grows into `[secret]`.
  */
-export function redactConnectionError(
-  message: string,
+export function redactPluginText(
+  text: string,
   plugin: SecretConnectionFields,
   configs: readonly (ConnectionValues | undefined)[],
 ): string {
   const secrets = connectionSecretValues(plugin, configs);
-  return boundConnectionError(redactSecretValues(message, secrets), secrets);
+  return boundConnectionError(redactSecretValues(text, secrets), secrets);
+}
+
+/**
+ * The summary a plugin wrote for a connection, with every value that holds a
+ * secret redacted. A value that is all secret, such as a number, becomes
+ * `[secret]`.
+ */
+export function redactConnectionSummary<
+  Value extends string | number | boolean,
+>(
+  summary: Readonly<Record<string, Value>>,
+  plugin: SecretConnectionFields,
+  configs: readonly (ConnectionValues | undefined)[],
+): Record<string, Value | string> {
+  return Object.fromEntries(
+    Object.entries(summary).map(([key, value]) => {
+      const redacted = redactPluginText(String(value), plugin, configs);
+      return [key, redacted === String(value) ? value : redacted];
+    }),
+  );
 }
 
 /**
@@ -219,7 +268,7 @@ export function pluginErrorMessage(
   plugin: SecretConnectionFields,
   ...configs: (ConnectionValues | undefined)[]
 ): string {
-  return redactConnectionError(errorMessage(error), plugin, configs);
+  return redactPluginText(errorMessage(error), plugin, configs);
 }
 
 /**

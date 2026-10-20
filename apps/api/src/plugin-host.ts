@@ -322,16 +322,6 @@ export class PluginManager {
     );
   }
 
-  /** Whether the plugin declares the given capability. */
-  async hasCapability(
-    pluginId: string,
-    capability: SwitchableCapability,
-  ): Promise<boolean> {
-    this.assertRunning();
-    const plugin = (await this.discoverPlugins()).plugins.get(pluginId);
-    return plugin?.manifest.capabilities[capability] !== undefined;
-  }
-
   /** An agent task's prompt, read fresh from the plugin folder. */
   async readAgentTaskPrompt(pluginId: string, taskId: string): Promise<string> {
     this.assertRunning();

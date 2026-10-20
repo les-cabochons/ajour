@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   connectionlessPluginErrorMessage,
   pluginErrorMessage,
+  redactConnectionSummary,
   redactSecretValues,
 } from "./plugin-errors.ts";
 
@@ -30,7 +31,7 @@ describe("plugin error messages", () => {
     ).toBe("Team secret is [secret].");
   });
 
-  it("replaces the longer of two secrets first, so one inside the other goes whole", () => {
+  it("replaces a secret that holds another secret whole", () => {
     expect(
       pluginErrorMessage(
         new Error("Tried s3cret-and-more, then s3cret."),
@@ -84,6 +85,19 @@ describe("plugin error messages", () => {
     ).toBe("Failed with token [secret]…");
   });
 
+  it("replaces a secret with spaces at its ends after the host trims the message", () => {
+    expect(
+      pluginErrorMessage(new Error("pat-abc failed"), plugin, {
+        token: " pat-abc",
+      }),
+    ).toBe("[secret] failed");
+    expect(
+      pluginErrorMessage(new Error("Refused pat-abc"), plugin, {
+        token: "pat-abc\n",
+      }),
+    ).toBe("Refused [secret]");
+  });
+
   it("keeps the end of a message that was not cut, even when it starts a secret", () => {
     expect(
       pluginErrorMessage(new Error("Too many requests"), plugin, {
@@ -110,6 +124,28 @@ describe("plugin error messages", () => {
     ).toBe(
       "Old key [secret] failed for Acme (Main) at https://acme.example after 15 minutes.",
     );
+  });
+
+  it("redacts a connection summary and keeps values without a secret as they are", () => {
+    expect(
+      redactConnectionSummary(
+        {
+          site: "https://acme.example",
+          auth: "Bearer pat-abc",
+          pin: 482913,
+          projects: 3,
+          verified: true,
+        },
+        plugin,
+        [{ siteUrl: "https://acme.example", token: "pat-abc", pin: 482913 }],
+      ),
+    ).toEqual({
+      site: "https://acme.example",
+      auth: "Bearer [secret]",
+      pin: "[secret]",
+      projects: 3,
+      verified: true,
+    });
   });
 
   it("only bounds the error of an operation with no connection", () => {
@@ -150,6 +186,23 @@ describe("redacting in one pass on the original message", () => {
   it("leaves the [secret] marks already in a message alone", () => {
     expect(redactSecretValues("Bad [secret]", ["secret"])).toBe("Bad [secret]");
     expect(redactSecretValues("Bad [secret]", ["e"])).toBe("Bad [secret]");
+  });
+
+  it("redacts large adversarial messages quickly", () => {
+    const started = performance.now();
+    // 50,000 marks, each with a one-character secret beside it.
+    expect(redactSecretValues("[secret]1".repeat(50_000), ["1"])).toBe(
+      "[secret]".repeat(100_000),
+    );
+    // Every match crosses two marks, so every match widens.
+    expect(redactSecretValues("[secret]1".repeat(50_000), ["]1["])).toBe(
+      "[secret]1",
+    );
+    // A long secret whose every start almost matches the end of a cut message.
+    expect(
+      redactSecretValues(`${"a".repeat(4_094)}c…`, [`${"a".repeat(3_999)}b`]),
+    ).toBe(`${"a".repeat(4_094)}c…`);
+    expect(performance.now() - started).toBeLessThan(2_000);
   });
 
   it("gives the same text when it redacts its own result", () => {

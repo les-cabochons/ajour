@@ -119,9 +119,29 @@ describe("plugin worker lifetime", () => {
       "import {parentPort} from 'node:worker_threads'; parentPort.postMessage({ok:false,error:'x'.repeat(5000)});",
     );
 
-    await expect(host.run("test", "sync", passThrough)).rejects.toThrow(
-      new Error(`${"x".repeat(4_095)}…`),
+    const error = await host
+      .run("test", "sync", passThrough)
+      .catch((thrown: unknown) => thrown);
+    expect((error as Error).message).toBe(`${"x".repeat(4_095)}…`);
+  });
+
+  it("cuts an uncaught asynchronous throw the same way, however long", async () => {
+    const host = await lifetime(
+      "setTimeout(() => { throw new Error('x'.repeat(100_000)); });",
     );
+
+    const error = await host
+      .run("test", "sync", passThrough)
+      .catch((thrown: unknown) => thrown);
+    expect((error as Error).message).toBe(`${"x".repeat(4_095)}…`);
+
+    const thrownString = await lifetime(
+      "setTimeout(() => { throw 'x'.repeat(100_000); });",
+    );
+    await expect(thrownString.run("test", "sync", passThrough)).rejects.toBe(
+      "x".repeat(100_000),
+    );
+    expect(thrownString.activeOperationCount).toBe(0);
   });
 
   it("releases capacity when the worker fails to start or exits before replying", async () => {
