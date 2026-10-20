@@ -686,3 +686,7 @@ Then(
     expect(description).toBe("Original");
   },
 );
+
+When("I save the description without waiting", async ({ page }) => {
+  await page.keyboard.press("ControlOrMeta+Enter");
+});

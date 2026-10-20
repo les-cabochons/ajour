@@ -559,6 +559,19 @@ Feature: Backlog list and board views
     Then the source was asked to write with the loss allowed
     And the source and the parent both hold "My notes"
 
+  Scenario: Save anyway after a sync during the dialog keeps the colleague's change
+    Given the Backlog parent is synced
+    And its description "Goal\n\nSteps", which lost its underline, is synced through a connection that allows lossy conversion
+    When I reload the app
+    And I open the Backlog parent page
+    And I start editing the description
+    And I change the description to "My goal\n\nSteps"
+    And I save the description without waiting
+    Then a dialog names the underline that saving loses
+    When a sync brings "Goal\n\nNew steps" while I edit
+    And I choose "Save anyway" in the dialog
+    Then the source and the parent both hold "My goal\n\nNew steps"
+
   Scenario: Cancel in the lossy save dialog writes nothing and keeps the edit
     Given the Backlog parent is synced
     And its description "Original", which lost its underline, is synced through a connection that allows lossy conversion
