@@ -134,6 +134,7 @@ The backlog editor module is feature-local because its vocabulary and commands b
 - Standalone Workday shape plugin: `les-cabochons/ajp-workday`
 - `@modelcontextprotocol/sdk`: the MCP server over Streamable HTTP in stateless mode, at `/mcp/ajour`. Transport, authentication and the tool table: `apps/api/src/mcp-server.ts`. Client tokens: `apps/api/src/mcp-clients.ts`. Sessions, questions and activity: `apps/api/src/agent-sessions.ts`. Tool schemas: `packages/shared/agent-tools.ts`. The renderer side: `apps/web/src/lib/mcp-bridge.ts` holds the bridge connection and `features/agents/agent-tool-runner.ts` runs the tools.
 - `@playwright/mcp`: the browser tools the agent runner gives a coding agent. Pinned to an exact version, never fetched with `npx @latest`. Owned by `apps/api/src/agent-runner/playwright-mcp.ts`.
+- Ending an agent CLI and everything it started, and nothing else: `apps/api/src/agent-runner/process-tree.ts`.
 
 ## Plugins
 

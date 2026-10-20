@@ -11,6 +11,8 @@ import type {
   McpClientCreateResponse,
 } from "../../../../packages/shared/agent-tools.ts";
 import type {
+  AgentBrowserMode,
+  AgentCliId,
   AgentCliStatus,
   AgentRun,
   AgentRunnerOverview,
@@ -30,6 +32,7 @@ import type {
   RunnerEvent,
   StdioServerSpec,
 } from "./adapter.ts";
+import { killProcessTree, processTreeSpawnOptions } from "./process-tree.ts";
 import { buildPrompt } from "./prompts.ts";
 
 /**
@@ -108,6 +111,8 @@ export interface AgentRunnerOptions {
   now?: () => number;
   /** Time between SIGTERM and SIGKILL. Tests shorten it. Defaults to 5 seconds. */
   killGraceMs?: number;
+  /** Ends the CLI and everything it started. Defaults to `killProcessTree`. */
+  killProcessTree?: (pid: number, signal: "SIGTERM" | "SIGKILL") => void;
 }
 
 /** The steps of a launch, in order. agent.run names the one that failed. */
@@ -129,15 +134,31 @@ interface StepFailure<Step extends string> {
   error: unknown;
 }
 
+type StopReason = "user" | "stalled" | "mcp" | "shutdown" | "ended";
+
+/**
+ * What a run's agent.run event names. A start gets its run ID before its
+ * first launch step, so a launch that fails before the client and the
+ * session exist still emits an event, with no client or session ID.
+ */
+interface RunContext {
+  runId: string;
+  pluginId: string;
+  taskId: string;
+  cli: AgentCliId;
+  cliVersion: string | undefined;
+  browserMode: AgentBrowserMode;
+  clientId?: string;
+  sessionId?: string;
+}
+
 interface ActiveRun {
   run: AgentRun;
+  context: RunContext;
   client: AgentClientRef;
   child: ChildProcess;
   workDirectory: string;
-  cli: AgentCliStatus["id"];
-  version: string | undefined;
-  browserMode: AgentRunnerSettings["browserMode"];
-  stopReason?: "user" | "stalled" | "mcp" | "shutdown" | "ended";
+  stopReason?: StopReason;
   /** Sends SIGKILL if the CLI ignores SIGTERM. Cleared when it exits. */
   killTimer?: NodeJS.Timeout;
   mcpFailure?: string;
@@ -150,7 +171,18 @@ interface ActiveRun {
   stalledSince?: number;
   /** When tick first saw the session ended while the CLI still ran. */
   endedSince?: number;
-  exited: Promise<void>;
+  /** Resolves when the CLI closes, which may be never. */
+  closed: Promise<void>;
+  /** Set by the first finalize() call, which later calls return. */
+  finalized?: Promise<void>;
+}
+
+/** How the runner ends a session that is still open when its run ends. */
+interface SessionEnding {
+  outcome: AgentSessionOutcome;
+  summary: string;
+  /** For the activity's error list. Never logged. */
+  error?: string;
 }
 
 function defaultReadVersion(executable: string, pathValue: string) {
@@ -354,10 +386,18 @@ export class AgentRunner {
         )
       : undefined;
 
-    // From here on the start is a run, and a launch failure still logs its
-    // agent.run, with the step that failed.
+    // From here on the start has a run ID, so a launch that fails still logs
+    // its agent.run, with the step that failed.
     const runId = randomUUID();
     const launchedAt = this.now();
+    const context: RunContext = {
+      runId,
+      pluginId: request.pluginId,
+      taskId: request.taskId,
+      cli: adapter.id,
+      cliVersion: versionOnly(cliStatus.version),
+      browserMode: settings.browserMode,
+    };
     let step: LaunchStep = "find_executable";
     let client: AgentClientRef | undefined;
     let session: AgentSession | undefined;
@@ -383,6 +423,7 @@ export class AgentRunner {
         `${task.label} run`,
       );
       client = { id: created.client.id, name: created.client.name };
+      context.clientId = client.id;
 
       step = "begin_session";
       session = this.options.sessions.begin(
@@ -403,6 +444,7 @@ export class AgentRunner {
             : {}),
         },
       );
+      context.sessionId = session.id;
 
       step = "create_work_folder";
       workDirectory = await mkdtemp(path.join(this.options.tempRoot, "run-"));
@@ -437,12 +479,13 @@ export class AgentRunner {
       }
 
       // A spawn that fails later, such as a missing executable, reaches
-      // finish() through the child's error and close events.
+      // finalize() through the child's error and close events.
       step = "spawn";
       child = spawn(invocation.command, invocation.args, {
         cwd: workDirectory,
         env: invocation.env,
         stdio: ["ignore", "pipe", "pipe"],
+        ...processTreeSpawnOptions,
       });
       const run: AgentRun = {
         id: runId,
@@ -454,58 +497,44 @@ export class AgentRunner {
       };
       const active: ActiveRun = {
         run,
+        context,
         client,
         child,
         workDirectory,
-        cli: adapter.id,
-        version: cliStatus.version,
-        browserMode: settings.browserMode,
         errorLines: [],
         toolCalls: 0,
-        exited: Promise.resolve(),
+        closed: Promise.resolve(),
       };
-      active.exited = this.watch(active, adapter);
+      active.closed = this.watch(active, adapter);
       this.active = active;
       return run;
     } catch (error) {
-      child?.kill("SIGKILL");
-      let cleanupFailure: StepFailure<CleanupStep> | undefined;
-      if (client) {
-        if (session) {
-          try {
-            this.options.sessions.end(client, {
+      if (child?.pid !== undefined) this.killTree(child.pid, "SIGKILL");
+      const cleanupFailures = client
+        ? await this.cleanUp(
+            client,
+            workDirectory,
+            session && {
               sessionId: session.id,
               outcome: "failed",
               summary: "Ajour could not start the agent.",
-            });
-          } catch (endError) {
-            cleanupFailure = { step: "end_session", error: endError };
-          }
-        }
-        const cleanedUp = await this.cleanUp(client, workDirectory);
-        cleanupFailure ??= cleanedUp;
-      }
-      this.options.logEvent(
-        agentRunEvent({
-          runId,
-          sessionId: session?.id,
-          clientId: client?.id,
-          pluginId: request.pluginId,
-          taskId: request.taskId,
-          cli: adapter.id,
-          version: cliStatus.version,
-          browserMode: settings.browserMode,
+            },
+          )
+        : [];
+      this.logRun(
+        agentRunEvent(context, {
           durationMs: this.now() - launchedAt,
           outcome: "failed",
           toolCalls: 0,
           launchFailure: { step, error },
-          cleanupFailure,
+          cleanupFailures,
         }),
       );
       throw error;
     }
   }
 
+  /** Reads the CLI's output. Resolves when the CLI closes. */
   private watch(active: ActiveRun, adapter: AgentCliAdapter): Promise<void> {
     const { child } = active;
     createInterface({ input: child.stdout! }).on("line", (line) => {
@@ -523,8 +552,8 @@ export class AgentRunner {
         if (child.pid === undefined) active.spawnError = error;
       });
       child.on("close", (code) => {
-        // finish() reports its own failures in the run's agent.run event.
-        void this.finish(active, code).finally(resolve);
+        void this.finalize(active, code);
+        resolve();
       });
     });
   }
@@ -548,45 +577,45 @@ export class AgentRunner {
     }
   }
 
-  private async finish(active: ActiveRun, code: number | null) {
-    const { sessions } = this.options;
-    clearTimeout(active.killTimer);
-    let outcome: AgentSessionOutcome | undefined;
-    let cleanupFailure: StepFailure<CleanupStep> | undefined;
+  /**
+   * Ends the run exactly once, whichever comes first: the CLI's close, or
+   * shutdown giving up on it. A later call gets the same promise.
+   */
+  private finalize(active: ActiveRun, code: number | null): Promise<void> {
+    active.finalized ??= this.endRun(active, code).catch(() => {
+      // endRun() handles its own failures. This keeps a bug in it from
+      // becoming an unhandled rejection, which would crash the API.
+    });
+    return active.finalized;
+  }
+
+  /** A log sink that throws must not change what the run does. */
+  private logRun(event: AgentRunEvent) {
     try {
-      const session = sessions.get(active.run.sessionId);
-      const open =
-        session && (session.state === "active" || session.state === "stalled");
-      outcome =
-        session && !open ? (session.state as AgentSessionOutcome) : undefined;
-      if (open) {
-        const ending = describeEnding(active, code);
-        outcome = ending.outcome;
-        if (ending.error) sessions.recordError(ending.error, active.client);
-        sessions.end(active.client, {
-          sessionId: active.run.sessionId,
-          outcome: ending.outcome,
-          summary: ending.summary,
-        });
-      }
-    } catch (error) {
-      cleanupFailure = { step: "end_session", error };
+      this.options.logEvent(event);
+    } catch {
+      // The event is lost; the run is not.
     }
-    // Whatever went wrong above, the client and the folder go away and the
-    // runner accepts a new run.
-    const cleanedUp = await this.cleanUp(active.client, active.workDirectory);
-    cleanupFailure ??= cleanedUp;
+  }
+
+  /** Ends the session, cleans up and emits the run's one agent.run event. */
+  private async endRun(active: ActiveRun, code: number | null) {
+    clearTimeout(active.killTimer);
+    const session = this.options.sessions.get(active.run.sessionId);
+    const open = session?.state === "active" || session?.state === "stalled";
+    // A session the agent ended itself keeps its outcome.
+    const ending = open ? describeEnding(active, code) : undefined;
+    const outcome =
+      ending?.outcome ?? (session?.state as AgentSessionOutcome | undefined);
+    // Whatever fails here, the runner accepts a new run.
+    const cleanupFailures = await this.cleanUp(
+      active.client,
+      active.workDirectory,
+      ending && { sessionId: active.run.sessionId, ...ending },
+    );
     if (this.active === active) this.active = null;
-    this.options.logEvent(
-      agentRunEvent({
-        runId: active.run.id,
-        sessionId: active.run.sessionId,
-        clientId: active.client.id,
-        pluginId: active.run.pluginId,
-        taskId: active.run.taskId,
-        cli: active.cli,
-        version: active.version,
-        browserMode: active.browserMode,
+    this.logRun(
+      agentRunEvent(active.context, {
         durationMs: this.now() - active.run.startedAt,
         outcome,
         exitCode: code,
@@ -595,44 +624,69 @@ export class AgentRunner {
         ...(active.spawnError
           ? { launchFailure: { step: "spawn", error: active.spawnError } }
           : {}),
-        cleanupFailure,
+        cleanupFailures,
       }),
     );
   }
 
   /**
-   * Revokes the client and removes the folder, each whatever the other did.
-   * Returns the first step that failed, for the run's agent.run event.
+   * Ends the session when given its ending, revokes the client and removes
+   * the folder, each whatever the others did. Returns every step that failed.
    */
   private async cleanUp(
     client: AgentClientRef,
-    workDirectory?: string,
-  ): Promise<StepFailure<CleanupStep> | undefined> {
-    let failure: StepFailure<CleanupStep> | undefined;
+    workDirectory: string | undefined,
+    ending?: SessionEnding & { sessionId: string },
+  ): Promise<StepFailure<CleanupStep>[]> {
+    const failures: StepFailure<CleanupStep>[] = [];
+    if (ending) {
+      try {
+        if (ending.error) {
+          this.options.sessions.recordError(ending.error, client);
+        }
+        this.options.sessions.end(client, {
+          sessionId: ending.sessionId,
+          outcome: ending.outcome,
+          summary: ending.summary,
+        });
+      } catch (error) {
+        failures.push({ step: "end_session", error });
+      }
+    }
     try {
       await this.options.storage.revokeMcpClient(client.id);
     } catch (error) {
-      failure = { step: "revoke_client", error };
+      failures.push({ step: "revoke_client", error });
     }
     if (workDirectory) {
       try {
         await rm(workDirectory, { recursive: true, force: true });
       } catch (error) {
-        failure ??= { step: "remove_work_folder", error };
+        failures.push({ step: "remove_work_folder", error });
       }
     }
-    return failure;
+    return failures;
   }
 
-  /** SIGTERM now, SIGKILL after the grace period if the CLI is still running. */
+  /**
+   * Ends the CLI and everything it started: SIGTERM now, SIGKILL after the
+   * grace period if the CLI has still not closed.
+   */
   private terminate(active: ActiveRun) {
-    active.child.kill("SIGTERM");
+    const { pid } = active.child;
+    // No pid: the CLI never started, and its error and close are on the way.
+    if (pid === undefined) return;
+    this.killTree(pid, "SIGTERM");
     if (active.killTimer) return;
     active.killTimer = setTimeout(
-      () => active.child.kill("SIGKILL"),
+      () => this.killTree(pid, "SIGKILL"),
       this.options.killGraceMs ?? DEFAULT_KILL_GRACE_MS,
     );
     active.killTimer.unref();
+  }
+
+  private killTree(pid: number, signal: "SIGTERM" | "SIGKILL") {
+    (this.options.killProcessTree ?? killProcessTree)(pid, signal);
   }
 
   /** The user pressed Stop. False when that run is not going. */
@@ -676,10 +730,10 @@ export class AgentRunner {
   }
 
   /**
-   * Ajour is quitting: wait for a start in progress, stop its run and wait for
-   * the cleanup. If the CLI still has not closed after the kill grace period
-   * plus a second, revoke the client and remove the folder directly so Ajour
-   * can quit.
+   * Ajour is quitting: wait for a start in progress, stop its run's whole
+   * process tree and wait for the CLI to close. If it still has not closed
+   * after the kill grace period plus a second, end the run without it, so
+   * Ajour can quit. A close that arrives later changes nothing.
    */
   async shutdown() {
     if (this.starting) await this.starting.catch(() => undefined);
@@ -688,26 +742,25 @@ export class AgentRunner {
     active.stopReason ??= "shutdown";
     this.terminate(active);
     let giveUp: NodeJS.Timeout | undefined;
-    const gaveUp = new Promise<"timeout">((resolve) => {
+    const gaveUp = new Promise<void>((resolve) => {
       giveUp = setTimeout(
-        () => resolve("timeout"),
+        resolve,
         (this.options.killGraceMs ?? DEFAULT_KILL_GRACE_MS) + 1000,
       );
     });
-    const outcome = await Promise.race([active.exited, gaveUp]);
+    await Promise.race([active.closed, gaveUp]);
     clearTimeout(giveUp);
-    if (outcome === "timeout") {
-      await this.cleanUp(active.client, active.workDirectory);
-      if (this.active === active) this.active = null;
-    }
+    await this.finalize(active, null);
   }
 }
 
-function describeEnding(
-  active: ActiveRun,
-  code: number | null,
-): { outcome: AgentSessionOutcome; summary: string; error?: string } {
+function describeEnding(active: ActiveRun, code: number | null): SessionEnding {
   const errorOutput = active.errorLines.join("\n");
+  // A CLI that never started failed, whatever stop came meanwhile.
+  if (active.spawnError) {
+    const summary = active.spawnError.message;
+    return { outcome: "failed", summary, error: summary };
+  }
   switch (active.stopReason) {
     case "user":
       return { outcome: "cancelled", summary: "Stopped by the user." };
@@ -716,7 +769,7 @@ function describeEnding(
     case "stalled":
       return { outcome: "failed", summary: "The agent stopped answering." };
     case "ended":
-      // The session is already ended, so finish() never asks for this.
+      // The session is already ended, so endRun() never asks for this.
       return { outcome: "failed", summary: "The agent kept running." };
     case "mcp":
       return {
@@ -740,68 +793,104 @@ function describeEnding(
   };
 }
 
+/** An error in a wide event: its type name and Node code, never its message. */
+type EventError = { type: string; code?: string };
+
 /**
- * The run's one agent.run wide event, however it ended. An error gives its
- * type and code only: messages can hold paths with the user's name, and the
- * CLI's output can hold the week's lines.
+ * The run's one wide event, however it ended. Errors give their type and
+ * code only: messages can hold paths with the user's name, and the CLI's
+ * output can hold the week's lines.
  */
-function agentRunEvent(run: {
-  runId: string;
-  sessionId: string | undefined;
-  clientId: string | undefined;
-  pluginId: string;
-  taskId: string;
-  cli: AgentCliStatus["id"];
-  version: string | undefined;
-  browserMode: AgentRunnerSettings["browserMode"];
+export type AgentRunEvent = {
+  event: "agent.run";
+  run_id: string;
+  /** Absent when the launch failed before the session began. */
+  session_id?: string;
+  /** Absent when the launch failed before the client was created. */
+  client_id?: string;
+  plugin_id: string;
+  task_id: string;
+  cli: AgentCliId;
+  cli_version?: string;
+  browser_mode: AgentBrowserMode;
+  duration_ms: number;
+  outcome?: AgentSessionOutcome;
+  exit_code?: number | null;
+  stop_reason?: StopReason;
+  tool_call_count: number;
+  /** Why the launch failed. */
+  error?: EventError;
+  launch?: { failed_step: LaunchStep };
+  cleanup: {
+    outcome: "ok" | "failed";
+    failed_steps: CleanupStep[];
+    /** The first failed step's error. */
+    error?: EventError;
+  };
+};
+
+/** How a run ended, for its agent.run event. */
+interface RunEnding {
   durationMs: number;
   outcome: AgentSessionOutcome | undefined;
   exitCode?: number | null;
-  stopReason?: ActiveRun["stopReason"];
+  stopReason?: StopReason;
   toolCalls: number;
   launchFailure?: StepFailure<LaunchStep>;
-  cleanupFailure?: StepFailure<CleanupStep>;
-}): Record<string, unknown> {
-  const launchError =
-    run.launchFailure && describeError(run.launchFailure.error);
-  const cleanupError =
-    run.cleanupFailure && describeError(run.cleanupFailure.error);
+  cleanupFailures: StepFailure<CleanupStep>[];
+}
+
+function agentRunEvent(context: RunContext, ending: RunEnding): AgentRunEvent {
+  const [firstCleanupFailure] = ending.cleanupFailures;
   return {
     event: "agent.run",
-    run_id: run.runId,
-    session_id: run.sessionId,
-    client_id: run.clientId,
-    plugin_id: run.pluginId,
-    task_id: run.taskId,
-    cli: run.cli,
-    cli_version: run.version,
-    browser_mode: run.browserMode,
-    duration_ms: run.durationMs,
-    outcome: run.outcome,
-    exit_code: run.exitCode,
-    stop_reason: run.stopReason,
-    tool_call_count: run.toolCalls,
-    launch_failed_step: run.launchFailure?.step,
-    error_type: launchError?.type,
-    error_code: launchError?.code,
-    cleanup_outcome: run.cleanupFailure ? "failed" : "ok",
-    cleanup_failed_step: run.cleanupFailure?.step,
-    cleanup_error_type: cleanupError?.type,
-    cleanup_error_code: cleanupError?.code,
+    run_id: context.runId,
+    session_id: context.sessionId,
+    client_id: context.clientId,
+    plugin_id: context.pluginId,
+    task_id: context.taskId,
+    cli: context.cli,
+    cli_version: context.cliVersion,
+    browser_mode: context.browserMode,
+    duration_ms: ending.durationMs,
+    outcome: ending.outcome,
+    exit_code: ending.exitCode,
+    stop_reason: ending.stopReason,
+    tool_call_count: ending.toolCalls,
+    ...(ending.launchFailure
+      ? {
+          error: eventError(ending.launchFailure.error),
+          launch: { failed_step: ending.launchFailure.step },
+        }
+      : {}),
+    cleanup: {
+      outcome: firstCleanupFailure ? "failed" : "ok",
+      failed_steps: ending.cleanupFailures.map((failure) => failure.step),
+      ...(firstCleanupFailure
+        ? { error: eventError(firstCleanupFailure.error) }
+        : {}),
+    },
   };
 }
 
-/** An error's type name and its Node code, such as ENOENT. Never its message. */
-function describeError(error: unknown): {
-  type: string;
-  code: string | undefined;
-} {
-  if (!(error instanceof Error)) return { type: typeof error, code: undefined };
+/**
+ * The version when it looks like one, such as 1.4.2 or 0.30.0-beta.1. When
+ * an adapter cannot read `--version`, Settings shows the raw output, which is
+ * CLI output and stays out of the log.
+ */
+function versionOnly(value: string | undefined): string | undefined {
+  return value !== undefined &&
+    /^v?\d+(?:\.\d+){1,3}(?:-[0-9A-Za-z.]+)?$/.test(value)
+    ? value
+    : undefined;
+}
+
+function eventError(error: unknown): EventError {
+  if (!(error instanceof Error)) return { type: typeof error };
   const { code } = error as { code?: unknown };
-  return {
-    type: error.name,
-    code: typeof code === "string" ? code : undefined,
-  };
+  return typeof code === "string"
+    ? { type: error.name, code }
+    : { type: error.name };
 }
 
 function safeHttpsUrl(value: string): string | undefined {

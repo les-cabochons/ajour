@@ -147,6 +147,11 @@ interface AppApiServerOptions {
   mcpLogEvent?: (event: Record<string, unknown>) => void;
   /** How long one wait_for_answer call holds. Tests shorten it. */
   mcpWaitForAnswerMs?: number;
+  /**
+   * The PATH the agent runner finds the agent CLIs on. Defaults to the login
+   * shell's PATH. Tests point it at a fake CLI.
+   */
+  agentCliPath?: string;
 }
 
 interface AppApiRuntime {
@@ -747,7 +752,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
     adapters: [claudeCodeAdapter, codexAdapter, opencodeAdapter],
     findExecutable: (name, pathValue) => findExecutable(name, pathValue),
-    loginShellPath: resolveLoginShellPath,
+    loginShellPath:
+      options.agentCliPath === undefined
+        ? resolveLoginShellPath
+        : async () => options.agentCliPath!,
     chromeInstalled: () => isChromeInstalled(),
     playwright: playwrightMcpServer,
     profileDirectory: path.join(storage.dataDirectory, "agent-browser-profile"),

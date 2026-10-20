@@ -37,12 +37,24 @@ export function sessionWindowMs(minutes: number) {
 /**
  * The `mcp.session_ended` wide event: IDs, outcome, counts and durations only.
  * Messages hold what the agent and the user wrote, so they stay out of the
- * log. `run_id` joins a session the runner began to its `agent.run` event.
+ * log.
  */
+export type SessionEndedEvent = {
+  event: "mcp.session_ended";
+  client_id: string;
+  session_id: string;
+  /** Joins a session the runner began to its `agent.run` event. */
+  run_id?: string;
+  outcome: AgentSession["state"];
+  duration_ms: number;
+  update_count: number;
+  question_count: number;
+};
+
 export function sessionEndedEvent(
   session: AgentSession,
   now: number,
-): Record<string, unknown> {
+): SessionEndedEvent {
   return {
     event: "mcp.session_ended",
     client_id: session.client.id,

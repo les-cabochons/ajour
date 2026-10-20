@@ -1,8 +1,9 @@
+import { spawn } from "node:child_process";
 import { mkdtemp, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentSessions, sessionEndedEvent } from "../agent-sessions.ts";
 import { claudeCodeAdapter } from "./adapters/claude-code.ts";
 import { codexAdapter } from "./adapters/codex.ts";
@@ -12,6 +13,7 @@ import type {
   PluginField,
 } from "../../../../packages/shared/plugins.ts";
 import type { AgentCliAdapter } from "./adapter.ts";
+import { killProcessTree } from "./process-tree.ts";
 import { AgentRunner } from "./runner.ts";
 
 const FAKE_CLI = fileURLToPath(new URL("./fake-cli.mjs", import.meta.url));
@@ -119,6 +121,14 @@ function fakePlugins(
   };
 }
 
+function killOnlyTheCli(pid: number, signal: "SIGTERM" | "SIGKILL") {
+  try {
+    process.kill(pid, signal);
+  } catch {
+    // Already gone.
+  }
+}
+
 async function setup(
   script: unknown[],
   options: {
@@ -134,6 +144,16 @@ async function setup(
     findExecutable?: (name: string) => Promise<string | null>;
     readPrompt?: () => Promise<string>;
     revokeError?: Error;
+    /**
+     * Kills the CLI's whole tree, as Ajour does. Off, only the CLI is killed:
+     * `taskkill` reads the process list through WMI, which takes seconds on
+     * some Windows machines, and most tests start no grandchild.
+     */
+    killTree?: boolean;
+    /** Replaces the sink that collects `events`. */
+    logEvent?: (event: Record<string, unknown>) => void;
+    /** What `<cli> --version` prints. */
+    versionOutput?: string;
   } = {},
 ) {
   const work = await mkdtemp(path.join(tmpdir(), "ajour-runner-test-"));
@@ -166,17 +186,18 @@ async function setup(
     },
     adapters: [options.adapter ?? fakeAdapter(script, report)],
     findExecutable: options.findExecutable ?? (async () => "/fake/claude"),
-    readVersion: async () => "1.0.0",
+    readVersion: async () => options.versionOutput ?? "1.0.0",
     loginShellPath: async () => process.env.PATH ?? "",
     chromeInstalled: async () => options.chrome ?? true,
     playwright: () => ({ command: "node", args: [], env: {} }),
     profileDirectory: path.join(work, "profile"),
     tempRoot: options.tempRoot ? path.join(work, options.tempRoot) : work,
     ajourMcpUrl: "http://127.0.0.1:8787/mcp/ajour",
-    logEvent: (event) => events.push(event),
+    logEvent: options.logEvent ?? ((event) => events.push(event)),
     ...(options.killGraceMs === undefined
       ? {}
       : { killGraceMs: options.killGraceMs }),
+    killProcessTree: options.killTree ? killProcessTree : killOnlyTheCli,
   });
   return { runner, sessions, revoked, events, work, report };
 }
@@ -187,11 +208,14 @@ const request = {
   weekOf: "2026-10-12",
 };
 
-/** Waits until the run is gone from the runner. */
+/**
+ * Waits until the run is gone from the runner. Stopping a run on Windows waits
+ * for `taskkill`, which takes several seconds on a machine with a slow WMI.
+ */
 async function settled(runner: AgentRunner) {
   await vi.waitFor(
     async () => expect((await runner.overview()).currentRun).toBeNull(),
-    { timeout: 5000 },
+    { timeout: 15_000 },
   );
 }
 
@@ -204,7 +228,46 @@ async function waitForCli(report: string) {
   );
 }
 
-describe("AgentRunner", () => {
+/** Processes the fake CLI started. Each test's leftovers are killed after it. */
+const grandchildren: number[] = [];
+
+afterEach(() => {
+  for (const pid of grandchildren.splice(0)) {
+    if (isAlive(pid)) process.kill(pid, "SIGKILL");
+  }
+});
+
+/** Waits for the fake CLI's grandchild and returns its pid. */
+async function waitForGrandchild(report: string): Promise<number> {
+  const pid = await vi.waitFor(
+    async () => {
+      const line = (await readFile(report, "utf8"))
+        .split("\n")
+        .filter(Boolean)
+        .map((text) => JSON.parse(text) as { grandchildPid?: number })
+        .find((entry) => entry.grandchildPid !== undefined);
+      expect(line).toBeDefined();
+      return line!.grandchildPid!;
+    },
+    { timeout: 5000 },
+  );
+  grandchildren.push(pid);
+  return pid;
+}
+
+function isAlive(pid: number) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const runEvents = (events: Record<string, unknown>[]) =>
+  events.filter((event) => event.event === "agent.run");
+
+describe("AgentRunner", { timeout: 30_000 }, () => {
   it("runs a selected Codex adapter and retains its final summary", async () => {
     const fake = fakeAdapter(
       [
@@ -412,10 +475,11 @@ describe("AgentRunner", () => {
         event: "agent.run",
         ...ids,
         outcome: "done",
-        cleanup_outcome: "ok",
+        cleanup: { outcome: "ok", failed_steps: [] },
       }),
     ]);
-    expect(events[1]!.launch_failed_step).toBeUndefined();
+    expect(events[1]).not.toHaveProperty("launch");
+    expect(events[1]).not.toHaveProperty("error");
   });
 
   it("logs a launch that fails after its session began, with the step", async () => {
@@ -425,10 +489,7 @@ describe("AgentRunner", () => {
     await expect(runner.start(request)).rejects.toThrow();
     const [session] = sessions.snapshot().sessions;
     expect(session!.state).toBe("failed");
-    const runEvents = events.filter(
-      (candidate) => candidate.event === "agent.run",
-    );
-    expect(runEvents).toEqual([
+    expect(runEvents(events)).toEqual([
       expect.objectContaining({
         run_id: session!.runId,
         session_id: session!.id,
@@ -436,9 +497,9 @@ describe("AgentRunner", () => {
         plugin_id: "ajp-test",
         task_id: "enter-week",
         outcome: "failed",
-        launch_failed_step: "create_work_folder",
-        error_type: "Error",
-        error_code: "ENOENT",
+        error: { type: "Error", code: "ENOENT" },
+        launch: { failed_step: "create_work_folder" },
+        cleanup: { outcome: "ok", failed_steps: [] },
       }),
     ]);
     expect(events).toContainEqual(
@@ -467,18 +528,40 @@ describe("AgentRunner", () => {
     const run = await runner.start(request);
     await settled(runner);
     expect(sessions.get(run.sessionId)!.state).toBe("failed");
-    expect(
-      events.filter((candidate) => candidate.event === "agent.run"),
-    ).toEqual([
+    expect(runEvents(events)).toEqual([
       expect.objectContaining({
         run_id: run.id,
         session_id: run.sessionId,
         outcome: "failed",
-        launch_failed_step: "spawn",
-        error_code: "ENOENT",
+        error: { type: "Error", code: "ENOENT" },
+        launch: { failed_step: "spawn" },
       }),
     ]);
     expect(JSON.stringify(events)).not.toContain("ajour-no-such-cli");
+  });
+
+  it("reports a CLI that could not be spawned as failed, even while Ajour quits", async () => {
+    const adapter: AgentCliAdapter = {
+      ...fakeAdapter([], ""),
+      buildInvocation: (input) => ({
+        command: path.join(tmpdir(), "ajour-no-such-cli", "claude"),
+        args: [],
+        env: input.baseEnv,
+        files: {},
+      }),
+    };
+    const { runner, sessions, events } = await setup([], { adapter });
+    const run = await runner.start(request);
+    // The spawn error arrives after start returns, so shutdown is waiting.
+    await runner.shutdown();
+    expect(sessions.get(run.sessionId)!.state).toBe("failed");
+    expect(runEvents(events)).toEqual([
+      expect.objectContaining({
+        outcome: "failed",
+        stop_reason: "shutdown",
+        launch: { failed_step: "spawn" },
+      }),
+    ]);
   });
 
   it("logs a spawn that throws as a launch failure", async () => {
@@ -494,14 +577,11 @@ describe("AgentRunner", () => {
     const { runner, events, revoked } = await setup([], { adapter });
     await expect(runner.start(request)).rejects.toThrow();
     expect(revoked).toHaveLength(1);
-    expect(
-      events.filter((candidate) => candidate.event === "agent.run"),
-    ).toEqual([
+    expect(runEvents(events)).toEqual([
       expect.objectContaining({
         outcome: "failed",
-        launch_failed_step: "spawn",
-        error_type: "TypeError",
-        error_code: "ERR_INVALID_ARG_VALUE",
+        error: { type: "TypeError", code: "ERR_INVALID_ARG_VALUE" },
+        launch: { failed_step: "spawn" },
       }),
     ]);
   });
@@ -517,22 +597,18 @@ describe("AgentRunner", () => {
     });
     await expect(runner.start(request)).rejects.toThrow("ENOENT");
     expect(revoked).toEqual([]);
-    const runEvents = events.filter(
-      (candidate) => candidate.event === "agent.run",
-    );
-    expect(runEvents).toEqual([
-      expect.objectContaining({
-        plugin_id: "ajp-test",
-        task_id: "enter-week",
-        outcome: "failed",
-        launch_failed_step: "read_prompt",
-        error_type: "Error",
-        error_code: "ENOENT",
-      }),
-    ]);
-    expect(runEvents[0]!.run_id).toEqual(expect.any(String));
-    expect(runEvents[0]!.session_id).toBeUndefined();
-    expect(runEvents[0]!.client_id).toBeUndefined();
+    const [event] = runEvents(events);
+    expect(event).toMatchObject({
+      plugin_id: "ajp-test",
+      task_id: "enter-week",
+      outcome: "failed",
+      error: { type: "Error", code: "ENOENT" },
+      launch: { failed_step: "read_prompt" },
+      cleanup: { outcome: "ok", failed_steps: [] },
+    });
+    expect(event!.run_id).toEqual(expect.any(String));
+    expect(event!.session_id).toBeUndefined();
+    expect(event!.client_id).toBeUndefined();
     expect(events.map((event) => event.event)).toEqual(["agent.run"]);
     expect(JSON.stringify(events)).not.toContain("someone");
   });
@@ -543,13 +619,11 @@ describe("AgentRunner", () => {
       findExecutable: async (name) => (name === "node" ? null : "/fake/claude"),
     });
     await expect(runner.start(request)).rejects.toMatchObject({ status: 400 });
-    expect(
-      events.filter((candidate) => candidate.event === "agent.run"),
-    ).toEqual([
+    expect(runEvents(events)).toEqual([
       expect.objectContaining({
         outcome: "failed",
-        launch_failed_step: "find_executable",
-        error_type: "AgentRunError",
+        error: { type: "AgentRunError" },
+        launch: { failed_step: "find_executable" },
       }),
     ]);
   });
@@ -569,10 +643,11 @@ describe("AgentRunner", () => {
     ]);
     expect(events[1]).toMatchObject({
       outcome: "done",
-      cleanup_outcome: "failed",
-      cleanup_failed_step: "revoke_client",
-      cleanup_error_type: "Error",
-      cleanup_error_code: "EPERM",
+      cleanup: {
+        outcome: "failed",
+        failed_steps: ["revoke_client"],
+        error: { type: "Error", code: "EPERM" },
+      },
     });
     // The folder still goes away.
     expect(
@@ -596,12 +671,79 @@ describe("AgentRunner", () => {
       expect.objectContaining({
         event: "agent.run",
         run_id: run.id,
-        cleanup_outcome: "failed",
-        cleanup_failed_step: "end_session",
-        cleanup_error_type: "Error",
+        cleanup: {
+          outcome: "failed",
+          failed_steps: ["end_session"],
+          error: { type: "Error" },
+        },
       }),
     ]);
     expect(JSON.stringify(events)).not.toContain("someone");
+  });
+
+  it("keeps every failed cleanup step, so a revoke that failed always shows", async () => {
+    const sessions = new AgentSessions();
+    const { runner, events } = await setup([{ exit: 0 }], {
+      sessions,
+      revokeError: Object.assign(new Error("EBUSY"), { code: "EBUSY" }),
+    });
+    await runner.start(request);
+    vi.spyOn(sessions, "end").mockImplementation(() => {
+      throw new TypeError("no session");
+    });
+    await settled(runner);
+    expect(runEvents(events)).toEqual([
+      expect.objectContaining({
+        cleanup: {
+          outcome: "failed",
+          failed_steps: ["end_session", "revoke_client"],
+          // The first failed step's error.
+          error: { type: "TypeError" },
+        },
+      }),
+    ]);
+  });
+
+  it("logs the CLI version only when it looks like a version", async () => {
+    const versioned = await setup([{ exit: 0 }], {
+      versionOutput: "1.4.2 (Claude Code)\n",
+    });
+    await versioned.runner.start(request);
+    await settled(versioned.runner);
+    expect(runEvents(versioned.events)[0]!.cli_version).toBe("1.4.2");
+
+    // Output the adapter cannot read is CLI output, and stays out.
+    const unreadable = await setup([{ exit: 0 }], {
+      versionOutput: "profile C:\\Users\\someone\\.claude, build 7",
+    });
+    await unreadable.runner.start(request);
+    await settled(unreadable.runner);
+    expect(runEvents(unreadable.events)[0]!.cli_version).toBeUndefined();
+    expect(JSON.stringify(unreadable.events)).not.toContain("someone");
+  });
+
+  it("keeps working when the log sink throws", async () => {
+    const sinkDown = () => {
+      throw new Error("sink down");
+    };
+    const { runner, sessions } = await setup([{ exit: 0 }], {
+      logEvent: sinkDown,
+    });
+    const first = await runner.start(request);
+    await settled(runner);
+    expect(sessions.get(first.sessionId)!.state).toBe("done");
+    const second = await runner.start(request);
+    await settled(runner);
+    expect(sessions.get(second.sessionId)!.state).toBe("done");
+
+    // A failed launch still reports its own error, not the sink's.
+    const missing = await setup([], {
+      logEvent: sinkDown,
+      findExecutable: async (name) => (name === "node" ? null : "/fake/claude"),
+    });
+    await expect(missing.runner.start(request)).rejects.toMatchObject({
+      status: 400,
+    });
   });
 
   it("logs no agent.run for a start it refuses", async () => {
@@ -683,6 +825,85 @@ describe("AgentRunner", () => {
     expect(runner.currentRun()).toBeNull();
   });
 
+  it("stops the CLI's whole process tree, so nothing it started holds the run open", async () => {
+    const { runner, sessions, events, report } = await setup(
+      [{ grandchild: true }, { hang: true }],
+      { killTree: true },
+    );
+    const run = await runner.start(request);
+    const grandchild = await waitForGrandchild(report);
+    expect(runner.stop(run.id)).toBe(true);
+    await settled(runner);
+    await vi.waitFor(() => expect(isAlive(grandchild)).toBe(false));
+    expect(sessions.get(run.sessionId)!.state).toBe("cancelled");
+    expect(runEvents(events)).toEqual([
+      expect.objectContaining({ run_id: run.id, outcome: "cancelled" }),
+    ]);
+  });
+
+  it("leaves nothing the CLI started running when Ajour quits", async () => {
+    const { runner, sessions, events, report } = await setup(
+      [{ grandchild: true }, { hang: true }],
+      { killTree: true },
+    );
+    const run = await runner.start(request);
+    const grandchild = await waitForGrandchild(report);
+    await runner.shutdown();
+    await vi.waitFor(() => expect(isAlive(grandchild)).toBe(false));
+    expect(runner.currentRun()).toBeNull();
+    expect(sessions.get(run.sessionId)!.state).toBe("cancelled");
+    expect(runEvents(events)).toEqual([
+      expect.objectContaining({ run_id: run.id, stop_reason: "shutdown" }),
+    ]);
+  });
+
+  it("ends a run exactly once when shutdown gives up on a CLI that never closes", async () => {
+    // The escapee is outside the CLI's tree and keeps its output open, so
+    // the CLI's close never comes while it lives.
+    const { runner, sessions, events, revoked, report } = await setup(
+      [{ escapee: true }, { hang: true }],
+      { killGraceMs: 50 },
+    );
+    const run = await runner.start(request);
+    const escapee = await waitForGrandchild(report);
+    await runner.shutdown();
+    expect(runner.currentRun()).toBeNull();
+    expect(revoked).toHaveLength(1);
+    expect(sessions.get(run.sessionId)!.state).toBe("cancelled");
+    expect(runEvents(events)).toEqual([
+      expect.objectContaining({
+        run_id: run.id,
+        outcome: "cancelled",
+        stop_reason: "shutdown",
+      }),
+    ]);
+    // With the escapee gone the close arrives late. It must not end the run
+    // a second time.
+    process.kill(escapee, "SIGKILL");
+    await vi.waitFor(() => expect(isAlive(escapee)).toBe(false));
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(runEvents(events)).toHaveLength(1);
+    expect(revoked).toHaveLength(1);
+  });
+
+  it("never kills a process the runner did not start, such as the user's Chrome", async () => {
+    const usersChrome = spawn(
+      process.execPath,
+      ["-e", "setInterval(() => {}, 1000)"],
+      { stdio: "ignore" },
+    );
+    grandchildren.push(usersChrome.pid!);
+    const { runner, report } = await setup(
+      [{ grandchild: true }, { hang: true }],
+      { killTree: true },
+    );
+    const run = await runner.start(request);
+    await waitForGrandchild(report);
+    runner.stop(run.id);
+    await settled(runner);
+    expect(isAlive(usersChrome.pid!)).toBe(true);
+  });
+
   it("cleans up when the invocation cannot be built", async () => {
     const adapter: AgentCliAdapter = {
       ...claudeCodeAdapter,
@@ -703,13 +924,12 @@ describe("AgentRunner", () => {
     expect(runner.currentRun()).toBeNull();
     const [session] = sessions.snapshot().sessions;
     expect(session!.state).toBe("failed");
-    expect(
-      events.filter((candidate) => candidate.event === "agent.run"),
-    ).toEqual([
+    expect(runEvents(events)).toEqual([
       expect.objectContaining({
         session_id: session!.id,
-        launch_failed_step: "build_invocation",
-        cleanup_outcome: "ok",
+        error: { type: "Error" },
+        launch: { failed_step: "build_invocation" },
+        cleanup: { outcome: "ok", failed_steps: [] },
       }),
     ]);
     expect(JSON.stringify(events)).not.toContain("no invocation");
