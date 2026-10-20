@@ -7,6 +7,7 @@ import type {
   LocalWorkItemEstimateFieldKey,
   PersistedLocalWorkItem,
 } from "@/domain/local-state";
+import { normalizeDescriptionText } from "@/domain/backlog/description-sync";
 import {
   assertValidParentWorkItem,
   inferInheritedParentMapping,
@@ -285,7 +286,7 @@ function createManualWorkItem(
     inheritsParentMapping: isSubtask
       ? workItem.inheritsParentMapping
       : undefined,
-    description: workItem.description?.trim() || undefined,
+    description: normalizeDescriptionText(workItem.description) || undefined,
     originalEstimateHours: normalizeWorkItemEstimateValue(
       workItem.originalEstimateHours,
     ),
@@ -532,7 +533,7 @@ export function updateWorkItem(
     title: nextTitle,
     description:
       typeof patch.description === "string"
-        ? patch.description.trim() || undefined
+        ? normalizeDescriptionText(patch.description) || undefined
         : "description" in patch
           ? patch.description
           : target.description,

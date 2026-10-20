@@ -2048,10 +2048,14 @@ export const localStore = {
         createId,
         now: Date.now,
       });
-      const next = applyWorkflowStateLifecycle(state, result.state, {
-        createId,
-        now: Date.now,
-      });
+      // A done item's description syncs too, and its timelog maps the item.
+      const next = withDescriptionTimelogs(
+        state,
+        applyWorkflowStateLifecycle(state, result.state, {
+          createId,
+          now: Date.now,
+        }),
+      );
       const newlyClosed = next.workItems.filter(
         (item) =>
           item.status === "archived" &&
