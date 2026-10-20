@@ -32,6 +32,11 @@ import {
   agentRunnerSettingsSchema,
   type AgentRunnerSettings,
 } from "../../../packages/shared/agent-runs.ts";
+import {
+  boundConnectionError,
+  connectionSecretValues,
+  redactSecretValues,
+} from "./plugin-errors.ts";
 
 interface StoredConnection {
   id: string;
@@ -447,7 +452,14 @@ function buildConnectionSummary(
     ...(connection.allowLossyConversion ? { allowLossyConversion: true } : {}),
     connectedAt: connection.connectedAt,
     lastSyncAt: connection.lastSyncAt,
-    lastError: connection.lastError,
+    // A last error stored before every route redacted plugin errors may
+    // still hold a secret.
+    lastError:
+      connection.lastError &&
+      redactSecretValues(
+        connection.lastError,
+        connectionSecretValues(plugin, [connection.config]),
+      ),
     lastErrorAt: connection.lastErrorAt,
     pendingImportCount: connectionItems.length,
     selectedImportCount: connectionItems.filter((item) => item.selected).length,
@@ -723,20 +735,6 @@ function normalizeState(
   }
 
   return migrateLegacyState(raw as AppApiStateV1);
-}
-
-/** The longest last error a connection keeps, as its summary schema allows. */
-export const MAX_CONNECTION_ERROR_CHARACTERS = 1_000;
-
-/**
- * Cuts a connection error to the length its summary allows. A plugin result
- * that breaks the contract can give a validation error of many kilobytes, and
- * storing it whole would make the overview fail to load.
- */
-export function boundConnectionError(message: string) {
-  return message.length <= MAX_CONNECTION_ERROR_CHARACTERS
-    ? message
-    : `${message.slice(0, MAX_CONNECTION_ERROR_CHARACTERS - 1)}…`;
 }
 
 export class AppApiStorage {

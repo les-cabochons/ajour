@@ -84,9 +84,15 @@ form hides it while that capability is off. `validateConnection` receives the
 capabilities that are on as its second argument and checks only their access.
 A calendar is read-only: `listCalendarEvents` returns event facts for a date
 range through `POST /api/calendars/:pluginId/connections/:connectionId/:operation`,
-and Ajour never stores the events (ADR 0005). The route replaces secret
-connection values in plugin error messages and logs one `calendar.operation`
-wide event with ids, range, count and outcome, never a title.
+and Ajour never stores the events (ADR 0005). The route logs one
+`calendar.operation` wide event with ids, range, count and outcome, never a
+title.
+A plugin may echo a secret connection value in an error. Every route that runs
+a plugin operation turns the error into a message with `pluginErrorMessage` in
+`apps/api/src/plugin-errors.ts`: each secret value of the connection becomes
+`[secret]`, then the message is cut to 1,000 characters. No response, stored
+last error or log carries the raw message, and the overview redacts a stored
+last error again before it returns it.
 The rules in this section apply to every such plugin, which must remain
 physically and logically separate from the application. A plugin owns its external-system
 authentication, transport, field discovery, and remote read/write behavior. It

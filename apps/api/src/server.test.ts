@@ -66,7 +66,19 @@ async function createPlugin(
   return pluginDirectory;
 }
 
-async function createProjectDataShapePlugin(parent: string) {
+const projectDataShapePluginSource = [
+  "export async function exportProjects(projects) {",
+  "  return { datasets: [{ id: 'projects', rows: projects.map((project) => ({ project: project.name })) }] };",
+  "}",
+  "export async function importProjects(datasets) {",
+  "  return { projects: datasets[0].rows.map((row) => ({ name: row.project, color: '#123456', status: 'active', tasks: [] })) };",
+  "}",
+].join("\n");
+
+async function createProjectDataShapePlugin(
+  parent: string,
+  source = projectDataShapePluginSource,
+) {
   const pluginDirectory = path.join(parent, "workday-project-data");
   await mkdir(pluginDirectory, { recursive: true });
   await writeFile(
@@ -101,18 +113,7 @@ async function createProjectDataShapePlugin(parent: string) {
     }),
     "utf8",
   );
-  await writeFile(
-    path.join(pluginDirectory, "plugin.mjs"),
-    [
-      "export async function exportProjects(projects) {",
-      "  return { datasets: [{ id: 'projects', rows: projects.map((project) => ({ project: project.name })) }] };",
-      "}",
-      "export async function importProjects(datasets) {",
-      "  return { projects: datasets[0].rows.map((row) => ({ name: row.project, color: '#123456', status: 'active', tasks: [] })) };",
-      "}",
-    ].join("\n"),
-    "utf8",
-  );
+  await writeFile(path.join(pluginDirectory, "plugin.mjs"), source, "utf8");
   return pluginDirectory;
 }
 
@@ -2746,5 +2747,291 @@ describe("backlog description routes", () => {
       status: 409,
       body: { error: "This plugin does not sync descriptions." },
     });
+  });
+});
+
+describe("plugin errors that echo a secret", () => {
+  const tempDirs: string[] = [];
+  const servers: Server[] = [];
+  const TOKEN = "pat-7c1e9a2b4d6f8a0c";
+  const SITE = "https://acme.atlassian.net";
+
+  afterEach(async () => {
+    for (const server of servers.splice(0)) {
+      server.emit("close");
+    }
+    await Promise.all(
+      tempDirs
+        .splice(0)
+        .map((directory) => rm(directory, { recursive: true, force: true })),
+    );
+  });
+
+  // Every operation fails with a message that names the token it was given.
+  const leakingPluginSource = [
+    "export async function validateConnection(config) {",
+    "  if (config.baseUrl.endsWith('/refused')) throw new Error(`Token ${config.token} was refused.`);",
+    "  return { normalizedConfig: config, connectionSummary: {} };",
+    "}",
+    "const leak = (what) => async (connection) => {",
+    "  throw new Error(`${what} failed with token ${connection.config.token}.`);",
+    "};",
+    "export const syncConnection = leak('Sync');",
+    "export const listSettleStates = leak('Listing states');",
+    "export const writeSettle = leak('Settling');",
+    "export const syncPullRequests = leak('Pull request sync');",
+    "export const getPullRequestContent = leak('Reading the pull request');",
+  ].join("\n");
+
+  async function createServer(savedState?: object) {
+    const root = await mkdtemp(path.join(os.tmpdir(), "ajour-leak-api-"));
+    tempDirs.push(root);
+    if (savedState) {
+      await writeFile(
+        path.join(root, "state.json"),
+        JSON.stringify(savedState),
+        "utf8",
+      );
+    }
+    const pluginDirectory = await createPlugin(
+      path.join(root, "source"),
+      leakingPluginSource,
+      "plugin.mjs",
+      {
+        capabilities: { connector: { settle: true }, codeHost: {} },
+        connectionFields: [
+          { id: "label", label: "Label", type: "text", required: true },
+          { id: "tenantLabel", label: "Site", type: "text", required: true },
+          { id: "baseUrl", label: "Site URL", type: "url", required: true },
+          {
+            id: "token",
+            label: "API token",
+            type: "password",
+            secret: true,
+          },
+        ],
+      },
+    );
+    const server = createAppApiServer({
+      statePath: path.join(root, "state.json"),
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [pluginDirectory],
+      allowDevelopmentPlugins: true,
+    });
+    servers.push(server);
+    return server;
+  }
+
+  const saveConnection = (
+    server: Server,
+    values: Record<string, unknown>,
+    id?: string,
+  ) =>
+    dispatchJsonRequest(server, {
+      method: "POST",
+      path: "/api/plugins/jira/connections",
+      body: JSON.stringify({
+        ...(id ? { id } : {}),
+        values: {
+          label: "Main Jira",
+          tenantLabel: "Acme",
+          autoSync: false,
+          autoSyncIntervalMinutes: 15,
+          baseUrl: SITE,
+          ...values,
+        },
+      }),
+    });
+
+  it("keeps the submitted and the stored token out of a refused save", async () => {
+    const server = await createServer();
+
+    await expect(
+      saveConnection(server, {
+        baseUrl: `${SITE}/refused`,
+        token: TOKEN,
+      }),
+    ).resolves.toEqual({
+      status: 400,
+      body: { error: "Token [secret] was refused." },
+    });
+
+    const saved = await saveConnection(server, { token: TOKEN });
+    const connectionId = (saved.body as { connection: { id: string } })
+      .connection.id;
+    // A blank secret keeps the stored one, so the plugin gets the stored token.
+    await expect(
+      saveConnection(
+        server,
+        { baseUrl: `${SITE}/refused`, token: "" },
+        connectionId,
+      ),
+    ).resolves.toEqual({
+      status: 400,
+      body: { error: "Token [secret] was refused." },
+    });
+  });
+
+  async function createConnection() {
+    const server = await createServer();
+    const saved = await saveConnection(server, { token: TOKEN });
+    const connectionId = (saved.body as { connection: { id: string } })
+      .connection.id;
+    return { server, connectionId };
+  }
+
+  it("keeps the token out of a failed settle", async () => {
+    const { server, connectionId } = await createConnection();
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/plugins/jira/connections/${connectionId}/settle-states`,
+        body: JSON.stringify({ sourceId: "OPEN-1" }),
+      }),
+    ).resolves.toEqual({
+      status: 502,
+      body: { error: "Listing states failed with token [secret]." },
+    });
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/plugins/jira/connections/${connectionId}/settle`,
+        body: JSON.stringify({ sourceId: "OPEN-1", state: "Done" }),
+      }),
+    ).resolves.toEqual({
+      status: 502,
+      body: { error: "Settling failed with token [secret]." },
+    });
+  });
+
+  async function storedLastError(server: Server) {
+    const overview = await dispatchJsonRequest(server, {
+      method: "GET",
+      path: "/api/plugins",
+    });
+    return (
+      overview.body as {
+        connectionGroups: { connections: { lastError?: string }[] }[];
+      }
+    ).connectionGroups[0]?.connections[0]?.lastError;
+  }
+
+  it("keeps the token out of a failed backlog sync and its stored error", async () => {
+    const { server, connectionId } = await createConnection();
+
+    const synced = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: `/api/plugins/jira/connections/${connectionId}/sync`,
+      body: JSON.stringify({ trigger: "manual", workItems: [] }),
+    });
+
+    expect(synced).toMatchObject({
+      status: 502,
+      body: {
+        error: "Sync failed with token [secret].",
+        connection: { lastError: "Sync failed with token [secret]." },
+      },
+    });
+    expect(JSON.stringify(synced.body)).not.toContain(TOKEN);
+    expect(await storedLastError(server)).toBe(
+      "Sync failed with token [secret].",
+    );
+  });
+
+  it("keeps the token out of failed pull request calls and the stored error", async () => {
+    const { server, connectionId } = await createConnection();
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/code-hosts/jira/connections/${connectionId}/getPullRequestContent`,
+        body: JSON.stringify({ repository: "acme/api", number: 7 }),
+      }),
+    ).resolves.toEqual({
+      status: 502,
+      body: { error: "Reading the pull request failed with token [secret]." },
+    });
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/code-hosts/jira/connections/${connectionId}/syncPullRequests`,
+        body: JSON.stringify({ tracked: [] }),
+      }),
+    ).resolves.toEqual({
+      status: 502,
+      body: { error: "Pull request sync failed with token [secret]." },
+    });
+    expect(await storedLastError(server)).toBe(
+      "Pull request sync failed with token [secret].",
+    );
+  });
+
+  it("hides the token in a last error stored before errors were redacted", async () => {
+    const server = await createServer({
+      version: 7,
+      connections: [
+        {
+          id: "saved-jira",
+          pluginId: "jira",
+          label: "Main Jira",
+          tenantLabel: "Acme",
+          autoSync: false,
+          autoSyncIntervalMinutes: 15,
+          connectedAt: 1,
+          config: { baseUrl: SITE, token: TOKEN },
+          configSummary: {},
+          lastError: `Sync failed with token ${TOKEN}.`,
+          lastErrorAt: 2,
+        },
+      ],
+      disabledPluginIds: [],
+      pluginsEnabled: true,
+    });
+
+    const overview = await dispatchJsonRequest(server, {
+      method: "GET",
+      path: "/api/plugins",
+    });
+
+    expect(JSON.stringify(overview.body)).not.toContain(TOKEN);
+    expect(await storedLastError(server)).toBe(
+      "Sync failed with token [secret].",
+    );
+  });
+
+  it("bounds a data shape plugin's error like a connection's", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "ajour-leak-shape-"));
+    tempDirs.push(root);
+    const pluginDirectory = await createProjectDataShapePlugin(
+      root,
+      [
+        "const fail = async () => { throw new Error(`Bad row ${'x'.repeat(3000)}`); };",
+        "export const exportProjects = fail;",
+        "export const importProjects = fail;",
+      ].join("\n"),
+    );
+    const server = createAppApiServer({
+      statePath: path.join(root, "state.json"),
+      installedPluginDirectory: path.join(root, "installed"),
+      projectDataShapePluginDirectories: [pluginDirectory],
+      allowDevelopmentPlugins: false,
+    });
+    servers.push(server);
+
+    for (const [operation, body] of [
+      ["export", { projects: [] }],
+      ["import", { datasets: [{ id: "projects", rows: [] }] }],
+    ] as const) {
+      const response = await dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/project-data-shapes/workday-project-data/${operation}`,
+        body: JSON.stringify(body),
+      });
+      expect(response.status).toBe(400);
+      const { error } = response.body as { error: string };
+      expect(error).toMatch(/^Bad row x+…$/);
+      expect(error).toHaveLength(1_000);
+    }
   });
 });
