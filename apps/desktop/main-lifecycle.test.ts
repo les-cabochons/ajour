@@ -14,7 +14,7 @@ describe("desktop plugin lifecycle", () => {
     );
 
     const lockIndex = source.indexOf("app.requestSingleInstanceLock()");
-    const readyIndex = source.indexOf("app.whenReady()");
+    const readyIndex = source.indexOf(".whenReady()");
 
     expect(lockIndex).toBeGreaterThan(-1);
     expect(readyIndex).toBeGreaterThan(lockIndex);
@@ -29,7 +29,7 @@ describe("desktop plugin lifecycle", () => {
 
     const assignmentIndex = source.indexOf("mainWindow = window;");
     const closedListenerIndex = source.indexOf('window.once("closed"');
-    const loadIndex = source.indexOf("await window.loadURL(rendererUrl);");
+    const loadIndex = source.indexOf("await recovery.load();");
 
     expect(assignmentIndex).toBeGreaterThan(-1);
     expect(closedListenerIndex).toBeGreaterThan(assignmentIndex);
@@ -46,34 +46,14 @@ describe("desktop plugin lifecycle", () => {
     expect(source).toContain("bundledPluginArchives: []");
     expect(source).not.toContain("resolveBundledPluginArchives()");
     expect(source).toContain("installedPluginDirectory:");
-    expect(source).toContain('app.on("before-quit"');
     expect(source).not.toContain("installPendingUpdate");
-    expect(source).toContain("stopInternalAppApi().finally(() => {");
-  });
-
-  it("does not poison graceful quit state when update preparation fails", async () => {
-    const source = await readFile(
-      new URL("./electron/main.cjs", import.meta.url),
-      "utf8",
+    // main-process-errors.test.ts runs the quit and update preparation: a stop
+    // that hangs or fails still ends the process, and a cancelled update
+    // leaves the next quit stopping the API again.
+    expect(source).toContain("prepareToInstall: prepareToInstallUpdate");
+    expect(source).toContain(
+      "resetInstallPreparation: cancelUpdateInstallPreparation",
     );
-
-    const preparationStart = source.indexOf("prepareToInstall: async () => {");
-    const stopIndex = source.indexOf(
-      "await stopInternalAppApi();",
-      preparationStart,
-    );
-    const quitFlagIndex = source.indexOf(
-      "gracefulQuitStarted = true;",
-      preparationStart,
-    );
-    const preparationEnd = source.indexOf("},", preparationStart);
-
-    expect(preparationStart).toBeGreaterThan(-1);
-    expect(stopIndex).toBeGreaterThan(preparationStart);
-    expect(quitFlagIndex).toBeGreaterThan(stopIndex);
-    expect(quitFlagIndex).toBeLessThan(preparationEnd);
-    expect(source).toContain("resetInstallPreparation: () => {");
-    expect(source).toContain("gracefulQuitStarted = false;");
   });
 
   it("keeps plugin installation behind the active desktop window IPC bridge", async () => {
@@ -166,10 +146,11 @@ describe("desktop plugin lifecycle", () => {
       "utf8",
     );
 
-    const readyIndex = source.indexOf("app.whenReady()");
+    const readyIndex = source.indexOf(".whenReady()");
     const menuIndex = source.indexOf("Menu.setApplicationMenu(", readyIndex);
     const windowIndex = source.indexOf("await createMainWindow();", readyIndex);
 
+    expect(readyIndex).toBeGreaterThan(-1);
     expect(menuIndex).toBeGreaterThan(readyIndex);
     expect(windowIndex).toBeGreaterThan(menuIndex);
     expect(source).toContain("developmentBuild: !app.isPackaged");

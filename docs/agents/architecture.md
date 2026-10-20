@@ -6,6 +6,11 @@ Ajour is a local-first time-tracking workspace built as a pnpm monorepo. Keep ar
 
 - `apps/web`: React 19 + Vite renderer. This is the main product UI for timers, time entries, backlog, projects, settings, and local import review.
 - `apps/desktop`: Electron shell that wraps the web renderer and provides desktop packaging/runtime bootstrap. Right-click menus are the system's: the renderer sends an action set as plain items over `ajour:show-context-menu` and gets back the picked id, and main shows the edit menu on text fields (`electron/context-menu.cjs`).
+  - Links and navigation from the window follow one policy, in `electron/navigation.cjs` (decided in #331):
+    - The app is matched by protocol and host, not origin. Node gives `app://` and `file://` URLs the same `"null"` origin, so an origin check let any non-web URL replace the app in the window.
+    - Only `http:`, `https:` and `mailto:` links open in the system browser or mail app.
+    - Every other scheme is blocked, including `file:`, `vscode:` and `msteams:`. Such links no longer open, and a malformed URL is blocked, never thrown.
+    - `window.open` to the app's own address does nothing.
 - `apps/api`: Optional local API for plugin configuration, backlog sync, plugin workers, and local import flows.
 - `packages/shared`: Cross-runtime domain types, validation schemas, normalization, aggregation, rule evaluation, and plugin contracts.
 - MCP: the local API serves an MCP endpoint at `/mcp/ajour` for agents such as Claude Code and Codex. It is off by default, and each agent client has its own token (ADR 0004). The API forwards every data tool to the renderer over `/api/mcp/bridge`, and `features/agents/agent-tool-runner.ts` runs it through the object action sets with Undo. Sessions, questions and the activity list live in API memory (`apps/api/src/agent-sessions.ts`).
