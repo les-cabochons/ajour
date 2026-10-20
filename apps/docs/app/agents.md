@@ -31,7 +31,7 @@ Create one client per agent, so you can revoke one without the others. **Revoke*
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Read         | The running entry, time entries, projects, backlog items, the week's changes since its last commit, and whether the week is submitted, with its committed hours and pace. |
 | Time         | Start, stop and edit the running entry. Create, edit, move and duplicate entries. Mark changes as committed, and submit a week.                                           |
-| Backlog      | Create, edit and move items. Settle and unsettle, snooze and unsnooze, archive and restore them.                                                                          |
+| Backlog      | Create, edit and move items. Settle and unsettle, snooze and unsnooze, archive and restore them. Change a synced description only where you allow it. See below.          |
 | Comments     | Read a synced item's comments, and post one, only where you allow it. See below.                                                                                          |
 | Conversation | Report what they are doing, and ask you a question.                                                                                                                       |
 
@@ -41,13 +41,24 @@ A submitted week is read-only for agents too: Ajour refuses their writes to it w
 
 ### Comments
 
-A synced item's [comments](/backlog/comments) are other people's words, often a client's, so agents get none of them until you allow it. Set **Agent access to comments** on each connection, in **Settings › Plugins**:
+A synced item's [comments](/backlog/comments) are other people's words, often a client's, so agents get none of them until you allow it. Set **Agent access** on each connection, in **Settings › Plugins**:
 
 - **None**, the default: agents can't read or post comments on the connection's items.
 - **Read**: agents can read the comments. What they read goes to their model provider, like the rest of your data.
-- **Read and post**: agents can also post a comment, or settle an item with one. The comment waits for its Undo toast, such as **Claude Code on this Mac: Commented on a backlog item**, and goes to the source when the toast closes. **Undo** cancels it. If you take back the access before it goes, or the source refuses it, Ajour keeps it as a draft on the item. A comment on an item you deleted goes with it.
+- **Read and write**: agents can also post a comment, or settle an item with one. The comment waits for its Undo toast, such as **Claude Code on this Mac: Commented on a backlog item**, and goes to the source when the toast closes. **Undo** cancels it. If you take back the access before it goes, or the source refuses it, Ajour keeps it as a draft on the item. A comment on an item you deleted goes with it.
 
-The connection's row shows **Agents read comments** or **Agents read and post comments** while you allow it.
+The connection's row shows **Agents read comments** or **Agents read and write comments** while you allow it.
+
+### Synced descriptions
+
+When a backlog plugin writes [descriptions](/backlog/items#description) back to the source, an agent can change one only with **Read and write** on the item's connection. **None** and **Read** refuse the change, with the reason. The connection's row then also names descriptions, such as **Agents read and write comments and descriptions**.
+
+The agent's change goes through your own save, with the same rules:
+
+- **No Undo for the text.** Ajour saves it, then writes it to the source at once. A change to the title or another field in the same call, and the project and task its [timelog](/backlog/items#frontmatter) sets, keep their Undo toast.
+- **Merging.** Changes made in the source to other lines are merged. A change there to the same lines writes nothing: the agent hears of the conflict, and you resolve it in [Sync review](/plugins/sync-review#resolve-description-conflicts). A failed write keeps the text in Ajour, and the agent gets the reason.
+- **Read-only descriptions stay read-only.** Ajour refuses a description the plugin cannot write, or one too long for Ajour. A description whose formatting has no Markdown form, such as an underline, is refused unless the connection has **Allow lossy conversion** on. Then the agent's change saves without asking, as if you pressed **Save anyway**.
+- **Length.** A text longer than the source takes is refused.
 
 ## Agent tasks
 

@@ -52,4 +52,4 @@ A comment's reactions show under it with their counts. Click one to add or remov
 - When you settle an item, the settle dialog can post a comment along with the change. See [Settle and snooze](/backlog/settle-and-snooze#settle-an-item).
 - When someone else comments on a settled item, it comes back to your plate. See [Unsettle](/backlog/settle-and-snooze#unsettle).
 
-Agents can read and post comments only where you allow it. See [Agents](/app/agents#comments).
+Agents can read and write comments only where you allow it. See [Agents](/app/agents#comments).

@@ -61,6 +61,8 @@ export function saveSyncedDescription(
   mode: "save" | "keepMine" = "save",
   /** What the user saw the conversion lose and saved anyway. */
   allowedLoss: readonly string[] = [],
+  /** An agent's save, which the API checks against Agent access. */
+  forAgent = false,
 ): Promise<DescriptionSaveOutcome> {
   const draftAncestor =
     mode === "save" ? conflictedDrafts.get(itemId) : undefined;
@@ -71,7 +73,7 @@ export function saveSyncedDescription(
     .then(() =>
       draftAncestor !== undefined
         ? recordDraftConflict(itemId, draftAncestor)
-        : runSave(itemId, mode, allowedLoss),
+        : runSave(itemId, mode, allowedLoss, forAgent),
     );
   saving.set(itemId, run);
   notify();
@@ -124,6 +126,7 @@ async function runSave(
   itemId: string,
   mode: "save" | "keepMine",
   allowedLoss: readonly string[],
+  forAgent: boolean,
 ): Promise<DescriptionSaveOutcome> {
   const item = findItem(itemId);
   if (
@@ -143,6 +146,7 @@ async function runSave(
       pluginId,
       connectionId,
       sourceId,
+      forAgent,
     );
     const now = findItem(itemId);
     if (!now?.descriptionSync) return { kind: "agreed" };
@@ -179,12 +183,17 @@ async function runSave(
     }
     if (plan.kind === "conflict") return recordConflict(itemId, current);
 
-    const result = await writeBacklogDescription(pluginId, connectionId, {
-      sourceId,
-      text: plan.text,
-      expected: current.text,
-      ...(allowedLoss.length > 0 ? { allowedLoss: [...allowedLoss] } : {}),
-    });
+    const result = await writeBacklogDescription(
+      pluginId,
+      connectionId,
+      {
+        sourceId,
+        text: plan.text,
+        expected: current.text,
+        ...(allowedLoss.length > 0 ? { allowedLoss: [...allowedLoss] } : {}),
+      },
+      forAgent,
+    );
     if (result.outcome === "conflict") {
       return recordConflict(itemId, result.description);
     }

@@ -402,7 +402,7 @@ describe("agent access to comments", () => {
 
     expect(fields.filter((field) => field.id === "agentAccess")).toEqual([
       expect.objectContaining({
-        label: "Agent access to comments",
+        label: "Agent access",
         defaultValue: "none",
         capability: "connector",
       }),
@@ -410,7 +410,18 @@ describe("agent access to comments", () => {
     expect(fields.at(-1)?.id).toBe("agentAccess");
   });
 
-  it("is absent without comments, even when the plugin declares the id", () => {
+  it("is Ajour's field on a plugin that writes descriptions, and the last field there", () => {
+    const fields = pluginConnectionFormFields({
+      ...declaringIt,
+      capabilities: { connector: { description: { write: true } } },
+    });
+    expect(fields.map((field) => field.id).slice(-2)).toEqual([
+      "agentAccess",
+      "allowLossyConversion",
+    ]);
+  });
+
+  it("is absent without comments or written descriptions, even when the plugin declares the id", () => {
     expect(
       pluginConnectionFormFields(declaringIt).map((field) => field.id),
     ).not.toContain("agentAccess");

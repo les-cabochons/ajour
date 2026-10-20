@@ -213,7 +213,7 @@ Declare the features your tool supports under `capabilities.connector.comments`.
 - Return the user as `viewer`, in the same id space as comment authors, so Ajour can tell which comments are theirs.
 - Set `restrictedTo` to the group or role that may read a restricted comment, such as a Jira role.
 - Ajour never stores the comment text it fetches. It holds the newest page in memory for five minutes, so throw rather than return a partial page. See [ADR 0008](https://github.com/les-cabochons/ajour/blob/main/docs/adr/0008-backlog-comments-are-fetched-and-written-at-once.md).
-- Ajour adds its own **Agent access to comments** field to your connection form: None, the default, Read, or Read and post. The value never reaches your plugin. Calls for an agent arrive like the user's.
+- Ajour adds its own **Agent access** field to your connection form: None, the default, Read, or Read and write. It covers comments, and descriptions when you declare `description.write`. The value never reaches your plugin. Calls for an agent arrive like the user's.
 
 ## postItemComment
 

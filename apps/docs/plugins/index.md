@@ -68,7 +68,7 @@ Press **Edit** to change a connection, then **Update connection**. Secret fields
 
 Press **Remove** to delete a connection and its credentials. For a plugin with pull requests, a calendar or a team, Ajour asks first and says what goes with it, such as the connection's saved pull requests.
 
-When the plugin provides comments, the form ends with Ajour's own **Agent access to comments**: **None**, the default, **Read** or **Read and post**. See [Agents and MCP](/app/agents#comments).
+When the plugin provides comments or writes descriptions back, the form ends with Ajour's own **Agent access**: **None**, the default, **Read** or **Read and write**. See [Agents and MCP](/app/agents#comments).
 
 When the plugin writes descriptions back, the form also has Ajour's own **Allow lossy conversion**, off by default. A description whose formatting has no Markdown form, such as text colour, is read-only until you turn it on. Then every save of such a description names what will be lost and asks first. See [Backlog items](/backlog/items#description).
 

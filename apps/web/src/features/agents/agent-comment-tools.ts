@@ -31,7 +31,7 @@ import { localStore } from "@/lib/local-store";
 
 /**
  * Comment tools for agents (map #234). The user allows them per connection:
- * None, the default, Read, or Read and post. Each call checks it against the
+ * None, the default, Read, or Read and write. Each call checks it against the
  * connection as the local API has it now, so a change in Settings counts at
  * once. A posted comment waits for its Undo toast, like a deleted one.
  */
@@ -62,7 +62,7 @@ export async function requireAgentCommentAccess(
   }
   if (!agentAccessAllows(current.access, need)) {
     throw new AgentToolRefusal(
-      `The user hasn't allowed agents to ${need === "read" ? "read" : "post"} comments on the "${current.connectionLabel ?? "item's"}" connection. They can change "Agent access to comments" on it in Ajour's Settings, under Plugins.`,
+      `The user hasn't allowed agents to ${need === "read" ? "read" : "post"} comments on the "${current.connectionLabel ?? "item's"}" connection. They can change "Agent access" on it in Ajour's Settings, under Plugins.`,
     );
   }
   return current.source;
@@ -206,7 +206,7 @@ export async function sendAgentComment(id: string) {
     }
     // Deleted or moved while access was read: the comment goes with it.
     if (!currentItem()) return;
-    // The API checks Read and post again at the post itself.
+    // The API checks Read and write again at the post itself.
     const { comment } = await postItemComment(
       entry.pluginId,
       entry.connectionId,

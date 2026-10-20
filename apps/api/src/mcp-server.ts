@@ -110,13 +110,13 @@ const TOOL_DESCRIPTIONS: Record<
   create_work_item:
     "Adds a manual backlog item, or a subitem with parentWorkItemId.",
   edit_work_item:
-    "Changes a backlog item's title, description, priority, remaining estimate, project or task. Null clears a field.",
+    "Changes a backlog item's title, description, priority, remaining estimate, project or task. Null clears a field. A synced description is written to its source at once, merged with what changed there: it needs Read and write on the item's connection, and its result is in `descriptionSave`; a change to the same lines becomes a conflict the user resolves.",
   move_work_item:
     "Moves a backlog item to a workflow state. A done state closes it. Pass includeSubitems when it has open subitems. A synced item writes its new source state when the Undo toast closes; when the workflow state stands for several source states, Ajour refuses with the options and you call again with sourceState.",
   settle_work_item:
-    "Settles a backlog item: a manual item is archived, a synced item waits on someone else. When the item's source asks which state it settles in, Ajour refuses with the options and you call again with sourceState. The source write goes when the Undo toast closes. An optional `comment`, such as what the item waits on, is posted after it; it needs Read and post on the item's connection.",
+    "Settles a backlog item: a manual item is archived, a synced item waits on someone else. When the item's source asks which state it settles in, Ajour refuses with the options and you call again with sourceState. The source write goes when the Undo toast closes. An optional `comment`, such as what the item waits on, is posted after it; it needs Read and write on the item's connection.",
   post_work_item_comment:
-    "Posts a comment on a synced backlog item, as Markdown. Mention someone as [@Name](mention:<id>) with an author id from list_work_item_comments. The comment goes to the source when the Undo toast closes, so the user can cancel it. Needs the user to allow Read and post on the item's connection.",
+    "Posts a comment on a synced backlog item, as Markdown. Mention someone as [@Name](mention:<id>) with an author id from list_work_item_comments. The comment goes to the source when the Undo toast closes, so the user can cancel it. Needs the user to allow Read and write on the item's connection.",
   unsettle_work_item: "Makes a settled item active again.",
   snooze_work_item:
     "Hides an item from the sidebar until a time (ISO 8601 with offset).",

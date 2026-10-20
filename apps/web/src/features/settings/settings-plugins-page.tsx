@@ -100,22 +100,31 @@ type PluginCatalogFilter = "all" | PluginCatalogCapability;
 /** The one notice Plugins shows when the web build runs without the app API. */
 const PLUGINS_NEED_DESKTOP_APP = "Plugins need the desktop app.";
 
-/** What agents may do with the connection's comments, when the user allowed any. */
+/**
+ * What agents may do with the connection's comments and synced descriptions,
+ * when the user allowed any.
+ */
 function agentAccessLabel(
   group: PluginOverviewGroup,
   connection: PluginConnectionSummary,
 ) {
+  const connector = group.plugin.capabilities.connector;
+  const comments = Boolean(connector?.comments);
+  const descriptions = Boolean(connector?.description?.write);
   if (
-    !group.plugin.capabilities.connector?.comments ||
+    (!comments && !descriptions) ||
     !isCapabilitySwitchedOn(group, "connector")
   ) {
     return null;
   }
   switch (connectionAgentAccess(connection)) {
     case "read":
-      return "Agents read comments";
+      return comments ? "Agents read comments" : null;
     case "readWrite":
-      return "Agents read and post comments";
+      if (!comments) return "Agents change descriptions";
+      return descriptions
+        ? "Agents read and write comments and descriptions"
+        : "Agents read and write comments";
     default:
       return null;
   }

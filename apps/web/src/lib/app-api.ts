@@ -915,9 +915,11 @@ export function readBacklogDescription(
   pluginId: string,
   connectionId: string,
   sourceId: string,
+  /** For an agent, which the API checks against the connection's Agent access. */
+  forAgent = false,
 ) {
   return appApiRequest(
-    `/api/plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/description`,
+    `/api/plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/description${forAgent ? "?agent=1" : ""}`,
     {
       method: "POST",
       body: JSON.stringify(
@@ -933,9 +935,11 @@ export function writeBacklogDescription(
   pluginId: string,
   connectionId: string,
   request: BacklogWriteDescriptionRequest,
+  /** For an agent, which the API checks against the connection's Agent access. */
+  forAgent = false,
 ) {
   return appApiRequest(
-    `/api/plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/description-write`,
+    `/api/plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/description-write${forAgent ? "?agent=1" : ""}`,
     {
       method: "POST",
       body: JSON.stringify(backlogWriteDescriptionRequestSchema.parse(request)),
