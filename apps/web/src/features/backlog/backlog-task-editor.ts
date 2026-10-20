@@ -285,6 +285,30 @@ function parseEditorEstimates(fields: BacklogTaskEditorFields) {
 }
 
 /**
+ * The draft after the item changed under it, as a sync can change it: each
+ * field the user has not touched since `base` takes the item's new value.
+ * Project and task move as one pair, so a draft never holds one mapping's
+ * project with another's task.
+ */
+export function followChangedItem(
+  draft: BacklogTaskEditorFields,
+  base: BacklogTaskEditorFields,
+  current: BacklogTaskEditorFields,
+): BacklogTaskEditorFields {
+  const next = { ...draft };
+  const mappingTouched =
+    draft.projectId !== base.projectId || draft.taskId !== base.taskId;
+  for (const key of Object.keys(current) as (keyof BacklogTaskEditorFields)[]) {
+    if (key === "projectId" || key === "taskId") {
+      if (!mappingTouched) next[key] = current[key];
+    } else if (draft[key] === base[key]) {
+      (next as Record<string, unknown>)[key] = current[key];
+    }
+  }
+  return next;
+}
+
+/**
  * Builds the patch for a saved item from the fields the user changed. Unchanged fields
  * stay out of the patch, so saving never rewrites a description, title or precise estimate the
  * user did not touch. Returns `null` when a changed field does not parse.

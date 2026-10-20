@@ -56,6 +56,7 @@ import {
   createBacklogTaskEditorFields,
   createBacklogTaskEditorSeed,
   evaluateBacklogTaskEditor,
+  followChangedItem,
   sumSubitemEstimates,
   type BacklogEstimateFieldKey,
   type BacklogTaskDraftCommitReason,
@@ -196,15 +197,7 @@ export function BacklogItemEditorForm({
       currentFields,
     ) as (keyof BacklogTaskEditorFields)[];
     if (keys.every((key) => currentFields[key] === base[key])) return;
-    setFields((current) => {
-      const next = { ...current };
-      for (const key of keys) {
-        if (current[key] === base[key]) {
-          (next as Record<string, unknown>)[key] = currentFields[key];
-        }
-      }
-      return next;
-    });
+    setFields((current) => followChangedItem(current, base, currentFields));
     setBase(currentFields);
   }, [currentFields, base]);
   const onFieldsChangeRef = useRef(onFieldsChange);

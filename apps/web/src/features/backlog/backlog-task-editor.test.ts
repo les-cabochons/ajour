@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LocalWorkItem } from "@/domain/local-state";
 import {
+  followChangedItem,
   buildBacklogTaskDraft,
   buildBacklogTaskPatch,
   commitBacklogTaskDraft,
@@ -141,6 +142,35 @@ describe("backlog task editor", () => {
         base: createBacklogTaskEditorFields(before),
       }),
     ).toEqual({ title: "Renamed" });
+  });
+
+  it("lets untouched fields follow a sync, and moves project and task as a pair", () => {
+    const base = createBacklogTaskEditorFields(
+      createWorkItem({
+        projectId: "project-a",
+        taskId: "task-a1",
+        description: "Before",
+      }),
+    );
+    const current = createBacklogTaskEditorFields(
+      createWorkItem({
+        projectId: "project-b",
+        taskId: "task-b1",
+        description: "After",
+      }),
+    );
+
+    // The user picked another task: their pair stays whole.
+    const pickedTask = { ...base, taskId: "task-a2", title: "Renamed" };
+    expect(followChangedItem(pickedTask, base, current)).toEqual({
+      ...current,
+      projectId: "project-a",
+      taskId: "task-a2",
+      title: "Renamed",
+    });
+
+    // An untouched draft takes the whole new mapping.
+    expect(followChangedItem(base, base, current)).toEqual(current);
   });
 
   it("changes project and task together", () => {
