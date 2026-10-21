@@ -46,6 +46,7 @@ export const catalog = defineCatalog({
         "token_missing",
         "token_unknown",
         "token_revoked",
+        "protocol_error",
       ],
       fields: {
         mcp: {
@@ -62,6 +63,7 @@ export const catalog = defineCatalog({
       kinds: ["request", "job"],
       reasons: [
         "invalid_call",
+        "protocol_error",
         "bridge_unavailable",
         "bridge_timeout",
         "tool_failed",

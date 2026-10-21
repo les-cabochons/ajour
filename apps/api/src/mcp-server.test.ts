@@ -527,6 +527,139 @@ describe("MCP endpoint", () => {
     ]);
   });
 
+  it("fails a batch whose call failed, and lists the call, never its text", async () => {
+    const { baseUrl, logged } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl);
+
+    // No Ajour window: list_projects can't reach the renderer.
+    await postMcp(
+      baseUrl,
+      token,
+      JSON.stringify([
+        {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "list_projects", arguments: {} },
+        },
+        {
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/call",
+          params: {
+            name: "begin_session",
+            arguments: { title: "Fill Workday", estimateMinutes: 10 },
+          },
+        },
+      ]),
+    );
+
+    expect(logged).toEqual([
+      expect.objectContaining({
+        name: "mcp.request",
+        outcome: "error",
+        mcp: { method: "batch", call_count: 2 },
+        steps: ["agent_tool.call", "agent_tool.call"],
+        step_failures: [
+          {
+            name: "agent_tool.call",
+            outcome: "error",
+            outcome_reason: "bridge_unavailable",
+            error_type: "BridgeCallError",
+          },
+        ],
+      }),
+    ]);
+    expect(JSON.stringify(logged)).not.toContain("Fill Workday");
+  });
+
+  it("refuses a request the transport rejects, by its HTTP status", async () => {
+    const { baseUrl, logged } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl);
+
+    const response = await postMcp(
+      baseUrl,
+      token,
+      JSON.stringify({
+        jsonrpc: "1.0",
+        id: 1,
+        method: "tools/call",
+        params: { name: "list_projects", arguments: {} },
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(logged).toEqual([
+      expect.objectContaining({
+        outcome: "refused",
+        outcome_reason: "protocol_error",
+      }),
+    ]);
+  });
+
+  it("refuses a tool call that never reaches its handler: a notification, or one with no params", async () => {
+    const { baseUrl, logged } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl);
+
+    await postMcp(
+      baseUrl,
+      token,
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: { name: "list_projects", arguments: {} },
+      }),
+    );
+    await postMcp(
+      baseUrl,
+      token,
+      JSON.stringify({ jsonrpc: "2.0", id: 7, method: "tools/call" }),
+    );
+
+    expect(
+      logged.map(({ name, outcome, outcome_reason }) => ({
+        name,
+        outcome,
+        outcome_reason,
+      })),
+    ).toEqual([
+      {
+        name: "agent_tool.call",
+        outcome: "refused",
+        outcome_reason: "invalid_call",
+      },
+      {
+        name: "agent_tool.call",
+        outcome: "refused",
+        outcome_reason: "invalid_call",
+      },
+    ]);
+  });
+
+  it("records an output the SDK rejects after the handler returned as an output mismatch", async () => {
+    const { baseUrl, logged } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl);
+    const agent = await connectAgent(baseUrl, token);
+    vi.spyOn(AgentSessions.prototype, "ask").mockImplementation(
+      () => ({ id: 5 }) as never,
+    );
+
+    const result = await agent.callTool({
+      name: "ask",
+      arguments: { question: "Which project for Globex?" },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(logged.filter((event) => event.name === "agent_tool.call")).toEqual([
+      expect.objectContaining({
+        outcome: "error",
+        outcome_reason: "output_mismatch",
+        agent_tool: { name: "ask", access: "session" },
+      }),
+    ]);
+    expect(JSON.stringify(logged)).not.toContain("Globex");
+  });
+
   it("reports renderer output that breaks the tool's output schema as an error", async () => {
     const { baseUrl, logged } = await startTestApi();
     const { token } = await enableMcpWithClient(baseUrl, "Claude Code");

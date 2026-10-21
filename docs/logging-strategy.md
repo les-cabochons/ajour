@@ -252,15 +252,26 @@ The local API's first events are placed by hand (#305):
 | `comment.list`, `comment.post`, `comment.edit`, `comment.delete`, `comment.react`, `mention.search` | the comment route                                                       |
 
 An MCP request is `agent_tool.call` once its body is a tool call, named with
-the tool (one of Ajour's, or `other`), never its arguments. The request keeps
-how far the call got in its handler. A call that never reached the handler,
-an unknown tool or invalid arguments, ends `refused` with `invalid_call`. A
-handler that throws ends `error` with the error's type, and an output the
-SDK rejects after the handler ends `error` with `output_mismatch`. A protocol
-error records its JSON-RPC code only. Any other request is
-`mcp.request` with `mcp.method`; a batch has the method `batch` and counts its
-tool calls in `mcp.call_count`. A session the runner began takes the run's
-trigger, `user`.
+the tool (one of Ajour's, or `other`), never its arguments. Every MCP request
+that didn't succeed ends with an outcome other than `ok`, and no diagnostic
+text or argument enters its event:
+
+- The request keeps, for each of its calls, how far it got in its handler.
+  A call that never reached the handler ends `refused` with `invalid_call`:
+  an unknown tool, invalid arguments, no `params`, or a call sent as a
+  notification, which gets no reply.
+- A handler that throws ends `error` with the error's type, and an output the
+  SDK rejects after the handler returned ends `error` with `output_mismatch`.
+- A JSON-RPC error reply records its code only.
+- A request the transport rejects before any reply, such as one with the
+  wrong `jsonrpc` version, ends by its HTTP status: `refused` for a 4xx and
+  `error` for a 5xx, both with `protocol_error`.
+- Any other request is `mcp.request` with `mcp.method`. A batch has the
+  method `batch` and counts its tool calls in `mcp.call_count`. Each call in
+  it folds into the batch's event, so a failed call is in `step_failures`, and
+  the batch ends with its worst call's outcome.
+
+A session the runner began takes the run's trigger, `user`.
 
 The seams of #304 add the rest: every local API request and plugin operation
 (#306), store commands, boot and Undo (#307), the main process (#308),
