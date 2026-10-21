@@ -1,3 +1,4 @@
+const { randomUUID } = require("node:crypto");
 const { existsSync, readdirSync } = require("node:fs");
 const { stat } = require("node:fs/promises");
 const http = require("node:http");
@@ -42,10 +43,16 @@ const {
   saveDevelopmentPluginDirectories,
   selectDevelopmentPluginDirectory,
 } = require("./development-plugin-settings.cjs");
-const { createIpcListeners } = require("./ipc-listeners.cjs");
+const { createIpcListeners, refusedSender } = require("./ipc-listeners.cjs");
 const {
   loadDesktopBootstrapLocalState,
 } = require("./local-state-bootstrap.cjs");
+const {
+  apiLaunchOf,
+  createLaunchContext,
+  createMainEvents,
+  loadMainEmitter,
+} = require("./main-events.cjs");
 const { classifyNavigation } = require("./navigation.cjs");
 const { stopWithin } = require("./stop-within.cjs");
 const {
@@ -65,6 +72,32 @@ const stableUserDataPath =
 if (app.getPath("userData") !== stableUserDataPath) {
   app.setPath("userData", stableUserDataPath);
 }
+
+// The main process's wide events (docs/logging-strategy.md). Units can start
+// at once: the package loads below, the way the local API does, and takes
+// over what was recorded meanwhile.
+const events = createMainEvents();
+const launch = createLaunchContext({
+  version: app.getVersion(),
+  packaged: app.isPackaged,
+  // The packaged build's commit, which electron-builder injects.
+  commit: require("../package.json").buildCommit,
+  platform: process.platform,
+  arch: process.arch,
+  electron: process.versions.electron,
+  randomUUID,
+});
+// Why the app quits, for app.quit. The menu's Quit and the system stay "other".
+let quitTrigger = "other";
+
+process.on("uncaughtExceptionMonitor", (error, origin) => {
+  if (origin === "uncaughtException") {
+    recordAppError(error, "uncaught_exception");
+  }
+});
+process.on("unhandledRejection", (reason) => {
+  recordAppError(reason, "unhandled_rejection");
+});
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
@@ -97,6 +130,17 @@ const internalAppApiEntryPath = app.isPackaged
   ? path.join(internalAppApiRuntimeRoot, "apps/api/src/server.ts")
   : path.resolve(__dirname, "../../api/src/server.ts");
 
+void loadMainEmitter({
+  packageRoot: path.join(internalAppApiRuntimeRoot, "packages/wide-events"),
+  launch,
+  homeDirectory: app.getPath("home"),
+  userDataPath: app.getPath("userData"),
+  sinkSwitch: process.env.AJOUR_WIDE_EVENTS,
+}).then(
+  (createEmitter) => events.attach(createEmitter),
+  () => events.abandon(),
+);
+
 let internalAppApiServer = null;
 let internalAppApiStartPromise = null;
 let internalAppApiStopPromise = null;
@@ -117,11 +161,12 @@ const checkForUpdatesCoordinated = createUpdateCheckCoordinator();
 const automaticUpdateController = createAutomaticUpdateController({
   autoUpdater,
   isEnabled: automaticUpdatesEnabled,
-  checkForUpdates: (track) =>
+  checkForUpdates: (track, report) =>
     checkForUpdatesCoordinated({
       track,
       currentVersion: app.getVersion(),
       fetchImpl: net.fetch,
+      report,
     }),
   onStateChanged: (state) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -132,6 +177,7 @@ const automaticUpdateController = createAutomaticUpdateController({
   getMainWindow: () => mainWindow,
   prepareToInstall: prepareToInstallUpdate,
   resetInstallPreparation: cancelUpdateInstallPreparation,
+  events,
 });
 
 const developmentPluginSettingsPath = path.join(
@@ -150,9 +196,29 @@ const pluginCatalogService = createPluginCatalogService({
   fetchImpl: net.fetch,
 });
 
-function refreshPluginCatalog() {
-  pluginCatalogRefreshPromise ??= pluginCatalogService
-    .refresh()
+/**
+ * Refreshes the plugin catalog, once at a time. It never rejects, so its
+ * `catalog.refresh` event takes its outcome from the refresh itself.
+ */
+function refreshPluginCatalog(trigger) {
+  pluginCatalogRefreshPromise ??= events
+    .run(
+      "catalog.refresh",
+      {
+        kind: "job",
+        trigger:
+          trigger === "launch"
+            ? "boot"
+            : trigger === "interval"
+              ? "schedule"
+              : "user",
+        detached: true,
+      },
+      (unit) => {
+        unit.set({ catalog: { trigger } });
+        return pluginCatalogService.refresh({ unit });
+      },
+    )
     .then((catalog) => {
       mainWindow?.webContents.send("ajour:plugin-catalog-updated", catalog);
       return catalog;
@@ -173,29 +239,42 @@ function schedulePluginCatalogRefresh() {
   }
   pluginCatalogRefreshTimer = setInterval(
     () => {
-      void refreshPluginCatalog().catch((error) => {
-        console.error("Unable to refresh the plugin catalog.", error);
-      });
+      void refreshPluginCatalog("interval");
     },
     pluginCatalogSettings.refreshMinutes * 60 * 1000,
   );
   pluginCatalogRefreshTimer.unref?.();
 }
 
-// Every `ipcMain.on` listener registers through `ipc`, so none can throw into
-// the main process. A failed synchronous request answers null.
-const ipc = createIpcListeners(ipcMain);
+// Every IPC channel registers through `ipc`, which emits each call's event,
+// named in ipc-channels.cjs. None can throw into the main process, and a
+// failed synchronous request answers null.
+const ipc = createIpcListeners(ipcMain, { events });
 
 // Read once per launch. A read that finds nothing or fails stays null until
 // the next launch, even when a crashed window reloads and asks again.
 ipc.answerSync("ajour:get-bootstrap-local-state", () => {
-  if (desktopBootstrapLocalState === undefined) {
-    desktopBootstrapLocalState = null;
-    desktopBootstrapLocalState = loadDesktopBootstrapLocalState({
-      appDataPath: app.getPath("appData"),
-      currentUserDataPath: app.getPath("userData"),
-    });
+  const unit = events.current();
+  if (desktopBootstrapLocalState !== undefined) {
+    unit?.set({ local_state: { cached: true } });
+    return desktopBootstrapLocalState;
   }
+  desktopBootstrapLocalState = null;
+  const report = {};
+  desktopBootstrapLocalState = loadDesktopBootstrapLocalState({
+    appDataPath: app.getPath("appData"),
+    currentUserDataPath: app.getPath("userData"),
+    report,
+  });
+  unit?.set({
+    local_state: {
+      cached: false,
+      source: report.source,
+      legacy_folder_count: report.legacy_folder_count,
+    },
+  });
+  // The renderer recovers nothing this launch; the event says why.
+  if (report.error) unit?.fail(report.error);
   return desktopBootstrapLocalState;
 });
 
@@ -204,6 +283,8 @@ ipc.answerSync("ajour:get-runtime-info", () => ({
   developmentBuild: !app.isPackaged,
   platform: process.platform,
   version: app.getVersion(),
+  // The launch the renderer reports in its events.
+  launch,
 }));
 
 ipc.answerSync("ajour:get-app-menu", () => appMenuModel);
@@ -215,6 +296,7 @@ ipc.onMessage("ajour:run-menu-item", (event, itemId) => {
   if (!findAppMenuRoleItem(appMenuModel, itemId)) {
     return;
   }
+  events.current()?.set({ menu: { item_id: itemId } });
 
   Menu.getApplicationMenu()
     ?.getMenuItemById(itemId)
@@ -223,9 +305,17 @@ ipc.onMessage("ajour:run-menu-item", (event, itemId) => {
 
 // Object right-click menus. Resolves with the picked item's id, or null when
 // the menu closes without a pick.
-ipcMain.handle("ajour:show-context-menu", (event, items, position) => {
+ipc.handle("ajour:show-context-menu", (event, items, position) => {
   assertActiveDesktopWindow(event, "show a context menu");
+  const unit = events.current();
   const menuItems = normalizeContextMenuItems(items);
+  unit?.set({
+    context_menu: {
+      item_count: Array.isArray(items) ? items.length : 0,
+      kept_count: menuItems.length,
+      picked: false,
+    },
+  });
   if (menuItems.length === 0) {
     return null;
   }
@@ -235,6 +325,9 @@ ipcMain.handle("ajour:show-context-menu", (event, items, position) => {
     const settle = (id) => {
       if (!settled) {
         settled = true;
+        if (id !== null) {
+          unit?.set({ context_menu: { picked: true, action_id: id } });
+        }
         resolve(id);
       }
     };
@@ -258,6 +351,9 @@ ipcMain.handle("ajour:show-context-menu", (event, items, position) => {
 // the cut and copy events the renderer listens to, as the Edit menu does.
 ipc.onMessage("ajour:run-edit-command", (event, command) => {
   assertActiveDesktopWindow(event, "run an edit command");
+  if (command === "cut" || command === "copy") {
+    events.current()?.set({ edit: { command } });
+  }
   if (command === "cut") {
     event.sender.cut();
   } else if (command === "copy") {
@@ -270,6 +366,7 @@ ipc.onMessage("ajour:run-edit-command", (event, command) => {
 ipc.onMessage("ajour:set-theme-source", (event, mode) => {
   assertActiveDesktopWindow(event, "update the theme");
   if (mode === "system" || mode === "dark" || mode === "light") {
+    events.current()?.set({ theme: { value: mode } });
     nativeTheme.themeSource = mode;
   }
 });
@@ -283,96 +380,153 @@ ipc.onMessage("ajour:set-window-chrome-theme", (event, theme) => {
     return;
   }
 
+  events.current()?.set({ theme: { value: theme } });
   mainWindow.setTitleBarOverlay(getWindowsTitleBarOverlay(theme));
 });
 
-ipcMain.handle("ajour:check-for-updates", async (event, track) => {
+ipc.handle("ajour:check-for-updates", async (event, track) => {
   assertActiveDesktopWindow(event, "check for application updates");
-  return await automaticUpdateController.checkNow(track);
+  return await automaticUpdateController.checkNow(track, {
+    unit: events.current(),
+  });
 });
 
-ipcMain.handle("ajour:get-update-state", (event) => {
+ipc.handle("ajour:get-update-state", (event) => {
   assertActiveDesktopWindow(event, "read application update state");
   return automaticUpdateController.getState();
 });
 
-ipcMain.handle("ajour:update-and-restart", async (event, track, version) => {
+ipc.handle("ajour:update-and-restart", async (event, track, version) => {
   assertActiveDesktopWindow(event, "update and restart the application");
-  return await automaticUpdateController.updateAndRestart(track, version);
+  return await automaticUpdateController.updateAndRestart(track, version, {
+    unit: events.current(),
+  });
 });
 
-ipcMain.handle("ajour:configure-automatic-updates", async (event, track) => {
+ipc.handle("ajour:configure-automatic-updates", async (event, track) => {
   assertActiveDesktopWindow(event, "configure automatic application updates");
-  await automaticUpdateController.configure(track);
+  await automaticUpdateController.configure(track, { unit: events.current() });
 });
 
-ipcMain.handle("ajour:open-update-release", async (event, releaseUrl) => {
+ipc.handle("ajour:open-update-release", async (event, releaseUrl) => {
   assertActiveDesktopWindow(event, "open an application update release");
-  if (!isAllowedReleaseUrl(releaseUrl)) {
+  const unit = events.current();
+  const allowed = isAllowedReleaseUrl(releaseUrl);
+  unit?.set({ update: { release_allowed: allowed } });
+  if (!allowed) {
+    unit?.refuse("url_not_allowed");
     throw new Error("The update release URL is not allowed.");
   }
   await shell.openExternal(releaseUrl);
 });
 
-ipcMain.handle("ajour:install-plugin", async (event) => {
-  if (!mainWindow || event.sender !== mainWindow.webContents) {
-    throw new Error(
-      "Plugins can only be installed by the active Ajour window.",
-    );
-  }
-  if (!app.isPackaged) {
-    throw new Error(
-      "Packaged plugin installation is only available in production builds.",
-    );
-  }
+/** A plugin ID fit for an event: the catalog's pattern, or nothing. */
+function pluginIdForEvent(pluginId) {
+  return typeof pluginId === "string" &&
+    /^[a-z0-9][a-z0-9_-]{1,63}$/u.test(pluginId)
+    ? pluginId
+    : undefined;
+}
 
-  const selectedArchive = await selectPluginArchive(dialog, mainWindow);
-  if (!selectedArchive) {
-    return null;
-  }
-
+/**
+ * Installs a plugin archive through the local API, and adds what the install
+ * did to `unit`, the call's `plugin.install` event.
+ */
+async function installPluginArchive(unit, archive, ...options) {
+  unit?.set({ plugin: { archive_bytes: archive.archiveBytes.byteLength } });
   await ensureInternalAppApiRunning();
   if (!internalAppApiServer || !internalAppApiModulePromise) {
+    unit?.set({ plugin: { result: "api_unavailable" } });
     throw new Error("Internal app API unavailable. Restart the app.");
   }
 
   const { installPluginForServer } = await internalAppApiModulePromise;
   if (typeof installPluginForServer !== "function") {
+    unit?.set({ plugin: { result: "api_unavailable" } });
     throw new Error("Internal app API does not support plugin installation.");
   }
 
-  return await installPluginForServer(
+  const installStartedAt = Date.now();
+  const result = await installPluginForServer(
     internalAppApiServer,
-    selectedArchive.archiveBytes,
-    selectedArchive.archiveFilename,
+    archive.archiveBytes,
+    archive.archiveFilename,
+    ...options,
   );
+  unit?.set({
+    plugin: {
+      id: pluginIdForEvent(result?.plugin?.id),
+      version: result?.plugin?.version,
+      replaced: result?.replaced,
+      install_ms: Date.now() - installStartedAt,
+      result: result?.replaced ? "updated" : "installed",
+    },
+  });
+  return result;
+}
+
+ipc.handle("ajour:install-plugin", async (event) => {
+  const unit = events.current();
+  unit?.set({ plugin: { source: "archive" } });
+  if (!mainWindow || event.sender !== mainWindow.webContents) {
+    throw refusedSender(
+      "Plugins can only be installed by the active Ajour window.",
+    );
+  }
+  if (!app.isPackaged) {
+    unit?.refuse("development_build");
+    throw new Error(
+      "Packaged plugin installation is only available in production builds.",
+    );
+  }
+
+  const dialogStartedAt = Date.now();
+  const selectedArchive = await selectPluginArchive(dialog, mainWindow);
+  unit?.set({ plugin: { dialog_ms: Date.now() - dialogStartedAt } });
+  if (!selectedArchive) {
+    unit?.set({ plugin: { result: "cancelled" } }).cancel();
+    return null;
+  }
+
+  return await installPluginArchive(unit, selectedArchive);
 });
 
-ipcMain.handle("ajour:get-plugin-catalog", async (event) => {
+ipc.handle("ajour:get-plugin-catalog", async (event) => {
   assertActiveDesktopWindow(event, "read the plugin catalog");
   return (
-    pluginCatalogService.getCurrentCatalog() ?? (await refreshPluginCatalog())
+    pluginCatalogService.getCurrentCatalog() ??
+    (await refreshPluginCatalog("request"))
   );
 });
 
-ipcMain.handle("ajour:get-plugin-catalog-settings", async (event) => {
+ipc.handle("ajour:get-plugin-catalog-settings", async (event) => {
   assertActiveDesktopWindow(event, "read plugin catalog settings");
   return pluginCatalogSettings;
 });
 
-ipcMain.handle("ajour:configure-plugin-catalog", async (event, settings) => {
+ipc.handle("ajour:configure-plugin-catalog", async (event, settings) => {
   assertActiveDesktopWindow(event, "configure the plugin catalog");
+  const before = pluginCatalogSettings.refreshMinutes;
   pluginCatalogSettings = savePluginCatalogSettings(
     pluginCatalogSettingsPath,
     settings,
   );
+  events.current()?.set({
+    catalog: {
+      refresh_minutes_before: before,
+      refresh_minutes_after: pluginCatalogSettings.refreshMinutes,
+    },
+  });
   schedulePluginCatalogRefresh();
   return pluginCatalogSettings;
 });
 
-ipcMain.handle("ajour:download-catalog-plugin", async (event, pluginId) => {
+ipc.handle("ajour:download-catalog-plugin", async (event, pluginId) => {
   assertActiveDesktopWindow(event, "download a plugin");
+  const unit = events.current();
+  unit?.set({ plugin: { source: "catalog", id: pluginIdForEvent(pluginId) } });
   if (!app.isPackaged) {
+    unit?.refuse("development_build");
     throw new Error(
       "Catalog plugin downloads are only available in production builds.",
     );
@@ -385,31 +539,25 @@ ipcMain.handle("ajour:download-catalog-plugin", async (event, pluginId) => {
     throw new Error("The catalog plugin identifier is invalid.");
   }
 
+  const downloadStartedAt = Date.now();
   const downloaded = await pluginCatalogService.downloadPluginArchive(pluginId);
-  await ensureInternalAppApiRunning();
-  if (!internalAppApiServer || !internalAppApiModulePromise) {
-    throw new Error("Internal app API unavailable. Restart the app.");
-  }
-  const { installPluginForServer } = await internalAppApiModulePromise;
-  if (typeof installPluginForServer !== "function") {
-    throw new Error("Internal app API does not support plugin installation.");
-  }
-  const result = await installPluginForServer(
-    internalAppApiServer,
-    downloaded.archiveBytes,
-    downloaded.archiveFilename,
-    { enableAfterInstall: false },
-  );
+  unit?.set({ plugin: { download_ms: Date.now() - downloadStartedAt } });
+  const result = await installPluginArchive(unit, downloaded, {
+    enableAfterInstall: false,
+  });
   return { type: "plugin", result };
 });
 
-ipcMain.handle("ajour:uninstall-plugin", async (event, pluginId) => {
+ipc.handle("ajour:uninstall-plugin", async (event, pluginId) => {
+  const unit = events.current();
+  unit?.set({ plugin: { id: pluginIdForEvent(pluginId) } });
   if (!mainWindow || event.sender !== mainWindow.webContents) {
-    throw new Error(
+    throw refusedSender(
       "Plugins can only be uninstalled by the active Ajour window.",
     );
   }
   if (!app.isPackaged) {
+    unit?.refuse("development_build");
     throw new Error(
       "Development directory plugins cannot be uninstalled by the app.",
     );
@@ -417,38 +565,74 @@ ipcMain.handle("ajour:uninstall-plugin", async (event, pluginId) => {
 
   await ensureInternalAppApiRunning();
   if (!internalAppApiServer || !internalAppApiModulePromise) {
+    unit?.set({ plugin: { result: "api_unavailable" } });
     throw new Error("Internal app API unavailable. Restart the app.");
   }
 
   const { uninstallPluginForServer } = await internalAppApiModulePromise;
   if (typeof uninstallPluginForServer !== "function") {
+    unit?.set({ plugin: { result: "api_unavailable" } });
     throw new Error("Internal app API does not support plugin uninstall.");
   }
 
-  return await uninstallPluginForServer(internalAppApiServer, pluginId);
+  const result = await uninstallPluginForServer(internalAppApiServer, pluginId);
+  unit?.set({ plugin: { result: "uninstalled" } });
+  return result;
 });
 
-ipcMain.handle("ajour:get-development-plugin-settings", async (event) => {
+ipc.handle("ajour:get-development-plugin-settings", async (event) => {
   assertActiveDesktopWindow(event, "read development plugin settings");
   return getDevelopmentPluginSettings();
 });
 
-ipcMain.handle("ajour:select-development-plugin-directory", async (event) => {
+ipc.handle("ajour:select-development-plugin-directory", async (event) => {
   assertDevelopmentBuild(event, "configure development plugin directories");
+  const unit = events.current();
+  unit?.set({
+    dev_plugins: {
+      action: "select",
+      directory_count_before: resolveDevelopmentPluginDirectories().length,
+    },
+  });
   const directory = await selectDevelopmentPluginDirectory(dialog, mainWindow);
   if (!directory) {
+    unit?.set({ dev_plugins: { result: "cancelled" } }).cancel();
     return null;
   }
 
-  await applyDevelopmentPluginDirectories([directory]);
+  await configureDevelopmentPluginDirectories(unit, [directory]);
   return getDevelopmentPluginSettings();
 });
 
-ipcMain.handle("ajour:clear-development-plugin-directories", async (event) => {
+ipc.handle("ajour:clear-development-plugin-directories", async (event) => {
   assertDevelopmentBuild(event, "reset development plugin directories");
-  await applyDevelopmentPluginDirectories(null);
+  const unit = events.current();
+  unit?.set({
+    dev_plugins: {
+      action: "clear",
+      directory_count_before: resolveDevelopmentPluginDirectories().length,
+    },
+  });
+  await configureDevelopmentPluginDirectories(unit, null);
   return getDevelopmentPluginSettings();
 });
+
+/** Applies development plugin folders, and records the result on `unit`. */
+async function configureDevelopmentPluginDirectories(unit, directories) {
+  try {
+    await applyDevelopmentPluginDirectories(directories);
+    unit?.set({ dev_plugins: { result: "applied" } });
+  } catch (error) {
+    unit?.set({ dev_plugins: { result: "rolled_back" } });
+    throw error;
+  } finally {
+    unit?.set({
+      dev_plugins: {
+        directory_count_after: resolveDevelopmentPluginDirectories().length,
+      },
+    });
+  }
+}
 
 /** Runs a registry action in the renderer, such as "time.day-view". */
 function sendMenuAction(action) {
@@ -504,15 +688,17 @@ function showEditContextMenu(window, params) {
   }
 }
 
+/** Refuses a call from any window but the active one. Its event says `refused`. */
 function assertActiveDesktopWindow(event, action) {
   if (!mainWindow || event.sender !== mainWindow.webContents) {
-    throw new Error(`Only the active Ajour window can ${action}.`);
+    throw refusedSender(`Only the active Ajour window can ${action}.`);
   }
 }
 
 function assertDevelopmentBuild(event, action) {
   assertActiveDesktopWindow(event, action);
   if (app.isPackaged) {
+    events.current()?.refuse("packaged_build");
     throw new Error(
       "Development plugin directories are unavailable in production builds.",
     );
@@ -595,14 +781,31 @@ async function waitForInternalAppApiStartup(apiProcess) {
     await delay(150);
   }
 
-  throw lastError ?? new Error("Internal app API failed to start");
+  throw Object.assign(
+    lastError ?? new Error("Internal app API failed to start"),
+    {
+      code: "health_timeout",
+    },
+  );
 }
 
 function internalAppApiPortInUseError(cause) {
-  return new Error(
-    `Ajour's plugin runtime cannot start because port ${INTERNAL_APP_API_PORT} is already in use. Close the other app or development server using this port, then try again.`,
-    { cause },
+  return Object.assign(
+    new Error(
+      `Ajour's plugin runtime cannot start because port ${INTERNAL_APP_API_PORT} is already in use. Close the other app or development server using this port, then try again.`,
+      { cause },
+    ),
+    { code: "port_in_use" },
   );
+}
+
+/** Why the local API could not start, as app.launch records it. */
+function apiStartFailureOf(error) {
+  return ["port_in_use", "health_timeout", "entry_missing"].includes(
+    error?.code,
+  )
+    ? error.code
+    : "listen_error";
 }
 
 async function ensureInternalAppApiRunning() {
@@ -625,8 +828,9 @@ async function ensureInternalAppApiRunning() {
     }
 
     if (!existsSync(internalAppApiEntryPath)) {
-      throw new Error(
-        `Internal app API entry missing: ${internalAppApiEntryPath}`,
+      throw Object.assign(
+        new Error(`Internal app API entry missing: ${internalAppApiEntryPath}`),
+        { code: "entry_missing" },
       );
     }
 
@@ -635,8 +839,11 @@ async function ensureInternalAppApiRunning() {
     );
     const { startAppApiServer } = await internalAppApiModulePromise;
     if (typeof startAppApiServer !== "function") {
-      throw new Error(
-        `Internal app API module is missing startAppApiServer: ${internalAppApiEntryPath}`,
+      throw Object.assign(
+        new Error(
+          `Internal app API module is missing startAppApiServer: ${internalAppApiEntryPath}`,
+        ),
+        { code: "entry_missing" },
       );
     }
 
@@ -655,6 +862,8 @@ async function ensureInternalAppApiRunning() {
       allowedOrigins: app.isPackaged
         ? ["app://local"]
         : ["http://127.0.0.1:5173"],
+      // The API reports this launch in its events.
+      launch: apiLaunchOf(launch),
     }).catch((error) => {
       if (error?.code === "EADDRINUSE") {
         throw internalAppApiPortInUseError(error);
@@ -738,10 +947,12 @@ function stopInternalAppApiWithinTimeout() {
 /**
  * Runs before an update installs, which quits Ajour. Like an ordinary quit, it
  * goes ahead whether the local API stopped, failed to stop or timed out.
+ * Resolves the stop outcome, for the install's event.
  */
 async function prepareToInstallUpdate() {
-  await stopInternalAppApiWithinTimeout();
+  const outcome = await stopInternalAppApiWithinTimeout();
   gracefulQuitStarted = true;
+  return outcome;
 }
 
 /** The update did not install, so the next quit stops the local API again. */
@@ -850,12 +1061,59 @@ async function applyDevelopmentPluginDirectories(directories) {
   }
 }
 
+/** A URL's scheme, such as `https:`, or `other`: never the rest of it. */
+function schemeOf(url) {
+  try {
+    const { protocol } = new URL(url);
+    return /^[a-z][a-z0-9+.-]{0,31}:$/u.test(protocol) ? protocol : "other";
+  } catch {
+    return "other";
+  }
+}
+
 /**
- * Opens a web or mail link in the system's browser or mail app. A link the
- * system cannot open is dropped.
+ * Follows a link or navigation from the window as `classifyNavigation`
+ * decided, and emits `window.navigate` with its scheme only. Web and mail
+ * links open in the system's browser or mail app; a link the system cannot
+ * open is dropped.
  */
-function openExternalLink(url) {
-  shell.openExternal(url).catch(() => {});
+function followNavigation(url, destination, source) {
+  const unit = events.start("window.navigate", {
+    kind: "navigation",
+    trigger: "user",
+  });
+  unit.set({ navigation: { destination, scheme: schemeOf(url), source } });
+  if (destination !== "external") {
+    unit.end(destination === "blocked" ? "refused" : "ok");
+    return;
+  }
+  shell.openExternal(url).then(
+    () => unit.end(),
+    (error) => {
+      // The system's message can quote the link, so only its type stays.
+      const failure = new Error("The system could not open the link.");
+      if (typeof error?.name === "string") failure.name = error.name;
+      unit.fail(failure).end();
+    },
+  );
+}
+
+/**
+ * Records an error nothing else caught as `app.error`, its own event even
+ * while another unit is active.
+ */
+function recordAppError(error, origin, handledBy = "none") {
+  events
+    .start("app.error", { kind: "crash", trigger: "system", detached: true })
+    .set({
+      crash: {
+        origin,
+        handled_by: handledBy,
+        active_unit: events.current()?.name,
+      },
+    })
+    .fail(error)
+    .end();
 }
 
 /**
@@ -865,14 +1123,20 @@ function openExternalLink(url) {
  * without plugins.
  */
 function quitAfterStartupFailure(error) {
+  recordAppError(error, "startup_failure", "dialog");
   dialog.showErrorBox(
     "Ajour could not start",
     typeof error?.message === "string" ? error.message : String(error),
   );
+  quitTrigger = "startup_failure";
   app.quit();
 }
 
-async function createMainWindow() {
+/**
+ * Opens the window and loads the app in it. `trigger` is `launch`, or
+ * `activate` when macOS reopens it. Resolves how long the load took.
+ */
+async function createMainWindow(trigger = "launch") {
   const rendererUrl = await resolveRendererUrl();
   const platformChromeOptions = getPlatformWindowChromeOptions(
     process.platform,
@@ -908,13 +1172,15 @@ async function createMainWindow() {
   const recovery = watchWindow(window, {
     url: rendererUrl,
     dialog,
-    quit: () => app.quit(),
+    events,
+    quit: () => {
+      quitTrigger = "recovery_dialog";
+      app.quit();
+    },
   });
 
   window.webContents.setWindowOpenHandler(({ url }) => {
-    if (classifyNavigation(url, rendererUrl) === "external") {
-      openExternalLink(url);
-    }
+    followNavigation(url, classifyNavigation(url, rendererUrl), "window_open");
     return { action: "deny" };
   });
 
@@ -924,35 +1190,88 @@ async function createMainWindow() {
 
   window.webContents.on("will-navigate", (event, navigationUrl) => {
     const destination = classifyNavigation(navigationUrl, rendererUrl);
-    if (destination === "app") {
-      return;
+    if (destination !== "app") {
+      event.preventDefault();
     }
-
-    event.preventDefault();
-    if (destination === "external") {
-      openExternalLink(navigationUrl);
-    }
+    followNavigation(navigationUrl, destination, "will_navigate");
   });
 
-  await recovery.load();
+  const loadStartedAt = Date.now();
+  await recovery.load(trigger);
+  return Date.now() - loadStartedAt;
 }
 
 if (!hasSingleInstanceLock) {
-  app.quit();
+  // This process's one event. The quit waits for the package to load, so the
+  // event leaves before the process exits.
+  events
+    .start("app.lock_refused", { kind: "lifecycle", trigger: "system" })
+    .end();
+  void Promise.race([events.ready, delay(2_000)]).then(() => app.quit());
 } else {
+  // From the process start until the window has loaded.
+  const launchUnit = events.start("app.launch", {
+    kind: "lifecycle",
+    trigger: "boot",
+    startedAt: Math.round(performance.timeOrigin),
+  });
+  launchUnit.set({
+    launch: {
+      renderer_source: process.env.AJOUR_DESKTOP_RENDERER_URL
+        ? "dev_server"
+        : "app_protocol",
+    },
+    catalog: {
+      settings_source: existsSync(pluginCatalogSettingsPath)
+        ? "saved"
+        : "default",
+      refresh_minutes: pluginCatalogSettings.refreshMinutes,
+    },
+  });
+
   app.on("second-instance", () => {
-    if (!mainWindow) {
-      return;
+    const unit = events.start("app.second_launch", {
+      kind: "lifecycle",
+      trigger: "system",
+    });
+    const hadWindow = Boolean(mainWindow);
+    let restored = false;
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+        restored = true;
+      }
+      mainWindow.focus();
     }
-    if (mainWindow.isMinimized()) {
-      mainWindow.restore();
-    }
-    mainWindow.focus();
+    unit
+      .set({
+        second_launch: { had_window: hadWindow, restored, focused: hadWindow },
+      })
+      .end();
+  });
+
+  // A renderer's crash is window-recovery.cjs's; these are the other processes.
+  app.on("child-process-gone", (_event, details) => {
+    events
+      .start("process.gone", { kind: "crash", trigger: "system" })
+      .set({
+        process: {
+          type: String(details?.type ?? "unknown")
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/gu, "_"),
+          reason: details?.reason,
+          exit_code: details?.exitCode,
+        },
+      })
+      .end(details?.reason === "clean-exit" ? "ok" : "error");
   });
 
   app
     .whenReady()
     .then(async () => {
+      launchUnit.set({
+        launch: { ready_ms: Date.now() - Math.round(performance.timeOrigin) },
+      });
       if (process.platform === "darwin") {
         app.dock.setIcon(nativeImage.createFromPath(iconPath));
       }
@@ -974,26 +1293,43 @@ if (!hasSingleInstanceLock) {
         ),
       );
 
-      void refreshPluginCatalog().catch((error) => {
-        console.error("Unable to refresh the plugin catalog.", error);
-      });
+      void refreshPluginCatalog("launch");
       schedulePluginCatalogRefresh();
 
+      // Ajour opens without plugins when the local API cannot start.
+      const apiStartedAt = Date.now();
       try {
         await ensureInternalAppApiRunning();
+        launchUnit.set({ api: { outcome: "started" } });
       } catch (error) {
-        console.error("Failed to start internal app API.", error);
+        launchUnit.set({
+          api: { outcome: "failed", failure_reason: apiStartFailureOf(error) },
+        });
       }
+      launchUnit.set({ launch: { api_start_ms: Date.now() - apiStartedAt } });
 
-      await createMainWindow();
+      const windowStartedAt = Date.now();
+      const rendererLoadMs = await createMainWindow("launch");
+      launchUnit
+        .set({
+          launch: {
+            window_ms: Date.now() - windowStartedAt,
+            renderer_load_ms: rendererLoadMs,
+          },
+        })
+        .end();
 
       app.on("activate", () => {
         if (BrowserWindow.getAllWindows().length === 0) {
-          createMainWindow().catch(quitAfterStartupFailure);
+          createMainWindow("activate").catch(quitAfterStartupFailure);
         }
       });
     })
-    .catch(quitAfterStartupFailure);
+    .catch((error) => {
+      // app.error holds the error; the launch says only where it ended.
+      launchUnit.end("error", "startup_failed");
+      quitAfterStartupFailure(error);
+    });
 
   app.on("before-quit", (event) => {
     if (gracefulQuitStarted) {
@@ -1001,15 +1337,34 @@ if (!hasSingleInstanceLock) {
     }
 
     gracefulQuitStarted = true;
+    const quit = events.start("app.quit", {
+      kind: "lifecycle",
+      trigger: quitTrigger === "other" ? "user" : "system",
+    });
+    quit.set({ quit: { trigger: quitTrigger } });
     if (pluginCatalogRefreshTimer) {
       clearInterval(pluginCatalogRefreshTimer);
       pluginCatalogRefreshTimer = null;
     }
     event.preventDefault();
+    const updaterStartedAt = Date.now();
     automaticUpdateController.dispose();
+    quit.set({ quit: { updater_ms: Date.now() - updaterStartedAt } });
     // A failed stop still quits.
+    const stopStartedAt = Date.now();
     void stopInternalAppApiWithinTimeout().then((outcome) => {
       gracefulQuitStarted = true;
+      quit.set({
+        quit: {
+          api_stop_ms: Date.now() - stopStartedAt,
+          api_stop: outcome.replace("-", "_"),
+        },
+      });
+      // Ended before the process exits.
+      if (outcome === "failed") quit.end("error", "api_stop_failed");
+      else if (outcome === "timed-out") {
+        quit.end("timeout", "api_stop_timed_out");
+      } else quit.end();
       if (outcome === "timed-out") {
         // Ends the process with the stop still running. Plugin workers are
         // threads, so they end with it. Nothing holds close, beforeunload or
@@ -1024,6 +1379,7 @@ if (!hasSingleInstanceLock) {
 
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") {
+      quitTrigger = "all_windows_closed";
       app.quit();
     }
   });

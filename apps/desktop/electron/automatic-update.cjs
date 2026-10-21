@@ -35,6 +35,24 @@ function isCandidateCoreAtLeastCurrent(currentVersion, candidateVersion) {
   return true;
 }
 
+/** A check's state as its update.check event records it. */
+function checkResultOf(state) {
+  if (state.status === "available") return "available";
+  if (state.status === "up-to-date") return "up_to_date";
+  if (state.status === "error") return "failed";
+  return undefined;
+}
+
+/** The local API's stop outcome, as an event records it. */
+function apiStopOf(outcome) {
+  return typeof outcome === "string" ? outcome.replace("-", "_") : undefined;
+}
+
+/**
+ * The application update state, its checks and its installs. Each check
+ * emits `update.check` and each install `update.install`: on the IPC event
+ * that asked for it when the caller passes its `unit`, or else as its own job.
+ */
 function createAutomaticUpdateController({
   autoUpdater,
   isEnabled,
@@ -44,7 +62,8 @@ function createAutomaticUpdateController({
   prepareToInstall,
   resetInstallPreparation = () => {},
   onStateChanged = () => {},
-  logger = console,
+  events,
+  now = Date.now,
   checkIntervalMs = DEFAULT_UPDATE_CHECK_INTERVAL_MS,
   setTimeoutImpl = setTimeout,
   clearTimeoutImpl = clearTimeout,
@@ -56,6 +75,10 @@ function createAutomaticUpdateController({
   let cancellationToken = null;
   let checkAfterCurrent = false;
   let disposed = false;
+  /** The error the last check failed with, for the checks that joined it. */
+  let lastCheckError = null;
+  /** The total size of the update being downloaded, from its progress. */
+  let downloadBytes;
   let state = {
     status: "idle",
     track: null,
@@ -82,7 +105,6 @@ function createAutomaticUpdateController({
   }
 
   function fail(error) {
-    logger.error("Application update failed.", error);
     return publish({
       status: "error",
       progress: null,
@@ -96,11 +118,18 @@ function createAutomaticUpdateController({
       generation += 1;
       resetInstallPreparation();
       fail(error);
+      // The install's own event ended before the handoff.
+      events
+        .start("update.install", { kind: "job", trigger: "system" })
+        .set({ update: { stopped_at: "install" } })
+        .fail(error)
+        .end();
     }
     // The check/download promise reports its own failure. Keep a listener so
     // electron-updater's error event never becomes an unhandled EventEmitter error.
   };
   const handleProgress = (info) => {
+    if (Number.isFinite(info?.total)) downloadBytes = info.total;
     if (state.status === "downloading" && Number.isFinite(info?.percent)) {
       const progress = Math.max(0, Math.min(100, Math.round(info.percent)));
       if (progress !== state.progress) publish({ progress });
@@ -141,30 +170,85 @@ function createAutomaticUpdateController({
     if (disposed || state.status === "installing") return;
     if (checkAfterCurrent) {
       checkAfterCurrent = false;
-      return checkNow();
+      return checkNow(currentTrack, { trigger: "track_change" });
     }
     clearScheduledCheck();
     scheduledCheck = setTimeoutImpl(() => {
       scheduledCheck = null;
-      void checkNow();
+      void checkNow(currentTrack, { trigger: "schedule" });
     }, checkIntervalMs);
     scheduledCheck.unref?.();
   }
 
-  function checkNow(track = currentTrack) {
+  /** The unit a check or install records on: the caller's, or its own job. */
+  function unitFor(name, unit, trigger) {
+    if (unit) return { unit, own: false };
+    return {
+      unit: events.start(name, {
+        kind: "job",
+        trigger: trigger === "schedule" ? "schedule" : "system",
+      }),
+      own: true,
+    };
+  }
+
+  /** Records how a check ended, once its operation settled. */
+  function recordCheck(unit, own, settled, superseded) {
+    if (superseded) {
+      unit.set({ update: { result: "superseded" } }).cancel("superseded");
+    } else {
+      const result = checkResultOf(settled);
+      unit.set({
+        update: {
+          ...(result ? { result } : {}),
+          ...(settled.result
+            ? {
+                current_version: settled.result.currentVersion,
+                latest_version: settled.result.latestVersion ?? undefined,
+                available: settled.result.updateAvailable,
+              }
+            : {}),
+        },
+      });
+      if (result === "failed") unit.fail(lastCheckError);
+    }
+    if (own) unit.end();
+    return settled;
+  }
+
+  /**
+   * Checks the track now. `unit` is the event of the IPC call that asked for
+   * it; `trigger` says why the check runs.
+   */
+  function checkNow(track = currentTrack, { unit, trigger = "manual" } = {}) {
     const changed = selectTrack(track);
+    const check = unitFor("update.check", unit, trigger);
+    check.unit.set({ update: { trigger, track } });
     if (operation) {
       if (changed) checkAfterCurrent = true;
-      return operation;
+      check.unit.set({ update: { cache: "joined" } });
+      // The running operation may be an install, which resolves nothing.
+      return operation.then((settled) => {
+        recordCheck(check.unit, check.own, state, false);
+        return settled;
+      });
     }
-    if (state.status === "installing") return Promise.resolve(state);
+    if (state.status === "installing") {
+      check.unit.set({ update: { result: "unchanged" } }).end("noop");
+      return Promise.resolve(state);
+    }
     clearScheduledCheck();
     const checkGeneration = generation;
+    const report = {};
+    let superseded = false;
     publish({ status: "checking", error: null });
     operation = Promise.resolve()
-      .then(() => checkForUpdates(track))
+      .then(() => checkForUpdates(track, report))
       .then((result) => {
-        if (checkGeneration !== generation) return state;
+        if (checkGeneration !== generation) {
+          superseded = true;
+          return state;
+        }
         return publish({
           status: result.updateAvailable ? "available" : "up-to-date",
           result,
@@ -173,24 +257,57 @@ function createAutomaticUpdateController({
         });
       })
       .catch((error) => {
-        if (checkGeneration === generation) fail(error);
+        if (checkGeneration === generation) {
+          lastCheckError = error;
+          fail(error);
+        } else {
+          superseded = true;
+        }
         return state;
       })
-      .finally(finishOperation);
-    return operation;
+      .finally(() => {
+        check.unit.set({ update: report });
+        return finishOperation();
+      });
+    return operation.then((settled) =>
+      recordCheck(check.unit, check.own, settled, superseded),
+    );
   }
 
-  function configure(track) {
+  function configure(track, { unit } = {}) {
     const changed = selectTrack(track);
     if (changed && operation) {
       checkAfterCurrent = true;
+      unit?.set({
+        update: { trigger: "track_change", track, cache: "joined" },
+      });
       return operation;
     }
-    return changed ? checkNow() : (operation ?? Promise.resolve(state));
+    if (changed) return checkNow(track, { unit, trigger: "track_change" });
+    unit?.set({
+      update: { trigger: "track_change", track, result: "unchanged" },
+    });
+    unit?.end("noop");
+    return operation ?? Promise.resolve(state);
   }
 
-  function updateAndRestart(track, version) {
+  /**
+   * Asks to confirm, downloads, stops the local API and hands over to the
+   * installer. `unit` is the event of the IPC call that asked for it. It is
+   * emitted just before the handoff, since the process quits right after.
+   */
+  function updateAndRestart(track, version, { unit } = {}) {
     assertUpdateTrack(track);
+    const install = unitFor("update.install", unit, "user");
+    install.unit.set({
+      update: {
+        track,
+        ...(typeof version === "string" ? { to_version: version } : {}),
+        ...(state.result?.currentVersion
+          ? { from_version: state.result.currentVersion }
+          : {}),
+      },
+    });
     if (
       disposed ||
       !isEnabled ||
@@ -199,12 +316,20 @@ function createAutomaticUpdateController({
       track !== currentTrack ||
       !state.result?.updateAvailable ||
       version !== state.result.latestVersion
-    )
+    ) {
+      install.unit.set({ update: { stopped_at: "not_ready" } }).end("noop");
       return Promise.resolve(state);
+    }
 
     clearScheduledCheck();
     const updateGeneration = generation;
     const isCurrent = () => !disposed && updateGeneration === generation;
+    let step = "confirm";
+    const stoppedBy = (outcome) => {
+      install.unit.set({ update: { stopped_at: step } });
+      if (outcome === "superseded") install.unit.cancel("superseded");
+      else if (outcome) install.unit.cancel();
+    };
     publish({ status: "confirming", error: null, progress: null });
     operation = Promise.resolve()
       .then(async () => {
@@ -224,19 +349,23 @@ function createAutomaticUpdateController({
           window && !window.isDestroyed?.()
             ? await dialog.showMessageBox(window, options)
             : await dialog.showMessageBox(options);
-        if (!isCurrent()) return;
+        if (!isCurrent()) return stoppedBy("superseded");
         if (response.response !== 1) {
+          install.unit.set({ update: { confirm: "cancel" } });
+          stoppedBy("cancelled");
           publish({ status: "available" });
           return;
         }
+        install.unit.set({ update: { confirm: "update" } });
 
+        step = "recheck";
         autoUpdater.channel = track === "nightly" ? "nightly" : "latest";
         autoUpdater.allowPrerelease = track === "nightly";
         // Same-core stable -> nightly is a SemVer downgrade. The support
         // callback still rejects releases with an older version core.
         autoUpdater.allowDowngrade = track === "nightly";
         const candidate = await autoUpdater.checkForUpdates();
-        if (!isCurrent()) return;
+        if (!isCurrent()) return stoppedBy("superseded");
         if (
           !candidate?.isUpdateAvailable ||
           candidate.updateInfo?.version !== version
@@ -245,25 +374,53 @@ function createAutomaticUpdateController({
             "The available update changed. Check for updates again before installing.",
           );
         }
+        step = "download";
         cancellationToken = candidate.cancellationToken;
         publish({ status: "downloading", progress: 0 });
+        downloadBytes = undefined;
+        const downloadStartedAt = now();
         await autoUpdater.downloadUpdate(cancellationToken);
-        if (!isCurrent()) return;
+        install.unit.set({
+          update: {
+            download_ms: now() - downloadStartedAt,
+            ...(downloadBytes !== undefined
+              ? { download_bytes: downloadBytes }
+              : {}),
+          },
+        });
+        if (!isCurrent()) return stoppedBy("superseded");
+        step = "prepare";
         publish({ status: "installing", progress: 100 });
-        await prepareToInstall();
+        const stopStartedAt = now();
+        const stop = await prepareToInstall();
+        install.unit.set({
+          update: {
+            api_stop_ms: now() - stopStartedAt,
+            ...(apiStopOf(stop) ? { api_stop: apiStopOf(stop) } : {}),
+          },
+        });
         if (!isCurrent()) {
           resetInstallPreparation();
-          return;
+          return stoppedBy("superseded");
         }
+        step = "install";
+        install.unit.set({ update: { stopped_at: "install" } }).end();
         autoUpdater.quitAndInstall(false, true);
       })
       .catch((error) => {
+        install.unit.set({ update: { stopped_at: step } });
         if (isCurrent()) {
           resetInstallPreparation();
           fail(error);
+          install.unit.fail(error);
+        } else {
+          install.unit.cancel("superseded");
         }
       })
-      .finally(finishOperation);
+      .finally(() => {
+        if (install.own) install.unit.end();
+        return finishOperation();
+      });
     return operation.then(() => state);
   }
 

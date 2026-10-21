@@ -1,14 +1,28 @@
 import { EventEmitter } from "node:events";
 import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
+import { catalog } from "../../packages/wide-events/catalog.ts";
+import { createEmitter } from "../../packages/wide-events/index.ts";
+import { asyncContextScope } from "../../packages/wide-events/node.ts";
+import { createRecordingSink } from "../../packages/wide-events/sinks.ts";
 
 const require = createRequire(import.meta.url);
 const { createAutomaticUpdateController, isCandidateCoreAtLeastCurrent } =
   require("./electron/automatic-update.cjs") as {
     createAutomaticUpdateController: (options: Record<string, unknown>) => {
-      checkNow: (track?: "stable" | "nightly") => Promise<unknown>;
-      configure: (track: "stable" | "nightly") => Promise<unknown>;
-      updateAndRestart: (track: string, version: string) => Promise<unknown>;
+      checkNow: (
+        track?: "stable" | "nightly",
+        options?: { unit?: unknown },
+      ) => Promise<unknown>;
+      configure: (
+        track: "stable" | "nightly",
+        options?: { unit?: unknown },
+      ) => Promise<unknown>;
+      updateAndRestart: (
+        track: string,
+        version: string,
+        options?: { unit?: unknown },
+      ) => Promise<unknown>;
       getState: () => { status: string };
       dispose: () => void;
     };
@@ -52,17 +66,41 @@ function createController(overrides: Record<string, unknown> = {}) {
   const dialog = { showMessageBox: vi.fn().mockResolvedValue({ response: 0 }) };
   const prepareToInstall = vi.fn().mockResolvedValue(undefined);
   const resetInstallPreparation = vi.fn();
-  const checkForUpdates = vi.fn(async (track: string) => ({
-    track,
-    currentVersion: "1.0.0",
-    latestVersion: "1.0.1",
-    latestTag: "v1.0.1",
-    releaseName: "Ajour 1.0.1",
-    releaseUrl: "https://github.com/les-cabochons/ajour/releases/tag/v1.0.1",
-    publishedAt: "2026-10-18T12:00:00Z",
-    updateAvailable: true,
-    checkedAt: "2026-10-19T12:00:00Z",
-  }));
+  const checkForUpdates = vi.fn(
+    async (
+      track: string,
+      report?: { cache?: string; github_statuses?: number[] },
+    ) => {
+      if (report) {
+        report.cache = "miss";
+        report.github_statuses = [200];
+      }
+      return {
+        track,
+        currentVersion: "1.0.0",
+        latestVersion: "1.0.1",
+        latestTag: "v1.0.1",
+        releaseName: "Ajour 1.0.1",
+        releaseUrl:
+          "https://github.com/les-cabochons/ajour/releases/tag/v1.0.1",
+        publishedAt: "2026-10-18T12:00:00Z",
+        updateAvailable: true,
+        checkedAt: "2026-10-19T12:00:00Z",
+      };
+    },
+  );
+  const sink = createRecordingSink();
+  const events = createEmitter({
+    catalog,
+    context: {
+      runtime: "main",
+      launch_id: "launch-1",
+      app: { version: "1.0.0", channel: "stable", packaged: true },
+      device: { platform: "win32" },
+    },
+    sink,
+    scope: asyncContextScope(),
+  });
   const scheduled: Array<() => void> = [];
   const controller = createAutomaticUpdateController({
     autoUpdater,
@@ -72,7 +110,7 @@ function createController(overrides: Record<string, unknown> = {}) {
     prepareToInstall,
     resetInstallPreparation,
     checkForUpdates,
-    logger: { error: vi.fn() },
+    events,
     setTimeoutImpl: (callback: () => void) => {
       scheduled.push(callback);
       return { unref: vi.fn() };
@@ -88,6 +126,8 @@ function createController(overrides: Record<string, unknown> = {}) {
     resetInstallPreparation,
     checkForUpdates,
     scheduled,
+    events,
+    recorded: sink.events,
   };
 }
 
@@ -402,5 +442,139 @@ describe("user-controlled desktop updates", () => {
       false,
     );
     expect(isCandidateCoreAtLeastCurrent("2.0.0", "invalid")).toBe(false);
+  });
+});
+
+describe("update events", () => {
+  it("records a scheduled check as its own job", async () => {
+    const { controller, scheduled, recorded } = createController();
+    await controller.configure("stable");
+    recorded.length = 0;
+
+    scheduled[0]!();
+    await vi.waitFor(() => expect(recorded).toHaveLength(1));
+
+    expect(recorded).toMatchObject([
+      {
+        name: "update.check",
+        kind: "job",
+        trigger: "schedule",
+        outcome: "ok",
+        update: {
+          trigger: "schedule",
+          track: "stable",
+          current_version: "1.0.0",
+          latest_version: "1.0.1",
+          available: true,
+          cache: "miss",
+          github_statuses: [200],
+          result: "available",
+        },
+      },
+    ]);
+  });
+
+  it("adds a manual check to the IPC event that asked for it", async () => {
+    const { controller, events, recorded } = createController();
+    await controller.configure("stable");
+    recorded.length = 0;
+
+    await events.run("update.check", { kind: "ipc", trigger: "user" }, (unit) =>
+      controller.checkNow("stable", { unit }),
+    );
+
+    expect(recorded).toMatchObject([
+      {
+        name: "update.check",
+        kind: "ipc",
+        update: { trigger: "manual", result: "available" },
+      },
+    ]);
+  });
+
+  it("records a failed check with its error", async () => {
+    const { controller, checkForUpdates, recorded } = createController();
+    checkForUpdates.mockRejectedValueOnce(
+      new Error("GitHub release check failed (503)."),
+    );
+
+    await controller.configure("stable");
+
+    expect(recorded).toMatchObject([
+      {
+        name: "update.check",
+        outcome: "error",
+        error: { message: "GitHub release check failed (503)." },
+        update: { trigger: "track_change", result: "failed" },
+      },
+    ]);
+  });
+
+  it("emits the install just before the installer takes over", async () => {
+    const prepareToInstall = vi.fn(async () => "stopped");
+    const { controller, autoUpdater, dialog, recorded } = createController({
+      prepareToInstall,
+    });
+    dialog.showMessageBox.mockResolvedValue({ response: 1 });
+    autoUpdater.downloadUpdate.mockImplementation(async () => {
+      autoUpdater.emit("download-progress", {
+        percent: 100,
+        total: 90_000_000,
+      });
+      return ["update.exe"];
+    });
+    let emittedBeforeInstall = false;
+    autoUpdater.quitAndInstall.mockImplementation(() => {
+      emittedBeforeInstall = recorded.some(
+        (event) => event.name === "update.install",
+      );
+    });
+    await controller.configure("stable");
+
+    await controller.updateAndRestart("stable", "1.0.1");
+
+    expect(emittedBeforeInstall).toBe(true);
+    expect(recorded.at(-1)).toMatchObject({
+      name: "update.install",
+      outcome: "ok",
+      update: {
+        from_version: "1.0.0",
+        to_version: "1.0.1",
+        track: "stable",
+        confirm: "update",
+        download_bytes: 90_000_000,
+        api_stop: "stopped",
+        stopped_at: "install",
+      },
+    });
+  });
+
+  it("records a declined install as cancelled at the confirmation", async () => {
+    const { controller, recorded } = createController();
+    await controller.configure("stable");
+
+    await controller.updateAndRestart("stable", "1.0.1");
+
+    expect(recorded.at(-1)).toMatchObject({
+      name: "update.install",
+      outcome: "cancelled",
+      update: { confirm: "cancel", stopped_at: "confirm" },
+    });
+  });
+
+  it("records an installer that failed after the handoff", async () => {
+    const { controller, autoUpdater, dialog, recorded } = createController();
+    dialog.showMessageBox.mockResolvedValue({ response: 1 });
+    await controller.configure("stable");
+    await controller.updateAndRestart("stable", "1.0.1");
+
+    autoUpdater.emit("error", new Error("Installer launch failed"));
+
+    expect(recorded.at(-1)).toMatchObject({
+      name: "update.install",
+      kind: "job",
+      outcome: "error",
+      update: { stopped_at: "install" },
+    });
   });
 });

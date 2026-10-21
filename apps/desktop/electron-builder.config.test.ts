@@ -69,6 +69,26 @@ describe("desktop electron-builder config", () => {
     expect(config.mac.artifactName).toBe("Ajour-${version}-${arch}.${ext}");
   });
 
+  // main.cjs reads it from the packaged package.json for the launch context.
+  it("injects the build's commit into the packaged package.json", () => {
+    vi.stubEnv(
+      "AJOUR_BUILD_COMMIT",
+      "0b3404ce0b3404ce0b3404ce0b3404ce0b3404ce",
+    );
+
+    expect(loadBuilderConfig().extraMetadata.buildCommit).toBe(
+      "0b3404ce0b3404ce0b3404ce0b3404ce0b3404ce",
+    );
+  });
+
+  it("takes the checked-out commit when the build names none", () => {
+    vi.stubEnv("AJOUR_BUILD_COMMIT", "");
+
+    expect(loadBuilderConfig().extraMetadata.buildCommit).toMatch(
+      /^[0-9a-f]{40}$/,
+    );
+  });
+
   it("publishes prereleases on the nightly update channel", () => {
     vi.stubEnv("AJOUR_UPDATE_CHANNEL", "nightly");
 

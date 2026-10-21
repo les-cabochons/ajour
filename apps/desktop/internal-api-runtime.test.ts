@@ -3,7 +3,15 @@ import http, { type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import vm from "node:vm";
+import { createRequire } from "node:module";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { recordingEvents } from "./recording-events.ts";
+
+const require = createRequire(import.meta.url);
+const {
+  createIpcListeners,
+  refusedSender,
+} = require("./electron/ipc-listeners.cjs");
 
 const servers: Server[] = [];
 
@@ -59,10 +67,15 @@ async function runtime(port: number, ownedServer: Server | null = null) {
     archiveBytes: Buffer.from("fixture archive"),
     archiveFilename: "fixture.ajour-connector",
   };
+  const { events, recorded } = recordingEvents();
   const context = vm.createContext({
     http,
     path,
     setTimeout,
+    events,
+    launch: { launch_id: "launch-1" },
+    apiLaunchOf: () => ({ id: "launch-1" }),
+    refusedSender,
     process: { env: {} },
     INTERNAL_APP_API_HOST: "127.0.0.1",
     INTERNAL_APP_API_PORT: port,
@@ -82,32 +95,35 @@ async function runtime(port: number, ownedServer: Server | null = null) {
     selectPluginArchive: async () => archive,
     assertActiveDesktopWindow: () => {},
     pluginCatalogService: { downloadPluginArchive: async () => archive },
-    ipcMain: {
-      handle(name: string, handler: (...args: unknown[]) => Promise<unknown>) {
-        handlers.set(name, handler);
+    ipc: createIpcListeners(
+      {
+        handle(
+          name: string,
+          handler: (...args: unknown[]) => Promise<unknown>,
+        ) {
+          handlers.set(name, handler);
+        },
       },
-    },
+      { events },
+    ),
   });
 
   // Execute the real startup and IPC paths without launching an Electron window.
   vm.runInContext(
     section("function delay(ms)", "async function stopInternalAppApi()") +
       section(
-        'ipcMain.handle("ajour:install-plugin"',
-        'ipcMain.handle("ajour:get-plugin-catalog"',
+        "function pluginIdForEvent(",
+        'ipc.handle("ajour:get-plugin-catalog"',
       ) +
       section(
-        'ipcMain.handle("ajour:download-catalog-plugin"',
-        'ipcMain.handle("ajour:uninstall-plugin"',
-      ) +
-      section(
-        'ipcMain.handle("ajour:uninstall-plugin"',
-        'ipcMain.handle("ajour:get-development-plugin-settings"',
+        'ipc.handle("ajour:download-catalog-plugin"',
+        'ipc.handle("ajour:get-development-plugin-settings"',
       ),
     context,
   );
   return {
     context,
+    recorded,
     start,
     install,
     uninstall,
@@ -163,6 +179,54 @@ describe("desktop plugin runtime ownership", () => {
     expect(app.install.mock.calls[0]?.[0]).toBe(
       app.context.internalAppApiServer,
     );
+  });
+
+  it("records a refused install with the occupied port's code", async () => {
+    const foreign = await listen();
+    const app = await runtime(portOf(foreign));
+
+    await expect(app.invoke("ajour:install-plugin")).rejects.toThrow(
+      /already in use/,
+    );
+
+    expect(app.recorded).toMatchObject([
+      {
+        name: "plugin.install",
+        kind: "ipc",
+        outcome: "error",
+        error: { code: "port_in_use" },
+        ipc: { channel: "ajour:install-plugin", sender_accepted: true },
+        plugin: { source: "archive", archive_bytes: 15 },
+      },
+    ]);
+  });
+
+  it("records a catalog install: the plugin, its version and the times", async () => {
+    const owned = await listen();
+    const app = await runtime(portOf(owned), owned);
+    app.install.mockResolvedValueOnce({
+      plugin: { id: "azure_devops", version: "1.2.3" },
+      replaced: true,
+    } as never);
+
+    await app.invoke("ajour:download-catalog-plugin");
+
+    expect(app.recorded).toMatchObject([
+      {
+        name: "plugin.install",
+        outcome: "ok",
+        plugin: {
+          id: "azure_devops",
+          version: "1.2.3",
+          source: "catalog",
+          replaced: true,
+          result: "updated",
+          archive_bytes: 15,
+          download_ms: expect.any(Number),
+          install_ms: expect.any(Number),
+        },
+      },
+    ]);
   });
 
   it("uses its owned healthy runtime without starting another server", async () => {

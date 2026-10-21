@@ -148,6 +148,40 @@ it("ships every package file the local API imports", () => {
   }
 }, 120_000);
 
+it("ships the wide-events package the main process loads at launch", async () => {
+  // Runs the real packaging step. The output folder is a git-ignored build artifact.
+  const prepared = spawnSync(
+    process.execPath,
+    [path.join(desktopRoot, "scripts/prepare-internal-api.cjs")],
+    { encoding: "utf8" },
+  );
+  expect(prepared.status, prepared.stderr).toBe(0);
+  const { loadMainEmitter } = require("./electron/main-events.cjs");
+  const lines: string[] = [];
+
+  const createEmitter = await loadMainEmitter({
+    packageRoot: path.join(runtimeRoot, "packages/wide-events"),
+    launch: {
+      launch_id: "launch-1",
+      app: { version: "1.2.0", channel: "stable", packaged: true },
+      device: { platform: "win32" },
+    },
+    homeDirectory: os.homedir(),
+    userDataPath: path.join(os.tmpdir(), "Ajour"),
+    sinkSwitch: "console",
+    write: (line: string) => lines.push(line),
+  });
+  createEmitter(Date.now)
+    .start("app.lock_refused", { kind: "lifecycle", trigger: "system" })
+    .end();
+
+  expect(JSON.parse(lines[0]!)).toMatchObject({
+    name: "app.lock_refused",
+    runtime: "main",
+    launch_id: "launch-1",
+  });
+}, 120_000);
+
 it("ships the pinned Playwright MCP with the internal API", () => {
   // Runs the real packaging step. The output folder is a git-ignored build artifact.
   const prepared = spawnSync(

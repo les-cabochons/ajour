@@ -1,9 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
-/** Matches an `ipcMain.handle("channel", ...)` registration however the call is wrapped. */
+/** Matches an `ipc.handle("channel", ...)` registration however the call is wrapped. */
 function ipcHandler(channel: string) {
-  return new RegExp(`ipcMain\\.handle\\(\\s*"${channel}"`);
+  return new RegExp(`ipc\\.handle\\(\\s*"${channel}"`);
 }
 
 describe("desktop plugin lifecycle", () => {
@@ -29,7 +29,7 @@ describe("desktop plugin lifecycle", () => {
 
     const assignmentIndex = source.indexOf("mainWindow = window;");
     const closedListenerIndex = source.indexOf('window.once("closed"');
-    const loadIndex = source.indexOf("await recovery.load();");
+    const loadIndex = source.indexOf("await recovery.load(trigger);");
 
     expect(assignmentIndex).toBeGreaterThan(-1);
     expect(closedListenerIndex).toBeGreaterThan(assignmentIndex);
@@ -116,7 +116,7 @@ describe("desktop plugin lifecycle", () => {
     );
     expect(mainSource).toMatch(ipcHandler("ajour:get-plugin-catalog"));
     expect(mainSource).toMatch(ipcHandler("ajour:download-catalog-plugin"));
-    expect(mainSource).toContain("{ enableAfterInstall: false }");
+    expect(mainSource).toContain("enableAfterInstall: false");
     expect(preloadSource).toContain(
       'ipcRenderer.invoke("ajour:configure-plugin-catalog", settings)',
     );
@@ -148,7 +148,10 @@ describe("desktop plugin lifecycle", () => {
 
     const readyIndex = source.indexOf(".whenReady()");
     const menuIndex = source.indexOf("Menu.setApplicationMenu(", readyIndex);
-    const windowIndex = source.indexOf("await createMainWindow();", readyIndex);
+    const windowIndex = source.indexOf(
+      'await createMainWindow("launch");',
+      readyIndex,
+    );
 
     expect(readyIndex).toBeGreaterThan(-1);
     expect(menuIndex).toBeGreaterThan(readyIndex);

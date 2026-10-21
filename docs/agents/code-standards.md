@@ -155,6 +155,8 @@ rg -n 'hours-input|project-task-budget|project-task-import-utils' apps/web/src
 rg -n 'features/backlog/(work-item-estimates|work-item-hierarchy)' apps/web/src
 rg -n 'window.addEventListener\("pointer(move|up|cancel)"' apps/web/src/features
 rg -n '^function (formatPriorityInput|parsePriorityInput|formatEstimateInput|parseEstimateInput|buildManualTimeEntryNote)' apps/web/src/features/backlog
+rg -n 'console\.' apps/desktop/electron
+rg -n 'ipcMain\.(on|handle|once|handleOnce)\(' apps/desktop/electron --glob '!ipc-listeners.cjs'
 ```
 
 Feature code consumes pure behavior from `domain`, runtime behavior from `lib`, local wrappers from `apps/web/src/components/ui`, app-level surfaces from `apps/web/src/components/app-surface.tsx`, or feature-local modules that own repeated rendering.

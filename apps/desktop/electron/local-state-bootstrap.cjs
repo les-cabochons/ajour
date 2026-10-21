@@ -130,11 +130,17 @@ function readLatestLocalStateFromLevelDb(levelDbPath) {
  * null. A profile that cannot be read gives null too: the renderer recovers
  * nothing this launch and asks again at the next one, instead of merging a
  * state older than the one it could not read.
+ *
+ * `options.report`, when given, learns where the state came from, how many
+ * legacy folders were scanned and the error a failed read swallowed, for the
+ * read's event. That error can hold the user data path, which the event's
+ * scrubber removes.
  */
 function loadDesktopBootstrapLocalState(options = {}) {
   try {
     return readNewestLocalState(options);
-  } catch {
+  } catch (error) {
+    if (options.report) options.report.error = error;
     return null;
   }
 }
@@ -151,9 +157,13 @@ function readNewestLocalState(options) {
     path.join(appDataPath, "Ajour"),
   ].filter((candidate) => candidate !== currentUserDataPath);
 
+  const report = options.report ?? {};
+  report.source = "none";
+  report.legacy_folder_count = 0;
   let latestState = currentUserDataPath
     ? readJsonFile(path.join(currentUserDataPath, RECOVERY_FILE_NAME))
     : null;
+  if (latestState) report.source = "recovery_file";
   let latestUpdatedAt =
     typeof latestState?.updatedAt === "number" &&
     Number.isFinite(latestState.updatedAt)
@@ -161,14 +171,16 @@ function readNewestLocalState(options) {
       : -1;
 
   for (const userDataPath of legacyUserDataCandidates) {
-    const state = readLatestLocalStateFromLevelDb(
-      path.join(userDataPath, "Local Storage", "leveldb"),
-    );
+    const levelDb = path.join(userDataPath, "Local Storage", "leveldb");
+    if (existsSync(levelDb)) report.legacy_folder_count += 1;
+    const state = readLatestLocalStateFromLevelDb(levelDb);
     const updatedAt =
       typeof state?.updatedAt === "number" && Number.isFinite(state.updatedAt)
         ? state.updatedAt
         : -1;
     if (updatedAt >= latestUpdatedAt) {
+      if (state) report.source = "legacy_profile";
+      else if (latestState) report.source = "none";
       latestState = state;
       latestUpdatedAt = updatedAt;
     }

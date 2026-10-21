@@ -10,8 +10,16 @@ const { loadDesktopBootstrapLocalState } =
     loadDesktopBootstrapLocalState: (options: {
       appDataPath?: string;
       currentUserDataPath?: string;
+      report?: BootstrapReport;
     }) => Record<string, unknown> | null;
   };
+
+/** What a read tells the local_state.recover event. */
+interface BootstrapReport {
+  source?: string;
+  legacy_folder_count?: number;
+  error?: unknown;
+}
 
 let appDataPath: string;
 let legacyLevelDb: string;
@@ -31,10 +39,11 @@ afterEach(async () => {
   await rm(appDataPath, { recursive: true, force: true });
 });
 
-function load() {
+function load(report?: BootstrapReport) {
   return loadDesktopBootstrapLocalState({
     appDataPath,
     currentUserDataPath: path.join(appDataPath, "Ajour"),
+    report,
   });
 }
 
@@ -60,5 +69,40 @@ describe("desktop bootstrap local state", () => {
     await mkdir(path.join(legacyLevelDb, "000004.log"), { recursive: true });
 
     expect(load()).toBeNull();
+  });
+});
+
+describe("what a bootstrap read reports", () => {
+  it("says which source the state came from and how many legacy folders it scanned", async () => {
+    await mkdir(legacyLevelDb, { recursive: true });
+    await writeFile(
+      path.join(legacyLevelDb, "000003.log"),
+      'ajour.local-state.v2{"updatedAt":5,"projects":[]}',
+    );
+    const report: BootstrapReport = {};
+
+    load(report);
+
+    expect(report).toEqual({
+      source: "legacy_profile",
+      legacy_folder_count: 1,
+    });
+  });
+
+  it("says when nothing was found", () => {
+    const report: BootstrapReport = {};
+
+    load(report);
+
+    expect(report).toEqual({ source: "none", legacy_folder_count: 0 });
+  });
+
+  it("keeps the error a failed read swallowed, for the event's scrubber", async () => {
+    await mkdir(path.join(legacyLevelDb, "000004.log"), { recursive: true });
+    const report: BootstrapReport = {};
+
+    expect(load(report)).toBeNull();
+
+    expect(report.error).toBeInstanceOf(Error);
   });
 });
