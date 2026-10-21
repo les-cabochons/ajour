@@ -224,6 +224,8 @@ importers:
         specifier: ^3.24.2
         version: 3.25.76
 
+  packages/wide-events: {}
+
 packages:
 
   '@algolia/abtesting@1.26.0':
