@@ -1,12 +1,19 @@
+import { execFile } from "node:child_process";
 import { chmod, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   findExecutable,
   readLoginShellPath,
   resolveLoginShellPath,
 } from "./cli-path.ts";
+
+// Records every shell start; each one still runs the real execFile.
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return { ...actual, execFile: vi.fn(actual.execFile) };
+});
 
 describe("findExecutable", () => {
   it("finds an executable on PATH and skips folders without it", async () => {
@@ -36,9 +43,11 @@ async function fakeShell(body: string): Promise<string> {
 
 describe("resolveLoginShellPath", () => {
   it.runIf(process.platform === "win32")(
-    "keeps the process PATH on Windows",
+    "keeps the process PATH on Windows without starting a shell",
     async () => {
+      vi.mocked(execFile).mockClear();
       expect(await resolveLoginShellPath()).toBe(process.env.PATH ?? "");
+      expect(execFile).not.toHaveBeenCalled();
     },
   );
 });
