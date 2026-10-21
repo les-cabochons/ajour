@@ -61,11 +61,11 @@ now they are exported nowhere.
   `request`) and in the plugin host (kind `plugin_operation`).
 - Each seam maps its keys to names in a typed table, so a new store command,
   route, IPC channel or plugin method fails to compile until it has a name.
-  The local API's comment and calendar operations are the first:
-  `COMMENT_EVENTS` and `CALENDAR_EVENTS` in `apps/api/src/server.ts`. The
-  main process's IPC channels are in `IPC_CHANNELS`
-  (`apps/desktop/electron/ipc-channels.cjs`), which `just typecheck` checks
-  against the catalog.
+  The local API's routes are `ROUTES` in `apps/api/src/routes.ts`, and its
+  plugin methods `PLUGIN_OPERATION_EVENTS` in `apps/api/src/plugin-host.ts`
+  (and the schema host's own). The main process's IPC channels are in
+  `IPC_CHANNELS` (`apps/desktop/electron/ipc-channels.cjs`), which
+  `just typecheck` checks against the catalog.
 - A seam may refine the name once it knows the operation, with
   `unit.rename()`: an MCP request becomes `agent_tool.call` once its method is
   read.
@@ -237,7 +237,8 @@ Logging plugins will later replace the sink without changing any event.
 
 Every event is a W3C span, so a future exporter can send it to a trace
 backend unchanged. A unit started with a `parent` (an incoming `traceparent`
-header) is that span's child. `unit.traceparent()` gives the header for an
+header) is that span's child: the local API makes each request the child of
+the `traceparent` it carries. `unit.traceparent()` gives the header for an
 outgoing call; a folded unit sends its outer unit's span. A delayed
 consequence of an action, such as a source write after the Undo window,
 starts its own trace and joins its cause through the domain ID that links
@@ -245,15 +246,70 @@ them.
 
 ## Where events come from today
 
-The local API's first events are placed by hand (#305):
+The local API emits these (#305, #306):
 
-| Event                                                                                               | Where                                                                   |
-| --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `mcp.request`, `agent_tool.call`                                                                    | `handleMcpRequest` in `apps/api/src/mcp-server.ts`, one per MCP request |
-| `agent.session`                                                                                     | `AgentSessions`, from begin to end                                      |
-| `agent.run`                                                                                         | `AgentRunner`, from the start's first launch step to its one finalizer  |
-| `calendar.fetch`                                                                                    | the calendar route                                                      |
-| `comment.list`, `comment.post`, `comment.edit`, `comment.delete`, `comment.react`, `mention.search` | the comment route                                                       |
+| Event                                 | Where                                                                          |
+| ------------------------------------- | ------------------------------------------------------------------------------ |
+| one `request` per HTTP request        | `serveWithEvent` in `apps/api/src/routes.ts`, named from `ROUTES`              |
+| `mcp.request`, `agent_tool.call`      | `handleMcpRequest` in `apps/api/src/mcp-server.ts`, on the request's event     |
+| `mcp_bridge.connection`               | the bridge route's request, which ends when the stream closes                  |
+| one `plugin_operation` per worker run | `PluginWorkerLifetime`, for the plugin host and the schema host                |
+| `api.start`, `api.stop`               | `startAppApiServer` and `stopAppApiServer` in `apps/api/src/server.ts`         |
+| `storage.load`                        | `AppApiStorage`, for each load of the state file                               |
+| `app.error`                           | `watchProcessCrashes` in `apps/api/src/events.ts`, with `reportProcessCrashes` |
+| `agent.session`                       | `AgentSessions`, from begin to end                                             |
+| `agent.run`                           | `AgentRunner`, from the start's first launch step to its one finalizer         |
+
+### Requests
+
+- **One event per request.** The request seam opens it before any check, as
+  `api.request`, and renames it from the route table once the request is
+  routed. Every route in `ROUTES` has a name and a handler, so a route
+  without either fails to compile. A route that serves several operations,
+  such as the code host's, names each from its own table (`CODE_HOST_EVENTS`,
+  `COMMENT_EVENTS`, `CALENDAR_EVENTS`).
+- **Every request records** its method, its route's pattern (never its
+  values), its status, the request and response sizes when their headers
+  give them, and its origin: `app`, `none` or `refused`.
+- **A request that never reaches a route** stays `api.request`, refused
+  with `stopping`, `host_refused`, `origin_refused` or `no_route`. A body or
+  parameter Ajour can't read is refused with `invalid_request`, and records
+  the error's type without the message that could quote it.
+- **An outcome the handler didn't record** follows the status: a 4xx is
+  `refused`, a 5xx an `error`. A route refused because the plugin system,
+  the plugin or the capability is off says which: `system_off`,
+  `plugin_off` or `capability_off`.
+- **Handlers add their catalog fields** to the event, such as a sync's
+  counts or a connection's field count, and a plugin's error through
+  `unit.fail(error, { secrets })` with the connection's secrets.
+- **The event ends** once the handler settles and the response is done, so
+  the bridge stream's `mcp_bridge.connection` lasts as long as the stream.
+
+### Plugin operations
+
+Each worker run in the plugin host and the schema host emits one
+`plugin_operation` event, named from the host's table of plugin methods, as
+a child span of the request that started it. It carries the plugin's ID,
+version, source and API version, the connection, the method and its
+capability, the host's other operations at admission, the preparation and
+worker durations, the timeout and the result's size. It ends with its own
+reason:
+
+- refused: `capacity`, a gate's `system_off`, `plugin_off` or
+  `capability_off`, `host_stopping`, `package_change`, `not_installed`,
+  `runs_no_code`, and `agent_access` for a comment call the user doesn't
+  allow;
+- cancelled: `system_off`, `plugin_off`, `capability_off`, `uninstalled` or
+  `shutdown`;
+- `timeout`;
+- errors: `result_too_large`, `invalid_result` (with the error's type only),
+  `exited_early` and `plugin_error`, scrubbed of the connection's secrets.
+
+Plugin discovery skips an invalid package without a log line: the active
+event counts it in `counts.invalid_plugin`, as it counts a bundled archive
+that fails to install and a leftover backup it can't clear.
+
+### MCP
 
 An MCP request is `agent_tool.call` once its body is a tool call, named with
 the tool (one of Ajour's, or `other`), never its arguments. Every MCP request
@@ -289,9 +345,8 @@ The order of outcomes is the package's: `worstOutcome()` and
 
 A session the runner began takes the run's trigger, `user`.
 
-The seams of #304 add the rest: every local API request and plugin operation
-(#306), store commands, boot and Undo (#307), `trigger` and `surface`
-(#309), and renderer jobs and navigation (#310).
+The seams of #304 add the rest: store commands, boot and Undo (#307),
+`trigger` and `surface` (#309), and renderer jobs and navigation (#310).
 
 ### The desktop main process
 
