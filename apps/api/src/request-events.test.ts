@@ -334,6 +334,7 @@ export async function listSettleStates() {
 }
 export async function writeSettle(connection, request) {
   if (request.sourceId === 'FAIL-1') throw new Error('Rejected ' + connection.config.token);
+  if (request.sourceId === 'BAD-1') return { priority: 'Secret priority' };
   return { state: request.state };
 }
 export async function syncPullRequests() {
@@ -547,6 +548,23 @@ describe("route events", () => {
     ]);
     expect(JSON.stringify(events)).not.toContain(TOKEN);
     expect(JSON.stringify(events)).not.toContain("FAIL-1");
+  });
+
+  it("records a plugin result that breaks its contract without what it held", async () => {
+    const { port, events, connectionId } = await connectedApi();
+
+    const bad = await call(
+      port,
+      `/api/plugins/jira/connections/${connectionId}/settle`,
+      { sourceId: "BAD-1", state: "Done" },
+    );
+
+    expect(bad.status).toBe(502);
+    expect(await lastRequest(events, "backlog.write_source")).toMatchObject({
+      outcome: "error",
+      error: expect.objectContaining({ type: "ZodError" }),
+    });
+    expect(JSON.stringify(events)).not.toContain("Secret priority");
   });
 
   it("records a pull request sync and a team sync", async () => {

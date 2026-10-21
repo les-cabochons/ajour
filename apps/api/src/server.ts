@@ -112,6 +112,7 @@ import { AgentSessions } from "./agent-sessions.ts";
 import {
   createApiEvents,
   watchProcessCrashes,
+  withoutContent,
   type ApiEvents,
   type ApiLaunch,
 } from "./events.ts";
@@ -439,11 +440,7 @@ function invalidRequestError(error: unknown): Error | undefined {
   if (error instanceof InvalidJsonError || error instanceof URIError) {
     return error;
   }
-  if (error instanceof ZodError) {
-    const standIn = new Error("The request does not match its schema.");
-    standIn.name = "ZodError";
-    return standIn;
-  }
+  if (error instanceof ZodError) return withoutContent(error) as Error;
   return undefined;
 }
 
@@ -1131,11 +1128,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       unit.set({ activation: { enabled: payload.enabled } });
       await storage.setPluginSystemEnabled(payload.enabled);
       if (!payload.enabled) {
-        const running =
-          pluginManager.activeOperationCount +
-          projectDataShapePluginManager.activeOperationCount;
         const plugins = await pluginManager.listPlugins();
-        await Promise.allSettled(
+        const cancelled = await Promise.allSettled(
           plugins.map((plugin) =>
             pluginManager.cancelPluginOperations(
               plugin.id,
@@ -1144,11 +1138,20 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             ),
           ),
         );
-        await projectDataShapePluginManager.cancelOperations(
-          new Error("The Ajour plugin system was deactivated."),
-          "system_off",
-        );
-        unit.set({ activation: { operations_cancelled: running } });
+        const schemaCancelled =
+          await projectDataShapePluginManager.cancelOperations(
+            new Error("The Ajour plugin system was deactivated."),
+            "system_off",
+          );
+        unit.set({
+          activation: {
+            operations_cancelled: cancelled.reduce(
+              (count, result) =>
+                count + (result.status === "fulfilled" ? result.value : 0),
+              schemaCancelled,
+            ),
+          },
+        });
       }
       writeJson(response, 200, await getOverview(storage, pluginManager));
     },
@@ -1206,7 +1209,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         });
         writeJson(response, 200, result);
       } catch (error) {
-        unit.fail(error);
+        unit.fail(withoutContent(error));
         writeJson(response, 400, {
           error: connectionlessPluginErrorMessage(error),
         });
@@ -1253,7 +1256,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         });
         writeJson(response, 200, result);
       } catch (error) {
-        unit.fail(error);
+        unit.fail(withoutContent(error));
         writeJson(response, 400, {
           error: connectionlessPluginErrorMessage(error),
         });
@@ -1280,7 +1283,6 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           ...(payload.capability ? { capability: payload.capability } : {}),
         },
       });
-      const running = pluginManager.activeOperationCount;
       if (payload.capability) {
         if (!pluginHasCapability(plugin, payload.capability)) {
           writeJson(response, 400, {
@@ -1294,35 +1296,26 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           payload.enabled,
         );
         if (!payload.enabled) {
-          await pluginManager.cancelCapabilityOperations(
+          const cancelled = await pluginManager.cancelCapabilityOperations(
             pluginId,
             payload.capability,
             new Error(
               `${switchableCapabilityLabels[payload.capability]} of plugin "${pluginId}" were turned off.`,
             ),
           );
-          unit.set({
-            activation: {
-              operations_cancelled:
-                running - pluginManager.activeOperationCount,
-            },
-          });
+          unit.set({ activation: { operations_cancelled: cancelled } });
         }
         writeJson(response, 200, await getOverview(storage, pluginManager));
         return;
       }
       await storage.setPluginEnabled(pluginId, payload.enabled);
       if (!payload.enabled) {
-        await pluginManager.cancelPluginOperations(
+        const cancelled = await pluginManager.cancelPluginOperations(
           pluginId,
           new Error(`Plugin "${pluginId}" was deactivated.`),
           "plugin_off",
         );
-        unit.set({
-          activation: {
-            operations_cancelled: running - pluginManager.activeOperationCount,
-          },
-        });
+        unit.set({ activation: { operations_cancelled: cancelled } });
       }
       writeJson(response, 200, await getOverview(storage, pluginManager));
     },
@@ -1402,7 +1395,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           call.admit,
         );
       } catch (error) {
-        unit.fail(error, {
+        unit.fail(withoutContent(error), {
           secrets: connectionSecretValues(call.manifest, [
             configForSave,
             existingConnection?.config,
@@ -1623,7 +1616,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           }),
         );
       } catch (error) {
-        unit.fail(error, {
+        unit.fail(withoutContent(error), {
           secrets: connectionSecretValues(call.manifest, [connection.config]),
         });
         const message = pluginErrorMessage(
@@ -1712,7 +1705,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         }
         writeJson(response, 200, result);
       } catch (error) {
-        unit.fail(error, {
+        unit.fail(withoutContent(error), {
           secrets: connectionSecretValues(call.manifest, [connection.config]),
         });
         const message = pluginErrorMessage(
@@ -1874,7 +1867,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         const secrets = connectionSecretValues(call.manifest, [
           connection.config,
         ]);
-        unit.fail(error, { secrets });
+        unit.fail(withoutContent(error), { secrets });
         writeJson(response, 502, {
           error: redactPluginText(errorMessage(error), secrets),
         });
@@ -1951,7 +1944,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           connection.config,
         ]);
         const message = redactPluginText(errorMessage(error), secrets);
-        unit.fail(error, { secrets });
+        unit.fail(withoutContent(error), { secrets });
         await storage.recordConnectionError(pluginId, connectionId, message);
         writeJson(response, 502, { error: message });
       }
@@ -1979,7 +1972,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           ),
         );
       } catch (error) {
-        unit.fail(error, {
+        unit.fail(withoutContent(error), {
           secrets: connectionSecretValues(call.manifest, [payload.values]),
         });
         writeJson(response, 502, {
@@ -2025,7 +2018,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         );
         writeJson(response, 200, result);
       } catch (error) {
-        unit.fail(error, {
+        unit.fail(withoutContent(error), {
           secrets: connectionSecretValues(call.manifest, [connection.config]),
         });
         const message = pluginErrorMessage(
@@ -2208,7 +2201,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(response, 200, backlogSettleWriteResultSchema.parse(result));
       }
     } catch (error) {
-      unit.fail(error, {
+      unit.fail(withoutContent(error), {
         secrets: connectionSecretValues(call.manifest, [connection.config]),
       });
       writeJson(response, 502, {
@@ -2336,7 +2329,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         );
       }
     } catch (error) {
-      unit.fail(error, {
+      unit.fail(withoutContent(error), {
         secrets: connectionSecretValues(call.manifest, [connection.config]),
       });
       // The message reaches the user and is stored with the item.
@@ -2422,7 +2415,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           } catch (error) {
             // An outcome MCP recorded stands, as a thrown error never
             // downgrades it.
-            if (unit.outcome === undefined) unit.fail(error);
+            if (unit.outcome === undefined) unit.fail(withoutContent(error));
             if (!response.headersSent) {
               writeJson(response, 500, { error: errorMessage(error) });
             }
@@ -2477,7 +2470,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           // and answers with `pluginErrorMessage`.
           const invalid = invalidRequestError(error);
           if (invalid) routed.fail(invalid).refuse("invalid_request");
-          else routed.fail(error);
+          else routed.fail(withoutContent(error));
           writeJson(response, 400, {
             error: errorMessage(error),
           });
@@ -2609,7 +2602,7 @@ export async function startAppApiServer(
       });
     });
   } catch (error) {
-    unit.fail(error, {
+    unit.fail(withoutContent(error), {
       reason:
         (error as { code?: unknown } | null)?.code === "EADDRINUSE"
           ? "port_in_use"

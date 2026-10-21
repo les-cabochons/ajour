@@ -9,7 +9,7 @@ import type {
   KindOf,
 } from "../../../packages/wide-events/catalog.ts";
 import type { Unit } from "../../../packages/wide-events/index.ts";
-import type { ApiEvents } from "./events.ts";
+import { withoutContent, type ApiEvents } from "./events.ts";
 
 /** An event the request seam may name a request: one whose kinds include `request`. */
 export type RequestEventName = {
@@ -436,7 +436,7 @@ export async function serveWithEvent(
   try {
     await unit.enter(() => serve(unit));
   } catch (error) {
-    unit.fail(error);
+    unit.fail(withoutContent(error));
   }
   const end = () => {
     const status = response.statusCode;

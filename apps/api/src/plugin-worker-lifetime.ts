@@ -1,12 +1,11 @@
 import { Worker } from "node:worker_threads";
-import { ZodError } from "zod";
 import type {
   AjourCatalog,
   EventName,
   KindOf,
 } from "../../../packages/wide-events/catalog.ts";
 import type { Unit } from "../../../packages/wide-events/index.ts";
-import { createApiEvents, type ApiEvents } from "./events.ts";
+import { createApiEvents, withoutContent, type ApiEvents } from "./events.ts";
 import { nowhere } from "../../../packages/wide-events/sinks.ts";
 
 /** Each host owns its own lifetime instance, so plugin and data-shape quotas stay separate. */
@@ -75,17 +74,6 @@ function cutErrorMessage(message: string) {
   return message.length <= MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS
     ? message
     : `${message.slice(0, MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS - 1)}…`;
-}
-
-/**
- * A result or input that failed validation, as an event holds it: its
- * type, never its message, which can quote what the plugin returned.
- */
-function contentFreeError(error: unknown) {
-  if (!(error instanceof ZodError)) return error;
-  const standIn = new Error("The value does not match its schema.");
-  standIn.name = "ZodError";
-  return standIn;
 }
 
 interface WorkerInvocation<T> {
@@ -250,7 +238,7 @@ export class PluginWorkerLifetime<TMethod extends string> {
           ...(secrets ? { secrets } : {}),
         });
       } else if (unit.outcome === undefined) {
-        unit.fail(contentFreeError(error), secrets ? { secrets } : {});
+        unit.fail(withoutContent(error), secrets ? { secrets } : {});
       }
       throw error;
     } finally {
@@ -258,13 +246,16 @@ export class PluginWorkerLifetime<TMethod extends string> {
     }
   }
 
-  /** Cancels the plugin's operations, or only those whose method `methods` keeps. */
+  /**
+   * Cancels the plugin's operations, or only those whose method `methods`
+   * keeps. Returns how many it cancelled.
+   */
   async cancel(
     error: Error,
     reason: PluginCancelReason | undefined,
     pluginId?: string,
     methods?: (method: TMethod) => boolean,
-  ): Promise<void> {
+  ): Promise<number> {
     const matchingOperations = Array.from(this.operations).filter(
       (operation) =>
         (pluginId === undefined || operation.pluginId === pluginId) &&
@@ -278,6 +269,7 @@ export class PluginWorkerLifetime<TMethod extends string> {
         return operation.cancelWorker?.(error);
       }),
     );
+    return matchingOperations.length;
   }
 
   shutdown(): Promise<void> {
@@ -357,7 +349,7 @@ export class PluginWorkerLifetime<TMethod extends string> {
             try {
               resolve(invocation.parse(result));
             } catch (parseError) {
-              unit.fail(contentFreeError(parseError), {
+              unit.fail(withoutContent(parseError), {
                 reason: "invalid_result",
               });
               reject(parseError);

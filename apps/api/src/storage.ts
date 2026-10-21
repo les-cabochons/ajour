@@ -28,7 +28,7 @@ import {
   type SwitchableCapability,
 } from "../../../packages/shared/plugins.ts";
 import type { McpSettings } from "../../../packages/shared/agent-tools.ts";
-import type { ApiEvents } from "./events.ts";
+import { withoutContent, type ApiEvents } from "./events.ts";
 import {
   agentRunnerSettingsSchema,
   type AgentRunnerSettings,
@@ -1831,7 +1831,7 @@ export class AppApiStorage {
       this.cache ??= state;
       return this.cache;
     } catch (error) {
-      if (unit?.outcome === undefined) unit?.fail(error);
+      if (unit?.outcome === undefined) unit?.fail(withoutContent(error));
       throw error;
     } finally {
       unit?.end();

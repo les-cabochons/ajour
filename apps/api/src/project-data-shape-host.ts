@@ -133,8 +133,9 @@ export class ProjectDataShapePluginManager {
     await this.workers.shutdown();
   }
 
+  /** Cancels every running operation, for `reason`. Returns how many. */
   async cancelOperations(error: Error, reason?: PluginCancelReason) {
-    await this.workers.cancel(error, reason);
+    return await this.workers.cancel(error, reason);
   }
 
   private invocationData(

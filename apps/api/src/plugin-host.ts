@@ -323,13 +323,13 @@ export class PluginManager {
     });
   }
 
-  /** Cancels the plugin's running operations, for `reason`. */
+  /** Cancels the plugin's running operations, for `reason`. Returns how many. */
   async cancelPluginOperations(
     pluginId: string,
     error: Error,
     reason?: PluginCancelReason,
-  ): Promise<void> {
-    await this.workers.cancel(error, reason, pluginId);
+  ): Promise<number> {
+    return await this.workers.cancel(error, reason, pluginId);
   }
 
   /** Cancels the running operations of one capability, such as a pull request sync. */
@@ -337,8 +337,8 @@ export class PluginManager {
     pluginId: string,
     capability: SwitchableCapability,
     error: Error,
-  ): Promise<void> {
-    await this.workers.cancel(
+  ): Promise<number> {
+    return await this.workers.cancel(
       error,
       "capability_off",
       pluginId,
