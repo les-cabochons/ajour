@@ -23,6 +23,11 @@ const copyTargets = [
     to: path.join(outputRoot, "packages/shared"),
     excludePackageNodeModules: true,
   },
+  {
+    from: path.resolve(repoRoot, "packages/wide-events"),
+    to: path.join(outputRoot, "packages/wide-events"),
+    excludePackageNodeModules: true,
+  },
 ];
 
 rmSync(outputRoot, { recursive: true, force: true });
