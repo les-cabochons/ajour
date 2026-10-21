@@ -55,6 +55,18 @@ let writeCount = 0;
 /** The command each open unit runs, so the same command inside joins it. */
 const openCommands = new WeakMap<object, StoreCommandName>();
 
+/** The store command each thrown error came from, for the error handler. */
+const thrownBy = new WeakMap<object, StoreCommandName>();
+
+/** The store command that threw `error`, when one did. */
+export function storeCommandThatThrew(
+  error: unknown,
+): StoreCommandName | undefined {
+  return typeof error === "object" && error !== null
+    ? thrownBy.get(error)
+    : undefined;
+}
+
 /** Counts one write of the local state, and its size, on the active unit. */
 export function countStoreWrite(bytes: number) {
   writeCount += 1;
@@ -106,7 +118,20 @@ export function runStoreCommand<Name extends StoreCommandName, Result>(
     (unit: StoreCommandUnit<Name>) => {
       openCommands.set(unit, name);
       const writes = writeCount;
-      const result = work(unit);
+      let result: Result;
+      try {
+        result = work(unit);
+      } catch (error) {
+        // The innermost command keeps the error: it is the one that threw.
+        if (
+          typeof error === "object" &&
+          error !== null &&
+          !thrownBy.has(error)
+        ) {
+          thrownBy.set(error, name);
+        }
+        throw error;
+      }
       if (unit.outcome === undefined && writeCount === writes) {
         unit.end("noop");
       }

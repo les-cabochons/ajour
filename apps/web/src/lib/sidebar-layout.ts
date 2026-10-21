@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { recordDeviceSettingChange } from "@/lib/preference-events";
 
 /**
  * How the expanded sidebar lays out its backlog items, per device. See "Layout
@@ -88,7 +89,9 @@ function getLayout() {
 
 /** Changes the layout and saves it for this device. */
 export function updateSidebarLayout(patch: Partial<SidebarLayout>) {
-  layout = { ...getLayout(), ...patch };
+  const before = getLayout();
+  layout = { ...before, ...patch };
+  recordDeviceSettingChange("sidebar_layout", before, layout, ["density"]);
   try {
     window.localStorage.setItem(
       SIDEBAR_LAYOUT_STORAGE_KEY,

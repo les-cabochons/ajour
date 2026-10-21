@@ -513,6 +513,7 @@ export function TimePage({ date }: { date: string }) {
             initialFields={carriedDraft}
             onFieldsChange={keepEditorDraft}
             onClose={closeEditor}
+            host="side_panel"
           />
           {panelCell && editorTarget.kind !== "create" ? (
             <div className="weekly-grid-add-another">

@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { recordDeviceSettingChange } from "@/lib/preference-events";
 
 /**
  * The widths the user dragged the side panels to, one per page, per device.
@@ -62,6 +63,8 @@ export function parseSidePanelWidths(value: string | null): SidePanelWidths {
 }
 
 let widths: SidePanelWidths | undefined;
+/** The widths last read from or written to storage, which a save compares with. */
+let savedWidths: SidePanelWidths = {};
 const listeners = new Set<() => void>();
 
 function getWidths() {
@@ -74,6 +77,7 @@ function getWidths() {
       // Storage can be unavailable under restrictive privacy settings.
       widths = {};
     }
+    savedWidths = widths;
   }
   return widths;
 }
@@ -97,6 +101,8 @@ export function setSidePanelWidth(
 
 /** Writes the current widths to this device's storage. */
 export function saveSidePanelWidths() {
+  recordDeviceSettingChange("side_panel_width", savedWidths, getWidths());
+  savedWidths = getWidths();
   try {
     window.localStorage.setItem(
       SIDE_PANEL_WIDTHS_STORAGE_KEY,

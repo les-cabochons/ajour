@@ -573,3 +573,115 @@ describe("store command catalog fields", () => {
     expect(JSON.stringify(sink.events)).not.toContain("Atlas");
   });
 });
+
+describe("preferences, reloads and boot", () => {
+  let browser: ReturnType<typeof installMockWindow>;
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+    browser = installMockWindow();
+  });
+
+  it("records the user preferences that changed, with their enum and numeric values", async () => {
+    const { sink, localStore } = await loadStore();
+
+    localStore.setUserPreferences({
+      themeMode: "dark",
+      paceTolerancePercent: 15,
+      commitLinesNameSource: "Client name field",
+      hideNonWorkingDays: false,
+    });
+    localStore.setUserPreferences({ themeMode: "dark" });
+
+    expect(sink.events).toMatchObject([
+      {
+        name: "preferences.update",
+        kind: "command",
+        outcome: "ok",
+        preferences: {
+          scope: "user",
+          setting: "user_preferences",
+          changed_keys: [
+            "themeMode",
+            "paceTolerancePercent",
+            "commitLinesNameSource",
+          ],
+          values: { themeMode: "dark", paceTolerancePercent: 15 },
+        },
+      },
+      { name: "preferences.update", outcome: "noop" },
+    ]);
+    expect(JSON.stringify(sink.events)).not.toContain("Client name field");
+  });
+
+  it("records a change of a device UI setting, never a filter's text", async () => {
+    const { sink } = await loadStore();
+    const { updateBacklogView } = await import("./backlog-view-settings");
+    const { updateSidebarLayout } = await import("./sidebar-layout");
+    const { setSidePanelWidth, saveSidePanelWidths } =
+      await import("./side-panel-width");
+
+    updateBacklogView({
+      layout: "board",
+      filters: [{ field: "project", value: "Secret project" }],
+    } as never);
+    updateSidebarLayout({ density: "compact" });
+    setSidePanelWidth("time", 400, { save: false });
+    setSidePanelWidth("time", 420, { save: false });
+    saveSidePanelWidths();
+
+    expect(sink.events).toMatchObject([
+      {
+        name: "preferences.update",
+        preferences: {
+          scope: "device",
+          setting: "backlog_view",
+          changed_keys: ["layout", "filters"],
+          values: { layout: "board" },
+        },
+      },
+      {
+        preferences: {
+          setting: "sidebar_layout",
+          changed_keys: ["density"],
+          values: { density: "compact" },
+        },
+      },
+      {
+        preferences: {
+          setting: "side_panel_width",
+          changed_keys: ["time"],
+          values: { time: 420 },
+        },
+      },
+    ]);
+    expect(JSON.stringify(sink.events)).not.toContain("Secret project");
+  });
+
+  it("emits local_state.reload when another window writes", async () => {
+    const { sink, localStore } = await loadStore();
+    localStore.subscribe(() => undefined);
+    localStore.snapshot();
+    browser.storage.set(
+      STORAGE_KEY,
+      JSON.stringify({ revision: "other-window", projects: [] }),
+    );
+
+    browser.fire("storage", { key: STORAGE_KEY });
+    browser.fire("storage", { key: null });
+
+    expect(sink.events).toMatchObject([
+      {
+        name: "local_state.reload",
+        kind: "job",
+        trigger: "system",
+        local_state: { revision_changed: true, storage_cleared: false },
+      },
+      {
+        name: "local_state.reload",
+        local_state: { revision_changed: false, storage_cleared: true },
+      },
+    ]);
+  });
+});

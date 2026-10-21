@@ -252,7 +252,7 @@ reason from `use-entry-selection.ts` and cuts nothing. Native
 right-click menus only grey it, since a native item cannot be greyed and
 chosen. The Move to and
 Duplicate to calendars grey out its days, and it gets no calendar suggestion. Writes without a control of their own, such as Cmd+V, show the
-refusal as a toast from `features/feedback/locked-week-toast.ts`.
+refusal as a toast from `features/feedback/app-error-handler.ts`, the handler that also emits `app.error`.
 
 Calendar suggestions (`features/time/calendar-suggestions.tsx`) show while a
 calendar plugin is on. The Day view adds a "From your calendar" section under

@@ -78,6 +78,7 @@ import {
 } from "@/lib/commit-selection";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
+import { runStoreCommand } from "@/lib/store-command-events";
 import { listProjectPropertyPlugins } from "@/lib/plugin-project-properties";
 import { ProjectIcon } from "@/lib/project-icons";
 import { cn, getIsoWeekDates, todayIsoDate } from "@/lib/utils";
@@ -380,9 +381,12 @@ export function CommitPage({
     });
   }
 
-  function lockWeek() {
+  function lockWeek(paceWarningShown: boolean) {
     setPaceCheckOpen(false);
-    const { undoToken, result } = localStore.submitWeek(weekOf);
+    const { undoToken, result } = runStoreCommand("week.submit", (unit) => {
+      unit.set({ week: { pace_warning_shown: paceWarningShown } });
+      return localStore.submitWeek(weekOf);
+    });
     if (!result.ok) {
       showToast(result.message);
       return;
@@ -409,7 +413,7 @@ export function CommitPage({
       setPaceCheckOpen(true);
       return;
     }
-    lockWeek();
+    lockWeek(false);
   }
 
   function reopen() {
@@ -715,7 +719,7 @@ export function CommitPage({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Review</AlertDialogCancel>
-            <AlertDialogAction onClick={lockWeek}>
+            <AlertDialogAction onClick={() => lockWeek(true)}>
               Submit anyway
             </AlertDialogAction>
           </AlertDialogFooter>

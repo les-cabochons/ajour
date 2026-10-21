@@ -93,6 +93,7 @@ export function TimeEntryModal({
           initialFields={initialFields}
           onFieldsChange={onFieldsChange}
           onClose={onClose}
+          host="dialog"
         />
       </DialogContent>
     </Dialog>

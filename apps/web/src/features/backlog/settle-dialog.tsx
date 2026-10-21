@@ -25,6 +25,7 @@ import {
 import { commentSourceOf } from "@/domain/backlog/comments";
 import { NO_PRIORITY_NAME, PRIORITY_LEVELS } from "@/domain/backlog/priority";
 import type { LocalWorkItem } from "@/domain/local-state";
+import { runStoreCommand } from "@/lib/store-command-events";
 import { findSettleRule } from "@/domain/backlog/settle-rules";
 import {
   canWriteSettle,
@@ -106,6 +107,8 @@ export function settleBacklogItem(
     settleBacklogItemWithUndo(
       workItem,
       behavior.kind === "apply" ? behavior.change : undefined,
+      undefined,
+      behavior.kind === "apply" ? "rule" : "local",
     );
   }
 }
@@ -115,16 +118,47 @@ export function settleBacklogItem(
  * whether they settle too, unless the user's setting answers. A change to the
  * source is sent when the toast closes, so Undo cancels it (ADR 0001). A
  * comment follows the change, or goes when the toast closes if nothing else
- * is written (ADR 0008).
+ * is written (ADR 0008). `behavior` says what chose the change, for the
+ * settle's wide event: a local settle, the rule, or the dialog.
  */
 export async function settleBacklogItemWithUndo(
   workItem: LocalWorkItem,
   change?: BacklogSettleChange,
   comment?: string,
+  behavior: "local" | "rule" | "ask" = change ? "rule" : "local",
 ) {
   const includeSubitems = await resolveIncludeSubitems(workItem, "settle");
   if (includeSubitems === null) return false;
 
+  // The settle's event takes what only this workflow knows: what chose the
+  // change, and the comment's length, never its text.
+  return runStoreCommand("backlog_item.settle", (unit) => {
+    unit.set({ backlog_item: { behavior } });
+    const settled = settleAndOfferUndo(
+      workItem,
+      includeSubitems,
+      change,
+      comment,
+    );
+    if (settled) {
+      const body = comment?.trim();
+      unit.set({
+        comment: {
+          queued: settled.commentQueued,
+          body_length: settled.commentQueued ? body?.length : undefined,
+        },
+      });
+    }
+    return settled !== false;
+  });
+}
+
+function settleAndOfferUndo(
+  workItem: LocalWorkItem,
+  includeSubitems: boolean,
+  change?: BacklogSettleChange,
+  comment?: string,
+) {
   const token = localStore.settleWorkItem(workItem._id, change, {
     includeSubitems,
   });
@@ -166,7 +200,7 @@ export async function settleBacklogItemWithUndo(
           }
         : undefined,
   });
-  return true;
+  return { commentQueued: Boolean(body && commentSource) };
 }
 
 type StatesLoad =
@@ -273,6 +307,7 @@ export function SettleDialogHost() {
           currentItem,
           change,
           commentSource ? comment : undefined,
+          "ask",
         )
       )
         setWorkItem(null);

@@ -108,6 +108,7 @@ export function TimeEntryEditorPopover({
             initialFields={initialFields}
             onFieldsChange={onFieldsChange}
             onClose={() => onOpenChange(false)}
+            host="popover"
           />
         ) : null}
       </PopoverContent>

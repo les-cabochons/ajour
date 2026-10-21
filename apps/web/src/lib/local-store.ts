@@ -7,6 +7,9 @@ import {
 } from "@ajour/shared";
 import { takeSourceDescription } from "@/domain/backlog/description-sync";
 import { todayIsoDate } from "@/lib/utils";
+import { describePreferenceChange } from "@/lib/preference-events";
+import { wideEvents } from "@/lib/wide-events";
+import { recordsEqual } from "@/domain/records-equal";
 import { StaleWindowError } from "@/lib/stale-window-error";
 import {
   countOnStoreCommand,
@@ -214,7 +217,11 @@ import {
   type TeamSyncState,
 } from "@/domain/projects/team-sync";
 import type { TeamProjectChange, TeamSyncResult } from "@ajour/shared";
-import type { AjourCatalog, CounterName } from "@ajour/wide-events/catalog.ts";
+import type {
+  AjourCatalog,
+  CounterName,
+  FieldsOf,
+} from "@ajour/wide-events/catalog.ts";
 import type {
   BacklogSortMode,
   ExtensionBridgeStatus,
@@ -768,12 +775,13 @@ function mergeBootstrapTimesheetEntries(
   return mergedEntries;
 }
 
+/** Why the desktop recovery file should merge into the stored state, or undefined. */
 function shouldBootstrapFromDesktopState(
   currentState: Partial<LocalAppState> | undefined,
   bootstrapState: Partial<LocalAppState> | null | undefined,
-) {
+): RecoveryFields["reason"] {
   if (!bootstrapState || currentState?.desktopBootstrapAppliedAt) {
-    return false;
+    return undefined;
   }
 
   // Submitted weeks alone are worth recovering: they keep the week as sent.
@@ -785,13 +793,13 @@ function shouldBootstrapFromDesktopState(
       (week) => !currentWeeks.has(week.weekOf),
     )
   ) {
-    return true;
+    return "submitted_weeks";
   }
 
   const bootstrapTimesheetCount = bootstrapState.timesheetEntries?.length ?? 0;
   const currentTimesheetCount = currentState?.timesheetEntries?.length ?? 0;
   if (currentTimesheetCount === 0 && bootstrapTimesheetCount > 0) {
-    return true;
+    return "no_entries";
   }
 
   const currentHasDefaultProjects = hasOnlyDefaultProjects(
@@ -801,16 +809,59 @@ function shouldBootstrapFromDesktopState(
     Array.isArray(bootstrapState.projects) &&
     bootstrapState.projects.length > 0 &&
     !hasOnlyDefaultProjects(bootstrapState.projects);
-  return currentHasDefaultProjects && bootstrapHasCustomProjects;
+  return currentHasDefaultProjects && bootstrapHasCustomProjects
+    ? "default_projects"
+    : undefined;
 }
 
-/** Logs, once, how many recovered records a submitted week kept out. */
-function warnLeftOut(count: number, one: string, many: string) {
-  if (count > 0) {
-    console.warn(
-      `Desktop recovery left out ${count} ${count === 1 ? one : many} in a submitted week.`,
-    );
-  }
+type BootFields = FieldsOf<AjourCatalog, "app.boot">;
+type RecoveryFields = NonNullable<BootFields["recovery"]>;
+
+/**
+ * What the last load of the local state did, for the `app.boot` event: its
+ * path, the migrations it applied, its size and the desktop recovery.
+ */
+export interface LocalStateLoad {
+  boot: NonNullable<BootFields["boot"]>;
+  recovery: RecoveryFields;
+}
+
+let load: LocalStateLoad = freshLoad();
+
+function freshLoad(): LocalStateLoad {
+  return {
+    boot: { load_path: "stored", migrations: [], persisted: true },
+    recovery: { decision: "none" },
+  };
+}
+
+/** Loads the local state, if it is not yet, and says how the load went. */
+export function localStateLoad(): LocalStateLoad {
+  readState();
+  return load;
+}
+
+/** The migrations a stored state needs, from a closed set, by its retired keys. */
+function storedMigrations(state: Record<string, unknown>) {
+  const migrations: string[] = [];
+  if ("backlogStatuses" in state || "backlogStatusMappings" in state)
+    migrations.push("workflow_states_renamed");
+  if ("priorityScales" in state || "priorityFormat" in state)
+    migrations.push("retired_priority_scales");
+  if ("activityLoggerEnabled" in state)
+    migrations.push("retired_activity_logger");
+  if (containsRetiredOutlookState(state)) migrations.push("retired_outlook");
+  if (state.backlogSortMode === "priority")
+    migrations.push("priority_sort_split");
+  return migrations;
+}
+
+/** Counts, for the boot event, recovered records a submitted week kept out. */
+function countLeftOut(
+  count: number,
+  field: "left_out_entry_count" | "left_out_running_entry_count",
+) {
+  if (count > 0) load.recovery[field] = (load.recovery[field] ?? 0) + count;
 }
 
 function mergeDesktopBootstrapState(
@@ -837,10 +888,9 @@ function mergeDesktopBootstrapState(
         typeof entry?.localDate !== "string" ||
         !isDateLocked(currentLocks, entry.localDate),
     );
-    warnLeftOut(
+    countLeftOut(
       bootstrapState.timesheetEntries!.length - recovered.length,
-      "entry",
-      "entries",
+      "left_out_entry_count",
     );
     nextState.timesheetEntries = mergeBootstrapTimesheetEntries(
       nextState.timesheetEntries,
@@ -862,9 +912,8 @@ function mergeDesktopBootstrapState(
       isDateLocked({ lockedWeeks: [week] }, day),
     );
     if (strands) {
-      console.warn(
-        `Desktop recovery did not submit the week of ${week.weekOf}: the running entry is on it.`,
-      );
+      load.recovery.unsubmitted_week_count =
+        (load.recovery.unsubmitted_week_count ?? 0) + 1;
     }
     return !strands;
   });
@@ -886,10 +935,9 @@ function mergeDesktopBootstrapState(
         typeof timer.startedAt !== "number" ||
         !isDateLocked(mergedLocks, normalizeTimer(timer).localDate),
     );
-    warnLeftOut(
+    countLeftOut(
       bootstrapState.timers!.length - recovered.length,
-      "running entry",
-      "running entries",
+      "left_out_running_entry_count",
     );
     nextState.timers = recovered;
   }
@@ -977,6 +1025,7 @@ function purgeRetiredAuthCache() {
 
 function loadState(): LocalAppState {
   purgeRetiredAuthCache();
+  load = freshLoad();
   return loadStoredState(window.ajourDesktop?.bootstrapLocalState);
 }
 
@@ -1001,12 +1050,16 @@ function loadStoredState(
   retryRecovery?: boolean,
 ): LocalAppState {
   let stored: string | null;
+  if (bootstrapState) load.recovery.decision = "used_whole";
   try {
     stored = window.localStorage.getItem(STORAGE_KEY);
   } catch {
+    load.boot.load_path = "storage_unavailable";
+    load.boot.persisted = false;
     return normalizeState(bootstrapState ?? createDefaultState());
   }
   if (!stored) {
+    load.boot.load_path = "empty";
     return normalizeState(
       bootstrapState
         ? {
@@ -1017,17 +1070,32 @@ function loadStoredState(
     );
   }
 
+  load.boot.state_bytes = stored.length * 2;
   let parsedState: Partial<LocalAppState>;
   try {
     parsedState = JSON.parse(stored) as Partial<LocalAppState>;
   } catch {
+    load.boot.load_path = "unreadable";
     return normalizeState(bootstrapState ?? createDefaultState());
   }
+  load.boot.load_path = "stored";
+  load.boot.migrations =
+    typeof parsedState === "object" && parsedState !== null
+      ? storedMigrations(parsedState as Record<string, unknown>)
+      : [];
+  load.recovery.decision = bootstrapState ? "already_applied" : "none";
 
   if (bootstrapState && !parsedState.desktopBootstrapAppliedAt) {
-    const merge =
-      retryRecovery ??
-      shouldBootstrapFromDesktopState(parsedState, bootstrapState);
+    if (retryRecovery === undefined) {
+      load.recovery.reason = shouldBootstrapFromDesktopState(
+        parsedState,
+        bootstrapState,
+      );
+    } else {
+      load.recovery.retried = true;
+    }
+    const merge = retryRecovery ?? load.recovery.reason !== undefined;
+    load.recovery.decision = merge ? "merged" : "nothing_to_merge";
     // With nothing to merge, the recovery still counts as applied, so a week
     // the user reopens later is not locked again by the same file on reload.
     const recovered = normalizeState(
@@ -1047,6 +1115,7 @@ function loadStoredState(
       return persistState(recovered);
     } catch {
       // Keep the complete recovered state in memory when persistence is unavailable.
+      load.boot.persisted = false;
       return recovered;
     }
   }
@@ -1059,6 +1128,7 @@ function loadStoredState(
         }
       } catch {
         // Keep the sanitized state in memory when persistence is unavailable.
+        load.boot.persisted = false;
       }
     }
     return normalizedState;
@@ -1403,8 +1473,21 @@ function listenForOtherWindowWrites() {
   otherWindowWritesListened = true;
   window.addEventListener("storage", (event: StorageEvent) => {
     if (event.key === STORAGE_KEY || event.key === null) {
-      refreshState();
-      announceStateChange({ local: false });
+      wideEvents.run(
+        "local_state.reload",
+        { kind: "job", trigger: "system" },
+        (unit) => {
+          const before = cachedRevision;
+          refreshState();
+          unit.set({
+            local_state: {
+              revision_changed: cachedRevision !== before,
+              storage_cleared: event.key === null,
+            },
+          });
+          announceStateChange({ local: false });
+        },
+      );
     }
   });
 }
@@ -1490,6 +1573,16 @@ function describeProjectImport(
     },
   });
 }
+
+/** The user preferences whose string values are enums, so an event may hold them. */
+const USER_PREFERENCE_ENUMS = [
+  "themeMode",
+  "updateTrack",
+  "weeklyTimeViewStyle",
+  "timeView",
+  "closeParentSubitems",
+  "projectDataShapeId",
+] as const satisfies readonly (keyof UserPreferences)[];
 
 const SUBMIT_REFUSALS = {
   "already-submitted": "already_submitted",
@@ -3127,13 +3220,20 @@ const store = {
     );
   },
   setUserPreferences(preferences: Partial<UserPreferences>) {
-    updateState((state) => ({
-      ...state,
-      userPreferences: {
-        ...state.userPreferences,
-        ...preferences,
+    const before = readState().userPreferences;
+    const after = updateState((state) => {
+      const userPreferences = { ...state.userPreferences, ...preferences };
+      return recordsEqual(userPreferences, state.userPreferences)
+        ? state
+        : { ...state, userPreferences };
+    }).userPreferences;
+    describeStoreCommand("preferences.update", {
+      preferences: {
+        scope: "user",
+        setting: "user_preferences",
+        ...describePreferenceChange(before, after, USER_PREFERENCE_ENUMS),
       },
-    }));
+    });
   },
 };
 

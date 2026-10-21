@@ -3468,37 +3468,33 @@ describe("submitted weeks in the store", () => {
   });
 
   it("does not submit a recovered week that holds the store's running entry", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      recoverFromDesktop(
-        {
-          timers: [
-            {
-              _id: "local-running",
-              startedAt: 1,
-              localDate: "2026-10-07",
-              accumulatedDurationMs: 0,
-            },
-          ],
-        },
-        [
-          { weekOf: "2026-10-05", lockedAt: 2 },
-          { weekOf: "2026-10-12", lockedAt: 3 },
+    recoverFromDesktop(
+      {
+        timers: [
+          {
+            _id: "local-running",
+            startedAt: 1,
+            localDate: "2026-10-07",
+            accumulatedDurationMs: 0,
+          },
         ],
-      );
-      const { localStore } = await import("./local-store");
-
-      expect(localStore.snapshot().timers).toHaveLength(1);
-      expect(localStore.snapshot().lockedWeeks).toEqual([
+      },
+      [
+        { weekOf: "2026-10-05", lockedAt: 2 },
         { weekOf: "2026-10-12", lockedAt: 3 },
-      ]);
-      expect(warn).toHaveBeenCalledTimes(1);
-      expect(warn).toHaveBeenCalledWith(
-        "Desktop recovery did not submit the week of 2026-10-05: the running entry is on it.",
-      );
-    } finally {
-      warn.mockRestore();
-    }
+      ],
+    );
+    const { localStore, localStateLoad } = await import("./local-store");
+
+    expect(localStore.snapshot().timers).toHaveLength(1);
+    expect(localStore.snapshot().lockedWeeks).toEqual([
+      { weekOf: "2026-10-12", lockedAt: 3 },
+    ]);
+    // The boot's event says so.
+    expect(localStateLoad().recovery).toMatchObject({
+      decision: "merged",
+      unsubmitted_week_count: 1,
+    });
   });
 
   it("refuses a stale window's write to a week another window submitted", async () => {
@@ -3681,53 +3677,41 @@ describe("submitted weeks in the store", () => {
   });
 
   it("leaves out recovered entries that land in a week this store submitted", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      recoverFromDesktop(
-        { lockedWeeks: [{ weekOf: "2026-10-05", lockedAt: 3 }] },
-        [],
-      );
-      const { localStore } = await import("./local-store");
+    recoverFromDesktop(
+      { lockedWeeks: [{ weekOf: "2026-10-05", lockedAt: 3 }] },
+      [],
+    );
+    const { localStore, localStateLoad } = await import("./local-store");
 
-      expect(
-        localStore.snapshot().timesheetEntries.map((entry) => entry._id),
-      ).toEqual(["next"]);
-      expect(localStore.snapshot().lockedWeeks).toEqual([
-        { weekOf: "2026-10-05", lockedAt: 3 },
-      ]);
-      expect(warn).toHaveBeenCalledTimes(1);
-      expect(warn).toHaveBeenCalledWith(
-        "Desktop recovery left out 1 entry in a submitted week.",
-      );
-    } finally {
-      warn.mockRestore();
-    }
+    expect(
+      localStore.snapshot().timesheetEntries.map((entry) => entry._id),
+    ).toEqual(["next"]);
+    expect(localStore.snapshot().lockedWeeks).toEqual([
+      { weekOf: "2026-10-05", lockedAt: 3 },
+    ]);
+    expect(localStateLoad().recovery).toMatchObject({
+      left_out_entry_count: 1,
+    });
   });
 
   it("leaves out a recovered running entry in a week locked after the merge", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      recoverFromDesktop({}, [{ weekOf: "2026-10-05", lockedAt: 2 }], {
-        timers: [
-          {
-            _id: "running",
-            startedAt: 1,
-            localDate: "2026-10-07",
-            accumulatedDurationMs: 0,
-          },
-        ],
-      });
-      const { localStore } = await import("./local-store");
+    recoverFromDesktop({}, [{ weekOf: "2026-10-05", lockedAt: 2 }], {
+      timers: [
+        {
+          _id: "running",
+          startedAt: 1,
+          localDate: "2026-10-07",
+          accumulatedDurationMs: 0,
+        },
+      ],
+    });
+    const { localStore, localStateLoad } = await import("./local-store");
 
-      expect(localStore.snapshot().timers).toEqual([]);
-      expect(localStore.snapshot().lockedWeeks).toHaveLength(1);
-      expect(warn).toHaveBeenCalledTimes(1);
-      expect(warn).toHaveBeenCalledWith(
-        "Desktop recovery left out 1 running entry in a submitted week.",
-      );
-    } finally {
-      warn.mockRestore();
-    }
+    expect(localStore.snapshot().timers).toEqual([]);
+    expect(localStore.snapshot().lockedWeeks).toHaveLength(1);
+    expect(localStateLoad().recovery).toMatchObject({
+      left_out_running_entry_count: 1,
+    });
   });
 
   it("recovers submitted weeks alone, with no entry to recover", async () => {

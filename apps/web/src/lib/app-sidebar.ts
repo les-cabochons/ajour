@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { useShortcut } from "@/lib/shortcut-handlers";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
+import { recordDeviceSettingChange } from "@/lib/preference-events";
 
 /**
  * The desktop app sidebar is either expanded (logo, timer dock, navigation and
@@ -43,6 +44,12 @@ export function writeAppSidebarPreference(
   storage: PreferenceStorage | undefined,
   state: AppSidebarState,
 ) {
+  recordDeviceSettingChange(
+    "app_sidebar",
+    { state: readAppSidebarPreference(storage) },
+    { state },
+    ["state"],
+  );
   try {
     storage?.setItem(APP_SIDEBAR_STORAGE_KEY, state);
   } catch {

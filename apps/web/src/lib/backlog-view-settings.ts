@@ -6,6 +6,7 @@ import {
   type BacklogProperty,
   type BacklogViewSettings,
 } from "@/domain/backlog/backlog-view";
+import { recordDeviceSettingChange } from "@/lib/preference-events";
 
 /**
  * The Backlog page's display options and filters, per device. Like the
@@ -113,7 +114,14 @@ function get() {
 
 /** Changes the display options or filters and saves them for this device. */
 export function updateBacklogView(patch: Partial<BacklogViewPreferences>) {
-  preferences = { ...get(), ...patch };
+  const before = get();
+  preferences = { ...before, ...patch };
+  recordDeviceSettingChange("backlog_view", before, preferences, [
+    "layout",
+    "grouping",
+    "swimlanes",
+    "doneWindow",
+  ]);
   try {
     window.localStorage.setItem(
       BACKLOG_VIEW_STORAGE_KEY,
