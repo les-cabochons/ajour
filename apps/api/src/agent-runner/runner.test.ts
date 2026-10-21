@@ -1,5 +1,5 @@
 import { ChildProcess } from "node:child_process";
-import { mkdtemp, readdir, readFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,7 +13,7 @@ import type {
   PluginField,
 } from "../../../../packages/shared/plugins.ts";
 import type { AgentCliAdapter } from "./adapter.ts";
-import { AgentRunner } from "./runner.ts";
+import { AgentRunner, DEFAULT_KILL_GRACE_MS } from "./runner.ts";
 
 const FAKE_CLI = fileURLToPath(new URL("./fake-cli.mjs", import.meta.url));
 const result = (text: string) =>
@@ -147,6 +147,7 @@ async function setup(
   } = {},
 ) {
   const work = await mkdtemp(path.join(tmpdir(), "ajour-runner-test-"));
+  tempDirs.push(work);
   const report = path.join(work, "report.jsonl");
   reports.push(report);
   const events: Record<string, unknown>[] = [];
@@ -190,6 +191,7 @@ async function setup(
       ? {}
       : { killGraceMs: options.killGraceMs }),
   });
+  runners.push({ runner, limitMs: shutdownLimitMs(options.killGraceMs) });
   return { runner, sessions, revoked, events, work, report };
 }
 
@@ -218,15 +220,100 @@ async function waitForCli(report: string) {
 
 /** Each test's reports, so the escapees its fake CLIs started are killed after it. */
 const reports: string[] = [];
+/**
+ * Each test's runners, so a test that fails mid-run still stops its CLI:
+ * Windows cannot remove a folder a running process works in.
+ */
+const runners: { runner: AgentRunner; limitMs: number }[] = [];
+/** Each test's folders, removed after it whether it passed or failed. */
+const tempDirs: string[] = [];
+/**
+ * The escapee pids this test already killed or found gone. Windows reuses
+ * pids quickly, so a pid is never killed a second time.
+ */
+const handledPids = new Set<number>();
+
+/**
+ * How long the cleanup waits for a runner before it removes the folders
+ * anyway: the runner sends SIGKILL after the kill grace period and ends the
+ * run without its CLI a second later, plus a margin.
+ */
+function shutdownLimitMs(killGraceMs = DEFAULT_KILL_GRACE_MS) {
+  return killGraceMs + 1000 + 500;
+}
+
+/** The longest shutdown plus the removal's retries (200 + 400 + … + 1000 ms). */
+const CLEANUP_TIMEOUT_MS = shutdownLimitMs() + 3000 + 1000;
 
 afterEach(async () => {
   vi.restoreAllMocks();
-  for (const report of reports.splice(0)) {
-    for (const pid of await grandchildPids(report)) {
-      if (isAlive(pid)) process.kill(pid, "SIGKILL");
-    }
+  const testReports = reports.splice(0);
+  const testRunners = runners.splice(0);
+  try {
+    await killEscapees(testReports);
+    await shutDownWithinLimit(testRunners);
+  } finally {
+    // An escapee can report itself while the runners shut down.
+    await killEscapees(testReports);
+    handledPids.clear();
+    // On Windows a process that just exited can hold a handle in its folder
+    // for a moment, so the removal retries.
+    await Promise.all(
+      tempDirs.splice(0).map((directory) =>
+        rm(directory, {
+          recursive: true,
+          force: true,
+          maxRetries: 5,
+          retryDelay: 200,
+        }),
+      ),
+    );
   }
-});
+}, CLEANUP_TIMEOUT_MS);
+
+/** Kills an escapee, unless this test already dealt with its pid. */
+function killEscapee(pid: number) {
+  if (handledPids.has(pid)) return;
+  handledPids.add(pid);
+  if (isAlive(pid)) process.kill(pid, "SIGKILL");
+}
+
+async function killEscapees(testReports: string[]) {
+  for (const report of testReports) {
+    for (const pid of await grandchildPids(report)) killEscapee(pid);
+  }
+}
+
+/**
+ * Shuts the runners down, or gives up after the longest of their limits: a
+ * test that failed can leave a run whose cleanup never ends.
+ */
+async function shutDownWithinLimit(
+  testRunners: { runner: AgentRunner; limitMs: number }[],
+) {
+  if (testRunners.length === 0) return;
+  const limitMs = Math.max(...testRunners.map(({ limitMs }) => limitMs));
+  let timer: NodeJS.Timeout | undefined;
+  const limit = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          new Error(
+            `A runner did not shut down within ${limitMs} ms of the test's end.`,
+          ),
+        ),
+      limitMs,
+    );
+  });
+  try {
+    await Promise.race([
+      Promise.all(testRunners.map(({ runner }) => runner.shutdown())),
+      limit,
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 async function grandchildPids(report: string): Promise<number[]> {
   return (await readFile(report, "utf8").catch(() => ""))
@@ -892,7 +979,7 @@ describe("AgentRunner", () => {
     expect(isAlive(escapee)).toBe(true);
     // With the escapee gone the close arrives late. It must not end the run
     // a second time.
-    process.kill(escapee, "SIGKILL");
+    killEscapee(escapee);
     await vi.waitFor(() => expect(isAlive(escapee)).toBe(false));
     await new Promise((resolve) => setTimeout(resolve, 500));
     expect(runEvents(events)).toHaveLength(1);
@@ -1026,9 +1113,9 @@ describe("AgentRunner", () => {
 
   it("ignores Stop and the stall timer while the run is ending", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
     try {
-      let release!: () => void;
-      const released = new Promise<void>((resolve) => (release = resolve));
       let revoking!: () => void;
       const revokeStarted = new Promise<void>(
         (resolve) => (revoking = resolve),
@@ -1052,6 +1139,8 @@ describe("AgentRunner", () => {
         expect.objectContaining({ outcome: "done", stop_reason: undefined }),
       ]);
     } finally {
+      // A failed assertion must not leave the revoke, and so the run, waiting.
+      release();
       vi.useRealTimers();
     }
   });
