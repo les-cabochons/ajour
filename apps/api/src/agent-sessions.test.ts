@@ -3,6 +3,7 @@ import type { AgentSession } from "../../../packages/shared/agent-tools.ts";
 import {
   AgentSessions,
   AgentSessionError,
+  sessionEndedEvent,
   sessionWindowMs,
 } from "./agent-sessions.ts";
 
@@ -207,5 +208,53 @@ describe("runner sessions", () => {
       runId: "run-1",
       link: { url: "https://wd.example/t" },
     });
+  });
+
+  it("names the run in mcp.session_ended for a session the runner began", () => {
+    const logged: Record<string, unknown>[] = [];
+    const { sessions, advance } = createSessions({
+      onEnded: (session) => logged.push(sessionEndedEvent(session, 0)),
+    });
+    const runSession = sessions.begin(
+      claude,
+      { title: "Enter in Workday, week of Oct 12", estimateMinutes: 10 },
+      { runId: "run-1" },
+    );
+    const ownSession = sessions.begin(codex, {
+      title: "Fill Workday",
+      estimateMinutes: 10,
+    });
+    advance(3 * MINUTE);
+    sessions.end(claude, {
+      sessionId: runSession.id,
+      outcome: "done",
+      summary: "Entered 9 lines.",
+    });
+    sessions.end(codex, {
+      sessionId: ownSession.id,
+      outcome: "done",
+      summary: "Done.",
+    });
+    expect(logged).toEqual([
+      {
+        event: "mcp.session_ended",
+        client_id: "c1",
+        session_id: runSession.id,
+        run_id: "run-1",
+        outcome: "done",
+        duration_ms: 3 * MINUTE,
+        update_count: 0,
+        question_count: 0,
+      },
+      {
+        event: "mcp.session_ended",
+        client_id: "c2",
+        session_id: ownSession.id,
+        outcome: "done",
+        duration_ms: 3 * MINUTE,
+        update_count: 0,
+        question_count: 0,
+      },
+    ]);
   });
 });

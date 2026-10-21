@@ -104,7 +104,7 @@ import {
   mergeConnectionConfigForSave,
   RESERVED_CONNECTION_FIELD_IDS,
 } from "./connection-values.ts";
-import { AgentSessions } from "./agent-sessions.ts";
+import { AgentSessions, sessionEndedEvent } from "./agent-sessions.ts";
 import { McpBridge } from "./mcp-bridge.ts";
 import { createMcpClient } from "./mcp-clients.ts";
 import { handleMcpRequest, MAX_WAIT_FOR_ANSWER_MS } from "./mcp-server.ts";
@@ -147,6 +147,11 @@ interface AppApiServerOptions {
   mcpLogEvent?: (event: Record<string, unknown>) => void;
   /** How long one wait_for_answer call holds. Tests shorten it. */
   mcpWaitForAnswerMs?: number;
+  /**
+   * The PATH the agent runner finds the agent CLIs on. Defaults to the login
+   * shell's PATH. Tests point it at a fake CLI.
+   */
+  agentCliPath?: string;
 }
 
 interface AppApiRuntime {
@@ -721,22 +726,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   });
   const agentSessions = new AgentSessions({
     onChange: () => mcpBridge.publish("agents", agentSessions.snapshot()),
-    // Ids, outcome, counts and durations only. Messages hold what the agent
-    // and the user wrote, so they stay out of the log.
-    onEnded: (session) =>
-      logMcpEvent({
-        event: "mcp.session_ended",
-        client_id: session.client.id,
-        session_id: session.id,
-        outcome: session.state,
-        duration_ms: (session.endedAt ?? Date.now()) - session.startedAt,
-        update_count: session.messages.filter(
-          (message) => message.kind === "update",
-        ).length,
-        question_count: session.messages.filter(
-          (message) => message.kind === "question",
-        ).length,
-      }),
+    onEnded: (session) => logMcpEvent(sessionEndedEvent(session, Date.now())),
   });
   const agentRunner = new AgentRunner({
     storage: {
@@ -762,7 +752,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
     adapters: [claudeCodeAdapter, codexAdapter, opencodeAdapter],
     findExecutable: (name, pathValue) => findExecutable(name, pathValue),
-    loginShellPath: resolveLoginShellPath,
+    loginShellPath:
+      options.agentCliPath === undefined
+        ? resolveLoginShellPath
+        : async () => options.agentCliPath!,
     chromeInstalled: () => isChromeInstalled(),
     playwright: playwrightMcpServer,
     profileDirectory: path.join(storage.dataDirectory, "agent-browser-profile"),

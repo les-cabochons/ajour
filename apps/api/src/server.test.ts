@@ -10,7 +10,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { create } from "tar";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createAppApiServer,
   installPluginForServer,
@@ -1506,7 +1506,12 @@ describe("agent task settings route", () => {
     );
   });
 
-  async function createServer() {
+  async function createServer(
+    options: Pick<
+      Parameters<typeof createAppApiServer>[0] & object,
+      "mcpLogEvent" | "agentCliPath"
+    > = {},
+  ) {
     const root = await mkdtemp(path.join(os.tmpdir(), "ajour-agent-task-"));
     tempDirs.push(root);
     const pluginDirectory = await createPlugin(
@@ -1559,10 +1564,64 @@ describe("agent task settings route", () => {
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
       allowDevelopmentPlugins: true,
+      ...options,
     });
     servers.push(server);
     return server;
   }
+
+  it(
+    "joins a run's session end to its agent.run in the server's events",
+    {
+      timeout: 20_000,
+    },
+    async () => {
+      const bin = await mkdtemp(path.join(os.tmpdir(), "ajour-agent-cli-"));
+      tempDirs.push(bin);
+      // A `claude` that exits at once on macOS and Linux. Windows cannot run a
+      // file without an extension, so there the spawn fails. Either way the
+      // run ends its session and emits its agent.run.
+      await writeFile(path.join(bin, "claude"), "#!/bin/sh\nexit 0\n", {
+        mode: 0o755,
+      });
+      const events: Record<string, unknown>[] = [];
+      const server = await createServer({
+        mcpLogEvent: (event) => events.push(event),
+        agentCliPath: bin,
+      });
+      const post = (pathname: string, body: object) =>
+        dispatchJsonRequest(server, {
+          method: "POST",
+          path: pathname,
+          body: JSON.stringify(body),
+        });
+      await post("/api/mcp/settings", { enabled: true });
+      await post("/api/agents/settings", {
+        cli: "claude-code",
+        browserMode: "my-chrome",
+      });
+      await post("/api/agent-runs", {
+        pluginId: "jira",
+        taskId: "enter-week",
+        weekOf: "2026-10-12",
+      });
+      await vi.waitFor(
+        () =>
+          expect(events.map((event) => event.event)).toEqual([
+            "mcp.session_ended",
+            "agent.run",
+          ]),
+        { timeout: 10_000 },
+      );
+      const [ended, run] = events;
+      expect(run!.run_id).toEqual(expect.any(String));
+      expect(ended).toMatchObject({
+        run_id: run!.run_id,
+        session_id: run!.session_id,
+        client_id: run!.client_id,
+      });
+    },
+  );
 
   const save = (server: Server, pluginId: string, values: object) =>
     dispatchJsonRequest(server, {
