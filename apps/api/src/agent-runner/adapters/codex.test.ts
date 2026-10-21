@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { codexAdapter } from "./codex.ts";
 
@@ -40,7 +41,7 @@ describe("Codex adapter", () => {
         "features.plugins=false",
         "features.apps=false",
         "features.hooks=false",
-        'model_instructions_file="/tmp/run with spaces/prompt.md"',
+        `model_instructions_file=${JSON.stringify(path.join(input.workDirectory, "prompt.md"))}`,
       ]),
     );
     expect(args).not.toContain("--dangerously-bypass-approvals-and-sandbox");

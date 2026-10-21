@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { claudeCodeAdapter } from "./claude-code.ts";
 
@@ -50,7 +51,7 @@ describe("Claude Code adapter", () => {
     expect(args).toEqual(
       expect.arrayContaining([
         "--append-system-prompt-file",
-        "/tmp/run-1/prompt.md",
+        path.join(input.workDirectory, "prompt.md"),
       ]),
     );
   });

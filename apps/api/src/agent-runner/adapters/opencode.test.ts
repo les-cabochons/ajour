@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { opencodeAdapter } from "./opencode.ts";
 
@@ -31,8 +32,8 @@ describe("OpenCode adapter", () => {
     ]);
     expect(env).toMatchObject({
       HOME: "/Users/a",
-      XDG_CONFIG_HOME: "/tmp/run with spaces/config",
-      OPENCODE_CONFIG: "/tmp/run with spaces/opencode.json",
+      XDG_CONFIG_HOME: path.join(input.workDirectory, "config"),
+      OPENCODE_CONFIG: path.join(input.workDirectory, "opencode.json"),
       OPENCODE_DISABLE_PROJECT_CONFIG: "1",
       OPENCODE_DISABLE_CLAUDE_CODE: "1",
       OPENCODE_DISABLE_EXTERNAL_SKILLS: "1",
@@ -88,7 +89,9 @@ describe("OpenCode adapter", () => {
     expect(env).not.toHaveProperty("OPENCODE_AUTO_SHARE");
     expect(env).not.toHaveProperty("OPENCODE_CONFIG_DIR");
     expect(env.OPENCODE_API_KEY).toBe("zen-key");
-    expect(env.OPENCODE_CONFIG).toBe("/tmp/run with spaces/opencode.json");
+    expect(env.OPENCODE_CONFIG).toBe(
+      path.join(input.workDirectory, "opencode.json"),
+    );
   });
 
   it("passes the model when one is set", () => {
