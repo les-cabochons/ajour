@@ -72,6 +72,11 @@ export interface FailOptions<Reason extends string> {
 }
 
 export interface Unit<C extends Catalog, Name extends EventName<C>> {
+  /**
+   * The outcome recorded so far, or undefined while none is: the event then
+   * ends `ok`. A seam reads it to weigh outcomes, never to copy them.
+   */
+  readonly outcome: Outcome | undefined;
   /** Adds the unit's own fields. Nested objects merge; other values replace. */
   set(fields: FieldsOf<C, Name>): this;
   /** Adds `amount` to a counter. A nested unit counts into the outer event. */

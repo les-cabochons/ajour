@@ -141,6 +141,19 @@ describe("one event per unit of work", () => {
     ]);
   });
 
+  it("tells the outcome recorded so far, so a seam can weigh it", () => {
+    const { events } = recordingEmitter();
+    const unit = events.start("backlog.sync", { kind: "job", trigger: "user" });
+
+    expect(unit.outcome).toBeUndefined();
+    unit.refuse("plugin_off");
+    expect(unit.outcome).toBe("refused");
+    unit.fail(new Error("Slow"), { outcome: "timeout" });
+    expect(unit.outcome).toBe("timeout");
+    unit.end("error");
+    expect(unit.outcome).toBe("error");
+  });
+
   it("emits a started unit once, at its first end, and ignores what comes after", () => {
     const { events, recorded } = recordingEmitter();
 

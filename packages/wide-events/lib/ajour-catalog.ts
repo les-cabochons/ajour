@@ -47,6 +47,7 @@ export const catalog = defineCatalog({
         "token_unknown",
         "token_revoked",
         "protocol_error",
+        "duplicate_id",
       ],
       fields: {
         mcp: {

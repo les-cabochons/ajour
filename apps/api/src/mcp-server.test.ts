@@ -527,6 +527,123 @@ describe("MCP endpoint", () => {
     ]);
   });
 
+  it("refuses a batch whose requests share an id before any of them runs", async () => {
+    const { baseUrl, logged } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl);
+    const calls: BridgeToolCall[] = [];
+    await openFakeRenderer(baseUrl, (call) => {
+      calls.push(call);
+      return { requestId: call.requestId, ok: true, output: acmeProjects };
+    });
+    const listProjects = {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "list_projects", arguments: {} },
+    };
+
+    const response = await postMcp(
+      baseUrl,
+      token,
+      JSON.stringify([listProjects, listProjects]),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      jsonrpc: "2.0",
+      id: null,
+      error: { code: -32600 },
+    });
+    expect(calls).toEqual([]);
+    expect(logged).toEqual([
+      expect.objectContaining({
+        name: "mcp.request",
+        outcome: "refused",
+        outcome_reason: "duplicate_id",
+        mcp: { method: "batch", call_count: 2 },
+      }),
+    ]);
+  });
+
+  it("ends a batch with its worst outcome: a timeout beside an ok call", async () => {
+    const { baseUrl, logged } = await startTestApi({ mcpBridgeTimeoutMs: 100 });
+    const { token } = await enableMcpWithClient(baseUrl);
+    // The window answers list_projects and never get_running_timer.
+    await openFakeRenderer(baseUrl, (call) =>
+      call.tool === "list_projects"
+        ? { requestId: call.requestId, ok: true, output: acmeProjects }
+        : undefined,
+    );
+
+    await postMcp(
+      baseUrl,
+      token,
+      JSON.stringify([
+        {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "list_projects", arguments: {} },
+        },
+        {
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/call",
+          params: { name: "get_running_timer", arguments: {} },
+        },
+      ]),
+    );
+
+    expect(logged).toEqual([
+      expect.objectContaining({
+        name: "mcp.request",
+        outcome: "timeout",
+        step_failures: [
+          {
+            name: "agent_tool.call",
+            outcome: "timeout",
+            outcome_reason: "bridge_timeout",
+            error_type: "BridgeCallError",
+          },
+        ],
+      }),
+    ]);
+  });
+
+  it("never downgrades a batch's own error to a call's refusal", async () => {
+    const { baseUrl, logged } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl);
+
+    await postMcp(
+      baseUrl,
+      token,
+      JSON.stringify([
+        { jsonrpc: "2.0", id: 1, method: "no/such_method" },
+        {
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/call",
+          params: { name: "delete_everything", arguments: {} },
+        },
+      ]),
+    );
+
+    expect(logged).toEqual([
+      expect.objectContaining({
+        name: "mcp.request",
+        outcome: "error",
+        error: { type: "McpError", code: "-32601" },
+        step_failures: [
+          {
+            name: "agent_tool.call",
+            outcome: "refused",
+            outcome_reason: "invalid_call",
+          },
+        ],
+      }),
+    ]);
+  });
+
   it("fails a batch whose call failed, and lists the call, never its text", async () => {
     const { baseUrl, logged } = await startTestApi();
     const { token } = await enableMcpWithClient(baseUrl);

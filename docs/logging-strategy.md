@@ -268,8 +268,13 @@ text or argument enters its event:
   `error` for a 5xx, both with `protocol_error`.
 - Any other request is `mcp.request` with `mcp.method`. A batch has the
   method `batch` and counts its tool calls in `mcp.call_count`. Each call in
-  it folds into the batch's event, so a failed call is in `step_failures`, and
-  the batch ends with its worst call's outcome.
+  it folds into the batch's event, so a failed call is in `step_failures`. The
+  batch ends with the worst outcome among its own and its calls', in this
+  order: `error`, `timeout`, `refused`, `cancelled`. An outcome already
+  recorded, such as a JSON-RPC error for an unknown method, is never
+  downgraded.
+- A batch in which two requests share an id is refused before any of it
+  runs, with `duplicate_id`, and the agent gets a JSON-RPC error.
 
 A session the runner began takes the run's trigger, `user`.
 

@@ -17,9 +17,8 @@ import {
 import type {
   AjourCatalog,
   McpMethod,
-  ReasonOf,
 } from "../../../packages/wide-events/catalog.ts";
-import type { FailOptions, Unit } from "../../../packages/wide-events/index.ts";
+import type { Outcome, Unit } from "../../../packages/wide-events/index.ts";
 import { AgentSessionError, type AgentSessions } from "./agent-sessions.ts";
 import type { ApiEvents } from "./events.ts";
 import { BridgeCallError, type McpBridge } from "./mcp-bridge.ts";
@@ -56,38 +55,17 @@ interface ToolResult {
   isError?: boolean;
 }
 
-type ToolCallReason = ReasonOf<AjourCatalog, "agent_tool.call">;
-
 /**
- * One tool call of a request: its `agent_tool.call` event, how far it got in
- * its handler and how it ended. The SDK answers an invalid call and a failed
+ * One tool call of a request: its `agent_tool.call` event, which holds how it
+ * ended, and how far it got in its handler. The SDK answers an invalid call and a failed
  * handler with the same kind of error reply, so the reply alone can't tell
  * the agent's mistake from Ajour's failure. A single call's event is the
  * request's own; a call in a batch folds into the batch's `mcp.request`.
  */
-class ToolCall {
+interface ToolCall {
   readonly unit: Unit<AjourCatalog, "agent_tool.call">;
   /** Set when the handler starts, and when it returns a result that isn't an error. */
-  handler: "not_reached" | "entered" | "returned_ok" = "not_reached";
-  outcome: "ok" | "refused" | "error" = "ok";
-
-  constructor(unit: Unit<AjourCatalog, "agent_tool.call">) {
-    this.unit = unit;
-  }
-
-  set(fields: Parameters<ToolCall["unit"]["set"]>[0]) {
-    this.unit.set(fields);
-  }
-
-  fail(error: unknown, options?: FailOptions<ToolCallReason>) {
-    this.outcome = "error";
-    this.unit.fail(error, options);
-  }
-
-  refuse(reason?: ToolCallReason) {
-    this.outcome = "refused";
-    this.unit.refuse(reason);
-  }
+  handler: "not_reached" | "entered" | "returned_ok";
 }
 
 /**
@@ -98,7 +76,8 @@ class McpExchange {
   readonly calls: ToolCall[] = [];
   private readonly byId = new Map<unknown, ToolCall>();
 
-  add(call: ToolCall, id: unknown) {
+  add(unit: ToolCall["unit"], id: unknown) {
+    const call: ToolCall = { unit, handler: "not_reached" };
     this.calls.push(call);
     if (id !== undefined && id !== null) this.byId.set(id, call);
     return call;
@@ -174,7 +153,7 @@ function recordReply(
     call?.handler === "not_reached" &&
     (reply.error || reply.result?.isError === true)
   ) {
-    call.refuse("invalid_call");
+    call.unit.refuse("invalid_call");
     return;
   }
   if (reply.error) {
@@ -182,23 +161,35 @@ function recordReply(
       name: "McpError",
       code: String(reply.error.code),
     });
-    if (call) call.fail(error);
+    if (call) call.unit.fail(error);
     else unit.fail(error);
     return;
   }
   // A handler that threw or answered an error recorded its own outcome.
   if (call?.handler === "returned_ok" && reply.result?.isError === true) {
-    call.fail(new Error("The SDK rejected the tool's output."), {
+    call.unit.fail(new Error("The SDK rejected the tool's output."), {
       reason: "output_mismatch",
     });
   }
 }
 
+/** How bad each outcome is: a request ends with the worst of its own and its calls'. */
+const OUTCOME_SEVERITY: Record<Outcome, number> = {
+  error: 4,
+  timeout: 3,
+  refused: 2,
+  cancelled: 1,
+  noop: 0,
+  ok: 0,
+};
+
 /**
  * Ends what the replies left open, once the response is written. A request
  * the transport rejected outright, which skips the replies, is refused for
  * a 4xx and an error for a 5xx. A call that never reached its handler is the
- * agent's invalid call. A batch ends with its worst call's outcome.
+ * agent's invalid call. A batch ends with the worst outcome among its own
+ * and its calls': error, then timeout, then refused, then cancelled. An
+ * outcome already recorded is never downgraded.
  */
 function settleExchange(
   unit: Unit<AjourCatalog, "mcp.request">,
@@ -215,18 +206,33 @@ function settleExchange(
     if (
       status < 400 &&
       call.handler === "not_reached" &&
-      call.outcome === "ok"
+      call.unit.outcome === undefined
     ) {
-      call.refuse("invalid_call");
+      call.unit.refuse("invalid_call");
     }
     if (batch) call.unit.end();
   }
-  if (!batch || status >= 400) return;
-  if (exchange.calls.some((call) => call.outcome === "error")) {
-    unit.end("error");
-  } else if (exchange.calls.some((call) => call.outcome === "refused")) {
-    unit.end("refused");
+  if (!batch) return;
+  const worst = exchange.calls.reduce<Outcome>((worst, call) => {
+    const outcome = call.unit.outcome ?? "ok";
+    return OUTCOME_SEVERITY[outcome] > OUTCOME_SEVERITY[worst]
+      ? outcome
+      : worst;
+  }, unit.outcome ?? "ok");
+  if (OUTCOME_SEVERITY[worst] > OUTCOME_SEVERITY[unit.outcome ?? "ok"]) {
+    unit.end(worst);
   }
+}
+
+/**
+ * Whether two requests in a batch share an id. Their replies couldn't be
+ * told apart, so such a batch is refused before any of it runs.
+ */
+function hasDuplicateIds(messages: unknown[]) {
+  const ids = messages
+    .map(messageId)
+    .filter((id) => id !== undefined && id !== null);
+  return new Set(ids).size < ids.length;
 }
 
 /** What every agent reads first. Spec B's plugins add their own. */
@@ -325,7 +331,7 @@ async function withToolEvent(
   call: ToolCall | undefined,
   run: () => Promise<ToolResult>,
 ): Promise<ToolResult> {
-  call?.set({ agent_tool: { name: tool, access } });
+  call?.unit.set({ agent_tool: { name: tool, access } });
   if (call) call.handler = "entered";
   try {
     const result = await run();
@@ -334,11 +340,11 @@ async function withToolEvent(
   } catch (error) {
     // The SDK turns a thrown error into a tool error, so the request never
     // sees it.
-    call?.fail(error);
+    call?.unit.fail(error);
     throw error;
   } finally {
     const sessionId = context.sessions.currentSessionId(client);
-    if (sessionId) call?.set({ agent: { session_id: sessionId } });
+    if (sessionId) call?.unit.set({ agent: { session_id: sessionId } });
   }
 }
 
@@ -361,7 +367,7 @@ function forwardToRenderer(
       result = await context.bridge.call(tool, input, client);
     } catch (error) {
       if (!(error instanceof BridgeCallError)) throw error;
-      call?.fail(
+      call?.unit.fail(
         error,
         error.reason === "timeout"
           ? { outcome: "timeout", reason: "bridge_timeout" }
@@ -370,15 +376,15 @@ function forwardToRenderer(
       context.sessions.recordError(error.message, client);
       return errorResult(error.message);
     }
-    call?.set({ agent_tool: { bridge_ms: Date.now() - startedAt } });
+    call?.unit.set({ agent_tool: { bridge_ms: Date.now() - startedAt } });
     if (!result.ok) {
       // A refusal is the tool working as designed. A failure is an exception
       // in the renderer, so the indicator shows it.
       if (result.failed) {
-        call?.fail(new Error(result.error), { reason: "tool_failed" });
+        call?.unit.fail(new Error(result.error), { reason: "tool_failed" });
         context.sessions.recordError(result.error, client);
       } else {
-        call?.refuse();
+        call?.unit.refuse();
         if (access === "write") {
           context.sessions.recordActivity(client, {
             outcome: "refused",
@@ -392,7 +398,7 @@ function forwardToRenderer(
     const output = dataToolOutputSchemas[tool].safeParse(result.output);
     if (!output.success) {
       const message = `Ajour returned ${tool} output that does not match its schema.`;
-      call?.fail(new Error(message), { reason: "output_mismatch" });
+      call?.unit.fail(new Error(message), { reason: "output_mismatch" });
       context.sessions.recordError(message, client);
       return errorResult(message);
     }
@@ -420,7 +426,7 @@ function runSessionTool<Name extends SessionToolName>(
       return structuredResult(await run());
     } catch (error) {
       if (!(error instanceof AgentSessionError)) throw error;
-      call?.refuse();
+      call?.unit.refuse();
       return errorResult(error.message);
     }
   });
@@ -618,15 +624,30 @@ export async function handleMcpRequest(
       } else if (method !== undefined && method !== "tools/call") {
         unit.set({ mcp: { method } });
       }
-      // Named before the SDK validates the call, so a call it refuses still
-      // says which tool it was.
+      if (method === "batch" && hasDuplicateIds(body as unknown[])) {
+        unit.refuse("duplicate_id");
+        response.writeHead(400, {
+          "Content-Type": "application/json; charset=utf-8",
+        });
+        response.end(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: null,
+            error: {
+              code: -32600,
+              message: "Each request in a batch needs its own id.",
+            },
+          }),
+        );
+        return;
+      }
       // Each call is named before the SDK validates it, so a call it
       // refuses still says which tool it was.
       const exchange = new McpExchange();
       if (method === "tools/call") {
         exchange
-          .add(new ToolCall(unit.rename("agent_tool.call")), messageId(body))
-          .set({ agent_tool: { name: calledTool(body) } });
+          .add(unit.rename("agent_tool.call"), messageId(body))
+          .unit.set({ agent_tool: { name: calledTool(body) } });
       } else if (method === "batch") {
         for (const message of body as unknown[]) {
           if (mcpMethod(message) !== "tools/call") continue;
@@ -636,8 +657,8 @@ export async function handleMcpRequest(
             trigger: "agent",
           });
           exchange
-            .add(new ToolCall(call), messageId(message))
-            .set({ agent_tool: { name: calledTool(message) } });
+            .add(call, messageId(message))
+            .unit.set({ agent_tool: { name: calledTool(message) } });
         }
       }
       registerTools(server, client, context, exchange);
