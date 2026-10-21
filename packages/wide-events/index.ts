@@ -17,6 +17,7 @@ export type {
   Envelope,
   EventError,
   Kind,
+  LaunchContext,
   Outcome,
   Runtime,
   RuntimeContext,

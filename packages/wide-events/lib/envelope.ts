@@ -86,6 +86,16 @@ export interface RuntimeContext {
   device: { platform: string; arch?: string; electron?: string };
 }
 
+/**
+ * What one app launch shares with every runtime. The desktop main process
+ * makes it at launch and hands it to the local API and the renderer, so all
+ * three report the same launch, build and device.
+ */
+export type LaunchContext = Pick<
+  RuntimeContext,
+  "launch_id" | "app" | "device"
+>;
+
 /** What every wide event carries, whatever its name. */
 export interface Envelope extends RuntimeContext {
   schema: 1;

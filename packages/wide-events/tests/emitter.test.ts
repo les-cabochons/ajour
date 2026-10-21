@@ -1,3 +1,4 @@
+import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 import { createEmitter, worstOutcome } from "../index.ts";
 import { apiContext, recordingEmitter, testCatalog } from "./fixtures.ts";
@@ -41,6 +42,33 @@ describe("one event per unit of work", () => {
         sync: { mode: "backlog", received_count: 4 },
       },
     ]);
+  });
+
+  // The desktop tests run main.cjs in a VM context, whose objects have their
+  // own Object.prototype.
+  it("merges nested fields made in another realm", () => {
+    const { events, recorded } = recordingEmitter();
+
+    events.run("backlog.sync", { kind: "job", trigger: "schedule" }, (unit) => {
+      unit.set(runInNewContext('({ sync: { mode: "backlog" } })'));
+      unit.set(runInNewContext("({ sync: { received_count: 4 } })"));
+    });
+
+    expect(recorded[0]!.sync).toEqual({ mode: "backlog", received_count: 4 });
+  });
+
+  it("describes an error made in another realm", () => {
+    const { events, recorded } = recordingEmitter();
+
+    events
+      .start("backlog.sync", { kind: "job", trigger: "schedule" })
+      .fail(runInNewContext('new TypeError("offline")'))
+      .end();
+
+    expect(recorded[0]!.error).toEqual({
+      type: "TypeError",
+      message: "offline",
+    });
   });
 
   it("emits an error event once when the work throws, and rethrows", () => {
