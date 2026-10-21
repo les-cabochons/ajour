@@ -254,6 +254,14 @@ A program driven by an LLM that uses Ajour through MCP, such as Claude Code or C
 **Agent client**:
 One configured connection for an agent, with its own name and token, such as "Claude Code on this Mac".
 
+**MCP endpoint**:
+The one address on the user's machine through which agents reach Ajour. It is off until the user turns MCP on, and it answers only agent clients.
+_Avoid_: MCP server (in user-facing text), API
+
+**Agent tool**:
+One operation an agent can call through the MCP endpoint, such as listing time entries or starting a time entry. An agent tool does exactly what the same action does in Ajour, with Undo.
+_Avoid_: Command, function, action (for the MCP operation)
+
 **Agent session**:
 A stretch of work an agent announces, with a title, a deadline it extends, progress updates and an outcome. A runner-started session belongs to one Agent run.
 _Avoid_: Transaction, job

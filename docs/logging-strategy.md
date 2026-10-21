@@ -24,6 +24,17 @@ now they are exported nowhere.
   outer event's `counts`. Its own fields stay out. A sync that runs four store
   commands is one event, and so is an agent tool call that runs a store
   command.
+  - A folded unit that ends `refused`, `cancelled`, `timeout` or `error` is
+    listed in the outer event's `step_failures`, as
+    `{ name, outcome, outcome_reason?, error_type?, error_code? }`: never its
+    message or fields. The outer unit's own outcome stays its own, so a sync
+    whose store command was refused for a `locked_week` still ends `ok`, and
+    says so in `step_failures`.
+  - `steps` and `step_failures` keep their first 50 entries.
+    `dropped_step_count` counts the names `steps` left out.
+  - A unit that ends inside its own scope gives way to the unit that was
+    active when it started, so the work after it still folds into the outer
+    unit.
 - **Two kinds of unit always emit their own event**, as a child span of the
   active unit:
   - a plugin operation, because the worker is its own runtime boundary;
@@ -96,8 +107,16 @@ type WideEvent = {
     | "dialog"
     | "toast"
     | "link";
-  steps?: string[]; // nested units folded into this one
-  counts?: Record<string, number>; // what this unit and its folded units counted
+  steps?: string[]; // nested units folded into this one, the first 50
+  dropped_step_count?: number; // names steps left out
+  step_failures?: {
+    name: string;
+    outcome: string;
+    outcome_reason?: string;
+    error_type?: string;
+    error_code?: string;
+  }[];
+  counts?: Record<string, number>; // added beyond #304: what count() and folded units counted
   app: {
     version: string;
     channel: "dev" | "nightly" | "stable" | "web";
@@ -148,10 +167,16 @@ tokens.
   every error message. A future sink receives them only if the user allows it
   for that sink.
 - An error message enters an event only through the scrubber. `unit.fail()`
-  and a thrown error both pass it. It replaces the connection's secret values
-  (pass them as `fail(error, { secrets })`), then URLs, the user data path and
-  the home directory, and caps the message at 512 characters. A scrubbed
-  message is still sensitive.
+  and a thrown error both pass it, when the event is built, so a dropped event
+  costs no scrubbing. It finds, on the original text, the connection's secret
+  values (pass them as `fail(error, { secrets })`), URLs, the user data path
+  and the home directory, the paths only where a path segment ends. Ranges
+  that overlap are replaced once, by the mark of the widest: `[secret]`,
+  `[url]`, `[user data]` or `~`. So a secret inside a URL or a path can't keep
+  the rest of it in the message. Then the message is cut at 512 characters. A
+  scrubbed message is still sensitive.
+- A request body that isn't JSON fails with a fixed error, type `SyntaxError`
+  and code `invalid_json`: the parser's message can quote the body.
 
 ## The package
 
@@ -199,7 +224,8 @@ the work does.
 - `console` prints one JSON line per event. `AJOUR_WIDE_EVENTS=console` turns
   it on in the terminal, for the local API today and the main process later.
   It is never on by default, and the local API prints nothing on stdout
-  without it.
+  without it. Run on its own (`just api-start`), the API says where it
+  listens on stderr, so stdout stays a clean stream of events.
 
 Logging plugins will later replace the sink without changing any event.
 
@@ -217,13 +243,21 @@ them.
 
 The local API's first events are placed by hand (#305):
 
-| Event                                                                                              | Where                                                                   |
-| -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `mcp.request`, `agent_tool.call`                                                                   | `handleMcpRequest` in `apps/api/src/mcp-server.ts`, one per MCP request |
-| `agent.session`                                                                                    | `AgentSessions`, from begin to end                                      |
-| `agent.run`                                                                                        | `AgentRunner`, from the start's first launch step to its one finalizer  |
-| `calendar.fetch`                                                                                   | the calendar route                                                      |
-| `comment.list`, `comment.post`, `comment.edit`, `comment.delete`, `comment.react`, `person.search` | the comment route                                                       |
+| Event                                                                                               | Where                                                                   |
+| --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `mcp.request`, `agent_tool.call`                                                                    | `handleMcpRequest` in `apps/api/src/mcp-server.ts`, one per MCP request |
+| `agent.session`                                                                                     | `AgentSessions`, from begin to end                                      |
+| `agent.run`                                                                                         | `AgentRunner`, from the start's first launch step to its one finalizer  |
+| `calendar.fetch`                                                                                    | the calendar route                                                      |
+| `comment.list`, `comment.post`, `comment.edit`, `comment.delete`, `comment.react`, `mention.search` | the comment route                                                       |
+
+An MCP request is `agent_tool.call` once its body is a tool call, named with
+the tool (one of Ajour's, or `other`), never its arguments. A call the SDK
+refuses before the handler runs ends `refused` with `invalid_call`, and a
+protocol error records its JSON-RPC code only. Any other request is
+`mcp.request` with `mcp.method`; a batch has the method `batch` and counts its
+tool calls in `mcp.call_count`. A session the runner began takes the run's
+trigger, `user`.
 
 The seams of #304 add the rest: every local API request and plugin operation
 (#306), store commands, boot and Undo (#307), the main process (#308),

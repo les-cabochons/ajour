@@ -301,7 +301,7 @@ Events go nowhere by default; `AJOUR_WIDE_EVENTS=console` prints them for a deve
 
 ## Dependency Direction
 
-- Apps can depend on `@ajour/shared` and `@ajour/wide-events`.
+- Apps can depend on `@ajour/shared` and on `packages/wide-events`, whose root files the local API imports by relative path.
 - `packages/shared` and `packages/wide-events` must not depend on app packages.
 - `apps/web/src/domain` must stay pure and must not import React, `features`, or `lib`.
 - `apps/web/src/lib` may depend on `domain`, but must not depend on `features`.
