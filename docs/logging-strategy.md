@@ -274,7 +274,14 @@ text or argument enters its event:
   recorded, such as a JSON-RPC error for an unknown method, is never
   downgraded.
 - A batch in which two requests share an id is refused before any of it
-  runs, with `duplicate_id`, and the agent gets a JSON-RPC error.
+  runs, with `duplicate_id`, and the agent gets a JSON-RPC error. This check
+  runs before the SDK transport's own header and protocol checks, which sit
+  inside its request handling where Ajour can't step in: a duplicate-id
+  batch that the transport would also reject is recorded as `duplicate_id`,
+  not `protocol_error`.
+
+The order of outcomes is the package's: `worstOutcome()` and
+`OUTCOME_SEVERITY` in `index.ts`, which later seams reuse.
 
 A session the runner began takes the run's trigger, `user`.
 

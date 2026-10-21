@@ -16,6 +16,30 @@ export type Runtime = "renderer" | "api" | "main";
 export type Outcome =
   "ok" | "noop" | "refused" | "cancelled" | "timeout" | "error";
 
+/** How bad each outcome is, worst first: error, timeout, refused, cancelled. */
+export const OUTCOME_SEVERITY: Readonly<Record<Outcome, number>> = {
+  error: 5,
+  timeout: 4,
+  refused: 3,
+  cancelled: 2,
+  noop: 1,
+  ok: 0,
+};
+
+/**
+ * The worst of several outcomes, such as a request's own and its calls'.
+ * An outcome not recorded yet counts as `ok`.
+ */
+export function worstOutcome(...outcomes: (Outcome | undefined)[]): Outcome {
+  let worst: Outcome = "ok";
+  for (const outcome of outcomes) {
+    if (outcome && OUTCOME_SEVERITY[outcome] > OUTCOME_SEVERITY[worst]) {
+      worst = outcome;
+    }
+  }
+  return worst;
+}
+
 /** Who started the unit of work. */
 export type Trigger = "user" | "agent" | "schedule" | "boot" | "system";
 

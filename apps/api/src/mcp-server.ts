@@ -18,7 +18,10 @@ import type {
   AjourCatalog,
   McpMethod,
 } from "../../../packages/wide-events/catalog.ts";
-import type { Outcome, Unit } from "../../../packages/wide-events/index.ts";
+import {
+  worstOutcome,
+  type Unit,
+} from "../../../packages/wide-events/index.ts";
 import { AgentSessionError, type AgentSessions } from "./agent-sessions.ts";
 import type { ApiEvents } from "./events.ts";
 import { BridgeCallError, type McpBridge } from "./mcp-bridge.ts";
@@ -173,16 +176,6 @@ function recordReply(
   }
 }
 
-/** How bad each outcome is: a request ends with the worst of its own and its calls'. */
-const OUTCOME_SEVERITY: Record<Outcome, number> = {
-  error: 4,
-  timeout: 3,
-  refused: 2,
-  cancelled: 1,
-  noop: 0,
-  ok: 0,
-};
-
 /**
  * Ends what the replies left open, once the response is written. A request
  * the transport rejected outright, which skips the replies, is refused for
@@ -213,26 +206,41 @@ function settleExchange(
     if (batch) call.unit.end();
   }
   if (!batch) return;
-  const worst = exchange.calls.reduce<Outcome>((worst, call) => {
-    const outcome = call.unit.outcome ?? "ok";
-    return OUTCOME_SEVERITY[outcome] > OUTCOME_SEVERITY[worst]
-      ? outcome
-      : worst;
-  }, unit.outcome ?? "ok");
-  if (OUTCOME_SEVERITY[worst] > OUTCOME_SEVERITY[unit.outcome ?? "ok"]) {
-    unit.end(worst);
-  }
+  const worst = worstOutcome(
+    unit.outcome,
+    ...exchange.calls.map((call) => call.unit.outcome),
+  );
+  if (worst !== worstOutcome(unit.outcome)) unit.end(worst);
 }
 
 /**
- * Whether two requests in a batch share an id. Their replies couldn't be
- * told apart, so such a batch is refused before any of it runs.
+ * Refuses a batch in which two requests share an id, before any of it runs:
+ * their replies couldn't be told apart. True when it refused.
  */
-function hasDuplicateIds(messages: unknown[]) {
+function refuseDuplicateIds(
+  messages: unknown[],
+  unit: Unit<AjourCatalog, "mcp.request">,
+  response: ServerResponse,
+) {
   const ids = messages
     .map(messageId)
     .filter((id) => id !== undefined && id !== null);
-  return new Set(ids).size < ids.length;
+  if (new Set(ids).size === ids.length) return false;
+  unit.refuse("duplicate_id");
+  response.writeHead(400, {
+    "Content-Type": "application/json; charset=utf-8",
+  });
+  response.end(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: null,
+      error: {
+        code: -32600,
+        message: "Each request in a batch needs its own id.",
+      },
+    }),
+  );
+  return true;
 }
 
 /** What every agent reads first. Spec B's plugins add their own. */
@@ -611,35 +619,21 @@ export async function handleMcpRequest(
       const body =
         request.method === "POST" ? await context.readBody(request) : undefined;
       const method = body === undefined ? undefined : mcpMethod(body);
-      if (method === "batch") {
-        const messages = body as unknown[];
+      const messages = method === "batch" ? (body as unknown[]) : undefined;
+      if (messages) {
         unit.set({
           mcp: {
-            method,
+            method: "batch",
             call_count: messages.filter(
               (message) => mcpMethod(message) === "tools/call",
             ).length,
           },
         });
+        // Before the transport's own checks, which run inside handleRequest:
+        // a duplicate-id batch is `duplicate_id` whatever else is wrong.
+        if (refuseDuplicateIds(messages, unit, response)) return;
       } else if (method !== undefined && method !== "tools/call") {
         unit.set({ mcp: { method } });
-      }
-      if (method === "batch" && hasDuplicateIds(body as unknown[])) {
-        unit.refuse("duplicate_id");
-        response.writeHead(400, {
-          "Content-Type": "application/json; charset=utf-8",
-        });
-        response.end(
-          JSON.stringify({
-            jsonrpc: "2.0",
-            id: null,
-            error: {
-              code: -32600,
-              message: "Each request in a batch needs its own id.",
-            },
-          }),
-        );
-        return;
       }
       // Each call is named before the SDK validates it, so a call it
       // refuses still says which tool it was.
@@ -648,18 +642,17 @@ export async function handleMcpRequest(
         exchange
           .add(unit.rename("agent_tool.call"), messageId(body))
           .unit.set({ agent_tool: { name: calledTool(body) } });
-      } else if (method === "batch") {
-        for (const message of body as unknown[]) {
-          if (mcpMethod(message) !== "tools/call") continue;
-          // Started inside the request, so it folds into the batch's event.
-          const call = context.events.start("agent_tool.call", {
-            kind: "request",
-            trigger: "agent",
-          });
-          exchange
-            .add(call, messageId(message))
-            .unit.set({ agent_tool: { name: calledTool(message) } });
-        }
+      }
+      for (const message of messages ?? []) {
+        if (mcpMethod(message) !== "tools/call") continue;
+        // Started inside the request, so it folds into the batch's event.
+        const call = context.events.start("agent_tool.call", {
+          kind: "request",
+          trigger: "agent",
+        });
+        exchange
+          .add(call, messageId(message))
+          .unit.set({ agent_tool: { name: calledTool(message) } });
       }
       registerTools(server, client, context, exchange);
       const transport = new StreamableHTTPServerTransport({

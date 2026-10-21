@@ -159,7 +159,8 @@ class UnitState {
   droppedSteps = 0;
   stepFailures?: StepFailure[];
   counts?: Record<string, number>;
-  outcome?: Outcome;
+  /** Private, so nothing outside the unit can rewrite how it ended. */
+  #outcome?: Outcome;
   reason?: string;
   /** Described, and its message scrubbed, only when the event is built. */
   failure?: {
@@ -199,6 +200,10 @@ class UnitState {
     }
   }
 
+  get outcome() {
+    return this.#outcome;
+  }
+
   get folded() {
     return this.root !== this;
   }
@@ -218,7 +223,7 @@ class UnitState {
 
   fail(error: unknown, options: FailOptions<string> = {}) {
     if (this.ended) return this;
-    this.outcome = options.outcome ?? "error";
+    this.#outcome = options.outcome ?? "error";
     this.reason = options.reason;
     this.failure = {
       error,
@@ -230,14 +235,14 @@ class UnitState {
 
   refuse(reason?: string) {
     if (this.ended) return this;
-    this.outcome = "refused";
+    this.#outcome = "refused";
     this.reason = reason;
     return this;
   }
 
   cancel(reason?: string) {
     if (this.ended) return this;
-    this.outcome = "cancelled";
+    this.#outcome = "cancelled";
     this.reason = reason;
     return this;
   }
@@ -253,7 +258,7 @@ class UnitState {
     if (this.ended) return;
     this.ended = true;
     if (outcome !== undefined) {
-      this.outcome = outcome;
+      this.#outcome = outcome;
       if (reason !== undefined) this.reason = reason;
     }
     // A folded unit emits nothing of its own, but a failure shows on the

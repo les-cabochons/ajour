@@ -8,6 +8,7 @@ export type {
   Unit,
   UnitInit,
 } from "./lib/emitter.ts";
+export { OUTCOME_SEVERITY, worstOutcome } from "./lib/envelope.ts";
 export { errorIdentity } from "./lib/errors.ts";
 export { synchronousScope } from "./lib/scope.ts";
 export type { ScopeStore } from "./lib/scope.ts";

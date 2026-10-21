@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createEmitter } from "../index.ts";
+import { createEmitter, worstOutcome } from "../index.ts";
 import { apiContext, recordingEmitter, testCatalog } from "./fixtures.ts";
 
 const TRACE_ID = /^[0-9a-f]{32}$/;
@@ -152,6 +152,27 @@ describe("one event per unit of work", () => {
     expect(unit.outcome).toBe("timeout");
     unit.end("error");
     expect(unit.outcome).toBe("error");
+  });
+
+  it("keeps a recorded outcome out of reach of code that writes to the unit", () => {
+    const { events, recorded } = recordingEmitter();
+    const unit = events.start("backlog.sync", { kind: "job", trigger: "user" });
+    unit.fail(new Error("Down"));
+
+    expect(() => Object.assign(unit, { outcome: "ok" })).toThrow(TypeError);
+    unit.end();
+
+    expect(recorded[0]!.outcome).toBe("error");
+  });
+
+  it("orders outcomes from worst to best: error, timeout, refused, cancelled", () => {
+    expect(worstOutcome("ok", "refused", "timeout", "cancelled")).toBe(
+      "timeout",
+    );
+    expect(worstOutcome("refused", "error", undefined)).toBe("error");
+    expect(worstOutcome("cancelled", "noop")).toBe("cancelled");
+    expect(worstOutcome(undefined, "noop")).toBe("noop");
+    expect(worstOutcome()).toBe("ok");
   });
 
   it("emits a started unit once, at its first end, and ignores what comes after", () => {
