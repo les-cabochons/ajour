@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdtemp, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   findExecutable,
   readLoginShellPath,
@@ -15,10 +15,34 @@ vi.mock("node:child_process", async (importOriginal) => {
   return { ...actual, execFile: vi.fn(actual.execFile) };
 });
 
+/** Each test's folders, removed after it whether it passed or failed. */
+const tempDirs: string[] = [];
+
+async function tempDir(prefix: string): Promise<string> {
+  const directory = await mkdtemp(path.join(tmpdir(), prefix));
+  tempDirs.push(directory);
+  return directory;
+}
+
+afterEach(async () => {
+  // On Windows a process that just exited can hold a handle in its folder
+  // for a moment, so the removal retries.
+  await Promise.all(
+    tempDirs.splice(0).map((directory) =>
+      rm(directory, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 200,
+      }),
+    ),
+  );
+});
+
 describe("findExecutable", () => {
   it("finds an executable on PATH and skips folders without it", async () => {
-    const empty = await mkdtemp(path.join(tmpdir(), "ajour-path-"));
-    const bin = await mkdtemp(path.join(tmpdir(), "ajour-path-"));
+    const empty = await tempDir("ajour-path-");
+    const bin = await tempDir("ajour-path-");
     await writeFile(path.join(bin, "claude"), "#!/bin/sh\n");
     await chmod(path.join(bin, "claude"), 0o755);
     expect(
@@ -34,7 +58,7 @@ describe("findExecutable", () => {
 
 /** A fake shell that prints a banner, then runs the command it is given like `sh -ilc <cmd>`. */
 async function fakeShell(body: string): Promise<string> {
-  const directory = await mkdtemp(path.join(tmpdir(), "ajour-shell-"));
+  const directory = await tempDir("ajour-shell-");
   const shell = path.join(directory, "fake-shell");
   await writeFile(shell, `#!/bin/sh\n${body}\n`);
   await chmod(shell, 0o755);

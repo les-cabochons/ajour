@@ -1,5 +1,5 @@
 import { ChildProcess } from "node:child_process";
-import { mkdtemp, readdir, readFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -147,6 +147,7 @@ async function setup(
   } = {},
 ) {
   const work = await mkdtemp(path.join(tmpdir(), "ajour-runner-test-"));
+  tempDirs.push(work);
   const report = path.join(work, "report.jsonl");
   reports.push(report);
   const events: Record<string, unknown>[] = [];
@@ -190,6 +191,7 @@ async function setup(
       ? {}
       : { killGraceMs: options.killGraceMs }),
   });
+  runners.push(runner);
   return { runner, sessions, revoked, events, work, report };
 }
 
@@ -218,6 +220,13 @@ async function waitForCli(report: string) {
 
 /** Each test's reports, so the escapees its fake CLIs started are killed after it. */
 const reports: string[] = [];
+/**
+ * Each test's runners, so a test that fails mid-run still stops its CLI:
+ * Windows cannot remove a folder a running process works in.
+ */
+const runners: AgentRunner[] = [];
+/** Each test's folders, removed after it whether it passed or failed. */
+const tempDirs: string[] = [];
 
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -226,6 +235,19 @@ afterEach(async () => {
       if (isAlive(pid)) process.kill(pid, "SIGKILL");
     }
   }
+  await Promise.all(runners.splice(0).map((runner) => runner.shutdown()));
+  // On Windows a process that just exited can hold a handle in its folder
+  // for a moment, so the removal retries.
+  await Promise.all(
+    tempDirs.splice(0).map((directory) =>
+      rm(directory, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 200,
+      }),
+    ),
+  );
 });
 
 async function grandchildPids(report: string): Promise<number[]> {
