@@ -5,7 +5,11 @@ import {
   type Emitter,
   type RuntimeContext,
 } from "@ajour/wide-events";
-import { nowhere, sinkFromSwitch, type Sink } from "@ajour/wide-events/sinks.ts";
+import {
+  nowhere,
+  sinkFromSwitch,
+  type Sink,
+} from "@ajour/wide-events/sinks.ts";
 
 /** The renderer's wide events. See docs/logging-strategy.md. */
 export type RendererEvents = Emitter<AjourCatalog>;
@@ -54,7 +58,8 @@ export function rendererContext(
     app: {
       version: text(launch.appVersion) ?? text(runtime?.version) ?? "unknown",
       channel:
-        channel ?? (!desktop ? "web" : runtime.developmentBuild ? "dev" : "stable"),
+        channel ??
+        (!desktop ? "web" : runtime.developmentBuild ? "dev" : "stable"),
       ...(commit ? { commit } : {}),
       packaged:
         typeof launch.packaged === "boolean"
@@ -78,10 +83,11 @@ function readDesktopRuntime() {
 
 function browserPlatform() {
   const navigator = globalThis.navigator as
-    | (Navigator & { userAgentData?: { platform?: string } })
-    | undefined;
+    (Navigator & { userAgentData?: { platform?: string } }) | undefined;
   return (
-    text(navigator?.userAgentData?.platform) ?? text(navigator?.platform) ?? "web"
+    text(navigator?.userAgentData?.platform) ??
+    text(navigator?.platform) ??
+    "web"
   );
 }
 
@@ -112,7 +118,8 @@ function current() {
  * re-enters it with `unit.enter()` around the store commands it runs after.
  */
 export const wideEvents: RendererEvents = {
-  start: ((name, init) => current().start(name, init)) as RendererEvents["start"],
+  start: ((name, init) =>
+    current().start(name, init)) as RendererEvents["start"],
   run: ((name, init, work) =>
     current().run(name, init, work)) as RendererEvents["run"],
   current: () => current().current(),

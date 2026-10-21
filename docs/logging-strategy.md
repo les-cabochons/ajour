@@ -214,7 +214,8 @@ sink:
   it.
 
 The local API creates its emitter in `apps/api/src/events.ts`, and the
-desktop main process in `apps/desktop/electron/main-events.cjs`.
+desktop main process in `apps/desktop/electron/main-events.cjs`, and the
+renderer in `apps/web/src/lib/wide-events.ts`.
 
 ## Sinks
 
@@ -228,9 +229,10 @@ the work does.
 - `console` prints one JSON line per event. `AJOUR_WIDE_EVENTS=console` turns
   it on in the terminal, for the local API and the main process.
   It is never on by default, and the local API prints nothing on stdout
-  without it. Run on its own (`just api-start`, through
-  `apps/api/src/standalone.ts`), the API says where it listens on stderr, so
-  stdout stays a clean stream of events.
+  without it. In the renderer, the same variable at dev or build time prints
+  the events in the devtools console. Run on its own (`just api-start`,
+  through `apps/api/src/standalone.ts`), the API says where it listens on
+  stderr, so stdout stays a clean stream of events.
 
 Logging plugins will later replace the sink without changing any event.
 
@@ -393,8 +395,57 @@ The order of outcomes is the package's: `worstOutcome()` and
 
 A session the runner began takes the run's trigger, `user`.
 
-The seams of #304 add the rest: store commands, boot and Undo (#307),
-`trigger` and `surface` (#309), and renderer jobs and navigation (#310).
+### The renderer (#307)
+
+The renderer creates its emitter at its first use. On desktop it reports the
+launch the main process hands over in `window.ajourDesktop.runtime.launch`,
+the shape of the local API's `launch` option. The web build, or a main
+process that hands none over, makes its own launch ID, and the web build
+reports the `web` channel. Each window load gets its own window ID.
+
+- **Store commands.** `STORE_COMMANDS` in `apps/web/src/lib/local-store.ts`
+  names every command of the local store but its reads, so a new command
+  without a name fails to compile. A name may be picked from the arguments,
+  as a pull request change is by its type. `lib/store-command-events.ts` runs
+  each call as one `command` event:
+  - the write path counts `store_write_count` and `store_write_bytes`, sets
+    `store.revision_changed` when another window wrote since this one read,
+    and records `refused` with `locked_week` or `stale_window` before the
+    error leaves the command, so before it reaches the toast;
+  - the Undo capture counts the records changed per local state list
+    (`changed_project_count`, `changed_time_entry_count` and so on) and sets
+    `store.undo_offered`;
+  - a command that writes nothing ends `noop`, and one that writes twice
+    counts two writes on its one event.
+  - Writes, bytes and records changed are counters, so a command that folds
+    into another unit, such as a sync, adds them to that unit's event.
+  - The same command inside an open one joins it instead of folding. The
+    code around a command opens its event first with `runStoreCommand` to
+    add what only it knows: the settle's behaviour and comment length, the
+    entry form's host, and whether Submit week showed the pace warning.
+- **Folding across `await`.** Store commands are synchronous, so they fold
+  into the unit on top of the scope stack. An async unit leaves the stack at
+  its first `await`, and runs the store commands after it inside
+  `unit.enter()`. A store command run outside it emits its own event.
+- **`app.boot`** (`lib/app-boot.ts`) runs from loading the local state to
+  the first render: the load path, the migrations applied, the desktop
+  recovery's decision, reason and what a submitted week left out, the
+  state's size and its records per collection. The recovery's writes count
+  on it.
+- **`undo.restore`** is the Undo store command. A refused Undo says why:
+  `expired`, `changed_since`, `two_running_entries` or `would_lock_week`.
+- **`local_state.reload`** is another window's write, read from browser
+  storage.
+- **`preferences.update`** names the keys that changed, with their values
+  when they are enums, numbers or booleans: user preferences through the
+  store, and device UI settings through `lib/preference-events.ts`.
+- **`app.error`** comes from `features/feedback/app-error-handler.ts`, the
+  window's one handler for uncaught errors and unhandled rejections, which
+  also shows a refused write as a toast. It names the store command that
+  threw.
+
+The seams of #304 add the rest: `trigger` and `surface` (#309), and renderer
+jobs and navigation (#310).
 
 ### The desktop main process
 

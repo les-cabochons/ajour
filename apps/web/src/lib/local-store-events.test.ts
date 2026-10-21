@@ -154,9 +154,9 @@ describe("store command events", () => {
     browser.storage.set("ajour.local-state.revision", "other-window");
     sink.events.length = 0;
 
-    expect(() => localStore.addProject({ name: "Late", color: "#000" })).toThrow(
-      "Ajour changed in another window",
-    );
+    expect(() =>
+      localStore.addProject({ name: "Late", color: "#000" }),
+    ).toThrow("Ajour changed in another window");
 
     expect(sink.events).toMatchObject([
       {
@@ -247,7 +247,10 @@ describe("store command events", () => {
 
   it("adds what an undoable action changed, per local state list, and that Undo was offered", async () => {
     const { sink, localStore } = await loadStore();
-    localStore.saveManualTimeEntry({ localDate: "2026-10-06", durationMs: 600 });
+    localStore.saveManualTimeEntry({
+      localDate: "2026-10-06",
+      durationMs: 600,
+    });
     const entryId = localStore.snapshot().timesheetEntries[0]!._id;
     sink.events.length = 0;
 
@@ -265,7 +268,10 @@ describe("store command events", () => {
 
   it("emits undo.restore with the records it restored", async () => {
     const { sink, localStore } = await loadStore();
-    localStore.saveManualTimeEntry({ localDate: "2026-10-06", durationMs: 600 });
+    localStore.saveManualTimeEntry({
+      localDate: "2026-10-06",
+      durationMs: 600,
+    });
     const entryId = localStore.snapshot().timesheetEntries[0]!._id;
     const token = localStore.deleteTimesheetEntry(entryId)!;
     sink.events.length = 0;
@@ -552,7 +558,13 @@ describe("store command catalog fields", () => {
     localStore.commitReadyTimesheetImportDrafts();
     localStore.importProjectTasks(projectId, ["Design", "Design", ""]);
     localStore.importProjectWorkbookRows([
-      { project: "Atlas", code: "", color: "", status: "active", task: "Build" },
+      {
+        project: "Atlas",
+        code: "",
+        color: "",
+        status: "active",
+        task: "Build",
+      },
     ] as never);
 
     expect(eventNamed(sink.events, "timesheet_import.stage")).toMatchObject([

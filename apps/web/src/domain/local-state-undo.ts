@@ -95,9 +95,7 @@ export type LocalStateUndoResult = "restored" | "stale";
  * now.
  */
 export type LocalStateUndoStaleReason =
-  | "changed_since"
-  | "two_running_entries"
-  | "would_lock_week";
+  "changed_since" | "two_running_entries" | "would_lock_week";
 
 /** Updates a replacement action's snapshots without hiding independent edits. */
 export function completeSourceWriteInUndo(

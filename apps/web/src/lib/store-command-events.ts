@@ -42,10 +42,7 @@ export type StoreCommandSpec<Command> =
  * The store's command table: every command of the store but its reads has a
  * name, so a new command without one fails to compile.
  */
-export type StoreCommandTable<
-  Store,
-  Reads extends keyof Store,
-> = {
+export type StoreCommandTable<Store, Reads extends keyof Store> = {
   readonly [Key in Exclude<keyof Store, Reads>]: StoreCommandSpec<Store[Key]>;
 };
 
@@ -77,7 +74,10 @@ export function countStoreWrite(bytes: number) {
 }
 
 /** Adds to a counter of the active unit, if any. */
-export function countOnStoreCommand(counter: CounterName<AjourCatalog>, amount: number) {
+export function countOnStoreCommand(
+  counter: CounterName<AjourCatalog>,
+  amount: number,
+) {
   if (amount > 0) wideEvents.current()?.count(counter, amount);
 }
 
@@ -156,7 +156,9 @@ export function instrumentStoreCommands<Store extends object>(
   ][]) {
     const command = commands[key]!;
     const { name, trigger } =
-      typeof spec === "object" ? spec : { name: spec, trigger: "user" as const };
+      typeof spec === "object"
+        ? spec
+        : { name: spec, trigger: "user" as const };
     commands[key] = function (this: unknown, ...args: unknown[]) {
       const resolved = typeof name === "function" ? name(...args) : name;
       return runStoreCommand(

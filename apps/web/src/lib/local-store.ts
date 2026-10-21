@@ -2003,23 +2003,25 @@ const store = {
     return imported;
   },
   importProjectWorkbookRows(rows: ProjectTransferRow[]) {
-    const imported = updateStateWithResult<ProjectWorkbookImportResult>((state) => {
-      const operation = applyProjectWorkbookImport(state.projects, rows, {
-        createProject: (project) =>
-          createProject(project, { createId, now: Date.now }),
-        createTask: (task) =>
-          createProjectTask(task, { createId, now: Date.now }),
-        now: Date.now,
-      });
+    const imported = updateStateWithResult<ProjectWorkbookImportResult>(
+      (state) => {
+        const operation = applyProjectWorkbookImport(state.projects, rows, {
+          createProject: (project) =>
+            createProject(project, { createId, now: Date.now }),
+          createTask: (task) =>
+            createProjectTask(task, { createId, now: Date.now }),
+          now: Date.now,
+        });
 
-      return {
-        state: {
-          ...state,
-          projects: operation.projects,
-        },
-        result: operation.result,
-      };
-    });
+        return {
+          state: {
+            ...state,
+            projects: operation.projects,
+          },
+          result: operation.result,
+        };
+      },
+    );
     describeProjectImport(imported, {
       schema: "default",
       row_count: rows.length,
@@ -2030,23 +2032,29 @@ const store = {
   },
   importProjectDataShapeProjects(projects: ProjectDataShapeImportProject[]) {
     const schema = readState().userPreferences.projectDataShapeId;
-    const imported = updateStateWithResult<ProjectWorkbookImportResult>((state) => {
-      const operation = applyProjectDataShapeImport(state.projects, projects, {
-        createProject: (project) =>
-          createProject(project, { createId, now: Date.now }),
-        createTask: (task) =>
-          createProjectTask(task, { createId, now: Date.now }),
-        now: Date.now,
-      });
+    const imported = updateStateWithResult<ProjectWorkbookImportResult>(
+      (state) => {
+        const operation = applyProjectDataShapeImport(
+          state.projects,
+          projects,
+          {
+            createProject: (project) =>
+              createProject(project, { createId, now: Date.now }),
+            createTask: (task) =>
+              createProjectTask(task, { createId, now: Date.now }),
+            now: Date.now,
+          },
+        );
 
-      return {
-        state: {
-          ...state,
-          projects: operation.projects,
-        },
-        result: operation.result,
-      };
-    });
+        return {
+          state: {
+            ...state,
+            projects: operation.projects,
+          },
+          result: operation.result,
+        };
+      },
+    );
     describeProjectImport(imported, {
       schema: schema === BUILT_IN_PROJECT_DATA_SHAPE_ID ? "default" : schema,
       project_count: projects.length,
@@ -2707,7 +2715,9 @@ const store = {
   ) {
     const { edits, ...moveOptions } = options ?? {};
     const before = readState();
-    const item = before.workItems.find((candidate) => candidate._id === workItemId);
+    const item = before.workItems.find(
+      (candidate) => candidate._id === workItemId,
+    );
     if (edits) {
       updateState((state) => applyUpdateWorkItem(state, workItemId, edits));
     }
@@ -3238,7 +3248,8 @@ const store = {
 };
 
 /** The store's reads: they change nothing, so they emit no event. */
-type StoreRead = "subscribe" | "snapshot" | "pendingUndoProjectIds" | "getTimeline";
+type StoreRead =
+  "subscribe" | "snapshot" | "pendingUndoProjectIds" | "getTimeline";
 
 /**
  * Each store command's wide event name. Every command but the reads has one,
@@ -3330,7 +3341,10 @@ const STORE_COMMANDS = {
     name: "backlog_item.complete_source_write",
     trigger: "system",
   },
-  failSourceWrite: { name: "backlog_item.fail_source_write", trigger: "system" },
+  failSourceWrite: {
+    name: "backlog_item.fail_source_write",
+    trigger: "system",
+  },
   applySettleRule: "settle_rule.set",
   askSettleRule: "settle_rule.set",
   unsettleWorkItem: "backlog_item.unsettle",

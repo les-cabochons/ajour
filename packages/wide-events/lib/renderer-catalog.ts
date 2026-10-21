@@ -314,7 +314,9 @@ export const rendererEvents = {
   "time_entry.paste": command(timeEntryCount),
   "time_entry.drop": command(timeEntryCount),
   "time_entry.reorder": command(timeEntryCount),
-  "time_entry.commit": command({ time_entry: { count: operational<number>() } }),
+  "time_entry.commit": command({
+    time_entry: { count: operational<number>() },
+  }),
   "time_entry.uncommit": command({
     time_entry: { count: operational<number>() },
   }),
@@ -392,9 +394,12 @@ export const rendererEvents = {
       header_count: operational<number>(),
     },
   }),
-  "team.create": command({}, {
-    kinds: ["command", "request", "plugin_operation"],
-  }),
+  "team.create": command(
+    {},
+    {
+      kinds: ["command", "request", "plugin_operation"],
+    },
+  ),
   "team.apply_sync": command({
     connection: { id: operational() },
     team_sync: {
@@ -422,7 +427,10 @@ export const rendererEvents = {
     },
   }),
   "backlog_item.update": command({
-    backlog_item: { id: operational(), changed_fields: operational<string[]>() },
+    backlog_item: {
+      id: operational(),
+      changed_fields: operational<string[]>(),
+    },
   }),
   "backlog_item.move": command({
     backlog_item: {
@@ -470,7 +478,9 @@ export const rendererEvents = {
   "backlog_item.resolve_estimate": command({
     backlog_item: {
       id: operational(),
-      estimate_resolution: operational<"keep_local" | "accept_source" | "dismiss">(),
+      estimate_resolution: operational<
+        "keep_local" | "accept_source" | "dismiss"
+      >(),
     },
   }),
   "backlog_item.resolve_description": command(backlogItem),
