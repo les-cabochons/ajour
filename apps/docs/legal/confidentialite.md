@@ -11,7 +11,7 @@ next: false
 
 # Politique de confidentialité
 
-Dernière mise à jour : 20 octobre 2026
+Dernière mise à jour : 21 octobre 2026
 
 <a href="/legal/privacy" lang="en">English version</a> · [Conditions d'utilisation](/legal/conditions)
 
@@ -20,6 +20,68 @@ Dernière mise à jour : 20 octobre 2026
 Ajour est publié par Alex Trépanier, qui exerce ses activités sous le nom cabochons.io. Dans cette politique, "nous" désigne Alex Trépanier. Alex Trépanier est aussi le responsable de la protection des renseignements personnels. Vous pouvez lui écrire à [info@cabochons.io](mailto:info@cabochons.io) pour toute question, demande ou plainte concernant vos renseignements personnels.
 
 Cette politique couvre l'application Ajour, son site de documentation et les renseignements que vous nous transmettez. Ajour est un outil de suivi du temps qui conserve d'abord les données sur votre appareil. Aucun compte Ajour n'est nécessaire. Nous n'exploitons pas de service qui reçoit votre espace de travail pour le conserver ou le sauvegarder. L'application ne nous envoie pas de télémétrie d'utilisation ni de rapports de plantage automatiques.
+
+## Données du compte et du calendrier Google
+
+La connexion Google et le plugin Google Calendar sont en développement et ne font pas partie de la version publique actuelle. Cette section décrit le traitement prévu de leurs données. Elle ne décrit pas la sécurité des plugins à jetons actuels. Si la mise en oeuvre change ces pratiques, nous mettrons cette politique à jour avant de rendre l'intégration disponible.
+
+### Accès aux données et utilisation
+
+La connexion à Google sera facultative. Ajour demandera `openid` et `email` pour identifier le compte Google que vous choisissez. L'accès au calendrier sera demandé séparément lorsque vous activerez les suggestions, avec la permission `https://www.googleapis.com/auth/calendar.events.owned.readonly`. Cette permission permet de lire les événements des calendriers Google dont vous êtes propriétaire. Elle ne permet pas à Ajour de créer, de modifier ou de supprimer des événements Google. Ajour ne demandera pas de permissions Gmail, Google Drive ou Google Contacts pour cette intégration.
+
+| Données Google                                                                                                                                                                                                                                                              | Pourquoi Ajour y accède                                                                                                                                                                      |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| L'identifiant stable de votre compte Google et votre adresse courriel, y compris son état de vérification                                                                                                                                                                   | Pour distinguer vos comptes connectés et montrer celui qu'utilise une connexion. Ajour n'utilisera pas votre adresse à des fins de marketing.                                                |
+| Les jetons d'accès OAuth, les jetons de renouvellement, les permissions accordées et les renseignements d'expiration                                                                                                                                                        | Pour authentifier les requêtes que vous autorisez et maintenir la connexion sans vous demander de vous reconnecter à chaque requête. Ces identifiants ne sont pas votre mot de passe Google. |
+| Les identifiants d'événements et de séries récurrentes, les titres, les heures de début et de fin, les fuseaux horaires, le caractère journée entière, l'état d'annulation, l'état occupé ou libre, votre réponse à l'invitation et le fait que vous organisiez l'événement | Pour afficher les suggestions des dates consultées, appliquer vos filtres, reconnaître les réunions récurrentes et éviter de suggérer une occurrence déjà ajoutée ou ignorée.                |
+
+La permission de calendrier peut donner accès à plus de détails qu'Ajour n'en a besoin. L'intégration limitera ses requêtes aux champs nécessaires aux usages ci-dessus. Les descriptions d'événements, les lieux, les liens de conférence et les coordonnées des autres participants ne font pas partie des données des suggestions de calendrier d'Ajour.
+
+Lire un événement ne créera pas d'entrée de temps et ne modifiera pas Google Calendar. Lorsque vous choisissez d'ajouter une suggestion, son titre et sa durée peuvent faire partie d'une entrée de temps locale. Mémoriser ou masquer une réunion récurrente conserve localement son identifiant, son titre et le projet et la tâche choisis, ou le choix de la masquer.
+
+### Communication des données et accès humain
+
+Les requêtes aux services de connexion et de calendrier Google partiront de votre appareil vers Google. Google reçoit les identifiants et les renseignements nécessaires pour y répondre. Nous ne recevrons pas vos identifiants Google ni une copie de votre calendrier par un serveur exploité par Ajour. Le plugin de calendrier autorisé recevra les champs nécessaires aux suggestions par le courtier d'identifiants d'Ajour, sans recevoir les jetons du compte.
+
+Les outils MCP d'Ajour ne donnent pas accès aux listes d'événements récupérées. Lorsque vous transformez un événement en entrée de temps ou en réunion mémorisée, ses données enregistrées font partie de votre espace de travail. Si vous autorisez un agent à lire cet espace, exportez les données ou les transmettez à un service de feuilles de temps, le contenu dérivé de Google peut parvenir au fournisseur d'IA ou à la destination que vous choisissez. Ces transferts doivent servir la fonction demandée et respecter les exigences d'utilisation limitée de Google. L'accès général d'un agent n'est pas une exception à ces exigences.
+
+Nous ne vendrons pas les données Google, ne les communiquerons pas à des annonceurs ou à des courtiers en données et ne les utiliserons pas pour évaluer la solvabilité. Nous n'utiliserons pas les données des API Google Workspace pour développer, améliorer ou entraîner des modèles d'IA ou d'apprentissage automatique non personnalisés, et ne les transférerons pas à ces fins. Ces restrictions couvrent aussi les données dérivées de Google, comme le titre d'un événement enregistré dans une entrée de temps.
+
+Nous n'avons pas d'accès humain habituel à votre calendrier Google, puisqu'il reste sur votre appareil. Si vous choisissez d'inclure des données Google précises dans une demande d'assistance, nous les utiliserons pour traiter cette demande selon les conditions de contact et de conservation ci-dessous. Tout autre accès ou toute autre communication doit reposer sur le consentement ou une autre base permise par la politique de Google et la loi applicable.
+
+### Protection des données
+
+L'intégration Google prévue utilisera HTTPS pour les requêtes à Google et une connexion par code d'autorisation avec PKCE. Les jetons d'accès resteront en mémoire. Les jetons de renouvellement seront conservés localement avec le chiffrement du système d'exploitation. Ajour refusera de les conserver si ce chiffrement n'est pas disponible. Le courtier fera les requêtes authentifiées et gardera les jetons hors du code des plugins. Ce sont des protections prévues, pas des mesures présentes dans l'exécution des plugins de la version publique actuelle.
+
+Les entrées de temps et les réunions mémorisées utilisent le stockage ordinaire de l'espace de travail. Ajour ne chiffre pas l'ensemble de cet espace. Protégez votre compte sur l'appareil, utilisez le chiffrement de disque du système d'exploitation lorsqu'il est disponible et protégez vos sauvegardes et vos exports. Le chiffrement des identifiants par le système d'exploitation ne protège pas contre une personne qui contrôle déjà votre appareil ou votre compte utilisateur.
+
+### Conservation
+
+Nous ne conserverons pas de copie des données de compte ou de calendrier Google sur un serveur. Les règles suivantes s'appliqueront sur votre appareil :
+
+| Données                                                               | Durée de conservation                                                                                                                                                                                                                                                                                                                                                       |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Jetons d'accès                                                        | En mémoire pendant la session de l'application, remplacés au besoin et effacés par une déconnexion ou la fermeture de l'application.                                                                                                                                                                                                                                        |
+| Jetons de renouvellement                                              | Dans le stockage local chiffré jusqu'à votre déconnexion, au retrait du compte ou au remplacement de ses identifiants. La déconnexion efface les jetons de cet appareil, sans retirer l'autorisation Google sur les autres appareils.                                                                                                                                       |
+| Identifiant du compte, adresse courriel et autorisations enregistrées | Jusqu'au retrait du compte. Une déconnexion peut conserver la fiche du compte pour vous permettre de vous reconnecter.                                                                                                                                                                                                                                                      |
+| Événements de calendrier récupérés                                    | En mémoire pour les suggestions, sans archive enregistrée du calendrier. Recharger ou fermer Ajour efface ce cache. Un échec d'actualisation peut conserver les résultats précédents en mémoire.                                                                                                                                                                            |
+| Décisions d'ajouter ou d'ignorer une occurrence                       | Localement jusqu'au retrait de la connexion, ou jusqu'à ce qu'un chargement ultérieur de l'espace de travail retire les décisions concernant des événements de plus de 90 jours.                                                                                                                                                                                            |
+| Réunions récurrentes mémorisées ou masquées                           | Localement jusqu'au retrait de la réunion mémorisée ou de sa connexion de calendrier. Ces données comprennent l'identifiant et le titre de la réunion.                                                                                                                                                                                                                      |
+| Entrées de temps créées à partir d'événements                         | Dans votre espace de travail jusqu'à leur suppression. Si une entrée a déjà été transférée à une feuille de temps externe, Ajour garde ses dernières valeurs transférées comme suppression en attente jusqu'à ce que vous confirmiez le transfert de cette suppression. Retirer le compte ou la connexion Google ne supprime pas les entrées que vous avez choisi de créer. |
+
+Vos sauvegardes et vos exports peuvent conserver des copies après la suppression dans Ajour. Leur conservation dépend de vous. Google et les destinations auxquelles vous envoyez volontairement des données contrôlent leurs copies selon leurs politiques.
+
+### Déconnexion et suppression des données Google
+
+Lorsque cette intégration sera disponible, une déconnexion dans Ajour supprimera les jetons locaux du compte et arrêtera l'accès authentifié par ce compte. Retirer le compte supprimera aussi son identité et ses autorisations enregistrées. Retirer une connexion de calendrier supprimera ses réunions mémorisées et ses décisions par occurrence. Pour supprimer les entrées de temps créées à partir d'événements, supprimez-les séparément et confirmez le transfert de toute suppression en attente d'une entrée déjà envoyée à votre feuille de temps. Pour effacer les événements récupérés en mémoire, rechargez ou fermez Ajour.
+
+Vous pouvez révoquer la permission d'Ajour dans les [connexions tierces de votre compte Google](https://myaccount.google.com/connections). La révocation chez Google est distincte de la suppression locale. Elle retire l'autorisation du projet sur tous les appareils. Les autres appareils peuvent toutefois conserver des données locales déjà récupérées ou enregistrées. Déconnecter Ajour ne supprime pas vos événements originaux dans Google Calendar.
+
+Pour tout supprimer localement, suivez le guide [Your data](/app/data#back-up-export-or-delete-data), en anglais, et supprimez aussi vos sauvegardes et vos exports. Pour poser une question ou demander la suppression de données Google que vous nous avez volontairement envoyées dans une demande d'assistance, écrivez à [info@cabochons.io](mailto:info@cabochons.io). Nous ne pouvons pas supprimer à distance un espace de travail que nous ne détenons pas.
+
+### Exigences d'utilisation limitée de Google
+
+L'utilisation et le transfert par Ajour des renseignements reçus des API Google respecteront la [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), y compris ses exigences d'utilisation limitée, appelées Limited Use. Cela s'applique aux données Google et aux données dérivées décrites ci-dessus. Une future fonction qui exige des données supplémentaires ou une nouvelle communication nécessitera une mise à jour des informations et le consentement requis avant cet accès ou cette communication.
 
 ## Votre espace de travail local
 
@@ -59,15 +121,13 @@ MCP et l'exécution de tâches d'agent sont facultatifs. Un agent peut transmett
 
 En mode navigateur séparé, Ajour conserve un profil local entre les tâches. Ce profil peut garder des témoins, aussi appelés cookies, et des sessions ouvertes, dont une session Workday. Si vous reliez un agent à votre propre navigateur, celui-ci conserve ses propres données de session. Terminer une tâche ne ferme pas les sessions. Le guide [Your data](/app/data#back-up-export-or-delete-data), en anglais, explique comment les effacer localement.
 
-## Connexion Google et Microsoft prévue
+## Connexion Microsoft prévue
 
-La prise en charge des connexions Google et Microsoft par le courtier d'identifiants n'est pas disponible dans la version actuelle. Cette section décrit le traitement prévu lorsque cette fonction sera disponible. Elle ne décrit pas la sécurité des plugins à jetons actuels.
+La connexion Microsoft par le courtier d'identifiants est aussi en développement et n'est pas disponible dans la version actuelle.
 
-Si vous vous connectez à un compte Google ou Microsoft avec cette fonction, Ajour gardera les identifiants du compte chiffrés sur votre appareil, sans nous les envoyer ni les transmettre au code des plugins. Il demandera le minimum de permissions pour les fonctions que vous choisissez. Les renseignements d'identité serviront seulement à distinguer les comptes lorsque nécessaire. L'accès au calendrier sera demandé à son activation. Les plugins autorisés utiliseront le compte par l'intermédiaire du courtier.
+Si vous vous connectez à un compte Microsoft avec cette fonction, Ajour gardera les identifiants du compte chiffrés sur votre appareil, sans nous les envoyer ni les transmettre au code des plugins. Il demandera le minimum de permissions pour les fonctions que vous choisissez. Les renseignements d'identité serviront seulement à distinguer les comptes lorsque nécessaire. L'accès au calendrier sera demandé à son activation. Les plugins autorisés utiliseront le compte par l'intermédiaire du courtier.
 
-L'utilisation et le transfert par Ajour des renseignements reçus des API Google respecteront la [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), y compris ses exigences d'utilisation limitée, appelées Limited Use. Les données Google serviront uniquement aux fonctions visibles que vous activez. Elles ne seront ni vendues, ni utilisées à des fins publicitaires, ni utilisées pour entraîner des modèles d'IA à usage général. Tout transfert permis restera soumis à cette politique et au consentement qu'elle exige.
-
-La version qui ajoutera ces connexions mettra cette politique à jour et expliquera les permissions, le retrait d'un compte et la révocation auprès du fournisseur. Supprimer un identifiant local et révoquer une permission chez un fournisseur sont deux actions différentes.
+La version qui ajoutera la connexion Microsoft mettra cette politique à jour et expliquera les permissions, le retrait d'un compte et la révocation auprès du fournisseur. Supprimer un identifiant local et révoquer une permission chez un fournisseur sont deux actions différentes.
 
 ## Ce site Web
 
@@ -94,5 +154,7 @@ Vous pouvez envoyer une plainte à la même adresse. Au Québec, vous pouvez aus
 ## Modifications de cette politique
 
 Nous publierons les modifications ici et mettrons à jour la date ci-dessus. Une modification importante sera accompagnée d'un avis sur cette page qui explique le changement. La mise à jour de la politique n'autorise pas à elle seule un nouvel usage de vos renseignements lorsqu'un consentement est nécessaire. Les versions antérieures restent accessibles dans l'historique du dépôt.
+
+21 octobre 2026 : Précisions sur les données du compte et du calendrier Google, leurs usages, leurs destinataires, leur protection, leur durée de conservation et leur suppression. La connexion Google reste en développement.
 
 </div>
