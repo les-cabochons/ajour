@@ -1,5 +1,10 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { isChromeInstalled } from "./chrome.ts";
+
+// The host's path module joins the macOS locations, so expected paths are
+// joined the same way and the macOS cases also run on Windows.
+const MAC_BINARY = "Google Chrome.app/Contents/MacOS/Google Chrome";
 
 describe("isChromeInstalled", () => {
   it("looks in /Applications on macOS", async () => {
@@ -12,21 +17,22 @@ describe("isChromeInstalled", () => {
       },
     });
     expect(installed).toBe(true);
-    expect(seen[0]).toContain("Google Chrome.app");
+    expect(seen[0]).toBe(path.join("/Applications", MAC_BINARY));
   });
 
   it("also looks in the user's Applications folder on macOS", async () => {
+    const userCopy = path.join("/Users/a", "Applications", MAC_BINARY);
     const seen: string[] = [];
     const installed = await isChromeInstalled({
       platform: "darwin",
       env: { HOME: "/Users/a" },
       exists: async (candidate) => {
         seen.push(candidate);
-        return candidate.startsWith("/Users/a/Applications/");
+        return candidate === userCopy;
       },
     });
     expect(installed).toBe(true);
-    expect(seen).toHaveLength(2);
+    expect(seen).toEqual([path.join("/Applications", MAC_BINARY), userCopy]);
   });
 
   it("is false when Chrome is nowhere", async () => {

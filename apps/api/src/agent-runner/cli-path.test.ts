@@ -2,7 +2,11 @@ import { chmod, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { findExecutable, readLoginShellPath } from "./cli-path.ts";
+import {
+  findExecutable,
+  readLoginShellPath,
+  resolveLoginShellPath,
+} from "./cli-path.ts";
 
 describe("findExecutable", () => {
   it("finds an executable on PATH and skips folders without it", async () => {
@@ -30,7 +34,18 @@ async function fakeShell(body: string): Promise<string> {
   return shell;
 }
 
-describe("readLoginShellPath", () => {
+describe("resolveLoginShellPath", () => {
+  it.runIf(process.platform === "win32")(
+    "keeps the process PATH on Windows",
+    async () => {
+      expect(await resolveLoginShellPath()).toBe(process.env.PATH ?? "");
+    },
+  );
+});
+
+// The fake shells are `#!/bin/sh` scripts, and Ajour reads a login shell's
+// PATH only on macOS and Linux; Windows keeps the process PATH.
+describe.skipIf(process.platform === "win32")("readLoginShellPath", () => {
   it("ignores output an rc file prints around the PATH", async () => {
     const shell = await fakeShell(
       'echo "Welcome banner"\nexport PATH=/custom/bin:/usr/bin\n/bin/sh -c "$2"\necho "trailing notice"',
