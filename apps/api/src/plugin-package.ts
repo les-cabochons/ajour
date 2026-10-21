@@ -136,6 +136,8 @@ export interface InstalledPlugin {
   directory: string;
   replaced: boolean;
   installed: boolean;
+  /** The replaced package's backup couldn't be removed; the next start removes it. */
+  backupLeft?: true;
 }
 
 function isPathInside(parent: string, candidate: string) {
@@ -372,19 +374,25 @@ export async function readPlugin(
  * Reads every installed package. Packages built for another plugin API come
  * back in `unavailable`; other invalid directories are logged and skipped.
  */
+/**
+ * The runnable installed plugins, and the packages Ajour read but can't run.
+ * `invalidCount` counts the folders skipped because their package is invalid.
+ */
 export async function discoverInstalledPlugins(pluginRoot: string): Promise<{
   plugins: ResolvedPlugin[];
   unavailable: UnavailablePlugin[];
+  invalidCount: number;
 }> {
   let entries;
   try {
     entries = await readdir(pluginRoot, { withFileTypes: true });
   } catch {
-    return { plugins: [], unavailable: [] };
+    return { plugins: [], unavailable: [], invalidCount: 0 };
   }
 
   const plugins: ResolvedPlugin[] = [];
   const unavailable: UnavailablePlugin[] = [];
+  let invalidCount = 0;
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith(".")) {
       continue;
@@ -403,17 +411,21 @@ export async function discoverInstalledPlugins(pluginRoot: string): Promise<{
         });
         continue;
       }
-      console.error(
-        `Skipping invalid plugin directory "${entry.name}".`,
-        error,
-      );
+      invalidCount += 1;
     }
   }
 
-  return { plugins, unavailable };
+  return { plugins, unavailable, invalidCount };
 }
 
-export async function reconcilePluginInstallRoot(pluginRoot: string) {
+/**
+ * Finishes or undoes package changes a stopped app left half done. Returns
+ * how many leftover backups it could neither restore nor remove.
+ */
+export async function reconcilePluginInstallRoot(
+  pluginRoot: string,
+): Promise<number> {
+  let failedBackups = 0;
   await mkdir(pluginRoot, { recursive: true, mode: 0o700 });
   const entries = await readdir(pluginRoot, { withFileTypes: true });
   for (const entry of entries) {
@@ -440,10 +452,11 @@ export async function reconcilePluginInstallRoot(pluginRoot: string) {
       } else {
         await rename(entryPath, targetDirectory);
       }
-    } catch (error) {
-      console.error(`Unable to reconcile plugin backup "${entryPath}".`, error);
+    } catch {
+      failedBackups += 1;
     }
   }
+  return failedBackups;
 }
 
 export async function installPluginArchive(options: {
@@ -533,22 +546,21 @@ export async function installPluginArchive(options: {
       throw error;
     }
 
-    if (targetExists) {
-      await rm(backupDirectory, { recursive: true, force: true }).catch(
-        (error) => {
-          console.error(
-            `Unable to remove plugin backup "${backupDirectory}".`,
-            error,
-          );
-        },
-      );
-    }
+    // A backup left behind is removed at the next start, by
+    // reconcilePluginInstallRoot.
+    const backupLeft =
+      targetExists &&
+      (await rm(backupDirectory, { recursive: true, force: true }).then(
+        () => false,
+        () => true,
+      ));
 
     return {
       manifest: stagedPlugin.manifest,
       directory: targetDirectory,
       replaced: targetExists,
       installed: true,
+      ...(backupLeft ? { backupLeft: true as const } : {}),
     };
   } finally {
     await rm(stagingRoot, { recursive: true, force: true });

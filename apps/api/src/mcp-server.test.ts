@@ -15,6 +15,12 @@ import { AgentSessions } from "./agent-sessions.ts";
 import { startAppApiServer, stopAppApiServer } from "./server.ts";
 
 const TEST_ORIGIN = "http://127.0.0.1:5173";
+const MCP_EVENT_NAMES: ReadonlySet<string> = new Set([
+  "mcp.request",
+  "agent_tool.call",
+  "agent.session",
+  "agent.run",
+]);
 const running: (() => Promise<void>)[] = [];
 
 afterEach(async () => {
@@ -32,6 +38,13 @@ type TestApiOptions = Omit<
 async function startTestApi(options: TestApiOptions = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "ajour-mcp-"));
   const sink = createRecordingSink<AjourEvent>();
+  // The MCP and agent events. Each /api request the test makes emits its
+  // own, which request-events.test.ts covers.
+  const logged: AjourEvent[] = [];
+  const recordMcp = (event: Parameters<typeof sink.emit>[0]) => {
+    sink.emit(event);
+    if (MCP_EVENT_NAMES.has(event.name)) logged.push(event as AjourEvent);
+  };
   const server = await startAppApiServer({
     port: 0,
     statePath: path.join(root, "state.json"),
@@ -39,7 +52,7 @@ async function startTestApi(options: TestApiOptions = {}) {
     allowDevelopmentPlugins: false,
     projectDataShapePluginDirectories: [],
     allowedOrigins: [TEST_ORIGIN],
-    eventSink: sink,
+    eventSink: { emit: recordMcp },
     ...options,
   });
   const { port } = server.address() as AddressInfo;
@@ -47,7 +60,7 @@ async function startTestApi(options: TestApiOptions = {}) {
     await stopAppApiServer(server);
     await rm(root, { recursive: true, force: true });
   });
-  return { baseUrl: `http://127.0.0.1:${port}`, logged: sink.events };
+  return { baseUrl: `http://127.0.0.1:${port}`, logged, all: sink.events };
 }
 
 /** Calls an /api route the way the renderer does, with its origin. */
@@ -380,6 +393,12 @@ describe("MCP endpoint", () => {
           name: "list_projects",
           access: "read",
           bridge_ms: expect.any(Number),
+        },
+        http: {
+          method: "POST",
+          route: "/mcp/ajour",
+          status_code: 200,
+          request_bytes: expect.any(Number),
         },
       },
     ]);
@@ -1305,14 +1324,16 @@ describe("wide events on stdout", () => {
     await refusedBrowserCall(baseUrl, token);
     await refusedBrowserCall(baseUrl, token);
 
-    expect(log).toHaveBeenCalledTimes(2);
     for (const [line] of log.mock.calls) {
       expect(typeof line).toBe("string");
       expect(line).not.toContain("\n");
-      expect(JSON.parse(line as string)).toMatchObject({
-        name: "mcp.request",
-        outcome_reason: "browser_origin",
-      });
     }
+    const lines = log.mock.calls.map(
+      ([line]) => JSON.parse(line as string) as AjourEvent,
+    );
+    expect(lines.filter((event) => event.name === "mcp.request")).toEqual([
+      expect.objectContaining({ outcome_reason: "browser_origin" }),
+      expect.objectContaining({ outcome_reason: "browser_origin" }),
+    ]);
   });
 });

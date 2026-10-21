@@ -28,6 +28,7 @@ import {
   type SwitchableCapability,
 } from "../../../packages/shared/plugins.ts";
 import type { McpSettings } from "../../../packages/shared/agent-tools.ts";
+import type { ApiEvents } from "./events.ts";
 import {
   agentRunnerSettingsSchema,
   type AgentRunnerSettings,
@@ -747,8 +748,24 @@ function normalizeState(
   return migrateLegacyState(raw as AppApiStateV1);
 }
 
+/** The state file's path: the one given, else AJOUR_APP_API_STATE_PATH, else ~/.ajour. */
+export function resolveStatePath(
+  statePath = process.env.AJOUR_APP_API_STATE_PATH,
+): string {
+  return statePath && statePath.trim().length > 0
+    ? statePath
+    : path.join(os.homedir(), ".ajour", "app-api-state.json");
+}
+
+/** A state file that isn't JSON. The parser's message can quote the file, secrets included. */
+function unreadableStateError() {
+  const error = new SyntaxError("The state file is not valid JSON.");
+  return Object.assign(error, { code: "unreadable" });
+}
+
 export class AppApiStorage {
   private readonly statePath: string;
+  private readonly events?: ApiEvents;
   private cache?: AppApiState;
   private mutationQueue: Promise<unknown> = Promise.resolve();
   private loading?: Promise<AppApiState>;
@@ -758,11 +775,10 @@ export class AppApiStorage {
    */
   private lastDismissal?: ImportDismissal;
 
-  constructor(statePath = process.env.AJOUR_APP_API_STATE_PATH) {
-    this.statePath =
-      statePath && statePath.trim().length > 0
-        ? statePath
-        : path.join(os.homedir(), ".ajour", "app-api-state.json");
+  /** `events` receives a `storage.load` event for each load of the state file. */
+  constructor(statePath?: string, options: { events?: ApiEvents } = {}) {
+    this.statePath = resolveStatePath(statePath);
+    this.events = options.events;
   }
 
   /** The folder that holds the state file. Agent browser data lives next to it. */
@@ -1773,16 +1789,53 @@ export class AppApiStorage {
     return this.cache ?? loaded;
   }
 
+  /**
+   * Reads and migrates the state file, in its own `storage.load` event. A
+   * file that isn't JSON fails every read until it is fixed, and its event
+   * says it is unreadable.
+   */
   private async loadState(): Promise<AppApiState> {
-    const state = existsSync(this.statePath)
-      ? normalizeState(
-          JSON.parse(await readFile(this.statePath, "utf8")) as Partial<
-            AppApiState | AppApiStateV1 | AppApiStateV2
-          >,
-        )
-      : createDefaultState();
-    this.cache ??= state;
-    return this.cache;
+    const unit = this.events?.start("storage.load", {
+      kind: "lifecycle",
+      trigger: "system",
+      // Shared by every first reader, so never folded into one of them.
+      detached: true,
+    });
+    try {
+      let state: AppApiState;
+      if (existsSync(this.statePath)) {
+        const text = await readFile(this.statePath, "utf8");
+        unit?.set({
+          storage: { found: true, bytes: Buffer.byteLength(text) },
+        });
+        let raw: Partial<AppApiState | AppApiStateV1 | AppApiStateV2>;
+        try {
+          raw = JSON.parse(text) as typeof raw;
+        } catch (error) {
+          unit
+            ?.set({ storage: { unreadable: true } })
+            .fail(unreadableStateError(), { reason: "unreadable" });
+          throw error;
+        }
+        unit?.set({
+          storage: {
+            version_from: typeof raw.version === "number" ? raw.version : 1,
+          },
+        });
+        state = normalizeState(raw);
+      } else {
+        unit?.set({ storage: { found: false } });
+        state = createDefaultState();
+      }
+      unit?.set({ storage: { version_to: state.version } });
+      this.cache ??= state;
+      return this.cache;
+    } catch (error) {
+      if (unit?.outcome === undefined) unit?.fail(error);
+      throw error;
+    } finally {
+      unit?.end();
+    }
   }
 
   private async writeState(state: AppApiState) {

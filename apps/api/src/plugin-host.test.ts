@@ -14,6 +14,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { codeHostOperations } from "../../../packages/shared/code-host.ts";
 import { calendarOperations } from "../../../packages/shared/calendar.ts";
 import type { TeamProjectChange } from "../../../packages/shared/team-sync.ts";
+import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
+import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
+import { createApiEvents } from "./events.ts";
 import { capabilityOfMethod, PluginManager } from "./plugin-host.ts";
 import { readPlugin } from "./plugin-package.ts";
 
@@ -84,14 +87,6 @@ async function packagePlugin(pluginDirectory: string, archivePath: string) {
 
 const AGENT_TASK_PROMPT =
   "Enter week {{weekOf}} at {{settings.url}} in session {{sessionId}}.";
-
-/** Everything a console.error spy received, as one string. */
-function logged(spy: { mock: { calls: unknown[][] } }) {
-  return spy.mock.calls
-    .flat()
-    .map((value) => (value instanceof Error ? value.message : String(value)))
-    .join("\n");
-}
 
 /** Files of a plugin that only declares an agent task: no entrypoint. */
 function agentTaskPluginFiles(overrides: { prompt?: string } = {}) {
@@ -1062,37 +1057,55 @@ describe("PluginManager", () => {
     ).rejects.toThrow('has no agent task "other"');
   });
 
-  // Invalid development plugins are skipped and logged, not listed as unavailable.
-  it("skips an agent task plugin whose prompt uses an unknown slot", async () => {
-    const consoleError = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
-    try {
-      const pluginManager = await createManagerWithDevelopmentPlugin(
-        agentTaskPluginFiles({ prompt: "Hi {{settings.nope}}" }),
-      );
-      const { plugins } = await pluginManager.inspectPlugins();
-      expect(plugins.map((plugin) => plugin.id)).not.toContain("ajp-test");
-      expect(logged(consoleError)).toContain("settings.nope");
-    } finally {
-      consoleError.mockRestore();
+  /**
+   * Discovers plugins inside a unit, as a request does, and returns the
+   * plugins it lists and what its event counted.
+   */
+  async function discoverCounted(files: Record<string, string>) {
+    const root = await tempDir();
+    const pluginDirectory = path.join(root, "dev-plugin");
+    for (const [relativePath, content] of Object.entries(files)) {
+      const filePath = path.join(pluginDirectory, relativePath);
+      await mkdir(path.dirname(filePath), { recursive: true });
+      await writeFile(filePath, content, "utf8");
     }
+    const sink = createRecordingSink<AjourEvent>();
+    const events = createApiEvents({ sink, userDataPath: root });
+    const pluginManager = manager({
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [pluginDirectory],
+      allowDevelopmentPlugins: true,
+      events,
+    });
+    const { plugins } = await events.run(
+      "plugin.list",
+      { kind: "request", trigger: "system" },
+      () => pluginManager.inspectPlugins(),
+    );
+    return {
+      pluginIds: plugins.map((plugin) => plugin.id),
+      counts: sink.events[0]?.counts,
+      reading: readPlugin(pluginDirectory, "development"),
+    };
+  }
+
+  // Invalid development plugins are skipped and counted, not listed as unavailable.
+  it("skips an agent task plugin whose prompt uses an unknown slot", async () => {
+    const { pluginIds, counts, reading } = await discoverCounted(
+      agentTaskPluginFiles({ prompt: "Hi {{settings.nope}}" }),
+    );
+    expect(pluginIds).not.toContain("ajp-test");
+    expect(counts).toEqual({ invalid_plugin: 1 });
+    await expect(reading).rejects.toThrow("settings.nope");
   });
 
   it("skips an agent task plugin whose prompt is over 64 KB", async () => {
-    const consoleError = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => undefined);
-    try {
-      const pluginManager = await createManagerWithDevelopmentPlugin(
-        agentTaskPluginFiles({ prompt: "x".repeat(65_537) }),
-      );
-      const { plugins } = await pluginManager.inspectPlugins();
-      expect(plugins.map((plugin) => plugin.id)).not.toContain("ajp-test");
-      expect(logged(consoleError)).toContain("64 KB");
-    } finally {
-      consoleError.mockRestore();
-    }
+    const { pluginIds, counts, reading } = await discoverCounted(
+      agentTaskPluginFiles({ prompt: "x".repeat(65_537) }),
+    );
+    expect(pluginIds).not.toContain("ajp-test");
+    expect(counts).toEqual({ invalid_plugin: 1 });
+    await expect(reading).rejects.toThrow("64 KB");
   });
 
   it("refuses to run code for a plugin without an entrypoint", async () => {

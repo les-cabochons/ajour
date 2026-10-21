@@ -156,23 +156,38 @@ async function dispatchJsonRequest(
     } as unknown as IncomingMessage;
     let status = 0;
     const response = {
+      statusCode: 200,
+      headersSent: false,
+      writableEnded: false,
       setHeader() {
+        return response;
+      },
+      getHeader() {
+        return undefined;
+      },
+      once() {
         return response;
       },
       writeHead(statusCode: number) {
         status = statusCode;
+        response.statusCode = statusCode;
+        response.headersSent = true;
         return response;
       },
       end(payload?: string) {
-        resolve({
-          status,
-          body: payload ? JSON.parse(payload) : undefined,
-        });
+        response.writableEnded = true;
+        // The request's event ends once its handler returns, just after.
+        setImmediate(() =>
+          resolve({
+            status,
+            body: payload ? JSON.parse(payload) : undefined,
+          }),
+        );
         return response;
       },
-    } as unknown as ServerResponse;
+    };
 
-    server.emit("request", request, response);
+    server.emit("request", request, response as unknown as ServerResponse);
   });
 }
 
@@ -1358,7 +1373,9 @@ describe("calendar routes", () => {
       body: { events: [{ eventId: "standup", title: "Secret project sync" }] },
     });
 
-    const logged = events.filter((event) => event.name === "calendar.fetch");
+    const logged = events.filter(
+      (event) => event.name === "calendar.fetch" && event.kind === "request",
+    );
     expect(logged).toEqual([
       expect.objectContaining({
         kind: "request",
@@ -1610,13 +1627,16 @@ describe("agent task settings route", () => {
       });
       await vi.waitFor(
         () =>
-          expect(events.map((event) => event.name)).toEqual([
-            "agent.session",
-            "agent.run",
-          ]),
+          expect(
+            events
+              .map((event) => event.name)
+              .filter((name) => name.startsWith("agent.")),
+          ).toEqual(["agent.session", "agent.run"]),
         { timeout: 10_000 },
       );
-      const [ended, run] = events;
+      const [ended, run] = events.filter((event) =>
+        event.name.startsWith("agent."),
+      );
       expect(run!.agent?.run_id).toEqual(expect.any(String));
       expect(ended).toMatchObject({
         agent: {
@@ -2058,14 +2078,23 @@ describe("backlog comment routes", () => {
         ],
       },
     );
-    const sink = createRecordingSink<AjourEvent>();
-    const { events } = sink;
+    // The comment routes' request events only.
+    const events: AjourEvent[] = [];
     const server = createAppApiServer({
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
       allowDevelopmentPlugins: true,
-      eventSink: sink,
+      eventSink: {
+        emit(event) {
+          if (
+            event.kind === "request" &&
+            /^(comment|mention)\./.test(event.name)
+          ) {
+            events.push(event as AjourEvent);
+          }
+        },
+      },
     });
     servers.push(server);
     const connectionResponse = await dispatchJsonRequest(server, {
@@ -2520,6 +2549,8 @@ describe("backlog comment routes", () => {
         { name: "comment.edit", outcome: "ok" },
         { name: "comment.delete", outcome: "ok" },
         { name: "comment.react", outcome: "ok" },
+        // A reaction the plugin doesn't declare is refused before it runs.
+        { name: "comment.react", outcome: "refused" },
       ],
     );
     expect(full.events[0]!.comment).toEqual({

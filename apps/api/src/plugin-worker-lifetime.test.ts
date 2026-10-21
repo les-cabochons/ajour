@@ -39,6 +39,11 @@ describe("plugin worker lifetime", () => {
       name: "Plugin",
       workerScriptUrl: pathToFileURL(script),
       requestTimeoutMs,
+      eventNames: {
+        sync: "backlog.sync",
+        syncConnection: "backlog.sync",
+        syncPullRequests: "pull_request.sync",
+      },
     });
     lifetimes.push(host);
     return host;
@@ -203,7 +208,7 @@ describe("plugin worker lifetime", () => {
     const removed = host.run("removed", "sync", passThrough);
     const kept = host.run("kept", "sync", passThrough);
     await waitForWorkerStart();
-    await host.cancel(new Error("Plugin removed"), "removed");
+    await host.cancel(new Error("Plugin removed"), undefined, "removed");
     await expect(removed).rejects.toThrow("Plugin removed");
     expect(host.activeOperationCount).toBe(1);
     await host.shutdown();
@@ -217,6 +222,7 @@ describe("plugin worker lifetime", () => {
     await waitForWorkerStart();
     await host.cancel(
       new Error("Pull requests turned off"),
+      "capability_off",
       "github",
       (method) => method === "syncPullRequests",
     );

@@ -74,19 +74,16 @@ import {
 import {
   calendarOperationSchema,
   calendarOperations,
-  type CalendarOperation,
 } from "../../../packages/shared/calendar.ts";
 import {
   backlogCommentOperationAllowed,
   backlogCommentOperationSchema,
   backlogCommentOperations,
-  type BacklogCommentOperation,
 } from "../../../packages/shared/backlog-comments.ts";
-import type {
-  AjourCatalog,
-  EventName,
-} from "../../../packages/wide-events/catalog.ts";
+import type { AjourCatalog } from "../../../packages/wide-events/catalog.ts";
+import type { Unit } from "../../../packages/wide-events/index.ts";
 import { teamSyncRequestSchema } from "../../../packages/shared/team-sync.ts";
+import { ZodError } from "zod";
 import {
   projectDataShapeExportRequestSchema,
   projectDataShapeExportResponseSchema,
@@ -112,7 +109,7 @@ import {
 } from "./connection-values.ts";
 import type { Sink } from "../../../packages/wide-events/sinks.ts";
 import { AgentSessions } from "./agent-sessions.ts";
-import { createApiEvents, type ApiLaunch } from "./events.ts";
+import { createApiEvents, type ApiEvents, type ApiLaunch } from "./events.ts";
 import { McpBridge } from "./mcp-bridge.ts";
 import { createMcpClient } from "./mcp-clients.ts";
 import { handleMcpRequest, MAX_WAIT_FOR_ANSWER_MS } from "./mcp-server.ts";
@@ -127,6 +124,7 @@ import {
 import { playwrightMcpServer } from "./agent-runner/playwright-mcp.ts";
 import { AgentRunError, AgentRunner } from "./agent-runner/runner.ts";
 import { capabilityOfMethod, PluginManager } from "./plugin-host.ts";
+import { PluginOperationRefused } from "./plugin-worker-lifetime.ts";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
 import {
   connectionlessPluginErrorMessage,
@@ -138,7 +136,20 @@ import {
   redactPluginText,
   type ConnectionRedaction,
 } from "./plugin-errors.ts";
-import { AppApiStorage } from "./storage.ts";
+import {
+  decodeParams,
+  matchRoute,
+  serveWithEvent,
+  type RouteContext,
+  type RouteHandlers,
+  type RouteId,
+  type RouteParams,
+} from "./routes.ts";
+import {
+  AppApiStorage,
+  resolveStatePath,
+  type StoredConnection,
+} from "./storage.ts";
 
 interface AppApiServerOptions {
   host?: string;
@@ -170,27 +181,14 @@ interface AppApiServerOptions {
 }
 
 interface AppApiRuntime {
+  events: ApiEvents;
+  port: number;
   storage: AppApiStorage;
   pluginManager: PluginManager;
   projectDataShapePluginManager: ProjectDataShapePluginManager;
   agentRunner: AgentRunner;
   stopping: boolean;
 }
-
-/** The event each comment operation's request emits. A new operation needs one. */
-const COMMENT_EVENTS = {
-  listItemComments: "comment.list",
-  postItemComment: "comment.post",
-  editItemComment: "comment.edit",
-  deleteItemComment: "comment.delete",
-  setItemCommentReaction: "comment.react",
-  searchItemPeople: "mention.search",
-} as const satisfies Record<BacklogCommentOperation, EventName<AjourCatalog>>;
-
-/** The event each calendar operation's request emits. */
-const CALENDAR_EVENTS = {
-  listCalendarEvents: "calendar.fetch",
-} as const satisfies Record<CalendarOperation, EventName<AjourCatalog>>;
 
 const appApiRuntimesByServer = new WeakMap<Server, AppApiRuntime>();
 const MAX_JSON_BODY_BYTES = 16 * 1024 * 1024;
@@ -406,45 +404,101 @@ class InvalidJsonError extends SyntaxError {
   }
 }
 
-function matchPluginRoute(pathname: string) {
-  return pathname.match(
-    /^\/api\/plugins\/([^/]+)\/connections(?:\/([^/]+)(?:\/(sync|settle-states|settle|description|description-write))?)?$/,
-  );
+/**
+ * The request's URL. A request line Node accepted can still fail to parse,
+ * such as `//`, and then the request reaches no route.
+ */
+function requestUrlOf(request: IncomingMessage) {
+  try {
+    return new URL(request.url ?? "/", "http://127.0.0.1");
+  } catch {
+    return new URL("http://127.0.0.1/");
+  }
 }
 
-function matchCodeHostRoute(pathname: string) {
-  return pathname.match(
-    /^\/api\/code-hosts\/([^/]+)\/connections\/([^/]+)\/([A-Za-z]+)$/,
-  );
+/**
+ * A request Ajour couldn't read, as its event holds it: a body that isn't
+ * JSON, a malformed path segment, or values that don't match the route's
+ * schema, whose message can quote what the caller sent. Undefined for any
+ * other error.
+ */
+function invalidRequestError(error: unknown): Error | undefined {
+  if (error instanceof InvalidJsonError || error instanceof URIError) {
+    return error;
+  }
+  if (error instanceof ZodError) {
+    const standIn = new Error("The request does not match its schema.");
+    standIn.name = "ZodError";
+    return standIn;
+  }
+  return undefined;
 }
 
-function matchBacklogCommentRoute(pathname: string) {
-  return pathname.match(
-    /^\/api\/backlog-comments\/([^/]+)\/connections\/([^/]+)\/([A-Za-z]+)$/,
-  );
+/** The connection as a plugin receives it. */
+function invocationConnection(connection: StoredConnection) {
+  return {
+    id: connection.id,
+    pluginId: connection.pluginId,
+    label: connection.label,
+    tenantLabel: connection.tenantLabel,
+    autoSync: connection.autoSync,
+    autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
+    connectedAt: connection.connectedAt,
+    lastSyncAt: connection.lastSyncAt,
+    lastError: connection.lastError,
+    config: connection.config,
+  };
 }
 
-function matchCalendarRoute(pathname: string) {
-  return pathname.match(
-    /^\/api\/calendars\/([^/]+)\/connections\/([^/]+)\/([A-Za-z]+)$/,
-  );
+/**
+ * A code host request's catalog fields: counts, a review's verdict and a
+ * merge's method. Never a repository, a number, a path or a body.
+ */
+function codeHostRequestFields(request: object) {
+  const fields: {
+    pull_request?: {
+      tracked_count?: number;
+      verdict?: "approve" | "request_changes" | "comment";
+      comment_count?: number;
+      merge_method?: string;
+    };
+  } = {};
+  if ("tracked" in request && Array.isArray(request.tracked)) {
+    fields.pull_request = { tracked_count: request.tracked.length };
+  }
+  if ("verdict" in request && "comments" in request) {
+    const review = request as {
+      verdict: "approve" | "request_changes" | "comment";
+      comments: unknown[];
+    };
+    fields.pull_request = {
+      verdict: review.verdict,
+      comment_count: review.comments.length,
+    };
+  }
+  if ("method" in request && typeof request.method === "string") {
+    fields.pull_request = { merge_method: request.method };
+  }
+  return fields;
 }
 
-/** `/api/teams/:pluginId/create` or `/api/teams/:pluginId/connections/:id/sync`. */
-function matchTeamRoute(pathname: string) {
-  return pathname.match(
-    /^\/api\/teams\/([^/]+)\/(?:(create)|connections\/([^/]+)\/(sync))$/,
-  );
-}
-
-function matchPluginActivationRoute(pathname: string) {
-  return pathname.match(/^\/api\/plugins\/([^/]+)\/activation$/);
-}
-
-function matchProjectDataShapeRoute(pathname: string) {
-  return pathname.match(
-    /^\/api\/project-data-shapes\/([^/]+)\/(export|import)$/,
-  );
+/** A code host result's catalog fields: how many pull requests, files or threads. */
+function codeHostResultFields(result: object) {
+  const fields: {
+    pull_request?: {
+      received_count?: number;
+      file_count?: number;
+      thread_count?: number;
+    };
+  } = {};
+  if ("pullRequests" in result && Array.isArray(result.pullRequests)) {
+    fields.pull_request = { received_count: result.pullRequests.length };
+  } else if ("files" in result && Array.isArray(result.files)) {
+    fields.pull_request = { file_count: result.files.length };
+  } else if ("threads" in result && Array.isArray(result.threads)) {
+    fields.pull_request = { thread_count: result.threads.length };
+  }
+  return fields;
 }
 
 function parseBooleanValue(value: unknown, fieldId: string) {
@@ -582,20 +636,27 @@ function parseAgentTaskValues(
 }
 
 /**
- * Why a capability cannot run now: the plugin is off, or the user turned the
- * capability off. Undefined when it can run.
+ * Why a capability cannot run now, and the reason its events record: the
+ * plugin system or the plugin is off, or the user turned the capability off.
+ * Undefined when it can run.
  */
-async function inactiveCapabilityError(
+async function inactiveCapability(
   storage: AppApiStorage,
   pluginId: string,
   capability: SwitchableCapability,
   availablePluginIds: ReadonlySet<string>,
   action: string,
-) {
+): Promise<
+  | { message: string; reason: "system_off" | "plugin_off" | "capability_off" }
+  | undefined
+> {
   if (!(await storage.isPluginEnabled(pluginId, availablePluginIds))) {
-    return capability === "connector"
-      ? `Activate this plugin before ${action}.`
-      : `Activate this plugin before ${action}.`;
+    return {
+      message: `Activate this plugin before ${action}.`,
+      reason: (await storage.getPluginSystemEnabled())
+        ? "plugin_off"
+        : "system_off",
+    };
   }
   if (
     !(await storage.isPluginCapabilityEnabled(
@@ -604,16 +665,29 @@ async function inactiveCapabilityError(
       availablePluginIds,
     ))
   ) {
-    return `Turn on ${switchableCapabilityLabels[capability].toLowerCase()} for this plugin before ${action}.`;
+    return {
+      message: `Turn on ${switchableCapabilityLabels[capability].toLowerCase()} for this plugin before ${action}.`,
+      reason: "capability_off",
+    };
   }
   return undefined;
 }
 
+/** The plugins overview. `unit`, the overview's own request, gets its counts. */
 async function getOverview(
   storage: AppApiStorage,
   pluginManager: PluginManager,
+  unit?: Unit<AjourCatalog, "plugin.list">,
 ) {
+  const startedAt = Date.now();
   const { plugins, unavailable } = await pluginManager.inspectPlugins();
+  unit?.set({
+    plugin_list: {
+      plugin_count: plugins.length,
+      unavailable_count: unavailable.length,
+      discovery_ms: Date.now() - startedAt,
+    },
+  });
   return pluginsOverviewSchema.parse(
     await storage.getPluginsOverview(plugins, unavailable),
   );
@@ -715,7 +789,13 @@ function defaultProjectDataShapePluginDirectories() {
 export function createAppApiServer(options: AppApiServerOptions = {}) {
   const host = options.host ?? process.env.AJOUR_APP_API_HOST ?? "127.0.0.1";
   const port = options.port ?? Number(process.env.AJOUR_APP_API_PORT ?? 8787);
-  const storage = new AppApiStorage(options.statePath);
+  const statePath = resolveStatePath(options.statePath);
+  const events = createApiEvents({
+    sink: options.eventSink,
+    launch: options.launch,
+    userDataPath: path.dirname(statePath),
+  });
+  const storage = new AppApiStorage(statePath, { events });
   const allowDevelopmentPlugins =
     options.allowDevelopmentPlugins ??
     process.env.AJOUR_ALLOW_DEVELOPMENT_PLUGINS === "1";
@@ -729,20 +809,23 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     bundledPluginArchives: options.bundledPluginArchives,
     allowDevelopmentPlugins,
     requestTimeoutMs: options.pluginRequestTimeoutMs,
+    events,
     // The routes check activation before reading the request. This repeats
     // the check once the operation can be cancelled, so a capability turned
     // off meanwhile never runs.
     operationGate: async (pluginId, method) => {
       const capability = capabilityOfMethod(method);
       if (!capability) return;
-      const inactive = await inactiveCapabilityError(
+      const inactive = await inactiveCapability(
         storage,
         pluginId,
         capability,
         new Set([pluginId]),
         "running it",
       );
-      if (inactive) throw new Error(inactive);
+      if (inactive) {
+        throw new PluginOperationRefused(inactive.message, inactive.reason);
+      }
     },
   });
   const projectDataShapePluginManager = new ProjectDataShapePluginManager({
@@ -750,15 +833,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       options.projectDataShapePluginDirectories ??
       defaultProjectDataShapePluginDirectories(),
     requestTimeoutMs: options.pluginRequestTimeoutMs,
+    events,
   });
   const allowedOrigins = new Set(
     options.allowedOrigins ?? configuredAllowedOrigins(),
   );
-  const events = createApiEvents({
-    sink: options.eventSink,
-    launch: options.launch,
-    userDataPath: storage.dataDirectory,
-  });
   // The bridge and the sessions publish through each other. Both closures
   // run after both constants exist, so the forward reference is safe.
   const mcpBridge: McpBridge = new McpBridge({
@@ -805,6 +884,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     events,
   });
   const runtime: AppApiRuntime = {
+    events,
+    port,
     storage,
     pluginManager,
     projectDataShapePluginManager,
@@ -828,1548 +909,1569 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     readBody: readJsonBody,
   };
 
-  const server = createServer(async (request, response) => {
-    if (runtime.stopping) {
-      writeJson(response, 503, { error: "App API is shutting down." });
-      return;
-    }
-    if (request.headers.host && !isAllowedRequestHost(request.headers.host)) {
-      writeJson(response, 403, { error: "Request host is not allowed." });
-      return;
-    }
-    const requestPath = new URL(request.url ?? "/", "http://127.0.0.1")
-      .pathname;
-    // MCP has its own rules: bearer tokens, and no browser origins at all.
-    if (requestPath === "/mcp" || requestPath.startsWith("/mcp/")) {
+  // One handler per route in ROUTES. Each adds its catalog fields to the
+  // request's event; the seam records the method, route, status and sizes.
+  const handlers: RouteHandlers = {
+    health: ({ response }) => {
+      writeJson(response, 200, { ok: true });
+    },
+
+    agentRunnerStatus: async ({ response }) => {
+      writeJson(response, 200, await agentRunner.overview());
+    },
+
+    agentRunnerConfigure: async ({ request, response }) => {
+      const payload = agentRunnerSettingsUpdateSchema.parse(
+        await readJsonBody(request),
+      );
+      await storage.updateAgentRunnerSettings(payload);
+      writeJson(response, 200, await agentRunner.overview());
+    },
+
+    // A plugin's agent tasks share their settings, so they save together.
+    agentTaskConfigure: async ({ request, response, params, unit }) => {
+      const payload = agentTaskSettingsUpdateSchema.parse(
+        await readJsonBody(request),
+      );
+      const { pluginId } = params;
+      unit.set({ plugin: { id: pluginId } });
+      const tasks = (await pluginManager.listPlugins()).find(
+        (plugin) => plugin.id === pluginId,
+      )?.capabilities.agentTask?.tasks;
+      if (!tasks) {
+        writeJson(response, 404, {
+          error: "This plugin has no agent tasks.",
+        });
+        return;
+      }
+      const parsed = parseAgentTaskValues(
+        agentTaskSettingFields(tasks),
+        payload.values,
+      );
+      if ("error" in parsed) {
+        writeJson(response, 400, { error: parsed.error });
+        return;
+      }
+      unit.set({
+        agent_task: { field_count: Object.keys(parsed.values).length },
+      });
+      await storage.setAgentTaskValues(pluginId, parsed.values);
+      writeJson(response, 200, await agentRunner.overview());
+    },
+
+    agentRunStart: async ({ request, response, unit }) => {
+      const payload = agentRunStartRequestSchema.parse(
+        await readJsonBody(request),
+      );
+      unit.set({
+        agent: { task_id: payload.taskId },
+        plugin: { id: payload.pluginId },
+      });
       try {
-        await handleMcpRequest(request, response, requestPath, mcpContext);
+        const run = await agentRunner.start(payload);
+        unit.set({ agent: { run_id: run.id } });
+        writeJson(response, 201, run);
       } catch (error) {
-        if (!response.headersSent) {
-          writeJson(response, 500, { error: errorMessage(error) });
-        }
+        if (!(error instanceof AgentRunError)) throw error;
+        writeJson(response, error.status, { error: error.message });
       }
-      return;
-    }
-    const requestOrigin = request.headers.origin;
-    if (
-      requestOrigin &&
-      !isAllowedRequestOrigin(requestOrigin, allowedOrigins)
-    ) {
-      writeJson(response, 403, { error: "Request origin is not allowed." });
-      return;
-    }
-    if (requestOrigin) {
-      response.setHeader("Access-Control-Allow-Origin", requestOrigin);
-      response.setHeader("Vary", "Origin");
-    }
+    },
 
-    if (request.method === "OPTIONS") {
-      writeJson(response, 204);
-      return;
-    }
+    agentRunStatus: ({ response }) => {
+      writeJson(response, 200, { run: agentRunner.currentRun() });
+    },
 
-    const requestUrl = new URL(request.url ?? "/", `http://${host}:${port}`);
-
-    try {
-      if (request.method === "GET" && requestUrl.pathname === "/api/health") {
-        writeJson(response, 200, { ok: true });
+    agentRunStop: ({ response, params, unit }) => {
+      unit.set({ agent: { run_id: params.runId } });
+      if (!agentRunner.stop(params.runId)) {
+        writeJson(response, 404, {
+          error: "That agent task is not running.",
+        });
         return;
       }
+      writeJson(response, 200, agentSessions.snapshot());
+    },
 
-      if (request.method === "GET" && requestUrl.pathname === "/api/agents") {
-        writeJson(response, 200, await agentRunner.overview());
-        return;
-      }
+    mcpStatus: async ({ response }) => {
+      writeJson(response, 200, await storage.getMcpSettings());
+    },
 
-      if (
-        request.method === "POST" &&
-        requestUrl.pathname === "/api/agents/settings"
-      ) {
-        const payload = agentRunnerSettingsUpdateSchema.parse(
-          await readJsonBody(request),
-        );
-        await storage.updateAgentRunnerSettings(payload);
-        writeJson(response, 200, await agentRunner.overview());
-        return;
-      }
-
-      // A plugin's agent tasks share their settings, so they save together.
-      const agentTaskSettingsRoute = requestUrl.pathname.match(
-        /^\/api\/agents\/plugins\/([^/]+)\/settings$/,
+    mcpConfigure: async ({ request, response, unit }) => {
+      const payload = mcpSettingsUpdateSchema.parse(
+        await readJsonBody(request),
       );
-      if (request.method === "POST" && agentTaskSettingsRoute) {
-        const payload = agentTaskSettingsUpdateSchema.parse(
-          await readJsonBody(request),
-        );
-        const pluginId = decodeURIComponent(agentTaskSettingsRoute[1] ?? "");
-        const tasks = (await pluginManager.listPlugins()).find(
-          (plugin) => plugin.id === pluginId,
-        )?.capabilities.agentTask?.tasks;
-        if (!tasks) {
-          writeJson(response, 404, {
-            error: "This plugin has no agent tasks.",
-          });
-          return;
-        }
-        const parsed = parseAgentTaskValues(
-          agentTaskSettingFields(tasks),
-          payload.values,
-        );
-        if ("error" in parsed) {
-          writeJson(response, 400, { error: parsed.error });
-          return;
-        }
-        await storage.setAgentTaskValues(pluginId, parsed.values);
-        writeJson(response, 200, await agentRunner.overview());
-        return;
-      }
+      unit.set({ mcp: { enabled: payload.enabled } });
+      await storage.setMcpEnabled(payload.enabled);
+      if (!payload.enabled) mcpBridge.close();
+      writeJson(response, 200, await storage.getMcpSettings());
+    },
 
-      if (
-        request.method === "POST" &&
-        requestUrl.pathname === "/api/agent-runs"
-      ) {
-        const payload = agentRunStartRequestSchema.parse(
-          await readJsonBody(request),
-        );
-        try {
-          writeJson(response, 201, await agentRunner.start(payload));
-        } catch (error) {
-          if (!(error instanceof AgentRunError)) throw error;
-          writeJson(response, error.status, { error: error.message });
-        }
-        return;
-      }
-
-      if (
-        request.method === "GET" &&
-        requestUrl.pathname === "/api/agent-runs/current"
-      ) {
-        writeJson(response, 200, { run: agentRunner.currentRun() });
-        return;
-      }
-
-      const agentRunStopRoute = requestUrl.pathname.match(
-        /^\/api\/agent-runs\/([^/]+)\/stop$/,
+    mcpClientCreate: async ({ request, response, unit }) => {
+      const payload = mcpClientCreateRequestSchema.parse(
+        await readJsonBody(request),
       );
-      if (request.method === "POST" && agentRunStopRoute) {
-        if (!agentRunner.stop(decodeURIComponent(agentRunStopRoute[1] ?? ""))) {
-          writeJson(response, 404, {
-            error: "That agent task is not running.",
-          });
-          return;
-        }
-        writeJson(response, 200, agentSessions.snapshot());
-        return;
-      }
+      const created = await createMcpClient(storage, payload.name);
+      unit.set({ agent: { client_id: created.client.id } });
+      writeJson(response, 201, created);
+    },
 
-      if (requestUrl.pathname === "/api/mcp/settings") {
-        if (request.method === "POST") {
-          const payload = mcpSettingsUpdateSchema.parse(
-            await readJsonBody(request),
-          );
-          await storage.setMcpEnabled(payload.enabled);
-          if (!payload.enabled) mcpBridge.close();
-        }
-        writeJson(response, 200, await storage.getMcpSettings());
-        return;
-      }
-
-      if (
-        request.method === "POST" &&
-        requestUrl.pathname === "/api/mcp/clients"
-      ) {
-        const payload = mcpClientCreateRequestSchema.parse(
-          await readJsonBody(request),
-        );
-        writeJson(response, 201, await createMcpClient(storage, payload.name));
-        return;
-      }
-
-      const mcpRevokeRoute = requestUrl.pathname.match(
-        /^\/api\/mcp\/clients\/([^/]+)\/revoke$/,
+    mcpClientRevoke: async ({ response, params, unit }) => {
+      unit.set({ agent: { client_id: params.clientId } });
+      const revoked = await storage.revokeMcpClient(
+        params.clientId,
+        Date.now(),
       );
-      if (request.method === "POST" && mcpRevokeRoute) {
-        const revoked = await storage.revokeMcpClient(
-          decodeURIComponent(mcpRevokeRoute[1] ?? ""),
-          Date.now(),
-        );
-        if (!revoked) {
-          writeJson(response, 404, { error: "Unknown MCP client." });
-          return;
-        }
-        writeJson(response, 200, await storage.getMcpSettings());
+      if (!revoked) {
+        writeJson(response, 404, { error: "Unknown MCP client." });
         return;
       }
+      writeJson(response, 200, await storage.getMcpSettings());
+    },
 
-      if (
-        request.method === "GET" &&
-        requestUrl.pathname === "/api/mcp/bridge"
-      ) {
-        // A new stream replaces the renderer's. A web page can open one with
-        // an <img> tag, which sends no Origin, so require the renderer's.
-        // EventSource sends Origin because the renderer is cross-origin:
-        // http://127.0.0.1:5173 in development, app://local when packaged.
-        if (!requestOrigin) {
-          writeJson(response, 403, { error: "The bridge needs an Origin." });
-          return;
-        }
-        if (!(await storage.getMcpSettings()).enabled) {
-          writeJson(response, 404, { error: "MCP is off." });
-          return;
-        }
-        mcpBridge.attach(response);
+    // A new stream replaces the renderer's. A web page can open one with an
+    // <img> tag, which sends no Origin, so require the renderer's.
+    // EventSource sends Origin because the renderer is cross-origin:
+    // http://127.0.0.1:5173 in development, app://local when packaged. The
+    // request's event ends when the stream closes.
+    mcpBridge: async ({ response, origin, unit }) => {
+      if (!origin) {
+        unit.refuse("no_origin");
+        writeJson(response, 403, { error: "The bridge needs an Origin." });
         return;
       }
-
-      if (
-        request.method === "POST" &&
-        requestUrl.pathname === "/api/mcp/bridge/results"
-      ) {
-        const result = bridgeToolResultSchema.parse(
-          await readJsonBody(request),
-        );
-        writeJson(response, 200, { ok: mcpBridge.resolve(result) });
+      if (!(await storage.getMcpSettings()).enabled) {
+        unit.refuse("mcp_off");
+        writeJson(response, 404, { error: "MCP is off." });
         return;
       }
+      let calls = 0;
+      unit.set({ mcp_bridge: { call_count: calls } });
+      mcpBridge.attach(response, {
+        onCall: () => {
+          calls += 1;
+          unit.set({ mcp_bridge: { call_count: calls } });
+        },
+      });
+    },
 
-      // The user's answer to an agent's question, from the agent panel.
-      const mcpAnswerRoute = requestUrl.pathname.match(
-        /^\/api\/mcp\/questions\/([^/]+)\/answer$/,
+    mcpBridgeResult: async ({ request, response, unit }) => {
+      const result = bridgeToolResultSchema.parse(await readJsonBody(request));
+      const resolved = mcpBridge.resolve(result);
+      unit.set({ mcp_bridge: { resolved } });
+      writeJson(response, 200, { ok: resolved });
+    },
+
+    // The user's answer to an agent's question, from the agent panel.
+    agentQuestionAnswer: async ({ request, response, params, unit }) => {
+      unit.set({ agent: { question_id: params.questionId } });
+      const payload = agentAnswerRequestSchema.parse(
+        await readJsonBody(request),
       );
-      if (request.method === "POST" && mcpAnswerRoute) {
-        const payload = agentAnswerRequestSchema.parse(
-          await readJsonBody(request),
-        );
-        try {
-          agentSessions.answer(
-            decodeURIComponent(mcpAnswerRoute[1] ?? ""),
-            payload.text,
-          );
-        } catch (error) {
-          writeJson(response, 409, { error: errorMessage(error) });
-          return;
-        }
-        writeJson(response, 200, agentSessions.snapshot());
+      try {
+        agentSessions.answer(params.questionId, payload.text);
+      } catch (error) {
+        writeJson(response, 409, { error: errorMessage(error) });
         return;
       }
+      writeJson(response, 200, agentSessions.snapshot());
+    },
 
-      // The user clears a session from the panel, for an agent that died
-      // without ending it.
-      const mcpDismissRoute = requestUrl.pathname.match(
-        /^\/api\/mcp\/sessions\/([^/]+)\/dismiss$/,
+    // The user clears a session from the panel, for an agent that died
+    // without ending it.
+    agentSessionDismiss: ({ response, params, unit }) => {
+      unit.set({ agent: { session_id: params.sessionId } });
+      try {
+        agentSessions.dismiss(params.sessionId);
+      } catch (error) {
+        writeJson(response, 409, { error: errorMessage(error) });
+        return;
+      }
+      writeJson(response, 200, agentSessions.snapshot());
+    },
+
+    // The user opened the agent panel: earlier errors and failures are seen.
+    agentSessionMarkSeen: ({ response }) => {
+      agentSessions.markSeen();
+      writeJson(response, 200, agentSessions.snapshot());
+    },
+
+    pluginOverview: async ({ response, unit }) => {
+      writeJson(response, 200, await getOverview(storage, pluginManager, unit));
+    },
+
+    pluginManifests: async ({ response, unit }) => {
+      const startedAt = Date.now();
+      const plugins = await pluginManager.listPlugins();
+      unit.set({
+        plugin_list: {
+          plugin_count: plugins.length,
+          discovery_ms: Date.now() - startedAt,
+        },
+      });
+      writeJson(response, 200, plugins);
+    },
+
+    pluginSystemToggle: async ({ request, response, unit }) => {
+      const payload = pluginSystemActivationUpdateSchema.parse(
+        await readJsonBody(request),
       );
-      if (request.method === "POST" && mcpDismissRoute) {
-        try {
-          agentSessions.dismiss(decodeURIComponent(mcpDismissRoute[1] ?? ""));
-        } catch (error) {
-          writeJson(response, 409, { error: errorMessage(error) });
-          return;
-        }
-        writeJson(response, 200, agentSessions.snapshot());
-        return;
-      }
-
-      // The user opened the agent panel: earlier errors and failures are seen.
-      if (
-        request.method === "POST" &&
-        requestUrl.pathname === "/api/mcp/seen"
-      ) {
-        agentSessions.markSeen();
-        writeJson(response, 200, agentSessions.snapshot());
-        return;
-      }
-
-      if (request.method === "GET" && requestUrl.pathname === "/api/plugins") {
-        writeJson(response, 200, await getOverview(storage, pluginManager));
-        return;
-      }
-
-      if (
-        request.method === "GET" &&
-        requestUrl.pathname === "/api/plugins/plugins"
-      ) {
-        writeJson(response, 200, await pluginManager.listPlugins());
-        return;
-      }
-
-      if (
-        request.method === "POST" &&
-        requestUrl.pathname === "/api/plugins/activation"
-      ) {
-        const payload = pluginSystemActivationUpdateSchema.parse(
-          await readJsonBody(request),
-        );
-        await storage.setPluginSystemEnabled(payload.enabled);
-        if (!payload.enabled) {
-          const plugins = await pluginManager.listPlugins();
-          await Promise.allSettled(
-            plugins.map((plugin) =>
-              pluginManager.cancelPluginOperations(
-                plugin.id,
-                new Error("The Ajour plugin system was deactivated."),
-              ),
+      unit.set({ activation: { enabled: payload.enabled } });
+      await storage.setPluginSystemEnabled(payload.enabled);
+      if (!payload.enabled) {
+        const running =
+          pluginManager.activeOperationCount +
+          projectDataShapePluginManager.activeOperationCount;
+        const plugins = await pluginManager.listPlugins();
+        await Promise.allSettled(
+          plugins.map((plugin) =>
+            pluginManager.cancelPluginOperations(
+              plugin.id,
+              new Error("The Ajour plugin system was deactivated."),
+              "system_off",
             ),
-          );
-          await projectDataShapePluginManager.cancelOperations(
-            new Error("The Ajour plugin system was deactivated."),
-          );
-        }
-        writeJson(response, 200, await getOverview(storage, pluginManager));
-        return;
-      }
-
-      if (
-        request.method === "GET" &&
-        requestUrl.pathname === "/api/project-data-shapes"
-      ) {
-        const pluginsEnabled = await storage.getPluginSystemEnabled();
-        writeJson(
-          response,
-          200,
-          projectDataShapeListResponseSchema.parse({
-            plugins: pluginsEnabled
-              ? await projectDataShapePluginManager.listPlugins()
-              : [],
-          }),
-        );
-        return;
-      }
-
-      const projectDataShapeRoute = matchProjectDataShapeRoute(
-        requestUrl.pathname,
-      );
-      if (request.method === "POST" && projectDataShapeRoute) {
-        if (!(await storage.getPluginSystemEnabled())) {
-          writeJson(response, 409, {
-            error: "The Ajour plugin system is deactivated.",
-          });
-          return;
-        }
-        const pluginId = projectDataShapePluginIdSchema.parse(
-          decodeURIComponent(projectDataShapeRoute[1] ?? ""),
-        );
-        const operation = projectDataShapeRoute[2];
-        // A malformed body fails here, outside the try, as a 400.
-        const exportRequest =
-          operation === "export"
-            ? projectDataShapeExportRequestSchema.parse(
-                await readJsonBody(request),
-              )
-            : undefined;
-        const importRequest =
-          operation === "import"
-            ? projectDataShapeImportRequestSchema.parse(
-                await readJsonBody(request),
-              )
-            : undefined;
-        try {
-          if (exportRequest) {
-            writeJson(
-              response,
-              200,
-              projectDataShapeExportResponseSchema.parse(
-                await projectDataShapePluginManager.exportProjects(
-                  pluginId,
-                  exportRequest.projects,
-                ),
-              ),
-            );
-          }
-          if (importRequest) {
-            writeJson(
-              response,
-              200,
-              projectDataShapeImportResponseSchema.parse(
-                await projectDataShapePluginManager.importProjects(
-                  pluginId,
-                  importRequest.datasets,
-                ),
-              ),
-            );
-          }
-        } catch (error) {
-          writeJson(response, 400, {
-            error: connectionlessPluginErrorMessage(error),
-          });
-        }
-        return;
-      }
-
-      const pluginActivationRoute = matchPluginActivationRoute(
-        requestUrl.pathname,
-      );
-      if (request.method === "POST" && pluginActivationRoute) {
-        const pluginId = pluginIdSchema.parse(
-          decodeURIComponent(pluginActivationRoute[1] ?? ""),
-        );
-        const plugin = (await pluginManager.listPlugins()).find(
-          (candidate) => candidate.id === pluginId,
-        );
-        if (!plugin) {
-          writeJson(response, 404, { error: "Plugin not found." });
-          return;
-        }
-
-        const payload = pluginActivationUpdateSchema.parse(
-          await readJsonBody(request),
-        );
-        if (payload.capability) {
-          if (!pluginHasCapability(plugin, payload.capability)) {
-            writeJson(response, 400, {
-              error: "This plugin does not declare that capability.",
-            });
-            return;
-          }
-          await storage.setPluginCapabilityEnabled(
-            pluginId,
-            payload.capability,
-            payload.enabled,
-          );
-          if (!payload.enabled) {
-            await pluginManager.cancelCapabilityOperations(
-              pluginId,
-              payload.capability,
-              new Error(
-                `${switchableCapabilityLabels[payload.capability]} of plugin "${pluginId}" were turned off.`,
-              ),
-            );
-          }
-          writeJson(response, 200, await getOverview(storage, pluginManager));
-          return;
-        }
-        await storage.setPluginEnabled(pluginId, payload.enabled);
-        if (!payload.enabled) {
-          await pluginManager.cancelPluginOperations(
-            pluginId,
-            new Error(`Plugin "${pluginId}" was deactivated.`),
-          );
-        }
-        writeJson(response, 200, await getOverview(storage, pluginManager));
-        return;
-      }
-
-      if (
-        request.method === "GET" &&
-        requestUrl.pathname === "/api/backlog/source-statuses"
-      ) {
-        writeJson(
-          response,
-          200,
-          backlogSourceStatusListResponseSchema.parse(
-            await storage.listBacklogSourceStatuses(),
           ),
         );
+        await projectDataShapePluginManager.cancelOperations(
+          new Error("The Ajour plugin system was deactivated."),
+          "system_off",
+        );
+        unit.set({ activation: { operations_cancelled: running } });
+      }
+      writeJson(response, 200, await getOverview(storage, pluginManager));
+    },
+
+    schemaList: async ({ response, unit }) => {
+      const pluginsEnabled = await storage.getPluginSystemEnabled();
+      const plugins = pluginsEnabled
+        ? await projectDataShapePluginManager.listPlugins()
+        : [];
+      unit.set({ schema_list: { plugin_count: plugins.length } });
+      writeJson(
+        response,
+        200,
+        projectDataShapeListResponseSchema.parse({ plugins }),
+      );
+    },
+
+    projectExport: async ({ request, response, params, unit }) => {
+      if (!(await storage.getPluginSystemEnabled())) {
+        unit.refuse("system_off");
+        writeJson(response, 409, {
+          error: "The Ajour plugin system is deactivated.",
+        });
+        return;
+      }
+      const pluginId = projectDataShapePluginIdSchema.parse(params.pluginId);
+      unit.set({ plugin: { id: pluginId } });
+      // A malformed body fails here, outside the try, as a 400.
+      const exportRequest = projectDataShapeExportRequestSchema.parse(
+        await readJsonBody(request),
+      );
+      unit.set({
+        project_data: {
+          project_count: exportRequest.projects.length,
+          task_count: exportRequest.projects.reduce(
+            (count, project) => count + project.tasks.length,
+            0,
+          ),
+        },
+      });
+      try {
+        const result = projectDataShapeExportResponseSchema.parse(
+          await projectDataShapePluginManager.exportProjects(
+            pluginId,
+            exportRequest.projects,
+          ),
+        );
+        unit.set({
+          project_data: {
+            row_count: result.datasets.reduce(
+              (count, dataset) => count + dataset.rows.length,
+              0,
+            ),
+          },
+        });
+        writeJson(response, 200, result);
+      } catch (error) {
+        unit.fail(error);
+        writeJson(response, 400, {
+          error: connectionlessPluginErrorMessage(error),
+        });
+      }
+    },
+
+    projectImport: async ({ request, response, params, unit }) => {
+      if (!(await storage.getPluginSystemEnabled())) {
+        unit.refuse("system_off");
+        writeJson(response, 409, {
+          error: "The Ajour plugin system is deactivated.",
+        });
+        return;
+      }
+      const pluginId = projectDataShapePluginIdSchema.parse(params.pluginId);
+      unit.set({ plugin: { id: pluginId } });
+      // A malformed body fails here, outside the try, as a 400.
+      const importRequest = projectDataShapeImportRequestSchema.parse(
+        await readJsonBody(request),
+      );
+      unit.set({
+        project_data: {
+          row_count: importRequest.datasets.reduce(
+            (count, dataset) => count + dataset.rows.length,
+            0,
+          ),
+        },
+      });
+      try {
+        const result = projectDataShapeImportResponseSchema.parse(
+          await projectDataShapePluginManager.importProjects(
+            pluginId,
+            importRequest.datasets,
+          ),
+        );
+        unit.set({
+          project_data: {
+            project_count: result.projects.length,
+            task_count: result.projects.reduce(
+              (count, project) => count + project.tasks.length,
+              0,
+            ),
+          },
+        });
+        writeJson(response, 200, result);
+      } catch (error) {
+        unit.fail(error);
+        writeJson(response, 400, {
+          error: connectionlessPluginErrorMessage(error),
+        });
+      }
+    },
+
+    pluginActivate: async ({ request, response, params, unit }) => {
+      const pluginId = pluginIdSchema.parse(params.pluginId);
+      unit.set({ plugin: { id: pluginId } });
+      const plugin = (await pluginManager.listPlugins()).find(
+        (candidate) => candidate.id === pluginId,
+      );
+      if (!plugin) {
+        writeJson(response, 404, { error: "Plugin not found." });
         return;
       }
 
-      if (
-        request.method === "POST" &&
-        requestUrl.pathname === "/api/backlog/source-statuses"
-      ) {
-        const payload = backlogSourceStatusUpsertRequestSchema.parse(
-          await readJsonBody(request),
+      const payload = pluginActivationUpdateSchema.parse(
+        await readJsonBody(request),
+      );
+      unit.set({
+        activation: {
+          enabled: payload.enabled,
+          ...(payload.capability ? { capability: payload.capability } : {}),
+        },
+      });
+      const running = pluginManager.activeOperationCount;
+      if (payload.capability) {
+        if (!pluginHasCapability(plugin, payload.capability)) {
+          writeJson(response, 400, {
+            error: "This plugin does not declare that capability.",
+          });
+          return;
+        }
+        await storage.setPluginCapabilityEnabled(
+          pluginId,
+          payload.capability,
+          payload.enabled,
         );
-        writeJson(
-          response,
-          200,
-          backlogSourceStatusUpsertResponseSchema.parse({
-            items: await storage.upsertBacklogSourceStatuses(payload.items),
-          }),
+        if (!payload.enabled) {
+          await pluginManager.cancelCapabilityOperations(
+            pluginId,
+            payload.capability,
+            new Error(
+              `${switchableCapabilityLabels[payload.capability]} of plugin "${pluginId}" were turned off.`,
+            ),
+          );
+          unit.set({
+            activation: {
+              operations_cancelled:
+                running - pluginManager.activeOperationCount,
+            },
+          });
+        }
+        writeJson(response, 200, await getOverview(storage, pluginManager));
+        return;
+      }
+      await storage.setPluginEnabled(pluginId, payload.enabled);
+      if (!payload.enabled) {
+        await pluginManager.cancelPluginOperations(
+          pluginId,
+          new Error(`Plugin "${pluginId}" was deactivated.`),
+          "plugin_off",
         );
+        unit.set({
+          activation: {
+            operations_cancelled: running - pluginManager.activeOperationCount,
+          },
+        });
+      }
+      writeJson(response, 200, await getOverview(storage, pluginManager));
+    },
+
+    sourceStateList: async ({ response, unit }) => {
+      const statuses = backlogSourceStatusListResponseSchema.parse(
+        await storage.listBacklogSourceStatuses(),
+      );
+      unit.set({ source_state: { count: statuses.items.length } });
+      writeJson(response, 200, statuses);
+    },
+
+    sourceStateUpdate: async ({ request, response, unit }) => {
+      const payload = backlogSourceStatusUpsertRequestSchema.parse(
+        await readJsonBody(request),
+      );
+      unit.set({ source_state: { count: payload.items.length } });
+      writeJson(
+        response,
+        200,
+        backlogSourceStatusUpsertResponseSchema.parse({
+          items: await storage.upsertBacklogSourceStatuses(payload.items),
+        }),
+      );
+    },
+
+    connectionSave: async ({ request, response, params, unit }) => {
+      const pluginId = pluginIdSchema.parse(params.pluginId);
+      unit.set({ plugin: { id: pluginId } });
+      const payload = pluginConnectionSaveRequestSchema.parse(
+        await readJsonBody(request),
+      );
+      const parsedValues = parseConnectionValues(payload.values);
+      const { plugin, unavailableReason } = await findPlugin(
+        pluginManager,
+        pluginId,
+      );
+      if (!plugin) {
+        // The host runs no code of a plugin it can't load, and would
+        // refuse with this reason.
+        unit.refuse("not_installed");
+        writeJson(response, 400, {
+          error: unavailableReason ?? `Plugin "${pluginId}" is not installed.`,
+        });
+        return;
+      }
+      const existingConnection = payload.id
+        ? await storage.getConnection(pluginId, payload.id)
+        : null;
+      // A config saved before Ajour kept its own fields out may hold one.
+      const configForSave = withoutReservedFields(
+        mergeConnectionConfigForSave(
+          plugin,
+          parsedValues.config,
+          existingConnection?.config,
+        ),
+      );
+      const capabilities = await storage.listEnabledCapabilities(
+        pluginId,
+        pluginSwitchableCapabilities(plugin),
+      );
+      unit.set({
+        connection: {
+          is_new: !existingConnection,
+          field_count: Object.keys(configForSave).length,
+          capability_count: capabilities.length,
+          ...(existingConnection ? { id: existingConnection.id } : {}),
+        },
+      });
+      const call = admittedCall(plugin);
+      let validation: PluginValidationResult;
+      try {
+        validation = await pluginManager.validateConnection(
+          pluginId,
+          configForSave,
+          { capabilities },
+          call.admit,
+        );
+      } catch (error) {
+        unit.fail(error, {
+          secrets: connectionSecretValues(call.manifest, [
+            configForSave,
+            existingConnection?.config,
+          ]),
+        });
+        writeJson(response, 400, {
+          error: pluginErrorMessage(
+            error,
+            call.manifest,
+            configForSave,
+            existingConnection?.config,
+          ),
+        });
+        return;
+      }
+      const storedConnection = await storage.upsertConnection(pluginId, {
+        id: payload.id,
+        label: parsedValues.label,
+        tenantLabel: parsedValues.tenantLabel,
+        autoSync: parsedValues.autoSync,
+        autoSyncIntervalMinutes: parsedValues.autoSyncIntervalMinutes,
+        pullRequestAutoSync: parsedValues.pullRequestAutoSync,
+        agentAccess: parsedValues.agentAccess,
+        allowLossyConversion: parsedValues.allowLossyConversion,
+        // The plugin's answer can't set a field Ajour owns.
+        config: withoutReservedFields(validation.normalizedConfig),
+        // Redacted before it is stored: the normalized config may no
+        // longer hold a value the plugin swapped out, such as a password
+        // it traded for a token, so the overview couldn't find it later.
+        configSummary: redactConnectionSummary(
+          validation.connectionSummary,
+          connectionSecretValues(call.manifest, [
+            configForSave,
+            existingConnection?.config,
+            validation.normalizedConfig,
+          ]),
+        ),
+      });
+      unit.set({ connection: { id: storedConnection.id } });
+      const { overview, summary } = await findConnectionSummary(
+        storage,
+        pluginManager,
+        pluginId,
+        storedConnection.id,
+      );
+
+      writeJson(
+        response,
+        200,
+        pluginConnectionSaveResponseSchema.parse({
+          overview,
+          connection: summary,
+        }),
+      );
+    },
+
+    connectionDelete: async ({ response, params, unit }) => {
+      const pluginId = pluginIdSchema.parse(params.pluginId);
+      const { connectionId } = params;
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+      const deleted = await storage.deleteConnection(pluginId, connectionId);
+      if (!deleted) {
+        writeJson(response, 404, {
+          error: "Plugin connection not found.",
+        });
         return;
       }
 
-      const pluginRoute = matchPluginRoute(requestUrl.pathname);
-      if (pluginRoute) {
-        const [, rawPluginId, rawConnectionId, action] = pluginRoute;
-        const pluginId = pluginIdSchema.parse(
-          decodeURIComponent(rawPluginId ?? ""),
+      writeJson(response, 200, await getOverview(storage, pluginManager));
+    },
+
+    settleStateList: (context) => serveSettle(context, "settle-states"),
+
+    settleWrite: (context) => serveSettle(context, "settle"),
+
+    descriptionRead: (context) => serveDescription(context, false),
+
+    descriptionWrite: (context) => serveDescription(context, true),
+
+    backlogSync: async ({ request, response, params, unit }) => {
+      const pluginId = pluginIdSchema.parse(params.pluginId);
+      const { connectionId } = params;
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+      const { plugin, pluginIds: availablePluginIds } = await findPlugin(
+        pluginManager,
+        pluginId,
+      );
+      if (!plugin?.capabilities.connector) {
+        writeJson(response, 409, {
+          error: "This plugin does not sync backlog items.",
+        });
+        return;
+      }
+      const inactive = await inactiveCapability(
+        storage,
+        pluginId,
+        "connector",
+        availablePluginIds,
+        "syncing",
+      );
+      if (inactive) {
+        unit.refuse(inactive.reason);
+        writeJson(response, 409, { error: inactive.message });
+        return;
+      }
+
+      const connection = await storage.getConnection(pluginId, connectionId);
+      if (!connection) {
+        writeJson(response, 404, {
+          error: "Plugin connection not found.",
+        });
+        return;
+      }
+
+      const payload = backlogSyncRequestSchema.parse(
+        await readJsonBody(request),
+      );
+      const isSourceWriteOnly = payload.trigger === "source_write";
+      const shouldAutoSyncToBacklog =
+        connection.autoSync && payload.trigger === "auto";
+      unit.set({
+        backlog_sync: {
+          trigger: payload.trigger,
+          mode: shouldAutoSyncToBacklog ? "backlog" : "review",
+          items_sent: payload.workItems.length,
+        },
+      });
+
+      const call = admittedCall(plugin);
+      try {
+        const fetched = await pluginManager.syncConnection(
+          pluginId,
+          invocationConnection(connection),
+          payload.workItems,
+          call.admit,
         );
-
-        if (request.method === "POST" && !rawConnectionId && !action) {
-          const payload = pluginConnectionSaveRequestSchema.parse(
-            await readJsonBody(request),
-          );
-          const parsedValues = parseConnectionValues(payload.values);
-          const { plugin, unavailableReason } = await findPlugin(
-            pluginManager,
-            pluginId,
-          );
-          if (!plugin) {
-            // The host runs no code of a plugin it can't load, and would
-            // refuse with this reason.
-            writeJson(response, 400, {
-              error:
-                unavailableReason ?? `Plugin "${pluginId}" is not installed.`,
-            });
-            return;
-          }
-          const existingConnection = payload.id
-            ? await storage.getConnection(pluginId, payload.id)
-            : null;
-          // A config saved before Ajour kept its own fields out may hold one.
-          const configForSave = withoutReservedFields(
-            mergeConnectionConfigForSave(
-              plugin,
-              parsedValues.config,
-              existingConnection?.config,
-            ),
-          );
-          const capabilities = await storage.listEnabledCapabilities(
-            pluginId,
-            pluginSwitchableCapabilities(plugin),
-          );
-          const call = admittedCall(plugin);
-          let validation: PluginValidationResult;
-          try {
-            validation = await pluginManager.validateConnection(
-              pluginId,
-              configForSave,
-              { capabilities },
-              call.admit,
-            );
-          } catch (error) {
-            writeJson(response, 400, {
-              error: pluginErrorMessage(
-                error,
-                call.manifest,
-                configForSave,
-                existingConnection?.config,
-              ),
-            });
-            return;
-          }
-          const storedConnection = await storage.upsertConnection(pluginId, {
-            id: payload.id,
-            label: parsedValues.label,
-            tenantLabel: parsedValues.tenantLabel,
-            autoSync: parsedValues.autoSync,
-            autoSyncIntervalMinutes: parsedValues.autoSyncIntervalMinutes,
-            pullRequestAutoSync: parsedValues.pullRequestAutoSync,
-            agentAccess: parsedValues.agentAccess,
-            allowLossyConversion: parsedValues.allowLossyConversion,
-            // The plugin's answer can't set a field Ajour owns.
-            config: withoutReservedFields(validation.normalizedConfig),
-            // Redacted before it is stored: the normalized config may no
-            // longer hold a value the plugin swapped out, such as a password
-            // it traded for a token, so the overview couldn't find it later.
-            configSummary: redactConnectionSummary(
-              validation.connectionSummary,
-              connectionSecretValues(call.manifest, [
-                configForSave,
-                existingConnection?.config,
-                validation.normalizedConfig,
-              ]),
-            ),
-          });
-          const { overview, summary } = await findConnectionSummary(
-            storage,
-            pluginManager,
-            pluginId,
-            storedConnection.id,
-          );
-
-          writeJson(
-            response,
-            200,
-            pluginConnectionSaveResponseSchema.parse({
-              overview,
-              connection: summary,
-            }),
-          );
-          return;
-        }
-
-        const connectionId = decodeURIComponent(rawConnectionId ?? "");
-        if (!connectionId) {
-          writeJson(response, 404, {
-            error: "Plugin connection not found.",
-          });
-          return;
-        }
-
-        if (request.method === "DELETE" && !action) {
-          const deleted = await storage.deleteConnection(
-            pluginId,
-            connectionId,
-          );
-          if (!deleted) {
-            writeJson(response, 404, {
-              error: "Plugin connection not found.",
-            });
-            return;
-          }
-
-          writeJson(response, 200, await getOverview(storage, pluginManager));
-          return;
-        }
-
+        const { openItems, doneItems } = splitDoneItems(fetched.items);
+        unit.set({
+          backlog_sync: {
+            items_received: fetched.items.length,
+            done_count: doneItems.length,
+            work_item_update_count: fetched.workItemUpdates.length,
+            comment_fact_count: fetched.commentFacts.length,
+          },
+        });
         if (
-          request.method === "POST" &&
-          (action === "settle-states" || action === "settle")
-        ) {
-          const connection = await storage.getConnection(
-            pluginId,
-            connectionId,
-          );
-          if (!connection) {
-            writeJson(response, 404, {
-              error: "Plugin connection not found.",
-            });
-            return;
-          }
-          const { plugin, pluginIds } = await findPlugin(
-            pluginManager,
-            pluginId,
-          );
-          const inactive = await inactiveCapabilityError(
-            storage,
-            pluginId,
-            "connector",
-            pluginIds,
-            "settling",
-          );
-          if (inactive) {
-            writeJson(response, 409, { error: inactive });
-            return;
-          }
-          if (!plugin?.capabilities.connector?.settle) {
-            writeJson(response, 409, {
-              error: "This plugin does not support settling.",
-            });
-            return;
-          }
-
-          const body = await readJsonBody(request);
-          const pluginConnection = {
-            id: connection.id,
-            pluginId: connection.pluginId,
-            label: connection.label,
-            tenantLabel: connection.tenantLabel,
-            autoSync: connection.autoSync,
-            autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
-            connectedAt: connection.connectedAt,
-            lastSyncAt: connection.lastSyncAt,
-            lastError: connection.lastError,
-            config: connection.config,
-          };
-          // A malformed body fails here, outside the try, as a 400.
-          const statesRequest =
-            action === "settle-states"
-              ? backlogSettleStatesRequestSchema.parse(body)
-              : undefined;
-          const writeRequest =
-            action === "settle"
-              ? backlogSettleWriteRequestSchema.parse(body)
-              : undefined;
-          const call = admittedCall(plugin);
-          try {
-            if (statesRequest) {
-              const result = await pluginManager.listSettleStates(
-                pluginId,
-                pluginConnection,
-                statesRequest,
-                call.admit,
-              );
-              writeJson(
-                response,
-                200,
-                backlogSettleStatesResultSchema.parse(result),
-              );
-              return;
-            }
-            if (writeRequest) {
-              const result = await pluginManager.writeSettle(
-                pluginId,
-                pluginConnection,
-                writeRequest,
-                call.admit,
-              );
-              writeJson(
-                response,
-                200,
-                backlogSettleWriteResultSchema.parse(result),
-              );
-            }
-          } catch (error) {
-            writeJson(response, 502, {
-              error: pluginErrorMessage(
-                error,
-                call.manifest,
-                connection.config,
-              ),
-            });
-          }
-          return;
-        }
-
-        if (
-          request.method === "POST" &&
-          (action === "description" || action === "description-write")
-        ) {
-          const connection = await storage.getConnection(
-            pluginId,
-            connectionId,
-          );
-          if (!connection) {
-            writeJson(response, 404, {
-              error: "Plugin connection not found.",
-            });
-            return;
-          }
-          const { plugin, pluginIds } = await findPlugin(
-            pluginManager,
-            pluginId,
-          );
-          const inactive = await inactiveCapabilityError(
-            storage,
-            pluginId,
-            "connector",
-            pluginIds,
-            "syncing descriptions",
-          );
-          if (inactive) {
-            writeJson(response, 409, { error: inactive });
-            return;
-          }
-          const writes = action === "description-write";
-          const description = plugin?.capabilities.connector?.description;
-          if (!plugin || !description || (writes && !description.write)) {
-            writeJson(response, 409, {
-              error: writes
-                ? "This plugin does not write descriptions."
-                : "This plugin does not sync descriptions.",
-            });
-            return;
-          }
-
-          const body = await readJsonBody(request);
-          const pluginConnection = {
-            id: connection.id,
-            pluginId: connection.pluginId,
-            label: connection.label,
-            tenantLabel: connection.tenantLabel,
-            autoSync: connection.autoSync,
-            autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
-            connectedAt: connection.connectedAt,
-            lastSyncAt: connection.lastSyncAt,
-            lastError: connection.lastError,
-            config: connection.config,
-          };
-          // A malformed body fails here, outside the try, as a 400.
-          const readRequest = writes
-            ? undefined
-            : backlogReadDescriptionRequestSchema.parse(body);
-          const writeRequest = writes
-            ? backlogWriteDescriptionRequestSchema.parse(body)
-            : undefined;
-          // An agent's call says so; it needs Read to read the description
-          // and Read and write to change it, whatever the page asks.
-          if (
-            requestUrl.searchParams.get("agent") === "1" &&
-            !agentAccessAllows(
-              connectionAgentAccess(connection),
-              writes ? "readWrite" : "read",
-            )
-          ) {
-            writeJson(response, 409, {
-              error: `The user hasn't allowed agents to ${writes ? "change" : "read"} descriptions on the "${connection.label}" connection.`,
-            });
-            return;
-          }
-          // Only a connection that allows lossy conversion writes with losses,
-          // whatever a client asks.
-          if (
-            writeRequest?.allowedLoss?.length &&
-            connection.allowLossyConversion !== true
-          ) {
-            writeJson(response, 409, {
-              error: "This connection does not allow lossy conversion.",
-            });
-            return;
-          }
-          const call = admittedCall(plugin);
-          try {
-            if (readRequest) {
-              const result = await pluginManager.readDescription(
-                pluginId,
-                pluginConnection,
-                readRequest,
-                call.admit,
-              );
-              writeJson(
-                response,
-                200,
-                backlogReadDescriptionResultSchema.parse(result),
-              );
-              return;
-            }
-            if (writeRequest) {
-              const result = await pluginManager.writeDescription(
-                pluginId,
-                pluginConnection,
-                writeRequest,
-                call.admit,
-              );
-              writeJson(
-                response,
-                200,
-                backlogWriteDescriptionResultSchema.parse(result),
-              );
-            }
-          } catch (error) {
-            // The message reaches the user and is stored with the item.
-            writeJson(response, 502, {
-              error: pluginErrorMessage(
-                error,
-                call.manifest,
-                connection.config,
-              ),
-            });
-          }
-          return;
-        }
-
-        if (request.method === "POST" && action === "sync") {
-          const { plugin, pluginIds: availablePluginIds } = await findPlugin(
-            pluginManager,
-            pluginId,
-          );
-          if (!plugin?.capabilities.connector) {
-            writeJson(response, 409, {
-              error: "This plugin does not sync backlog items.",
-            });
-            return;
-          }
-          const inactive = await inactiveCapabilityError(
-            storage,
+          !(await storage.isPluginCapabilityEnabled(
             pluginId,
             "connector",
             availablePluginIds,
-            "syncing",
-          );
-          if (inactive) {
-            writeJson(response, 409, { error: inactive });
-            return;
-          }
+          ))
+        ) {
+          unit.refuse("deactivated_during_sync");
+          writeJson(response, 409, {
+            error: "Plugin was deactivated while syncing.",
+          });
+          return;
+        }
+        const discoveredStatuses = collectSourceStatuses(fetched.items);
+        if (discoveredStatuses.length > 0) {
+          await storage.upsertBacklogSourceStatuses(discoveredStatuses);
+        }
 
-          const connection = await storage.getConnection(
-            pluginId,
-            connectionId,
-          );
-          if (!connection) {
-            writeJson(response, 404, {
-              error: "Plugin connection not found.",
-            });
-            return;
-          }
-
-          const payload = backlogSyncRequestSchema.parse(
-            await readJsonBody(request),
-          );
-          const isSourceWriteOnly = payload.trigger === "source_write";
-          const shouldAutoSyncToBacklog =
-            connection.autoSync && payload.trigger === "auto";
-
-          const call = admittedCall(plugin);
-          try {
-            const fetched = await pluginManager.syncConnection(
-              pluginId,
-              {
-                id: connection.id,
-                pluginId: connection.pluginId,
-                label: connection.label,
-                tenantLabel: connection.tenantLabel,
-                autoSync: connection.autoSync,
-                autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
-                connectedAt: connection.connectedAt,
-                lastSyncAt: connection.lastSyncAt,
-                lastError: connection.lastError,
-                config: connection.config,
-              },
-              payload.workItems,
-              call.admit,
-            );
-            const { openItems, doneItems } = splitDoneItems(fetched.items);
-            if (
-              !(await storage.isPluginCapabilityEnabled(
-                pluginId,
-                "connector",
-                availablePluginIds,
-              ))
-            ) {
-              writeJson(response, 409, {
-                error: "Plugin was deactivated while syncing.",
-              });
-              return;
+        const autoSyncItems = shouldAutoSyncToBacklog
+          ? collectAutoSyncItems(openItems)
+          : [];
+        const stageResult = isSourceWriteOnly
+          ? {
+              queuedCount: 0,
+              updatedCount: 0,
+              skippedCount: 0,
             }
-            const discoveredStatuses = collectSourceStatuses(fetched.items);
-            if (discoveredStatuses.length > 0) {
-              await storage.upsertBacklogSourceStatuses(discoveredStatuses);
-            }
-
-            const autoSyncItems = shouldAutoSyncToBacklog
-              ? collectAutoSyncItems(openItems)
-              : [];
-            const stageResult = isSourceWriteOnly
-              ? {
-                  queuedCount: 0,
-                  updatedCount: 0,
-                  skippedCount: 0,
-                }
-              : shouldAutoSyncToBacklog
-                ? {
-                    queuedCount: autoSyncItems.length,
-                    updatedCount: 0,
-                    skippedCount: 0,
-                  }
-                : await storage.stageImportItems(openItems);
-            await storage.recordConnectionSyncSuccess(
-              pluginId,
-              connectionId,
-              Date.now(),
-            );
-            const { summary } = await findConnectionSummary(
-              storage,
-              pluginManager,
-              pluginId,
-              connectionId,
-            );
-
-            writeJson(
-              response,
-              200,
-              backlogSyncResultSchema.parse({
-                connection: summary,
-                mode: shouldAutoSyncToBacklog ? "backlog" : "review",
-                items: isSourceWriteOnly ? [] : autoSyncItems,
-                stagedCount: stageResult.queuedCount,
-                updatedCount: stageResult.updatedCount,
-                skippedCount: stageResult.skippedCount,
-                workItemUpdates: redactFieldUpdateMessages(
-                  fetched.workItemUpdates,
-                  connectionRedaction(
-                    connectionSecretValues(call.manifest, [connection.config]),
-                  ),
-                ),
-                doneItems,
-                viewer: fetched.viewer,
-                commentFacts: fetched.commentFacts,
-              }),
-            );
-          } catch (error) {
-            const message = pluginErrorMessage(
-              error,
-              call.manifest,
-              connection.config,
-            );
-            await storage.recordConnectionError(
-              pluginId,
-              connectionId,
-              message,
-            );
-            const { summary } = await findConnectionSummary(
-              storage,
-              pluginManager,
-              pluginId,
-              connectionId,
-            );
-            // `error` gives the client the reason, as other failed requests do.
-            writeJson(response, 502, {
-              ...backlogSyncResultSchema.parse({
-                connection: summary,
-                mode: shouldAutoSyncToBacklog ? "backlog" : "review",
-                items: [],
-                stagedCount: 0,
+          : shouldAutoSyncToBacklog
+            ? {
+                queuedCount: autoSyncItems.length,
                 updatedCount: 0,
                 skippedCount: 0,
-                workItemUpdates: [],
-              }),
-              error: message,
-            });
-          }
-
-          return;
-        }
-      }
-
-      const codeHostRoute = matchCodeHostRoute(requestUrl.pathname);
-      if (codeHostRoute && request.method === "POST") {
-        const [, rawPluginId, rawConnectionId, rawOperation] = codeHostRoute;
-        const pluginId = pluginIdSchema.parse(
-          decodeURIComponent(rawPluginId ?? ""),
-        );
-        const connectionId = decodeURIComponent(rawConnectionId ?? "");
-        const operation = codeHostOperationSchema.safeParse(rawOperation);
-        if (!operation.success) {
-          writeJson(response, 404, { error: "Unknown code host operation." });
-          return;
-        }
-        const { plugin, pluginIds } = await findPlugin(pluginManager, pluginId);
-        if (!plugin || !pluginHasCodeHost(plugin)) {
-          writeJson(response, 404, {
-            error: "This plugin does not provide pull requests.",
-          });
-          return;
-        }
-        const inactive = await inactiveCapabilityError(
-          storage,
-          pluginId,
-          "codeHost",
-          pluginIds,
-          "using its pull requests",
-        );
-        if (inactive) {
-          writeJson(response, 409, { error: inactive });
-          return;
-        }
-        const connection = await storage.getConnection(pluginId, connectionId);
-        if (!connection) {
-          writeJson(response, 404, { error: "Connection not found." });
-          return;
-        }
-
-        // A malformed body fails here, outside the try, as a 400.
-        const codeHostRequest = codeHostOperations[
-          operation.data
-        ].request.parse(await readJsonBody(request));
-        const call = admittedCall(plugin);
-        try {
-          const result = await pluginManager.runCodeHostOperation(
-            pluginId,
-            operation.data,
-            {
-              id: connection.id,
-              pluginId: connection.pluginId,
-              label: connection.label,
-              tenantLabel: connection.tenantLabel,
-              autoSync: connection.autoSync,
-              autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
-              connectedAt: connection.connectedAt,
-              lastSyncAt: connection.lastSyncAt,
-              lastError: connection.lastError,
-              config: connection.config,
-            },
-            codeHostRequest,
-            call.admit,
-          );
-          if (operation.data === "syncPullRequests") {
-            await storage.recordConnectionSyncSuccess(
-              pluginId,
-              connectionId,
-              Date.now(),
-            );
-          }
-          writeJson(response, 200, result);
-        } catch (error) {
-          const message = pluginErrorMessage(
-            error,
-            call.manifest,
-            connection.config,
-          );
-          if (operation.data === "syncPullRequests") {
-            await storage.recordConnectionError(
-              pluginId,
-              connectionId,
-              message,
-            );
-          }
-          writeJson(response, 502, { error: message });
-        }
-        return;
-      }
-
-      const backlogCommentRoute = matchBacklogCommentRoute(requestUrl.pathname);
-      if (backlogCommentRoute && request.method === "POST") {
-        const [, rawPluginId, rawConnectionId, rawOperation] =
-          backlogCommentRoute;
-        const pluginId = pluginIdSchema.parse(
-          decodeURIComponent(rawPluginId ?? ""),
-        );
-        const connectionId = decodeURIComponent(rawConnectionId ?? "");
-        const operation = backlogCommentOperationSchema.safeParse(rawOperation);
-        if (!operation.success) {
-          writeJson(response, 404, { error: "Unknown comment operation." });
-          return;
-        }
-        const { plugin, pluginIds } = await findPlugin(pluginManager, pluginId);
-        if (!plugin?.capabilities.connector?.comments) {
-          writeJson(response, 404, {
-            error: "This plugin does not provide comments.",
-          });
-          return;
-        }
-        const inactive = await inactiveCapabilityError(
-          storage,
-          pluginId,
-          "connector",
-          pluginIds,
-          "using its comments",
-        );
-        if (inactive) {
-          writeJson(response, 409, { error: inactive });
-          return;
-        }
-        const connection = await storage.getConnection(pluginId, connectionId);
-        if (!connection) {
-          writeJson(response, 404, { error: "Connection not found." });
-          return;
-        }
-
-        // A malformed body fails here, outside the try, as a 400.
-        const commentRequest = backlogCommentOperations[
-          operation.data
-        ].request.parse(await readJsonBody(request));
-        if (
-          !backlogCommentOperationAllowed(
-            plugin.capabilities.connector.comments,
-            operation.data,
-            operation.data === "setItemCommentReaction"
-              ? backlogCommentOperations.setItemCommentReaction.request.parse(
-                  commentRequest,
-                ).reaction
-              : undefined,
-          )
-        ) {
-          writeJson(response, 404, {
-            error: "This plugin does not support that on comments.",
-          });
-          return;
-        }
-        // An agent's call says so; Ajour's own pages don't. The access it
-        // needs follows from the operation, not from the caller.
-        const forAgent = requestUrl.searchParams.get("agent") === "1";
-        const agentNeed =
-          operation.data === "listItemComments" ||
-          operation.data === "searchItemPeople"
-            ? "read"
-            : "readWrite";
-        // Ids, counts and duration only. Comment text and authors stay out
-        // of the event (ADR 0008).
-        await events.run(
-          COMMENT_EVENTS[operation.data],
-          { kind: "request", trigger: forAgent ? "agent" : "system" },
-          async (unit) => {
-            unit.set({
-              plugin: { id: pluginId },
-              connection: { id: connectionId },
-            });
-            if (operation.data === "listItemComments") {
-              unit.set({
-                comment: {
-                  page:
-                    "cursor" in commentRequest && commentRequest.cursor
-                      ? "earlier"
-                      : "latest",
-                },
-              });
-            } else if ("body" in commentRequest) {
-              // Its size and its mentions, never its text.
-              unit.set({
-                comment: {
-                  body_length: commentRequest.body.length,
-                  mention_count:
-                    commentRequest.body.match(/\]\(mention:/g)?.length ?? 0,
-                },
-              });
-            }
-            /**
-             * Refuses an agent's call the user doesn't allow on the connection,
-             * as stored now: before the plugin runs, and again before a read's
-             * text leaves, so a revocation saved meanwhile holds.
-             */
-            const agentRefusal = `The user hasn't allowed agents to ${agentNeed === "read" ? "read" : "post"} comments on the "${connection.label}" connection.`;
-            const agentAllowed = async () => {
-              if (!forAgent) return true;
-              const current = await storage.getConnection(
-                pluginId,
-                connectionId,
-              );
-              return Boolean(
-                current &&
-                agentAccessAllows(connectionAgentAccess(current), agentNeed),
-              );
-            };
-            const refuseAgent = () => {
-              unit.refuse("agent_access");
-              writeJson(response, 403, { error: agentRefusal });
-            };
-            if (!(await agentAllowed())) {
-              refuseAgent();
-              return;
-            }
-            // Checked again at the plugin's admission, after the host's own
-            // waits, so a revocation saved meanwhile stops a post.
-            let refusedAtAdmission = false;
-            const call = admittedCall(plugin);
-            const admit = async (manifest: PluginManifest) => {
-              call.admit(manifest);
-              if (await agentAllowed()) return;
-              refusedAtAdmission = true;
-              throw new Error(agentRefusal);
-            };
-            try {
-              const result = await pluginManager.runBacklogCommentOperation(
-                pluginId,
-                operation.data,
-                {
-                  id: connection.id,
-                  pluginId: connection.pluginId,
-                  label: connection.label,
-                  tenantLabel: connection.tenantLabel,
-                  autoSync: connection.autoSync,
-                  autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
-                  connectedAt: connection.connectedAt,
-                  lastSyncAt: connection.lastSyncAt,
-                  lastError: connection.lastError,
-                  config: connection.config,
-                },
-                commentRequest,
-                admit,
-              );
-              // A read's text leaves only while the agent may still read. A
-              // change was allowed at admission and has happened: it stands.
-              if (agentNeed === "read" && !(await agentAllowed())) {
-                refuseAgent();
-                return;
               }
-              if ("comments" in result) {
-                unit.set({
-                  comment: { comment_count: result.comments.length },
-                });
-              } else if ("people" in result) {
-                unit.set({ mention: { result_count: result.people.length } });
-              }
-              writeJson(response, 200, result);
-            } catch (error) {
-              if (refusedAtAdmission) {
-                refuseAgent();
-                return;
-              }
-              const secrets = connectionSecretValues(call.manifest, [
-                connection.config,
-              ]);
-              unit.fail(error, { secrets });
-              writeJson(response, 502, {
-                error: redactPluginText(errorMessage(error), secrets),
-              });
-            }
+            : await storage.stageImportItems(openItems);
+        unit.set({
+          backlog_sync: {
+            staged_count: stageResult.queuedCount,
+            updated_count: stageResult.updatedCount,
+            skipped_count: stageResult.skippedCount,
           },
-        );
-        return;
-      }
-
-      const calendarRoute = matchCalendarRoute(requestUrl.pathname);
-      if (calendarRoute && request.method === "POST") {
-        const [, rawPluginId, rawConnectionId, rawOperation] = calendarRoute;
-        const pluginId = pluginIdSchema.parse(
-          decodeURIComponent(rawPluginId ?? ""),
-        );
-        const connectionId = decodeURIComponent(rawConnectionId ?? "");
-        const operation = calendarOperationSchema.safeParse(rawOperation);
-        if (!operation.success) {
-          writeJson(response, 404, { error: "Unknown calendar operation." });
-          return;
-        }
-        const { plugin, pluginIds } = await findPlugin(pluginManager, pluginId);
-        if (!plugin || !pluginHasCalendar(plugin)) {
-          writeJson(response, 404, {
-            error: "This plugin does not provide calendar events.",
-          });
-          return;
-        }
-        const inactive = await inactiveCapabilityError(
-          storage,
+        });
+        await storage.recordConnectionSyncSuccess(
           pluginId,
-          "calendar",
-          pluginIds,
-          "using its calendar",
+          connectionId,
+          Date.now(),
         );
-        if (inactive) {
-          writeJson(response, 409, { error: inactive });
-          return;
-        }
-        const connection = await storage.getConnection(pluginId, connectionId);
-        if (!connection) {
-          writeJson(response, 404, { error: "Connection not found." });
-          return;
-        }
-
-        // A malformed body fails here, outside the try, as a 400.
-        const calendarRequest = calendarOperations[
-          operation.data
-        ].request.parse(await readJsonBody(request));
-        // Ids, range, counts and duration only. Titles and the calendar
-        // address stay out of the event (ADR 0005).
-        await events.run(
-          CALENDAR_EVENTS[operation.data],
-          { kind: "request", trigger: "system" },
-          async (unit) => {
-            unit.set({
-              plugin: { id: pluginId },
-              connection: { id: connectionId },
-              calendar: {
-                range_days:
-                  (Date.parse(`${calendarRequest.to}T00:00:00Z`) -
-                    Date.parse(`${calendarRequest.from}T00:00:00Z`)) /
-                    86_400_000 +
-                  1,
-              },
-            });
-            const call = admittedCall(plugin);
-            try {
-              const result = await pluginManager.runCalendarOperation(
-                pluginId,
-                operation.data,
-                {
-                  id: connection.id,
-                  pluginId: connection.pluginId,
-                  label: connection.label,
-                  tenantLabel: connection.tenantLabel,
-                  autoSync: connection.autoSync,
-                  autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
-                  connectedAt: connection.connectedAt,
-                  lastSyncAt: connection.lastSyncAt,
-                  lastError: connection.lastError,
-                  config: connection.config,
-                },
-                calendarRequest,
-                call.admit,
-              );
-              await storage.recordConnectionSyncSuccess(
-                pluginId,
-                connectionId,
-                Date.now(),
-              );
-              unit.set({ calendar: { event_count: result.events.length } });
-              writeJson(response, 200, result);
-            } catch (error) {
-              const secrets = connectionSecretValues(call.manifest, [
-                connection.config,
-              ]);
-              const message = redactPluginText(errorMessage(error), secrets);
-              unit.fail(error, { secrets });
-              await storage.recordConnectionError(
-                pluginId,
-                connectionId,
-                message,
-              );
-              writeJson(response, 502, { error: message });
-            }
-          },
-        );
-        return;
-      }
-
-      const teamRoute = matchTeamRoute(requestUrl.pathname);
-      if (teamRoute && request.method === "POST") {
-        const [, rawPluginId, create, rawConnectionId] = teamRoute;
-        const pluginId = pluginIdSchema.parse(
-          decodeURIComponent(rawPluginId ?? ""),
-        );
-        const { plugin, pluginIds } = await findPlugin(pluginManager, pluginId);
-        if (!plugin || !pluginHasTeam(plugin)) {
-          writeJson(response, 404, {
-            error: "This plugin does not sync a team's projects.",
-          });
-          return;
-        }
-        const inactive = await inactiveCapabilityError(
+        const { summary } = await findConnectionSummary(
           storage,
+          pluginManager,
           pluginId,
-          "team",
-          pluginIds,
-          create ? "creating a team" : "syncing its projects",
+          connectionId,
         );
-        if (inactive) {
-          writeJson(response, 409, { error: inactive });
-          return;
-        }
 
-        if (create) {
-          // A malformed body fails here, outside the try, as a 400.
-          const payload = teamCreateRouteRequestSchema.parse(
-            await readJsonBody(request),
-          );
-          const call = admittedCall(plugin);
-          try {
-            writeJson(
-              response,
-              200,
-              await pluginManager.createTeam(
-                pluginId,
-                payload.values,
-                payload.team,
-                call.admit,
+        writeJson(
+          response,
+          200,
+          backlogSyncResultSchema.parse({
+            connection: summary,
+            mode: shouldAutoSyncToBacklog ? "backlog" : "review",
+            items: isSourceWriteOnly ? [] : autoSyncItems,
+            stagedCount: stageResult.queuedCount,
+            updatedCount: stageResult.updatedCount,
+            skippedCount: stageResult.skippedCount,
+            workItemUpdates: redactFieldUpdateMessages(
+              fetched.workItemUpdates,
+              connectionRedaction(
+                connectionSecretValues(call.manifest, [connection.config]),
               ),
-            );
-          } catch (error) {
-            writeJson(response, 502, {
-              error: pluginErrorMessage(error, call.manifest, payload.values),
-            });
-          }
-          return;
-        }
-
-        const connectionId = decodeURIComponent(rawConnectionId ?? "");
-        const connection = await storage.getConnection(pluginId, connectionId);
-        if (!connection) {
-          writeJson(response, 404, { error: "Connection not found." });
-          return;
-        }
-        const syncRequest = teamSyncRequestSchema.parse(
-          await readJsonBody(request),
+            ),
+            doneItems,
+            viewer: fetched.viewer,
+            commentFacts: fetched.commentFacts,
+          }),
         );
-        const call = admittedCall(plugin);
-        try {
-          const result = await pluginManager.syncTeamProjects(
-            pluginId,
-            {
-              id: connection.id,
-              pluginId: connection.pluginId,
-              label: connection.label,
-              tenantLabel: connection.tenantLabel,
-              autoSync: connection.autoSync,
-              autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
-              connectedAt: connection.connectedAt,
-              lastSyncAt: connection.lastSyncAt,
-              lastError: connection.lastError,
-              config: connection.config,
-            },
-            syncRequest,
-            call.admit,
-          );
+      } catch (error) {
+        unit.fail(error, {
+          secrets: connectionSecretValues(call.manifest, [connection.config]),
+        });
+        const message = pluginErrorMessage(
+          error,
+          call.manifest,
+          connection.config,
+        );
+        await storage.recordConnectionError(pluginId, connectionId, message);
+        const { summary } = await findConnectionSummary(
+          storage,
+          pluginManager,
+          pluginId,
+          connectionId,
+        );
+        // `error` gives the client the reason, as other failed requests do.
+        writeJson(response, 502, {
+          ...backlogSyncResultSchema.parse({
+            connection: summary,
+            mode: shouldAutoSyncToBacklog ? "backlog" : "review",
+            items: [],
+            stagedCount: 0,
+            updatedCount: 0,
+            skippedCount: 0,
+            workItemUpdates: [],
+          }),
+          error: message,
+        });
+      }
+    },
+
+    codeHost: async ({ request, response, params, unit }) => {
+      const pluginId = pluginIdSchema.parse(params.pluginId);
+      const { connectionId } = params;
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+      const operation = codeHostOperationSchema.safeParse(params.operation);
+      if (!operation.success) {
+        writeJson(response, 404, { error: "Unknown code host operation." });
+        return;
+      }
+      const { plugin, pluginIds } = await findPlugin(pluginManager, pluginId);
+      if (!plugin || !pluginHasCodeHost(plugin)) {
+        writeJson(response, 404, {
+          error: "This plugin does not provide pull requests.",
+        });
+        return;
+      }
+      const inactive = await inactiveCapability(
+        storage,
+        pluginId,
+        "codeHost",
+        pluginIds,
+        "using its pull requests",
+      );
+      if (inactive) {
+        unit.refuse(inactive.reason);
+        writeJson(response, 409, { error: inactive.message });
+        return;
+      }
+      const connection = await storage.getConnection(pluginId, connectionId);
+      if (!connection) {
+        writeJson(response, 404, { error: "Connection not found." });
+        return;
+      }
+
+      // A malformed body fails here, outside the try, as a 400.
+      const codeHostRequest = codeHostOperations[operation.data].request.parse(
+        await readJsonBody(request),
+      );
+      unit.set(codeHostRequestFields(codeHostRequest));
+      const call = admittedCall(plugin);
+      try {
+        const result = await pluginManager.runCodeHostOperation(
+          pluginId,
+          operation.data,
+          invocationConnection(connection),
+          codeHostRequest,
+          call.admit,
+        );
+        unit.set(codeHostResultFields(result));
+        if (operation.data === "syncPullRequests") {
           await storage.recordConnectionSyncSuccess(
             pluginId,
             connectionId,
             Date.now(),
           );
-          writeJson(response, 200, result);
-        } catch (error) {
-          const message = pluginErrorMessage(
-            error,
-            call.manifest,
-            connection.config,
-          );
-          await storage.recordConnectionError(pluginId, connectionId, message);
-          writeJson(response, 502, { error: message });
         }
+        writeJson(response, 200, result);
+      } catch (error) {
+        unit.fail(error, {
+          secrets: connectionSecretValues(call.manifest, [connection.config]),
+        });
+        const message = pluginErrorMessage(
+          error,
+          call.manifest,
+          connection.config,
+        );
+        if (operation.data === "syncPullRequests") {
+          await storage.recordConnectionError(pluginId, connectionId, message);
+        }
+        writeJson(response, 502, { error: message });
+      }
+    },
+
+    backlogComment: async ({ request, response, url, params, unit }) => {
+      const pluginId = pluginIdSchema.parse(params.pluginId);
+      const { connectionId } = params;
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+      const operation = backlogCommentOperationSchema.safeParse(
+        params.operation,
+      );
+      if (!operation.success) {
+        writeJson(response, 404, { error: "Unknown comment operation." });
+        return;
+      }
+      const { plugin, pluginIds } = await findPlugin(pluginManager, pluginId);
+      if (!plugin?.capabilities.connector?.comments) {
+        writeJson(response, 404, {
+          error: "This plugin does not provide comments.",
+        });
+        return;
+      }
+      const inactive = await inactiveCapability(
+        storage,
+        pluginId,
+        "connector",
+        pluginIds,
+        "using its comments",
+      );
+      if (inactive) {
+        unit.refuse(inactive.reason);
+        writeJson(response, 409, { error: inactive.message });
+        return;
+      }
+      const connection = await storage.getConnection(pluginId, connectionId);
+      if (!connection) {
+        writeJson(response, 404, { error: "Connection not found." });
         return;
       }
 
+      // A malformed body fails here, outside the try, as a 400.
+      const commentRequest = backlogCommentOperations[
+        operation.data
+      ].request.parse(await readJsonBody(request));
       if (
-        request.method === "POST" &&
-        requestUrl.pathname === "/api/backlog/items"
+        !backlogCommentOperationAllowed(
+          plugin.capabilities.connector.comments,
+          operation.data,
+          operation.data === "setItemCommentReaction"
+            ? backlogCommentOperations.setItemCommentReaction.request.parse(
+                commentRequest,
+              ).reaction
+            : undefined,
+        )
       ) {
-        const payload = backlogImportPushRequestSchema.parse(
-          await readJsonBody(request),
+        writeJson(response, 404, {
+          error: "This plugin does not support that on comments.",
+        });
+        return;
+      }
+      // An agent's call says so; Ajour's own pages don't. The access it
+      // needs follows from the operation, not from the caller.
+      const forAgent = url.searchParams.get("agent") === "1";
+      const agentNeed =
+        operation.data === "listItemComments" ||
+        operation.data === "searchItemPeople"
+          ? "read"
+          : "readWrite";
+      // Ids, counts and duration only. Comment text and authors stay out
+      // of the event (ADR 0008).
+      if (operation.data === "listItemComments") {
+        unit.set({
+          comment: {
+            page:
+              "cursor" in commentRequest && commentRequest.cursor
+                ? "earlier"
+                : "latest",
+          },
+        });
+      } else if ("body" in commentRequest) {
+        // Its size and its mentions, never its text.
+        unit.set({
+          comment: {
+            body_length: commentRequest.body.length,
+            mention_count:
+              commentRequest.body.match(/\]\(mention:/g)?.length ?? 0,
+          },
+        });
+      }
+      /**
+       * Refuses an agent's call the user doesn't allow on the connection,
+       * as stored now: before the plugin runs, and again before a read's
+       * text leaves, so a revocation saved meanwhile holds.
+       */
+      const agentRefusal = `The user hasn't allowed agents to ${agentNeed === "read" ? "read" : "post"} comments on the "${connection.label}" connection.`;
+      const agentAllowed = async () => {
+        if (!forAgent) return true;
+        const current = await storage.getConnection(pluginId, connectionId);
+        return Boolean(
+          current &&
+          agentAccessAllows(connectionAgentAccess(current), agentNeed),
         );
-        writeJson(
-          response,
-          200,
-          backlogImportPushResponseSchema.parse(
-            await storage.stageImportItems(payload.items),
-          ),
+      };
+      const refuseAgent = () => {
+        unit.refuse("agent_access");
+        writeJson(response, 403, { error: agentRefusal });
+      };
+      if (!(await agentAllowed())) {
+        refuseAgent();
+        return;
+      }
+      // Checked again at the plugin's admission, after the host's own
+      // waits, so a revocation saved meanwhile stops a post.
+      let refusedAtAdmission = false;
+      const call = admittedCall(plugin);
+      const admit = async (manifest: PluginManifest) => {
+        call.admit(manifest);
+        if (await agentAllowed()) return;
+        refusedAtAdmission = true;
+        throw new PluginOperationRefused(agentRefusal, "agent_access");
+      };
+      try {
+        const result = await pluginManager.runBacklogCommentOperation(
+          pluginId,
+          operation.data,
+          invocationConnection(connection),
+          commentRequest,
+          admit,
         );
+        // A read's text leaves only while the agent may still read. A
+        // change was allowed at admission and has happened: it stands.
+        if (agentNeed === "read" && !(await agentAllowed())) {
+          refuseAgent();
+          return;
+        }
+        if ("comments" in result) {
+          unit.set({
+            comment: { comment_count: result.comments.length },
+          });
+        } else if ("people" in result) {
+          unit.set({ mention: { result_count: result.people.length } });
+        }
+        writeJson(response, 200, result);
+      } catch (error) {
+        if (refusedAtAdmission) {
+          refuseAgent();
+          return;
+        }
+        const secrets = connectionSecretValues(call.manifest, [
+          connection.config,
+        ]);
+        unit.fail(error, { secrets });
+        writeJson(response, 502, {
+          error: redactPluginText(errorMessage(error), secrets),
+        });
+      }
+    },
+
+    calendar: async ({ request, response, params, unit }) => {
+      const pluginId = pluginIdSchema.parse(params.pluginId);
+      const { connectionId } = params;
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+      const operation = calendarOperationSchema.safeParse(params.operation);
+      if (!operation.success) {
+        writeJson(response, 404, { error: "Unknown calendar operation." });
+        return;
+      }
+      const { plugin, pluginIds } = await findPlugin(pluginManager, pluginId);
+      if (!plugin || !pluginHasCalendar(plugin)) {
+        writeJson(response, 404, {
+          error: "This plugin does not provide calendar events.",
+        });
+        return;
+      }
+      const inactive = await inactiveCapability(
+        storage,
+        pluginId,
+        "calendar",
+        pluginIds,
+        "using its calendar",
+      );
+      if (inactive) {
+        unit.refuse(inactive.reason);
+        writeJson(response, 409, { error: inactive.message });
+        return;
+      }
+      const connection = await storage.getConnection(pluginId, connectionId);
+      if (!connection) {
+        writeJson(response, 404, { error: "Connection not found." });
         return;
       }
 
-      if (
-        request.method === "GET" &&
-        requestUrl.pathname === "/api/backlog/imports"
-      ) {
-        writeJson(
-          response,
-          200,
-          backlogImportListResponseSchema.parse(
-            await storage.listStagedImports(),
-          ),
-        );
-        return;
-      }
-
-      if (
-        request.method === "POST" &&
-        requestUrl.pathname === "/api/backlog/imports/selection"
-      ) {
-        const payload = backlogImportSelectionUpdateSchema.parse(
-          await readJsonBody(request),
-        );
-        writeJson(
-          response,
-          200,
-          backlogImportSelectionResponseSchema.parse({
-            updatedCount: await storage.updateImportSelection(
-              payload.ids,
-              payload.selected,
-            ),
-          }),
-        );
-        return;
-      }
-
-      if (
-        request.method === "POST" &&
-        requestUrl.pathname === "/api/backlog/imports/dismiss"
-      ) {
-        const payload = backlogImportDismissRequestSchema.parse(
-          await readJsonBody(request),
-        );
-        writeJson(
-          response,
-          200,
-          backlogImportDismissResponseSchema.parse(
-            await storage.dismissImports(payload.ids),
-          ),
-        );
-        return;
-      }
-
-      if (
-        request.method === "POST" &&
-        requestUrl.pathname === "/api/backlog/imports/restore"
-      ) {
-        const payload = backlogImportRestoreRequestSchema.parse(
-          await readJsonBody(request),
-        );
-        writeJson(
-          response,
-          200,
-          backlogImportRestoreResponseSchema.parse({
-            result: await storage.restoreDismissedImports(payload.undoToken),
-          }),
-        );
-        return;
-      }
-
-      if (
-        request.method === "POST" &&
-        requestUrl.pathname === "/api/backlog/imports/commit-selected"
-      ) {
-        const items = await storage.commitSelectedImports();
-        writeJson(
-          response,
-          200,
-          backlogImportCommitResponseSchema.parse({
-            items,
-            committedCount: items.length,
-          }),
-        );
-        return;
-      }
-
-      writeJson(response, 404, {
-        error: `No route for ${request.method ?? "GET"} ${requestUrl.pathname}`,
+      // A malformed body fails here, outside the try, as a 400.
+      const calendarRequest = calendarOperations[operation.data].request.parse(
+        await readJsonBody(request),
+      );
+      // Ids, range, counts and duration only. Titles and the calendar
+      // address stay out of the event (ADR 0005).
+      unit.set({
+        calendar: {
+          range_days:
+            (Date.parse(`${calendarRequest.to}T00:00:00Z`) -
+              Date.parse(`${calendarRequest.from}T00:00:00Z`)) /
+              86_400_000 +
+            1,
+        },
       });
+      const call = admittedCall(plugin);
+      try {
+        const result = await pluginManager.runCalendarOperation(
+          pluginId,
+          operation.data,
+          invocationConnection(connection),
+          calendarRequest,
+          call.admit,
+        );
+        await storage.recordConnectionSyncSuccess(
+          pluginId,
+          connectionId,
+          Date.now(),
+        );
+        unit.set({ calendar: { event_count: result.events.length } });
+        writeJson(response, 200, result);
+      } catch (error) {
+        const secrets = connectionSecretValues(call.manifest, [
+          connection.config,
+        ]);
+        const message = redactPluginText(errorMessage(error), secrets);
+        unit.fail(error, { secrets });
+        await storage.recordConnectionError(pluginId, connectionId, message);
+        writeJson(response, 502, { error: message });
+      }
+    },
+
+    teamCreate: async ({ request, response, params, unit }) => {
+      const pluginId = pluginIdSchema.parse(params.pluginId);
+      unit.set({ plugin: { id: pluginId } });
+      const plugin = await teamPlugin(pluginId, response, unit, true);
+      if (!plugin) return;
+      // A malformed body fails here, outside the try, as a 400.
+      const payload = teamCreateRouteRequestSchema.parse(
+        await readJsonBody(request),
+      );
+      const call = admittedCall(plugin);
+      try {
+        writeJson(
+          response,
+          200,
+          await pluginManager.createTeam(
+            pluginId,
+            payload.values,
+            payload.team,
+            call.admit,
+          ),
+        );
+      } catch (error) {
+        unit.fail(error, {
+          secrets: connectionSecretValues(call.manifest, [payload.values]),
+        });
+        writeJson(response, 502, {
+          error: pluginErrorMessage(error, call.manifest, payload.values),
+        });
+      }
+    },
+
+    teamSync: async ({ request, response, params, unit }) => {
+      const pluginId = pluginIdSchema.parse(params.pluginId);
+      const { connectionId } = params;
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+      const plugin = await teamPlugin(pluginId, response, unit, false);
+      if (!plugin) return;
+      const connection = await storage.getConnection(pluginId, connectionId);
+      if (!connection) {
+        writeJson(response, 404, { error: "Connection not found." });
+        return;
+      }
+      const syncRequest = teamSyncRequestSchema.parse(
+        await readJsonBody(request),
+      );
+      unit.set({ team_sync: { projects_sent: syncRequest.changes.length } });
+      const call = admittedCall(plugin);
+      try {
+        const result = await pluginManager.syncTeamProjects(
+          pluginId,
+          invocationConnection(connection),
+          syncRequest,
+          call.admit,
+        );
+        unit.set({
+          team_sync: {
+            projects_received: result.projects.length,
+            assigned_count: result.assigned.length,
+            has_more: result.hasMore,
+          },
+        });
+        await storage.recordConnectionSyncSuccess(
+          pluginId,
+          connectionId,
+          Date.now(),
+        );
+        writeJson(response, 200, result);
+      } catch (error) {
+        unit.fail(error, {
+          secrets: connectionSecretValues(call.manifest, [connection.config]),
+        });
+        const message = pluginErrorMessage(
+          error,
+          call.manifest,
+          connection.config,
+        );
+        await storage.recordConnectionError(pluginId, connectionId, message);
+        writeJson(response, 502, { error: message });
+      }
+    },
+
+    backlogImportStage: async ({ request, response, unit }) => {
+      const payload = backlogImportPushRequestSchema.parse(
+        await readJsonBody(request),
+      );
+      const staged = backlogImportPushResponseSchema.parse(
+        await storage.stageImportItems(payload.items),
+      );
+      unit.set({
+        backlog_import: {
+          candidate_count: payload.items.length,
+          staged_count: staged.queuedCount,
+          updated_count: staged.updatedCount,
+        },
+      });
+      writeJson(response, 200, staged);
+    },
+
+    backlogImportList: async ({ response, unit }) => {
+      const imports = backlogImportListResponseSchema.parse(
+        await storage.listStagedImports(),
+      );
+      unit.set({ backlog_import: { candidate_count: imports.items.length } });
+      writeJson(response, 200, imports);
+    },
+
+    backlogImportSelect: async ({ request, response, unit }) => {
+      const payload = backlogImportSelectionUpdateSchema.parse(
+        await readJsonBody(request),
+      );
+      const updatedCount = await storage.updateImportSelection(
+        payload.ids,
+        payload.selected,
+      );
+      unit.set({
+        backlog_import: {
+          candidate_count: payload.ids.length,
+          updated_count: updatedCount,
+        },
+      });
+      writeJson(
+        response,
+        200,
+        backlogImportSelectionResponseSchema.parse({ updatedCount }),
+      );
+    },
+
+    backlogImportDismiss: async ({ request, response, unit }) => {
+      const payload = backlogImportDismissRequestSchema.parse(
+        await readJsonBody(request),
+      );
+      unit.set({ backlog_import: { candidate_count: payload.ids.length } });
+      writeJson(
+        response,
+        200,
+        backlogImportDismissResponseSchema.parse(
+          await storage.dismissImports(payload.ids),
+        ),
+      );
+    },
+
+    backlogImportRestore: async ({ request, response }) => {
+      const payload = backlogImportRestoreRequestSchema.parse(
+        await readJsonBody(request),
+      );
+      writeJson(
+        response,
+        200,
+        backlogImportRestoreResponseSchema.parse({
+          result: await storage.restoreDismissedImports(payload.undoToken),
+        }),
+      );
+    },
+
+    backlogImportCommit: async ({ response, unit }) => {
+      const items = await storage.commitSelectedImports();
+      unit.set({ backlog_import: { committed_count: items.length } });
+      writeJson(
+        response,
+        200,
+        backlogImportCommitResponseSchema.parse({
+          items,
+          committedCount: items.length,
+        }),
+      );
+    },
+  };
+
+  /** The settle routes: the states a settle can write, and the write itself. */
+  async function serveSettle(
+    {
+      request,
+      response,
+      params,
+      unit,
+    }: RouteContext<"settleStateList" | "settleWrite">,
+    action: "settle-states" | "settle",
+  ) {
+    const pluginId = pluginIdSchema.parse(params.pluginId);
+    const { connectionId } = params;
+    unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+    const connection = await storage.getConnection(pluginId, connectionId);
+    if (!connection) {
+      writeJson(response, 404, {
+        error: "Plugin connection not found.",
+      });
+      return;
+    }
+    const { plugin, pluginIds } = await findPlugin(pluginManager, pluginId);
+    const inactive = await inactiveCapability(
+      storage,
+      pluginId,
+      "connector",
+      pluginIds,
+      "settling",
+    );
+    if (inactive) {
+      unit.refuse(inactive.reason);
+      writeJson(response, 409, { error: inactive.message });
+      return;
+    }
+    if (!plugin?.capabilities.connector?.settle) {
+      writeJson(response, 409, {
+        error: "This plugin does not support settling.",
+      });
+      return;
+    }
+
+    const body = await readJsonBody(request);
+    // A malformed body fails here, outside the try, as a 400.
+    const statesRequest =
+      action === "settle-states"
+        ? backlogSettleStatesRequestSchema.parse(body)
+        : undefined;
+    const writeRequest =
+      action === "settle"
+        ? backlogSettleWriteRequestSchema.parse(body)
+        : undefined;
+    const call = admittedCall(plugin);
+    try {
+      if (statesRequest) {
+        const result = backlogSettleStatesResultSchema.parse(
+          await pluginManager.listSettleStates(
+            pluginId,
+            invocationConnection(connection),
+            statesRequest,
+            call.admit,
+          ),
+        );
+        (unit as Unit<AjourCatalog, "settle_state.list">).set({
+          settle_state: { count: result.states.length },
+        });
+        writeJson(response, 200, result);
+        return;
+      }
+      if (writeRequest) {
+        (unit as Unit<AjourCatalog, "backlog.write_source">).set({
+          source_write: {
+            state_sent: writeRequest.state !== undefined,
+            priority_sent: writeRequest.priority !== undefined,
+          },
+        });
+        const result = await pluginManager.writeSettle(
+          pluginId,
+          invocationConnection(connection),
+          writeRequest,
+          call.admit,
+        );
+        writeJson(response, 200, backlogSettleWriteResultSchema.parse(result));
+      }
     } catch (error) {
-      // Ajour's own errors only. Only a route knows the connection whose
-      // secrets a plugin error may echo, so each catches its plugin call and
-      // answers with `pluginErrorMessage`.
-      writeJson(response, 400, {
-        error: errorMessage(error),
+      unit.fail(error, {
+        secrets: connectionSecretValues(call.manifest, [connection.config]),
+      });
+      writeJson(response, 502, {
+        error: pluginErrorMessage(error, call.manifest, connection.config),
       });
     }
+  }
+
+  /** A synced item's description: read as its source holds it, or written. */
+  async function serveDescription(
+    {
+      request,
+      response,
+      url,
+      params,
+      unit,
+    }: RouteContext<"descriptionRead" | "descriptionWrite">,
+    writes: boolean,
+  ) {
+    const pluginId = pluginIdSchema.parse(params.pluginId);
+    const { connectionId } = params;
+    unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+    const connection = await storage.getConnection(pluginId, connectionId);
+    if (!connection) {
+      writeJson(response, 404, {
+        error: "Plugin connection not found.",
+      });
+      return;
+    }
+    const { plugin, pluginIds } = await findPlugin(pluginManager, pluginId);
+    const inactive = await inactiveCapability(
+      storage,
+      pluginId,
+      "connector",
+      pluginIds,
+      "syncing descriptions",
+    );
+    if (inactive) {
+      unit.refuse(inactive.reason);
+      writeJson(response, 409, { error: inactive.message });
+      return;
+    }
+    const description = plugin?.capabilities.connector?.description;
+    if (!plugin || !description || (writes && !description.write)) {
+      writeJson(response, 409, {
+        error: writes
+          ? "This plugin does not write descriptions."
+          : "This plugin does not sync descriptions.",
+      });
+      return;
+    }
+
+    const body = await readJsonBody(request);
+    // A malformed body fails here, outside the try, as a 400.
+    const readRequest = writes
+      ? undefined
+      : backlogReadDescriptionRequestSchema.parse(body);
+    const writeRequest = writes
+      ? backlogWriteDescriptionRequestSchema.parse(body)
+      : undefined;
+    if (writeRequest) {
+      (unit as Unit<AjourCatalog, "description.write">).set({
+        description: {
+          length: writeRequest.text.length,
+          allowed_loss_count: writeRequest.allowedLoss?.length ?? 0,
+        },
+      });
+    }
+    // An agent's call says so; it needs Read to read the description
+    // and Read and write to change it, whatever the page asks.
+    if (
+      url.searchParams.get("agent") === "1" &&
+      !agentAccessAllows(
+        connectionAgentAccess(connection),
+        writes ? "readWrite" : "read",
+      )
+    ) {
+      unit.refuse("agent_access");
+      writeJson(response, 409, {
+        error: `The user hasn't allowed agents to ${writes ? "change" : "read"} descriptions on the "${connection.label}" connection.`,
+      });
+      return;
+    }
+    // Only a connection that allows lossy conversion writes with losses,
+    // whatever a client asks.
+    if (
+      writeRequest?.allowedLoss?.length &&
+      connection.allowLossyConversion !== true
+    ) {
+      (unit as Unit<AjourCatalog, "description.write">).refuse(
+        "lossy_not_allowed",
+      );
+      writeJson(response, 409, {
+        error: "This connection does not allow lossy conversion.",
+      });
+      return;
+    }
+    const call = admittedCall(plugin);
+    try {
+      if (readRequest) {
+        const result = await pluginManager.readDescription(
+          pluginId,
+          invocationConnection(connection),
+          readRequest,
+          call.admit,
+        );
+        writeJson(
+          response,
+          200,
+          backlogReadDescriptionResultSchema.parse(result),
+        );
+        return;
+      }
+      if (writeRequest) {
+        const result = await pluginManager.writeDescription(
+          pluginId,
+          invocationConnection(connection),
+          writeRequest,
+          call.admit,
+        );
+        writeJson(
+          response,
+          200,
+          backlogWriteDescriptionResultSchema.parse(result),
+        );
+      }
+    } catch (error) {
+      unit.fail(error, {
+        secrets: connectionSecretValues(call.manifest, [connection.config]),
+      });
+      // The message reaches the user and is stored with the item.
+      writeJson(response, 502, {
+        error: pluginErrorMessage(error, call.manifest, connection.config),
+      });
+    }
+  }
+
+  /**
+   * The team plugin a team route runs, or undefined once it answered why
+   * not: the plugin has no team, or it or its team capability is off.
+   */
+  async function teamPlugin(
+    pluginId: string,
+    response: ServerResponse,
+    unit: Unit<AjourCatalog, "team.create" | "team.sync">,
+    create: boolean,
+  ) {
+    const { plugin, pluginIds } = await findPlugin(pluginManager, pluginId);
+    if (!plugin || !pluginHasTeam(plugin)) {
+      writeJson(response, 404, {
+        error: "This plugin does not sync a team's projects.",
+      });
+      return undefined;
+    }
+    const inactive = await inactiveCapability(
+      storage,
+      pluginId,
+      "team",
+      pluginIds,
+      create ? "creating a team" : "syncing its projects",
+    );
+    if (inactive) {
+      unit.refuse(inactive.reason);
+      writeJson(response, 409, { error: inactive.message });
+      return undefined;
+    }
+    return plugin;
+  }
+
+  const server = createServer((request, response) => {
+    void serveRequest(request, response);
   });
+
+  /**
+   * Serves one request inside its event. The host check comes first, then
+   * MCP, which has its own rules (bearer tokens, and no browser origins at
+   * all), then the origin check and the route table.
+   */
+  async function serveRequest(
+    request: IncomingMessage,
+    response: ServerResponse,
+  ) {
+    const url = requestUrlOf(request);
+    const isMcp = url.pathname === "/mcp" || url.pathname.startsWith("/mcp/");
+    const fromAgent = isMcp || url.searchParams.get("agent") === "1";
+    await serveWithEvent(
+      events,
+      request,
+      response,
+      { trigger: fromAgent ? "agent" : "system" },
+      async (unit) => {
+        if (runtime.stopping) {
+          unit.refuse("stopping");
+          writeJson(response, 503, { error: "App API is shutting down." });
+          return;
+        }
+        if (
+          request.headers.host &&
+          !isAllowedRequestHost(request.headers.host)
+        ) {
+          unit.refuse("host_refused");
+          writeJson(response, 403, { error: "Request host is not allowed." });
+          return;
+        }
+        if (isMcp) {
+          try {
+            await handleMcpRequest(request, response, url.pathname, {
+              ...mcpContext,
+              unit,
+            });
+          } catch (error) {
+            // An outcome MCP recorded stands, as a thrown error never
+            // downgrades it.
+            if (unit.outcome === undefined) unit.fail(error);
+            if (!response.headersSent) {
+              writeJson(response, 500, { error: errorMessage(error) });
+            }
+          }
+          return;
+        }
+        const requestOrigin = request.headers.origin;
+        if (
+          requestOrigin &&
+          !isAllowedRequestOrigin(requestOrigin, allowedOrigins)
+        ) {
+          unit.set({ http: { origin: "refused" } }).refuse("origin_refused");
+          writeJson(response, 403, { error: "Request origin is not allowed." });
+          return;
+        }
+        unit.set({ http: { origin: requestOrigin ? "app" : "none" } });
+        if (requestOrigin) {
+          response.setHeader("Access-Control-Allow-Origin", requestOrigin);
+          response.setHeader("Vary", "Origin");
+        }
+
+        if (request.method === "OPTIONS") {
+          writeJson(response, 204);
+          return;
+        }
+
+        const route = matchRoute(request.method, url.pathname);
+        if (!route) {
+          unit.refuse("no_route");
+          writeJson(response, 404, {
+            error: `No route for ${request.method ?? "GET"} ${url.pathname}`,
+          });
+          return;
+        }
+        const routed = route.name ? unit.rename(route.name) : unit;
+        routed.set({ http: { route: route.path } });
+        try {
+          const handle = handlers[route.id] as (
+            context: RouteContext<RouteId>,
+          ) => Promise<void> | void;
+          await handle({
+            request,
+            response,
+            url,
+            origin: requestOrigin,
+            params: decodeParams(route.rawParams) as RouteParams<RouteId>,
+            unit: routed as RouteContext<RouteId>["unit"],
+          });
+        } catch (error) {
+          // Ajour's own errors only. Only a route knows the connection whose
+          // secrets a plugin error may echo, so each catches its plugin call
+          // and answers with `pluginErrorMessage`.
+          const invalid = invalidRequestError(error);
+          if (invalid) routed.fail(invalid).refuse("invalid_request");
+          else routed.fail(error);
+          writeJson(response, 400, {
+            error: errorMessage(error),
+          });
+        }
+      },
+    );
+  }
 
   appApiRuntimesByServer.set(server, runtime);
   server.once("close", () => {

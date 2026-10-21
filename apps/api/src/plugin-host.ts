@@ -1,6 +1,13 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { PluginWorkerLifetime } from "./plugin-worker-lifetime.ts";
+import {
+  PluginOperationRefused,
+  PluginWorkerLifetime,
+  type PluginCancelReason,
+  type PluginOperationEventName,
+} from "./plugin-worker-lifetime.ts";
+import type { ApiEvents } from "./events.ts";
+import { connectionSecretValues } from "./plugin-errors.ts";
 import { readFile, realpath } from "node:fs/promises";
 import {
   PLUGIN_API_VERSION,
@@ -89,6 +96,8 @@ interface PluginHostOptions {
    * is cancelled.
    */
   operationGate?: (pluginId: string, method: PluginMethod) => Promise<void>;
+  /** Where each worker run's `plugin_operation` event goes. Nowhere by default. */
+  events?: ApiEvents;
 }
 
 const pluginInvocationConnectionSchema = z.object({
@@ -127,6 +136,37 @@ export type PluginMethod =
   | CalendarOperation
   | BacklogCommentOperation
   | TeamPluginMethod;
+/** The event each plugin method's worker run emits. A new method needs one. */
+export const PLUGIN_OPERATION_EVENTS = {
+  validateConnection: "connection.save",
+  syncConnection: "backlog.sync",
+  listSettleStates: "settle_state.list",
+  writeSettle: "backlog.write_source",
+  readDescription: "description.read",
+  writeDescription: "description.write",
+  syncPullRequests: "pull_request.sync",
+  getPullRequestContent: "pull_request.load",
+  getFileContent: "pull_request.load_file",
+  getPullRequestConversation: "pull_request.load_conversation",
+  browsePullRequests: "pull_request.browse",
+  submitReview: "pull_request.submit_review",
+  postComment: "pull_request.comment",
+  replyToThread: "pull_request.reply",
+  setThreadResolved: "pull_request.resolve_thread",
+  setFileViewed: "pull_request.mark_file_viewed",
+  updatePullRequest: "pull_request.update",
+  mergePullRequest: "pull_request.merge",
+  listCalendarEvents: "calendar.fetch",
+  listItemComments: "comment.list",
+  postItemComment: "comment.post",
+  editItemComment: "comment.edit",
+  deleteItemComment: "comment.delete",
+  setItemCommentReaction: "comment.react",
+  searchItemPeople: "mention.search",
+  createTeam: "team.create",
+  syncTeamProjects: "team.sync",
+} as const satisfies Record<PluginMethod, PluginOperationEventName>;
+
 const missingCapabilityMessages: Record<SwitchableCapability, string> = {
   connector: "does not sync backlog items",
   codeHost: "does not provide pull requests",
@@ -167,6 +207,7 @@ export class PluginManager {
   private readonly bundledPluginArchives: string[];
   private readonly allowDevelopmentPlugins: boolean;
   private readonly operationGate?: PluginHostOptions["operationGate"];
+  private readonly events?: ApiEvents;
   private readonly workers: PluginWorkerLifetime<PluginMethod>;
   private activePackageReaders = 0;
   private packageReadersDrainedPromise?: Promise<void>;
@@ -189,8 +230,12 @@ export class PluginManager {
     );
     this.allowDevelopmentPlugins = options.allowDevelopmentPlugins ?? false;
     this.operationGate = options.operationGate;
+    this.events = options.events;
     this.workers = new PluginWorkerLifetime({
       name: "Plugin",
+      events: options.events,
+      eventNames: PLUGIN_OPERATION_EVENTS,
+      capabilityOf: capabilityOfMethod,
       requestTimeoutMs: options.requestTimeoutMs ?? 30_000,
       workerScriptUrl:
         options.workerScriptUrl ??
@@ -246,6 +291,9 @@ export class PluginManager {
         installRoot: this.installedPluginDirectory,
         replaceExisting: true,
       });
+      if (installed.backupLeft) {
+        this.events?.current()?.count("plugin_backup_failed");
+      }
       if (installed.installed) await afterInstall?.(installed);
       return installed;
     });
@@ -258,6 +306,7 @@ export class PluginManager {
       await this.cancelPluginOperations(
         pluginId,
         new Error(`Plugin "${pluginId}" was uninstalled.`),
+        "uninstalled",
       );
 
       const removedPlugin = await uninstallPluginPackage({
@@ -274,8 +323,13 @@ export class PluginManager {
     });
   }
 
-  async cancelPluginOperations(pluginId: string, error: Error): Promise<void> {
-    await this.workers.cancel(error, pluginId);
+  /** Cancels the plugin's running operations, for `reason`. */
+  async cancelPluginOperations(
+    pluginId: string,
+    error: Error,
+    reason?: PluginCancelReason,
+  ): Promise<void> {
+    await this.workers.cancel(error, reason, pluginId);
   }
 
   /** Cancels the running operations of one capability, such as a pull request sync. */
@@ -286,6 +340,7 @@ export class PluginManager {
   ): Promise<void> {
     await this.workers.cancel(
       error,
+      "capability_off",
       pluginId,
       (method) => capabilityOfMethod(method) === capability,
     );
@@ -541,26 +596,51 @@ export class PluginManager {
     schema: { parse: (value: unknown) => T },
     admit?: PluginAdmission,
   ): Promise<T> {
-    this.assertCanInvoke();
-    return await this.workers.run(pluginId, method, async () => {
-      const plugin = await this.getPlugin(pluginId);
-      // Discovery awaited, so shutdown or a package change may have started meanwhile.
-      this.assertCanInvoke();
-      if (!plugin.entrypointPath) {
-        throw new Error(`Plugin "${pluginId}" runs no code.`);
-      }
-      await this.operationGate?.(pluginId, method);
-      await admit?.(plugin.manifest);
-      return {
-        workerData: {
-          apiVersion: PLUGIN_API_VERSION,
-          entrypointUrl: pathToFileURL(plugin.entrypointPath).toString(),
-          method,
-          params,
-        },
-        parse: (result: unknown) => schema.parse(result),
-      };
-    });
+    const connection = params.connection as
+      { id?: unknown; config?: PluginFieldValues } | undefined;
+    return await this.workers.run(
+      pluginId,
+      method,
+      async (record) => {
+        const plugin = await this.getPlugin(pluginId);
+        record.plugin({
+          version: plugin.manifest.version,
+          source: plugin.source,
+          apiVersion: plugin.manifest.apiVersion,
+        });
+        record.secrets(
+          connectionSecretValues(plugin.manifest, [
+            connection?.config,
+            params.config as PluginFieldValues | undefined,
+          ]),
+        );
+        // Discovery awaited, so shutdown or a package change may have started meanwhile.
+        this.assertCanInvoke();
+        if (!plugin.entrypointPath) {
+          throw new PluginOperationRefused(
+            `Plugin "${pluginId}" runs no code.`,
+            "runs_no_code",
+          );
+        }
+        await this.operationGate?.(pluginId, method);
+        await admit?.(plugin.manifest);
+        return {
+          workerData: {
+            apiVersion: PLUGIN_API_VERSION,
+            entrypointUrl: pathToFileURL(plugin.entrypointPath).toString(),
+            method,
+            params,
+          },
+          parse: (result: unknown) => schema.parse(result),
+        };
+      },
+      {
+        check: () => this.assertCanInvoke(),
+        ...(typeof connection?.id === "string"
+          ? { connectionId: connection.id }
+          : {}),
+      },
+    );
   }
 
   private async assertCapability(
@@ -638,7 +718,10 @@ export class PluginManager {
   private assertCanInvoke() {
     this.assertRunning();
     if (this.mutatingPluginPackage) {
-      throw new Error("Plugin package change is in progress.");
+      throw new PluginOperationRefused(
+        "Plugin package change is in progress.",
+        "package_change",
+      );
     }
   }
 
@@ -646,9 +729,10 @@ export class PluginManager {
     const { plugins, unavailable } = await this.discoverPlugins();
     const plugin = plugins.get(pluginId);
     if (!plugin) {
-      throw new Error(
+      throw new PluginOperationRefused(
         unavailable.get(pluginId)?.reason ??
           `Plugin "${pluginId}" is not installed.`,
+        "not_installed",
       );
     }
 
@@ -670,6 +754,9 @@ export class PluginManager {
       for (const plugin of installed.plugins) {
         plugins.set(plugin.manifest.id, plugin);
       }
+      if (installed.invalidCount > 0) {
+        this.events?.current()?.count("invalid_plugin", installed.invalidCount);
+      }
       for (const plugin of installed.unavailable) {
         unavailable.set(plugin.manifest.id, plugin);
       }
@@ -680,11 +767,9 @@ export class PluginManager {
             const plugin = await readPlugin(directory, "development");
             plugins.set(plugin.manifest.id, plugin);
             unavailable.delete(plugin.manifest.id);
-          } catch (error) {
-            console.error(
-              `Skipping invalid development plugin "${directory}".`,
-              error,
-            );
+          } catch {
+            // Skipped, as an invalid installed package is: the event counts it.
+            this.events?.current()?.count("invalid_plugin");
           }
         }
       }
@@ -710,7 +795,12 @@ export class PluginManager {
   }
 
   private async installBundledPlugins() {
-    await reconcilePluginInstallRoot(this.installedPluginDirectory);
+    const failedBackups = await reconcilePluginInstallRoot(
+      this.installedPluginDirectory,
+    );
+    if (failedBackups > 0) {
+      this.events?.current()?.count("plugin_backup_failed", failedBackups);
+    }
     for (const archivePath of this.bundledPluginArchives) {
       try {
         const archiveBytes = await readFile(archivePath);
@@ -720,18 +810,18 @@ export class PluginManager {
           installRoot: this.installedPluginDirectory,
           replaceExisting: false,
         });
-      } catch (error) {
-        console.error(
-          `Unable to install bundled plugin "${archivePath}".`,
-          error,
-        );
+      } catch {
+        this.events?.current()?.count("bundled_plugin_failed");
       }
     }
   }
 
   private assertRunning() {
     if (this.shuttingDown) {
-      throw new Error("Plugin host is shutting down.");
+      throw new PluginOperationRefused(
+        "Plugin host is shutting down.",
+        "host_stopping",
+      );
     }
   }
 
