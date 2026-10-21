@@ -4,9 +4,11 @@ import type {
   Kind,
   Outcome,
   RuntimeContext,
+  StepFailure,
   Surface,
   Trigger,
 } from "./envelope.ts";
+import { errorIdentity } from "./errors.ts";
 import type {
   Catalog,
   CounterName,
@@ -128,6 +130,9 @@ export interface Emitter<C extends Catalog> {
 
 type Fields = Record<string, unknown>;
 
+/** The most folded units' names, and failures, an event lists. */
+const MAX_STEPS = 50;
+
 class UnitState {
   name: string;
   readonly kind: Kind;
@@ -140,14 +145,23 @@ class UnitState {
   readonly emitter: EmitterState;
   /** The unit that emits for this one: itself, or the outer unit it folds into. */
   readonly root: UnitState;
-  /** Where a folded unit's name sits in the outer unit's steps. */
+  /** Where a folded unit's name sits in the outer unit's steps, or -1. */
   readonly step: number = -1;
+  /** The unit that was active when this one started, open or not now. */
+  readonly outer?: UnitState;
   fields: Fields = {};
   steps?: string[];
+  droppedSteps = 0;
+  stepFailures?: StepFailure[];
   counts?: Record<string, number>;
   outcome?: Outcome;
   reason?: string;
-  error?: EventError;
+  /** Described, and its message scrubbed, only when the event is built. */
+  failure?: {
+    error: unknown;
+    retriable?: boolean;
+    secrets?: readonly string[];
+  };
   ended = false;
 
   constructor(
@@ -155,7 +169,8 @@ class UnitState {
     name: string,
     init: { kind: Kind; trigger: Trigger; surface?: Surface },
     parent:
-      { fold: true; outer: UnitState } | { fold: false; trace?: TraceParent },
+      | { fold: true; outer: UnitState }
+      | { fold: false; trace?: TraceParent; outer?: UnitState },
   ) {
     this.emitter = emitter;
     this.name = name;
@@ -163,11 +178,14 @@ class UnitState {
     this.trigger = init.trigger;
     if (init.surface) this.surface = init.surface;
     this.startedAt = emitter.now();
+    this.outer = parent.outer;
     if (parent.fold) {
       this.root = parent.outer.root;
       this.traceId = this.root.traceId;
       this.spanId = this.root.spanId;
-      this.step = (this.root.steps ??= []).push(name) - 1;
+      const steps = (this.root.steps ??= []);
+      if (steps.length < MAX_STEPS) this.step = steps.push(name) - 1;
+      else this.root.droppedSteps += 1;
     } else {
       this.root = this;
       this.traceId = parent.trace?.trace_id ?? randomHex(16);
@@ -197,7 +215,11 @@ class UnitState {
     if (this.ended) return this;
     this.outcome = options.outcome ?? "error";
     this.reason = options.reason;
-    this.error = this.emitter.describe(error, options);
+    this.failure = {
+      error,
+      retriable: options.retriable,
+      secrets: options.secrets,
+    };
     return this;
   }
 
@@ -219,7 +241,7 @@ class UnitState {
   threw(error: unknown) {
     if (this.ended) return;
     if (this.outcome === undefined) this.fail(error);
-    else this.error ??= this.emitter.describe(error);
+    else this.failure ??= { error };
   }
 
   end(outcome?: Outcome, reason?: string) {
@@ -229,8 +251,26 @@ class UnitState {
       this.outcome = outcome;
       if (reason !== undefined) this.reason = reason;
     }
-    // A folded unit emits nothing of its own.
-    if (!this.folded) this.emitter.emit(this);
+    // A folded unit emits nothing of its own, but a failure shows on the
+    // outer event: its name, outcome and reason, and the error's type.
+    if (this.folded) this.recordFailure();
+    else this.emitter.emit(this);
+  }
+
+  private recordFailure() {
+    const { outcome, root } = this;
+    if (outcome === undefined || outcome === "ok" || outcome === "noop") return;
+    if (root.ended) return;
+    const failures = (root.stepFailures ??= []);
+    if (failures.length >= MAX_STEPS) return;
+    const failure: StepFailure = { name: this.name, outcome };
+    if (this.reason !== undefined) failure.outcome_reason = this.reason;
+    if (this.failure) {
+      const { type, code } = errorIdentity(this.failure.error);
+      failure.error_type = type;
+      if (code !== undefined) failure.error_code = code;
+    }
+    failures.push(failure);
   }
 
   enter<Result>(work: () => Result): Result {
@@ -247,7 +287,9 @@ class UnitState {
   rename(name: string) {
     if (this.ended) return this;
     this.name = name;
-    if (this.folded && this.root.steps) this.root.steps[this.step] = name;
+    if (this.folded && this.root.steps && this.step >= 0) {
+      this.root.steps[this.step] = name;
+    }
     return this;
   }
 }
@@ -304,12 +346,7 @@ class EmitterState {
     error: unknown,
     options: { retriable?: boolean; secrets?: readonly string[] } = {},
   ): EventError {
-    const described: EventError =
-      error instanceof Error
-        ? { type: error.name }
-        : { type: error === null ? "null" : typeof error };
-    const code = (error as { code?: unknown } | null | undefined)?.code;
-    if (typeof code === "string") described.code = code;
+    const described: EventError = errorIdentity(error);
     const message =
       error instanceof Error
         ? error.message
@@ -327,10 +364,14 @@ class EmitterState {
     return described;
   }
 
-  /** The active unit, while it is open. */
+  /**
+   * The active unit, while it is open. A unit that ended inside its own
+   * scope gives way to the unit that was active when it started.
+   */
   active(): UnitState | undefined {
-    const unit = this.scope.active() as UnitState | undefined;
-    return unit && !unit.ended && !unit.root.ended ? unit : undefined;
+    let unit = this.scope.active() as UnitState | undefined;
+    while (unit && (unit.ended || unit.root.ended)) unit = unit.outer;
+    return unit;
   }
 
   start(name: string, init: UnitInit<Catalog, string>) {
@@ -350,6 +391,7 @@ class EmitterState {
       return new UnitState(this, name, init, {
         fold: false,
         trace: { trace_id: outer.traceId, span_id: outer.spanId },
+        outer,
       });
     }
     return new UnitState(this, name, init, { fold: true, outer });
@@ -380,8 +422,12 @@ class EmitterState {
     if (context.window_id) event.window_id = context.window_id;
     if (unit.surface) event.surface = unit.surface;
     if (unit.steps) event.steps = unit.steps;
+    if (unit.droppedSteps > 0) event.dropped_step_count = unit.droppedSteps;
+    if (unit.stepFailures) event.step_failures = unit.stepFailures;
     if (unit.counts) event.counts = unit.counts;
-    if (unit.error) event.error = unit.error;
+    if (unit.failure) {
+      event.error = this.describe(unit.failure.error, unit.failure);
+    }
     try {
       this.sink.emit(event);
     } catch {

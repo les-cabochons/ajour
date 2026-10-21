@@ -115,6 +115,118 @@ describe("nested units fold into the outer one", () => {
     expect(recorded[1]!.trace_id).not.toBe(recorded[0]!.trace_id);
   });
 
+  it("keeps folding into the open outer unit after a nested unit ends inside its own scope", () => {
+    const { events, recorded } = recordingEmitter();
+
+    events.run("backlog.sync", { kind: "request", trigger: "system" }, () => {
+      const update = events.start("time_entry.update", {
+        kind: "command",
+        trigger: "system",
+      });
+      update.enter(() => {
+        update.end();
+        events.run(
+          "api.request",
+          { kind: "request", trigger: "system" },
+          () => {},
+        );
+      });
+      const operation = events.start("backlog.sync", {
+        kind: "plugin_operation",
+        trigger: "system",
+      });
+      operation.enter(() => {
+        operation.end();
+        events.run(
+          "time_entry.update",
+          { kind: "command", trigger: "system" },
+          () => {},
+        );
+      });
+    });
+
+    const [operation, request] = recorded;
+    expect(recorded.map((event) => event.kind)).toEqual([
+      "plugin_operation",
+      "request",
+    ]);
+    expect(request!.steps).toEqual([
+      "time_entry.update",
+      "api.request",
+      "time_entry.update",
+    ]);
+    expect(operation!.parent_span_id).toBe(request!.span_id);
+  });
+
+  it("records a nested unit's refusal or failure on the outer event, which keeps its own outcome", () => {
+    const { events, recorded } = recordingEmitter();
+
+    events.run("backlog.sync", { kind: "job", trigger: "schedule" }, () => {
+      events.run(
+        "time_entry.update",
+        { kind: "command", trigger: "system" },
+        (update) => update.refuse("locked_week"),
+      );
+      try {
+        events.run(
+          "api.request",
+          { kind: "request", trigger: "system" },
+          () => {
+            throw Object.assign(new TypeError("Note: lunch with Ana"), {
+              code: "E_NOTE",
+            });
+          },
+        );
+      } catch {
+        // The sync goes on.
+      }
+      events.run(
+        "time_entry.update",
+        { kind: "command", trigger: "system" },
+        (update) => update.end("noop"),
+      );
+    });
+
+    expect(recorded).toEqual([
+      expect.objectContaining({
+        outcome: "ok",
+        step_failures: [
+          {
+            name: "time_entry.update",
+            outcome: "refused",
+            outcome_reason: "locked_week",
+          },
+          {
+            name: "api.request",
+            outcome: "error",
+            error_type: "TypeError",
+            error_code: "E_NOTE",
+          },
+        ],
+      }),
+    ]);
+    // A nested failure's message stays out: only its type and code.
+    expect(JSON.stringify(recorded)).not.toContain("lunch");
+  });
+
+  it("keeps the first 50 steps and step failures, and counts the steps it dropped", () => {
+    const { events, recorded } = recordingEmitter();
+
+    events.run("backlog.sync", { kind: "job", trigger: "schedule" }, () => {
+      for (let index = 0; index < 60; index += 1) {
+        events.run(
+          "time_entry.update",
+          { kind: "command", trigger: "system" },
+          (update) => update.refuse("locked_week"),
+        );
+      }
+    });
+
+    expect(recorded[0]!.steps).toHaveLength(50);
+    expect(recorded[0]!.dropped_step_count).toBe(10);
+    expect(recorded[0]!.step_failures).toHaveLength(50);
+  });
+
   it("gives the active unit to the code doing the work", () => {
     const { events, recorded } = recordingEmitter();
 

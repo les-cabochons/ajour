@@ -8,13 +8,18 @@ export interface Sink {
 /** The default sink: it drops every event. */
 export const nowhere: Sink = { emit() {} };
 
-/** A sink for tests: it keeps every event, in order. */
-export function createRecordingSink() {
-  const events: (Envelope & Record<string, any>)[] = [];
+/**
+ * A sink for tests: it keeps every event, in order. Pass the events' type,
+ * such as `AjourEvent` from the catalog, to read their fields typed.
+ */
+export function createRecordingSink<
+  Event extends Envelope = Envelope & { readonly [field: string]: unknown },
+>() {
+  const events: Event[] = [];
   return {
     events,
     emit(event: Envelope & Record<string, unknown>) {
-      events.push(event);
+      events.push(event as Event);
     },
   };
 }

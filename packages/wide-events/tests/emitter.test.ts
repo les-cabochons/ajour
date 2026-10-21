@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { recordingEmitter } from "./fixtures.ts";
+import { createEmitter } from "../index.ts";
+import { apiContext, recordingEmitter, testCatalog } from "./fixtures.ts";
 
 const TRACE_ID = /^[0-9a-f]{32}$/;
 const SPAN_ID = /^[0-9a-f]{16}$/;
@@ -210,6 +211,34 @@ describe("one event per unit of work", () => {
         steps: ["agent_tool.call"],
       }),
     ]);
+  });
+
+  it("reads and scrubs a failure's message only when the event is built", () => {
+    let reads = 0;
+    const failure = new Error();
+    Object.defineProperty(failure, "message", {
+      get: () => {
+        reads += 1;
+        return "Bad token pat-7c1e9a";
+      },
+    });
+    const dropped = createEmitter({
+      catalog: testCatalog,
+      context: apiContext,
+    });
+    dropped.run("backlog.sync", { kind: "job", trigger: "user" }, (unit) =>
+      unit.fail(failure, { secrets: ["pat-7c1e9a"] }),
+    );
+    expect(reads).toBe(0);
+
+    const { events, recorded } = recordingEmitter();
+    events.run("backlog.sync", { kind: "job", trigger: "user" }, (unit) =>
+      unit.fail(failure, { secrets: ["pat-7c1e9a"] }),
+    );
+    expect(recorded[0]!.error).toEqual({
+      type: "Error",
+      message: "Bad token [secret]",
+    });
   });
 
   it("keeps working when the sink throws", () => {

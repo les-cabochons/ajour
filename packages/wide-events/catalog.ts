@@ -2,7 +2,11 @@
 // one. Every field declares its privacy class, so a field without one fails
 // to compile.
 export { catalog } from "./lib/ajour-catalog.ts";
-export type { AjourCatalog } from "./lib/ajour-catalog.ts";
+export type {
+  AjourCatalog,
+  AjourEvent,
+  McpMethod,
+} from "./lib/ajour-catalog.ts";
 export {
   defineCatalog,
   envelopeFields,
@@ -13,6 +17,7 @@ export type {
   Catalog,
   CounterName,
   EventName,
+  EventOf,
   EventSpec,
   Field,
   FieldsOf,

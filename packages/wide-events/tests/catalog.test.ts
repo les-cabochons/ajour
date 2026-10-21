@@ -8,13 +8,19 @@ import {
   type FieldTree,
 } from "../catalog.ts";
 
-/** Every leaf of a field tree, with its path. */
+/**
+ * Every leaf of a field tree, with its path and class. A node that is
+ * neither a field nor an object with fields is a leaf with no class.
+ */
 function leaves(tree: FieldTree, path: string[] = []): [string, unknown][] {
-  return Object.entries(tree).flatMap(([key, node]) =>
-    "privacy" in node && typeof node.privacy === "string"
-      ? [[[...path, key].join("."), node.privacy] as [string, unknown]]
-      : leaves(node as FieldTree, [...path, key]),
-  );
+  return Object.entries(tree).flatMap(([key, node]) => {
+    const at = [...path, key];
+    if ("privacy" in node && typeof node.privacy === "string") {
+      return [[at.join("."), node.privacy] as [string, unknown]];
+    }
+    const children = leaves(node as FieldTree, at);
+    return children.length > 0 ? children : [[at.join("."), undefined]];
+  });
 }
 
 describe("the catalog", () => {
@@ -66,16 +72,18 @@ describe("the catalog", () => {
       valid.events["time_entry.stop"].fields.time_entry.duration_ms,
     ).toEqual({ privacy: "sensitive" });
 
-    defineCatalog({
-      counters: {},
-      events: {
-        "time_entry.stop": {
-          kinds: ["command"],
-          // @ts-expect-error A field must declare operational or sensitive.
-          fields: { time_entry: { id: "string" } },
+    expect(() =>
+      defineCatalog({
+        counters: {},
+        events: {
+          "time_entry.stop": {
+            kinds: ["command"],
+            // @ts-expect-error A field must declare operational or sensitive.
+            fields: { time_entry: { id: "string" } },
+          },
         },
-      },
-    });
+      }),
+    ).toThrow("declares no privacy class");
     defineCatalog({
       counters: {},
       events: {
@@ -86,10 +94,32 @@ describe("the catalog", () => {
         },
       },
     });
-    defineCatalog({
-      // @ts-expect-error A counter must declare its class too.
-      counters: { store_write_count: 1 },
-      events: {},
-    });
+    expect(() =>
+      defineCatalog({
+        // @ts-expect-error A counter must declare its class too.
+        counters: { store_write_count: 1 },
+        events: {},
+      }),
+    ).toThrow('Catalog field "counter store_write_count"');
+  });
+
+  it("refuses an empty object where a field belongs, at compile time and at load", () => {
+    expect(() =>
+      defineCatalog({
+        counters: {},
+        events: {
+          "time_entry.stop": {
+            kinds: ["command"],
+            // @ts-expect-error An empty object declares no class.
+            fields: { time_entry: { id: {} } },
+          },
+        },
+      }),
+    ).toThrow(
+      'Catalog field "time_entry.stop time_entry.id" declares no privacy class.',
+    );
+    expect(leaves({ time_entry: { id: {} } } as unknown as FieldTree)).toEqual([
+      ["time_entry.id", undefined],
+    ]);
   });
 });

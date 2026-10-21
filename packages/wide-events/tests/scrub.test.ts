@@ -57,6 +57,87 @@ describe("the error scrubber", () => {
     ).toBe("GET [url] failed. See [url], or ([url]).");
   });
 
+  it("finds secrets, URLs and paths on the original text, so a secret inside one can't break the others", () => {
+    // The secret is the URL's scheme: the host and path still go.
+    expect(
+      scrubErrorMessage("GET https://private.example/a failed", {
+        secrets: ["https"],
+      }),
+    ).toBe("GET [url] failed");
+    // The secret sits inside the home path: the path still goes.
+    expect(
+      scrubErrorMessage("open C:\\Users\\Ana\\notes.txt", {
+        ...windows,
+        secrets: ["Users\\Ana"],
+      }),
+    ).toBe("open ~\\notes.txt");
+    // A secret that starts before a URL and ends inside it goes with it, as
+    // one mark: the widest range's.
+    expect(
+      scrubErrorMessage("key=pat-9 https://acme.example/x", {
+        secrets: ["pat-9 https://acme"],
+      }),
+    ).toBe("key=[url]");
+    // A secret that holds the home path is one secret.
+    expect(
+      scrubErrorMessage("Key C:\\Users\\Ana\\key.pem refused", {
+        ...windows,
+        secrets: ["C:\\Users\\Ana\\key.pem"],
+      }),
+    ).toBe("Key [secret] refused");
+  });
+
+  it("replaces the home directory only where a path segment ends", () => {
+    expect(
+      scrubErrorMessage("C:\\Users\\Anabel\\x and C:\\Users\\Ana", windows),
+    ).toBe("C:\\Users\\Anabel\\x and ~");
+  });
+
+  it("leaks no secret, host or home path when they overlap, across random messages", () => {
+    const hosts = ["private.example", "acme.atlassian.net", "intra.local"];
+    const pieces = [
+      ...hosts.map((host) => `https://${host}/rest/2/issue?t=pat-7c1e9a`),
+      "C:\\Users\\Ana\\AppData\\Roaming\\Ajour\\state.json",
+      "c:/users/ana/Documents/plan.xlsx",
+      "pat-7c1e9a",
+      "Bearer pat-7c1e9a",
+      "failed",
+      "with",
+      "(",
+      ")",
+      ",",
+      "\n",
+    ];
+    const secretPool = [
+      "pat-7c1e9a",
+      "https",
+      "Users\\Ana",
+      "private",
+      "atlassian.net/rest",
+      "Ajour\\state",
+      "ana/Documents",
+    ];
+    let seed = 7;
+    const random = (below: number) => {
+      seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
+      return seed % below;
+    };
+    for (let round = 0; round < 2_000; round += 1) {
+      const secrets = secretPool.filter(() => random(2) === 0);
+      const message = Array.from(
+        { length: 1 + random(8) },
+        () => pieces[random(pieces.length)],
+      ).join(random(2) === 0 ? " " : "");
+      const scrubbed = scrubErrorMessage(message, { ...windows, secrets });
+      for (const leak of [...secrets, ...hosts, "Users\\Ana", "users/ana"]) {
+        expect([message, scrubbed.toLowerCase()]).not.toEqual([
+          message,
+          expect.stringContaining(leak.toLowerCase()),
+        ]);
+      }
+    }
+  });
+
   it("caps a message at 512 characters, never inside a mark", () => {
     const long = scrubErrorMessage("x".repeat(600));
     expect(long).toHaveLength(512);

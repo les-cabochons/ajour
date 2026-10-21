@@ -8,6 +8,7 @@ export type {
   Unit,
   UnitInit,
 } from "./lib/emitter.ts";
+export { errorIdentity } from "./lib/errors.ts";
 export { synchronousScope } from "./lib/scope.ts";
 export type { ScopeStore } from "./lib/scope.ts";
 export type {
@@ -18,6 +19,7 @@ export type {
   Outcome,
   Runtime,
   RuntimeContext,
+  StepFailure,
   Surface,
   Trigger,
 } from "./lib/envelope.ts";

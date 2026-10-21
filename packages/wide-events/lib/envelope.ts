@@ -80,11 +80,34 @@ export interface Envelope extends RuntimeContext {
   parent_span_id?: string;
   trigger: Trigger;
   surface?: Surface;
-  /** The names of the nested units folded into this one, in the order they started. */
+  /**
+   * The names of the nested units folded into this one, in the order they
+   * started: the first 50.
+   */
   steps?: string[];
-  /** What this unit and the units folded into it counted. */
+  /** How many folded units' names `steps` left out past its first 50. */
+  dropped_step_count?: number;
+  /**
+   * The folded units that didn't end `ok` or `noop`, the first 50. The outer
+   * unit's own outcome stays its own.
+   */
+  step_failures?: StepFailure[];
+  /**
+   * What this unit and the units folded into it counted, by counter name
+   * from the catalog. Not in #304's envelope: it is where `count()` and a
+   * folded unit's counts add up.
+   */
   counts?: Record<string, number>;
   error?: EventError;
+}
+
+/** A folded unit that failed, without content: never its message or fields. */
+export interface StepFailure {
+  name: string;
+  outcome: Exclude<Outcome, "ok" | "noop">;
+  outcome_reason?: string;
+  error_type?: string;
+  error_code?: string;
 }
 
 export type EnvelopeKey = keyof Envelope;

@@ -1,4 +1,29 @@
-import { defineCatalog, operational } from "./fields.ts";
+import { defineCatalog, operational, type EventOf } from "./fields.ts";
+
+/**
+ * The MCP methods an `mcp.request` event names: those of the MCP spec, a
+ * `batch` of several messages, and `other` for any Ajour doesn't know.
+ */
+export type McpMethod =
+  | "initialize"
+  | "ping"
+  | "notifications/initialized"
+  | "notifications/cancelled"
+  | "notifications/progress"
+  | "notifications/roots/list_changed"
+  | "tools/list"
+  | "tools/call"
+  | "resources/list"
+  | "resources/templates/list"
+  | "resources/read"
+  | "resources/subscribe"
+  | "resources/unsubscribe"
+  | "prompts/list"
+  | "prompts/get"
+  | "logging/setLevel"
+  | "completion/complete"
+  | "batch"
+  | "other";
 
 /**
  * Ajour's event names, one table for every runtime: an operation keeps its
@@ -24,16 +49,19 @@ export const catalog = defineCatalog({
       ],
       fields: {
         mcp: {
-          /** The JSON-RPC method, such as `initialize` or `tools/list`; `other` for any Ajour doesn't know. */
-          method: operational(),
+          /** The JSON-RPC method, from a closed set. */
+          method: operational<McpMethod>(),
+          /** In a `batch`, how many of its messages call a tool. */
+          call_count: operational<number>(),
         },
         agent: { client_id: operational() },
       },
     },
-    /** One MCP tool call, named once the request's method is read. */
+    /** One call of an agent tool, named once the request's method is read. */
     "agent_tool.call": {
       kinds: ["request", "job"],
       reasons: [
+        "invalid_call",
         "bridge_unavailable",
         "bridge_timeout",
         "tool_failed",
@@ -46,6 +74,7 @@ export const catalog = defineCatalog({
           session_id: operational(),
         },
         agent_tool: {
+          /** One of Ajour's tools, or `other` for a name it doesn't have. */
           name: operational(),
           /** Read and write tools run in the renderer; session tools in the API. */
           access: operational<"read" | "write" | "session">(),
@@ -116,7 +145,10 @@ export const catalog = defineCatalog({
         },
       },
     },
-    /** A calendar's events for a date range. Never a title (ADR 0005). */
+    /**
+     * A calendar's events for a date range. Never a title (ADR 0005). The
+     * renderer's hop adds whether it was forced and fresh from cache (#310).
+     */
     "calendar.fetch": {
       kinds: ["job", "request", "plugin_operation"],
       fields: {
@@ -128,22 +160,34 @@ export const catalog = defineCatalog({
         },
       },
     },
-    /** A synced backlog item's comments. Never their text or authors (ADR 0008). */
+    /**
+     * A synced backlog item's comments. Never their text or authors (ADR
+     * 0008). The renderer's hop adds Ajour's item ID and the cache hit (#310).
+     */
     "comment.list": {
       kinds: ["command", "request", "plugin_operation"],
       reasons: ["agent_access"],
       fields: {
         plugin: { id: operational() },
         connection: { id: operational() },
-        comment: { count: operational<number>() },
+        comment: {
+          /** The newest comments, or an earlier page through a cursor. */
+          page: operational<"latest" | "earlier">(),
+          comment_count: operational<number>(),
+        },
       },
     },
+    /** A comment posted on a synced backlog item: its length, never its text. */
     "comment.post": {
       kinds: ["command", "request", "plugin_operation"],
       reasons: ["agent_access"],
       fields: {
         plugin: { id: operational() },
         connection: { id: operational() },
+        comment: {
+          body_length: operational<number>(),
+          mention_count: operational<number>(),
+        },
       },
     },
     "comment.edit": {
@@ -152,8 +196,13 @@ export const catalog = defineCatalog({
       fields: {
         plugin: { id: operational() },
         connection: { id: operational() },
+        comment: {
+          body_length: operational<number>(),
+          mention_count: operational<number>(),
+        },
       },
     },
+    /** Sent after the Undo window, so a job in the renderer. */
     "comment.delete": {
       kinds: ["job", "request", "plugin_operation"],
       reasons: ["agent_access"],
@@ -170,17 +219,20 @@ export const catalog = defineCatalog({
         connection: { id: operational() },
       },
     },
-    /** The people a mention can name. Never their names. */
-    "person.search": {
+    /** The people a mention can name, for the editor's @ suggestions. Never their names. */
+    "mention.search": {
       kinds: ["command", "request", "plugin_operation"],
       reasons: ["agent_access"],
       fields: {
         plugin: { id: operational() },
         connection: { id: operational() },
-        person: { count: operational<number>() },
+        mention: { result_count: operational<number>() },
       },
     },
   },
 });
 
 export type AjourCatalog = typeof catalog;
+
+/** Any of Ajour's events, as a sink or a test reads it. */
+export type AjourEvent = EventOf<AjourCatalog>;

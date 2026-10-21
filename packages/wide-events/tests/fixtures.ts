@@ -1,5 +1,10 @@
 import { createEmitter, type EmitterOptions } from "../index.ts";
-import { defineCatalog, operational, sensitive } from "../catalog.ts";
+import {
+  defineCatalog,
+  operational,
+  sensitive,
+  type EventOf,
+} from "../catalog.ts";
 import { createRecordingSink } from "../sinks.ts";
 
 /** A small catalog for the package's own tests. */
@@ -56,7 +61,7 @@ export const apiContext = {
 export function recordingEmitter(
   options: Partial<EmitterOptions<typeof testCatalog>> = {},
 ) {
-  const sink = createRecordingSink();
+  const sink = createRecordingSink<EventOf<typeof testCatalog>>();
   const events = createEmitter({
     catalog: testCatalog,
     context: apiContext,

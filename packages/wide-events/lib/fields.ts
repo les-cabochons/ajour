@@ -1,4 +1,4 @@
-import type { EnvelopeKey, Kind } from "./envelope.ts";
+import type { Envelope, EnvelopeKey, Kind, StepFailure } from "./envelope.ts";
 
 /**
  * Who may receive a field. `operational` fields hold IDs, enums, counts,
@@ -48,8 +48,30 @@ export interface Catalog {
 type NoEnvelopeKeys = { readonly [Key in EnvelopeKey]?: never };
 
 /**
- * Checks a catalog at compile time: every field declares `operational` or
- * `sensitive`, and no event field takes an envelope field's name.
+ * A field tree as declared, with every empty object turned into a type that
+ * nothing matches: an empty object would type its values as `{}`, which a
+ * string fits, and declare no class.
+ */
+type ClassedTree<Tree> = {
+  readonly [Key in keyof Tree]: Tree[Key] extends Field<unknown>
+    ? Tree[Key]
+    : [keyof Tree[Key]] extends [never]
+      ? { readonly "declare operational or sensitive": never }
+      : ClassedTree<Tree[Key]>;
+};
+
+type ClassedEvents<Events> = {
+  readonly [Name in keyof Events]: Events[Name] extends {
+    readonly fields: infer Tree;
+  }
+    ? Omit<Events[Name], "fields"> & { readonly fields: ClassedTree<Tree> }
+    : Events[Name];
+};
+
+/**
+ * Checks a catalog at compile time and when it loads: every field declares
+ * `operational` or `sensitive`, no nested object is empty, and no event
+ * field takes an envelope field's name.
  */
 export function defineCatalog<
   const Counters extends Catalog["counters"],
@@ -60,9 +82,38 @@ export function defineCatalog<
   },
 >(catalog: {
   counters: Counters;
-  events: Events;
+  events: Events & ClassedEvents<Events>;
 }): { counters: Counters; events: Events } {
+  for (const [name, spec] of Object.entries<EventSpec>(catalog.events)) {
+    assertClassed(spec.fields, `${name} `);
+  }
+  for (const [name, counter] of Object.entries<Field<number>>(
+    catalog.counters,
+  )) {
+    if (!isField(counter)) assertClassed({ [name]: counter }, "counter ");
+  }
   return catalog;
+}
+
+function isField(node: unknown): node is Field<unknown> {
+  const privacy = (node as Field<unknown> | null | undefined)?.privacy;
+  return privacy === "operational" || privacy === "sensitive";
+}
+
+/** Throws on a node that is neither a classed field nor an object of fields. */
+function assertClassed(tree: object, path: string) {
+  for (const [key, node] of Object.entries(tree)) {
+    const at = path.endsWith(" ") ? `${path}${key}` : `${path}.${key}`;
+    if (isField(node)) continue;
+    if (
+      typeof node !== "object" ||
+      node === null ||
+      Object.keys(node).length === 0
+    ) {
+      throw new Error(`Catalog field "${at}" declares no privacy class.`);
+    }
+    assertClassed(node, at);
+  }
 }
 
 /**
@@ -86,6 +137,8 @@ export const envelopeFields = {
   trigger: operational(),
   surface: operational(),
   steps: operational<string[]>(),
+  dropped_step_count: operational<number>(),
+  step_failures: operational<StepFailure[]>(),
   counts: operational<Record<string, number>>(),
   app: {
     version: operational(),
@@ -135,3 +188,17 @@ export type FieldsOf<
   C extends Catalog,
   Name extends EventName<C>,
 > = FieldValues<C["events"][Name]["fields"]>;
+
+type UnionToIntersection<Union> = (
+  Union extends unknown ? (value: Union) => void : never
+) extends (value: infer Intersection) => void
+  ? Intersection
+  : never;
+
+/**
+ * Any event of a catalog, as a reader sees it: the envelope, and every field
+ * any of its names declares, all optional.
+ */
+export type EventOf<C extends Catalog> = Envelope & {
+  name: EventName<C>;
+} & FieldValues<UnionToIntersection<C["events"][EventName<C>]["fields"]>>;
