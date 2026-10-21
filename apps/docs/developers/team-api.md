@@ -13,7 +13,7 @@ export async function createTeam(
 ): Promise<{ values: Record<string, string | number | boolean> }>;
 ```
 
-Ajour calls it from the connection form, before the connection is saved. `config` holds the form's values as they stand, such as the deployment URL. `name` is 1 to 120 characters. Return the connection values that join the new team, such as its ID and secret, and Ajour fills them into the form. Your plugin names its own fields. Make the secret on the user's machine where you can, so the backend only ever sees its hash.
+Ajour calls it from the connection form, before the connection is saved. `config` holds the form's values as they stand, such as the deployment URL. `name` is 1 to 120 characters. Return the connection values that join the new team, such as its ID and secret, and Ajour fills them into the form. Your plugin names its own fields. Generate the secret on the user's machine where you can, send it over HTTPS, and store only its hash on the backend. Hashing at rest does not hide the secret from the backend: a plugin that sends it to authenticate creation or sync requests exposes it to the backend while it handles those requests. Do not log it.
 
 Ajour tells teams apart by your plugin's non-secret connection fields, other than the [reserved ones](/developers/manifest#reserved-fields). A new secret keeps the team, but a new value in any of those fields names another team: the connection's shared projects turn local and sharing starts over. Mark the team's secret `secret: true`, and keep other non-secret fields to what names the team, such as the deployment URL and team ID.
 

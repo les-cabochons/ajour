@@ -147,7 +147,8 @@ export default defineConfig({
     },
     docFooter: { prev: "Previous", next: "Next" },
     footer: {
-      message: "Ajour keeps your time on your machine.",
+      message:
+        'Ajour keeps your time on your machine. <a href="/legal/privacy">Privacy policy</a> · <a href="/legal/terms">Terms of service</a> · <a href="/legal/confidentialite" lang="fr">Confidentialité</a> · <a href="/legal/conditions" lang="fr">Conditions d\'utilisation</a>',
     },
   },
 });

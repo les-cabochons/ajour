@@ -1,6 +1,6 @@
 # Your data
 
-Ajour keeps your work on your machine. It has no account, no server and no telemetry. This page lists what Ajour stores, where, and when it uses the network.
+Ajour keeps your workspace on your machine. You do not need an Ajour account, and Ajour does not upload your workspace to a server we run or send us usage telemetry. Optional plugins and agents connect to the services you choose. This page explains storage, network requests and deletion. The [privacy policy](/legal/privacy) covers the app, this website and information you send us.
 
 ## Where Ajour stores data
 
@@ -17,23 +17,36 @@ The folder holds:
 - **`app-api-state.json`**: plugin connections, items waiting in Sync review, MCP clients and agent task settings.
 - **`plugins/`**: installed plugins.
 - **`plugin-catalog/`**: a cache of the plugin catalog.
+- **`agent-browser-profile/`**: the browser profile used by agent tasks in their separate browser mode. It keeps cookies, sessions and other browser data, including a Workday sign-in, between runs. An agent attached to your own browser uses that browser's profile instead.
 
 To back up Ajour, quit it and copy this folder.
 
 ::: warning Plugin credentials
-Connection tokens, such as an Azure DevOps personal access token, are stored in `app-api-state.json`. Only your user account can read the file, but the tokens in it are not encrypted. Give each token only the permissions its plugin needs, and an expiry date.
+Connection tokens, such as an Azure DevOps personal access token, are stored unencrypted in `app-api-state.json`. Ajour restricts the file's permissions, but programs running as you, including installed plugin code, can read it. Keep this folder and its backups private. Give each token only the permissions its plugin needs, and an expiry date.
 :::
 
 ## When Ajour uses the network
 
-Ajour never sends your time entries anywhere. It connects to the network for these, some of them on a timer:
+Ajour makes these network requests, some of them on a timer:
 
 - **GitHub releases**, to check for updates on startup, every 4 hours and when you ask, in the desktop app. Updates download only when you choose to update.
-- **The plugin catalog** on GitHub, at launch and every 15 minutes, and GitHub releases when you download a plugin.
+- **The plugin catalog** on GitHub, at launch and every 15 minutes by default. Its images also come from GitHub and are cached locally. Downloading a plugin contacts GitHub releases and its download hosts.
 - **The tools you connect**, such as Azure DevOps, Jira, GitHub or your calendar, when you press **Sync**, on the connection's timer, and when you open a week or an item's comments.
+- **Your team's backend**, through a team plugin, for the project and task fields you share. This does not include time entries or their notes. The operator of that backend controls its storage and retention.
+- **Your AI provider and the sites an agent visits**, when you use [MCP or an agent task](/app/agents). The agent can send the data it reads, including time entries, notes and browser content, to the provider you configured. A task can also enter your timesheet into a service such as Workday.
 
-Your time entries stay on your machine, unless you export them or let an agent read them, through [MCP](/app/agents) or an [agent task](/app/agents#agent-tasks).
+Each contacted service receives ordinary request information, including your IP address. Update and catalog requests do not include your time entries or connection tokens. Exporting data to a destination you choose or opening an external link can also send information outside your device.
 
 ## What plugins can see
 
-A plugin sees the connection settings you give it, and the data of its own connections, such as their backlog items. A team plugin also gets the projects and tasks you share with the team. No plugin sees your time entries or other plugins' data. Plugins do run with your user's permissions, like any app you install, so install plugins you trust. See [Plugins](/plugins/#trust).
+Ajour passes a plugin its connection settings, including its credentials, and data needed for its operations. A team plugin also gets the projects and tasks you share. Ordinary plugin calls do not include your time entries or another plugin's connection. This is a limit on what Ajour passes, not an isolation guarantee: plugin code runs with your user's permissions, can read local files and can reach the network. Ajour does not currently sandbox it. See [Plugins](/plugins/#trust).
+
+Ajour masks secret fields in its settings and redacts known connection secrets from plugin errors and summaries. Those protections do not stop plugin code from reading credentials. The planned credential broker will keep secrets out of plugin code and make authenticated requests on its behalf. It has not shipped. The [privacy policy](/legal/privacy#credentials-and-plugin-access) explains that distinction.
+
+## Back up, export or delete data
+
+Quit Ajour before copying its data folder. A copy includes credentials and browser sessions, so protect it like the original. The app's [exports](/projects/import-export) cover the data offered by each export format, not a complete backup of this folder.
+
+Removing a connection deletes its saved credentials from Ajour. It does not revoke a token at the provider or delete records already sent to a source tool, a team backend or an AI provider. Turn a plugin off to stop its sync without deleting its data. Uninstalling it removes its connections; imported backlog items remain.
+
+To remove all desktop data, quit Ajour and delete the folder listed above and any copies you made. Uninstalling the application may leave that folder behind. To clear only the separate agent browser's sessions, close that browser and Ajour, then delete `agent-browser-profile/`. Clear sessions in your own browser separately if an agent used it. Revoke tokens and sign-ins at the service that issued them when you no longer want them to work.

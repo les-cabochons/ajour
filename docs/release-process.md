@@ -50,18 +50,18 @@ general network, updater, filesystem, or shell access.
 On packaged Windows builds, the main process uses `electron-updater` to check
 the matching GitHub channel at startup, after a track change, when the user
 selects **Check again**, and every four hours while Ajour remains open.
-Available updates download in the background. Once a download is verified,
-Ajour asks whether to restart now or later. **Restart now** shuts down the
-internal app API before handing off to the installer. **Later** leaves
-the update pending and installs it on the next normal app quit. macOS continues
-to use the renderer-safe release check and manual release link until its builds
-are signed and notarized.
+An available update waits for the user to select **Update and restart** and
+confirm the dialog. Ajour then downloads it, verifies it, shuts down the
+internal app API and restarts to install it. Cancelling the dialog leaves the
+update available without downloading it. Automatic downloads and installation
+on quit are disabled. macOS continues to use the renderer-safe release check
+and manual release link until its builds are signed and notarized.
 
 Downloads are owned by the selected track rather than Electron's global
-install-on-quit handler. Switching tracks cancels an active download, invalidates
-an already downloaded update, and starts a fresh check for the newly selected
-track. Nightly selection permits the SemVer downgrade needed to move from a
-stable build to a prerelease with the same version core, but rejects nightlies
+install-on-quit handler. Switching tracks cancels an active download and starts
+a fresh check for the newly selected track. Once installation begins, Ajour
+refuses track changes. Nightly selection permits the SemVer downgrade needed
+to move from a stable build to a prerelease with the same version core, but rejects nightlies
 whose major, minor, or patch core is older than the installed build.
 
 Stable checks use GitHub's latest full-release endpoint so a long nightly history
