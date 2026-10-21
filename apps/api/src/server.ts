@@ -109,7 +109,12 @@ import {
 } from "./connection-values.ts";
 import type { Sink } from "../../../packages/wide-events/sinks.ts";
 import { AgentSessions } from "./agent-sessions.ts";
-import { createApiEvents, type ApiEvents, type ApiLaunch } from "./events.ts";
+import {
+  createApiEvents,
+  watchProcessCrashes,
+  type ApiEvents,
+  type ApiLaunch,
+} from "./events.ts";
 import { McpBridge } from "./mcp-bridge.ts";
 import { createMcpClient } from "./mcp-clients.ts";
 import { handleMcpRequest, MAX_WAIT_FOR_ANSWER_MS } from "./mcp-server.ts";
@@ -171,6 +176,12 @@ interface AppApiServerOptions {
   eventSink?: Sink;
   /** The launch the API runs in: its ID, the app version and the channel. */
   launch?: ApiLaunch;
+  /**
+   * Records the process's uncaught exceptions and unhandled rejections as
+   * `app.error`, from start to stop. For a process the API owns, such as
+   * the standalone API; off by default, since a host process reports its own.
+   */
+  reportProcessCrashes?: boolean;
   /** How long one wait_for_answer call holds. Tests shorten it. */
   mcpWaitForAnswerMs?: number;
   /**
@@ -183,6 +194,8 @@ interface AppApiServerOptions {
 interface AppApiRuntime {
   events: ApiEvents;
   port: number;
+  /** Stops recording the process's crashes, when the API was asked to. */
+  stopWatchingCrashes?: () => void;
   storage: AppApiStorage;
   pluginManager: PluginManager;
   projectDataShapePluginManager: ProjectDataShapePluginManager;
@@ -2579,42 +2592,106 @@ export async function startAppApiServer(
   const host = options.host ?? process.env.AJOUR_APP_API_HOST ?? "127.0.0.1";
   const port = options.port ?? Number(process.env.AJOUR_APP_API_PORT ?? 8787);
   const server = createAppApiServer(options);
-
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(port, host, () => {
-      server.off("error", reject);
-      resolve();
-    });
+  const runtime = appApiRuntimesByServer.get(server)!;
+  const unit = runtime.events.start("api.start", {
+    kind: "lifecycle",
+    trigger: "boot",
   });
+  unit.set({ api: { port } });
+  const listenStartedAt = Date.now();
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(port, host, () => {
+        server.off("error", reject);
+        resolve();
+      });
+    });
+  } catch (error) {
+    unit.fail(error, {
+      reason:
+        (error as { code?: unknown } | null)?.code === "EADDRINUSE"
+          ? "port_in_use"
+          : "listen_error",
+    });
+    throw error;
+  } finally {
+    const address = server.address();
+    unit.set({
+      api: {
+        listen_ms: Date.now() - listenStartedAt,
+        ...(address && typeof address === "object"
+          ? { port: address.port }
+          : {}),
+      },
+    });
+    unit.end();
+  }
+  runtime.port =
+    (server.address() as { port?: number } | null)?.port ?? runtime.port;
+  if (options.reportProcessCrashes) {
+    runtime.stopWatchingCrashes = watchProcessCrashes(runtime.events);
+  }
 
   return server;
 }
 
+/**
+ * Stops the API: new requests are refused, the agent runner and the plugin
+ * hosts stop, then the connections close. Its `api.stop` event times each
+ * phase.
+ */
 export async function stopAppApiServer(server: Server): Promise<void> {
   const runtime = appApiRuntimesByServer.get(server);
-  if (runtime) {
-    runtime.stopping = true;
-  }
-  const closePromise = new Promise<void>((resolve, reject) => {
-    server.close((error) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-
-      resolve();
-    });
+  const unit = runtime?.events.start("api.stop", {
+    kind: "lifecycle",
+    trigger: "system",
   });
-  server.closeIdleConnections();
-  // The run's cleanup revokes its MCP client, so finish it before the plugins stop.
-  await runtime?.agentRunner.shutdown();
-  await Promise.all([
-    runtime?.pluginManager.shutdown(),
-    runtime?.projectDataShapePluginManager.shutdown(),
-  ]);
-  server.closeAllConnections();
-  await closePromise;
+  try {
+    if (runtime) {
+      runtime.stopping = true;
+      runtime.stopWatchingCrashes?.();
+      unit?.set({
+        api: {
+          port: runtime.port,
+          plugin_operations_running:
+            runtime.pluginManager.activeOperationCount +
+            runtime.projectDataShapePluginManager.activeOperationCount,
+        },
+      });
+    }
+    const closePromise = new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      });
+    });
+    server.closeIdleConnections();
+    // The run's cleanup revokes its MCP client, so finish it before the plugins stop.
+    let phaseStartedAt = Date.now();
+    await runtime?.agentRunner.shutdown();
+    unit?.set({ api: { agent_runner_ms: Date.now() - phaseStartedAt } });
+    phaseStartedAt = Date.now();
+    await Promise.all([
+      runtime?.pluginManager.shutdown(),
+      runtime?.projectDataShapePluginManager.shutdown(),
+    ]);
+    unit?.set({ api: { plugins_ms: Date.now() - phaseStartedAt } });
+    phaseStartedAt = Date.now();
+    server.closeAllConnections();
+    await closePromise;
+    unit?.set({ api: { close_ms: Date.now() - phaseStartedAt } });
+  } catch (error) {
+    unit?.fail(error);
+    throw error;
+  } finally {
+    unit?.end();
+  }
 }
 
 const executedDirectly =
@@ -2624,7 +2701,8 @@ const executedDirectly =
 // Run on its own, as `just api-start` does, the API says on stderr where it
 // listens. Started by the desktop app or a test, it prints nothing.
 if (executedDirectly) {
-  void startAppApiServer().then((server) => {
+  // The standalone API owns its process, so it records the process's crashes.
+  void startAppApiServer({ reportProcessCrashes: true }).then((server) => {
     const address = server.address();
     if (address && typeof address === "object") {
       // On stderr: stdout carries the console sink's JSON lines.

@@ -3,7 +3,7 @@ import path from "node:path";
 import { request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
@@ -16,8 +16,15 @@ afterEach(async () => {
   for (const stop of running.splice(0).reverse()) await stop();
 });
 
-/** Starts a real API on a free port, with a temporary state file. */
-async function startTestApi() {
+type ApiOptions = Parameters<typeof startAppApiServer>[0] & object;
+
+/**
+ * Starts a real API on a free port, with a temporary state file. `setup`
+ * writes fixtures into the temporary folder and returns more options.
+ */
+async function startTestApi(
+  setup: (root: string) => Promise<ApiOptions> = async () => ({}),
+) {
   const root = await mkdtemp(path.join(os.tmpdir(), "ajour-request-events-"));
   const sink = createRecordingSink<AjourEvent>();
   const server = await startAppApiServer({
@@ -28,6 +35,7 @@ async function startTestApi() {
     projectDataShapePluginDirectories: [],
     allowedOrigins: [APP_ORIGIN],
     eventSink: sink,
+    ...(await setup(root)),
   });
   const { port } = server.address() as AddressInfo;
   let stopped = false;
@@ -298,3 +306,352 @@ function dispatch(server: Server, url: string) {
     );
   });
 }
+
+const ICON = "<svg viewBox='0 0 16 16'><path d='M0 0h16v16H0z' /></svg>";
+const TOKEN = "tok_request_canary_51c2";
+
+/** A plugin with backlog items (and settle), pull requests and a team. */
+const pluginSource = `
+export async function validateConnection(config) {
+  return { normalizedConfig: config, connectionSummary: {} };
+}
+export async function syncConnection(connection) {
+  return {
+    items: [{
+      source: 'jira', connectionId: connection.id,
+      connectionLabel: connection.label, tenantLabel: connection.tenantLabel,
+      sourceId: 'ENG-1', externalId: 'ENG-1', title: 'Secret roadmap item',
+      workItemType: 'Task', depth: 0, selectable: true, childCount: 0,
+    }],
+    workItemUpdates: [],
+  };
+}
+export async function listSettleStates() {
+  return { states: [
+    { name: 'Waiting', category: 'In Progress', done: false },
+    { name: 'Done', category: 'Done', done: true },
+  ] };
+}
+export async function writeSettle(connection, request) {
+  if (request.sourceId === 'FAIL-1') throw new Error('Rejected ' + connection.config.token);
+  return { state: request.state };
+}
+export async function syncPullRequests() {
+  return { viewer: { login: 'octocat', isBot: false }, pullRequests: [] };
+}
+export async function syncTeamProjects() {
+  return { cursor: 'c2', projects: [], assigned: [] };
+}
+`;
+
+async function writePlugin(root: string) {
+  const directory = path.join(root, "plugins", "jira");
+  await mkdir(directory, { recursive: true });
+  await writeFile(
+    path.join(directory, "plugin.json"),
+    JSON.stringify({
+      id: "jira",
+      version: "1.0.0",
+      apiVersion: 3,
+      displayName: "Jira",
+      description: "Test plugin.",
+      iconSvg: ICON,
+      entrypoint: "plugin.mjs",
+      capabilities: {
+        connector: { settle: true },
+        codeHost: {},
+        team: { apiVersion: 1 },
+      },
+      connectionFields: [
+        { id: "label", label: "Label", type: "text", required: true },
+        { id: "tenantLabel", label: "Site", type: "text", required: true },
+        {
+          id: "token",
+          label: "Token",
+          type: "password",
+          required: true,
+          secret: true,
+        },
+      ],
+    }),
+  );
+  await writeFile(path.join(directory, "plugin.mjs"), pluginSource);
+  const schema = path.join(root, "schemas", "workday");
+  await mkdir(schema, { recursive: true });
+  await writeFile(
+    path.join(schema, "plugin.json"),
+    JSON.stringify({
+      id: "workday",
+      version: "1.0.0",
+      apiVersion: 1,
+      displayName: "Workday",
+      description: "Test schema.",
+      iconSvg: ICON,
+      entrypoint: "plugin.mjs",
+      capabilities: {
+        projectDataShape: {
+          apiVersion: 1,
+          datasets: [
+            {
+              id: "projects",
+              displayName: "Projects",
+              columns: [
+                {
+                  key: "project",
+                  header: "project",
+                  type: "string",
+                  required: true,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    }),
+  );
+  await writeFile(
+    path.join(schema, "plugin.mjs"),
+    "export async function exportProjects(projects) { return { datasets: [{ id: 'projects', rows: projects.map((p) => ({ project: p.name })) }] }; }",
+  );
+  return {
+    developmentPluginDirectories: [directory],
+    allowDevelopmentPlugins: true,
+    projectDataShapePluginDirectories: [schema],
+  };
+}
+
+/** Calls a route the way the renderer does, and returns its JSON body. */
+async function call(port: number, pathname: string, body?: unknown) {
+  const response = await send(port, {
+    method: body === undefined ? "GET" : "POST",
+    path: pathname,
+    headers: { Origin: APP_ORIGIN, "Content-Type": "application/json" },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  return {
+    status: response.status,
+    body: response.body ? (JSON.parse(response.body) as any) : undefined,
+  };
+}
+
+/** The last request event named `name`, once it has been emitted. */
+async function lastRequest(events: AjourEvent[], name: string) {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const found = events.filter(
+      (event) => event.kind === "request" && event.name === name,
+    );
+    if (found.length > 0) return found[found.length - 1]!;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`No ${name} request event.`);
+}
+
+describe("route events", () => {
+  async function connectedApi() {
+    const api = await startTestApi(writePlugin);
+    const saved = await call(api.port, "/api/plugins/jira/connections", {
+      values: {
+        label: "Work",
+        tenantLabel: "Acme",
+        autoSync: false,
+        autoSyncIntervalMinutes: 15,
+        token: TOKEN,
+      },
+    });
+    expect(saved.status).toBe(200);
+    return { ...api, connectionId: saved.body.connection.id as string };
+  }
+
+  it("records a connection save with its plugin operation as a child span", async () => {
+    const { events, connectionId } = await connectedApi();
+
+    const request = await lastRequest(events, "connection.save");
+    expect(request).toMatchObject({
+      outcome: "ok",
+      plugin: { id: "jira" },
+      connection: {
+        id: connectionId,
+        is_new: true,
+        field_count: 1,
+      },
+      http: { route: "/api/plugins/:pluginId/connections", status_code: 200 },
+    });
+    const operation = events.find(
+      (event) =>
+        event.kind === "plugin_operation" && event.name === "connection.save",
+    );
+    expect(operation).toMatchObject({
+      trace_id: request.trace_id,
+      parent_span_id: request.span_id,
+      worker: expect.objectContaining({ method: "validateConnection" }),
+    });
+    expect(JSON.stringify(events)).not.toContain(TOKEN);
+  });
+
+  it("records a backlog sync's counts, never an item's title", async () => {
+    const { port, events, connectionId } = await connectedApi();
+
+    await call(port, `/api/plugins/jira/connections/${connectionId}/sync`, {
+      trigger: "manual",
+      workItems: [],
+    });
+
+    expect(await lastRequest(events, "backlog.sync")).toMatchObject({
+      outcome: "ok",
+      plugin: { id: "jira" },
+      connection: { id: connectionId },
+      backlog_sync: {
+        trigger: "manual",
+        mode: "review",
+        items_sent: 0,
+        items_received: 1,
+        staged_count: 1,
+        updated_count: 0,
+        skipped_count: 0,
+        done_count: 0,
+      },
+    });
+    expect(JSON.stringify(events)).not.toContain("Secret roadmap item");
+    expect(JSON.stringify(events)).not.toContain("ENG-1");
+  });
+
+  it("records a settle's states and writes, and a failed write scrubbed of the token", async () => {
+    const { port, events, connectionId } = await connectedApi();
+    const base = `/api/plugins/jira/connections/${connectionId}`;
+
+    await call(port, `${base}/settle-states`, { sourceId: "ENG-1" });
+    await call(port, `${base}/settle`, { sourceId: "ENG-1", state: "Done" });
+    const failed = await call(port, `${base}/settle`, {
+      sourceId: "FAIL-1",
+      state: "Done",
+    });
+
+    expect(failed.status).toBe(502);
+    expect(await lastRequest(events, "settle_state.list")).toMatchObject({
+      outcome: "ok",
+      settle_state: { count: 2 },
+    });
+    const writes = events.filter(
+      (event) =>
+        event.kind === "request" && event.name === "backlog.write_source",
+    );
+    expect(writes).toEqual([
+      expect.objectContaining({
+        outcome: "ok",
+        source_write: { state_sent: true, priority_sent: false },
+      }),
+      expect.objectContaining({
+        outcome: "error",
+        error: expect.objectContaining({ message: "Rejected [secret]" }),
+      }),
+    ]);
+    expect(JSON.stringify(events)).not.toContain(TOKEN);
+    expect(JSON.stringify(events)).not.toContain("FAIL-1");
+  });
+
+  it("records a pull request sync and a team sync", async () => {
+    const { port, events, connectionId } = await connectedApi();
+
+    await call(
+      port,
+      `/api/code-hosts/jira/connections/${connectionId}/syncPullRequests`,
+      { tracked: [] },
+    );
+    await call(port, `/api/teams/jira/connections/${connectionId}/sync`, {
+      changes: [],
+    });
+
+    expect(await lastRequest(events, "pull_request.sync")).toMatchObject({
+      outcome: "ok",
+      pull_request: { tracked_count: 0, received_count: 0 },
+      http: {
+        route: "/api/code-hosts/:pluginId/connections/:connectionId/:operation",
+      },
+    });
+    expect(await lastRequest(events, "team.sync")).toMatchObject({
+      outcome: "ok",
+      team_sync: {
+        projects_sent: 0,
+        projects_received: 0,
+        assigned_count: 0,
+        has_more: false,
+      },
+    });
+  });
+
+  it("records a turned-off capability, and the request it then refuses", async () => {
+    const { port, events, connectionId } = await connectedApi();
+
+    await call(port, "/api/plugins/jira/activation", {
+      enabled: false,
+      capability: "codeHost",
+    });
+    const refused = await call(
+      port,
+      `/api/code-hosts/jira/connections/${connectionId}/syncPullRequests`,
+      { tracked: [] },
+    );
+
+    expect(refused.status).toBe(409);
+    expect(await lastRequest(events, "plugin.activate")).toMatchObject({
+      plugin: { id: "jira" },
+      activation: {
+        capability: "codeHost",
+        enabled: false,
+        operations_cancelled: 0,
+      },
+    });
+    expect(await lastRequest(events, "pull_request.sync")).toMatchObject({
+      outcome: "refused",
+      outcome_reason: "capability_off",
+    });
+  });
+
+  it("records the plugin system turned off, and a schema export", async () => {
+    const { port, events } = await startTestApi(writePlugin);
+
+    await call(port, "/api/project-data-shapes/workday/export", {
+      projects: [
+        {
+          name: "Secret client",
+          color: "#123456",
+          status: "active",
+          tasks: [],
+        },
+      ],
+    });
+    await call(port, "/api/plugins/activation", { enabled: false });
+
+    expect(await lastRequest(events, "project.export")).toMatchObject({
+      outcome: "ok",
+      plugin: { id: "workday" },
+      project_data: { project_count: 1, task_count: 0, row_count: 1 },
+    });
+    expect(await lastRequest(events, "plugin_system.toggle")).toMatchObject({
+      activation: { enabled: false, operations_cancelled: 0 },
+    });
+    expect(JSON.stringify(events)).not.toContain("Secret client");
+  });
+
+  it("records the bridge stream when it closes, with the calls it carried", async () => {
+    const { port, events } = await startTestApi();
+    await call(port, "/api/mcp/settings", { enabled: true });
+    const controller = new AbortController();
+    const stream = await fetch(`http://127.0.0.1:${port}/api/mcp/bridge`, {
+      headers: { Origin: APP_ORIGIN },
+      signal: controller.signal,
+    });
+    expect(stream.status).toBe(200);
+    expect(events.some((event) => event.name === "mcp_bridge.connection")).toBe(
+      false,
+    );
+
+    controller.abort();
+
+    expect(await lastRequest(events, "mcp_bridge.connection")).toMatchObject({
+      outcome: "ok",
+      mcp_bridge: { call_count: 0 },
+      http: { route: "/api/mcp/bridge", status_code: 200, origin: "app" },
+    });
+  });
+});

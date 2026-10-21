@@ -96,6 +96,13 @@ const operations = (logged: AjourEvent[]) =>
 
 const hang = "await new Promise(() => setInterval(() => {}, 1000));";
 
+/** Waits until the host has registered `count` operations, so they can be cancelled. */
+async function registered(host: PluginManager, count: number) {
+  while (host.activeOperationCount < count) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 describe("plugin operation events", () => {
   it("records a worker run with the plugin, its connection and its durations", async () => {
     const { host, logged } = await pluginHost(
@@ -156,9 +163,7 @@ describe("plugin operation events", () => {
     const running = Array.from({ length: 4 }, () =>
       host.syncConnection("jira", connection).catch(() => undefined),
     );
-    while (host.activeOperationCount < 4) {
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
+    await registered(host, 4);
 
     await expect(host.syncConnection("jira", connection)).rejects.toThrow(
       "Too many",
@@ -242,8 +247,8 @@ describe("plugin operation events", () => {
   it("records each cancellation with its reason", async () => {
     const { host, logged } = await pluginHost(hang);
     const turnedOff = host.syncConnection("jira", connection);
-    const deactivated = host.syncConnection("jira", connection);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    const alsoTurnedOff = host.syncConnection("jira", connection);
+    await registered(host, 2);
 
     await host.cancelCapabilityOperations(
       "jira",
@@ -251,9 +256,9 @@ describe("plugin operation events", () => {
       new Error("Backlog items were turned off."),
     );
     await expect(turnedOff).rejects.toThrow("turned off");
-    await expect(deactivated).rejects.toThrow("turned off");
+    await expect(alsoTurnedOff).rejects.toThrow("turned off");
     const more = host.syncConnection("jira", connection);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await registered(host, 1);
     await host.cancelPluginOperations(
       "jira",
       new Error("Plugin was deactivated."),
