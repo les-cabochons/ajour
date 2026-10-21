@@ -1,3 +1,4 @@
+import { webcrypto } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { lockedWeekMessage } from "@/domain/time/locked-weeks";
 
@@ -68,6 +69,8 @@ describe("localStore workflow state sync", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.stubGlobal("crypto", {
+      // The renderer's wide events draw their IDs from it.
+      getRandomValues: webcrypto.getRandomValues.bind(webcrypto),
       randomUUID: vi.fn(() => `uuid-${Math.random().toString(16).slice(2)}`),
     });
     installMockWindow();
@@ -2863,6 +2866,8 @@ describe("localStore subscriptions", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.stubGlobal("crypto", {
+      // The renderer's wide events draw their IDs from it.
+      getRandomValues: webcrypto.getRandomValues.bind(webcrypto),
       randomUUID: vi.fn(() => `uuid-${Math.random().toString(16).slice(2)}`),
     });
     installMockWindow();
@@ -3030,6 +3035,8 @@ describe("calendar suggestions in the store", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.stubGlobal("crypto", {
+      // The renderer's wide events draw their IDs from it.
+      getRandomValues: webcrypto.getRandomValues.bind(webcrypto),
       randomUUID: vi.fn(() => `uuid-${Math.random().toString(16).slice(2)}`),
     });
     installMockWindow();
@@ -3777,6 +3784,8 @@ describe("localStore description timelog", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.stubGlobal("crypto", {
+      // The renderer's wide events draw their IDs from it.
+      getRandomValues: webcrypto.getRandomValues.bind(webcrypto),
       randomUUID: vi.fn(() => `uuid-${Math.random().toString(16).slice(2)}`),
     });
     installMockWindow();

@@ -10,7 +10,7 @@ import type {
   ThemeMode,
   UpdateTrack,
 } from "@/domain/local-state";
-import type { LaunchContext } from "../../../../packages/wide-events/index.ts";
+import type { LaunchContext } from "@ajour/wide-events";
 
 export interface DevelopmentPluginSettings {
   available: boolean;

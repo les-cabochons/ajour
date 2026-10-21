@@ -1,4 +1,5 @@
 import { defineCatalog, operational, type EventOf } from "./fields.ts";
+import { rendererCounters, rendererEvents } from "./renderer-catalog.ts";
 
 /**
  * The MCP methods an `mcp.request` event names: those of the MCP spec, a
@@ -154,11 +155,12 @@ const pluginRequestReasons = [
  * nested objects named for glossary terms. No field holds content: no text
  * anyone wrote, no name, URL, path, source tool key or secret (ADR 0011).
  *
- * The entries below are the local API's events. The seams of #304 add the
- * rest.
+ * The entries below are the local API's events, and the renderer's from
+ * `renderer-catalog.ts`. The seams of #304 add the rest.
  */
 export const catalog = defineCatalog({
   counters: {
+    ...rendererCounters,
     /** A plugin folder discovery skipped because its package is invalid. */
     invalid_plugin: operational<number>(),
     /** A bundled plugin archive that failed to install. */
@@ -167,6 +169,7 @@ export const catalog = defineCatalog({
     plugin_backup_failed: operational<number>(),
   },
   events: {
+    ...rendererEvents,
     // The local API itself.
 
     /** A request refused before routing, or one that matches no route. */

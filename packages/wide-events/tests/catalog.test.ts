@@ -47,6 +47,40 @@ describe("the catalog", () => {
     }
   });
 
+  it("classes the days, weeks and durations of time records sensitive", () => {
+    const timeRecordFields = Object.entries(catalog.events).flatMap(
+      ([name, spec]) =>
+        leaves(spec.fields)
+          .filter(([path]) =>
+            /(^|\.)(day|from_day|to_day|week_of|duration_ms|duration_before_ms|duration_after_ms|counted_ms|days_covered)$/.test(
+              path,
+            ),
+          )
+          .map(([path, privacy]) => [`${name} ${path}`, privacy]),
+    );
+
+    expect(timeRecordFields).toContainEqual([
+      "time_entry.create time_entry.day",
+      "sensitive",
+    ]);
+    expect(timeRecordFields).toContainEqual([
+      "week.submit week.week_of",
+      "sensitive",
+    ]);
+    for (const [field, privacy] of timeRecordFields) {
+      expect([field, privacy]).toEqual([field, "sensitive"]);
+    }
+  });
+
+  it("names a store command's write counts once, for every command to add to", () => {
+    expect(catalog.counters.store_write_count.privacy).toBe("operational");
+    expect(catalog.counters.store_write_bytes.privacy).toBe("operational");
+    expect(catalog.events["time_entry.start"].kinds).toContain("command");
+    expect(catalog.events["time_entry.start"].reasons).toEqual(
+      expect.arrayContaining(["locked_week", "stale_window"]),
+    );
+  });
+
   it("classes the envelope too: an error message is sensitive, its type is not", () => {
     expect(envelopeFields.error.message.privacy).toBe("sensitive");
     expect(envelopeFields.error.type.privacy).toBe("operational");

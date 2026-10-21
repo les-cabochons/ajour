@@ -252,6 +252,7 @@ describe("time entry undo", () => {
     expect(restoreUndo(deletionCommitted, undo)).toEqual({
       state: deletionCommitted,
       result: "stale",
+      staleReason: "changed_since",
     });
   });
 
