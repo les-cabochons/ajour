@@ -1,0 +1,228 @@
+import { describe, expect, it } from "vitest";
+import { recordingEmitter } from "./fixtures.ts";
+
+const TRACE_ID = /^[0-9a-f]{32}$/;
+const SPAN_ID = /^[0-9a-f]{16}$/;
+
+describe("one event per unit of work", () => {
+  it("emits one event with the envelope when a unit ends", () => {
+    let now = Date.parse("2026-10-20T14:23:11.118Z");
+    const { events, recorded } = recordingEmitter({ now: () => now });
+
+    const result = events.run(
+      "backlog.sync",
+      { kind: "job", trigger: "schedule" },
+      (unit) => {
+        unit.set({ plugin: { id: "jira" }, sync: { mode: "backlog" } });
+        unit.set({ sync: { received_count: 4 } });
+        now += 42;
+        return "synced";
+      },
+    );
+
+    expect(result).toBe("synced");
+    expect(recorded).toEqual([
+      {
+        schema: 1,
+        name: "backlog.sync",
+        kind: "job",
+        runtime: "api",
+        outcome: "ok",
+        started_at: "2026-10-20T14:23:11.118Z",
+        duration_ms: 42,
+        trace_id: expect.stringMatching(TRACE_ID),
+        span_id: expect.stringMatching(SPAN_ID),
+        launch_id: "launch-1",
+        trigger: "schedule",
+        app: { version: "1.2.3", channel: "nightly", packaged: true },
+        device: { platform: "win32", arch: "x64" },
+        plugin: { id: "jira" },
+        sync: { mode: "backlog", received_count: 4 },
+      },
+    ]);
+  });
+
+  it("emits an error event once when the work throws, and rethrows", () => {
+    const { events, recorded } = recordingEmitter();
+    const failure = Object.assign(new TypeError("Bad state"), {
+      code: "E_STATE",
+    });
+
+    expect(() =>
+      events.run("backlog.sync", { kind: "job", trigger: "user" }, () => {
+        throw failure;
+      }),
+    ).toThrow(failure);
+
+    expect(recorded).toEqual([
+      expect.objectContaining({
+        name: "backlog.sync",
+        outcome: "error",
+        error: { type: "TypeError", code: "E_STATE", message: "Bad state" },
+        duration_ms: expect.any(Number),
+      }),
+    ]);
+  });
+
+  it("ends an async unit when its work settles, in every path", async () => {
+    let now = 0;
+    const { events, recorded } = recordingEmitter({ now: () => now });
+
+    const done = events.run(
+      "backlog.sync",
+      { kind: "job", trigger: "schedule" },
+      async () => {
+        await Promise.resolve();
+        now += 30;
+        return 7;
+      },
+    );
+    expect(recorded).toEqual([]);
+    await expect(done).resolves.toBe(7);
+
+    await expect(
+      events.run("backlog.sync", { kind: "job", trigger: "schedule" }, () =>
+        Promise.reject(new RangeError("Too far")),
+      ),
+    ).rejects.toThrow("Too far");
+
+    expect(recorded).toEqual([
+      expect.objectContaining({ outcome: "ok", duration_ms: 30 }),
+      expect.objectContaining({
+        outcome: "error",
+        error: { type: "RangeError", message: "Too far" },
+      }),
+    ]);
+  });
+
+  it("records a refusal, a cancellation and a timeout with their reasons", () => {
+    const { events, recorded } = recordingEmitter();
+
+    events.run(
+      "time_entry.update",
+      { kind: "command", trigger: "user" },
+      (unit) => unit.refuse("locked_week"),
+    );
+    events.run("backlog.sync", { kind: "job", trigger: "user" }, (unit) =>
+      unit.cancel("plugin_off"),
+    );
+    events.run(
+      "backlog.sync",
+      { kind: "plugin_operation", trigger: "user" },
+      (unit) =>
+        unit.fail(new Error("Took too long"), {
+          outcome: "timeout",
+          reason: "timeout",
+          retriable: true,
+        }),
+    );
+    events.run(
+      "time_entry.update",
+      { kind: "command", trigger: "user" },
+      (unit) => unit.end("noop"),
+    );
+
+    expect(
+      recorded.map(({ outcome, outcome_reason, error }) => ({
+        outcome,
+        outcome_reason,
+        error,
+      })),
+    ).toEqual([
+      { outcome: "refused", outcome_reason: "locked_week", error: undefined },
+      { outcome: "cancelled", outcome_reason: "plugin_off", error: undefined },
+      {
+        outcome: "timeout",
+        outcome_reason: "timeout",
+        error: { type: "Error", message: "Took too long", retriable: true },
+      },
+      { outcome: "noop", outcome_reason: undefined, error: undefined },
+    ]);
+  });
+
+  it("emits a started unit once, at its first end, and ignores what comes after", () => {
+    const { events, recorded } = recordingEmitter();
+
+    const unit = events.start("backlog.sync", { kind: "job", trigger: "user" });
+    unit.set({ plugin: { id: "jira" } });
+    expect(recorded).toEqual([]);
+    unit.end();
+    unit.set({ plugin: { id: "github" } });
+    unit.fail(new Error("Late"));
+    unit.end("error");
+
+    expect(recorded).toEqual([
+      expect.objectContaining({ outcome: "ok", plugin: { id: "jira" } }),
+    ]);
+    expect(recorded[0]).not.toHaveProperty("error");
+  });
+
+  it("keeps the outcome the work recorded when it then throws", () => {
+    const { events, recorded } = recordingEmitter();
+
+    expect(() =>
+      events.run(
+        "time_entry.update",
+        { kind: "command", trigger: "user" },
+        (unit) => {
+          unit.refuse("stale_window");
+          throw new Error("Stale window");
+        },
+      ),
+    ).toThrow();
+
+    expect(recorded).toEqual([
+      expect.objectContaining({
+        outcome: "refused",
+        outcome_reason: "stale_window",
+        error: { type: "Error", message: "Stale window" },
+      }),
+    ]);
+  });
+
+  it("lets a seam refine the name once it knows the operation", () => {
+    const { events, recorded } = recordingEmitter();
+
+    events.run(
+      "api.request",
+      { kind: "request", trigger: "agent" },
+      (request) => {
+        const call = request.rename("agent_tool.call");
+        call.set({ agent_tool: { name: "list_projects" } });
+      },
+    );
+    events.run("backlog.sync", { kind: "job", trigger: "user" }, () => {
+      events.run(
+        "api.request",
+        { kind: "request", trigger: "user" },
+        (request) => request.rename("agent_tool.call"),
+      );
+    });
+
+    expect(recorded).toEqual([
+      expect.objectContaining({
+        name: "agent_tool.call",
+        kind: "request",
+        agent_tool: { name: "list_projects" },
+      }),
+      expect.objectContaining({
+        name: "backlog.sync",
+        steps: ["agent_tool.call"],
+      }),
+    ]);
+  });
+
+  it("keeps working when the sink throws", () => {
+    const { events } = recordingEmitter({
+      sink: {
+        emit() {
+          throw new Error("Sink down");
+        },
+      },
+    });
+
+    expect(
+      events.run("backlog.sync", { kind: "job", trigger: "user" }, () => 3),
+    ).toBe(3);
+  });
+});
