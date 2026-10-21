@@ -13,7 +13,7 @@ import type {
   PluginField,
 } from "../../../../packages/shared/plugins.ts";
 import type { AgentCliAdapter } from "./adapter.ts";
-import { AgentRunner } from "./runner.ts";
+import { AgentRunner, DEFAULT_KILL_GRACE_MS } from "./runner.ts";
 
 const FAKE_CLI = fileURLToPath(new URL("./fake-cli.mjs", import.meta.url));
 const result = (text: string) =>
@@ -191,7 +191,7 @@ async function setup(
       ? {}
       : { killGraceMs: options.killGraceMs }),
   });
-  runners.push(runner);
+  runners.push({ runner, limitMs: shutdownLimitMs(options.killGraceMs) });
   return { runner, sessions, revoked, events, work, report };
 }
 
@@ -224,7 +224,7 @@ const reports: string[] = [];
  * Each test's runners, so a test that fails mid-run still stops its CLI:
  * Windows cannot remove a folder a running process works in.
  */
-const runners: AgentRunner[] = [];
+const runners: { runner: AgentRunner; limitMs: number }[] = [];
 /** Each test's folders, removed after it whether it passed or failed. */
 const tempDirs: string[] = [];
 /**
@@ -232,8 +232,18 @@ const tempDirs: string[] = [];
  * pids quickly, so a pid is never killed a second time.
  */
 const handledPids = new Set<number>();
-/** How long the cleanup waits for the runners before it removes the folders anyway. */
-const SHUTDOWN_LIMIT_MS = 2000;
+
+/**
+ * How long the cleanup waits for a runner before it removes the folders
+ * anyway: the runner sends SIGKILL after the kill grace period and ends the
+ * run without its CLI a second later, plus a margin.
+ */
+function shutdownLimitMs(killGraceMs = DEFAULT_KILL_GRACE_MS) {
+  return killGraceMs + 1000 + 500;
+}
+
+/** The longest shutdown plus the removal's retries (200 + 400 + … + 1000 ms). */
+const CLEANUP_TIMEOUT_MS = shutdownLimitMs() + 3000 + 1000;
 
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -259,7 +269,7 @@ afterEach(async () => {
       ),
     );
   }
-});
+}, CLEANUP_TIMEOUT_MS);
 
 /** Kills an escapee, unless this test already dealt with its pid. */
 function killEscapee(pid: number) {
@@ -275,25 +285,29 @@ async function killEscapees(testReports: string[]) {
 }
 
 /**
- * Shuts the runners down, or gives up after SHUTDOWN_LIMIT_MS: a test that
- * failed can leave a run whose cleanup never ends.
+ * Shuts the runners down, or gives up after the longest of their limits: a
+ * test that failed can leave a run whose cleanup never ends.
  */
-async function shutDownWithinLimit(testRunners: AgentRunner[]) {
+async function shutDownWithinLimit(
+  testRunners: { runner: AgentRunner; limitMs: number }[],
+) {
+  if (testRunners.length === 0) return;
+  const limitMs = Math.max(...testRunners.map(({ limitMs }) => limitMs));
   let timer: NodeJS.Timeout | undefined;
   const limit = new Promise<never>((_, reject) => {
     timer = setTimeout(
       () =>
         reject(
           new Error(
-            `A runner did not shut down within ${SHUTDOWN_LIMIT_MS} ms of the test's end.`,
+            `A runner did not shut down within ${limitMs} ms of the test's end.`,
           ),
         ),
-      SHUTDOWN_LIMIT_MS,
+      limitMs,
     );
   });
   try {
     await Promise.race([
-      Promise.all(testRunners.map((runner) => runner.shutdown())),
+      Promise.all(testRunners.map(({ runner }) => runner.shutdown())),
       limit,
     ]);
   } finally {

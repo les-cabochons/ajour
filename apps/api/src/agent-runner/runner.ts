@@ -44,7 +44,7 @@ const STALL_LIMIT_MS = 10 * 60_000;
 /** How long a CLI may keep running after its session ended before tick stops it. */
 const ENDED_GRACE_MS = 2 * 60_000;
 /** How long a CLI gets to exit after SIGTERM before it is killed. */
-const DEFAULT_KILL_GRACE_MS = 5000;
+export const DEFAULT_KILL_GRACE_MS = 5000;
 const ERROR_LINES = 20;
 const ALL_CLIS: {
   id: AgentCliStatus["id"];
