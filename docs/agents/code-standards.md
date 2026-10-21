@@ -124,7 +124,9 @@ Runtime performance is a hard constraint. Visual polish never costs render time.
 ## Logging And Privacy
 
 - Do not use scattered `console.log()` as the operational logging strategy.
-- Follow the wide-events model in `docs/logging-strategy.md`.
+- Follow the wide-events model in `docs/logging-strategy.md`: one event per unit of work per runtime, through the runtime's emitter from `packages/wide-events`.
+- Events never hold content (ADR 0011). A new field goes in the catalog with its privacy class, and an error message reaches an event only through `unit.fail()`, which scrubs it.
+- Test an event at its seam's highest level with a recording sink, and assert its name, kind, outcome, reason and the fields that matter.
 - Never log raw URLs, query strings, URL fragments, meeting contents, uncommitted notes, or private activity details to a remote sink by default.
 
 ## Verification

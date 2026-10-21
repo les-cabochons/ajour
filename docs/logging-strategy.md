@@ -1,318 +1,257 @@
 # Logging Strategy
 
-This repo should adopt a wide-events logging model inspired by:
+Ajour reports what happened with wide events, following
+[loggingsucks.com](https://loggingsucks.com/): one context-rich event per unit
+of work per runtime, built up while the work runs and emitted once at the end.
+The event records what happened to the unit of work, not what the code did
+along the way. The spec is #304. Events never hold content (ADR 0011), and for
+now they are exported nowhere.
 
-- [loggingsucks.com](https://loggingsucks.com/)
-- [Stripe canonical log lines](https://stripe.com/blog/canonical-log-lines)
-- [Observability wide events 101](https://boristane.com/blog/observability-wide-events-101/)
+## The model
 
-## Decision
+- **A unit of work** is something that changes state, crosses to another
+  runtime or an external system, or takes noticeable time: a store command, a
+  local API request, a plugin operation, an IPC call to the main process, a
+  background job (a sync, a calendar fetch, a queued write), a route change,
+  launch, boot and quit, and every uncaught error. Opening a menu, hovering,
+  moving focus or typing is not a unit of work.
+- **One event per unit of work per runtime.** The event opens when the unit
+  starts, collects fields while it runs, and is emitted once from a
+  finally-style completion path. There are no start or progress events.
+- **Nested units fold into the outer one.** A unit that starts while another
+  unit of the same runtime is active in the same flow emits nothing of its
+  own. Its name is added to the outer event's `steps`, and its counts to the
+  outer event's `counts`. Its own fields stay out. A sync that runs four store
+  commands is one event, and so is an agent tool call that runs a store
+  command.
+- **Two kinds of unit always emit their own event**, as a child span of the
+  active unit:
+  - a plugin operation, because the worker is its own runtime boundary;
+  - detached work, which outlives the unit that starts it, such as an agent
+    run a request starts, or an agent session a tool call begins.
+- **The active unit** follows the flow. The renderer uses a synchronous scope
+  stack, because store commands are synchronous: an async unit leaves the
+  stack at its first `await`, and re-enters its scope with `unit.enter()`
+  around the store commands it runs after. The local API and the main process
+  use Node's async context, so the active unit follows `await`s.
+- **Runtimes** are `renderer`, `api` and `main`. On desktop the local API runs
+  inside the main process, but it stays its own runtime. A plugin operation's
+  event reports its host's runtime.
 
-We will log one structured, context-rich event per meaningful operation per runtime boundary.
+## Names
 
-In this repo, "meaningful operation" does not mean every function call or UI render. It means things like:
+- A name is `<subject>.<operation>` in snake_case. The subject is a glossary
+  term (`time_entry`, `backlog_item`, `comment`, `agent`), and the operation a
+  present-tense verb (`time_entry.update`) or the noun of a lifetime
+  (`agent.run`, `agent.session`, `app.launch`). Glossary terms win over code
+  identifiers: `backlog_item.settle`, not `work_item.settle`.
+- An operation keeps its name in every runtime. The backlog sync is
+  `backlog.sync` in the renderer (kind `job`), in the local API (kind
+  `request`) and in the plugin host (kind `plugin_operation`).
+- Each seam maps its keys to names in a typed table, so a new store command,
+  route, IPC channel or plugin method fails to compile until it has a name.
+  The local API's comment and calendar operations are the first:
+  `COMMENT_EVENTS` and `CALENDAR_EVENTS` in `apps/api/src/server.ts`.
+- A seam may refine the name once it knows the operation, with
+  `unit.rename()`: an MCP request becomes `agent_tool.call` once its method is
+  read.
 
-- a timer being started or saved
-- a timesheet entry being committed
-- an app API request completing
+## Envelope
 
-We will not use scattered `console.log()` calls as the primary debugging model.
+Every event carries the envelope, whatever its name:
 
-## Why This Fits Ajour
-
-This app is split across multiple runtimes:
-
-- `apps/web`
-- `apps/api`
-- `apps/desktop`
-
-Wide events fit that shape well because each runtime can emit one authoritative record for its part of a flow, keyed by shared IDs where possible.
-
-The privacy model changes how we apply the pattern:
-
-- raw activity stays local
-- uncommitted notes stay local
-- dismissed activity stays local
-- rules are sensitive and must be treated as such
-
-That means our logging strategy must be wide-event-driven and privacy-scoped, not "log everything everywhere."
-
-## Goals
-
-- Make debugging operational flows queryable without grep-heavy text logs.
-- Preserve the local-first privacy boundary from [local-first-architecture.md](./local-first-architecture.md).
-- Keep event names and field names consistent across runtimes.
-- Make logs useful for both debugging and product analytics.
-
-## Non-Goals
-
-- Logging every internal helper call.
-- Logging React renders, polling loops, or state snapshots on every change.
-- Shipping raw activity or private content to remote logging backends.
-- Treating OpenTelemetry alone as the strategy. OTel can carry the data later, but it does not decide the schema for us.
-
-## Core Rules
-
-1. Emit JSON only.
-2. Emit one wide event at operation completion, usually in a `finally` block or equivalent completion path.
-3. Keep only two levels: `info` and `error`.
-4. Prefer nested objects over flattened ad hoc field names when they represent a real domain concept.
-5. Use stable IDs, counts, durations, flags, and statuses instead of human prose.
-6. Never log unstructured strings as the primary record of an operation.
-
-## Privacy Rules
-
-The privacy boundary is stricter than a normal SaaS app. These fields must never go to a remote sink by default:
-
-- raw URLs
-- query strings
-- URL fragments
-- full page titles
-- full window titles
-- uncommitted notes
-- dismissed or private activity details
-- unaccepted rule proposals
-
-For local-only diagnostics, we can be somewhat richer, but we should still prefer sanitized values over originals.
-
-### Safe-by-default fields
-
-These are acceptable as the default business context:
-
-- internal IDs like `project_id`, `task_id`, `team_id`, `entry_id`
-- runtime and deployment fields
-- `domain`
-- sanitized `pathname` or `pathname_depth`
-- `fingerprint`
-- source kind like `extension_bridge`, `manual`, `macos_agent`
-- counts, durations, confidence, mixed-bucket flags, rule match outcomes
-
-### Remote sink policy
-
-Until the product has explicit consent and a stronger privacy review, diagnostics should default to local-only storage.
-
-If a remote sink is introduced later, it should accept only explicitly remote-safe aggregate events and operational status, never raw activity details.
-
-## Two Sinks
-
-### 1. Local diagnostic sink
-
-Use this for `apps/web`, `apps/api`, and `apps/desktop`.
-
-Properties:
-
-- enabled in development by default
-- available in production only behind an explicit debug setting
-- stored locally only
-- retained as a bounded ring buffer
-
-Recommended retention:
-
-- last 5,000 events or last 7 days, whichever is smaller
-
-### 2. Optional remote operational sink
-
-Use this only for explicitly remote-safe app events if the product later adds an external service.
-
-Properties:
-
-- structured JSON
-- no raw activity payloads
-- no PII like email addresses
-- ready for aggregation and alerting
-
-## Common Event Envelope
-
-Every wide event should include this envelope:
-
-```json
-{
-  "ts": "2026-04-15T14:23:11.118Z",
-  "event_name": "web.timesheet.entry_committed",
-  "level": "info",
-  "outcome": "success",
-  "duration_ms": 42,
-  "service": "ajour-web",
-  "runtime": "web",
-  "env": "development",
-  "app_version": "0.1.0",
-  "git_sha": "abc1234",
-  "operation_id": "op_7f2...",
-  "trace_id": "trace_7f2...",
-  "session_id": "sess_3cd...",
-  "privacy_tier": "local_only"
-}
+```ts
+type WideEvent = {
+  schema: 1;
+  name: string; // from the catalog
+  kind:
+    | "command"
+    | "job"
+    | "request"
+    | "ipc"
+    | "plugin_operation"
+    | "lifecycle"
+    | "navigation"
+    | "crash";
+  runtime: "renderer" | "api" | "main";
+  outcome: "ok" | "noop" | "refused" | "cancelled" | "timeout" | "error";
+  outcome_reason?: string; // a closed set per event: "locked_week", "capacity", ...
+  started_at: string; // ISO 8601 UTC with milliseconds
+  duration_ms: number;
+  trace_id: string; // W3C trace context, 32 hex
+  span_id: string; // 16 hex
+  parent_span_id?: string;
+  launch_id: string; // one per app launch, shared by every runtime
+  window_id?: string; // renderer only, one per window load
+  trigger: "user" | "agent" | "schedule" | "boot" | "system";
+  surface?:
+    | "button"
+    | "shortcut"
+    | "item_key"
+    | "palette"
+    | "context_menu"
+    | "app_menu"
+    | "drag"
+    | "editor"
+    | "dialog"
+    | "toast"
+    | "link";
+  steps?: string[]; // nested units folded into this one
+  counts?: Record<string, number>; // what this unit and its folded units counted
+  app: {
+    version: string;
+    channel: "dev" | "nightly" | "stable" | "web";
+    commit?: string;
+    packaged: boolean;
+  };
+  device: { platform: string; arch?: string; electron?: string };
+  error?: {
+    type: string;
+    code?: string;
+    message?: string;
+    retriable?: boolean;
+  };
+  // plus the event's own nested objects, typed per name in the catalog
+};
 ```
 
-Add domain-specific objects under the envelope instead of inventing one-off root fields.
+- **No `level`.** Whoever shows or exports an event derives severity from
+  `outcome`.
+- **Fields are snake_case.** IDs end in `_id`, and units go in the name
+  (`_ms`, `_bytes`, `_count`).
+- **Domain context lives in nested objects** named for glossary terms and
+  seams: `time_entry`, `backlog_item`, `plugin`, `connection`, `agent`,
+  `http`, `ipc`, `worker`, `store`.
+- **`kind`** names the seam that opened the event. A `command` is a store
+  command, or a local API client call a user or agent action started. A `job`
+  is wrapped work that can run on its own: a sync, a fetch, a queued send, an
+  agent session or run.
+- **`trigger`** says who started the unit: the user, an agent through MCP, a
+  schedule, the boot, or the system reacting to something else. A local API
+  request is `system` unless it knows better, such as an agent's MCP call or
+  comment call: the caller's own event, in the same trace, holds the user's
+  trigger.
+- **`surface`** says where a user action came from. The dispatchers that
+  already know set it.
 
-Recommended nested objects:
+## Privacy
 
-- `actor`
-- `workspace`
-- `activity`
-- `timesheet`
-- `project`
-- `rule`
-- `bridge`
-- `agent`
-- `http`
-- `error`
+ADR 0011 is the rule: events never hold content. No notes, titles,
+descriptions, comment bodies, names, emails, search text, agent prompts or
+tool inputs, file names, paths, URLs, hosts, source tool keys, secrets or
+tokens.
 
-## Required Shared Fields
+- Every field declares a privacy class in the catalog, `operational` or
+  `sensitive`, and a field without one fails to compile. The envelope is
+  classed the same way (`envelopeFields`).
+- Sensitive fields are the days, weeks and durations of time records, and
+  every error message. A future sink receives them only if the user allows it
+  for that sink.
+- An error message enters an event only through the scrubber. `unit.fail()`
+  and a thrown error both pass it. It replaces the connection's secret values
+  (pass them as `fail(error, { secrets })`), then URLs, the user data path and
+  the home directory, and caps the message at 512 characters. A scrubbed
+  message is still sensitive.
 
-These field names should stay consistent across runtimes.
+## The package
 
-```text
-event_name
-level
-outcome
-duration_ms
-service
-runtime
-env
-app_version
-git_sha
-operation_id
-trace_id
-session_id
-privacy_tier
-error.type
-error.code
-error.message
-```
+`packages/wide-events` owns the model. It runs in the browser and in Node, and
+its entry points are:
 
-When available, also include:
+| Entry point           | What it holds                                                                                    |
+| --------------------- | ------------------------------------------------------------------------------------------------ |
+| `index.ts`            | `createEmitter`, the envelope types and the synchronous scope                                    |
+| `catalog.ts`          | Ajour's catalog of event names, `defineCatalog`, `operational`, `sensitive` and `envelopeFields` |
+| `sinks.ts`            | `nowhere`, `createRecordingSink`, `createConsoleSink` and `sinkFromSwitch`                       |
+| `trace-context.ts`    | `encodeTraceparent` and `decodeTraceparent`                                                      |
+| `scrub.ts`            | `scrubErrorMessage`                                                                              |
+| `secret-redaction.ts` | the secret redaction the scrubber and the local API's plugin errors share                        |
+| `node.ts`             | `asyncContextScope`, for Node runtimes only                                                      |
 
-```text
-actor.user_id
-workspace.team_id
-workspace.local_date
-project.project_id
-project.task_id
-activity.source
-activity.domain
-activity.pathname
-activity.fingerprint
-activity.duration_ms
-activity.bucket_count
-activity.segment_count
-activity.confidence
-activity.is_mixed
-```
+Each runtime creates one emitter at start, with its runtime context and a
+sink:
 
-## Event Catalog By Runtime
+- `start(name, init)` opens a unit. `init` gives its `kind` (one the catalog
+  allows for the name), `trigger` and `surface`, and `detached` or a `parent`
+  span.
+- A unit has `set(fields)`, `count(counter, n)`, `fail(error, options)`,
+  `refuse(reason)`, `cancel(reason)` and `end(outcome?)`. The outcome
+  defaults to the one recorded, or `ok`. `end` emits once; anything after it
+  changes nothing. A unit also has `enter(fn)`, `rename(name)` and
+  `traceparent()`.
+- `run(name, init, fn)` runs a sync or async function as a unit, active while
+  it runs, and ends it in every path. A thrown error ends it as an `error`,
+  unless the work recorded its outcome first. A sync function stays sync.
+- `current()` returns the active unit, so the code doing the work can add to
+  it.
 
-### `apps/web`
+The local API creates its emitter in `apps/api/src/events.ts`.
 
-The web app should log one wide event per user mutation, not per render and not per polling tick.
+## Sinks
 
-Start with:
+A sink has one method, `emit(event)`. A sink that throws never changes what
+the work does.
 
-- `web.timer.started`
-- `web.timer.updated`
-- `web.timer.saved`
-- `web.timesheet.manual_saved`
-- `web.timesheet.entry_updated`
-- `web.timesheet.entry_deleted`
-- `web.timesheet.entry_committed`
-- `web.rule.saved`
+- `nowhere` is the default, and drops everything. With it an event is never
+  built: it costs object writes only, with no serialization, no I/O and no
+  timers.
+- `recording` is for tests.
+- `console` prints one JSON line per event. `AJOUR_WIDE_EVENTS=console` turns
+  it on in the terminal, for the local API today and the main process later.
+  It is never on by default, and the local API prints nothing on stdout
+  without it.
 
-First instrumentation points:
+Logging plugins will later replace the sink without changing any event.
 
-- [local-store.ts](../apps/web/src/lib/local-store.ts)
-- [app-api.ts](../apps/web/src/lib/app-api.ts)
+## Traces
 
-## Event Shape Examples
+Every event is a W3C span, so a future exporter can send it to a trace
+backend unchanged. A unit started with a `parent` (an incoming `traceparent`
+header) is that span's child. `unit.traceparent()` gives the header for an
+outgoing call; a folded unit sends its outer unit's span. A delayed
+consequence of an action, such as a source write after the Undo window,
+starts its own trace and joins its cause through the domain ID that links
+them.
 
-### Web: browser bucket import
+## Where events come from today
 
-```json
-{
-  "ts": "2026-04-15T14:23:11.118Z",
-  "event_name": "web.browser_buckets.imported",
-  "level": "info",
-  "outcome": "success",
-  "duration_ms": 31,
-  "service": "ajour-web",
-  "runtime": "web",
-  "privacy_tier": "local_only",
-  "workspace": {
-    "team_id": "local_team",
-    "local_date": "2026-04-15"
-  },
-  "bridge": {
-    "request_type": "TT_GET_BUCKETS",
-    "available": true,
-    "paused": false
-  },
-  "activity": {
-    "source": "extension_bridge",
-    "bucket_count": 12,
-    "mixed_bucket_count": 3,
-    "domain_count": 5,
-    "max_confidence": 0.91
-  }
-}
-```
+The local API's first events are placed by hand (#305):
 
-## Sampling And Retention
+| Event                                                                                              | Where                                                                   |
+| -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `mcp.request`, `agent_tool.call`                                                                   | `handleMcpRequest` in `apps/api/src/mcp-server.ts`, one per MCP request |
+| `agent.session`                                                                                    | `AgentSessions`, from begin to end                                      |
+| `agent.run`                                                                                        | `AgentRunner`, from the start's first launch step to its one finalizer  |
+| `calendar.fetch`                                                                                   | the calendar route                                                      |
+| `comment.list`, `comment.post`, `comment.edit`, `comment.delete`, `comment.react`, `person.search` | the comment route                                                       |
 
-Wide events are information-dense, but some flows are still high-volume.
+The seams of #304 add the rest: every local API request and plugin operation
+(#306), store commands, boot and Undo (#307), the main process (#308),
+`trigger` and `surface` (#309), and renderer jobs and navigation (#310).
 
-Use tail-style retention rules:
+## Performance
 
-1. Keep 100% of `error` events.
-2. Keep 100% of user mutations like commit, import, save, delete, pair, ingest.
-3. Keep 100% of security-sensitive events like auth, pairing, or permission changes.
-4. Sample or disable high-frequency healthy status checks.
+- No event on a high-frequency path: store reads and subscribers, the running
+  clock, the scheduler tick itself, polling, keystrokes, pointer moves, hover,
+  focus moves, retries (counted as `attempts` instead) and progress updates.
+- With the `nowhere` sink, 100,000 syncs that each fold a store command take
+  about 80 ms on a laptop. The package's performance test guards it.
+- A change that touches the renderer runs `just ui-perf` before and after, as
+  `docs/agents/code-standards.md` requires.
 
-Recommended starting policy:
+## Testing
 
-- `web`: keep all mutation events, drop polling/status noise
-- `extension`: keep finalized segments and failures, sample healthy repeated status pings at 10% if needed
-- `agent`: keep HTTP completions and aggregation work, drop raw sampling loop noise
+A good test drives a unit of work through its public entry and asserts the
+recorded event: its name, kind, outcome, reason and the fields that matter.
+It never asserts the emitter's internals or field order. The package's own
+tests cover nesting and folding, every outcome path, trace context, the
+scrubber, field classes and the sinks. The local API's tests start the server
+with a recording sink (`eventSink`).
 
-## Implementation Plan
+## Anti-patterns
 
-### Phase 1
-
-Add a shared logger contract and instrument the real runtime boundaries first:
-
-- `apps/api/src/server.ts`
-- `apps/web/src/lib/app-api.ts`
-
-### Phase 2
-
-Instrument local business mutations in:
-
-- `apps/web/src/lib/local-store.ts`
-
-### Phase 3
-
-Add a local diagnostics viewer to the existing debug/settings surface so logs are inspectable without shipping private data off-device.
-
-### Phase 4
-
-Only after the schema is stable, add transport integration such as OpenTelemetry or a vendor sink.
-
-## Anti-Patterns To Ban
-
-- `console.log("something happened")`
-- logging inside React render paths
-- multiple partial log lines for one operation
-- shipping raw titles or raw URLs to remote logging
-- using email as the main user identifier
-- emitting separate "started", "middle", and "finished" logs for the same small operation when one completion event is enough
-
-## Bottom Line
-
-For this repo, a "wide event" should mean:
-
-- one event per meaningful completed operation
-- structured JSON only
-- consistent field names across runtimes
-- local-first by default for privacy-sensitive activity
-- remote logging only for remote-safe operational data
-
-That keeps the core benefit from wide events, high-cardinality and high-dimensional context, without violating the product's privacy boundary.
+- `console.log("something happened")` as a record of an operation.
+- Several partial events for one unit of work, or start and finish events.
+- An event on every render, poll or keystroke.
+- Content in a field, or an error message that skipped the scrubber.
+- A field added outside the catalog, or a name that is not in it.
