@@ -1,112 +1,113 @@
-# Ajour - Ajour
+# <img src="./assets/ajour-logo-mark.png" alt="" width="48" height="48" /> Ajour
 
-Ajour is a local-first time-tracking workspace with a web app, an Electron desktop shell, shared domain logic, and an optional local API for plugin-driven imports.
+Local-first time tracking for your workday.
 
-## What Exists Today
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
-- local workspace onboarding
-- projects and tasks
-- start/stop timer flow
-- manual time entries and notes
-- backlog management
-- desktop packaging for local use
+Ajour is a time tracker for people who fill in a timesheet every week. Keep your
+time entries, projects, and backlog together, then review what to enter in your
+timesheet tool.
 
-## Privacy Boundary
+- Start a timer or log time by hand, with notes and a project and task.
+- Review and edit your day or week. Copy entries and drag them between days.
+- Organize projects and tasks, set budgets, and manage your backlog as a list or board.
+- Bring in work items and pull requests from Azure DevOps, Jira, and GitHub through optional plugins.
+- Turn calendar events into time entries after reviewing the suggestions.
+- Review the week's changes on the Commit page before copying them into your timesheet.
 
-The default product direction is local-first:
+Your workspace stays on your machine. Ajour needs no account and does not collect
+activity in the background. Optional plugins and agents connect to the services
+you choose. Read [how Ajour stores and uses your data](https://docs.ajour.day/app/data).
 
-- timers, time entries, backlog items, and workspace metadata stay local
-- there is no automatic activity capture in the supported workflow
-- tracking data should not be uploaded without explicit user intent
+![Ajour's Day view with a running timer, time entries, and backlog](./apps/docs/public/shots/time-day-light.webp#gh-light-mode-only)
+![Ajour's Day view with a running timer, time entries, and backlog](./apps/docs/public/shots/time-day-dark.webp#gh-dark-mode-only)
 
-Read [docs/local-first-architecture.md](./docs/local-first-architecture.md) before changing sync or capture behavior.
+## Get started
 
-## Requirements
+- [Download Ajour for macOS or Windows](https://github.com/les-cabochons/ajour/releases).
+- Follow the [start guide](https://docs.ajour.day/start/) to track your first day.
+- To run from source, follow [Run locally](#run-locally) below.
 
-- Node.js 22+
+## Documentation
+
+The user guide and plugin developer reference are at [docs.ajour.day](https://docs.ajour.day/).
+
+- [Time tracking and weekly review](https://docs.ajour.day/time/day-view)
+- [Projects, tasks, and budgets](https://docs.ajour.day/projects/)
+- [Plugins and connections](https://docs.ajour.day/plugins/)
+- [Build a plugin](https://docs.ajour.day/developers/)
+- [Keyboard shortcuts](https://docs.ajour.day/start/shortcuts)
+
+## Run locally
+
+### Requirements
+
+- Node.js 22 or later
 - Corepack
 - `just`
+- A POSIX shell. On Windows, make Git Bash's `sh` available on your `PATH`.
 
-This repo is meant to be driven through the root `Justfile`.
+Use the root [justfile](./justfile) for development commands. Corepack uses the
+pnpm version pinned in `package.json`.
 
-## Quick Start
+### Web app
 
-Install dependencies:
+Clone the repository, install dependencies, and start the app:
 
 ```sh
+git clone https://github.com/les-cabochons/ajour.git
+cd ajour
 just install
-```
-
-Start the web app:
-
-```sh
 just start
 ```
 
-Open:
+Open [http://127.0.0.1:5173](http://127.0.0.1:5173). The local time-tracking
+workflow needs no account or plugin credentials.
 
-```text
-http://127.0.0.1:5173
-```
-
-To use a different port:
+To use another port:
 
 ```sh
 just start --port 4173
 ```
 
-## Common Commands
+### Desktop app
 
-List available commands:
-
-```sh
-just
-```
-
-Start the web app:
-
-```sh
-just start
-```
-
-Start the desktop app in development:
+After installing dependencies, start the Electron app in development mode:
 
 ```sh
 just desktop-start
 ```
 
-Start the local API server:
+The desktop renderer also uses port `5173`, so stop a running `just start` first.
+
+### Local API
+
+The optional local API handles plugin configuration, sync, and import review.
+To run it on its own:
 
 ```sh
 just api-start
 ```
 
-Run tests:
+It listens at `http://127.0.0.1:8787` by default.
 
-```sh
-just test
-```
+### Development commands
 
-Run type checks:
+Run `just` to list all available recipes.
 
-```sh
-just typecheck
-```
+| Command                | Purpose                                                  |
+| ---------------------- | -------------------------------------------------------- |
+| `just test`            | Run workspace unit tests.                                |
+| `just typecheck`       | Check TypeScript and package import boundaries.          |
+| `just format`          | Format the workspace with Prettier.                      |
+| `just format-check`    | Check formatting without changing files.                 |
+| `just build`           | Build all workspace packages.                            |
+| `just desktop-build`   | Build the desktop renderer.                              |
+| `just desktop-package` | Package the desktop app for the current host.            |
+| `just desktop-make`    | Create a desktop distributable for the current host.     |
+| `just docs-start`      | Start the documentation site at `http://127.0.0.1:5174`. |
 
-Format the workspace with Prettier, or check formatting without writing:
-
-```sh
-just format
-just format-check
-```
-
-Build all workspace packages:
-
-```sh
-just build
-```
-
-Create desktop distributables:
+Create desktop distributables for specific platforms with:
 
 ```sh
 just make --mac
@@ -114,136 +115,98 @@ just make --windows
 just make
 ```
 
-Clean local build output:
+With no flags, `just make` requests both platforms.
+See the [release process](./docs/release-process.md) for packaging details.
 
-```sh
-just clean --force
-```
+To remove build output, run `just clean --force`. To also remove dependencies,
+run `just clean-all --force`. Without `--force`, both commands show a dry run.
 
-Remove dependencies and build output:
+### Tests and verification
 
-```sh
-just clean-all --force
-```
-
-## Runtime Surfaces
-
-### Web app
-
-The main local-first UI lives in `apps/web`.
-
-### Desktop app
-
-The Electron shell lives in `apps/desktop` and wraps the web renderer for desktop timer workflows.
-
-Useful commands:
-
-```sh
-just desktop-start
-just desktop-build
-just desktop-package
-just desktop-make
-```
-
-### Local API
-
-The optional local API lives in `apps/api` and defaults to `127.0.0.1:8787`. It supports plugin configuration, sync, and local import review flows.
-
-### Plugins
-
-Plugin implementations live in standalone repositories. They compile to
-self-contained JavaScript and do not import API, desktop, web, or shared
-application source at runtime.
-
-Each standalone plugin repository owns its compilation and watch process.
-Run `just install` there, then keep `just dev` running while developing the
-plugin. In Ajour, set `AJOUR_DEV_PLUGIN_DIRS` to a platform-delimited
-list of development plugin directories, or choose a directory from Settings →
-Debug in the development desktop app. A selected directory must contain
-`plugin.json` and its compiled manifest entrypoint. Ajour loads that output but
-does not compile or watch the external plugin. The Debug setting is persisted
-for future development launches and is ignored by production builds. An explicit
-`AJOUR_DEV_PLUGIN_DIRS` value overrides the saved Debug setting for that
-launch.
-
-```sh
-AJOUR_DEV_PLUGIN_DIRS=/absolute/path/to/plugin just desktop-start
-```
-
-Production desktop installs use one local `.ajour-connector` archive at a time
-through Settings → Plugins. Archive installation is available only through the
-desktop bridge and its native file chooser, not the loopback HTTP API. Official
-plugin implementations and their versioned builds are maintained in:
-
-- [`les-cabochons/ajc-azure-devops`](https://github.com/les-cabochons/ajc-azure-devops)
-- [`les-cabochons/ajc-jira`](https://github.com/les-cabochons/ajc-jira)
-
-Each archive contains `plugin.json` and the compiled `dist/` tree. The manifest
-declares the plugin version, host API version, entrypoint, icon, and
-connection fields. Production builds do not preinstall plugin archives.
-Uninstalling removes the managed archive contents and plugin configuration
-while retaining backlog items that were already imported.
-
-## Verification
-
-The main verification path is:
+Run the main verification checks with:
 
 ```sh
 just test
 just typecheck
 just build
+just format-check
 ```
 
-## Repo Map
-
-```text
-apps/web/        React + Vite app for the main time-tracking UI
-apps/desktop/    Electron shell and packaging scripts
-apps/api/        local API for plugins and import flows
-packages/shared/ shared schemas, rules, and domain logic
-packages/example/ copy-me template for a new deep-module package
-docs/            project context (docs/agents), ADRs, frozen specs, architecture and logging notes
-```
-
-## Related Docs
-
-- [docs/local-first-architecture.md](./docs/local-first-architecture.md)
-- [docs/logging-strategy.md](./docs/logging-strategy.md)
-- [AGENTS.md](./AGENTS.md) and [docs/agents/](./docs/agents/) for project context, conventions and the planning workflow
-
-<!-- testing-shell:start -->
-
-## Testing Shell
-
-The repository keeps its existing Vitest unit tests and adds executable, web-first Gherkin acceptance coverage plus manual QA routines. The acceptance path runs the documented behavior through Playwright-BDD and Playwright's Chromium project against an isolated Vite test server.
-
-### Commands
-
-Install project dependencies and Playwright's managed Chromium build:
+`just test` runs Vitest in workspace packages that expose a test script.
+For browser acceptance tests, install Chromium once, then generate and run the
+Gherkin scenarios:
 
 ```sh
-just install
 just acceptance-install
-```
-
-Run the existing unit shell:
-
-```sh
-just test
-```
-
-`just test` runs Vitest in workspace packages that expose a test script. No duplicate unit smoke test was added because the established web and shared suites already prove deterministic test discovery.
-
-Generate and run the Gherkin acceptance shell:
-
-```sh
 just acceptance-test
 ```
 
-This command runs `bddgen` and then Playwright in Chromium. The Vite server uses `127.0.0.1:4173` in test mode, and the step binding supplies an empty local plugin fixture so acceptance does not depend on live services or credentials.
+Acceptance tests use Playwright-BDD and Chromium against an isolated Vite server
+in test mode at `http://127.0.0.1:4173`. Local fixtures keep them independent of
+live services and credentials. Set `AJOUR_ACCEPTANCE_PORT` to use another port.
+Manual QA procedures live in [qa/routines](./qa/routines/).
 
-QA routines are manual Markdown procedures under `qa/routines/`; testers follow them directly rather than invoking a QA command.
+### Plugin development
 
-`@playwright/test` owns browser lifecycle, assertions, isolation, screenshots, and traces. `playwright-bdd` compiles `.feature` files into Playwright tests and binds their steps through `createBdd`. Both are development-only dependencies of `apps/web`.
+Plugins live in standalone repositories and compile to self-contained JavaScript.
+They do not import Ajour application source at runtime. Official implementations include:
 
-<!-- testing-shell:end -->
+- [Azure DevOps](https://github.com/les-cabochons/ajc-azure-devops)
+- [Jira](https://github.com/les-cabochons/ajc-jira)
+- [GitHub](https://github.com/les-cabochons/ajc-github)
+- [ICS calendars](https://github.com/les-cabochons/ajc-ics)
+
+In the plugin repository, run `just install`, then keep `just dev` running.
+In the Ajour repository, point the development app at the compiled plugin:
+
+```sh
+AJOUR_DEV_PLUGIN_DIRS=/absolute/path/to/plugin just desktop-start
+```
+
+For multiple directories, separate paths with `:` on macOS or Linux, or `;` on
+Windows. Each directory must contain `plugin.json` and its compiled manifest
+entrypoint. Ajour loads that output but does not compile or watch the plugin.
+
+You can also choose a directory under Settings > Debug in the development
+desktop app. That setting persists across development launches.
+`AJOUR_DEV_PLUGIN_DIRS` overrides it for the current launch. Production builds
+ignore development directories.
+
+Production installs use `.ajour-connector` archives containing `plugin.json` and
+the compiled `dist/` tree. The manifest declares the version, host API version,
+entrypoint, icon, and connection fields. No plugin archives come preinstalled.
+Install one archive at a time through Settings > Plugins. File installation uses
+the desktop bridge and native file chooser, and is unavailable through the
+loopback HTTP API. Uninstalling removes the plugin and its configuration while
+keeping previously imported backlog items.
+
+See the [plugin developer guide](https://docs.ajour.day/developers/) for the API,
+testing, and packaging instructions.
+
+## Contributing
+
+[Report a bug or propose a change](https://github.com/les-cabochons/ajour/issues).
+Before contributing, read [AGENTS.md](./AGENTS.md) and the
+[project overview](./docs/agents/project-overview.md). Project context and coding
+conventions live in [docs/agents](./docs/agents/).
+
+### Repository layout
+
+```text
+apps/web/         React + Vite time-tracking UI
+apps/desktop/     Electron runtime and desktop packaging
+apps/api/         Optional local API and plugin host
+apps/docs/        User guide and plugin developer documentation
+packages/shared/  Cross-runtime types, validation, and domain logic
+packages/example/ Template for a new deep-module package
+docs/             Agent context, ADRs, frozen specs, and architecture notes
+qa/               Acceptance support, UI checks, and manual QA routines
+```
+
+Read the [local-first architecture](./docs/local-first-architecture.md) before
+changing sync or activity capture behavior. The
+[logging strategy](./docs/logging-strategy.md) describes logging and privacy rules.
+
+## License
+
+Ajour is available under the [MIT license](./LICENSE).
