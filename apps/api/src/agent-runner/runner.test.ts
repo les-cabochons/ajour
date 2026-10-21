@@ -227,28 +227,79 @@ const reports: string[] = [];
 const runners: AgentRunner[] = [];
 /** Each test's folders, removed after it whether it passed or failed. */
 const tempDirs: string[] = [];
+/**
+ * The escapee pids this test already killed or found gone. Windows reuses
+ * pids quickly, so a pid is never killed a second time.
+ */
+const handledPids = new Set<number>();
+/** How long the cleanup waits for the runners before it removes the folders anyway. */
+const SHUTDOWN_LIMIT_MS = 2000;
 
 afterEach(async () => {
   vi.restoreAllMocks();
-  for (const report of reports.splice(0)) {
-    for (const pid of await grandchildPids(report)) {
-      if (isAlive(pid)) process.kill(pid, "SIGKILL");
-    }
+  const testReports = reports.splice(0);
+  const testRunners = runners.splice(0);
+  try {
+    await killEscapees(testReports);
+    await shutDownWithinLimit(testRunners);
+  } finally {
+    // An escapee can report itself while the runners shut down.
+    await killEscapees(testReports);
+    handledPids.clear();
+    // On Windows a process that just exited can hold a handle in its folder
+    // for a moment, so the removal retries.
+    await Promise.all(
+      tempDirs.splice(0).map((directory) =>
+        rm(directory, {
+          recursive: true,
+          force: true,
+          maxRetries: 5,
+          retryDelay: 200,
+        }),
+      ),
+    );
   }
-  await Promise.all(runners.splice(0).map((runner) => runner.shutdown()));
-  // On Windows a process that just exited can hold a handle in its folder
-  // for a moment, so the removal retries.
-  await Promise.all(
-    tempDirs.splice(0).map((directory) =>
-      rm(directory, {
-        recursive: true,
-        force: true,
-        maxRetries: 5,
-        retryDelay: 200,
-      }),
-    ),
-  );
 });
+
+/** Kills an escapee, unless this test already dealt with its pid. */
+function killEscapee(pid: number) {
+  if (handledPids.has(pid)) return;
+  handledPids.add(pid);
+  if (isAlive(pid)) process.kill(pid, "SIGKILL");
+}
+
+async function killEscapees(testReports: string[]) {
+  for (const report of testReports) {
+    for (const pid of await grandchildPids(report)) killEscapee(pid);
+  }
+}
+
+/**
+ * Shuts the runners down, or gives up after SHUTDOWN_LIMIT_MS: a test that
+ * failed can leave a run whose cleanup never ends.
+ */
+async function shutDownWithinLimit(testRunners: AgentRunner[]) {
+  let timer: NodeJS.Timeout | undefined;
+  const limit = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          new Error(
+            `A runner did not shut down within ${SHUTDOWN_LIMIT_MS} ms of the test's end.`,
+          ),
+        ),
+      SHUTDOWN_LIMIT_MS,
+    );
+  });
+  try {
+    await Promise.race([
+      Promise.all(testRunners.map((runner) => runner.shutdown())),
+      limit,
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 async function grandchildPids(report: string): Promise<number[]> {
   return (await readFile(report, "utf8").catch(() => ""))
@@ -914,7 +965,7 @@ describe("AgentRunner", () => {
     expect(isAlive(escapee)).toBe(true);
     // With the escapee gone the close arrives late. It must not end the run
     // a second time.
-    process.kill(escapee, "SIGKILL");
+    killEscapee(escapee);
     await vi.waitFor(() => expect(isAlive(escapee)).toBe(false));
     await new Promise((resolve) => setTimeout(resolve, 500));
     expect(runEvents(events)).toHaveLength(1);
@@ -1048,9 +1099,9 @@ describe("AgentRunner", () => {
 
   it("ignores Stop and the stall timer while the run is ending", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
     try {
-      let release!: () => void;
-      const released = new Promise<void>((resolve) => (release = resolve));
       let revoking!: () => void;
       const revokeStarted = new Promise<void>(
         (resolve) => (revoking = resolve),
@@ -1074,6 +1125,8 @@ describe("AgentRunner", () => {
         expect.objectContaining({ outcome: "done", stop_reason: undefined }),
       ]);
     } finally {
+      // A failed assertion must not leave the revoke, and so the run, waiting.
+      release();
       vi.useRealTimers();
     }
   });
