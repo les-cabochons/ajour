@@ -60,13 +60,15 @@ interface ToolResult {
  * tool's name and how it ended, never its input or output. A batch has
  * none: its `mcp.request` counts the calls in it.
  */
-type ToolCallUnit = Unit<AjourCatalog, "agent_tool.call"> | undefined;
-
-/**
- * Whether each tool call's handler returned a result that isn't an error.
- * A call the SDK refuses before its handler runs has no entry.
- */
-const handledToolCalls = new WeakMap<object, boolean>();
+interface ToolCall {
+  readonly unit: Unit<AjourCatalog, "agent_tool.call">;
+  /**
+   * How far the call got in its handler, for this request only. The SDK
+   * answers each of these with an error reply alike, so the reply alone
+   * can't tell the agent's invalid call from Ajour's failure.
+   */
+  handler: "not_reached" | "threw" | "returned_error" | "returned_ok";
+}
 
 /** The MCP methods an `mcp.request` event names. Any other is `other`. */
 const MCP_METHODS: ReadonlySet<string> = new Set<McpMethod>([
@@ -116,7 +118,7 @@ function calledTool(message: unknown): string {
 function recordReply(
   message: unknown,
   unit: Unit<AjourCatalog, "mcp.request">,
-  toolCall: ToolCallUnit,
+  toolCall: ToolCall | undefined,
 ) {
   const reply = message as {
     error?: { code?: unknown };
@@ -132,11 +134,11 @@ function recordReply(
     return;
   }
   if (!toolCall || reply.result?.isError !== true) return;
-  const handled = handledToolCalls.get(toolCall);
-  if (handled === undefined) {
-    toolCall.refuse("invalid_call");
-  } else if (handled) {
-    toolCall.fail(new Error("The SDK rejected the tool's output."), {
+  // A handler that threw or answered an error recorded its own outcome.
+  if (toolCall.handler === "not_reached") {
+    toolCall.unit.refuse("invalid_call");
+  } else if (toolCall.handler === "returned_ok") {
+    toolCall.unit.fail(new Error("The SDK rejected the tool's output."), {
       reason: "output_mismatch",
     });
   }
@@ -235,22 +237,25 @@ async function withToolEvent(
   access: "read" | "write" | "session",
   client: AgentClientRef,
   context: McpRequestContext,
-  unit: ToolCallUnit,
+  call: ToolCall | undefined,
   run: () => Promise<ToolResult>,
 ): Promise<ToolResult> {
-  unit?.set({ agent_tool: { name: tool, access } });
+  call?.unit.set({ agent_tool: { name: tool, access } });
+  if (call) call.handler = "threw";
   try {
     const result = await run();
-    if (unit) handledToolCalls.set(unit, result.isError !== true);
+    if (call) {
+      call.handler = result.isError ? "returned_error" : "returned_ok";
+    }
     return result;
   } catch (error) {
     // The SDK turns a thrown error into a tool error, so the request never
     // sees it.
-    unit?.fail(error);
+    call?.unit.fail(error);
     throw error;
   } finally {
     const sessionId = context.sessions.currentSessionId(client);
-    if (sessionId) unit?.set({ agent: { session_id: sessionId } });
+    if (sessionId) call?.unit.set({ agent: { session_id: sessionId } });
   }
 }
 
@@ -263,17 +268,17 @@ function forwardToRenderer(
   input: unknown,
   client: AgentClientRef,
   context: McpRequestContext,
-  unit: ToolCallUnit,
+  call: ToolCall | undefined,
 ): Promise<ToolResult> {
   const access = Object.hasOwn(writeToolInputSchemas, tool) ? "write" : "read";
-  return withToolEvent(tool, access, client, context, unit, async () => {
+  return withToolEvent(tool, access, client, context, call, async () => {
     const startedAt = Date.now();
     let result;
     try {
       result = await context.bridge.call(tool, input, client);
     } catch (error) {
       if (!(error instanceof BridgeCallError)) throw error;
-      unit?.fail(
+      call?.unit.fail(
         error,
         error.reason === "timeout"
           ? { outcome: "timeout", reason: "bridge_timeout" }
@@ -282,15 +287,15 @@ function forwardToRenderer(
       context.sessions.recordError(error.message, client);
       return errorResult(error.message);
     }
-    unit?.set({ agent_tool: { bridge_ms: Date.now() - startedAt } });
+    call?.unit.set({ agent_tool: { bridge_ms: Date.now() - startedAt } });
     if (!result.ok) {
       // A refusal is the tool working as designed. A failure is an exception
       // in the renderer, so the indicator shows it.
       if (result.failed) {
-        unit?.fail(new Error(result.error), { reason: "tool_failed" });
+        call?.unit.fail(new Error(result.error), { reason: "tool_failed" });
         context.sessions.recordError(result.error, client);
       } else {
-        unit?.refuse();
+        call?.unit.refuse();
         if (access === "write") {
           context.sessions.recordActivity(client, {
             outcome: "refused",
@@ -304,7 +309,7 @@ function forwardToRenderer(
     const output = dataToolOutputSchemas[tool].safeParse(result.output);
     if (!output.success) {
       const message = `Ajour returned ${tool} output that does not match its schema.`;
-      unit?.fail(new Error(message), { reason: "output_mismatch" });
+      call?.unit.fail(new Error(message), { reason: "output_mismatch" });
       context.sessions.recordError(message, client);
       return errorResult(message);
     }
@@ -324,15 +329,15 @@ function runSessionTool<Name extends SessionToolName>(
   tool: Name,
   client: AgentClientRef,
   context: McpRequestContext,
-  unit: ToolCallUnit,
+  call: ToolCall | undefined,
   run: () => SessionToolOutput<Name> | Promise<SessionToolOutput<Name>>,
 ): Promise<ToolResult> {
-  return withToolEvent(tool, "session", client, context, unit, async () => {
+  return withToolEvent(tool, "session", client, context, call, async () => {
     try {
       return structuredResult(await run());
     } catch (error) {
       if (!(error instanceof AgentSessionError)) throw error;
-      unit?.refuse();
+      call?.unit.refuse();
       return errorResult(error.message);
     }
   });
@@ -343,7 +348,7 @@ function registerTools(
   server: McpServer,
   client: AgentClientRef,
   context: McpRequestContext,
-  unit: ToolCallUnit,
+  call: ToolCall | undefined,
 ) {
   for (const name of Object.keys(readToolInputSchemas) as ReadToolName[]) {
     server.registerTool(
@@ -357,7 +362,7 @@ function registerTools(
       // bridge only forwards it, so `unknown` is enough (and the union of
       // schemas in this loop gives the SDK nothing to infer from).
       async (input: unknown) =>
-        forwardToRenderer(name, input, client, context, unit),
+        forwardToRenderer(name, input, client, context, call),
     );
   }
   for (const name of Object.keys(writeToolInputSchemas) as WriteToolName[]) {
@@ -369,7 +374,7 @@ function registerTools(
         outputSchema: dataToolOutputSchemas[name].shape,
       },
       async (input: unknown) =>
-        forwardToRenderer(name, input, client, context, unit),
+        forwardToRenderer(name, input, client, context, call),
     );
   }
 
@@ -386,7 +391,7 @@ function registerTools(
     "begin_session",
     sessionToolConfig("begin_session"),
     async (input: SessionInput<"begin_session">) =>
-      runSessionTool("begin_session", client, context, unit, () => {
+      runSessionTool("begin_session", client, context, call, () => {
         const session = sessions.begin(client, input);
         return {
           sessionId: session.id,
@@ -398,7 +403,7 @@ function registerTools(
     "update_session",
     sessionToolConfig("update_session"),
     async (input: SessionInput<"update_session">) =>
-      runSessionTool("update_session", client, context, unit, () => {
+      runSessionTool("update_session", client, context, call, () => {
         const session = sessions.update(client, input);
         return {
           state: session.state,
@@ -412,7 +417,7 @@ function registerTools(
     "end_session",
     sessionToolConfig("end_session"),
     async (input: SessionInput<"end_session">) =>
-      runSessionTool("end_session", client, context, unit, () => {
+      runSessionTool("end_session", client, context, call, () => {
         sessions.end(client, input);
         return { ended: true as const };
       }),
@@ -421,7 +426,7 @@ function registerTools(
     "ask",
     sessionToolConfig("ask"),
     async (input: SessionInput<"ask">) =>
-      runSessionTool("ask", client, context, unit, () => ({
+      runSessionTool("ask", client, context, call, () => ({
         questionId: sessions.ask(client, input).id,
       })),
   );
@@ -429,7 +434,7 @@ function registerTools(
     "wait_for_answer",
     sessionToolConfig("wait_for_answer"),
     async (input: SessionInput<"wait_for_answer">) =>
-      runSessionTool("wait_for_answer", client, context, unit, () =>
+      runSessionTool("wait_for_answer", client, context, call, () =>
         sessions.waitForAnswer(
           client,
           input.questionId,
@@ -520,9 +525,11 @@ export async function handleMcpRequest(
       }
       // Named before the SDK validates the call, so a call it refuses still
       // says which tool it was.
-      const toolCall =
-        method === "tools/call" ? unit.rename("agent_tool.call") : undefined;
-      toolCall?.set({ agent_tool: { name: calledTool(body) } });
+      const toolCall: ToolCall | undefined =
+        method === "tools/call"
+          ? { unit: unit.rename("agent_tool.call"), handler: "not_reached" }
+          : undefined;
+      toolCall?.unit.set({ agent_tool: { name: calledTool(body) } });
       registerTools(server, client, context, toolCall);
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,

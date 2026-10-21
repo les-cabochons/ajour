@@ -252,9 +252,12 @@ The local API's first events are placed by hand (#305):
 | `comment.list`, `comment.post`, `comment.edit`, `comment.delete`, `comment.react`, `mention.search` | the comment route                                                       |
 
 An MCP request is `agent_tool.call` once its body is a tool call, named with
-the tool (one of Ajour's, or `other`), never its arguments. A call the SDK
-refuses before the handler runs ends `refused` with `invalid_call`, and a
-protocol error records its JSON-RPC code only. Any other request is
+the tool (one of Ajour's, or `other`), never its arguments. The request keeps
+how far the call got in its handler. A call that never reached the handler,
+an unknown tool or invalid arguments, ends `refused` with `invalid_call`. A
+handler that throws ends `error` with the error's type, and an output the
+SDK rejects after the handler ends `error` with `output_mismatch`. A protocol
+error records its JSON-RPC code only. Any other request is
 `mcp.request` with `mcp.method`; a batch has the method `batch` and counts its
 tool calls in `mcp.call_count`. A session the runner began takes the run's
 trigger, `user`.

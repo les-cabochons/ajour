@@ -11,6 +11,7 @@ import type {
 } from "../../../packages/shared/agent-tools.ts";
 import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
+import { AgentSessions } from "./agent-sessions.ts";
 import { startAppApiServer, stopAppApiServer } from "./server.ts";
 
 const TEST_ORIGIN = "http://127.0.0.1:5173";
@@ -442,6 +443,29 @@ describe("MCP endpoint", () => {
       }),
     ]);
     expect(JSON.stringify(logged)).not.toContain("Ana");
+  });
+
+  it("records a tool whose handler throws as an error, not as the agent's invalid call", async () => {
+    const { baseUrl, logged } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl);
+    const agent = await connectAgent(baseUrl, token);
+    vi.spyOn(AgentSessions.prototype, "begin").mockImplementation(() => {
+      throw new TypeError("Cannot begin Fill Workday");
+    });
+
+    const result = await agent.callTool({
+      name: "begin_session",
+      arguments: { title: "Fill Workday", estimateMinutes: 10 },
+    });
+
+    expect(result.isError).toBe(true);
+    const [call] = logged.filter((event) => event.name === "agent_tool.call");
+    expect(call).toMatchObject({
+      outcome: "error",
+      agent_tool: { name: "begin_session", access: "session" },
+      error: { type: "TypeError" },
+    });
+    expect(call).not.toHaveProperty("outcome_reason");
   });
 
   it("records a tool call the SDK rejects, with the tool's name and never its arguments", async () => {
