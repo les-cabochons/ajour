@@ -13,6 +13,7 @@ Ajour is a local-first time-tracking workspace built as a pnpm monorepo. Keep ar
     - `window.open` to the app's own address does nothing.
 - `apps/api`: Optional local API for plugin configuration, backlog sync, plugin workers, and local import flows.
 - `packages/shared`: Cross-runtime domain types, validation schemas, normalization, aggregation, rule evaluation, and plugin contracts.
+- `packages/wide-events`: the wide-event model every runtime emits through: the envelope, the catalog of event names with a privacy class on every field, the emitter, W3C trace context, the error scrubber and the sinks. It runs in the browser and in Node. See `docs/logging-strategy.md`.
 - MCP: the local API serves an MCP endpoint at `/mcp/ajour` for agents such as Claude Code and Codex. It is off by default, and each agent client has its own token (ADR 0004). The API forwards every data tool to the renderer over `/api/mcp/bridge`, and `features/agents/agent-tool-runner.ts` runs it through the object action sets with Undo. Sessions, questions and the activity list live in API memory (`apps/api/src/agent-sessions.ts`).
 
 ## Agent runner
@@ -91,8 +92,8 @@ form hides it while that capability is off. `validateConnection` receives the
 capabilities that are on as its second argument and checks only their access.
 A calendar is read-only: `listCalendarEvents` returns event facts for a date
 range through `POST /api/calendars/:pluginId/connections/:connectionId/:operation`,
-and Ajour never stores the events (ADR 0005). The route logs one
-`calendar.operation` wide event with ids, range, count and outcome, never a
+and Ajour never stores the events (ADR 0005). The route emits one
+`calendar.fetch` wide event with ids, range, count and outcome, never a
 title.
 A plugin may echo a secret connection value in an error. Every route that runs
 a plugin operation turns the error into a message with `pluginErrorMessage` in
@@ -294,14 +295,14 @@ cannot be written.
 
 ## Logging
 
-Follow `docs/logging-strategy.md`: one structured wide event per meaningful operation, not scattered debug strings.
+Follow `docs/logging-strategy.md`: one wide event per unit of work per runtime, through the runtime's emitter from `packages/wide-events`, not scattered debug strings. Events never hold content (ADR 0011).
 
-Default to local-only diagnostics. Any remote event path must be explicitly privacy-reviewed and aggregate-safe.
+Events go nowhere by default; `AJOUR_WIDE_EVENTS=console` prints them for a developer. Any sink that sends them elsewhere must be explicit, opt-in and filtered by each field's privacy class.
 
 ## Dependency Direction
 
-- Apps can depend on `@ajour/shared`.
-- `packages/shared` must not depend on app packages.
+- Apps can depend on `@ajour/shared` and on `packages/wide-events`, whose root files the local API imports by relative path.
+- `packages/shared` and `packages/wide-events` must not depend on app packages.
 - `apps/web/src/domain` must stay pure and must not import React, `features`, or `lib`.
 - `apps/web/src/lib` may depend on `domain`, but must not depend on `features`.
 - `apps/web/src/features` may depend on `domain`, `lib`, and `components`.

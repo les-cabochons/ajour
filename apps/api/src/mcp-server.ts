@@ -14,7 +14,16 @@ import {
   type SessionToolOutput,
   type WriteToolName,
 } from "../../../packages/shared/agent-tools.ts";
+import type {
+  AjourCatalog,
+  McpMethod,
+} from "../../../packages/wide-events/catalog.ts";
+import {
+  worstOutcome,
+  type Unit,
+} from "../../../packages/wide-events/index.ts";
 import { AgentSessionError, type AgentSessions } from "./agent-sessions.ts";
+import type { ApiEvents } from "./events.ts";
 import { BridgeCallError, type McpBridge } from "./mcp-bridge.ts";
 import { authenticateMcpRequest } from "./mcp-clients.ts";
 import type { AppApiStorage } from "./storage.ts";
@@ -31,7 +40,7 @@ export interface McpRequestContext {
   sessions: AgentSessions;
   /** How long one wait_for_answer call holds. Capped at MAX_WAIT_FOR_ANSWER_MS. */
   waitForAnswerMs: number;
-  logEvent: (event: Record<string, unknown>) => void;
+  events: ApiEvents;
   readBody: (request: IncomingMessage) => Promise<unknown>;
 }
 
@@ -49,19 +58,190 @@ interface ToolResult {
   isError?: boolean;
 }
 
-/** The wide event each MCP call logs. Never a tool input or output. */
-type McpRequestEvent = {
-  event: "mcp.request";
-  client_id: string;
-  /** The client's newest open session when the call ended. */
-  session_id?: string;
-  tool: string;
-  outcome?: "ok" | "refused" | "error" | BridgeCallError["reason"];
-  /** Why an `error` outcome happened, when Ajour knows. */
-  error_kind?: "output_mismatch";
-  bridge_ms?: number;
-  duration_ms?: number;
-};
+/**
+ * One tool call of a request: its `agent_tool.call` event, which holds how it
+ * ended, and how far it got in its handler. The SDK answers an invalid call and a failed
+ * handler with the same kind of error reply, so the reply alone can't tell
+ * the agent's mistake from Ajour's failure. A single call's event is the
+ * request's own; a call in a batch folds into the batch's `mcp.request`.
+ */
+interface ToolCall {
+  readonly unit: Unit<AjourCatalog, "agent_tool.call">;
+  /** Set when the handler starts, and when it returns a result that isn't an error. */
+  handler: "not_reached" | "entered" | "returned_ok";
+}
+
+/**
+ * What one MCP request carries: its tool calls, by JSON-RPC id. A call sent
+ * as a notification has no id, never reaches a handler and gets no reply.
+ */
+class McpExchange {
+  readonly calls: ToolCall[] = [];
+  private readonly byId = new Map<unknown, ToolCall>();
+
+  add(unit: ToolCall["unit"], id: unknown) {
+    const call: ToolCall = { unit, handler: "not_reached" };
+    this.calls.push(call);
+    if (id !== undefined && id !== null) this.byId.set(id, call);
+    return call;
+  }
+
+  call(id: unknown) {
+    return this.byId.get(id);
+  }
+}
+
+/** The MCP methods an `mcp.request` event names. Any other is `other`. */
+const MCP_METHODS: ReadonlySet<string> = new Set<McpMethod>([
+  "initialize",
+  "ping",
+  "notifications/initialized",
+  "notifications/cancelled",
+  "notifications/progress",
+  "notifications/roots/list_changed",
+  "tools/list",
+  "tools/call",
+  "resources/list",
+  "resources/templates/list",
+  "resources/read",
+  "resources/subscribe",
+  "resources/unsubscribe",
+  "prompts/list",
+  "prompts/get",
+  "logging/setLevel",
+  "completion/complete",
+]);
+
+/** The JSON-RPC method of a message, from a closed set. */
+function mcpMethod(message: unknown): McpMethod {
+  if (Array.isArray(message)) return "batch";
+  const method = (message as { method?: unknown } | null | undefined)?.method;
+  return typeof method === "string" && MCP_METHODS.has(method)
+    ? (method as McpMethod)
+    : "other";
+}
+
+/** A JSON-RPC message's id, or undefined for a notification. */
+function messageId(message: unknown): unknown {
+  return (message as { id?: unknown } | null | undefined)?.id;
+}
+
+/** The tool a call names, when Ajour has it. Never its arguments. */
+function calledTool(message: unknown): string {
+  const name = (message as { params?: { name?: unknown } } | null | undefined)
+    ?.params?.name;
+  return typeof name === "string" && Object.hasOwn(TOOL_DESCRIPTIONS, name)
+    ? name
+    : "other";
+}
+
+/**
+ * Adds what the SDK answered to the request's events: a call it refused
+ * before the handler ran, an output it rejected after, or a protocol error,
+ * by its JSON-RPC code only. Messages hold the agent's own text, so none
+ * enters an event.
+ */
+function recordReply(
+  message: unknown,
+  unit: Unit<AjourCatalog, "mcp.request">,
+  exchange: McpExchange,
+) {
+  const reply = message as {
+    id?: unknown;
+    error?: { code?: unknown };
+    result?: { isError?: unknown };
+  };
+  const call = exchange.call(reply.id);
+  if (
+    call?.handler === "not_reached" &&
+    (reply.error || reply.result?.isError === true)
+  ) {
+    call.unit.refuse("invalid_call");
+    return;
+  }
+  if (reply.error) {
+    const error = Object.assign(new Error(), {
+      name: "McpError",
+      code: String(reply.error.code),
+    });
+    if (call) call.unit.fail(error);
+    else unit.fail(error);
+    return;
+  }
+  // A handler that threw or answered an error recorded its own outcome.
+  if (call?.handler === "returned_ok" && reply.result?.isError === true) {
+    call.unit.fail(new Error("The SDK rejected the tool's output."), {
+      reason: "output_mismatch",
+    });
+  }
+}
+
+/**
+ * Ends what the replies left open, once the response is written. A request
+ * the transport rejected outright, which skips the replies, is refused for
+ * a 4xx and an error for a 5xx. A call that never reached its handler is the
+ * agent's invalid call. A batch ends with the worst outcome among its own
+ * and its calls': error, then timeout, then refused, then cancelled. An
+ * outcome already recorded is never downgraded.
+ */
+function settleExchange(
+  unit: Unit<AjourCatalog, "mcp.request">,
+  exchange: McpExchange,
+  status: number,
+  batch: boolean,
+) {
+  if (status >= 500) {
+    unit.end("error", "protocol_error");
+  } else if (status >= 400) {
+    unit.refuse("protocol_error");
+  }
+  for (const call of exchange.calls) {
+    if (
+      status < 400 &&
+      call.handler === "not_reached" &&
+      call.unit.outcome === undefined
+    ) {
+      call.unit.refuse("invalid_call");
+    }
+    if (batch) call.unit.end();
+  }
+  if (!batch) return;
+  const worst = worstOutcome(
+    unit.outcome,
+    ...exchange.calls.map((call) => call.unit.outcome),
+  );
+  if (worst !== worstOutcome(unit.outcome)) unit.end(worst);
+}
+
+/**
+ * Refuses a batch in which two requests share an id, before any of it runs:
+ * their replies couldn't be told apart. True when it refused.
+ */
+function refuseDuplicateIds(
+  messages: unknown[],
+  unit: Unit<AjourCatalog, "mcp.request">,
+  response: ServerResponse,
+) {
+  const ids = messages
+    .map(messageId)
+    .filter((id) => id !== undefined && id !== null);
+  if (new Set(ids).size === ids.length) return false;
+  unit.refuse("duplicate_id");
+  response.writeHead(400, {
+    "Content-Type": "application/json; charset=utf-8",
+  });
+  response.end(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: null,
+      error: {
+        code: -32600,
+        message: "Each request in a batch needs its own id.",
+      },
+    }),
+  );
+  return true;
+}
 
 /** What every agent reads first. Spec B's plugins add their own. */
 const AJOUR_INSTRUCTIONS = [
@@ -147,29 +327,32 @@ function errorResult(message: string): ToolResult {
   return { content: [{ type: "text", text: message }], isError: true };
 }
 
-/** Runs one tool call and logs its `mcp.request` event when it ends. */
-async function withRequestEvent(
+/**
+ * Runs one tool call and adds it to the request's `agent_tool.call` event:
+ * the tool, how it ended, and the client's newest open session when it did.
+ */
+async function withToolEvent(
   tool: string,
+  access: "read" | "write" | "session",
   client: AgentClientRef,
   context: McpRequestContext,
-  run: (event: McpRequestEvent) => Promise<ToolResult>,
+  call: ToolCall | undefined,
+  run: () => Promise<ToolResult>,
 ): Promise<ToolResult> {
-  const startedAt = Date.now();
-  const event: McpRequestEvent = {
-    event: "mcp.request",
-    client_id: client.id,
-    tool,
-  };
+  call?.unit.set({ agent_tool: { name: tool, access } });
+  if (call) call.handler = "entered";
   try {
-    return await run(event);
+    const result = await run();
+    if (call && !result.isError) call.handler = "returned_ok";
+    return result;
   } catch (error) {
-    event.outcome = "error";
+    // The SDK turns a thrown error into a tool error, so the request never
+    // sees it.
+    call?.unit.fail(error);
     throw error;
   } finally {
     const sessionId = context.sessions.currentSessionId(client);
-    if (sessionId) event.session_id = sessionId;
-    event.duration_ms = Date.now() - startedAt;
-    context.logEvent(event);
+    if (sessionId) call?.unit.set({ agent: { session_id: sessionId } });
   }
 }
 
@@ -182,43 +365,51 @@ function forwardToRenderer(
   input: unknown,
   client: AgentClientRef,
   context: McpRequestContext,
+  call: ToolCall | undefined,
 ): Promise<ToolResult> {
-  return withRequestEvent(tool, client, context, async (event) => {
+  const access = Object.hasOwn(writeToolInputSchemas, tool) ? "write" : "read";
+  return withToolEvent(tool, access, client, context, call, async () => {
     const startedAt = Date.now();
     let result;
     try {
       result = await context.bridge.call(tool, input, client);
     } catch (error) {
       if (!(error instanceof BridgeCallError)) throw error;
-      event.outcome = error.reason;
+      call?.unit.fail(
+        error,
+        error.reason === "timeout"
+          ? { outcome: "timeout", reason: "bridge_timeout" }
+          : { reason: "bridge_unavailable" },
+      );
       context.sessions.recordError(error.message, client);
       return errorResult(error.message);
     }
-    event.bridge_ms = Date.now() - startedAt;
+    call?.unit.set({ agent_tool: { bridge_ms: Date.now() - startedAt } });
     if (!result.ok) {
       // A refusal is the tool working as designed. A failure is an exception
       // in the renderer, so the indicator shows it.
-      event.outcome = result.failed ? "error" : "refused";
       if (result.failed) {
+        call?.unit.fail(new Error(result.error), { reason: "tool_failed" });
         context.sessions.recordError(result.error, client);
-      } else if (Object.hasOwn(writeToolInputSchemas, tool)) {
-        context.sessions.recordActivity(client, {
-          outcome: "refused",
-          tool,
-          reason: result.error,
-        });
+      } else {
+        call?.unit.refuse();
+        if (access === "write") {
+          context.sessions.recordActivity(client, {
+            outcome: "refused",
+            tool,
+            reason: result.error,
+          });
+        }
       }
       return errorResult(result.error);
     }
     const output = dataToolOutputSchemas[tool].safeParse(result.output);
     if (!output.success) {
-      event.outcome = "error";
-      event.error_kind = "output_mismatch";
       const message = `Ajour returned ${tool} output that does not match its schema.`;
+      call?.unit.fail(new Error(message), { reason: "output_mismatch" });
       context.sessions.recordError(message, client);
       return errorResult(message);
     }
-    event.outcome = "ok";
     if (result.activity) {
       context.sessions.recordActivity(client, {
         outcome: "ok",
@@ -235,27 +426,30 @@ function runSessionTool<Name extends SessionToolName>(
   tool: Name,
   client: AgentClientRef,
   context: McpRequestContext,
+  call: ToolCall | undefined,
   run: () => SessionToolOutput<Name> | Promise<SessionToolOutput<Name>>,
 ): Promise<ToolResult> {
-  return withRequestEvent(tool, client, context, async (event) => {
+  return withToolEvent(tool, "session", client, context, call, async () => {
     try {
-      const output = await run();
-      event.outcome = "ok";
-      return structuredResult(output);
+      return structuredResult(await run());
     } catch (error) {
       if (!(error instanceof AgentSessionError)) throw error;
-      event.outcome = "refused";
+      call?.unit.refuse();
       return errorResult(error.message);
     }
   });
 }
 
-/** Registers every tool for one request, bound to its client. */
+/** Registers every tool for one request, bound to its client and its event. */
 function registerTools(
   server: McpServer,
   client: AgentClientRef,
   context: McpRequestContext,
+  exchange: McpExchange,
 ) {
+  // The SDK hands each handler its JSON-RPC request id, which finds its call.
+  const callOf = (extra: { requestId: unknown }) =>
+    exchange.call(extra.requestId);
   for (const name of Object.keys(readToolInputSchemas) as ReadToolName[]) {
     server.registerTool(
       name,
@@ -267,7 +461,8 @@ function registerTools(
       // The SDK has already parsed `input` against this tool's schema. The
       // bridge only forwards it, so `unknown` is enough (and the union of
       // schemas in this loop gives the SDK nothing to infer from).
-      async (input: unknown) => forwardToRenderer(name, input, client, context),
+      async (input: unknown, extra: { requestId: unknown }) =>
+        forwardToRenderer(name, input, client, context, callOf(extra)),
     );
   }
   for (const name of Object.keys(writeToolInputSchemas) as WriteToolName[]) {
@@ -278,7 +473,8 @@ function registerTools(
         inputSchema: writeToolInputSchemas[name].shape,
         outputSchema: dataToolOutputSchemas[name].shape,
       },
-      async (input: unknown) => forwardToRenderer(name, input, client, context),
+      async (input: unknown, extra: { requestId: unknown }) =>
+        forwardToRenderer(name, input, client, context, callOf(extra)),
     );
   }
 
@@ -294,8 +490,11 @@ function registerTools(
   server.registerTool(
     "begin_session",
     sessionToolConfig("begin_session"),
-    async (input: SessionInput<"begin_session">) =>
-      runSessionTool("begin_session", client, context, () => {
+    async (
+      input: SessionInput<"begin_session">,
+      extra: { requestId: unknown },
+    ) =>
+      runSessionTool("begin_session", client, context, callOf(extra), () => {
         const session = sessions.begin(client, input);
         return {
           sessionId: session.id,
@@ -306,8 +505,11 @@ function registerTools(
   server.registerTool(
     "update_session",
     sessionToolConfig("update_session"),
-    async (input: SessionInput<"update_session">) =>
-      runSessionTool("update_session", client, context, () => {
+    async (
+      input: SessionInput<"update_session">,
+      extra: { requestId: unknown },
+    ) =>
+      runSessionTool("update_session", client, context, callOf(extra), () => {
         const session = sessions.update(client, input);
         return {
           state: session.state,
@@ -320,8 +522,8 @@ function registerTools(
   server.registerTool(
     "end_session",
     sessionToolConfig("end_session"),
-    async (input: SessionInput<"end_session">) =>
-      runSessionTool("end_session", client, context, () => {
+    async (input: SessionInput<"end_session">, extra: { requestId: unknown }) =>
+      runSessionTool("end_session", client, context, callOf(extra), () => {
         sessions.end(client, input);
         return { ended: true as const };
       }),
@@ -329,16 +531,19 @@ function registerTools(
   server.registerTool(
     "ask",
     sessionToolConfig("ask"),
-    async (input: SessionInput<"ask">) =>
-      runSessionTool("ask", client, context, () => ({
+    async (input: SessionInput<"ask">, extra: { requestId: unknown }) =>
+      runSessionTool("ask", client, context, callOf(extra), () => ({
         questionId: sessions.ask(client, input).id,
       })),
   );
   server.registerTool(
     "wait_for_answer",
     sessionToolConfig("wait_for_answer"),
-    async (input: SessionInput<"wait_for_answer">) =>
-      runSessionTool("wait_for_answer", client, context, () =>
+    async (
+      input: SessionInput<"wait_for_answer">,
+      extra: { requestId: unknown },
+    ) =>
+      runSessionTool("wait_for_answer", client, context, callOf(extra), () =>
         sessions.waitForAnswer(
           client,
           input.questionId,
@@ -371,56 +576,104 @@ export async function handleMcpRequest(
     writeError(response, 404, "Not found.");
     return;
   }
-  // Agents are not browsers. An Origin header means a web page is calling.
-  if (request.headers.origin) {
-    context.logEvent({ event: "mcp.request", outcome: "browser_refused" });
-    writeError(response, 403, "MCP does not accept browser requests.");
-    return;
-  }
+  // One event per request: `agent_tool.call` once the body says it is a
+  // tool call, `mcp.request` for any other method and for refusals. With
+  // JSON responses, handleRequest settles once the answer is written.
+  await context.events.run(
+    "mcp.request",
+    { kind: "request", trigger: "agent" },
+    async (unit) => {
+      // Agents are not browsers. An Origin header means a web page is calling.
+      if (request.headers.origin) {
+        unit.refuse("browser_origin");
+        writeError(response, 403, "MCP does not accept browser requests.");
+        return;
+      }
 
-  const authentication = await authenticateMcpRequest(
-    context.storage,
-    request.headers.authorization,
-  );
-  if (authentication.kind !== "ok") {
-    if (authentication.kind === "revoked") {
-      context.sessions.recordError(
-        `${authentication.client.name}: its token was revoked.`,
-        { id: authentication.client.id, name: authentication.client.name },
+      const authentication = await authenticateMcpRequest(
+        context.storage,
+        request.headers.authorization,
       );
-    }
-    context.logEvent({
-      event: "mcp.request",
-      outcome: "unauthorized",
-      reason: authentication.kind,
-      client_id:
-        authentication.kind === "revoked"
-          ? authentication.client.id
-          : undefined,
-    });
-    writeError(response, 401, "Unknown or revoked token.");
-    return;
-  }
+      if (authentication.kind !== "ok") {
+        if (authentication.kind === "revoked") {
+          context.sessions.recordError(
+            `${authentication.client.name}: its token was revoked.`,
+            { id: authentication.client.id, name: authentication.client.name },
+          );
+          unit.set({ agent: { client_id: authentication.client.id } });
+        }
+        unit.refuse(`token_${authentication.kind}`);
+        writeError(response, 401, "Unknown or revoked token.");
+        return;
+      }
 
-  const client = {
-    id: authentication.client.id,
-    name: authentication.client.name,
-  };
-  const server = new McpServer(
-    { name: "ajour", version: "1.0.0" },
-    { instructions: AJOUR_INSTRUCTIONS },
+      const client = {
+        id: authentication.client.id,
+        name: authentication.client.name,
+      };
+      unit.set({ agent: { client_id: client.id } });
+      const server = new McpServer(
+        { name: "ajour", version: "1.0.0" },
+        { instructions: AJOUR_INSTRUCTIONS },
+      );
+      const body =
+        request.method === "POST" ? await context.readBody(request) : undefined;
+      const method = body === undefined ? undefined : mcpMethod(body);
+      const messages = method === "batch" ? (body as unknown[]) : undefined;
+      if (messages) {
+        unit.set({
+          mcp: {
+            method: "batch",
+            call_count: messages.filter(
+              (message) => mcpMethod(message) === "tools/call",
+            ).length,
+          },
+        });
+        // Before the transport's own checks, which run inside handleRequest:
+        // a duplicate-id batch is `duplicate_id` whatever else is wrong.
+        if (refuseDuplicateIds(messages, unit, response)) return;
+      } else if (method !== undefined && method !== "tools/call") {
+        unit.set({ mcp: { method } });
+      }
+      // Each call is named before the SDK validates it, so a call it
+      // refuses still says which tool it was.
+      const exchange = new McpExchange();
+      if (method === "tools/call") {
+        exchange
+          .add(unit.rename("agent_tool.call"), messageId(body))
+          .unit.set({ agent_tool: { name: calledTool(body) } });
+      }
+      for (const message of messages ?? []) {
+        if (mcpMethod(message) !== "tools/call") continue;
+        // Started inside the request, so it folds into the batch's event.
+        const call = context.events.start("agent_tool.call", {
+          kind: "request",
+          trigger: "agent",
+        });
+        exchange
+          .add(call, messageId(message))
+          .unit.set({ agent_tool: { name: calledTool(message) } });
+      }
+      registerTools(server, client, context, exchange);
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+        enableJsonResponse: true,
+      });
+      const send = transport.send.bind(transport);
+      transport.send = async (message, options) => {
+        recordReply(message, unit, exchange);
+        return send(message, options);
+      };
+      response.on("close", () => {
+        void transport.close();
+        void server.close();
+      });
+      await server.connect(transport);
+      try {
+        await transport.handleRequest(request, response, body);
+      } finally {
+        settleExchange(unit, exchange, response.statusCode, method === "batch");
+      }
+    },
   );
-  registerTools(server, client, context);
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
-    enableJsonResponse: true,
-  });
-  response.on("close", () => {
-    void transport.close();
-    void server.close();
-  });
-  await server.connect(transport);
-  const body =
-    request.method === "POST" ? await context.readBody(request) : undefined;
-  await transport.handleRequest(request, response, body);
 }

@@ -1,27 +1,32 @@
 import { describe, expect, it } from "vitest";
-import type { AgentSession } from "../../../packages/shared/agent-tools.ts";
+import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
+import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import {
   AgentSessions,
   AgentSessionError,
-  sessionEndedEvent,
   sessionWindowMs,
 } from "./agent-sessions.ts";
+import { createApiEvents } from "./events.ts";
 
 const MINUTE = 60_000;
 const claude = { id: "c1", name: "Claude Code" };
 const codex = { id: "c2", name: "Codex" };
 
-function createSessions(
-  options: { onEnded?: (session: AgentSession) => void } = {},
-) {
+function createSessions() {
   let now = 0;
   let next = 0;
+  const sink = createRecordingSink<AjourEvent>();
   const sessions = new AgentSessions({
     now: () => now,
     createId: () => `id-${(next += 1)}`,
-    ...options,
+    events: createApiEvents({ sink, userDataPath: "ajour", now: () => now }),
   });
-  return { sessions, advance: (ms: number) => (now += ms), now: () => now };
+  return {
+    sessions,
+    recorded: sink.events,
+    advance: (ms: number) => (now += ms),
+    now: () => now,
+  };
 }
 
 describe("session deadlines", () => {
@@ -119,10 +124,7 @@ describe("questions", () => {
   });
 
   it("dismisses a session, withdraws its question and wakes the waiter", async () => {
-    const ended: string[] = [];
-    const { sessions } = createSessions({
-      onEnded: (session) => ended.push(session.state),
-    });
+    const { sessions, recorded } = createSessions();
     const session = sessions.begin(claude, {
       title: "Work",
       estimateMinutes: 5,
@@ -138,7 +140,13 @@ describe("questions", () => {
     expect(dismissed.state).toBe("cancelled");
     expect(sessions.snapshot().openQuestions).toEqual([]);
     await expect(waiting).resolves.toEqual({ status: "withdrawn" });
-    expect(ended).toEqual(["cancelled"]);
+    expect(recorded).toEqual([
+      expect.objectContaining({
+        name: "agent.session",
+        outcome: "cancelled",
+        outcome_reason: "dismissed",
+      }),
+    ]);
   });
 
   it("refuses to dismiss an unknown or an ended session", () => {
@@ -210,11 +218,8 @@ describe("runner sessions", () => {
     });
   });
 
-  it("names the run in mcp.session_ended for a session the runner began", () => {
-    const logged: Record<string, unknown>[] = [];
-    const { sessions, advance } = createSessions({
-      onEnded: (session) => logged.push(sessionEndedEvent(session, 0)),
-    });
+  it("names the run in agent.session for a session the runner began", () => {
+    const { sessions, advance, recorded } = createSessions();
     const runSession = sessions.begin(
       claude,
       { title: "Enter in Workday, week of Oct 12", estimateMinutes: 10 },
@@ -235,26 +240,71 @@ describe("runner sessions", () => {
       outcome: "done",
       summary: "Done.",
     });
-    expect(logged).toEqual([
-      {
-        event: "mcp.session_ended",
-        client_id: "c1",
-        session_id: runSession.id,
-        run_id: "run-1",
-        outcome: "done",
+    expect(recorded).toEqual([
+      expect.objectContaining({
+        name: "agent.session",
+        kind: "job",
+        // The runner began it, for the user's run.
+        trigger: "user",
+        outcome: "ok",
         duration_ms: 3 * MINUTE,
-        update_count: 0,
-        question_count: 0,
-      },
-      {
-        event: "mcp.session_ended",
-        client_id: "c2",
-        session_id: ownSession.id,
-        outcome: "done",
+        agent: {
+          client_id: "c1",
+          session_id: runSession.id,
+          run_id: "run-1",
+          update_count: 0,
+          question_count: 0,
+          stall_count: 0,
+        },
+      }),
+      expect.objectContaining({
+        name: "agent.session",
+        trigger: "agent",
+        outcome: "ok",
         duration_ms: 3 * MINUTE,
-        update_count: 0,
-        question_count: 0,
-      },
+        agent: {
+          client_id: "c2",
+          session_id: ownSession.id,
+          update_count: 0,
+          question_count: 0,
+          stall_count: 0,
+        },
+      }),
     ]);
+  });
+
+  it("counts a session's updates, questions and stalls, never what they say", () => {
+    const { sessions, advance, recorded } = createSessions();
+    const session = sessions.begin(claude, {
+      title: "Fill Workday",
+      estimateMinutes: 2,
+    });
+    advance(3 * MINUTE);
+    sessions.tick();
+    sessions.update(claude, { sessionId: session.id, message: "Line 3 of 9" });
+    // The update revived it for 5 minutes plus 25%.
+    advance(7 * MINUTE);
+    sessions.tick();
+    sessions.ask(claude, {
+      question: "Which project for Globex?",
+      sessionId: session.id,
+    });
+    sessions.end(claude, {
+      sessionId: session.id,
+      outcome: "failed",
+      summary: "Globex is not in Ajour.",
+    });
+
+    expect(recorded).toEqual([
+      expect.objectContaining({
+        outcome: "error",
+        agent: expect.objectContaining({
+          update_count: 1,
+          question_count: 1,
+          stall_count: 2,
+        }),
+      }),
+    ]);
+    expect(JSON.stringify(recorded)).not.toMatch(/Workday|Line 3|Globex/);
   });
 });

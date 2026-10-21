@@ -1,0 +1,19 @@
+{
+  "//": "Checks that every entry point but node.ts compiles without Node's types, so it runs in the browser.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "erasableSyntaxOnly": true,
+    "rootDir": ".",
+    "outDir": "dist",
+    "lib": ["ES2022", "DOM"],
+    "types": []
+  },
+  "include": [
+    "index.ts",
+    "catalog.ts",
+    "sinks.ts",
+    "trace-context.ts",
+    "scrub.ts",
+    "secret-redaction.ts"
+  ]
+}

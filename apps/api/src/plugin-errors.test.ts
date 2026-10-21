@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
-  ConnectionRedaction,
+  connectionRedaction,
   connectionSecretValues,
   connectionlessPluginErrorMessage,
   pluginErrorMessage,
   redactConnectionSummary,
   redactPluginText,
-  redactSecretValues,
 } from "./plugin-errors.ts";
+
+// The redaction of one text, and its tests, live in packages/wide-events.
+// The summary and the request budget are the local API's.
 
 const plugin = {
   connectionFields: [
@@ -129,6 +131,45 @@ describe("plugin error messages", () => {
     );
   });
 
+  it("only bounds the error of an operation with no connection", () => {
+    expect(
+      connectionlessPluginErrorMessage(new Error("Row 3 has no project.")),
+    ).toBe("Row 3 has no project.");
+    expect(connectionlessPluginErrorMessage(new Error("x".repeat(1_500)))).toBe(
+      `${"x".repeat(999)}…`,
+    );
+  });
+
+  it("says Unknown error for a thrown value that isn't an Error", () => {
+    expect(pluginErrorMessage("pat-7c1e9a2b4d6f8a0c", plugin)).toBe(
+      "Unknown error",
+    );
+  });
+});
+
+describe("redacting twice", () => {
+  it("gives the same text when it redacts its own result", () => {
+    const config = {
+      token: "secret",
+      pin: 4829,
+      teamSecret: "pat-7c1e9a2b4d6f8a0c",
+    };
+    for (const raw of [
+      "Token secret and PIN 4829 were refused.",
+      // Split by the worker's cut.
+      `${"x".repeat(20)} pat-7c1e9a…`,
+      // The bound falls inside the [secret] that replaces "secret".
+      `${"x".repeat(995)}secret${"y".repeat(20)}`,
+      // The bound leaves "pat", which starts a secret, before its ellipsis.
+      `${"x".repeat(996)}patrol`,
+    ]) {
+      const once = pluginErrorMessage(new Error(raw), plugin, config);
+      expect(pluginErrorMessage(new Error(once), plugin, config)).toBe(once);
+    }
+  });
+});
+
+describe("redacting a connection summary", () => {
   const summarySecrets = connectionSecretValues(plugin, [
     { siteUrl: "https://acme.example", token: "pat-abc", pin: 482913 },
   ]);
@@ -197,87 +238,6 @@ describe("plugin error messages", () => {
     );
     expect(performance.now() - started).toBeLessThan(200);
   });
-
-  it("only bounds the error of an operation with no connection", () => {
-    expect(
-      connectionlessPluginErrorMessage(new Error("Row 3 has no project.")),
-    ).toBe("Row 3 has no project.");
-    expect(connectionlessPluginErrorMessage(new Error("x".repeat(1_500)))).toBe(
-      `${"x".repeat(999)}…`,
-    );
-  });
-
-  it("says Unknown error for a thrown value that isn't an Error", () => {
-    expect(pluginErrorMessage("pat-7c1e9a2b4d6f8a0c", plugin)).toBe(
-      "Unknown error",
-    );
-  });
-});
-
-describe("redacting in one pass on the original message", () => {
-  it("finds a cut secret's start even when a shorter secret sits inside it", () => {
-    expect(redactSecretValues("Failed ABCD…", ["ABCDEF", "CD"])).toBe(
-      "Failed [secret]…",
-    );
-    expect(
-      redactSecretValues("token pat-7c1e9a…", ["pat-7c1e9a2b4d6f8a0c", "7c1e"]),
-    ).toBe("token [secret]…");
-  });
-
-  it("replaces overlapping secrets as one", () => {
-    expect(redactSecretValues("abc123xyz9", ["abc123", "123xyz9"])).toBe(
-      "[secret]",
-    );
-    expect(redactSecretValues("abc123xyz…", ["abc123", "123xyz9"])).toBe(
-      "[secret]…",
-    );
-  });
-
-  it("leaves the [secret] marks already in a message alone", () => {
-    expect(redactSecretValues("Bad [secret]", ["secret"])).toBe("Bad [secret]");
-    expect(redactSecretValues("Bad [secret]", ["e"])).toBe("Bad [secret]");
-  });
-
-  it("redacts large adversarial messages quickly", () => {
-    const started = performance.now();
-    // 25,000 marks, each with a one-character secret beside it.
-    expect(redactSecretValues("[secret]1".repeat(25_000), ["1"])).toBe(
-      "[secret]".repeat(50_000),
-    );
-    // Every match crosses two marks, so every match widens.
-    expect(redactSecretValues("[secret]1".repeat(25_000), ["]1["])).toBe(
-      "[secret]1",
-    );
-    // Twice as long is past one text's budget, so it is hidden whole.
-    expect(redactSecretValues("[secret]1".repeat(50_000), ["1"])).toBe(
-      "Hidden because it couldn't be checked for secrets.",
-    );
-    // A long secret whose every start almost matches the end of a cut message.
-    expect(
-      redactSecretValues(`${"a".repeat(4_094)}c…`, [`${"a".repeat(3_999)}b`]),
-    ).toBe(`${"a".repeat(4_094)}c…`);
-    expect(performance.now() - started).toBeLessThan(2_000);
-  });
-
-  it("gives the same text when it redacts its own result", () => {
-    const config = {
-      token: "secret",
-      pin: 4829,
-      teamSecret: "pat-7c1e9a2b4d6f8a0c",
-    };
-    for (const raw of [
-      "Token secret and PIN 4829 were refused.",
-      // Split by the worker's cut.
-      `${"x".repeat(20)} pat-7c1e9a…`,
-      // The bound falls inside the [secret] that replaces "secret".
-      `${"x".repeat(995)}secret${"y".repeat(20)}`,
-      // The bound leaves "pat", which starts a secret, before its ellipsis.
-      `${"x".repeat(996)}patrol`,
-    ]) {
-      const once = pluginErrorMessage(new Error(raw), plugin, config);
-      expect(pluginErrorMessage(new Error(once), plugin, config)).toBe(once);
-    }
-  });
 });
 
 describe("the redaction's work budget", () => {
@@ -314,26 +274,6 @@ describe("the redaction's work budget", () => {
     ).toEqual(summaryOf(`${"a".repeat(998)}b…`));
     expect(performance.now() - restarted).toBeLessThan(200);
   });
-
-  it("hides a text it can't check behind a fixed message", () => {
-    expect(redactPluginText("a".repeat(1_000), growingSecrets)).toBe(UNCHECKED);
-    expect(redactSecretValues("a".repeat(1_000), growingSecrets)).toBe(
-      UNCHECKED,
-    );
-  });
-
-  it("finds the start of a cut secret in time linear in the secret", () => {
-    const started = performance.now();
-    for (let round = 0; round < 50; round += 1) {
-      expect(redactSecretValues(`${"a".repeat(998)}b…`, longSecrets)).toBe(
-        `${"a".repeat(998)}b…`,
-      );
-    }
-    expect(redactSecretValues(`x ${"a".repeat(997)}…`, longSecrets)).toBe(
-      "x [secret]…",
-    );
-    expect(performance.now() - started).toBeLessThan(200);
-  });
 });
 
 describe("one redaction per connection and request", () => {
@@ -359,7 +299,7 @@ describe("one redaction per connection and request", () => {
     "redacts 20,000 field messages against %i long secrets quickly, as one call per message would",
     (count) => {
       const secrets = secretsWith(count);
-      const redaction = new ConnectionRedaction(secrets);
+      const redaction = connectionRedaction(secrets);
 
       const started = performance.now();
       const redacted = messages.map((message) => redaction.text(message));
@@ -373,7 +313,7 @@ describe("one redaction per connection and request", () => {
   );
 
   it("hides a text past its own budget, and goes on with the next", () => {
-    const redaction = new ConnectionRedaction(["s3cret"]);
+    const redaction = connectionRedaction(["s3cret"]);
 
     expect(redaction.text("x".repeat(300_000))).toBe(UNCHECKED);
     expect(redaction.text("Bad s3cret.")).toBe("Bad [secret].");
@@ -381,7 +321,7 @@ describe("one redaction per connection and request", () => {
 
   it("stays quick when 20,000 stored values meet 20,000 cut messages", () => {
     const started = performance.now();
-    const redaction = new ConnectionRedaction(
+    const redaction = connectionRedaction(
       Array.from(
         { length: 20_000 },
         (_, index) => `stored-value-${index}-abcdefgh`,
@@ -398,7 +338,7 @@ describe("one redaction per connection and request", () => {
 
   it("stays quick when 100,000 short secrets meet 100,000 messages", () => {
     const started = performance.now();
-    const redaction = new ConnectionRedaction(
+    const redaction = connectionRedaction(
       Array.from(
         { length: 100_000 },
         (_, index) => `s${index.toString(36).padStart(5, "0")}`,
@@ -414,7 +354,7 @@ describe("one redaction per connection and request", () => {
   });
 
   it("hides the rest once the request's budget is spent, but not a text no secret can be in", () => {
-    const redaction = new ConnectionRedaction(["s3cret"]);
+    const redaction = connectionRedaction(["s3cret"]);
     const big = `${"x".repeat(199_993)}s3cret!`;
 
     const results = Array.from({ length: 40 }, () => redaction.text(big));

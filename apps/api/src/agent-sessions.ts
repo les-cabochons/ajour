@@ -9,6 +9,9 @@ import type {
   AgentsSnapshot,
   OpenAgentQuestion,
 } from "../../../packages/shared/agent-tools.ts";
+import type { AjourCatalog } from "../../../packages/wide-events/catalog.ts";
+import type { Outcome, Unit } from "../../../packages/wide-events/index.ts";
+import type { ApiEvents } from "./events.ts";
 
 /**
  * Agent sessions, questions, the activity list and recent errors. All of it
@@ -35,41 +38,14 @@ export function sessionWindowMs(minutes: number) {
 }
 
 /**
- * The `mcp.session_ended` wide event: IDs, outcome, counts and durations only.
- * Messages hold what the agent and the user wrote, so they stay out of the
- * log.
+ * How a session's outcome ends a wide event: its own `agent.session`, and
+ * the `agent.run` of the run that began it.
  */
-export type SessionEndedEvent = {
-  event: "mcp.session_ended";
-  client_id: string;
-  session_id: string;
-  /** Joins a session the runner began to its `agent.run` event. */
-  run_id?: string;
-  outcome: AgentSession["state"];
-  duration_ms: number;
-  update_count: number;
-  question_count: number;
-};
-
-export function sessionEndedEvent(
-  session: AgentSession,
-  now: number,
-): SessionEndedEvent {
-  return {
-    event: "mcp.session_ended",
-    client_id: session.client.id,
-    session_id: session.id,
-    run_id: session.runId,
-    outcome: session.state,
-    duration_ms: (session.endedAt ?? now) - session.startedAt,
-    update_count: session.messages.filter(
-      (message) => message.kind === "update",
-    ).length,
-    question_count: session.messages.filter(
-      (message) => message.kind === "question",
-    ).length,
-  };
-}
+export const SESSION_EVENT_OUTCOMES = {
+  done: "ok",
+  failed: "error",
+  cancelled: "cancelled",
+} as const satisfies Record<AgentSessionOutcome, Outcome>;
 
 /** A session or question call Ajour refuses. The message goes to the agent. */
 
@@ -97,8 +73,18 @@ interface AgentSessionsOptions {
   createId?: () => string;
   /** Runs after every change, to publish the snapshot. */
   onChange?: () => void;
-  /** Runs once when a session ends, for the `mcp.session_ended` event. */
-  onEnded?: (session: AgentSession) => void;
+  /**
+   * Where each session's `agent.session` event goes, once it ends: IDs,
+   * outcome and counts only. Messages hold what the agent and the user
+   * wrote, so they stay out of it.
+   */
+  events?: ApiEvents;
+}
+
+/** An open session's event, and how often it stalled. */
+interface SessionEvent {
+  unit: Unit<AjourCatalog, "agent.session">;
+  stalls: number;
 }
 
 const isOpen = (session: AgentSession) =>
@@ -112,6 +98,7 @@ export class AgentSessions {
   private readonly sessions = new Map<string, AgentSession>();
   private readonly questions = new Map<string, AgentQuestion>();
   private readonly waiters = new Map<string, Set<() => void>>();
+  private readonly sessionEvents = new Map<string, SessionEvent>();
   private activity: AgentActivity[] = [];
   private errors: AgentError[] = [];
   private seenAt = 0;
@@ -138,6 +125,7 @@ export class AgentSessions {
       ...(extra.link ? { link: extra.link } : {}),
     };
     this.sessions.set(session.id, session);
+    this.beginEvent(session);
     this.pruneSessions();
     this.changed();
     return session;
@@ -191,7 +179,7 @@ export class AgentSessions {
     if (!session || !isOpen(session)) {
       throw new AgentSessionError("This session is no longer open.");
     }
-    this.finish(session, "cancelled", "Dismissed by the user.");
+    this.finish(session, "cancelled", "Dismissed by the user.", true);
     return session;
   }
 
@@ -312,6 +300,8 @@ export class AgentSessions {
         now > session.deadlineAt
       ) {
         session.state = "stalled";
+        const event = this.sessionEvents.get(session.id);
+        if (event) event.stalls += 1;
         changed = true;
       }
     }
@@ -383,11 +373,58 @@ export class AgentSessions {
     return session;
   }
 
+  /**
+   * Opens the session's event. It outlives the call that began the session,
+   * so it emits on its own, as a child span of that call. A session the
+   * runner began is part of the run the user started, so it takes the run's
+   * trigger.
+   */
+  private beginEvent(session: AgentSession) {
+    const unit = this.options.events?.start("agent.session", {
+      kind: "job",
+      trigger: session.runId ? "user" : "agent",
+      detached: true,
+    });
+    if (!unit) return;
+    unit.set({
+      agent: {
+        client_id: session.client.id,
+        session_id: session.id,
+        run_id: session.runId,
+      },
+    });
+    this.sessionEvents.set(session.id, { unit, stalls: 0 });
+  }
+
+  private endEvent(
+    session: AgentSession,
+    outcome: AgentSessionOutcome,
+    dismissed: boolean,
+  ) {
+    const event = this.sessionEvents.get(session.id);
+    if (!event) return;
+    this.sessionEvents.delete(session.id);
+    const count = (kind: AgentSession["messages"][number]["kind"]) =>
+      session.messages.filter((message) => message.kind === kind).length;
+    event.unit.set({
+      agent: {
+        update_count: count("update"),
+        question_count: count("question"),
+        stall_count: event.stalls,
+      },
+    });
+    event.unit.end(
+      SESSION_EVENT_OUTCOMES[outcome],
+      dismissed ? "dismissed" : undefined,
+    );
+  }
+
   /** Ends an open session and releases the agents waiting on its questions. */
   private finish(
     session: AgentSession,
     outcome: AgentSessionOutcome,
     summary: string,
+    dismissed = false,
   ) {
     const now = this.now();
     session.state = outcome;
@@ -401,7 +438,7 @@ export class AgentSessions {
         this.wake(question.id);
       }
     }
-    this.options.onEnded?.(session);
+    this.endEvent(session, outcome, dismissed);
     this.changed();
   }
 

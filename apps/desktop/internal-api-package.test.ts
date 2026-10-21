@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -114,6 +114,39 @@ it("copies API dependencies into resources so the packaged runtime can load", as
     ).name,
   ).toBe("zod");
 });
+
+it("ships every package file the local API imports", () => {
+  // Runs the real packaging step. The output folder is a git-ignored build artifact.
+  const prepared = spawnSync(
+    process.execPath,
+    [path.join(desktopRoot, "scripts/prepare-internal-api.cjs")],
+    { encoding: "utf8" },
+  );
+  expect(prepared.status, prepared.stderr).toBe(0);
+
+  const apiSource = path.join(repoRoot, "apps/api/src");
+  const imported = new Set<string>();
+  for (const entry of readdirSync(apiSource, {
+    recursive: true,
+    withFileTypes: true,
+  })) {
+    if (!entry.isFile() || !/(?<!\.test)\.ts$/.test(entry.name)) continue;
+    const source = readFileSync(
+      path.join(entry.parentPath, entry.name),
+      "utf8",
+    );
+    for (const [, file] of source.matchAll(
+      /from "(?:\.\.\/)+(packages\/[^"]+)"/g,
+    )) {
+      imported.add(file!);
+    }
+  }
+
+  expect(imported).toContain("packages/wide-events/index.ts");
+  for (const file of imported) {
+    expect(existsSync(path.join(runtimeRoot, file)), file).toBe(true);
+  }
+}, 120_000);
 
 it("ships the pinned Playwright MCP with the internal API", () => {
   // Runs the real packaging step. The output folder is a git-ignored build artifact.
