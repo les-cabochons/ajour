@@ -14,7 +14,10 @@ import {
   type SessionToolOutput,
   type WriteToolName,
 } from "../../../packages/shared/agent-tools.ts";
-import type { AjourCatalog } from "../../../packages/wide-events/catalog.ts";
+import type {
+  AjourCatalog,
+  McpMethod,
+} from "../../../packages/wide-events/catalog.ts";
 import type { Unit } from "../../../packages/wide-events/index.ts";
 import { AgentSessionError, type AgentSessions } from "./agent-sessions.ts";
 import type { ApiEvents } from "./events.ts";
@@ -54,13 +57,19 @@ interface ToolResult {
 
 /**
  * The request's wide event once it is known to be a tool call. It holds the
- * tool's name and how it ended, never its input or output. A batch of
- * messages has none: its calls go unrecorded.
+ * tool's name and how it ended, never its input or output. A batch has
+ * none: its `mcp.request` counts the calls in it.
  */
 type ToolCallUnit = Unit<AjourCatalog, "agent_tool.call"> | undefined;
 
+/**
+ * Whether each tool call's handler returned a result that isn't an error.
+ * A call the SDK refuses before its handler runs has no entry.
+ */
+const handledToolCalls = new WeakMap<object, boolean>();
+
 /** The MCP methods an `mcp.request` event names. Any other is `other`. */
-const MCP_METHODS = new Set([
+const MCP_METHODS: ReadonlySet<string> = new Set<McpMethod>([
   "initialize",
   "ping",
   "notifications/initialized",
@@ -80,13 +89,57 @@ const MCP_METHODS = new Set([
   "completion/complete",
 ]);
 
-/** The JSON-RPC method of a request body, from a closed set. */
-function mcpMethod(body: unknown): string {
-  if (Array.isArray(body)) return "batch";
-  const method = (body as { method?: unknown } | null | undefined)?.method;
+/** The JSON-RPC method of a message, from a closed set. */
+function mcpMethod(message: unknown): McpMethod {
+  if (Array.isArray(message)) return "batch";
+  const method = (message as { method?: unknown } | null | undefined)?.method;
   return typeof method === "string" && MCP_METHODS.has(method)
-    ? method
+    ? (method as McpMethod)
     : "other";
+}
+
+/** The tool a call names, when Ajour has it. Never its arguments. */
+function calledTool(message: unknown): string {
+  const name = (message as { params?: { name?: unknown } } | null | undefined)
+    ?.params?.name;
+  return typeof name === "string" && Object.hasOwn(TOOL_DESCRIPTIONS, name)
+    ? name
+    : "other";
+}
+
+/**
+ * Adds what the SDK answered to the request's event: a call it refused
+ * before the handler ran, an output it rejected after, or a protocol error,
+ * by its JSON-RPC code only. Messages hold the agent's own text, so none
+ * enters the event.
+ */
+function recordReply(
+  message: unknown,
+  unit: Unit<AjourCatalog, "mcp.request">,
+  toolCall: ToolCallUnit,
+) {
+  const reply = message as {
+    error?: { code?: unknown };
+    result?: { isError?: unknown };
+  };
+  if (reply.error) {
+    unit.fail(
+      Object.assign(new Error(), {
+        name: "McpError",
+        code: String(reply.error.code),
+      }),
+    );
+    return;
+  }
+  if (!toolCall || reply.result?.isError !== true) return;
+  const handled = handledToolCalls.get(toolCall);
+  if (handled === undefined) {
+    toolCall.refuse("invalid_call");
+  } else if (handled) {
+    toolCall.fail(new Error("The SDK rejected the tool's output."), {
+      reason: "output_mismatch",
+    });
+  }
 }
 
 /** What every agent reads first. Spec B's plugins add their own. */
@@ -187,7 +240,9 @@ async function withToolEvent(
 ): Promise<ToolResult> {
   unit?.set({ agent_tool: { name: tool, access } });
   try {
-    return await run();
+    const result = await run();
+    if (unit) handledToolCalls.set(unit, result.isError !== true);
+    return result;
   } catch (error) {
     // The SDK turns a thrown error into a tool error, so the request never
     // sees it.
@@ -450,19 +505,34 @@ export async function handleMcpRequest(
       const body =
         request.method === "POST" ? await context.readBody(request) : undefined;
       const method = body === undefined ? undefined : mcpMethod(body);
-      if (method !== undefined && method !== "tools/call") {
+      if (method === "batch") {
+        const messages = body as unknown[];
+        unit.set({
+          mcp: {
+            method,
+            call_count: messages.filter(
+              (message) => mcpMethod(message) === "tools/call",
+            ).length,
+          },
+        });
+      } else if (method !== undefined && method !== "tools/call") {
         unit.set({ mcp: { method } });
       }
-      registerTools(
-        server,
-        client,
-        context,
-        method === "tools/call" ? unit.rename("agent_tool.call") : undefined,
-      );
+      // Named before the SDK validates the call, so a call it refuses still
+      // says which tool it was.
+      const toolCall =
+        method === "tools/call" ? unit.rename("agent_tool.call") : undefined;
+      toolCall?.set({ agent_tool: { name: calledTool(body) } });
+      registerTools(server, client, context, toolCall);
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
         enableJsonResponse: true,
       });
+      const send = transport.send.bind(transport);
+      transport.send = async (message, options) => {
+        recordReply(message, unit, toolCall);
+        return send(message, options);
+      };
       response.on("close", () => {
         void transport.close();
         void server.close();

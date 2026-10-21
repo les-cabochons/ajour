@@ -14,21 +14,63 @@
 import { RESERVED_CONNECTION_FIELD_IDS } from "./connection-values.ts";
 import {
   boundConnectionError,
-  redactPluginText,
+  ConnectionRedaction,
 } from "../../../packages/wide-events/secret-redaction.ts";
 
-export {
-  boundConnectionError,
-  ConnectionRedaction,
-  MAX_CONNECTION_ERROR_CHARACTERS,
-  MAX_CONNECTION_SUMMARY_ENTRIES,
-  redactConnectionSummary,
-  redactPluginText,
-  redactSecretValues,
-  REQUEST_WORK_BUDGET,
-  TEXT_WORK_BUDGET,
-  UNCHECKED_TEXT,
-} from "../../../packages/wide-events/secret-redaction.ts";
+export { boundConnectionError };
+export type { ConnectionRedaction };
+
+/**
+ * The most one `ConnectionRedaction` may cost across all the texts of a
+ * request: their steps and reads, a dropped text's steps included, and the
+ * secrets' tables. Once it is spent, every later text that could hold a
+ * secret is replaced by `UNCHECKED_TEXT` at once. A text no secret can be in,
+ * shorter than every secret and not cut, costs `redact` one comparison. Such a
+ * text longer than 1,000 characters is still cut, which reads up to 1,000
+ * characters per secret and is charged like any other work, and once the
+ * request is spent it becomes `UNCHECKED_TEXT` instead of being cut. So a
+ * request costs at most this much, plus a constant per text.
+ */
+export const REQUEST_WORK_BUDGET = 5_000_000;
+
+/**
+ * The redaction for one connection's texts within one request, with the
+ * request's budget. Build one per connection and request, and reuse it.
+ */
+export function connectionRedaction(
+  secrets: readonly string[],
+): ConnectionRedaction {
+  return new ConnectionRedaction(secrets, {
+    requestBudget: REQUEST_WORK_BUDGET,
+  });
+}
+
+/**
+ * Text a plugin wrote for a connection, such as an error or a status message,
+ * as it may be shown, stored or returned: every secret value of the
+ * connection replaced, then the length bounded to 1,000 characters. Bounding
+ * comes last because a short secret grows into `[secret]`. For several texts
+ * of one connection, build one `connectionRedaction` and reuse it.
+ */
+export function redactPluginText(
+  text: string,
+  secrets: readonly string[],
+): string {
+  return connectionRedaction(secrets).text(text);
+}
+
+/**
+ * The summary a plugin wrote for a connection, redacted as
+ * `ConnectionRedaction.summary` does.
+ */
+export function redactConnectionSummary<
+  Value extends string | number | boolean,
+>(
+  summary: Readonly<Record<string, Value>>,
+  secrets: readonly string[],
+): Record<string, Value | string> {
+  return connectionRedaction(secrets).summary(summary);
+}
 
 /** The part of a plugin manifest that says which connection fields are secret. */
 export interface SecretConnectionFields {

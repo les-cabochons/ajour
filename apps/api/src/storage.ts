@@ -34,7 +34,7 @@ import {
 } from "../../../packages/shared/agent-runs.ts";
 import {
   boundConnectionError,
-  ConnectionRedaction,
+  connectionRedaction,
   connectionSecretValues,
 } from "./plugin-errors.ts";
 
@@ -447,7 +447,7 @@ function buildConnectionSummary(
   // secret: an error stored before every route redacted plugin errors, or a
   // summary stored before saves redacted it. A stand-in says nothing about
   // which stored values are secret, so then none of their text is shown.
-  const redaction = new ConnectionRedaction(
+  const redaction = connectionRedaction(
     installed ? connectionSecretValues(plugin, [connection.config]) : [],
   );
 

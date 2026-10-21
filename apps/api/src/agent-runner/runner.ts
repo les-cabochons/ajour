@@ -25,8 +25,14 @@ import {
 } from "../../../../packages/shared/plugins.ts";
 import { fillTemplate } from "../../../../packages/shared/agent-task-templates.ts";
 import type { AjourCatalog } from "../../../../packages/wide-events/catalog.ts";
-import type { Outcome, Unit } from "../../../../packages/wide-events/index.ts";
-import type { AgentSessions } from "../agent-sessions.ts";
+import {
+  errorIdentity,
+  type Unit,
+} from "../../../../packages/wide-events/index.ts";
+import {
+  SESSION_EVENT_OUTCOMES,
+  type AgentSessions,
+} from "../agent-sessions.ts";
 import type { ApiEvents } from "../events.ts";
 import type {
   AgentCliAdapter,
@@ -827,13 +833,6 @@ interface RunEnding {
   cleanupFailures: StepFailure<CleanupStep>[];
 }
 
-/** How the run's session ended ends its event. */
-const RUN_OUTCOMES = {
-  done: "ok",
-  failed: "error",
-  cancelled: "cancelled",
-} as const satisfies Record<AgentSessionOutcome, Outcome>;
-
 /**
  * Ends the run's one wide event, however it ended. A launch failure is the
  * event's error, its message scrubbed. A cleanup step's error gives its type
@@ -851,7 +850,7 @@ function endRunEvent(event: RunEvent, ending: RunEnding) {
       outcome: firstCleanupFailure ? "failed" : "ok",
       failed_steps: ending.cleanupFailures.map((failure) => failure.step),
       ...(firstCleanupFailure
-        ? { error: errorType(firstCleanupFailure.error) }
+        ? { error: errorIdentity(firstCleanupFailure.error) }
         : {}),
     },
   });
@@ -862,7 +861,7 @@ function endRunEvent(event: RunEvent, ending: RunEnding) {
     return;
   }
   // A session that is gone tells nothing, so the run counts as failed.
-  event.end(ending.outcome ? RUN_OUTCOMES[ending.outcome] : "error");
+  event.end(ending.outcome ? SESSION_EVENT_OUTCOMES[ending.outcome] : "error");
 }
 
 /**
@@ -875,15 +874,6 @@ function versionOnly(value: string | undefined): string | undefined {
     /^v?\d+(?:\.\d+){1,3}(?:-[0-9A-Za-z.]+)?$/.test(value)
     ? value
     : undefined;
-}
-
-/** A cleanup step's error in the event: its type name and Node code. */
-function errorType(error: unknown): { type: string; code?: string } {
-  if (!(error instanceof Error)) return { type: typeof error };
-  const { code } = error as { code?: unknown };
-  return typeof code === "string"
-    ? { type: error.name, code }
-    : { type: error.name };
 }
 
 function safeHttpsUrl(value: string): string | undefined {

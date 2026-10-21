@@ -129,12 +129,14 @@ import { AgentRunError, AgentRunner } from "./agent-runner/runner.ts";
 import { capabilityOfMethod, PluginManager } from "./plugin-host.ts";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
 import {
-  ConnectionRedaction,
   connectionlessPluginErrorMessage,
+  connectionRedaction,
   connectionSecretValues,
   errorMessage,
   pluginErrorMessage,
   redactConnectionSummary,
+  redactPluginText,
+  type ConnectionRedaction,
 } from "./plugin-errors.ts";
 import { AppApiStorage } from "./storage.ts";
 
@@ -182,7 +184,7 @@ const COMMENT_EVENTS = {
   editItemComment: "comment.edit",
   deleteItemComment: "comment.delete",
   setItemCommentReaction: "comment.react",
-  searchItemPeople: "person.search",
+  searchItemPeople: "mention.search",
 } as const satisfies Record<BacklogCommentOperation, EventName<AjourCatalog>>;
 
 /** The event each calendar operation's request emits. */
@@ -385,7 +387,23 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
     return undefined;
   }
 
-  return JSON.parse(rawBody);
+  try {
+    return JSON.parse(rawBody);
+  } catch {
+    // The parser's message can quote the body, which may hold the user's
+    // text, so it never travels on.
+    throw new InvalidJsonError();
+  }
+}
+
+/** A request body that isn't JSON. Its message is fixed, whatever the body held. */
+class InvalidJsonError extends SyntaxError {
+  readonly code = "invalid_json";
+
+  constructor() {
+    super("The request body is not valid JSON.");
+    this.name = "SyntaxError";
+  }
 }
 
 function matchPluginRoute(pathname: string) {
@@ -1730,7 +1748,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
                 skippedCount: stageResult.skippedCount,
                 workItemUpdates: redactFieldUpdateMessages(
                   fetched.workItemUpdates,
-                  new ConnectionRedaction(
+                  connectionRedaction(
                     connectionSecretValues(call.manifest, [connection.config]),
                   ),
                 ),
@@ -1931,11 +1949,30 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         await events.run(
           COMMENT_EVENTS[operation.data],
           { kind: "request", trigger: forAgent ? "agent" : "system" },
-          async (event) => {
-            event.set({
+          async (unit) => {
+            unit.set({
               plugin: { id: pluginId },
               connection: { id: connectionId },
             });
+            if (operation.data === "listItemComments") {
+              unit.set({
+                comment: {
+                  page:
+                    "cursor" in commentRequest && commentRequest.cursor
+                      ? "earlier"
+                      : "latest",
+                },
+              });
+            } else if ("body" in commentRequest) {
+              // Its size and its mentions, never its text.
+              unit.set({
+                comment: {
+                  body_length: commentRequest.body.length,
+                  mention_count:
+                    commentRequest.body.match(/\]\(mention:/g)?.length ?? 0,
+                },
+              });
+            }
             /**
              * Refuses an agent's call the user doesn't allow on the connection,
              * as stored now: before the plugin runs, and again before a read's
@@ -1954,7 +1991,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               );
             };
             const refuseAgent = () => {
-              event.refuse("agent_access");
+              unit.refuse("agent_access");
               writeJson(response, 403, { error: agentRefusal });
             };
             if (!(await agentAllowed())) {
@@ -1997,9 +2034,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
                 return;
               }
               if ("comments" in result) {
-                event.set({ comment: { count: result.comments.length } });
+                unit.set({
+                  comment: { comment_count: result.comments.length },
+                });
               } else if ("people" in result) {
-                event.set({ person: { count: result.people.length } });
+                unit.set({ mention: { result_count: result.people.length } });
               }
               writeJson(response, 200, result);
             } catch (error) {
@@ -2007,17 +2046,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
                 refuseAgent();
                 return;
               }
-              const message = pluginErrorMessage(
-                error,
-                call.manifest,
+              const secrets = connectionSecretValues(call.manifest, [
                 connection.config,
-              );
-              event.fail(error, {
-                secrets: connectionSecretValues(call.manifest, [
-                  connection.config,
-                ]),
+              ]);
+              unit.fail(error, { secrets });
+              writeJson(response, 502, {
+                error: redactPluginText(errorMessage(error), secrets),
               });
-              writeJson(response, 502, { error: message });
             }
           },
         );
@@ -2069,8 +2104,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         await events.run(
           CALENDAR_EVENTS[operation.data],
           { kind: "request", trigger: "system" },
-          async (event) => {
-            event.set({
+          async (unit) => {
+            unit.set({
               plugin: { id: pluginId },
               connection: { id: connectionId },
               calendar: {
@@ -2106,19 +2141,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
                 connectionId,
                 Date.now(),
               );
-              event.set({ calendar: { event_count: result.events.length } });
+              unit.set({ calendar: { event_count: result.events.length } });
               writeJson(response, 200, result);
             } catch (error) {
-              const message = pluginErrorMessage(
-                error,
-                call.manifest,
+              const secrets = connectionSecretValues(call.manifest, [
                 connection.config,
-              );
-              event.fail(error, {
-                secrets: connectionSecretValues(call.manifest, [
-                  connection.config,
-                ]),
-              });
+              ]);
+              const message = redactPluginText(errorMessage(error), secrets);
+              unit.fail(error, { secrets });
               await storage.recordConnectionError(
                 pluginId,
                 connectionId,
@@ -2489,13 +2519,14 @@ const executedDirectly =
   typeof process.argv[1] === "string" &&
   import.meta.url === pathToFileURL(process.argv[1]).toString();
 
-// Run on its own, as `just api-start` does, the API says where it listens.
-// Started by the desktop app or a test, it prints nothing on stdout.
+// Run on its own, as `just api-start` does, the API says on stderr where it
+// listens. Started by the desktop app or a test, it prints nothing.
 if (executedDirectly) {
   void startAppApiServer().then((server) => {
     const address = server.address();
     if (address && typeof address === "object") {
-      console.log(
+      // On stderr: stdout carries the console sink's JSON lines.
+      console.error(
         `Ajour app API listening on http://${address.address}:${address.port}`,
       );
     }

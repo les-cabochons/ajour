@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import {
   AgentSessions,
@@ -14,7 +15,7 @@ const codex = { id: "c2", name: "Codex" };
 function createSessions() {
   let now = 0;
   let next = 0;
-  const sink = createRecordingSink();
+  const sink = createRecordingSink<AjourEvent>();
   const sessions = new AgentSessions({
     now: () => now,
     createId: () => `id-${(next += 1)}`,
@@ -243,7 +244,8 @@ describe("runner sessions", () => {
       expect.objectContaining({
         name: "agent.session",
         kind: "job",
-        trigger: "agent",
+        // The runner began it, for the user's run.
+        trigger: "user",
         outcome: "ok",
         duration_ms: 3 * MINUTE,
         agent: {
@@ -257,6 +259,7 @@ describe("runner sessions", () => {
       }),
       expect.objectContaining({
         name: "agent.session",
+        trigger: "agent",
         outcome: "ok",
         duration_ms: 3 * MINUTE,
         agent: {

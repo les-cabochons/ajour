@@ -37,8 +37,11 @@ export function sessionWindowMs(minutes: number) {
   );
 }
 
-/** How a session's outcome ends its `agent.session` event. */
-const EVENT_OUTCOMES = {
+/**
+ * How a session's outcome ends a wide event: its own `agent.session`, and
+ * the `agent.run` of the run that began it.
+ */
+export const SESSION_EVENT_OUTCOMES = {
   done: "ok",
   failed: "error",
   cancelled: "cancelled",
@@ -372,12 +375,14 @@ export class AgentSessions {
 
   /**
    * Opens the session's event. It outlives the call that began the session,
-   * so it emits on its own, as a child span of that call.
+   * so it emits on its own, as a child span of that call. A session the
+   * runner began is part of the run the user started, so it takes the run's
+   * trigger.
    */
   private beginEvent(session: AgentSession) {
     const unit = this.options.events?.start("agent.session", {
       kind: "job",
-      trigger: "agent",
+      trigger: session.runId ? "user" : "agent",
       detached: true,
     });
     if (!unit) return;
@@ -409,7 +414,7 @@ export class AgentSessions {
       },
     });
     event.unit.end(
-      EVENT_OUTCOMES[outcome],
+      SESSION_EVENT_OUTCOMES[outcome],
       dismissed ? "dismissed" : undefined,
     );
   }

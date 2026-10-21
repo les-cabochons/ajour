@@ -11,6 +11,7 @@ import {
 } from "node:fs/promises";
 import { create } from "tar";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import {
   createAppApiServer,
@@ -1306,7 +1307,7 @@ describe("calendar routes", () => {
         ],
       },
     );
-    const sink = createRecordingSink();
+    const sink = createRecordingSink<AjourEvent>();
     const { events } = sink;
     const server = createAppApiServer({
       statePath: path.join(root, "state.json"),
@@ -1585,7 +1586,7 @@ describe("agent task settings route", () => {
       await writeFile(path.join(bin, "claude"), "#!/bin/sh\nexit 0\n", {
         mode: 0o755,
       });
-      const sink = createRecordingSink();
+      const sink = createRecordingSink<AjourEvent>();
       const { events } = sink;
       const server = await createServer({
         eventSink: sink,
@@ -1616,12 +1617,12 @@ describe("agent task settings route", () => {
         { timeout: 10_000 },
       );
       const [ended, run] = events;
-      expect(run!.agent.run_id).toEqual(expect.any(String));
+      expect(run!.agent?.run_id).toEqual(expect.any(String));
       expect(ended).toMatchObject({
         agent: {
-          run_id: run!.agent.run_id,
-          session_id: run!.agent.session_id,
-          client_id: run!.agent.client_id,
+          run_id: run!.agent?.run_id,
+          session_id: run!.agent?.session_id,
+          client_id: run!.agent?.client_id,
         },
       });
     },
@@ -2057,7 +2058,7 @@ describe("backlog comment routes", () => {
         ],
       },
     );
-    const sink = createRecordingSink();
+    const sink = createRecordingSink<AjourEvent>();
     const { events } = sink;
     const server = createAppApiServer({
       statePath: path.join(root, "state.json"),
@@ -2379,7 +2380,7 @@ describe("backlog comment routes", () => {
         outcome: "ok",
         plugin: { id: "jira" },
         connection: { id: connectionId },
-        comment: { count: 1 },
+        comment: { comment_count: 1, page: "latest" },
       }),
     ]);
     expect(JSON.stringify(events)).not.toContain("Secret client detail");
@@ -2438,7 +2439,12 @@ describe("backlog comment routes", () => {
       body: { comment: { id: "c2", body: "Private reply" } },
     });
     expect(events).toEqual([
-      expect.objectContaining({ name: "comment.post", outcome: "ok" }),
+      expect.objectContaining({
+        name: "comment.post",
+        outcome: "ok",
+        // Its length, never its text.
+        comment: { body_length: 13, mention_count: 0 },
+      }),
     ]);
     expect(JSON.stringify(events)).not.toContain("Private reply");
 
@@ -2477,12 +2483,12 @@ describe("backlog comment routes", () => {
       dispatchJsonRequest(full.server, {
         method: "POST",
         path: listPath(full.connectionId, "editItemComment"),
-        body: JSON.stringify({ ...ref, body: "Changed" }),
+        body: JSON.stringify({
+          ...ref,
+          body: "Changed for [@Ana](mention:ana) and [@Bo](mention:bo)",
+        }),
       }),
-    ).resolves.toMatchObject({
-      status: 200,
-      body: { comment: { id: "c1", body: "Changed" } },
-    });
+    ).resolves.toMatchObject({ status: 200 });
     await expect(
       dispatchJsonRequest(full.server, {
         method: "POST",
@@ -2516,7 +2522,11 @@ describe("backlog comment routes", () => {
         { name: "comment.react", outcome: "ok" },
       ],
     );
-    expect(JSON.stringify(full.events)).not.toContain("Changed");
+    expect(full.events[0]!.comment).toEqual({
+      body_length: 53,
+      mention_count: 2,
+    });
+    expect(JSON.stringify(full.events)).not.toMatch(/Changed|Ana|mention:/);
   });
 
   it("searches people only for a plugin that declares mentions", async () => {
@@ -2544,7 +2554,10 @@ describe("backlog comment routes", () => {
       body: { people: [{ id: "ana", displayName: "Ana Silva an" }] },
     });
     expect(events).toEqual([
-      expect.objectContaining({ name: "person.search", person: { count: 1 } }),
+      expect.objectContaining({
+        name: "mention.search",
+        mention: { result_count: 1 },
+      }),
     ]);
     expect(JSON.stringify(events)).not.toContain("Ana Silva");
   });

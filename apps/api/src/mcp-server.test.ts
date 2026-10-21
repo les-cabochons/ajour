@@ -9,6 +9,7 @@ import type {
   BridgeToolCall,
   BridgeToolResult,
 } from "../../../packages/shared/agent-tools.ts";
+import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import { startAppApiServer, stopAppApiServer } from "./server.ts";
 
@@ -29,7 +30,7 @@ type TestApiOptions = Omit<
 /** Starts a real API on a free port, with a temporary state file. */
 async function startTestApi(options: TestApiOptions = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "ajour-mcp-"));
-  const sink = createRecordingSink();
+  const sink = createRecordingSink<AjourEvent>();
   const server = await startAppApiServer({
     port: 0,
     statePath: path.join(root, "state.json"),
@@ -409,6 +410,97 @@ describe("MCP endpoint", () => {
         }),
       ),
     );
+  });
+
+  /** Posts a raw JSON-RPC body to the MCP endpoint, as an agent would. */
+  const postMcp = (baseUrl: string, token: string, body: string) =>
+    fetch(`${baseUrl}/mcp/ajour`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+      },
+      body,
+    });
+
+  it("records a body that isn't JSON with a fixed diagnostic, never the body's text", async () => {
+    const { baseUrl, logged } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl);
+
+    await postMcp(baseUrl, token, '{"note": "Lunch with Ana about the raise",');
+
+    expect(logged).toEqual([
+      expect.objectContaining({
+        name: "mcp.request",
+        outcome: "error",
+        error: {
+          type: "SyntaxError",
+          code: "invalid_json",
+          message: "The request body is not valid JSON.",
+        },
+      }),
+    ]);
+    expect(JSON.stringify(logged)).not.toContain("Ana");
+  });
+
+  it("records a tool call the SDK rejects, with the tool's name and never its arguments", async () => {
+    const { baseUrl, logged } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl);
+    const agent = await connectAgent(baseUrl, token);
+
+    const unknown = await agent.callTool({
+      name: "delete_everything",
+      arguments: {},
+    });
+    const invalid = await agent.callTool({
+      name: "list_time_entries",
+      arguments: { from: "Lunch with Ana", to: 3 },
+    });
+
+    expect(unknown.isError).toBe(true);
+    expect(invalid.isError).toBe(true);
+    expect(
+      logged
+        .filter((event) => event.name === "agent_tool.call")
+        .map(({ outcome, outcome_reason, agent_tool }) => ({
+          outcome,
+          outcome_reason,
+          agent_tool,
+        })),
+    ).toEqual([
+      {
+        outcome: "refused",
+        outcome_reason: "invalid_call",
+        agent_tool: { name: "other" },
+      },
+      {
+        outcome: "refused",
+        outcome_reason: "invalid_call",
+        agent_tool: { name: "list_time_entries" },
+      },
+    ]);
+    expect(JSON.stringify(logged)).not.toMatch(/delete_everything|Ana/);
+  });
+
+  it("records a batch of messages as one mcp.request that counts its tool calls", async () => {
+    const { baseUrl, logged } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl);
+    const call = (id: number) => ({
+      jsonrpc: "2.0",
+      id,
+      method: "tools/call",
+      params: { name: "list_projects", arguments: {} },
+    });
+
+    await postMcp(baseUrl, token, JSON.stringify([call(1), call(2)]));
+
+    expect(logged).toEqual([
+      expect.objectContaining({
+        name: "mcp.request",
+        mcp: { method: "batch", call_count: 2 },
+      }),
+    ]);
   });
 
   it("reports renderer output that breaks the tool's output schema as an error", async () => {

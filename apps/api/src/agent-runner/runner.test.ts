@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { AjourEvent } from "../../../../packages/wide-events/catalog.ts";
 import {
   createRecordingSink,
   type Sink,
@@ -155,7 +156,7 @@ async function setup(
   tempDirs.push(work);
   const report = path.join(work, "report.jsonl");
   reports.push(report);
-  const recording = createRecordingSink();
+  const recording = createRecordingSink<AjourEvent>();
   const { events } = recording;
   // The work folder stands in for the user data path, and a fake home
   // directory for the user's, so the tests can check the scrubber.
@@ -630,7 +631,8 @@ describe("AgentRunner", () => {
     ]);
     expect(events[1]).not.toHaveProperty("launch");
     expect(events[1]).not.toHaveProperty("error");
-    // The session is a child span of the run.
+    // The session is a child span of the run, and the user started both.
+    expect(events.map((event) => event.trigger)).toEqual(["user", "user"]);
     expect(events[0]).toMatchObject({
       trace_id: events[1]!.trace_id,
       parent_span_id: events[1]!.span_id,
@@ -788,9 +790,9 @@ describe("AgentRunner", () => {
       launch: { failed_step: "read_prompt" },
       cleanup: { outcome: "ok", failed_steps: [] },
     });
-    expect(event!.agent.run_id).toEqual(expect.any(String));
-    expect(event!.agent.session_id).toBeUndefined();
-    expect(event!.agent.client_id).toBeUndefined();
+    expect(event!.agent?.run_id).toEqual(expect.any(String));
+    expect(event!.agent?.session_id).toBeUndefined();
+    expect(event!.agent?.client_id).toBeUndefined();
     expect(events.map((event) => event.name)).toEqual(["agent.run"]);
     expect(JSON.stringify(events)).not.toContain("someone");
   });
@@ -892,7 +894,7 @@ describe("AgentRunner", () => {
     });
     await versioned.runner.start(request);
     await settled(versioned.runner);
-    expect(runEvents(versioned.events)[0]!.agent.cli_version).toBe("1.4.2");
+    expect(runEvents(versioned.events)[0]!.agent?.cli_version).toBe("1.4.2");
 
     // Output the adapter cannot read is CLI output, and stays out.
     const unreadable = await setup([{ exit: 0 }], {
@@ -900,7 +902,7 @@ describe("AgentRunner", () => {
     });
     await unreadable.runner.start(request);
     await settled(unreadable.runner);
-    expect(runEvents(unreadable.events)[0]!.agent.cli_version).toBeUndefined();
+    expect(runEvents(unreadable.events)[0]!.agent?.cli_version).toBeUndefined();
     expect(JSON.stringify(unreadable.events)).not.toContain("someone");
   });
 
@@ -1081,7 +1083,7 @@ describe("AgentRunner", () => {
     expect(revoked).toEqual(["c-Enter in Workday run"]);
     const next = await runner.start(request);
     await settled(runner);
-    expect(runEvents(events).map((event) => event.agent.run_id)).toEqual([
+    expect(runEvents(events).map((event) => event.agent?.run_id)).toEqual([
       run.id,
       next.id,
     ]);
