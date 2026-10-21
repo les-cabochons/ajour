@@ -14,7 +14,10 @@ import {
   type SessionToolOutput,
   type WriteToolName,
 } from "../../../packages/shared/agent-tools.ts";
+import type { AjourCatalog } from "../../../packages/wide-events/catalog.ts";
+import type { Unit } from "../../../packages/wide-events/index.ts";
 import { AgentSessionError, type AgentSessions } from "./agent-sessions.ts";
+import type { ApiEvents } from "./events.ts";
 import { BridgeCallError, type McpBridge } from "./mcp-bridge.ts";
 import { authenticateMcpRequest } from "./mcp-clients.ts";
 import type { AppApiStorage } from "./storage.ts";
@@ -31,7 +34,7 @@ export interface McpRequestContext {
   sessions: AgentSessions;
   /** How long one wait_for_answer call holds. Capped at MAX_WAIT_FOR_ANSWER_MS. */
   waitForAnswerMs: number;
-  logEvent: (event: Record<string, unknown>) => void;
+  events: ApiEvents;
   readBody: (request: IncomingMessage) => Promise<unknown>;
 }
 
@@ -49,19 +52,42 @@ interface ToolResult {
   isError?: boolean;
 }
 
-/** The wide event each MCP call logs. Never a tool input or output. */
-type McpRequestEvent = {
-  event: "mcp.request";
-  client_id: string;
-  /** The client's newest open session when the call ended. */
-  session_id?: string;
-  tool: string;
-  outcome?: "ok" | "refused" | "error" | BridgeCallError["reason"];
-  /** Why an `error` outcome happened, when Ajour knows. */
-  error_kind?: "output_mismatch";
-  bridge_ms?: number;
-  duration_ms?: number;
-};
+/**
+ * The request's wide event once it is known to be a tool call. It holds the
+ * tool's name and how it ended, never its input or output. A batch of
+ * messages has none: its calls go unrecorded.
+ */
+type ToolCallUnit = Unit<AjourCatalog, "agent_tool.call"> | undefined;
+
+/** The MCP methods an `mcp.request` event names. Any other is `other`. */
+const MCP_METHODS = new Set([
+  "initialize",
+  "ping",
+  "notifications/initialized",
+  "notifications/cancelled",
+  "notifications/progress",
+  "notifications/roots/list_changed",
+  "tools/list",
+  "tools/call",
+  "resources/list",
+  "resources/templates/list",
+  "resources/read",
+  "resources/subscribe",
+  "resources/unsubscribe",
+  "prompts/list",
+  "prompts/get",
+  "logging/setLevel",
+  "completion/complete",
+]);
+
+/** The JSON-RPC method of a request body, from a closed set. */
+function mcpMethod(body: unknown): string {
+  if (Array.isArray(body)) return "batch";
+  const method = (body as { method?: unknown } | null | undefined)?.method;
+  return typeof method === "string" && MCP_METHODS.has(method)
+    ? method
+    : "other";
+}
 
 /** What every agent reads first. Spec B's plugins add their own. */
 const AJOUR_INSTRUCTIONS = [
@@ -147,29 +173,29 @@ function errorResult(message: string): ToolResult {
   return { content: [{ type: "text", text: message }], isError: true };
 }
 
-/** Runs one tool call and logs its `mcp.request` event when it ends. */
-async function withRequestEvent(
+/**
+ * Runs one tool call and adds it to the request's `agent_tool.call` event:
+ * the tool, how it ended, and the client's newest open session when it did.
+ */
+async function withToolEvent(
   tool: string,
+  access: "read" | "write" | "session",
   client: AgentClientRef,
   context: McpRequestContext,
-  run: (event: McpRequestEvent) => Promise<ToolResult>,
+  unit: ToolCallUnit,
+  run: () => Promise<ToolResult>,
 ): Promise<ToolResult> {
-  const startedAt = Date.now();
-  const event: McpRequestEvent = {
-    event: "mcp.request",
-    client_id: client.id,
-    tool,
-  };
+  unit?.set({ agent_tool: { name: tool, access } });
   try {
-    return await run(event);
+    return await run();
   } catch (error) {
-    event.outcome = "error";
+    // The SDK turns a thrown error into a tool error, so the request never
+    // sees it.
+    unit?.fail(error);
     throw error;
   } finally {
     const sessionId = context.sessions.currentSessionId(client);
-    if (sessionId) event.session_id = sessionId;
-    event.duration_ms = Date.now() - startedAt;
-    context.logEvent(event);
+    if (sessionId) unit?.set({ agent: { session_id: sessionId } });
   }
 }
 
@@ -182,43 +208,51 @@ function forwardToRenderer(
   input: unknown,
   client: AgentClientRef,
   context: McpRequestContext,
+  unit: ToolCallUnit,
 ): Promise<ToolResult> {
-  return withRequestEvent(tool, client, context, async (event) => {
+  const access = Object.hasOwn(writeToolInputSchemas, tool) ? "write" : "read";
+  return withToolEvent(tool, access, client, context, unit, async () => {
     const startedAt = Date.now();
     let result;
     try {
       result = await context.bridge.call(tool, input, client);
     } catch (error) {
       if (!(error instanceof BridgeCallError)) throw error;
-      event.outcome = error.reason;
+      unit?.fail(
+        error,
+        error.reason === "timeout"
+          ? { outcome: "timeout", reason: "bridge_timeout" }
+          : { reason: "bridge_unavailable" },
+      );
       context.sessions.recordError(error.message, client);
       return errorResult(error.message);
     }
-    event.bridge_ms = Date.now() - startedAt;
+    unit?.set({ agent_tool: { bridge_ms: Date.now() - startedAt } });
     if (!result.ok) {
       // A refusal is the tool working as designed. A failure is an exception
       // in the renderer, so the indicator shows it.
-      event.outcome = result.failed ? "error" : "refused";
       if (result.failed) {
+        unit?.fail(new Error(result.error), { reason: "tool_failed" });
         context.sessions.recordError(result.error, client);
-      } else if (Object.hasOwn(writeToolInputSchemas, tool)) {
-        context.sessions.recordActivity(client, {
-          outcome: "refused",
-          tool,
-          reason: result.error,
-        });
+      } else {
+        unit?.refuse();
+        if (access === "write") {
+          context.sessions.recordActivity(client, {
+            outcome: "refused",
+            tool,
+            reason: result.error,
+          });
+        }
       }
       return errorResult(result.error);
     }
     const output = dataToolOutputSchemas[tool].safeParse(result.output);
     if (!output.success) {
-      event.outcome = "error";
-      event.error_kind = "output_mismatch";
       const message = `Ajour returned ${tool} output that does not match its schema.`;
+      unit?.fail(new Error(message), { reason: "output_mismatch" });
       context.sessions.recordError(message, client);
       return errorResult(message);
     }
-    event.outcome = "ok";
     if (result.activity) {
       context.sessions.recordActivity(client, {
         outcome: "ok",
@@ -235,26 +269,26 @@ function runSessionTool<Name extends SessionToolName>(
   tool: Name,
   client: AgentClientRef,
   context: McpRequestContext,
+  unit: ToolCallUnit,
   run: () => SessionToolOutput<Name> | Promise<SessionToolOutput<Name>>,
 ): Promise<ToolResult> {
-  return withRequestEvent(tool, client, context, async (event) => {
+  return withToolEvent(tool, "session", client, context, unit, async () => {
     try {
-      const output = await run();
-      event.outcome = "ok";
-      return structuredResult(output);
+      return structuredResult(await run());
     } catch (error) {
       if (!(error instanceof AgentSessionError)) throw error;
-      event.outcome = "refused";
+      unit?.refuse();
       return errorResult(error.message);
     }
   });
 }
 
-/** Registers every tool for one request, bound to its client. */
+/** Registers every tool for one request, bound to its client and its event. */
 function registerTools(
   server: McpServer,
   client: AgentClientRef,
   context: McpRequestContext,
+  unit: ToolCallUnit,
 ) {
   for (const name of Object.keys(readToolInputSchemas) as ReadToolName[]) {
     server.registerTool(
@@ -267,7 +301,8 @@ function registerTools(
       // The SDK has already parsed `input` against this tool's schema. The
       // bridge only forwards it, so `unknown` is enough (and the union of
       // schemas in this loop gives the SDK nothing to infer from).
-      async (input: unknown) => forwardToRenderer(name, input, client, context),
+      async (input: unknown) =>
+        forwardToRenderer(name, input, client, context, unit),
     );
   }
   for (const name of Object.keys(writeToolInputSchemas) as WriteToolName[]) {
@@ -278,7 +313,8 @@ function registerTools(
         inputSchema: writeToolInputSchemas[name].shape,
         outputSchema: dataToolOutputSchemas[name].shape,
       },
-      async (input: unknown) => forwardToRenderer(name, input, client, context),
+      async (input: unknown) =>
+        forwardToRenderer(name, input, client, context, unit),
     );
   }
 
@@ -295,7 +331,7 @@ function registerTools(
     "begin_session",
     sessionToolConfig("begin_session"),
     async (input: SessionInput<"begin_session">) =>
-      runSessionTool("begin_session", client, context, () => {
+      runSessionTool("begin_session", client, context, unit, () => {
         const session = sessions.begin(client, input);
         return {
           sessionId: session.id,
@@ -307,7 +343,7 @@ function registerTools(
     "update_session",
     sessionToolConfig("update_session"),
     async (input: SessionInput<"update_session">) =>
-      runSessionTool("update_session", client, context, () => {
+      runSessionTool("update_session", client, context, unit, () => {
         const session = sessions.update(client, input);
         return {
           state: session.state,
@@ -321,7 +357,7 @@ function registerTools(
     "end_session",
     sessionToolConfig("end_session"),
     async (input: SessionInput<"end_session">) =>
-      runSessionTool("end_session", client, context, () => {
+      runSessionTool("end_session", client, context, unit, () => {
         sessions.end(client, input);
         return { ended: true as const };
       }),
@@ -330,7 +366,7 @@ function registerTools(
     "ask",
     sessionToolConfig("ask"),
     async (input: SessionInput<"ask">) =>
-      runSessionTool("ask", client, context, () => ({
+      runSessionTool("ask", client, context, unit, () => ({
         questionId: sessions.ask(client, input).id,
       })),
   );
@@ -338,7 +374,7 @@ function registerTools(
     "wait_for_answer",
     sessionToolConfig("wait_for_answer"),
     async (input: SessionInput<"wait_for_answer">) =>
-      runSessionTool("wait_for_answer", client, context, () =>
+      runSessionTool("wait_for_answer", client, context, unit, () =>
         sessions.waitForAnswer(
           client,
           input.questionId,
@@ -371,56 +407,68 @@ export async function handleMcpRequest(
     writeError(response, 404, "Not found.");
     return;
   }
-  // Agents are not browsers. An Origin header means a web page is calling.
-  if (request.headers.origin) {
-    context.logEvent({ event: "mcp.request", outcome: "browser_refused" });
-    writeError(response, 403, "MCP does not accept browser requests.");
-    return;
-  }
+  // One event per request: `agent_tool.call` once the body says it is a
+  // tool call, `mcp.request` for any other method and for refusals. With
+  // JSON responses, handleRequest settles once the answer is written.
+  await context.events.run(
+    "mcp.request",
+    { kind: "request", trigger: "agent" },
+    async (unit) => {
+      // Agents are not browsers. An Origin header means a web page is calling.
+      if (request.headers.origin) {
+        unit.refuse("browser_origin");
+        writeError(response, 403, "MCP does not accept browser requests.");
+        return;
+      }
 
-  const authentication = await authenticateMcpRequest(
-    context.storage,
-    request.headers.authorization,
-  );
-  if (authentication.kind !== "ok") {
-    if (authentication.kind === "revoked") {
-      context.sessions.recordError(
-        `${authentication.client.name}: its token was revoked.`,
-        { id: authentication.client.id, name: authentication.client.name },
+      const authentication = await authenticateMcpRequest(
+        context.storage,
+        request.headers.authorization,
       );
-    }
-    context.logEvent({
-      event: "mcp.request",
-      outcome: "unauthorized",
-      reason: authentication.kind,
-      client_id:
-        authentication.kind === "revoked"
-          ? authentication.client.id
-          : undefined,
-    });
-    writeError(response, 401, "Unknown or revoked token.");
-    return;
-  }
+      if (authentication.kind !== "ok") {
+        if (authentication.kind === "revoked") {
+          context.sessions.recordError(
+            `${authentication.client.name}: its token was revoked.`,
+            { id: authentication.client.id, name: authentication.client.name },
+          );
+          unit.set({ agent: { client_id: authentication.client.id } });
+        }
+        unit.refuse(`token_${authentication.kind}`);
+        writeError(response, 401, "Unknown or revoked token.");
+        return;
+      }
 
-  const client = {
-    id: authentication.client.id,
-    name: authentication.client.name,
-  };
-  const server = new McpServer(
-    { name: "ajour", version: "1.0.0" },
-    { instructions: AJOUR_INSTRUCTIONS },
+      const client = {
+        id: authentication.client.id,
+        name: authentication.client.name,
+      };
+      unit.set({ agent: { client_id: client.id } });
+      const server = new McpServer(
+        { name: "ajour", version: "1.0.0" },
+        { instructions: AJOUR_INSTRUCTIONS },
+      );
+      const body =
+        request.method === "POST" ? await context.readBody(request) : undefined;
+      const method = body === undefined ? undefined : mcpMethod(body);
+      if (method !== undefined && method !== "tools/call") {
+        unit.set({ mcp: { method } });
+      }
+      registerTools(
+        server,
+        client,
+        context,
+        method === "tools/call" ? unit.rename("agent_tool.call") : undefined,
+      );
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+        enableJsonResponse: true,
+      });
+      response.on("close", () => {
+        void transport.close();
+        void server.close();
+      });
+      await server.connect(transport);
+      await transport.handleRequest(request, response, body);
+    },
   );
-  registerTools(server, client, context);
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
-    enableJsonResponse: true,
-  });
-  response.on("close", () => {
-    void transport.close();
-    void server.close();
-  });
-  await server.connect(transport);
-  const body =
-    request.method === "POST" ? await context.readBody(request) : undefined;
-  await transport.handleRequest(request, response, body);
 }

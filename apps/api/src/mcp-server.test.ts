@@ -4,11 +4,12 @@ import type { AddressInfo } from "node:net";
 import { mkdtemp, rm } from "node:fs/promises";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   BridgeToolCall,
   BridgeToolResult,
 } from "../../../packages/shared/agent-tools.ts";
+import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import { startAppApiServer, stopAppApiServer } from "./server.ts";
 
 const TEST_ORIGIN = "http://127.0.0.1:5173";
@@ -16,6 +17,8 @@ const running: (() => Promise<void>)[] = [];
 
 afterEach(async () => {
   for (const stop of running.splice(0).reverse()) await stop();
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
 });
 
 type TestApiOptions = Omit<
@@ -26,7 +29,7 @@ type TestApiOptions = Omit<
 /** Starts a real API on a free port, with a temporary state file. */
 async function startTestApi(options: TestApiOptions = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "ajour-mcp-"));
-  const logged: Record<string, unknown>[] = [];
+  const sink = createRecordingSink();
   const server = await startAppApiServer({
     port: 0,
     statePath: path.join(root, "state.json"),
@@ -34,7 +37,7 @@ async function startTestApi(options: TestApiOptions = {}) {
     allowDevelopmentPlugins: false,
     projectDataShapePluginDirectories: [],
     allowedOrigins: [TEST_ORIGIN],
-    mcpLogEvent: (event) => logged.push(event),
+    eventSink: sink,
     ...options,
   });
   const { port } = server.address() as AddressInfo;
@@ -42,7 +45,7 @@ async function startTestApi(options: TestApiOptions = {}) {
     await stopAppApiServer(server);
     await rm(root, { recursive: true, force: true });
   });
-  return { baseUrl: `http://127.0.0.1:${port}`, logged };
+  return { baseUrl: `http://127.0.0.1:${port}`, logged: sink.events };
 }
 
 /** Calls an /api route the way the renderer does, with its origin. */
@@ -258,20 +261,33 @@ describe("MCP endpoint", () => {
   });
 
   it("refuses browser requests even with a valid token", async () => {
-    const { baseUrl } = await startTestApi();
+    const { baseUrl, logged } = await startTestApi();
     const { token } = await enableMcpWithClient(baseUrl);
     const response = await fetch(`${baseUrl}/mcp/ajour`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, Origin: TEST_ORIGIN },
     });
     expect(response.status).toBe(403);
+    expect(logged).toEqual([
+      expect.objectContaining({
+        name: "mcp.request",
+        kind: "request",
+        outcome: "refused",
+        outcome_reason: "browser_origin",
+      }),
+    ]);
   });
 
   it("answers 401 without a token and with a revoked one", async () => {
-    const { baseUrl } = await startTestApi();
+    const { baseUrl, logged } = await startTestApi();
     const created = await enableMcpWithClient(baseUrl);
     const missing = await fetch(`${baseUrl}/mcp/ajour`, { method: "POST" });
     expect(missing.status).toBe(401);
+    const unknown = await fetch(`${baseUrl}/mcp/ajour`, {
+      method: "POST",
+      headers: { Authorization: "Bearer ajour_nobody" },
+    });
+    expect(unknown.status).toBe(401);
 
     await apiRequest(
       baseUrl,
@@ -283,11 +299,40 @@ describe("MCP endpoint", () => {
       headers: { Authorization: `Bearer ${created.token}` },
     });
     expect(revoked.status).toBe(401);
+    expect(
+      logged.map(({ name, outcome, outcome_reason, agent }) => ({
+        name,
+        outcome,
+        outcome_reason,
+        agent,
+      })),
+    ).toEqual([
+      {
+        name: "mcp.request",
+        outcome: "refused",
+        outcome_reason: "token_missing",
+        agent: undefined,
+      },
+      {
+        name: "mcp.request",
+        outcome: "refused",
+        outcome_reason: "token_unknown",
+        agent: undefined,
+      },
+      {
+        name: "mcp.request",
+        outcome: "refused",
+        outcome_reason: "token_revoked",
+        agent: { client_id: created.client.id },
+      },
+    ]);
+    // A token never enters an event.
+    expect(JSON.stringify(logged)).not.toContain(created.token);
   });
 
   it("runs a read tool in the renderer and names the client", async () => {
     const { baseUrl, logged } = await startTestApi();
-    const { token } = await enableMcpWithClient(baseUrl, "Claude Code");
+    const { token, client } = await enableMcpWithClient(baseUrl, "Claude Code");
     const calls: BridgeToolCall[] = [];
     await openFakeRenderer(baseUrl, (call) => {
       calls.push(call);
@@ -310,14 +355,60 @@ describe("MCP endpoint", () => {
       tool: "list_projects",
       client: { name: "Claude Code" },
     });
-    expect(logged).toContainEqual(
-      expect.objectContaining({
-        event: "mcp.request",
-        tool: "list_projects",
-        outcome: "ok",
-      }),
+    const toolCalls = logged.filter(
+      (event) => event.name === "agent_tool.call",
     );
-    expect(logged.every((event) => !("input" in event))).toBe(true);
+    expect(toolCalls).toEqual([
+      {
+        schema: 1,
+        name: "agent_tool.call",
+        kind: "request",
+        runtime: "api",
+        outcome: "ok",
+        started_at: expect.stringMatching(/^\d{4}-\d\d-\d\dT[\d:.]+Z$/),
+        duration_ms: expect.any(Number),
+        trace_id: expect.stringMatching(/^[0-9a-f]{32}$/),
+        span_id: expect.stringMatching(/^[0-9a-f]{16}$/),
+        launch_id: expect.any(String),
+        trigger: "agent",
+        app: expect.objectContaining({ channel: "dev", packaged: false }),
+        device: expect.objectContaining({ platform: process.platform }),
+        agent: { client_id: client.id },
+        agent_tool: {
+          name: "list_projects",
+          access: "read",
+          bridge_ms: expect.any(Number),
+        },
+      },
+    ]);
+    // Neither the tool's input nor its output enters an event.
+    expect(JSON.stringify(logged)).not.toContain("Acme");
+  });
+
+  it("names every other MCP method mcp.request", async () => {
+    const { baseUrl, logged } = await startTestApi();
+    const { token, client } = await enableMcpWithClient(baseUrl);
+    const agent = await connectAgent(baseUrl, token);
+
+    await agent.listTools();
+
+    expect(
+      logged.map(({ name, outcome, mcp, agent: ids }) => ({
+        name,
+        outcome,
+        mcp,
+        agent: ids,
+      })),
+    ).toEqual(
+      ["initialize", "notifications/initialized", "tools/list"].map(
+        (method) => ({
+          name: "mcp.request",
+          outcome: "ok",
+          mcp: { method },
+          agent: { client_id: client.id },
+        }),
+      ),
+    );
   });
 
   it("reports renderer output that breaks the tool's output schema as an error", async () => {
@@ -341,9 +432,10 @@ describe("MCP endpoint", () => {
     );
     expect(logged).toContainEqual(
       expect.objectContaining({
-        tool: "list_projects",
+        name: "agent_tool.call",
+        agent_tool: expect.objectContaining({ name: "list_projects" }),
         outcome: "error",
-        error_kind: "output_mismatch",
+        outcome_reason: "output_mismatch",
       }),
     );
     await renderer.waitFor("agents", (data) => data.errors.length > 0);
@@ -387,7 +479,7 @@ describe("MCP endpoint", () => {
   });
 
   it("returns the renderer's refusal as a tool error", async () => {
-    const { baseUrl } = await startTestApi();
+    const { baseUrl, logged } = await startTestApi();
     const { token } = await enableMcpWithClient(baseUrl);
     await openFakeRenderer(baseUrl, (call) => ({
       requestId: call.requestId,
@@ -403,6 +495,13 @@ describe("MCP endpoint", () => {
 
     expect(result.isError).toBe(true);
     expect(resultText(result)).toBe("No backlog item has the id x.");
+    expect(logged).toContainEqual(
+      expect.objectContaining({
+        name: "agent_tool.call",
+        outcome: "refused",
+        agent_tool: expect.objectContaining({ name: "get_work_item" }),
+      }),
+    );
   });
 
   it("logs a renderer exception as an error and shows it in the indicator", async () => {
@@ -425,9 +524,14 @@ describe("MCP endpoint", () => {
     expect(resultText(result)).toBe("Cannot read properties of undefined");
     expect(logged).toContainEqual(
       expect.objectContaining({
-        event: "mcp.request",
-        tool: "list_projects",
+        name: "agent_tool.call",
+        agent_tool: expect.objectContaining({ name: "list_projects" }),
         outcome: "error",
+        outcome_reason: "tool_failed",
+        error: {
+          type: "Error",
+          message: "Cannot read properties of undefined",
+        },
       }),
     );
     const published = await renderer.waitFor(
@@ -440,7 +544,7 @@ describe("MCP endpoint", () => {
   });
 
   it("tells the agent to open Ajour when no window is connected", async () => {
-    const { baseUrl } = await startTestApi();
+    const { baseUrl, logged } = await startTestApi();
     const { token } = await enableMcpWithClient(baseUrl);
     const agent = await connectAgent(baseUrl, token);
 
@@ -451,10 +555,17 @@ describe("MCP endpoint", () => {
 
     expect(result.isError).toBe(true);
     expect(resultText(result)).toBe("Open the Ajour window to use this tool.");
+    expect(logged).toContainEqual(
+      expect.objectContaining({
+        name: "agent_tool.call",
+        outcome: "error",
+        outcome_reason: "bridge_unavailable",
+      }),
+    );
   });
 
   it("times out when the window does not answer", async () => {
-    const { baseUrl } = await startTestApi({ mcpBridgeTimeoutMs: 100 });
+    const { baseUrl, logged } = await startTestApi({ mcpBridgeTimeoutMs: 100 });
     const { token } = await enableMcpWithClient(baseUrl);
     await openFakeRenderer(baseUrl, () => undefined);
     const agent = await connectAgent(baseUrl, token);
@@ -465,6 +576,13 @@ describe("MCP endpoint", () => {
     });
 
     expect(resultText(result)).toBe("Ajour did not answer in time.");
+    expect(logged).toContainEqual(
+      expect.objectContaining({
+        name: "agent_tool.call",
+        outcome: "timeout",
+        outcome_reason: "bridge_timeout",
+      }),
+    );
   });
 });
 
@@ -492,9 +610,9 @@ describe("agent sessions over MCP", () => {
     });
     expect(logged).toContainEqual(
       expect.objectContaining({
-        event: "mcp.request",
-        tool: "begin_session",
-        session_id: begun.sessionId,
+        name: "agent_tool.call",
+        agent_tool: { name: "begin_session", access: "session" },
+        agent: expect.objectContaining({ session_id: begun.sessionId }),
       }),
     );
 
@@ -506,9 +624,30 @@ describe("agent sessions over MCP", () => {
         summary: "Entered 5 lines",
       },
     });
-    expect(logged).toContainEqual(
-      expect.objectContaining({ event: "mcp.session_ended", outcome: "done" }),
-    );
+    const ended = logged.filter((event) => event.name === "agent.session");
+    expect(ended).toEqual([
+      expect.objectContaining({
+        kind: "job",
+        runtime: "api",
+        trigger: "agent",
+        outcome: "ok",
+        agent: {
+          client_id: expect.any(String),
+          session_id: begun.sessionId,
+          update_count: 0,
+          question_count: 0,
+          stall_count: 0,
+        },
+      }),
+    ]);
+    // The session is a child span of the begin_session call that started it.
+    const begin = logged.find(
+      (event) => event.agent_tool?.name === "begin_session",
+    )!;
+    expect(ended[0]).toMatchObject({
+      trace_id: begin.trace_id,
+      parent_span_id: begin.span_id,
+    });
     // Wide events carry ids and counts, never what the agent or user wrote.
     expect(JSON.stringify(logged)).not.toContain("Entered 5 lines");
     expect(JSON.stringify(logged)).not.toContain("Fill Workday");
@@ -600,9 +739,10 @@ describe("agent sessions over MCP", () => {
     });
     expect(logged).toContainEqual(
       expect.objectContaining({
-        event: "mcp.session_ended",
-        session_id: begun.sessionId,
+        name: "agent.session",
+        agent: expect.objectContaining({ session_id: begun.sessionId }),
         outcome: "cancelled",
+        outcome_reason: "dismissed",
       }),
     );
     expect((await apiRequest(baseUrl, path, {})).status).toBe(409);
@@ -766,5 +906,47 @@ describe("agent runner routes", () => {
       "codex",
       "opencode",
     ]);
+  });
+});
+
+describe("wide events on stdout", () => {
+  const refusedBrowserCall = (baseUrl: string, token: string) =>
+    fetch(`${baseUrl}/mcp/ajour`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, Origin: TEST_ORIGIN },
+    });
+
+  it("prints nothing by default", async () => {
+    const log = vi.spyOn(console, "log");
+    const info = vi.spyOn(console, "info");
+    const write = vi.spyOn(process.stdout, "write");
+    const { baseUrl } = await startTestApi({ eventSink: undefined });
+    const { token } = await enableMcpWithClient(baseUrl);
+
+    expect((await refusedBrowserCall(baseUrl, token)).status).toBe(403);
+
+    expect(log).not.toHaveBeenCalled();
+    expect(info).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it("prints one JSON line per event when AJOUR_WIDE_EVENTS=console", async () => {
+    vi.stubEnv("AJOUR_WIDE_EVENTS", "console");
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const { baseUrl } = await startTestApi({ eventSink: undefined });
+    const { token } = await enableMcpWithClient(baseUrl);
+
+    await refusedBrowserCall(baseUrl, token);
+    await refusedBrowserCall(baseUrl, token);
+
+    expect(log).toHaveBeenCalledTimes(2);
+    for (const [line] of log.mock.calls) {
+      expect(typeof line).toBe("string");
+      expect(line).not.toContain("\n");
+      expect(JSON.parse(line as string)).toMatchObject({
+        name: "mcp.request",
+        outcome_reason: "browser_origin",
+      });
+    }
   });
 });

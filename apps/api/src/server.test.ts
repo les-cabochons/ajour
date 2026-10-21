@@ -11,6 +11,7 @@ import {
 } from "node:fs/promises";
 import { create } from "tar";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import {
   createAppApiServer,
   installPluginForServer,
@@ -1305,13 +1306,14 @@ describe("calendar routes", () => {
         ],
       },
     );
-    const events: Record<string, unknown>[] = [];
+    const sink = createRecordingSink();
+    const { events } = sink;
     const server = createAppApiServer({
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
       allowDevelopmentPlugins: true,
-      mcpLogEvent: (event) => events.push(event),
+      eventSink: sink,
     });
     servers.push(server);
     const connectionResponse = await dispatchJsonRequest(server, {
@@ -1355,17 +1357,15 @@ describe("calendar routes", () => {
       body: { events: [{ eventId: "standup", title: "Secret project sync" }] },
     });
 
-    const logged = events.filter(
-      (event) => event.event === "calendar.operation",
-    );
+    const logged = events.filter((event) => event.name === "calendar.fetch");
     expect(logged).toEqual([
       expect.objectContaining({
-        operation: "listCalendarEvents",
-        plugin_id: "jira",
-        connection_id: connectionId,
-        range_days: 7,
-        event_count: 1,
+        kind: "request",
+        runtime: "api",
         outcome: "ok",
+        plugin: { id: "jira" },
+        connection: { id: connectionId },
+        calendar: { range_days: 7, event_count: 1 },
       }),
     ]);
     expect(JSON.stringify(logged)).not.toContain("Secret project sync");
@@ -1484,8 +1484,9 @@ describe("calendar routes", () => {
     expect(JSON.stringify(events)).not.toContain(FEED);
     expect(events).toContainEqual(
       expect.objectContaining({
-        event: "calendar.operation",
+        name: "calendar.fetch",
         outcome: "error",
+        error: { type: "Error", message: "Could not read [secret]: 404" },
       }),
     );
   });
@@ -1509,7 +1510,7 @@ describe("agent task settings route", () => {
   async function createServer(
     options: Pick<
       Parameters<typeof createAppApiServer>[0] & object,
-      "mcpLogEvent" | "agentCliPath"
+      "eventSink" | "agentCliPath"
     > = {},
   ) {
     const root = await mkdtemp(path.join(os.tmpdir(), "ajour-agent-task-"));
@@ -1584,9 +1585,10 @@ describe("agent task settings route", () => {
       await writeFile(path.join(bin, "claude"), "#!/bin/sh\nexit 0\n", {
         mode: 0o755,
       });
-      const events: Record<string, unknown>[] = [];
+      const sink = createRecordingSink();
+      const { events } = sink;
       const server = await createServer({
-        mcpLogEvent: (event) => events.push(event),
+        eventSink: sink,
         agentCliPath: bin,
       });
       const post = (pathname: string, body: object) =>
@@ -1607,18 +1609,20 @@ describe("agent task settings route", () => {
       });
       await vi.waitFor(
         () =>
-          expect(events.map((event) => event.event)).toEqual([
-            "mcp.session_ended",
+          expect(events.map((event) => event.name)).toEqual([
+            "agent.session",
             "agent.run",
           ]),
         { timeout: 10_000 },
       );
       const [ended, run] = events;
-      expect(run!.run_id).toEqual(expect.any(String));
+      expect(run!.agent.run_id).toEqual(expect.any(String));
       expect(ended).toMatchObject({
-        run_id: run!.run_id,
-        session_id: run!.session_id,
-        client_id: run!.client_id,
+        agent: {
+          run_id: run!.agent.run_id,
+          session_id: run!.agent.session_id,
+          client_id: run!.agent.client_id,
+        },
       });
     },
   );
@@ -2053,13 +2057,14 @@ describe("backlog comment routes", () => {
         ],
       },
     );
-    const events: Record<string, unknown>[] = [];
+    const sink = createRecordingSink();
+    const { events } = sink;
     const server = createAppApiServer({
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
       allowDevelopmentPlugins: true,
-      mcpLogEvent: (event) => events.push(event),
+      eventSink: sink,
     });
     servers.push(server);
     const connectionResponse = await dispatchJsonRequest(server, {
@@ -2311,8 +2316,19 @@ describe("backlog comment routes", () => {
     await writeFile(release, "");
     expect(await slow).toMatchObject({ status: 403 });
     const refused = events.filter((event) => event.outcome === "refused");
-    expect(refused).toHaveLength(3);
-    expect(refused.every((event) => event.agent === true)).toBe(true);
+    expect(
+      refused.map(({ name, trigger, outcome_reason }) => ({
+        name,
+        trigger,
+        outcome_reason,
+      })),
+    ).toEqual(
+      ["comment.list", "comment.post", "comment.list"].map((name) => ({
+        name,
+        trigger: "agent",
+        outcome_reason: "agent_access",
+      })),
+    );
 
     // A post allowed at admission stands, even if access drops meanwhile.
     await setAccess("readWrite");
@@ -2355,18 +2371,19 @@ describe("backlog comment routes", () => {
       },
     });
 
-    const logged = events.filter((event) => event.event === "backlog.comments");
-    expect(logged).toEqual([
+    expect(events).toEqual([
       expect.objectContaining({
-        operation: "listItemComments",
-        plugin_id: "jira",
-        connection_id: connectionId,
-        comment_count: 1,
+        name: "comment.list",
+        kind: "request",
+        trigger: "system",
         outcome: "ok",
+        plugin: { id: "jira" },
+        connection: { id: connectionId },
+        comment: { count: 1 },
       }),
     ]);
-    expect(JSON.stringify(logged)).not.toContain("Secret client detail");
-    expect(JSON.stringify(logged)).not.toContain("Ana Silva");
+    expect(JSON.stringify(events)).not.toContain("Secret client detail");
+    expect(JSON.stringify(events)).not.toContain("Ana Silva");
   });
 
   it("rejects plugins without comments, unknown operations and malformed requests", async () => {
@@ -2420,15 +2437,10 @@ describe("backlog comment routes", () => {
       status: 200,
       body: { comment: { id: "c2", body: "Private reply" } },
     });
-    const logged = events.filter((event) => event.event === "backlog.comments");
-    expect(logged).toEqual([
-      expect.objectContaining({
-        operation: "postItemComment",
-        comment_count: 1,
-        outcome: "ok",
-      }),
+    expect(events).toEqual([
+      expect.objectContaining({ name: "comment.post", outcome: "ok" }),
     ]);
-    expect(JSON.stringify(logged)).not.toContain("Private reply");
+    expect(JSON.stringify(events)).not.toContain("Private reply");
 
     await expect(
       dispatchJsonRequest(server, {
@@ -2497,6 +2509,14 @@ describe("backlog comment routes", () => {
         body: JSON.stringify({ ...ref, reaction: "heart", reacted: true }),
       }),
     ).resolves.toMatchObject({ status: 404 });
+    expect(full.events.map(({ name, outcome }) => ({ name, outcome }))).toEqual(
+      [
+        { name: "comment.edit", outcome: "ok" },
+        { name: "comment.delete", outcome: "ok" },
+        { name: "comment.react", outcome: "ok" },
+      ],
+    );
+    expect(JSON.stringify(full.events)).not.toContain("Changed");
   });
 
   it("searches people only for a plugin that declares mentions", async () => {
@@ -2523,12 +2543,14 @@ describe("backlog comment routes", () => {
       status: 200,
       body: { people: [{ id: "ana", displayName: "Ana Silva an" }] },
     });
-    const logged = events.filter((event) => event.event === "backlog.comments");
-    expect(JSON.stringify(logged)).not.toContain("Ana Silva");
+    expect(events).toEqual([
+      expect.objectContaining({ name: "person.search", person: { count: 1 } }),
+    ]);
+    expect(JSON.stringify(events)).not.toContain("Ana Silva");
   });
 
-  it("keeps the connection's secret out of a failed read", async () => {
-    const { server, connectionId } = await createServer({
+  it("keeps the connection's secret out of a failed read and its event", async () => {
+    const { server, connectionId, events } = await createServer({
       connector: { comments: {} },
     });
 
@@ -2540,6 +2562,14 @@ describe("backlog comment routes", () => {
 
     expect(response.status).toBe(502);
     expect(JSON.stringify(response.body)).not.toContain(TOKEN);
+    expect(events).toEqual([
+      expect.objectContaining({
+        name: "comment.list",
+        outcome: "error",
+        error: { type: "Error", message: "Could not read with [secret]" },
+      }),
+    ]);
+    expect(JSON.stringify(events)).not.toContain(TOKEN);
   });
 });
 

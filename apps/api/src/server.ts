@@ -74,12 +74,18 @@ import {
 import {
   calendarOperationSchema,
   calendarOperations,
+  type CalendarOperation,
 } from "../../../packages/shared/calendar.ts";
 import {
   backlogCommentOperationAllowed,
   backlogCommentOperationSchema,
   backlogCommentOperations,
+  type BacklogCommentOperation,
 } from "../../../packages/shared/backlog-comments.ts";
+import type {
+  AjourCatalog,
+  EventName,
+} from "../../../packages/wide-events/catalog.ts";
 import { teamSyncRequestSchema } from "../../../packages/shared/team-sync.ts";
 import {
   projectDataShapeExportRequestSchema,
@@ -104,7 +110,9 @@ import {
   mergeConnectionConfigForSave,
   RESERVED_CONNECTION_FIELD_IDS,
 } from "./connection-values.ts";
-import { AgentSessions, sessionEndedEvent } from "./agent-sessions.ts";
+import type { Sink } from "../../../packages/wide-events/sinks.ts";
+import { AgentSessions } from "./agent-sessions.ts";
+import { createApiEvents, type ApiLaunch } from "./events.ts";
 import { McpBridge } from "./mcp-bridge.ts";
 import { createMcpClient } from "./mcp-clients.ts";
 import { handleMcpRequest, MAX_WAIT_FOR_ANSWER_MS } from "./mcp-server.ts";
@@ -143,8 +151,13 @@ interface AppApiServerOptions {
   allowedOrigins?: string[];
   /** How long a data tool waits for the renderer. Tests shorten it. */
   mcpBridgeTimeoutMs?: number;
-  /** Receives wide events: MCP, agent runs and calendar calls. Defaults to one JSON line on stdout. */
-  mcpLogEvent?: (event: Record<string, unknown>) => void;
+  /**
+   * Receives the API's wide events. Defaults to where AJOUR_WIDE_EVENTS sends
+   * them: nowhere, or one JSON line each on stdout with `console`.
+   */
+  eventSink?: Sink;
+  /** The launch the API runs in: its ID, the app version and the channel. */
+  launch?: ApiLaunch;
   /** How long one wait_for_answer call holds. Tests shorten it. */
   mcpWaitForAnswerMs?: number;
   /**
@@ -161,6 +174,21 @@ interface AppApiRuntime {
   agentRunner: AgentRunner;
   stopping: boolean;
 }
+
+/** The event each comment operation's request emits. A new operation needs one. */
+const COMMENT_EVENTS = {
+  listItemComments: "comment.list",
+  postItemComment: "comment.post",
+  editItemComment: "comment.edit",
+  deleteItemComment: "comment.delete",
+  setItemCommentReaction: "comment.react",
+  searchItemPeople: "person.search",
+} as const satisfies Record<BacklogCommentOperation, EventName<AjourCatalog>>;
+
+/** The event each calendar operation's request emits. */
+const CALENDAR_EVENTS = {
+  listCalendarEvents: "calendar.fetch",
+} as const satisfies Record<CalendarOperation, EventName<AjourCatalog>>;
 
 const appApiRuntimesByServer = new WeakMap<Server, AppApiRuntime>();
 const MAX_JSON_BODY_BYTES = 16 * 1024 * 1024;
@@ -708,16 +736,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   const allowedOrigins = new Set(
     options.allowedOrigins ?? configuredAllowedOrigins(),
   );
-  const logMcpEvent =
-    options.mcpLogEvent ??
-    ((event: Record<string, unknown>) =>
-      console.info(
-        JSON.stringify({
-          timestamp: new Date().toISOString(),
-          level: "info",
-          ...event,
-        }),
-      ));
+  const events = createApiEvents({
+    sink: options.eventSink,
+    launch: options.launch,
+    userDataPath: storage.dataDirectory,
+  });
   // The bridge and the sessions publish through each other. Both closures
   // run after both constants exist, so the forward reference is safe.
   const mcpBridge: McpBridge = new McpBridge({
@@ -726,7 +749,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   });
   const agentSessions = new AgentSessions({
     onChange: () => mcpBridge.publish("agents", agentSessions.snapshot()),
-    onEnded: (session) => logMcpEvent(sessionEndedEvent(session, Date.now())),
+    events,
   });
   const agentRunner = new AgentRunner({
     storage: {
@@ -761,7 +784,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     profileDirectory: path.join(storage.dataDirectory, "agent-browser-profile"),
     tempRoot: os.tmpdir(),
     ajourMcpUrl: `http://${host}:${port}/mcp/ajour`,
-    logEvent: logMcpEvent,
+    events,
   });
   const runtime: AppApiRuntime = {
     storage,
@@ -783,7 +806,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       options.mcpWaitForAnswerMs ?? MAX_WAIT_FOR_ANSWER_MS,
       MAX_WAIT_FOR_ANSWER_MS,
     ),
-    logEvent: logMcpEvent,
+    events,
     readBody: readJsonBody,
   };
 
@@ -1895,7 +1918,6 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           });
           return;
         }
-        const startedAt = Date.now();
         // An agent's call says so; Ajour's own pages don't. The access it
         // needs follows from the operation, not from the caller.
         const forAgent = requestUrl.searchParams.get("agent") === "1";
@@ -1905,102 +1927,100 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             ? "read"
             : "readWrite";
         // Ids, counts and duration only. Comment text and authors stay out
-        // of the log (ADR 0008).
-        const logCommentEvent = (
-          outcome: "ok" | "error" | "refused",
-          commentCount?: number,
-        ) =>
-          logMcpEvent({
-            event: "backlog.comments",
-            operation: operation.data,
-            plugin_id: pluginId,
-            connection_id: connectionId,
-            agent: forAgent,
-            comment_count: commentCount,
-            outcome,
-            duration_ms: Date.now() - startedAt,
-          });
-        /**
-         * Refuses an agent's call the user doesn't allow on the connection,
-         * as stored now: before the plugin runs, and again before a read's
-         * text leaves, so a revocation saved meanwhile holds.
-         */
-        const agentRefusal = `The user hasn't allowed agents to ${agentNeed === "read" ? "read" : "post"} comments on the "${connection.label}" connection.`;
-        const agentAllowed = async () => {
-          if (!forAgent) return true;
-          const current = await storage.getConnection(pluginId, connectionId);
-          return Boolean(
-            current &&
-            agentAccessAllows(connectionAgentAccess(current), agentNeed),
-          );
-        };
-        const refuseAgent = () => {
-          logCommentEvent("refused");
-          writeJson(response, 403, { error: agentRefusal });
-        };
-        if (!(await agentAllowed())) {
-          refuseAgent();
-          return;
-        }
-        // Checked again at the plugin's admission, after the host's own
-        // waits, so a revocation saved meanwhile stops a post.
-        let refusedAtAdmission = false;
-        const call = admittedCall(plugin);
-        const admit = async (manifest: PluginManifest) => {
-          call.admit(manifest);
-          if (await agentAllowed()) return;
-          refusedAtAdmission = true;
-          throw new Error(agentRefusal);
-        };
-        try {
-          const result = await pluginManager.runBacklogCommentOperation(
-            pluginId,
-            operation.data,
-            {
-              id: connection.id,
-              pluginId: connection.pluginId,
-              label: connection.label,
-              tenantLabel: connection.tenantLabel,
-              autoSync: connection.autoSync,
-              autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
-              connectedAt: connection.connectedAt,
-              lastSyncAt: connection.lastSyncAt,
-              lastError: connection.lastError,
-              config: connection.config,
-            },
-            commentRequest,
-            admit,
-          );
-          // A read's text leaves only while the agent may still read. A
-          // change was allowed at admission and has happened: it stands.
-          if (agentNeed === "read" && !(await agentAllowed())) {
-            refuseAgent();
-            return;
-          }
-          logCommentEvent(
-            "ok",
-            "comments" in result
-              ? result.comments.length
-              : "people" in result
-                ? result.people.length
-                : "comment" in result
-                  ? 1
-                  : 0,
-          );
-          writeJson(response, 200, result);
-        } catch (error) {
-          if (refusedAtAdmission) {
-            refuseAgent();
-            return;
-          }
-          const message = pluginErrorMessage(
-            error,
-            call.manifest,
-            connection.config,
-          );
-          logCommentEvent("error");
-          writeJson(response, 502, { error: message });
-        }
+        // of the event (ADR 0008).
+        await events.run(
+          COMMENT_EVENTS[operation.data],
+          { kind: "request", trigger: forAgent ? "agent" : "system" },
+          async (event) => {
+            event.set({
+              plugin: { id: pluginId },
+              connection: { id: connectionId },
+            });
+            /**
+             * Refuses an agent's call the user doesn't allow on the connection,
+             * as stored now: before the plugin runs, and again before a read's
+             * text leaves, so a revocation saved meanwhile holds.
+             */
+            const agentRefusal = `The user hasn't allowed agents to ${agentNeed === "read" ? "read" : "post"} comments on the "${connection.label}" connection.`;
+            const agentAllowed = async () => {
+              if (!forAgent) return true;
+              const current = await storage.getConnection(
+                pluginId,
+                connectionId,
+              );
+              return Boolean(
+                current &&
+                agentAccessAllows(connectionAgentAccess(current), agentNeed),
+              );
+            };
+            const refuseAgent = () => {
+              event.refuse("agent_access");
+              writeJson(response, 403, { error: agentRefusal });
+            };
+            if (!(await agentAllowed())) {
+              refuseAgent();
+              return;
+            }
+            // Checked again at the plugin's admission, after the host's own
+            // waits, so a revocation saved meanwhile stops a post.
+            let refusedAtAdmission = false;
+            const call = admittedCall(plugin);
+            const admit = async (manifest: PluginManifest) => {
+              call.admit(manifest);
+              if (await agentAllowed()) return;
+              refusedAtAdmission = true;
+              throw new Error(agentRefusal);
+            };
+            try {
+              const result = await pluginManager.runBacklogCommentOperation(
+                pluginId,
+                operation.data,
+                {
+                  id: connection.id,
+                  pluginId: connection.pluginId,
+                  label: connection.label,
+                  tenantLabel: connection.tenantLabel,
+                  autoSync: connection.autoSync,
+                  autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
+                  connectedAt: connection.connectedAt,
+                  lastSyncAt: connection.lastSyncAt,
+                  lastError: connection.lastError,
+                  config: connection.config,
+                },
+                commentRequest,
+                admit,
+              );
+              // A read's text leaves only while the agent may still read. A
+              // change was allowed at admission and has happened: it stands.
+              if (agentNeed === "read" && !(await agentAllowed())) {
+                refuseAgent();
+                return;
+              }
+              if ("comments" in result) {
+                event.set({ comment: { count: result.comments.length } });
+              } else if ("people" in result) {
+                event.set({ person: { count: result.people.length } });
+              }
+              writeJson(response, 200, result);
+            } catch (error) {
+              if (refusedAtAdmission) {
+                refuseAgent();
+                return;
+              }
+              const message = pluginErrorMessage(
+                error,
+                call.manifest,
+                connection.config,
+              );
+              event.fail(error, {
+                secrets: connectionSecretValues(call.manifest, [
+                  connection.config,
+                ]),
+              });
+              writeJson(response, 502, { error: message });
+            }
+          },
+        );
         return;
       }
 
@@ -2044,64 +2064,70 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         const calendarRequest = calendarOperations[
           operation.data
         ].request.parse(await readJsonBody(request));
-        const startedAt = Date.now();
         // Ids, range, counts and duration only. Titles and the calendar
-        // address stay out of the log (ADR 0005).
-        const logCalendarEvent = (
-          outcome: "ok" | "error",
-          eventCount?: number,
-        ) =>
-          logMcpEvent({
-            event: "calendar.operation",
-            operation: operation.data,
-            plugin_id: pluginId,
-            connection_id: connectionId,
-            range_days:
-              (Date.parse(`${calendarRequest.to}T00:00:00Z`) -
-                Date.parse(`${calendarRequest.from}T00:00:00Z`)) /
-                86_400_000 +
-              1,
-            event_count: eventCount,
-            outcome,
-            duration_ms: Date.now() - startedAt,
-          });
-        const call = admittedCall(plugin);
-        try {
-          const result = await pluginManager.runCalendarOperation(
-            pluginId,
-            operation.data,
-            {
-              id: connection.id,
-              pluginId: connection.pluginId,
-              label: connection.label,
-              tenantLabel: connection.tenantLabel,
-              autoSync: connection.autoSync,
-              autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
-              connectedAt: connection.connectedAt,
-              lastSyncAt: connection.lastSyncAt,
-              lastError: connection.lastError,
-              config: connection.config,
-            },
-            calendarRequest,
-            call.admit,
-          );
-          await storage.recordConnectionSyncSuccess(
-            pluginId,
-            connectionId,
-            Date.now(),
-          );
-          logCalendarEvent("ok", result.events.length);
-          writeJson(response, 200, result);
-        } catch (error) {
-          const message = pluginErrorMessage(
-            error,
-            call.manifest,
-            connection.config,
-          );
-          await storage.recordConnectionError(pluginId, connectionId, message);
-          logCalendarEvent("error");
-          writeJson(response, 502, { error: message });
-        }
+        // address stay out of the event (ADR 0005).
+        await events.run(
+          CALENDAR_EVENTS[operation.data],
+          { kind: "request", trigger: "system" },
+          async (event) => {
+            event.set({
+              plugin: { id: pluginId },
+              connection: { id: connectionId },
+              calendar: {
+                range_days:
+                  (Date.parse(`${calendarRequest.to}T00:00:00Z`) -
+                    Date.parse(`${calendarRequest.from}T00:00:00Z`)) /
+                    86_400_000 +
+                  1,
+              },
+            });
+            const call = admittedCall(plugin);
+            try {
+              const result = await pluginManager.runCalendarOperation(
+                pluginId,
+                operation.data,
+                {
+                  id: connection.id,
+                  pluginId: connection.pluginId,
+                  label: connection.label,
+                  tenantLabel: connection.tenantLabel,
+                  autoSync: connection.autoSync,
+                  autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
+                  connectedAt: connection.connectedAt,
+                  lastSyncAt: connection.lastSyncAt,
+                  lastError: connection.lastError,
+                  config: connection.config,
+                },
+                calendarRequest,
+                call.admit,
+              );
+              await storage.recordConnectionSyncSuccess(
+                pluginId,
+                connectionId,
+                Date.now(),
+              );
+              event.set({ calendar: { event_count: result.events.length } });
+              writeJson(response, 200, result);
+            } catch (error) {
+              const message = pluginErrorMessage(
+                error,
+                call.manifest,
+                connection.config,
+              );
+              event.fail(error, {
+                secrets: connectionSecretValues(call.manifest, [
+                  connection.config,
+                ]),
+              });
+              await storage.recordConnectionError(
+                pluginId,
+                connectionId,
+                message,
+              );
+              writeJson(response, 502, { error: message });
+            }
+          },
+        );
         return;
       }
 
@@ -2426,7 +2452,6 @@ export async function startAppApiServer(
     server.once("error", reject);
     server.listen(port, host, () => {
       server.off("error", reject);
-      console.log(`Ajour app API listening on http://${host}:${port}`);
       resolve();
     });
   });
@@ -2464,6 +2489,15 @@ const executedDirectly =
   typeof process.argv[1] === "string" &&
   import.meta.url === pathToFileURL(process.argv[1]).toString();
 
+// Run on its own, as `just api-start` does, the API says where it listens.
+// Started by the desktop app or a test, it prints nothing on stdout.
 if (executedDirectly) {
-  void startAppApiServer();
+  void startAppApiServer().then((server) => {
+    const address = server.address();
+    if (address && typeof address === "object") {
+      console.log(
+        `Ajour app API listening on http://${address.address}:${address.port}`,
+      );
+    }
+  });
 }

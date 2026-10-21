@@ -11,8 +11,6 @@ import type {
   McpClientCreateResponse,
 } from "../../../../packages/shared/agent-tools.ts";
 import type {
-  AgentBrowserMode,
-  AgentCliId,
   AgentCliStatus,
   AgentRun,
   AgentRunnerOverview,
@@ -26,7 +24,10 @@ import {
   type PluginFieldValues,
 } from "../../../../packages/shared/plugins.ts";
 import { fillTemplate } from "../../../../packages/shared/agent-task-templates.ts";
+import type { AjourCatalog } from "../../../../packages/wide-events/catalog.ts";
+import type { Outcome, Unit } from "../../../../packages/wide-events/index.ts";
 import type { AgentSessions } from "../agent-sessions.ts";
+import type { ApiEvents } from "../events.ts";
 import type {
   AgentCliAdapter,
   RunnerEvent,
@@ -106,7 +107,8 @@ export interface AgentRunnerOptions {
   profileDirectory: string;
   tempRoot: string;
   ajourMcpUrl: string;
-  logEvent: (event: Record<string, unknown>) => void;
+  /** Where each run's one `agent.run` event goes. */
+  events: ApiEvents;
   now?: () => number;
   /** Time between SIGTERM and SIGKILL. Tests shorten it. Defaults to 5 seconds. */
   killGraceMs?: number;
@@ -134,24 +136,15 @@ interface StepFailure<Step extends string> {
 type StopReason = "user" | "stalled" | "mcp" | "shutdown" | "ended";
 
 /**
- * What a run's agent.run event names. A start gets its run ID before its
+ * A run's one `agent.run` event. A start opens it with its run ID before its
  * first launch step, so a launch that fails before the client and the
- * session exist still emits an event, with no client or session ID.
+ * session exist still emits it, with no client or session ID.
  */
-interface RunContext {
-  runId: string;
-  pluginId: string;
-  taskId: string;
-  cli: AgentCliId;
-  cliVersion: string | undefined;
-  browserMode: AgentBrowserMode;
-  clientId?: string;
-  sessionId?: string;
-}
+type RunEvent = Unit<AjourCatalog, "agent.run">;
 
 interface ActiveRun {
   run: AgentRun;
-  context: RunContext;
+  event: RunEvent;
   client: AgentClientRef;
   child: ChildProcess;
   workDirectory: string;
@@ -391,17 +384,24 @@ export class AgentRunner {
       : undefined;
 
     // From here on the start has a run ID, so a launch that fails still logs
-    // its agent.run, with the step that failed.
+    // its agent.run, with the step that failed. The run outlives the request
+    // that starts it, so its event is its own.
     const runId = randomUUID();
-    const launchedAt = this.now();
-    const context: RunContext = {
-      runId,
-      pluginId: request.pluginId,
-      taskId: request.taskId,
-      cli: adapter.id,
-      cliVersion: versionOnly(cliStatus.version),
-      browserMode: settings.browserMode,
-    };
+    const event: RunEvent = this.options.events.start("agent.run", {
+      kind: "job",
+      trigger: "user",
+      detached: true,
+    });
+    event.set({
+      agent: {
+        run_id: runId,
+        task_id: request.taskId,
+        cli: adapter.id,
+        cli_version: versionOnly(cliStatus.version),
+        browser_mode: settings.browserMode,
+      },
+      plugin: { id: request.pluginId },
+    });
     let step: LaunchStep = "find_executable";
     let client: AgentClientRef | undefined;
     let session: AgentSession | undefined;
@@ -427,28 +427,32 @@ export class AgentRunner {
         `${task.label} run`,
       );
       client = { id: created.client.id, name: created.client.name };
-      context.clientId = client.id;
+      event.set({ agent: { client_id: client.id } });
 
       step = "begin_session";
-      session = this.options.sessions.begin(
-        client,
-        {
-          title: `${task.label}, week of ${request.weekOf}`,
-          estimateMinutes: task.estimateMinutes,
-        },
-        {
-          runId,
-          ...(weekLink
-            ? {
-                link: {
-                  label: `Open the week in ${task.pluginName}`,
-                  url: weekLink,
-                },
-              }
-            : {}),
-        },
+      const runClient = client;
+      // Inside the run's event, so the session's event is its child span.
+      session = event.enter(() =>
+        this.options.sessions.begin(
+          runClient,
+          {
+            title: `${task.label}, week of ${request.weekOf}`,
+            estimateMinutes: task.estimateMinutes,
+          },
+          {
+            runId,
+            ...(weekLink
+              ? {
+                  link: {
+                    label: `Open the week in ${task.pluginName}`,
+                    url: weekLink,
+                  },
+                }
+              : {}),
+          },
+        ),
       );
-      context.sessionId = session.id;
+      event.set({ agent: { session_id: session.id } });
 
       step = "create_work_folder";
       workDirectory = await mkdtemp(path.join(this.options.tempRoot, "run-"));
@@ -500,7 +504,7 @@ export class AgentRunner {
       };
       const active: ActiveRun = {
         run,
-        context,
+        event,
         client,
         child,
         workDirectory,
@@ -524,15 +528,12 @@ export class AgentRunner {
             },
           )
         : [];
-      this.logRun(
-        agentRunEvent(context, {
-          durationMs: this.now() - launchedAt,
-          outcome: "failed",
-          toolCalls: 0,
-          launchFailure: { step, error },
-          cleanupFailures,
-        }),
-      );
+      endRunEvent(event, {
+        outcome: "failed",
+        toolCalls: 0,
+        launchFailure: { step, error },
+        cleanupFailures,
+      });
       throw error;
     }
   }
@@ -600,15 +601,6 @@ export class AgentRunner {
     return active.finalized;
   }
 
-  /** A log sink that throws must not change what the run does. */
-  private logRun(event: AgentRunEvent) {
-    try {
-      this.options.logEvent(event);
-    } catch {
-      // The event is lost; the run is not.
-    }
-  }
-
   /** Ends the session, cleans up and emits the run's one agent.run event. */
   private async endRun(active: ActiveRun, code: number | null) {
     clearTimeout(active.killTimer);
@@ -627,19 +619,16 @@ export class AgentRunner {
       ending && { sessionId: active.run.sessionId, ...ending },
     );
     if (this.active === active) this.active = null;
-    this.logRun(
-      agentRunEvent(active.context, {
-        durationMs: this.now() - active.run.startedAt,
-        outcome,
-        exitCode: code,
-        stopReason,
-        toolCalls: active.toolCalls,
-        ...(active.spawnError
-          ? { launchFailure: { step: "spawn", error: active.spawnError } }
-          : {}),
-        cleanupFailures,
-      }),
-    );
+    endRunEvent(active.event, {
+      outcome,
+      exitCode: code,
+      stopReason,
+      toolCalls: active.toolCalls,
+      ...(active.spawnError
+        ? { launchFailure: { step: "spawn", error: active.spawnError } }
+        : {}),
+      cleanupFailures,
+    });
   }
 
   /**
@@ -828,45 +817,8 @@ function describeEnding(active: ActiveRun, code: number | null): SessionEnding {
   };
 }
 
-/** An error in a wide event: its type name and Node code, never its message. */
-type EventError = { type: string; code?: string };
-
-/**
- * The run's one wide event, however it ended. Errors give their type and
- * code only: messages can hold paths with the user's name, and the CLI's
- * output can hold the week's lines.
- */
-export type AgentRunEvent = {
-  event: "agent.run";
-  run_id: string;
-  /** Absent when the launch failed before the session began. */
-  session_id?: string;
-  /** Absent when the launch failed before the client was created. */
-  client_id?: string;
-  plugin_id: string;
-  task_id: string;
-  cli: AgentCliId;
-  cli_version?: string;
-  browser_mode: AgentBrowserMode;
-  duration_ms: number;
-  outcome?: AgentSessionOutcome;
-  exit_code?: number | null;
-  stop_reason?: StopReason;
-  tool_call_count: number;
-  /** Why the launch failed. */
-  error?: EventError;
-  launch?: { failed_step: LaunchStep };
-  cleanup: {
-    outcome: "ok" | "failed";
-    failed_steps: CleanupStep[];
-    /** The first failed step's error. */
-    error?: EventError;
-  };
-};
-
 /** How a run ended, for its agent.run event. */
 interface RunEnding {
-  durationMs: number;
   outcome: AgentSessionOutcome | undefined;
   exitCode?: number | null;
   stopReason?: StopReason;
@@ -875,37 +827,42 @@ interface RunEnding {
   cleanupFailures: StepFailure<CleanupStep>[];
 }
 
-function agentRunEvent(context: RunContext, ending: RunEnding): AgentRunEvent {
+/** How the run's session ended ends its event. */
+const RUN_OUTCOMES = {
+  done: "ok",
+  failed: "error",
+  cancelled: "cancelled",
+} as const satisfies Record<AgentSessionOutcome, Outcome>;
+
+/**
+ * Ends the run's one wide event, however it ended. A launch failure is the
+ * event's error, its message scrubbed. A cleanup step's error gives its type
+ * and code only.
+ */
+function endRunEvent(event: RunEvent, ending: RunEnding) {
   const [firstCleanupFailure] = ending.cleanupFailures;
-  return {
-    event: "agent.run",
-    run_id: context.runId,
-    session_id: context.sessionId,
-    client_id: context.clientId,
-    plugin_id: context.pluginId,
-    task_id: context.taskId,
-    cli: context.cli,
-    cli_version: context.cliVersion,
-    browser_mode: context.browserMode,
-    duration_ms: ending.durationMs,
-    outcome: ending.outcome,
-    exit_code: ending.exitCode,
-    stop_reason: ending.stopReason,
-    tool_call_count: ending.toolCalls,
-    ...(ending.launchFailure
-      ? {
-          error: eventError(ending.launchFailure.error),
-          launch: { failed_step: ending.launchFailure.step },
-        }
-      : {}),
+  event.set({
+    agent: {
+      exit_code: ending.exitCode,
+      stop_reason: ending.stopReason,
+      tool_call_count: ending.toolCalls,
+    },
     cleanup: {
       outcome: firstCleanupFailure ? "failed" : "ok",
       failed_steps: ending.cleanupFailures.map((failure) => failure.step),
       ...(firstCleanupFailure
-        ? { error: eventError(firstCleanupFailure.error) }
+        ? { error: errorType(firstCleanupFailure.error) }
         : {}),
     },
-  };
+  });
+  if (ending.launchFailure) {
+    event.set({ launch: { failed_step: ending.launchFailure.step } });
+    event.fail(ending.launchFailure.error);
+    event.end();
+    return;
+  }
+  // A session that is gone tells nothing, so the run counts as failed.
+  event.end(ending.outcome ? RUN_OUTCOMES[ending.outcome] : "error");
 }
 
 /**
@@ -920,7 +877,8 @@ function versionOnly(value: string | undefined): string | undefined {
     : undefined;
 }
 
-function eventError(error: unknown): EventError {
+/** A cleanup step's error in the event: its type name and Node code. */
+function errorType(error: unknown): { type: string; code?: string } {
   if (!(error instanceof Error)) return { type: typeof error };
   const { code } = error as { code?: unknown };
   return typeof code === "string"

@@ -76,8 +76,8 @@ export interface Unit<C extends Catalog, Name extends EventName<C>> {
   count(counter: CounterName<C>, amount?: number): this;
   /** Records the error the unit failed with. The unit still ends with `end`. */
   fail(error: unknown, options?: FailOptions<ReasonOf<C, Name>>): this;
-  /** Records that the unit was refused, and why. */
-  refuse(reason: ReasonOf<C, Name>): this;
+  /** Records that the unit was refused, and why when it is known. */
+  refuse(reason?: ReasonOf<C, Name>): this;
   /** Records that the unit was cancelled, and why. */
   cancel(reason?: ReasonOf<C, Name>): this;
   /**
@@ -201,7 +201,7 @@ class UnitState {
     return this;
   }
 
-  refuse(reason: string) {
+  refuse(reason?: string) {
     if (this.ended) return this;
     this.outcome = "refused";
     this.reason = reason;
