@@ -174,7 +174,10 @@ interface ActiveRun {
   closed: Promise<void>;
   /** Set by the first finalize() call, which later calls return. */
   finalized?: Promise<void>;
-  /** Set by the first Stop or shutdown: ends the run, closed or not. */
+  /**
+   * Set by the first ending (the CLI's exit, a kill, Stop or shutdown): ends
+   * the run, closed or not.
+   */
   finishing?: Promise<void>;
 }
 
@@ -587,7 +590,7 @@ export class AgentRunner {
 
   /**
    * Ends the run exactly once, whichever comes first: the CLI's close, or
-   * shutdown giving up on it. A later call gets the same promise.
+   * the give-up that any ending starts. A later call gets the same promise.
    */
   private finalize(active: ActiveRun, code: number | null): Promise<void> {
     active.finalized ??= this.endRun(active, code).catch(() => {
