@@ -308,7 +308,7 @@ The local API emits these (#305, #306):
   `client_closed`, without a status or response bytes nobody received, and
   without the error its leaving caused, such as a body read's
   `ECONNRESET`. An outcome the route had recorded, such as a plugin's
-  timeout, stands. A route whose response is a stream calls `stream()` on
+  timeout, stands. So is any other error, even after the client left: it is recorded with its code. A route whose response is a stream calls `stream()` on
   its context: the bridge's `mcp_bridge.connection` lasts until its client
   closes it, and that close is its normal end.
 - **Validation messages stay out.** An error a validator throws lists the
