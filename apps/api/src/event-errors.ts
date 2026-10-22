@@ -56,6 +56,21 @@ export class InvalidPluginResultError extends Error {
   }
 }
 
+/**
+ * A request's body stream that failed while Ajour read it, such as when
+ * its client hung up. Only such an error, from the request's own stream, is
+ * the client's leaving rather than a failure.
+ */
+export class RequestBodyInterrupted extends Error {
+  constructor(cause: unknown) {
+    super(
+      cause instanceof Error ? cause.message : "The request body stopped.",
+      { cause },
+    );
+    this.name = "RequestBodyInterrupted";
+  }
+}
+
 /** Runs `read`, and turns what it throws into an `InvalidRequestError`. */
 export function readInput<Value>(read: () => Value): Value {
   try {

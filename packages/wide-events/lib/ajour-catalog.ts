@@ -64,10 +64,14 @@ const requestFields = {
 
 /**
  * How any request can end other than by its route's own reasons: its body
- * or parameters didn't validate, the caller's mistake, or its client left
- * before the response reached it.
+ * or parameters didn't validate, the caller's mistake, its client left
+ * before the response reached it, or the API stopped and cut it off.
  */
-const requestReasons = ["invalid_request", "client_closed"] as const;
+const requestReasons = [
+  "invalid_request",
+  "client_closed",
+  "stopping",
+] as const;
 
 /**
  * Why a plugin activation or capability check refuses work. They double as
@@ -169,7 +173,6 @@ export const catalog = defineCatalog({
     "api.request": {
       kinds: ["request"],
       reasons: [
-        "stopping",
         "host_refused",
         "origin_refused",
         "no_route",

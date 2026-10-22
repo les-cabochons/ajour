@@ -4,7 +4,7 @@ import type {
   HttpMethod,
 } from "../../../packages/wide-events/catalog.ts";
 import type { Outcome, Unit } from "../../../packages/wide-events/index.ts";
-import { withoutContent } from "./event-errors.ts";
+import { RequestBodyInterrupted, withoutContent } from "./event-errors.ts";
 import type { ApiEvents } from "./events.ts";
 import {
   CALENDAR_EVENTS,
@@ -429,38 +429,23 @@ function responseDone(response: ServerResponse): Promise<void> {
   });
 }
 
-/** The errors an interrupted body read or connection raises. */
-const HANG_UP_CODES: ReadonlySet<string> = new Set([
-  "ECONNRESET",
-  "ECONNABORTED",
-  "EPIPE",
-  "ERR_STREAM_PREMATURE_CLOSE",
-]);
-
-function isTransportError(error: unknown) {
-  const code = (error as { code?: unknown } | null | undefined)?.code;
-  return (
-    (typeof code === "string" && HANG_UP_CODES.has(code)) ||
-    (error instanceof Error && error.message === "aborted")
-  );
-}
-
-/**
- * How a handler that counts outcomes itself, such as MCP's for a batch,
- * ends the request: the seam ends it once, after the status and the sizes.
- */
 /** What the seam lends the code that serves a request. */
 export interface Exchange {
   /** The response is a stream, which lasts until its client closes it. */
   stream(): void;
   /**
    * Whether `error` is the client hanging up: the connection closed before
-   * the response finished, and `error` is what the interrupted body read or
-   * transport raised. Any other error, even after a hang-up, is a failure.
+   * the response finished, and `error` came from this request's own body
+   * stream. Any other error, even after a hang-up and whatever its code, is
+   * a failure.
    */
   isHangUp(error: unknown): boolean;
 }
 
+/**
+ * How a handler that counts outcomes itself, such as MCP's for a batch,
+ * ends the request: the seam ends it once, after the status and the sizes.
+ */
 export interface Settlement {
   outcome: Outcome;
   reason?: string;
@@ -484,6 +469,8 @@ export async function serveWithEvent(
   options: {
     trigger: "system" | "agent";
     origin: "app" | "none" | "refused";
+    /** Whether the API is stopping, which cuts off requests in progress. */
+    stopping?: () => boolean;
   },
   serve: (
     unit: Unit<AjourCatalog, "api.request">,
@@ -503,8 +490,8 @@ export async function serveWithEvent(
   });
   let settlement: Settlement | void = undefined;
   let streaming = false;
-  // A hang-up: the connection closed before the response finished. The
-  // server never destroys a request or its socket while it serves one.
+  // The connection closed before the response finished: the client hung up,
+  // or the API, stopping, cut it off.
   let hungUp = false;
   const noteClose = () => {
     if (!response.writableFinished) hungUp = true;
@@ -515,7 +502,8 @@ export async function serveWithEvent(
       streaming = true;
     },
     isHangUp: (error) =>
-      isTransportError(error) && (hungUp || request.socket?.destroyed === true),
+      error instanceof RequestBodyInterrupted &&
+      (hungUp || request.socket?.destroyed === true),
   };
   try {
     settlement = await unit.enter(() => serve(unit, exchange));
@@ -543,8 +531,12 @@ export async function serveWithEvent(
       settlement.reason as Parameters<typeof unit.end>[1],
     );
   } else if (unit.outcome === undefined) {
-    if (!delivered) unit.end("cancelled", "client_closed");
-    else if (status >= 500) unit.end("error");
+    if (!delivered) {
+      unit.end(
+        "cancelled",
+        options.stopping?.() ? "stopping" : "client_closed",
+      );
+    } else if (status >= 500) unit.end("error");
     else if (status >= 400) unit.end("refused");
   }
   unit.end();

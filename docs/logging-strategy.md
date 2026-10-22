@@ -306,11 +306,18 @@ The local API emits these (#305, #306):
 - **A client that leaves** before its response flushed, while its body still
   arrived or the work still ran, ends the request `cancelled` with
   `client_closed`, without a status or response bytes nobody received, and
-  without the error its leaving caused, such as a body read's
-  `ECONNRESET`. An outcome the route had recorded, such as a plugin's
-  timeout, stands. So is any other error, even after the client left: it is recorded with its code. A route whose response is a stream calls `stream()` on
-  its context: the bridge's `mcp_bridge.connection` lasts until its client
-  closes it, and that close is its normal end.
+  without the error its leaving caused: an error from the request's own body
+  stream, such as `ECONNRESET`. An outcome the route had recorded, such as a
+  plugin's timeout, stands. So does any other error, even after the client
+  left, whatever its code: it is recorded as the failure it is. A request
+  the API cut off as it stopped ends `cancelled` with `stopping`. A route
+  whose response is a stream calls `stream()` on its context: the bridge's
+  `mcp_bridge.connection` lasts until its client closes it, and that close
+  is its normal end.
+- **A body over the limit** (16 MB) is answered with a 400 as soon as it
+  crosses it, with `Connection: close`: Ajour stops reading it, and the
+  connection closes once the answer is out. The request is refused with
+  `invalid_request`.
 - **Validation messages stay out.** An error a validator throws lists the
   values it received, whether a caller's text, a plugin's result or a
   spreadsheet's headings. `withoutContent` gives every event such an error

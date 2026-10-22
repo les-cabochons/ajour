@@ -155,6 +155,7 @@ import {
   InvalidPluginResultError,
   InvalidRequestError,
   readInput,
+  RequestBodyInterrupted,
   withoutContent,
 } from "./event-errors.ts";
 import {
@@ -344,10 +345,12 @@ function writeJson(
   response: ServerResponse,
   statusCode: number,
   body?: unknown,
+  extraHeaders: Record<string, string> = {},
 ) {
   const headers = {
     "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
+    ...extraHeaders,
   };
 
   if (body === undefined) {
@@ -395,22 +398,25 @@ function isAllowedRequestHost(hostHeader: string) {
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   let totalBytes = 0;
-  for await (const chunk of request) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    totalBytes += buffer.byteLength;
-    // Past the limit, the rest is read and dropped rather than thrown on:
-    // leaving the loop would destroy the request, and the caller would get
-    // no answer.
-    if (totalBytes > MAX_JSON_BODY_BYTES) {
-      chunks.length = 0;
-      continue;
+  // Leaving the loop early must not destroy the request: a body over the
+  // limit still gets its answer, before the connection closes.
+  const stream =
+    typeof request.iterator === "function"
+      ? request.iterator({ destroyOnReturn: false })
+      : request;
+  try {
+    for await (const chunk of stream) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      totalBytes += buffer.byteLength;
+      if (totalBytes > MAX_JSON_BODY_BYTES) {
+        throw new InvalidRequestError(new BodyTooLargeError());
+      }
+      chunks.push(buffer);
     }
-    chunks.push(buffer);
-  }
-  if (totalBytes > MAX_JSON_BODY_BYTES) {
-    throw new InvalidRequestError(
-      new Error(`JSON request body exceeds ${MAX_JSON_BODY_BYTES} bytes.`),
-    );
+  } catch (error) {
+    if (error instanceof InvalidRequestError) throw error;
+    // The body stream itself failed, such as when its client hung up.
+    throw new RequestBodyInterrupted(error);
   }
 
   if (chunks.length === 0) {
@@ -429,6 +435,53 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
     // text, so it never travels on.
     throw new InvalidRequestError(new InvalidJsonError());
   }
+}
+
+/** How long a connection that sent too large a body stays open after its answer. */
+const BODY_TOO_LARGE_GRACE_MS = 1_000;
+
+/** A JSON body over the limit. Ajour stops reading it and closes the connection. */
+class BodyTooLargeError extends Error {
+  readonly code = "body_too_large";
+
+  constructor() {
+    super(`JSON request body exceeds ${MAX_JSON_BODY_BYTES} bytes.`);
+  }
+}
+
+/**
+ * Answers a request Ajour couldn't read with a 400. A body over the limit
+ * isn't read further: the answer says the connection closes, and it closes
+ * once the answer is out, so a client that keeps sending stops at once.
+ */
+function writeInvalidRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  error: InvalidRequestError,
+) {
+  if (!(error.cause instanceof BodyTooLargeError)) {
+    writeJson(response, 400, { error: errorMessage(error) });
+    return;
+  }
+  request.pause();
+  const socket = request.socket;
+  if (socket) {
+    // Node closes a `Connection: close` socket as soon as the answer is
+    // out. With the client's bytes still arriving, that close would reset
+    // the connection and could drop the answer, so it ends the connection
+    // instead, drops what still arrives, and closes after a grace period.
+    socket.destroySoon = () => {
+      socket.end();
+      request.resume();
+      setTimeout(() => socket.destroy(), BODY_TOO_LARGE_GRACE_MS).unref();
+    };
+  }
+  writeJson(
+    response,
+    400,
+    { error: errorMessage(error) },
+    { Connection: "close" },
+  );
 }
 
 /** Reads a JSON body and checks it against the route's schema. */
@@ -2528,7 +2581,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       events,
       request,
       response,
-      { trigger: fromAgent ? "agent" : "system", origin },
+      {
+        trigger: fromAgent ? "agent" : "system",
+        origin,
+        stopping: () => runtime.stopping,
+      },
       async (unit, exchange): Promise<Settlement | void> => {
         if (runtime.stopping) {
           unit.refuse("stopping");
@@ -2554,7 +2611,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             if (error instanceof InvalidRequestError) {
               unit.fail(withoutContent(error)).refuse("invalid_request");
               if (!response.headersSent) {
-                writeJson(response, 400, { error: errorMessage(error) });
+                writeInvalidRequest(request, response, error);
               }
               return;
             }
@@ -2617,6 +2674,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           routed.fail(withoutContent(error));
           if (error instanceof InvalidRequestError) {
             routed.refuse("invalid_request");
+            writeInvalidRequest(request, response, error);
+            return;
           }
           writeJson(response, 400, {
             error: errorMessage(error),

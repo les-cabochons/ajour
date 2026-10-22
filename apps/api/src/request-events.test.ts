@@ -5,10 +5,11 @@ import { request as httpRequest } from "node:http";
 import { connect, type AddressInfo } from "node:net";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import { startAppApiServer, stopAppApiServer } from "./server.ts";
+import { AppApiStorage } from "./storage.ts";
 
 const APP_ORIGIN = "http://127.0.0.1:5173";
 const running: (() => Promise<void>)[] = [];
@@ -1131,5 +1132,139 @@ describe("request events: what the server does is not a hang-up", () => {
       error: expect.objectContaining({ code: "EISDIR" }),
     });
     expect(event.http?.status_code).toBeUndefined();
+  });
+});
+
+describe("request events: limits, sources and shutdown", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** Waits until a request event named `name` exists, for slow handlers. */
+  async function eventually(events: AjourEvent[], name: string) {
+    for (let attempt = 0; attempt < 300; attempt += 1) {
+      const found = events.find(
+        (event) => event.kind === "request" && event.name === name,
+      );
+      if (found) return found;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`No ${name} request event.`);
+  }
+
+  it("answers a body that crosses the limit at once, and closes the connection", async () => {
+    const { port, events } = await startTestApi();
+    const socket = connect(port, "127.0.0.1");
+    await new Promise<void>((resolve) => socket.once("connect", resolve));
+    let answer = "";
+    socket.on("data", (chunk: Buffer) => {
+      answer += chunk.toString("utf8");
+    });
+    socket.on("error", () => undefined);
+    const closed = new Promise<void>((resolve) =>
+      socket.once("close", resolve),
+    );
+    socket.write(
+      [
+        "POST /api/mcp/settings HTTP/1.1",
+        "Host: 127.0.0.1",
+        `Origin: ${APP_ORIGIN}`,
+        "Content-Type: application/json",
+        "Transfer-Encoding: chunked",
+        "",
+        "",
+      ].join("\r\n"),
+    );
+    // A client that never stops sending: 1 MB chunks, with no end.
+    const megabyte = "a".repeat(1024 * 1024);
+    const sending = setInterval(() => {
+      if (!socket.destroyed) {
+        socket.write(`${(1024 * 1024).toString(16)}\r\n${megabyte}\r\n`);
+      }
+    }, 5);
+    const startedAt = Date.now();
+    try {
+      await closed;
+    } finally {
+      clearInterval(sending);
+    }
+
+    expect(Date.now() - startedAt).toBeLessThan(5_000);
+    expect(answer).toMatch(/^HTTP\/1\.1 400/);
+    expect(answer.toLowerCase()).toContain("connection: close");
+    const event = await eventually(events, "mcp.configure");
+    expect(event).toMatchObject({
+      outcome: "refused",
+      outcome_reason: "invalid_request",
+      http: { status_code: 400 },
+    });
+  });
+
+  it("records an unrelated EPIPE after a hang-up as the failure it is", async () => {
+    const { port, events } = await startTestApi(writePlugin);
+    vi.spyOn(AppApiStorage.prototype, "upsertConnection").mockRejectedValue(
+      Object.assign(new Error("write EPIPE"), { code: "EPIPE" }),
+    );
+    const body = JSON.stringify({
+      values: {
+        label: "Work",
+        tenantLabel: "Acme",
+        autoSync: false,
+        autoSyncIntervalMinutes: 15,
+        token: "slow",
+      },
+    });
+
+    const outgoing = httpRequest({
+      host: "127.0.0.1",
+      port,
+      method: "POST",
+      path: "/api/plugins/jira/connections",
+      headers: {
+        Origin: APP_ORIGIN,
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(body),
+      },
+    });
+    outgoing.on("error", () => undefined);
+    outgoing.end(body);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    outgoing.destroy();
+
+    const event = await eventually(events, "connection.save");
+    expect(event).toMatchObject({
+      outcome: "error",
+      error: expect.objectContaining({ code: "EPIPE" }),
+    });
+  });
+
+  it("records a request a shutdown cut off as cancelled for stopping", async () => {
+    const { server, port, events, markStopped } = await startTestApi();
+    markStopped();
+    const socket = connect(port, "127.0.0.1");
+    await new Promise<void>((resolve) => socket.once("connect", resolve));
+    socket.on("error", () => undefined);
+    socket.write(
+      [
+        "POST /api/mcp/settings HTTP/1.1",
+        "Host: 127.0.0.1",
+        `Origin: ${APP_ORIGIN}`,
+        "Content-Type: application/json",
+        "Content-Length: 100",
+        "",
+        '{"enab',
+      ].join("\r\n"),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    await stopAppApiServer(server);
+
+    const event = await eventually(events, "mcp.configure");
+    expect(event).toMatchObject({
+      outcome: "cancelled",
+      outcome_reason: "stopping",
+    });
+    expect(event.error).toBeUndefined();
+    socket.destroy();
   });
 });
