@@ -158,6 +158,7 @@ import {
   withoutContent,
 } from "./event-errors.ts";
 import {
+  clientLeft,
   decodeParams,
   matchRoute,
   serveWithEvent,
@@ -2543,6 +2544,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               unit,
             });
           } catch (error) {
+            if (clientLeft(request, response)) return;
             if (error instanceof InvalidRequestError) {
               unit.fail(withoutContent(error)).refuse("invalid_request");
               if (!response.headersSent) {
@@ -2600,6 +2602,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             stream: exchange.stream,
           });
         } catch (error) {
+          // The client left, and the error is its leaving: the seam ends
+          // the request `cancelled`.
+          if (clientLeft(request, response)) return;
           // Ajour's own errors only. Only a route knows the connection whose
           // secrets a plugin error may echo, so each catches its plugin call
           // and answers with `pluginErrorMessage`.

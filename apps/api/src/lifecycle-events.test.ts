@@ -154,7 +154,10 @@ describe("local API lifecycle events", () => {
         outcome: "error",
         outcome_reason: "unreadable",
         storage: expect.objectContaining({ found: true, unreadable: true }),
-        error: expect.objectContaining({ type: "SyntaxError" }),
+        error: expect.objectContaining({
+          type: "StateFileError",
+          code: "unreadable",
+        }),
       }),
     ]);
     expect(JSON.stringify(events)).not.toContain("tok_state_canary_7d");
@@ -174,9 +177,9 @@ describe("local API lifecycle events", () => {
     expect(request).toMatchObject({
       outcome: "error",
       error: {
-        type: "SyntaxError",
+        type: "StateFileError",
         code: "unreadable",
-        message: "The state file is not valid JSON.",
+        message: "The state file can't be read.",
       },
     });
     expect(JSON.stringify(events)).not.toContain("CANARY");
@@ -200,11 +203,19 @@ describe("local API lifecycle events", () => {
   });
 
   it.each([
-    ["a string", JSON.stringify("Lunch with Ana")],
-    ["a number", "4242424242"],
-    ["an array", JSON.stringify(["Lunch with Ana"])],
+    ["a string root", JSON.stringify("Lunch with Ana")],
+    ["a number root", "4242424242"],
+    ["an array root", JSON.stringify(["Lunch with Ana"])],
+    [
+      "a nested number",
+      JSON.stringify({ connections: [], dismissedImportKeys: 4242424242 }),
+    ],
+    [
+      "a nested value migration chokes on",
+      JSON.stringify({ stagedImports: { note: "Lunch with Ana" } }),
+    ],
   ])(
-    "records a state file whose root is %s as unreadable, without its text",
+    "records a state file with %s as unreadable, without its text",
     async (_, contents) => {
       const root = await tempRoot();
       await writeFile(path.join(root, "state.json"), contents);
@@ -219,9 +230,20 @@ describe("local API lifecycle events", () => {
           outcome: "error",
           outcome_reason: "unreadable",
           storage: expect.objectContaining({ found: true, unreadable: true }),
-          error: expect.objectContaining({ code: "unreadable" }),
+          error: {
+            type: "StateFileError",
+            code: "unreadable",
+            message: "The state file can't be read.",
+          },
         }),
       ]);
+      expect(
+        events.find((event) => event.name === "plugin.list")?.error,
+      ).toEqual({
+        type: "StateFileError",
+        code: "unreadable",
+        message: "The state file can't be read.",
+      });
       expect(JSON.stringify(events)).not.toContain("Ana");
       expect(JSON.stringify(events)).not.toContain("4242424242");
       expect(body).not.toContain("Ana");

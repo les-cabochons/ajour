@@ -876,6 +876,8 @@ describe("request events: abandoned requests", () => {
       outcome: "cancelled",
       outcome_reason: "client_closed",
     });
+    // The body's read failed because the client left: no error of its own.
+    expect(event.error).toBeUndefined();
     expect(event.http?.status_code).toBeUndefined();
     expect(event.http?.response_bytes).toBeUndefined();
   });
@@ -916,8 +918,61 @@ describe("request events: abandoned requests", () => {
       outcome_reason: "client_closed",
       http: { request_bytes: Buffer.byteLength(body) },
     });
+    expect(event.error).toBeUndefined();
     expect(event.http?.status_code).toBeUndefined();
     expect(event.http?.response_bytes).toBeUndefined();
+  });
+
+  it("keeps the outcome a route recorded after its client left", async () => {
+    const api = await startTestApi(async (root) => ({
+      ...(await writePlugin(root)),
+      pluginRequestTimeoutMs: 150,
+    }));
+    const saved = await call(api.port, "/api/plugins/jira/connections", {
+      values: {
+        label: "Work",
+        tenantLabel: "Acme",
+        autoSync: false,
+        autoSyncIntervalMinutes: 15,
+        token: TOKEN,
+      },
+    });
+    const connectionId = saved.body.connection.id as string;
+    const body = JSON.stringify({ cursor: "slow", changes: [] });
+
+    const outgoing = httpRequest({
+      host: "127.0.0.1",
+      port: api.port,
+      method: "POST",
+      path: `/api/teams/jira/connections/${connectionId}/sync`,
+      headers: {
+        Origin: APP_ORIGIN,
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(body),
+      },
+    });
+    outgoing.on("error", () => undefined);
+    outgoing.end(body);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    outgoing.destroy();
+
+    // The plugin timed out after the client left: the request says so, as
+    // its operation does, still without a status nobody received.
+    const event = await eventually(api.events, "team.sync");
+    expect(event).toMatchObject({
+      outcome: "timeout",
+      outcome_reason: "timeout",
+      error: expect.objectContaining({ type: "Error" }),
+    });
+    expect(event.http?.status_code).toBeUndefined();
+    const operation = api.events.find(
+      (candidate) =>
+        candidate.kind === "plugin_operation" && candidate.name === "team.sync",
+    );
+    expect(operation).toMatchObject({
+      outcome: "timeout",
+      outcome_reason: "timeout",
+    });
   });
 });
 

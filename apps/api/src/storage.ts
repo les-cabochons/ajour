@@ -760,15 +760,38 @@ export function resolveStatePath(
 
 /** A state file that isn't JSON. The parser's message can quote the file, secrets included. */
 function unreadableStateError() {
-  const error = new SyntaxError("The state file is not valid JSON.");
+  const error = new Error("The state file can't be read.");
+  error.name = "StateFileError";
   return Object.assign(error, { code: "unreadable" });
 }
 
-/** A parsed state file's root that migration can read: an object, or null for the defaults. */
-function isStateRoot(
-  value: unknown,
-): value is Partial<AppApiState | AppApiStateV1 | AppApiStateV2> | null {
-  return value === null || (typeof value === "object" && !Array.isArray(value));
+/**
+ * The state a file holds, migrated, and the version it was written in. A
+ * file that holds null loads the defaults, like a missing one. Undefined for
+ * a file that isn't state: not JSON, a root that isn't an object, or any
+ * value migration can't read, however deep.
+ */
+function readStateFile(
+  text: string,
+): { state: AppApiState; versionFrom: number } | undefined {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (
+      parsed !== null &&
+      (typeof parsed !== "object" || Array.isArray(parsed))
+    ) {
+      return undefined;
+    }
+    const raw = parsed as Partial<
+      AppApiState | AppApiStateV1 | AppApiStateV2
+    > | null;
+    return {
+      state: normalizeState(raw ?? undefined),
+      versionFrom: typeof raw?.version === "number" ? raw.version : 1,
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 export class AppApiStorage {
@@ -1816,32 +1839,18 @@ export class AppApiStorage {
         unit?.set({
           storage: { found: true, bytes: Buffer.byteLength(text) },
         });
-        let parsed: unknown;
-        let isJson = true;
-        try {
-          parsed = JSON.parse(text);
-        } catch {
-          isJson = false;
-        }
-        // A file that isn't JSON, or whose root is neither an object nor
-        // null, can't be state. The parser's message, and the migration's
-        // errors on such a root, quote the file, so neither the event nor
-        // the request that read it gets them.
-        if (!isJson || !isStateRoot(parsed)) {
+        const read = readStateFile(text);
+        if (!read) {
+          // The parser's and the migration's errors quote the file, so
+          // neither the event nor the request that read it gets them.
           const unreadable = unreadableStateError();
           unit
             ?.set({ storage: { unreadable: true } })
             .fail(unreadable, { reason: "unreadable" });
           throw unreadable;
         }
-        const raw = parsed;
-        // A file that holds null, like a missing one, loads the defaults.
-        unit?.set({
-          storage: {
-            version_from: typeof raw?.version === "number" ? raw.version : 1,
-          },
-        });
-        state = normalizeState(raw ?? undefined);
+        unit?.set({ storage: { version_from: read.versionFrom } });
+        state = read.state;
       } else {
         unit?.set({ storage: { found: false } });
         state = createDefaultState();

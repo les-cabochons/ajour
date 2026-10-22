@@ -430,6 +430,21 @@ function responseDone(response: ServerResponse): Promise<void> {
 }
 
 /**
+ * Whether the client left before its request was served: the connection
+ * closed, or the body stopped arriving. An error that follows, such as a
+ * body read's `ECONNRESET`, is the client leaving, not the request failing.
+ */
+export function clientLeft(
+  request: IncomingMessage,
+  response: ServerResponse,
+): boolean {
+  return (
+    response.destroyed === true ||
+    (request.destroyed === true && request.complete === false)
+  );
+}
+
+/**
  * How a handler that counts outcomes itself, such as MCP's for a batch,
  * ends the request: the seam ends it once, after the status and the sizes.
  */
@@ -483,17 +498,26 @@ export async function serveWithEvent(
   try {
     settlement = await unit.enter(() => serve(unit, exchange));
   } catch (error) {
-    unit.fail(withoutContent(error));
+    if (!clientLeft(request, response)) unit.fail(withoutContent(error));
   }
   await responseDone(response);
   const received = requestBytes();
   if (!response.writableFinished && !streaming) {
     // The client left before the response reached it, while the body still
-    // arrived or the work still ran: no status or bytes were delivered.
+    // arrived or the work still ran: no status or bytes were delivered. An
+    // outcome the route recorded, such as a plugin's timeout, stands.
     unit.set({
       http: received !== undefined ? { request_bytes: received } : {},
     });
-    unit.end("cancelled", "client_closed");
+    if (settlement) {
+      unit.end(
+        settlement.outcome,
+        settlement.reason as Parameters<typeof unit.end>[1],
+      );
+    } else if (unit.outcome === undefined) {
+      unit.end("cancelled", "client_closed");
+    }
+    unit.end();
     return;
   }
   const status = response.statusCode;

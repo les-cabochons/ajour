@@ -249,17 +249,17 @@ them.
 
 The local API emits these (#305, #306):
 
-| Event                                 | Where                                                                                          |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| one `request` per HTTP request        | `serveWithEvent` in `apps/api/src/routes.ts`, named from `ROUTES`                              |
-| `mcp.request`, `agent_tool.call`      | `handleMcpRequest` in `apps/api/src/mcp-server.ts`, on the request's event                     |
-| `mcp_bridge.connection`               | the bridge route's request, which ends when the stream closes                                  |
-| one `plugin_operation` per worker run | `PluginWorkerLifetime`, for the plugin host and the schema host                                |
-| `api.start`, `api.stop`               | `startAppApiServer` and `stopAppApiServer` in `apps/api/src/server.ts`                         |
-| `storage.load`                        | `AppApiStorage`, for each load of the state file                                               |
-| `app.error`                           | `watchProcessCrashes` in `apps/api/src/events.ts`, which `apps/api/src/standalone.ts` turns on |
-| `agent.session`                       | `AgentSessions`, from begin to end                                                             |
-| `agent.run`                           | `AgentRunner`, from the start's first launch step to its one finalizer                         |
+| Event                                 | Where                                                                                              |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| one `request` per HTTP request        | `serveWithEvent` in `apps/api/src/routes.ts`, named from `ROUTES`                                  |
+| `mcp.request`, `agent_tool.call`      | `handleMcpRequest` in `apps/api/src/mcp-server.ts`, on the request's event                         |
+| `mcp_bridge.connection`               | the bridge route's request, which ends when the stream closes                                      |
+| one `plugin_operation` per worker run | `PluginWorkerLifetime`, for the plugin host and the schema host                                    |
+| `api.start`, `api.stop`               | `startAppApiServer` and `stopAppApiServer` in `apps/api/src/server.ts`                             |
+| `storage.load`                        | `AppApiStorage`, for each load of the state file; one it can't read, at any depth, is `unreadable` |
+| `app.error`                           | `watchProcessCrashes` in `apps/api/src/events.ts`, which `apps/api/src/standalone.ts` turns on     |
+| `agent.session`                       | `AgentSessions`, from begin to end                                                                 |
+| `agent.run`                           | `AgentRunner`, from the start's first launch step to its one finalizer                             |
 
 ### Requests
 
@@ -292,14 +292,25 @@ The local API emits these (#305, #306):
   record follows the status: a 4xx is `refused`, a 5xx an `error`.
 - **Handlers add their catalog fields** to the event, such as a sync's
   counts or a connection's field count. A failed plugin call goes through
-  `recordPluginFailure`: a refusal keeps its reason, a result that broke its
-  contract is `invalid_result`, and any other error is scrubbed of the
-  connection's secrets.
+  `recordPluginFailure`, so the request ends with the same outcome and
+  reason as its plugin operation: a refusal or a cancellation with its
+  reason, a `timeout`, a worker failure (`plugin_error`, `exited_early`,
+  `result_too_large`) with the plugin's message scrubbed of the
+  connection's secrets, or `invalid_result` by its type and code. It is
+  typed against the catalog, so a route's event that lacks one of these
+  reasons fails to compile.
 - **The event ends once**, by the seam, when the handler has settled and the
-  response has flushed or closed: `end()` only starts the flush. The bridge
-  stream's `mcp_bridge.connection` lasts as long as the stream. A handler
+  response has flushed or closed: `end()` only starts the flush. A handler
   that weighs outcomes itself, such as MCP's for a batch, returns how the
   request ends instead of ending it, so the status and sizes still land.
+- **A client that leaves** before its response flushed, while its body still
+  arrived or the work still ran, ends the request `cancelled` with
+  `client_closed`, without a status or response bytes nobody received, and
+  without the error its leaving caused, such as a body read's
+  `ECONNRESET`. An outcome the route had recorded, such as a plugin's
+  timeout, stands. A route whose response is a stream calls `stream()` on
+  its context: the bridge's `mcp_bridge.connection` lasts until its client
+  closes it, and that close is its normal end.
 - **Validation messages stay out.** An error a validator throws lists the
   values it received, whether a caller's text, a plugin's result or a
   spreadsheet's headings. `withoutContent` gives every event such an error
