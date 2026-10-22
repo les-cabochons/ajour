@@ -100,7 +100,9 @@ export function watchProcessCrashes(
           origin === "unhandledRejection"
             ? "unhandled_rejection"
             : "uncaught_exception",
-        ...(active ? { unit_name: active.name } : {}),
+        // The local API shows no dialog or toast of its own.
+        handled_by: "none",
+        ...(active ? { active_unit: active.name } : {}),
       },
     });
     unit.fail(withoutContent(error));

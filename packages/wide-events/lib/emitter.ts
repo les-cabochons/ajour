@@ -82,8 +82,6 @@ export interface Unit<C extends Catalog, Name extends EventName<C>> {
    * ends `ok`. A seam reads it to weigh outcomes, never to copy them.
    */
   readonly outcome: Outcome | undefined;
-  /** The unit's event name, such as a crash event's record of what was active. */
-  readonly name: Name;
   /** Who started the unit, so work it starts in another runtime can say the same. */
   readonly trigger: Trigger;
   /** Adds the unit's own fields. Nested objects merge; other values replace. */

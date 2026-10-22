@@ -278,14 +278,14 @@ describe("local API crash events", () => {
       expect.objectContaining({
         kind: "crash",
         outcome: "error",
-        crash: { origin: "uncaught_exception" },
+        crash: { origin: "uncaught_exception", handled_by: "none" },
         error: expect.objectContaining({
           type: "TypeError",
           message: `Cannot read [user data]${path.sep}secret-file.txt`,
         }),
       }),
       expect.objectContaining({
-        crash: { origin: "unhandled_rejection" },
+        crash: { origin: "unhandled_rejection", handled_by: "none" },
         error: expect.objectContaining({ message: "Rejected at [url]" }),
       }),
     ]);
