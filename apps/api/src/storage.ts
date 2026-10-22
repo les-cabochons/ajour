@@ -758,7 +758,11 @@ export function resolveStatePath(
     : path.join(os.homedir(), ".ajour", "app-api-state.json");
 }
 
-/** A state file that isn't JSON. The parser's message can quote the file, secrets included. */
+/**
+ * The error for a state file Ajour can't read: any failure while it is
+ * parsed, migrated or normalized. Their messages quote the file, secrets
+ * included, so this fixed one stands in, for the event and the caller.
+ */
 function unreadableStateError() {
   const error = new Error("The state file can't be read.");
   error.name = "StateFileError";

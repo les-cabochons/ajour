@@ -327,6 +327,7 @@ const TOKEN = "tok_request_canary_51c2";
 /** A plugin with backlog items (and settle), pull requests and a team. */
 const pluginSource = `
 export async function validateConnection(config) {
+  if (config.token === 'slow') await new Promise((resolve) => setTimeout(resolve, 300));
   return { normalizedConfig: config, connectionSummary: {} };
 }
 export async function syncConnection(connection) {
@@ -1052,5 +1053,83 @@ describe("request events: a plugin operation's reason", () => {
       ["cancelled", "plugin_off"],
       ["cancelled", "plugin_off"],
     ]);
+  });
+});
+
+describe("request events: what the server does is not a hang-up", () => {
+  /** Waits until a request event named `name` exists, for slow handlers. */
+  async function eventually(events: AjourEvent[], name: string) {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const found = events.find(
+        (event) => event.kind === "request" && event.name === name,
+      );
+      if (found) return found;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`No ${name} request event.`);
+  }
+
+  it("answers a body over the limit with a 400 on an open connection", async () => {
+    const { port, events } = await startTestApi();
+    const body = JSON.stringify({ enabled: "a".repeat(17 * 1024 * 1024) });
+
+    const response = await send(port, {
+      method: "POST",
+      path: "/api/mcp/settings",
+      headers: { Origin: APP_ORIGIN, "Content-Type": "application/json" },
+      body,
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toContain("exceeds");
+    const event = await eventually(events, "mcp.configure");
+    expect(event).toMatchObject({
+      outcome: "refused",
+      outcome_reason: "invalid_request",
+      http: { status_code: 400 },
+    });
+  });
+
+  it("records a real failure after the client hung up, with its code", async () => {
+    let root = "";
+    const { port, events } = await startTestApi(async (folder) => {
+      root = folder;
+      return await writePlugin(folder);
+    });
+    const body = JSON.stringify({
+      values: {
+        label: "Work",
+        tenantLabel: "Acme",
+        autoSync: false,
+        autoSyncIntervalMinutes: 15,
+        token: "slow",
+      },
+    });
+
+    // The plugin validates slowly; meanwhile the client hangs up, and the
+    // state file becomes a folder, so the save that follows fails.
+    const outgoing = httpRequest({
+      host: "127.0.0.1",
+      port,
+      method: "POST",
+      path: "/api/plugins/jira/connections",
+      headers: {
+        Origin: APP_ORIGIN,
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(body),
+      },
+    });
+    outgoing.on("error", () => undefined);
+    outgoing.end(body);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    outgoing.destroy();
+    await mkdir(path.join(root, "state.json"));
+
+    const event = await eventually(events, "connection.save");
+    expect(event).toMatchObject({
+      outcome: "error",
+      error: expect.objectContaining({ code: "EISDIR" }),
+    });
+    expect(event.http?.status_code).toBeUndefined();
   });
 });

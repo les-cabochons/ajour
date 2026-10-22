@@ -158,7 +158,6 @@ import {
   withoutContent,
 } from "./event-errors.ts";
 import {
-  clientLeft,
   decodeParams,
   matchRoute,
   serveWithEvent,
@@ -399,12 +398,19 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   for await (const chunk of request) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     totalBytes += buffer.byteLength;
+    // Past the limit, the rest is read and dropped rather than thrown on:
+    // leaving the loop would destroy the request, and the caller would get
+    // no answer.
     if (totalBytes > MAX_JSON_BODY_BYTES) {
-      throw new InvalidRequestError(
-        new Error(`JSON request body exceeds ${MAX_JSON_BODY_BYTES} bytes.`),
-      );
+      chunks.length = 0;
+      continue;
     }
     chunks.push(buffer);
+  }
+  if (totalBytes > MAX_JSON_BODY_BYTES) {
+    throw new InvalidRequestError(
+      new Error(`JSON request body exceeds ${MAX_JSON_BODY_BYTES} bytes.`),
+    );
   }
 
   if (chunks.length === 0) {
@@ -2544,7 +2550,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               unit,
             });
           } catch (error) {
-            if (clientLeft(request, response)) return;
+            if (exchange.isHangUp(error)) return;
             if (error instanceof InvalidRequestError) {
               unit.fail(withoutContent(error)).refuse("invalid_request");
               if (!response.headersSent) {
@@ -2602,9 +2608,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             stream: exchange.stream,
           });
         } catch (error) {
-          // The client left, and the error is its leaving: the seam ends
-          // the request `cancelled`.
-          if (clientLeft(request, response)) return;
+          // The client hung up, and the error is its interrupted body or
+          // connection: the seam ends the request `cancelled`.
+          if (exchange.isHangUp(error)) return;
           // Ajour's own errors only. Only a route knows the connection whose
           // secrets a plugin error may echo, so each catches its plugin call
           // and answers with `pluginErrorMessage`.

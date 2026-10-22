@@ -429,18 +429,19 @@ function responseDone(response: ServerResponse): Promise<void> {
   });
 }
 
-/**
- * Whether the client left before its request was served: the connection
- * closed, or the body stopped arriving. An error that follows, such as a
- * body read's `ECONNRESET`, is the client leaving, not the request failing.
- */
-export function clientLeft(
-  request: IncomingMessage,
-  response: ServerResponse,
-): boolean {
+/** The errors an interrupted body read or connection raises. */
+const HANG_UP_CODES: ReadonlySet<string> = new Set([
+  "ECONNRESET",
+  "ECONNABORTED",
+  "EPIPE",
+  "ERR_STREAM_PREMATURE_CLOSE",
+]);
+
+function isTransportError(error: unknown) {
+  const code = (error as { code?: unknown } | null | undefined)?.code;
   return (
-    response.destroyed === true ||
-    (request.destroyed === true && request.complete === false)
+    (typeof code === "string" && HANG_UP_CODES.has(code)) ||
+    (error instanceof Error && error.message === "aborted")
   );
 }
 
@@ -448,6 +449,18 @@ export function clientLeft(
  * How a handler that counts outcomes itself, such as MCP's for a batch,
  * ends the request: the seam ends it once, after the status and the sizes.
  */
+/** What the seam lends the code that serves a request. */
+export interface Exchange {
+  /** The response is a stream, which lasts until its client closes it. */
+  stream(): void;
+  /**
+   * Whether `error` is the client hanging up: the connection closed before
+   * the response finished, and `error` is what the interrupted body read or
+   * transport raised. Any other error, even after a hang-up, is a failure.
+   */
+  isHangUp(error: unknown): boolean;
+}
+
 export interface Settlement {
   outcome: Outcome;
   reason?: string;
@@ -474,7 +487,7 @@ export async function serveWithEvent(
   },
   serve: (
     unit: Unit<AjourCatalog, "api.request">,
-    exchange: { stream(): void },
+    exchange: Exchange,
   ) => Promise<Settlement | void>,
 ): Promise<void> {
   const traceparent = request.headers.traceparent;
@@ -490,51 +503,48 @@ export async function serveWithEvent(
   });
   let settlement: Settlement | void = undefined;
   let streaming = false;
-  const exchange = {
+  // A hang-up: the connection closed before the response finished. The
+  // server never destroys a request or its socket while it serves one.
+  let hungUp = false;
+  const noteClose = () => {
+    if (!response.writableFinished) hungUp = true;
+  };
+  response.once?.("close", noteClose);
+  const exchange: Exchange = {
     stream: () => {
       streaming = true;
     },
+    isHangUp: (error) =>
+      isTransportError(error) && (hungUp || request.socket?.destroyed === true),
   };
   try {
     settlement = await unit.enter(() => serve(unit, exchange));
   } catch (error) {
-    if (!clientLeft(request, response)) unit.fail(withoutContent(error));
+    if (!exchange.isHangUp(error)) unit.fail(withoutContent(error));
   }
   await responseDone(response);
   const received = requestBytes();
-  if (!response.writableFinished && !streaming) {
-    // The client left before the response reached it, while the body still
-    // arrived or the work still ran: no status or bytes were delivered. An
-    // outcome the route recorded, such as a plugin's timeout, stands.
-    unit.set({
-      http: received !== undefined ? { request_bytes: received } : {},
-    });
-    if (settlement) {
-      unit.end(
-        settlement.outcome,
-        settlement.reason as Parameters<typeof unit.end>[1],
-      );
-    } else if (unit.outcome === undefined) {
-      unit.end("cancelled", "client_closed");
-    }
-    unit.end();
-    return;
-  }
+  const delivered = response.writableFinished || streaming;
   const status = response.statusCode;
+  // A response whose client left before it reached it, while the body still
+  // arrived or the work still ran, delivered no status or bytes.
   unit.set({
     http: {
-      status_code: status,
       ...(received !== undefined ? { request_bytes: received } : {}),
-      response_bytes: responseBytes(),
+      ...(delivered
+        ? { status_code: status, response_bytes: responseBytes() }
+        : {}),
     },
   });
+  // An outcome the route recorded, such as a plugin's timeout, stands.
   if (settlement) {
     unit.end(
       settlement.outcome,
       settlement.reason as Parameters<typeof unit.end>[1],
     );
   } else if (unit.outcome === undefined) {
-    if (status >= 500) unit.end("error");
+    if (!delivered) unit.end("cancelled", "client_closed");
+    else if (status >= 500) unit.end("error");
     else if (status >= 400) unit.end("refused");
   }
   unit.end();
