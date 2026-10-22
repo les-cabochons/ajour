@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, expect, it } from "vitest";
 
-const SERVER = fileURLToPath(new URL("./server.ts", import.meta.url));
+const SERVER = fileURLToPath(new URL("./standalone.ts", import.meta.url));
 const roots: string[] = [];
 
 afterEach(async () => {

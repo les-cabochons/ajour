@@ -159,6 +159,45 @@ describe("local API lifecycle events", () => {
     ]);
     expect(JSON.stringify(events)).not.toContain("tok_state_canary_7d");
   });
+
+  it("keeps a corrupt state file's text out of the request that read it, and its answer", async () => {
+    const root = await tempRoot();
+    // The parser quotes the start of a file like this one in its message.
+    await writeFile(path.join(root, "state.json"), "CANARY_SECRET_TOKEN");
+    const { events, port } = await start(root);
+
+    const response = await fetch(`http://127.0.0.1:${port}/api/plugins`);
+    const body = await response.text();
+
+    expect(response.status).toBe(400);
+    const request = events.find((event) => event.name === "plugin.list");
+    expect(request).toMatchObject({
+      outcome: "error",
+      error: {
+        type: "SyntaxError",
+        code: "unreadable",
+        message: "The state file is not valid JSON.",
+      },
+    });
+    expect(JSON.stringify(events)).not.toContain("CANARY");
+    expect(body).not.toContain("CANARY");
+  });
+
+  it("loads the defaults from a state file that holds null", async () => {
+    const root = await tempRoot();
+    await writeFile(path.join(root, "state.json"), "null");
+    const { events, port } = await start(root);
+
+    const response = await fetch(`http://127.0.0.1:${port}/api/plugins`);
+
+    expect(response.status).toBe(200);
+    expect(named(events, "storage.load")).toEqual([
+      expect.objectContaining({
+        outcome: "ok",
+        storage: expect.objectContaining({ found: true, version_to: 7 }),
+      }),
+    ]);
+  });
 });
 
 /** What Node does before it handles a crash: tell the monitor listeners. */

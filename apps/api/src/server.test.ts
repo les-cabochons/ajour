@@ -159,6 +159,7 @@ async function dispatchJsonRequest(
       statusCode: 200,
       headersSent: false,
       writableEnded: false,
+      writableFinished: false,
       setHeader() {
         return response;
       },
@@ -176,6 +177,7 @@ async function dispatchJsonRequest(
       },
       end(payload?: string) {
         response.writableEnded = true;
+        response.writableFinished = true;
         // The request's event ends once its handler returns, just after.
         setImmediate(() =>
           resolve({

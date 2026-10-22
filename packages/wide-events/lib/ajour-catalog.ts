@@ -103,8 +103,9 @@ const pluginOperationFields = {
 
 /**
  * Every way a plugin operation ends other than `ok`. Refused: `capacity`,
- * the inactive reasons, `host_stopping`, `package_change`, `not_installed`
- * and `runs_no_code`. Cancelled: the inactive reasons, `uninstalled` and
+ * the inactive reasons, `host_stopping`, `package_change`, `not_installed`,
+ * `runs_no_code` and `not_supported`, for a capability or feature the
+ * plugin doesn't declare. Cancelled: the inactive reasons, `uninstalled` and
  * `shutdown`. Then `timeout`, and the errors `result_too_large`,
  * `invalid_result`, `exited_early` and `plugin_error`.
  */
@@ -115,6 +116,7 @@ const pluginOperationReasons = [
   "package_change",
   "not_installed",
   "runs_no_code",
+  "not_supported",
   "uninstalled",
   "shutdown",
   "timeout",
@@ -124,10 +126,14 @@ const pluginOperationReasons = [
   "plugin_error",
 ] as const;
 
-/** A route that runs a plugin operation: the request and the operation share the name. */
+/**
+ * A route that runs a plugin operation: the request and the operation share
+ * the name. The route also refuses a connection it doesn't have.
+ */
 const pluginRequestReasons = [
   ...requestReasons,
   ...pluginOperationReasons,
+  "connection_not_found",
 ] as const;
 
 /**
@@ -160,6 +166,8 @@ export const catalog = defineCatalog({
         "host_refused",
         "origin_refused",
         "no_route",
+        /** A route that names its operations, called with one it doesn't have. */
+        "unknown_operation",
         ...requestReasons,
       ],
       fields: { ...requestFields },
@@ -292,24 +300,25 @@ export const catalog = defineCatalog({
       reasons: requestReasons,
       fields: { ...requestFields, mcp: { enabled: operational<boolean>() } },
     },
-    "mcp_client.create": {
+    "agent_client.create": {
       kinds: ["command", "request"],
       reasons: requestReasons,
       fields: { ...requestFields, agent: { client_id: operational() } },
     },
-    "mcp_client.revoke": {
+    "agent_client.revoke": {
       kinds: ["command", "request"],
-      reasons: requestReasons,
+      reasons: ["unknown_client", ...requestReasons],
       fields: { ...requestFields, agent: { client_id: operational() } },
     },
-    "agent_question.answer": {
+    /** The user's answer to an agent's question. Never its text. */
+    "question.answer": {
       kinds: ["command", "request"],
-      reasons: requestReasons,
+      reasons: ["question_closed", ...requestReasons],
       fields: { ...requestFields, agent: { question_id: operational() } },
     },
     "agent_session.dismiss": {
       kinds: ["command", "request"],
-      reasons: requestReasons,
+      reasons: ["session_closed", ...requestReasons],
       fields: { ...requestFields, agent: { session_id: operational() } },
     },
     /** The user opened the agent panel: earlier errors are seen. */
@@ -382,7 +391,12 @@ export const catalog = defineCatalog({
     },
     "agent_run.start": {
       kinds: ["command", "request"],
-      reasons: requestReasons,
+      reasons: [
+        "already_running",
+        "no_agent_task",
+        "blocked",
+        ...requestReasons,
+      ],
       fields: {
         ...requestFields,
         agent: { run_id: operational(), task_id: operational() },
@@ -391,7 +405,7 @@ export const catalog = defineCatalog({
     },
     "agent_run.stop": {
       kinds: ["command", "request"],
-      reasons: requestReasons,
+      reasons: ["not_running", ...requestReasons],
       fields: { ...requestFields, agent: { run_id: operational() } },
     },
     "agent_run.status": {
@@ -411,7 +425,7 @@ export const catalog = defineCatalog({
     },
     "agent_task.configure": {
       kinds: ["command", "request"],
-      reasons: requestReasons,
+      reasons: ["no_agent_task", ...requestReasons],
       fields: {
         ...requestFields,
         plugin: { id: operational() },
@@ -437,7 +451,7 @@ export const catalog = defineCatalog({
     /** A plugin, or one of its capabilities, turned on or off. */
     "plugin.activate": {
       kinds: ["command", "request"],
-      reasons: requestReasons,
+      reasons: ["not_installed", "not_supported", ...requestReasons],
       fields: {
         ...requestFields,
         plugin: { id: operational() },
@@ -480,7 +494,7 @@ export const catalog = defineCatalog({
     },
     "connection.delete": {
       kinds: ["command", "request"],
-      reasons: requestReasons,
+      reasons: ["connection_not_found", ...requestReasons],
       fields: {
         ...requestFields,
         plugin: { id: operational() },
@@ -525,16 +539,6 @@ export const catalog = defineCatalog({
         },
       },
     },
-    /** The states a settle can write to the source. */
-    "settle_state.list": {
-      kinds: ["command", "request", "plugin_operation"],
-      reasons: pluginRequestReasons,
-      fields: {
-        ...requestFields,
-        ...pluginOperationFields,
-        settle_state: { count: operational<number>() },
-      },
-    },
     /** A synced item's description as its source holds it now. */
     "description.read": {
       kinds: ["command", "request", "plugin_operation"],
@@ -554,11 +558,16 @@ export const catalog = defineCatalog({
         },
       },
     },
+    /**
+     * Source states: those Ajour has seen on synced items, or those a settle
+     * can write, which the plugin lists.
+     */
     "source_state.list": {
-      kinds: ["command", "request"],
-      reasons: requestReasons,
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
       fields: {
         ...requestFields,
+        ...pluginOperationFields,
         source_state: { count: operational<number>() },
       },
     },

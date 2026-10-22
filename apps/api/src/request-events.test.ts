@@ -1,5 +1,6 @@
 import os from "node:os";
 import path from "node:path";
+import { EventEmitter } from "node:events";
 import { request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
@@ -119,6 +120,7 @@ describe("local API request events", () => {
           method: "GET",
           route: "/api/health",
           status_code: 200,
+          request_bytes: 0,
           response_bytes: Buffer.byteLength(response.body),
           origin: "app",
         },
@@ -140,8 +142,9 @@ describe("local API request events", () => {
     expect(response.status).toBe(409);
     const [event] = await requestEvents(events, 1);
     expect(event).toMatchObject({
-      name: "agent_question.answer",
+      name: "question.answer",
       outcome: "refused",
+      outcome_reason: "question_closed",
       http: {
         method: "POST",
         route: "/api/mcp/questions/:questionId/answer",
@@ -186,7 +189,11 @@ describe("local API request events", () => {
       name: "api.request",
       outcome: "refused",
       outcome_reason: "host_refused",
-      http: { status_code: 403 },
+      http: {
+        status_code: 403,
+        origin: "none",
+        response_bytes: expect.any(Number),
+      },
     });
     expect(JSON.stringify(event)).not.toContain("attacker.example");
   });
@@ -210,6 +217,10 @@ describe("local API request events", () => {
     expect(JSON.stringify(event)).not.toContain("evil.example");
   });
 
+  // A real socket can't reach this branch on demand: stopping closes every
+  // idle connection at once, so a new request has no connection to arrive
+  // on, and gets no answer or event. Only a request a busy connection had
+  // already started sees `stopping`, which this hands over directly.
   it("records a request that arrives while the API stops", async () => {
     const { server, events, markStopped } = await startTestApi();
     markStopped();
@@ -225,6 +236,7 @@ describe("local API request events", () => {
         name: "api.request",
         outcome: "refused",
         outcome_reason: "stopping",
+        http: expect.objectContaining({ status_code: 503, origin: "none" }),
       }),
     ]);
   });
@@ -277,6 +289,7 @@ function dispatch(server: Server, url: string) {
     const response = {
       statusCode: 200,
       writableEnded: false,
+      writableFinished: false,
       headersSent: false,
       setHeader: () => response,
       getHeader: () => undefined,
@@ -290,6 +303,7 @@ function dispatch(server: Server, url: string) {
       },
       end() {
         response.writableEnded = true;
+        response.writableFinished = true;
         setImmediate(() => resolve(status));
         return response;
       },
@@ -528,9 +542,9 @@ describe("route events", () => {
     });
 
     expect(failed.status).toBe(502);
-    expect(await lastRequest(events, "settle_state.list")).toMatchObject({
+    expect(await lastRequest(events, "source_state.list")).toMatchObject({
       outcome: "ok",
-      settle_state: { count: 2 },
+      source_state: { count: 2 },
     });
     const writes = events.filter(
       (event) =>
@@ -651,6 +665,26 @@ describe("route events", () => {
     expect(JSON.stringify(events)).not.toContain("Secret client");
   });
 
+  it("refuses a schema import whose rows break the definition, without their headings", async () => {
+    const { port, events } = await startTestApi(writePlugin);
+
+    const imported = await call(
+      port,
+      "/api/project-data-shapes/workday/import",
+      {
+        datasets: [{ id: "projects", rows: [{ "Private heading": "Acme" }] }],
+      },
+    );
+
+    expect(imported.status).toBe(400);
+    expect(imported.body.error).toContain("Private heading");
+    expect(await lastRequest(events, "project.import")).toMatchObject({
+      outcome: "refused",
+      outcome_reason: "invalid_request",
+    });
+    expect(JSON.stringify(events)).not.toContain("Private heading");
+  });
+
   it("records the bridge stream when it closes, with the calls it carried", async () => {
     const { port, events } = await startTestApi();
     await call(port, "/api/mcp/settings", { enabled: true });
@@ -669,7 +703,137 @@ describe("route events", () => {
     expect(await lastRequest(events, "mcp_bridge.connection")).toMatchObject({
       outcome: "ok",
       mcp_bridge: { call_count: 0 },
-      http: { route: "/api/mcp/bridge", status_code: 200, origin: "app" },
+      http: expect.objectContaining({
+        route: "/api/mcp/bridge",
+        status_code: 200,
+        origin: "app",
+        response_bytes: expect.any(Number),
+      }),
     });
+    // Its first line and the agents snapshot it publishes on attach.
+    expect(
+      (await lastRequest(events, "mcp_bridge.connection")).http?.response_bytes,
+    ).toBeGreaterThan(Buffer.byteLength("retry: 2000\n\n"));
+  });
+});
+
+describe("request events: boundary and reasons", () => {
+  it("counts a chunked request body", async () => {
+    const { port, events } = await startTestApi();
+    const body = JSON.stringify({ enabled: false });
+
+    await new Promise<void>((resolve, reject) => {
+      const outgoing = httpRequest(
+        {
+          host: "127.0.0.1",
+          port,
+          method: "POST",
+          path: "/api/mcp/settings",
+          headers: {
+            Origin: APP_ORIGIN,
+            "Content-Type": "application/json",
+            "Transfer-Encoding": "chunked",
+          },
+        },
+        (incoming) => {
+          incoming.resume();
+          incoming.on("end", () => resolve());
+        },
+      );
+      outgoing.on("error", reject);
+      outgoing.write(body.slice(0, 5));
+      outgoing.end(body.slice(5));
+    });
+
+    expect(await lastRequest(events, "mcp.configure")).toMatchObject({
+      outcome: "ok",
+      http: {
+        request_bytes: Buffer.byteLength(body),
+        response_bytes: expect.any(Number),
+      },
+    });
+  });
+
+  it("ends a request's event once its response has flushed, not when it ends", async () => {
+    const { server, events } = await startTestApi();
+    const response = Object.assign(new EventEmitter(), {
+      statusCode: 200,
+      headersSent: false,
+      writableEnded: false,
+      writableFinished: false,
+      destroyed: false,
+      setHeader: () => response,
+      getHeader: () => undefined,
+      writeHead(statusCode: number) {
+        response.statusCode = statusCode;
+        response.headersSent = true;
+        return response;
+      },
+      end() {
+        // Called, but the bytes are still on their way.
+        response.writableEnded = true;
+        return response;
+      },
+    });
+
+    server.emit(
+      "request",
+      {
+        method: "GET",
+        url: "/api/health",
+        headers: { host: "127.0.0.1" },
+        async *[Symbol.asyncIterator]() {},
+      } as unknown as IncomingMessage,
+      response as unknown as ServerResponse,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(response.writableEnded).toBe(true);
+    expect(events.filter((event) => event.kind === "request")).toEqual([]);
+
+    response.writableFinished = true;
+    response.emit("finish");
+
+    expect(await lastRequest(events, "api.health")).toMatchObject({
+      outcome: "ok",
+      http: { status_code: 200 },
+    });
+  });
+
+  it("refuses a value Ajour checks itself as the caller's mistake, without the message", async () => {
+    const { port, events } = await startTestApi();
+
+    const saved = await call(port, "/api/plugins/jira/connections", {
+      values: { tenantLabel: "Acme private workspace" },
+    });
+
+    expect(saved.status).toBe(400);
+    const event = await lastRequest(events, "connection.save");
+    expect(event).toMatchObject({
+      outcome: "refused",
+      outcome_reason: "invalid_request",
+      error: { type: "Error", code: "invalid_request" },
+    });
+    expect(event.error?.message).toBeUndefined();
+    expect(JSON.stringify(events)).not.toContain("Acme private");
+  });
+
+  it("gives each refusal a route answers with a 4xx its reason", async () => {
+    const { port, events } = await startTestApi();
+
+    await call(port, "/api/agents/plugins/nope/settings", { values: {} });
+    await call(port, "/api/agent-runs/nope/stop", {});
+    await call(port, "/api/mcp/clients/nope/revoke", {});
+    await call(port, "/api/code-hosts/jira/connections/c1/rewriteHistory", {});
+
+    expect(
+      (await requestEvents(events, 4)).map(
+        ({ name, outcome, outcome_reason }) => [name, outcome, outcome_reason],
+      ),
+    ).toEqual([
+      ["agent_task.configure", "refused", "no_agent_task"],
+      ["agent_run.stop", "refused", "not_running"],
+      ["agent_client.revoke", "refused", "unknown_client"],
+      ["api.request", "refused", "unknown_operation"],
+    ]);
   });
 });

@@ -372,11 +372,8 @@ export async function readPlugin(
 
 /**
  * Reads every installed package. Packages built for another plugin API come
- * back in `unavailable`; other invalid directories are logged and skipped.
- */
-/**
- * The runnable installed plugins, and the packages Ajour read but can't run.
- * `invalidCount` counts the folders skipped because their package is invalid.
+ * back in `unavailable`. Other invalid directories are skipped, and
+ * `invalidCount` counts them, for the caller's event.
  */
 export async function discoverInstalledPlugins(pluginRoot: string): Promise<{
   plugins: ResolvedPlugin[];

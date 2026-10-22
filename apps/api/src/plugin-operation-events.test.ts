@@ -246,8 +246,14 @@ describe("plugin operation events", () => {
 
   it("records each cancellation with its reason", async () => {
     const { host, logged } = await pluginHost(hang);
-    const turnedOff = host.syncConnection("jira", connection);
-    const alsoTurnedOff = host.syncConnection("jira", connection);
+    // Each rejection is handled from the start: they settle while the
+    // cancel is awaited.
+    const turnedOff = expect(
+      host.syncConnection("jira", connection),
+    ).rejects.toThrow("turned off");
+    const alsoTurnedOff = expect(
+      host.syncConnection("jira", connection),
+    ).rejects.toThrow("turned off");
     await registered(host, 2);
 
     await host.cancelCapabilityOperations(
@@ -255,16 +261,17 @@ describe("plugin operation events", () => {
       "connector",
       new Error("Backlog items were turned off."),
     );
-    await expect(turnedOff).rejects.toThrow("turned off");
-    await expect(alsoTurnedOff).rejects.toThrow("turned off");
-    const more = host.syncConnection("jira", connection);
+    await Promise.all([turnedOff, alsoTurnedOff]);
+    const more = expect(
+      host.syncConnection("jira", connection),
+    ).rejects.toThrow("deactivated");
     await registered(host, 1);
     await host.cancelPluginOperations(
       "jira",
       new Error("Plugin was deactivated."),
       "plugin_off",
     );
-    await expect(more).rejects.toThrow("deactivated");
+    await more;
 
     expect(
       operations(logged).map(({ outcome, outcome_reason }) => [
@@ -418,5 +425,167 @@ describe("plugin operation events", () => {
       }),
     ]);
     expect(JSON.stringify(sink.events)).not.toContain("Secret client");
+  });
+});
+
+/** A schema plugin whose `exportProjects` is `body`, and its host. */
+async function schemaHost(body: string) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "ajour-schema-events-"));
+  directories.push(root);
+  const directory = path.join(root, "workday");
+  await mkdir(directory, { recursive: true });
+  await writeFile(
+    path.join(directory, "plugin.json"),
+    JSON.stringify({
+      id: "workday",
+      version: "2.0.0",
+      apiVersion: 1,
+      displayName: "Workday",
+      description: "Test schema.",
+      iconSvg: ICON,
+      entrypoint: "plugin.mjs",
+      capabilities: {
+        projectDataShape: {
+          apiVersion: 1,
+          datasets: [
+            {
+              id: "projects",
+              displayName: "Projects",
+              columns: [
+                {
+                  key: "project",
+                  header: "project",
+                  type: "string",
+                  required: true,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    }),
+  );
+  await writeFile(
+    path.join(directory, "plugin.mjs"),
+    `export async function exportProjects(projects) {\n${body}\n}\nexport async function importProjects() { return { projects: [] }; }\n`,
+  );
+  const sink = createRecordingSink<AjourEvent>();
+  const host = new ProjectDataShapePluginManager({
+    pluginDirectories: [directory],
+    events: createApiEvents({ sink, userDataPath: root }),
+  });
+  hosts.push(host);
+  return { host, logged: sink.events };
+}
+
+describe("plugin operation events: validation and pre-flight", () => {
+  it("records a schema result that breaks its definition by type and code only", async () => {
+    const { host, logged } = await schemaHost(
+      "return { datasets: [{ id: 'Secret heading sheet', rows: [] }] };",
+    );
+
+    await expect(host.exportProjects("workday", [])).rejects.toThrow(
+      "Secret heading sheet",
+    );
+
+    const [operation] = operations(logged);
+    expect(operation).toMatchObject({
+      outcome: "error",
+      outcome_reason: "invalid_result",
+      error: { type: "Error", code: "invalid_result" },
+    });
+    expect(operation?.error?.message).toBeUndefined();
+    expect(JSON.stringify(logged)).not.toContain("Secret heading");
+  });
+
+  it("refuses an import whose rows break the definition, without their text", async () => {
+    const { host, logged } = await schemaHost("return { datasets: [] };");
+
+    await expect(
+      host.importProjects("workday", [
+        { id: "projects", rows: [{ "Private heading": "Acme" }] },
+      ]),
+    ).rejects.toThrow("Private heading");
+
+    expect(operations(logged)).toEqual([
+      expect.objectContaining({
+        name: "project.import",
+        outcome: "refused",
+        outcome_reason: "invalid_request",
+      }),
+    ]);
+    expect(JSON.stringify(logged)).not.toContain("Private heading");
+  });
+
+  it("records a refusal its pre-flight finds through a real method", async () => {
+    const { host, logged } = await pluginHost(
+      "return { items: [], workItemUpdates: [] };",
+    );
+
+    await expect(
+      host.syncConnection("missing", { ...connection, pluginId: "missing" }),
+    ).rejects.toThrow("not installed");
+    await expect(
+      host.runCalendarOperation("jira", "listCalendarEvents", connection, {
+        from: "2026-10-12",
+        to: "2026-10-18",
+        timeZone: "UTC",
+      }),
+    ).rejects.toThrow("does not provide calendar events");
+    await expect(
+      host.runCodeHostOperation("jira", "syncPullRequests", connection, {
+        tracked: [],
+      }),
+    ).rejects.toThrow("does not provide pull requests");
+    await expect(
+      host.runBacklogCommentOperation("jira", "listItemComments", connection, {
+        sourceId: "ENG-1",
+        limit: 10,
+      }),
+    ).rejects.toThrow("does not provide comments");
+    await expect(
+      host.syncTeamProjects("jira", connection, { changes: [] }),
+    ).rejects.toThrow("does not sync a team's projects");
+    await expect(
+      host.listSettleStates("jira", connection, { sourceId: "ENG-1" }),
+    ).rejects.toThrow("does not support settling");
+    await host.shutdown();
+    await expect(host.syncConnection("jira", connection)).rejects.toThrow(
+      "shutting down",
+    );
+
+    expect(
+      operations(logged).map(({ name, outcome, outcome_reason }) => [
+        name,
+        outcome,
+        outcome_reason,
+      ]),
+    ).toEqual([
+      ["backlog.sync", "refused", "not_installed"],
+      ["calendar.fetch", "refused", "not_supported"],
+      ["pull_request.sync", "refused", "not_supported"],
+      ["comment.list", "refused", "not_supported"],
+      ["team.sync", "refused", "not_supported"],
+      ["source_state.list", "refused", "not_supported"],
+      ["backlog.sync", "refused", "host_stopping"],
+    ]);
+  });
+
+  it("takes the trigger of the unit that started it", async () => {
+    const { host, events, logged } = await pluginHost(
+      "return { items: [], workItemUpdates: [] };",
+    );
+
+    await events.run(
+      "backlog.sync",
+      { kind: "request", trigger: "agent" },
+      () => host.syncConnection("jira", connection),
+    );
+    await host.syncConnection("jira", connection);
+
+    expect(operations(logged).map((event) => event.trigger)).toEqual([
+      "agent",
+      "system",
+    ]);
   });
 });

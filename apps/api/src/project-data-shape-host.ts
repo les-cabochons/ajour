@@ -4,8 +4,8 @@ import {
   PluginWorkerLifetime,
   type OperationRecord,
   type PluginCancelReason,
-  type PluginOperationEventName,
 } from "./plugin-worker-lifetime.ts";
+import type { PluginOperationEventName } from "./operation-events.ts";
 import type { ApiEvents } from "./events.ts";
 import {
   PROJECT_DATA_SHAPE_PLUGIN_API_VERSION,
@@ -113,11 +113,21 @@ export class ProjectDataShapePluginManager {
       "importProjects",
       async (record) => {
         const plugin = await this.getPlugin(pluginId, record);
-        const validatedDatasets = validateProjectDataShapeDatasets(
-          plugin.manifest.capabilities.projectDataShape,
-          projectDataShapeImportRequestSchema.parse({ datasets }).datasets,
-          { validateRequiredValues: false, validateValueTypes: false },
-        );
+        let validatedDatasets: ProjectDataShapeDataset[];
+        try {
+          validatedDatasets = validateProjectDataShapeDatasets(
+            plugin.manifest.capabilities.projectDataShape,
+            projectDataShapeImportRequestSchema.parse({ datasets }).datasets,
+            { validateRequiredValues: false, validateValueTypes: false },
+          );
+        } catch (error) {
+          // The file's rows break the plugin's definition. The message names
+          // their headings, for the user; the event holds the reason only.
+          throw new PluginOperationRefused(
+            error instanceof Error ? error.message : String(error),
+            "invalid_request",
+          );
+        }
         return {
           workerData: this.invocationData(plugin, "importProjects", {
             datasets: validatedDatasets,

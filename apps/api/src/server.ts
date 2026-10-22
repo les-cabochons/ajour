@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import {
   agentTaskSettingFields,
   backlogSourceStatusListResponseSchema,
@@ -70,6 +70,9 @@ import {
 import {
   codeHostOperationSchema,
   codeHostOperations,
+  type CodeHostOperation,
+  type CodeHostOperationRequest,
+  type CodeHostOperationResult,
 } from "../../../packages/shared/code-host.ts";
 import {
   calendarOperationSchema,
@@ -80,10 +83,12 @@ import {
   backlogCommentOperationSchema,
   backlogCommentOperations,
 } from "../../../packages/shared/backlog-comments.ts";
-import type { AjourCatalog } from "../../../packages/wide-events/catalog.ts";
+import type {
+  AjourCatalog,
+  FieldsOf,
+} from "../../../packages/wide-events/catalog.ts";
 import type { Unit } from "../../../packages/wide-events/index.ts";
 import { teamSyncRequestSchema } from "../../../packages/shared/team-sync.ts";
-import { ZodError } from "zod";
 import {
   projectDataShapeExportRequestSchema,
   projectDataShapeExportResponseSchema,
@@ -112,7 +117,6 @@ import { AgentSessions } from "./agent-sessions.ts";
 import {
   createApiEvents,
   watchProcessCrashes,
-  withoutContent,
   type ApiEvents,
   type ApiLaunch,
 } from "./events.ts";
@@ -143,6 +147,12 @@ import {
   type ConnectionRedaction,
 } from "./plugin-errors.ts";
 import {
+  InvalidPluginResultError,
+  InvalidRequestError,
+  readInput,
+  withoutContent,
+} from "./event-errors.ts";
+import {
   decodeParams,
   matchRoute,
   serveWithEvent,
@@ -150,6 +160,7 @@ import {
   type RouteHandlers,
   type RouteId,
   type RouteParams,
+  type Settlement,
 } from "./routes.ts";
 import {
   AppApiStorage,
@@ -383,8 +394,8 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     totalBytes += buffer.byteLength;
     if (totalBytes > MAX_JSON_BODY_BYTES) {
-      throw new Error(
-        `JSON request body exceeds ${MAX_JSON_BODY_BYTES} bytes.`,
+      throw new InvalidRequestError(
+        new Error(`JSON request body exceeds ${MAX_JSON_BODY_BYTES} bytes.`),
       );
     }
     chunks.push(buffer);
@@ -404,8 +415,17 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   } catch {
     // The parser's message can quote the body, which may hold the user's
     // text, so it never travels on.
-    throw new InvalidJsonError();
+    throw new InvalidRequestError(new InvalidJsonError());
   }
+}
+
+/** Reads a JSON body and checks it against the route's schema. */
+async function readRequest<Value>(
+  request: IncomingMessage,
+  schema: { parse(value: unknown): Value },
+): Promise<Value> {
+  const body = await readJsonBody(request);
+  return readInput(() => schema.parse(body));
 }
 
 /** A request body that isn't JSON. Its message is fixed, whatever the body held. */
@@ -431,17 +451,30 @@ function requestUrlOf(request: IncomingMessage) {
 }
 
 /**
- * A request Ajour couldn't read, as its event holds it: a body that isn't
- * JSON, a malformed path segment, or values that don't match the route's
- * schema, whose message can quote what the caller sent. Undefined for any
- * other error.
+ * Records a failed plugin call on its route's event: a refusal with its
+ * reason, a result that broke its contract by its type and code, or the
+ * plugin's error scrubbed of the connection's secrets.
  */
-function invalidRequestError(error: unknown): Error | undefined {
-  if (error instanceof InvalidJsonError || error instanceof URIError) {
-    return error;
+function recordPluginFailure(
+  unit: {
+    // Each event a route that runs a plugin operation emits lists the
+    // plugin operation's reasons in the catalog, so they fit every unit here.
+    refuse(reason: never): unknown;
+    fail(
+      error: unknown,
+      options?: { reason?: never; secrets?: readonly string[] },
+    ): unknown;
+  },
+  error: unknown,
+  secrets?: readonly string[],
+) {
+  if (error instanceof PluginOperationRefused) {
+    unit.refuse(error.reason as never);
+  } else if (error instanceof InvalidPluginResultError) {
+    unit.fail(withoutContent(error), { reason: "invalid_result" as never });
+  } else {
+    unit.fail(withoutContent(error), secrets ? { secrets } : {});
   }
-  if (error instanceof ZodError) return withoutContent(error) as Error;
-  return undefined;
 }
 
 /** The connection as a plugin receives it. */
@@ -464,51 +497,46 @@ function invocationConnection(connection: StoredConnection) {
  * A code host request's catalog fields: counts, a review's verdict and a
  * merge's method. Never a repository, a number, a path or a body.
  */
-function codeHostRequestFields(request: object) {
-  const fields: {
-    pull_request?: {
-      tracked_count?: number;
-      verdict?: "approve" | "request_changes" | "comment";
-      comment_count?: number;
-      merge_method?: string;
-    };
-  } = {};
-  if ("tracked" in request && Array.isArray(request.tracked)) {
-    fields.pull_request = { tracked_count: request.tracked.length };
+function codeHostRequestFields(
+  request: CodeHostOperationRequest<CodeHostOperation>,
+): FieldsOf<
+  AjourCatalog,
+  "pull_request.sync" | "pull_request.submit_review" | "pull_request.merge"
+> {
+  if ("tracked" in request) {
+    return { pull_request: { tracked_count: request.tracked.length } };
   }
-  if ("verdict" in request && "comments" in request) {
-    const review = request as {
-      verdict: "approve" | "request_changes" | "comment";
-      comments: unknown[];
-    };
-    fields.pull_request = {
-      verdict: review.verdict,
-      comment_count: review.comments.length,
+  if ("verdict" in request) {
+    return {
+      pull_request: {
+        verdict: request.verdict,
+        comment_count: request.comments.length,
+      },
     };
   }
-  if ("method" in request && typeof request.method === "string") {
-    fields.pull_request = { merge_method: request.method };
+  if ("method" in request) {
+    return { pull_request: { merge_method: request.method } };
   }
-  return fields;
+  return {};
 }
 
 /** A code host result's catalog fields: how many pull requests, files or threads. */
-function codeHostResultFields(result: object) {
-  const fields: {
-    pull_request?: {
-      received_count?: number;
-      file_count?: number;
-      thread_count?: number;
-    };
-  } = {};
-  if ("pullRequests" in result && Array.isArray(result.pullRequests)) {
-    fields.pull_request = { received_count: result.pullRequests.length };
-  } else if ("files" in result && Array.isArray(result.files)) {
-    fields.pull_request = { file_count: result.files.length };
-  } else if ("threads" in result && Array.isArray(result.threads)) {
-    fields.pull_request = { thread_count: result.threads.length };
+function codeHostResultFields(
+  result: CodeHostOperationResult<CodeHostOperation>,
+): FieldsOf<
+  AjourCatalog,
+  "pull_request.sync" | "pull_request.load" | "pull_request.load_conversation"
+> {
+  if ("pullRequests" in result && "viewer" in result) {
+    return { pull_request: { received_count: result.pullRequests.length } };
   }
-  return fields;
+  if ("files" in result && "headSha" in result) {
+    return { pull_request: { file_count: result.files.length } };
+  }
+  if ("threads" in result && "timeline" in result) {
+    return { pull_request: { thread_count: result.threads.length } };
+  }
+  return {};
 }
 
 function parseBooleanValue(value: unknown, fieldId: string) {
@@ -931,8 +959,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
 
     agentRunnerConfigure: async ({ request, response }) => {
-      const payload = agentRunnerSettingsUpdateSchema.parse(
-        await readJsonBody(request),
+      const payload = await readRequest(
+        request,
+        agentRunnerSettingsUpdateSchema,
       );
       await storage.updateAgentRunnerSettings(payload);
       writeJson(response, 200, await agentRunner.overview());
@@ -940,15 +969,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
 
     // A plugin's agent tasks share their settings, so they save together.
     agentTaskConfigure: async ({ request, response, params, unit }) => {
-      const payload = agentTaskSettingsUpdateSchema.parse(
-        await readJsonBody(request),
-      );
+      const payload = await readRequest(request, agentTaskSettingsUpdateSchema);
       const { pluginId } = params;
       unit.set({ plugin: { id: pluginId } });
       const tasks = (await pluginManager.listPlugins()).find(
         (plugin) => plugin.id === pluginId,
       )?.capabilities.agentTask?.tasks;
       if (!tasks) {
+        unit.refuse("no_agent_task");
         writeJson(response, 404, {
           error: "This plugin has no agent tasks.",
         });
@@ -959,6 +987,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         payload.values,
       );
       if ("error" in parsed) {
+        unit.refuse("invalid_request");
         writeJson(response, 400, { error: parsed.error });
         return;
       }
@@ -970,9 +999,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
 
     agentRunStart: async ({ request, response, unit }) => {
-      const payload = agentRunStartRequestSchema.parse(
-        await readJsonBody(request),
-      );
+      const payload = await readRequest(request, agentRunStartRequestSchema);
       unit.set({
         agent: { task_id: payload.taskId },
         plugin: { id: payload.pluginId },
@@ -983,6 +1010,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(response, 201, run);
       } catch (error) {
         if (!(error instanceof AgentRunError)) throw error;
+        unit.refuse(
+          error.status === 409
+            ? "already_running"
+            : error.status === 404
+              ? "no_agent_task"
+              : "blocked",
+        );
         writeJson(response, error.status, { error: error.message });
       }
     },
@@ -994,6 +1028,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     agentRunStop: ({ response, params, unit }) => {
       unit.set({ agent: { run_id: params.runId } });
       if (!agentRunner.stop(params.runId)) {
+        unit.refuse("not_running");
         writeJson(response, 404, {
           error: "That agent task is not running.",
         });
@@ -1007,9 +1042,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
 
     mcpConfigure: async ({ request, response, unit }) => {
-      const payload = mcpSettingsUpdateSchema.parse(
-        await readJsonBody(request),
-      );
+      const payload = await readRequest(request, mcpSettingsUpdateSchema);
       unit.set({ mcp: { enabled: payload.enabled } });
       await storage.setMcpEnabled(payload.enabled);
       if (!payload.enabled) mcpBridge.close();
@@ -1017,9 +1050,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
 
     mcpClientCreate: async ({ request, response, unit }) => {
-      const payload = mcpClientCreateRequestSchema.parse(
-        await readJsonBody(request),
-      );
+      const payload = await readRequest(request, mcpClientCreateRequestSchema);
       const created = await createMcpClient(storage, payload.name);
       unit.set({ agent: { client_id: created.client.id } });
       writeJson(response, 201, created);
@@ -1032,6 +1063,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         Date.now(),
       );
       if (!revoked) {
+        unit.refuse("unknown_client");
         writeJson(response, 404, { error: "Unknown MCP client." });
         return;
       }
@@ -1065,7 +1097,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
 
     mcpBridgeResult: async ({ request, response, unit }) => {
-      const result = bridgeToolResultSchema.parse(await readJsonBody(request));
+      const result = await readRequest(request, bridgeToolResultSchema);
       const resolved = mcpBridge.resolve(result);
       unit.set({ mcp_bridge: { resolved } });
       writeJson(response, 200, { ok: resolved });
@@ -1074,12 +1106,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     // The user's answer to an agent's question, from the agent panel.
     agentQuestionAnswer: async ({ request, response, params, unit }) => {
       unit.set({ agent: { question_id: params.questionId } });
-      const payload = agentAnswerRequestSchema.parse(
-        await readJsonBody(request),
-      );
+      const payload = await readRequest(request, agentAnswerRequestSchema);
       try {
         agentSessions.answer(params.questionId, payload.text);
       } catch (error) {
+        unit.refuse("question_closed");
         writeJson(response, 409, { error: errorMessage(error) });
         return;
       }
@@ -1093,6 +1124,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       try {
         agentSessions.dismiss(params.sessionId);
       } catch (error) {
+        unit.refuse("session_closed");
         writeJson(response, 409, { error: errorMessage(error) });
         return;
       }
@@ -1122,8 +1154,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
 
     pluginSystemToggle: async ({ request, response, unit }) => {
-      const payload = pluginSystemActivationUpdateSchema.parse(
-        await readJsonBody(request),
+      const payload = await readRequest(
+        request,
+        pluginSystemActivationUpdateSchema,
       );
       unit.set({ activation: { enabled: payload.enabled } });
       await storage.setPluginSystemEnabled(payload.enabled);
@@ -1177,11 +1210,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         });
         return;
       }
-      const pluginId = projectDataShapePluginIdSchema.parse(params.pluginId);
+      const pluginId = readInput(() =>
+        projectDataShapePluginIdSchema.parse(params.pluginId),
+      );
       unit.set({ plugin: { id: pluginId } });
       // A malformed body fails here, outside the try, as a 400.
-      const exportRequest = projectDataShapeExportRequestSchema.parse(
-        await readJsonBody(request),
+      const exportRequest = await readRequest(
+        request,
+        projectDataShapeExportRequestSchema,
       );
       unit.set({
         project_data: {
@@ -1209,7 +1245,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         });
         writeJson(response, 200, result);
       } catch (error) {
-        unit.fail(withoutContent(error));
+        recordPluginFailure(unit, error);
         writeJson(response, 400, {
           error: connectionlessPluginErrorMessage(error),
         });
@@ -1224,11 +1260,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         });
         return;
       }
-      const pluginId = projectDataShapePluginIdSchema.parse(params.pluginId);
+      const pluginId = readInput(() =>
+        projectDataShapePluginIdSchema.parse(params.pluginId),
+      );
       unit.set({ plugin: { id: pluginId } });
       // A malformed body fails here, outside the try, as a 400.
-      const importRequest = projectDataShapeImportRequestSchema.parse(
-        await readJsonBody(request),
+      const importRequest = await readRequest(
+        request,
+        projectDataShapeImportRequestSchema,
       );
       unit.set({
         project_data: {
@@ -1256,7 +1295,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         });
         writeJson(response, 200, result);
       } catch (error) {
-        unit.fail(withoutContent(error));
+        recordPluginFailure(unit, error);
         writeJson(response, 400, {
           error: connectionlessPluginErrorMessage(error),
         });
@@ -1264,19 +1303,18 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
 
     pluginActivate: async ({ request, response, params, unit }) => {
-      const pluginId = pluginIdSchema.parse(params.pluginId);
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
       unit.set({ plugin: { id: pluginId } });
       const plugin = (await pluginManager.listPlugins()).find(
         (candidate) => candidate.id === pluginId,
       );
       if (!plugin) {
+        unit.refuse("not_installed");
         writeJson(response, 404, { error: "Plugin not found." });
         return;
       }
 
-      const payload = pluginActivationUpdateSchema.parse(
-        await readJsonBody(request),
-      );
+      const payload = await readRequest(request, pluginActivationUpdateSchema);
       unit.set({
         activation: {
           enabled: payload.enabled,
@@ -1285,6 +1323,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       });
       if (payload.capability) {
         if (!pluginHasCapability(plugin, payload.capability)) {
+          unit.refuse("not_supported");
           writeJson(response, 400, {
             error: "This plugin does not declare that capability.",
           });
@@ -1329,8 +1368,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
 
     sourceStateUpdate: async ({ request, response, unit }) => {
-      const payload = backlogSourceStatusUpsertRequestSchema.parse(
-        await readJsonBody(request),
+      const payload = await readRequest(
+        request,
+        backlogSourceStatusUpsertRequestSchema,
       );
       unit.set({ source_state: { count: payload.items.length } });
       writeJson(
@@ -1343,12 +1383,15 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
 
     connectionSave: async ({ request, response, params, unit }) => {
-      const pluginId = pluginIdSchema.parse(params.pluginId);
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
       unit.set({ plugin: { id: pluginId } });
-      const payload = pluginConnectionSaveRequestSchema.parse(
-        await readJsonBody(request),
+      const payload = await readRequest(
+        request,
+        pluginConnectionSaveRequestSchema,
       );
-      const parsedValues = parseConnectionValues(payload.values);
+      const parsedValues = readInput(() =>
+        parseConnectionValues(payload.values),
+      );
       const { plugin, unavailableReason } = await findPlugin(
         pluginManager,
         pluginId,
@@ -1395,12 +1438,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           call.admit,
         );
       } catch (error) {
-        unit.fail(withoutContent(error), {
-          secrets: connectionSecretValues(call.manifest, [
+        recordPluginFailure(
+          unit,
+          error,
+          connectionSecretValues(call.manifest, [
             configForSave,
             existingConnection?.config,
           ]),
-        });
+        );
         writeJson(response, 400, {
           error: pluginErrorMessage(
             error,
@@ -1453,11 +1498,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
 
     connectionDelete: async ({ response, params, unit }) => {
-      const pluginId = pluginIdSchema.parse(params.pluginId);
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
       const { connectionId } = params;
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
       const deleted = await storage.deleteConnection(pluginId, connectionId);
       if (!deleted) {
+        unit.refuse("connection_not_found");
         writeJson(response, 404, {
           error: "Plugin connection not found.",
         });
@@ -1467,16 +1513,178 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       writeJson(response, 200, await getOverview(storage, pluginManager));
     },
 
-    settleStateList: (context) => serveSettle(context, "settle-states"),
+    settleStateList: async (context) => {
+      const target = await backlogTarget(
+        context,
+        "settling",
+        (plugin) => Boolean(plugin.capabilities.connector?.settle),
+        "This plugin does not support settling.",
+      );
+      if (!target) return;
+      const { request, response, unit } = context;
+      // A malformed body fails here, outside the try, as a 400.
+      const statesRequest = await readRequest(
+        request,
+        backlogSettleStatesRequestSchema,
+      );
+      try {
+        const result = backlogSettleStatesResultSchema.parse(
+          await pluginManager.listSettleStates(
+            target.pluginId,
+            invocationConnection(target.connection),
+            statesRequest,
+            target.call.admit,
+          ),
+        );
+        unit.set({ source_state: { count: result.states.length } });
+        writeJson(response, 200, result);
+      } catch (error) {
+        failPluginCall(
+          response,
+          unit,
+          error,
+          target.call.manifest,
+          target.connection,
+        );
+      }
+    },
 
-    settleWrite: (context) => serveSettle(context, "settle"),
+    settleWrite: async (context) => {
+      const target = await backlogTarget(
+        context,
+        "settling",
+        (plugin) => Boolean(plugin.capabilities.connector?.settle),
+        "This plugin does not support settling.",
+      );
+      if (!target) return;
+      const { request, response, unit } = context;
+      // A malformed body fails here, outside the try, as a 400.
+      const writeRequest = await readRequest(
+        request,
+        backlogSettleWriteRequestSchema,
+      );
+      unit.set({
+        source_write: {
+          state_sent: writeRequest.state !== undefined,
+          priority_sent: writeRequest.priority !== undefined,
+        },
+      });
+      try {
+        const result = await pluginManager.writeSettle(
+          target.pluginId,
+          invocationConnection(target.connection),
+          writeRequest,
+          target.call.admit,
+        );
+        writeJson(response, 200, backlogSettleWriteResultSchema.parse(result));
+      } catch (error) {
+        failPluginCall(
+          response,
+          unit,
+          error,
+          target.call.manifest,
+          target.connection,
+        );
+      }
+    },
 
-    descriptionRead: (context) => serveDescription(context, false),
+    descriptionRead: async (context) => {
+      const target = await backlogTarget(
+        context,
+        "syncing descriptions",
+        (plugin) => Boolean(plugin.capabilities.connector?.description),
+        "This plugin does not sync descriptions.",
+      );
+      if (!target) return;
+      const { request, response } = context;
+      // A malformed body fails here, outside the try, as a 400.
+      const readRequestBody = await readRequest(
+        request,
+        backlogReadDescriptionRequestSchema,
+      );
+      if (refuseAgentDescription(context, target.connection, false)) return;
+      try {
+        const result = await pluginManager.readDescription(
+          target.pluginId,
+          invocationConnection(target.connection),
+          readRequestBody,
+          target.call.admit,
+        );
+        writeJson(
+          response,
+          200,
+          backlogReadDescriptionResultSchema.parse(result),
+        );
+      } catch (error) {
+        failPluginCall(
+          response,
+          context.unit,
+          error,
+          target.call.manifest,
+          target.connection,
+        );
+      }
+    },
 
-    descriptionWrite: (context) => serveDescription(context, true),
+    descriptionWrite: async (context) => {
+      const target = await backlogTarget(
+        context,
+        "syncing descriptions",
+        (plugin) => Boolean(plugin.capabilities.connector?.description?.write),
+        "This plugin does not write descriptions.",
+      );
+      if (!target) return;
+      const { request, response, unit } = context;
+      // A malformed body fails here, outside the try, as a 400.
+      const writeRequest = await readRequest(
+        request,
+        backlogWriteDescriptionRequestSchema,
+      );
+      // Its length, never its text.
+      unit.set({
+        description: {
+          length: writeRequest.text.length,
+          allowed_loss_count: writeRequest.allowedLoss?.length ?? 0,
+        },
+      });
+      if (refuseAgentDescription(context, target.connection, true)) return;
+      // Only a connection that allows lossy conversion writes with losses,
+      // whatever a client asks.
+      if (
+        writeRequest.allowedLoss?.length &&
+        target.connection.allowLossyConversion !== true
+      ) {
+        unit.refuse("lossy_not_allowed");
+        writeJson(response, 409, {
+          error: "This connection does not allow lossy conversion.",
+        });
+        return;
+      }
+      try {
+        const result = await pluginManager.writeDescription(
+          target.pluginId,
+          invocationConnection(target.connection),
+          writeRequest,
+          target.call.admit,
+        );
+        writeJson(
+          response,
+          200,
+          backlogWriteDescriptionResultSchema.parse(result),
+        );
+      } catch (error) {
+        failPluginCall(
+          response,
+          unit,
+          error,
+          target.call.manifest,
+          target.connection,
+        );
+      }
+    },
 
     backlogSync: async ({ request, response, params, unit }) => {
-      const pluginId = pluginIdSchema.parse(params.pluginId);
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
       const { connectionId } = params;
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
       const { plugin, pluginIds: availablePluginIds } = await findPlugin(
@@ -1484,6 +1692,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         pluginId,
       );
       if (!plugin?.capabilities.connector) {
+        unit.refuse("not_supported");
         writeJson(response, 409, {
           error: "This plugin does not sync backlog items.",
         });
@@ -1504,15 +1713,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
 
       const connection = await storage.getConnection(pluginId, connectionId);
       if (!connection) {
+        unit.refuse("connection_not_found");
         writeJson(response, 404, {
           error: "Plugin connection not found.",
         });
         return;
       }
 
-      const payload = backlogSyncRequestSchema.parse(
-        await readJsonBody(request),
-      );
+      const payload = await readRequest(request, backlogSyncRequestSchema);
       const isSourceWriteOnly = payload.trigger === "source_write";
       const shouldAutoSyncToBacklog =
         connection.autoSync && payload.trigger === "auto";
@@ -1616,9 +1824,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           }),
         );
       } catch (error) {
-        unit.fail(withoutContent(error), {
-          secrets: connectionSecretValues(call.manifest, [connection.config]),
-        });
+        recordPluginFailure(
+          unit,
+          error,
+          connectionSecretValues(call.manifest, [connection.config]),
+        );
         const message = pluginErrorMessage(
           error,
           call.manifest,
@@ -1648,16 +1858,18 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
 
     codeHost: async ({ request, response, params, unit }) => {
-      const pluginId = pluginIdSchema.parse(params.pluginId);
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
       const { connectionId } = params;
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
       const operation = codeHostOperationSchema.safeParse(params.operation);
       if (!operation.success) {
+        unit.refuse("unknown_operation");
         writeJson(response, 404, { error: "Unknown code host operation." });
         return;
       }
       const { plugin, pluginIds } = await findPlugin(pluginManager, pluginId);
       if (!plugin || !pluginHasCodeHost(plugin)) {
+        unit.refuse("not_supported");
         writeJson(response, 404, {
           error: "This plugin does not provide pull requests.",
         });
@@ -1677,13 +1889,15 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       }
       const connection = await storage.getConnection(pluginId, connectionId);
       if (!connection) {
+        unit.refuse("connection_not_found");
         writeJson(response, 404, { error: "Connection not found." });
         return;
       }
 
       // A malformed body fails here, outside the try, as a 400.
-      const codeHostRequest = codeHostOperations[operation.data].request.parse(
-        await readJsonBody(request),
+      const codeHostBody = await readJsonBody(request);
+      const codeHostRequest = readInput(() =>
+        codeHostOperations[operation.data].request.parse(codeHostBody),
       );
       unit.set(codeHostRequestFields(codeHostRequest));
       const call = admittedCall(plugin);
@@ -1705,9 +1919,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         }
         writeJson(response, 200, result);
       } catch (error) {
-        unit.fail(withoutContent(error), {
-          secrets: connectionSecretValues(call.manifest, [connection.config]),
-        });
+        recordPluginFailure(
+          unit,
+          error,
+          connectionSecretValues(call.manifest, [connection.config]),
+        );
         const message = pluginErrorMessage(
           error,
           call.manifest,
@@ -1721,18 +1937,20 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
 
     backlogComment: async ({ request, response, url, params, unit }) => {
-      const pluginId = pluginIdSchema.parse(params.pluginId);
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
       const { connectionId } = params;
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
       const operation = backlogCommentOperationSchema.safeParse(
         params.operation,
       );
       if (!operation.success) {
+        unit.refuse("unknown_operation");
         writeJson(response, 404, { error: "Unknown comment operation." });
         return;
       }
       const { plugin, pluginIds } = await findPlugin(pluginManager, pluginId);
       if (!plugin?.capabilities.connector?.comments) {
+        unit.refuse("not_supported");
         writeJson(response, 404, {
           error: "This plugin does not provide comments.",
         });
@@ -1752,14 +1970,16 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       }
       const connection = await storage.getConnection(pluginId, connectionId);
       if (!connection) {
+        unit.refuse("connection_not_found");
         writeJson(response, 404, { error: "Connection not found." });
         return;
       }
 
       // A malformed body fails here, outside the try, as a 400.
-      const commentRequest = backlogCommentOperations[
-        operation.data
-      ].request.parse(await readJsonBody(request));
+      const commentBody = await readJsonBody(request);
+      const commentRequest = readInput(() =>
+        backlogCommentOperations[operation.data].request.parse(commentBody),
+      );
       if (
         !backlogCommentOperationAllowed(
           plugin.capabilities.connector.comments,
@@ -1771,6 +1991,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             : undefined,
         )
       ) {
+        unit.refuse("not_supported");
         writeJson(response, 404, {
           error: "This plugin does not support that on comments.",
         });
@@ -1867,7 +2088,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         const secrets = connectionSecretValues(call.manifest, [
           connection.config,
         ]);
-        unit.fail(withoutContent(error), { secrets });
+        recordPluginFailure(unit, error, secrets);
         writeJson(response, 502, {
           error: redactPluginText(errorMessage(error), secrets),
         });
@@ -1875,16 +2096,18 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
 
     calendar: async ({ request, response, params, unit }) => {
-      const pluginId = pluginIdSchema.parse(params.pluginId);
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
       const { connectionId } = params;
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
       const operation = calendarOperationSchema.safeParse(params.operation);
       if (!operation.success) {
+        unit.refuse("unknown_operation");
         writeJson(response, 404, { error: "Unknown calendar operation." });
         return;
       }
       const { plugin, pluginIds } = await findPlugin(pluginManager, pluginId);
       if (!plugin || !pluginHasCalendar(plugin)) {
+        unit.refuse("not_supported");
         writeJson(response, 404, {
           error: "This plugin does not provide calendar events.",
         });
@@ -1904,13 +2127,15 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       }
       const connection = await storage.getConnection(pluginId, connectionId);
       if (!connection) {
+        unit.refuse("connection_not_found");
         writeJson(response, 404, { error: "Connection not found." });
         return;
       }
 
       // A malformed body fails here, outside the try, as a 400.
-      const calendarRequest = calendarOperations[operation.data].request.parse(
-        await readJsonBody(request),
+      const calendarRequest = await readRequest(
+        request,
+        calendarOperations[operation.data].request,
       );
       // Ids, range, counts and duration only. Titles and the calendar
       // address stay out of the event (ADR 0005).
@@ -1944,21 +2169,19 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           connection.config,
         ]);
         const message = redactPluginText(errorMessage(error), secrets);
-        unit.fail(withoutContent(error), { secrets });
+        recordPluginFailure(unit, error, secrets);
         await storage.recordConnectionError(pluginId, connectionId, message);
         writeJson(response, 502, { error: message });
       }
     },
 
     teamCreate: async ({ request, response, params, unit }) => {
-      const pluginId = pluginIdSchema.parse(params.pluginId);
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
       unit.set({ plugin: { id: pluginId } });
       const plugin = await teamPlugin(pluginId, response, unit, true);
       if (!plugin) return;
       // A malformed body fails here, outside the try, as a 400.
-      const payload = teamCreateRouteRequestSchema.parse(
-        await readJsonBody(request),
-      );
+      const payload = await readRequest(request, teamCreateRouteRequestSchema);
       const call = admittedCall(plugin);
       try {
         writeJson(
@@ -1972,9 +2195,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           ),
         );
       } catch (error) {
-        unit.fail(withoutContent(error), {
-          secrets: connectionSecretValues(call.manifest, [payload.values]),
-        });
+        recordPluginFailure(
+          unit,
+          error,
+          connectionSecretValues(call.manifest, [payload.values]),
+        );
         writeJson(response, 502, {
           error: pluginErrorMessage(error, call.manifest, payload.values),
         });
@@ -1982,19 +2207,18 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
 
     teamSync: async ({ request, response, params, unit }) => {
-      const pluginId = pluginIdSchema.parse(params.pluginId);
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
       const { connectionId } = params;
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
       const plugin = await teamPlugin(pluginId, response, unit, false);
       if (!plugin) return;
       const connection = await storage.getConnection(pluginId, connectionId);
       if (!connection) {
+        unit.refuse("connection_not_found");
         writeJson(response, 404, { error: "Connection not found." });
         return;
       }
-      const syncRequest = teamSyncRequestSchema.parse(
-        await readJsonBody(request),
-      );
+      const syncRequest = await readRequest(request, teamSyncRequestSchema);
       unit.set({ team_sync: { projects_sent: syncRequest.changes.length } });
       const call = admittedCall(plugin);
       try {
@@ -2018,9 +2242,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         );
         writeJson(response, 200, result);
       } catch (error) {
-        unit.fail(withoutContent(error), {
-          secrets: connectionSecretValues(call.manifest, [connection.config]),
-        });
+        recordPluginFailure(
+          unit,
+          error,
+          connectionSecretValues(call.manifest, [connection.config]),
+        );
         const message = pluginErrorMessage(
           error,
           call.manifest,
@@ -2032,8 +2258,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
 
     backlogImportStage: async ({ request, response, unit }) => {
-      const payload = backlogImportPushRequestSchema.parse(
-        await readJsonBody(request),
+      const payload = await readRequest(
+        request,
+        backlogImportPushRequestSchema,
       );
       const staged = backlogImportPushResponseSchema.parse(
         await storage.stageImportItems(payload.items),
@@ -2057,8 +2284,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
 
     backlogImportSelect: async ({ request, response, unit }) => {
-      const payload = backlogImportSelectionUpdateSchema.parse(
-        await readJsonBody(request),
+      const payload = await readRequest(
+        request,
+        backlogImportSelectionUpdateSchema,
       );
       const updatedCount = await storage.updateImportSelection(
         payload.ids,
@@ -2078,8 +2306,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
 
     backlogImportDismiss: async ({ request, response, unit }) => {
-      const payload = backlogImportDismissRequestSchema.parse(
-        await readJsonBody(request),
+      const payload = await readRequest(
+        request,
+        backlogImportDismissRequestSchema,
       );
       unit.set({ backlog_import: { candidate_count: payload.ids.length } });
       writeJson(
@@ -2092,8 +2321,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
 
     backlogImportRestore: async ({ request, response }) => {
-      const payload = backlogImportRestoreRequestSchema.parse(
-        await readJsonBody(request),
+      const payload = await readRequest(
+        request,
+        backlogImportRestoreRequestSchema,
       );
       writeJson(
         response,
@@ -2118,25 +2348,33 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     },
   };
 
-  /** The settle routes: the states a settle can write, and the write itself. */
-  async function serveSettle(
+  /**
+   * The connection and plugin a settle or description route runs, or
+   * undefined once it answered why not: the connection is missing, the plugin
+   * or its backlog capability is off, or the plugin lacks the feature.
+   */
+  async function backlogTarget(
     {
-      request,
       response,
       params,
       unit,
-    }: RouteContext<"settleStateList" | "settleWrite">,
-    action: "settle-states" | "settle",
+    }: RouteContext<
+      "settleStateList" | "settleWrite" | "descriptionRead" | "descriptionWrite"
+    >,
+    action: string,
+    supported: (plugin: PluginManifest) => boolean,
+    unsupported: string,
   ) {
-    const pluginId = pluginIdSchema.parse(params.pluginId);
+    const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
     const { connectionId } = params;
     unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
     const connection = await storage.getConnection(pluginId, connectionId);
     if (!connection) {
+      unit.refuse("connection_not_found");
       writeJson(response, 404, {
         error: "Plugin connection not found.",
       });
-      return;
+      return undefined;
     }
     const { plugin, pluginIds } = await findPlugin(pluginManager, pluginId);
     const inactive = await inactiveCapability(
@@ -2144,199 +2382,71 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       pluginId,
       "connector",
       pluginIds,
-      "settling",
+      action,
     );
     if (inactive) {
       unit.refuse(inactive.reason);
       writeJson(response, 409, { error: inactive.message });
-      return;
+      return undefined;
     }
-    if (!plugin?.capabilities.connector?.settle) {
-      writeJson(response, 409, {
-        error: "This plugin does not support settling.",
-      });
-      return;
+    if (!plugin || !supported(plugin)) {
+      unit.refuse("not_supported");
+      writeJson(response, 409, { error: unsupported });
+      return undefined;
     }
-
-    const body = await readJsonBody(request);
-    // A malformed body fails here, outside the try, as a 400.
-    const statesRequest =
-      action === "settle-states"
-        ? backlogSettleStatesRequestSchema.parse(body)
-        : undefined;
-    const writeRequest =
-      action === "settle"
-        ? backlogSettleWriteRequestSchema.parse(body)
-        : undefined;
-    const call = admittedCall(plugin);
-    try {
-      if (statesRequest) {
-        const result = backlogSettleStatesResultSchema.parse(
-          await pluginManager.listSettleStates(
-            pluginId,
-            invocationConnection(connection),
-            statesRequest,
-            call.admit,
-          ),
-        );
-        (unit as Unit<AjourCatalog, "settle_state.list">).set({
-          settle_state: { count: result.states.length },
-        });
-        writeJson(response, 200, result);
-        return;
-      }
-      if (writeRequest) {
-        (unit as Unit<AjourCatalog, "backlog.write_source">).set({
-          source_write: {
-            state_sent: writeRequest.state !== undefined,
-            priority_sent: writeRequest.priority !== undefined,
-          },
-        });
-        const result = await pluginManager.writeSettle(
-          pluginId,
-          invocationConnection(connection),
-          writeRequest,
-          call.admit,
-        );
-        writeJson(response, 200, backlogSettleWriteResultSchema.parse(result));
-      }
-    } catch (error) {
-      unit.fail(withoutContent(error), {
-        secrets: connectionSecretValues(call.manifest, [connection.config]),
-      });
-      writeJson(response, 502, {
-        error: pluginErrorMessage(error, call.manifest, connection.config),
-      });
-    }
+    return { pluginId, connection, plugin, call: admittedCall(plugin) };
   }
 
-  /** A synced item's description: read as its source holds it, or written. */
-  async function serveDescription(
+  /**
+   * Refuses an agent's description call the user doesn't allow on the
+   * connection: it needs Read to read the description and Read and write to
+   * change it, whatever the page asks. True when it refused.
+   */
+  function refuseAgentDescription(
     {
-      request,
       response,
       url,
-      params,
       unit,
     }: RouteContext<"descriptionRead" | "descriptionWrite">,
+    connection: StoredConnection,
     writes: boolean,
   ) {
-    const pluginId = pluginIdSchema.parse(params.pluginId);
-    const { connectionId } = params;
-    unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
-    const connection = await storage.getConnection(pluginId, connectionId);
-    if (!connection) {
-      writeJson(response, 404, {
-        error: "Plugin connection not found.",
-      });
-      return;
-    }
-    const { plugin, pluginIds } = await findPlugin(pluginManager, pluginId);
-    const inactive = await inactiveCapability(
-      storage,
-      pluginId,
-      "connector",
-      pluginIds,
-      "syncing descriptions",
-    );
-    if (inactive) {
-      unit.refuse(inactive.reason);
-      writeJson(response, 409, { error: inactive.message });
-      return;
-    }
-    const description = plugin?.capabilities.connector?.description;
-    if (!plugin || !description || (writes && !description.write)) {
-      writeJson(response, 409, {
-        error: writes
-          ? "This plugin does not write descriptions."
-          : "This plugin does not sync descriptions.",
-      });
-      return;
-    }
-
-    const body = await readJsonBody(request);
-    // A malformed body fails here, outside the try, as a 400.
-    const readRequest = writes
-      ? undefined
-      : backlogReadDescriptionRequestSchema.parse(body);
-    const writeRequest = writes
-      ? backlogWriteDescriptionRequestSchema.parse(body)
-      : undefined;
-    if (writeRequest) {
-      (unit as Unit<AjourCatalog, "description.write">).set({
-        description: {
-          length: writeRequest.text.length,
-          allowed_loss_count: writeRequest.allowedLoss?.length ?? 0,
-        },
-      });
-    }
-    // An agent's call says so; it needs Read to read the description
-    // and Read and write to change it, whatever the page asks.
     if (
-      url.searchParams.get("agent") === "1" &&
-      !agentAccessAllows(
+      url.searchParams.get("agent") !== "1" ||
+      agentAccessAllows(
         connectionAgentAccess(connection),
         writes ? "readWrite" : "read",
       )
     ) {
-      unit.refuse("agent_access");
-      writeJson(response, 409, {
-        error: `The user hasn't allowed agents to ${writes ? "change" : "read"} descriptions on the "${connection.label}" connection.`,
-      });
-      return;
+      return false;
     }
-    // Only a connection that allows lossy conversion writes with losses,
-    // whatever a client asks.
-    if (
-      writeRequest?.allowedLoss?.length &&
-      connection.allowLossyConversion !== true
-    ) {
-      (unit as Unit<AjourCatalog, "description.write">).refuse(
-        "lossy_not_allowed",
-      );
-      writeJson(response, 409, {
-        error: "This connection does not allow lossy conversion.",
-      });
-      return;
-    }
-    const call = admittedCall(plugin);
-    try {
-      if (readRequest) {
-        const result = await pluginManager.readDescription(
-          pluginId,
-          invocationConnection(connection),
-          readRequest,
-          call.admit,
-        );
-        writeJson(
-          response,
-          200,
-          backlogReadDescriptionResultSchema.parse(result),
-        );
-        return;
-      }
-      if (writeRequest) {
-        const result = await pluginManager.writeDescription(
-          pluginId,
-          invocationConnection(connection),
-          writeRequest,
-          call.admit,
-        );
-        writeJson(
-          response,
-          200,
-          backlogWriteDescriptionResultSchema.parse(result),
-        );
-      }
-    } catch (error) {
-      unit.fail(withoutContent(error), {
-        secrets: connectionSecretValues(call.manifest, [connection.config]),
-      });
-      // The message reaches the user and is stored with the item.
-      writeJson(response, 502, {
-        error: pluginErrorMessage(error, call.manifest, connection.config),
-      });
-    }
+    unit.refuse("agent_access");
+    writeJson(response, 409, {
+      error: `The user hasn't allowed agents to ${writes ? "change" : "read"} descriptions on the "${connection.label}" connection.`,
+    });
+    return true;
+  }
+
+  /**
+   * Answers a failed plugin call on a connection with the plugin's error,
+   * redacted, and records it on the request's event.
+   */
+  function failPluginCall(
+    response: ServerResponse,
+    unit: Parameters<typeof recordPluginFailure>[0],
+    error: unknown,
+    manifest: PluginManifest,
+    connection: StoredConnection,
+  ) {
+    recordPluginFailure(
+      unit,
+      error,
+      connectionSecretValues(manifest, [connection.config]),
+    );
+    // The message reaches the user, and a description's is stored with the item.
+    writeJson(response, 502, {
+      error: pluginErrorMessage(error, manifest, connection.config),
+    });
   }
 
   /**
@@ -2351,6 +2461,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   ) {
     const { plugin, pluginIds } = await findPlugin(pluginManager, pluginId);
     if (!plugin || !pluginHasTeam(plugin)) {
+      unit.refuse("not_supported");
       writeJson(response, 404, {
         error: "This plugin does not sync a team's projects.",
       });
@@ -2387,12 +2498,18 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     const url = requestUrlOf(request);
     const isMcp = url.pathname === "/mcp" || url.pathname.startsWith("/mcp/");
     const fromAgent = isMcp || url.searchParams.get("agent") === "1";
+    const requestOrigin = request.headers.origin;
+    const origin = !requestOrigin
+      ? "none"
+      : isAllowedRequestOrigin(requestOrigin, allowedOrigins)
+        ? "app"
+        : "refused";
     await serveWithEvent(
       events,
       request,
       response,
-      { trigger: fromAgent ? "agent" : "system" },
-      async (unit) => {
+      { trigger: fromAgent ? "agent" : "system", origin },
+      async (unit): Promise<Settlement | void> => {
         if (runtime.stopping) {
           unit.refuse("stopping");
           writeJson(response, 503, { error: "App API is shutting down." });
@@ -2408,11 +2525,18 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         }
         if (isMcp) {
           try {
-            await handleMcpRequest(request, response, url.pathname, {
+            return await handleMcpRequest(request, response, url.pathname, {
               ...mcpContext,
               unit,
             });
           } catch (error) {
+            if (error instanceof InvalidRequestError) {
+              unit.fail(withoutContent(error)).refuse("invalid_request");
+              if (!response.headersSent) {
+                writeJson(response, 400, { error: errorMessage(error) });
+              }
+              return;
+            }
             // An outcome MCP recorded stands, as a thrown error never
             // downgrades it.
             if (unit.outcome === undefined) unit.fail(withoutContent(error));
@@ -2422,16 +2546,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           }
           return;
         }
-        const requestOrigin = request.headers.origin;
-        if (
-          requestOrigin &&
-          !isAllowedRequestOrigin(requestOrigin, allowedOrigins)
-        ) {
-          unit.set({ http: { origin: "refused" } }).refuse("origin_refused");
+        if (origin === "refused") {
+          unit.refuse("origin_refused");
           writeJson(response, 403, { error: "Request origin is not allowed." });
           return;
         }
-        unit.set({ http: { origin: requestOrigin ? "app" : "none" } });
         if (requestOrigin) {
           response.setHeader("Access-Control-Allow-Origin", requestOrigin);
           response.setHeader("Vary", "Origin");
@@ -2461,16 +2580,19 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             response,
             url,
             origin: requestOrigin,
-            params: decodeParams(route.rawParams) as RouteParams<RouteId>,
+            params: readInput(() =>
+              decodeParams(route.rawParams),
+            ) as RouteParams<RouteId>,
             unit: routed as RouteContext<RouteId>["unit"],
           });
         } catch (error) {
           // Ajour's own errors only. Only a route knows the connection whose
           // secrets a plugin error may echo, so each catches its plugin call
           // and answers with `pluginErrorMessage`.
-          const invalid = invalidRequestError(error);
-          if (invalid) routed.fail(invalid).refuse("invalid_request");
-          else routed.fail(withoutContent(error));
+          routed.fail(withoutContent(error));
+          if (error instanceof InvalidRequestError) {
+            routed.refuse("invalid_request");
+          }
           writeJson(response, 400, {
             error: errorMessage(error),
           });
@@ -2685,23 +2807,4 @@ export async function stopAppApiServer(server: Server): Promise<void> {
   } finally {
     unit?.end();
   }
-}
-
-const executedDirectly =
-  typeof process.argv[1] === "string" &&
-  import.meta.url === pathToFileURL(process.argv[1]).toString();
-
-// Run on its own, as `just api-start` does, the API says on stderr where it
-// listens. Started by the desktop app or a test, it prints nothing.
-if (executedDirectly) {
-  // The standalone API owns its process, so it records the process's crashes.
-  void startAppApiServer({ reportProcessCrashes: true }).then((server) => {
-    const address = server.address();
-    if (address && typeof address === "object") {
-      // On stderr: stdout carries the console sink's JSON lines.
-      console.error(
-        `Ajour app API listening on http://${address.address}:${address.port}`,
-      );
-    }
-  });
 }

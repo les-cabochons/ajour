@@ -399,6 +399,8 @@ describe("MCP endpoint", () => {
           route: "/mcp/ajour",
           status_code: 200,
           request_bytes: expect.any(Number),
+          response_bytes: expect.any(Number),
+          origin: "none",
         },
       },
     ]);
@@ -444,21 +446,23 @@ describe("MCP endpoint", () => {
       body,
     });
 
-  it("records a body that isn't JSON with a fixed diagnostic, never the body's text", async () => {
+  it("refuses a body that isn't JSON as the agent's mistake, never with the body's text", async () => {
     const { baseUrl, logged } = await startTestApi();
     const { token } = await enableMcpWithClient(baseUrl);
 
-    await postMcp(baseUrl, token, '{"note": "Lunch with Ana about the raise",');
+    const response = await postMcp(
+      baseUrl,
+      token,
+      '{"note": "Lunch with Ana about the raise",',
+    );
 
+    expect(response.status).toBe(400);
     expect(logged).toEqual([
       expect.objectContaining({
         name: "mcp.request",
-        outcome: "error",
-        error: {
-          type: "SyntaxError",
-          code: "invalid_json",
-          message: "The request body is not valid JSON.",
-        },
+        outcome: "refused",
+        outcome_reason: "invalid_request",
+        error: { type: "SyntaxError", code: "invalid_json" },
       }),
     ]);
     expect(JSON.stringify(logged)).not.toContain("Ana");
@@ -617,6 +621,12 @@ describe("MCP endpoint", () => {
       expect.objectContaining({
         name: "mcp.request",
         outcome: "timeout",
+        // Settled by the batch, ended once by the request seam: it still
+        // gets the status and the size.
+        http: expect.objectContaining({
+          status_code: 200,
+          response_bytes: expect.any(Number),
+        }),
         step_failures: [
           {
             name: "agent_tool.call",
@@ -729,6 +739,7 @@ describe("MCP endpoint", () => {
       expect.objectContaining({
         outcome: "refused",
         outcome_reason: "protocol_error",
+        http: expect.objectContaining({ status_code: 400, origin: "none" }),
       }),
     ]);
   });

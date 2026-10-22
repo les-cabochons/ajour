@@ -1,26 +1,14 @@
 import { Worker } from "node:worker_threads";
-import type {
-  AjourCatalog,
-  EventName,
-  KindOf,
-} from "../../../packages/wide-events/catalog.ts";
+import type { AjourCatalog } from "../../../packages/wide-events/catalog.ts";
 import type { Unit } from "../../../packages/wide-events/index.ts";
-import { createApiEvents, withoutContent, type ApiEvents } from "./events.ts";
+import { InvalidPluginResultError, withoutContent } from "./event-errors.ts";
+import type { PluginOperationEventName } from "./operation-events.ts";
+import { createApiEvents, type ApiEvents } from "./events.ts";
 import { nowhere } from "../../../packages/wide-events/sinks.ts";
 
 /** Each host owns its own lifetime instance, so plugin and data-shape quotas stay separate. */
 const MAX_CONCURRENT_OPERATIONS_PER_HOST = 4;
 const MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS = 4_096;
-
-/** An event a worker run may be named: one whose kinds include `plugin_operation`. */
-export type PluginOperationEventName = {
-  [Name in EventName<AjourCatalog>]: "plugin_operation" extends KindOf<
-    AjourCatalog,
-    Name
-  >
-    ? Name
-    : never;
-}[EventName<AjourCatalog>];
 
 /** Why a plugin operation was refused before its worker started. */
 export type PluginRefusalReason =
@@ -32,6 +20,8 @@ export type PluginRefusalReason =
   | "package_change"
   | "not_installed"
   | "runs_no_code"
+  | "not_supported"
+  | "invalid_request"
   | "agent_access";
 
 /** Why a registered plugin operation was cancelled. */
@@ -158,9 +148,10 @@ export class PluginWorkerLifetime<TMethod extends string> {
     prepare: (record: OperationRecord) => Promise<WorkerInvocation<T>>,
     options: { connectionId?: string; check?: () => void } = {},
   ): Promise<T> {
+    // Who started the request that runs it started the operation too.
     const unit = this.events.start(this.options.eventNames[method], {
       kind: "plugin_operation",
-      trigger: "system",
+      trigger: this.events.current()?.trigger ?? "system",
     }) as OperationUnit;
     const admittedAt = Date.now();
     const capability = this.options.capabilityOf?.(method);
@@ -349,10 +340,11 @@ export class PluginWorkerLifetime<TMethod extends string> {
             try {
               resolve(invocation.parse(result));
             } catch (parseError) {
-              unit.fail(withoutContent(parseError), {
-                reason: "invalid_result",
-              });
-              reject(parseError);
+              // The message is about what the plugin returned: callers show
+              // it, and the event holds its type and code only.
+              const invalid = new InvalidPluginResultError(parseError);
+              unit.fail(withoutContent(invalid), { reason: "invalid_result" });
+              reject(invalid);
             }
           }
         })();

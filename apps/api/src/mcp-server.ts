@@ -24,6 +24,7 @@ import {
 } from "../../../packages/wide-events/index.ts";
 import { AgentSessionError, type AgentSessions } from "./agent-sessions.ts";
 import type { ApiEvents } from "./events.ts";
+import type { Settlement } from "./routes.ts";
 import { BridgeCallError, type McpBridge } from "./mcp-bridge.ts";
 import { authenticateMcpRequest } from "./mcp-clients.ts";
 import type { AppApiStorage } from "./storage.ts";
@@ -194,12 +195,11 @@ function settleExchange(
   exchange: McpExchange,
   status: number,
   batch: boolean,
-) {
-  if (status >= 500) {
-    unit.end("error", "protocol_error");
-  } else if (status >= 400) {
-    unit.refuse("protocol_error");
-  }
+): Settlement | undefined {
+  // The request seam ends the request's event, once, after its status and
+  // sizes: this only says how.
+  if (status >= 500) return { outcome: "error", reason: "protocol_error" };
+  if (status >= 400) unit.refuse("protocol_error");
   for (const call of exchange.calls) {
     if (
       status < 400 &&
@@ -210,12 +210,12 @@ function settleExchange(
     }
     if (batch) call.unit.end();
   }
-  if (!batch) return;
+  if (!batch) return undefined;
   const worst = worstOutcome(
     unit.outcome,
     ...exchange.calls.map((call) => call.unit.outcome),
   );
-  if (worst !== worstOutcome(unit.outcome)) unit.end(worst);
+  return worst !== worstOutcome(unit.outcome) ? { outcome: worst } : undefined;
 }
 
 /**
@@ -572,7 +572,8 @@ export async function handleMcpRequest(
   response: ServerResponse,
   pathname: string,
   context: McpRequestContext,
-) {
+): Promise<Settlement | undefined> {
+  let settlement: Settlement | undefined;
   // Only /mcp/ajour is a route. While MCP is off, it is absent too,
   // whoever asks.
   if (pathname !== "/mcp/ajour") {
@@ -679,6 +680,13 @@ export async function handleMcpRequest(
   try {
     await transport.handleRequest(request, response, body);
   } finally {
-    settleExchange(unit, exchange, response.statusCode, method === "batch");
+    // A thrown error skips the settlement, and the request ends an error.
+    settlement = settleExchange(
+      unit,
+      exchange,
+      response.statusCode,
+      method === "batch",
+    );
   }
+  return settlement;
 }

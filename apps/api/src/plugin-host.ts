@@ -4,8 +4,13 @@ import {
   PluginOperationRefused,
   PluginWorkerLifetime,
   type PluginCancelReason,
-  type PluginOperationEventName,
 } from "./plugin-worker-lifetime.ts";
+import {
+  CALENDAR_EVENTS,
+  CODE_HOST_EVENTS,
+  COMMENT_EVENTS,
+  type PluginOperationEventName,
+} from "./operation-events.ts";
 import type { ApiEvents } from "./events.ts";
 import { connectionSecretValues } from "./plugin-errors.ts";
 import { readFile, realpath } from "node:fs/promises";
@@ -140,29 +145,13 @@ export type PluginMethod =
 export const PLUGIN_OPERATION_EVENTS = {
   validateConnection: "connection.save",
   syncConnection: "backlog.sync",
-  listSettleStates: "settle_state.list",
+  listSettleStates: "source_state.list",
   writeSettle: "backlog.write_source",
   readDescription: "description.read",
   writeDescription: "description.write",
-  syncPullRequests: "pull_request.sync",
-  getPullRequestContent: "pull_request.load",
-  getFileContent: "pull_request.load_file",
-  getPullRequestConversation: "pull_request.load_conversation",
-  browsePullRequests: "pull_request.browse",
-  submitReview: "pull_request.submit_review",
-  postComment: "pull_request.comment",
-  replyToThread: "pull_request.reply",
-  setThreadResolved: "pull_request.resolve_thread",
-  setFileViewed: "pull_request.mark_file_viewed",
-  updatePullRequest: "pull_request.update",
-  mergePullRequest: "pull_request.merge",
-  listCalendarEvents: "calendar.fetch",
-  listItemComments: "comment.list",
-  postItemComment: "comment.post",
-  editItemComment: "comment.edit",
-  deleteItemComment: "comment.delete",
-  setItemCommentReaction: "comment.react",
-  searchItemPeople: "mention.search",
+  ...CODE_HOST_EVENTS,
+  ...CALENDAR_EVENTS,
+  ...COMMENT_EVENTS,
   createTeam: "team.create",
   syncTeamProjects: "team.sync",
 } as const satisfies Record<PluginMethod, PluginOperationEventName>;
@@ -193,6 +182,45 @@ export function capabilityOfMethod(
   if (method === "validateConnection") return undefined;
   return method in calendarOperations ? "calendar" : "codeHost";
 }
+
+/**
+ * What a plugin must declare to run a method. It is checked inside the
+ * operation, once the plugin is found, so a refusal has its event.
+ */
+type Requirement = (manifest: PluginManifest) => void;
+
+/** The plugin declares `capability`. */
+function requireCapability(capability: SwitchableCapability): Requirement {
+  return (manifest) => {
+    if (manifest.capabilities[capability] === undefined) {
+      throw new PluginOperationRefused(
+        `Plugin "${manifest.id}" ${missingCapabilityMessages[capability]}.`,
+        "not_supported",
+      );
+    }
+  };
+}
+
+/** The plugin declares a feature of its backlog capability. */
+function requireFeature(
+  has: (manifest: PluginManifest) => unknown,
+  missing: string,
+): Requirement {
+  return (manifest) => {
+    requireCapability("connector")(manifest);
+    if (!has(manifest)) {
+      throw new PluginOperationRefused(
+        `Plugin "${manifest.id}" ${missing}.`,
+        "not_supported",
+      );
+    }
+  };
+}
+
+const requireSettle = requireFeature(
+  (manifest) => manifest.capabilities.connector?.settle,
+  "does not support settling backlog items",
+);
 
 function comparePlugins(left: PluginManifest, right: PluginManifest) {
   return (
@@ -373,7 +401,6 @@ export class PluginManager {
     workItems: BacklogSyncWorkItem[] = [],
     admit?: PluginAdmission,
   ): Promise<BacklogPluginSyncResult> {
-    await this.assertCapability(pluginId, "connector");
     const payload = {
       connection: pluginInvocationConnectionSchema.parse(connection),
       workItems: workItems.map((workItem) =>
@@ -387,6 +414,7 @@ export class PluginManager {
       payload,
       backlogPluginSyncResultSchema,
       admit,
+      requireCapability("connector"),
     );
   }
 
@@ -416,7 +444,6 @@ export class PluginManager {
     request: CodeHostOperationRequest<Operation>,
     admit?: PluginAdmission,
   ): Promise<CodeHostOperationResult<Operation>> {
-    await this.assertCapability(pluginId, "codeHost");
     const contract = codeHostOperations[operation];
     const resultSchema = contract.result as {
       parse: (value: unknown) => CodeHostOperationResult<Operation>;
@@ -430,6 +457,7 @@ export class PluginManager {
       },
       resultSchema,
       admit,
+      requireCapability("codeHost"),
     );
   }
 
@@ -444,11 +472,6 @@ export class PluginManager {
     request: BacklogCommentOperationRequest<Operation>,
     admit?: PluginAdmission,
   ): Promise<BacklogCommentOperationResult<Operation>> {
-    await this.assertCapability(pluginId, "connector");
-    const plugin = await this.getPlugin(pluginId);
-    if (!plugin.manifest.capabilities.connector?.comments) {
-      throw new Error(`Plugin "${pluginId}" does not provide comments.`);
-    }
     const contract = backlogCommentOperations[operation];
     const resultSchema = contract.result as {
       parse: (value: unknown) => BacklogCommentOperationResult<Operation>;
@@ -462,6 +485,10 @@ export class PluginManager {
       },
       resultSchema,
       admit,
+      requireFeature(
+        (manifest) => manifest.capabilities.connector?.comments,
+        "does not provide comments",
+      ),
     );
   }
 
@@ -473,7 +500,6 @@ export class PluginManager {
     request: CalendarOperationRequest<Operation>,
     admit?: PluginAdmission,
   ): Promise<CalendarOperationResult<Operation>> {
-    await this.assertCapability(pluginId, "calendar");
     const contract = calendarOperations[operation];
     const resultSchema = contract.result as {
       parse: (value: unknown) => CalendarOperationResult<Operation>;
@@ -487,6 +513,7 @@ export class PluginManager {
       },
       resultSchema,
       admit,
+      requireCapability("calendar"),
     );
   }
 
@@ -500,7 +527,6 @@ export class PluginManager {
     request: TeamCreateRequest,
     admit?: PluginAdmission,
   ): Promise<TeamCreateResult> {
-    await this.assertCapability(pluginId, "team");
     return await this.invokePlugin(
       pluginId,
       "createTeam",
@@ -510,6 +536,7 @@ export class PluginManager {
       },
       teamCreateResultSchema,
       admit,
+      requireCapability("team"),
     );
   }
 
@@ -520,7 +547,6 @@ export class PluginManager {
     request: TeamSyncRequest,
     admit?: PluginAdmission,
   ): Promise<TeamSyncResult> {
-    await this.assertCapability(pluginId, "team");
     return await this.invokePlugin(
       pluginId,
       "syncTeamProjects",
@@ -530,6 +556,7 @@ export class PluginManager {
       },
       teamSyncResultSchema,
       admit,
+      requireCapability("team"),
     );
   }
 
@@ -539,7 +566,6 @@ export class PluginManager {
     request: BacklogSettleStatesRequest,
     admit?: PluginAdmission,
   ): Promise<BacklogSettleStatesResult> {
-    await this.assertSupportsSettle(pluginId);
     return await this.invokePlugin(
       pluginId,
       "listSettleStates",
@@ -549,6 +575,7 @@ export class PluginManager {
       },
       backlogSettleStatesResultSchema,
       admit,
+      requireSettle,
     );
   }
 
@@ -558,7 +585,6 @@ export class PluginManager {
     request: BacklogSettleWriteRequest,
     admit?: PluginAdmission,
   ): Promise<BacklogSettleWriteResult> {
-    await this.assertSupportsSettle(pluginId);
     return await this.invokePlugin(
       pluginId,
       "writeSettle",
@@ -568,6 +594,7 @@ export class PluginManager {
       },
       backlogSettleWriteResultSchema,
       admit,
+      requireSettle,
     );
   }
 
@@ -595,6 +622,7 @@ export class PluginManager {
     params: Record<string, unknown>,
     schema: { parse: (value: unknown) => T },
     admit?: PluginAdmission,
+    requirement?: Requirement,
   ): Promise<T> {
     const connection = params.connection as
       { id?: unknown; config?: PluginFieldValues } | undefined;
@@ -614,6 +642,7 @@ export class PluginManager {
             params.config as PluginFieldValues | undefined,
           ]),
         );
+        requirement?.(plugin.manifest);
         // Discovery awaited, so shutdown or a package change may have started meanwhile.
         this.assertCanInvoke();
         if (!plugin.entrypointPath) {
@@ -635,31 +664,15 @@ export class PluginManager {
         };
       },
       {
-        check: () => this.assertCanInvoke(),
+        // A method with a requirement waits for discovery first, as a
+        // package change ends, and checks again after it. Validation, which
+        // has none, is refused at once while a package changes.
+        ...(requirement ? {} : { check: () => this.assertCanInvoke() }),
         ...(typeof connection?.id === "string"
           ? { connectionId: connection.id }
           : {}),
       },
     );
-  }
-
-  private async assertCapability(
-    pluginId: string,
-    capability: SwitchableCapability,
-  ) {
-    const plugin = await this.getPlugin(pluginId);
-    if (plugin.manifest.capabilities[capability] === undefined) {
-      throw new Error(
-        `Plugin "${pluginId}" ${missingCapabilityMessages[capability]}.`,
-      );
-    }
-  }
-
-  /** Whether the plugin syncs descriptions, and writes them with `write`. */
-  async supportsDescriptions(pluginId: string, write = false) {
-    const description = (await this.getPlugin(pluginId)).manifest.capabilities
-      .connector?.description;
-    return Boolean(description && (!write || description.write));
   }
 
   /** The item's description as the source holds it now. */
@@ -669,9 +682,6 @@ export class PluginManager {
     request: BacklogReadDescriptionRequest,
     admit?: PluginAdmission,
   ): Promise<BacklogReadDescriptionResult> {
-    if (!(await this.supportsDescriptions(pluginId))) {
-      throw new Error(`Plugin "${pluginId}" does not sync descriptions.`);
-    }
     return await this.invokePlugin(
       pluginId,
       "readDescription",
@@ -681,6 +691,10 @@ export class PluginManager {
       },
       backlogReadDescriptionResultSchema,
       admit,
+      requireFeature(
+        (manifest) => manifest.capabilities.connector?.description,
+        "does not sync descriptions",
+      ),
     );
   }
 
@@ -691,9 +705,6 @@ export class PluginManager {
     request: BacklogWriteDescriptionRequest,
     admit?: PluginAdmission,
   ): Promise<BacklogWriteDescriptionResult> {
-    if (!(await this.supportsDescriptions(pluginId, true))) {
-      throw new Error(`Plugin "${pluginId}" does not write descriptions.`);
-    }
     return await this.invokePlugin(
       pluginId,
       "writeDescription",
@@ -703,16 +714,11 @@ export class PluginManager {
       },
       backlogWriteDescriptionResultSchema,
       admit,
+      requireFeature(
+        (manifest) => manifest.capabilities.connector?.description?.write,
+        "does not write descriptions",
+      ),
     );
-  }
-
-  private async assertSupportsSettle(pluginId: string) {
-    const plugin = await this.getPlugin(pluginId);
-    if (!plugin.manifest.capabilities.connector?.settle) {
-      throw new Error(
-        `Plugin "${pluginId}" does not support settling backlog items.`,
-      );
-    }
   }
 
   private assertCanInvoke() {

@@ -323,6 +323,18 @@ describe("one event per unit of work", () => {
     expect(names).toEqual(["api.request", "agent_tool.call"]);
   });
 
+  it("tells who started it", () => {
+    const { events } = recordingEmitter();
+
+    const trigger = events.run(
+      "api.request",
+      { kind: "request", trigger: "agent" },
+      () => events.current()?.trigger,
+    );
+
+    expect(trigger).toBe("agent");
+  });
+
   it("reads and scrubs a failure's message only when the event is built", () => {
     let reads = 0;
     const failure = new Error();

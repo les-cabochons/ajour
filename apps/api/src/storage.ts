@@ -28,7 +28,8 @@ import {
   type SwitchableCapability,
 } from "../../../packages/shared/plugins.ts";
 import type { McpSettings } from "../../../packages/shared/agent-tools.ts";
-import { withoutContent, type ApiEvents } from "./events.ts";
+import { withoutContent } from "./event-errors.ts";
+import type { ApiEvents } from "./events.ts";
 import {
   agentRunnerSettingsSchema,
   type AgentRunnerSettings,
@@ -1808,21 +1809,25 @@ export class AppApiStorage {
         unit?.set({
           storage: { found: true, bytes: Buffer.byteLength(text) },
         });
-        let raw: Partial<AppApiState | AppApiStateV1 | AppApiStateV2>;
+        let raw: Partial<AppApiState | AppApiStateV1 | AppApiStateV2> | null;
         try {
           raw = JSON.parse(text) as typeof raw;
-        } catch (error) {
+        } catch {
+          // The parser's message quotes the file, so neither the event nor
+          // the request that read it gets it.
+          const unreadable = unreadableStateError();
           unit
             ?.set({ storage: { unreadable: true } })
-            .fail(unreadableStateError(), { reason: "unreadable" });
-          throw error;
+            .fail(unreadable, { reason: "unreadable" });
+          throw unreadable;
         }
+        // A file that holds null, like a missing one, loads the defaults.
         unit?.set({
           storage: {
-            version_from: typeof raw.version === "number" ? raw.version : 1,
+            version_from: typeof raw?.version === "number" ? raw.version : 1,
           },
         });
-        state = normalizeState(raw);
+        state = normalizeState(raw ?? undefined);
       } else {
         unit?.set({ storage: { found: false } });
         state = createDefaultState();

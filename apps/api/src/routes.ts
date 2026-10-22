@@ -1,56 +1,19 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { BacklogCommentOperation } from "../../../packages/shared/backlog-comments.ts";
-import type { CalendarOperation } from "../../../packages/shared/calendar.ts";
-import type { CodeHostOperation } from "../../../packages/shared/code-host.ts";
 import type {
   AjourCatalog,
-  EventName,
   HttpMethod,
-  KindOf,
 } from "../../../packages/wide-events/catalog.ts";
-import type { Unit } from "../../../packages/wide-events/index.ts";
-import { withoutContent, type ApiEvents } from "./events.ts";
+import type { Outcome, Unit } from "../../../packages/wide-events/index.ts";
+import { withoutContent } from "./event-errors.ts";
+import type { ApiEvents } from "./events.ts";
+import {
+  CALENDAR_EVENTS,
+  CODE_HOST_EVENTS,
+  COMMENT_EVENTS,
+  type RequestEventName,
+} from "./operation-events.ts";
 
-/** An event the request seam may name a request: one whose kinds include `request`. */
-export type RequestEventName = {
-  [Name in EventName<AjourCatalog>]: "request" extends KindOf<
-    AjourCatalog,
-    Name
-  >
-    ? Name
-    : never;
-}[EventName<AjourCatalog>];
-
-/** The event each comment operation's request emits. A new operation needs one. */
-export const COMMENT_EVENTS = {
-  listItemComments: "comment.list",
-  postItemComment: "comment.post",
-  editItemComment: "comment.edit",
-  deleteItemComment: "comment.delete",
-  setItemCommentReaction: "comment.react",
-  searchItemPeople: "mention.search",
-} as const satisfies Record<BacklogCommentOperation, RequestEventName>;
-
-/** The event each calendar operation's request emits. */
-export const CALENDAR_EVENTS = {
-  listCalendarEvents: "calendar.fetch",
-} as const satisfies Record<CalendarOperation, RequestEventName>;
-
-/** The event each code host operation's request emits. */
-export const CODE_HOST_EVENTS = {
-  syncPullRequests: "pull_request.sync",
-  getPullRequestContent: "pull_request.load",
-  getFileContent: "pull_request.load_file",
-  getPullRequestConversation: "pull_request.load_conversation",
-  browsePullRequests: "pull_request.browse",
-  submitReview: "pull_request.submit_review",
-  postComment: "pull_request.comment",
-  replyToThread: "pull_request.reply",
-  setThreadResolved: "pull_request.resolve_thread",
-  setFileViewed: "pull_request.mark_file_viewed",
-  updatePullRequest: "pull_request.update",
-  mergePullRequest: "pull_request.merge",
-} as const satisfies Record<CodeHostOperation, RequestEventName>;
+export type { RequestEventName };
 
 /** A table that names a route by one of its parameters, such as `:operation`. */
 interface NameByParam {
@@ -116,12 +79,12 @@ export const ROUTES = {
   mcpClientCreate: {
     method: "POST",
     path: "/api/mcp/clients",
-    name: "mcp_client.create",
+    name: "agent_client.create",
   },
   mcpClientRevoke: {
     method: "POST",
     path: "/api/mcp/clients/:clientId/revoke",
-    name: "mcp_client.revoke",
+    name: "agent_client.revoke",
   },
   mcpBridge: {
     method: "GET",
@@ -136,7 +99,7 @@ export const ROUTES = {
   agentQuestionAnswer: {
     method: "POST",
     path: "/api/mcp/questions/:questionId/answer",
-    name: "agent_question.answer",
+    name: "question.answer",
   },
   agentSessionDismiss: {
     method: "POST",
@@ -202,7 +165,7 @@ export const ROUTES = {
   settleStateList: {
     method: "POST",
     path: "/api/plugins/:pluginId/connections/:connectionId/settle-states",
-    name: "settle_state.list",
+    name: "source_state.list",
   },
   settleWrite: {
     method: "POST",
@@ -399,26 +362,96 @@ function httpMethod(method: string | undefined): HttpMethod {
   return method && HTTP_METHODS.has(method) ? (method as HttpMethod) : "other";
 }
 
-/** A header's byte count, when the peer sent or set one. */
-function byteCount(value: unknown): number | undefined {
-  const count = Number(Array.isArray(value) ? value[0] : value);
-  return Number.isInteger(count) && count >= 0 ? count : undefined;
+/** A body chunk's size in bytes: a string's in its encoding, or a buffer's. */
+function chunkBytes(chunk: unknown, encoding: unknown): number {
+  if (typeof chunk === "string") {
+    return Buffer.byteLength(
+      chunk,
+      typeof encoding === "string" ? (encoding as BufferEncoding) : "utf8",
+    );
+  }
+  return chunk instanceof Uint8Array ? chunk.byteLength : 0;
+}
+
+/**
+ * Counts the body bytes the request receives, as Node's parser pushes them
+ * into its stream, so reading the body is untouched and a chunked body is
+ * counted too. A request with no stream behind it, such as a test's, is
+ * counted from its Content-Length.
+ */
+function countRequestBytes(request: IncomingMessage): () => number | undefined {
+  const push = (request as { push?: IncomingMessage["push"] }).push;
+  if (typeof push !== "function") {
+    const header = Number(request.headers["content-length"]);
+    return () => (Number.isInteger(header) && header >= 0 ? header : undefined);
+  }
+  let bytes = 0;
+  request.push = function (chunk: unknown, encoding?: BufferEncoding) {
+    bytes += chunkBytes(chunk, encoding);
+    return push.call(this, chunk, encoding);
+  };
+  return () => bytes;
+}
+
+/** Counts the body bytes written to the response, by every writer. */
+function countResponseBytes(response: ServerResponse): () => number {
+  let bytes = 0;
+  const { write, end } = response;
+  if (typeof write === "function") {
+    response.write = function (this: ServerResponse, ...args: unknown[]) {
+      bytes += chunkBytes(args[0], args[1]);
+      return (write as (...rest: unknown[]) => boolean).apply(this, args);
+    } as ServerResponse["write"];
+  }
+  if (typeof end === "function") {
+    response.end = function (this: ServerResponse, ...args: unknown[]) {
+      if (typeof args[0] !== "function") bytes += chunkBytes(args[0], args[1]);
+      return (end as (...rest: unknown[]) => ServerResponse).apply(this, args);
+    } as ServerResponse["end"];
+  }
+  return () => bytes;
+}
+
+/**
+ * Resolves once the response has flushed, or its connection closed: `end()`
+ * only starts the flush.
+ */
+function responseDone(response: ServerResponse): Promise<void> {
+  if (response.writableFinished || response.destroyed) return Promise.resolve();
+  return new Promise((resolve) => {
+    response.once("finish", () => resolve());
+    response.once("close", () => resolve());
+  });
+}
+
+/**
+ * How a handler that counts outcomes itself, such as MCP's for a batch,
+ * ends the request: the seam ends it once, after the status and the sizes.
+ */
+export interface Settlement {
+  outcome: Outcome;
+  reason?: string;
 }
 
 /**
  * The request seam: one `request` event per HTTP request. It opens before
  * any check, as `api.request`, a child of the caller's span when the request
  * carries a `traceparent`, and `serve` renames it once it knows the route.
- * It ends once `serve` settles and the response is done, so a stream such as
- * the MCP bridge ends when it closes. An outcome `serve` didn't record
- * follows the status: a 4xx is `refused`, a 5xx an `error`.
+ * It ends once `serve` settles and the response has flushed or closed, so a
+ * stream such as the MCP bridge ends when it closes. An outcome `serve`
+ * didn't record follows the status: a 4xx is `refused`, a 5xx an `error`.
  */
 export async function serveWithEvent(
   events: ApiEvents,
   request: IncomingMessage,
   response: ServerResponse,
-  options: { trigger: "system" | "agent" },
-  serve: (unit: Unit<AjourCatalog, "api.request">) => Promise<void>,
+  options: {
+    trigger: "system" | "agent";
+    origin: "app" | "none" | "refused";
+  },
+  serve: (
+    unit: Unit<AjourCatalog, "api.request">,
+  ) => Promise<Settlement | void>,
 ): Promise<void> {
   const traceparent = request.headers.traceparent;
   const unit = events.start("api.request", {
@@ -426,35 +459,35 @@ export async function serveWithEvent(
     trigger: options.trigger,
     ...(typeof traceparent === "string" ? { parent: traceparent } : {}),
   });
-  const requestBytes = byteCount(request.headers["content-length"]);
+  const requestBytes = countRequestBytes(request);
+  const responseBytes = countResponseBytes(response);
   unit.set({
-    http: {
-      method: httpMethod(request.method),
-      ...(requestBytes !== undefined ? { request_bytes: requestBytes } : {}),
-    },
+    http: { method: httpMethod(request.method), origin: options.origin },
   });
+  let settlement: Settlement | void = undefined;
   try {
-    await unit.enter(() => serve(unit));
+    settlement = await unit.enter(() => serve(unit));
   } catch (error) {
     unit.fail(withoutContent(error));
   }
-  const end = () => {
-    const status = response.statusCode;
-    const responseBytes = byteCount(response.getHeader?.("content-length"));
-    unit.set({
-      http: {
-        status_code: status,
-        ...(responseBytes !== undefined
-          ? { response_bytes: responseBytes }
-          : {}),
-      },
-    });
-    if (unit.outcome === undefined) {
-      if (status >= 500) unit.end("error");
-      else if (status >= 400) unit.end("refused");
-    }
-    unit.end();
-  };
-  if (response.writableEnded || response.destroyed) end();
-  else response.once("close", end);
+  await responseDone(response);
+  const status = response.statusCode;
+  const received = requestBytes();
+  unit.set({
+    http: {
+      status_code: status,
+      ...(received !== undefined ? { request_bytes: received } : {}),
+      response_bytes: responseBytes(),
+    },
+  });
+  if (settlement) {
+    unit.end(
+      settlement.outcome,
+      settlement.reason as Parameters<typeof unit.end>[1],
+    );
+  } else if (unit.outcome === undefined) {
+    if (status >= 500) unit.end("error");
+    else if (status >= 400) unit.end("refused");
+  }
+  unit.end();
 }

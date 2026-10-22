@@ -228,8 +228,9 @@ the work does.
 - `console` prints one JSON line per event. `AJOUR_WIDE_EVENTS=console` turns
   it on in the terminal, for the local API and the main process.
   It is never on by default, and the local API prints nothing on stdout
-  without it. Run on its own (`just api-start`), the API says where it
-  listens on stderr, so stdout stays a clean stream of events.
+  without it. Run on its own (`just api-start`, through
+  `apps/api/src/standalone.ts`), the API says where it listens on stderr, so
+  stdout stays a clean stream of events.
 
 Logging plugins will later replace the sink without changing any event.
 
@@ -248,17 +249,17 @@ them.
 
 The local API emits these (#305, #306):
 
-| Event                                 | Where                                                                          |
-| ------------------------------------- | ------------------------------------------------------------------------------ |
-| one `request` per HTTP request        | `serveWithEvent` in `apps/api/src/routes.ts`, named from `ROUTES`              |
-| `mcp.request`, `agent_tool.call`      | `handleMcpRequest` in `apps/api/src/mcp-server.ts`, on the request's event     |
-| `mcp_bridge.connection`               | the bridge route's request, which ends when the stream closes                  |
-| one `plugin_operation` per worker run | `PluginWorkerLifetime`, for the plugin host and the schema host                |
-| `api.start`, `api.stop`               | `startAppApiServer` and `stopAppApiServer` in `apps/api/src/server.ts`         |
-| `storage.load`                        | `AppApiStorage`, for each load of the state file                               |
-| `app.error`                           | `watchProcessCrashes` in `apps/api/src/events.ts`, with `reportProcessCrashes` |
-| `agent.session`                       | `AgentSessions`, from begin to end                                             |
-| `agent.run`                           | `AgentRunner`, from the start's first launch step to its one finalizer         |
+| Event                                 | Where                                                                                          |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| one `request` per HTTP request        | `serveWithEvent` in `apps/api/src/routes.ts`, named from `ROUTES`                              |
+| `mcp.request`, `agent_tool.call`      | `handleMcpRequest` in `apps/api/src/mcp-server.ts`, on the request's event                     |
+| `mcp_bridge.connection`               | the bridge route's request, which ends when the stream closes                                  |
+| one `plugin_operation` per worker run | `PluginWorkerLifetime`, for the plugin host and the schema host                                |
+| `api.start`, `api.stop`               | `startAppApiServer` and `stopAppApiServer` in `apps/api/src/server.ts`                         |
+| `storage.load`                        | `AppApiStorage`, for each load of the state file                                               |
+| `app.error`                           | `watchProcessCrashes` in `apps/api/src/events.ts`, which `apps/api/src/standalone.ts` turns on |
+| `agent.session`                       | `AgentSessions`, from begin to end                                                             |
+| `agent.run`                           | `AgentRunner`, from the start's first launch step to its one finalizer                         |
 
 ### Requests
 
@@ -267,43 +268,67 @@ The local API emits these (#305, #306):
   routed. Every route in `ROUTES` has a name and a handler, so a route
   without either fails to compile. A route that serves several operations,
   such as the code host's, names each from its own table (`CODE_HOST_EVENTS`,
-  `COMMENT_EVENTS`, `CALENDAR_EVENTS`).
+  `COMMENT_EVENTS`, `CALENDAR_EVENTS` in `apps/api/src/operation-events.ts`),
+  which the plugin host's table shares.
 - **Every request records** its method, its route's pattern (never its
-  values), its status, the request and response sizes when their headers
-  give them, and its origin: `app`, `none` or `refused`.
+  values), its status, its origin (`app`, `none` or `refused`) on every path,
+  and its request and response sizes. The seam counts the bytes at the
+  boundary, as the request's stream receives them and as the response
+  writes them, so a chunked body, a stream and a refusal are counted too.
 - **A request that never reaches a route** stays `api.request`, refused
-  with `stopping`, `host_refused`, `origin_refused` or `no_route`. A body or
-  parameter Ajour can't read is refused with `invalid_request`, and records
-  the error's type without the message that could quote it.
-- **An outcome the handler didn't record** follows the status: a 4xx is
-  `refused`, a 5xx an `error`. A route refused because the plugin system,
-  the plugin or the capability is off says which: `system_off`,
-  `plugin_off` or `capability_off`.
+  with `stopping`, `host_refused`, `origin_refused` or `no_route`, or
+  `unknown_operation` for an operation a route's table doesn't have.
+- **A request Ajour can't read** is refused with `invalid_request`: a body
+  that isn't JSON or is too large, a malformed path segment, or a value the
+  route's schema or Ajour's own checks refuse. Each is an
+  `InvalidRequestError` (`apps/api/src/event-errors.ts`), and its event
+  holds the error's type and code, never the message that could quote the
+  caller's text. Any other error a route throws ends it as an `error`.
+- **Each refusal says why.** A route refused because the plugin system, the
+  plugin or the capability is off says which (`system_off`, `plugin_off`,
+  `capability_off`), as do a missing connection (`connection_not_found`), a
+  feature the plugin doesn't declare (`not_supported`), and the agent
+  routes' own reasons, such as `not_running`. An outcome the handler didn't
+  record follows the status: a 4xx is `refused`, a 5xx an `error`.
 - **Handlers add their catalog fields** to the event, such as a sync's
-  counts or a connection's field count, and a plugin's error through
-  `unit.fail(error, { secrets })` with the connection's secrets.
-- **The event ends** once the handler settles and the response is done, so
-  the bridge stream's `mcp_bridge.connection` lasts as long as the stream.
+  counts or a connection's field count. A failed plugin call goes through
+  `recordPluginFailure`: a refusal keeps its reason, a result that broke its
+  contract is `invalid_result`, and any other error is scrubbed of the
+  connection's secrets.
+- **The event ends once**, by the seam, when the handler has settled and the
+  response has flushed or closed: `end()` only starts the flush. The bridge
+  stream's `mcp_bridge.connection` lasts as long as the stream. A handler
+  that weighs outcomes itself, such as MCP's for a batch, returns how the
+  request ends instead of ending it, so the status and sizes still land.
+- **Validation messages stay out.** An error a validator throws lists the
+  values it received, whether a caller's text, a plugin's result or a
+  spreadsheet's headings. `withoutContent` gives every event such an error
+  as its type and code, with no message.
 
 ### Plugin operations
 
 Each worker run in the plugin host and the schema host emits one
 `plugin_operation` event, named from the host's table of plugin methods, as
-a child span of the request that started it. It carries the plugin's ID,
-version, source and API version, the connection, the method and its
-capability, the host's other operations at admission, the preparation and
-worker durations, the timeout and the result's size. It ends with its own
+a child span of the request that started it, with its trigger. It carries
+the plugin's ID, version, source and API version, the connection, the method
+and its capability, the host's other operations at admission, the
+preparation and worker durations, the timeout and the result's size. What
+the method requires of the plugin, such as its capability, is checked inside
+the operation, so a refusal there has its event too. It ends with its own
 reason:
 
 - refused: `capacity`, a gate's `system_off`, `plugin_off` or
   `capability_off`, `host_stopping`, `package_change`, `not_installed`,
-  `runs_no_code`, and `agent_access` for a comment call the user doesn't
-  allow;
+  `runs_no_code`, `not_supported` for a capability or feature the plugin
+  doesn't declare, `invalid_request` for an import whose rows break the
+  plugin's definition, and `agent_access` for a comment call the user
+  doesn't allow;
 - cancelled: `system_off`, `plugin_off`, `capability_off`, `uninstalled` or
   `shutdown`;
 - `timeout`;
-- errors: `result_too_large`, `invalid_result` (with the error's type only),
-  `exited_early` and `plugin_error`, scrubbed of the connection's secrets.
+- errors: `result_too_large`, `invalid_result` (with the error's type and
+  code only), `exited_early` and `plugin_error`, scrubbed of the
+  connection's secrets.
 
 Plugin discovery skips an invalid package without a log line: the active
 event counts it in `counts.invalid_plugin`, as it counts a bundled archive

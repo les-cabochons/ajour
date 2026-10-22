@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import os from "node:os";
-import { ZodError } from "zod";
+import { withoutContent } from "./event-errors.ts";
 import {
   catalog,
   type AjourCatalog,
@@ -110,17 +110,4 @@ export function watchProcessCrashes(
   return () => {
     target.off("uncaughtExceptionMonitor", listener);
   };
-}
-
-/**
- * An error as an event may hold it. A validation error's message lists what
- * failed with the values it received, which can be a plugin's result or a
- * caller's text, so it becomes a stand-in with its type and a fixed message.
- * Any other error passes, for the scrubber.
- */
-export function withoutContent(error: unknown): unknown {
-  if (!(error instanceof ZodError)) return error;
-  const standIn = new Error("The value does not match its schema.");
-  standIn.name = "ZodError";
-  return standIn;
 }

@@ -157,9 +157,9 @@ rg -n 'window.addEventListener\("pointer(move|up|cancel)"' apps/web/src/features
 rg -n '^function (formatPriorityInput|parsePriorityInput|formatEstimateInput|parseEstimateInput|buildManualTimeEntryNote)' apps/web/src/features/backlog
 rg -n 'console\.' apps/desktop/electron
 rg -n 'ipcMain\.(on|handle|once|handleOnce)\(' apps/desktop/electron --glob '!ipc-listeners.cjs'
-rg -n 'console\.' apps/api/src -g '!*.test.ts' -g '!server.ts'
+rg -n 'console\.' apps/api/src -g '!*.test.ts' -g '!standalone.ts'
 ```
 
-The standalone local API's "listening" line on stderr, in `apps/api/src/server.ts`, is the one `console.` call the local API keeps.
+The standalone local API's "listening" line on stderr, in `apps/api/src/standalone.ts`, is the one `console.` call the local API keeps, by decision, for `just api-start`.
 
 Feature code consumes pure behavior from `domain`, runtime behavior from `lib`, local wrappers from `apps/web/src/components/ui`, app-level surfaces from `apps/web/src/components/app-surface.tsx`, or feature-local modules that own repeated rendering.
