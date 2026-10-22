@@ -103,18 +103,54 @@ describe("an install's result as its event records it", () => {
   const named = (name: string, message = "") =>
     Object.assign(new Error(message), { name });
 
+  const coded = (code: string, message: string) =>
+    Object.assign(new Error(message), { code });
+
   it.each([
+    // Desktop's own errors carry a code.
+    [
+      coded(
+        "invalid_archive",
+        "Plugin archives must be between 1 byte and 26214400 bytes.",
+      ),
+      "select",
+      "invalid_archive",
+    ],
+    [
+      coded("not_available", 'Plugin "jira" is not available for download.'),
+      "download",
+      "not_available",
+    ],
+    // Text alone no longer classifies a download.
     [
       new Error('Plugin "jira" is not available for download.'),
       "download",
-      "not_available",
-    ],
-    [
-      new Error("No compatible release asset is available for Jira."),
-      "download",
-      "not_available",
+      "failed",
     ],
     [new Error("Plugin download returned HTTP 503."), "download", "failed"],
+    // A system error is a failure, whatever its message names.
+    [
+      coded(
+        "EACCES",
+        "EACCES: permission denied, open 'C:/plugins/jira/plugin.json'",
+      ),
+      "install",
+      "failed",
+    ],
+    [
+      coded(
+        "ENOSPC",
+        "ENOSPC: no space left on device, write 'jira.ajour-connector'",
+      ),
+      "install",
+      "failed",
+    ],
+    [
+      coded("ENOENT", "ENOENT: no such file, open 'archive'"),
+      "select",
+      "failed",
+    ],
+    // The local API's installer: its validation messages, until it has codes.
     [
       new Error("Another plugin package change is already in progress."),
       "install",
@@ -134,7 +170,13 @@ describe("an install's result as its event records it", () => {
       "install",
       "invalid_archive",
     ],
-    [new Error("EACCES: permission denied"), "install", "failed"],
+    [
+      new Error('Plugin "jira" entrypoint must be compiled JavaScript.'),
+      "install",
+      "invalid_archive",
+    ],
+    [new Error("Manifest file is over 64 KB."), "install", "invalid_archive"],
+    [new Error("Could not write the plugin's manifest."), "install", "failed"],
   ])("%s at %s is %s", (error, step, result) => {
     expect(pluginInstallResultOf(error, step)).toBe(result);
   });

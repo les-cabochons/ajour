@@ -74,6 +74,12 @@ function createAutomaticUpdateController({
   let disposed = false;
   /** The error the last check failed with, for the checks that joined it. */
   let lastCheckError = null;
+  /**
+   * The install in progress, until its operation settles, so an updater error
+   * lands on its event. electron-updater reports an installer that cannot
+   * start from inside quitAndInstall.
+   */
+  let activeInstall = null;
   /** The total size of the update being downloaded, from its progress. */
   let downloadBytes;
   let state = {
@@ -115,16 +121,8 @@ function createAutomaticUpdateController({
       generation += 1;
       resetInstallPreparation();
       fail(error);
-      // The install's own event ended before the handoff.
-      events
-        .start("update.install", {
-          kind: "job",
-          trigger: "system",
-          detached: true,
-        })
-        .set({ update: { stopped_at: "install" } })
-        .fail(error)
-        .end();
+      // The install's one event takes the error, where the install was.
+      activeInstall?.fail(error);
     }
     // The check/download promise reports its own failure. Keep a listener so
     // electron-updater's error event never becomes an unhandled EventEmitter error.
@@ -346,7 +344,15 @@ function createAutomaticUpdateController({
     const updateGeneration = generation;
     const isCurrent = () => !disposed && updateGeneration === generation;
     let step = "confirm";
+    const active = {
+      fail(error) {
+        install.unit.set({ update: { stopped_at: step } }).fail(error);
+      },
+    };
+    activeInstall = active;
     const stoppedBy = (outcome) => {
+      // An updater error already recorded where the install stopped.
+      if (install.unit.outcome === "error") return;
       install.unit.set({ update: { stopped_at: step } });
       if (outcome === "superseded") install.unit.cancel("superseded");
       else if (outcome) install.unit.cancel();
@@ -430,16 +436,16 @@ function createAutomaticUpdateController({
         install.unit.end();
       })
       .catch((error) => {
-        install.unit.set({ update: { stopped_at: step } });
         if (isCurrent()) {
           resetInstallPreparation();
           fail(error);
-          install.unit.fail(error);
+          active.fail(error);
         } else {
-          install.unit.cancel("superseded");
+          stoppedBy("superseded");
         }
       })
       .finally(() => {
+        if (activeInstall === active) activeInstall = null;
         if (install.own) install.unit.end();
         return finishOperation();
       });

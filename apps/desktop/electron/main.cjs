@@ -14,6 +14,7 @@ const {
   nativeImage,
   nativeTheme,
   net,
+  powerMonitor,
   protocol,
   shell,
 } = require("electron");
@@ -57,8 +58,9 @@ const {
   createLaunchContext,
   createMainEvents,
   loadMainEmitter,
-  recordLaunchVersion,
+  readLaunchVersion,
   triggerOf,
+  writeLaunchVersion,
 } = require("./main-events.cjs");
 const { classifyNavigation } = require("./navigation.cjs");
 const { stopWithin } = require("./stop-within.cjs");
@@ -95,7 +97,7 @@ const launch = createLaunchContext({
   electron: process.versions.electron,
   randomUUID,
 });
-// Why the app quits, for app.quit. The menu's Quit and the system stay "other".
+// Why the app quits, for app.quit: what set it off, or "other".
 let quitTrigger = "other";
 
 process.on("uncaughtExceptionMonitor", (error, origin) => {
@@ -302,9 +304,6 @@ ipc.onMessage("ajour:run-menu-item", (event, itemId) => {
   if (!roleItem) {
     return;
   }
-  if (roleItem.role === "quit") {
-    quitTrigger = "menu";
-  }
   events.current()?.set({ menu: { item_id: itemId } });
 
   Menu.getApplicationMenu()
@@ -508,8 +507,15 @@ ipc.handle("ajour:install-plugin", async (event) => {
   }
 
   const dialogStartedAt = Date.now();
-  const selectedArchive = await selectPluginArchive(dialog, mainWindow);
-  unit?.set({ plugin: { dialog_ms: Date.now() - dialogStartedAt } });
+  let selectedArchive;
+  try {
+    selectedArchive = await selectPluginArchive(dialog, mainWindow);
+  } catch (error) {
+    unit?.set({ plugin: { result: pluginInstallResultOf(error, "select") } });
+    throw error;
+  } finally {
+    unit?.set({ plugin: { dialog_ms: Date.now() - dialogStartedAt } });
+  }
   if (!selectedArchive) {
     unit?.set({ plugin: { result: "cancelled" } }).cancel();
     return null;
@@ -846,6 +852,11 @@ function internalAppApiPortInUseError(cause) {
   );
 }
 
+/** Where a packaged launch keeps the version it ran, for the next app.launch. */
+function launchVersionMarker() {
+  return path.join(app.getPath("userData"), "last-launch.json");
+}
+
 /** Why the local API could not start, as app.launch records it. */
 function apiStartFailureOf(error) {
   return ["port_in_use", "health_timeout", "entry_missing"].includes(
@@ -990,6 +1001,12 @@ function stopInternalAppApiWithinTimeout() {
   return stopWithin(stopInternalAppApi(), INTERNAL_APP_API_STOP_TIMEOUT_MS);
 }
 
+/** The app menu's Quit, and the title bar's, which clicks the same item. */
+function quitFromMenu() {
+  quitTrigger = "menu";
+  app.quit();
+}
+
 /**
  * Opens `app.quit` for a quit set off by `trigger`. It is its own unit, never
  * part of the IPC call or menu item that asked for it, which ends first.
@@ -1004,8 +1021,23 @@ function startQuit(trigger) {
     .set({ quit: { trigger } });
 }
 
+/** Set once a Windows session end recorded the quit before-quit never sees. */
+let systemQuitRecorded = false;
+
+/**
+ * Windows ends the session without before-quit, so the quit the system began
+ * is recorded when the session ends, once.
+ */
+function recordSessionEnd() {
+  quitTrigger = "os";
+  if (systemQuitRecorded || gracefulQuitStarted) return;
+  systemQuitRecorded = true;
+  startQuit("os").end();
+}
+
 /** Records how the local API's stop ended on a quit. */
 function recordApiStop(quit, outcome, stopStartedAt) {
+  if (!quit) return;
   quit.set({
     quit: {
       api_stop_ms: Date.now() - stopStartedAt,
@@ -1016,6 +1048,7 @@ function recordApiStop(quit, outcome, stopStartedAt) {
 
 /** Ends a quit with its local API stop's outcome. */
 function endQuit(quit, outcome) {
+  if (!quit) return;
   if (outcome === "failed") quit.end("error", "api_stop_failed");
   else if (outcome === "timed-out") quit.end("timeout", "api_stop_timed_out");
   else quit.end();
@@ -1055,6 +1088,10 @@ async function prepareToInstallUpdate() {
   const outcome = await stopInternalAppApiWithinTimeout();
   recordApiStop(quit, outcome, stopStartedAt);
   if (updateQuit?.quit === quit) updateQuit.outcome = outcome;
+  // The installer's quit skips before-quit's wait for the events.
+  await whenEventsReady(
+    INTERNAL_APP_API_STOP_TIMEOUT_MS - (Date.now() - stopStartedAt),
+  );
   gracefulQuitStarted = true;
   return outcome;
 }
@@ -1303,6 +1340,8 @@ async function createMainWindow(trigger = "launch") {
     return { action: "deny" };
   });
 
+  window.on("session-end", recordSessionEnd);
+
   window.webContents.on("context-menu", (_event, params) => {
     showEditContextMenu(window, params);
   });
@@ -1343,10 +1382,11 @@ if (!hasSingleInstanceLock) {
       renderer_source: process.env.AJOUR_DESKTOP_RENDERER_URL
         ? "dev_server"
         : "app_protocol",
-      previous_version: recordLaunchVersion(
-        path.join(app.getPath("userData"), "last-launch.json"),
-        app.getVersion(),
-      ),
+      // Development runs share the user data folder, so only packaged
+      // builds read and write the marker.
+      ...(app.isPackaged
+        ? { previous_version: readLaunchVersion(launchVersionMarker()) }
+        : {}),
     },
     catalog: {
       settings_source: existsSync(pluginCatalogSettingsPath)
@@ -1421,9 +1461,15 @@ if (!hasSingleInstanceLock) {
           buildAppMenuTemplate(appMenuModel, {
             platform: process.platform,
             sendAction: sendMenuAction,
+            quit: quitFromMenu,
           }),
         ),
       );
+
+      // macOS and Linux shut down through before-quit.
+      powerMonitor.on("shutdown", () => {
+        quitTrigger = "os";
+      });
 
       void refreshPluginCatalog("launch");
       schedulePluginCatalogRefresh();
@@ -1451,7 +1497,12 @@ if (!hasSingleInstanceLock) {
       if (loadOutcome === "error") launchUnit.end("error", "load_failed");
       else if (loadOutcome === "cancelled") {
         launchUnit.end("cancelled", "load_cancelled");
-      } else launchUnit.end();
+      } else {
+        launchUnit.end();
+        if (app.isPackaged) {
+          writeLaunchVersion(launchVersionMarker(), app.getVersion());
+        }
+      }
 
       app.on("activate", () => {
         if (BrowserWindow.getAllWindows().length === 0) {
@@ -1475,7 +1526,7 @@ if (!hasSingleInstanceLock) {
 
     gracefulQuitStarted = true;
     const quitStartedAt = Date.now();
-    const quit = startQuit(quitTrigger);
+    const quit = systemQuitRecorded ? undefined : startQuit(quitTrigger);
     if (pluginCatalogRefreshTimer) {
       clearInterval(pluginCatalogRefreshTimer);
       pluginCatalogRefreshTimer = null;
@@ -1483,7 +1534,7 @@ if (!hasSingleInstanceLock) {
     event.preventDefault();
     const updaterStartedAt = Date.now();
     automaticUpdateController.dispose();
-    quit.set({ quit: { updater_ms: Date.now() - updaterStartedAt } });
+    quit?.set({ quit: { updater_ms: Date.now() - updaterStartedAt } });
     // A failed stop still quits.
     const stopStartedAt = Date.now();
     void stopInternalAppApiWithinTimeout().then(async (outcome) => {
@@ -1509,7 +1560,7 @@ if (!hasSingleInstanceLock) {
 
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") {
-      quitTrigger = "all_windows_closed";
+      if (quitTrigger === "other") quitTrigger = "all_windows_closed";
       app.quit();
     }
   });

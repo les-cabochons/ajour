@@ -15,8 +15,9 @@ const {
   createLaunchContext,
   createMainEvents,
   loadMainEmitter,
-  recordLaunchVersion,
+  readLaunchVersion,
   triggerOf,
+  writeLaunchVersion,
 } = require("./electron/main-events.cjs");
 
 const repoRoot = path.resolve(
@@ -401,14 +402,16 @@ describe("shared mappings", () => {
 });
 
 describe("the previous version", () => {
-  it("is the version the last launch recorded, and this launch records its own", async () => {
+  it("reads the version the last packaged launch wrote, and writes only when asked", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "ajour-launch-"));
     const marker = path.join(directory, "last-launch.json");
     try {
-      expect(recordLaunchVersion(marker, "1.2.0")).toBeUndefined();
-      expect(recordLaunchVersion(marker, "1.3.0")).toBe("1.2.0");
+      expect(readLaunchVersion(marker)).toBeUndefined();
+      writeLaunchVersion(marker, "1.2.0");
+      expect(readLaunchVersion(marker)).toBe("1.2.0");
+      expect(readLaunchVersion(marker)).toBe("1.2.0");
       expect(JSON.parse(await readFile(marker, "utf8"))).toEqual({
-        version: "1.3.0",
+        version: "1.2.0",
       });
     } finally {
       await rm(directory, { recursive: true, force: true });
@@ -420,9 +423,9 @@ describe("the previous version", () => {
     const marker = path.join(directory, "last-launch.json");
     try {
       await writeFile(marker, "not json");
-      expect(recordLaunchVersion(marker, "1.2.0")).toBeUndefined();
+      expect(readLaunchVersion(marker)).toBeUndefined();
       expect(() =>
-        recordLaunchVersion(path.join(marker, "inside-a-file.json"), "1.2.0"),
+        writeLaunchVersion(path.join(marker, "inside-a-file.json"), "1.2.0"),
       ).not.toThrow();
     } finally {
       await rm(directory, { recursive: true, force: true });

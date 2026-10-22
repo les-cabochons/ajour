@@ -284,10 +284,11 @@ export const catalog = defineCatalog({
       reasons: ["api_stop_failed", "api_stop_timed_out", "update_cancelled"],
       fields: {
         quit: {
-          /** `other` is the system, or a Quit that no Ajour code saw. */
+          /** `os` is a shutdown or a logout; `other`, a quit no Ajour code saw. */
           trigger: operational<
             | "all_windows_closed"
             | "menu"
+            | "os"
             | "update_install"
             | "recovery_dialog"
             | "startup_failure"

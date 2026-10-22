@@ -12,6 +12,7 @@ const {
   createIpcListeners,
   refusedSender,
 } = require("./electron/ipc-listeners.cjs");
+const { pluginInstallResultOf } = require("./electron/plugin-install.cjs");
 
 const servers: Server[] = [];
 
@@ -44,7 +45,11 @@ function portOf(server: Server) {
   return (server.address() as AddressInfo).port;
 }
 
-async function runtime(port: number, ownedServer: Server | null = null) {
+async function runtime(
+  port: number,
+  ownedServer: Server | null = null,
+  { select }: { select?: () => Promise<unknown> } = {},
+) {
   const source = await readFile(
     new URL("./electron/main.cjs", import.meta.url),
     "utf8",
@@ -92,7 +97,8 @@ async function runtime(port: number, ownedServer: Server | null = null) {
     app: { isPackaged: true, getPath: () => "/fixture" },
     mainWindow: { webContents: "active-window" },
     dialog: {},
-    selectPluginArchive: async () => archive,
+    selectPluginArchive: select ?? (async () => archive),
+    pluginInstallResultOf,
     assertActiveDesktopWindow: () => {},
     pluginCatalogService: { downloadPluginArchive: async () => archive },
     ipc: createIpcListeners(
@@ -179,6 +185,38 @@ describe("desktop plugin runtime ownership", () => {
     expect(app.install.mock.calls[0]?.[0]).toBe(
       app.context.internalAppApiServer,
     );
+  });
+
+  // selectPluginArchive refuses an empty or oversized archive itself.
+  it("records an archive refused when it was picked, with the dialog's time", async () => {
+    const owned = await listen();
+    const app = await runtime(portOf(owned), owned, {
+      select: async () => {
+        throw Object.assign(
+          new Error(
+            "Plugin archives must be between 1 byte and 26214400 bytes.",
+          ),
+          { code: "invalid_archive" },
+        );
+      },
+    });
+
+    await expect(app.invoke("ajour:install-plugin")).rejects.toThrow(
+      "between 1 byte",
+    );
+
+    expect(app.recorded).toMatchObject([
+      {
+        name: "plugin.install",
+        outcome: "error",
+        plugin: {
+          source: "archive",
+          result: "invalid_archive",
+          dialog_ms: expect.any(Number),
+        },
+      },
+    ]);
+    expect(app.install).not.toHaveBeenCalled();
   });
 
   it("records a refused install with the occupied port's code", async () => {

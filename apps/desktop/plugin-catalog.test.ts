@@ -304,6 +304,16 @@ describe("desktop plugin catalog", () => {
     );
   });
 
+  // plugin.install records `not_available` from the code, not the message.
+  it("marks a plugin it cannot offer with the not_available code", async () => {
+    const service = await serviceForPluginYaml(pluginYaml);
+    await service.refresh();
+
+    await expect(
+      service.downloadPluginArchive("not_in_the_catalog"),
+    ).rejects.toMatchObject({ code: "not_available" });
+  });
+
   it("skips a catalog entry with an unknown capability and keeps the rest", async () => {
     const service = await serviceForPluginYaml(
       pluginYaml.replace(

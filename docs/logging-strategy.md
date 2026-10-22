@@ -314,24 +314,35 @@ The main process loads the package the way it loads the local API: it
 imports its TypeScript entry points, from the repository or from the
 packaged internal API runtime. That import is asynchronous, so `events` is a
 stand-in from main.cjs's first lines: it records units with their own times
-and replays them on the real emitter once the package loads. `events.ready`
-resolves then, so a process about to exit can wait for its last event. The
-scrubber replaces the home directory and the user data path in every error
-message.
+and replays them on the real emitter once the package loads, in the order
+things happened. The active unit lives in one AsyncLocalStorage from before
+the load to after, so `current()` finds it and a unit started inside another
+folds into it either side of the load. `events.ready` resolves once the
+package loaded or failed to: every exit path waits for it within the quit's
+10 seconds (the refused lock, `before-quit`, and update preparation, since
+the installer's quit skips `before-quit`'s wait). The scrubber replaces the
+home directory and the user data path in every error message.
 
-| Event                                                                              | Where                                                                                                                               |
-| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| every IPC channel's event                                                          | `createIpcListeners` in `ipc-listeners.cjs`, named from `IPC_CHANNELS`                                                              |
-| `app.launch`                                                                       | from the process start until the window has loaded, with each phase's duration and why the local API could not start                |
-| `app.quit`                                                                         | `before-quit`, with the updater and the local API stop, ended before the process exits                                              |
-| `app.second_launch`, `app.lock_refused`                                            | `second-instance`, and the second process just before it quits                                                                      |
-| `window.load`, `window.unresponsive`, `process.gone` (renderer)                    | `watchWindow` in `window-recovery.cjs`: a unit that leads to a dialog ends with its answer                                          |
-| `process.gone` (GPU, utility)                                                      | `child-process-gone`                                                                                                                |
-| `app.error`                                                                        | an uncaught exception, an unhandled rejection, or a startup that failed                                                             |
-| `window.navigate`                                                                  | `will-navigate` and the window open handler: the scheme only, never the URL                                                         |
-| `catalog.refresh`                                                                  | each refresh, at launch, on its interval or asked for. The refresh never rejects, so `plugin-catalog.cjs` records its outcome on it |
-| `update.check`, `update.install`                                                   | `automatic-update.cjs`, on the IPC event that asked, or as its own job. The install ends just before the installer takes over       |
-| `plugin.install`, `plugin.uninstall`, `catalog.configure`, `dev_plugins.configure` | their IPC handlers in main.cjs                                                                                                      |
+Units that are never part of the work that happens to be active, such as
+`app.quit`, crashes, `window.load`, `window.navigate` and the update jobs,
+start `detached`: a menu Quit is its own event, not a step of the menu
+item's.
+
+| Event                                                                              | Where                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| every IPC channel's event                                                          | `createIpcListeners` in `ipc-listeners.cjs`, named from `IPC_CHANNELS`                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `app.launch`                                                                       | from the process start until the window has loaded, with each phase's duration, why the local API could not start, and the load's outcome. Packaged builds add the version the previous launch ran, from `last-launch.json` in user data, which they write once the window has loaded                                                                                                                                                                                                     |
+| `app.quit`                                                                         | `before-quit`, with the updater and the local API stop, ended before the process exits. Its trigger: the last window closed, the menu's Quit (the app menu's item calls `quitFromMenu`, and the title bar clicks it), `os` (a Windows session end, recorded then since `before-quit` never comes; a macOS or Linux shutdown through `powerMonitor`), an update install (cancelled if it does not install), a recovery dialog or a failed start. Anything else is `other`, by the `system` |
+| `app.second_launch`, `app.lock_refused`                                            | `second-instance`, and the second process just before it quits                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `window.load`, `window.unresponsive`, `process.gone` (renderer)                    | `watchWindow` in `window-recovery.cjs`: a unit that leads to a dialog ends with its answer                                                                                                                                                                                                                                                                                                                                                                                                |
+| `process.gone` (GPU, utility)                                                      | `child-process-gone`                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `app.error`                                                                        | an uncaught exception (`uncaughtExceptionMonitor`), an unhandled rejection, which keeps Node's warning, or a startup that failed                                                                                                                                                                                                                                                                                                                                                          |
+| `window.navigate`                                                                  | `will-navigate` and the window open handler: the scheme only, never the URL                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `catalog.refresh`                                                                  | each refresh, at launch, on its interval or asked for. The refresh never rejects, so `plugin-catalog.cjs` records its outcome on it                                                                                                                                                                                                                                                                                                                                                       |
+| `update.check`, `update.install`                                                   | `automatic-update.cjs`, on the IPC event that asked, or as its own job. One install is one event: an updater error lands on it, where the install was, and it ends in the task that hands over to the installer. It records only the offered release's version                                                                                                                                                                                                                            |
+| `plugin.install`, `plugin.uninstall`, `catalog.configure`, `dev_plugins.configure` | their IPC handlers in main.cjs. An install's result comes from `pluginInstallResultOf` in `plugin-install.cjs`, by structure: desktop's own error codes, Node system codes and the step it failed at. The local API's installer has no codes yet, so only its validation messages mark an invalid archive                                                                                                                                                                                 |
+| `context_menu.show`                                                                | the picked id only when it is one of the renderer's object actions (`OBJECT_ACTION_IDS` in `context-menu.cjs`), else `other`                                                                                                                                                                                                                                                                                                                                                              |
+| `local_state.recover`                                                              | counts only the persisted collections `RECORD_COLLECTIONS` names, never a key the file chose                                                                                                                                                                                                                                                                                                                                                                                              |
 
 Every IPC channel registers through one wrapper, `createIpcListeners`, with
 `handle` for `invoke`, `onMessage` for one-way messages and `answerSync` for
@@ -342,7 +353,13 @@ one throws `refusedSender(…)`, and its event ends `refused` with
 call's last argument; the wrapper takes it off and the event joins the
 renderer's trace. The listener adds its own fields through
 `events.current()`. A channel missing from `IPC_CHANNELS`, or registered the
-wrong way, throws when it registers.
+wrong way, fails `just typecheck`: the wrapper's methods take only the
+table's channels of their mode, and the desktop typecheck checks main.cjs.
+It also throws when it registers.
+
+The local API's stop, split into the agent runner and the plugins with the
+operations still running, is the local API's own `api.stop` (#306), not
+`app.quit`'s.
 
 ## Performance
 

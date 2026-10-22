@@ -115,7 +115,7 @@ describe("what a bootstrap read reports", () => {
 
   it("counts the bytes it read and the records it found, never their content", async () => {
     const log =
-      'ajour.local-state.v2{"updatedAt":5,"projects":[{"name":"Acme"},{"name":"Globex"}],"timeEntries":[{"note":"secret"}],"theme":"dark"}';
+      'ajour.local-state.v2{"updatedAt":5,"projects":[{"name":"Acme"},{"name":"Globex"}],"timesheetEntries":[{"note":"secret"}],"theme":"dark"}';
     await mkdir(legacyLevelDb, { recursive: true });
     await writeFile(path.join(legacyLevelDb, "000003.log"), log);
     const report: BootstrapReport = {};
@@ -124,8 +124,44 @@ describe("what a bootstrap read reports", () => {
 
     expect(report).toMatchObject({
       bytes_scanned: Buffer.byteLength(log),
-      record_counts: { projects: 2, timeEntries: 1 },
+      record_counts: { projects: 2, timesheetEntries: 1 },
     });
     expect(JSON.stringify(report)).not.toMatch(/Acme|secret/);
+  });
+
+  // A key is a name the file chose; only Ajour's own collections are counted.
+  it("never counts a collection Ajour does not have", async () => {
+    await mkdir(path.join(appDataPath, "Ajour"), { recursive: true });
+    await writeFile(
+      path.join(appDataPath, "Ajour", "local-state-recovery.json"),
+      JSON.stringify({ updatedAt: 1, projects: [], SecretClient: [{}] }),
+    );
+    const report: BootstrapReport = {};
+
+    load(report);
+
+    expect(report.record_counts).toEqual({ projects: 0 });
+  });
+
+  it("knows every collection of the persisted local state", async () => {
+    const { RECORD_COLLECTIONS } =
+      require("./electron/local-state-bootstrap.cjs") as {
+        RECORD_COLLECTIONS: readonly string[];
+      };
+    const { readFile } = await import("node:fs/promises");
+    const source = await readFile(
+      new URL("../web/src/domain/local-state.ts", import.meta.url),
+      "utf8",
+    );
+    const body = source.slice(
+      source.indexOf("export interface LocalAppState {"),
+    );
+    const state = body.slice(0, body.indexOf("\n}\n"));
+    const collections = [...state.matchAll(/^ {2}(\w+)\??: \w+\[\];$/gmu)].map(
+      ([, name]) => name,
+    );
+
+    expect(collections.length).toBeGreaterThan(15);
+    expect([...RECORD_COLLECTIONS].sort()).toEqual(collections.sort());
   });
 });

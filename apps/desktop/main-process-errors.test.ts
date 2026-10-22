@@ -19,6 +19,11 @@ const {
 } = require("./electron/ipc-listeners.cjs");
 const { stopWithin } = require("./electron/stop-within.cjs");
 const {
+  buildAppMenuTemplate,
+  findAppMenuRoleItem,
+  getAppMenuModel,
+} = require("./electron/app-menu.cjs");
+const {
   buildContextMenuTemplate,
   normalizeContextMenuItems,
   objectActionIdOf,
@@ -112,6 +117,8 @@ describe("quitting and installing an update", () => {
       "function endQuit(",
       "function whenEventsReady(",
       "let updateQuit",
+      "let systemQuitRecorded",
+      "function recordSessionEnd(",
       "async function prepareToInstallUpdate(",
       "function cancelUpdateInstallPreparation(",
       'app.on("before-quit"',
@@ -125,6 +132,7 @@ describe("quitting and installing an update", () => {
         handlers.get("before-quit")?.(event);
         return event;
       },
+      recordSessionEnd: () => context.recordSessionEnd(),
       prepareToInstallUpdate: () =>
         context.prepareToInstallUpdate() as Promise<void>,
       cancelUpdateInstallPreparation: () =>
@@ -261,6 +269,19 @@ describe("quitting and installing an update", () => {
     });
   });
 
+  it("still stops the local API after a session end, without a second quit event", async () => {
+    const runtime = quitRuntime(async () => {});
+
+    runtime.recordSessionEnd();
+    runtime.quit();
+    await flush();
+
+    expect(runtime.recorded).toMatchObject([
+      { name: "app.quit", quit: { trigger: "os" } },
+    ]);
+    expect(runtime.app.quit).toHaveBeenCalledOnce();
+  });
+
   it("records a menu Quit as the user's, on its own event", async () => {
     const runtime = quitRuntime(async () => {}, { quitTrigger: "menu" });
 
@@ -319,6 +340,32 @@ describe("quitting and installing an update", () => {
     expect(runtime.recorded).toMatchObject([{ name: "app.quit" }]);
   });
 
+  // The installer's quit skips before-quit's wait, so preparation waits.
+  it("waits for the events package before an update installs", async () => {
+    const runtime = quitRuntime(async () => {}, { loaded: false });
+    const prepared = vi.fn();
+
+    void runtime.prepareToInstallUpdate().then(prepared);
+    await flush();
+    expect(prepared).not.toHaveBeenCalled();
+    runtime.attach();
+    await flush();
+
+    expect(prepared).toHaveBeenCalledOnce();
+  });
+
+  it("installs within ten seconds even when the events package never loads", async () => {
+    const runtime = quitRuntime(async () => {}, { loaded: false });
+    const prepared = vi.fn();
+
+    void runtime.prepareToInstallUpdate().then(prepared);
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(prepared).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(prepared).toHaveBeenCalledOnce();
+  });
+
   it("quits within ten seconds even when the events package never loads", async () => {
     const runtime = quitRuntime(async () => {}, { loaded: false });
 
@@ -349,6 +396,7 @@ describe("IPC listeners", () => {
       (): Record<string, unknown> | null => ({ updatedAt: 1 }),
     ),
     role = "zoomIn",
+    realMenu = false,
   } = {}) {
     const handlers = new Map<string, (...args: unknown[]) => unknown>();
     const ipcMain = Object.assign(new EventEmitter(), {
@@ -370,8 +418,14 @@ describe("IPC listeners", () => {
       ipc: createIpcListeners(ipcMain, { events }),
       nativeTheme,
       mainWindow,
-      appMenuModel: { menus: [] },
-      findAppMenuRoleItem: () => ({ role }),
+      appMenuModel: realMenu
+        ? getAppMenuModel({
+            platform: "win32",
+            developmentBuild: false,
+            appName: "Ajour",
+          })
+        : { menus: [] },
+      findAppMenuRoleItem: realMenu ? findAppMenuRoleItem : () => ({ role }),
       quitTrigger: "other",
       Menu: {
         getApplicationMenu: () => null,
@@ -510,16 +564,28 @@ describe("IPC listeners", () => {
     expect(JSON.stringify(runtime.recorded)).not.toContain("private.example");
   });
 
-  it("names a Quit from the title bar menu as the menu's", () => {
-    const runtime = ipcRuntime({ role: "quit" });
+  // The renderer names the item; only one of the menu's own role items
+  // enters an event.
+  it("never records a menu item id the menu does not have", () => {
+    const runtime = ipcRuntime({ realMenu: true });
 
     runtime.ipcMain.emit(
       "ajour:run-menu-item",
       { sender: "active-window" },
-      "role:quit",
+      "https://private.example/menu",
+    );
+    runtime.ipcMain.emit(
+      "ajour:run-menu-item",
+      { sender: "active-window" },
+      "role:zoomIn",
     );
 
-    expect(runtime.context.quitTrigger).toBe("menu");
+    expect(runtime.recorded).toMatchObject([
+      { name: "menu.run_item", outcome: "ok" },
+      { name: "menu.run_item", menu: { item_id: "role:zoomIn" } },
+    ]);
+    expect(runtime.recorded[0]).not.toHaveProperty("menu");
+    expect(JSON.stringify(runtime.recorded)).not.toContain("private.example");
   });
 
   it("records what each message did, with its enum values only", () => {
@@ -641,6 +707,8 @@ describe("the main window", () => {
       app: { quit: vi.fn() },
       events,
       quitTrigger: "other",
+      gracefulQuitStarted: false,
+      triggerOf,
       URL,
       classifyNavigation,
       dialog,
@@ -659,6 +727,9 @@ describe("the main window", () => {
       context,
       "function schemeOf(",
       "function followNavigation(",
+      "function startQuit(",
+      "let systemQuitRecorded",
+      "function recordSessionEnd(",
       "async function createMainWindow(",
     );
     return {
@@ -771,6 +842,20 @@ describe("the main window", () => {
     expect(JSON.stringify(navigations)).not.toMatch(/azure|alex|::1/);
   });
 
+  // Windows ends the session without before-quit, so the quit is recorded
+  // when the session ends.
+  it("records a quit the system began on Windows, once", async () => {
+    const runtime = windowRuntime();
+    await runtime.createMainWindow();
+
+    runtime.window.emit("session-end");
+    runtime.window.emit("session-end");
+
+    expect(
+      runtime.recorded.filter((event) => event.name === "app.quit"),
+    ).toMatchObject([{ trigger: "system", quit: { trigger: "os" } }]);
+  });
+
   it("records the window's first load as the launch's", async () => {
     const runtime = windowRuntime();
 
@@ -812,8 +897,10 @@ describe("startup", () => {
     hasSingleInstanceLock = true,
     mainWindow = null as null | Record<string, unknown>,
     loaded = true,
+    packaged = true,
   }: {
     loaded?: boolean;
+    packaged?: boolean;
     createMainWindow?: () => Promise<{ loadMs: number; loadOutcome: string }>;
     ensureInternalAppApiRunning?: () => Promise<void>;
     hasSingleInstanceLock?: boolean;
@@ -828,13 +915,24 @@ describe("startup", () => {
       quit: vi.fn(),
       getPath: () => "/fixture",
       getVersion: () => "1.3.0",
+      isPackaged: packaged,
     };
     const dialog = { showErrorBox: vi.fn() };
     const { events, recorded, attach } = recordingEvents({ loaded });
+    const powerMonitor = new EventEmitter();
+    let menuTemplate: {
+      submenu?: { id?: string; click?: () => void }[];
+    }[] = [];
+    const writeLaunchVersion = vi.fn();
     const context = vm.createContext({
       app,
-      appMenuModel: { menus: [] },
-      buildAppMenuTemplate: () => [],
+      appMenuModel: getAppMenuModel({
+        platform: "win32",
+        developmentBuild: false,
+        appName: "Ajour",
+      }),
+      buildAppMenuTemplate,
+      powerMonitor,
       BrowserWindow: { getAllWindows: () => [] },
       createMainWindow,
       dialog,
@@ -845,10 +943,16 @@ describe("startup", () => {
       INTERNAL_APP_API_STOP_TIMEOUT_MS: 10_000,
       mainWindow,
       path,
-      recordLaunchVersion: vi.fn(() => "1.2.0"),
+      readLaunchVersion: vi.fn(() => "1.2.0"),
+      writeLaunchVersion,
       setTimeout,
       clearTimeout,
-      Menu: { setApplicationMenu: vi.fn(), buildFromTemplate: vi.fn() },
+      Menu: {
+        setApplicationMenu: vi.fn(),
+        buildFromTemplate: (built: typeof menuTemplate) => {
+          menuTemplate = built;
+        },
+      },
       performance: { timeOrigin: Date.now() - 500 },
       pluginCatalogSettings: { refreshMinutes: 15 },
       pluginCatalogSettingsPath: "plugin-catalog-settings.json",
@@ -863,6 +967,8 @@ describe("startup", () => {
       context,
       "function recordAppError(",
       "function quitAfterStartupFailure(",
+      "function launchVersionMarker(",
+      "function quitFromMenu(",
       "function apiStartFailureOf(",
       "function whenEventsReady(",
       "if (!hasSingleInstanceLock)",
@@ -874,6 +980,16 @@ describe("startup", () => {
       recorded,
       events,
       attach,
+      writeLaunchVersion,
+      context,
+      powerMonitor,
+      /** Clicks a menu item of the app menu main.cjs built. */
+      clickMenuItem(id: string) {
+        menuTemplate
+          .flatMap((menu) => menu.submenu ?? [])
+          .find((item) => item.id === id)
+          ?.click?.();
+      },
       emit: (name: string, ...args: unknown[]) => handlers.get(name)?.(...args),
     };
   }
@@ -1024,6 +1140,29 @@ describe("startup", () => {
     });
   });
 
+  // Development runs share the user data folder, and would fake an upgrade.
+  it("leaves the version marker alone in a development build", async () => {
+    const runtime = startupRuntime({ packaged: false });
+    await flush();
+
+    expect(runtime.recorded[0]!.launch).not.toHaveProperty("previous_version");
+    expect(runtime.writeLaunchVersion).not.toHaveBeenCalled();
+  });
+
+  it("writes this launch's version once the window has loaded", async () => {
+    const loaded = startupRuntime();
+    const failed = startupRuntime({
+      createMainWindow: async () => ({ loadMs: 40, loadOutcome: "error" }),
+    });
+    await flush();
+
+    expect(loaded.writeLaunchVersion).toHaveBeenCalledWith(
+      expect.stringMatching(/last-launch\.json$/),
+      "1.3.0",
+    );
+    expect(failed.writeLaunchVersion).not.toHaveBeenCalled();
+  });
+
   it("ends the launch with the failed load's outcome", async () => {
     const runtime = startupRuntime({
       createMainWindow: async () => ({ loadMs: 40, loadOutcome: "error" }),
@@ -1051,6 +1190,37 @@ describe("startup", () => {
 
     expect(runtime.app.quit).toHaveBeenCalledOnce();
     expect(runtime.recorded).toMatchObject([{ name: "app.lock_refused" }]);
+  });
+
+  // The title bar's Quit clicks the same item through ajour:run-menu-item.
+  it("names a Quit from the app menu as the menu's", async () => {
+    const runtime = startupRuntime();
+    await flush();
+
+    runtime.clickMenuItem("role:quit");
+
+    expect(runtime.context.quitTrigger).toBe("menu");
+    expect(runtime.app.quit).toHaveBeenCalledOnce();
+  });
+
+  it("names a quit the system began on macOS and Linux as the system's", async () => {
+    const runtime = startupRuntime();
+    await flush();
+
+    runtime.powerMonitor.emit("shutdown");
+    runtime.emit("window-all-closed");
+
+    expect(runtime.context.quitTrigger).toBe("os");
+  });
+
+  it("names a quit after the last window closed as such", async () => {
+    const runtime = startupRuntime();
+    await flush();
+
+    runtime.emit("window-all-closed");
+
+    expect(runtime.context.quitTrigger).toBe("all_windows_closed");
+    expect(runtime.app.quit).toHaveBeenCalledOnce();
   });
 
   it("records a GPU process that ended", async () => {

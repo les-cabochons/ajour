@@ -555,20 +555,61 @@ describe("update events", () => {
     });
   });
 
-  it("records an installer that failed after the handoff", async () => {
+  const installs = (recorded: { name: string }[]) =>
+    recorded.filter((event) => event.name === "update.install");
+
+  // electron-updater reports an installer that cannot start as an error
+  // event, from inside quitAndInstall.
+  it("records an installer that fails in the handoff on the install's one event", async () => {
+    const { controller, autoUpdater, dialog, recorded } = createController();
+    dialog.showMessageBox.mockResolvedValue({ response: 1 });
+    autoUpdater.quitAndInstall.mockImplementation(() => {
+      autoUpdater.emit("error", new Error("Installer launch failed"));
+    });
+    await controller.configure("stable");
+
+    await controller.updateAndRestart("stable", "1.0.1");
+
+    expect(installs(recorded)).toMatchObject([
+      {
+        outcome: "error",
+        error: { message: "Installer launch failed" },
+        update: { stopped_at: "install" },
+      },
+    ]);
+  });
+
+  it("records an updater error while preparing on the install's one event, where it stopped", async () => {
+    const { controller, autoUpdater, dialog, recorded } = createController({
+      prepareToInstall: vi.fn(async () => {
+        autoUpdater.emit("error", new Error("Download cancelled during quit"));
+        return "stopped";
+      }),
+    });
+    dialog.showMessageBox.mockResolvedValue({ response: 1 });
+    await controller.configure("stable");
+
+    await controller.updateAndRestart("stable", "1.0.1");
+
+    expect(installs(recorded)).toMatchObject([
+      {
+        outcome: "error",
+        error: { message: "Download cancelled during quit" },
+        update: { stopped_at: "prepare" },
+      },
+    ]);
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+  });
+
+  it("adds no second install event for an error after the handoff", async () => {
     const { controller, autoUpdater, dialog, recorded } = createController();
     dialog.showMessageBox.mockResolvedValue({ response: 1 });
     await controller.configure("stable");
     await controller.updateAndRestart("stable", "1.0.1");
 
-    autoUpdater.emit("error", new Error("Installer launch failed"));
+    autoUpdater.emit("error", new Error("late"));
 
-    expect(recorded.at(-1)).toMatchObject({
-      name: "update.install",
-      kind: "job",
-      outcome: "error",
-      update: { stopped_at: "install" },
-    });
+    expect(installs(recorded)).toMatchObject([{ outcome: "ok" }]);
   });
 
   it("records a handoff to the installer that throws", async () => {

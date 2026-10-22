@@ -30,26 +30,32 @@ function createLaunchContext({
 }
 
 /**
- * The version the last launch recorded in `markerPath`, for app.launch, and
- * records this launch's `version` there. Undefined on a first launch, or when
- * the marker cannot be read. Never throws.
+ * The version the last packaged launch wrote in `markerPath`, for app.launch.
+ * Undefined on a first launch, or when the marker cannot be read. Never
+ * throws.
  */
-function recordLaunchVersion(markerPath, version) {
-  let previous;
+function readLaunchVersion(markerPath) {
   try {
     const recorded = JSON.parse(readFileSync(markerPath, "utf8"))?.version;
-    if (typeof recorded === "string" && recorded.length <= 64) {
-      previous = recorded;
-    }
+    return typeof recorded === "string" && recorded.length <= 64
+      ? recorded
+      : undefined;
   } catch {
-    // A first launch, or a marker that is not ours.
+    return undefined;
   }
+}
+
+/**
+ * Writes this launch's `version` in `markerPath`, once a packaged launch has
+ * loaded its window. A marker that cannot be written leaves the next launch
+ * without a previous version. Never throws.
+ */
+function writeLaunchVersion(markerPath, version) {
   try {
     writeFileSync(markerPath, `${JSON.stringify({ version })}\n`, "utf8");
   } catch {
     // The next launch reports no previous version.
   }
-  return previous;
 }
 
 /** The launch context as the local API's `launch` start option takes it. */
@@ -323,6 +329,7 @@ module.exports = {
   createLaunchContext,
   createMainEvents,
   loadMainEmitter,
-  recordLaunchVersion,
+  readLaunchVersion,
   triggerOf,
+  writeLaunchVersion,
 };

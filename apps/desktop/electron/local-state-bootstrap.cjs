@@ -18,15 +18,48 @@ function readJsonFile(filePath, report) {
   }
 }
 
-/** How many records each collection of a state holds: its names and counts only. */
+/**
+ * The collections of the persisted local state (`LocalAppState` in
+ * apps/web/src/domain/local-state.ts), the only names a record count may
+ * carry. local-state-bootstrap.test.ts keeps it in step.
+ */
+const RECORD_COLLECTIONS = Object.freeze([
+  "projects",
+  "rules",
+  "segments",
+  "dismissedSegmentIds",
+  "editedBlocks",
+  "importedBrowserDrafts",
+  "timers",
+  "timesheetEntries",
+  "timesheetTombstones",
+  "lockedWeeks",
+  "timesheetImportDrafts",
+  "commitPromptedWeeks",
+  "workItems",
+  "pullRequests",
+  "calendarDecisions",
+  "calendarEventRules",
+  "workflowStates",
+  "workflowStateMappings",
+  "workflowStateWriteRules",
+  "settleRules",
+  "blocks",
+  "browserDrafts",
+]);
+
+/**
+ * How many records each of Ajour's collections holds in a state. A key the
+ * file chose, which could be anything, never becomes a field.
+ */
 function recordCountsOf(state) {
   const counts = {};
   if (!state || typeof state !== "object") return counts;
-  for (const [key, value] of Object.entries(state)) {
-    if (Object.keys(counts).length >= 40) break;
-    if (Array.isArray(value) && /^[A-Za-z][A-Za-z0-9]{0,39}$/u.test(key)) {
-      counts[key] = value.length;
-    }
+  for (const collection of RECORD_COLLECTIONS) {
+    const records = Object.hasOwn(state, collection)
+      ? state[collection]
+      : undefined;
+    if (Array.isArray(records)) counts[collection] = records.length;
   }
   return counts;
 }
@@ -209,5 +242,6 @@ function readNewestLocalState(options) {
 }
 
 module.exports = {
+  RECORD_COLLECTIONS,
   loadDesktopBootstrapLocalState,
 };

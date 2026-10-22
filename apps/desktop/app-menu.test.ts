@@ -53,6 +53,7 @@ const {
     options: {
       platform: NodeJS.Platform;
       sendAction: (action: string) => void;
+      quit?: () => void;
     },
   ) => TemplateItem[];
   findAppMenuRoleItem: (model: AppMenu[], itemId: unknown) => unknown;
@@ -246,6 +247,30 @@ describe("desktop app menu template", () => {
 
     expect(sendAction).toHaveBeenCalledWith("app.toggle-sidebar");
   });
+
+  // A role ignores click handlers, so Quit runs through `quit`, which tells
+  // app.quit it came from the menu.
+  it.each(["darwin", "win32"] as const)(
+    "runs Quit through the quit callback on %s, keeping its label and key",
+    (platform) => {
+      const quit = vi.fn();
+      const template = buildAppMenuTemplate(model(platform, false), {
+        platform,
+        sendAction: vi.fn(),
+        quit,
+      });
+      const item = templateItem(template, "role:quit") as TemplateItem & {
+        role?: string;
+      };
+
+      item.click?.(null, null, {});
+
+      expect(quit).toHaveBeenCalledOnce();
+      expect(item.role).toBeUndefined();
+      expect(item.label).toBe(platform === "darwin" ? "Quit Ajour" : "Exit");
+      if (platform === "darwin") expect(item.accelerator).toBe("Command+Q");
+    },
+  );
 
   it("shows single keys on Windows as accelerators it does not register", () => {
     const sendAction = vi.fn();

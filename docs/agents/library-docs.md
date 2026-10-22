@@ -109,7 +109,7 @@ The backlog editor module is feature-local because its vocabulary and commands b
   `apps/desktop/electron/plugin-catalog-seed.cjs`
 - Catalog refresh persistence: `apps/desktop/electron/plugin-catalog-settings.cjs`
 - Main-process failures:
-  - Every IPC channel registers through `apps/desktop/electron/ipc-listeners.cjs` (`ipc.handle`, `ipc.onMessage`, `ipc.answerSync`), so none can throw into main, a failed `sendSync` request answers null, and each call emits its wide event. The channel table, with each channel's event, is `apps/desktop/electron/ipc-channels.cjs`, which `just typecheck` checks against the catalog. No code registers with `ipcMain` directly.
+  - Every IPC channel registers through `apps/desktop/electron/ipc-listeners.cjs` (`ipc.handle`, `ipc.onMessage`, `ipc.answerSync`), so none can throw into main, a failed `sendSync` request answers null, and each call emits its wide event. The channel table, with each channel's event, is `apps/desktop/electron/ipc-channels.cjs`, which `just typecheck` checks against the catalog. `just typecheck` also checks main.cjs's registrations against the table (`apps/desktop/tsconfig.json`, loose JS checking). No code registers with `ipcMain` directly.
   - `apps/desktop/electron/window-recovery.cjs` reloads a crashed window, but the third crash within a minute asks Reload or Quit instead. It also asks about a hung window or a failed load.
   - `apps/desktop/electron/navigation.cjs` decides whether a navigation stays in the app, opens in the system browser, or is blocked.
   - `apps/desktop/electron/stop-within.cjs` bounds the local API stop before a quit or an update.

@@ -3,6 +3,16 @@ const path = require("node:path");
 
 const MAX_PLUGIN_ARCHIVE_BYTES = 25 * 1024 * 1024;
 
+/** A picked archive that is empty or too large: an invalid archive. */
+function invalidArchiveSize() {
+  return Object.assign(
+    new Error(
+      `Plugin archives must be between 1 byte and ${MAX_PLUGIN_ARCHIVE_BYTES} bytes.`,
+    ),
+    { code: "invalid_archive" },
+  );
+}
+
 async function selectPluginArchive(
   dialog,
   parentWindow,
@@ -31,9 +41,7 @@ async function selectPluginArchive(
       archiveStat.size === 0 ||
       archiveStat.size > MAX_PLUGIN_ARCHIVE_BYTES
     ) {
-      throw new Error(
-        `Plugin archives must be between 1 byte and ${MAX_PLUGIN_ARCHIVE_BYTES} bytes.`,
-      );
+      throw invalidArchiveSize();
     }
 
     const chunks = [];
@@ -55,9 +63,7 @@ async function selectPluginArchive(
       totalBytes += bytesRead;
     }
     if (totalBytes === 0 || totalBytes > MAX_PLUGIN_ARCHIVE_BYTES) {
-      throw new Error(
-        `Plugin archives must be between 1 byte and ${MAX_PLUGIN_ARCHIVE_BYTES} bytes.`,
-      );
+      throw invalidArchiveSize();
     }
 
     return {
@@ -69,31 +75,39 @@ async function selectPluginArchive(
   }
 }
 
-// What the catalog download and the local API's installer say when they
-// refuse, as apps/desktop/electron/plugin-catalog.cjs, apps/api/src/plugin-host.ts
-// and apps/api/src/plugin-package.ts throw it.
-const NOT_AVAILABLE =
-  /is not available for download|No compatible release asset|cannot install packaged schema plugins/u;
+/** A Node system error's code, such as `EACCES` or `ENOSPC`. */
+const SYSTEM_ERROR_CODE = /^E[A-Z0-9]+$/u;
+
+// The local API's installer throws plain errors (apps/api/src/plugin-host.ts
+// and apps/api/src/plugin-package.ts), so its refusals are told apart by
+// their messages until it gives them codes. Only its archive validation
+// counts as an invalid archive.
 const BUSY =
-  /package change is already in progress|Wait for active plugin operations/u;
-const INVALID_ARCHIVE =
-  /archive|manifest|plugin\.json|entrypoint|unsafe path|runs no code|regular file|symbolic link|leaves its plugin directory|over 64 KB/iu;
+  /^(Another plugin package change is already in progress|Wait for active plugin operations to finish)/u;
+const INVALID_ARCHIVE = [
+  /^Plugin archives? /u,
+  /^Plugin files must use the /u,
+  /^Plugin "[^"]*" (runs no code|entrypoint )/u,
+  / (must be a regular file|must not traverse symbolic links|must be relative|leaves its plugin directory|is over 64 KB|which Ajour does not fill)\.$/u,
+];
 
 /**
  * A failed install's result for its `plugin.install` event, from the step it
- * failed at (`download` or `install`) and the error, never its message.
+ * failed at (`select`, `download` or `install`) and the error's structure:
+ * the code desktop's own errors carry, a Node system error's code, or the
+ * type of the local API's validation error.
  */
 function pluginInstallResultOf(error, step) {
-  const message = typeof error?.message === "string" ? error.message : "";
-  if (step === "download") {
-    return NOT_AVAILABLE.test(message) ? "not_available" : "failed";
+  const code = typeof error?.code === "string" ? error.code : "";
+  if (SYSTEM_ERROR_CODE.test(code)) return "failed";
+  if (code === "invalid_archive" || code === "not_available") return code;
+  if (step !== "install") return "failed";
+  if (error?.name === "ZodError" || error?.name === "IncompatiblePluginError") {
+    return "invalid_archive";
   }
+  const message = typeof error?.message === "string" ? error.message : "";
   if (BUSY.test(message)) return "busy";
-  if (
-    error?.name === "ZodError" ||
-    error?.name === "IncompatiblePluginError" ||
-    INVALID_ARCHIVE.test(message)
-  ) {
+  if (INVALID_ARCHIVE.some((pattern) => pattern.test(message))) {
     return "invalid_archive";
   }
   return "failed";

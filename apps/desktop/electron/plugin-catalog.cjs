@@ -474,6 +474,11 @@ async function loadCache(cacheFile) {
   }
 }
 
+/** A plugin the catalog cannot offer this Ajour, which plugin.install records as `not_available`. */
+function notAvailable(message) {
+  return Object.assign(new Error(message), { code: "not_available" });
+}
+
 function createPluginCatalogService(options) {
   const fetchImpl = options.fetchImpl;
   const cacheDirectory = path.resolve(options.cacheDirectory);
@@ -769,7 +774,7 @@ function createPluginCatalogService(options) {
       (candidate) => candidate.id === pluginId,
     );
     if (!entry || entry.status !== "available" || !entry.install) {
-      throw new Error(`Plugin "${pluginId}" is not available for download.`);
+      throw notAvailable(`Plugin "${pluginId}" is not available for download.`);
     }
     if (
       !entry.capabilities.includes("connector") &&
@@ -778,7 +783,7 @@ function createPluginCatalogService(options) {
       !entry.capabilities.includes("team") &&
       !entry.capabilities.includes("agentTask")
     ) {
-      throw new Error(
+      throw notAvailable(
         "This Ajour version cannot install packaged schema plugins yet.",
       );
     }
@@ -825,7 +830,7 @@ function createPluginCatalogService(options) {
     }
     const selectedAsset = best?.matchingAssets[0];
     if (!selectedAsset) {
-      throw new Error(
+      throw notAvailable(
         `No compatible release asset is available for ${entry.title}.`,
       );
     }
