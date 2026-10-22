@@ -511,6 +511,44 @@ describe("PluginManager", () => {
     await expect(discoveryAfterUninstall).resolves.toEqual([]);
   });
 
+  it("refuses an install while plugin operations run, with the code busy", async () => {
+    const root = await tempDir();
+    const pluginDirectory = await createPluginDirectory(
+      path.join(root, "source"),
+      "jira",
+      "export async function validateConnection() { await new Promise(() => setInterval(() => {}, 1000)); }",
+    );
+    const archivePath = path.join(root, "jira-1.0.0.ajour-connector");
+    await packagePlugin(pluginDirectory, archivePath);
+    const pluginManager = manager({
+      installedPluginDirectory: path.join(root, "installed"),
+      requestTimeoutMs: 5_000,
+    });
+    await pluginManager.installPluginArchive(
+      await readFile(archivePath),
+      path.basename(archivePath),
+    );
+    const running = pluginManager
+      .validateConnection("jira", {})
+      .catch(() => undefined);
+    while (pluginManager.activeOperationCount === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    await expect(
+      pluginManager.installPluginArchive(
+        await readFile(archivePath),
+        path.basename(archivePath),
+      ),
+    ).rejects.toMatchObject({
+      message:
+        "Wait for active plugin operations to finish before installing a plugin.",
+      code: "busy",
+    });
+    await pluginManager.shutdown();
+    await running;
+  });
+
   it("terminates active plugin work and removes only managed packages on uninstall", async () => {
     const root = await tempDir();
     const pluginDirectory = await createPluginDirectory(

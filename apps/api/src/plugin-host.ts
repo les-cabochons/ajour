@@ -156,6 +156,9 @@ export const PLUGIN_OPERATION_EVENTS = {
   syncTeamProjects: "team.sync",
 } as const satisfies Record<PluginMethod, PluginOperationEventName>;
 
+/** The code of an install refused while plugin operations run. */
+export const PLUGIN_HOST_BUSY = "busy";
+
 const missingCapabilityMessages: Record<SwitchableCapability, string> = {
   connector: "does not sync backlog items",
   codeHost: "does not provide pull requests",
@@ -308,8 +311,12 @@ export class PluginManager {
     return await this.runPackageMutation(async () => {
       await this.ensureInitialized();
       if (this.workers.activeOperationCount > 0) {
-        throw new Error(
-          "Wait for active plugin operations to finish before installing a plugin.",
+        // The desktop records the install as `busy` from this code.
+        throw Object.assign(
+          new Error(
+            "Wait for active plugin operations to finish before installing a plugin.",
+          ),
+          { code: PLUGIN_HOST_BUSY },
         );
       }
 
