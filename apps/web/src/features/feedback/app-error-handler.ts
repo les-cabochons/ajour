@@ -48,9 +48,13 @@ export function installAppErrorHandler(
     unit.fail(error);
     unit.end();
   };
-  target.addEventListener("error", (event) =>
-    handle(event, (event as ErrorEvent).error, "uncaught_exception"),
-  );
+  target.addEventListener("error", (event) => {
+    const { error } = event as ErrorEvent;
+    // An error event without an error is browser noise, such as a
+    // ResizeObserver loop warning, or a resource that failed to load.
+    if (error === null || error === undefined) return;
+    handle(event, error, "uncaught_exception");
+  });
   target.addEventListener("unhandledrejection", (event) =>
     handle(
       event,

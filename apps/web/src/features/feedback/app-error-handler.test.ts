@@ -80,6 +80,8 @@ describe("installAppErrorHandler", () => {
         error: { type: "TypeError" },
       },
     ]);
+    // The renderer knows no home or data folder to scrub, so no message.
+    expect(sink.events[0]!.error).toEqual({ type: "TypeError" });
   });
 
   it("records an unhandled rejection, and that a toast handled it", () => {
@@ -122,5 +124,21 @@ describe("installAppErrorHandler", () => {
     expect(sink.events[1]).toMatchObject({
       crash: { active_unit: "time_entry.delete", handled_by_toast: true },
     });
+  });
+
+  it("ignores an error event without an error, such as a ResizeObserver loop warning", () => {
+    const target = new EventTarget();
+    installAppErrorHandler(target);
+
+    target.dispatchEvent(
+      Object.assign(new Event("error", { cancelable: true }), {
+        error: null,
+        message:
+          "ResizeObserver loop completed with undelivered notifications.",
+      }),
+    );
+
+    expect(sink.events).toEqual([]);
+    expect(showToast).not.toHaveBeenCalled();
   });
 });

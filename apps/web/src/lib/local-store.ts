@@ -7,7 +7,6 @@ import {
 } from "@ajour/shared";
 import { takeSourceDescription } from "@/domain/backlog/description-sync";
 import { todayIsoDate } from "@/lib/utils";
-import { describePreferenceChange } from "@/lib/preference-events";
 import { wideEvents } from "@/lib/wide-events";
 import { recordsEqual } from "@/domain/records-equal";
 import { StaleWindowError } from "@/lib/stale-window-error";
@@ -16,9 +15,36 @@ import {
   countStoreWrite,
   describeStoreCommand,
   instrumentStoreCommands,
+  resolveCommandName,
+  runStoreCommand,
+  startStoreCommand,
   storeCommandUnit,
+  type SpecName,
+  type StoreCommandSpec,
   type StoreCommandTable,
+  type StoreCommandUnit,
+  UNDO_GROUP,
 } from "@/lib/store-command-events";
+import {
+  countUndoChanges,
+  describeBacklogImport,
+  describeEntryCreate,
+  describeEntryUpdate,
+  describeImportDrafts,
+  describeImportStage,
+  describeMove,
+  describeProjectImport,
+  describeRunningEntryEdit,
+  describeSettle,
+  describeShare,
+  describeSuggestionAdd,
+  describeTaskImport,
+  describeTimerDiscard,
+  describeTimerStart,
+  describeTimerStop,
+  describeUserPreferences,
+  describeWeekSubmit,
+} from "@/lib/store-command-fields";
 import {
   changePullRequest,
   normalizePullRequests,
@@ -217,11 +243,7 @@ import {
   type TeamSyncState,
 } from "@/domain/projects/team-sync";
 import type { TeamProjectChange, TeamSyncResult } from "@ajour/shared";
-import type {
-  AjourCatalog,
-  CounterName,
-  FieldsOf,
-} from "@ajour/wide-events/catalog.ts";
+import type { AjourCatalog, FieldsOf } from "@ajour/wide-events/catalog.ts";
 import type {
   BacklogSortMode,
   ExtensionBridgeStatus,
@@ -1177,16 +1199,14 @@ function persistState<T extends Partial<LocalAppState>>(
   countStoreWrite(serialized.length * 2);
   try {
     window.localStorage.setItem(REVISION_KEY, saved.revision);
-  } catch (error) {
+  } catch {
     try {
       window.localStorage.removeItem(REVISION_KEY);
     } catch {
-      // The warning below covers both failures.
+      // Other windows reload either way: the hint is old or missing.
     }
-    console.warn(
-      "Ajour could not save its revision hint; other windows reload before each write.",
-      error,
-    );
+    // Other windows now reload before each write instead of trusting the hint.
+    countOnStoreCommand("store_revision_hint_failure_count");
   }
   return saved;
 }
@@ -1302,6 +1322,9 @@ function updateStateWithResult<T>(
  */
 let lastUndo: { token: string; undo: LocalStateUndo } | undefined;
 
+/** How many `runWithUndo` calls are running, one inside another. */
+let undoGroupDepth = 0;
+
 /**
  * Applies an undoable action and remembers what it changed. Returns the token
  * that Undo passes back, or null when the action changed nothing.
@@ -1378,8 +1401,11 @@ const TEAM_PUSH_HOLD_MS = 60_000;
  */
 function rememberUndo(token: string, undo: LocalStateUndo) {
   lastUndo = { token, undo };
-  countUndoChanges(undo);
-  storeCommandUnit()?.set({ store: { undo_offered: true } });
+  // Inside `runWithUndo`, the group's own capture counts the change, once.
+  if (undoGroupDepth === 0) {
+    countUndoChanges(undo);
+    storeCommandUnit()?.set({ store: { undo_offered: true } });
+  }
   const state = readState();
   const shared = new Set(
     state.projects
@@ -1402,36 +1428,6 @@ function rememberUndo(token: string, undo: LocalStateUndo) {
   } else if (state.teamPushHold) {
     writeState({ ...state, teamPushHold: undefined });
   }
-}
-
-/** The counter of each local state list that Undo records. */
-const UNDO_COUNTERS = {
-  projects: "changed_project_count",
-  timesheetEntries: "changed_time_entry_count",
-  timesheetTombstones: "changed_tombstone_count",
-  lockedWeeks: "changed_submitted_week_count",
-  timers: "changed_running_entry_count",
-  timesheetImportDrafts: "changed_import_draft_count",
-  workItems: "changed_backlog_item_count",
-  workflowStates: "changed_workflow_state_count",
-  workflowStateMappings: "changed_source_state_mapping_count",
-  workflowStateWriteRules: "changed_write_rule_count",
-  calendarDecisions: "changed_calendar_decision_count",
-  calendarEventRules: "changed_event_rule_count",
-} as const satisfies Record<
-  Exclude<keyof LocalStateUndo, "workItemOrder">,
-  CounterName<AjourCatalog>
->;
-
-/** Counts, on the active command, the records an action changed or an Undo restored. */
-function countUndoChanges(undo: LocalStateUndo) {
-  for (const [collection, counter] of Object.entries(UNDO_COUNTERS) as [
-    keyof typeof UNDO_COUNTERS,
-    CounterName<AjourCatalog>,
-  ][]) {
-    countOnStoreCommand(counter, undo[collection].length);
-  }
-  if (undo.workItemOrder) countOnStoreCommand("changed_backlog_order_count", 1);
 }
 
 /** The Undo window closed: team syncs no longer wait for its projects. */
@@ -1492,112 +1488,16 @@ function listenForOtherWindowWrites() {
   });
 }
 
-/** Which fields of a time entry an edit changed, by key, never by value. */
-function changedEntryFields(
-  entry: Pick<LocalTimesheetEntry, "projectId" | "taskId" | "note"> & {
-    durationMs?: number;
-    accumulatedDurationMs?: number;
-  },
-  values: {
-    projectId?: string;
-    taskId?: string;
-    note?: string;
-    durationMs?: number;
-  },
-) {
-  const changed: string[] = [];
-  if ("projectId" in values && values.projectId !== entry.projectId)
-    changed.push("project");
-  if ("taskId" in values && values.taskId !== entry.taskId)
-    changed.push("task");
-  if ("note" in values && values.note !== entry.note) changed.push("note");
-  if (
-    values.durationMs !== undefined &&
-    values.durationMs !== (entry.durationMs ?? entry.accumulatedDurationMs)
-  )
-    changed.push("duration");
-  return changed;
-}
-
-/** How many backlog items besides `workItemId` a command changed. */
-function otherItemsChanged(
-  before: LocalAppState,
-  after: LocalAppState,
-  workItemId: string,
-) {
-  if (before === after) return 0;
-  const previous = new Map(before.workItems.map((item) => [item._id, item]));
-  return after.workItems.filter(
-    (item) => item._id !== workItemId && previous.get(item._id) !== item,
-  ).length;
-}
-
-/** Runs a change of the timesheet import drafts and counts what it did. */
-function describeDraftChange<Result>(
+/** Runs a change of the timesheet import drafts and records what it did. */
+function withDraftCounts<Result>(
   name: "timesheet_import.dismiss" | "timesheet_import.commit",
   change: () => Result,
 ): Result {
-  const before = readState().timesheetImportDrafts;
+  const before = readState();
   const result = change();
-  const after = readState().timesheetImportDrafts;
-  const removed = before.filter((draft) => !after.includes(draft)).length;
-  describeStoreCommand(name, {
-    timesheet_import:
-      name === "timesheet_import.commit"
-        ? {
-            committed_count: removed,
-            conflict_count: after.filter((draft) => draft.potentialConflict)
-              .length,
-          }
-        : { dismissed_count: removed },
-  });
+  describeImportDrafts(name, before, readState());
   return result;
 }
-
-function describeProjectImport(
-  result: ProjectWorkbookImportResult,
-  counts: {
-    schema: string;
-    row_count?: number;
-    project_count: number;
-    task_count: number;
-  },
-) {
-  describeStoreCommand("project.import", {
-    project_import: {
-      ...counts,
-      created_project_count: result.createdProjectCount,
-      merged_project_count: result.mergedProjectCount,
-      added_task_count: result.addedTaskCount,
-      updated_task_count: result.updatedTaskCount,
-    },
-  });
-}
-
-/** The user preferences whose string values are enums, so an event may hold them. */
-const USER_PREFERENCE_ENUMS = [
-  "themeMode",
-  "updateTrack",
-  "weeklyTimeViewStyle",
-  "timeView",
-  "closeParentSubitems",
-  "projectDataShapeId",
-] as const satisfies readonly (keyof UserPreferences)[];
-
-const SUBMIT_REFUSALS = {
-  "already-submitted": "already_submitted",
-  "uncommitted-changes": "uncommitted_changes",
-  "running-entry": "running_entry",
-} as const;
-
-const SHARE_RESULTS = {
-  shared: "shared",
-  missing: "missing",
-  alreadyShared: "already_shared",
-  sameNameShared: "same_name_shared",
-  sameNameHeld: "same_name_held",
-  notSynced: "not_synced",
-} as const satisfies Record<TeamShareResult["kind"], string>;
 
 /**
  * The local store's reads and commands. A command that would change a
@@ -1679,30 +1579,7 @@ const store = {
       result = operation.result;
       return operation.state;
     });
-    const after = readState();
-    const entryIds = new Set(result.entryIds);
-    const added = after.timesheetEntries.filter((entry) =>
-      entryIds.has(entry._id),
-    );
-    describeStoreCommand("suggestion.add", {
-      suggestion: {
-        count: result.entryIds.length,
-        skipped_count: result.skipped,
-        remembered_series_count: (after.calendarEventRules ?? []).filter(
-          (rule) =>
-            rule.action === "assign" &&
-            !(before.calendarEventRules ?? []).includes(rule),
-        ).length,
-        project_ids: [
-          ...new Set(
-            added.flatMap(({ projectId }) => (projectId ? [projectId] : [])),
-          ),
-        ],
-        task_ids: [
-          ...new Set(added.flatMap(({ taskId }) => (taskId ? [taskId] : []))),
-        ],
-      },
-    });
+    describeSuggestionAdd(before, readState(), result);
     return { ...result, undoToken };
   },
   /** Hides these occurrences. Returns an undo token. */
@@ -1803,11 +1680,7 @@ const store = {
         ? withTeamSyncState(state, next)
         : state;
     });
-    describeStoreCommand("project.share", {
-      project: { id: projectId },
-      connection: { id: connectionId },
-      share: { result: SHARE_RESULTS[result.kind] },
-    });
+    describeShare(projectId, connectionId, result);
     return { result, undoToken };
   },
   /**
@@ -1860,13 +1733,16 @@ const store = {
     });
   },
   removeConnectionPullRequests(pluginId: string, connectionId: string) {
-    return updateState((state) => ({
-      ...state,
-      pullRequests: (state.pullRequests ?? []).filter(
+    return updateState((state) => {
+      const pullRequests = (state.pullRequests ?? []).filter(
         (item) =>
           item.pluginId !== pluginId || item.connectionId !== connectionId,
-      ),
-    }));
+      );
+      // Nothing to remove writes nothing.
+      return pullRequests.length === (state.pullRequests ?? []).length
+        ? state
+        : { ...state, pullRequests };
+    });
   },
   createTeam(
     teamName: string,
@@ -1991,15 +1867,7 @@ const store = {
         result: operation.result,
       };
     });
-    describeStoreCommand("task.import", {
-      project: { id: projectId },
-      task_import: {
-        imported_count: imported.importedCount,
-        duplicate_count: imported.duplicateCount,
-        blank_count: imported.blankCount,
-        header_count: imported.headerCount,
-      },
-    });
+    describeTaskImport(projectId, imported);
     return imported;
   },
   importProjectWorkbookRows(rows: ProjectTransferRow[]) {
@@ -2210,58 +2078,23 @@ const store = {
         now: Date.now,
       }),
     );
-    const started = after.timers[0];
-    if (after !== before && started) {
-      describeStoreCommand("time_entry.start", {
-        time_entry: {
-          id: started._id,
-          entry_id: started.entryId,
-          project_id: started.projectId,
-          task_id: started.taskId,
-          backlog_item_id: started.workItemId,
-          replaced_running: before.timers.length > 0,
-          counted_ms: started.accumulatedDurationMs,
-        },
-      });
-    }
+    describeTimerStart(before, after);
   },
   /** Saves the running entry's form. It keeps running. */
   editRunningEntry(timerId: string, edit: RunningEntryEdit) {
     const timer = readState().timers.find((item) => item._id === timerId);
-    const countedBefore = timer
-      ? timer.accumulatedDurationMs + Math.max(0, Date.now() - timer.startedAt)
-      : undefined;
+    const now = Date.now();
     updateState((state) =>
       applyEditRunningEntry(state, timerId, edit, { now: Date.now }),
     );
-    if (timer) {
-      describeStoreCommand("time_entry.update", {
-        time_entry: {
-          id: timerId,
-          running: true,
-          changed_fields: changedEntryFields(timer, {
-            ...edit,
-            durationMs: edit.countedDurationMs,
-          }),
-          duration_before_ms: countedBefore,
-          duration_after_ms: edit.countedDurationMs ?? countedBefore,
-        },
-      });
-    }
+    describeRunningEntryEdit(timer, edit, now);
   },
   /** Discards the running entry. Returns an undo token, or null when nothing changed. */
   cancelTimer(timerId: string) {
-    const timer = readState().timers.find((item) => item._id === timerId);
-    if (timer) {
-      describeStoreCommand("time_entry.discard", {
-        time_entry: {
-          id: timerId,
-          duration_ms:
-            timer.accumulatedDurationMs +
-            Math.max(0, Date.now() - timer.startedAt),
-        },
-      });
-    }
+    describeTimerDiscard(
+      readState().timers.find((item) => item._id === timerId),
+      Date.now(),
+    );
     return updateStateWithUndo((state) => applyCancelTimer(state, timerId));
   },
   saveManualTimeEntry(values: {
@@ -2279,40 +2112,21 @@ const store = {
         now: Date.now,
       }),
     );
-    const entry = after.timesheetEntries.at(-1);
-    if (after !== before && entry) {
-      describeStoreCommand("time_entry.create", {
-        time_entry: {
-          id: entry._id,
-          project_id: entry.projectId,
-          task_id: entry.taskId,
-          backlog_item_id: entry.workItemId,
-          day: entry.localDate,
-          duration_ms: entry.durationMs,
-        },
-      });
-    }
+    describeEntryCreate(before, after);
   },
   stageTimesheetImportRows(rows: TimesheetImportRow[]) {
-    const before = readState().timesheetImportDrafts;
+    const before = readState();
     const after = updateState((state) =>
       applyStageTimesheetImportRows(state, rows, {
         createId,
         now: Date.now,
       }),
-    ).timesheetImportDrafts;
-    const staged = after.filter((draft) => !before.includes(draft));
-    describeStoreCommand("timesheet_import.stage", {
-      timesheet_import: {
-        row_count: rows.length,
-        conflict_count: staged.filter((draft) => draft.potentialConflict)
-          .length,
-      },
-    });
+    );
+    describeImportStage(before, after, rows.length);
   },
   /** Dismisses one import draft. Returns an undo token, or null when nothing changed. */
   dismissTimesheetImportDraft(draftId: string) {
-    return describeDraftChange("timesheet_import.dismiss", () =>
+    return withDraftCounts("timesheet_import.dismiss", () =>
       updateStateWithUndo((state) =>
         applyDismissTimesheetImportDraft(state, draftId),
       ),
@@ -2320,12 +2134,12 @@ const store = {
   },
   /** Dismisses every import draft. Returns an undo token, or null when there were none. */
   dismissAllTimesheetImportDrafts() {
-    return describeDraftChange("timesheet_import.dismiss", () =>
+    return withDraftCounts("timesheet_import.dismiss", () =>
       updateStateWithUndo((state) => applyClearTimesheetImportDrafts(state)),
     );
   },
   commitTimesheetImportDraft(draftId: string) {
-    describeDraftChange("timesheet_import.commit", () =>
+    withDraftCounts("timesheet_import.commit", () =>
       updateState((state) =>
         applyCommitTimesheetImportDraft(state, draftId, {
           createId,
@@ -2335,7 +2149,7 @@ const store = {
     );
   },
   commitReadyTimesheetImportDrafts() {
-    describeDraftChange("timesheet_import.commit", () =>
+    withDraftCounts("timesheet_import.commit", () =>
       updateState((state) =>
         applyCommitReadyTimesheetImportDrafts(state, {
           createId,
@@ -2369,7 +2183,7 @@ const store = {
       archiveMissingFromConnectionId?: string;
     },
   ) {
-    return updateStateWithResult((state) => {
+    const imported = updateStateWithResult((state) => {
       const imported = applySyncedWorkItemImport(
         applyWorkflowStateLifecycle(
           state,
@@ -2404,6 +2218,8 @@ const store = {
         state: withDescriptionTimelogs(state, imported.state),
       };
     });
+    describeBacklogImport(workItems.length, imported);
+    return imported;
   },
   /** Archives the synced items a sync reports in a done category. */
   archiveDoneSyncedWorkItems(doneItems: BacklogDoneWorkItem[]) {
@@ -2683,20 +2499,7 @@ const store = {
         options,
       ),
     );
-    const settled = readState().workItems.find(
-      (item) => item._id === workItemId,
-    );
-    describeStoreCommand("backlog_item.settle", {
-      backlog_item: {
-        id: workItemId,
-        state_changed: change?.state !== undefined,
-        priority_changed: change?.priority !== undefined,
-        subitems_included: options?.includeSubitems === true,
-        subitem_count: otherItemsChanged(before, readState(), workItemId),
-        settle_id: settled?.settleId,
-        archived: settled?.status === "archived",
-      },
-    });
+    describeSettle(before, readState(), workItemId, change, options);
     return token;
   },
   /**
@@ -2715,9 +2518,6 @@ const store = {
   ) {
     const { edits, ...moveOptions } = options ?? {};
     const before = readState();
-    const item = before.workItems.find(
-      (candidate) => candidate._id === workItemId,
-    );
     if (edits) {
       updateState((state) => applyUpdateWorkItem(state, workItemId, edits));
     }
@@ -2736,23 +2536,7 @@ const store = {
         moveOptions,
       ),
     );
-    const after = readState().workItems.find(
-      (candidate) => candidate._id === workItemId,
-    );
-    describeStoreCommand("backlog_item.move", {
-      backlog_item: {
-        id: workItemId,
-        workflow_state_from: item?.workflowStateId,
-        workflow_state_to: after?.workflowStateId,
-        closed: item?.status !== "archived" && after?.status === "archived",
-        reopened: item?.status === "archived" && after?.status !== "archived",
-        subitems_included: moveOptions.includeSubitems === true,
-        subitem_count: otherItemsChanged(before, readState(), workItemId),
-        source_writes_queued: Object.keys(moveOptions.sourceWrites ?? {})
-          .length,
-        result: moved ? "moved" : "unchanged",
-      },
-    });
+    describeMove(before, readState(), workItemId, moveOptions, moved !== null);
     return moved;
   },
   /**
@@ -2874,17 +2658,7 @@ const store = {
         now: Date.now,
       }),
     );
-    if (entry) {
-      describeStoreCommand("time_entry.update", {
-        time_entry: {
-          id: entryId,
-          running: false,
-          changed_fields: changedEntryFields(entry, values),
-          duration_before_ms: entry.durationMs,
-          duration_after_ms: values.durationMs,
-        },
-      });
-    }
+    describeEntryUpdate(entry, values);
   },
   /** Deletes an entry. Returns an undo token, or null when nothing changed. */
   deleteTimesheetEntry(entryId: string) {
@@ -3021,7 +2795,7 @@ const store = {
       releaseTeamPushHold();
       const result = updateStateWithResult((state) => {
         const restored = restoreUndo(state, undo);
-        if (restored.staleReason) {
+        if (restored.result === "stale") {
           storeCommandUnit()?.refuse(restored.staleReason);
         }
         return {
@@ -3057,7 +2831,13 @@ const store = {
    */
   runWithUndo<T>(run: () => T): { result: T; undoToken: string | null } {
     const before = readState();
-    const result = run();
+    undoGroupDepth += 1;
+    let result: T;
+    try {
+      result = run();
+    } finally {
+      undoGroupDepth -= 1;
+    }
     const after = readState();
     if (after === before) return { result, undoToken: null };
 
@@ -3069,18 +2849,10 @@ const store = {
   },
   saveTimer(timerId: string) {
     const before = readState();
-    const timer = before.timers.find((item) => item._id === timerId);
     const after = updateState((state) =>
       applySaveTimer(state, timerId, { createId, now: Date.now }),
     );
-    const entry = timer?.entryId
-      ? after.timesheetEntries.find((item) => item._id === timer.entryId)
-      : after.timesheetEntries.at(-1);
-    if (after !== before && entry) {
-      describeStoreCommand("time_entry.stop", {
-        time_entry: { id: entry._id, duration_ms: entry.durationMs },
-      });
-    }
+    describeTimerStop(before, after, timerId);
   },
   /**
    * Remembers that Ajour asked to commit the week of `weekOf`, so it never asks
@@ -3116,17 +2888,7 @@ const store = {
     const submitted = updateStateWithUndoResult((state) =>
       applySubmitWeek(state, weekOf, Date.now),
     );
-    const { result } = submitted;
-    describeStoreCommand("week.submit", {
-      week: result.ok
-        ? { week_of: result.weekOf, result: "submitted" }
-        : {
-            week_of: weekOf,
-            result: SUBMIT_REFUSALS[result.kind],
-            uncommitted_count:
-              result.kind === "uncommitted-changes" ? result.count : undefined,
-          },
-    });
+    describeWeekSubmit(weekOf, submitted.result);
     return submitted;
   },
   /** Reopens a submitted week. Returns an undo token, or null when it was not submitted. */
@@ -3237,63 +2999,231 @@ const store = {
         ? state
         : { ...state, userPreferences };
     }).userPreferences;
-    describeStoreCommand("preferences.update", {
-      preferences: {
-        scope: "user",
-        setting: "user_preferences",
-        ...describePreferenceChange(before, after, USER_PREFERENCE_ENUMS),
-      },
-    });
+    describeUserPreferences(before, after);
   },
 };
+
+/** A pull request change's event, by its type. */
+const PULL_REQUEST_COMMANDS = {
+  open: "pull_request.open",
+  settle: "pull_request.settle",
+  unsettle: "pull_request.unsettle",
+  snooze: "pull_request.snooze",
+  unsnooze: "pull_request.unsnooze",
+} as const satisfies Record<PullRequestCommand["type"], string>;
+
+/** A backlog item command whose first argument is the item's ID. */
+function backlogItemCommand<
+  Name extends
+    | "backlog_item.apply_timelog"
+    | "backlog_item.restore"
+    | "backlog_item.change_source_state"
+    | "backlog_item.complete_source_write"
+    | "backlog_item.fail_source_write"
+    | "backlog_item.unsettle"
+    | "backlog_item.snooze"
+    | "backlog_item.unsnooze"
+    | "backlog_item.pin"
+    | "backlog_item.unpin"
+    | "backlog_item.open"
+    | "backlog_item.archive"
+    | "backlog_item.delete",
+>(name: Name) {
+  return {
+    name,
+    fields: ([workItemId]: readonly [string, ...unknown[]]) => ({
+      backlog_item: { id: workItemId },
+    }),
+  };
+}
 
 /** The store's reads: they change nothing, so they emit no event. */
 type StoreRead =
   "subscribe" | "snapshot" | "pendingUndoProjectIds" | "getTimeline";
 
 /**
- * Each store command's wide event name. Every command but the reads has one,
- * so a new command without a name fails to compile. See docs/logging-strategy.md.
+ * Each store command's wide event name, and the fields it reads from its
+ * arguments and result. Every command but the reads has one, so a new
+ * command without a name fails to compile. Commands whose fields need the
+ * state before and after describe themselves through
+ * `lib/store-command-fields.ts`. See docs/logging-strategy.md.
  */
 const STORE_COMMANDS = {
-  syncPullRequests: { name: "pull_request.apply_sync", trigger: "system" },
-  changePullRequest: (_id, command) => `pull_request.${command.type}`,
+  syncPullRequests: {
+    name: "pull_request.apply_sync",
+    trigger: "system",
+    fields: ([source, result]) => ({
+      plugin: { id: source.pluginId },
+      connection: { id: source.connectionId },
+      pull_request: { received_count: result.pullRequests.length },
+    }),
+  },
+  changePullRequest: {
+    pick: (_id, command) => PULL_REQUEST_COMMANDS[command.type],
+    fallback: "pull_request.change",
+  },
   acceptCalendarSuggestions: "suggestion.add",
-  dismissCalendarSuggestions: "suggestion.dismiss",
+  dismissCalendarSuggestions: {
+    name: "suggestion.dismiss",
+    fields: ([suggestions]) => ({ suggestion: { count: suggestions.length } }),
+  },
   hideCalendarMeeting: "event_rule.hide",
-  forgetCalendarEventRule: "event_rule.forget",
+  forgetCalendarEventRule: {
+    name: "event_rule.forget",
+    fields: ([ruleId]) => ({ event_rule: { id: ruleId } }),
+  },
   removeConnectionCalendarData: "connection.delete",
-  applyTeamSyncRound: { name: "team.apply_sync", trigger: "system" },
+  applyTeamSyncRound: {
+    name: "team.apply_sync",
+    trigger: "system",
+    fields: ([connectionId], result) => ({
+      connection: { id: connectionId },
+      team_sync: { result: result.kind },
+    }),
+  },
   shareProjectWithTeam: "project.share",
-  unshareProjectFromTeam: "project.unshare",
-  resolveTeamArrival: "team.resolve_arrival",
+  unshareProjectFromTeam: {
+    name: "project.unshare",
+    fields: ([projectId]) => ({ project: { id: projectId } }),
+  },
+  resolveTeamArrival: {
+    name: "team.resolve_arrival",
+    fields: ([connectionId, _remoteId, choice], result) => ({
+      connection: { id: connectionId },
+      team: {
+        choice: choice.kind === "link" ? "link" : "add_separately",
+        result: result.kind,
+      },
+    }),
+  },
   removeConnectionTeamData: "connection.delete",
   removeConnectionPullRequests: "connection.delete",
   createTeam: "team.create",
-  addProject: "project.create",
-  updateProject: "project.update",
-  updateProjectWithUndo: "project.update",
-  reorderProjects: "project.reorder",
-  archiveProject: "project.archive",
-  unarchiveProject: "project.restore",
-  addProjectTask: "task.create",
-  reorderProjectTask: "task.reorder",
-  reorderTimesheetEntries: "time_entry.reorder",
+  addProject: {
+    name: "project.create",
+    fields: (_args, result) => ({ project: { id: result } }),
+  },
+  updateProject: {
+    name: "project.update",
+    fields: ([projectId, patch]) => ({
+      project: { id: projectId, changed_fields: Object.keys(patch) },
+    }),
+  },
+  updateProjectWithUndo: {
+    name: "project.update",
+    fields: ([projectId, patch]) => ({
+      project: { id: projectId, changed_fields: Object.keys(patch) },
+    }),
+  },
+  reorderProjects: {
+    name: "project.reorder",
+    fields: ([orderedIds]) => ({ project: { count: orderedIds.length } }),
+  },
+  archiveProject: {
+    name: "project.archive",
+    fields: ([projectId]) => ({ project: { id: projectId } }),
+  },
+  unarchiveProject: {
+    name: "project.restore",
+    fields: ([projectId]) => ({ project: { id: projectId } }),
+  },
+  addProjectTask: {
+    name: "task.create",
+    fields: ([projectId]) => ({ project: { id: projectId } }),
+  },
+  reorderProjectTask: {
+    name: "task.reorder",
+    fields: ([projectId, taskId]) => ({
+      project: { id: projectId },
+      task: { id: taskId },
+    }),
+  },
+  reorderTimesheetEntries: {
+    name: "time_entry.reorder",
+    fields: ([localDate, orderedIds]) => ({
+      time_entry: { count: orderedIds.length, to_day: localDate },
+    }),
+  },
   importProjectTasks: "task.import",
   importProjectWorkbookRows: "project.import",
   importProjectDataShapeProjects: "project.import",
-  renameProjectTask: "task.update",
-  updateProjectTask: "task.update",
-  setProjectTaskPinnedSlot: "task.pin",
-  archiveProjectTask: "task.archive",
-  unarchiveProjectTask: "task.restore",
-  addWorkflowState: "workflow_state.create",
-  updateWorkflowState: "workflow_state.update",
-  deleteWorkflowState: "workflow_state.delete",
+  renameProjectTask: {
+    name: "task.update",
+    fields: ([projectId, taskId]) => ({
+      project: { id: projectId },
+      task: { id: taskId, changed_fields: ["name"] },
+    }),
+  },
+  updateProjectTask: {
+    name: "task.update",
+    fields: ([projectId, taskId, patch]) => ({
+      project: { id: projectId },
+      task: { id: taskId, changed_fields: Object.keys(patch) },
+    }),
+  },
+  setProjectTaskPinnedSlot: {
+    name: "task.pin",
+    fields: ([projectId, taskId, slot]) => ({
+      project: { id: projectId },
+      task: { id: taskId, pinned_slot: slot ?? null },
+    }),
+  },
+  archiveProjectTask: {
+    name: "task.archive",
+    fields: ([projectId, taskId]) => ({
+      project: { id: projectId },
+      task: { id: taskId },
+    }),
+  },
+  unarchiveProjectTask: {
+    name: "task.restore",
+    fields: ([projectId, taskId]) => ({
+      project: { id: projectId },
+      task: { id: taskId },
+    }),
+  },
+  addWorkflowState: {
+    name: "workflow_state.create",
+    fields: (_args, result) => ({ workflow_state: { id: result } }),
+  },
+  updateWorkflowState: {
+    name: "workflow_state.update",
+    fields: ([statusId, updates]) => ({
+      workflow_state: {
+        id: statusId,
+        done: typeof updates === "object" ? updates.done : undefined,
+      },
+    }),
+  },
+  deleteWorkflowState: {
+    name: "workflow_state.delete",
+    fields: ([statusId]) => ({ workflow_state: { id: statusId } }),
+  },
   autoMapSourceStates: { name: "workflow_state.auto_map", trigger: "system" },
-  setWorkflowStateWriteRule: "workflow_state.set_write_rule",
-  moveWorkflowState: "workflow_state.move",
-  setWorkflowStateMapping: "workflow_state.map",
+  setWorkflowStateWriteRule: {
+    name: "workflow_state.set_write_rule",
+    fields: ([rule]) => ({
+      workflow_state: {
+        id: rule.workflowStateId,
+        write_rule: rule.write?.kind ?? "cleared",
+      },
+    }),
+  },
+  moveWorkflowState: {
+    name: "workflow_state.move",
+    fields: ([workflowStateId]) => ({
+      workflow_state: { id: workflowStateId },
+    }),
+  },
+  setWorkflowStateMapping: {
+    name: "workflow_state.map",
+    fields: ([mapping], result) => ({
+      workflow_state: {
+        id: mapping.workflowStateId ?? undefined,
+        closed_count: result.closedCount,
+      },
+    }),
+  },
   startTimer: "time_entry.start",
   editRunningEntry: "time_entry.update",
   cancelTimer: "time_entry.discard",
@@ -3303,12 +3233,28 @@ const STORE_COMMANDS = {
   dismissAllTimesheetImportDrafts: "timesheet_import.dismiss",
   commitTimesheetImportDraft: "timesheet_import.commit",
   commitReadyTimesheetImportDrafts: "timesheet_import.commit",
-  addWorkItem: "backlog_item.create",
-  addSubtask: "backlog_item.create",
+  addWorkItem: {
+    name: "backlog_item.create",
+    fields: ([draft], result) => ({
+      backlog_item: { id: result, parent_id: draft.parentWorkItemId },
+    }),
+  },
+  addSubtask: {
+    name: "backlog_item.create",
+    fields: ([parentId], result) => ({
+      backlog_item: { id: result, parent_id: parentId },
+    }),
+  },
   importSyncedWorkItems: "backlog_import.commit",
   archiveDoneSyncedWorkItems: {
     name: "backlog.archive_done",
     trigger: "system",
+    fields: ([doneItems], archived) => ({
+      backlog_import: {
+        candidate_count: doneItems.length,
+        archived_count: archived,
+      },
+    }),
   },
   returnItemsWithNewComments: {
     name: "backlog_item.return",
@@ -3317,63 +3263,182 @@ const STORE_COMMANDS = {
   applyBacklogSyncWorkItemUpdates: {
     name: "backlog.apply_updates",
     trigger: "system",
+    fields: ([updates]) => ({
+      backlog_import: { candidate_count: updates.length },
+    }),
   },
-  keepLocalEstimateConflict: "backlog_item.resolve_estimate",
-  takeSourceDescriptionWithUndo: "backlog_item.resolve_description",
-  updateSyncedDescription: "backlog_item.save_description",
-  acceptRemoteEstimateValue: "backlog_item.resolve_estimate",
-  dismissEstimateIssue: "backlog_item.resolve_estimate",
-  reorderWorkItems: "backlog_item.reorder",
-  reorderWorkItemsWithUndo: "backlog_item.reorder",
-  setBacklogSortMode: "backlog.sort",
-  updateWorkItem: "backlog_item.update",
-  updateWorkItemWithUndo: "backlog_item.update",
-  saveWorkItemEdits: "backlog_item.update",
-  saveWorkItemDescriptionText: "backlog_item.update",
-  applyWorkItemEditsSince: "backlog_item.update",
-  saveNewWorkItem: "backlog_item.create",
-  applyTimelogWithUndo: "backlog_item.apply_timelog",
-  restoreWorkItem: "backlog_item.restore",
+  keepLocalEstimateConflict: {
+    name: "backlog_item.resolve_estimate",
+    fields: ([workItemId]) => ({
+      backlog_item: { id: workItemId, estimate_resolution: "keep_local" },
+    }),
+  },
+  takeSourceDescriptionWithUndo: {
+    name: "backlog_item.resolve_description",
+    fields: ([workItemId]) => ({ backlog_item: { id: workItemId } }),
+  },
+  updateSyncedDescription: {
+    name: "backlog_item.save_description",
+    fields: ([workItemId]) => ({ backlog_item: { id: workItemId } }),
+  },
+  acceptRemoteEstimateValue: {
+    name: "backlog_item.resolve_estimate",
+    fields: ([workItemId]) => ({
+      backlog_item: { id: workItemId, estimate_resolution: "accept_source" },
+    }),
+  },
+  dismissEstimateIssue: {
+    name: "backlog_item.resolve_estimate",
+    fields: ([workItemId]) => ({
+      backlog_item: { id: workItemId, estimate_resolution: "dismiss" },
+    }),
+  },
+  reorderWorkItems: {
+    name: "backlog_item.reorder",
+    fields: ([orderedIds]) => ({ backlog_item: { count: orderedIds.length } }),
+  },
+  reorderWorkItemsWithUndo: {
+    name: "backlog_item.reorder",
+    fields: ([orderedIds]) => ({ backlog_item: { count: orderedIds.length } }),
+  },
+  setBacklogSortMode: {
+    name: "backlog.sort",
+    fields: ([mode]) => ({ backlog: { sort_mode: mode } }),
+  },
+  updateWorkItem: {
+    name: "backlog_item.update",
+    fields: ([workItemId, patch]) => ({
+      backlog_item: { id: workItemId, changed_fields: Object.keys(patch) },
+    }),
+  },
+  updateWorkItemWithUndo: {
+    name: "backlog_item.update",
+    fields: ([workItemId, patch]) => ({
+      backlog_item: { id: workItemId, changed_fields: Object.keys(patch) },
+    }),
+  },
+  saveWorkItemEdits: {
+    name: "backlog_item.update",
+    fields: ([workItemId, patch]) => ({
+      backlog_item: { id: workItemId, changed_fields: Object.keys(patch) },
+    }),
+  },
+  saveWorkItemDescriptionText: {
+    name: "backlog_item.update",
+    fields: ([workItemId]) => ({
+      backlog_item: { id: workItemId, changed_fields: ["description"] },
+    }),
+  },
+  applyWorkItemEditsSince: {
+    name: "backlog_item.update",
+    fields: ([workItemId, patch]) => ({
+      backlog_item: { id: workItemId, changed_fields: Object.keys(patch) },
+    }),
+  },
+  saveNewWorkItem: {
+    name: "backlog_item.create",
+    fields: ([draft, closeIn], result) => ({
+      backlog_item: {
+        id: result.workItemId,
+        parent_id: draft.parentWorkItemId,
+        closed: closeIn !== undefined,
+      },
+    }),
+  },
+  applyTimelogWithUndo: backlogItemCommand("backlog_item.apply_timelog"),
+  restoreWorkItem: backlogItemCommand("backlog_item.restore"),
   settleWorkItem: "backlog_item.settle",
   moveWorkItemToState: "backlog_item.move",
-  changeWorkItemSourceState: "backlog_item.change_source_state",
+  changeWorkItemSourceState: backlogItemCommand(
+    "backlog_item.change_source_state",
+  ),
   completeSourceWrite: {
-    name: "backlog_item.complete_source_write",
+    ...backlogItemCommand("backlog_item.complete_source_write"),
     trigger: "system",
   },
   failSourceWrite: {
-    name: "backlog_item.fail_source_write",
+    ...backlogItemCommand("backlog_item.fail_source_write"),
     trigger: "system",
   },
-  applySettleRule: "settle_rule.set",
-  askSettleRule: "settle_rule.set",
-  unsettleWorkItem: "backlog_item.unsettle",
-  snoozeWorkItem: "backlog_item.snooze",
-  unsnoozeWorkItem: "backlog_item.unsnooze",
-  pinWorkItem: "backlog_item.pin",
-  unpinWorkItem: "backlog_item.unpin",
-  markWorkItemOpened: "backlog_item.open",
-  archiveWorkItem: "backlog_item.archive",
-  deleteWorkItem: "backlog_item.delete",
+  applySettleRule: {
+    name: "settle_rule.set",
+    fields: () => ({ settle_rule: { mode: "apply" } }),
+  },
+  askSettleRule: {
+    name: "settle_rule.set",
+    fields: () => ({ settle_rule: { mode: "ask" } }),
+  },
+  unsettleWorkItem: backlogItemCommand("backlog_item.unsettle"),
+  snoozeWorkItem: backlogItemCommand("backlog_item.snooze"),
+  unsnoozeWorkItem: backlogItemCommand("backlog_item.unsnooze"),
+  pinWorkItem: backlogItemCommand("backlog_item.pin"),
+  unpinWorkItem: backlogItemCommand("backlog_item.unpin"),
+  markWorkItemOpened: backlogItemCommand("backlog_item.open"),
+  archiveWorkItem: backlogItemCommand("backlog_item.archive"),
+  deleteWorkItem: backlogItemCommand("backlog_item.delete"),
   updateTimesheetEntry: "time_entry.update",
-  deleteTimesheetEntry: "time_entry.delete",
-  deleteTimesheetEntries: "time_entry.delete",
-  duplicateTimesheetEntry: "time_entry.duplicate",
-  moveTimesheetEntry: "time_entry.move",
-  pasteTimesheetEntries: "time_entry.paste",
-  relocateTimesheetEntries: (_entries, mode) =>
-    mode === "copy" ? "time_entry.duplicate" : "time_entry.move",
-  dropTimesheetEntries: "time_entry.drop",
+  deleteTimesheetEntry: {
+    name: "time_entry.delete",
+    fields: () => ({ time_entry: { count: 1 } }),
+  },
+  deleteTimesheetEntries: {
+    name: "time_entry.delete",
+    fields: ([entryIds]) => ({ time_entry: { count: entryIds.length } }),
+  },
+  duplicateTimesheetEntry: {
+    name: "time_entry.duplicate",
+    fields: ([_entryId, values]) => ({
+      time_entry: { count: 1, mode: "copy", to_day: values.localDate },
+    }),
+  },
+  moveTimesheetEntry: {
+    name: "time_entry.move",
+    fields: ([_entryId, values]) => ({
+      time_entry: { count: 1, mode: "cut", to_day: values.localDate },
+    }),
+  },
+  pasteTimesheetEntries: {
+    name: "time_entry.paste",
+    fields: ([entries, mode]) => ({
+      time_entry: { count: entries.length, mode },
+    }),
+  },
+  relocateTimesheetEntries: {
+    pick: (_entries, mode) =>
+      mode === "copy" ? "time_entry.duplicate" : "time_entry.move",
+    fallback: "time_entry.move",
+  },
+  dropTimesheetEntries: {
+    name: "time_entry.drop",
+    fields: ([entryIds, localDate]) => ({
+      time_entry: { count: entryIds.length, to_day: localDate },
+    }),
+  },
   undo: "undo.restore",
   forgetUndo: { name: "undo.expire", trigger: "system" },
-  runWithUndo: "undo.group",
+  runWithUndo: UNDO_GROUP,
   saveTimer: "time_entry.stop",
-  markCommitPrompted: "week.prompt_commit",
-  markTimesheetEntriesCommitted: "time_entry.commit",
-  markTimesheetEntriesNotCommitted: "time_entry.uncommit",
+  markCommitPrompted: {
+    name: "week.prompt_commit",
+    fields: ([weekOf]) => ({ week: { week_of: weekOf } }),
+  },
+  markTimesheetEntriesCommitted: {
+    name: "time_entry.commit",
+    fields: ([entryIds]) => ({ time_entry: { count: entryIds.length } }),
+  },
+  markTimesheetEntriesNotCommitted: {
+    name: "time_entry.uncommit",
+    fields: ([entryIds]) => ({ time_entry: { count: entryIds.length } }),
+  },
   submitWeek: "week.submit",
-  reopenWeek: "week.reopen",
-  continueTimesheetEntry: "time_entry.continue",
+  reopenWeek: {
+    name: "week.reopen",
+    fields: ([weekOf]) => ({ week: { week_of: weekOf } }),
+  },
+  continueTimesheetEntry: {
+    name: "time_entry.continue",
+    fields: ([entryId]) => ({ time_entry: { id: entryId } }),
+  },
   addSampleActivity: "timeline.import",
   importBrowserBuckets: "timeline.import",
   setExtensionBridgeStatus: { name: "timeline.update", trigger: "system" },
@@ -3393,3 +3458,59 @@ const STORE_COMMANDS = {
  * `STORE_COMMANDS`; a command run inside another unit folds into it.
  */
 export const localStore = instrumentStoreCommands(store, STORE_COMMANDS);
+
+type Store = typeof store;
+type StoreCommandKey = keyof typeof STORE_COMMANDS;
+/** The event names a store command can take. */
+type CommandNameOf<Key extends StoreCommandKey> = SpecName<
+  (typeof STORE_COMMANDS)[Key]
+>;
+type CommandOf<Key extends StoreCommandKey> = Store[Key] extends (
+  ...args: infer Args
+) => infer Result
+  ? { args: Args; result: Result }
+  : never;
+type AnySpec = StoreCommandSpec<(...args: never[]) => unknown>;
+
+/**
+ * Runs the store command `key` with `args`, and lets the code around it add
+ * what only it knows to the command's event, such as where the entry form
+ * sits. `extend` runs inside the event, after the command. Because the
+ * command is the one named, its own fields always land on that event.
+ */
+export function runStoreCommandWith<Key extends StoreCommandKey>(
+  key: Key,
+  args: CommandOf<Key>["args"],
+  extend: (
+    unit: StoreCommandUnit<CommandNameOf<Key>>,
+    result: CommandOf<Key>["result"],
+  ) => void,
+): CommandOf<Key>["result"] {
+  const spec = STORE_COMMANDS[key] as AnySpec;
+  const command = localStore[key] as unknown as (
+    ...args: CommandOf<Key>["args"]
+  ) => CommandOf<Key>["result"];
+  return runStoreCommand(
+    resolveCommandName(spec, args) as CommandNameOf<Key>,
+    (unit) => {
+      const result = command.apply(localStore, args);
+      extend(unit, result);
+      return result;
+    },
+    (typeof spec === "object" && spec.trigger) || "user",
+  );
+}
+
+/**
+ * Opens the event of the store command `key` for a workflow that awaits
+ * before it runs it, such as a move that asks about subitems first. The
+ * workflow runs the command inside `unit.enter()`, and calls `finish` once
+ * in every path.
+ */
+export function startStoreCommandFor<Key extends StoreCommandKey>(key: Key) {
+  const spec = STORE_COMMANDS[key] as AnySpec;
+  return startStoreCommand(
+    resolveCommandName(spec, []) as CommandNameOf<Key>,
+    (typeof spec === "object" && spec.trigger) || "user",
+  );
+}

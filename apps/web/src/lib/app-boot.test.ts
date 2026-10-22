@@ -109,12 +109,14 @@ describe("app.boot", () => {
         platform: "win32",
         version: "1.4.0",
         launch: {
-          id: "launch-from-main",
-          appVersion: "1.4.0",
-          channel: "nightly",
-          commit: "abc1234",
-          packaged: true,
-          arch: "x64",
+          launch_id: "launch-from-main",
+          app: {
+            version: "1.4.0",
+            channel: "nightly",
+            commit: "abc1234",
+            packaged: true,
+          },
+          device: { platform: "win32", arch: "x64", electron: "38.1.0" },
         },
       },
       bootstrapLocalState: {
@@ -147,7 +149,7 @@ describe("app.boot", () => {
         commit: "abc1234",
         packaged: true,
       },
-      device: { platform: "win32", arch: "x64" },
+      device: { platform: "win32", arch: "x64", electron: "38.1.0" },
       recovery: {
         decision: "merged",
         reason: "no_entries",
@@ -165,5 +167,41 @@ describe("app.boot", () => {
     expect(event!.launch_id).toMatch(/^[0-9a-f-]{36}$/);
     expect(event!.window_id).toMatch(/^[0-9a-f-]{36}$/);
     expect(event!.app).toMatchObject({ channel: "web", packaged: false });
+  });
+
+  it("ends with the error when loading the local state throws", async () => {
+    installMockWindow();
+    Object.defineProperty(window, "ajourDesktop", {
+      get() {
+        throw new TypeError("The bridge is gone");
+      },
+    });
+    const sink = createRecordingSink<AjourEvent>();
+    const { replaceEventSink } = await import("./wide-events");
+    replaceEventSink(sink);
+    const { startAppBoot } = await import("./app-boot");
+
+    expect(() => startAppBoot()).toThrow("The bridge is gone");
+
+    expect(sink.events).toMatchObject([
+      { name: "app.boot", outcome: "error", error: { type: "TypeError" } },
+    ]);
+  });
+
+  it("ends with the error when the first render fails, and only once", async () => {
+    installMockWindow();
+    const sink = createRecordingSink<AjourEvent>();
+    const { replaceEventSink } = await import("./wide-events");
+    replaceEventSink(sink);
+    const { startAppBoot } = await import("./app-boot");
+    const boot = startAppBoot();
+
+    boot.failed(new RangeError("Render failed"));
+    boot.rendered();
+
+    expect(sink.events).toMatchObject([
+      { name: "app.boot", outcome: "error", error: { type: "RangeError" } },
+    ]);
+    expect(sink.events).toHaveLength(1);
   });
 });

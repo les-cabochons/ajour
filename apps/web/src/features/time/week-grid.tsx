@@ -63,8 +63,7 @@ import {
   TIME_ENTRY_ACTION_KEYS,
   type ActionKeys,
 } from "@/lib/item-keys";
-import { localStore } from "@/lib/local-store";
-import { runStoreCommand } from "@/lib/store-command-events";
+import { localStore, runStoreCommandWith } from "@/lib/local-store";
 import { leavesContextMenuToSystem } from "@/lib/native-context-menu";
 import { ProjectIcon } from "@/lib/project-icons";
 import { cn } from "@/lib/utils";
@@ -501,15 +500,15 @@ export function WeekGrid({
     }
 
     if (result.kind === "create") {
-      runStoreCommand("time_entry.create", (unit) => {
-        unit.set({ time_entry: { host: "grid_cell" } });
-        localStore.saveManualTimeEntry(result.values);
-      });
+      runStoreCommandWith("saveManualTimeEntry", [result.values], (unit) =>
+        unit.set({ time_entry: { host: "grid_cell" } }),
+      );
     } else if (result.kind === "update") {
-      runStoreCommand("time_entry.update", (unit) => {
-        unit.set({ time_entry: { host: "grid_cell" } });
-        localStore.updateTimesheetEntry(result.entryId, result.values);
-      });
+      runStoreCommandWith(
+        "updateTimesheetEntry",
+        [result.entryId, result.values],
+        (unit) => unit.set({ time_entry: { host: "grid_cell" } }),
+      );
     } else if (result.kind === "delete") {
       offerTimeEntryUndo(
         localStore.deleteTimesheetEntry(result.entryId),

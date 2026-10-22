@@ -3391,7 +3391,8 @@ describe("submitted weeks in the store", () => {
       setItem.mockImplementation(write);
     }
 
-    expect(warn).toHaveBeenCalledTimes(1);
+    // The command's event counts the failure; nothing goes to the console.
+    expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
     expect(() =>
       second.saveManualTimeEntry({ localDate: "2026-10-27", durationMs: HOUR }),

@@ -398,16 +398,22 @@ A session the runner began takes the run's trigger, `user`.
 ### The renderer (#307)
 
 The renderer creates its emitter at its first use. On desktop it reports the
-launch the main process hands over in `window.ajourDesktop.runtime.launch`,
-the shape of the local API's `launch` option. The web build, or a main
-process that hands none over, makes its own launch ID, and the web build
-reports the `web` channel. Each window load gets its own window ID.
+launch the main process hands over in `window.ajourDesktop.runtime.launch`
+(`LaunchContext`: `launch_id`, `app` and `device`), so every runtime reports
+one launch. Each field is checked and falls back on its own: the web build,
+or a main process that hands none over, makes its own launch ID, and the web
+build reports the `web` channel. Each window load gets its own window ID.
+The renderer knows neither the home folder nor the user data folder, so its
+events keep an error's type and code but leave its message out.
 
 - **Store commands.** `STORE_COMMANDS` in `apps/web/src/lib/local-store.ts`
   names every command of the local store but its reads, so a new command
   without a name fails to compile. A name may be picked from the arguments,
-  as a pull request change is by its type. `lib/store-command-events.ts` runs
-  each call as one `command` event:
+  as a pull request change is by its type, with a fallback name for a call
+  it can't read. An entry may also read the command's own fields from its
+  arguments and result, typed against its name; fields that need the state
+  before and after come from `lib/store-command-fields.ts`.
+  `lib/store-command-events.ts` runs each call as one `command` event:
   - the write path counts `store_write_count` and `store_write_bytes`, sets
     `store.revision_changed` when another window wrote since this one read,
     and records `refused` with `locked_week` or `stale_window` before the
@@ -416,13 +422,24 @@ reports the `web` channel. Each window load gets its own window ID.
     (`changed_project_count`, `changed_time_entry_count` and so on) and sets
     `store.undo_offered`;
   - a command that writes nothing ends `noop`, and one that writes twice
-    counts two writes on its one event.
+    counts two writes on its one event;
+  - a revision hint that could not be saved counts
+    `store_revision_hint_failure_count`.
   - Writes, bytes and records changed are counters, so a command that folds
     into another unit, such as a sync, adds them to that unit's event.
   - The same command inside an open one joins it instead of folding. The
-    code around a command opens its event first with `runStoreCommand` to
-    add what only it knows: the settle's behaviour and comment length, the
-    entry form's host, and whether Submit week showed the pace warning.
+    code around a command adds what only it knows with
+    `runStoreCommandWith(key, args, extend)`, which runs the command it names
+    by its key, so the fields can't land on another command's event: the
+    settle's behaviour and comment length, the entry form's host, and
+    whether Submit week showed the pace warning.
+  - A workflow that awaits before its command opens the event first with
+    `startStoreCommandFor(key)` and runs the command inside `unit.enter()`.
+    A move cancelled in its subitem or source state dialog ends `cancelled`;
+    a connection's delete is one `connection.delete` with what it removed
+    per kind.
+  - `runWithUndo`, which agent tools run their writes in, takes the name of
+    the first command it runs, and counts its change once.
 - **Folding across `await`.** Store commands are synchronous, so they fold
   into the unit on top of the scope stack. An async unit leaves the stack at
   its first `await`, and runs the store commands after it inside
@@ -431,7 +448,8 @@ reports the `web` channel. Each window load gets its own window ID.
   the first render: the load path, the migrations applied, the desktop
   recovery's decision, reason and what a submitted week left out, the
   state's size and its records per collection. The recovery's writes count
-  on it.
+  on it. A load that throws, or a first render that fails, ends it with the
+  error.
 - **`undo.restore`** is the Undo store command. A refused Undo says why:
   `expired`, `changed_since`, `two_running_entries` or `would_lock_week`.
 - **`local_state.reload`** is another window's write, read from browser
@@ -442,7 +460,8 @@ reports the `web` channel. Each window load gets its own window ID.
 - **`app.error`** comes from `features/feedback/app-error-handler.ts`, the
   window's one handler for uncaught errors and unhandled rejections, which
   also shows a refused write as a toast. It names the store command that
-  threw.
+  threw. An error event without an error, such as a ResizeObserver warning,
+  is noise and emits nothing.
 
 The seams of #304 add the rest: `trigger` and `surface` (#309), and renderer
 jobs and navigation (#310).

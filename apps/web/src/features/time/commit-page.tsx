@@ -77,8 +77,7 @@ import {
   useUncheckedChangeIds,
 } from "@/lib/commit-selection";
 import { useLocalState } from "@/lib/local-hooks";
-import { localStore } from "@/lib/local-store";
-import { runStoreCommand } from "@/lib/store-command-events";
+import { localStore, runStoreCommandWith } from "@/lib/local-store";
 import { listProjectPropertyPlugins } from "@/lib/plugin-project-properties";
 import { ProjectIcon } from "@/lib/project-icons";
 import { cn, getIsoWeekDates, todayIsoDate } from "@/lib/utils";
@@ -383,10 +382,11 @@ export function CommitPage({
 
   function lockWeek(paceWarningShown: boolean) {
     setPaceCheckOpen(false);
-    const { undoToken, result } = runStoreCommand("week.submit", (unit) => {
-      unit.set({ week: { pace_warning_shown: paceWarningShown } });
-      return localStore.submitWeek(weekOf);
-    });
+    const { undoToken, result } = runStoreCommandWith(
+      "submitWeek",
+      [weekOf],
+      (unit) => unit.set({ week: { pace_warning_shown: paceWarningShown } }),
+    );
     if (!result.ok) {
       showToast(result.message);
       return;

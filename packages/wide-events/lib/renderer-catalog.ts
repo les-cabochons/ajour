@@ -20,6 +20,11 @@ export const rendererCounters = {
   store_write_count: operational<number>(),
   /** What those writes stored: UTF-16 code units times two, as browser storage holds them. */
   store_write_bytes: operational<number>(),
+  /**
+   * Writes whose revision hint could not be saved, so other windows reload
+   * before each write instead of trusting it.
+   */
+  store_revision_hint_failure_count: operational<number>(),
   /** The records an undoable action changed, or an Undo restored, per local state list. */
   changed_project_count: operational<number>(),
   changed_time_entry_count: operational<number>(),
@@ -76,19 +81,13 @@ const timeEntryCount = {
   time_entry: {
     count: operational<number>(),
     mode: operational<"copy" | "cut">(),
-    from_day: sensitive(),
     to_day: sensitive(),
-    day_changed: operational<boolean>(),
   },
 };
 const backlogItem = {
-  backlog_item: {
-    id: operational(),
-    subitem_count: operational<number>(),
-  },
+  backlog_item: { id: operational() },
 };
 const projectId = { project: { id: operational() } };
-const taskIds = { project: { id: operational() }, task: { id: operational() } };
 const changedProject = {
   project: { id: operational(), changed_fields: operational<string[]>() },
 };
@@ -97,16 +96,18 @@ const changedTask = {
   task: {
     id: operational(),
     changed_fields: operational<string[]>(),
-    pinned_slot: operational<number | null>(),
+    pinned_slot: operational<string | null>(),
   },
 };
 const connectionData = {
   plugin: { id: operational() },
   connection: { id: operational() },
+  /** The records the delete took out of the local state, per kind. */
   removed: {
-    calendar_data: operational<boolean>(),
-    team_data: operational<boolean>(),
-    pull_requests: operational<boolean>(),
+    pull_request_count: operational<number>(),
+    calendar_decision_count: operational<number>(),
+    event_rule_count: operational<number>(),
+    team_project_count: operational<number>(),
   },
 };
 const importCounts = {
@@ -143,14 +144,12 @@ const workflowState = {
     id: operational(),
     done: operational<boolean>(),
     closed_count: operational<number>(),
-    mapped_count: operational<number>(),
     write_rule: operational<"state" | "ask" | "none" | "cleared">(),
   },
 };
 const pullRequest = {
   pull_request: { id: operational() },
 };
-const timeline = { timeline: { count: operational<number>() } };
 
 /** A settings key and its value, kept only when it is an enum, a number or a boolean. */
 type PreferenceValue = string | number | boolean;
@@ -275,13 +274,7 @@ export const rendererEvents = {
   "time_entry.discard": command({
     time_entry: { id: operational(), duration_ms: sensitive<number>() },
   }),
-  "time_entry.continue": command({
-    time_entry: {
-      id: operational(),
-      same_day: operational<boolean>(),
-      resumed: operational<boolean>(),
-    },
-  }),
+  "time_entry.continue": command({ time_entry: { id: operational() } }),
   "time_entry.create": command({
     time_entry: {
       id: operational(),
@@ -304,10 +297,7 @@ export const rendererEvents = {
     },
   }),
   "time_entry.delete": command({
-    time_entry: {
-      count: operational<number>(),
-      tombstones_added: operational<number>(),
-    },
+    time_entry: { count: operational<number>() },
   }),
   "time_entry.duplicate": command(timeEntryCount),
   "time_entry.move": command(timeEntryCount),
@@ -352,7 +342,7 @@ export const rendererEvents = {
   "suggestion.dismiss": command({
     suggestion: { count: operational<number>() },
   }),
-  "event_rule.hide": command({ event_rule: { id: operational() } }),
+  "event_rule.hide": command({}),
   "event_rule.forget": command({ event_rule: { id: operational() } }),
 
   // Projects, tasks and teams
@@ -423,7 +413,6 @@ export const rendererEvents = {
       id: operational(),
       parent_id: operational(),
       closed: operational<boolean>(),
-      timelog_applied: operational<boolean>(),
     },
   }),
   "backlog_item.update": command({
@@ -487,9 +476,7 @@ export const rendererEvents = {
   "backlog_item.save_description": command(backlogItem),
   "backlog_item.complete_source_write": command(backlogItem),
   "backlog_item.fail_source_write": command(backlogItem),
-  "backlog_item.return": command({
-    backlog_item: { count: operational<number>() },
-  }),
+  "backlog_item.return": command({}),
   "backlog.sort": command({ backlog: { sort_mode: operational() } }),
   "backlog.archive_done": command(backlogImport),
   "backlog.apply_updates": command(backlogImport),
@@ -513,6 +500,8 @@ export const rendererEvents = {
     connection: { id: operational() },
     pull_request: { received_count: operational<number>() },
   }),
+  /** A pull request change whose type Ajour couldn't read. */
+  "pull_request.change": command(pullRequest),
   "pull_request.open": command(pullRequest),
   "pull_request.settle": command(pullRequest),
   "pull_request.unsettle": command(pullRequest),
@@ -520,9 +509,9 @@ export const rendererEvents = {
   "pull_request.unsnooze": command(pullRequest),
 
   // The retired activity timeline, kept for stored data.
-  "timeline.import": command(timeline),
-  "timeline.update": command(timeline),
-  "timeline.dismiss": command(timeline),
-  "timeline.commit": command(timeline),
-  "timeline.save_rule": command(timeline),
+  "timeline.import": command({}),
+  "timeline.update": command({}),
+  "timeline.dismiss": command({}),
+  "timeline.commit": command({}),
+  "timeline.save_rule": command({}),
 } as const;

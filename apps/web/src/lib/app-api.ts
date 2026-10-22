@@ -69,7 +69,8 @@ import {
   type AgentRunnerSettings,
   type AgentRunStartRequest,
 } from "@ajour/shared/agent-runs";
-import { localStore } from "@/lib/local-store";
+import { localStore, startStoreCommandFor } from "@/lib/local-store";
+import { describeConnectionDelete } from "@/lib/store-command-fields";
 import {
   calendarListEventsResultSchema,
   type CalendarListEventsRequest,
@@ -571,21 +572,39 @@ export async function deletePluginConnection(
   pluginId: string,
   connectionId: string,
 ): Promise<PluginsOverview> {
-  const key = connectionKey(pluginId, connectionId);
-  connectionGenerations.set(key, (connectionGenerations.get(key) ?? 0) + 1);
-  const overview = cachePluginsOverview(
-    await appApiRequest(
-      `/api/plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}`,
-      {
-        method: "DELETE",
-      },
-      pluginsOverviewSchema,
-    ),
-  );
-  localStore.removeConnectionPullRequests(pluginId, connectionId);
-  localStore.removeConnectionCalendarData(pluginId, connectionId);
-  localStore.removeConnectionTeamData(connectionId);
-  return overview;
+  // One event for the whole delete: the three cleanups below join it.
+  const command = startStoreCommandFor("removeConnectionPullRequests");
+  try {
+    const key = connectionKey(pluginId, connectionId);
+    connectionGenerations.set(key, (connectionGenerations.get(key) ?? 0) + 1);
+    const overview = cachePluginsOverview(
+      await appApiRequest(
+        `/api/plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}`,
+        {
+          method: "DELETE",
+        },
+        pluginsOverviewSchema,
+      ),
+    );
+    command.unit.enter(() => {
+      const before = localStore.snapshot();
+      localStore.removeConnectionPullRequests(pluginId, connectionId);
+      localStore.removeConnectionCalendarData(pluginId, connectionId);
+      localStore.removeConnectionTeamData(connectionId);
+      describeConnectionDelete(
+        before,
+        localStore.snapshot(),
+        pluginId,
+        connectionId,
+      );
+    });
+    return overview;
+  } catch (error) {
+    command.fail(error);
+    throw error;
+  } finally {
+    command.finish();
+  }
 }
 
 /** A page of a synced item's comments, newest last (ADR 0008). */

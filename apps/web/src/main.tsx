@@ -16,7 +16,14 @@ function BootRendered() {
   return null;
 }
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
+ReactDOM.createRoot(document.getElementById("root")!, {
+  // A render that fails before the first commit ends the boot's event with
+  // its error. The error then goes on to the window, as React reports it.
+  onUncaughtError(error) {
+    boot.failed(error);
+    globalThis.reportError(error);
+  },
+}).render(
   <React.StrictMode>
     <TooltipProvider>
       <AppRouter />

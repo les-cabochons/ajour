@@ -1,6 +1,6 @@
 import type { AjourEvent } from "@ajour/wide-events/catalog.ts";
 import { createRecordingSink } from "@ajour/wide-events/sinks.ts";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const STORAGE_KEY = "ajour.local-state.v2";
 
@@ -694,6 +694,256 @@ describe("preferences, reloads and boot", () => {
         name: "local_state.reload",
         local_state: { revision_changed: false, storage_cleared: true },
       },
+    ]);
+  });
+});
+
+describe("a connection's delete", () => {
+  let browser: ReturnType<typeof installMockWindow>;
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+    browser = installMockWindow();
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("emits one connection.delete with what it removed per kind", async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    browser.storage.set(
+      STORAGE_KEY,
+      JSON.stringify({
+        calendarEventRules: [
+          {
+            _id: "rule",
+            pluginId: "calendar-plugin",
+            connectionId: "c1",
+            seriesId: "series",
+            action: "hide",
+          },
+        ],
+        calendarDecisions: [
+          {
+            _id: "decision",
+            pluginId: "calendar-plugin",
+            connectionId: "c1",
+            occurrenceKey: "o1",
+            localDate: today,
+            decision: "dismissed",
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          pluginsEnabled: true,
+          plugins: [],
+          connectionGroups: [],
+          totalPendingImportCount: 0,
+          totalSelectedImportCount: 0,
+        }),
+      ),
+    );
+    const { sink } = await loadStore();
+    const { deletePluginConnection } = await import("./app-api");
+
+    await deletePluginConnection("calendar-plugin", "c1");
+
+    expect(sink.events).toHaveLength(1);
+    expect(sink.events[0]).toMatchObject({
+      name: "connection.delete",
+      kind: "command",
+      outcome: "ok",
+      plugin: { id: "calendar-plugin" },
+      connection: { id: "c1" },
+      removed: {
+        pull_request_count: 0,
+        calendar_decision_count: 1,
+        event_rule_count: 1,
+        team_project_count: 0,
+      },
+      counts: { store_write_count: 1 },
+    });
+  });
+});
+
+describe("review round 1", () => {
+  let browser: ReturnType<typeof installMockWindow>;
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+    browser = installMockWindow();
+  });
+
+  it("counts a revision hint that could not be saved on the command's event", async () => {
+    const { sink, localStore } = await loadStore();
+    const storage = window.localStorage as unknown as {
+      setItem: (key: string, value: string) => void;
+    };
+    const write = storage.setItem;
+    storage.setItem = (key, value) => {
+      if (key === "ajour.local-state.revision") {
+        throw new DOMException("Quota exceeded", "QuotaExceededError");
+      }
+      write(key, value);
+    };
+    const warn = vi.spyOn(console, "warn");
+
+    localStore.addProject({ name: "Hinted", color: "#000" });
+
+    expect(sink.events).toMatchObject([
+      {
+        name: "project.create",
+        outcome: "ok",
+        counts: { store_write_count: 1, store_revision_hint_failure_count: 1 },
+      },
+    ]);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("backlog_import.commit counts its candidates and what it imported and updated", async () => {
+    const { sink, localStore } = await loadStore();
+    const candidate = {
+      id: "connector-1",
+      source: "azure_devops" as const,
+      connectionId: "ado-1",
+      connectionLabel: "Main connection",
+      sourceId: "101",
+      externalId: "101",
+      title: "Secret imported title",
+      projectName: "Project Mercury",
+      depth: 0 as const,
+      selectable: true,
+      selected: true,
+      childCount: 0,
+      pushedAt: 1,
+    };
+
+    localStore.importSyncedWorkItems([
+      candidate,
+      { ...candidate, id: "connector-2", sourceId: "102", externalId: "102" },
+    ] as never);
+    localStore.importSyncedWorkItems([
+      { ...candidate, title: "Renamed secret" },
+    ] as never);
+
+    expect(
+      sink.events.filter((event) => event.name === "backlog_import.commit"),
+    ).toMatchObject([
+      {
+        backlog_import: {
+          candidate_count: 2,
+          imported_count: 2,
+          updated_count: 0,
+        },
+      },
+      {
+        backlog_import: {
+          candidate_count: 1,
+          imported_count: 0,
+          updated_count: 1,
+        },
+      },
+    ]);
+    expect(JSON.stringify(sink.events)).not.toContain("secret");
+  });
+
+  it("names an undo group after the command it runs, and counts its change once", async () => {
+    const { sink, localStore } = await loadStore();
+    localStore.saveManualTimeEntry({
+      localDate: "2026-10-06",
+      durationMs: 600,
+    });
+    const entryId = localStore.snapshot().timesheetEntries[0]!._id;
+    sink.events.length = 0;
+
+    const { undoToken } = localStore.runWithUndo(() =>
+      localStore.duplicateTimesheetEntry(entryId, {
+        localDate: "2026-10-07",
+        durationMs: 600,
+      }),
+    );
+
+    expect(undoToken).not.toBeNull();
+    expect(sink.events).toHaveLength(1);
+    expect(sink.events[0]).toMatchObject({
+      name: "time_entry.duplicate",
+      kind: "command",
+      outcome: "ok",
+      time_entry: { count: 1, mode: "copy", to_day: "2026-10-07" },
+      store: { undo_offered: true },
+      counts: { changed_time_entry_count: 1 },
+    });
+    expect(sink.events[0]!.steps).toBeUndefined();
+  });
+
+  it("an undo group that runs nothing stays undo.group and reports noop", async () => {
+    const { sink, localStore } = await loadStore();
+
+    localStore.runWithUndo(() => undefined);
+
+    expect(sink.events).toMatchObject([
+      { name: "undo.group", outcome: "noop" },
+    ]);
+  });
+
+  it("the code around a command adds its fields to the command it names, by key", async () => {
+    const { sink } = await loadStore();
+    const { runStoreCommandWith } = await import("./local-store");
+
+    runStoreCommandWith(
+      "saveManualTimeEntry",
+      [{ localDate: "2026-10-06", durationMs: 60_000 }],
+      (unit) => unit.set({ time_entry: { host: "grid_cell" } }),
+    );
+
+    expect(sink.events).toHaveLength(1);
+    expect(sink.events[0]).toMatchObject({
+      name: "time_entry.create",
+      time_entry: {
+        host: "grid_cell",
+        day: "2026-10-06",
+        duration_ms: 60_000,
+        id: expect.any(String),
+      },
+    });
+  });
+
+  it("a pull request change it can't name still emits, as pull_request.change", async () => {
+    const { sink, localStore } = await loadStore();
+
+    localStore.changePullRequest("pr-1", undefined as never);
+
+    expect(sink.events).toMatchObject([
+      { name: "pull_request.change", kind: "command" },
+    ]);
+  });
+
+  it("commands named for a record carry its ID and the keys they changed", async () => {
+    const { sink, localStore } = await loadStore();
+    const projectId = localStore.snapshot().projects[0]!._id;
+    const itemId = localStore.addWorkItem({ title: "Item" });
+
+    localStore.updateProject(projectId, { color: "#123456" });
+    localStore.snoozeWorkItem(itemId, Date.now() + 60_000);
+
+    expect(
+      sink.events.filter(
+        (event) =>
+          event.name !== "backlog_item.create" ||
+          event.backlog_item?.id === itemId,
+      ),
+    ).toMatchObject([
+      { name: "backlog_item.create", backlog_item: { id: itemId } },
+      {
+        name: "project.update",
+        project: { id: projectId, changed_fields: ["color"] },
+      },
+      { name: "backlog_item.snooze", backlog_item: { id: itemId } },
     ]);
   });
 });

@@ -355,11 +355,13 @@ function restoreLoggedTime(
 export function restoreUndo(
   state: LocalAppState,
   undo: LocalStateUndo,
-): {
-  state: LocalAppState;
-  result: LocalStateUndoResult;
-  staleReason?: LocalStateUndoStaleReason;
-} {
+):
+  | { state: LocalAppState; result: "restored" }
+  | {
+      state: LocalAppState;
+      result: "stale";
+      staleReason: LocalStateUndoStaleReason;
+    } {
   const changedTimeEntries = undo.timesheetEntries.length > 0;
   const strictCollections = UNDO_COLLECTIONS.filter(
     (collection) => !(changedTimeEntries && collection === "workItems"),

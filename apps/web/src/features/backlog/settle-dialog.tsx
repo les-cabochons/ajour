@@ -25,7 +25,6 @@ import {
 import { commentSourceOf } from "@/domain/backlog/comments";
 import { NO_PRIORITY_NAME, PRIORITY_LEVELS } from "@/domain/backlog/priority";
 import type { LocalWorkItem } from "@/domain/local-state";
-import { runStoreCommand } from "@/lib/store-command-events";
 import { findSettleRule } from "@/domain/backlog/settle-rules";
 import {
   canWriteSettle,
@@ -45,7 +44,7 @@ import {
   getCachedPluginsOverview,
   listBacklogSettleStates,
 } from "@/lib/app-api";
-import { localStore } from "@/lib/local-store";
+import { localStore, runStoreCommandWith } from "@/lib/local-store";
 import { queueSettleComment } from "@/lib/settle-comments";
 import { useLocalState } from "@/lib/local-hooks";
 
@@ -132,37 +131,26 @@ export async function settleBacklogItemWithUndo(
 
   // The settle's event takes what only this workflow knows: what chose the
   // change, and the comment's length, never its text.
-  return runStoreCommand("backlog_item.settle", (unit) => {
-    unit.set({ backlog_item: { behavior } });
-    const settled = settleAndOfferUndo(
-      workItem,
-      includeSubitems,
-      change,
-      comment,
-    );
-    if (settled) {
-      const body = comment?.trim();
+  const token = runStoreCommandWith(
+    "settleWorkItem",
+    [workItem._id, change, { includeSubitems }],
+    (unit, token) => {
+      unit.set({ backlog_item: { behavior } });
+      if (!token) return;
+      const { commentQueued } = afterSettle(workItem, token, comment);
       unit.set({
         comment: {
-          queued: settled.commentQueued,
-          body_length: settled.commentQueued ? body?.length : undefined,
+          queued: commentQueued,
+          body_length: commentQueued ? comment?.trim().length : undefined,
         },
       });
-    }
-    return settled !== false;
-  });
+    },
+  );
+  return token !== null;
 }
 
-function settleAndOfferUndo(
-  workItem: LocalWorkItem,
-  includeSubitems: boolean,
-  change?: BacklogSettleChange,
-  comment?: string,
-) {
-  const token = localStore.settleWorkItem(workItem._id, change, {
-    includeSubitems,
-  });
-  if (!token) return false;
+/** Queues the settle's comment, and offers its Undo. */
+function afterSettle(workItem: LocalWorkItem, token: string, comment?: string) {
   const settled = localStore
     .snapshot()
     .workItems.find((candidate) => candidate._id === workItem._id);
