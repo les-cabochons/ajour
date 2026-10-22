@@ -148,7 +148,8 @@ async function dispatchJsonRequest(
           value,
         ]),
       ),
-      async *[Symbol.asyncIterator]() {
+      // The body, as `request.iterator()` reads it.
+      async *iterator() {
         options.bodyGate?.reached();
         await options.bodyGate?.release;
         yield* requestBody;

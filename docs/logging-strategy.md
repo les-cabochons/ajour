@@ -310,14 +310,19 @@ The local API emits these (#305, #306):
   stream, such as `ECONNRESET`. An outcome the route had recorded, such as a
   plugin's timeout, stands. So does any other error, even after the client
   left, whatever its code: it is recorded as the failure it is. A request
-  the API cut off as it stopped ends `cancelled` with `stopping`. A route
+  whose connection the API's stop closed ends `cancelled` with `stopping`;
+  a client that hangs up on its own while the API stops is still
+  `client_closed`. A body Node's HTTP parser can't read, which Node answers
+  with its own 400, is `refused` with `invalid_request` and the parser's
+  code, such as `HPE_INVALID_CHUNK_SIZE`. A route
   whose response is a stream calls `stream()` on its context: the bridge's
   `mcp_bridge.connection` lasts until its client closes it, and that close
   is its normal end.
 - **A body over the limit** (16 MB) is answered with a 400 as soon as it
   crosses it, with `Connection: close`: Ajour stops reading it, and the
-  connection closes once the answer is out. The request is refused with
-  `invalid_request`.
+  connection closes within a second of the limit being crossed, whether or
+  not the answer could go out. The request is refused with
+  `invalid_request`, and its error has the code `body_too_large`.
 - **Validation messages stay out.** An error a validator throws lists the
   values it received, whether a caller's text, a plugin's result or a
   spreadsheet's headings. `withoutContent` gives every event such an error

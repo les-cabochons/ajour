@@ -5,6 +5,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import { randomUUID } from "node:crypto";
+import type { Socket } from "node:net";
 import { existsSync, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -211,6 +212,10 @@ interface AppApiServerOptions {
 
 interface AppApiRuntime {
   events: ApiEvents;
+  /** The connections open now. */
+  openSockets: Set<Socket>;
+  /** The connections a stop closed, so their requests say `stopping`. */
+  cutOffSockets: WeakSet<Socket>;
   port: number;
   /** Stops recording the process's crashes, when the API was asked to. */
   stopWatchingCrashes?: () => void;
@@ -400,12 +405,8 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   let totalBytes = 0;
   // Leaving the loop early must not destroy the request: a body over the
   // limit still gets its answer, before the connection closes.
-  const stream =
-    typeof request.iterator === "function"
-      ? request.iterator({ destroyOnReturn: false })
-      : request;
   try {
-    for await (const chunk of stream) {
+    for await (const chunk of request.iterator({ destroyOnReturn: false })) {
       const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       totalBytes += buffer.byteLength;
       if (totalBytes > MAX_JSON_BODY_BYTES) {
@@ -446,6 +447,7 @@ class BodyTooLargeError extends Error {
 
   constructor() {
     super(`JSON request body exceeds ${MAX_JSON_BODY_BYTES} bytes.`);
+    this.name = "BodyTooLargeError";
   }
 }
 
@@ -466,14 +468,22 @@ function writeInvalidRequest(
   request.pause();
   const socket = request.socket;
   if (socket) {
+    // The connection closes within the grace period of the limit being
+    // crossed, whether or not the answer could go out: it may wait behind
+    // another response on the same connection, such as the bridge stream.
+    const deadline = setTimeout(
+      () => socket.destroy(),
+      BODY_TOO_LARGE_GRACE_MS,
+    );
+    deadline.unref();
+    socket.once("close", () => clearTimeout(deadline));
     // Node closes a `Connection: close` socket as soon as the answer is
     // out. With the client's bytes still arriving, that close would reset
     // the connection and could drop the answer, so it ends the connection
-    // instead, drops what still arrives, and closes after a grace period.
+    // instead and drops what still arrives until the deadline.
     socket.destroySoon = () => {
       socket.end();
       request.resume();
-      setTimeout(() => socket.destroy(), BODY_TOO_LARGE_GRACE_MS).unref();
     };
   }
   writeJson(
@@ -995,6 +1005,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   });
   const runtime: AppApiRuntime = {
     events,
+    openSockets: new Set(),
+    cutOffSockets: new WeakSet(),
     port,
     storage,
     pluginManager,
@@ -2558,6 +2570,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   const server = createServer((request, response) => {
     void serveRequest(request, response);
   });
+  server.on("connection", (socket: Socket) => {
+    runtime.openSockets.add(socket);
+    socket.once("close", () => runtime.openSockets.delete(socket));
+  });
 
   /**
    * Serves one request inside its event. The host check comes first, then
@@ -2584,7 +2600,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       {
         trigger: fromAgent ? "agent" : "system",
         origin,
-        stopping: () => runtime.stopping,
+        cutOff: () => runtime.cutOffSockets.has(request.socket),
       },
       async (unit, exchange): Promise<Settlement | void> => {
         if (runtime.stopping) {
@@ -2882,6 +2898,11 @@ export async function stopAppApiServer(server: Server): Promise<void> {
     ]);
     unit?.set({ api: { plugins_ms: Date.now() - phaseStartedAt } });
     phaseStartedAt = Date.now();
+    // The connections still open are cut off by the stop, not by their
+    // clients: their requests end `cancelled` with `stopping`.
+    for (const socket of runtime?.openSockets ?? []) {
+      runtime?.cutOffSockets.add(socket);
+    }
     server.closeAllConnections();
     await closePromise;
     unit?.set({ api: { close_ms: Date.now() - phaseStartedAt } });

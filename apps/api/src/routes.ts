@@ -421,12 +421,46 @@ function countResponseBytes(response: ServerResponse): () => number {
  * Resolves once the response has flushed, or its connection closed: `end()`
  * only starts the flush.
  */
-function responseDone(response: ServerResponse): Promise<void> {
-  if (response.writableFinished || response.destroyed) return Promise.resolve();
+function responseDone(
+  request: IncomingMessage,
+  response: ServerResponse,
+): Promise<void> {
+  const socket = request.socket as IncomingMessage["socket"] | undefined;
+  if (response.writableFinished || response.destroyed || socket?.destroyed) {
+    return Promise.resolve();
+  }
   return new Promise((resolve) => {
-    response.once("finish", () => resolve());
-    response.once("close", () => resolve());
+    const done = () => {
+      response.off("finish", done);
+      response.off("close", done);
+      socket?.off("close", done);
+      resolve();
+    };
+    response.once("finish", done);
+    response.once("close", done);
+    // A connection Node closed itself, such as on a body it couldn't parse,
+    // may never close a response it hadn't started.
+    socket?.once("close", done);
   });
+}
+
+/**
+ * The error Node's HTTP parser closed the request's connection with, as an
+ * event holds it: its code, such as `HPE_INVALID_CHUNK_SIZE`, and no
+ * message. Undefined when the parser didn't.
+ */
+function parserError(request: IncomingMessage): Error | undefined {
+  const code = (request.socket?.errored as { code?: unknown } | null)?.code;
+  // A connection that ends mid-body is the client leaving, not a body the
+  // parser refused.
+  if (
+    typeof code !== "string" ||
+    !code.startsWith("HPE_") ||
+    code === "HPE_INVALID_EOF_STATE"
+  ) {
+    return undefined;
+  }
+  return Object.assign(new Error(""), { code });
 }
 
 /** What the seam lends the code that serves a request. */
@@ -469,8 +503,8 @@ export async function serveWithEvent(
   options: {
     trigger: "system" | "agent";
     origin: "app" | "none" | "refused";
-    /** Whether the API is stopping, which cuts off requests in progress. */
-    stopping?: () => boolean;
+    /** Whether the API's stop closed this request's connection. */
+    cutOff?: () => boolean;
   },
   serve: (
     unit: Unit<AjourCatalog, "api.request">,
@@ -491,7 +525,7 @@ export async function serveWithEvent(
   let settlement: Settlement | void = undefined;
   let streaming = false;
   // The connection closed before the response finished: the client hung up,
-  // or the API, stopping, cut it off.
+  // the API's stop cut it off, or Node refused a body it couldn't parse.
   let hungUp = false;
   const noteClose = () => {
     if (!response.writableFinished) hungUp = true;
@@ -510,7 +544,7 @@ export async function serveWithEvent(
   } catch (error) {
     if (!exchange.isHangUp(error)) unit.fail(withoutContent(error));
   }
-  await responseDone(response);
+  await responseDone(request, response);
   const received = requestBytes();
   const delivered = response.writableFinished || streaming;
   const status = response.statusCode;
@@ -532,10 +566,17 @@ export async function serveWithEvent(
     );
   } else if (unit.outcome === undefined) {
     if (!delivered) {
-      unit.end(
-        "cancelled",
-        options.stopping?.() ? "stopping" : "client_closed",
-      );
+      const parseError = parserError(request);
+      if (parseError) {
+        // Node answered a body it couldn't parse with its own 400, and
+        // closed the connection: the server refused it.
+        unit.fail(parseError).end("refused", "invalid_request");
+      } else {
+        unit.end(
+          "cancelled",
+          options.cutOff?.() ? "stopping" : "client_closed",
+        );
+      }
     } else if (status >= 500) unit.end("error");
     else if (status >= 400) unit.end("refused");
   }

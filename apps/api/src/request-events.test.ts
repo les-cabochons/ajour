@@ -2,13 +2,14 @@ import os from "node:os";
 import path from "node:path";
 import { EventEmitter } from "node:events";
 import { request as httpRequest } from "node:http";
-import { connect, type AddressInfo } from "node:net";
+import { connect, type AddressInfo, type Socket } from "node:net";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import { startAppApiServer, stopAppApiServer } from "./server.ts";
+import { AgentRunner } from "./agent-runner/runner.ts";
 import { AppApiStorage } from "./storage.ts";
 
 const APP_ORIGIN = "http://127.0.0.1:5173";
@@ -315,7 +316,7 @@ function dispatch(server: Server, url: string) {
         method: "GET",
         url,
         headers: { host: "127.0.0.1" },
-        async *[Symbol.asyncIterator]() {},
+        async *iterator() {},
       } as unknown as IncomingMessage,
       response as unknown as ServerResponse,
     );
@@ -785,7 +786,7 @@ describe("request events: boundary and reasons", () => {
         method: "GET",
         url: "/api/health",
         headers: { host: "127.0.0.1" },
-        async *[Symbol.asyncIterator]() {},
+        async *iterator() {},
       } as unknown as IncomingMessage,
       response as unknown as ServerResponse,
     );
@@ -1266,5 +1267,168 @@ describe("request events: limits, sources and shutdown", () => {
     });
     expect(event.error).toBeUndefined();
     socket.destroy();
+  });
+});
+
+describe("request events: what closes a connection", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** Waits until a request event named `name` exists, for slow handlers. */
+  async function eventually(events: AjourEvent[], name: string) {
+    for (let attempt = 0; attempt < 300; attempt += 1) {
+      const found = events.find(
+        (event) => event.kind === "request" && event.name === name,
+      );
+      if (found) return found;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`No ${name} request event.`);
+  }
+
+  /** Opens a raw connection that ignores what the server sends. */
+  async function rawSocket(port: number) {
+    const socket = connect(port, "127.0.0.1");
+    await new Promise<void>((resolve) => socket.once("connect", resolve));
+    socket.on("error", () => undefined);
+    return socket;
+  }
+
+  const oversizedHead = [
+    "POST /api/mcp/settings HTTP/1.1",
+    "Host: 127.0.0.1",
+    `Origin: ${APP_ORIGIN}`,
+    "Content-Type: application/json",
+    "Transfer-Encoding: chunked",
+    "",
+    "",
+  ].join("\r\n");
+
+  /** Sends 1 MB chunks until the socket closes. Resolves with when it closed. */
+  function sendForever(socket: Socket) {
+    const megabyte = "a".repeat(1024 * 1024);
+    const closed = new Promise<number>((resolve) =>
+      socket.once("close", () => resolve(Date.now())),
+    );
+    const sending = setInterval(() => {
+      if (!socket.destroyed) {
+        socket.write(`${(1024 * 1024).toString(16)}\r\n${megabyte}\r\n`);
+      }
+    }, 5);
+    void closed.then(() => clearInterval(sending));
+    return closed;
+  }
+
+  it("closes the connection of a client that never reads, about a second after the limit", async () => {
+    const { port, events } = await startTestApi();
+    const socket = await rawSocket(port);
+    socket.pause();
+    socket.write(oversizedHead);
+    const startedAt = Date.now();
+
+    const closedAt = await sendForever(socket);
+
+    // 16 MB at 1 MB every 5 ms, then the one-second grace period.
+    expect(closedAt - startedAt).toBeLessThan(1_800);
+    expect(await eventually(events, "mcp.configure")).toMatchObject({
+      outcome: "refused",
+      outcome_reason: "invalid_request",
+      error: { type: "BodyTooLargeError", code: "body_too_large" },
+    });
+  });
+
+  it("closes the connection of a body over the limit queued behind a stream", async () => {
+    const { port } = await startTestApi();
+    await call(port, "/api/mcp/settings", { enabled: true });
+    const socket = await rawSocket(port);
+    // The bridge's answer never ends, so the 400 behind it can't go out.
+    socket.write(
+      [
+        "GET /api/mcp/bridge HTTP/1.1",
+        "Host: 127.0.0.1",
+        `Origin: ${APP_ORIGIN}`,
+        "",
+        "",
+      ].join("\r\n") + oversizedHead,
+    );
+    const startedAt = Date.now();
+
+    const closedAt = await sendForever(socket);
+
+    expect(closedAt - startedAt).toBeLessThan(1_800);
+  });
+
+  it("records a client that hangs up while the API stops as the client leaving", async () => {
+    const { server, port, events, markStopped } = await startTestApi();
+    markStopped();
+    // The agent runner's shutdown takes a while: the graceful phase, before
+    // the API closes the connections still open.
+    const shutdown = AgentRunner.prototype.shutdown;
+    vi.spyOn(AgentRunner.prototype, "shutdown").mockImplementation(
+      async function (this: AgentRunner) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        return shutdown.call(this);
+      },
+    );
+    const socket = await rawSocket(port);
+    socket.write(
+      [
+        "POST /api/mcp/settings HTTP/1.1",
+        "Host: 127.0.0.1",
+        `Origin: ${APP_ORIGIN}`,
+        "Content-Type: application/json",
+        "Content-Length: 100",
+        "",
+        '{"enab',
+      ].join("\r\n"),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const stopping = stopAppApiServer(server);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    socket.destroy();
+    await stopping;
+
+    expect(await eventually(events, "mcp.configure")).toMatchObject({
+      outcome: "cancelled",
+      outcome_reason: "client_closed",
+    });
+  });
+
+  it("records a chunked body Node can't parse as refused, not as the client leaving", async () => {
+    const { port, events } = await startTestApi();
+    const socket = await rawSocket(port);
+    let answer = "";
+    socket.on("data", (chunk: Buffer) => {
+      answer += chunk.toString("utf8");
+    });
+    const closed = new Promise<void>((resolve) =>
+      socket.once("close", resolve),
+    );
+
+    socket.write(
+      [
+        "POST /api/mcp/settings HTTP/1.1",
+        "Host: 127.0.0.1",
+        `Origin: ${APP_ORIGIN}`,
+        "Content-Type: application/json",
+        "Transfer-Encoding: chunked",
+        "",
+        "5",
+        '{"ena',
+        "not-a-chunk-size",
+        "",
+      ].join("\r\n"),
+    );
+    await closed;
+
+    expect(answer).toMatch(/^HTTP\/1\.1 400 Bad Request/);
+    const event = await eventually(events, "mcp.configure");
+    expect(event).toMatchObject({
+      outcome: "refused",
+      outcome_reason: "invalid_request",
+      error: { type: "Error", code: expect.stringMatching(/^HPE_/) },
+    });
   });
 });

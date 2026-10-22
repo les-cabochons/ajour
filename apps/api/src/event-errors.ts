@@ -16,6 +16,12 @@ function codeOf(error: unknown) {
   return typeof code === "string" ? code : undefined;
 }
 
+/** The codes an `InvalidRequestError`'s cause keeps in an event: they hold no content. */
+const REQUEST_CODES: ReadonlySet<string> = new Set([
+  "invalid_json",
+  "body_too_large",
+]);
+
 /** An error with a type and a code, and no message. */
 function standIn(type: string, code: string): Error {
   const error = Object.assign(new Error(""), { code });
@@ -85,11 +91,10 @@ export function readInput<Value>(read: () => Value): Value {
 /** An error as an event may hold it. */
 export function withoutContent(error: unknown): unknown {
   if (error instanceof InvalidRequestError) {
+    const code = codeOf(error.cause);
     return standIn(
       typeOf(error.cause),
-      codeOf(error.cause) === "invalid_json"
-        ? "invalid_json"
-        : "invalid_request",
+      code !== undefined && REQUEST_CODES.has(code) ? code : "invalid_request",
     );
   }
   if (error instanceof InvalidPluginResultError) {
