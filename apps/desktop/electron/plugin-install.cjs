@@ -91,18 +91,45 @@ const INVALID_ARCHIVE = [
   / (must be a regular file|must not traverse symbolic links|must be relative|leaves its plugin directory|is over 64 KB|which Ajour does not fill)\.$/u,
 ];
 
+/** The manifest the installer reads from the extracted archive. */
+const MANIFEST_FILE = "plugin.json";
+
+/** The last segment of a file path, on Windows or POSIX. */
+function baseName(filePath) {
+  return typeof filePath === "string"
+    ? (filePath.split(/[\\/]/u).pop() ?? "")
+    : "";
+}
+
 /**
  * A failed install's result for its `plugin.install` event, from the step it
  * failed at (`select`, `download` or `install`) and the error's structure:
- * the code desktop's own errors carry, a Node system error's code, or the
- * type of the local API's validation error.
+ * the code desktop's own errors carry, tar's codes, a Node system error's
+ * code and path, or the type of the local API's validation error.
  */
 function pluginInstallResultOf(error, step) {
   const code = typeof error?.code === "string" ? error.code : "";
-  if (SYSTEM_ERROR_CODE.test(code)) return "failed";
   if (code === "invalid_archive" || code === "not_available") return code;
+  if (step === "install") {
+    // tar refuses what is not a gzipped tar, with its own codes.
+    if (code.startsWith("TAR_")) return "invalid_archive";
+    // The extracted archive holds no manifest.
+    if (
+      SYSTEM_ERROR_CODE.test(code) &&
+      baseName(error?.path) === MANIFEST_FILE
+    ) {
+      return "invalid_archive";
+    }
+  }
+  if (SYSTEM_ERROR_CODE.test(code)) return "failed";
   if (step !== "install") return "failed";
-  if (error?.name === "ZodError" || error?.name === "IncompatiblePluginError") {
+  // The manifest is the one file the installer parses as JSON, and zod checks
+  // what it holds.
+  if (
+    error?.name === "SyntaxError" ||
+    error?.name === "ZodError" ||
+    error?.name === "IncompatiblePluginError"
+  ) {
     return "invalid_archive";
   }
   const message = typeof error?.message === "string" ? error.message : "";

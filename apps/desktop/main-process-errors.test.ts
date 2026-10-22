@@ -91,6 +91,10 @@ describe("quitting and installing an update", () => {
       exit: vi.fn(),
     };
     const { events, recorded, attach } = recordingEvents({ loaded });
+    const automaticUpdateController = {
+      dispose: vi.fn(),
+      installerQuitting: vi.fn(),
+    };
     const context = vm.createContext({
       app,
       events,
@@ -104,7 +108,7 @@ describe("quitting and installing an update", () => {
       clearTimeout,
       gracefulQuitStarted: false,
       pluginCatalogRefreshTimer: null,
-      automaticUpdateController: { dispose: vi.fn() },
+      automaticUpdateController,
       stopInternalAppApi,
       stopWithin,
     });
@@ -122,11 +126,14 @@ describe("quitting and installing an update", () => {
       "async function prepareToInstallUpdate(",
       "function cancelUpdateInstallPreparation(",
       'app.on("before-quit"',
+      'app.on("will-quit"',
     );
     return {
       app,
       recorded,
       attach,
+      automaticUpdateController,
+      emit: (name: string) => handlers.get(name)?.({ preventDefault: vi.fn() }),
       quit() {
         const event = { preventDefault: vi.fn() };
         handlers.get("before-quit")?.(event);
@@ -341,6 +348,17 @@ describe("quitting and installing an update", () => {
   });
 
   // The installer's quit skips before-quit's wait, so preparation waits.
+  // The install's event stays open until the app quits for the installer.
+  it("tells the update controller when the app quits", () => {
+    const runtime = quitRuntime(async () => {});
+
+    runtime.emit("will-quit");
+
+    expect(
+      runtime.automaticUpdateController.installerQuitting,
+    ).toHaveBeenCalledOnce();
+  });
+
   it("waits for the events package before an update installs", async () => {
     const runtime = quitRuntime(async () => {}, { loaded: false });
     const prepared = vi.fn();

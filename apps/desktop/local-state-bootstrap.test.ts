@@ -143,25 +143,55 @@ describe("what a bootstrap read reports", () => {
     expect(report.record_counts).toEqual({ projects: 0 });
   });
 
-  it("knows every collection of the persisted local state", async () => {
-    const { RECORD_COLLECTIONS } =
-      require("./electron/local-state-bootstrap.cjs") as {
-        RECORD_COLLECTIONS: readonly string[];
-      };
-    const { readFile } = await import("node:fs/promises");
-    const source = await readFile(
-      new URL("../web/src/domain/local-state.ts", import.meta.url),
-      "utf8",
-    );
-    const body = source.slice(
-      source.indexOf("export interface LocalAppState {"),
-    );
-    const state = body.slice(0, body.indexOf("\n}\n"));
-    const collections = [...state.matchAll(/^ {2}(\w+)\??: \w+\[\];$/gmu)].map(
-      ([, name]) => name,
-    );
+  it.each([
+    ["LF", "\n"],
+    ["CRLF", "\r\n"],
+  ])(
+    "knows every collection of the persisted local state, read with %s line endings",
+    async (_name, newline) => {
+      const { RECORD_COLLECTIONS } =
+        require("./electron/local-state-bootstrap.cjs") as {
+          RECORD_COLLECTIONS: readonly string[];
+        };
+      const { readFile } = await import("node:fs/promises");
+      const source = (
+        await readFile(
+          new URL("../web/src/domain/local-state.ts", import.meta.url),
+          "utf8",
+        )
+      ).replace(/\r?\n/gu, newline);
 
-    expect(collections.length).toBeGreaterThan(15);
-    expect([...RECORD_COLLECTIONS].sort()).toEqual(collections.sort());
+      expect([...RECORD_COLLECTIONS].sort()).toEqual(
+        persistedCollections(source).sort(),
+      );
+    },
+  );
+
+  it("refuses a source whose LocalAppState it cannot find the end of", () => {
+    expect(() =>
+      persistedCollections(
+        "export interface LocalAppState {\n  projects: X[];",
+      ),
+    ).toThrow("LocalAppState");
   });
 });
+
+/**
+ * The array fields of `LocalAppState` in local-state.ts. Throws when the
+ * interface or its end cannot be found, rather than read on past it.
+ */
+function persistedCollections(source: string) {
+  const text = source.replace(/\r\n/gu, "\n");
+  const start = text.indexOf("export interface LocalAppState {");
+  const end = start < 0 ? -1 : text.indexOf("\n}\n", start);
+  if (end < 0) {
+    throw new Error("LocalAppState has no end in local-state.ts.");
+  }
+  const collections = [
+    ...text.slice(start, end).matchAll(/^ {2}(\w+)\??: \w+\[\];$/gmu),
+  ].map(([, name]) => name!);
+  if (collections.length < 15) {
+    throw new Error("LocalAppState lists fewer collections than expected.");
+  }
+  return collections;
+}

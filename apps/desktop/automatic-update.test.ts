@@ -22,6 +22,7 @@ const { createAutomaticUpdateController, isCandidateCoreAtLeastCurrent } =
       ) => Promise<unknown>;
       getState: () => { status: string };
       dispose: () => void;
+      installerQuitting: () => void;
     };
     isCandidateCoreAtLeastCurrent: (
       current: string,
@@ -99,6 +100,8 @@ function createController(overrides: Record<string, unknown> = {}) {
     resetInstallPreparation,
     checkForUpdates,
     events,
+    // Most tests do not wait for the app to quit for the installer.
+    handoffTimeoutMs: 0,
     setTimeoutImpl: (callback: () => void) => {
       scheduled.push(callback);
       return { unref: vi.fn() };
@@ -498,12 +501,13 @@ describe("update events", () => {
     ]);
   });
 
-  // The process quits right after the handoff, so the event leaves in the
-  // same task, but only once the handoff returned.
-  it("emits the install in the task that hands over to the installer", async () => {
+  // The installer may still fail to start after the handoff, so the event
+  // stays open until the app quits for it.
+  it("ends the install when the app quits for the installer", async () => {
     const prepareToInstall = vi.fn(async () => "stopped");
     const { controller, autoUpdater, dialog, recorded } = createController({
       prepareToInstall,
+      handoffTimeoutMs: 60_000,
     });
     dialog.showMessageBox.mockResolvedValue({ response: 1 });
     autoUpdater.downloadUpdate.mockImplementation(async () => {
@@ -513,20 +517,21 @@ describe("update events", () => {
       });
       return ["update.exe"];
     });
-    const emitted = { atHandoff: true, sameTask: false };
+    const emitted = { atHandoff: true, beforeQuit: true };
     const hasInstall = () =>
       recorded.some((event) => event.name === "update.install");
     autoUpdater.quitAndInstall.mockImplementation(() => {
       emitted.atHandoff = hasInstall();
-      queueMicrotask(() => {
-        emitted.sameTask = hasInstall();
-      });
+      setTimeout(() => {
+        emitted.beforeQuit = hasInstall();
+        controller.installerQuitting();
+      }, 5);
     });
     await controller.configure("stable");
 
     await controller.updateAndRestart("stable", "1.0.1");
 
-    expect(emitted).toEqual({ atHandoff: false, sameTask: true });
+    expect(emitted).toEqual({ atHandoff: false, beforeQuit: false });
     expect(recorded.at(-1)).toMatchObject({
       name: "update.install",
       outcome: "ok",
@@ -601,9 +606,51 @@ describe("update events", () => {
     expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
   });
 
-  it("adds no second install event for an error after the handoff", async () => {
-    const { controller, autoUpdater, dialog, recorded } = createController();
+  // electron-updater's NSIS installer reports a spawn that failed later,
+  // from a promise's catch.
+  it("records an installer that fails to start after the handoff on the install's one event", async () => {
+    const { controller, autoUpdater, dialog, recorded } = createController({
+      handoffTimeoutMs: 60_000,
+    });
     dialog.showMessageBox.mockResolvedValue({ response: 1 });
+    autoUpdater.quitAndInstall.mockImplementation(() => {
+      setTimeout(() => autoUpdater.emit("error", new Error("spawn ENOENT")), 5);
+    });
+    await controller.configure("stable");
+
+    await controller.updateAndRestart("stable", "1.0.1");
+
+    expect(installs(recorded)).toMatchObject([
+      {
+        outcome: "error",
+        error: { message: "spawn ENOENT" },
+        update: { stopped_at: "install" },
+      },
+    ]);
+  });
+
+  it("ends the install within the quit's time when the app never quits", async () => {
+    const { controller, dialog, recorded } = createController({
+      handoffTimeoutMs: 20,
+    });
+    dialog.showMessageBox.mockResolvedValue({ response: 1 });
+    await controller.configure("stable");
+
+    await controller.updateAndRestart("stable", "1.0.1");
+
+    expect(installs(recorded)).toMatchObject([
+      { outcome: "ok", update: { stopped_at: "install" } },
+    ]);
+  });
+
+  it("adds no second install event for an error once the app quit for the installer", async () => {
+    const { controller, autoUpdater, dialog, recorded } = createController({
+      handoffTimeoutMs: 60_000,
+    });
+    dialog.showMessageBox.mockResolvedValue({ response: 1 });
+    autoUpdater.quitAndInstall.mockImplementation(() => {
+      setTimeout(() => controller.installerQuitting(), 1);
+    });
     await controller.configure("stable");
     await controller.updateAndRestart("stable", "1.0.1");
 

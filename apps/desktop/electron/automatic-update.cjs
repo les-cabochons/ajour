@@ -1,6 +1,8 @@
 const { apiStopOf, triggerOf } = require("./main-events.cjs");
 
 const DEFAULT_UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60_000;
+/** The quit's own bound: the installer quits Ajour well within it. */
+const INSTALLER_HANDOFF_TIMEOUT_MS = 10_000;
 
 function assertUpdateTrack(track) {
   if (track !== "stable" && track !== "nightly") {
@@ -62,6 +64,8 @@ function createAutomaticUpdateController({
   events,
   now = Date.now,
   checkIntervalMs = DEFAULT_UPDATE_CHECK_INTERVAL_MS,
+  /** How long an install's event waits, after the handoff, for the app to quit. */
+  handoffTimeoutMs = INSTALLER_HANDOFF_TIMEOUT_MS,
   setTimeoutImpl = setTimeout,
   clearTimeoutImpl = clearTimeout,
 }) {
@@ -80,6 +84,8 @@ function createAutomaticUpdateController({
    * start from inside quitAndInstall.
    */
   let activeInstall = null;
+  /** Ends the wait after the handoff: the app quits, or the installer failed. */
+  let settleHandoff = null;
   /** The total size of the update being downloaded, from its progress. */
   let downloadBytes;
   let state = {
@@ -347,6 +353,7 @@ function createAutomaticUpdateController({
     const active = {
       fail(error) {
         install.unit.set({ update: { stopped_at: step } }).fail(error);
+        settleHandoff?.();
       },
     };
     activeInstall = active;
@@ -433,6 +440,19 @@ function createAutomaticUpdateController({
         step = "install";
         install.unit.set({ update: { stopped_at: "install" } });
         autoUpdater.quitAndInstall(false, true);
+        // electron-updater reports an installer that fails to start later,
+        // so the event waits for the app to quit for it, within the quit's
+        // time, and an updater error meanwhile lands on it.
+        await new Promise((resolve) => {
+          const timer = setTimeout(resolve, handoffTimeoutMs);
+          timer.unref?.();
+          settleHandoff = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+          if (install.unit.outcome === "error") settleHandoff();
+        });
+        settleHandoff = null;
         install.unit.end();
       })
       .catch((error) => {
@@ -468,9 +488,15 @@ function createAutomaticUpdateController({
     autoUpdater.isUpdateSupported = defaultIsUpdateSupported;
   }
 
+  /** The app is quitting for the installer: the install's event ends. */
+  function installerQuitting() {
+    settleHandoff?.();
+  }
+
   return {
     checkNow,
     configure,
+    installerQuitting,
     updateAndRestart,
     getState: () => state,
     dispose,

@@ -44,8 +44,6 @@ const RECORD_COLLECTIONS = Object.freeze([
   "workflowStateMappings",
   "workflowStateWriteRules",
   "settleRules",
-  "blocks",
-  "browserDrafts",
 ]);
 
 /**

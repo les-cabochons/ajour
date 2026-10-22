@@ -181,3 +181,78 @@ describe("an install's result as its event records it", () => {
     expect(pluginInstallResultOf(error, step)).toBe(result);
   });
 });
+
+// Bad archives as the local API's real installer refuses them.
+describe("the installer's refusals", () => {
+  const { pluginInstallResultOf } =
+    require("./electron/plugin-install.cjs") as {
+      pluginInstallResultOf: (error: unknown, step: string) => string;
+    };
+
+  async function refusal(build: (directory: string) => Promise<Buffer>) {
+    const { mkdtemp, rm } = await import("node:fs/promises");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const { installPluginArchive } =
+      await import("../api/src/plugin-package.ts");
+    const directory = await mkdtemp(path.join(os.tmpdir(), "ajour-archive-"));
+    try {
+      const archiveBytes = await build(directory);
+      return await installPluginArchive({
+        archiveBytes,
+        archiveFilename: "broken.ajour-connector",
+        installRoot: path.join(directory, "installed"),
+      }).then(
+        () => {
+          throw new Error("The archive installed.");
+        },
+        (error: unknown) => error,
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+
+  async function tarGz(directory: string, files: Record<string, string>) {
+    const { mkdir, readFile, writeFile } = await import("node:fs/promises");
+    const path = await import("node:path");
+    const { create } = await import("tar");
+    const source = path.join(directory, "source");
+    await mkdir(source, { recursive: true });
+    for (const [name, contents] of Object.entries(files)) {
+      await writeFile(path.join(source, name), contents);
+    }
+    const file = path.join(directory, "plugin.tgz");
+    await create({ gzip: true, cwd: source, file }, Object.keys(files));
+    return await readFile(file);
+  }
+
+  it.each([
+    ["a file that is not gzip", async () => Buffer.from("not an archive")],
+    [
+      "gzip that holds no tar",
+      async () => (await import("node:zlib")).gzipSync("not a tar"),
+    ],
+    [
+      "an archive without plugin.json",
+      (directory: string) => tarGz(directory, { "index.js": "export {};" }),
+    ],
+    [
+      "a plugin.json that is not JSON",
+      (directory: string) => tarGz(directory, { "plugin.json": "{ nope" }),
+    ],
+  ])("records %s as an invalid archive", async (_case, build) => {
+    const error = await refusal(build);
+
+    expect(pluginInstallResultOf(error, "install")).toBe("invalid_archive");
+  });
+
+  it("keeps a system error outside the archive a failure", () => {
+    const error = Object.assign(new Error("ENOSPC: no space left on device"), {
+      code: "ENOSPC",
+      path: "C:/plugins/.install-1/plugin.ajour-connector",
+    });
+
+    expect(pluginInstallResultOf(error, "install")).toBe("failed");
+  });
+});

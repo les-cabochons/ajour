@@ -1558,6 +1558,11 @@ if (!hasSingleInstanceLock) {
     });
   });
 
+  // An update install's event waits for the app to quit for the installer.
+  app.on("will-quit", () => {
+    automaticUpdateController.installerQuitting();
+  });
+
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") {
       if (quitTrigger === "other") quitTrigger = "all_windows_closed";
