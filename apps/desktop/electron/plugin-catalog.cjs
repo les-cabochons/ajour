@@ -474,12 +474,18 @@ async function loadCache(cacheFile) {
   }
 }
 
+/** A plugin the catalog cannot offer this Ajour, which plugin.install records as `not_available`. */
+function notAvailable(message) {
+  return Object.assign(new Error(message), { code: "not_available" });
+}
+
 function createPluginCatalogService(options) {
   const fetchImpl = options.fetchImpl;
   const cacheDirectory = path.resolve(options.cacheDirectory);
   const cacheFile = path.join(cacheDirectory, "catalog-cache.json");
   const imageDirectory = path.join(cacheDirectory, "images");
   const now = options.now ?? (() => new Date());
+  /** @type {Record<string, any>} */
   let currentCatalog = {
     entries: BUILT_IN_PLUGIN_CATALOG_ENTRIES,
     checkedAt: now().toISOString(),
@@ -487,29 +493,40 @@ function createPluginCatalogService(options) {
     warning:
       "Showing the built-in plugin catalog until the Ajour plugin index can be refreshed.",
   };
+  /** Whether the current catalog is still the built-in snapshot. */
+  let builtIn = true;
 
-  async function fetchText(url, cache, warnings) {
+  /**
+   * Fetches the index (`counter` absent) or an entry's definition, and counts
+   * what happened to the request in `stats`.
+   */
+  async function fetchText(url, cache, warnings, stats, counter) {
     const previous = cache.resources[url];
     try {
-      const response = await fetchWithTimeout(fetchImpl, url, {
-        headers: conditionalHeaders(previous),
-      });
+      const headers = conditionalHeaders(previous);
+      if (!counter) stats.revalidated = Object.keys(headers).length > 0;
+      const response = await fetchWithTimeout(fetchImpl, url, { headers });
+      if (!counter) stats.status = response.status;
       if (response.status === 304 && typeof previous?.body === "string") {
+        if (counter) stats[`${counter}_revalidated`] += 1;
         return previous.body;
       }
       if (!response.ok) {
         throw new Error(`Request returned HTTP ${response.status}.`);
       }
-      const body = (
-        await readBoundedResponse(response, MAX_CATALOG_BYTES)
-      ).toString("utf8");
+      const bytes = await readBoundedResponse(response, MAX_CATALOG_BYTES);
+      stats.bytes += bytes.byteLength;
+      const body = bytes.toString("utf8");
       cache.resources[url] = {
         body,
         etag: response.headers.get("etag") ?? undefined,
         lastModified: response.headers.get("last-modified") ?? undefined,
       };
+      if (counter) stats[`${counter}_fetched`] += 1;
       return body;
     } catch (error) {
+      if (counter) stats[`${counter}_failed`] += 1;
+      else delete stats.status;
       if (typeof previous?.body === "string") {
         warnings.push(
           `Using cached catalog metadata for ${url}: ${error.message}`,
@@ -520,7 +537,15 @@ function createPluginCatalogService(options) {
     }
   }
 
-  async function fetchImage(url, pluginId, role, imagePath, cache, warnings) {
+  async function fetchImage(
+    url,
+    pluginId,
+    role,
+    imagePath,
+    cache,
+    warnings,
+    stats,
+  ) {
     const previous = cache.resources[url];
     const extension = path.extname(imagePath).toLowerCase();
     const contentType = IMAGE_CONTENT_TYPES[extension];
@@ -533,6 +558,7 @@ function createPluginCatalogService(options) {
       });
       if (response.status === 304 && previous?.fileName === fileName) {
         bytes = await readFile(file);
+        stats.images_revalidated += 1;
       } else {
         if (!response.ok) {
           throw new Error(`Request returned HTTP ${response.status}.`);
@@ -546,6 +572,7 @@ function createPluginCatalogService(options) {
           );
         }
         bytes = await readBoundedResponse(response, MAX_IMAGE_BYTES);
+        stats.bytes += bytes.byteLength;
         await atomicWrite(file, bytes);
         cache.resources[url] = {
           fileName,
@@ -553,8 +580,10 @@ function createPluginCatalogService(options) {
           etag: response.headers.get("etag") ?? undefined,
           lastModified: response.headers.get("last-modified") ?? undefined,
         };
+        stats.images_fetched += 1;
       }
     } catch (error) {
+      stats.images_failed += 1;
       if (previous?.fileName === fileName) {
         try {
           bytes = await readFile(file);
@@ -574,12 +603,12 @@ function createPluginCatalogService(options) {
     return `data:${contentType};base64,${bytes.toString("base64")}`;
   }
 
-  async function refreshFromNetwork() {
+  async function refreshFromNetwork(stats) {
     await mkdir(imageDirectory, { recursive: true });
     const cache = await loadCache(cacheFile);
     const warnings = [];
     const skippedPluginIds = [];
-    const catalogText = await fetchText(CATALOG_URL, cache, warnings);
+    const catalogText = await fetchText(CATALOG_URL, cache, warnings, stats);
     const catalogEntries = parseCatalog(
       YAML.parse(catalogText, {
         schema: "core",
@@ -593,7 +622,13 @@ function createPluginCatalogService(options) {
         catalogEntry.path,
         CATALOG_BASE_URL,
       ).toString();
-      const definitionText = await fetchText(definitionUrl, cache, warnings);
+      const definitionText = await fetchText(
+        definitionUrl,
+        cache,
+        warnings,
+        stats,
+        "definitions",
+      );
       let normalized;
       try {
         normalized = normalizeCatalogEntry(
@@ -604,13 +639,11 @@ function createPluginCatalogService(options) {
           }),
           catalogEntry.id,
         );
-      } catch (error) {
+      } catch {
         // One entry this Ajour version cannot read, such as a newer
         // capability, must not hide the rest of the catalog. It is not a
-        // cache fallback, so it stays out of the warnings.
-        console.warn(
-          `Skipped catalog entry ${catalogEntry.id}: ${error.message}`,
-        );
+        // cache fallback, so it stays out of the warnings; the refresh's
+        // event lists it.
         skippedPluginIds.push(catalogEntry.id);
         continue;
       }
@@ -630,6 +663,7 @@ function createPluginCatalogService(options) {
             imagePath,
             cache,
             warnings,
+            stats,
           );
         } catch (error) {
           warnings.push(
@@ -658,13 +692,48 @@ function createPluginCatalogService(options) {
         ? { skippedPluginIds: skippedPluginIds.slice(0, 100) }
         : {}),
     };
+    builtIn = false;
     return currentCatalog;
   }
 
-  async function refresh() {
+  /**
+   * Refreshes the catalog. Never rejects: a refresh that fails keeps the
+   * current catalog, the cached one or the built-in snapshot. So `unit`, the
+   * refresh's `catalog.refresh` event, gets its outcome here: what came from
+   * the network, the cache and the snapshot, and the error when it failed.
+   */
+  /** @param {{ unit?: any }} [options] */
+  async function refresh({ unit } = {}) {
+    const stats = {
+      bytes: 0,
+      definitions_fetched: 0,
+      definitions_revalidated: 0,
+      definitions_failed: 0,
+      images_fetched: 0,
+      images_revalidated: 0,
+      images_failed: 0,
+    };
+    const record = () =>
+      unit?.set({
+        catalog: {
+          ...stats,
+          source: builtIn
+            ? "built_in"
+            : currentCatalog.source === "network"
+              ? "network"
+              : "cache",
+          entry_count: currentCatalog.entries.length,
+          ...(currentCatalog.skippedPluginIds
+            ? { skipped_plugin_ids: currentCatalog.skippedPluginIds }
+            : {}),
+        },
+      });
     try {
-      return await refreshFromNetwork();
+      const catalog = await refreshFromNetwork(stats);
+      record();
+      return catalog;
     } catch (error) {
+      unit?.fail(error);
       currentCatalog = {
         ...currentCatalog,
         checkedAt: now().toISOString(),
@@ -675,6 +744,7 @@ function createPluginCatalogService(options) {
             1_000,
           ),
       };
+      record();
       return currentCatalog;
     }
   }
@@ -704,7 +774,7 @@ function createPluginCatalogService(options) {
       (candidate) => candidate.id === pluginId,
     );
     if (!entry || entry.status !== "available" || !entry.install) {
-      throw new Error(`Plugin "${pluginId}" is not available for download.`);
+      throw notAvailable(`Plugin "${pluginId}" is not available for download.`);
     }
     if (
       !entry.capabilities.includes("connector") &&
@@ -713,7 +783,7 @@ function createPluginCatalogService(options) {
       !entry.capabilities.includes("team") &&
       !entry.capabilities.includes("agentTask")
     ) {
-      throw new Error(
+      throw notAvailable(
         "This Ajour version cannot install packaged schema plugins yet.",
       );
     }
@@ -760,7 +830,7 @@ function createPluginCatalogService(options) {
     }
     const selectedAsset = best?.matchingAssets[0];
     if (!selectedAsset) {
-      throw new Error(
+      throw notAvailable(
         `No compatible release asset is available for ${entry.title}.`,
       );
     }

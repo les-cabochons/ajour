@@ -265,7 +265,23 @@ function isUpdateAvailable(currentVersion, latestRelease, releases) {
   return isFallbackUpdateAvailable(currentVersion, latestRelease);
 }
 
-async function fetchGithubJson(fetchImpl, url, { allowNotFound = false } = {}) {
+/** Adds a GitHub response's status to what the check reports. */
+function reportStatus(report, response) {
+  if (report && typeof response?.status === "number") {
+    (report.github_statuses ??= []).push(response.status);
+  }
+}
+
+/**
+ * @param {any} fetchImpl
+ * @param {string} url
+ * @param {{ allowNotFound?: boolean, report?: any }} [options]
+ */
+async function fetchGithubJson(
+  fetchImpl,
+  url,
+  { allowNotFound = false, report } = {},
+) {
   let response;
   try {
     response = await fetchImpl(url, {
@@ -282,6 +298,7 @@ async function fetchGithubJson(fetchImpl, url, { allowNotFound = false } = {}) {
     throw error;
   }
 
+  reportStatus(report, response);
   if (allowNotFound && response?.status === 404) {
     return null;
   }
@@ -294,13 +311,14 @@ async function fetchGithubJson(fetchImpl, url, { allowNotFound = false } = {}) {
   return await response.json();
 }
 
-async function fetchTrackReleases(fetchImpl, track) {
+async function fetchTrackReleases(fetchImpl, track, report) {
   if (track === "stable") {
     const value = await fetchGithubJson(
       fetchImpl,
       GITHUB_LATEST_STABLE_API_URL,
       {
         allowNotFound: true,
+        report,
       },
     );
     const release = normalizeRelease(value);
@@ -308,11 +326,16 @@ async function fetchTrackReleases(fetchImpl, track) {
   }
 
   return normalizeReleases(
-    await fetchGithubJson(fetchImpl, GITHUB_RELEASES_API_URL),
+    await fetchGithubJson(fetchImpl, GITHUB_RELEASES_API_URL, { report }),
   );
 }
 
-async function fetchCurrentRelease(fetchImpl, currentVersion, releases) {
+async function fetchCurrentRelease(
+  fetchImpl,
+  currentVersion,
+  releases,
+  report,
+) {
   const includedRelease = releases.find(
     (release) => release.packageVersion === currentVersion,
   );
@@ -328,17 +351,22 @@ async function fetchCurrentRelease(fetchImpl, currentVersion, releases) {
   const value = await fetchGithubJson(
     fetchImpl,
     `https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${encodeURIComponent(currentTag)}`,
-    { allowNotFound: true },
+    { allowNotFound: true, report },
   );
   const release = normalizeRelease(value);
   return release?.packageVersion === currentVersion ? release : null;
 }
 
+/**
+ * Checks GitHub for the latest release of `track`. `report`, when given,
+ * collects the status of every GitHub response, for the check's event.
+ */
 async function checkForUpdates({
   track,
   currentVersion,
   fetchImpl,
   now = Date.now,
+  report,
 }) {
   assertUpdateTrack(track);
   if (typeof currentVersion !== "string" || !currentVersion.trim()) {
@@ -348,7 +376,7 @@ async function checkForUpdates({
     throw new Error("Update checking is unavailable.");
   }
 
-  const releases = await fetchTrackReleases(fetchImpl, track);
+  const releases = await fetchTrackReleases(fetchImpl, track, report);
   const latestRelease = selectLatestTrackRelease(releases, track);
   if (!latestRelease) {
     return {
@@ -371,6 +399,7 @@ async function checkForUpdates({
       fetchImpl,
       currentVersion,
       releases,
+      report,
     );
     if (currentRelease) {
       releases.push(currentRelease);
@@ -399,11 +428,17 @@ function createUpdateCheckCoordinator({
   const inFlight = new Map();
   const cache = new Map();
 
+  /**
+   * `options.report`, when given, learns whether the check came from the
+   * cache (`hit`), joined one already running (`joined`) or ran (`miss`).
+   */
   return function checkForUpdatesCoordinated(options) {
     assertUpdateTrack(options?.track);
+    const { report } = options;
     const key = `${options.track}:${options.currentVersion}`;
     const cached = cache.get(key);
     if (cached && cached.expiresAt > now()) {
+      if (report) report.cache = "hit";
       return cached.error
         ? Promise.reject(cached.error)
         : Promise.resolve(cached.result);
@@ -414,8 +449,10 @@ function createUpdateCheckCoordinator({
 
     const activeRequest = inFlight.get(key);
     if (activeRequest) {
+      if (report) report.cache = "joined";
       return activeRequest;
     }
+    if (report) report.cache = "miss";
 
     const request = Promise.resolve()
       .then(() => checkForUpdatesImpl(options))

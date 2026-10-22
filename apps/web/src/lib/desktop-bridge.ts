@@ -10,6 +10,7 @@ import type {
   ThemeMode,
   UpdateTrack,
 } from "@/domain/local-state";
+import type { LaunchContext } from "../../../../packages/wide-events/index.ts";
 
 export interface DevelopmentPluginSettings {
   available: boolean;
@@ -101,6 +102,11 @@ declare global {
         developmentBuild: boolean;
         platform: string;
         version: string;
+        /**
+         * The main process's launch: its ID, build and device, which the
+         * renderer's wide events report. Absent before #308.
+         */
+        launch?: LaunchContext;
       } | null;
       /** The app menu. Windows draws it in the title bar. */
       appMenu?: DesktopAppMenu[] | null;

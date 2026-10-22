@@ -109,7 +109,7 @@ The backlog editor module is feature-local because its vocabulary and commands b
   `apps/desktop/electron/plugin-catalog-seed.cjs`
 - Catalog refresh persistence: `apps/desktop/electron/plugin-catalog-settings.cjs`
 - Main-process failures:
-  - Every `ipcMain.on` listener registers through `apps/desktop/electron/ipc-listeners.cjs`, so none can throw into main, and a failed `sendSync` request answers null.
+  - Every IPC channel registers through `apps/desktop/electron/ipc-listeners.cjs` (`ipc.handle`, `ipc.onMessage`, `ipc.answerSync`), so none can throw into main, a failed `sendSync` request answers null, and each call emits its wide event. The channel table, with each channel's event, is `apps/desktop/electron/ipc-channels.cjs`, which `just typecheck` checks against the catalog. `just typecheck` also checks main.cjs's registrations against the table (`apps/desktop/tsconfig.json`, loose JS checking). No code registers with `ipcMain` directly.
   - `apps/desktop/electron/window-recovery.cjs` reloads a crashed window, but the third crash within a minute asks Reload or Quit instead. It also asks about a hung window or a failed load.
   - `apps/desktop/electron/navigation.cjs` decides whether a navigation stays in the app, opens in the system browser, or is blocked.
   - `apps/desktop/electron/stop-within.cjs` bounds the local API stop before a quit or an update.
@@ -124,7 +124,7 @@ The backlog editor module is feature-local because its vocabulary and commands b
 ## API
 
 - Local API lives in `apps/api`
-- Plugin package validation and installation: `apps/api/src/plugin-package.ts`
+- Plugin package validation and installation: `apps/api/src/plugin-package.ts`. Every archive-validation error carries the code `invalid_archive` (`INVALID_PLUGIN_ARCHIVE`); a Node system error is marked only on a path inside the extraction folder, such as a manifest or entrypoint the archive lacks, and never for a full, locked or busy disk.
 - Plugin discovery, request/reply validation, and package mutation coordination: `apps/api/src/plugin-host.ts`
 - Shared ephemeral worker admission, cancellation, timeout, termination, and shutdown drain: `apps/api/src/plugin-worker-lifetime.ts`. Each plugin/data-shape manager owns a separate four-operation quota and its own worker script.
 - Worker entrypoint bridge: `apps/api/src/plugin-worker.mjs`
@@ -191,6 +191,7 @@ The backlog editor module is feature-local because its vocabulary and commands b
 - Entry points: `index.ts` (`createEmitter`, the envelope types, the synchronous scope), `catalog.ts` (Ajour's event names and `defineCatalog`, where every field declares `operational` or `sensitive`), `sinks.ts` (`nowhere`, recording and console sinks, `sinkFromSwitch` for `AJOUR_WIDE_EVENTS`), `trace-context.ts` (`traceparent`), `scrub.ts` (`scrubErrorMessage`), `secret-redaction.ts` and `node.ts` (`asyncContextScope`, Node only).
 - A new event name, with its fields and outcome reasons, goes in `packages/wide-events/lib/ajour-catalog.ts`.
 - The local API's emitter: `apps/api/src/events.ts`. Its tests pass a recording sink as `eventSink`.
+- The desktop main process's emitter and launch context: `apps/desktop/electron/main-events.cjs`. main.cjs loads the package by file URL, as it loads the local API, and hands the launch context to the local API (`launch`) and the renderer (`runtime.launch`). The desktop tests run main.cjs slices with `events` from `apps/desktop/recording-events.ts` in their VM globals.
 - The packaged app copies the package into its internal API runtime (`apps/desktop/scripts/prepare-internal-api.cjs`).
 
 ## Documentation Lookup Rules

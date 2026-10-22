@@ -8,7 +8,7 @@ import type {
   Surface,
   Trigger,
 } from "./envelope.ts";
-import { errorIdentity } from "./errors.ts";
+import { errorIdentity, isError } from "./errors.ts";
 import type {
   Catalog,
   CounterName,
@@ -72,6 +72,11 @@ export interface FailOptions<Reason extends string> {
 }
 
 export interface Unit<C extends Catalog, Name extends EventName<C>> {
+  /**
+   * The unit's event name, such as `app.error`'s `active_unit` reads. A
+   * rename changes it, so it is typed as any of the catalog's names.
+   */
+  readonly name: EventName<C>;
   /**
    * The outcome recorded so far, or undefined while none is: the event then
    * ends `ok`. A seam reads it to weigh outcomes, never to copy them.
@@ -319,13 +324,23 @@ function mergeInto(target: Fields, source: Fields) {
   return target;
 }
 
+/**
+ * An object literal of any realm: its prototype is null or an
+ * `Object.prototype`, not necessarily this realm's. A realm's
+ * `Object.prototype` has no prototype and its own `constructor`, `Object`.
+ */
 function isPlainObject(value: unknown): value is Fields {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.getPrototypeOf(value) === Object.prototype
-  );
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const prototype: unknown = Object.getPrototypeOf(value);
+  if (prototype === null) return true;
+  if (Object.getPrototypeOf(prototype) !== null) return false;
+  const constructor = Object.getOwnPropertyDescriptor(
+    prototype,
+    "constructor",
+  )?.value;
+  return typeof constructor === "function" && constructor.name === "Object";
 }
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
@@ -357,12 +372,11 @@ class EmitterState {
     options: { retriable?: boolean; secrets?: readonly string[] } = {},
   ): EventError {
     const described: EventError = errorIdentity(error);
-    const message =
-      error instanceof Error
-        ? error.message
-        : typeof error === "string"
-          ? error
-          : "";
+    const message = isError(error)
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : "";
     if (message) {
       described.message = scrubErrorMessage(message, {
         ...this.paths,

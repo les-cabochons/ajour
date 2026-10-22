@@ -21,6 +21,7 @@ const {
     currentVersion: string;
     fetchImpl: ReturnType<typeof vi.fn>;
     now?: () => number;
+    report?: UpdateCheckReport;
   }) => Promise<Record<string, unknown>>;
   createUpdateCheckCoordinator: (options?: {
     checkForUpdatesImpl?: ReturnType<typeof vi.fn>;
@@ -31,6 +32,7 @@ const {
     track: "stable" | "nightly";
     currentVersion: string;
     fetchImpl?: ReturnType<typeof vi.fn>;
+    report?: UpdateCheckReport;
   }) => Promise<unknown>;
   isAllowedReleaseUrl: (value: unknown) => boolean;
   isUpdateAvailable: (
@@ -70,6 +72,12 @@ function githubRelease(
     prerelease,
     published_at: publishedAt,
   };
+}
+
+/** What a check tells its update.check event. */
+interface UpdateCheckReport {
+  cache?: "hit" | "joined" | "miss";
+  github_statuses?: number[];
 }
 
 describe("desktop update checks", () => {
@@ -379,5 +387,56 @@ describe("desktop update checks", () => {
           ),
       }),
     ).rejects.toThrow("GitHub release check timed out");
+  });
+});
+
+describe("what an update check reports", () => {
+  it("lists every GitHub status the check saw", async () => {
+    const report: UpdateCheckReport = {};
+
+    await checkForUpdates({
+      track: "stable",
+      currentVersion: "1.0.0",
+      fetchImpl: vi.fn().mockResolvedValue({ ok: false, status: 404 }),
+      report,
+    });
+    await checkForUpdates({
+      track: "stable",
+      currentVersion: "1.0.0",
+      fetchImpl: vi.fn().mockResolvedValue({ ok: false, status: 503 }),
+      report,
+    }).catch(() => {});
+
+    expect(report.github_statuses).toEqual([404, 503]);
+  });
+
+  it("says whether a check ran, joined one running or came from the cache", async () => {
+    let finish: (value: { latestTag: string }) => void = () => {};
+    const coordinatedCheck = createUpdateCheckCoordinator({
+      checkForUpdatesImpl: vi.fn(
+        () =>
+          new Promise<{ latestTag: string }>((resolve) => {
+            finish = resolve;
+          }),
+      ),
+      now: () => 0,
+    });
+    const options = { track: "stable" as const, currentVersion: "1.0.0" };
+    const ran: UpdateCheckReport = {};
+    const joined: UpdateCheckReport = {};
+    const cached: UpdateCheckReport = {};
+
+    const first = coordinatedCheck({ ...options, report: ran });
+    void coordinatedCheck({ ...options, report: joined });
+    await Promise.resolve();
+    finish({ latestTag: "v1.0.0" });
+    await first;
+    await coordinatedCheck({ ...options, report: cached });
+
+    expect([ran.cache, joined.cache, cached.cache]).toEqual([
+      "miss",
+      "joined",
+      "hit",
+    ]);
   });
 });

@@ -1,9 +1,14 @@
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const require = createRequire(import.meta.url);
+
+/** The commit fallback reads git; a source tree without git has none to read. */
+const inGitCheckout =
+  spawnSync("git", ["rev-parse", "HEAD"], { cwd: __dirname }).status === 0;
 
 function loadBuilderConfig() {
   const configPath = require.resolve("./electron-builder.config.cjs");
@@ -67,6 +72,37 @@ describe("desktop electron-builder config", () => {
       { target: "zip", arch: ["x64", "arm64"] },
     ]);
     expect(config.mac.artifactName).toBe("Ajour-${version}-${arch}.${ext}");
+  });
+
+  // main.cjs reads it from the packaged package.json for the launch context.
+  it("injects the build's commit into the packaged package.json", () => {
+    vi.stubEnv(
+      "AJOUR_BUILD_COMMIT",
+      "0b3404ce0b3404ce0b3404ce0b3404ce0b3404ce",
+    );
+
+    expect(loadBuilderConfig().extraMetadata.buildCommit).toBe(
+      "0b3404ce0b3404ce0b3404ce0b3404ce0b3404ce",
+    );
+  });
+
+  it.skipIf(!inGitCheckout)(
+    "takes the checked-out commit when the build names none (needs a git checkout)",
+    () => {
+      vi.stubEnv("AJOUR_BUILD_COMMIT", "");
+
+      expect(loadBuilderConfig().extraMetadata.buildCommit).toMatch(
+        /^[0-9a-f]{40}$/,
+      );
+    },
+  );
+
+  it("names no commit when the build names none outside a git checkout", () => {
+    vi.stubEnv("AJOUR_BUILD_COMMIT", "");
+    vi.stubEnv("PATH", "");
+    vi.stubEnv("Path", "");
+
+    expect(loadBuilderConfig().extraMetadata).not.toHaveProperty("buildCommit");
   });
 
   it("publishes prereleases on the nightly update channel", () => {

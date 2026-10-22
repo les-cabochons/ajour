@@ -3,6 +3,16 @@ const path = require("node:path");
 
 const MAX_PLUGIN_ARCHIVE_BYTES = 25 * 1024 * 1024;
 
+/** A picked archive that is empty or too large: an invalid archive. */
+function invalidArchiveSize() {
+  return Object.assign(
+    new Error(
+      `Plugin archives must be between 1 byte and ${MAX_PLUGIN_ARCHIVE_BYTES} bytes.`,
+    ),
+    { code: "invalid_archive" },
+  );
+}
+
 async function selectPluginArchive(
   dialog,
   parentWindow,
@@ -31,9 +41,7 @@ async function selectPluginArchive(
       archiveStat.size === 0 ||
       archiveStat.size > MAX_PLUGIN_ARCHIVE_BYTES
     ) {
-      throw new Error(
-        `Plugin archives must be between 1 byte and ${MAX_PLUGIN_ARCHIVE_BYTES} bytes.`,
-      );
+      throw invalidArchiveSize();
     }
 
     const chunks = [];
@@ -55,9 +63,7 @@ async function selectPluginArchive(
       totalBytes += bytesRead;
     }
     if (totalBytes === 0 || totalBytes > MAX_PLUGIN_ARCHIVE_BYTES) {
-      throw new Error(
-        `Plugin archives must be between 1 byte and ${MAX_PLUGIN_ARCHIVE_BYTES} bytes.`,
-      );
+      throw invalidArchiveSize();
     }
 
     return {
@@ -69,7 +75,23 @@ async function selectPluginArchive(
   }
 }
 
+/** The codes an install failure carries when the package itself is the cause. */
+const PACKAGE_RESULTS = new Set(["invalid_archive", "not_available"]);
+
+/**
+ * A failed install's result for its `plugin.install` event, from the code
+ * the error carries: `invalid_archive` from the local API's installer
+ * (apps/api/src/plugin-package.ts) or from picking an archive here,
+ * `not_available` from the catalog. Anything else is the machine or Ajour
+ * failing.
+ */
+function pluginInstallResultOf(error) {
+  const code = typeof error?.code === "string" ? error.code : "";
+  return PACKAGE_RESULTS.has(code) ? code : "failed";
+}
+
 module.exports = {
   MAX_PLUGIN_ARCHIVE_BYTES,
+  pluginInstallResultOf,
   selectPluginArchive,
 };

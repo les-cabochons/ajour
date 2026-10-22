@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
+import { recordingEvents } from "./recording-events.ts";
 
 const require = createRequire(import.meta.url);
 const { watchWindow } = require("./electron/window-recovery.cjs") as {
@@ -10,9 +11,10 @@ const { watchWindow } = require("./electron/window-recovery.cjs") as {
       url: string;
       dialog: { showMessageBox: FakeDialog["showMessageBox"] };
       quit: () => void;
+      events: unknown;
       now?: () => number;
     },
-  ) => { load: () => Promise<void> };
+  ) => { load: (trigger?: string) => Promise<string> };
 };
 
 const APP_URL = "app://local/";
@@ -121,10 +123,12 @@ function setUp({ closesOnAbort = true } = {}) {
   const dialog = fakeDialog({ closesOnAbort });
   const quit = vi.fn();
   let time = 0;
+  const { events, recorded } = recordingEvents({ now: () => time });
   const recovery = watchWindow(window, {
     url: APP_URL,
     dialog,
     quit,
+    events,
     now: () => time,
   });
   return {
@@ -132,6 +136,8 @@ function setUp({ closesOnAbort = true } = {}) {
     dialog,
     quit,
     recovery,
+    events: recorded,
+    fixture: events,
     at(ms: number) {
       time = ms;
     },
@@ -262,7 +268,7 @@ describe("window recovery", () => {
       loadError("ERR_FILE_NOT_FOUND", "(-6) loading 'app://local/'"),
     );
 
-    await expect(recovery.load()).resolves.toBeUndefined();
+    await expect(recovery.load()).resolves.toBe("error");
     await flush();
     expect(dialog.shown).toHaveLength(1);
     expect(dialog.shown[0]).toMatchObject({
@@ -502,5 +508,191 @@ describe("window recovery", () => {
 
     expect(window.loadURL).toHaveBeenCalledOnce();
     expect(dialog.shown).toEqual([]);
+  });
+});
+
+describe("window recovery events", () => {
+  it("records a load with its trigger and duration", async () => {
+    const { window, recovery, events, at } = setUp();
+    window.loadURL.mockImplementation(async () => {
+      at(120);
+    });
+
+    await recovery.load("launch");
+
+    expect(events).toMatchObject([
+      {
+        name: "window.load",
+        kind: "lifecycle",
+        outcome: "ok",
+        trigger: "boot",
+        window: { trigger: "launch", load_ms: 120 },
+      },
+    ]);
+  });
+
+  it("keeps a failed load open until the answer, with Electron's code", async () => {
+    const { window, dialog, recovery, events } = setUp();
+    window.loadURL.mockRejectedValueOnce(
+      loadError("ERR_FILE_NOT_FOUND", "(-6) loading 'app://local/'"),
+    );
+
+    await recovery.load("launch");
+    await flush();
+    expect(events).toEqual([]);
+    await dialog.choose("Try again");
+
+    expect(events).toMatchObject([
+      {
+        name: "window.load",
+        outcome: "error",
+        error: { code: "ERR_FILE_NOT_FOUND" },
+        window: { trigger: "launch", answer: "try_again" },
+      },
+      { name: "window.load", outcome: "ok", window: { trigger: "retry" } },
+    ]);
+    expect(JSON.stringify(events)).not.toContain("app://local");
+  });
+
+  it("records an aborted load as cancelled", async () => {
+    const { window, recovery, events } = setUp();
+    window.loadURL.mockRejectedValueOnce(
+      loadError("ERR_ABORTED", "(-3) loading 'app://local/'"),
+    );
+
+    await recovery.load();
+
+    expect(events).toMatchObject([
+      { name: "window.load", outcome: "cancelled", outcome_reason: "aborted" },
+    ]);
+  });
+
+  it("records a crash and the reload it led to", async () => {
+    const { window, recovery, events } = setUp();
+    await recovery.load("launch");
+
+    window.webContents.emit(
+      "render-process-gone",
+      {},
+      { reason: "oom", exitCode: -536870904 },
+    );
+    await flush();
+
+    expect(events.slice(1)).toMatchObject([
+      {
+        name: "process.gone",
+        kind: "crash",
+        outcome: "error",
+        process: { type: "renderer", reason: "oom", exit_code: -536870904 },
+        recovery: { action: "reloaded" },
+      },
+      { name: "window.load", window: { trigger: "crash_reload" } },
+    ]);
+  });
+
+  it("records the third crash with the answer to the dialog", async () => {
+    const { window, dialog, recovery, events } = setUp();
+    await recovery.load();
+    crash(window);
+    crash(window);
+    crash(window);
+    await flush();
+
+    await dialog.choose("Quit");
+
+    expect(
+      events.filter((event) => event.name === "process.gone").at(-1),
+    ).toMatchObject({ recovery: { action: "cap_reached", answer: "quit" } });
+  });
+
+  it("records a hung window until it responds again", async () => {
+    const { window, recovery, events, at } = setUp();
+    await recovery.load();
+
+    at(1_000);
+    window.webContents.emit("unresponsive");
+    await flush();
+    at(4_000);
+    window.webContents.emit("responsive");
+    await flush();
+
+    expect(events.slice(1)).toMatchObject([
+      {
+        name: "window.unresponsive",
+        kind: "crash",
+        outcome: "ok",
+        duration_ms: 3_000,
+        unresponsive: { answer: "replaced", recovered: true },
+      },
+    ]);
+  });
+
+  it("records Reload from the not-responding dialog, and its kill as on purpose", async () => {
+    const { window, dialog, recovery, events } = setUp();
+    await recovery.load();
+
+    window.webContents.emit("unresponsive");
+    await flush();
+    await dialog.choose("Reload");
+    await flush();
+
+    expect(events.slice(1)).toMatchObject([
+      {
+        name: "window.unresponsive",
+        outcome: "error",
+        unresponsive: { answer: "reload", recovered: false },
+      },
+      {
+        name: "process.gone",
+        outcome: "ok",
+        recovery: { action: "killed_on_purpose" },
+      },
+      { name: "window.load", window: { trigger: "crash_reload" } },
+    ]);
+  });
+
+  it("resolves each load's outcome, so the launch can end with it", async () => {
+    const { window, recovery } = setUp();
+    window.loadURL
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(loadError("ERR_FAILED", "(-2) loading"))
+      .mockRejectedValueOnce(loadError("ERR_ABORTED", "(-3) loading"));
+
+    const outcomes = [
+      await recovery.load("launch"),
+      await recovery.load("launch"),
+      await recovery.load("launch"),
+    ];
+
+    expect(outcomes).toEqual(["ok", "error", "cancelled"]);
+  });
+
+  it("keeps the answer of a hang dialog that a crash replaced", async () => {
+    const { window, recovery, events } = setUp();
+    await recovery.load();
+
+    window.webContents.emit("unresponsive");
+    await flush();
+    crash(window);
+    await flush();
+
+    expect(events.find((e) => e.name === "window.unresponsive")).toMatchObject({
+      outcome: "error",
+      unresponsive: { answer: "replaced", recovered: false },
+    });
+  });
+
+  it("emits a crash as its own event even while another unit is active", async () => {
+    const { window, recovery, events, fixture } = setUp();
+    await recovery.load();
+
+    fixture.run("menu.run_item", { kind: "ipc", trigger: "user" }, () => {
+      crash(window);
+    });
+    await flush();
+
+    expect(events.map((e) => e.name)).toEqual(
+      expect.arrayContaining(["process.gone", "menu.run_item"]),
+    );
   });
 });

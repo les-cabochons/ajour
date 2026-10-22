@@ -16,7 +16,7 @@
     "make:win": "node scripts/run-builder-command.cjs make win32",
     "start": "node scripts/run-renderer.cjs build && node scripts/run-renderer.cjs start",
     "test": "vitest run",
-    "typecheck": "node --check electron/main.cjs"
+    "typecheck": "node --check electron/main.cjs && tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "electron-updater": "^6.8.9",

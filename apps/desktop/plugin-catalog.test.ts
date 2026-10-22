@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { recordingEvents } from "./recording-events.ts";
 
 const require = createRequire(import.meta.url);
 const { CATALOG_URL, createPluginCatalogService } =
@@ -13,10 +14,11 @@ const { CATALOG_URL, createPluginCatalogService } =
       fetchImpl: typeof fetch;
       now?: () => Date;
     }): {
-      refresh(): Promise<{
+      refresh(options?: { unit?: unknown }): Promise<{
         entries: Array<{ id: string; images?: { thumbnailDataUrl?: string } }>;
         source: "network" | "cache";
         warning?: string;
+        skippedPluginIds?: string[];
       }>;
       downloadPluginArchive(pluginId: string): Promise<{
         archiveBytes: Buffer;
@@ -302,6 +304,16 @@ describe("desktop plugin catalog", () => {
     );
   });
 
+  // plugin.install records `not_available` from the code, not the message.
+  it("marks a plugin it cannot offer with the not_available code", async () => {
+    const service = await serviceForPluginYaml(pluginYaml);
+    await service.refresh();
+
+    await expect(
+      service.downloadPluginArchive("not_in_the_catalog"),
+    ).rejects.toMatchObject({ code: "not_available" });
+  });
+
   it("skips a catalog entry with an unknown capability and keeps the rest", async () => {
     const service = await serviceForPluginYaml(
       pluginYaml.replace(
@@ -420,4 +432,173 @@ describe("desktop plugin catalog", () => {
       newestAmbiguous.service.downloadPluginArchive("azure_devops"),
     ).rejects.toThrow("multiple matching plugin assets");
   });
+});
+
+describe("the catalog.refresh event", () => {
+  /** Runs one refresh as the main process does, and returns its event. */
+  async function refreshEvent(service: {
+    refresh(options?: { unit?: unknown }): Promise<unknown>;
+  }) {
+    const { events, recorded } = recordingEvents();
+    await events.run(
+      "catalog.refresh",
+      { kind: "job", trigger: "boot" },
+      (unit) => service.refresh({ unit }),
+    );
+    return recorded[0]!;
+  }
+
+  function indexFetch(handle: (url: string, init?: RequestInit) => Response) {
+    return vi.fn(async (input: string | URL | Request, init?: RequestInit) =>
+      handle(String(input), init),
+    ) as unknown as typeof fetch;
+  }
+
+  const fresh = (url: string) => {
+    if (url === CATALOG_URL) {
+      return response(catalogYaml, { headers: { etag: '"catalog-1"' } });
+    }
+    if (url === definitionUrl) {
+      return response(pluginYaml, { headers: { etag: '"plugin-1"' } });
+    }
+    if (url === imageUrl) {
+      return response(Buffer.from("image"), {
+        headers: { "content-type": "image/png", etag: '"image-1"' },
+      });
+    }
+    throw new Error(`Unexpected URL ${url}`);
+  };
+
+  it("records what came from the network", async () => {
+    const service = createPluginCatalogService({
+      cacheDirectory: await tempDirectory(),
+      fetchImpl: indexFetch(fresh),
+    });
+
+    const event = await refreshEvent(service);
+
+    expect(event).toMatchObject({
+      name: "catalog.refresh",
+      outcome: "ok",
+      catalog: {
+        source: "network",
+        status: 200,
+        revalidated: false,
+        entry_count: 1,
+        definitions_fetched: 1,
+        definitions_revalidated: 0,
+        definitions_failed: 0,
+        images_fetched: 1,
+        images_revalidated: 0,
+        images_failed: 0,
+        bytes: catalogYaml.length + Buffer.byteLength(pluginYaml) + 5,
+      },
+    });
+  });
+
+  it("records what a conditional refresh revalidated", async () => {
+    const cacheDirectory = await tempDirectory();
+    let revalidate = false;
+    const service = createPluginCatalogService({
+      cacheDirectory,
+      fetchImpl: indexFetch((url) =>
+        revalidate ? response(null, { status: 304 }) : fresh(url),
+      ),
+    });
+    await service.refresh();
+    revalidate = true;
+
+    const event = await refreshEvent(service);
+
+    expect(event).toMatchObject({
+      outcome: "ok",
+      catalog: {
+        source: "network",
+        status: 304,
+        revalidated: true,
+        definitions_revalidated: 1,
+        images_revalidated: 1,
+        bytes: 0,
+      },
+    });
+  });
+
+  it("records a refresh that fell back to the cache", async () => {
+    const cacheDirectory = await tempDirectory();
+    let offline = false;
+    const service = createPluginCatalogService({
+      cacheDirectory,
+      fetchImpl: indexFetch((url) => {
+        if (offline) throw new Error("offline");
+        return fresh(url);
+      }),
+    });
+    await service.refresh();
+    offline = true;
+
+    const event = await refreshEvent(service);
+
+    expect(event).toMatchObject({
+      outcome: "ok",
+      catalog: { source: "cache", definitions_failed: 1, images_failed: 1 },
+    });
+    expect((event.catalog as { status?: number }).status).toBeUndefined();
+  });
+
+  // The refresh never rejects, so its outcome comes from its result.
+  it("records a refresh that kept the built-in snapshot as a failure", async () => {
+    const service = createPluginCatalogService({
+      cacheDirectory: await tempDirectory(),
+      fetchImpl: indexFetch(() => {
+        throw new TypeError("fetch failed");
+      }),
+    });
+
+    const event = await refreshEvent(service);
+
+    expect(event).toMatchObject({
+      outcome: "error",
+      error: { type: "TypeError", message: "fetch failed" },
+      catalog: { source: "built_in", entry_count: 5 },
+    });
+  });
+
+  it("records skipped entries without printing them", async () => {
+    const warn = vi.spyOn(console, "warn");
+    const service = await serviceForSkippedEntry();
+
+    const event = await refreshEvent(service);
+
+    expect(event).toMatchObject({
+      outcome: "ok",
+      catalog: { skipped_plugin_ids: ["azure_devops"], entry_count: 1 },
+    });
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  async function serviceForSkippedEntry() {
+    return createPluginCatalogService({
+      cacheDirectory: await tempDirectory(),
+      fetchImpl: indexFetch((url) => {
+        if (url === CATALOG_URL) {
+          return response(`${catalogYaml}  - plugins/valid/plugin.yaml\n`);
+        }
+        if (url.endsWith("plugins/valid/plugin.yaml")) {
+          return response(pluginYaml.replace("id: azure_devops", "id: valid"));
+        }
+        if (url === definitionUrl) {
+          return response(
+            pluginYaml.replace(
+              "capabilities:\n  - connector",
+              "capabilities:\n  - work-item-sync",
+            ),
+          );
+        }
+        return response(Buffer.from("image"), {
+          headers: { "content-type": "image/png" },
+        });
+      }),
+    });
+  }
 });

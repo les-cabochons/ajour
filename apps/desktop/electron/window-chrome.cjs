@@ -22,6 +22,7 @@ function getWindowsTitleBarOverlay(theme) {
   return { ...overlay };
 }
 
+/** @returns {Partial<Electron.BrowserWindowConstructorOptions>} */
 function getPlatformWindowChromeOptions(platform, theme) {
   if (platform === "darwin") {
     return {

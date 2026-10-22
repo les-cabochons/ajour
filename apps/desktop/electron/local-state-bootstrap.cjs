@@ -4,16 +4,62 @@ const path = require("node:path");
 const STORAGE_KEY = "ajour.local-state.v2";
 const RECOVERY_FILE_NAME = "local-state-recovery.json";
 
-function readJsonFile(filePath) {
+function readJsonFile(filePath, report) {
   if (!existsSync(filePath)) {
     return null;
   }
 
   try {
-    return JSON.parse(readFileSync(filePath, "utf8"));
+    const bytes = readFileSync(filePath);
+    report.bytes_scanned += bytes.length;
+    return JSON.parse(bytes.toString("utf8"));
   } catch {
     return null;
   }
+}
+
+/**
+ * The collections of the persisted local state (`LocalAppState` in
+ * apps/web/src/domain/local-state.ts), the only names a record count may
+ * carry. local-state-bootstrap.test.ts keeps it in step.
+ */
+const RECORD_COLLECTIONS = Object.freeze([
+  "projects",
+  "rules",
+  "segments",
+  "dismissedSegmentIds",
+  "editedBlocks",
+  "importedBrowserDrafts",
+  "timers",
+  "timesheetEntries",
+  "timesheetTombstones",
+  "lockedWeeks",
+  "timesheetImportDrafts",
+  "commitPromptedWeeks",
+  "workItems",
+  "pullRequests",
+  "calendarDecisions",
+  "calendarEventRules",
+  "workflowStates",
+  "workflowStateMappings",
+  "workflowStateWriteRules",
+  "settleRules",
+]);
+
+/**
+ * How many records each of Ajour's collections holds in a state. A key the
+ * file chose, which could be anything, never becomes a field.
+ */
+function recordCountsOf(state) {
+  const counts = {};
+  if (!state || typeof state !== "object") return counts;
+  for (const collection of RECORD_COLLECTIONS) {
+    const records = Object.hasOwn(state, collection)
+      ? state[collection]
+      : undefined;
+    if (Array.isArray(records)) counts[collection] = records.length;
+  }
+  return counts;
 }
 
 function extractBalancedJson(text, startIndex) {
@@ -84,7 +130,7 @@ function extractJsonFromBytes(bytes, searchStart) {
   return null;
 }
 
-function readLatestLocalStateFromLevelDb(levelDbPath) {
+function readLatestLocalStateFromLevelDb(levelDbPath, report) {
   if (!existsSync(levelDbPath)) {
     return null;
   }
@@ -98,6 +144,7 @@ function readLatestLocalStateFromLevelDb(levelDbPath) {
 
   for (const filePath of candidateFiles) {
     const bytes = readFileSync(filePath);
+    report.bytes_scanned += bytes.length;
     let cursor = 0;
     while (cursor < bytes.length) {
       const keyIndex = bytes.indexOf(STORAGE_KEY, cursor, "utf8");
@@ -130,11 +177,17 @@ function readLatestLocalStateFromLevelDb(levelDbPath) {
  * null. A profile that cannot be read gives null too: the renderer recovers
  * nothing this launch and asks again at the next one, instead of merging a
  * state older than the one it could not read.
+ *
+ * `options.report`, when given, learns where the state came from, how many
+ * legacy folders and bytes were scanned, the record count of each collection
+ * it found, and the error a failed read swallowed, for the read's event. That error can hold the user data path, which the event's
+ * scrubber removes.
  */
 function loadDesktopBootstrapLocalState(options = {}) {
   try {
     return readNewestLocalState(options);
-  } catch {
+  } catch (error) {
+    if (options.report) options.report.error = error;
     return null;
   }
 }
@@ -151,9 +204,15 @@ function readNewestLocalState(options) {
     path.join(appDataPath, "Ajour"),
   ].filter((candidate) => candidate !== currentUserDataPath);
 
+  const report = options.report ?? {};
+  report.source = "none";
+  report.legacy_folder_count = 0;
+  report.bytes_scanned = 0;
+  report.record_counts = {};
   let latestState = currentUserDataPath
-    ? readJsonFile(path.join(currentUserDataPath, RECOVERY_FILE_NAME))
+    ? readJsonFile(path.join(currentUserDataPath, RECOVERY_FILE_NAME), report)
     : null;
+  if (latestState) report.source = "recovery_file";
   let latestUpdatedAt =
     typeof latestState?.updatedAt === "number" &&
     Number.isFinite(latestState.updatedAt)
@@ -161,22 +220,26 @@ function readNewestLocalState(options) {
       : -1;
 
   for (const userDataPath of legacyUserDataCandidates) {
-    const state = readLatestLocalStateFromLevelDb(
-      path.join(userDataPath, "Local Storage", "leveldb"),
-    );
+    const levelDb = path.join(userDataPath, "Local Storage", "leveldb");
+    if (existsSync(levelDb)) report.legacy_folder_count += 1;
+    const state = readLatestLocalStateFromLevelDb(levelDb, report);
     const updatedAt =
       typeof state?.updatedAt === "number" && Number.isFinite(state.updatedAt)
         ? state.updatedAt
         : -1;
     if (updatedAt >= latestUpdatedAt) {
+      if (state) report.source = "legacy_profile";
+      else if (latestState) report.source = "none";
       latestState = state;
       latestUpdatedAt = updatedAt;
     }
   }
 
+  report.record_counts = recordCountsOf(latestState);
   return latestState;
 }
 
 module.exports = {
+  RECORD_COLLECTIONS,
   loadDesktopBootstrapLocalState,
 };

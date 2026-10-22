@@ -172,25 +172,37 @@ function getAppMenuModel({ platform, developmentBuild, appName }) {
  * their registry id; role items run their Electron role. `platform` must be the
  * one the model was built for.
  *
+ * Quit calls `quit` when it is given: a role ignores click handlers, and the
+ * quit's event needs to know the menu asked for it.
+ *
  * @param {AppMenu[]} model
- * @param {{ platform: NodeJS.Platform, sendAction: (action: string) => void }} options
+ * @param {{ platform: NodeJS.Platform, sendAction: (action: string) => void, quit?: () => void }} options
  * @returns {Electron.MenuItemConstructorOptions[]}
  */
-function buildAppMenuTemplate(model, { platform, sendAction }) {
+function buildAppMenuTemplate(model, { platform, sendAction, quit }) {
   return model.map((menu) => ({
     id: `menu:${menu.id}`,
     label: menu.label,
     ...(menu.role ? { role: menu.role } : {}),
     submenu: menu.items.map((item) =>
-      toTemplateItem(item, platform, sendAction),
+      toTemplateItem(item, platform, sendAction, quit),
     ),
   }));
 }
 
 /** @returns {Electron.MenuItemConstructorOptions} */
-function toTemplateItem(item, platform, sendAction) {
+function toTemplateItem(item, platform, sendAction, quit) {
   if (item.type === "separator") {
     return { type: "separator" };
+  }
+
+  if (item.type === "role" && item.role === "quit" && quit) {
+    return {
+      id: item.id,
+      label: item.label,
+      click: () => quit(),
+      ...(item.accelerator ? { accelerator: item.accelerator } : {}),
+    };
   }
 
   if (item.type === "role") {

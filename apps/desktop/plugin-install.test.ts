@@ -94,3 +94,42 @@ describe("desktop plugin file selection", () => {
     expect(archive.close).toHaveBeenCalledOnce();
   });
 });
+
+describe("an install's result as its event records it", () => {
+  const { pluginInstallResultOf } =
+    require("./electron/plugin-install.cjs") as {
+      pluginInstallResultOf: (error: unknown) => string;
+    };
+  const coded = (code: string, message = "") =>
+    Object.assign(new Error(message), { code });
+
+  // plugin-install-archives.test.ts runs the local API's real installer.
+  it.each([
+    [
+      coded(
+        "invalid_archive",
+        "Plugin archives must be between 1 byte and 26214400 bytes.",
+      ),
+      "invalid_archive",
+    ],
+    [
+      coded("not_available", 'Plugin "jira" is not available for download.'),
+      "not_available",
+    ],
+    // Neither a message nor a type classifies an install any more.
+    [new Error('Plugin "jira" is not available for download.'), "failed"],
+    [new Error("Plugin archive contains an unsafe path: ../x"), "failed"],
+    [new SyntaxError("Unexpected token } in JSON"), "failed"],
+    [
+      coded("TAR_BAD_ARCHIVE", "TAR_BAD_ARCHIVE: Unrecognized archive format"),
+      "failed",
+    ],
+    [coded("ENOSPC", "ENOSPC: no space left on device"), "failed"],
+    [
+      coded("EACCES", "EACCES: permission denied, open 'plugin.json'"),
+      "failed",
+    ],
+  ])("%s is %s", (error, result) => {
+    expect(pluginInstallResultOf(error)).toBe(result);
+  });
+});

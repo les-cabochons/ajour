@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "types": ["node"],
+    "strict": false,
+    "noImplicitAny": false,
+    "noUncheckedIndexedAccess": false
+  },
+  "include": [
+    "electron/main.cjs",
+    "electron/ipc-channels.cjs",
+    "ipc-channel-types.check.cjs"
+  ]
+}

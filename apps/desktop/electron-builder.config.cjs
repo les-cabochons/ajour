@@ -1,3 +1,4 @@
+const { execFileSync } = require("node:child_process");
 const path = require("node:path");
 
 const desktopRoot = __dirname;
@@ -11,6 +12,29 @@ if (updateChannel !== "latest" && updateChannel !== "nightly") {
   throw new Error("AJOUR_UPDATE_CHANNEL must be latest or nightly.");
 }
 
+const COMMIT = /^[0-9a-f]{40}$/;
+
+/**
+ * The commit the app is built from, which its wide events report:
+ * AJOUR_BUILD_COMMIT, or else the checked-out commit. A build outside a git
+ * checkout reports none.
+ */
+function resolveBuildCommit() {
+  const named = process.env.AJOUR_BUILD_COMMIT?.trim().toLowerCase();
+  if (named && COMMIT.test(named)) return named;
+  try {
+    const head = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return COMMIT.test(head) ? head : undefined;
+  } catch {
+    return undefined;
+  }
+}
+const buildCommit = resolveBuildCommit();
+
 module.exports = {
   appId: "com.lescabochons.ajour",
   productName: "Ajour",
@@ -20,6 +44,8 @@ module.exports = {
   // folder because the installer reuses the InstallLocation registry value.
   extraMetadata: {
     name: "ajour",
+    // main.cjs reads it into the launch context.
+    ...(buildCommit ? { buildCommit } : {}),
   },
   electronVersion,
   asar: true,
