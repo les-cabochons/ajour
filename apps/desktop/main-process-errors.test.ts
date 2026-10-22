@@ -347,7 +347,6 @@ describe("quitting and installing an update", () => {
     expect(runtime.recorded).toMatchObject([{ name: "app.quit" }]);
   });
 
-  // The installer's quit skips before-quit's wait, so preparation waits.
   // The install's event stays open until the app quits for the installer.
   it("tells the update controller when the app quits", () => {
     const runtime = quitRuntime(async () => {});
@@ -359,6 +358,7 @@ describe("quitting and installing an update", () => {
     ).toHaveBeenCalledOnce();
   });
 
+  // The installer's quit skips before-quit's wait, so preparation waits.
   it("waits for the events package before an update installs", async () => {
     const runtime = quitRuntime(async () => {}, { loaded: false });
     const prepared = vi.fn();

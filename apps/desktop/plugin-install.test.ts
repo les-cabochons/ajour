@@ -98,161 +98,38 @@ describe("desktop plugin file selection", () => {
 describe("an install's result as its event records it", () => {
   const { pluginInstallResultOf } =
     require("./electron/plugin-install.cjs") as {
-      pluginInstallResultOf: (error: unknown, step: string) => string;
+      pluginInstallResultOf: (error: unknown) => string;
     };
-  const named = (name: string, message = "") =>
-    Object.assign(new Error(message), { name });
-
-  const coded = (code: string, message: string) =>
+  const coded = (code: string, message = "") =>
     Object.assign(new Error(message), { code });
 
+  // plugin-install-archives.test.ts runs the local API's real installer.
   it.each([
-    // Desktop's own errors carry a code.
     [
       coded(
         "invalid_archive",
         "Plugin archives must be between 1 byte and 26214400 bytes.",
       ),
-      "select",
       "invalid_archive",
     ],
     [
       coded("not_available", 'Plugin "jira" is not available for download.'),
-      "download",
       "not_available",
     ],
-    // Text alone no longer classifies a download.
+    // Neither a message nor a type classifies an install any more.
+    [new Error('Plugin "jira" is not available for download.'), "failed"],
+    [new Error("Plugin archive contains an unsafe path: ../x"), "failed"],
+    [new SyntaxError("Unexpected token } in JSON"), "failed"],
     [
-      new Error('Plugin "jira" is not available for download.'),
-      "download",
+      coded("TAR_BAD_ARCHIVE", "TAR_BAD_ARCHIVE: Unrecognized archive format"),
       "failed",
     ],
-    [new Error("Plugin download returned HTTP 503."), "download", "failed"],
-    // A system error is a failure, whatever its message names.
+    [coded("ENOSPC", "ENOSPC: no space left on device"), "failed"],
     [
-      coded(
-        "EACCES",
-        "EACCES: permission denied, open 'C:/plugins/jira/plugin.json'",
-      ),
-      "install",
+      coded("EACCES", "EACCES: permission denied, open 'plugin.json'"),
       "failed",
     ],
-    [
-      coded(
-        "ENOSPC",
-        "ENOSPC: no space left on device, write 'jira.ajour-connector'",
-      ),
-      "install",
-      "failed",
-    ],
-    [
-      coded("ENOENT", "ENOENT: no such file, open 'archive'"),
-      "select",
-      "failed",
-    ],
-    // The local API's installer: its validation messages, until it has codes.
-    [
-      new Error("Another plugin package change is already in progress."),
-      "install",
-      "busy",
-    ],
-    [
-      new Error(
-        "Wait for active plugin operations to finish before installing a plugin.",
-      ),
-      "install",
-      "busy",
-    ],
-    [named("ZodError"), "install", "invalid_archive"],
-    [named("IncompatiblePluginError"), "install", "invalid_archive"],
-    [
-      new Error("Plugin archive contains an unsafe path: ../x"),
-      "install",
-      "invalid_archive",
-    ],
-    [
-      new Error('Plugin "jira" entrypoint must be compiled JavaScript.'),
-      "install",
-      "invalid_archive",
-    ],
-    [new Error("Manifest file is over 64 KB."), "install", "invalid_archive"],
-    [new Error("Could not write the plugin's manifest."), "install", "failed"],
-  ])("%s at %s is %s", (error, step, result) => {
-    expect(pluginInstallResultOf(error, step)).toBe(result);
-  });
-});
-
-// Bad archives as the local API's real installer refuses them.
-describe("the installer's refusals", () => {
-  const { pluginInstallResultOf } =
-    require("./electron/plugin-install.cjs") as {
-      pluginInstallResultOf: (error: unknown, step: string) => string;
-    };
-
-  async function refusal(build: (directory: string) => Promise<Buffer>) {
-    const { mkdtemp, rm } = await import("node:fs/promises");
-    const os = await import("node:os");
-    const path = await import("node:path");
-    const { installPluginArchive } =
-      await import("../api/src/plugin-package.ts");
-    const directory = await mkdtemp(path.join(os.tmpdir(), "ajour-archive-"));
-    try {
-      const archiveBytes = await build(directory);
-      return await installPluginArchive({
-        archiveBytes,
-        archiveFilename: "broken.ajour-connector",
-        installRoot: path.join(directory, "installed"),
-      }).then(
-        () => {
-          throw new Error("The archive installed.");
-        },
-        (error: unknown) => error,
-      );
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  }
-
-  async function tarGz(directory: string, files: Record<string, string>) {
-    const { mkdir, readFile, writeFile } = await import("node:fs/promises");
-    const path = await import("node:path");
-    const { create } = await import("tar");
-    const source = path.join(directory, "source");
-    await mkdir(source, { recursive: true });
-    for (const [name, contents] of Object.entries(files)) {
-      await writeFile(path.join(source, name), contents);
-    }
-    const file = path.join(directory, "plugin.tgz");
-    await create({ gzip: true, cwd: source, file }, Object.keys(files));
-    return await readFile(file);
-  }
-
-  it.each([
-    ["a file that is not gzip", async () => Buffer.from("not an archive")],
-    [
-      "gzip that holds no tar",
-      async () => (await import("node:zlib")).gzipSync("not a tar"),
-    ],
-    [
-      "an archive without plugin.json",
-      (directory: string) => tarGz(directory, { "index.js": "export {};" }),
-    ],
-    [
-      "a plugin.json that is not JSON",
-      (directory: string) => tarGz(directory, { "plugin.json": "{ nope" }),
-    ],
-  ])("records %s as an invalid archive", async (_case, build) => {
-    const error = await refusal(build);
-
-    expect(pluginInstallResultOf(error, "install")).toBe("invalid_archive");
-  });
-
-  it("keeps a system error outside the archive a failure", () => {
-    const error = Object.assign(new Error("ENOSPC: no space left on device"), {
-      code: "ENOSPC",
-      path: "C:/plugins/.install-1/plugin.ajour-connector",
-    });
-
-    expect(pluginInstallResultOf(error, "install")).toBe("failed");
+  ])("%s is %s", (error, result) => {
+    expect(pluginInstallResultOf(error)).toBe(result);
   });
 });

@@ -353,7 +353,7 @@ function createAutomaticUpdateController({
     const active = {
       fail(error) {
         install.unit.set({ update: { stopped_at: step } }).fail(error);
-        settleHandoff?.();
+        settleHandoff?.("installer_failed");
       },
     };
     activeInstall = active;
@@ -443,17 +443,23 @@ function createAutomaticUpdateController({
         // electron-updater reports an installer that fails to start later,
         // so the event waits for the app to quit for it, within the quit's
         // time, and an updater error meanwhile lands on it.
-        await new Promise((resolve) => {
-          const timer = setTimeout(resolve, handoffTimeoutMs);
-          timer.unref?.();
-          settleHandoff = () => {
-            clearTimeout(timer);
-            resolve();
+        const handoff = await new Promise((resolve) => {
+          const timer = setTimeoutImpl(
+            () => resolve("timed_out"),
+            handoffTimeoutMs,
+          );
+          timer?.unref?.();
+          settleHandoff = (how) => {
+            clearTimeoutImpl(timer);
+            resolve(how);
           };
-          if (install.unit.outcome === "error") settleHandoff();
+          if (install.unit.outcome === "error") {
+            settleHandoff("installer_failed");
+          }
         });
         settleHandoff = null;
-        install.unit.end();
+        install.unit.set({ update: { handoff } });
+        install.unit.end(handoff === "timed_out" ? "timeout" : undefined);
       })
       .catch((error) => {
         if (isCurrent()) {
@@ -490,7 +496,7 @@ function createAutomaticUpdateController({
 
   /** The app is quitting for the installer: the install's event ends. */
   function installerQuitting() {
-    settleHandoff?.();
+    settleHandoff?.("app_quit");
   }
 
   return {

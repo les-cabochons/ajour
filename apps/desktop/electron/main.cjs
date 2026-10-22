@@ -474,7 +474,7 @@ async function installPluginArchive(unit, archive, ...options) {
     unit?.set({
       plugin: {
         install_ms: Date.now() - installStartedAt,
-        result: pluginInstallResultOf(error, "install"),
+        result: pluginInstallResultOf(error),
       },
     });
     throw error;
@@ -511,7 +511,7 @@ ipc.handle("ajour:install-plugin", async (event) => {
   try {
     selectedArchive = await selectPluginArchive(dialog, mainWindow);
   } catch (error) {
-    unit?.set({ plugin: { result: pluginInstallResultOf(error, "select") } });
+    unit?.set({ plugin: { result: pluginInstallResultOf(error) } });
     throw error;
   } finally {
     unit?.set({ plugin: { dialog_ms: Date.now() - dialogStartedAt } });
@@ -577,7 +577,7 @@ ipc.handle("ajour:download-catalog-plugin", async (event, pluginId) => {
   try {
     downloaded = await pluginCatalogService.downloadPluginArchive(pluginId);
   } catch (error) {
-    unit?.set({ plugin: { result: pluginInstallResultOf(error, "download") } });
+    unit?.set({ plugin: { result: pluginInstallResultOf(error) } });
     throw error;
   } finally {
     unit?.set({ plugin: { download_ms: Date.now() - downloadStartedAt } });

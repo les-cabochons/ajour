@@ -75,69 +75,19 @@ async function selectPluginArchive(
   }
 }
 
-/** A Node system error's code, such as `EACCES` or `ENOSPC`. */
-const SYSTEM_ERROR_CODE = /^E[A-Z0-9]+$/u;
-
-// The local API's installer throws plain errors (apps/api/src/plugin-host.ts
-// and apps/api/src/plugin-package.ts), so its refusals are told apart by
-// their messages until it gives them codes. Only its archive validation
-// counts as an invalid archive.
-const BUSY =
-  /^(Another plugin package change is already in progress|Wait for active plugin operations to finish)/u;
-const INVALID_ARCHIVE = [
-  /^Plugin archives? /u,
-  /^Plugin files must use the /u,
-  /^Plugin "[^"]*" (runs no code|entrypoint )/u,
-  / (must be a regular file|must not traverse symbolic links|must be relative|leaves its plugin directory|is over 64 KB|which Ajour does not fill)\.$/u,
-];
-
-/** The manifest the installer reads from the extracted archive. */
-const MANIFEST_FILE = "plugin.json";
-
-/** The last segment of a file path, on Windows or POSIX. */
-function baseName(filePath) {
-  return typeof filePath === "string"
-    ? (filePath.split(/[\\/]/u).pop() ?? "")
-    : "";
-}
+/** The codes an install failure carries when the package itself is the cause. */
+const PACKAGE_RESULTS = new Set(["invalid_archive", "not_available"]);
 
 /**
- * A failed install's result for its `plugin.install` event, from the step it
- * failed at (`select`, `download` or `install`) and the error's structure:
- * the code desktop's own errors carry, tar's codes, a Node system error's
- * code and path, or the type of the local API's validation error.
+ * A failed install's result for its `plugin.install` event, from the code
+ * the error carries: `invalid_archive` from the local API's installer
+ * (apps/api/src/plugin-package.ts) or from picking an archive here,
+ * `not_available` from the catalog. Anything else is the machine or Ajour
+ * failing.
  */
-function pluginInstallResultOf(error, step) {
+function pluginInstallResultOf(error) {
   const code = typeof error?.code === "string" ? error.code : "";
-  if (code === "invalid_archive" || code === "not_available") return code;
-  if (step === "install") {
-    // tar refuses what is not a gzipped tar, with its own codes.
-    if (code.startsWith("TAR_")) return "invalid_archive";
-    // The extracted archive holds no manifest.
-    if (
-      SYSTEM_ERROR_CODE.test(code) &&
-      baseName(error?.path) === MANIFEST_FILE
-    ) {
-      return "invalid_archive";
-    }
-  }
-  if (SYSTEM_ERROR_CODE.test(code)) return "failed";
-  if (step !== "install") return "failed";
-  // The manifest is the one file the installer parses as JSON, and zod checks
-  // what it holds.
-  if (
-    error?.name === "SyntaxError" ||
-    error?.name === "ZodError" ||
-    error?.name === "IncompatiblePluginError"
-  ) {
-    return "invalid_archive";
-  }
-  const message = typeof error?.message === "string" ? error.message : "";
-  if (BUSY.test(message)) return "busy";
-  if (INVALID_ARCHIVE.some((pattern) => pattern.test(message))) {
-    return "invalid_archive";
-  }
-  return "failed";
+  return PACKAGE_RESULTS.has(code) ? code : "failed";
 }
 
 module.exports = {

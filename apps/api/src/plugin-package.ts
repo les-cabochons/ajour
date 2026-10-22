@@ -54,6 +54,40 @@ export interface UnavailablePlugin {
   reason: string;
 }
 
+/**
+ * The code of an error that says the plugin archive itself is invalid, as the
+ * desktop's plugin.install event records it, apart from the machine failing.
+ */
+export const INVALID_PLUGIN_ARCHIVE = "invalid_archive";
+
+/**
+ * Marks an error raised while validating, extracting or reading an archive
+ * as `invalid_archive`. A Node system error is the machine failing (a locked,
+ * full or busy disk), except `ENOENT` inside the extracted archive, which
+ * means the archive lacks the file.
+ */
+function invalidArchiveError(error: unknown): unknown {
+  const systemError = error as NodeJS.ErrnoException | null;
+  if (
+    typeof systemError?.syscall === "string" &&
+    systemError.code !== "ENOENT"
+  ) {
+    return error;
+  }
+  const marked = error instanceof Error ? error : new Error(String(error));
+  return Object.assign(marked, { code: INVALID_PLUGIN_ARCHIVE });
+}
+
+async function asArchiveValidation<Result>(
+  work: () => Promise<Result>,
+): Promise<Result> {
+  try {
+    return await work();
+  } catch (error) {
+    throw invalidArchiveError(error);
+  }
+}
+
 /** Thrown when a valid manifest targets a plugin API this app does not run. */
 export class IncompatiblePluginError extends Error {
   readonly manifest: PluginManifest;
@@ -394,8 +428,10 @@ export async function installPluginArchive(options: {
   if (
     !options.archiveFilename.toLowerCase().endsWith(PLUGIN_ARCHIVE_EXTENSION)
   ) {
-    throw new Error(
-      `Plugin files must use the ${PLUGIN_ARCHIVE_EXTENSION} extension.`,
+    throw invalidArchiveError(
+      new Error(
+        `Plugin files must use the ${PLUGIN_ARCHIVE_EXTENSION} extension.`,
+      ),
     );
   }
 
@@ -403,8 +439,10 @@ export async function installPluginArchive(options: {
     options.archiveBytes.byteLength === 0 ||
     options.archiveBytes.byteLength > MAX_PLUGIN_ARCHIVE_BYTES
   ) {
-    throw new Error(
-      `Plugin archives must be between 1 byte and ${MAX_PLUGIN_ARCHIVE_BYTES} bytes.`,
+    throw invalidArchiveError(
+      new Error(
+        `Plugin archives must be between 1 byte and ${MAX_PLUGIN_ARCHIVE_BYTES} bytes.`,
+      ),
     );
   }
 
@@ -418,16 +456,17 @@ export async function installPluginArchive(options: {
 
   try {
     await writeFile(archivePath, options.archiveBytes, { mode: 0o600 });
-    await validatePluginArchive(archivePath);
-    await extract({
-      cwd: payloadDirectory,
-      file: archivePath,
-      gzip: true,
-      preservePaths: false,
-      strict: true,
+    const stagedPlugin = await asArchiveValidation(async () => {
+      await validatePluginArchive(archivePath);
+      await extract({
+        cwd: payloadDirectory,
+        file: archivePath,
+        gzip: true,
+        preservePaths: false,
+        strict: true,
+      });
+      return await readPlugin(payloadDirectory, "installed");
     });
-
-    const stagedPlugin = await readPlugin(payloadDirectory, "installed");
     const targetDirectory = path.join(
       options.installRoot,
       stagedPlugin.manifest.id,

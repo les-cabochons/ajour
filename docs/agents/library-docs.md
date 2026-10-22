@@ -124,7 +124,7 @@ The backlog editor module is feature-local because its vocabulary and commands b
 ## API
 
 - Local API lives in `apps/api`
-- Plugin package validation and installation: `apps/api/src/plugin-package.ts`
+- Plugin package validation and installation: `apps/api/src/plugin-package.ts`. Every archive-validation error carries the code `invalid_archive` (`INVALID_PLUGIN_ARCHIVE`); a Node system error, such as a locked or full disk, keeps its own code.
 - Plugin discovery, request/reply validation, and package mutation coordination: `apps/api/src/plugin-host.ts`
 - Shared ephemeral worker admission, cancellation, timeout, termination, and shutdown drain: `apps/api/src/plugin-worker-lifetime.ts`. Each plugin/data-shape manager owns a separate four-operation quota and its own worker script.
 - Worker entrypoint bridge: `apps/api/src/plugin-worker.mjs`

@@ -1,34 +1,42 @@
 import { EventEmitter } from "node:events";
 import { createRequire } from "node:module";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { recordingEvents } from "./recording-events.ts";
 
 const require = createRequire(import.meta.url);
-const { createAutomaticUpdateController, isCandidateCoreAtLeastCurrent } =
-  require("./electron/automatic-update.cjs") as {
-    createAutomaticUpdateController: (options: Record<string, unknown>) => {
-      checkNow: (
-        track?: "stable" | "nightly",
-        options?: { unit?: unknown },
-      ) => Promise<unknown>;
-      configure: (
-        track: "stable" | "nightly",
-        options?: { unit?: unknown },
-      ) => Promise<unknown>;
-      updateAndRestart: (
-        track: string,
-        version: string,
-        options?: { unit?: unknown },
-      ) => Promise<unknown>;
-      getState: () => { status: string };
-      dispose: () => void;
-      installerQuitting: () => void;
-    };
-    isCandidateCoreAtLeastCurrent: (
-      current: string,
-      candidate: string,
-    ) => boolean;
+const {
+  DEFAULT_UPDATE_CHECK_INTERVAL_MS,
+  createAutomaticUpdateController,
+  isCandidateCoreAtLeastCurrent,
+} = require("./electron/automatic-update.cjs") as {
+  DEFAULT_UPDATE_CHECK_INTERVAL_MS: number;
+  createAutomaticUpdateController: (options: Record<string, unknown>) => {
+    checkNow: (
+      track?: "stable" | "nightly",
+      options?: { unit?: unknown },
+    ) => Promise<unknown>;
+    configure: (
+      track: "stable" | "nightly",
+      options?: { unit?: unknown },
+    ) => Promise<unknown>;
+    updateAndRestart: (
+      track: string,
+      version: string,
+      options?: { unit?: unknown },
+    ) => Promise<unknown>;
+    getState: () => { status: string };
+    dispose: () => void;
+    installerQuitting: () => void;
   };
+  isCandidateCoreAtLeastCurrent: (
+    current: string,
+    candidate: string,
+  ) => boolean;
+};
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -102,11 +110,16 @@ function createController(overrides: Record<string, unknown> = {}) {
     events,
     // Most tests do not wait for the app to quit for the installer.
     handoffTimeoutMs: 0,
-    setTimeoutImpl: (callback: () => void) => {
+    // The tests run the scheduled check by hand; other delays, such as the
+    // wait after the installer handoff, follow the clock, fake or real.
+    setTimeoutImpl: (callback: () => void, ms: number) => {
+      if (ms !== DEFAULT_UPDATE_CHECK_INTERVAL_MS)
+        return setTimeout(callback, ms);
       scheduled.push(callback);
       return { unref: vi.fn() };
     },
-    clearTimeoutImpl: vi.fn(),
+    clearTimeoutImpl: (timer: ReturnType<typeof setTimeout>) =>
+      clearTimeout(timer),
     ...overrides,
   });
   return {
@@ -504,6 +517,7 @@ describe("update events", () => {
   // The installer may still fail to start after the handoff, so the event
   // stays open until the app quits for it.
   it("ends the install when the app quits for the installer", async () => {
+    vi.useFakeTimers();
     const prepareToInstall = vi.fn(async () => "stopped");
     const { controller, autoUpdater, dialog, recorded } = createController({
       prepareToInstall,
@@ -529,7 +543,10 @@ describe("update events", () => {
     });
     await controller.configure("stable");
 
-    await controller.updateAndRestart("stable", "1.0.1");
+    const update = controller.updateAndRestart("stable", "1.0.1");
+    await untilHandoff(autoUpdater);
+    await vi.advanceTimersByTimeAsync(5);
+    await update;
 
     expect(emitted).toEqual({ atHandoff: false, beforeQuit: false });
     expect(recorded.at(-1)).toMatchObject({
@@ -543,6 +560,7 @@ describe("update events", () => {
         download_bytes: 90_000_000,
         api_stop: "stopped",
         stopped_at: "install",
+        handoff: "app_quit",
       },
     });
   });
@@ -562,6 +580,15 @@ describe("update events", () => {
 
   const installs = (recorded: { name: string }[]) =>
     recorded.filter((event) => event.name === "update.install");
+
+  /** Lets the install run up to the handoff to the installer. */
+  async function untilHandoff(autoUpdater: FakeUpdater) {
+    for (let turn = 0; turn < 100; turn += 1) {
+      if (autoUpdater.quitAndInstall.mock.calls.length > 0) return;
+      await Promise.resolve();
+    }
+    throw new Error("The install never reached the handoff.");
+  }
 
   // electron-updater reports an installer that cannot start as an error
   // event, from inside quitAndInstall.
@@ -609,8 +636,9 @@ describe("update events", () => {
   // electron-updater's NSIS installer reports a spawn that failed later,
   // from a promise's catch.
   it("records an installer that fails to start after the handoff on the install's one event", async () => {
+    vi.useFakeTimers();
     const { controller, autoUpdater, dialog, recorded } = createController({
-      handoffTimeoutMs: 60_000,
+      handoffTimeoutMs: 10_000,
     });
     dialog.showMessageBox.mockResolvedValue({ response: 1 });
     autoUpdater.quitAndInstall.mockImplementation(() => {
@@ -618,41 +646,57 @@ describe("update events", () => {
     });
     await controller.configure("stable");
 
-    await controller.updateAndRestart("stable", "1.0.1");
+    const update = controller.updateAndRestart("stable", "1.0.1");
+    await untilHandoff(autoUpdater);
+    await vi.advanceTimersByTimeAsync(5);
+    await update;
 
     expect(installs(recorded)).toMatchObject([
       {
         outcome: "error",
         error: { message: "spawn ENOENT" },
-        update: { stopped_at: "install" },
+        update: { stopped_at: "install", handoff: "installer_failed" },
       },
     ]);
   });
 
-  it("ends the install within the quit's time when the app never quits", async () => {
-    const { controller, dialog, recorded } = createController({
-      handoffTimeoutMs: 20,
+  it("records a handoff the app never quit for as timed out, within the quit's time", async () => {
+    vi.useFakeTimers();
+    const { controller, autoUpdater, dialog, recorded } = createController({
+      handoffTimeoutMs: 10_000,
     });
     dialog.showMessageBox.mockResolvedValue({ response: 1 });
     await controller.configure("stable");
 
-    await controller.updateAndRestart("stable", "1.0.1");
+    const update = controller.updateAndRestart("stable", "1.0.1");
+    await untilHandoff(autoUpdater);
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(installs(recorded)).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    await update;
 
     expect(installs(recorded)).toMatchObject([
-      { outcome: "ok", update: { stopped_at: "install" } },
+      {
+        outcome: "timeout",
+        update: { stopped_at: "install", handoff: "timed_out" },
+      },
     ]);
   });
 
   it("adds no second install event for an error once the app quit for the installer", async () => {
+    vi.useFakeTimers();
     const { controller, autoUpdater, dialog, recorded } = createController({
-      handoffTimeoutMs: 60_000,
+      handoffTimeoutMs: 10_000,
     });
     dialog.showMessageBox.mockResolvedValue({ response: 1 });
     autoUpdater.quitAndInstall.mockImplementation(() => {
       setTimeout(() => controller.installerQuitting(), 1);
     });
     await controller.configure("stable");
-    await controller.updateAndRestart("stable", "1.0.1");
+    const update = controller.updateAndRestart("stable", "1.0.1");
+    await untilHandoff(autoUpdater);
+    await vi.advanceTimersByTimeAsync(1);
+    await update;
 
     autoUpdater.emit("error", new Error("late"));
 

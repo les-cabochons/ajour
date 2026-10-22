@@ -501,6 +501,12 @@ export const catalog = defineCatalog({
           >(),
           api_stop: operational<ApiStop>(),
           api_stop_ms: operational<number>(),
+          /**
+           * How the wait after the handoff ended: the app quit for the
+           * installer, the installer failed to start, or the quit's time ran
+           * out with the app still open.
+           */
+          handoff: operational<"app_quit" | "installer_failed" | "timed_out">(),
         },
       },
     },
