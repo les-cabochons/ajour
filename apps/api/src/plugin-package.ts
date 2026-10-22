@@ -60,31 +60,58 @@ export interface UnavailablePlugin {
  */
 export const INVALID_PLUGIN_ARCHIVE = "invalid_archive";
 
+/** System errors that are the machine failing wherever they happen: a full, locked or busy disk. */
+const MACHINE_ERROR_CODES = new Set([
+  "EACCES",
+  "EAGAIN",
+  "EBUSY",
+  "EDQUOT",
+  "EIO",
+  "EMFILE",
+  "ENFILE",
+  "ENOMEM",
+  "ENOSPC",
+  "EPERM",
+  "EROFS",
+]);
+
 /**
  * Marks an error raised while validating, extracting or reading an archive
- * as `invalid_archive`. A Node system error is the machine failing (a locked,
- * full or busy disk), except `ENOENT` inside the extracted archive, which
- * means the archive lacks the file.
+ * as `invalid_archive`. Errors the archive's contents cause are: tar's and
+ * zlib's, the manifest's parse and schema errors, and the limits. A Node
+ * system error is the archive's fault only on a path inside the extraction
+ * folder, such as a manifest or entrypoint the archive lacks (`ENOENT`) or an
+ * entry tar cannot write over another (`EEXIST`). Opening the staged archive
+ * or reaching the extraction folder itself, and a full, locked or busy disk
+ * anywhere, stay the machine failing.
  */
-function invalidArchiveError(error: unknown): unknown {
+function invalidArchiveError(
+  error: unknown,
+  extractionFolder: string,
+): unknown {
   const systemError = error as NodeJS.ErrnoException | null;
-  if (
-    typeof systemError?.syscall === "string" &&
-    systemError.code !== "ENOENT"
-  ) {
-    return error;
+  if (typeof systemError?.syscall === "string") {
+    const file = systemError.path;
+    const insideExtraction =
+      typeof file === "string" &&
+      isPathInside(extractionFolder, file) &&
+      path.resolve(file) !== path.resolve(extractionFolder);
+    if (!insideExtraction || MACHINE_ERROR_CODES.has(systemError.code ?? "")) {
+      return error;
+    }
   }
   const marked = error instanceof Error ? error : new Error(String(error));
   return Object.assign(marked, { code: INVALID_PLUGIN_ARCHIVE });
 }
 
 async function asArchiveValidation<Result>(
+  extractionFolder: string,
   work: () => Promise<Result>,
 ): Promise<Result> {
   try {
     return await work();
   } catch (error) {
-    throw invalidArchiveError(error);
+    throw invalidArchiveError(error, extractionFolder);
   }
 }
 
@@ -428,10 +455,11 @@ export async function installPluginArchive(options: {
   if (
     !options.archiveFilename.toLowerCase().endsWith(PLUGIN_ARCHIVE_EXTENSION)
   ) {
-    throw invalidArchiveError(
+    throw Object.assign(
       new Error(
         `Plugin files must use the ${PLUGIN_ARCHIVE_EXTENSION} extension.`,
       ),
+      { code: INVALID_PLUGIN_ARCHIVE },
     );
   }
 
@@ -439,10 +467,11 @@ export async function installPluginArchive(options: {
     options.archiveBytes.byteLength === 0 ||
     options.archiveBytes.byteLength > MAX_PLUGIN_ARCHIVE_BYTES
   ) {
-    throw invalidArchiveError(
+    throw Object.assign(
       new Error(
         `Plugin archives must be between 1 byte and ${MAX_PLUGIN_ARCHIVE_BYTES} bytes.`,
       ),
+      { code: INVALID_PLUGIN_ARCHIVE },
     );
   }
 
@@ -456,17 +485,20 @@ export async function installPluginArchive(options: {
 
   try {
     await writeFile(archivePath, options.archiveBytes, { mode: 0o600 });
-    const stagedPlugin = await asArchiveValidation(async () => {
-      await validatePluginArchive(archivePath);
-      await extract({
-        cwd: payloadDirectory,
-        file: archivePath,
-        gzip: true,
-        preservePaths: false,
-        strict: true,
-      });
-      return await readPlugin(payloadDirectory, "installed");
-    });
+    const stagedPlugin = await asArchiveValidation(
+      payloadDirectory,
+      async () => {
+        await validatePluginArchive(archivePath);
+        await extract({
+          cwd: payloadDirectory,
+          file: archivePath,
+          gzip: true,
+          preservePaths: false,
+          strict: true,
+        });
+        return await readPlugin(payloadDirectory, "installed");
+      },
+    );
     const targetDirectory = path.join(
       options.installRoot,
       stagedPlugin.manifest.id,

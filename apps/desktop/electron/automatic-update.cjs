@@ -68,6 +68,9 @@ function createAutomaticUpdateController({
   handoffTimeoutMs = INSTALLER_HANDOFF_TIMEOUT_MS,
   setTimeoutImpl = setTimeout,
   clearTimeoutImpl = clearTimeout,
+  /** The wait after the installer handoff, apart from the check schedule. */
+  setHandoffTimer = setTimeoutImpl,
+  clearHandoffTimer = clearTimeoutImpl,
 }) {
   let currentTrack = null;
   let generation = 0;
@@ -444,13 +447,13 @@ function createAutomaticUpdateController({
         // so the event waits for the app to quit for it, within the quit's
         // time, and an updater error meanwhile lands on it.
         const handoff = await new Promise((resolve) => {
-          const timer = setTimeoutImpl(
+          const timer = setHandoffTimer(
             () => resolve("timed_out"),
             handoffTimeoutMs,
           );
           timer?.unref?.();
           settleHandoff = (how) => {
-            clearTimeoutImpl(timer);
+            clearHandoffTimer(timer);
             resolve(how);
           };
           if (install.unit.outcome === "error") {

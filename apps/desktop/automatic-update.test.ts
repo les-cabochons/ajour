@@ -4,35 +4,31 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { recordingEvents } from "./recording-events.ts";
 
 const require = createRequire(import.meta.url);
-const {
-  DEFAULT_UPDATE_CHECK_INTERVAL_MS,
-  createAutomaticUpdateController,
-  isCandidateCoreAtLeastCurrent,
-} = require("./electron/automatic-update.cjs") as {
-  DEFAULT_UPDATE_CHECK_INTERVAL_MS: number;
-  createAutomaticUpdateController: (options: Record<string, unknown>) => {
-    checkNow: (
-      track?: "stable" | "nightly",
-      options?: { unit?: unknown },
-    ) => Promise<unknown>;
-    configure: (
-      track: "stable" | "nightly",
-      options?: { unit?: unknown },
-    ) => Promise<unknown>;
-    updateAndRestart: (
-      track: string,
-      version: string,
-      options?: { unit?: unknown },
-    ) => Promise<unknown>;
-    getState: () => { status: string };
-    dispose: () => void;
-    installerQuitting: () => void;
+const { createAutomaticUpdateController, isCandidateCoreAtLeastCurrent } =
+  require("./electron/automatic-update.cjs") as {
+    createAutomaticUpdateController: (options: Record<string, unknown>) => {
+      checkNow: (
+        track?: "stable" | "nightly",
+        options?: { unit?: unknown },
+      ) => Promise<unknown>;
+      configure: (
+        track: "stable" | "nightly",
+        options?: { unit?: unknown },
+      ) => Promise<unknown>;
+      updateAndRestart: (
+        track: string,
+        version: string,
+        options?: { unit?: unknown },
+      ) => Promise<unknown>;
+      getState: () => { status: string };
+      dispose: () => void;
+      installerQuitting: () => void;
+    };
+    isCandidateCoreAtLeastCurrent: (
+      current: string,
+      candidate: string,
+    ) => boolean;
   };
-  isCandidateCoreAtLeastCurrent: (
-    current: string,
-    candidate: string,
-  ) => boolean;
-};
 
 afterEach(() => {
   vi.useRealTimers();
@@ -110,15 +106,16 @@ function createController(overrides: Record<string, unknown> = {}) {
     events,
     // Most tests do not wait for the app to quit for the installer.
     handoffTimeoutMs: 0,
-    // The tests run the scheduled check by hand; other delays, such as the
-    // wait after the installer handoff, follow the clock, fake or real.
-    setTimeoutImpl: (callback: () => void, ms: number) => {
-      if (ms !== DEFAULT_UPDATE_CHECK_INTERVAL_MS)
-        return setTimeout(callback, ms);
+    // The tests run the scheduled check by hand.
+    setTimeoutImpl: (callback: () => void) => {
       scheduled.push(callback);
       return { unref: vi.fn() };
     },
-    clearTimeoutImpl: (timer: ReturnType<typeof setTimeout>) =>
+    clearTimeoutImpl: vi.fn(),
+    // The wait after the installer handoff follows the clock, fake or real.
+    setHandoffTimer: (callback: () => void, ms: number) =>
+      setTimeout(callback, ms),
+    clearHandoffTimer: (timer: ReturnType<typeof setTimeout>) =>
       clearTimeout(timer),
     ...overrides,
   });
@@ -516,6 +513,25 @@ describe("update events", () => {
 
   // The installer may still fail to start after the handoff, so the event
   // stays open until the app quits for it.
+  it("waits after the handoff on its own timer, never the check schedule", async () => {
+    const setHandoffTimer = vi.fn((callback: () => void) => {
+      queueMicrotask(callback);
+      return { unref: vi.fn() };
+    });
+    const { controller, dialog, scheduled } = createController({
+      handoffTimeoutMs: 10_000,
+      setHandoffTimer,
+    });
+    dialog.showMessageBox.mockResolvedValue({ response: 1 });
+    await controller.configure("stable");
+    const checksScheduled = scheduled.length;
+
+    await controller.updateAndRestart("stable", "1.0.1");
+
+    expect(setHandoffTimer).toHaveBeenCalledWith(expect.any(Function), 10_000);
+    expect(scheduled).toHaveLength(checksScheduled);
+  });
+
   it("ends the install when the app quits for the installer", async () => {
     vi.useFakeTimers();
     const prepareToInstall = vi.fn(async () => "stopped");
