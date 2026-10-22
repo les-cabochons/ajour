@@ -1,5 +1,5 @@
 import { runInNewContext } from "node:vm";
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { createEmitter, worstOutcome } from "../index.ts";
 import { apiContext, recordingEmitter, testCatalog } from "./fixtures.ts";
 
@@ -55,6 +55,38 @@ describe("one event per unit of work", () => {
     });
 
     expect(recorded[0]!.sync).toEqual({ mode: "backlog", received_count: 4 });
+  });
+
+  it("replaces, never merges into, an object that is not an object literal", () => {
+    const { events, recorded } = recordingEmitter();
+    const notLiteral = Object.assign(Object.create(Object.create(null)), {
+      received_count: 4,
+    });
+
+    events.run("backlog.sync", { kind: "job", trigger: "schedule" }, (unit) => {
+      unit.set({ sync: { mode: "backlog" } });
+      unit.set({ sync: notLiteral });
+    });
+
+    expect(recorded[0]!.sync).toBe(notLiteral);
+  });
+
+  it("names a renamed unit by its new name", () => {
+    const { events } = recordingEmitter();
+
+    const unit = events.start("api.request", {
+      kind: "request",
+      trigger: "system",
+    });
+    const renamed = unit.rename("agent_tool.call");
+
+    expectTypeOf(unit.name).toEqualTypeOf<
+      "backlog.sync" | "time_entry.update" | "api.request" | "agent_tool.call"
+    >();
+    expect([unit.name, renamed.name]).toEqual([
+      "agent_tool.call",
+      "agent_tool.call",
+    ]);
   });
 
   it("describes an error made in another realm", () => {

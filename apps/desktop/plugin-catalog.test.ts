@@ -3,10 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { catalog as eventCatalog } from "../../packages/wide-events/catalog.ts";
-import { createEmitter } from "../../packages/wide-events/index.ts";
-import { asyncContextScope } from "../../packages/wide-events/node.ts";
-import { createRecordingSink } from "../../packages/wide-events/sinks.ts";
+import { recordingEvents } from "./recording-events.ts";
 
 const require = createRequire(import.meta.url);
 const { CATALOG_URL, createPluginCatalogService } =
@@ -432,24 +429,13 @@ describe("the catalog.refresh event", () => {
   async function refreshEvent(service: {
     refresh(options?: { unit?: unknown }): Promise<unknown>;
   }) {
-    const sink = createRecordingSink();
-    const events = createEmitter({
-      catalog: eventCatalog,
-      context: {
-        runtime: "main",
-        launch_id: "launch-1",
-        app: { version: "1.2.0", channel: "stable", packaged: true },
-        device: { platform: "win32" },
-      },
-      sink,
-      scope: asyncContextScope(),
-    });
+    const { events, recorded } = recordingEvents();
     await events.run(
       "catalog.refresh",
       { kind: "job", trigger: "boot" },
       (unit) => service.refresh({ unit }),
     );
-    return sink.events[0]!;
+    return recorded[0]!;
   }
 
   function indexFetch(handle: (url: string, init?: RequestInit) => Response) {

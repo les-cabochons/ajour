@@ -1,18 +1,22 @@
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { catalog } from "../../packages/wide-events/catalog.ts";
 import { createEmitter } from "../../packages/wide-events/index.ts";
-import { asyncContextScope } from "../../packages/wide-events/node.ts";
 import { createRecordingSink } from "../../packages/wide-events/sinks.ts";
 
 const require = createRequire(import.meta.url);
 const {
   apiLaunchOf,
+  apiStopOf,
   createLaunchContext,
   createMainEvents,
   loadMainEmitter,
+  recordLaunchVersion,
+  triggerOf,
 } = require("./electron/main-events.cjs");
 
 const repoRoot = path.resolve(
@@ -31,12 +35,12 @@ function attached(clock: { now: number }) {
   const sink = createRecordingSink();
   const events = createMainEvents({ now: () => clock.now });
   const attach = () =>
-    events.attach((now: () => number) =>
+    events.attach((now: () => number, scope: never) =>
       createEmitter({
         catalog,
         context: { runtime: "main", ...launch },
         sink,
-        scope: asyncContextScope(),
+        scope,
         now,
       }),
     );
@@ -243,7 +247,7 @@ describe("loading the package", () => {
       sinkSwitch: "console",
       write: (line: string) => lines.push(line),
     });
-    const emitter = factory(() => 5);
+    const emitter = factory(() => 5, undefined);
 
     const unit = emitter.start("app.error", {
       kind: "crash",
@@ -263,5 +267,165 @@ describe("loading the package", () => {
       launch_id: "launch-1",
     });
     expect(event.error.message).not.toContain("alex");
+  });
+});
+
+describe("the active unit across the package load", () => {
+  it("is the running unit before the package loads, through awaits", async () => {
+    const { events, sink, attach } = attached({ now: 0 });
+
+    await events.run(
+      "local_state.recover",
+      { kind: "ipc", trigger: "boot" },
+      async () => {
+        await Promise.resolve();
+        events.current()?.set({ local_state: { source: "none" } });
+        events.current()?.fail(new Error("EPERM"));
+      },
+    );
+    attach();
+
+    expect(sink.events).toMatchObject([
+      {
+        name: "local_state.recover",
+        outcome: "error",
+        local_state: { source: "none" },
+      },
+    ]);
+  });
+
+  it("folds a unit started inside another before the package loads", async () => {
+    const { events, sink, attach } = attached({ now: 0 });
+
+    await events.run(
+      "update.check",
+      { kind: "ipc", trigger: "user" },
+      async () => {
+        await Promise.resolve();
+        events
+          .start("catalog.refresh", { kind: "job", trigger: "user" })
+          .end("error");
+      },
+    );
+    attach();
+
+    expect(sink.events).toMatchObject([
+      {
+        name: "update.check",
+        steps: ["catalog.refresh"],
+        step_failures: [{ name: "catalog.refresh", outcome: "error" }],
+      },
+    ]);
+  });
+
+  it("keeps work that started before the load in its unit after it", async () => {
+    const { events, sink, attach } = attached({ now: 0 });
+    let resume: () => void = () => {};
+
+    const work = events.run(
+      "update.check",
+      { kind: "ipc", trigger: "user" },
+      async () => {
+        await new Promise<void>((resolve) => {
+          resume = resolve;
+        });
+        events.current()?.set({ update: { track: "stable" } });
+        events.start("catalog.refresh", { kind: "job", trigger: "user" }).end();
+      },
+    );
+    attach();
+    resume();
+    await work;
+
+    expect(sink.events).toMatchObject([
+      {
+        name: "update.check",
+        update: { track: "stable" },
+        steps: ["catalog.refresh"],
+      },
+    ]);
+  });
+
+  it("emits a detached unit on its own, before the load as after", async () => {
+    const { events, sink, attach } = attached({ now: 0 });
+
+    await events.run("menu.run_item", { kind: "ipc", trigger: "user" }, () => {
+      events
+        .start("app.quit", {
+          kind: "lifecycle",
+          trigger: "user",
+          detached: true,
+        })
+        .end();
+    });
+    attach();
+
+    expect(sink.events.map((event) => event.name)).toEqual([
+      "app.quit",
+      "menu.run_item",
+    ]);
+    expect(sink.events[0]!.parent_span_id).toBe(sink.events[1]!.span_id);
+  });
+});
+
+describe("shared mappings", () => {
+  it("says who started a unit from what set it off", () => {
+    expect(
+      [
+        "launch",
+        "interval",
+        "schedule",
+        "manual",
+        "activate",
+        "menu",
+        "crash_reload",
+        "other",
+      ].map(triggerOf),
+    ).toEqual([
+      "boot",
+      "schedule",
+      "schedule",
+      "user",
+      "user",
+      "user",
+      "system",
+      "system",
+    ]);
+  });
+
+  it("names the local API's stop outcome as an event does", () => {
+    expect(
+      ["stopped", "failed", "timed-out", undefined].map(apiStopOf),
+    ).toEqual(["stopped", "failed", "timed_out", undefined]);
+  });
+});
+
+describe("the previous version", () => {
+  it("is the version the last launch recorded, and this launch records its own", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "ajour-launch-"));
+    const marker = path.join(directory, "last-launch.json");
+    try {
+      expect(recordLaunchVersion(marker, "1.2.0")).toBeUndefined();
+      expect(recordLaunchVersion(marker, "1.3.0")).toBe("1.2.0");
+      expect(JSON.parse(await readFile(marker, "utf8"))).toEqual({
+        version: "1.3.0",
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("ignores a marker it cannot read, and a folder it cannot write", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "ajour-launch-"));
+    const marker = path.join(directory, "last-launch.json");
+    try {
+      await writeFile(marker, "not json");
+      expect(recordLaunchVersion(marker, "1.2.0")).toBeUndefined();
+      expect(() =>
+        recordLaunchVersion(path.join(marker, "inside-a-file.json"), "1.2.0"),
+      ).not.toThrow();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });

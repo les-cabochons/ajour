@@ -3,9 +3,7 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 import { catalog } from "../../packages/wide-events/catalog.ts";
-import { createEmitter } from "../../packages/wide-events/index.ts";
-import { asyncContextScope } from "../../packages/wide-events/node.ts";
-import { createRecordingSink } from "../../packages/wide-events/sinks.ts";
+import { recordingEvents } from "./recording-events.ts";
 
 const require = createRequire(import.meta.url);
 const { createIpcListeners, refusedSender } =
@@ -50,21 +48,10 @@ const TRACEPARENT = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
 
 function setUp() {
   const ipcMain = new FakeIpcMain();
-  const sink = createRecordingSink();
-  const events = createEmitter({
-    catalog,
-    context: {
-      runtime: "main",
-      launch_id: "launch-1",
-      app: { version: "1.2.0", channel: "stable", packaged: true },
-      device: { platform: "win32" },
-    },
-    sink,
-    scope: asyncContextScope(),
-  });
+  const { events, recorded } = recordingEvents();
   return {
     ipcMain,
-    sink,
+    recorded,
     events,
     ipc: createIpcListeners(ipcMain, { events }),
   };
@@ -118,14 +105,14 @@ describe("main process IPC listeners", () => {
   });
 
   it("emits one event per call, named from the channel table", async () => {
-    const { ipcMain, ipc, sink } = setUp();
+    const { ipcMain, ipc, recorded } = setUp();
     ipc.handle("ajour:get-update-state", () => ({ status: "idle" }));
 
     await expect(
       ipcMain.invoke("ajour:get-update-state", { sender: "window" }),
     ).resolves.toEqual({ status: "idle" });
 
-    expect(sink.events).toMatchObject([
+    expect(recorded).toMatchObject([
       {
         name: "update.get_state",
         kind: "ipc",
@@ -140,7 +127,7 @@ describe("main process IPC listeners", () => {
   });
 
   it("records a refused sender as refused, not as a crash, and still rejects the invoke", async () => {
-    const { ipcMain, ipc, sink } = setUp();
+    const { ipcMain, ipc, recorded } = setUp();
     ipc.handle("ajour:check-for-updates", () => {
       throw refusedSender(
         "Only the active Ajour window can check for application updates.",
@@ -155,7 +142,7 @@ describe("main process IPC listeners", () => {
     ).rejects.toThrow("Only the active Ajour window");
     ipcMain.emit("ajour:set-theme-source", { sender: "other" }, "dark");
 
-    expect(sink.events).toMatchObject([
+    expect(recorded).toMatchObject([
       {
         name: "update.check",
         outcome: "refused",
@@ -172,14 +159,14 @@ describe("main process IPC listeners", () => {
   });
 
   it("records a failed call as an error", async () => {
-    const { ipcMain, ipc, sink } = setUp();
+    const { ipcMain, ipc, recorded } = setUp();
     ipc.answerSync("ajour:get-runtime-info", () => {
       throw new TypeError("broken");
     });
 
     ipcMain.emit("ajour:get-runtime-info", { sender: "window" });
 
-    expect(sink.events).toMatchObject([
+    expect(recorded).toMatchObject([
       {
         name: "app.runtime_info",
         outcome: "error",
@@ -190,7 +177,7 @@ describe("main process IPC listeners", () => {
   });
 
   it("takes an optional traceparent as the last argument and hides it from the listener", async () => {
-    const { ipcMain, ipc, sink } = setUp();
+    const { ipcMain, ipc, recorded } = setUp();
     const received: unknown[][] = [];
     ipc.handle("ajour:check-for-updates", (_event, ...args) => {
       received.push(args);
@@ -210,15 +197,15 @@ describe("main process IPC listeners", () => {
     );
 
     expect(received).toEqual([["stable"], ["nightly"]]);
-    expect(sink.events[0]).toMatchObject({
+    expect(recorded[0]).toMatchObject({
       trace_id: "0af7651916cd43dd8448eb211c80319c",
       parent_span_id: "b7ad6b7169203331",
     });
-    expect(sink.events[1]!.parent_span_id).toBeUndefined();
+    expect(recorded[1]!.parent_span_id).toBeUndefined();
   });
 
   it("lets the listener add to its event through the active unit", async () => {
-    const { ipcMain, ipc, sink, events } = setUp();
+    const { ipcMain, ipc, recorded, events } = setUp();
     ipc.handle("ajour:show-context-menu", async () => {
       await Promise.resolve();
       events.current()?.set({ context_menu: { item_count: 3 } });
@@ -227,7 +214,7 @@ describe("main process IPC listeners", () => {
 
     await ipcMain.invoke("ajour:show-context-menu", { sender: "window" }, []);
 
-    expect(sink.events[0]).toMatchObject({
+    expect(recorded[0]).toMatchObject({
       name: "context_menu.show",
       context_menu: { item_count: 3 },
     });

@@ -262,8 +262,55 @@ function buildEditContextMenuTemplate(params, actions) {
   return template;
 }
 
+/**
+ * The renderer's object action ids (apps/web/src/domain/actions/object-actions.ts),
+ * the only picked ids an event may name. context-menu.test.ts keeps it in step.
+ */
+const OBJECT_ACTION_IDS = new Set([
+  "add",
+  "add-subitem",
+  "archive",
+  "assign-shortcut",
+  "change-source-state",
+  "choose-project",
+  "continue",
+  "copy",
+  "cut",
+  "delete",
+  "discard",
+  "dismiss",
+  "duplicate",
+  "duplicate-to",
+  "edit",
+  "forget-meeting",
+  "hide-meeting",
+  "mark-not-committed",
+  "move-to",
+  "new-entry",
+  "new-task",
+  "open-in-source",
+  "paste",
+  "pin",
+  "restore",
+  "settle",
+  "snooze",
+  "start-entry",
+  "stop",
+  "stop-entry",
+  "unpin",
+  "unsettle",
+  "unsnooze",
+]);
+
+/** A picked item's id as an event records it: a known object action, or `other`. */
+function objectActionIdOf(id) {
+  return OBJECT_ACTION_IDS.has(id) ? id : "other";
+}
+
 module.exports = {
   MAC_ICON_SYMBOLS,
+  OBJECT_ACTION_IDS,
+  objectActionIdOf,
   buildContextMenuTemplate,
   buildEditContextMenuTemplate,
   getPopupPosition,

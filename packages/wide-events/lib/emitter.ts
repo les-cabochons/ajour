@@ -72,8 +72,11 @@ export interface FailOptions<Reason extends string> {
 }
 
 export interface Unit<C extends Catalog, Name extends EventName<C>> {
-  /** The unit's event name, such as `app.error`'s `active_unit` reads. */
-  readonly name: Name;
+  /**
+   * The unit's event name, such as `app.error`'s `active_unit` reads. A
+   * rename changes it, so it is typed as any of the catalog's names.
+   */
+  readonly name: EventName<C>;
   /**
    * The outcome recorded so far, or undefined while none is: the event then
    * ends `ok`. A seam reads it to weigh outcomes, never to copy them.
@@ -323,14 +326,21 @@ function mergeInto(target: Fields, source: Fields) {
 
 /**
  * An object literal of any realm: its prototype is null or an
- * `Object.prototype`, not necessarily this realm's.
+ * `Object.prototype`, not necessarily this realm's. A realm's
+ * `Object.prototype` has no prototype and its own `constructor`, `Object`.
  */
 function isPlainObject(value: unknown): value is Fields {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return false;
   }
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === null || Object.getPrototypeOf(prototype) === null;
+  const prototype: unknown = Object.getPrototypeOf(value);
+  if (prototype === null) return true;
+  if (Object.getPrototypeOf(prototype) !== null) return false;
+  const constructor = Object.getOwnPropertyDescriptor(
+    prototype,
+    "constructor",
+  )?.value;
+  return typeof constructor === "function" && constructor.name === "Object";
 }
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {

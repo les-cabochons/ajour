@@ -1,3 +1,5 @@
+const { apiStopOf, triggerOf } = require("./main-events.cjs");
+
 const DEFAULT_UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60_000;
 
 function assertUpdateTrack(track) {
@@ -43,11 +45,6 @@ function checkResultOf(state) {
   return undefined;
 }
 
-/** The local API's stop outcome, as an event records it. */
-function apiStopOf(outcome) {
-  return typeof outcome === "string" ? outcome.replace("-", "_") : undefined;
-}
-
 /**
  * The application update state, its checks and its installs. Each check
  * emits `update.check` and each install `update.install`: on the IPC event
@@ -61,7 +58,7 @@ function createAutomaticUpdateController({
   getMainWindow,
   prepareToInstall,
   resetInstallPreparation = () => {},
-  onStateChanged = () => {},
+  onStateChanged = (_state) => {},
   events,
   now = Date.now,
   checkIntervalMs = DEFAULT_UPDATE_CHECK_INTERVAL_MS,
@@ -120,7 +117,11 @@ function createAutomaticUpdateController({
       fail(error);
       // The install's own event ended before the handoff.
       events
-        .start("update.install", { kind: "job", trigger: "system" })
+        .start("update.install", {
+          kind: "job",
+          trigger: "system",
+          detached: true,
+        })
         .set({ update: { stopped_at: "install" } })
         .fail(error)
         .end();
@@ -180,13 +181,18 @@ function createAutomaticUpdateController({
     scheduledCheck.unref?.();
   }
 
-  /** The unit a check or install records on: the caller's, or its own job. */
+  /**
+   * The unit a check or install records on: the caller's, or its own job,
+   * which never folds into a unit that happens to be active, such as the IPC
+   * call whose check finished just before.
+   */
   function unitFor(name, unit, trigger) {
     if (unit) return { unit, own: false };
     return {
       unit: events.start(name, {
         kind: "job",
-        trigger: trigger === "schedule" ? "schedule" : "system",
+        trigger: triggerOf(trigger),
+        detached: true,
       }),
       own: true,
     };
@@ -219,6 +225,10 @@ function createAutomaticUpdateController({
   /**
    * Checks the track now. `unit` is the event of the IPC call that asked for
    * it; `trigger` says why the check runs.
+   */
+  /**
+   * @param {string} [track]
+   * @param {{ unit?: any, trigger?: string }} [options]
    */
   function checkNow(track = currentTrack, { unit, trigger = "manual" } = {}) {
     const changed = selectTrack(track);
@@ -274,6 +284,10 @@ function createAutomaticUpdateController({
     );
   }
 
+  /**
+   * @param {string} track
+   * @param {{ unit?: any }} [options]
+   */
   function configure(track, { unit } = {}) {
     const changed = selectTrack(track);
     if (changed && operation) {
@@ -293,16 +307,22 @@ function createAutomaticUpdateController({
 
   /**
    * Asks to confirm, downloads, stops the local API and hands over to the
-   * installer. `unit` is the event of the IPC call that asked for it. It is
-   * emitted just before the handoff, since the process quits right after.
+   * installer. `unit` is the event of the IPC call that asked for it. It
+   * ends in the task that hands over, since the process quits right after.
+   * Only the offered release's version enters it, never the one the
+   * renderer named.
+   */
+  /**
+   * @param {string} track
+   * @param {string} version
+   * @param {{ unit?: any }} [options]
    */
   function updateAndRestart(track, version, { unit } = {}) {
     assertUpdateTrack(track);
-    const install = unitFor("update.install", unit, "user");
+    const install = unitFor("update.install", unit, "manual");
     install.unit.set({
       update: {
         track,
-        ...(typeof version === "string" ? { to_version: version } : {}),
         ...(state.result?.currentVersion
           ? { from_version: state.result.currentVersion }
           : {}),
@@ -320,6 +340,7 @@ function createAutomaticUpdateController({
       install.unit.set({ update: { stopped_at: "not_ready" } }).end("noop");
       return Promise.resolve(state);
     }
+    install.unit.set({ update: { to_version: state.result.latestVersion } });
 
     clearScheduledCheck();
     const updateGeneration = generation;
@@ -404,8 +425,9 @@ function createAutomaticUpdateController({
           return stoppedBy("superseded");
         }
         step = "install";
-        install.unit.set({ update: { stopped_at: "install" } }).end();
+        install.unit.set({ update: { stopped_at: "install" } });
         autoUpdater.quitAndInstall(false, true);
+        install.unit.end();
       })
       .catch((error) => {
         install.unit.set({ update: { stopped_at: step } });

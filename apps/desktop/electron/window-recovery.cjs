@@ -1,3 +1,5 @@
+const { triggerOf } = require("./main-events.cjs");
+
 const CRASH_LIMIT = 3;
 const CRASH_PERIOD_MS = 60_000;
 
@@ -93,18 +95,16 @@ function watchWindow(window, { url, dialog, quit, events, now = Date.now }) {
    * Loads the app. Never rejects: a failure offers Try again and Quit. Only
    * the latest load's failure counts, and an aborted load is not a failure,
    * since a newer navigation replaced it. `trigger` says why it loads.
+   * Resolves the load's outcome: `ok`, `error` while its dialog shows, or
+   * `cancelled`.
    */
   async function load(trigger = "launch") {
     loadGeneration += 1;
     const thisLoad = loadGeneration;
     const unit = events.start("window.load", {
       kind: "lifecycle",
-      trigger:
-        trigger === "launch"
-          ? "boot"
-          : trigger === "activate"
-            ? "user"
-            : "system",
+      trigger: triggerOf(trigger),
+      detached: true,
     });
     unit.set({ window: { trigger } });
     const startedAt = now();
@@ -112,19 +112,20 @@ function watchWindow(window, { url, dialog, quit, events, now = Date.now }) {
       await window.loadURL(url);
       unit.set({ window: { load_ms: now() - startedAt } });
       unit.end();
+      return "ok";
     } catch (error) {
       unit.set({ window: { load_ms: now() - startedAt } });
       if (window.isDestroyed()) {
         unit.end("cancelled", "window_closed");
-        return;
+        return "cancelled";
       }
       if (thisLoad !== loadGeneration) {
         unit.end("cancelled", "superseded");
-        return;
+        return "cancelled";
       }
       if (error?.code === "ERR_ABORTED") {
         unit.end("cancelled", "aborted");
-        return;
+        return "cancelled";
       }
       unit.fail(error);
       void askToRetryOrQuit(
@@ -140,6 +141,7 @@ function watchWindow(window, { url, dialog, quit, events, now = Date.now }) {
           unit.end();
         },
       );
+      return "error";
     }
   }
 
@@ -159,9 +161,15 @@ function watchWindow(window, { url, dialog, quit, events, now = Date.now }) {
     );
   }
 
-  /** Ends the open hang: the page responded, or it is gone. */
+  /**
+   * Ends the open hang: the page responded, or it is gone. Its dialog, still
+   * open, is replaced.
+   */
   function endHang(recovered) {
     if (!hang) return;
+    if (openQuestion?.kind === "hang") {
+      hang.set({ unresponsive: { answer: "replaced" } });
+    }
     hang.set({ unresponsive: { recovered } });
     hang.end(recovered ? "ok" : "error");
     hang = null;
@@ -177,6 +185,7 @@ function watchWindow(window, { url, dialog, quit, events, now = Date.now }) {
     hang ??= events.start("window.unresponsive", {
       kind: "crash",
       trigger: "system",
+      detached: true,
     });
     const unit = hang;
     let answer;
@@ -201,25 +210,25 @@ function watchWindow(window, { url, dialog, quit, events, now = Date.now }) {
   });
 
   window.webContents.on("responsive", () => {
+    endHang(true);
     if (openQuestion?.kind === "hang") {
-      hang?.set({ unresponsive: { answer: "replaced" } });
       closeOpenQuestion();
     }
-    endHang(true);
   });
 
   window.once?.("closed", () => endHang(false));
 
   window.webContents.on("render-process-gone", (_event, details) => {
     // The crash starts a new recovery: earlier dialogs and loads are outdated.
-    closeOpenQuestion();
     endHang(false);
+    closeOpenQuestion();
     loadGeneration += 1;
     const killedOnPurpose = killingHungPage;
     killingHungPage = false;
     const unit = events.start("process.gone", {
       kind: "crash",
       trigger: "system",
+      detached: true,
     });
     unit.set({
       process: {

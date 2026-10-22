@@ -255,9 +255,11 @@ export const catalog = defineCatalog({
     /** One launch, from the process start until the window has loaded. */
     "app.launch": {
       kinds: ["lifecycle"],
-      reasons: ["startup_failed"],
+      reasons: ["startup_failed", "load_failed", "load_cancelled"],
       fields: {
         launch: {
+          /** The version the previous launch ran, absent on a first launch. */
+          previous_version: operational(),
           /** From the process start until Electron is ready. */
           ready_ms: operational<number>(),
           api_start_ms: operational<number>(),
@@ -279,12 +281,14 @@ export const catalog = defineCatalog({
     /** Quitting, from the first quit request until the process quits. */
     "app.quit": {
       kinds: ["lifecycle"],
-      reasons: ["api_stop_failed", "api_stop_timed_out"],
+      reasons: ["api_stop_failed", "api_stop_timed_out", "update_cancelled"],
       fields: {
         quit: {
-          /** `other` is the menu's Quit or the system. */
+          /** `other` is the system, or a Quit that no Ajour code saw. */
           trigger: operational<
             | "all_windows_closed"
+            | "menu"
+            | "update_install"
             | "recovery_dialog"
             | "startup_failure"
             | "other"
@@ -528,7 +532,14 @@ export const catalog = defineCatalog({
           download_ms: operational<number>(),
           install_ms: operational<number>(),
           result: operational<
-            "installed" | "updated" | "cancelled" | "api_unavailable" | "failed"
+            | "installed"
+            | "updated"
+            | "cancelled"
+            | "busy"
+            | "invalid_archive"
+            | "not_available"
+            | "api_unavailable"
+            | "failed"
           >(),
         },
       },
@@ -594,6 +605,9 @@ export const catalog = defineCatalog({
         local_state: {
           source: operational<"recovery_file" | "legacy_profile" | "none">(),
           legacy_folder_count: operational<number>(),
+          bytes_scanned: operational<number>(),
+          /** Each collection's record count in the state found, never a record. */
+          record_counts: operational<Record<string, number>>(),
           /** A reload after a crash gets this launch's first answer. */
           cached: operational<boolean>(),
         },

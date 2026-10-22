@@ -480,6 +480,7 @@ function createPluginCatalogService(options) {
   const cacheFile = path.join(cacheDirectory, "catalog-cache.json");
   const imageDirectory = path.join(cacheDirectory, "images");
   const now = options.now ?? (() => new Date());
+  /** @type {Record<string, any>} */
   let currentCatalog = {
     entries: BUILT_IN_PLUGIN_CATALOG_ENTRIES,
     checkedAt: now().toISOString(),
@@ -696,6 +697,7 @@ function createPluginCatalogService(options) {
    * refresh's `catalog.refresh` event, gets its outcome here: what came from
    * the network, the cache and the snapshot, and the error when it failed.
    */
+  /** @param {{ unit?: any }} [options] */
   async function refresh({ unit } = {}) {
     const stats = {
       bytes: 0,

@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
+import path from "node:path";
 import vm from "node:vm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { recordingEvents } from "./recording-events.ts";
@@ -17,6 +18,12 @@ const {
   refusedSender,
 } = require("./electron/ipc-listeners.cjs");
 const { stopWithin } = require("./electron/stop-within.cjs");
+const {
+  buildContextMenuTemplate,
+  normalizeContextMenuItems,
+  objectActionIdOf,
+} = require("./electron/context-menu.cjs");
+const { apiStopOf, triggerOf } = require("./electron/main-events.cjs");
 const { watchWindow } = require("./electron/window-recovery.cjs");
 
 const source = await readFile(
@@ -55,7 +62,7 @@ function run(context: vm.Context, ...openings: string[]) {
 }
 
 async function flush() {
-  for (let index = 0; index < 10; index += 1) await Promise.resolve();
+  for (let index = 0; index < 30; index += 1) await Promise.resolve();
 }
 
 beforeEach(() => {
@@ -67,7 +74,10 @@ afterEach(() => {
 });
 
 describe("quitting and installing an update", () => {
-  function quitRuntime(stopInternalAppApi: () => Promise<void>) {
+  function quitRuntime(
+    stopInternalAppApi: () => Promise<void>,
+    { loaded = true, quitTrigger = "other" } = {},
+  ) {
     const handlers = new Map<string, (event: unknown) => void>();
     const app = {
       on: (name: string, handler: (event: unknown) => void) =>
@@ -75,12 +85,18 @@ describe("quitting and installing an update", () => {
       quit: vi.fn(),
       exit: vi.fn(),
     };
-    const { events, recorded } = recordingEvents();
+    const { events, recorded, attach } = recordingEvents({ loaded });
     const context = vm.createContext({
       app,
       events,
-      quitTrigger: "other",
+      quitTrigger,
+      apiStopOf,
+      triggerOf,
+      // The faked clock: the quit's deadline counts from Date.now().
+      Date,
       clearInterval,
+      setTimeout,
+      clearTimeout,
       gracefulQuitStarted: false,
       pluginCatalogRefreshTimer: null,
       automaticUpdateController: { dispose: vi.fn() },
@@ -91,6 +107,11 @@ describe("quitting and installing an update", () => {
       context,
       "const INTERNAL_APP_API_STOP_TIMEOUT_MS",
       "function stopInternalAppApiWithinTimeout(",
+      "function startQuit(",
+      "function recordApiStop(",
+      "function endQuit(",
+      "function whenEventsReady(",
+      "let updateQuit",
       "async function prepareToInstallUpdate(",
       "function cancelUpdateInstallPreparation(",
       'app.on("before-quit"',
@@ -98,6 +119,7 @@ describe("quitting and installing an update", () => {
     return {
       app,
       recorded,
+      attach,
       quit() {
         const event = { preventDefault: vi.fn() };
         handlers.get("before-quit")?.(event);
@@ -226,6 +248,88 @@ describe("quitting and installing an update", () => {
     });
   });
 
+  // A system shutdown, or a Quit no Ajour code saw, is not the user.
+  it("names a quit it cannot attribute as the system's", async () => {
+    const runtime = quitRuntime(async () => {});
+
+    runtime.quit();
+    await flush();
+
+    expect(runtime.recorded[0]).toMatchObject({
+      trigger: "system",
+      quit: { trigger: "other" },
+    });
+  });
+
+  it("records a menu Quit as the user's, on its own event", async () => {
+    const runtime = quitRuntime(async () => {}, { quitTrigger: "menu" });
+
+    runtime.quit();
+    await flush();
+
+    expect(runtime.recorded[0]).toMatchObject({
+      name: "app.quit",
+      trigger: "user",
+      quit: { trigger: "menu", api_stop: "stopped" },
+    });
+  });
+
+  it("records the quit an update install makes, once the installer quits", async () => {
+    const runtime = quitRuntime(async () => {});
+
+    await runtime.prepareToInstallUpdate();
+    expect(runtime.recorded).toEqual([]);
+    runtime.quit();
+
+    expect(runtime.recorded).toMatchObject([
+      {
+        name: "app.quit",
+        outcome: "ok",
+        quit: { trigger: "update_install", api_stop: "stopped" },
+      },
+    ]);
+  });
+
+  it("records an update install that did not quit as cancelled", async () => {
+    const runtime = quitRuntime(async () => {});
+
+    await runtime.prepareToInstallUpdate();
+    runtime.cancelUpdateInstallPreparation();
+
+    expect(runtime.recorded).toMatchObject([
+      {
+        name: "app.quit",
+        outcome: "cancelled",
+        outcome_reason: "update_cancelled",
+        quit: { trigger: "update_install" },
+      },
+    ]);
+  });
+
+  it("waits for the events package before the process quits", async () => {
+    const runtime = quitRuntime(async () => {}, { loaded: false });
+
+    runtime.quit();
+    await flush();
+    expect(runtime.app.quit).not.toHaveBeenCalled();
+    runtime.attach();
+    await flush();
+
+    expect(runtime.app.quit).toHaveBeenCalledOnce();
+    expect(runtime.recorded).toMatchObject([{ name: "app.quit" }]);
+  });
+
+  it("quits within ten seconds even when the events package never loads", async () => {
+    const runtime = quitRuntime(async () => {}, { loaded: false });
+
+    runtime.quit();
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(runtime.app.quit).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(runtime.app.quit).toHaveBeenCalledOnce();
+  });
+
   it("stops the local API again on the next quit when the update is cancelled", async () => {
     const runtime = quitRuntime(async () => {});
     await runtime.prepareToInstallUpdate();
@@ -244,8 +348,15 @@ describe("IPC listeners", () => {
     loadDesktopBootstrapLocalState = vi.fn(
       (): Record<string, unknown> | null => ({ updatedAt: 1 }),
     ),
+    role = "zoomIn",
   } = {}) {
-    const ipcMain = new EventEmitter();
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    const ipcMain = Object.assign(new EventEmitter(), {
+      handle: (channel: string, handler: (...args: unknown[]) => unknown) =>
+        handlers.set(channel, handler),
+    });
+    let popup: { callback: () => void } | undefined;
+    let template: { label?: string; click?: () => void }[] = [];
     const nativeTheme = { themeSource: "system" };
     const mainWindow = {
       webContents: "active-window",
@@ -260,8 +371,25 @@ describe("IPC listeners", () => {
       nativeTheme,
       mainWindow,
       appMenuModel: { menus: [] },
-      findAppMenuRoleItem: () => ({ role: "zoomIn" }),
-      Menu: { getApplicationMenu: () => null },
+      findAppMenuRoleItem: () => ({ role }),
+      quitTrigger: "other",
+      Menu: {
+        getApplicationMenu: () => null,
+        buildFromTemplate: (built: typeof template) => {
+          template = built;
+          return {
+            popup: (options: { callback: () => void }) => {
+              popup = options;
+            },
+          };
+        },
+      },
+      normalizeContextMenuItems,
+      buildContextMenuTemplate,
+      getPopupPosition: () => ({}),
+      getContextMenuIcon: () => undefined,
+      objectActionIdOf,
+      setTimeout,
       process: { platform: "win32" },
       getWindowsTitleBarOverlay: () => ({}),
       loadDesktopBootstrapLocalState,
@@ -271,6 +399,7 @@ describe("IPC listeners", () => {
       "let desktopBootstrapLocalState",
       'ipc.answerSync("ajour:get-bootstrap-local-state"',
       'ipc.onMessage("ajour:run-menu-item"',
+      'ipc.handle("ajour:show-context-menu"',
       'ipc.onMessage("ajour:run-edit-command"',
       'ipc.onMessage("ajour:set-theme-source"',
       'ipc.onMessage("ajour:set-window-chrome-theme"',
@@ -281,6 +410,21 @@ describe("IPC listeners", () => {
       nativeTheme,
       mainWindow,
       recorded,
+      context,
+      /** Shows a context menu with `ids` and picks the item labelled `pick`. */
+      async pickFromContextMenu(ids: string[], pick: string) {
+        const sender = { getZoomFactor: () => 1 };
+        mainWindow.webContents = sender as never;
+        const shown = handlers.get("ajour:show-context-menu")!(
+          { sender },
+          ids.map((id) => ({ type: "item", id, label: id, enabled: true })),
+          { x: 1, y: 1 },
+        );
+        template.find((item) => item.label === pick)?.click?.();
+        popup?.callback();
+        await vi.runAllTimersAsync();
+        return await shown;
+      },
       requestBootstrapState() {
         const event: { sender: string; returnValue?: unknown } = {
           sender: "active-window",
@@ -337,6 +481,45 @@ describe("IPC listeners", () => {
         ipc: { channel: "ajour:set-theme-source", sender_accepted: false },
       },
     ]);
+  });
+
+  // The renderer names the items; only a known object action enters an event.
+  it("records the picked object action, and any other id as other", async () => {
+    const runtime = ipcRuntime();
+
+    await expect(
+      runtime.pickFromContextMenu(["settle", "archive"], "settle"),
+    ).resolves.toBe("settle");
+    await runtime.pickFromContextMenu(
+      ["https://private.example/secret"],
+      "https://private.example/secret",
+    );
+
+    expect(runtime.recorded).toMatchObject([
+      {
+        name: "context_menu.show",
+        context_menu: {
+          item_count: 2,
+          kept_count: 2,
+          picked: true,
+          action_id: "settle",
+        },
+      },
+      { name: "context_menu.show", context_menu: { action_id: "other" } },
+    ]);
+    expect(JSON.stringify(runtime.recorded)).not.toContain("private.example");
+  });
+
+  it("names a Quit from the title bar menu as the menu's", () => {
+    const runtime = ipcRuntime({ role: "quit" });
+
+    runtime.ipcMain.emit(
+      "ajour:run-menu-item",
+      { sender: "active-window" },
+      "role:quit",
+    );
+
+    expect(runtime.context.quitTrigger).toBe("menu");
   });
 
   it("records what each message did, with its enum values only", () => {
@@ -608,10 +791,11 @@ describe("the main window", () => {
       },
     });
 
-    // It resolves how long the load took, for app.launch.
-    await expect(runtime.createMainWindow()).resolves.toEqual(
-      expect.any(Number),
-    );
+    // It resolves how long the load took and how it ended, for app.launch.
+    await expect(runtime.createMainWindow()).resolves.toEqual({
+      loadMs: expect.any(Number),
+      loadOutcome: "error",
+    });
     await flush();
 
     expect(runtime.dialog.showMessageBox).toHaveBeenCalledWith(
@@ -623,12 +807,14 @@ describe("the main window", () => {
 
 describe("startup", () => {
   function startupRuntime({
-    createMainWindow = vi.fn(async () => 120),
+    createMainWindow = vi.fn(async () => ({ loadMs: 120, loadOutcome: "ok" })),
     ensureInternalAppApiRunning = async () => {},
     hasSingleInstanceLock = true,
     mainWindow = null as null | Record<string, unknown>,
+    loaded = true,
   }: {
-    createMainWindow?: () => Promise<number>;
+    loaded?: boolean;
+    createMainWindow?: () => Promise<{ loadMs: number; loadOutcome: string }>;
     ensureInternalAppApiRunning?: () => Promise<void>;
     hasSingleInstanceLock?: boolean;
     mainWindow?: null | Record<string, unknown>;
@@ -640,22 +826,28 @@ describe("startup", () => {
       ),
       whenReady: () => Promise.resolve(),
       quit: vi.fn(),
+      getPath: () => "/fixture",
+      getVersion: () => "1.3.0",
     };
     const dialog = { showErrorBox: vi.fn() };
-    const { events, recorded } = recordingEvents();
+    const { events, recorded, attach } = recordingEvents({ loaded });
     const context = vm.createContext({
       app,
       appMenuModel: { menus: [] },
       buildAppMenuTemplate: () => [],
       BrowserWindow: { getAllWindows: () => [] },
       createMainWindow,
-      delay: () => new Promise(() => {}),
       dialog,
       ensureInternalAppApiRunning,
       events,
       existsSync: () => true,
       hasSingleInstanceLock,
+      INTERNAL_APP_API_STOP_TIMEOUT_MS: 10_000,
       mainWindow,
+      path,
+      recordLaunchVersion: vi.fn(() => "1.2.0"),
+      setTimeout,
+      clearTimeout,
       Menu: { setApplicationMenu: vi.fn(), buildFromTemplate: vi.fn() },
       performance: { timeOrigin: Date.now() - 500 },
       pluginCatalogSettings: { refreshMinutes: 15 },
@@ -672,6 +864,7 @@ describe("startup", () => {
       "function recordAppError(",
       "function quitAfterStartupFailure(",
       "function apiStartFailureOf(",
+      "function whenEventsReady(",
       "if (!hasSingleInstanceLock)",
     );
     return {
@@ -680,6 +873,7 @@ describe("startup", () => {
       createMainWindow,
       recorded,
       events,
+      attach,
       emit: (name: string, ...args: unknown[]) => handlers.get(name)?.(...args),
     };
   }
@@ -820,6 +1014,45 @@ describe("startup", () => {
     });
   });
 
+  it("records the version the previous launch ran", async () => {
+    const runtime = startupRuntime();
+    await flush();
+
+    expect(runtime.recorded[0]).toMatchObject({
+      name: "app.launch",
+      launch: { previous_version: "1.2.0" },
+    });
+  });
+
+  it("ends the launch with the failed load's outcome", async () => {
+    const runtime = startupRuntime({
+      createMainWindow: async () => ({ loadMs: 40, loadOutcome: "error" }),
+    });
+    await flush();
+
+    expect(runtime.recorded[0]).toMatchObject({
+      name: "app.launch",
+      outcome: "error",
+      outcome_reason: "load_failed",
+      launch: { renderer_load_ms: 40 },
+    });
+  });
+
+  it("waits for the events package before the second process quits", async () => {
+    const runtime = startupRuntime({
+      hasSingleInstanceLock: false,
+      loaded: false,
+    });
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(runtime.app.quit).not.toHaveBeenCalled();
+    runtime.attach();
+    await flush();
+
+    expect(runtime.app.quit).toHaveBeenCalledOnce();
+    expect(runtime.recorded).toMatchObject([{ name: "app.lock_refused" }]);
+  });
+
   it("records a GPU process that ended", async () => {
     const runtime = startupRuntime();
     await flush();
@@ -843,15 +1076,18 @@ describe("errors nothing else caught", () => {
   function crashRuntime() {
     const listeners = new Map<string, (...args: unknown[]) => void>();
     const { events, recorded } = recordingEvents();
+    const emitWarning = vi.fn();
     const context = vm.createContext({
       events,
       process: {
         on: (name: string, listener: (...args: unknown[]) => void) =>
           listeners.set(name, listener),
+        emitWarning,
       },
     });
     run(
       context,
+      "function describeRejection(",
       "function recordAppError(",
       'process.on("uncaughtExceptionMonitor"',
       'process.on("unhandledRejection"',
@@ -859,6 +1095,7 @@ describe("errors nothing else caught", () => {
     return {
       events,
       recorded,
+      emitWarning,
       emit: (name: string, ...args: unknown[]) =>
         listeners.get(name)?.(...args),
     };
@@ -906,6 +1143,25 @@ describe("errors nothing else caught", () => {
         crash: { origin: "unhandled_rejection" },
         error: { message: "refresh failed" },
       },
+    ]);
+  });
+
+  // Events go nowhere by default, so a rejection keeps Node's warning.
+  it("keeps the warning an unhandled rejection prints without a listener", () => {
+    const runtime = crashRuntime();
+
+    runtime.emit("unhandledRejection", new Error("refresh failed"));
+    runtime.emit("unhandledRejection", Object.create(null));
+
+    expect(runtime.emitWarning.mock.calls).toEqual([
+      [
+        expect.stringContaining("refresh failed"),
+        "UnhandledPromiseRejectionWarning",
+      ],
+      [
+        "Unhandled promise rejection: a value that cannot be printed",
+        "UnhandledPromiseRejectionWarning",
+      ],
     ]);
   });
 });

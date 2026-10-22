@@ -69,7 +69,38 @@ async function selectPluginArchive(
   }
 }
 
+// What the catalog download and the local API's installer say when they
+// refuse, as apps/desktop/electron/plugin-catalog.cjs, apps/api/src/plugin-host.ts
+// and apps/api/src/plugin-package.ts throw it.
+const NOT_AVAILABLE =
+  /is not available for download|No compatible release asset|cannot install packaged schema plugins/u;
+const BUSY =
+  /package change is already in progress|Wait for active plugin operations/u;
+const INVALID_ARCHIVE =
+  /archive|manifest|plugin\.json|entrypoint|unsafe path|runs no code|regular file|symbolic link|leaves its plugin directory|over 64 KB/iu;
+
+/**
+ * A failed install's result for its `plugin.install` event, from the step it
+ * failed at (`download` or `install`) and the error, never its message.
+ */
+function pluginInstallResultOf(error, step) {
+  const message = typeof error?.message === "string" ? error.message : "";
+  if (step === "download") {
+    return NOT_AVAILABLE.test(message) ? "not_available" : "failed";
+  }
+  if (BUSY.test(message)) return "busy";
+  if (
+    error?.name === "ZodError" ||
+    error?.name === "IncompatiblePluginError" ||
+    INVALID_ARCHIVE.test(message)
+  ) {
+    return "invalid_archive";
+  }
+  return "failed";
+}
+
 module.exports = {
   MAX_PLUGIN_ARCHIVE_BYTES,
+  pluginInstallResultOf,
   selectPluginArchive,
 };

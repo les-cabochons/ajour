@@ -3,7 +3,14 @@
   "compilerOptions": {
     "allowJs": true,
     "checkJs": true,
-    "types": ["node"]
+    "types": ["node"],
+    "strict": false,
+    "noImplicitAny": false,
+    "noUncheckedIndexedAccess": false
   },
-  "include": ["electron/ipc-channels.cjs"]
+  "include": [
+    "electron/main.cjs",
+    "electron/ipc-channels.cjs",
+    "ipc-channel-types.check.cjs"
+  ]
 }

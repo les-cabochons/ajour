@@ -422,3 +422,42 @@ describe("edit context menu", () => {
     ).toEqual([]);
   });
 });
+
+describe("the picked action as an event records it", () => {
+  const { OBJECT_ACTION_IDS, objectActionIdOf } =
+    require("./electron/context-menu.cjs") as {
+      OBJECT_ACTION_IDS: ReadonlySet<string>;
+      objectActionIdOf: (id: unknown) => string;
+    };
+
+  it("keeps a known object action and names anything else other", () => {
+    expect(
+      [
+        "settle",
+        "move-to",
+        "https://private.example/secret",
+        "",
+        undefined,
+      ].map(objectActionIdOf),
+    ).toEqual(["settle", "move-to", "other", "other", "other"]);
+  });
+
+  // The set follows the renderer's object actions, so a new action is named
+  // in events as soon as it ships.
+  it("knows every object action the renderer declares", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const source = await readFile(
+      new URL("../web/src/domain/actions/object-actions.ts", import.meta.url),
+      "utf8",
+    );
+    const declared = new Set<string>();
+    for (const [, union] of source.matchAll(
+      /export type \w+ActionId =([^;]+);/g,
+    )) {
+      for (const [, id] of union!.matchAll(/"([^"]+)"/g)) declared.add(id!);
+    }
+
+    expect(declared.size).toBeGreaterThan(20);
+    expect([...declared].sort()).toEqual([...OBJECT_ACTION_IDS].sort());
+  });
+});

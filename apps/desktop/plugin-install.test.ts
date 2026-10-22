@@ -94,3 +94,48 @@ describe("desktop plugin file selection", () => {
     expect(archive.close).toHaveBeenCalledOnce();
   });
 });
+
+describe("an install's result as its event records it", () => {
+  const { pluginInstallResultOf } =
+    require("./electron/plugin-install.cjs") as {
+      pluginInstallResultOf: (error: unknown, step: string) => string;
+    };
+  const named = (name: string, message = "") =>
+    Object.assign(new Error(message), { name });
+
+  it.each([
+    [
+      new Error('Plugin "jira" is not available for download.'),
+      "download",
+      "not_available",
+    ],
+    [
+      new Error("No compatible release asset is available for Jira."),
+      "download",
+      "not_available",
+    ],
+    [new Error("Plugin download returned HTTP 503."), "download", "failed"],
+    [
+      new Error("Another plugin package change is already in progress."),
+      "install",
+      "busy",
+    ],
+    [
+      new Error(
+        "Wait for active plugin operations to finish before installing a plugin.",
+      ),
+      "install",
+      "busy",
+    ],
+    [named("ZodError"), "install", "invalid_archive"],
+    [named("IncompatiblePluginError"), "install", "invalid_archive"],
+    [
+      new Error("Plugin archive contains an unsafe path: ../x"),
+      "install",
+      "invalid_archive",
+    ],
+    [new Error("EACCES: permission denied"), "install", "failed"],
+  ])("%s at %s is %s", (error, step, result) => {
+    expect(pluginInstallResultOf(error, step)).toBe(result);
+  });
+});

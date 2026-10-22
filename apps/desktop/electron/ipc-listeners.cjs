@@ -1,5 +1,16 @@
 const { IPC_CHANNELS } = require("./ipc-channels.cjs");
 
+/**
+ * @typedef {typeof IPC_CHANNELS} IpcChannels
+ * @typedef {(event: any, ...args: any[]) => any} IpcListener
+ */
+/**
+ * The channels the table registers with `mode`, so `just typecheck` refuses a
+ * channel it lacks or one registered another way.
+ * @template {string} Mode
+ * @typedef {{ [Channel in keyof IpcChannels]: IpcChannels[Channel]["mode"] extends Mode ? Channel : never }[keyof IpcChannels]} ChannelOf
+ */
+
 const REFUSED_SENDER = "refused_sender";
 
 /**
@@ -97,7 +108,11 @@ function createIpcListeners(ipcMain, { events }) {
   }
 
   return {
-    /** An `invoke` request: the renderer gets the listener's promise. */
+    /**
+     * An `invoke` request: the renderer gets the listener's promise.
+     * @param {ChannelOf<"invoke">} channel
+     * @param {IpcListener} listener
+     */
     handle(channel, listener) {
       const entry = channelEntry(channel, "invoke");
       ipcMain.handle(channel, (event, ...args) =>
@@ -105,7 +120,11 @@ function createIpcListeners(ipcMain, { events }) {
       );
     },
 
-    /** A one-way message from the renderer. A failure is dropped. */
+    /**
+     * A one-way message from the renderer. A failure is dropped.
+     * @param {ChannelOf<"message">} channel
+     * @param {IpcListener} listener
+     */
     onMessage(channel, listener) {
       const entry = channelEntry(channel, "message");
       ipcMain.on(channel, (event, ...args) => {
@@ -123,6 +142,8 @@ function createIpcListeners(ipcMain, { events }) {
     /**
      * A `sendSync` request: the renderer waits for `answer`'s value. A failure
      * answers null.
+     * @param {ChannelOf<"sync">} channel
+     * @param {IpcListener} answer
      */
     answerSync(channel, answer) {
       const entry = channelEntry(channel, "sync");

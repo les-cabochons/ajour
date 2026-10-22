@@ -18,6 +18,8 @@ const { loadDesktopBootstrapLocalState } =
 interface BootstrapReport {
   source?: string;
   legacy_folder_count?: number;
+  bytes_scanned?: number;
+  record_counts?: Record<string, number>;
   error?: unknown;
 }
 
@@ -83,7 +85,7 @@ describe("what a bootstrap read reports", () => {
 
     load(report);
 
-    expect(report).toEqual({
+    expect(report).toMatchObject({
       source: "legacy_profile",
       legacy_folder_count: 1,
     });
@@ -94,7 +96,12 @@ describe("what a bootstrap read reports", () => {
 
     load(report);
 
-    expect(report).toEqual({ source: "none", legacy_folder_count: 0 });
+    expect(report).toEqual({
+      source: "none",
+      legacy_folder_count: 0,
+      bytes_scanned: 0,
+      record_counts: {},
+    });
   });
 
   it("keeps the error a failed read swallowed, for the event's scrubber", async () => {
@@ -104,5 +111,21 @@ describe("what a bootstrap read reports", () => {
     expect(load(report)).toBeNull();
 
     expect(report.error).toBeInstanceOf(Error);
+  });
+
+  it("counts the bytes it read and the records it found, never their content", async () => {
+    const log =
+      'ajour.local-state.v2{"updatedAt":5,"projects":[{"name":"Acme"},{"name":"Globex"}],"timeEntries":[{"note":"secret"}],"theme":"dark"}';
+    await mkdir(legacyLevelDb, { recursive: true });
+    await writeFile(path.join(legacyLevelDb, "000003.log"), log);
+    const report: BootstrapReport = {};
+
+    load(report);
+
+    expect(report).toMatchObject({
+      bytes_scanned: Buffer.byteLength(log),
+      record_counts: { projects: 2, timeEntries: 1 },
+    });
+    expect(JSON.stringify(report)).not.toMatch(/Acme|secret/);
   });
 });

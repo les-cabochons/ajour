@@ -1,10 +1,7 @@
 import { EventEmitter } from "node:events";
 import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
-import { catalog } from "../../packages/wide-events/catalog.ts";
-import { createEmitter } from "../../packages/wide-events/index.ts";
-import { asyncContextScope } from "../../packages/wide-events/node.ts";
-import { createRecordingSink } from "../../packages/wide-events/sinks.ts";
+import { recordingEvents } from "./recording-events.ts";
 
 const require = createRequire(import.meta.url);
 const { watchWindow } = require("./electron/window-recovery.cjs") as {
@@ -17,7 +14,7 @@ const { watchWindow } = require("./electron/window-recovery.cjs") as {
       events: unknown;
       now?: () => number;
     },
-  ) => { load: (trigger?: string) => Promise<void> };
+  ) => { load: (trigger?: string) => Promise<string> };
 };
 
 const APP_URL = "app://local/";
@@ -126,19 +123,7 @@ function setUp({ closesOnAbort = true } = {}) {
   const dialog = fakeDialog({ closesOnAbort });
   const quit = vi.fn();
   let time = 0;
-  const sink = createRecordingSink();
-  const events = createEmitter({
-    catalog,
-    context: {
-      runtime: "main",
-      launch_id: "launch-1",
-      app: { version: "1.2.0", channel: "stable", packaged: true },
-      device: { platform: "win32" },
-    },
-    sink,
-    scope: asyncContextScope(),
-    now: () => time,
-  });
+  const { events, recorded } = recordingEvents({ now: () => time });
   const recovery = watchWindow(window, {
     url: APP_URL,
     dialog,
@@ -151,7 +136,8 @@ function setUp({ closesOnAbort = true } = {}) {
     dialog,
     quit,
     recovery,
-    events: sink.events,
+    events: recorded,
+    fixture: events,
     at(ms: number) {
       time = ms;
     },
@@ -282,7 +268,7 @@ describe("window recovery", () => {
       loadError("ERR_FILE_NOT_FOUND", "(-6) loading 'app://local/'"),
     );
 
-    await expect(recovery.load()).resolves.toBeUndefined();
+    await expect(recovery.load()).resolves.toBe("error");
     await flush();
     expect(dialog.shown).toHaveLength(1);
     expect(dialog.shown[0]).toMatchObject({
@@ -663,5 +649,50 @@ describe("window recovery events", () => {
       },
       { name: "window.load", window: { trigger: "crash_reload" } },
     ]);
+  });
+
+  it("resolves each load's outcome, so the launch can end with it", async () => {
+    const { window, recovery } = setUp();
+    window.loadURL
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(loadError("ERR_FAILED", "(-2) loading"))
+      .mockRejectedValueOnce(loadError("ERR_ABORTED", "(-3) loading"));
+
+    const outcomes = [
+      await recovery.load("launch"),
+      await recovery.load("launch"),
+      await recovery.load("launch"),
+    ];
+
+    expect(outcomes).toEqual(["ok", "error", "cancelled"]);
+  });
+
+  it("keeps the answer of a hang dialog that a crash replaced", async () => {
+    const { window, recovery, events } = setUp();
+    await recovery.load();
+
+    window.webContents.emit("unresponsive");
+    await flush();
+    crash(window);
+    await flush();
+
+    expect(events.find((e) => e.name === "window.unresponsive")).toMatchObject({
+      outcome: "error",
+      unresponsive: { answer: "replaced", recovered: false },
+    });
+  });
+
+  it("emits a crash as its own event even while another unit is active", async () => {
+    const { window, recovery, events, fixture } = setUp();
+    await recovery.load();
+
+    fixture.run("menu.run_item", { kind: "ipc", trigger: "user" }, () => {
+      crash(window);
+    });
+    await flush();
+
+    expect(events.map((e) => e.name)).toEqual(
+      expect.arrayContaining(["process.gone", "menu.run_item"]),
+    );
   });
 });

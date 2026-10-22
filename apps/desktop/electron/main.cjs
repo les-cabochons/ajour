@@ -26,12 +26,16 @@ const {
 const { createAutomaticUpdateController } = require("./automatic-update.cjs");
 const {
   MAC_ICON_SYMBOLS,
+  objectActionIdOf,
   buildContextMenuTemplate,
   buildEditContextMenuTemplate,
   getPopupPosition,
   normalizeContextMenuItems,
 } = require("./context-menu.cjs");
-const { selectPluginArchive } = require("./plugin-install.cjs");
+const {
+  pluginInstallResultOf,
+  selectPluginArchive,
+} = require("./plugin-install.cjs");
 const { createPluginCatalogService } = require("./plugin-catalog.cjs");
 const {
   loadPluginCatalogSettings,
@@ -49,9 +53,12 @@ const {
 } = require("./local-state-bootstrap.cjs");
 const {
   apiLaunchOf,
+  apiStopOf,
   createLaunchContext,
   createMainEvents,
   loadMainEmitter,
+  recordLaunchVersion,
+  triggerOf,
 } = require("./main-events.cjs");
 const { classifyNavigation } = require("./navigation.cjs");
 const { stopWithin } = require("./stop-within.cjs");
@@ -81,7 +88,8 @@ const launch = createLaunchContext({
   version: app.getVersion(),
   packaged: app.isPackaged,
   // The packaged build's commit, which electron-builder injects.
-  commit: require("../package.json").buildCommit,
+  commit: /** @type {{ buildCommit?: string }} */ (require("../package.json"))
+    .buildCommit,
   platform: process.platform,
   arch: process.arch,
   electron: process.versions.electron,
@@ -95,8 +103,14 @@ process.on("uncaughtExceptionMonitor", (error, origin) => {
     recordAppError(error, "uncaught_exception");
   }
 });
+// Node has no observe-only event for rejections, and a listener silences
+// its warning. Events go nowhere by default, so the warning is kept.
 process.on("unhandledRejection", (reason) => {
   recordAppError(reason, "unhandled_rejection");
+  process.emitWarning(
+    `Unhandled promise rejection: ${describeRejection(reason)}`,
+    "UnhandledPromiseRejectionWarning",
+  );
 });
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
@@ -204,16 +218,7 @@ function refreshPluginCatalog(trigger) {
   pluginCatalogRefreshPromise ??= events
     .run(
       "catalog.refresh",
-      {
-        kind: "job",
-        trigger:
-          trigger === "launch"
-            ? "boot"
-            : trigger === "interval"
-              ? "schedule"
-              : "user",
-        detached: true,
-      },
+      { kind: "job", trigger: triggerOf(trigger), detached: true },
       (unit) => {
         unit.set({ catalog: { trigger } });
         return pluginCatalogService.refresh({ unit });
@@ -271,9 +276,10 @@ ipc.answerSync("ajour:get-bootstrap-local-state", () => {
       cached: false,
       source: report.source,
       legacy_folder_count: report.legacy_folder_count,
+      bytes_scanned: report.bytes_scanned,
+      record_counts: report.record_counts,
     },
   });
-  // The renderer recovers nothing this launch; the event says why.
   if (report.error) unit?.fail(report.error);
   return desktopBootstrapLocalState;
 });
@@ -283,7 +289,6 @@ ipc.answerSync("ajour:get-runtime-info", () => ({
   developmentBuild: !app.isPackaged,
   platform: process.platform,
   version: app.getVersion(),
-  // The launch the renderer reports in its events.
   launch,
 }));
 
@@ -293,8 +298,12 @@ ipc.answerSync("ajour:get-app-menu", () => appMenuModel);
 // hidden native menu, so they behave like the macOS menu bar.
 ipc.onMessage("ajour:run-menu-item", (event, itemId) => {
   assertActiveDesktopWindow(event, "run a menu item");
-  if (!findAppMenuRoleItem(appMenuModel, itemId)) {
+  const roleItem = findAppMenuRoleItem(appMenuModel, itemId);
+  if (!roleItem) {
     return;
+  }
+  if (roleItem.role === "quit") {
+    quitTrigger = "menu";
   }
   events.current()?.set({ menu: { item_id: itemId } });
 
@@ -326,7 +335,9 @@ ipc.handle("ajour:show-context-menu", (event, items, position) => {
       if (!settled) {
         settled = true;
         if (id !== null) {
-          unit?.set({ context_menu: { picked: true, action_id: id } });
+          unit?.set({
+            context_menu: { picked: true, action_id: objectActionIdOf(id) },
+          });
         }
         resolve(id);
       }
@@ -434,7 +445,12 @@ function pluginIdForEvent(pluginId) {
  */
 async function installPluginArchive(unit, archive, ...options) {
   unit?.set({ plugin: { archive_bytes: archive.archiveBytes.byteLength } });
-  await ensureInternalAppApiRunning();
+  try {
+    await ensureInternalAppApiRunning();
+  } catch (error) {
+    unit?.set({ plugin: { result: "api_unavailable" } });
+    throw error;
+  }
   if (!internalAppApiServer || !internalAppApiModulePromise) {
     unit?.set({ plugin: { result: "api_unavailable" } });
     throw new Error("Internal app API unavailable. Restart the app.");
@@ -447,12 +463,23 @@ async function installPluginArchive(unit, archive, ...options) {
   }
 
   const installStartedAt = Date.now();
-  const result = await installPluginForServer(
-    internalAppApiServer,
-    archive.archiveBytes,
-    archive.archiveFilename,
-    ...options,
-  );
+  let result;
+  try {
+    result = await installPluginForServer(
+      internalAppApiServer,
+      archive.archiveBytes,
+      archive.archiveFilename,
+      ...options,
+    );
+  } catch (error) {
+    unit?.set({
+      plugin: {
+        install_ms: Date.now() - installStartedAt,
+        result: pluginInstallResultOf(error, "install"),
+      },
+    });
+    throw error;
+  }
   unit?.set({
     plugin: {
       id: pluginIdForEvent(result?.plugin?.id),
@@ -540,8 +567,15 @@ ipc.handle("ajour:download-catalog-plugin", async (event, pluginId) => {
   }
 
   const downloadStartedAt = Date.now();
-  const downloaded = await pluginCatalogService.downloadPluginArchive(pluginId);
-  unit?.set({ plugin: { download_ms: Date.now() - downloadStartedAt } });
+  let downloaded;
+  try {
+    downloaded = await pluginCatalogService.downloadPluginArchive(pluginId);
+  } catch (error) {
+    unit?.set({ plugin: { result: pluginInstallResultOf(error, "download") } });
+    throw error;
+  } finally {
+    unit?.set({ plugin: { download_ms: Date.now() - downloadStartedAt } });
+  }
   const result = await installPluginArchive(unit, downloaded, {
     enableAfterInstall: false,
   });
@@ -563,7 +597,12 @@ ipc.handle("ajour:uninstall-plugin", async (event, pluginId) => {
     );
   }
 
-  await ensureInternalAppApiRunning();
+  try {
+    await ensureInternalAppApiRunning();
+  } catch (error) {
+    unit?.set({ plugin: { result: "api_unavailable" } });
+    throw error;
+  }
   if (!internalAppApiServer || !internalAppApiModulePromise) {
     unit?.set({ plugin: { result: "api_unavailable" } });
     throw new Error("Internal app API unavailable. Restart the app.");
@@ -575,9 +614,17 @@ ipc.handle("ajour:uninstall-plugin", async (event, pluginId) => {
     throw new Error("Internal app API does not support plugin uninstall.");
   }
 
-  const result = await uninstallPluginForServer(internalAppApiServer, pluginId);
-  unit?.set({ plugin: { result: "uninstalled" } });
-  return result;
+  try {
+    const result = await uninstallPluginForServer(
+      internalAppApiServer,
+      pluginId,
+    );
+    unit?.set({ plugin: { result: "uninstalled" } });
+    return result;
+  } catch (error) {
+    unit?.set({ plugin: { result: "failed" } });
+    throw error;
+  }
 });
 
 ipc.handle("ajour:get-development-plugin-settings", async (event) => {
@@ -862,7 +909,6 @@ async function ensureInternalAppApiRunning() {
       allowedOrigins: app.isPackaged
         ? ["app://local"]
         : ["http://127.0.0.1:5173"],
-      // The API reports this launch in its events.
       launch: apiLaunchOf(launch),
     }).catch((error) => {
       if (error?.code === "EADDRINUSE") {
@@ -945,12 +991,70 @@ function stopInternalAppApiWithinTimeout() {
 }
 
 /**
+ * Opens `app.quit` for a quit set off by `trigger`. It is its own unit, never
+ * part of the IPC call or menu item that asked for it, which ends first.
+ */
+function startQuit(trigger) {
+  return events
+    .start("app.quit", {
+      kind: "lifecycle",
+      trigger: triggerOf(trigger),
+      detached: true,
+    })
+    .set({ quit: { trigger } });
+}
+
+/** Records how the local API's stop ended on a quit. */
+function recordApiStop(quit, outcome, stopStartedAt) {
+  quit.set({
+    quit: {
+      api_stop_ms: Date.now() - stopStartedAt,
+      api_stop: apiStopOf(outcome),
+    },
+  });
+}
+
+/** Ends a quit with its local API stop's outcome. */
+function endQuit(quit, outcome) {
+  if (outcome === "failed") quit.end("error", "api_stop_failed");
+  else if (outcome === "timed-out") quit.end("timeout", "api_stop_timed_out");
+  else quit.end();
+}
+
+/**
+ * Resolves once the wide-events package has loaded and taken the events
+ * recorded before it, or after `withinMs`, so no exit path waits longer than
+ * quitting allows.
+ */
+function whenEventsReady(withinMs) {
+  let timer;
+  const deadline = new Promise((resolve) => {
+    timer = setTimeout(resolve, Math.max(0, withinMs));
+  });
+  return Promise.race([events.ready, deadline]).finally(() =>
+    clearTimeout(timer),
+  );
+}
+
+/**
+ * The quit an update install began, with its local API stop's outcome. It
+ * ends when the installer quits Ajour, or as cancelled when the update does
+ * not install.
+ */
+let updateQuit = null;
+
+/**
  * Runs before an update installs, which quits Ajour. Like an ordinary quit, it
  * goes ahead whether the local API stopped, failed to stop or timed out.
  * Resolves the stop outcome, for the install's event.
  */
 async function prepareToInstallUpdate() {
+  const quit = startQuit("update_install");
+  updateQuit = { quit, outcome: undefined };
+  const stopStartedAt = Date.now();
   const outcome = await stopInternalAppApiWithinTimeout();
+  recordApiStop(quit, outcome, stopStartedAt);
+  if (updateQuit?.quit === quit) updateQuit.outcome = outcome;
   gracefulQuitStarted = true;
   return outcome;
 }
@@ -958,6 +1062,8 @@ async function prepareToInstallUpdate() {
 /** The update did not install, so the next quit stops the local API again. */
 function cancelUpdateInstallPreparation() {
   gracefulQuitStarted = false;
+  updateQuit?.quit.end("cancelled", "update_cancelled");
+  updateQuit = null;
 }
 
 async function resolveRendererUrl() {
@@ -1081,6 +1187,7 @@ function followNavigation(url, destination, source) {
   const unit = events.start("window.navigate", {
     kind: "navigation",
     trigger: "user",
+    detached: true,
   });
   unit.set({ navigation: { destination, scheme: schemeOf(url), source } });
   if (destination !== "external") {
@@ -1096,6 +1203,17 @@ function followNavigation(url, destination, source) {
       unit.fail(failure).end();
     },
   );
+}
+
+/** A rejection's reason as Node's warning prints it. */
+function describeRejection(reason) {
+  try {
+    return reason instanceof Error
+      ? (reason.stack ?? reason.message)
+      : String(reason);
+  } catch {
+    return "a value that cannot be printed";
+  }
 }
 
 /**
@@ -1134,7 +1252,8 @@ function quitAfterStartupFailure(error) {
 
 /**
  * Opens the window and loads the app in it. `trigger` is `launch`, or
- * `activate` when macOS reopens it. Resolves how long the load took.
+ * `activate` when macOS reopens it. Resolves how long the load took, and
+ * its outcome: `ok`, `error` or `cancelled`.
  */
 async function createMainWindow(trigger = "launch") {
   const rendererUrl = await resolveRendererUrl();
@@ -1197,17 +1316,21 @@ async function createMainWindow(trigger = "launch") {
   });
 
   const loadStartedAt = Date.now();
-  await recovery.load(trigger);
-  return Date.now() - loadStartedAt;
+  const loadOutcome = await recovery.load(trigger);
+  return { loadMs: Date.now() - loadStartedAt, loadOutcome };
 }
 
 if (!hasSingleInstanceLock) {
   // This process's one event. The quit waits for the package to load, so the
   // event leaves before the process exits.
   events
-    .start("app.lock_refused", { kind: "lifecycle", trigger: "system" })
+    .start("app.lock_refused", {
+      kind: "lifecycle",
+      trigger: "system",
+      detached: true,
+    })
     .end();
-  void Promise.race([events.ready, delay(2_000)]).then(() => app.quit());
+  void whenEventsReady(INTERNAL_APP_API_STOP_TIMEOUT_MS).then(() => app.quit());
 } else {
   // From the process start until the window has loaded.
   const launchUnit = events.start("app.launch", {
@@ -1220,6 +1343,10 @@ if (!hasSingleInstanceLock) {
       renderer_source: process.env.AJOUR_DESKTOP_RENDERER_URL
         ? "dev_server"
         : "app_protocol",
+      previous_version: recordLaunchVersion(
+        path.join(app.getPath("userData"), "last-launch.json"),
+        app.getVersion(),
+      ),
     },
     catalog: {
       settings_source: existsSync(pluginCatalogSettingsPath)
@@ -1233,6 +1360,7 @@ if (!hasSingleInstanceLock) {
     const unit = events.start("app.second_launch", {
       kind: "lifecycle",
       trigger: "system",
+      detached: true,
     });
     const hadWindow = Boolean(mainWindow);
     let restored = false;
@@ -1253,7 +1381,11 @@ if (!hasSingleInstanceLock) {
   // A renderer's crash is window-recovery.cjs's; these are the other processes.
   app.on("child-process-gone", (_event, details) => {
     events
-      .start("process.gone", { kind: "crash", trigger: "system" })
+      .start("process.gone", {
+        kind: "crash",
+        trigger: "system",
+        detached: true,
+      })
       .set({
         process: {
           type: String(details?.type ?? "unknown")
@@ -1309,15 +1441,17 @@ if (!hasSingleInstanceLock) {
       launchUnit.set({ launch: { api_start_ms: Date.now() - apiStartedAt } });
 
       const windowStartedAt = Date.now();
-      const rendererLoadMs = await createMainWindow("launch");
-      launchUnit
-        .set({
-          launch: {
-            window_ms: Date.now() - windowStartedAt,
-            renderer_load_ms: rendererLoadMs,
-          },
-        })
-        .end();
+      const { loadMs, loadOutcome } = await createMainWindow("launch");
+      launchUnit.set({
+        launch: {
+          window_ms: Date.now() - windowStartedAt,
+          renderer_load_ms: loadMs,
+        },
+      });
+      if (loadOutcome === "error") launchUnit.end("error", "load_failed");
+      else if (loadOutcome === "cancelled") {
+        launchUnit.end("cancelled", "load_cancelled");
+      } else launchUnit.end();
 
       app.on("activate", () => {
         if (BrowserWindow.getAllWindows().length === 0) {
@@ -1333,15 +1467,15 @@ if (!hasSingleInstanceLock) {
 
   app.on("before-quit", (event) => {
     if (gracefulQuitStarted) {
+      // The installer quits Ajour after its own preparation stopped the API.
+      if (updateQuit) endQuit(updateQuit.quit, updateQuit.outcome);
+      updateQuit = null;
       return;
     }
 
     gracefulQuitStarted = true;
-    const quit = events.start("app.quit", {
-      kind: "lifecycle",
-      trigger: quitTrigger === "other" ? "user" : "system",
-    });
-    quit.set({ quit: { trigger: quitTrigger } });
+    const quitStartedAt = Date.now();
+    const quit = startQuit(quitTrigger);
     if (pluginCatalogRefreshTimer) {
       clearInterval(pluginCatalogRefreshTimer);
       pluginCatalogRefreshTimer = null;
@@ -1352,19 +1486,15 @@ if (!hasSingleInstanceLock) {
     quit.set({ quit: { updater_ms: Date.now() - updaterStartedAt } });
     // A failed stop still quits.
     const stopStartedAt = Date.now();
-    void stopInternalAppApiWithinTimeout().then((outcome) => {
+    void stopInternalAppApiWithinTimeout().then(async (outcome) => {
       gracefulQuitStarted = true;
-      quit.set({
-        quit: {
-          api_stop_ms: Date.now() - stopStartedAt,
-          api_stop: outcome.replace("-", "_"),
-        },
-      });
-      // Ended before the process exits.
-      if (outcome === "failed") quit.end("error", "api_stop_failed");
-      else if (outcome === "timed-out") {
-        quit.end("timeout", "api_stop_timed_out");
-      } else quit.end();
+      recordApiStop(quit, outcome, stopStartedAt);
+      endQuit(quit, outcome);
+      // Events recorded before the package loaded are lost if the process
+      // exits first.
+      await whenEventsReady(
+        INTERNAL_APP_API_STOP_TIMEOUT_MS - (Date.now() - quitStartedAt),
+      );
       if (outcome === "timed-out") {
         // Ends the process with the stop still running. Plugin workers are
         // threads, so they end with it. Nothing holds close, beforeunload or

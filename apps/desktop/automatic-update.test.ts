@@ -1,10 +1,7 @@
 import { EventEmitter } from "node:events";
 import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
-import { catalog } from "../../packages/wide-events/catalog.ts";
-import { createEmitter } from "../../packages/wide-events/index.ts";
-import { asyncContextScope } from "../../packages/wide-events/node.ts";
-import { createRecordingSink } from "../../packages/wide-events/sinks.ts";
+import { recordingEvents } from "./recording-events.ts";
 
 const require = createRequire(import.meta.url);
 const { createAutomaticUpdateController, isCandidateCoreAtLeastCurrent } =
@@ -89,17 +86,8 @@ function createController(overrides: Record<string, unknown> = {}) {
       };
     },
   );
-  const sink = createRecordingSink();
-  const events = createEmitter({
-    catalog,
-    context: {
-      runtime: "main",
-      launch_id: "launch-1",
-      app: { version: "1.0.0", channel: "stable", packaged: true },
-      device: { platform: "win32" },
-    },
-    sink,
-    scope: asyncContextScope(),
+  const { events, recorded } = recordingEvents({
+    context: { app: { version: "1.0.0", channel: "stable", packaged: true } },
   });
   const scheduled: Array<() => void> = [];
   const controller = createAutomaticUpdateController({
@@ -127,7 +115,7 @@ function createController(overrides: Record<string, unknown> = {}) {
     checkForUpdates,
     scheduled,
     events,
-    recorded: sink.events,
+    recorded,
   };
 }
 
@@ -510,7 +498,9 @@ describe("update events", () => {
     ]);
   });
 
-  it("emits the install just before the installer takes over", async () => {
+  // The process quits right after the handoff, so the event leaves in the
+  // same task, but only once the handoff returned.
+  it("emits the install in the task that hands over to the installer", async () => {
     const prepareToInstall = vi.fn(async () => "stopped");
     const { controller, autoUpdater, dialog, recorded } = createController({
       prepareToInstall,
@@ -523,17 +513,20 @@ describe("update events", () => {
       });
       return ["update.exe"];
     });
-    let emittedBeforeInstall = false;
+    const emitted = { atHandoff: true, sameTask: false };
+    const hasInstall = () =>
+      recorded.some((event) => event.name === "update.install");
     autoUpdater.quitAndInstall.mockImplementation(() => {
-      emittedBeforeInstall = recorded.some(
-        (event) => event.name === "update.install",
-      );
+      emitted.atHandoff = hasInstall();
+      queueMicrotask(() => {
+        emitted.sameTask = hasInstall();
+      });
     });
     await controller.configure("stable");
 
     await controller.updateAndRestart("stable", "1.0.1");
 
-    expect(emittedBeforeInstall).toBe(true);
+    expect(emitted).toEqual({ atHandoff: false, sameTask: true });
     expect(recorded.at(-1)).toMatchObject({
       name: "update.install",
       outcome: "ok",
@@ -576,5 +569,89 @@ describe("update events", () => {
       outcome: "error",
       update: { stopped_at: "install" },
     });
+  });
+
+  it("records a handoff to the installer that throws", async () => {
+    const { controller, autoUpdater, dialog, recorded } = createController();
+    dialog.showMessageBox.mockResolvedValue({ response: 1 });
+    autoUpdater.quitAndInstall.mockImplementation(() => {
+      throw new Error("spawn EACCES");
+    });
+    await controller.configure("stable");
+
+    await controller.updateAndRestart("stable", "1.0.1");
+
+    expect(recorded.filter((e) => e.name === "update.install")).toMatchObject([
+      {
+        outcome: "error",
+        error: { message: "spawn EACCES" },
+        update: { stopped_at: "install" },
+      },
+    ]);
+  });
+
+  // The renderer names the version; only the release it was offered may
+  // enter an event.
+  it("keeps a version the renderer named out of the event unless it is the available release", async () => {
+    const { controller, recorded } = createController();
+    await controller.configure("stable");
+
+    await controller.updateAndRestart(
+      "stable",
+      "https://private.example/secret",
+    );
+
+    expect(recorded.at(-1)).toMatchObject({
+      name: "update.install",
+      outcome: "noop",
+      update: { stopped_at: "not_ready" },
+    });
+    expect(JSON.stringify(recorded)).not.toContain("private.example");
+  });
+
+  it("runs a check started by a track change as its own job", async () => {
+    const { controller, checkForUpdates, events, recorded } =
+      createController();
+    let finish: () => void = () => {};
+    checkForUpdates.mockImplementationOnce(
+      (track: string) =>
+        new Promise((resolve) => {
+          finish = () =>
+            resolve({
+              track,
+              currentVersion: "1.0.0",
+              latestVersion: "1.0.1",
+              updateAvailable: true,
+            } as never);
+        }),
+    );
+
+    await events.run(
+      "update.check",
+      { kind: "ipc", trigger: "user" },
+      async (unit) => {
+        const first = controller.checkNow("stable", { unit });
+        await Promise.resolve();
+        void controller.configure("nightly");
+        finish();
+        await first;
+      },
+    );
+    await vi.waitFor(() => expect(recorded).toHaveLength(2));
+
+    expect(recorded).toMatchObject(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "update.check", kind: "ipc" }),
+        expect.objectContaining({
+          name: "update.check",
+          kind: "job",
+          update: expect.objectContaining({
+            trigger: "track_change",
+            track: "nightly",
+            result: "available",
+          }),
+        }),
+      ]),
+    );
   });
 });

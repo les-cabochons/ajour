@@ -272,6 +272,11 @@ function reportStatus(report, response) {
   }
 }
 
+/**
+ * @param {any} fetchImpl
+ * @param {string} url
+ * @param {{ allowNotFound?: boolean, report?: any }} [options]
+ */
 async function fetchGithubJson(
   fetchImpl,
   url,
