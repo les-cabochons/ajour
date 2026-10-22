@@ -100,8 +100,8 @@ export type SpecName<Spec> = Spec extends StoreCommandName
       : never;
 
 /**
- * Runs store commands as one undoable action. The first command inside it
- * that writes gives it its name, so an agent's write is named for what it
+ * Runs store commands as one undoable action. The outermost command running
+ * inside it when it first writes gives it its name, so an agent's write is named for what it
  * did.
  */
 export const UNDO_GROUP = "undo.group" satisfies StoreCommandName;
@@ -154,7 +154,9 @@ export function countStoreWrite(bytes: number) {
   const unit = wideEvents.current();
   if (!unit) return;
   unit.count("store_write_count").count("store_write_bytes", bytes);
-  const writer = pendingGroupNames.at(-1);
+  // The outermost command running in the group names it: an inner command
+  // it ran, such as Restore's update, is part of what it did.
+  const writer = pendingGroupNames[0];
   if (openCommands.get(unit) === UNDO_GROUP && writer) {
     (unit as StoreCommandUnit).rename(writer as never);
     openCommands.set(unit, writer);

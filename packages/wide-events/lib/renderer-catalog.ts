@@ -1,5 +1,5 @@
 import type { Kind } from "./envelope.ts";
-import { operational, sensitive, type FieldTree } from "./fields.ts";
+import { operational, sensitive } from "./fields.ts";
 
 /**
  * The renderer's events: its store commands, boot, Undo, reloads,
@@ -25,6 +25,12 @@ export const rendererCounters = {
    * before each write instead of trusting it.
    */
   store_revision_hint_failure_count: operational<number>(),
+  /**
+   * Fields the renderer's sink dropped from an event: a field the catalog
+   * doesn't declare, or an object or a function where a field's value
+   * belongs.
+   */
+  dropped_field_count: operational<number>(),
   /** The records an undoable action changed, or an Undo restored, per local state list. */
   changed_project_count: operational<number>(),
   changed_time_entry_count: operational<number>(),
@@ -60,10 +66,14 @@ type EntryHost = "side_panel" | "dialog" | "popover" | "grid_cell" | "agent";
 
 /**
  * A store command's catalog entry: kind `command`, the write refusals among
- * its reasons, and the store's fields with its own.
+ * its reasons, and the store's fields with its own. `Fields` is not
+ * constrained to `FieldTree`: that contextual type would widen an inline
+ * `operational()` to `Field<unknown>`, and every field must keep its value
+ * type, so a reader that returns the wrong thing fails to compile.
+ * `defineCatalog` still checks that every field is classed.
  */
 function command<
-  const Fields extends FieldTree,
+  const Fields extends object,
   const Kinds extends readonly Kind[] = readonly ["command"],
   const Reasons extends readonly string[] = readonly [],
 >(fields: Fields, options: { kinds?: Kinds; reasons?: Reasons } = {}) {
@@ -150,9 +160,6 @@ const workflowState = {
 const pullRequest = {
   pull_request: { id: operational() },
 };
-
-/** A settings key and its value, kept only when it is an enum, a number or a boolean. */
-type PreferenceValue = string | number | boolean;
 
 export const rendererEvents = {
   /** The renderer's boot: loading the local state until the first render. */
@@ -251,8 +258,12 @@ export const rendererEvents = {
         | "app_sidebar"
       >(),
       changed_keys: operational<string[]>(),
-      /** The changed keys whose values are enums, numbers or booleans. */
-      values: operational<Record<string, PreferenceValue>>(),
+      /**
+       * The changed keys whose values are enums, numbers or booleans, as
+       * `key=value`. A field holds only strings, numbers, booleans and lists
+       * of them, never an object.
+       */
+      values: operational<string[]>(),
     },
   }),
 

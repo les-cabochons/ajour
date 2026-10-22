@@ -619,7 +619,7 @@ describe("preferences, reloads and boot", () => {
             "paceTolerancePercent",
             "commitLinesNameSource",
           ],
-          values: { themeMode: "dark", paceTolerancePercent: 15 },
+          values: ["themeMode=dark", "paceTolerancePercent=15"],
         },
       },
       { name: "preferences.update", outcome: "noop" },
@@ -650,21 +650,21 @@ describe("preferences, reloads and boot", () => {
           scope: "device",
           setting: "backlog_view",
           changed_keys: ["layout", "filters"],
-          values: { layout: "board" },
+          values: ["layout=board"],
         },
       },
       {
         preferences: {
           setting: "sidebar_layout",
           changed_keys: ["density"],
-          values: { density: "compact" },
+          values: ["density=compact"],
         },
       },
       {
         preferences: {
           setting: "side_panel_width",
           changed_keys: ["time"],
-          values: { time: 420 },
+          values: ["time=420"],
         },
       },
     ]);
@@ -975,7 +975,7 @@ describe("review round 2", () => {
         preferences: {
           setting: "sidebar_layout",
           changed_keys: ["width"],
-          values: { width: 260 },
+          values: ["width=260"],
         },
       },
     ]);
@@ -1134,5 +1134,44 @@ describe("review round 2", () => {
     expect(sink.events).toMatchObject([
       { name: "connection.delete", outcome: "ok" },
     ]);
+  });
+});
+
+describe("review round 3", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+    installMockWindow();
+  });
+
+  it("names an undo group after the outermost command that writes", async () => {
+    const { sink, localStore } = await loadStore();
+    const projectId = localStore.snapshot().projects[0]!._id;
+    localStore.archiveProject(projectId);
+    sink.events.length = 0;
+
+    localStore.runWithUndo(() => localStore.unarchiveProject(projectId));
+
+    expect(sink.events).toHaveLength(1);
+    expect(sink.events[0]).toMatchObject({
+      name: "project.restore",
+      trigger: "agent",
+      project: { id: projectId },
+    });
+  });
+
+  it("a command on a record that doesn't exist writes nothing and reports noop", async () => {
+    const { sink, localStore } = await loadStore();
+
+    localStore.updateProject("missing", { color: "#123456" });
+    localStore.archiveProject("missing");
+    localStore.snoozeWorkItem("missing", Date.now() + 60_000);
+
+    expect(sink.events.map((event) => [event.name, event.outcome])).toEqual([
+      ["project.update", "noop"],
+      ["project.archive", "noop"],
+      ["backlog_item.snooze", "noop"],
+    ]);
+    expect(sink.events.every((event) => event.counts === undefined)).toBe(true);
   });
 });

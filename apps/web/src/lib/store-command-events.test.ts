@@ -5,6 +5,7 @@ import type { StoreCommandTable } from "@/lib/store-command-events";
 interface ExampleStore {
   snapshot(): void;
   reopenWeek(weekOf: string): string | null;
+  addWorkItem(draft: { title: string; description?: string }): string;
 }
 
 describe("the command table's types", () => {
@@ -14,6 +15,7 @@ describe("the command table's types", () => {
         name: "week.reopen",
         fields: { week: { week_of: ([weekOf]) => weekOf } },
       },
+      addWorkItem: "backlog_item.create",
     } satisfies StoreCommandTable<ExampleStore, "snapshot">;
 
     expect(table.reopenWeek.fields.week.week_of(["2026-10-05"])).toBe(
@@ -33,7 +35,7 @@ describe("the command table's types", () => {
           },
         },
       },
-    } satisfies StoreCommandTable<ExampleStore, "snapshot">;
+    } satisfies StoreCommandTable<ExampleStore, "snapshot" | "addWorkItem">;
     const extra = {
       reopenWeek: {
         name: "week.reopen",
@@ -42,8 +44,25 @@ describe("the command table's types", () => {
           extra: { secret: () => "y" },
         },
       },
-    } satisfies StoreCommandTable<ExampleStore, "snapshot">;
+    } satisfies StoreCommandTable<ExampleStore, "snapshot" | "addWorkItem">;
 
     expect(table && extra).toBeTruthy();
+  });
+
+  it("refuses at compile time a reader that returns the wrong type for its field", () => {
+    const table = {
+      reopenWeek: "week.reopen",
+      addWorkItem: {
+        name: "backlog_item.create",
+        fields: {
+          backlog_item: {
+            // @ts-expect-error A backlog item's ID is a string, not the draft.
+            id: ([draft]) => draft,
+          },
+        },
+      },
+    } satisfies StoreCommandTable<ExampleStore, "snapshot">;
+
+    expect(table).toBeTruthy();
   });
 });

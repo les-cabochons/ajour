@@ -1292,14 +1292,40 @@ function withTeamSyncState(
   };
 }
 
+/**
+ * Whether `next` holds what `current` holds: every key the same value, or a
+ * list with the same records in the same order. A transition that found
+ * nothing to change, such as one on a record that doesn't exist, often
+ * copies the state and its lists anyway; that copy is not a write.
+ */
+function holdsSameState(current: LocalAppState, next: LocalAppState) {
+  if (current === next) return true;
+  const before = current as unknown as Record<string, unknown>;
+  const after = next as unknown as Record<string, unknown>;
+  for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    const left = before[key];
+    const right = after[key];
+    if (left === right) continue;
+    if (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((record, index) => record === right[index])
+    ) {
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
 function updateState(
   mutator: (state: LocalAppState) => LocalAppState,
 ): LocalAppState {
   const current = readState();
   const next = mutator(current);
-  if (next !== current) {
-    writeState(next);
-  }
+  if (holdsSameState(current, next)) return current;
+  writeState(next);
   return next;
 }
 
@@ -1311,7 +1337,7 @@ function updateStateWithResult<T>(
 ): T {
   const current = readState();
   const { state, result } = operation(current);
-  if (state !== current) {
+  if (!holdsSameState(current, state)) {
     writeState(state);
   }
   return result;
@@ -1335,7 +1361,7 @@ function updateStateWithUndo(
 ): string | null {
   const current = readState();
   const next = mutator(current);
-  if (next === current) {
+  if (holdsSameState(current, next)) {
     return null;
   }
 
@@ -3550,8 +3576,10 @@ export function runStoreCommandWith<Key extends StoreCommandKey>(
 /**
  * Opens the event of the store command `key` for a workflow that awaits
  * before it runs it, such as a move that asks about subitems first. The
- * workflow runs the command inside `unit.enter()`, and calls `finish` once
- * in every path.
+ * workflow runs the command inside the handle's `enter`, never
+ * `unit.enter()`: only the writes made inside `enter` count as the
+ * command's own, so a command run through `unit.enter()` would report a
+ * real write as `noop`. It calls `finish` once in every path.
  */
 export function startStoreCommandFor<Key extends StoreCommandKey>(key: Key) {
   const spec = STORE_COMMANDS[key] as AnySpec;

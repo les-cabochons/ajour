@@ -406,7 +406,10 @@ build reports the `web` channel. Each window load gets its own window ID.
 The renderer knows neither the home folder nor the user data folder, so its
 events keep an error's type and code but leave its message out. Its sink
 also passes on only the fields the catalog declares for each event, so a
-field without a privacy class never leaves the renderer, whatever set it.
+field without a privacy class never leaves the renderer, whatever set it,
+and a field holds only strings, numbers, booleans, null and lists of them:
+an object or a function where a value belongs is dropped, and counted in
+`dropped_field_count`.
 
 - **Store commands.** `STORE_COMMANDS` in `apps/web/src/lib/local-store.ts`
   names every command of the local store but its reads, so a new command
@@ -447,12 +450,17 @@ field without a privacy class never leaves the renderer, whatever set it.
     is one `connection.delete` with what it removed per kind, and `ok` once
     the local API deleted it.
   - `runWithUndo`, which only agent tools run their writes in, has the
-    trigger `agent`. It takes the name of the first command inside it that
-    writes, and counts its change once.
+    trigger `agent`. It takes the name of the outermost command running
+    inside it when it first writes, and counts its change once.
+  - A command that finds nothing to change, such as one on a record that
+    doesn't exist, writes nothing and ends `noop`: a state whose values and
+    lists hold the same records is not a write.
 - **Folding across `await`.** Store commands are synchronous, so they fold
   into the unit on top of the scope stack. An async unit leaves the stack at
   its first `await`, and runs the store commands after it inside
-  `unit.enter()`. A store command run outside it emits its own event.
+  `unit.enter()`; a store command's own workflow uses the `enter` of
+  `startStoreCommandFor`, which also counts its writes. A store command run
+  outside it emits its own event.
 - **`app.boot`** (`lib/app-boot.ts`) runs from loading the local state to
   the first render: the load path, the migrations applied, the desktop
   recovery's decision, reason and what a submitted week left out, the

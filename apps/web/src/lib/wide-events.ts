@@ -108,27 +108,63 @@ function isField(node: unknown) {
   return privacy === "operational" || privacy === "sensitive";
 }
 
-/** `value` with only the fields `tree` declares, or undefined when none is left. */
-function declaredOnly(value: unknown, tree: unknown): unknown {
-  if (isField(tree)) return value;
+/** A value a field may hold: a string, number, boolean or null, or a list of them. */
+function isFieldValue(value: unknown): boolean {
+  if (Array.isArray(value)) return value.every(isScalar);
+  return isScalar(value);
+}
+
+function isScalar(value: unknown) {
+  return (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  );
+}
+
+/**
+ * `value` with only the fields `tree` declares, each holding a field value,
+ * or undefined when none is left. `drop` counts each field it leaves out.
+ */
+function declaredOnly(
+  value: unknown,
+  tree: unknown,
+  drop: () => void,
+): unknown {
+  if (isField(tree)) {
+    if (isFieldValue(value)) return value;
+    drop();
+    return undefined;
+  }
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    drop();
     return undefined;
   }
   const kept: Record<string, unknown> = {};
+  let empty = true;
   for (const [key, child] of Object.entries(value)) {
-    if (!Object.hasOwn(tree as Tree, key)) continue;
-    const declared = declaredOnly(child, (tree as Tree)[key]);
-    if (declared !== undefined) kept[key] = declared;
+    if (!Object.hasOwn(tree as Tree, key)) {
+      drop();
+      continue;
+    }
+    const declared = declaredOnly(child, (tree as Tree)[key], drop);
+    if (declared !== undefined) {
+      kept[key] = declared;
+      empty = false;
+    }
   }
-  return kept;
+  return empty ? undefined : kept;
 }
 
 /**
  * Passes on only what the catalog declares, so a field without a privacy
- * class never leaves the renderer, whatever set it. It also drops each
- * error's message, keeping its type and code: the renderer knows neither
- * the home folder nor the user data folder, so its scrubber could leave
- * either in a message.
+ * class never leaves the renderer, whatever set it, and a field holds only
+ * strings, numbers, booleans, null and lists of them: an object or a
+ * function where a value belongs is dropped, never passed through. Each
+ * drop counts in `dropped_field_count`. It also drops each error's message,
+ * keeping its type and code: the renderer knows neither the home folder nor
+ * the user data folder, so its scrubber could leave either in a message.
  */
 function catalogedOnly(target: Sink): Sink {
   return {
@@ -137,16 +173,25 @@ function catalogedOnly(target: Sink): Sink {
         event.name
       ]?.fields;
       const kept: Record<string, unknown> = {};
+      let dropped = 0;
+      const drop = () => {
+        dropped += 1;
+      };
       for (const [key, value] of Object.entries(event)) {
         if (Object.hasOwn(envelopeFields, key)) kept[key] = value;
         else if (fields && Object.hasOwn(fields, key)) {
-          const declared = declaredOnly(value, fields[key]);
+          const declared = declaredOnly(value, fields[key], drop);
           if (declared !== undefined) kept[key] = declared;
+        } else {
+          drop();
         }
       }
       if (event.error?.message !== undefined) {
         const { message: _message, ...error } = event.error;
         kept.error = error;
+      }
+      if (dropped > 0) {
+        kept.counts = { ...event.counts, dropped_field_count: dropped };
       }
       target.emit(kept as typeof event);
     },

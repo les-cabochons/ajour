@@ -121,4 +121,55 @@ describe("the renderer's error messages", () => {
     expect(JSON.stringify(event)).not.toContain("Private note");
     expect(event).not.toHaveProperty("extra");
   });
+
+  it("drops an object or a function at a declared field, and counts what it dropped", () => {
+    const sink = createRecordingSink<AjourEvent>();
+    replaceEventSink(sink);
+
+    wideEvents.run(
+      "backlog_item.create",
+      { kind: "command", trigger: "user" },
+      (unit) =>
+        unit.set({
+          backlog_item: {
+            id: { title: "Secret title", description: "Secret text" },
+            parent_id: () => "fn",
+            closed: true,
+          },
+          time_entry: { day: "2026-10-06" },
+        } as never),
+    );
+
+    const [event] = sink.events;
+    expect(event!.backlog_item).toEqual({ closed: true });
+    expect(event!.counts).toEqual({ dropped_field_count: 3 });
+    expect(JSON.stringify(event)).not.toContain("Secret");
+  });
+
+  it("keeps strings, numbers, booleans, null and arrays of them", () => {
+    const sink = createRecordingSink<AjourEvent>();
+    replaceEventSink(sink);
+
+    wideEvents.run(
+      "preferences.update",
+      { kind: "command", trigger: "user" },
+      (unit) =>
+        unit.set({
+          preferences: {
+            scope: "user",
+            changed_keys: ["themeMode", "timeView"],
+            values: ["themeMode=dark", { secret: "Secret" }],
+          },
+          store: { revision_changed: null, undo_offered: false },
+        } as never),
+    );
+
+    expect(sink.events[0]).toMatchObject({
+      preferences: { scope: "user", changed_keys: ["themeMode", "timeView"] },
+      store: { revision_changed: null, undo_offered: false },
+    });
+    // An array that holds an object is dropped whole.
+    expect(sink.events[0]!.preferences).not.toHaveProperty("values");
+    expect(sink.events[0]!.counts).toEqual({ dropped_field_count: 1 });
+  });
 });

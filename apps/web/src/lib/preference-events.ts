@@ -8,8 +8,9 @@ type PreferenceFields = NonNullable<
 
 /**
  * Which settings keys changed between `before` and `after`, and the values of
- * those that are numbers, booleans or one of `enumKeys`. Other values, such as
- * a filter's text or a name source, stay out (ADR 0011).
+ * those that are numbers, booleans or one of `enumKeys`, as `key=value`.
+ * Other values, such as a filter's text or a name source, stay out (ADR
+ * 0011).
  */
 export function describePreferenceChange(
   before: object,
@@ -19,7 +20,7 @@ export function describePreferenceChange(
   const previous = before as Record<string, unknown>;
   const next = after as Record<string, unknown>;
   const changed: string[] = [];
-  const values: Record<string, string | number | boolean> = {};
+  const values: string[] = [];
   for (const key of new Set([...Object.keys(next), ...Object.keys(previous)])) {
     if (recordsEqual(previous[key], next[key])) continue;
     changed.push(key);
@@ -29,7 +30,7 @@ export function describePreferenceChange(
       typeof value === "boolean" ||
       (typeof value === "string" && enumKeys.includes(key))
     ) {
-      values[key] = value;
+      values.push(`${key}=${value}`);
     }
   }
   return { changed_keys: changed, values };
