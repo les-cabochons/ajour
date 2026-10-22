@@ -15,6 +15,7 @@ import {
   countStoreWrite,
   describeStoreCommand,
   instrumentStoreCommands,
+  refuseStoreCommand,
   resolveCommandName,
   runStoreCommand,
   startStoreCommand,
@@ -1259,9 +1260,9 @@ function writeState(state: LocalAppState) {
     } catch (error) {
       // Recorded on the command's event before the error reaches the toast.
       if (error instanceof LockedWeekError) {
-        storeCommandUnit()?.refuse("locked_week");
+        refuseStoreCommand("locked_week");
       } else if (error instanceof StaleWindowError) {
-        storeCommandUnit()?.refuse("stale_window");
+        refuseStoreCommand("stale_window");
       }
       throw error;
     }
@@ -2784,7 +2785,7 @@ const store = {
   undo(token: string): UndoResult {
     if (lastUndo?.token !== token) {
       describeStoreCommand("undo.restore", { undo: { result: "expired" } });
-      storeCommandUnit()?.refuse("expired");
+      refuseStoreCommand("expired");
       return "expired";
     }
 
@@ -2796,7 +2797,7 @@ const store = {
       const result = updateStateWithResult((state) => {
         const restored = restoreUndo(state, undo);
         if (restored.result === "stale") {
-          storeCommandUnit()?.refuse(restored.staleReason);
+          refuseStoreCommand(restored.staleReason);
         }
         return {
           result: restored.result,
@@ -3027,202 +3028,206 @@ function backlogItemCommand<
     | "backlog_item.unpin"
     | "backlog_item.open"
     | "backlog_item.archive"
-    | "backlog_item.delete",
+    | "backlog_item.delete"
+    | "backlog_item.resolve_description"
+    | "backlog_item.save_description",
 >(name: Name) {
   return {
     name,
-    fields: ([workItemId]: readonly [string, ...unknown[]]) => ({
-      backlog_item: { id: workItemId },
-    }),
+    fields: {
+      backlog_item: {
+        id: ([workItemId]: readonly [string, ...unknown[]]) => workItemId,
+      },
+    },
   };
 }
+
+/** A command whose first argument is a project ID. */
+const projectIdFirst = {
+  project: { id: ([projectId]: readonly [string, ...unknown[]]) => projectId },
+};
+
+/** A command whose first two arguments are a project ID and a task ID. */
+const taskIdsFirst = {
+  project: { id: ([projectId]: readonly [string, ...unknown[]]) => projectId },
+  task: {
+    id: ([, taskId]: readonly [string, string, ...unknown[]]) => taskId,
+  },
+};
 
 /** The store's reads: they change nothing, so they emit no event. */
 type StoreRead =
   "subscribe" | "snapshot" | "pendingUndoProjectIds" | "getTimeline";
 
 /**
- * Each store command's wide event name, and the fields it reads from its
- * arguments and result. Every command but the reads has one, so a new
- * command without a name fails to compile. Commands whose fields need the
- * state before and after describe themselves through
- * `lib/store-command-fields.ts`. See docs/logging-strategy.md.
+ * Each store command's wide event name, and how it reads its fields: from
+ * its arguments before it runs (`fields`), and from its result after
+ * (`resultFields`). Every command but the reads has a name, so a new command
+ * without one fails to compile, and a field the catalog doesn't declare for
+ * that name fails too. Commands whose fields need the state before and
+ * after describe themselves through `lib/store-command-fields.ts`. See
+ * docs/logging-strategy.md.
  */
 const STORE_COMMANDS = {
   syncPullRequests: {
     name: "pull_request.apply_sync",
     trigger: "system",
-    fields: ([source, result]) => ({
-      plugin: { id: source.pluginId },
-      connection: { id: source.connectionId },
-      pull_request: { received_count: result.pullRequests.length },
-    }),
+    fields: {
+      plugin: { id: ([source]) => source.pluginId },
+      connection: { id: ([source]) => source.connectionId },
+      pull_request: {
+        received_count: ([, result]) => result.pullRequests.length,
+      },
+    },
   },
   changePullRequest: {
     pick: (_id, command) => PULL_REQUEST_COMMANDS[command.type],
     fallback: "pull_request.change",
+    fields: { pull_request: { id: ([id]) => id } },
   },
   acceptCalendarSuggestions: "suggestion.add",
   dismissCalendarSuggestions: {
     name: "suggestion.dismiss",
-    fields: ([suggestions]) => ({ suggestion: { count: suggestions.length } }),
+    fields: { suggestion: { count: ([suggestions]) => suggestions.length } },
   },
   hideCalendarMeeting: "event_rule.hide",
   forgetCalendarEventRule: {
     name: "event_rule.forget",
-    fields: ([ruleId]) => ({ event_rule: { id: ruleId } }),
+    fields: { event_rule: { id: ([ruleId]) => ruleId } },
   },
   removeConnectionCalendarData: "connection.delete",
   applyTeamSyncRound: {
     name: "team.apply_sync",
     trigger: "system",
-    fields: ([connectionId], result) => ({
-      connection: { id: connectionId },
-      team_sync: { result: result.kind },
-    }),
+    fields: { connection: { id: ([connectionId]) => connectionId } },
+    resultFields: { team_sync: { result: (result) => result.kind } },
   },
   shareProjectWithTeam: "project.share",
-  unshareProjectFromTeam: {
-    name: "project.unshare",
-    fields: ([projectId]) => ({ project: { id: projectId } }),
-  },
+  unshareProjectFromTeam: { name: "project.unshare", fields: projectIdFirst },
   resolveTeamArrival: {
     name: "team.resolve_arrival",
-    fields: ([connectionId, _remoteId, choice], result) => ({
-      connection: { id: connectionId },
+    fields: {
+      connection: { id: ([connectionId]) => connectionId },
       team: {
-        choice: choice.kind === "link" ? "link" : "add_separately",
-        result: result.kind,
+        choice: ([, , choice]) =>
+          choice.kind === "link" ? "link" : "add_separately",
       },
-    }),
+    },
+    resultFields: { team: { result: (result) => result.kind } },
   },
   removeConnectionTeamData: "connection.delete",
   removeConnectionPullRequests: "connection.delete",
   createTeam: "team.create",
   addProject: {
     name: "project.create",
-    fields: (_args, result) => ({ project: { id: result } }),
+    resultFields: { project: { id: (projectId) => projectId } },
   },
   updateProject: {
     name: "project.update",
-    fields: ([projectId, patch]) => ({
-      project: { id: projectId, changed_fields: Object.keys(patch) },
-    }),
+    fields: {
+      project: {
+        id: ([projectId]) => projectId,
+        changed_fields: ([, patch]) => Object.keys(patch),
+      },
+    },
   },
   updateProjectWithUndo: {
     name: "project.update",
-    fields: ([projectId, patch]) => ({
-      project: { id: projectId, changed_fields: Object.keys(patch) },
-    }),
+    fields: {
+      project: {
+        id: ([projectId]) => projectId,
+        changed_fields: ([, patch]) => Object.keys(patch),
+      },
+    },
   },
   reorderProjects: {
     name: "project.reorder",
-    fields: ([orderedIds]) => ({ project: { count: orderedIds.length } }),
+    fields: { project: { count: ([orderedIds]) => orderedIds.length } },
   },
-  archiveProject: {
-    name: "project.archive",
-    fields: ([projectId]) => ({ project: { id: projectId } }),
-  },
-  unarchiveProject: {
-    name: "project.restore",
-    fields: ([projectId]) => ({ project: { id: projectId } }),
-  },
-  addProjectTask: {
-    name: "task.create",
-    fields: ([projectId]) => ({ project: { id: projectId } }),
-  },
-  reorderProjectTask: {
-    name: "task.reorder",
-    fields: ([projectId, taskId]) => ({
-      project: { id: projectId },
-      task: { id: taskId },
-    }),
-  },
+  archiveProject: { name: "project.archive", fields: projectIdFirst },
+  unarchiveProject: { name: "project.restore", fields: projectIdFirst },
+  addProjectTask: { name: "task.create", fields: projectIdFirst },
+  reorderProjectTask: { name: "task.reorder", fields: taskIdsFirst },
   reorderTimesheetEntries: {
     name: "time_entry.reorder",
-    fields: ([localDate, orderedIds]) => ({
-      time_entry: { count: orderedIds.length, to_day: localDate },
-    }),
+    fields: {
+      time_entry: {
+        count: ([, orderedIds]) => orderedIds.length,
+        to_day: ([localDate]) => localDate,
+      },
+    },
   },
   importProjectTasks: "task.import",
   importProjectWorkbookRows: "project.import",
   importProjectDataShapeProjects: "project.import",
   renameProjectTask: {
     name: "task.update",
-    fields: ([projectId, taskId]) => ({
-      project: { id: projectId },
-      task: { id: taskId, changed_fields: ["name"] },
-    }),
+    fields: {
+      ...taskIdsFirst,
+      task: { ...taskIdsFirst.task, changed_fields: () => ["name"] },
+    },
   },
   updateProjectTask: {
     name: "task.update",
-    fields: ([projectId, taskId, patch]) => ({
-      project: { id: projectId },
-      task: { id: taskId, changed_fields: Object.keys(patch) },
-    }),
+    fields: {
+      ...taskIdsFirst,
+      task: {
+        ...taskIdsFirst.task,
+        changed_fields: ([, , patch]) => Object.keys(patch),
+      },
+    },
   },
   setProjectTaskPinnedSlot: {
     name: "task.pin",
-    fields: ([projectId, taskId, slot]) => ({
-      project: { id: projectId },
-      task: { id: taskId, pinned_slot: slot ?? null },
-    }),
+    fields: {
+      ...taskIdsFirst,
+      task: { ...taskIdsFirst.task, pinned_slot: ([, , slot]) => slot ?? null },
+    },
   },
-  archiveProjectTask: {
-    name: "task.archive",
-    fields: ([projectId, taskId]) => ({
-      project: { id: projectId },
-      task: { id: taskId },
-    }),
-  },
-  unarchiveProjectTask: {
-    name: "task.restore",
-    fields: ([projectId, taskId]) => ({
-      project: { id: projectId },
-      task: { id: taskId },
-    }),
-  },
+  archiveProjectTask: { name: "task.archive", fields: taskIdsFirst },
+  unarchiveProjectTask: { name: "task.restore", fields: taskIdsFirst },
   addWorkflowState: {
     name: "workflow_state.create",
-    fields: (_args, result) => ({ workflow_state: { id: result } }),
+    resultFields: { workflow_state: { id: (statusId) => statusId } },
   },
   updateWorkflowState: {
     name: "workflow_state.update",
-    fields: ([statusId, updates]) => ({
+    fields: {
       workflow_state: {
-        id: statusId,
-        done: typeof updates === "object" ? updates.done : undefined,
+        id: ([statusId]) => statusId,
+        done: ([, updates]) =>
+          typeof updates === "object" ? updates.done : undefined,
       },
-    }),
+    },
   },
   deleteWorkflowState: {
     name: "workflow_state.delete",
-    fields: ([statusId]) => ({ workflow_state: { id: statusId } }),
+    fields: { workflow_state: { id: ([statusId]) => statusId } },
   },
   autoMapSourceStates: { name: "workflow_state.auto_map", trigger: "system" },
   setWorkflowStateWriteRule: {
     name: "workflow_state.set_write_rule",
-    fields: ([rule]) => ({
+    fields: {
       workflow_state: {
-        id: rule.workflowStateId,
-        write_rule: rule.write?.kind ?? "cleared",
+        id: ([rule]) => rule.workflowStateId,
+        write_rule: ([rule]) => rule.write?.kind ?? "cleared",
       },
-    }),
+    },
   },
   moveWorkflowState: {
     name: "workflow_state.move",
-    fields: ([workflowStateId]) => ({
-      workflow_state: { id: workflowStateId },
-    }),
+    fields: { workflow_state: { id: ([workflowStateId]) => workflowStateId } },
   },
   setWorkflowStateMapping: {
     name: "workflow_state.map",
-    fields: ([mapping], result) => ({
+    fields: {
       workflow_state: {
-        id: mapping.workflowStateId ?? undefined,
-        closed_count: result.closedCount,
+        id: ([mapping]) => mapping.workflowStateId ?? undefined,
       },
-    }),
+    },
+    resultFields: {
+      workflow_state: { closed_count: (result) => result.closedCount },
+    },
   },
   startTimer: "time_entry.start",
   editRunningEntry: "time_entry.update",
@@ -3235,26 +3240,26 @@ const STORE_COMMANDS = {
   commitReadyTimesheetImportDrafts: "timesheet_import.commit",
   addWorkItem: {
     name: "backlog_item.create",
-    fields: ([draft], result) => ({
-      backlog_item: { id: result, parent_id: draft.parentWorkItemId },
-    }),
+    fields: {
+      backlog_item: { parent_id: ([draft]) => draft.parentWorkItemId },
+    },
+    resultFields: { backlog_item: { id: (workItemId) => workItemId } },
   },
   addSubtask: {
     name: "backlog_item.create",
-    fields: ([parentId], result) => ({
-      backlog_item: { id: result, parent_id: parentId },
-    }),
+    fields: { backlog_item: { parent_id: ([parentId]) => parentId } },
+    resultFields: { backlog_item: { id: (workItemId) => workItemId } },
   },
   importSyncedWorkItems: "backlog_import.commit",
   archiveDoneSyncedWorkItems: {
     name: "backlog.archive_done",
     trigger: "system",
-    fields: ([doneItems], archived) => ({
-      backlog_import: {
-        candidate_count: doneItems.length,
-        archived_count: archived,
-      },
-    }),
+    fields: {
+      backlog_import: { candidate_count: ([doneItems]) => doneItems.length },
+    },
+    resultFields: {
+      backlog_import: { archived_count: (archived) => archived },
+    },
   },
   returnItemsWithNewComments: {
     name: "backlog_item.return",
@@ -3263,87 +3268,107 @@ const STORE_COMMANDS = {
   applyBacklogSyncWorkItemUpdates: {
     name: "backlog.apply_updates",
     trigger: "system",
-    fields: ([updates]) => ({
-      backlog_import: { candidate_count: updates.length },
-    }),
+    fields: {
+      backlog_import: { candidate_count: ([updates]) => updates.length },
+    },
   },
   keepLocalEstimateConflict: {
     name: "backlog_item.resolve_estimate",
-    fields: ([workItemId]) => ({
-      backlog_item: { id: workItemId, estimate_resolution: "keep_local" },
-    }),
+    fields: {
+      backlog_item: {
+        id: ([workItemId]) => workItemId,
+        estimate_resolution: () => "keep_local",
+      },
+    },
   },
-  takeSourceDescriptionWithUndo: {
-    name: "backlog_item.resolve_description",
-    fields: ([workItemId]) => ({ backlog_item: { id: workItemId } }),
-  },
-  updateSyncedDescription: {
-    name: "backlog_item.save_description",
-    fields: ([workItemId]) => ({ backlog_item: { id: workItemId } }),
-  },
+  takeSourceDescriptionWithUndo: backlogItemCommand(
+    "backlog_item.resolve_description",
+  ),
+  updateSyncedDescription: backlogItemCommand("backlog_item.save_description"),
   acceptRemoteEstimateValue: {
     name: "backlog_item.resolve_estimate",
-    fields: ([workItemId]) => ({
-      backlog_item: { id: workItemId, estimate_resolution: "accept_source" },
-    }),
+    fields: {
+      backlog_item: {
+        id: ([workItemId]) => workItemId,
+        estimate_resolution: () => "accept_source",
+      },
+    },
   },
   dismissEstimateIssue: {
     name: "backlog_item.resolve_estimate",
-    fields: ([workItemId]) => ({
-      backlog_item: { id: workItemId, estimate_resolution: "dismiss" },
-    }),
+    fields: {
+      backlog_item: {
+        id: ([workItemId]) => workItemId,
+        estimate_resolution: () => "dismiss",
+      },
+    },
   },
   reorderWorkItems: {
     name: "backlog_item.reorder",
-    fields: ([orderedIds]) => ({ backlog_item: { count: orderedIds.length } }),
+    fields: { backlog_item: { count: ([orderedIds]) => orderedIds.length } },
   },
   reorderWorkItemsWithUndo: {
     name: "backlog_item.reorder",
-    fields: ([orderedIds]) => ({ backlog_item: { count: orderedIds.length } }),
+    fields: { backlog_item: { count: ([orderedIds]) => orderedIds.length } },
   },
   setBacklogSortMode: {
     name: "backlog.sort",
-    fields: ([mode]) => ({ backlog: { sort_mode: mode } }),
+    fields: { backlog: { sort_mode: ([mode]) => mode } },
   },
   updateWorkItem: {
     name: "backlog_item.update",
-    fields: ([workItemId, patch]) => ({
-      backlog_item: { id: workItemId, changed_fields: Object.keys(patch) },
-    }),
+    fields: {
+      backlog_item: {
+        id: ([workItemId]) => workItemId,
+        changed_fields: ([, patch]) => Object.keys(patch),
+      },
+    },
   },
   updateWorkItemWithUndo: {
     name: "backlog_item.update",
-    fields: ([workItemId, patch]) => ({
-      backlog_item: { id: workItemId, changed_fields: Object.keys(patch) },
-    }),
+    fields: {
+      backlog_item: {
+        id: ([workItemId]) => workItemId,
+        changed_fields: ([, patch]) => Object.keys(patch),
+      },
+    },
   },
   saveWorkItemEdits: {
     name: "backlog_item.update",
-    fields: ([workItemId, patch]) => ({
-      backlog_item: { id: workItemId, changed_fields: Object.keys(patch) },
-    }),
+    fields: {
+      backlog_item: {
+        id: ([workItemId]) => workItemId,
+        changed_fields: ([, patch]) => Object.keys(patch),
+      },
+    },
   },
   saveWorkItemDescriptionText: {
     name: "backlog_item.update",
-    fields: ([workItemId]) => ({
-      backlog_item: { id: workItemId, changed_fields: ["description"] },
-    }),
+    fields: {
+      backlog_item: {
+        id: ([workItemId]) => workItemId,
+        changed_fields: () => ["description"],
+      },
+    },
   },
   applyWorkItemEditsSince: {
     name: "backlog_item.update",
-    fields: ([workItemId, patch]) => ({
-      backlog_item: { id: workItemId, changed_fields: Object.keys(patch) },
-    }),
+    fields: {
+      backlog_item: {
+        id: ([workItemId]) => workItemId,
+        changed_fields: ([, patch]) => Object.keys(patch),
+      },
+    },
   },
   saveNewWorkItem: {
     name: "backlog_item.create",
-    fields: ([draft, closeIn], result) => ({
+    fields: {
       backlog_item: {
-        id: result.workItemId,
-        parent_id: draft.parentWorkItemId,
-        closed: closeIn !== undefined,
+        parent_id: ([draft]) => draft.parentWorkItemId,
+        closed: ([, closeIn]) => closeIn !== undefined,
       },
-    }),
+    },
+    resultFields: { backlog_item: { id: (result) => result.workItemId } },
   },
   applyTimelogWithUndo: backlogItemCommand("backlog_item.apply_timelog"),
   restoreWorkItem: backlogItemCommand("backlog_item.restore"),
@@ -3362,11 +3387,11 @@ const STORE_COMMANDS = {
   },
   applySettleRule: {
     name: "settle_rule.set",
-    fields: () => ({ settle_rule: { mode: "apply" } }),
+    fields: { settle_rule: { mode: () => "apply" } },
   },
   askSettleRule: {
     name: "settle_rule.set",
-    fields: () => ({ settle_rule: { mode: "ask" } }),
+    fields: { settle_rule: { mode: () => "ask" } },
   },
   unsettleWorkItem: backlogItemCommand("backlog_item.unsettle"),
   snoozeWorkItem: backlogItemCommand("backlog_item.snooze"),
@@ -3379,65 +3404,86 @@ const STORE_COMMANDS = {
   updateTimesheetEntry: "time_entry.update",
   deleteTimesheetEntry: {
     name: "time_entry.delete",
-    fields: () => ({ time_entry: { count: 1 } }),
+    fields: { time_entry: { count: () => 1 } },
   },
   deleteTimesheetEntries: {
     name: "time_entry.delete",
-    fields: ([entryIds]) => ({ time_entry: { count: entryIds.length } }),
+    fields: { time_entry: { count: ([entryIds]) => entryIds.length } },
   },
   duplicateTimesheetEntry: {
     name: "time_entry.duplicate",
-    fields: ([_entryId, values]) => ({
-      time_entry: { count: 1, mode: "copy", to_day: values.localDate },
-    }),
+    fields: {
+      time_entry: {
+        count: () => 1,
+        mode: () => "copy",
+        to_day: ([, values]) => values.localDate,
+      },
+    },
   },
   moveTimesheetEntry: {
     name: "time_entry.move",
-    fields: ([_entryId, values]) => ({
-      time_entry: { count: 1, mode: "cut", to_day: values.localDate },
-    }),
+    fields: {
+      time_entry: {
+        count: () => 1,
+        mode: () => "cut",
+        to_day: ([, values]) => values.localDate,
+      },
+    },
   },
   pasteTimesheetEntries: {
     name: "time_entry.paste",
-    fields: ([entries, mode]) => ({
-      time_entry: { count: entries.length, mode },
-    }),
+    fields: {
+      time_entry: {
+        count: ([entries]) => entries.length,
+        mode: ([, mode]) => mode,
+      },
+    },
   },
   relocateTimesheetEntries: {
     pick: (_entries, mode) =>
       mode === "copy" ? "time_entry.duplicate" : "time_entry.move",
     fallback: "time_entry.move",
+    fields: {
+      time_entry: {
+        count: ([entries]) => entries.length,
+        mode: ([, mode]) => mode,
+      },
+    },
   },
   dropTimesheetEntries: {
     name: "time_entry.drop",
-    fields: ([entryIds, localDate]) => ({
-      time_entry: { count: entryIds.length, to_day: localDate },
-    }),
+    fields: {
+      time_entry: {
+        count: ([entryIds]) => entryIds.length,
+        to_day: ([, localDate]) => localDate,
+      },
+    },
   },
   undo: "undo.restore",
   forgetUndo: { name: "undo.expire", trigger: "system" },
-  runWithUndo: UNDO_GROUP,
+  // Only agent tools group their writes under one Undo today.
+  runWithUndo: { name: UNDO_GROUP, trigger: "agent" },
   saveTimer: "time_entry.stop",
   markCommitPrompted: {
     name: "week.prompt_commit",
-    fields: ([weekOf]) => ({ week: { week_of: weekOf } }),
+    fields: { week: { week_of: ([weekOf]) => weekOf } },
   },
   markTimesheetEntriesCommitted: {
     name: "time_entry.commit",
-    fields: ([entryIds]) => ({ time_entry: { count: entryIds.length } }),
+    fields: { time_entry: { count: ([entryIds]) => entryIds.length } },
   },
   markTimesheetEntriesNotCommitted: {
     name: "time_entry.uncommit",
-    fields: ([entryIds]) => ({ time_entry: { count: entryIds.length } }),
+    fields: { time_entry: { count: ([entryIds]) => entryIds.length } },
   },
   submitWeek: "week.submit",
   reopenWeek: {
     name: "week.reopen",
-    fields: ([weekOf]) => ({ week: { week_of: weekOf } }),
+    fields: { week: { week_of: ([weekOf]) => weekOf } },
   },
   continueTimesheetEntry: {
     name: "time_entry.continue",
-    fields: ([entryId]) => ({ time_entry: { id: entryId } }),
+    fields: { time_entry: { id: ([entryId]) => entryId } },
   },
   addSampleActivity: "timeline.import",
   importBrowserBuckets: "timeline.import",

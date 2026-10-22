@@ -28,6 +28,8 @@ vi.mock("@/lib/local-store", () => ({
       set: () => undefined,
       cancel: () => undefined,
     },
+    enter: <Result>(work: () => Result) => work(),
+    didWork: () => undefined,
     fail: () => undefined,
     finish: () => undefined,
   }),

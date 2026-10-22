@@ -404,14 +404,19 @@ one launch. Each field is checked and falls back on its own: the web build,
 or a main process that hands none over, makes its own launch ID, and the web
 build reports the `web` channel. Each window load gets its own window ID.
 The renderer knows neither the home folder nor the user data folder, so its
-events keep an error's type and code but leave its message out.
+events keep an error's type and code but leave its message out. Its sink
+also passes on only the fields the catalog declares for each event, so a
+field without a privacy class never leaves the renderer, whatever set it.
 
 - **Store commands.** `STORE_COMMANDS` in `apps/web/src/lib/local-store.ts`
   names every command of the local store but its reads, so a new command
   without a name fails to compile. A name may be picked from the arguments,
   as a pull request change is by its type, with a fallback name for a call
-  it can't read. An entry may also read the command's own fields from its
-  arguments and result, typed against its name; fields that need the state
+  it can't read. An entry may also read the command's own fields: `fields`
+  from its arguments, before it runs, so a refused command keeps them, and
+  `resultFields` from its result. Each is the catalog's field tree for the
+  command's name with a function in place of each field, so a field the
+  catalog doesn't declare fails to compile. Fields that need the state
   before and after come from `lib/store-command-fields.ts`.
   `lib/store-command-events.ts` runs each call as one `command` event:
   - the write path counts `store_write_count` and `store_write_bytes`, sets
@@ -422,7 +427,8 @@ events keep an error's type and code but leave its message out.
     (`changed_project_count`, `changed_time_entry_count` and so on) and sets
     `store.undo_offered`;
   - a command that writes nothing ends `noop`, and one that writes twice
-    counts two writes on its one event;
+    counts two writes on its one event. Only the writes made while a command
+    runs count as its own;
   - a revision hint that could not be saved counts
     `store_revision_hint_failure_count`.
   - Writes, bytes and records changed are counters, so a command that folds
@@ -434,12 +440,15 @@ events keep an error's type and code but leave its message out.
     settle's behaviour and comment length, the entry form's host, and
     whether Submit week showed the pace warning.
   - A workflow that awaits before its command opens the event first with
-    `startStoreCommandFor(key)` and runs the command inside `unit.enter()`.
-    A move cancelled in its subitem or source state dialog ends `cancelled`;
-    a connection's delete is one `connection.delete` with what it removed
-    per kind.
-  - `runWithUndo`, which agent tools run their writes in, takes the name of
-    the first command it runs, and counts its change once.
+    `startStoreCommandFor(key)` and runs the command inside its `enter`, so
+    another command's write meanwhile isn't counted as its own. A failure
+    it attaches keeps a refusal already recorded. A move cancelled in its
+    subitem or source state dialog ends `cancelled`; a connection's delete
+    is one `connection.delete` with what it removed per kind, and `ok` once
+    the local API deleted it.
+  - `runWithUndo`, which only agent tools run their writes in, has the
+    trigger `agent`. It takes the name of the first command inside it that
+    writes, and counts its change once.
 - **Folding across `await`.** Store commands are synchronous, so they fold
   into the unit on top of the scope stack. An async unit leaves the stack at
   its first `await`, and runs the store commands after it inside
@@ -456,7 +465,8 @@ events keep an error's type and code but leave its message out.
   storage.
 - **`preferences.update`** names the keys that changed, with their values
   when they are enums, numbers or booleans: user preferences through the
-  store, and device UI settings through `lib/preference-events.ts`.
+  store, and device UI settings through `lib/preference-events.ts`. A drag
+  of the sidebar or a side panel records one change when it ends.
 - **`app.error`** comes from `features/feedback/app-error-handler.ts`, the
   window's one handler for uncaught errors and unhandled rejections, which
   also shows a refused write as a toast. It names the store command that

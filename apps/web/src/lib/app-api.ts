@@ -586,7 +586,10 @@ export async function deletePluginConnection(
         pluginsOverviewSchema,
       ),
     );
-    command.unit.enter(() => {
+    // The local API deleted the connection, even when nothing is left to
+    // clean up here.
+    command.didWork();
+    command.enter(() => {
       const before = localStore.snapshot();
       localStore.removeConnectionPullRequests(pluginId, connectionId);
       localStore.removeConnectionCalendarData(pluginId, connectionId);

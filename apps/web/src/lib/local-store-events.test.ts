@@ -947,3 +947,192 @@ describe("review round 1", () => {
     ]);
   });
 });
+
+describe("review round 2", () => {
+  let browser: ReturnType<typeof installMockWindow>;
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+    browser = installMockWindow();
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("records one sidebar width change when a drag ends, not one per move", async () => {
+    const { sink } = await loadStore();
+    const { updateSidebarLayout, saveSidebarLayout } =
+      await import("./sidebar-layout");
+
+    updateSidebarLayout({ width: 240 }, { save: false });
+    updateSidebarLayout({ width: 250 }, { save: false });
+    updateSidebarLayout({ width: 260 }, { save: false });
+    saveSidebarLayout();
+
+    expect(sink.events).toMatchObject([
+      {
+        name: "preferences.update",
+        preferences: {
+          setting: "sidebar_layout",
+          changed_keys: ["width"],
+          values: { width: 260 },
+        },
+      },
+    ]);
+    expect(
+      JSON.parse(browser.storage.get("ajour.sidebar-layout")!),
+    ).toMatchObject({ width: 260 });
+  });
+
+  it("keeps a stale-window refusal when the workflow then fails with the error", async () => {
+    const { sink, localStore } = await loadStore();
+    const { startStoreCommandFor } = await import("./local-store");
+    const itemId = localStore.addWorkItem({ title: "Item" });
+    const done = localStore.addWorkflowState("Shipped", "#16a34a");
+    const stored = JSON.parse(browser.storage.get(STORAGE_KEY)!);
+    browser.storage.set(
+      STORAGE_KEY,
+      JSON.stringify({ ...stored, revision: "other-window" }),
+    );
+    browser.storage.set("ajour.local-state.revision", "other-window");
+    sink.events.length = 0;
+
+    const command = startStoreCommandFor("moveWorkItemToState");
+    try {
+      command.enter(() => localStore.moveWorkItemToState(itemId, done));
+    } catch (error) {
+      command.fail(error);
+    } finally {
+      command.finish();
+    }
+
+    expect(sink.events).toMatchObject([
+      {
+        name: "backlog_item.move",
+        outcome: "refused",
+        outcome_reason: "stale_window",
+        error: { type: "StaleWindowError" },
+      },
+    ]);
+  });
+
+  it("counts committed import drafts by ID, not the conflicts it kept", async () => {
+    const { sink, localStore } = await loadStore();
+    localStore.saveManualTimeEntry({
+      localDate: "2026-10-06",
+      projectId: localStore.snapshot().projects[0]!._id,
+      durationMs: 60_000,
+    });
+    const project = localStore.snapshot().projects[0]!;
+    localStore.addProjectTask(project._id, { name: "Admin" });
+    localStore.stageTimesheetImportRows([
+      { date: "2026-10-06", project: project.name, task: "", hours: 1 },
+      { date: "2026-10-09", project: project.name, task: "Admin", hours: 2 },
+    ]);
+    const drafts = localStore.snapshot().timesheetImportDrafts;
+    expect(drafts.filter((draft) => draft.potentialConflict)).toHaveLength(1);
+    sink.events.length = 0;
+
+    localStore.commitReadyTimesheetImportDrafts();
+
+    expect(sink.events).toMatchObject([
+      {
+        name: "timesheet_import.commit",
+        timesheet_import: { committed_count: 1, conflict_count: 1 },
+      },
+    ]);
+  });
+
+  it("an async command counts only its own writes: another command's write leaves it noop", async () => {
+    const { sink, localStore } = await loadStore();
+    const { startStoreCommandFor } = await import("./local-store");
+
+    const command = startStoreCommandFor("moveWorkItemToState");
+    await Promise.resolve();
+    localStore.addProject({ name: "Elsewhere", color: "#000" });
+    command.finish();
+
+    expect(
+      sink.events.find((event) => event.name === "backlog_item.move"),
+    ).toMatchObject({ outcome: "noop" });
+  });
+
+  it("a pull request change names its pull request", async () => {
+    const { sink, localStore } = await loadStore();
+
+    localStore.changePullRequest("pr-1", { type: "settle" });
+
+    expect(sink.events).toMatchObject([
+      { name: "pull_request.settle", pull_request: { id: "pr-1" } },
+    ]);
+  });
+
+  it("an undo group is the agent's, and takes the name of the command that wrote", async () => {
+    const { sink, localStore } = await loadStore();
+
+    localStore.runWithUndo(() => {
+      localStore.saveTimer("no_such_timer");
+      localStore.addWorkItem({ title: "Agent item" });
+    });
+
+    expect(sink.events).toHaveLength(1);
+    expect(sink.events[0]).toMatchObject({
+      name: "backlog_item.create",
+      trigger: "agent",
+      outcome: "ok",
+      store: { undo_offered: true },
+    });
+  });
+
+  it("a refused command keeps the fields it read from its arguments", async () => {
+    browser.storage.set(
+      STORAGE_KEY,
+      JSON.stringify({
+        timesheetEntries: [
+          {
+            _id: "a",
+            localDate: "2026-10-06",
+            label: "",
+            durationMs: 3_600_000,
+            sourceBlockIds: [],
+          },
+        ],
+        lockedWeeks: [{ weekOf: "2026-10-05", lockedAt: 2 }],
+      }),
+    );
+    const { sink, localStore } = await loadStore();
+
+    expect(() => localStore.deleteTimesheetEntries(["a"])).toThrow();
+
+    expect(sink.events).toMatchObject([
+      {
+        name: "time_entry.delete",
+        outcome: "refused",
+        time_entry: { count: 1 },
+      },
+    ]);
+  });
+
+  it("a connection delete the local API made is ok, with nothing to clean here", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          pluginsEnabled: true,
+          plugins: [],
+          connectionGroups: [],
+          totalPendingImportCount: 0,
+          totalSelectedImportCount: 0,
+        }),
+      ),
+    );
+    const { sink } = await loadStore();
+    const { deletePluginConnection } = await import("./app-api");
+
+    await deletePluginConnection("backlog-plugin", "c2");
+
+    expect(sink.events).toMatchObject([
+      { name: "connection.delete", outcome: "ok" },
+    ]);
+  });
+});

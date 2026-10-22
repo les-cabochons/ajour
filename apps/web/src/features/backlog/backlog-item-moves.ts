@@ -250,7 +250,7 @@ export async function moveBacklogItem(
   const command = startStoreCommandFor("moveWorkItemToState");
   try {
     const result = await planMove(
-      command.unit,
+      command,
       workItem,
       workflowStateId,
       choices,

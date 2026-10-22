@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { recordsEqual } from "@/domain/records-equal";
 import { recordDeviceSettingChange } from "@/lib/preference-events";
 
 /**
@@ -101,6 +102,8 @@ export function setSidePanelWidth(
 
 /** Writes the current widths to this device's storage. */
 export function saveSidePanelWidths() {
+  // A drag that ends where it started saves nothing.
+  if (recordsEqual(savedWidths, getWidths())) return;
   recordDeviceSettingChange("side_panel_width", savedWidths, getWidths());
   savedWidths = getWidths();
   try {

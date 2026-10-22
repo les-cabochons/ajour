@@ -2,8 +2,10 @@ import type {
   AjourCatalog,
   CounterName,
   EventName,
+  Field,
   FieldsOf,
   KindOf,
+  ReasonOf,
 } from "@ajour/wide-events/catalog.ts";
 import type { Trigger, Unit, UnitInit } from "@ajour/wide-events";
 import { wideEvents } from "@/lib/wide-events";
@@ -21,6 +23,9 @@ export type StoreCommandName = {
 export type StoreCommandUnit<Name extends StoreCommandName = StoreCommandName> =
   Unit<AjourCatalog, Name>;
 
+/** Why a store command was refused: a write refusal, or an Undo's reason. */
+export type StoreCommandReason = ReasonOf<AjourCatalog, "undo.restore">;
+
 type ArgsOf<Command> = Command extends (...args: infer Args) => unknown
   ? Args
   : never;
@@ -28,16 +33,32 @@ type ResultOf<Command> = Command extends (...args: never[]) => infer Result
   ? Result
   : never;
 
+type TreeOf<Name extends StoreCommandName> =
+  AjourCatalog["events"][Name]["fields"];
+
+/**
+ * How a command reads its event's fields: the catalog's field tree for its
+ * name, with a function in place of each field. It is an object literal in
+ * the table, so a field the catalog doesn't declare fails to compile.
+ */
+export type FieldReaders<Tree, Input> = {
+  readonly [Key in keyof Tree]?: Tree[Key] extends Field<infer Value>
+    ? (input: Input) => Value | undefined
+    : FieldReaders<Tree[Key], Input>;
+};
+
 /**
  * A store command's spec in the command table:
  *
  * - a name;
- * - `{ name, fields?, trigger? }`: `fields` reads the command's own fields
- *   from its arguments and result, typed against its name, and `system`
- *   marks a command that reacts to something other than the user, such as a
- *   sync result;
- * - `{ pick, fallback }`: a name picked from the arguments, such as a pull
- *   request change by its type, and the name to use when it can't pick one.
+ * - `{ name, fields?, resultFields?, trigger? }`: `fields` reads the
+ *   command's fields from its arguments, before it runs, so a refused
+ *   command keeps them; `resultFields` reads the rest from its result.
+ *   `system` and `agent` say who starts the command when no outer unit does;
+ * - `{ pick, fallback, fields? }`: a name picked from the arguments, such as
+ *   a pull request change by its type, the name to use when it can't pick
+ *   one, and the fields every name it picks shares, typed against the
+ *   fallback's.
  */
 export type StoreCommandSpec<Command> =
   | StoreCommandName
@@ -45,17 +66,18 @@ export type StoreCommandSpec<Command> =
       [Name in StoreCommandName]: {
         name: Name;
         trigger?: Trigger;
-        fields?: (
-          args: ArgsOf<Command>,
-          result: ResultOf<Command>,
-        ) => FieldsOf<AjourCatalog, Name>;
+        fields?: FieldReaders<TreeOf<Name>, ArgsOf<Command>>;
+        resultFields?: FieldReaders<TreeOf<Name>, ResultOf<Command>>;
       };
     }[StoreCommandName]
   | {
-      pick: (...args: ArgsOf<Command>) => StoreCommandName | undefined;
-      fallback: StoreCommandName;
-      trigger?: Trigger;
-    };
+      [Fallback in StoreCommandName]: {
+        pick: (...args: ArgsOf<Command>) => StoreCommandName | undefined;
+        fallback: Fallback;
+        trigger?: Trigger;
+        fields?: FieldReaders<TreeOf<Fallback>, ArgsOf<Command>>;
+      };
+    }[StoreCommandName];
 
 /**
  * The store's command table: every command of the store but its reads has a
@@ -78,16 +100,35 @@ export type SpecName<Spec> = Spec extends StoreCommandName
       : never;
 
 /**
- * Runs store commands as one undoable action. The first command run inside
- * it gives it its name, so an agent's write is named for what it did.
+ * Runs store commands as one undoable action. The first command inside it
+ * that writes gives it its name, so an agent's write is named for what it
+ * did.
  */
 export const UNDO_GROUP = "undo.group" satisfies StoreCommandName;
 
-/** Successful writes of the local state, so a command knows whether it wrote. */
-let writeCount = 0;
-
 /** The command each open store command unit runs, so the same command inside joins it. */
 const openCommands = new WeakMap<object, StoreCommandName>();
+
+/** The writes each open store command unit made, its own and its inner commands'. */
+const unitWrites = new WeakMap<object, number>();
+
+/** The store command units running now, outermost first: a write counts for each. */
+const runningCommands: object[] = [];
+
+function runningAs<Result>(unit: object, work: () => Result): Result {
+  runningCommands.push(unit);
+  try {
+    return work();
+  } finally {
+    runningCommands.pop();
+  }
+}
+
+/** The reason each refused store command unit was refused for. */
+const refusals = new WeakMap<object, StoreCommandReason>();
+
+/** The commands running inside an undo group that has no name yet, innermost last. */
+const pendingGroupNames: StoreCommandName[] = [];
 
 /** The store command each thrown error came from, for the error handler. */
 const thrownBy = new WeakMap<object, StoreCommandName>();
@@ -101,13 +142,23 @@ export function storeCommandThatThrew(
     : undefined;
 }
 
-/** Counts one write of the local state, and its size, on the active unit. */
+/**
+ * Counts one write of the local state, and its size, on the active unit, and
+ * that the active store command wrote. An undo group without a name yet
+ * takes the name of the command that wrote.
+ */
 export function countStoreWrite(bytes: number) {
-  writeCount += 1;
-  wideEvents
-    .current()
-    ?.count("store_write_count")
-    .count("store_write_bytes", bytes);
+  for (const running of runningCommands) {
+    unitWrites.set(running, (unitWrites.get(running) ?? 0) + 1);
+  }
+  const unit = wideEvents.current();
+  if (!unit) return;
+  unit.count("store_write_count").count("store_write_bytes", bytes);
+  const writer = pendingGroupNames.at(-1);
+  if (openCommands.get(unit) === UNDO_GROUP && writer) {
+    (unit as StoreCommandUnit).rename(writer as never);
+    openCommands.set(unit, writer);
+  }
 }
 
 /** Adds to a counter of the active unit, if any. */
@@ -119,14 +170,32 @@ export function countOnStoreCommand(
 }
 
 /**
- * The active unit when it is a store command's, for the write path to record
- * a refusal on. A job or a lifecycle unit is never one.
+ * The active unit when it is a store command's. A job or a lifecycle unit is
+ * never one.
  */
 export function storeCommandUnit(): StoreCommandUnit | undefined {
   const unit = wideEvents.current();
   return unit && openCommands.has(unit)
     ? (unit as StoreCommandUnit)
     : undefined;
+}
+
+/**
+ * Records that the active store command was refused, and why. A failure
+ * attached later keeps the refusal.
+ */
+export function refuseStoreCommand(reason: StoreCommandReason) {
+  const unit = storeCommandUnit();
+  if (!unit) return;
+  refusals.set(unit, reason);
+  (unit as StoreCommandUnit<"undo.restore">).refuse(reason);
+}
+
+/** Attaches `error` to `unit`, keeping a refusal it already recorded. */
+function attachError(unit: StoreCommandUnit, error: unknown) {
+  const refusal = refusals.get(unit);
+  unit.fail(error);
+  if (refusal) (unit as StoreCommandUnit<"undo.restore">).refuse(refusal);
 }
 
 /**
@@ -158,8 +227,8 @@ function rememberThrower(error: unknown, name: StoreCommandName) {
  * Runs `work` as the store command `name`, which emits one `command` event.
  * Inside another unit it folds into it. Inside the same command, it joins
  * that event: the code around a command opened it first to add what only it
- * knows. Inside an undo group, the first command names the group. A command
- * that writes nothing ends `noop`.
+ * knows. Inside an undo group, it joins the group, and names it if it
+ * writes. A command that writes nothing ends `noop`.
  */
 export function runStoreCommand<Name extends StoreCommandName, Result>(
   name: Name,
@@ -172,22 +241,23 @@ export function runStoreCommand<Name extends StoreCommandName, Result>(
     return work(outer as StoreCommandUnit<Name>);
   }
   if (outer && outerName === UNDO_GROUP) {
-    // The group's event takes the name of what it runs.
-    (outer as StoreCommandUnit).rename(name as never);
-    openCommands.set(outer, name);
-    return work(outer as StoreCommandUnit<Name>);
+    pendingGroupNames.push(name);
+    try {
+      return work(outer as StoreCommandUnit<Name>);
+    } finally {
+      pendingGroupNames.pop();
+    }
   }
   return wideEvents.run(name, commandInit<Name>(trigger), (unit) => {
     openCommands.set(unit, name);
-    const writes = writeCount;
     let result: Result;
     try {
-      result = work(unit);
+      result = runningAs(unit, () => work(unit));
     } catch (error) {
       rememberThrower(error, name);
       throw error;
     }
-    if (unit.outcome === undefined && writeCount === writes) {
+    if (unit.outcome === undefined && !unitWrites.get(unit)) {
       unit.end("noop");
     }
     return result;
@@ -197,8 +267,11 @@ export function runStoreCommand<Name extends StoreCommandName, Result>(
 /**
  * Opens the store command `name` for a workflow that awaits before it runs
  * the command, such as a move that asks about subitems first. The workflow
- * runs the command inside `unit.enter()`, which joins it, and calls `finish`
- * once in every path: a unit with no outcome that wrote nothing ends `noop`.
+ * runs the command inside `enter`, which joins it, and calls `finish` once
+ * in every path. Only the writes made inside `enter` count as its own, so
+ * another command's write meanwhile can't make it `ok`: with no outcome and
+ * no write of its own, it ends `noop`, unless the workflow did its work
+ * elsewhere, such as on the local API, and said so with `didWork`.
  */
 export function startStoreCommand<Name extends StoreCommandName>(
   name: Name,
@@ -206,16 +279,24 @@ export function startStoreCommand<Name extends StoreCommandName>(
 ) {
   const unit = wideEvents.start(name, commandInit<Name>(trigger));
   openCommands.set(unit, name);
-  const writes = writeCount;
+  let worked = false;
   return {
     unit,
-    /** Records that the workflow threw `error`. */
+    /** Runs `work` inside the command's event. */
+    enter<Result>(work: () => Result): Result {
+      return unit.enter(() => runningAs(unit, work));
+    },
+    /** The workflow changed something outside the local state. */
+    didWork() {
+      worked = true;
+    },
+    /** Records that the workflow threw `error`, keeping a refusal. */
     fail(error: unknown) {
       rememberThrower(error, name);
-      unit.fail(error);
+      attachError(unit as StoreCommandUnit, error);
     },
     finish() {
-      if (unit.outcome === undefined && writeCount === writes) {
+      if (unit.outcome === undefined && !worked && !unitWrites.get(unit)) {
         unit.end("noop");
       } else {
         unit.end();
@@ -245,10 +326,40 @@ export function resolveCommandName(
   }
 }
 
+type Readers = {
+  readonly [key: string]: Readers | ((input: never) => unknown);
+};
+
+/** The fields `readers` read from `input`, leaving out what they can't read. */
+function readFields(readers: Readers, input: unknown) {
+  const fields: Record<string, unknown> = {};
+  let empty = true;
+  for (const key in readers) {
+    const reader = readers[key]!;
+    let value: unknown;
+    if (typeof reader === "function") {
+      try {
+        value = (reader as (input: unknown) => unknown)(input);
+      } catch {
+        // A malformed call can't break its command: the field stays out.
+        value = undefined;
+      }
+    } else {
+      value = readFields(reader, input);
+    }
+    if (value !== undefined) {
+      fields[key] = value;
+      empty = false;
+    }
+  }
+  return empty ? undefined : fields;
+}
+
 /**
  * Wraps each command of `store` named in `table`, in place, so each call
- * runs as its store command and adds the fields its spec reads. A command
- * that calls another through `this` runs it inside its own.
+ * runs as its store command, with the fields its spec reads: from the
+ * arguments before it runs, and from the result after. A command that calls
+ * another through `this` runs it inside its own.
  */
 export function instrumentStoreCommands<Store extends object>(
   store: Store,
@@ -260,18 +371,28 @@ export function instrumentStoreCommands<Store extends object>(
     StoreCommandSpec<(...args: never[]) => unknown>,
   ][]) {
     const command = commands[key]!;
-    const trigger = (typeof spec === "object" && spec.trigger) || "user";
-    const fields =
-      typeof spec === "object" && "fields" in spec
-        ? (spec.fields as
-            ((args: unknown[], result: unknown) => object) | undefined)
-        : undefined;
+    const options =
+      typeof spec === "object"
+        ? (spec as {
+            trigger?: Trigger;
+            fields?: Readers;
+            resultFields?: Readers;
+          })
+        : {};
+    const trigger = options.trigger ?? "user";
     commands[key] = function (this: unknown, ...args: unknown[]) {
       return runStoreCommand(
         resolveCommandName(spec, args),
         (unit) => {
+          if (options.fields) {
+            const fields = readFields(options.fields, args);
+            if (fields) unit.set(fields as never);
+          }
           const result = command.apply(this, args);
-          if (fields) unit.set(fields(args, result) as never);
+          if (options.resultFields) {
+            const fields = readFields(options.resultFields, result);
+            if (fields) unit.set(fields as never);
+          }
           return result;
         },
         trigger,

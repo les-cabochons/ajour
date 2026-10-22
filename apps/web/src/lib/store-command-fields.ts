@@ -218,8 +218,11 @@ export function describeImportStage(
   after: LocalAppState,
   rowCount: number,
 ) {
+  const earlier = new Set(
+    before.timesheetImportDrafts.map((draft) => draft._id),
+  );
   const staged = after.timesheetImportDrafts.filter(
-    (draft) => !before.timesheetImportDrafts.includes(draft),
+    (draft) => !earlier.has(draft._id),
   );
   describeStoreCommand("timesheet_import.stage", {
     timesheet_import: {
@@ -236,8 +239,10 @@ export function describeImportDrafts(
   after: LocalAppState,
 ) {
   const remaining = after.timesheetImportDrafts;
+  // A commit recreates the drafts it keeps, so drafts compare by ID.
+  const kept = new Set(remaining.map((draft) => draft._id));
   const removed = before.timesheetImportDrafts.filter(
-    (draft) => !remaining.includes(draft),
+    (draft) => !kept.has(draft._id),
   ).length;
   describeStoreCommand(name, {
     timesheet_import:

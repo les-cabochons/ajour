@@ -98,4 +98,27 @@ describe("the renderer's error messages", () => {
 
     expect(sink.events[0]!.error).toEqual({ type: "Error", code: "ENOENT" });
   });
+
+  it("drops at runtime any field the catalog doesn't declare for the event", () => {
+    const sink = createRecordingSink<AjourEvent>();
+    replaceEventSink(sink);
+
+    wideEvents.run(
+      "week.reopen",
+      { kind: "command", trigger: "user" },
+      (unit) =>
+        unit.set({
+          week: { week_of: "2026-10-05", note: "Private note" },
+          extra: { secret: "y" },
+        } as never),
+    );
+
+    const [event] = sink.events;
+    expect(event).toMatchObject({
+      name: "week.reopen",
+      week: { week_of: "2026-10-05" },
+    });
+    expect(JSON.stringify(event)).not.toContain("Private note");
+    expect(event).not.toHaveProperty("extra");
+  });
 });

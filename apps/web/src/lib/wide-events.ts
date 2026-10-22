@@ -1,4 +1,8 @@
-import { catalog, type AjourCatalog } from "@ajour/wide-events/catalog.ts";
+import {
+  catalog,
+  envelopeFields,
+  type AjourCatalog,
+} from "@ajour/wide-events/catalog.ts";
 import {
   createEmitter,
   type Channel,
@@ -97,17 +101,54 @@ function defaultSink(): Sink {
   return sinkFromSwitch(import.meta.env.AJOUR_WIDE_EVENTS);
 }
 
+type Tree = { readonly [key: string]: unknown };
+
+function isField(node: unknown) {
+  const privacy = (node as { privacy?: unknown } | null)?.privacy;
+  return privacy === "operational" || privacy === "sensitive";
+}
+
+/** `value` with only the fields `tree` declares, or undefined when none is left. */
+function declaredOnly(value: unknown, tree: unknown): unknown {
+  if (isField(tree)) return value;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const kept: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (!Object.hasOwn(tree as Tree, key)) continue;
+    const declared = declaredOnly(child, (tree as Tree)[key]);
+    if (declared !== undefined) kept[key] = declared;
+  }
+  return kept;
+}
+
 /**
- * Drops each error's message, keeping its type and code. The renderer knows
- * neither the home folder nor the user data folder, so its scrubber could
- * leave either in a message.
+ * Passes on only what the catalog declares, so a field without a privacy
+ * class never leaves the renderer, whatever set it. It also drops each
+ * error's message, keeping its type and code: the renderer knows neither
+ * the home folder nor the user data folder, so its scrubber could leave
+ * either in a message.
  */
-function withoutErrorMessages(target: Sink): Sink {
+function catalogedOnly(target: Sink): Sink {
   return {
     emit(event) {
-      if (event.error?.message === undefined) return target.emit(event);
-      const { message: _message, ...error } = event.error;
-      target.emit({ ...event, error });
+      const fields = (catalog.events as Record<string, { fields: Tree }>)[
+        event.name
+      ]?.fields;
+      const kept: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(event)) {
+        if (Object.hasOwn(envelopeFields, key)) kept[key] = value;
+        else if (fields && Object.hasOwn(fields, key)) {
+          const declared = declaredOnly(value, fields[key]);
+          if (declared !== undefined) kept[key] = declared;
+        }
+      }
+      if (event.error?.message !== undefined) {
+        const { message: _message, ...error } = event.error;
+        kept.error = error;
+      }
+      target.emit(kept as typeof event);
     },
   };
 }
@@ -117,7 +158,7 @@ function createRendererEmitter(sink: Sink): RendererEvents {
     catalog,
     context: rendererContext(),
     // `nowhere` stays itself, so a dropped event is never built.
-    sink: sink === nowhere ? nowhere : withoutErrorMessages(sink),
+    sink: sink === nowhere ? nowhere : catalogedOnly(sink),
   });
 }
 
