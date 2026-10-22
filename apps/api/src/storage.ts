@@ -764,6 +764,13 @@ function unreadableStateError() {
   return Object.assign(error, { code: "unreadable" });
 }
 
+/** A parsed state file's root that migration can read: an object, or null for the defaults. */
+function isStateRoot(
+  value: unknown,
+): value is Partial<AppApiState | AppApiStateV1 | AppApiStateV2> | null {
+  return value === null || (typeof value === "object" && !Array.isArray(value));
+}
+
 export class AppApiStorage {
   private readonly statePath: string;
   private readonly events?: ApiEvents;
@@ -1809,18 +1816,25 @@ export class AppApiStorage {
         unit?.set({
           storage: { found: true, bytes: Buffer.byteLength(text) },
         });
-        let raw: Partial<AppApiState | AppApiStateV1 | AppApiStateV2> | null;
+        let parsed: unknown;
+        let isJson = true;
         try {
-          raw = JSON.parse(text) as typeof raw;
+          parsed = JSON.parse(text);
         } catch {
-          // The parser's message quotes the file, so neither the event nor
-          // the request that read it gets it.
+          isJson = false;
+        }
+        // A file that isn't JSON, or whose root is neither an object nor
+        // null, can't be state. The parser's message, and the migration's
+        // errors on such a root, quote the file, so neither the event nor
+        // the request that read it gets them.
+        if (!isJson || !isStateRoot(parsed)) {
           const unreadable = unreadableStateError();
           unit
             ?.set({ storage: { unreadable: true } })
             .fail(unreadable, { reason: "unreadable" });
           throw unreadable;
         }
+        const raw = parsed;
         // A file that holds null, like a missing one, loads the defaults.
         unit?.set({
           storage: {

@@ -2,7 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import { EventEmitter } from "node:events";
 import { request as httpRequest } from "node:http";
-import type { AddressInfo } from "node:net";
+import { connect, type AddressInfo } from "node:net";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
@@ -354,7 +354,8 @@ export async function writeSettle(connection, request) {
 export async function syncPullRequests() {
   return { viewer: { login: 'octocat', isBot: false }, pullRequests: [] };
 }
-export async function syncTeamProjects() {
+export async function syncTeamProjects(connection, request) {
+  if (request.cursor === 'slow') await new Promise((resolve) => setTimeout(resolve, 300));
   return { cursor: 'c2', projects: [], assigned: [] };
 }
 `;
@@ -834,6 +835,167 @@ describe("request events: boundary and reasons", () => {
       ["agent_run.stop", "refused", "not_running"],
       ["agent_client.revoke", "refused", "unknown_client"],
       ["api.request", "refused", "unknown_operation"],
+    ]);
+  });
+});
+
+describe("request events: abandoned requests", () => {
+  /** Waits until a request event named `name` exists, for slow handlers. */
+  async function eventually(events: AjourEvent[], name: string) {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const found = events.find(
+        (event) => event.kind === "request" && event.name === name,
+      );
+      if (found) return found;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`No ${name} request event.`);
+  }
+
+  it("records a request whose client dropped while sending its body as cancelled", async () => {
+    const { port, events } = await startTestApi();
+    const socket = connect(port, "127.0.0.1");
+    await new Promise<void>((resolve) => socket.once("connect", resolve));
+
+    socket.write(
+      [
+        "POST /api/mcp/settings HTTP/1.1",
+        "Host: 127.0.0.1",
+        `Origin: ${APP_ORIGIN}`,
+        "Content-Type: application/json",
+        "Content-Length: 100",
+        "",
+        '{"enab',
+      ].join("\r\n"),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    socket.destroy();
+
+    const event = await eventually(events, "mcp.configure");
+    expect(event).toMatchObject({
+      outcome: "cancelled",
+      outcome_reason: "client_closed",
+    });
+    expect(event.http?.status_code).toBeUndefined();
+    expect(event.http?.response_bytes).toBeUndefined();
+  });
+
+  it("records a request whose client left during a slow plugin call as cancelled", async () => {
+    const api = await startTestApi(writePlugin);
+    const saved = await call(api.port, "/api/plugins/jira/connections", {
+      values: {
+        label: "Work",
+        tenantLabel: "Acme",
+        autoSync: false,
+        autoSyncIntervalMinutes: 15,
+        token: TOKEN,
+      },
+    });
+    const connectionId = saved.body.connection.id as string;
+    const body = JSON.stringify({ cursor: "slow", changes: [] });
+
+    const outgoing = httpRequest({
+      host: "127.0.0.1",
+      port: api.port,
+      method: "POST",
+      path: `/api/teams/jira/connections/${connectionId}/sync`,
+      headers: {
+        Origin: APP_ORIGIN,
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(body),
+      },
+    });
+    outgoing.on("error", () => undefined);
+    outgoing.end(body);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    outgoing.destroy();
+
+    const event = await eventually(api.events, "team.sync");
+    expect(event).toMatchObject({
+      outcome: "cancelled",
+      outcome_reason: "client_closed",
+      http: { request_bytes: Buffer.byteLength(body) },
+    });
+    expect(event.http?.status_code).toBeUndefined();
+    expect(event.http?.response_bytes).toBeUndefined();
+  });
+});
+
+describe("request events: a plugin operation's reason", () => {
+  async function teamApi(pluginRequestTimeoutMs?: number) {
+    const api = await startTestApi(async (root) => ({
+      ...(await writePlugin(root)),
+      ...(pluginRequestTimeoutMs ? { pluginRequestTimeoutMs } : {}),
+    }));
+    const saved = await call(api.port, "/api/plugins/jira/connections", {
+      values: {
+        label: "Work",
+        tenantLabel: "Acme",
+        autoSync: false,
+        autoSyncIntervalMinutes: 15,
+        token: TOKEN,
+      },
+    });
+    return { ...api, connectionId: saved.body.connection.id as string };
+  }
+
+  /** The request event and the plugin operation event named `name`. */
+  async function bothHops(events: AjourEvent[], name: string) {
+    const request = await lastRequest(events, name);
+    const operation = events.find(
+      (event) => event.kind === "plugin_operation" && event.name === name,
+    );
+    return [request, operation].map((event) => [
+      event?.outcome,
+      event?.outcome_reason,
+    ]);
+  }
+
+  it("says the plugin's error, as its operation does", async () => {
+    const { port, events, connectionId } = await teamApi();
+
+    await call(port, `/api/plugins/jira/connections/${connectionId}/settle`, {
+      sourceId: "FAIL-1",
+      state: "Done",
+    });
+
+    expect(await bothHops(events, "backlog.write_source")).toEqual([
+      ["error", "plugin_error"],
+      ["error", "plugin_error"],
+    ]);
+  });
+
+  it("says the timeout, as its operation does", async () => {
+    const { port, events, connectionId } = await teamApi(100);
+
+    const timedOut = await call(
+      port,
+      `/api/teams/jira/connections/${connectionId}/sync`,
+      { cursor: "slow", changes: [] },
+    );
+
+    expect(timedOut.status).toBe(502);
+    expect(await bothHops(events, "team.sync")).toEqual([
+      ["timeout", "timeout"],
+      ["timeout", "timeout"],
+    ]);
+  });
+
+  it("says why it was cancelled, as its operation does", async () => {
+    const { port, events, connectionId } = await teamApi();
+
+    const syncing = call(
+      port,
+      `/api/teams/jira/connections/${connectionId}/sync`,
+      { cursor: "slow", changes: [] },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await call(port, "/api/plugins/jira/activation", { enabled: false });
+    expect((await syncing).status).toBe(502);
+
+    expect(await bothHops(events, "team.sync")).toEqual([
+      ["cancelled", "plugin_off"],
+      ["cancelled", "plugin_off"],
     ]);
   });
 });

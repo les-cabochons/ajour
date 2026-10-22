@@ -29,7 +29,7 @@ export type PluginCancelReason =
   "system_off" | "plugin_off" | "capability_off" | "uninstalled" | "shutdown";
 
 /** How a worker failed. */
-type WorkerFailureReason =
+export type WorkerFailureReason =
   "timeout" | "result_too_large" | "exited_early" | "plugin_error";
 
 /**
@@ -46,8 +46,29 @@ export class PluginOperationRefused extends Error {
   }
 }
 
+/** A registered plugin operation that was cancelled, and why when it is known. */
+export class PluginOperationCancelled extends Error {
+  readonly reason: PluginCancelReason | undefined;
+
+  constructor(
+    message: string,
+    reason: PluginCancelReason | undefined,
+    cause: Error,
+  ) {
+    super(message, { cause });
+    this.reason = reason;
+  }
+}
+
+/** Every reason a plugin operation can fail with, which its route's event says too. */
+export type PluginFailureReason =
+  | PluginRefusalReason
+  | PluginCancelReason
+  | WorkerFailureReason
+  | "invalid_result";
+
 /** A worker that timed out, exited early, or ended with the plugin's error. */
-class PluginWorkerFailure extends Error {
+export class PluginWorkerFailure extends Error {
   readonly reason: WorkerFailureReason;
 
   constructor(message: string, reason: WorkerFailureReason) {
@@ -220,6 +241,12 @@ export class PluginWorkerLifetime<TMethod extends string> {
       const registered = operation as Operation | undefined;
       if (registered?.cancelled) {
         unit.cancel(registered.cancelReason);
+        // The caller's message, with the reason its route's event needs.
+        throw new PluginOperationCancelled(
+          registered.cancelled.message,
+          registered.cancelReason,
+          registered.cancelled,
+        );
       } else if (error instanceof PluginOperationRefused) {
         unit.refuse(error.reason);
       } else if (error instanceof PluginWorkerFailure) {

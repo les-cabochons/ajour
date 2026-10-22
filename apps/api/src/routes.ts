@@ -277,6 +277,11 @@ export interface RouteContext<Id extends RouteId> {
   origin: string | undefined;
   params: RouteParams<Id>;
   unit: Unit<AjourCatalog, RouteEventName<Id>>;
+  /**
+   * Says the response is a stream that lasts until the client closes it,
+   * such as the MCP bridge: its client closing it is how it ends.
+   */
+  stream(): void;
 }
 
 /** One handler per route ID: a route without one, or a handler without a route, fails to compile. */
@@ -438,8 +443,11 @@ export interface Settlement {
  * any check, as `api.request`, a child of the caller's span when the request
  * carries a `traceparent`, and `serve` renames it once it knows the route.
  * It ends once `serve` settles and the response has flushed or closed, so a
- * stream such as the MCP bridge ends when it closes. An outcome `serve`
- * didn't record follows the status: a 4xx is `refused`, a 5xx an `error`.
+ * stream such as the MCP bridge ends when it closes. A response whose client
+ * left before it flushed, other than a stream, is `cancelled` with
+ * `client_closed`, without a status or bytes nobody received. An outcome
+ * `serve` didn't record follows the status: a 4xx is `refused`, a 5xx an
+ * `error`.
  */
 export async function serveWithEvent(
   events: ApiEvents,
@@ -451,6 +459,7 @@ export async function serveWithEvent(
   },
   serve: (
     unit: Unit<AjourCatalog, "api.request">,
+    exchange: { stream(): void },
   ) => Promise<Settlement | void>,
 ): Promise<void> {
   const traceparent = request.headers.traceparent;
@@ -465,14 +474,29 @@ export async function serveWithEvent(
     http: { method: httpMethod(request.method), origin: options.origin },
   });
   let settlement: Settlement | void = undefined;
+  let streaming = false;
+  const exchange = {
+    stream: () => {
+      streaming = true;
+    },
+  };
   try {
-    settlement = await unit.enter(() => serve(unit));
+    settlement = await unit.enter(() => serve(unit, exchange));
   } catch (error) {
     unit.fail(withoutContent(error));
   }
   await responseDone(response);
-  const status = response.statusCode;
   const received = requestBytes();
+  if (!response.writableFinished && !streaming) {
+    // The client left before the response reached it, while the body still
+    // arrived or the work still ran: no status or bytes were delivered.
+    unit.set({
+      http: received !== undefined ? { request_bytes: received } : {},
+    });
+    unit.end("cancelled", "client_closed");
+    return;
+  }
+  const status = response.statusCode;
   unit.set({
     http: {
       status_code: status,

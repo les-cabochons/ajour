@@ -87,7 +87,7 @@ import type {
   AjourCatalog,
   FieldsOf,
 } from "../../../packages/wide-events/catalog.ts";
-import type { Unit } from "../../../packages/wide-events/index.ts";
+import type { FailOptions, Unit } from "../../../packages/wide-events/index.ts";
 import { teamSyncRequestSchema } from "../../../packages/shared/team-sync.ts";
 import {
   projectDataShapeExportRequestSchema,
@@ -134,7 +134,12 @@ import {
 import { playwrightMcpServer } from "./agent-runner/playwright-mcp.ts";
 import { AgentRunError, AgentRunner } from "./agent-runner/runner.ts";
 import { capabilityOfMethod, PluginManager } from "./plugin-host.ts";
-import { PluginOperationRefused } from "./plugin-worker-lifetime.ts";
+import {
+  PluginOperationCancelled,
+  PluginOperationRefused,
+  PluginWorkerFailure,
+  type PluginFailureReason,
+} from "./plugin-worker-lifetime.ts";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
 import {
   connectionlessPluginErrorMessage,
@@ -451,27 +456,34 @@ function requestUrlOf(request: IncomingMessage) {
 }
 
 /**
- * Records a failed plugin call on its route's event: a refusal with its
- * reason, a result that broke its contract by its type and code, or the
- * plugin's error scrubbed of the connection's secrets.
+ * Records a failed plugin call on its route's event with the reason its
+ * plugin operation ended with, so a request and its operation say the same:
+ * a refusal or a cancellation, a timeout, a result that broke its contract
+ * by its type and code, or the plugin's error scrubbed of the connection's
+ * secrets. Every event a route that runs a plugin operation emits lists
+ * these reasons in the catalog, or this fails to compile.
  */
 function recordPluginFailure(
   unit: {
-    // Each event a route that runs a plugin operation emits lists the
-    // plugin operation's reasons in the catalog, so they fit every unit here.
-    refuse(reason: never): unknown;
-    fail(
-      error: unknown,
-      options?: { reason?: never; secrets?: readonly string[] },
-    ): unknown;
+    refuse(reason?: PluginFailureReason): unknown;
+    cancel(reason?: PluginFailureReason): unknown;
+    fail(error: unknown, options?: FailOptions<PluginFailureReason>): unknown;
   },
   error: unknown,
   secrets?: readonly string[],
 ) {
   if (error instanceof PluginOperationRefused) {
-    unit.refuse(error.reason as never);
+    unit.refuse(error.reason);
+  } else if (error instanceof PluginOperationCancelled) {
+    unit.cancel(error.reason);
+  } else if (error instanceof PluginWorkerFailure) {
+    unit.fail(error, {
+      ...(error.reason === "timeout" ? { outcome: "timeout" } : {}),
+      reason: error.reason,
+      ...(secrets ? { secrets } : {}),
+    });
   } else if (error instanceof InvalidPluginResultError) {
-    unit.fail(withoutContent(error), { reason: "invalid_result" as never });
+    unit.fail(withoutContent(error), { reason: "invalid_result" });
   } else {
     unit.fail(withoutContent(error), secrets ? { secrets } : {});
   }
@@ -1075,7 +1087,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     // EventSource sends Origin because the renderer is cross-origin:
     // http://127.0.0.1:5173 in development, app://local when packaged. The
     // request's event ends when the stream closes.
-    mcpBridge: async ({ response, origin, unit }) => {
+    mcpBridge: async ({ response, origin, unit, stream }) => {
       if (!origin) {
         unit.refuse("no_origin");
         writeJson(response, 403, { error: "The bridge needs an Origin." });
@@ -1088,6 +1100,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       }
       let calls = 0;
       unit.set({ mcp_bridge: { call_count: calls } });
+      stream();
       mcpBridge.attach(response, {
         onCall: () => {
           calls += 1;
@@ -2509,7 +2522,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       request,
       response,
       { trigger: fromAgent ? "agent" : "system", origin },
-      async (unit): Promise<Settlement | void> => {
+      async (unit, exchange): Promise<Settlement | void> => {
         if (runtime.stopping) {
           unit.refuse("stopping");
           writeJson(response, 503, { error: "App API is shutting down." });
@@ -2584,6 +2597,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               decodeParams(route.rawParams),
             ) as RouteParams<RouteId>,
             unit: routed as RouteContext<RouteId>["unit"],
+            stream: exchange.stream,
           });
         } catch (error) {
           // Ajour's own errors only. Only a route knows the connection whose

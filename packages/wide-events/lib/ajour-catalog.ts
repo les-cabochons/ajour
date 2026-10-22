@@ -62,8 +62,12 @@ const requestFields = {
   },
 } as const;
 
-/** A request whose body or parameters didn't validate: the caller's mistake. */
-const requestReasons = ["invalid_request"] as const;
+/**
+ * How any request can end other than by its route's own reasons: its body
+ * or parameters didn't validate, the caller's mistake, or its client left
+ * before the response reached it.
+ */
+const requestReasons = ["invalid_request", "client_closed"] as const;
 
 /**
  * Why a plugin activation or capability check refuses work. They double as
@@ -104,8 +108,9 @@ const pluginOperationFields = {
 /**
  * Every way a plugin operation ends other than `ok`. Refused: `capacity`,
  * the inactive reasons, `host_stopping`, `package_change`, `not_installed`,
- * `runs_no_code` and `not_supported`, for a capability or feature the
- * plugin doesn't declare. Cancelled: the inactive reasons, `uninstalled` and
+ * `runs_no_code`, `not_supported` for a capability or feature the plugin
+ * doesn't declare, and `agent_access` when its route's admission check
+ * refuses it. Cancelled: the inactive reasons, `uninstalled` and
  * `shutdown`. Then `timeout`, and the errors `result_too_large`,
  * `invalid_result`, `exited_early` and `plugin_error`.
  */
@@ -117,6 +122,8 @@ const pluginOperationReasons = [
   "not_installed",
   "runs_no_code",
   "not_supported",
+  /** The route's own admission check refused the call, such as an agent's comment. */
+  "agent_access",
   "uninstalled",
   "shutdown",
   "timeout",
@@ -542,13 +549,13 @@ export const catalog = defineCatalog({
     /** A synced item's description as its source holds it now. */
     "description.read": {
       kinds: ["command", "request", "plugin_operation"],
-      reasons: [...pluginRequestReasons, "agent_access"],
+      reasons: pluginRequestReasons,
       fields: { ...requestFields, ...pluginOperationFields },
     },
     /** A synced item's description written to its source. Its length, never its text. */
     "description.write": {
       kinds: ["command", "request", "plugin_operation"],
-      reasons: [...pluginRequestReasons, "agent_access", "lossy_not_allowed"],
+      reasons: [...pluginRequestReasons, "lossy_not_allowed"],
       fields: {
         ...requestFields,
         ...pluginOperationFields,
@@ -641,7 +648,7 @@ export const catalog = defineCatalog({
      */
     "comment.list": {
       kinds: ["command", "request", "plugin_operation"],
-      reasons: [...pluginRequestReasons, "agent_access"],
+      reasons: pluginRequestReasons,
       fields: {
         ...requestFields,
         ...pluginOperationFields,
@@ -655,7 +662,7 @@ export const catalog = defineCatalog({
     /** A comment posted on a synced backlog item: its length, never its text. */
     "comment.post": {
       kinds: ["command", "request", "plugin_operation"],
-      reasons: [...pluginRequestReasons, "agent_access"],
+      reasons: pluginRequestReasons,
       fields: {
         ...requestFields,
         ...pluginOperationFields,
@@ -667,7 +674,7 @@ export const catalog = defineCatalog({
     },
     "comment.edit": {
       kinds: ["command", "request", "plugin_operation"],
-      reasons: [...pluginRequestReasons, "agent_access"],
+      reasons: pluginRequestReasons,
       fields: {
         ...requestFields,
         ...pluginOperationFields,
@@ -680,18 +687,18 @@ export const catalog = defineCatalog({
     /** Sent after the Undo window, so a job in the renderer. */
     "comment.delete": {
       kinds: ["job", "request", "plugin_operation"],
-      reasons: [...pluginRequestReasons, "agent_access"],
+      reasons: pluginRequestReasons,
       fields: { ...requestFields, ...pluginOperationFields },
     },
     "comment.react": {
       kinds: ["command", "request", "plugin_operation"],
-      reasons: [...pluginRequestReasons, "agent_access"],
+      reasons: pluginRequestReasons,
       fields: { ...requestFields, ...pluginOperationFields },
     },
     /** The people a mention can name, for the editor's @ suggestions. Never their names. */
     "mention.search": {
       kinds: ["command", "request", "plugin_operation"],
-      reasons: [...pluginRequestReasons, "agent_access"],
+      reasons: pluginRequestReasons,
       fields: {
         ...requestFields,
         ...pluginOperationFields,

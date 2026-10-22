@@ -198,6 +198,35 @@ describe("local API lifecycle events", () => {
       }),
     ]);
   });
+
+  it.each([
+    ["a string", JSON.stringify("Lunch with Ana")],
+    ["a number", "4242424242"],
+    ["an array", JSON.stringify(["Lunch with Ana"])],
+  ])(
+    "records a state file whose root is %s as unreadable, without its text",
+    async (_, contents) => {
+      const root = await tempRoot();
+      await writeFile(path.join(root, "state.json"), contents);
+      const { events, port } = await start(root);
+
+      const response = await fetch(`http://127.0.0.1:${port}/api/plugins`);
+      const body = await response.text();
+
+      expect(response.status).toBe(400);
+      expect(named(events, "storage.load")).toEqual([
+        expect.objectContaining({
+          outcome: "error",
+          outcome_reason: "unreadable",
+          storage: expect.objectContaining({ found: true, unreadable: true }),
+          error: expect.objectContaining({ code: "unreadable" }),
+        }),
+      ]);
+      expect(JSON.stringify(events)).not.toContain("Ana");
+      expect(JSON.stringify(events)).not.toContain("4242424242");
+      expect(body).not.toContain("Ana");
+    },
+  );
 });
 
 /** What Node does before it handles a crash: tell the monitor listeners. */
