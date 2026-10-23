@@ -34,12 +34,22 @@ function errorMessage(error) {
   return `${message.slice(0, MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS - 1)}…`;
 }
 
+// The host learns the result's size, and tells a result that's too large
+// from the plugin's own error.
+let outcome;
 try {
   const result = await run();
-  if (serialize(result).byteLength > MAX_PLUGIN_RESULT_BYTES) {
-    throw new Error("Schema plugin result exceeds the allowed size.");
-  }
-  parentPort.postMessage({ ok: true, result });
+  const bytes = serialize(result).byteLength;
+  outcome =
+    bytes > MAX_PLUGIN_RESULT_BYTES
+      ? {
+          ok: false,
+          error: "Schema plugin result exceeds the allowed size.",
+          reason: "result_too_large",
+          bytes,
+        }
+      : { ok: true, result, bytes };
 } catch (error) {
-  parentPort.postMessage({ ok: false, error: errorMessage(error) });
+  outcome = { ok: false, error: errorMessage(error) };
 }
+parentPort.postMessage(outcome);

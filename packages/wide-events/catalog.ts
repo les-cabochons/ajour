@@ -5,6 +5,7 @@ export { catalog } from "./lib/ajour-catalog.ts";
 export type {
   AjourCatalog,
   AjourEvent,
+  HttpMethod,
   McpMethod,
 } from "./lib/ajour-catalog.ts";
 export {

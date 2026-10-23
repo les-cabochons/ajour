@@ -41,6 +41,112 @@ const ipcFields = {
   sender_accepted: operational<boolean>(),
 } as const;
 
+/** An HTTP method, from a closed set: any other is `other`. */
+export type HttpMethod =
+  "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS" | "other";
+
+/**
+ * What every `request` event carries, whatever its route: the method, the
+ * route's pattern (never its values), the status and the sizes.
+ */
+const requestFields = {
+  http: {
+    method: operational<HttpMethod>(),
+    /** The route's pattern, such as `/api/plugins/:pluginId/connections`. */
+    route: operational(),
+    status_code: operational<number>(),
+    request_bytes: operational<number>(),
+    response_bytes: operational<number>(),
+    /** Whether the caller sent an allowed browser origin, none, or another. */
+    origin: operational<"app" | "none" | "refused">(),
+  },
+} as const;
+
+/**
+ * How any request can end other than by its route's own reasons: its body
+ * or parameters didn't validate, the caller's mistake, its client left
+ * before the response reached it, or the API stopped and cut it off.
+ */
+const requestReasons = [
+  "invalid_request",
+  "client_closed",
+  "stopping",
+] as const;
+
+/**
+ * Why a plugin activation or capability check refuses work. They double as
+ * plugin operation reasons, so a request and its operation say the same.
+ */
+const inactiveReasons = ["system_off", "plugin_off", "capability_off"] as const;
+
+/**
+ * What every `plugin_operation` event carries: one worker run, in the plugin
+ * host or the schema host.
+ */
+const pluginOperationFields = {
+  plugin: {
+    id: operational(),
+    version: operational(),
+    source: operational<"installed" | "development">(),
+    api_version: operational<number>(),
+  },
+  connection: { id: operational() },
+  worker: {
+    host: operational<"plugin" | "schema">(),
+    /** The plugin method the worker ran, such as `syncConnection`. */
+    method: operational(),
+    /** The switchable capability the method serves, if any. */
+    capability: operational(),
+    /** The host's other operations running when this one was admitted. */
+    active_operations: operational<number>(),
+    /** From admission to the worker's start: discovery, gates, validation. */
+    prepare_ms: operational<number>(),
+    /** From the worker's start to its result, failure or termination. */
+    worker_ms: operational<number>(),
+    timeout_ms: operational<number>(),
+    /** The serialized size of the worker's result. */
+    result_bytes: operational<number>(),
+  },
+} as const;
+
+/**
+ * Every way a plugin operation ends other than `ok`. Refused: `capacity`,
+ * the inactive reasons, `host_stopping`, `package_change`, `not_installed`,
+ * `runs_no_code`, `not_supported` for a capability or feature the plugin
+ * doesn't declare, and `agent_access` when its route's admission check
+ * refuses it. Cancelled: the inactive reasons, `uninstalled` and
+ * `shutdown`. Then `timeout`, and the errors `result_too_large`,
+ * `invalid_result`, `exited_early` and `plugin_error`.
+ */
+const pluginOperationReasons = [
+  "capacity",
+  ...inactiveReasons,
+  "host_stopping",
+  "package_change",
+  "not_installed",
+  "runs_no_code",
+  "not_supported",
+  /** The route's own admission check refused the call, such as an agent's comment. */
+  "agent_access",
+  "uninstalled",
+  "shutdown",
+  "timeout",
+  "result_too_large",
+  "invalid_result",
+  "exited_early",
+  "plugin_error",
+] as const;
+
+/**
+ * A route that runs a plugin operation: the request and the operation share
+ * the name. The route also refuses a connection it doesn't have.
+ */
+const pluginRequestReasons = [
+  ...requestReasons,
+  ...pluginOperationReasons,
+  "connection_not_found",
+] as const;
+
 /**
  * Ajour's event names, one table for every runtime: an operation keeps its
  * name in each runtime that sees it, and `kind` and `runtime` tell the hops
@@ -48,24 +154,94 @@ const ipcFields = {
  * nested objects named for glossary terms. No field holds content: no text
  * anyone wrote, no name, URL, path, source tool key or secret (ADR 0011).
  *
- * The entries below are the local API's first events. The seams of #304 add
- * the rest.
+ * The entries below are the local API's events. The seams of #304 add the
+ * rest.
  */
 export const catalog = defineCatalog({
-  counters: {},
+  counters: {
+    /** A plugin folder discovery skipped because its package is invalid. */
+    invalid_plugin: operational<number>(),
+    /** A bundled plugin archive that failed to install. */
+    bundled_plugin_failed: operational<number>(),
+    /** A leftover plugin backup that couldn't be restored or removed. */
+    plugin_backup_failed: operational<number>(),
+  },
   events: {
+    // The local API itself.
+
+    /** A request refused before routing, or one that matches no route. */
+    "api.request": {
+      kinds: ["request"],
+      reasons: [
+        "host_refused",
+        "origin_refused",
+        "no_route",
+        /** A route that names its operations, called with one it doesn't have. */
+        "unknown_operation",
+        ...requestReasons,
+      ],
+      fields: { ...requestFields },
+    },
+    "api.health": {
+      kinds: ["request"],
+      reasons: requestReasons,
+      fields: { ...requestFields },
+    },
+    /** The local API starts listening. */
+    "api.start": {
+      kinds: ["lifecycle"],
+      reasons: ["port_in_use", "listen_error"],
+      fields: {
+        api: { port: operational<number>(), listen_ms: operational<number>() },
+      },
+    },
+    /** The local API stops: each phase's duration, and what still ran. */
+    "api.stop": {
+      kinds: ["lifecycle"],
+      fields: {
+        api: {
+          port: operational<number>(),
+          agent_runner_ms: operational<number>(),
+          plugins_ms: operational<number>(),
+          close_ms: operational<number>(),
+          plugin_operations_running: operational<number>(),
+        },
+      },
+    },
+    /** The local API's first read of its state file, shared by every first reader. */
+    "storage.load": {
+      kinds: ["lifecycle"],
+      reasons: ["unreadable"],
+      fields: {
+        storage: {
+          /** False when no state file exists yet, and the defaults load. */
+          found: operational<boolean>(),
+          /** The file's state version, before migration. */
+          version_from: operational<number>(),
+          version_to: operational<number>(),
+          bytes: operational<number>(),
+          /** The file exists but is not JSON. Every read fails until it is fixed. */
+          unreadable: operational<boolean>(),
+        },
+      },
+    },
+    // Agents and MCP.
+
     /** An MCP request other than a tool call, or one refused before it reached a tool. */
     "mcp.request": {
       kinds: ["request"],
       reasons: [
+        "mcp_off",
         "browser_origin",
         "token_missing",
         "token_unknown",
         "token_revoked",
         "protocol_error",
         "duplicate_id",
+        ...requestReasons,
       ],
       fields: {
+        ...requestFields,
         mcp: {
           /** The JSON-RPC method, from a closed set. */
           method: operational<McpMethod>(),
@@ -85,8 +261,10 @@ export const catalog = defineCatalog({
         "bridge_timeout",
         "tool_failed",
         "output_mismatch",
+        ...requestReasons,
       ],
       fields: {
+        ...requestFields,
         agent: {
           client_id: operational(),
           /** The client's newest open session when the call ended. */
@@ -101,6 +279,63 @@ export const catalog = defineCatalog({
           bridge_ms: operational<number>(),
         },
       },
+    },
+    /** The renderer's bridge stream, from open to close. */
+    "mcp_bridge.connection": {
+      kinds: ["job", "request"],
+      reasons: ["mcp_off", "no_origin", ...requestReasons],
+      fields: {
+        ...requestFields,
+        /** The tool calls the stream carried to the renderer. */
+        mcp_bridge: { call_count: operational<number>() },
+      },
+    },
+    /** The renderer's answer to a tool call it was sent over the bridge. */
+    "mcp_bridge.result": {
+      kinds: ["request"],
+      reasons: requestReasons,
+      fields: {
+        ...requestFields,
+        /** False when the call had already timed out. */
+        mcp_bridge: { resolved: operational<boolean>() },
+      },
+    },
+    "mcp.status": {
+      kinds: ["request"],
+      reasons: requestReasons,
+      fields: { ...requestFields },
+    },
+    "mcp.configure": {
+      kinds: ["command", "request"],
+      reasons: requestReasons,
+      fields: { ...requestFields, mcp: { enabled: operational<boolean>() } },
+    },
+    "agent_client.create": {
+      kinds: ["command", "request"],
+      reasons: requestReasons,
+      fields: { ...requestFields, agent: { client_id: operational() } },
+    },
+    "agent_client.revoke": {
+      kinds: ["command", "request"],
+      reasons: ["unknown_client", ...requestReasons],
+      fields: { ...requestFields, agent: { client_id: operational() } },
+    },
+    /** The user's answer to an agent's question. Never its text. */
+    "question.answer": {
+      kinds: ["command", "request"],
+      reasons: ["question_closed", ...requestReasons],
+      fields: { ...requestFields, agent: { question_id: operational() } },
+    },
+    "agent_session.dismiss": {
+      kinds: ["command", "request"],
+      reasons: ["session_closed", ...requestReasons],
+      fields: { ...requestFields, agent: { session_id: operational() } },
+    },
+    /** The user opened the agent panel: earlier errors are seen. */
+    "agent_session.mark_seen": {
+      kinds: ["command", "request"],
+      reasons: requestReasons,
+      fields: { ...requestFields },
     },
     /** An agent session, from begin to end. */
     "agent.session": {
@@ -164,31 +399,262 @@ export const catalog = defineCatalog({
         },
       },
     },
-    /**
-     * A calendar's events for a date range. Never a title (ADR 0005). The
-     * renderer's hop adds whether it was forced and fresh from cache (#310).
-     */
-    "calendar.fetch": {
-      kinds: ["job", "request", "plugin_operation"],
+    "agent_run.start": {
+      kinds: ["command", "request"],
+      reasons: [
+        "already_running",
+        "no_agent_task",
+        "blocked",
+        ...requestReasons,
+      ],
       fields: {
+        ...requestFields,
+        agent: { run_id: operational(), task_id: operational() },
         plugin: { id: operational() },
-        connection: { id: operational() },
-        calendar: {
-          range_days: operational<number>(),
-          event_count: operational<number>(),
+      },
+    },
+    "agent_run.stop": {
+      kinds: ["command", "request"],
+      reasons: ["not_running", ...requestReasons],
+      fields: { ...requestFields, agent: { run_id: operational() } },
+    },
+    "agent_run.status": {
+      kinds: ["request"],
+      reasons: requestReasons,
+      fields: { ...requestFields },
+    },
+    "agent_runner.status": {
+      kinds: ["command", "request"],
+      reasons: requestReasons,
+      fields: { ...requestFields },
+    },
+    "agent_runner.configure": {
+      kinds: ["command", "request"],
+      reasons: requestReasons,
+      fields: { ...requestFields },
+    },
+    "agent_task.configure": {
+      kinds: ["command", "request"],
+      reasons: ["no_agent_task", ...requestReasons],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        agent_task: { field_count: operational<number>() },
+      },
+    },
+
+    // Plugins, connections and activation.
+
+    /** The plugins overview, or the runnable plugins' manifests. */
+    "plugin.list": {
+      kinds: ["request"],
+      reasons: requestReasons,
+      fields: {
+        ...requestFields,
+        plugin_list: {
+          plugin_count: operational<number>(),
+          unavailable_count: operational<number>(),
+          discovery_ms: operational<number>(),
         },
       },
     },
+    /** A plugin, or one of its capabilities, turned on or off. */
+    "plugin.activate": {
+      kinds: ["command", "request"],
+      reasons: ["not_installed", "not_supported", ...requestReasons],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        activation: {
+          capability: operational(),
+          enabled: operational<boolean>(),
+          /** Running plugin operations the turn-off cancelled. */
+          operations_cancelled: operational<number>(),
+        },
+      },
+    },
+    "plugin_system.toggle": {
+      kinds: ["command", "request"],
+      reasons: requestReasons,
+      fields: {
+        ...requestFields,
+        activation: {
+          enabled: operational<boolean>(),
+          operations_cancelled: operational<number>(),
+        },
+      },
+    },
+    /** A connection's settings validated by its plugin and saved. */
+    "connection.save": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        connection: {
+          id: operational(),
+          /** True for a connection saved for the first time. */
+          is_new: operational<boolean>(),
+          /** How many of the plugin's own fields the settings hold. */
+          field_count: operational<number>(),
+          /** The switchable capabilities that were on, so checked. */
+          capability_count: operational<number>(),
+        },
+      },
+    },
+    "connection.delete": {
+      kinds: ["command", "request"],
+      reasons: ["connection_not_found", ...requestReasons],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        connection: { id: operational() },
+      },
+    },
+
+    // Backlog.
+
+    /** One backlog sync of a connection. */
+    "backlog.sync": {
+      kinds: ["job", "request", "plugin_operation"],
+      reasons: [...pluginRequestReasons, "deactivated_during_sync"],
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        backlog_sync: {
+          trigger: operational<"manual" | "auto" | "source_write">(),
+          mode: operational<"review" | "backlog">(),
+          /** The synced items Ajour sent, for their updates. */
+          items_sent: operational<number>(),
+          items_received: operational<number>(),
+          staged_count: operational<number>(),
+          updated_count: operational<number>(),
+          skipped_count: operational<number>(),
+          done_count: operational<number>(),
+          work_item_update_count: operational<number>(),
+          comment_fact_count: operational<number>(),
+        },
+      },
+    },
+    /** A settle's state or priority, written to the source after the Undo window. */
+    "backlog.write_source": {
+      kinds: ["job", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        source_write: {
+          state_sent: operational<boolean>(),
+          priority_sent: operational<boolean>(),
+        },
+      },
+    },
+    /** A synced item's description as its source holds it now. */
+    "description.read": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: { ...requestFields, ...pluginOperationFields },
+    },
+    /** A synced item's description written to its source. Its length, never its text. */
+    "description.write": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: [...pluginRequestReasons, "lossy_not_allowed"],
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        description: {
+          length: operational<number>(),
+          allowed_loss_count: operational<number>(),
+        },
+      },
+    },
+    /**
+     * Source states: those Ajour has seen on synced items, or those a settle
+     * can write, which the plugin lists.
+     */
+    "source_state.list": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        source_state: { count: operational<number>() },
+      },
+    },
+    "source_state.update": {
+      kinds: ["command", "request"],
+      reasons: requestReasons,
+      fields: {
+        ...requestFields,
+        source_state: { count: operational<number>() },
+      },
+    },
+    /** Candidates a plugin or the renderer pushes to Sync review. */
+    "backlog_import.stage": {
+      kinds: ["command", "request"],
+      reasons: requestReasons,
+      fields: {
+        ...requestFields,
+        backlog_import: {
+          candidate_count: operational<number>(),
+          staged_count: operational<number>(),
+          updated_count: operational<number>(),
+        },
+      },
+    },
+    "backlog_import.list": {
+      kinds: ["command", "request"],
+      reasons: requestReasons,
+      fields: {
+        ...requestFields,
+        backlog_import: { candidate_count: operational<number>() },
+      },
+    },
+    "backlog_import.select": {
+      kinds: ["command", "request"],
+      reasons: requestReasons,
+      fields: {
+        ...requestFields,
+        backlog_import: {
+          candidate_count: operational<number>(),
+          updated_count: operational<number>(),
+        },
+      },
+    },
+    "backlog_import.dismiss": {
+      kinds: ["command", "request"],
+      reasons: requestReasons,
+      fields: {
+        ...requestFields,
+        backlog_import: { candidate_count: operational<number>() },
+      },
+    },
+    "backlog_import.restore": {
+      kinds: ["command", "request"],
+      reasons: requestReasons,
+      fields: { ...requestFields },
+    },
+    "backlog_import.commit": {
+      kinds: ["command", "request"],
+      reasons: requestReasons,
+      fields: {
+        ...requestFields,
+        backlog_import: { committed_count: operational<number>() },
+      },
+    },
+
+    // Comments.
+
     /**
      * A synced backlog item's comments. Never their text or authors (ADR
      * 0008). The renderer's hop adds Ajour's item ID and the cache hit (#310).
      */
     "comment.list": {
       kinds: ["command", "request", "plugin_operation"],
-      reasons: ["agent_access"],
+      reasons: pluginRequestReasons,
       fields: {
-        plugin: { id: operational() },
-        connection: { id: operational() },
+        ...requestFields,
+        ...pluginOperationFields,
         comment: {
           /** The newest comments, or an earlier page through a cursor. */
           page: operational<"latest" | "earlier">(),
@@ -199,10 +665,10 @@ export const catalog = defineCatalog({
     /** A comment posted on a synced backlog item: its length, never its text. */
     "comment.post": {
       kinds: ["command", "request", "plugin_operation"],
-      reasons: ["agent_access"],
+      reasons: pluginRequestReasons,
       fields: {
-        plugin: { id: operational() },
-        connection: { id: operational() },
+        ...requestFields,
+        ...pluginOperationFields,
         comment: {
           body_length: operational<number>(),
           mention_count: operational<number>(),
@@ -211,10 +677,10 @@ export const catalog = defineCatalog({
     },
     "comment.edit": {
       kinds: ["command", "request", "plugin_operation"],
-      reasons: ["agent_access"],
+      reasons: pluginRequestReasons,
       fields: {
-        plugin: { id: operational() },
-        connection: { id: operational() },
+        ...requestFields,
+        ...pluginOperationFields,
         comment: {
           body_length: operational<number>(),
           mention_count: operational<number>(),
@@ -224,27 +690,21 @@ export const catalog = defineCatalog({
     /** Sent after the Undo window, so a job in the renderer. */
     "comment.delete": {
       kinds: ["job", "request", "plugin_operation"],
-      reasons: ["agent_access"],
-      fields: {
-        plugin: { id: operational() },
-        connection: { id: operational() },
-      },
+      reasons: pluginRequestReasons,
+      fields: { ...requestFields, ...pluginOperationFields },
     },
     "comment.react": {
       kinds: ["command", "request", "plugin_operation"],
-      reasons: ["agent_access"],
-      fields: {
-        plugin: { id: operational() },
-        connection: { id: operational() },
-      },
+      reasons: pluginRequestReasons,
+      fields: { ...requestFields, ...pluginOperationFields },
     },
     /** The people a mention can name, for the editor's @ suggestions. Never their names. */
     "mention.search": {
       kinds: ["command", "request", "plugin_operation"],
-      reasons: ["agent_access"],
+      reasons: pluginRequestReasons,
       fields: {
-        plugin: { id: operational() },
-        connection: { id: operational() },
+        ...requestFields,
+        ...pluginOperationFields,
         mention: { result_count: operational<number>() },
       },
     },
@@ -617,6 +1077,174 @@ export const catalog = defineCatalog({
           record_counts: operational<Record<string, number>>(),
           /** A reload after a crash gets this launch's first answer. */
           cached: operational<boolean>(),
+        },
+      },
+    },
+
+    // Calendar.
+
+    /**
+     * A calendar's events for a date range. Never a title (ADR 0005). The
+     * renderer's hop adds whether it was forced and fresh from cache (#310).
+     */
+    "calendar.fetch": {
+      kinds: ["job", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        calendar: {
+          range_days: operational<number>(),
+          event_count: operational<number>(),
+        },
+      },
+    },
+
+    // Pull requests. A pull request's repository and number are a source
+    // tool's keys, so they stay out.
+
+    "pull_request.sync": {
+      kinds: ["job", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        pull_request: {
+          tracked_count: operational<number>(),
+          received_count: operational<number>(),
+        },
+      },
+    },
+    "pull_request.load": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        pull_request: { file_count: operational<number>() },
+      },
+    },
+    "pull_request.load_file": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: { ...requestFields, ...pluginOperationFields },
+    },
+    "pull_request.load_conversation": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        pull_request: { thread_count: operational<number>() },
+      },
+    },
+    "pull_request.browse": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: { ...requestFields, ...pluginOperationFields },
+    },
+    "pull_request.submit_review": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        pull_request: {
+          verdict: operational<"approve" | "request_changes" | "comment">(),
+          comment_count: operational<number>(),
+        },
+      },
+    },
+    "pull_request.comment": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: { ...requestFields, ...pluginOperationFields },
+    },
+    "pull_request.reply": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: { ...requestFields, ...pluginOperationFields },
+    },
+    "pull_request.resolve_thread": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: { ...requestFields, ...pluginOperationFields },
+    },
+    "pull_request.mark_file_viewed": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: { ...requestFields, ...pluginOperationFields },
+    },
+    "pull_request.update": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: { ...requestFields, ...pluginOperationFields },
+    },
+    "pull_request.merge": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        pull_request: { merge_method: operational() },
+      },
+    },
+
+    // Teams and schemas.
+
+    "team.create": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: { ...requestFields, ...pluginOperationFields },
+    },
+    /** One round of a team sync. */
+    "team.sync": {
+      kinds: ["job", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        team_sync: {
+          /** The local changes sent this round. */
+          projects_sent: operational<number>(),
+          projects_received: operational<number>(),
+          assigned_count: operational<number>(),
+          has_more: operational<boolean>(),
+        },
+      },
+    },
+    /** The schema plugins a project import or export can use. */
+    "schema.list": {
+      kinds: ["request"],
+      reasons: requestReasons,
+      fields: {
+        ...requestFields,
+        schema_list: { plugin_count: operational<number>() },
+      },
+    },
+    "project.export": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        project_data: {
+          project_count: operational<number>(),
+          task_count: operational<number>(),
+          row_count: operational<number>(),
+        },
+      },
+    },
+    "project.import": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        project_data: {
+          project_count: operational<number>(),
+          task_count: operational<number>(),
+          row_count: operational<number>(),
         },
       },
     },

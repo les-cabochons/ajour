@@ -61,11 +61,11 @@ now they are exported nowhere.
   `request`) and in the plugin host (kind `plugin_operation`).
 - Each seam maps its keys to names in a typed table, so a new store command,
   route, IPC channel or plugin method fails to compile until it has a name.
-  The local API's comment and calendar operations are the first:
-  `COMMENT_EVENTS` and `CALENDAR_EVENTS` in `apps/api/src/server.ts`. The
-  main process's IPC channels are in `IPC_CHANNELS`
-  (`apps/desktop/electron/ipc-channels.cjs`), which `just typecheck` checks
-  against the catalog.
+  The local API's routes are `ROUTES` in `apps/api/src/routes.ts`, and its
+  plugin methods `PLUGIN_OPERATION_EVENTS` in `apps/api/src/plugin-host.ts`
+  (and the schema host's own). The main process's IPC channels are in
+  `IPC_CHANNELS` (`apps/desktop/electron/ipc-channels.cjs`), which
+  `just typecheck` checks against the catalog.
 - A seam may refine the name once it knows the operation, with
   `unit.rename()`: an MCP request becomes `agent_tool.call` once its method is
   read.
@@ -228,8 +228,9 @@ the work does.
 - `console` prints one JSON line per event. `AJOUR_WIDE_EVENTS=console` turns
   it on in the terminal, for the local API and the main process.
   It is never on by default, and the local API prints nothing on stdout
-  without it. Run on its own (`just api-start`), the API says where it
-  listens on stderr, so stdout stays a clean stream of events.
+  without it. Run on its own (`just api-start`, through
+  `apps/api/src/standalone.ts`), the API says where it listens on stderr, so
+  stdout stays a clean stream of events.
 
 Logging plugins will later replace the sink without changing any event.
 
@@ -237,7 +238,8 @@ Logging plugins will later replace the sink without changing any event.
 
 Every event is a W3C span, so a future exporter can send it to a trace
 backend unchanged. A unit started with a `parent` (an incoming `traceparent`
-header) is that span's child. `unit.traceparent()` gives the header for an
+header) is that span's child: the local API makes each request the child of
+the `traceparent` it carries. `unit.traceparent()` gives the header for an
 outgoing call; a folded unit sends its outer unit's span. A delayed
 consequence of an action, such as a source write after the Undo window,
 starts its own trace and joins its cause through the domain ID that links
@@ -245,15 +247,117 @@ them.
 
 ## Where events come from today
 
-The local API's first events are placed by hand (#305):
+The local API emits these (#305, #306):
 
-| Event                                                                                               | Where                                                                   |
-| --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `mcp.request`, `agent_tool.call`                                                                    | `handleMcpRequest` in `apps/api/src/mcp-server.ts`, one per MCP request |
-| `agent.session`                                                                                     | `AgentSessions`, from begin to end                                      |
-| `agent.run`                                                                                         | `AgentRunner`, from the start's first launch step to its one finalizer  |
-| `calendar.fetch`                                                                                    | the calendar route                                                      |
-| `comment.list`, `comment.post`, `comment.edit`, `comment.delete`, `comment.react`, `mention.search` | the comment route                                                       |
+| Event                                 | Where                                                                                              |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| one `request` per HTTP request        | `serveWithEvent` in `apps/api/src/routes.ts`, named from `ROUTES`                                  |
+| `mcp.request`, `agent_tool.call`      | `handleMcpRequest` in `apps/api/src/mcp-server.ts`, on the request's event                         |
+| `mcp_bridge.connection`               | the bridge route's request, which ends when the stream closes                                      |
+| one `plugin_operation` per worker run | `PluginWorkerLifetime`, for the plugin host and the schema host                                    |
+| `api.start`, `api.stop`               | `startAppApiServer` and `stopAppApiServer` in `apps/api/src/server.ts`                             |
+| `storage.load`                        | `AppApiStorage`, for each load of the state file; one it can't read, at any depth, is `unreadable` |
+| `app.error`                           | `watchProcessCrashes` in `apps/api/src/events.ts`, which `apps/api/src/standalone.ts` turns on     |
+| `agent.session`                       | `AgentSessions`, from begin to end                                                                 |
+| `agent.run`                           | `AgentRunner`, from the start's first launch step to its one finalizer                             |
+
+### Requests
+
+- **One event per request.** The request seam opens it before any check, as
+  `api.request`, and renames it from the route table once the request is
+  routed. Every route in `ROUTES` has a name and a handler, so a route
+  without either fails to compile. A route that serves several operations,
+  such as the code host's, names each from its own table (`CODE_HOST_EVENTS`,
+  `COMMENT_EVENTS`, `CALENDAR_EVENTS` in `apps/api/src/operation-events.ts`),
+  which the plugin host's table shares.
+- **Every request records** its method, its route's pattern (never its
+  values), its status, its origin (`app`, `none` or `refused`) on every path,
+  and its request and response sizes. The seam counts the bytes at the
+  boundary, as the request's stream receives them and as the response
+  writes them, so a chunked body, a stream and a refusal are counted too.
+- **A request that never reaches a route** stays `api.request`, refused
+  with `stopping`, `host_refused`, `origin_refused` or `no_route`, or
+  `unknown_operation` for an operation a route's table doesn't have.
+- **A request Ajour can't read** is refused with `invalid_request`: a body
+  that isn't JSON or is too large, a malformed path segment, or a value the
+  route's schema or Ajour's own checks refuse. Each is an
+  `InvalidRequestError` (`apps/api/src/event-errors.ts`), and its event
+  holds the error's type and code, never the message that could quote the
+  caller's text. Any other error a route throws ends it as an `error`.
+- **Each refusal says why.** A route refused because the plugin system, the
+  plugin or the capability is off says which (`system_off`, `plugin_off`,
+  `capability_off`), as do a missing connection (`connection_not_found`), a
+  feature the plugin doesn't declare (`not_supported`), and the agent
+  routes' own reasons, such as `not_running`. An outcome the handler didn't
+  record follows the status: a 4xx is `refused`, a 5xx an `error`.
+- **Handlers add their catalog fields** to the event, such as a sync's
+  counts or a connection's field count. A failed plugin call goes through
+  `recordPluginFailure`, so the request ends with the same outcome and
+  reason as its plugin operation: a refusal or a cancellation with its
+  reason, a `timeout`, a worker failure (`plugin_error`, `exited_early`,
+  `result_too_large`) with the plugin's message scrubbed of the
+  connection's secrets, or `invalid_result` by its type and code. It is
+  typed against the catalog, so a route's event that lacks one of these
+  reasons fails to compile.
+- **The event ends once**, by the seam, when the handler has settled and the
+  response has flushed or closed: `end()` only starts the flush. A handler
+  that weighs outcomes itself, such as MCP's for a batch, returns how the
+  request ends instead of ending it, so the status and sizes still land.
+- **A client that leaves** before its response flushed, while its body still
+  arrived or the work still ran, ends the request `cancelled` with
+  `client_closed`, without a status or response bytes nobody received, and
+  without the error its leaving caused: an error from the request's own body
+  stream, such as `ECONNRESET`. An outcome the route had recorded, such as a
+  plugin's timeout, stands. So does any other error, even after the client
+  left, whatever its code: it is recorded as the failure it is. A request
+  whose connection the API's stop closed ends `cancelled` with `stopping`;
+  a client that hangs up on its own while the API stops is still
+  `client_closed`. A body Node's HTTP parser can't read, which Node answers
+  with its own 400, is `refused` with `invalid_request` and the parser's
+  code, such as `HPE_INVALID_CHUNK_SIZE`. A route
+  whose response is a stream calls `stream()` on its context: the bridge's
+  `mcp_bridge.connection` lasts until its client closes it, and that close
+  is its normal end.
+- **A body over the limit** (16 MB) is answered with a 400 as soon as it
+  crosses it, with `Connection: close`: Ajour stops reading it, and the
+  connection closes within a second of the limit being crossed, whether or
+  not the answer could go out. The request is refused with
+  `invalid_request`, and its error has the code `body_too_large`.
+- **Validation messages stay out.** An error a validator throws lists the
+  values it received, whether a caller's text, a plugin's result or a
+  spreadsheet's headings. `withoutContent` gives every event such an error
+  as its type and code, with no message.
+
+### Plugin operations
+
+Each worker run in the plugin host and the schema host emits one
+`plugin_operation` event, named from the host's table of plugin methods, as
+a child span of the request that started it, with its trigger. It carries
+the plugin's ID, version, source and API version, the connection, the method
+and its capability, the host's other operations at admission, the
+preparation and worker durations, the timeout and the result's size. What
+the method requires of the plugin, such as its capability, is checked inside
+the operation, so a refusal there has its event too. It ends with its own
+reason:
+
+- refused: `capacity`, a gate's `system_off`, `plugin_off` or
+  `capability_off`, `host_stopping`, `package_change`, `not_installed`,
+  `runs_no_code`, `not_supported` for a capability or feature the plugin
+  doesn't declare, `invalid_request` for an import whose rows break the
+  plugin's definition, and `agent_access` for a comment call the user
+  doesn't allow;
+- cancelled: `system_off`, `plugin_off`, `capability_off`, `uninstalled` or
+  `shutdown`;
+- `timeout`;
+- errors: `result_too_large`, `invalid_result` (with the error's type and
+  code only), `exited_early` and `plugin_error`, scrubbed of the
+  connection's secrets.
+
+Plugin discovery skips an invalid package without a log line: the active
+event counts it in `counts.invalid_plugin`, as it counts a bundled archive
+that fails to install and a leftover backup it can't clear.
+
+### MCP
 
 An MCP request is `agent_tool.call` once its body is a tool call, named with
 the tool (one of Ajour's, or `other`), never its arguments. Every MCP request
@@ -289,9 +393,8 @@ The order of outcomes is the package's: `worstOutcome()` and
 
 A session the runner began takes the run's trigger, `user`.
 
-The seams of #304 add the rest: every local API request and plugin operation
-(#306), store commands, boot and Undo (#307), `trigger` and `surface`
-(#309), and renderer jobs and navigation (#310).
+The seams of #304 add the rest: store commands, boot and Undo (#307),
+`trigger` and `surface` (#309), and renderer jobs and navigation (#310).
 
 ### The desktop main process
 
@@ -328,21 +431,21 @@ Units that are never part of the work that happens to be active, such as
 start `detached`: a menu Quit is its own event, not a step of the menu
 item's.
 
-| Event                                                                              | Where                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| every IPC channel's event                                                          | `createIpcListeners` in `ipc-listeners.cjs`, named from `IPC_CHANNELS`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `app.launch`                                                                       | from the process start until the window has loaded, with each phase's duration, why the local API could not start, and the load's outcome. Packaged builds add the version the previous launch ran, from `last-launch.json` in user data, which they write once the window has loaded                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `app.quit`                                                                         | `before-quit`, with the updater and the local API stop, ended before the process exits. Its trigger: the last window closed, the menu's Quit (the app menu's item calls `quitFromMenu`, and the title bar clicks it), `os` (a Windows session end, recorded then since `before-quit` never comes; a macOS or Linux shutdown through `powerMonitor`), an update install (cancelled if it does not install), a recovery dialog or a failed start. Anything else is `other`, by the `system`                                                                                                                                                                                                                                                                                                                      |
-| `app.second_launch`, `app.lock_refused`                                            | `second-instance`, and the second process just before it quits                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `window.load`, `window.unresponsive`, `process.gone` (renderer)                    | `watchWindow` in `window-recovery.cjs`: a unit that leads to a dialog ends with its answer                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `process.gone` (GPU, utility)                                                      | `child-process-gone`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `app.error`                                                                        | an uncaught exception (`uncaughtExceptionMonitor`), an unhandled rejection, which keeps Node's warning, or a startup that failed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `window.navigate`                                                                  | `will-navigate` and the window open handler: the scheme only, never the URL                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `catalog.refresh`                                                                  | each refresh, at launch, on its interval or asked for. The refresh never rejects, so `plugin-catalog.cjs` records its outcome on it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `update.check`, `update.install`                                                   | `automatic-update.cjs`, on the IPC event that asked, or as its own job. One install is one event: an updater error lands on it, where the install was. After the handoff it stays open until the app quits for the installer (`will-quit`), or for the quit's 10 seconds, since electron-updater reports an installer that fails to start later. `update.handoff` says which: `app_quit`, `installer_failed`, or `timed_out`, which ends the event as a `timeout`. It records only the offered release's version                                                                                                                                                                                                                                                                                               |
-| `plugin.install`, `plugin.uninstall`, `catalog.configure`, `dev_plugins.configure` | their IPC handlers in main.cjs. An install's result comes from `pluginInstallResultOf` in `plugin-install.cjs`, from the error's code only: the local API's installer marks every archive-validation error `invalid_archive` (bad tar or gzip, a missing or unparseable manifest, a failed schema, a missing entrypoint, the size and entry limits; `INVALID_PLUGIN_ARCHIVE` in `apps/api/src/plugin-package.ts`), picking an archive here marks one too, and the catalog marks `not_available`. A Node system error is the archive's fault only on a path inside the extraction folder (a manifest or entrypoint the archive lacks, an entry tar cannot write); opening the staged archive, reaching the extraction folder itself, and a full, locked or busy disk anywhere are `failed`, as is anything else |
-| `context_menu.show`                                                                | the picked id only when it is one of the renderer's object actions (`OBJECT_ACTION_IDS` in `context-menu.cjs`), else `other`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `local_state.recover`                                                              | counts only the persisted collections `RECORD_COLLECTIONS` names, never a key the file chose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Event                                                                              | Where                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| every IPC channel's event                                                          | `createIpcListeners` in `ipc-listeners.cjs`, named from `IPC_CHANNELS`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `app.launch`                                                                       | from the process start until the window has loaded, with each phase's duration, why the local API could not start, and the load's outcome. Packaged builds add the version the previous launch ran, from `last-launch.json` in user data, which they write once the window has loaded                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `app.quit`                                                                         | `before-quit`, with the updater and the local API stop, ended before the process exits. Its trigger: the last window closed, the menu's Quit (the app menu's item calls `quitFromMenu`, and the title bar clicks it), `os` (a Windows session end, recorded then since `before-quit` never comes; a macOS or Linux shutdown through `powerMonitor`), an update install (cancelled if it does not install), a recovery dialog or a failed start. Anything else is `other`, by the `system`                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `app.second_launch`, `app.lock_refused`                                            | `second-instance`, and the second process just before it quits                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `window.load`, `window.unresponsive`, `process.gone` (renderer)                    | `watchWindow` in `window-recovery.cjs`: a unit that leads to a dialog ends with its answer                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `process.gone` (GPU, utility)                                                      | `child-process-gone`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `app.error`                                                                        | an uncaught exception (`uncaughtExceptionMonitor`), an unhandled rejection, which keeps Node's warning, or a startup that failed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `window.navigate`                                                                  | `will-navigate` and the window open handler: the scheme only, never the URL                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `catalog.refresh`                                                                  | each refresh, at launch, on its interval or asked for. The refresh never rejects, so `plugin-catalog.cjs` records its outcome on it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `update.check`, `update.install`                                                   | `automatic-update.cjs`, on the IPC event that asked, or as its own job. One install is one event: an updater error lands on it, where the install was. After the handoff it stays open until the app quits for the installer (`will-quit`), or for the quit's 10 seconds, since electron-updater reports an installer that fails to start later. `update.handoff` says which: `app_quit`, `installer_failed`, or `timed_out`, which ends the event as a `timeout`. It records only the offered release's version                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `plugin.install`, `plugin.uninstall`, `catalog.configure`, `dev_plugins.configure` | their IPC handlers in main.cjs. An install's result comes from `pluginInstallResultOf` in `plugin-install.cjs`, from the error's code only: the local API's installer marks every archive-validation error `invalid_archive` (bad tar or gzip, a missing or unparseable manifest, a failed schema, a missing entrypoint, the size and entry limits; `INVALID_PLUGIN_ARCHIVE` in `apps/api/src/plugin-package.ts`), picking an archive here marks one too, the catalog marks `not_available`, and the plugin host marks an install it refuses while plugin operations run `busy` (`PLUGIN_HOST_BUSY` in `apps/api/src/plugin-host.ts`). A Node system error is the archive's fault only on a path inside the extraction folder (a manifest or entrypoint the archive lacks, an entry tar cannot write); opening the staged archive, reaching the extraction folder itself, and a full, locked or busy disk anywhere are `failed`, as is anything else |
+| `context_menu.show`                                                                | the picked id only when it is one of the renderer's object actions (`OBJECT_ACTION_IDS` in `context-menu.cjs`), else `other`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `local_state.recover`                                                              | counts only the persisted collections `RECORD_COLLECTIONS` names, never a key the file chose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 Every IPC channel registers through one wrapper, `createIpcListeners`, with
 `handle` for `invoke`, `onMessage` for one-way messages and `answerSync` for

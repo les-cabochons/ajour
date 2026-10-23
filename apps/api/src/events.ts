@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import os from "node:os";
+import { withoutContent } from "./event-errors.ts";
 import {
   catalog,
   type AjourCatalog,
@@ -73,4 +74,42 @@ export function createApiEvents(options: {
     },
     ...(options.now ? { now: options.now } : {}),
   });
+}
+
+/**
+ * Records every uncaught exception and unhandled rejection as an
+ * `app.error`, through Node's `uncaughtExceptionMonitor`: it watches only,
+ * so the process ends as it would have. An unhandled rejection reaches it
+ * when Node raises it, as it does unless another listener handles it.
+ * Returns a function that stops watching.
+ */
+export function watchProcessCrashes(
+  events: ApiEvents,
+  target: NodeJS.EventEmitter = process,
+): () => void {
+  const listener = (error: unknown, origin: unknown) => {
+    const active = events.current();
+    const unit = events.start("app.error", {
+      kind: "crash",
+      trigger: "system",
+      detached: true,
+    });
+    unit.set({
+      crash: {
+        origin:
+          origin === "unhandledRejection"
+            ? "unhandled_rejection"
+            : "uncaught_exception",
+        // The local API shows no dialog or toast of its own.
+        handled_by: "none",
+        ...(active ? { active_unit: active.name } : {}),
+      },
+    });
+    unit.fail(withoutContent(error));
+    unit.end();
+  };
+  target.on("uncaughtExceptionMonitor", listener);
+  return () => {
+    target.off("uncaughtExceptionMonitor", listener);
+  };
 }

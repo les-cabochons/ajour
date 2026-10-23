@@ -249,7 +249,8 @@ describe("an archive the installer refuses", () => {
 
 describe("an install that fails after the archive was accepted", () => {
   // installPluginForServer reads Ajour's own state to apply the new plugin's
-  // activation, and a corrupt state file throws a SyntaxError there.
+  // activation, and a corrupt state file throws the local API's fixed
+  // unreadable error there.
   it("records a corrupt Ajour state as a failure, not an invalid archive", async () => {
     const directory = await temporaryDirectory();
     const statePath = path.join(directory, "state.json");
@@ -277,10 +278,26 @@ describe("an install that fails after the archive was accepted", () => {
         (refusal: unknown) => refusal,
       );
 
-      expect(error).toBeInstanceOf(SyntaxError);
+      expect(error).toMatchObject({
+        name: "StateFileError",
+        code: "unreadable",
+      });
       expect(pluginInstallResultOf(error)).toBe("failed");
     } finally {
       await stopAppApiServer(server);
     }
+  });
+});
+
+describe("an install the plugin host refuses while plugins run", () => {
+  it("records it as busy, from the code the host gives it", () => {
+    const refusal = Object.assign(
+      new Error(
+        "Wait for active plugin operations to finish before installing a plugin.",
+      ),
+      { code: "busy" },
+    );
+
+    expect(pluginInstallResultOf(refusal)).toBe("busy");
   });
 });

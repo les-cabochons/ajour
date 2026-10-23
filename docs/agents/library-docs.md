@@ -192,6 +192,7 @@ The backlog editor module is feature-local because its vocabulary and commands b
 - A new event name, with its fields and outcome reasons, goes in `packages/wide-events/lib/ajour-catalog.ts`.
 - The local API's emitter: `apps/api/src/events.ts`. Its tests pass a recording sink as `eventSink`.
 - The desktop main process's emitter and launch context: `apps/desktop/electron/main-events.cjs`. main.cjs loads the package by file URL, as it loads the local API, and hands the launch context to the local API (`launch`) and the renderer (`runtime.launch`). The desktop tests run main.cjs slices with `events` from `apps/desktop/recording-events.ts` in their VM globals.
+- The local API's route table and request seam: `apps/api/src/routes.ts`. A new route is an entry in `ROUTES`, with its event name, and a handler in `createAppApiServer`. A new plugin method needs a name in `PLUGIN_OPERATION_EVENTS` (`apps/api/src/plugin-host.ts`).
 - The packaged app copies the package into its internal API runtime (`apps/desktop/scripts/prepare-internal-api.cjs`).
 
 ## Documentation Lookup Rules

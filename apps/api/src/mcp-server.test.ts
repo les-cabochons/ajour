@@ -15,6 +15,12 @@ import { AgentSessions } from "./agent-sessions.ts";
 import { startAppApiServer, stopAppApiServer } from "./server.ts";
 
 const TEST_ORIGIN = "http://127.0.0.1:5173";
+const MCP_EVENT_NAMES: ReadonlySet<string> = new Set([
+  "mcp.request",
+  "agent_tool.call",
+  "agent.session",
+  "agent.run",
+]);
 const running: (() => Promise<void>)[] = [];
 
 afterEach(async () => {
@@ -32,6 +38,13 @@ type TestApiOptions = Omit<
 async function startTestApi(options: TestApiOptions = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "ajour-mcp-"));
   const sink = createRecordingSink<AjourEvent>();
+  // The MCP and agent events. Each /api request the test makes emits its
+  // own, which request-events.test.ts covers.
+  const logged: AjourEvent[] = [];
+  const recordMcp = (event: Parameters<typeof sink.emit>[0]) => {
+    sink.emit(event);
+    if (MCP_EVENT_NAMES.has(event.name)) logged.push(event as AjourEvent);
+  };
   const server = await startAppApiServer({
     port: 0,
     statePath: path.join(root, "state.json"),
@@ -39,7 +52,7 @@ async function startTestApi(options: TestApiOptions = {}) {
     allowDevelopmentPlugins: false,
     projectDataShapePluginDirectories: [],
     allowedOrigins: [TEST_ORIGIN],
-    eventSink: sink,
+    eventSink: { emit: recordMcp },
     ...options,
   });
   const { port } = server.address() as AddressInfo;
@@ -47,7 +60,7 @@ async function startTestApi(options: TestApiOptions = {}) {
     await stopAppApiServer(server);
     await rm(root, { recursive: true, force: true });
   });
-  return { baseUrl: `http://127.0.0.1:${port}`, logged: sink.events };
+  return { baseUrl: `http://127.0.0.1:${port}`, logged, all: sink.events };
 }
 
 /** Calls an /api route the way the renderer does, with its origin. */
@@ -381,6 +394,14 @@ describe("MCP endpoint", () => {
           access: "read",
           bridge_ms: expect.any(Number),
         },
+        http: {
+          method: "POST",
+          route: "/mcp/ajour",
+          status_code: 200,
+          request_bytes: expect.any(Number),
+          response_bytes: expect.any(Number),
+          origin: "none",
+        },
       },
     ]);
     // Neither the tool's input nor its output enters an event.
@@ -425,21 +446,23 @@ describe("MCP endpoint", () => {
       body,
     });
 
-  it("records a body that isn't JSON with a fixed diagnostic, never the body's text", async () => {
+  it("refuses a body that isn't JSON as the agent's mistake, never with the body's text", async () => {
     const { baseUrl, logged } = await startTestApi();
     const { token } = await enableMcpWithClient(baseUrl);
 
-    await postMcp(baseUrl, token, '{"note": "Lunch with Ana about the raise",');
+    const response = await postMcp(
+      baseUrl,
+      token,
+      '{"note": "Lunch with Ana about the raise",',
+    );
 
+    expect(response.status).toBe(400);
     expect(logged).toEqual([
       expect.objectContaining({
         name: "mcp.request",
-        outcome: "error",
-        error: {
-          type: "SyntaxError",
-          code: "invalid_json",
-          message: "The request body is not valid JSON.",
-        },
+        outcome: "refused",
+        outcome_reason: "invalid_request",
+        error: { type: "SyntaxError", code: "invalid_json" },
       }),
     ]);
     expect(JSON.stringify(logged)).not.toContain("Ana");
@@ -598,6 +621,12 @@ describe("MCP endpoint", () => {
       expect.objectContaining({
         name: "mcp.request",
         outcome: "timeout",
+        // Settled by the batch, ended once by the request seam: it still
+        // gets the status and the size.
+        http: expect.objectContaining({
+          status_code: 200,
+          response_bytes: expect.any(Number),
+        }),
         step_failures: [
           {
             name: "agent_tool.call",
@@ -710,6 +739,7 @@ describe("MCP endpoint", () => {
       expect.objectContaining({
         outcome: "refused",
         outcome_reason: "protocol_error",
+        http: expect.objectContaining({ status_code: 400, origin: "none" }),
       }),
     ]);
   });
@@ -1305,14 +1335,16 @@ describe("wide events on stdout", () => {
     await refusedBrowserCall(baseUrl, token);
     await refusedBrowserCall(baseUrl, token);
 
-    expect(log).toHaveBeenCalledTimes(2);
     for (const [line] of log.mock.calls) {
       expect(typeof line).toBe("string");
       expect(line).not.toContain("\n");
-      expect(JSON.parse(line as string)).toMatchObject({
-        name: "mcp.request",
-        outcome_reason: "browser_origin",
-      });
     }
+    const lines = log.mock.calls.map(
+      ([line]) => JSON.parse(line as string) as AjourEvent,
+    );
+    expect(lines.filter((event) => event.name === "mcp.request")).toEqual([
+      expect.objectContaining({ outcome_reason: "browser_origin" }),
+      expect.objectContaining({ outcome_reason: "browser_origin" }),
+    ]);
   });
 });

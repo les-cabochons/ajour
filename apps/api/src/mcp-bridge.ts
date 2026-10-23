@@ -37,6 +37,7 @@ interface PendingCall {
 
 export class McpBridge {
   private stream?: ServerResponse;
+  private onStreamCall?: () => void;
   private keepAlive?: NodeJS.Timeout;
   private readonly pending = new Map<string, PendingCall>();
   private readonly timeoutMs: number;
@@ -51,8 +52,11 @@ export class McpBridge {
     return this.stream !== undefined && !this.stream.writableEnded;
   }
 
-  /** Makes `response` the renderer's stream. Ends the previous one. */
-  attach(response: ServerResponse) {
+  /**
+   * Makes `response` the renderer's stream. Ends the previous one.
+   * `onCall` runs for each tool call the stream carries.
+   */
+  attach(response: ServerResponse, options: { onCall?: () => void } = {}) {
     this.detach();
     response.writeHead(200, {
       "Content-Type": "text/event-stream; charset=utf-8",
@@ -61,6 +65,7 @@ export class McpBridge {
     });
     response.write("retry: 2000\n\n");
     this.stream = response;
+    this.onStreamCall = options.onCall;
     this.keepAlive = setInterval(() => {
       response.write(": keep-alive\n\n");
     }, KEEP_ALIVE_MS);
@@ -91,6 +96,7 @@ export class McpBridge {
       }, this.timeoutMs);
       this.pending.set(requestId, { resolve, reject, timer });
       this.send("tool-call", { requestId, tool, input, client });
+      this.onStreamCall?.();
     });
   }
 
@@ -135,5 +141,6 @@ export class McpBridge {
     if (this.keepAlive) clearInterval(this.keepAlive);
     this.keepAlive = undefined;
     this.stream = undefined;
+    this.onStreamCall = undefined;
   }
 }

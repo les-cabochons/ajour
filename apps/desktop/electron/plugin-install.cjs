@@ -75,19 +75,23 @@ async function selectPluginArchive(
   }
 }
 
-/** The codes an install failure carries when the package itself is the cause. */
-const PACKAGE_RESULTS = new Set(["invalid_archive", "not_available"]);
+/**
+ * The codes an install failure carries when its cause is known: the
+ * package itself, or the plugin host being busy.
+ */
+const KNOWN_RESULTS = new Set(["invalid_archive", "not_available", "busy"]);
 
 /**
  * A failed install's result for its `plugin.install` event, from the code
  * the error carries: `invalid_archive` from the local API's installer
  * (apps/api/src/plugin-package.ts) or from picking an archive here,
- * `not_available` from the catalog. Anything else is the machine or Ajour
- * failing.
+ * `not_available` from the catalog, and `busy` from the plugin host while
+ * plugin operations run (apps/api/src/plugin-host.ts). Anything else is the
+ * machine or Ajour failing.
  */
 function pluginInstallResultOf(error) {
   const code = typeof error?.code === "string" ? error.code : "";
-  return PACKAGE_RESULTS.has(code) ? code : "failed";
+  return KNOWN_RESULTS.has(code) ? code : "failed";
 }
 
 module.exports = {

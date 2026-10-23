@@ -24,6 +24,7 @@ import {
 } from "../../../packages/wide-events/index.ts";
 import { AgentSessionError, type AgentSessions } from "./agent-sessions.ts";
 import type { ApiEvents } from "./events.ts";
+import type { Settlement } from "./routes.ts";
 import { BridgeCallError, type McpBridge } from "./mcp-bridge.ts";
 import { authenticateMcpRequest } from "./mcp-clients.ts";
 import type { AppApiStorage } from "./storage.ts";
@@ -42,6 +43,11 @@ export interface McpRequestContext {
   waitForAnswerMs: number;
   events: ApiEvents;
   readBody: (request: IncomingMessage) => Promise<unknown>;
+  /**
+   * The request's event, which the request seam opened. MCP names it
+   * `mcp.request`, or `agent_tool.call` once the body is a tool call.
+   */
+  unit: Unit<AjourCatalog, "api.request">;
 }
 
 /** The longest one wait_for_answer call may hold. Agents call it again. */
@@ -189,12 +195,11 @@ function settleExchange(
   exchange: McpExchange,
   status: number,
   batch: boolean,
-) {
-  if (status >= 500) {
-    unit.end("error", "protocol_error");
-  } else if (status >= 400) {
-    unit.refuse("protocol_error");
-  }
+): Settlement | undefined {
+  // The request seam ends the request's event, once, after its status and
+  // sizes: this only says how.
+  if (status >= 500) return { outcome: "error", reason: "protocol_error" };
+  if (status >= 400) unit.refuse("protocol_error");
   for (const call of exchange.calls) {
     if (
       status < 400 &&
@@ -205,12 +210,12 @@ function settleExchange(
     }
     if (batch) call.unit.end();
   }
-  if (!batch) return;
+  if (!batch) return undefined;
   const worst = worstOutcome(
     unit.outcome,
     ...exchange.calls.map((call) => call.unit.outcome),
   );
-  if (worst !== worstOutcome(unit.outcome)) unit.end(worst);
+  return worst !== worstOutcome(unit.outcome) ? { outcome: worst } : undefined;
 }
 
 /**
@@ -567,113 +572,121 @@ export async function handleMcpRequest(
   response: ServerResponse,
   pathname: string,
   context: McpRequestContext,
-) {
-  // While MCP is off, every /mcp path is absent, whoever asks.
-  if (
-    pathname !== "/mcp/ajour" ||
-    !(await context.storage.getMcpSettings()).enabled
-  ) {
+): Promise<Settlement | undefined> {
+  let settlement: Settlement | undefined;
+  // Only /mcp/ajour is a route. While MCP is off, it is absent too,
+  // whoever asks.
+  if (pathname !== "/mcp/ajour") {
+    context.unit.refuse("no_route");
     writeError(response, 404, "Not found.");
     return;
   }
   // One event per request: `agent_tool.call` once the body says it is a
   // tool call, `mcp.request` for any other method and for refusals. With
   // JSON responses, handleRequest settles once the answer is written.
-  await context.events.run(
-    "mcp.request",
-    { kind: "request", trigger: "agent" },
-    async (unit) => {
-      // Agents are not browsers. An Origin header means a web page is calling.
-      if (request.headers.origin) {
-        unit.refuse("browser_origin");
-        writeError(response, 403, "MCP does not accept browser requests.");
-        return;
-      }
+  const unit = context.unit.rename("mcp.request");
+  unit.set({ http: { route: "/mcp/ajour" } });
+  if (!(await context.storage.getMcpSettings()).enabled) {
+    unit.refuse("mcp_off");
+    writeError(response, 404, "Not found.");
+    return;
+  }
+  // Agents are not browsers. An Origin header means a web page is calling.
+  if (request.headers.origin) {
+    unit.refuse("browser_origin");
+    writeError(response, 403, "MCP does not accept browser requests.");
+    return;
+  }
 
-      const authentication = await authenticateMcpRequest(
-        context.storage,
-        request.headers.authorization,
-      );
-      if (authentication.kind !== "ok") {
-        if (authentication.kind === "revoked") {
-          context.sessions.recordError(
-            `${authentication.client.name}: its token was revoked.`,
-            { id: authentication.client.id, name: authentication.client.name },
-          );
-          unit.set({ agent: { client_id: authentication.client.id } });
-        }
-        unit.refuse(`token_${authentication.kind}`);
-        writeError(response, 401, "Unknown or revoked token.");
-        return;
-      }
-
-      const client = {
-        id: authentication.client.id,
-        name: authentication.client.name,
-      };
-      unit.set({ agent: { client_id: client.id } });
-      const server = new McpServer(
-        { name: "ajour", version: "1.0.0" },
-        { instructions: AJOUR_INSTRUCTIONS },
-      );
-      const body =
-        request.method === "POST" ? await context.readBody(request) : undefined;
-      const method = body === undefined ? undefined : mcpMethod(body);
-      const messages = method === "batch" ? (body as unknown[]) : undefined;
-      if (messages) {
-        unit.set({
-          mcp: {
-            method: "batch",
-            call_count: messages.filter(
-              (message) => mcpMethod(message) === "tools/call",
-            ).length,
-          },
-        });
-        // Before the transport's own checks, which run inside handleRequest:
-        // a duplicate-id batch is `duplicate_id` whatever else is wrong.
-        if (refuseDuplicateIds(messages, unit, response)) return;
-      } else if (method !== undefined && method !== "tools/call") {
-        unit.set({ mcp: { method } });
-      }
-      // Each call is named before the SDK validates it, so a call it
-      // refuses still says which tool it was.
-      const exchange = new McpExchange();
-      if (method === "tools/call") {
-        exchange
-          .add(unit.rename("agent_tool.call"), messageId(body))
-          .unit.set({ agent_tool: { name: calledTool(body) } });
-      }
-      for (const message of messages ?? []) {
-        if (mcpMethod(message) !== "tools/call") continue;
-        // Started inside the request, so it folds into the batch's event.
-        const call = context.events.start("agent_tool.call", {
-          kind: "request",
-          trigger: "agent",
-        });
-        exchange
-          .add(call, messageId(message))
-          .unit.set({ agent_tool: { name: calledTool(message) } });
-      }
-      registerTools(server, client, context, exchange);
-      const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: undefined,
-        enableJsonResponse: true,
-      });
-      const send = transport.send.bind(transport);
-      transport.send = async (message, options) => {
-        recordReply(message, unit, exchange);
-        return send(message, options);
-      };
-      response.on("close", () => {
-        void transport.close();
-        void server.close();
-      });
-      await server.connect(transport);
-      try {
-        await transport.handleRequest(request, response, body);
-      } finally {
-        settleExchange(unit, exchange, response.statusCode, method === "batch");
-      }
-    },
+  const authentication = await authenticateMcpRequest(
+    context.storage,
+    request.headers.authorization,
   );
+  if (authentication.kind !== "ok") {
+    if (authentication.kind === "revoked") {
+      context.sessions.recordError(
+        `${authentication.client.name}: its token was revoked.`,
+        { id: authentication.client.id, name: authentication.client.name },
+      );
+      unit.set({ agent: { client_id: authentication.client.id } });
+    }
+    unit.refuse(`token_${authentication.kind}`);
+    writeError(response, 401, "Unknown or revoked token.");
+    return;
+  }
+
+  const client = {
+    id: authentication.client.id,
+    name: authentication.client.name,
+  };
+  unit.set({ agent: { client_id: client.id } });
+  const server = new McpServer(
+    { name: "ajour", version: "1.0.0" },
+    { instructions: AJOUR_INSTRUCTIONS },
+  );
+  const body =
+    request.method === "POST" ? await context.readBody(request) : undefined;
+  const method = body === undefined ? undefined : mcpMethod(body);
+  const messages = method === "batch" ? (body as unknown[]) : undefined;
+  if (messages) {
+    unit.set({
+      mcp: {
+        method: "batch",
+        call_count: messages.filter(
+          (message) => mcpMethod(message) === "tools/call",
+        ).length,
+      },
+    });
+    // Before the transport's own checks, which run inside handleRequest:
+    // a duplicate-id batch is `duplicate_id` whatever else is wrong.
+    if (refuseDuplicateIds(messages, unit, response)) return;
+  } else if (method !== undefined && method !== "tools/call") {
+    unit.set({ mcp: { method } });
+  }
+  // Each call is named before the SDK validates it, so a call it
+  // refuses still says which tool it was.
+  const exchange = new McpExchange();
+  if (method === "tools/call") {
+    exchange
+      .add(unit.rename("agent_tool.call"), messageId(body))
+      .unit.set({ agent_tool: { name: calledTool(body) } });
+  }
+  for (const message of messages ?? []) {
+    if (mcpMethod(message) !== "tools/call") continue;
+    // Started inside the request, so it folds into the batch's event.
+    const call = context.events.start("agent_tool.call", {
+      kind: "request",
+      trigger: "agent",
+    });
+    exchange
+      .add(call, messageId(message))
+      .unit.set({ agent_tool: { name: calledTool(message) } });
+  }
+  registerTools(server, client, context, exchange);
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+    enableJsonResponse: true,
+  });
+  const send = transport.send.bind(transport);
+  transport.send = async (message, options) => {
+    recordReply(message, unit, exchange);
+    return send(message, options);
+  };
+  response.on("close", () => {
+    void transport.close();
+    void server.close();
+  });
+  await server.connect(transport);
+  try {
+    await transport.handleRequest(request, response, body);
+  } finally {
+    // A thrown error skips the settlement, and the request ends an error.
+    settlement = settleExchange(
+      unit,
+      exchange,
+      response.statusCode,
+      method === "batch",
+    );
+  }
+  return settlement;
 }

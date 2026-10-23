@@ -28,6 +28,8 @@ import {
   type SwitchableCapability,
 } from "../../../packages/shared/plugins.ts";
 import type { McpSettings } from "../../../packages/shared/agent-tools.ts";
+import { withoutContent } from "./event-errors.ts";
+import type { ApiEvents } from "./events.ts";
 import {
   agentRunnerSettingsSchema,
   type AgentRunnerSettings,
@@ -747,8 +749,58 @@ function normalizeState(
   return migrateLegacyState(raw as AppApiStateV1);
 }
 
+/** The state file's path: the one given, else AJOUR_APP_API_STATE_PATH, else ~/.ajour. */
+export function resolveStatePath(
+  statePath = process.env.AJOUR_APP_API_STATE_PATH,
+): string {
+  return statePath && statePath.trim().length > 0
+    ? statePath
+    : path.join(os.homedir(), ".ajour", "app-api-state.json");
+}
+
+/**
+ * The error for a state file Ajour can't read: any failure while it is
+ * parsed, migrated or normalized. Their messages quote the file, secrets
+ * included, so this fixed one stands in, for the event and the caller.
+ */
+function unreadableStateError() {
+  const error = new Error("The state file can't be read.");
+  error.name = "StateFileError";
+  return Object.assign(error, { code: "unreadable" });
+}
+
+/**
+ * The state a file holds, migrated, and the version it was written in. A
+ * file that holds null loads the defaults, like a missing one. Undefined for
+ * a file that isn't state: not JSON, a root that isn't an object, or any
+ * value migration can't read, however deep.
+ */
+function readStateFile(
+  text: string,
+): { state: AppApiState; versionFrom: number } | undefined {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (
+      parsed !== null &&
+      (typeof parsed !== "object" || Array.isArray(parsed))
+    ) {
+      return undefined;
+    }
+    const raw = parsed as Partial<
+      AppApiState | AppApiStateV1 | AppApiStateV2
+    > | null;
+    return {
+      state: normalizeState(raw ?? undefined),
+      versionFrom: typeof raw?.version === "number" ? raw.version : 1,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 export class AppApiStorage {
   private readonly statePath: string;
+  private readonly events?: ApiEvents;
   private cache?: AppApiState;
   private mutationQueue: Promise<unknown> = Promise.resolve();
   private loading?: Promise<AppApiState>;
@@ -758,11 +810,10 @@ export class AppApiStorage {
    */
   private lastDismissal?: ImportDismissal;
 
-  constructor(statePath = process.env.AJOUR_APP_API_STATE_PATH) {
-    this.statePath =
-      statePath && statePath.trim().length > 0
-        ? statePath
-        : path.join(os.homedir(), ".ajour", "app-api-state.json");
+  /** `events` receives a `storage.load` event for each load of the state file. */
+  constructor(statePath?: string, options: { events?: ApiEvents } = {}) {
+    this.statePath = resolveStatePath(statePath);
+    this.events = options.events;
   }
 
   /** The folder that holds the state file. Agent browser data lives next to it. */
@@ -1773,16 +1824,50 @@ export class AppApiStorage {
     return this.cache ?? loaded;
   }
 
+  /**
+   * Reads and migrates the state file, in its own `storage.load` event. A
+   * file that isn't JSON fails every read until it is fixed, and its event
+   * says it is unreadable.
+   */
   private async loadState(): Promise<AppApiState> {
-    const state = existsSync(this.statePath)
-      ? normalizeState(
-          JSON.parse(await readFile(this.statePath, "utf8")) as Partial<
-            AppApiState | AppApiStateV1 | AppApiStateV2
-          >,
-        )
-      : createDefaultState();
-    this.cache ??= state;
-    return this.cache;
+    const unit = this.events?.start("storage.load", {
+      kind: "lifecycle",
+      trigger: "system",
+      // Shared by every first reader, so never folded into one of them.
+      detached: true,
+    });
+    try {
+      let state: AppApiState;
+      if (existsSync(this.statePath)) {
+        const text = await readFile(this.statePath, "utf8");
+        unit?.set({
+          storage: { found: true, bytes: Buffer.byteLength(text) },
+        });
+        const read = readStateFile(text);
+        if (!read) {
+          // The parser's and the migration's errors quote the file, so
+          // neither the event nor the request that read it gets them.
+          const unreadable = unreadableStateError();
+          unit
+            ?.set({ storage: { unreadable: true } })
+            .fail(unreadable, { reason: "unreadable" });
+          throw unreadable;
+        }
+        unit?.set({ storage: { version_from: read.versionFrom } });
+        state = read.state;
+      } else {
+        unit?.set({ storage: { found: false } });
+        state = createDefaultState();
+      }
+      unit?.set({ storage: { version_to: state.version } });
+      this.cache ??= state;
+      return this.cache;
+    } catch (error) {
+      if (unit?.outcome === undefined) unit?.fail(withoutContent(error));
+      throw error;
+    } finally {
+      unit?.end();
+    }
   }
 
   private async writeState(state: AppApiState) {
