@@ -54,6 +54,11 @@ const SettingsPluginsPage = lazy(async () => {
   const module = await import("@/features/settings/settings-plugins-page");
   return { default: module.SettingsPluginsPage };
 });
+// PROTOTYPE, throwaway (#222): Access review variants. Never merge.
+const PrototypeAccessReviewPage = lazy(async () => {
+  const module = await import("@/features/settings/prototype-access-review");
+  return { default: module.PrototypeAccessReviewPage };
+});
 const SettingsMcpPage = lazy(async () => {
   const module = await import("@/features/settings/settings-mcp-page");
   return { default: module.SettingsMcpPage };
@@ -300,6 +305,16 @@ const settingsPluginDetailRoute = createRoute({
   },
 });
 
+const settingsPrototypeAccessRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/prototype-access",
+  component: () => (
+    <RouteSuspense>
+      <PrototypeAccessReviewPage />
+    </RouteSuspense>
+  ),
+});
+
 const settingsMcpRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/mcp",
@@ -412,6 +427,7 @@ const routeTree = rootRoute.addChildren([
       settingsGeneralRoute,
       settingsPluginsRoute,
       settingsPluginDetailRoute,
+      settingsPrototypeAccessRoute,
       settingsMcpRoute,
       settingsAgentsRoute,
       settingsBacklogRoute,
