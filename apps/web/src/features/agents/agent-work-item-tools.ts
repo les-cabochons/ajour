@@ -277,7 +277,9 @@ async function saveAgentDescription(
     return { outcome: "unchanged" as const };
   }
   const result = await withEventAttribution({ trigger: "agent" }, () =>
-    saveSyncedDescription(itemId, "save", allowedLoss, true),
+    saveSyncedDescription(itemId, "save", allowedLoss, true, {
+      trigger: "agent",
+    }),
   );
   switch (result.kind) {
     case "written":

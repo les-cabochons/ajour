@@ -388,9 +388,12 @@ export function handleItemKeyDown<Id extends string>(
       if (removesItem) {
         refocusAfterRender(item, { fallback: true });
       }
-      withEventAttribution({ surface: "item_key" }, () =>
-        onAction(command.action!.id, { shortcutId: command.shortcutId }),
-      );
+      const action = command.action;
+      if (action) {
+        withEventAttribution({ surface: "item_key" }, () =>
+          onAction(action.id, { shortcutId: command.shortcutId }),
+        );
+      }
       return;
     }
     default:

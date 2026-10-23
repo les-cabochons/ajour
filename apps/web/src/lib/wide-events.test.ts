@@ -196,7 +196,6 @@ describe("dispatcher attribution", () => {
       "editor",
       "dialog",
       "toast",
-      "link",
     ] as const;
 
     for (const surface of surfaces) {

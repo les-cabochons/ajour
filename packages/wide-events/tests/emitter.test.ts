@@ -45,6 +45,43 @@ describe("one event per unit of work", () => {
     expect(recorded[0]).toMatchObject({ trigger: "agent" });
   });
 
+  it("does not attach a user surface to an agent or system unit", () => {
+    const { events, recorded } = recordingEmitter();
+
+    events.set({ surface: "palette" });
+    events.run(
+      "time_entry.update",
+      { kind: "command", trigger: "agent" },
+      () => {},
+    );
+    events.run(
+      "time_entry.update",
+      { kind: "command", trigger: "system" },
+      () => {},
+    );
+
+    expect(
+      recorded.map(({ trigger, surface }) => ({ trigger, surface })),
+    ).toEqual([
+      { trigger: "agent", surface: undefined },
+      { trigger: "system", surface: undefined },
+    ]);
+  });
+
+  it("keeps the root surface when a later scope ends", () => {
+    const { events, recorded } = recordingEmitter();
+    const unit = events.start("time_entry.update", {
+      kind: "command",
+      trigger: "user",
+      surface: "palette",
+    });
+    const restore = events.set({ surface: "button" });
+    restore();
+    unit.end();
+
+    expect(recorded[0]).toMatchObject({ surface: "palette" });
+  });
+
   it("emits one event with the envelope when a unit ends", () => {
     let now = Date.parse("2026-10-20T14:23:11.118Z");
     const { events, recorded } = recordingEmitter({ now: () => now });

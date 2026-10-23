@@ -159,7 +159,6 @@ const SURFACE_PRIORITY: Record<Surface, number> = {
   dialog: 3,
   popover: 3,
   toast: 3,
-  link: 3,
 };
 
 function preferredAttribution(
@@ -253,7 +252,7 @@ class UnitState {
   setAttribution(attribution: { trigger?: Trigger; surface?: Surface }) {
     if (attribution.trigger !== undefined)
       this.root.trigger = attribution.trigger;
-    if (attribution.surface !== undefined)
+    if (attribution.surface !== undefined && this.root.surface === undefined)
       this.root.surface = attribution.surface;
   }
 
@@ -458,16 +457,17 @@ class EmitterState {
 
   start(name: string, init: UnitInit<Catalog, string>) {
     const attribution = preferredAttribution(this.attributions);
-    const attributedInit = attribution
-      ? {
-          ...init,
-          trigger:
-            init.trigger === "user"
-              ? (attribution.trigger ?? init.trigger)
-              : init.trigger,
-          surface: init.surface ?? attribution.surface,
-        }
-      : init;
+    const attributedInit = {
+      ...init,
+      trigger:
+        init.trigger === "user"
+          ? (attribution.trigger ?? init.trigger)
+          : init.trigger,
+      surface:
+        init.trigger === "user"
+          ? (init.surface ?? attribution.surface)
+          : init.surface,
+    };
     // A unit started from another runtime's span is that span's child.
     if (init.parent !== undefined) {
       const trace =

@@ -454,7 +454,9 @@ export function BacklogItemEditorForm({
   ) {
     if (workItem && "description" in patch && descriptionWritesToSource) {
       void withEventAttribution({ surface: editorSurface }, () =>
-        saveSyncedDescription(workItem._id, "save", allowedLoss),
+        saveSyncedDescription(workItem._id, "save", allowedLoss, false, {
+          surface: editorSurface,
+        }),
       );
     }
   }

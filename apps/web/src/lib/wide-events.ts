@@ -238,8 +238,6 @@ export function withEventAttribution<Result>(
   const restore = wideEvents.set(attribution);
   try {
     return work();
-  } catch (error) {
-    throw error;
   } finally {
     restore();
   }

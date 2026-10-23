@@ -55,8 +55,7 @@ export type Surface =
   | "drag"
   | "editor"
   | "dialog"
-  | "toast"
-  | "link";
+  | "toast";
 
 export type Channel = "dev" | "nightly" | "stable" | "web";
 

@@ -109,8 +109,7 @@ type WideEvent = {
     | "drag"
     | "editor"
     | "dialog"
-    | "toast"
-    | "link";
+    | "toast";
   steps?: string[]; // nested units folded into this one, the first 50
   dropped_step_count?: number; // names steps left out
   step_failures?: {
@@ -155,7 +154,8 @@ type WideEvent = {
   comment call: the caller's own event, in the same trace, holds the user's
   trigger.
 - **`surface`** says where a user action came from. The dispatchers that
-  already know set it.
+  report it own the value. When dispatchers nest, the inner dispatcher of
+  equal or higher `SURFACE_PRIORITY` wins.
 
 ## Privacy
 

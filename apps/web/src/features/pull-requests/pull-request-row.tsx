@@ -99,10 +99,7 @@ export function runPullRequestAction(
   action: Exclude<PullRequestAction, "open">,
 ) {
   return withEventAttribution({ surface: "button" }, () => {
-    if (action === "open-in-source")
-      withEventAttribution({ surface: "link" }, () =>
-        openSourceUrl(item.facts.url),
-      );
+    if (action === "open-in-source") openSourceUrl(item.facts.url);
     else if (action === "snooze") requestPullRequestSnooze(item._id);
     else localStore.changePullRequest(item._id, { type: action });
   });

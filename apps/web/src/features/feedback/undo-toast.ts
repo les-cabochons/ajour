@@ -28,9 +28,7 @@ export function offerUndo(
   showUndoToast({
     title,
     onUndo: () => {
-      const result = withEventAttribution({ surface: "toast" }, () =>
-        localStore.undo(token),
-      );
+      const result = localStore.undo(token);
       if (result !== "restored") {
         showToast(`Can't undo. The ${subject} changed after that action.`);
       }

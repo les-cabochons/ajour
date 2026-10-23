@@ -86,9 +86,7 @@ export function runBacklogItemAction(
         return;
       case "open-in-source":
         if (workItem.sourceUrl) {
-          withEventAttribution({ surface: "link" }, () =>
-            openSourceUrl(workItem.sourceUrl!),
-          );
+          openSourceUrl(workItem.sourceUrl);
         }
         return;
       case "archive":
