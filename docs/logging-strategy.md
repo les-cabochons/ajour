@@ -100,6 +100,7 @@ type WideEvent = {
   trigger: "user" | "agent" | "schedule" | "boot" | "system";
   surface?:
     | "button"
+    | "popover"
     | "shortcut"
     | "item_key"
     | "palette"

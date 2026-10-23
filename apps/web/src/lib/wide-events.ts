@@ -9,6 +9,7 @@ import {
   type Emitter,
   type RuntimeContext,
 } from "@ajour/wide-events";
+import type { Surface, Trigger } from "@ajour/wide-events";
 import {
   nowhere,
   sinkFromSwitch,
@@ -221,12 +222,28 @@ function current() {
  * re-enters it with `unit.enter()` around the store commands it runs after.
  */
 export const wideEvents: RendererEvents = {
+  set: ((attribution) => current().set(attribution)) as RendererEvents["set"],
   start: ((name, init) =>
     current().start(name, init)) as RendererEvents["start"],
   run: ((name, init, work) =>
     current().run(name, init, work)) as RendererEvents["run"],
   current: () => current().current(),
 };
+
+/** Runs a synchronous dispatcher with source metadata on its store commands. */
+export function withEventAttribution<Result>(
+  attribution: { trigger?: Trigger; surface?: Surface },
+  work: () => Result,
+): Result {
+  const restore = wideEvents.set(attribution);
+  try {
+    return work();
+  } catch (error) {
+    throw error;
+  } finally {
+    restore();
+  }
+}
 
 /** Sends the renderer's events to `next` from now on. Tests pass a recording sink. */
 export function replaceEventSink(next: Sink = nowhere) {

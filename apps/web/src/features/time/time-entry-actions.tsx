@@ -23,6 +23,7 @@ import {
 import { offerUndo, skipUndo } from "@/features/feedback/undo-toast";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
+import { withEventAttribution } from "@/lib/wide-events";
 
 /** The object a time entry action applies to: a saved entry, or the running entry. */
 export type TimeEntryActionTarget =
@@ -251,60 +252,62 @@ export function useTimeEntryActions({
     actionId: TimeEntryActionId,
     options: TimeEntryActionRunOptions = {},
   ) {
-    if (actionId === "edit") {
-      onEdit(target);
-      return;
-    }
-
-    if (target.kind === "running") {
-      if (actionId === "stop") {
-        localStore.saveTimer(target.timerId);
-        onAfterAction?.();
-      } else if (actionId === "discard") {
-        offerTimeEntryUndo(
-          localStore.cancelTimer(target.timerId),
-          "Running entry discarded",
-        );
-        onAfterAction?.();
+    return withEventAttribution({ surface: "button" }, () => {
+      if (actionId === "edit") {
+        onEdit(target);
+        return;
       }
-      return;
-    }
 
-    const { entry } = target;
-    switch (actionId) {
-      case "continue":
-        localStore.continueTimesheetEntry(entry._id);
-        onAfterAction?.();
+      if (target.kind === "running") {
+        if (actionId === "stop") {
+          localStore.saveTimer(target.timerId);
+          onAfterAction?.();
+        } else if (actionId === "discard") {
+          offerTimeEntryUndo(
+            localStore.cancelTimer(target.timerId),
+            "Running entry discarded",
+          );
+          onAfterAction?.();
+        }
         return;
-      case "duplicate":
-        relocate("duplicate", entry, entry.localDate, options.resolveValues);
-        return;
-      case "duplicate-to":
-      case "move-to":
-        setSelectedDate(dateAtNoon(entry.localDate));
-        setDateAction({
-          kind: actionId,
-          entry,
-          resolveValues: options.resolveValues,
-        });
-        return;
-      case "mark-not-committed":
-        // The editor stays open: the entry is still there, only its chip goes.
-        offerTimeEntryUndo(
-          localStore.markTimesheetEntriesNotCommitted([entry._id]),
-          "Marked as not committed",
-        );
-        return;
-      case "delete":
-        offerTimeEntryUndo(
-          localStore.deleteTimesheetEntry(entry._id),
-          "Entry deleted",
-        );
-        onAfterAction?.();
-        return;
-      default:
-        return;
-    }
+      }
+
+      const { entry } = target;
+      switch (actionId) {
+        case "continue":
+          localStore.continueTimesheetEntry(entry._id);
+          onAfterAction?.();
+          return;
+        case "duplicate":
+          relocate("duplicate", entry, entry.localDate, options.resolveValues);
+          return;
+        case "duplicate-to":
+        case "move-to":
+          setSelectedDate(dateAtNoon(entry.localDate));
+          setDateAction({
+            kind: actionId,
+            entry,
+            resolveValues: options.resolveValues,
+          });
+          return;
+        case "mark-not-committed":
+          // The editor stays open: the entry is still there, only its chip goes.
+          offerTimeEntryUndo(
+            localStore.markTimesheetEntriesNotCommitted([entry._id]),
+            "Marked as not committed",
+          );
+          return;
+        case "delete":
+          offerTimeEntryUndo(
+            localStore.deleteTimesheetEntry(entry._id),
+            "Entry deleted",
+          );
+          onAfterAction?.();
+          return;
+        default:
+          return;
+      }
+    });
   }
 
   function confirmDateAction() {

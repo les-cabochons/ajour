@@ -58,6 +58,7 @@ import { useCalendarSuggestions } from "@/lib/calendar-suggestions";
 import { useEntrySelection } from "@/features/time/use-entry-selection";
 import { handleItemKeyDown, TIME_ENTRY_ACTION_KEYS } from "@/lib/item-keys";
 import { localStore } from "@/lib/local-store";
+import { withEventAttribution } from "@/lib/wide-events";
 import { leavesContextMenuToSystem } from "@/lib/native-context-menu";
 import {
   getSharedTableBlockDropIndex,
@@ -465,10 +466,12 @@ export function WeeklyTimeView({
           performance.now() + SHARED_TABLE_DRAG_CLICK_SUPPRESSION_MS;
         dragSessionRef.current = null;
         if (commit && targetDate) {
-          dropEntries(
-            entryIds,
-            targetDate,
-            dragStateRef.current?.targetIndex ?? Number.MAX_SAFE_INTEGER,
+          withEventAttribution({ surface: "drag" }, () =>
+            dropEntries(
+              entryIds,
+              targetDate,
+              dragStateRef.current?.targetIndex ?? Number.MAX_SAFE_INTEGER,
+            ),
           );
         }
         clearDrag();

@@ -10,6 +10,7 @@ import { offerUndo } from "@/features/feedback/undo-toast";
 import { openNewEntryEditor } from "@/features/time/new-entry-request";
 import { localStore } from "@/lib/local-store";
 import { openSourceUrl } from "@/lib/source-navigation";
+import { withEventAttribution } from "@/lib/wide-events";
 
 /** The actions only a host with an editor can run. */
 export type HostedBacklogItemActionId = Extract<
@@ -30,81 +31,86 @@ export function runBacklogItemAction(
   onHosted: (actionId: HostedBacklogItemActionId) => void,
   { askToSettle = false }: { askToSettle?: boolean } = {},
 ) {
-  switch (actionId) {
-    case "start-entry":
-      if (findWorkItemTimer(localStore.snapshot().timers, workItem._id)) return;
-      // Today, saving any running entry first.
-      localStore.startTimer({
-        ...getWorkItemEntryValues(workItem),
-        accumulatedDurationMs: 0,
-      });
-      return;
-    case "stop-entry": {
-      const timer = findWorkItemTimer(
-        localStore.snapshot().timers,
-        workItem._id,
-      );
-      if (timer) localStore.saveTimer(timer._id);
-      return;
-    }
-    case "new-entry":
-      openNewEntryEditor(
-        { kind: "backlog-item", workItemId: workItem._id },
-        getWorkItemEntryValues(workItem),
-      );
-      return;
-    case "edit":
-    case "add-subitem":
-      onHosted(actionId);
-      return;
-    case "snooze":
-      requestSnooze(workItem._id);
-      return;
-    case "unsnooze":
-      localStore.unsnoozeWorkItem(workItem._id);
-      return;
-    case "pin":
-      localStore.pinWorkItem(workItem._id);
-      return;
-    case "unpin":
-      localStore.unpinWorkItem(workItem._id);
-      return;
-    case "settle":
-      settleBacklogItem(workItem, { ask: askToSettle });
-      return;
-    case "unsettle":
-      localStore.unsettleWorkItem(workItem._id);
-      return;
-    case "restore":
-      localStore.restoreWorkItem(workItem._id);
-      return;
-    case "change-source-state":
-      void changeSourceStateWithUndo(workItem);
-      return;
-    case "open-in-source":
-      if (workItem.sourceUrl) {
-        openSourceUrl(workItem.sourceUrl);
+  return withEventAttribution({ surface: "button" }, () => {
+    switch (actionId) {
+      case "start-entry":
+        if (findWorkItemTimer(localStore.snapshot().timers, workItem._id))
+          return;
+        // Today, saving any running entry first.
+        localStore.startTimer({
+          ...getWorkItemEntryValues(workItem),
+          accumulatedDurationMs: 0,
+        });
+        return;
+      case "stop-entry": {
+        const timer = findWorkItemTimer(
+          localStore.snapshot().timers,
+          workItem._id,
+        );
+        if (timer) localStore.saveTimer(timer._id);
+        return;
       }
-      return;
-    case "archive":
-      offerUndo(localStore.archiveWorkItem(workItem._id), {
-        title: "Backlog item archived",
-        subject: "backlog item",
-      });
-      return;
-    case "delete": {
-      const subitemCount = getDirectChildWorkItems(
-        workItem,
-        localStore.snapshot().workItems,
-      ).length;
-      offerUndo(localStore.deleteWorkItem(workItem._id), {
-        title:
-          subitemCount > 0
-            ? `Backlog item and ${subitemCount} ${subitemCount === 1 ? "subitem" : "subitems"} deleted`
-            : "Backlog item deleted",
-        subject: "backlog item",
-      });
-      return;
+      case "new-entry":
+        openNewEntryEditor(
+          { kind: "backlog-item", workItemId: workItem._id },
+          getWorkItemEntryValues(workItem),
+        );
+        return;
+      case "edit":
+      case "add-subitem":
+        onHosted(actionId);
+        return;
+      case "snooze":
+        requestSnooze(workItem._id);
+        return;
+      case "unsnooze":
+        localStore.unsnoozeWorkItem(workItem._id);
+        return;
+      case "pin":
+        localStore.pinWorkItem(workItem._id);
+        return;
+      case "unpin":
+        localStore.unpinWorkItem(workItem._id);
+        return;
+      case "settle":
+        settleBacklogItem(workItem, { ask: askToSettle });
+        return;
+      case "unsettle":
+        localStore.unsettleWorkItem(workItem._id);
+        return;
+      case "restore":
+        localStore.restoreWorkItem(workItem._id);
+        return;
+      case "change-source-state":
+        void changeSourceStateWithUndo(workItem);
+        return;
+      case "open-in-source":
+        if (workItem.sourceUrl) {
+          withEventAttribution({ surface: "link" }, () =>
+            openSourceUrl(workItem.sourceUrl!),
+          );
+        }
+        return;
+      case "archive":
+        offerUndo(localStore.archiveWorkItem(workItem._id), {
+          title: "Backlog item archived",
+          subject: "backlog item",
+        });
+        return;
+      case "delete": {
+        const subitemCount = getDirectChildWorkItems(
+          workItem,
+          localStore.snapshot().workItems,
+        ).length;
+        offerUndo(localStore.deleteWorkItem(workItem._id), {
+          title:
+            subitemCount > 0
+              ? `Backlog item and ${subitemCount} ${subitemCount === 1 ? "subitem" : "subitems"} deleted`
+              : "Backlog item deleted",
+          subject: "backlog item",
+        });
+        return;
+      }
     }
-  }
+  });
 }

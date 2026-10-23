@@ -77,6 +77,7 @@ import {
 } from "@/lib/item-keys";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
+import { withEventAttribution } from "@/lib/wide-events";
 import { ProjectIcon } from "@/lib/project-icons";
 import {
   formatAriaKeyShortcuts,
@@ -985,7 +986,10 @@ export function SidebarBacklogList({
     canReorder,
     disabled: sortMode !== "custom",
     onDrop: (_itemId, _key, order) => {
-      if (order) offerReorderUndo(order);
+      if (order)
+        withEventAttribution({ surface: "drag" }, () =>
+          offerReorderUndo(order),
+        );
     },
   });
   const dragging = drag.drag;

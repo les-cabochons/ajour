@@ -60,6 +60,7 @@ import type { BacklogItemActionId } from "@/domain/actions/object-actions";
 import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
+import { withEventAttribution } from "@/lib/wide-events";
 import { useBacklogView } from "@/lib/backlog-view-settings";
 import { useNow } from "@/lib/use-now";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
@@ -321,35 +322,43 @@ export function BacklogPage() {
             : true;
     if (sameGroup) {
       if (orderedIds)
-        offerUndo(localStore.reorderWorkItemsWithUndo(orderedIds), {
-          title: "Backlog item reordered",
-          subject: "backlog item",
-        });
+        withEventAttribution({ surface: "drag" }, () =>
+          offerUndo(localStore.reorderWorkItemsWithUndo(orderedIds), {
+            title: "Backlog item reordered",
+            subject: "backlog item",
+          }),
+        );
       return;
     }
     if (group.kind === "state")
-      await moveBacklogItemWithUndo(committed, group.workflowStateId, {
-        orderedIds,
-      });
+      await withEventAttribution({ surface: "drag" }, () =>
+        moveBacklogItemWithUndo(committed, group.workflowStateId, {
+          orderedIds,
+        }),
+      );
     if (group.kind === "priority")
-      patchBacklogItemWithUndo(
-        committed,
-        { priority: group.priority },
-        `Priority changed to ${getPriorityLevelName(group.priority)}`,
-        orderedIds,
+      withEventAttribution({ surface: "drag" }, () =>
+        patchBacklogItemWithUndo(
+          committed,
+          { priority: group.priority },
+          `Priority changed to ${getPriorityLevelName(group.priority)}`,
+          orderedIds,
+        ),
       );
     if (group.kind === "project")
-      patchBacklogItemWithUndo(
-        committed,
-        {
-          projectId: group.projectId,
-          taskId: undefined,
-          ...(isSubtaskWorkItem(committed)
-            ? { inheritsParentMapping: false }
-            : {}),
-        },
-        "Project changed",
-        orderedIds,
+      withEventAttribution({ surface: "drag" }, () =>
+        patchBacklogItemWithUndo(
+          committed,
+          {
+            projectId: group.projectId,
+            taskId: undefined,
+            ...(isSubtaskWorkItem(committed)
+              ? { inheritsParentMapping: false }
+              : {}),
+          },
+          "Project changed",
+          orderedIds,
+        ),
       );
   }
   const drag = useBacklogDrag({
@@ -478,6 +487,7 @@ export function BacklogPage() {
         ref={editorRef}
         target={target}
         titleAs={titleAs}
+        surface={titleAs ? "dialog" : "editor"}
         initialFields={initial}
         onFieldsChange={(fields) => {
           draft.current = fields;

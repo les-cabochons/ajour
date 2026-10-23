@@ -10,6 +10,7 @@ import {
 } from "react";
 import type { PinnedTaskSlot } from "@/domain/local-state";
 import { isEntryEditorOpen } from "@/lib/entry-editor-presence";
+import { withEventAttribution } from "@/lib/wide-events";
 import {
   APP_SHORTCUTS,
   blocksDigitShortcuts,
@@ -142,7 +143,9 @@ export function ShortcutProvider({ children }: { children: ReactNode }) {
         const handler = registry.find(resolution.shortcut.id);
         if (handler) {
           event.preventDefault();
-          handler.run({ digit: resolution.digit });
+          withEventAttribution({ surface: "shortcut" }, () =>
+            handler.run({ digit: resolution.digit }),
+          );
         }
       }
     }

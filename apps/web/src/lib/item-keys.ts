@@ -16,6 +16,7 @@ import {
   type ShortcutPlatform,
 } from "@/lib/shortcuts";
 import { isShortcutSequencePending } from "@/lib/shortcut-handlers";
+import { withEventAttribution } from "@/lib/wide-events";
 
 /**
  * Keys on the focused row, card or Grid cell. See "Focused rows and cards" in
@@ -360,7 +361,9 @@ export function handleItemKeyDown<Id extends string>(
     case "reorder":
       if (onReorder) {
         event.preventDefault();
-        onReorder(command.step);
+        withEventAttribution({ surface: "item_key" }, () =>
+          onReorder(command.step),
+        );
         // Moving a focused node in the DOM can drop its focus.
         refocusAfterRender(item);
       } else if (reorderLockedReason) {
@@ -385,7 +388,9 @@ export function handleItemKeyDown<Id extends string>(
       if (removesItem) {
         refocusAfterRender(item, { fallback: true });
       }
-      onAction(command.action.id, { shortcutId: command.shortcutId });
+      withEventAttribution({ surface: "item_key" }, () =>
+        onAction(command.action!.id, { shortcutId: command.shortcutId }),
+      );
       return;
     }
     default:

@@ -20,6 +20,7 @@ import { requestPullRequestSnooze } from "@/features/backlog/snooze-picker";
 import { formatSnoozeTime } from "@/features/backlog/snooze-presets";
 import { handleItemKeyDown, type ActionKeys } from "@/lib/item-keys";
 import { localStore } from "@/lib/local-store";
+import { withEventAttribution } from "@/lib/wide-events";
 import {
   openModifiedSourceClick,
   openSourceUrl,
@@ -97,9 +98,14 @@ export function runPullRequestAction(
   item: LocalPullRequest,
   action: Exclude<PullRequestAction, "open">,
 ) {
-  if (action === "open-in-source") openSourceUrl(item.facts.url);
-  else if (action === "snooze") requestPullRequestSnooze(item._id);
-  else localStore.changePullRequest(item._id, { type: action });
+  return withEventAttribution({ surface: "button" }, () => {
+    if (action === "open-in-source")
+      withEventAttribution({ surface: "link" }, () =>
+        openSourceUrl(item.facts.url),
+      );
+    else if (action === "snooze") requestPullRequestSnooze(item._id);
+    else localStore.changePullRequest(item._id, { type: action });
+  });
 }
 
 function waitingAge(time: number, now: number) {

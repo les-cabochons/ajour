@@ -46,6 +46,7 @@ import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
 import { localStore, runStoreCommandWith } from "@/lib/local-store";
 import { getTimerDurationsMs } from "@/lib/timer-totals";
 import { cn, todayIsoDate } from "@/lib/utils";
+import { withEventAttribution } from "@/lib/wide-events";
 
 /** Prefills a new entry, for example from a task's or backlog item's New entry… action. */
 export interface NewTimeEntryValues {
@@ -166,6 +167,7 @@ export function TimeEntryEditorForm({
   className?: string;
 }) {
   const state = useLocalState();
+  const editorSurface = host === "side_panel" ? "editor" : host;
   const projects = useLocalProjects();
   const today = todayIsoDate();
   const entry = target.kind === "edit" ? target.entry : undefined;
@@ -258,50 +260,52 @@ export function TimeEntryEditorForm({
   }) => unit.set({ time_entry: { host } });
 
   function writeEntry(values: TimeEntryValues) {
-    if (runningTimer) {
-      runStoreCommandWith(
-        "editRunningEntry",
-        [
-          runningTimer._id,
-          {
-            ...editor.metadata,
-            // Only a changed Hours resets the count; otherwise it keeps counting as is.
-            countedDurationMs:
-              values.durationMs === runningOriginal?.durationMs
-                ? undefined
-                : values.durationMs,
-          },
-        ],
-        recordHost,
-      );
-      return;
-    }
-
-    if (entry) {
-      if (values.localDate === entry.localDate) {
+    return withEventAttribution({ surface: editorSurface }, () => {
+      if (runningTimer) {
         runStoreCommandWith(
-          "updateTimesheetEntry",
-          [entry._id, values],
+          "editRunningEntry",
+          [
+            runningTimer._id,
+            {
+              ...editor.metadata,
+              // Only a changed Hours resets the count; otherwise it keeps counting as is.
+              countedDurationMs:
+                values.durationMs === runningOriginal?.durationMs
+                  ? undefined
+                  : values.durationMs,
+            },
+          ],
           recordHost,
         );
-      } else {
-        localStore.moveTimesheetEntry(entry._id, values);
+        return;
       }
-      return;
-    }
 
-    runStoreCommandWith(
-      "saveManualTimeEntry",
-      [{ ...values, workItemId }],
-      recordHost,
-    );
-    // Logged time changes the backlog item's estimates, so push them to its source.
-    const workItem = workItemId
-      ? state.workItems.find((item) => item._id === workItemId)
-      : undefined;
-    if (workItem) {
-      syncBacklogWorkItemToSource(workItem);
-    }
+      if (entry) {
+        if (values.localDate === entry.localDate) {
+          runStoreCommandWith(
+            "updateTimesheetEntry",
+            [entry._id, values],
+            recordHost,
+          );
+        } else {
+          localStore.moveTimesheetEntry(entry._id, values);
+        }
+        return;
+      }
+
+      runStoreCommandWith(
+        "saveManualTimeEntry",
+        [{ ...values, workItemId }],
+        recordHost,
+      );
+      // Logged time changes the backlog item's estimates, so push them to its source.
+      const workItem = workItemId
+        ? state.workItems.find((item) => item._id === workItemId)
+        : undefined;
+      if (workItem) {
+        syncBacklogWorkItemToSource(workItem);
+      }
+    });
   }
 
   function save() {
@@ -315,26 +319,33 @@ export function TimeEntryEditorForm({
    * Hours. Another running entry is saved first (Switch). Saved entries use Continue.
    */
   function start() {
-    if (editor.durationMs === null) return;
-    localStore.startTimer({
-      ...editor.metadata,
-      workItemId,
-      accumulatedDurationMs: editor.durationMs,
-    });
+    const durationMs = editor.durationMs;
+    if (durationMs === null) return;
+    withEventAttribution({ surface: editorSurface }, () =>
+      localStore.startTimer({
+        ...editor.metadata,
+        workItemId,
+        accumulatedDurationMs: durationMs,
+      }),
+    );
     onClose();
   }
 
   /** Saves draft changes, then continues the entry's work (see Continue in GLOSSARY.md). */
   function continueEntry() {
     if (!entry || !commit("save")) return;
-    localStore.continueTimesheetEntry(entry._id);
+    withEventAttribution({ surface: editorSurface }, () =>
+      localStore.continueTimesheetEntry(entry._id),
+    );
     onClose();
   }
 
   /** Saves draft changes to the running entry, then stops it. */
   function stop() {
     if (!runningTimer || !commit("save")) return;
-    localStore.saveTimer(runningTimer._id);
+    withEventAttribution({ surface: editorSurface }, () =>
+      localStore.saveTimer(runningTimer._id),
+    );
     onClose();
   }
 
@@ -414,7 +425,11 @@ export function TimeEntryEditorForm({
                     ? undefined
                     : "Enter a valid duration first",
               })}
-              onAction={handleAction}
+              onAction={(actionId) =>
+                withEventAttribution({ surface: editorSurface }, () =>
+                  handleAction(actionId),
+                )
+              }
               label="Entry actions"
             />
           ) : null}

@@ -4,6 +4,7 @@ import {
   showUndoToast,
 } from "@/components/ui/toast";
 import { localStore } from "@/lib/local-store";
+import { withEventAttribution } from "@/lib/wide-events";
 
 /**
  * Shows the Undo toast for a local state action. `token` is what the local
@@ -27,7 +28,10 @@ export function offerUndo(
   showUndoToast({
     title,
     onUndo: () => {
-      if (localStore.undo(token) !== "restored") {
+      const result = withEventAttribution({ surface: "toast" }, () =>
+        localStore.undo(token),
+      );
+      if (result !== "restored") {
         showToast(`Can't undo. The ${subject} changed after that action.`);
       }
     },

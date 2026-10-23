@@ -38,6 +38,7 @@ import {
 } from "@/lib/item-keys";
 import { useLocalProjects } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
+import { withEventAttribution } from "@/lib/wide-events";
 import { cn } from "@/lib/utils";
 
 /*
@@ -85,42 +86,44 @@ export function useCalendarSuggestionActions() {
     suggestion: CalendarSuggestion,
     actionId: CalendarSuggestionActionId,
   ) {
-    switch (actionId) {
-      case "add":
-        if (suggestion.projectId) {
-          add(
-            suggestion,
-            { projectId: suggestion.projectId, taskId: suggestion.taskId },
-            false,
-          );
-        } else {
+    return withEventAttribution({ surface: "button" }, () => {
+      switch (actionId) {
+        case "add":
+          if (suggestion.projectId) {
+            add(
+              suggestion,
+              { projectId: suggestion.projectId, taskId: suggestion.taskId },
+              false,
+            );
+          } else {
+            setOpenPicker(suggestion.key);
+          }
+          return;
+        case "choose-project":
           setOpenPicker(suggestion.key);
-        }
-        return;
-      case "choose-project":
-        setOpenPicker(suggestion.key);
-        return;
-      case "dismiss":
-        offerUndo(localStore.dismissCalendarSuggestions([suggestion]), {
-          title: `Dismissed ${suggestion.title}.`,
-          subject: "meeting",
-        });
-        return;
-      case "hide-meeting":
-        offerUndo(localStore.hideCalendarMeeting(suggestion), {
-          title: `${suggestion.title} hidden. Settings, Calendar can bring it back.`,
-          subject: "meeting",
-        });
-        return;
-      case "forget-meeting":
-        if (suggestion.ruleId) {
-          offerUndo(localStore.forgetCalendarEventRule(suggestion.ruleId), {
-            title: `Ajour no longer fills in ${suggestion.title}.`,
+          return;
+        case "dismiss":
+          offerUndo(localStore.dismissCalendarSuggestions([suggestion]), {
+            title: `Dismissed ${suggestion.title}.`,
             subject: "meeting",
           });
-        }
-        return;
-    }
+          return;
+        case "hide-meeting":
+          offerUndo(localStore.hideCalendarMeeting(suggestion), {
+            title: `${suggestion.title} hidden. Settings, Calendar can bring it back.`,
+            subject: "meeting",
+          });
+          return;
+        case "forget-meeting":
+          if (suggestion.ruleId) {
+            offerUndo(localStore.forgetCalendarEventRule(suggestion.ruleId), {
+              title: `Ajour no longer fills in ${suggestion.title}.`,
+              subject: "meeting",
+            });
+          }
+          return;
+      }
+    });
   }
 
   return { openPicker, setOpenPicker, add, run };

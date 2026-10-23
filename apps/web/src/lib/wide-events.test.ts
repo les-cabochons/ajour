@@ -2,9 +2,11 @@ import { webcrypto } from "node:crypto";
 import type { AjourEvent } from "@ajour/wide-events/catalog.ts";
 import { createRecordingSink } from "@ajour/wide-events/sinks.ts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { runStoreCommand } from "@/lib/store-command-events";
 import {
   rendererContext,
   replaceEventSink,
+  withEventAttribution,
   wideEvents,
 } from "@/lib/wide-events";
 
@@ -171,5 +173,59 @@ describe("the renderer's error messages", () => {
     // An array that holds an object is dropped whole.
     expect(sink.events[0]!.preferences).not.toHaveProperty("values");
     expect(sink.events[0]!.counts).toEqual({ dropped_field_count: 1 });
+  });
+});
+
+describe("dispatcher attribution", () => {
+  beforeEach(() => {
+    vi.stubGlobal("crypto", webcrypto);
+  });
+
+  it("records each catalog surface and leaves an unknown source unset", () => {
+    const sink = createRecordingSink<AjourEvent>();
+    replaceEventSink(sink);
+    const surfaces = [
+      "button",
+      "popover",
+      "shortcut",
+      "item_key",
+      "palette",
+      "context_menu",
+      "app_menu",
+      "drag",
+      "editor",
+      "dialog",
+      "toast",
+      "link",
+    ] as const;
+
+    for (const surface of surfaces) {
+      withEventAttribution({ surface }, () =>
+        runStoreCommand("time_entry.update", () => undefined),
+      );
+    }
+    runStoreCommand("time_entry.update", () => undefined);
+
+    expect(sink.events.map(({ surface }) => surface)).toEqual([
+      ...surfaces,
+      undefined,
+    ]);
+    expect(sink.events.at(-1)).toMatchObject({ trigger: "user" });
+  });
+
+  it("keeps right-click and the ellipsis menu on different surfaces", () => {
+    const sink = createRecordingSink<AjourEvent>();
+    replaceEventSink(sink);
+    const runCommand = () => runStoreCommand("time_entry.update", () => {});
+
+    withEventAttribution({ surface: "context_menu" }, () =>
+      withEventAttribution({ surface: "button" }, runCommand),
+    );
+    withEventAttribution({ surface: "button" }, runCommand);
+
+    expect(sink.events.map(({ surface }) => surface)).toEqual([
+      "context_menu",
+      "button",
+    ]);
   });
 });

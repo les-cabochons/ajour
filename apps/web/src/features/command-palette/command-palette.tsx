@@ -23,6 +23,7 @@ import { ProjectFormDialog } from "@/features/projects/project-form-dialog";
 import { getSettingsPages } from "@/features/settings/settings-navigation";
 import { openNewEntryEditor } from "@/features/time/new-entry-request";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
+import { withEventAttribution } from "@/lib/wide-events";
 import { useTimeEntryActions } from "@/features/time/time-entry-actions";
 import type { ActionRequest } from "@/lib/action-request";
 import {
@@ -133,7 +134,7 @@ export function CommandPalette() {
     void navigate({
       to,
       params: projectId ? { projectId } : undefined,
-      search: request as never,
+      search: { ...request, surface: "palette" } as never,
     } as never);
   }
 
@@ -147,17 +148,24 @@ export function CommandPalette() {
     projectId?: string,
     fallback?: () => void,
   ) {
+    const sourcedRequest = { ...request, surface: "palette" as const };
     const { pathname } = router.state.location;
     if (pathname === "/projects" || pathname.startsWith("/projects/")) {
-      void navigate({ to: ".", search: request as never });
+      void navigate({ to: ".", search: sourcedRequest as never });
     } else if (fallback) {
       fallback();
     } else if (projectId) {
-      requestPageAction("/projects/$projectId", request, projectId);
+      requestPageAction("/projects/$projectId", sourcedRequest, projectId);
     }
   }
 
   function run(command: PaletteCommand) {
+    return withEventAttribution({ surface: "palette" }, () =>
+      runCommand(command),
+    );
+  }
+
+  function runCommand(command: PaletteCommand) {
     const snapshot = localStore.snapshot();
     switch (command.kind) {
       case "shortcut":
