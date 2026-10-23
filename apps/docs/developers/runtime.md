@@ -6,7 +6,7 @@ This page explains where a plugin runs, what it can use, and the limits Ajour en
 
 The desktop app runs a local API inside its main process, on `127.0.0.1:8787`. The window talks to it over HTTP. When the API needs your plugin, it starts a Node worker thread, imports your entry point, calls one function, and ends the worker.
 
-- **Node version.** The desktop app is built on Electron 44, with Node 24. The official plugins build and test on Node 22. Target ES2022.
+- **Node version.** The desktop app is built on Electron 44, with Node 24, and the official plugins build and test on Node 24. Target ES2022.
 - **One call per worker.** Module-level variables, caches and timers do not survive the call. Ajour gives you everything you need as arguments.
 - **No background work.** Your plugin runs only when Ajour calls it. Work that outlives the call is lost when the worker ends.
 
