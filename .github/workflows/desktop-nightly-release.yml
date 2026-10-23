@@ -28,6 +28,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          # Electron 44 runs the app on Node 24. Fetch the newest 24.x patch
+          # rather than the older one cached on the runner.
+          node-version: 24
+          check-latest: true
+
       - name: Test release planner
         run: node --test .github/scripts/release-plan.test.mjs
 
