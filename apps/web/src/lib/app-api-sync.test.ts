@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BacklogImportCandidate, BacklogSyncResult } from "@ajour/shared";
+import type { AjourEvent } from "@ajour/wide-events/catalog.ts";
+import { createRecordingSink } from "@ajour/wide-events/sinks.ts";
 
 /**
  * Comment returns through `syncBacklogConnection` itself, with sync answers
@@ -271,5 +273,94 @@ describe("description conflicts a sync or a review import finds", () => {
     await api.commitSelectedBacklogImportsToLocalStore();
 
     expect(announced).toEqual([[itemId]]);
+  });
+});
+
+describe("a backlog sync's event", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    installWindow();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  async function recorded() {
+    const sink = createRecordingSink<AjourEvent>();
+    (await import("@/lib/wide-events")).replaceEventSink(sink);
+    return sink.events;
+  }
+
+  it("is one backlog.sync job, with the answer's counts and the store commands that applied it", async () => {
+    const events = await recorded();
+    const { syncBacklogConnection, facts } = await setup();
+    events.length = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          Response.json(
+            facts(answer({ author: "Ana", at: "2026-10-18T10:30:00Z" })),
+          ),
+        ),
+    );
+
+    await syncBacklogConnection("azure_devops", "c1", { trigger: "auto" });
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        name: "backlog.sync",
+        kind: "job",
+        trigger: "schedule",
+        outcome: "ok",
+        plugin: { id: "azure_devops" },
+        connection: { id: "c1" },
+        backlog_sync: {
+          trigger: "auto",
+          items_sent: 1,
+          mode: "review",
+          staged_count: 0,
+          updated_count: 0,
+          skipped_count: 0,
+          done_count: 0,
+          work_item_update_count: 0,
+          comment_fact_count: 1,
+          imported_count: 0,
+        },
+        steps: expect.arrayContaining(["backlog_item.return"]),
+        counts: expect.objectContaining({ api_call_count: 1 }),
+      }),
+    ]);
+    expect(JSON.stringify(events)).not.toMatch(/Ana|Synced/);
+  });
+
+  it("is one failed job when the local API refuses it", async () => {
+    const events = await recorded();
+    const { syncBacklogConnection } = await setup();
+    events.length = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({ error: "Connection not found." }, { status: 404 }),
+      ),
+    );
+
+    await expect(syncBacklogConnection("azure_devops", "c1")).rejects.toThrow();
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        name: "backlog.sync",
+        trigger: "user",
+        outcome: "error",
+        backlog_sync: { trigger: "manual", items_sent: 1 },
+        counts: expect.objectContaining({
+          api_call_count: 1,
+          api_failed_call_count: 1,
+        }),
+      }),
+    ]);
   });
 });

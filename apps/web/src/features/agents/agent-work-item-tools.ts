@@ -53,7 +53,7 @@ import {
 import { saveSyncedDescription } from "@/lib/description-save";
 import { localStore } from "@/lib/local-store";
 import { queueSettleComment } from "@/lib/settle-comments";
-import { withEventAttribution } from "@/lib/wide-events";
+import { reentry, withEventAttribution } from "@/lib/wide-events";
 
 /**
  * Backlog item tools. Like the UI, they check the item's action set, and
@@ -331,6 +331,8 @@ export async function runWorkItemWriteTool(
   rawInput: unknown,
   client: AgentClientRef,
 ): Promise<AgentWriteOutcome> {
+  // The tool call's unit: work after an `await` runs in it again, as the agent's.
+  const asAgent = reentry({ trigger: "agent" });
   const state = localStore.snapshot();
   const now = Date.now();
   const actionsFor = (item: LocalWorkItem) =>
@@ -423,7 +425,7 @@ export async function runWorkItemWriteTool(
         throw new AgentToolRefusal("Pass at least one field to change.");
       }
       if (!syncedDescription) {
-        const undoToken = withEventAttribution({ trigger: "agent" }, () =>
+        const undoToken = asAgent(() =>
           localStore.updateWorkItemWithUndo(item._id, patch),
         );
         return outcome(item._id, undoToken, "Edited a backlog item");
@@ -434,18 +436,20 @@ export async function runWorkItemWriteTool(
       const unchanged = syncedDescription.description === item.description;
       const before = unchanged
         ? localStore.snapshot()
-        : withEventAttribution({ trigger: "agent" }, () =>
+        : asAgent(() =>
             localStore.saveWorkItemDescriptionText(
               item._id,
               syncedDescription.description,
             ),
           );
-      const descriptionSave = await saveAgentDescription(
-        item._id,
-        syncedDescription.allowedLoss,
-        unchanged,
+      const descriptionSave = await asAgent(() =>
+        saveAgentDescription(
+          item._id,
+          syncedDescription.allowedLoss,
+          unchanged,
+        ),
       );
-      const undoToken = withEventAttribution({ trigger: "agent" }, () =>
+      const undoToken = asAgent(() =>
         localStore.applyWorkItemEditsSince(item._id, patch, before),
       );
       const edited = outcome(item._id, undoToken, "Edited a backlog item");
@@ -458,7 +462,7 @@ export async function runWorkItemWriteTool(
       const destination = requireWorkflowState(state, input.workflowStateId);
       let result;
       try {
-        result = await withEventAttribution({ trigger: "agent" }, () =>
+        result = await asAgent(() =>
           moveBacklogItem(item, destination._id, {
             includeSubitems: (target) =>
               resolveAgentIncludeSubitems(
@@ -505,13 +509,13 @@ export async function runWorkItemWriteTool(
       if (commentSource && input.comment) {
         assertCommentFits(commentSource, input.comment);
       }
-      const change = await resolveSettleChange(item, input.sourceState);
-      const includeSubitems = await resolveAgentIncludeSubitems(
-        item,
-        "settle",
-        input.includeSubitems,
+      const change = await asAgent(() =>
+        resolveSettleChange(item, input.sourceState),
       );
-      const undoToken = withEventAttribution({ trigger: "agent" }, () =>
+      const includeSubitems = await asAgent(() =>
+        resolveAgentIncludeSubitems(item, "settle", input.includeSubitems),
+      );
+      const undoToken = asAgent(() =>
         localStore.settleWorkItem(item._id, change, { includeSubitems }),
       );
       if (!undoToken) {
@@ -554,7 +558,7 @@ export async function runWorkItemWriteTool(
       if (until <= now) {
         throw new AgentToolRefusal("Pick a time in the future.");
       }
-      const undoToken = withEventAttribution({ trigger: "agent" }, () =>
+      const undoToken = asAgent(() =>
         localStore.snoozeWorkItem(item._id, until),
       );
       return outcome(item._id, undoToken, "Snoozed a backlog item");
@@ -564,9 +568,7 @@ export async function runWorkItemWriteTool(
       const input = writeToolInputSchemas.archive_work_item.parse(rawInput);
       const item = findWorkItemOrRefuse(state, input.workItemId);
       assertAllowed(actionsFor(item), "archive");
-      const undoToken = withEventAttribution({ trigger: "agent" }, () =>
-        localStore.archiveWorkItem(item._id),
-      );
+      const undoToken = asAgent(() => localStore.archiveWorkItem(item._id));
       return outcome(item._id, undoToken, "Archived a backlog item");
     }
 

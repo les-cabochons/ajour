@@ -7,10 +7,6 @@ import {
   type CSSProperties,
 } from "react";
 import { createPortal } from "react-dom";
-import {
-  isCapabilityActive,
-  syncsPullRequestsAutomatically,
-} from "@ajour/shared";
 import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   RiAddLine as Plus,
@@ -30,7 +26,6 @@ import {
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SidebarProvider } from "@/components/ui/sidebar";
-import { showErrorToast } from "@/components/ui/toast";
 import {
   AppNavigationSidebar,
   SidebarToggleButton,
@@ -76,12 +71,7 @@ import {
 import { formatClockDuration } from "@/domain/time/duration";
 import { formatElapsedDuration } from "@/domain/time/running-entry";
 import { findPinnedTask } from "@/domain/projects/project-transitions";
-import {
-  getPluginsOverview,
-  syncBacklogConnection,
-  syncCodeHostConnection,
-} from "@/lib/app-api";
-import { syncTeamConnection } from "@/lib/team-sync";
+import { traceCarrier } from "@/lib/wide-events";
 import { localStore } from "@/lib/local-store";
 import { setPageHeaderSlot, useHasPageHeader } from "@/lib/page-header";
 import {
@@ -90,13 +80,9 @@ import {
 } from "@/lib/timer-totals";
 import { useAppSidebar } from "@/lib/app-sidebar";
 import { resolveSidebarWidth, useSidebarLayout } from "@/lib/sidebar-layout";
-import {
-  flushSettleComments,
-  sendPendingSourceWrites,
-  watchSettleEnds,
-} from "@/features/backlog/backlog-source-writes";
-import { flushPendingCommentDeletes } from "@/lib/comment-deletes";
-import { flushAgentComments } from "@/features/agents/agent-comment-tools";
+import { watchSettleEnds } from "@/features/backlog/backlog-source-writes";
+import { flushPendingWrites } from "@/features/layout/pending-writes-flush";
+import { BacklogAutoSyncScheduler } from "@/features/layout/backlog-auto-sync-scheduler";
 import { CloseSubitemsDialogHost } from "@/features/backlog/close-subitems-dialog";
 import { SourceStateDialogHost } from "@/features/backlog/source-state-dialog";
 import { SettleDialogHost } from "@/features/backlog/settle-dialog";
@@ -122,8 +108,6 @@ const isMacDesktopShell =
   isDesktopShell &&
   typeof window !== "undefined" &&
   window.ajourDesktop?.runtime?.platform === "darwin";
-
-const AUTO_SYNC_POLL_INTERVAL_MS = 30_000;
 
 function getTimeRouteDate(pathname: string) {
   const match = pathname.match(/^\/(?:time|review)\/([^/?#]+)/);
@@ -207,164 +191,15 @@ function PageHeaderSlot({
 }
 
 /**
- * Syncs connections with automatic sync on when they are due. A failure shows
- * one error toast. A due connection retries on every poll, so the same failure
- * again shows nothing new until the connection syncs or fails differently.
- */
-/**
- * Sends the settle writes and comment deletes left from a session that quit
- * during their Undo window (ADR 0001, ADR 0008). There is no offline queue beyond that: a write that fails
- * here puts its item back to active.
+ * Sends the settle writes and comments left from a session that quit
+ * during their Undo window, once at launch (`flushPendingWrites`).
  */
 function PendingSourceWritesFlush() {
   useEffect(() => {
-    void sendPendingSourceWrites();
-    void flushPendingCommentDeletes();
-    void flushSettleComments();
-    void flushAgentComments();
+    void flushPendingWrites();
   }, []);
   // A settle that ends turns its waiting comments into drafts.
   useEffect(() => watchSettleEnds(), []);
-  return null;
-}
-
-function BacklogAutoSyncScheduler() {
-  const loopStateRef = useRef({
-    cancelled: false,
-    running: false,
-    timeoutId: undefined as number | undefined,
-    /** The last failure shown per connection, by `pluginId:connectionId`. */
-    shownFailures: new Map<string, string>(),
-  });
-
-  useEffect(() => {
-    const loopState = loopStateRef.current;
-    loopState.cancelled = false;
-
-    const scheduleNext = (delayMs = AUTO_SYNC_POLL_INTERVAL_MS) => {
-      if (loopState.cancelled) {
-        return;
-      }
-
-      loopState.timeoutId = window.setTimeout(() => {
-        void tick();
-      }, delayMs);
-    };
-
-    const tick = async () => {
-      if (loopState.cancelled || loopState.running) {
-        scheduleNext();
-        return;
-      }
-
-      loopState.running = true;
-      try {
-        const overview = await getPluginsOverview();
-        const now = Date.now();
-        // Each capability has its own automatic sync: auto sync imports work
-        // items straight to the backlog, pull requests have their own, and a
-        // team's projects always sync.
-        const autoCapabilities = (
-          group: (typeof overview.connectionGroups)[number],
-          connection: (typeof group.connections)[number],
-        ) =>
-          overview.pluginsEnabled === false
-            ? []
-            : [
-                ...(connection.autoSync &&
-                isCapabilityActive(group, "connector")
-                  ? (["connector"] as const)
-                  : []),
-                ...(syncsPullRequestsAutomatically(connection) &&
-                isCapabilityActive(group, "codeHost")
-                  ? (["codeHost"] as const)
-                  : []),
-                // A team always syncs on the interval: there is no review to skip.
-                ...(isCapabilityActive(group, "team")
-                  ? (["team"] as const)
-                  : []),
-              ];
-        const dueConnections = overview.connectionGroups.flatMap((group) =>
-          group.connections
-            .filter(
-              (connection) =>
-                !connection.lastSyncAt ||
-                now - connection.lastSyncAt >=
-                  connection.autoSyncIntervalMinutes * 60_000,
-            )
-            .map((connection) => ({
-              pluginId: group.plugin.id,
-              connection,
-              capabilities: autoCapabilities(group, connection),
-            }))
-            .filter((due) => due.capabilities.length > 0),
-        );
-
-        for (const dueConnection of dueConnections) {
-          if (loopState.cancelled) {
-            break;
-          }
-
-          const operations = dueConnection.capabilities.map((capability) => ({
-            capability,
-            run: () =>
-              capability === "connector"
-                ? syncBacklogConnection(
-                    dueConnection.pluginId,
-                    dueConnection.connection.id,
-                    { trigger: "auto" },
-                  )
-                : capability === "codeHost"
-                  ? syncCodeHostConnection(
-                      dueConnection.pluginId,
-                      dueConnection.connection.id,
-                    )
-                  : syncTeamConnection(
-                      dueConnection.pluginId,
-                      dueConnection.connection.id,
-                    ),
-          }));
-          for (const operation of operations) {
-            if (loopState.cancelled) break;
-            const failureKey = `${dueConnection.pluginId}:${dueConnection.connection.id}:${operation.capability}`;
-            try {
-              await operation.run();
-              loopState.shownFailures.delete(failureKey);
-            } catch (error) {
-              console.error(
-                `Backlog auto sync failed for "${dueConnection.pluginId}".`,
-                error,
-              );
-              const message =
-                error instanceof Error ? error.message : "Unknown error";
-              if (loopState.shownFailures.get(failureKey) !== message) {
-                loopState.shownFailures.set(failureKey, message);
-                showErrorToast({
-                  title: `${dueConnection.connection.label} sync failed`,
-                  description: message,
-                });
-              }
-            }
-          }
-        }
-      } catch (error) {
-        console.error("Backlog auto sync failed.", error);
-      } finally {
-        loopState.running = false;
-        scheduleNext();
-      }
-    };
-
-    void tick();
-
-    return () => {
-      loopState.cancelled = true;
-      if (loopState.timeoutId !== undefined) {
-        window.clearTimeout(loopState.timeoutId);
-      }
-    };
-  }, []);
-
   return null;
 }
 
@@ -731,11 +566,10 @@ export function AppShell() {
   );
 
   useEffect(() => {
+    // The main process's IPC event records a failure.
     void window.ajourDesktop
-      ?.configureAutomaticUpdates?.(updateTrack)
-      .catch((error) =>
-        console.error("Unable to configure automatic updates.", error),
-      );
+      ?.configureAutomaticUpdates?.(updateTrack, traceCarrier())
+      .catch(() => undefined);
   }, [updateTrack]);
 
   useEffect(() => {

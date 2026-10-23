@@ -62,8 +62,8 @@ describe("desktop plugin lifecycle", () => {
       readFile(new URL("./electron/preload.cjs", import.meta.url), "utf8"),
     ]);
 
-    expect(preloadSource).toContain(
-      'ipcRenderer.invoke("ajour:install-plugin")',
+    expect(preloadSource).toMatch(
+      /ipcRenderer\.invoke\("ajour:install-plugin", \.\.\.traced\(trace\)\)/,
     );
     expect(mainSource).toMatch(ipcHandler("ajour:install-plugin"));
     expect(mainSource).toContain("event.sender !== mainWindow.webContents");
@@ -82,14 +82,14 @@ describe("desktop plugin lifecycle", () => {
       readFile(new URL("./electron/preload.cjs", import.meta.url), "utf8"),
     ]);
 
-    expect(preloadSource).toContain(
-      'ipcRenderer.invoke("ajour:check-for-updates", track)',
+    expect(preloadSource).toMatch(
+      /ipcRenderer\.invoke\(\s*"ajour:check-for-updates",\s*track,/,
     );
-    expect(preloadSource).toContain(
-      'ipcRenderer.invoke("ajour:configure-automatic-updates", track)',
+    expect(preloadSource).toMatch(
+      /ipcRenderer\.invoke\(\s*"ajour:configure-automatic-updates",\s*track,/,
     );
-    expect(preloadSource).toContain(
-      'ipcRenderer.invoke("ajour:open-update-release", releaseUrl)',
+    expect(preloadSource).toMatch(
+      /ipcRenderer\.invoke\(\s*"ajour:open-update-release",\s*releaseUrl,/,
     );
     expect(mainSource).toMatch(ipcHandler("ajour:check-for-updates"));
     expect(mainSource).toMatch(ipcHandler("ajour:configure-automatic-updates"));
@@ -117,8 +117,8 @@ describe("desktop plugin lifecycle", () => {
     expect(mainSource).toMatch(ipcHandler("ajour:get-plugin-catalog"));
     expect(mainSource).toMatch(ipcHandler("ajour:download-catalog-plugin"));
     expect(mainSource).toContain("enableAfterInstall: false");
-    expect(preloadSource).toContain(
-      'ipcRenderer.invoke("ajour:configure-plugin-catalog", settings)',
+    expect(preloadSource).toMatch(
+      /ipcRenderer\.invoke\(\s*"ajour:configure-plugin-catalog",\s*settings,/,
     );
     expect(preloadSource).toContain(
       'ipcRenderer.on("ajour:plugin-catalog-updated", listener)',

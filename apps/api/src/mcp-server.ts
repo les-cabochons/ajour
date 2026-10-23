@@ -377,7 +377,12 @@ function forwardToRenderer(
     const startedAt = Date.now();
     let result;
     try {
-      result = await context.bridge.call(tool, input, client);
+      result = await context.bridge.call(
+        tool,
+        input,
+        client,
+        call?.unit.traceparent(),
+      );
     } catch (error) {
       if (!(error instanceof BridgeCallError)) throw error;
       call?.unit.fail(

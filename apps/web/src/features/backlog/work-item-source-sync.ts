@@ -8,7 +8,6 @@ export function syncBacklogWorkItemToSource(workItem: LocalWorkItem) {
 
   void syncBacklogConnection(workItem.source, workItem.sourceConnectionId, {
     trigger: "source_write",
-  }).catch((error) => {
-    console.error("Backlog work item sync failed.", error);
-  });
+    // The sync's own event records a failure.
+  }).catch(() => undefined);
 }

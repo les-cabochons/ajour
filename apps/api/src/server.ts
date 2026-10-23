@@ -353,7 +353,9 @@ function writeJson(
   extraHeaders: Record<string, string> = {},
 ) {
   const headers = {
-    "Access-Control-Allow-Headers": "Content-Type",
+    // The renderer sends `traceparent` on every call, so its request events
+    // join the renderer's trace.
+    "Access-Control-Allow-Headers": "Content-Type, traceparent",
     "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
     ...extraHeaders,
   };

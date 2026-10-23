@@ -91,6 +91,16 @@ export interface DesktopAppMenu {
   items: DesktopAppMenuItem[];
 }
 
+/**
+ * What a call through the bridge may pass last: the active unit's
+ * `traceparent` (`traceCarrier()` in lib/wide-events.ts), so the main
+ * process's IPC event joins the renderer's trace. The preload passes it on
+ * only when it holds a string.
+ */
+export interface TraceCarrier {
+  traceparent: string;
+}
+
 declare global {
   interface Window {
     ajourDesktop?: {
@@ -114,7 +124,7 @@ declare global {
       /** Runs `callback` with the action id of each app menu item the user picks. */
       onMenuAction?: (callback: (action: string) => void) => () => void;
       /** Runs a role item of the app menu, such as Copy, in the main process. */
-      runMenuItem?: (itemId: string) => void;
+      runMenuItem?: (itemId: string, trace?: TraceCarrier) => void;
       /**
        * Pops up a native right-click menu at `position`, in CSS pixels from the
        * window's top left. Resolves with the picked item's id, or null.
@@ -122,39 +132,70 @@ declare global {
       showContextMenu?: (
         items: DesktopContextMenuItem[],
         position: { x: number; y: number },
+        trace?: TraceCarrier,
       ) => Promise<string | null>;
       /** Runs the page's Cut or Copy, as the Edit menu does. */
-      runEditCommand?: (command: "cut" | "copy") => void;
+      runEditCommand?: (command: "cut" | "copy", trace?: TraceCarrier) => void;
       /** Makes native menus and the window chrome follow the app's theme. */
-      setThemeSource?: (mode: ThemeMode) => void;
-      setWindowChromeTheme?: (theme: "dark" | "light") => void;
-      checkForUpdates?: (track: UpdateTrack) => Promise<DesktopUpdateState>;
-      getUpdateState?: () => Promise<DesktopUpdateState>;
+      setThemeSource?: (mode: ThemeMode, trace?: TraceCarrier) => void;
+      setWindowChromeTheme?: (
+        theme: "dark" | "light",
+        trace?: TraceCarrier,
+      ) => void;
+      checkForUpdates?: (
+        track: UpdateTrack,
+        trace?: TraceCarrier,
+      ) => Promise<DesktopUpdateState>;
+      getUpdateState?: (trace?: TraceCarrier) => Promise<DesktopUpdateState>;
       onUpdateStateChanged?: (
         callback: (state: DesktopUpdateState) => void,
       ) => () => void;
       updateAndRestart?: (
         track: UpdateTrack,
         version: string,
+        trace?: TraceCarrier,
       ) => Promise<DesktopUpdateState>;
-      configureAutomaticUpdates?: (track: UpdateTrack) => Promise<void>;
-      openUpdateRelease?: (releaseUrl: string) => Promise<void>;
-      installPlugin?: () => Promise<PluginInstallResponse | null>;
-      getPluginCatalog?: () => Promise<PluginCatalogResponse>;
-      getPluginCatalogSettings?: () => Promise<PluginCatalogSettings>;
+      configureAutomaticUpdates?: (
+        track: UpdateTrack,
+        trace?: TraceCarrier,
+      ) => Promise<void>;
+      openUpdateRelease?: (
+        releaseUrl: string,
+        trace?: TraceCarrier,
+      ) => Promise<void>;
+      installPlugin?: (
+        trace?: TraceCarrier,
+      ) => Promise<PluginInstallResponse | null>;
+      getPluginCatalog?: (
+        trace?: TraceCarrier,
+      ) => Promise<PluginCatalogResponse>;
+      getPluginCatalogSettings?: (
+        trace?: TraceCarrier,
+      ) => Promise<PluginCatalogSettings>;
       configurePluginCatalog?: (
         settings: PluginCatalogSettings,
+        trace?: TraceCarrier,
       ) => Promise<PluginCatalogSettings>;
       onPluginCatalogUpdated?: (
         callback: (catalog: PluginCatalogResponse) => void,
       ) => () => void;
       downloadCatalogPlugin?: (
         pluginId: string,
+        trace?: TraceCarrier,
       ) => Promise<CatalogPluginDownloadResponse>;
-      uninstallPlugin?: (pluginId: string) => Promise<PluginUninstallResponse>;
-      getDevelopmentPluginSettings?: () => Promise<DevelopmentPluginSettings>;
-      selectDevelopmentPluginDirectory?: () => Promise<DevelopmentPluginSettings | null>;
-      clearDevelopmentPluginDirectories?: () => Promise<DevelopmentPluginSettings>;
+      uninstallPlugin?: (
+        pluginId: string,
+        trace?: TraceCarrier,
+      ) => Promise<PluginUninstallResponse>;
+      getDevelopmentPluginSettings?: (
+        trace?: TraceCarrier,
+      ) => Promise<DevelopmentPluginSettings>;
+      selectDevelopmentPluginDirectory?: (
+        trace?: TraceCarrier,
+      ) => Promise<DevelopmentPluginSettings | null>;
+      clearDevelopmentPluginDirectories?: (
+        trace?: TraceCarrier,
+      ) => Promise<DevelopmentPluginSettings>;
     };
   }
 }

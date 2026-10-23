@@ -214,6 +214,61 @@ function closeUndoWindow() {
   offerUndo.mock.calls.at(-1)![1].onWindowClosed?.();
 }
 
+describe("a tool call the bridge runs", () => {
+  /** Runs the call as the bridge does: inside its `agent_tool.call` job. */
+  async function runInJob(tool: string, input: unknown) {
+    const { wideEvents } = await import("@/lib/wide-events");
+    const { runAgentToolCall } =
+      await import("@/features/agents/agent-tool-runner");
+    return wideEvents.run(
+      "agent_tool.call",
+      { kind: "job", trigger: "agent" },
+      () => runAgentToolCall({ requestId: "r1", tool, input, client }),
+    );
+  }
+
+  it("folds its writes into the job's one event, also those after an await", async () => {
+    const { localStore, sink } = await setup();
+    const workItemId = importSyncedItem(localStore);
+    sink.events.length = 0;
+
+    // The settle awaits the source's states before it writes.
+    const result = await runInJob("settle_work_item", {
+      workItemId,
+      sourceState: "in qa",
+    });
+
+    expect(result).toMatchObject({ ok: true });
+    expect(sink.events).toEqual([
+      expect.objectContaining({
+        name: "agent_tool.call",
+        trigger: "agent",
+        outcome: "ok",
+        agent_tool: { undo_offered: true },
+        steps: ["backlog_item.settle"],
+        counts: expect.objectContaining({ store_write_count: 1 }),
+      }),
+    ]);
+  });
+
+  it("folds an entry write into it too", async () => {
+    const { sink, project, task } = await setup();
+
+    await runInJob("start_timer", {
+      projectId: project._id,
+      taskId: task("Build")._id,
+    });
+
+    expect(sink.events).toEqual([
+      expect.objectContaining({
+        name: "agent_tool.call",
+        steps: ["time_entry.start"],
+        agent_tool: { undo_offered: true },
+      }),
+    ]);
+  });
+});
+
 describe("agent read tools", () => {
   it("lists projects through the runner", async () => {
     const { call } = await setup();

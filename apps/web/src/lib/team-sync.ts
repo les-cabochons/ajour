@@ -9,8 +9,11 @@ import {
   planTeamSync,
   type UnsendableRecord,
 } from "@/domain/projects/team-sync";
+import type { AjourCatalog } from "@ajour/wide-events/catalog.ts";
+import type { Unit } from "@ajour/wide-events";
 import { getPluginsOverview, runTeamSyncRound } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
+import { wideEvents } from "@/lib/wide-events";
 
 /*
  * Runs a team sync: plans a round from the local projects, sends it, applies
@@ -97,19 +100,25 @@ function exclusively<T>(name: string, operation: () => Promise<T>): Promise<T> {
 }
 
 /**
- * Syncs one team connection. A manual and a scheduled call share one run, and
- * other windows wait for it. A result the workspace refuses throws, with
- * nothing applied; the next sync sends the same round again.
+ * Syncs one team connection, as one `team.sync` job: its rounds' local API
+ * calls and store commands count on it. A manual and a scheduled call share
+ * one run, and its event, and other windows wait for it. A result the
+ * workspace refuses throws, with nothing applied; the next sync sends the
+ * same round again.
  */
 export function syncTeamConnection(
   pluginId: string,
   connectionId: string,
+  options: { trigger?: "user" | "schedule" } = {},
 ): Promise<TeamSyncOutcome> {
   const key = JSON.stringify([pluginId, connectionId]);
   const running = runningSyncs.get(key);
   if (running) return running;
 
-  const run = async (): Promise<TeamSyncOutcome> => {
+  const run = async (
+    job: Unit<AjourCatalog, "team.sync">,
+  ): Promise<TeamSyncOutcome> => {
+    job.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
     const outcome: TeamSyncOutcome = {
       rounds: 0,
       sentProjectCount: 0,
@@ -121,15 +130,19 @@ export function syncTeamConnection(
     };
     const unsendable = new Map<string, UnsendableRecord>();
 
-    const identity = await currentIdentity(pluginId, connectionId);
+    const identity = await job.enter(() =>
+      currentIdentity(pluginId, connectionId),
+    );
     if (!identity) {
+      job.refuse("connection_not_found");
       throw new Error("This team connection is gone, or Projects is off.");
     }
     // The connection now names another team: its links and cursor belong to
     // the old one, so its projects turn local and the new team starts fresh.
     const stored = localStore.snapshot().teamConnections?.[connectionId];
     if (stored?.identity && stored.identity !== identity) {
-      localStore.removeConnectionTeamData(connectionId);
+      job.set({ team_sync: { identity_changed: true } });
+      job.enter(() => localStore.removeConnectionTeamData(connectionId));
     }
 
     while (outcome.rounds < MAX_ROUNDS) {
@@ -146,19 +159,24 @@ export function syncTeamConnection(
         unsendable.set(`${record.projectId}:${record.taskId ?? ""}`, record);
       }
 
-      const result = await runTeamSyncRound(
-        pluginId,
-        connectionId,
-        plan.request,
+      const result = await job.enter(() =>
+        runTeamSyncRound(pluginId, connectionId, plan.request),
       );
       // Removed, turned off or pointed at another team while the round was
       // on its way, here or in another window: its answer does not apply.
-      if ((await currentIdentity(pluginId, connectionId)) !== identity) break;
-      const applied = localStore.applyTeamSyncRound(
-        connectionId,
-        plan.request.changes,
-        result,
-        identity,
+      if (
+        (await job.enter(() => currentIdentity(pluginId, connectionId))) !==
+        identity
+      ) {
+        break;
+      }
+      const applied = job.enter(() =>
+        localStore.applyTeamSyncRound(
+          connectionId,
+          plan.request.changes,
+          result,
+          identity,
+        ),
       );
       if (applied.kind === "rejected") {
         throw new Error(
@@ -182,12 +200,31 @@ export function syncTeamConnection(
     }
 
     outcome.unsendable = [...unsendable.values()];
+    job.set({
+      team_sync: {
+        round_count: outcome.rounds,
+        projects_sent: outcome.sentProjectCount,
+        created_count: outcome.createdProjectIds.length,
+        updated_count: outcome.updatedProjectIds.length,
+        held_arrival_count: outcome.heldArrivals.length,
+        unsendable_count: outcome.unsendable.length,
+        incomplete: outcome.incomplete,
+      },
+    });
     return outcome;
   };
 
-  const promise = exclusively(`ajour-team-sync:${key}`, run).finally(() => {
-    if (runningSyncs.get(key) === promise) runningSyncs.delete(key);
-  });
+  // The job opens now, so the time other windows hold the lock counts too.
+  const promise = wideEvents
+    .run(
+      "team.sync",
+      { kind: "job", trigger: options.trigger ?? "user", detached: true },
+      (job) => exclusively(`ajour-team-sync:${key}`, () => run(job)),
+    )
+    .finally(() => {
+      if (runningSyncs.get(key) === promise) runningSyncs.delete(key);
+    });
+
   runningSyncs.set(key, promise);
   return promise;
 }

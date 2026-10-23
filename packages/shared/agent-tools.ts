@@ -75,6 +75,11 @@ export const bridgeToolCallSchema = z.object({
   tool: z.string().min(1),
   input: z.unknown(),
   client: agentClientRefSchema,
+  /**
+   * The local API's tool call span, so the renderer's run of the call joins
+   * its trace. Absent from an older API.
+   */
+  traceparent: z.string().optional(),
 });
 export type BridgeToolCall = z.infer<typeof bridgeToolCallSchema>;
 

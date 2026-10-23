@@ -3,7 +3,7 @@
 interface ImportMetaEnv {
   readonly VITE_DESKTOP_SHELL?: string;
   readonly VITE_APP_API_BASE_URL?: string;
-  /** `console` prints the renderer's wide events in the devtools console. */
+  /** `console` prints the renderer's wide events in the devtools. */
   readonly AJOUR_WIDE_EVENTS?: string;
 }
 

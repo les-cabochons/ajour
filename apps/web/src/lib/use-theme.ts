@@ -1,6 +1,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { useUserPreferences } from "@/lib/local-hooks";
 import type { ThemeMode } from "@/domain/local-state";
+import { traceCarrier } from "@/lib/wide-events";
 
 function getSystemTheme(): "dark" | "light" {
   if (typeof window === "undefined") {
@@ -43,7 +44,7 @@ export function useApplyTheme(): void {
   // The mode, not the resolved theme: a fixed source would pin the page's
   // prefers-color-scheme and stop System from following the system.
   useEffect(() => {
-    window.ajourDesktop?.setThemeSource?.(themeMode);
+    window.ajourDesktop?.setThemeSource?.(themeMode, traceCarrier());
   }, [themeMode]);
 
   useEffect(() => {
@@ -57,7 +58,7 @@ export function useApplyTheme(): void {
       root.classList.remove("light");
     }
 
-    window.ajourDesktop?.setWindowChromeTheme?.(resolvedTheme);
+    window.ajourDesktop?.setWindowChromeTheme?.(resolvedTheme, traceCarrier());
   }, [resolvedTheme]);
 }
 

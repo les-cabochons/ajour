@@ -1,6 +1,7 @@
 import { showErrorToast } from "@/components/ui/toast";
 import { deleteItemComment } from "@/lib/app-api";
 import { createDeviceQueue } from "@/lib/device-queue";
+import { wideEvents } from "@/lib/wide-events";
 
 /**
  * Deleted comments waiting for their Undo window (ADR 0008, through ADR
@@ -76,19 +77,41 @@ export function cancelCommentDelete(comment: CommentRef) {
   write(read().filter((entry) => !sameComment(entry, comment)));
 }
 
+/** The deletes waiting now, which the launch flush sends. */
+export function pendingCommentDeleteCount() {
+  return read().length;
+}
+
 /**
- * Sends a queued delete. It leaves the queue first, so a second call never
- * sends it twice. Throws when the source tool refuses it.
+ * Sends a queued delete, as one `comment.delete` job. It leaves the queue
+ * first, so a second call never sends it twice, and ends `noop`. Throws when
+ * the source tool refuses it. The job starts its own trace: it names Ajour's
+ * backlog item, never the comment's ID in its source (ADR 0011).
  */
-export async function sendCommentDelete(comment: CommentRef) {
-  const entries = read();
-  const entry = entries.find((pending) => sameComment(pending, comment));
-  if (!entry) return;
-  write(entries.filter((pending) => !sameComment(pending, comment)));
-  await deleteItemComment(entry.pluginId, entry.connectionId, {
-    sourceId: entry.sourceId,
-    commentId: entry.commentId,
-  });
+export function sendCommentDelete(comment: CommentRef): Promise<void> {
+  return wideEvents.run(
+    "comment.delete",
+    { kind: "job", trigger: "system", detached: true },
+    async (job) => {
+      const entries = read();
+      const entry = entries.find((pending) => sameComment(pending, comment));
+      if (!entry) {
+        job.end("noop");
+        return;
+      }
+      job.set({
+        backlog_item: { id: entry.itemId },
+        plugin: { id: entry.pluginId },
+        connection: { id: entry.connectionId },
+        comment: { queued_ms: Math.max(0, Date.now() - entry.at) },
+      });
+      write(entries.filter((pending) => !sameComment(pending, comment)));
+      await deleteItemComment(entry.pluginId, entry.connectionId, {
+        sourceId: entry.sourceId,
+        commentId: entry.commentId,
+      });
+    },
+  );
 }
 
 /** At launch, sends the deletes left from a session that quit during Undo. */
