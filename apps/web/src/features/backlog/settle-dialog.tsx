@@ -44,7 +44,7 @@ import {
   getCachedPluginsOverview,
   listBacklogSettleStates,
 } from "@/lib/app-api";
-import { localStore } from "@/lib/local-store";
+import { localStore, runStoreCommandWith } from "@/lib/local-store";
 import { queueSettleComment } from "@/lib/settle-comments";
 import { useLocalState } from "@/lib/local-hooks";
 
@@ -106,6 +106,8 @@ export function settleBacklogItem(
     settleBacklogItemWithUndo(
       workItem,
       behavior.kind === "apply" ? behavior.change : undefined,
+      undefined,
+      behavior.kind === "apply" ? "rule" : "local",
     );
   }
 }
@@ -115,20 +117,40 @@ export function settleBacklogItem(
  * whether they settle too, unless the user's setting answers. A change to the
  * source is sent when the toast closes, so Undo cancels it (ADR 0001). A
  * comment follows the change, or goes when the toast closes if nothing else
- * is written (ADR 0008).
+ * is written (ADR 0008). `behavior` says what chose the change, for the
+ * settle's wide event: a local settle, the rule, or the dialog.
  */
 export async function settleBacklogItemWithUndo(
   workItem: LocalWorkItem,
   change?: BacklogSettleChange,
   comment?: string,
+  behavior: "local" | "rule" | "ask" = change ? "rule" : "local",
 ) {
   const includeSubitems = await resolveIncludeSubitems(workItem, "settle");
   if (includeSubitems === null) return false;
 
-  const token = localStore.settleWorkItem(workItem._id, change, {
-    includeSubitems,
-  });
-  if (!token) return false;
+  // The settle's event takes what only this workflow knows: what chose the
+  // change, and the comment's length, never its text.
+  const token = runStoreCommandWith(
+    "settleWorkItem",
+    [workItem._id, change, { includeSubitems }],
+    (unit, token) => {
+      unit.set({ backlog_item: { behavior } });
+      if (!token) return;
+      const { commentQueued } = afterSettle(workItem, token, comment);
+      unit.set({
+        comment: {
+          queued: commentQueued,
+          body_length: commentQueued ? comment?.trim().length : undefined,
+        },
+      });
+    },
+  );
+  return token !== null;
+}
+
+/** Queues the settle's comment, and offers its Undo. */
+function afterSettle(workItem: LocalWorkItem, token: string, comment?: string) {
   const settled = localStore
     .snapshot()
     .workItems.find((candidate) => candidate._id === workItem._id);
@@ -166,7 +188,7 @@ export async function settleBacklogItemWithUndo(
           }
         : undefined,
   });
-  return true;
+  return { commentQueued: Boolean(body && commentSource) };
 }
 
 type StatesLoad =
@@ -273,6 +295,7 @@ export function SettleDialogHost() {
           currentItem,
           change,
           commentSource ? comment : undefined,
+          "ask",
         )
       )
         setWorkItem(null);

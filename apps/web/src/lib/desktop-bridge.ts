@@ -5,12 +5,12 @@ import type {
   PluginCatalogResponse,
   PluginCatalogSettings,
 } from "@ajour/shared";
+import type { LaunchContext } from "@ajour/wide-events";
 import type {
   LocalAppState,
   ThemeMode,
   UpdateTrack,
 } from "@/domain/local-state";
-import type { LaunchContext } from "../../../../packages/wide-events/index.ts";
 
 export interface DevelopmentPluginSettings {
   available: boolean;
@@ -104,7 +104,8 @@ declare global {
         version: string;
         /**
          * The main process's launch: its ID, build and device, which the
-         * renderer's wide events report. Absent before #308.
+         * renderer's wide events report. Older main processes omit it, and
+         * each field is checked before use (lib/wide-events.ts).
          */
         launch?: LaunchContext;
       } | null;

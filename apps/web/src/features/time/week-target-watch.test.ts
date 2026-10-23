@@ -1,3 +1,4 @@
+import { webcrypto } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const STORAGE_KEY = "ajour.local-state.v2";
@@ -49,6 +50,8 @@ describe("watchWeekTargets", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.stubGlobal("crypto", {
+      // The renderer's wide events draw their IDs from it.
+      getRandomValues: webcrypto.getRandomValues.bind(webcrypto),
       randomUUID: () => `uuid-${Math.random().toString(16).slice(2)}`,
     });
   });

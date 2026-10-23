@@ -22,6 +22,17 @@ vi.mock("@/lib/local-store", () => ({
     changeWorkItemSourceState: mocks.change,
     updateWorkItem: mocks.update,
   },
+  startStoreCommandFor: () => ({
+    unit: {
+      enter: <Result>(work: () => Result) => work(),
+      set: () => undefined,
+      cancel: () => undefined,
+    },
+    enter: <Result>(work: () => Result) => work(),
+    didWork: () => undefined,
+    fail: () => undefined,
+    finish: () => undefined,
+  }),
 }));
 vi.mock("@/lib/app-api", () => ({ listBacklogSettleStates: mocks.states }));
 vi.mock("./backlog-source-writes", () => ({

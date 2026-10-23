@@ -47,6 +47,40 @@ describe("the catalog", () => {
     }
   });
 
+  it("classes the days, weeks and durations of time records sensitive", () => {
+    const timeRecordFields = Object.entries(catalog.events).flatMap(
+      ([name, spec]) =>
+        leaves(spec.fields)
+          .filter(([path]) =>
+            /(^|\.)(day|from_day|to_day|week_of|duration_ms|duration_before_ms|duration_after_ms|counted_ms|days_covered)$/.test(
+              path,
+            ),
+          )
+          .map(([path, privacy]) => [`${name} ${path}`, privacy]),
+    );
+
+    expect(timeRecordFields).toContainEqual([
+      "time_entry.create time_entry.day",
+      "sensitive",
+    ]);
+    expect(timeRecordFields).toContainEqual([
+      "week.submit week.week_of",
+      "sensitive",
+    ]);
+    for (const [field, privacy] of timeRecordFields) {
+      expect([field, privacy]).toEqual([field, "sensitive"]);
+    }
+  });
+
+  it("names a store command's write counts once, for every command to add to", () => {
+    expect(catalog.counters.store_write_count.privacy).toBe("operational");
+    expect(catalog.counters.store_write_bytes.privacy).toBe("operational");
+    expect(catalog.events["time_entry.start"].kinds).toContain("command");
+    expect(catalog.events["time_entry.start"].reasons).toEqual(
+      expect.arrayContaining(["locked_week", "stale_window"]),
+    );
+  });
+
   it("classes the envelope too: an error message is sensitive, its type is not", () => {
     expect(envelopeFields.error.message.privacy).toBe("sensitive");
     expect(envelopeFields.error.type.privacy).toBe("operational");
@@ -121,5 +155,33 @@ describe("the catalog", () => {
     expect(leaves({ time_entry: { id: {} } } as unknown as FieldTree)).toEqual([
       ["time_entry.id", undefined],
     ]);
+  });
+
+  it("keeps what the renderer and the other runtimes each declare for one event", () => {
+    const names = [
+      "project.import",
+      "team.create",
+      "connection.delete",
+    ] as const;
+    for (const name of names) {
+      const spec = catalog.events[name];
+      expect(spec.kinds).toContain("command");
+      expect(spec.reasons).toEqual(
+        expect.arrayContaining(["locked_week", "stale_window"]),
+      );
+      expect(spec.fields).toHaveProperty("store");
+      expect(spec.fields).toHaveProperty("http");
+    }
+    expect(
+      Object.keys(
+        catalog.events["backlog_import.commit"].fields.backlog_import,
+      ),
+    ).toEqual(expect.arrayContaining(["candidate_count", "committed_count"]));
+    expect(catalog.events["app.error"].fields.crash).toHaveProperty(
+      "handled_by",
+    );
+    expect(catalog.events["app.error"].fields.crash).not.toHaveProperty(
+      "handled_by_toast",
+    );
   });
 });

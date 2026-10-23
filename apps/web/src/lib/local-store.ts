@@ -7,7 +7,45 @@ import {
 } from "@ajour/shared";
 import { takeSourceDescription } from "@/domain/backlog/description-sync";
 import { todayIsoDate } from "@/lib/utils";
+import { wideEvents } from "@/lib/wide-events";
+import { recordsEqual } from "@/domain/records-equal";
 import { StaleWindowError } from "@/lib/stale-window-error";
+import {
+  countOnStoreCommand,
+  countStoreWrite,
+  describeStoreCommand,
+  instrumentStoreCommands,
+  refuseStoreCommand,
+  resolveCommandName,
+  runStoreCommand,
+  startStoreCommand,
+  storeCommandUnit,
+  type SpecName,
+  type StoreCommandSpec,
+  type StoreCommandTable,
+  type StoreCommandUnit,
+  UNDO_GROUP,
+} from "@/lib/store-command-events";
+import {
+  countUndoChanges,
+  describeBacklogImport,
+  describeEntryCreate,
+  describeEntryUpdate,
+  describeImportDrafts,
+  describeImportStage,
+  describeMove,
+  describeProjectImport,
+  describeRunningEntryEdit,
+  describeSettle,
+  describeShare,
+  describeSuggestionAdd,
+  describeTaskImport,
+  describeTimerDiscard,
+  describeTimerStart,
+  describeTimerStop,
+  describeUserPreferences,
+  describeWeekSubmit,
+} from "@/lib/store-command-fields";
 import {
   changePullRequest,
   normalizePullRequests,
@@ -206,6 +244,7 @@ import {
   type TeamSyncState,
 } from "@/domain/projects/team-sync";
 import type { TeamProjectChange, TeamSyncResult } from "@ajour/shared";
+import type { AjourCatalog, FieldsOf } from "@ajour/wide-events/catalog.ts";
 import type {
   BacklogSortMode,
   ExtensionBridgeStatus,
@@ -759,12 +798,13 @@ function mergeBootstrapTimesheetEntries(
   return mergedEntries;
 }
 
+/** Why the desktop recovery file should merge into the stored state, or undefined. */
 function shouldBootstrapFromDesktopState(
   currentState: Partial<LocalAppState> | undefined,
   bootstrapState: Partial<LocalAppState> | null | undefined,
-) {
+): RecoveryFields["reason"] {
   if (!bootstrapState || currentState?.desktopBootstrapAppliedAt) {
-    return false;
+    return undefined;
   }
 
   // Submitted weeks alone are worth recovering: they keep the week as sent.
@@ -776,13 +816,13 @@ function shouldBootstrapFromDesktopState(
       (week) => !currentWeeks.has(week.weekOf),
     )
   ) {
-    return true;
+    return "submitted_weeks";
   }
 
   const bootstrapTimesheetCount = bootstrapState.timesheetEntries?.length ?? 0;
   const currentTimesheetCount = currentState?.timesheetEntries?.length ?? 0;
   if (currentTimesheetCount === 0 && bootstrapTimesheetCount > 0) {
-    return true;
+    return "no_entries";
   }
 
   const currentHasDefaultProjects = hasOnlyDefaultProjects(
@@ -792,16 +832,59 @@ function shouldBootstrapFromDesktopState(
     Array.isArray(bootstrapState.projects) &&
     bootstrapState.projects.length > 0 &&
     !hasOnlyDefaultProjects(bootstrapState.projects);
-  return currentHasDefaultProjects && bootstrapHasCustomProjects;
+  return currentHasDefaultProjects && bootstrapHasCustomProjects
+    ? "default_projects"
+    : undefined;
 }
 
-/** Logs, once, how many recovered records a submitted week kept out. */
-function warnLeftOut(count: number, one: string, many: string) {
-  if (count > 0) {
-    console.warn(
-      `Desktop recovery left out ${count} ${count === 1 ? one : many} in a submitted week.`,
-    );
-  }
+type BootFields = FieldsOf<AjourCatalog, "app.boot">;
+type RecoveryFields = NonNullable<BootFields["recovery"]>;
+
+/**
+ * What the last load of the local state did, for the `app.boot` event: its
+ * path, the migrations it applied, its size and the desktop recovery.
+ */
+export interface LocalStateLoad {
+  boot: NonNullable<BootFields["boot"]>;
+  recovery: RecoveryFields;
+}
+
+let load: LocalStateLoad = freshLoad();
+
+function freshLoad(): LocalStateLoad {
+  return {
+    boot: { load_path: "stored", migrations: [], persisted: true },
+    recovery: { decision: "none" },
+  };
+}
+
+/** Loads the local state, if it is not yet, and says how the load went. */
+export function localStateLoad(): LocalStateLoad {
+  readState();
+  return load;
+}
+
+/** The migrations a stored state needs, from a closed set, by its retired keys. */
+function storedMigrations(state: Record<string, unknown>) {
+  const migrations: string[] = [];
+  if ("backlogStatuses" in state || "backlogStatusMappings" in state)
+    migrations.push("workflow_states_renamed");
+  if ("priorityScales" in state || "priorityFormat" in state)
+    migrations.push("retired_priority_scales");
+  if ("activityLoggerEnabled" in state)
+    migrations.push("retired_activity_logger");
+  if (containsRetiredOutlookState(state)) migrations.push("retired_outlook");
+  if (state.backlogSortMode === "priority")
+    migrations.push("priority_sort_split");
+  return migrations;
+}
+
+/** Counts, for the boot event, recovered records a submitted week kept out. */
+function countLeftOut(
+  count: number,
+  field: "left_out_entry_count" | "left_out_running_entry_count",
+) {
+  if (count > 0) load.recovery[field] = (load.recovery[field] ?? 0) + count;
 }
 
 function mergeDesktopBootstrapState(
@@ -828,10 +911,9 @@ function mergeDesktopBootstrapState(
         typeof entry?.localDate !== "string" ||
         !isDateLocked(currentLocks, entry.localDate),
     );
-    warnLeftOut(
+    countLeftOut(
       bootstrapState.timesheetEntries!.length - recovered.length,
-      "entry",
-      "entries",
+      "left_out_entry_count",
     );
     nextState.timesheetEntries = mergeBootstrapTimesheetEntries(
       nextState.timesheetEntries,
@@ -853,9 +935,8 @@ function mergeDesktopBootstrapState(
       isDateLocked({ lockedWeeks: [week] }, day),
     );
     if (strands) {
-      console.warn(
-        `Desktop recovery did not submit the week of ${week.weekOf}: the running entry is on it.`,
-      );
+      load.recovery.unsubmitted_week_count =
+        (load.recovery.unsubmitted_week_count ?? 0) + 1;
     }
     return !strands;
   });
@@ -877,10 +958,9 @@ function mergeDesktopBootstrapState(
         typeof timer.startedAt !== "number" ||
         !isDateLocked(mergedLocks, normalizeTimer(timer).localDate),
     );
-    warnLeftOut(
+    countLeftOut(
       bootstrapState.timers!.length - recovered.length,
-      "running entry",
-      "running entries",
+      "left_out_running_entry_count",
     );
     nextState.timers = recovered;
   }
@@ -968,6 +1048,7 @@ function purgeRetiredAuthCache() {
 
 function loadState(): LocalAppState {
   purgeRetiredAuthCache();
+  load = freshLoad();
   return loadStoredState(window.ajourDesktop?.bootstrapLocalState);
 }
 
@@ -992,12 +1073,16 @@ function loadStoredState(
   retryRecovery?: boolean,
 ): LocalAppState {
   let stored: string | null;
+  if (bootstrapState) load.recovery.decision = "used_whole";
   try {
     stored = window.localStorage.getItem(STORAGE_KEY);
   } catch {
+    load.boot.load_path = "storage_unavailable";
+    load.boot.persisted = false;
     return normalizeState(bootstrapState ?? createDefaultState());
   }
   if (!stored) {
+    load.boot.load_path = "empty";
     return normalizeState(
       bootstrapState
         ? {
@@ -1008,17 +1093,32 @@ function loadStoredState(
     );
   }
 
+  load.boot.state_bytes = stored.length * 2;
   let parsedState: Partial<LocalAppState>;
   try {
     parsedState = JSON.parse(stored) as Partial<LocalAppState>;
   } catch {
+    load.boot.load_path = "unreadable";
     return normalizeState(bootstrapState ?? createDefaultState());
   }
+  load.boot.load_path = "stored";
+  load.boot.migrations =
+    typeof parsedState === "object" && parsedState !== null
+      ? storedMigrations(parsedState as Record<string, unknown>)
+      : [];
+  load.recovery.decision = bootstrapState ? "already_applied" : "none";
 
   if (bootstrapState && !parsedState.desktopBootstrapAppliedAt) {
-    const merge =
-      retryRecovery ??
-      shouldBootstrapFromDesktopState(parsedState, bootstrapState);
+    if (retryRecovery === undefined) {
+      load.recovery.reason = shouldBootstrapFromDesktopState(
+        parsedState,
+        bootstrapState,
+      );
+    } else {
+      load.recovery.retried = true;
+    }
+    const merge = retryRecovery ?? load.recovery.reason !== undefined;
+    load.recovery.decision = merge ? "merged" : "nothing_to_merge";
     // With nothing to merge, the recovery still counts as applied, so a week
     // the user reopens later is not locked again by the same file on reload.
     const recovered = normalizeState(
@@ -1038,6 +1138,7 @@ function loadStoredState(
       return persistState(recovered);
     } catch {
       // Keep the complete recovered state in memory when persistence is unavailable.
+      load.boot.persisted = false;
       return recovered;
     }
   }
@@ -1050,6 +1151,7 @@ function loadStoredState(
         }
       } catch {
         // Keep the sanitized state in memory when persistence is unavailable.
+        load.boot.persisted = false;
       }
     }
     return normalizedState;
@@ -1093,19 +1195,19 @@ function persistState<T extends Partial<LocalAppState>>(
   state: T,
 ): T & { revision: string } {
   const saved = { ...state, revision: createId("revision") };
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
+  const serialized = JSON.stringify(saved);
+  window.localStorage.setItem(STORAGE_KEY, serialized);
+  countStoreWrite(serialized.length * 2);
   try {
     window.localStorage.setItem(REVISION_KEY, saved.revision);
-  } catch (error) {
+  } catch {
     try {
       window.localStorage.removeItem(REVISION_KEY);
     } catch {
-      // The warning below covers both failures.
+      // Other windows reload either way: the hint is old or missing.
     }
-    console.warn(
-      "Ajour could not save its revision hint; other windows reload before each write.",
-      error,
-    );
+    // Other windows now reload before each write instead of trusting the hint.
+    countOnStoreCommand("store_revision_hint_failure_count");
   }
   return saved;
 }
@@ -1137,6 +1239,7 @@ function assertFreshCache(cached: LocalAppState, next: LocalAppState) {
     return;
   }
 
+  storeCommandUnit()?.set({ store: { revision_changed: true } });
   announceStateChange({ local: false });
   // Judge what this write changes against the fresh locks.
   const weekOf = findLockedWeekWrite(
@@ -1151,8 +1254,18 @@ function writeState(state: LocalAppState) {
   // checks keep a submitted week as it is, whatever command, Undo or agent
   // tool made the write.
   if (cachedState) {
-    assertFreshCache(cachedState, state);
-    assertNoLockedWeekWrite(cachedState, state);
+    try {
+      assertFreshCache(cachedState, state);
+      assertNoLockedWeekWrite(cachedState, state);
+    } catch (error) {
+      // Recorded on the command's event before the error reaches the toast.
+      if (error instanceof LockedWeekError) {
+        refuseStoreCommand("locked_week");
+      } else if (error instanceof StaleWindowError) {
+        refuseStoreCommand("stale_window");
+      }
+      throw error;
+    }
   }
   const nextState = persistState({ ...state, updatedAt: Date.now() });
   cachedRevision = nextState.revision;
@@ -1179,14 +1292,40 @@ function withTeamSyncState(
   };
 }
 
+/**
+ * Whether `next` holds what `current` holds: every key the same value, or a
+ * list with the same records in the same order. A transition that found
+ * nothing to change, such as one on a record that doesn't exist, often
+ * copies the state and its lists anyway; that copy is not a write.
+ */
+function holdsSameState(current: LocalAppState, next: LocalAppState) {
+  if (current === next) return true;
+  const before = current as unknown as Record<string, unknown>;
+  const after = next as unknown as Record<string, unknown>;
+  for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    const left = before[key];
+    const right = after[key];
+    if (left === right) continue;
+    if (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((record, index) => record === right[index])
+    ) {
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
 function updateState(
   mutator: (state: LocalAppState) => LocalAppState,
 ): LocalAppState {
   const current = readState();
   const next = mutator(current);
-  if (next !== current) {
-    writeState(next);
-  }
+  if (holdsSameState(current, next)) return current;
+  writeState(next);
   return next;
 }
 
@@ -1198,7 +1337,7 @@ function updateStateWithResult<T>(
 ): T {
   const current = readState();
   const { state, result } = operation(current);
-  if (state !== current) {
+  if (!holdsSameState(current, state)) {
     writeState(state);
   }
   return result;
@@ -1210,6 +1349,9 @@ function updateStateWithResult<T>(
  */
 let lastUndo: { token: string; undo: LocalStateUndo } | undefined;
 
+/** How many `runWithUndo` calls are running, one inside another. */
+let undoGroupDepth = 0;
+
 /**
  * Applies an undoable action and remembers what it changed. Returns the token
  * that Undo passes back, or null when the action changed nothing.
@@ -1219,7 +1361,7 @@ function updateStateWithUndo(
 ): string | null {
   const current = readState();
   const next = mutator(current);
-  if (next === current) {
+  if (holdsSameState(current, next)) {
     return null;
   }
 
@@ -1286,6 +1428,11 @@ const TEAM_PUSH_HOLD_MS = 60_000;
  */
 function rememberUndo(token: string, undo: LocalStateUndo) {
   lastUndo = { token, undo };
+  // Inside `runWithUndo`, the group's own capture counts the change, once.
+  if (undoGroupDepth === 0) {
+    countUndoChanges(undo);
+    storeCommandUnit()?.set({ store: { undo_offered: true } });
+  }
   const state = readState();
   const shared = new Set(
     state.projects
@@ -1349,17 +1496,41 @@ function listenForOtherWindowWrites() {
   otherWindowWritesListened = true;
   window.addEventListener("storage", (event: StorageEvent) => {
     if (event.key === STORAGE_KEY || event.key === null) {
-      refreshState();
-      announceStateChange({ local: false });
+      wideEvents.run(
+        "local_state.reload",
+        { kind: "job", trigger: "system" },
+        (unit) => {
+          const before = cachedRevision;
+          refreshState();
+          unit.set({
+            local_state: {
+              revision_changed: cachedRevision !== before,
+              storage_cleared: event.key === null,
+            },
+          });
+          announceStateChange({ local: false });
+        },
+      );
     }
   });
 }
 
+/** Runs a change of the timesheet import drafts and records what it did. */
+function withDraftCounts<Result>(
+  name: "timesheet_import.dismiss" | "timesheet_import.commit",
+  change: () => Result,
+): Result {
+  const before = readState();
+  const result = change();
+  describeImportDrafts(name, before, readState());
+  return result;
+}
+
 /**
- * The local store. A command that would change a submitted week throws
- * `LockedWeekError` and writes nothing.
+ * The local store's reads and commands. A command that would change a
+ * submitted week throws `LockedWeekError` and writes nothing.
  */
-export const localStore = {
+const store = {
   /**
    * Calls `callback` after each change, from this window or another. The
    * change says which, for listeners that act on their own window's writes.
@@ -1422,6 +1593,7 @@ export const localStore = {
    * was added.
    */
   acceptCalendarSuggestions(acceptances: readonly CalendarAcceptance[]) {
+    const before = readState();
     let result: ReturnType<typeof applyAcceptCalendarSuggestions>["result"] = {
       entryIds: [],
       skipped: acceptances.length,
@@ -1434,6 +1606,7 @@ export const localStore = {
       result = operation.result;
       return operation.state;
     });
+    describeSuggestionAdd(before, readState(), result);
     return { ...result, undoToken };
   },
   /** Hides these occurrences. Returns an undo token. */
@@ -1534,6 +1707,7 @@ export const localStore = {
         ? withTeamSyncState(state, next)
         : state;
     });
+    describeShare(projectId, connectionId, result);
     return { result, undoToken };
   },
   /**
@@ -1586,13 +1760,16 @@ export const localStore = {
     });
   },
   removeConnectionPullRequests(pluginId: string, connectionId: string) {
-    return updateState((state) => ({
-      ...state,
-      pullRequests: (state.pullRequests ?? []).filter(
+    return updateState((state) => {
+      const pullRequests = (state.pullRequests ?? []).filter(
         (item) =>
           item.pluginId !== pluginId || item.connectionId !== connectionId,
-      ),
-    }));
+      );
+      // Nothing to remove writes nothing.
+      return pullRequests.length === (state.pullRequests ?? []).length
+        ? state
+        : { ...state, pullRequests };
+    });
   },
   createTeam(
     teamName: string,
@@ -1699,7 +1876,7 @@ export const localStore = {
     projectId: string,
     taskNames: string[],
   ): ProjectTaskImportResult {
-    return updateStateWithResult((state) => {
+    const imported = updateStateWithResult((state) => {
       const operation = applyProjectTaskImport(
         state.projects,
         projectId,
@@ -1717,44 +1894,71 @@ export const localStore = {
         result: operation.result,
       };
     });
+    describeTaskImport(projectId, imported);
+    return imported;
   },
   importProjectWorkbookRows(rows: ProjectTransferRow[]) {
-    return updateStateWithResult<ProjectWorkbookImportResult>((state) => {
-      const operation = applyProjectWorkbookImport(state.projects, rows, {
-        createProject: (project) =>
-          createProject(project, { createId, now: Date.now }),
-        createTask: (task) =>
-          createProjectTask(task, { createId, now: Date.now }),
-        now: Date.now,
-      });
+    const imported = updateStateWithResult<ProjectWorkbookImportResult>(
+      (state) => {
+        const operation = applyProjectWorkbookImport(state.projects, rows, {
+          createProject: (project) =>
+            createProject(project, { createId, now: Date.now }),
+          createTask: (task) =>
+            createProjectTask(task, { createId, now: Date.now }),
+          now: Date.now,
+        });
 
-      return {
-        state: {
-          ...state,
-          projects: operation.projects,
-        },
-        result: operation.result,
-      };
+        return {
+          state: {
+            ...state,
+            projects: operation.projects,
+          },
+          result: operation.result,
+        };
+      },
+    );
+    describeProjectImport(imported, {
+      schema: "default",
+      row_count: rows.length,
+      project_count: new Set(rows.map((row) => row.project)).size,
+      task_count: rows.length,
     });
+    return imported;
   },
   importProjectDataShapeProjects(projects: ProjectDataShapeImportProject[]) {
-    return updateStateWithResult<ProjectWorkbookImportResult>((state) => {
-      const operation = applyProjectDataShapeImport(state.projects, projects, {
-        createProject: (project) =>
-          createProject(project, { createId, now: Date.now }),
-        createTask: (task) =>
-          createProjectTask(task, { createId, now: Date.now }),
-        now: Date.now,
-      });
+    const schema = readState().userPreferences.projectDataShapeId;
+    const imported = updateStateWithResult<ProjectWorkbookImportResult>(
+      (state) => {
+        const operation = applyProjectDataShapeImport(
+          state.projects,
+          projects,
+          {
+            createProject: (project) =>
+              createProject(project, { createId, now: Date.now }),
+            createTask: (task) =>
+              createProjectTask(task, { createId, now: Date.now }),
+            now: Date.now,
+          },
+        );
 
-      return {
-        state: {
-          ...state,
-          projects: operation.projects,
-        },
-        result: operation.result,
-      };
+        return {
+          state: {
+            ...state,
+            projects: operation.projects,
+          },
+          result: operation.result,
+        };
+      },
+    );
+    describeProjectImport(imported, {
+      schema: schema === BUILT_IN_PROJECT_DATA_SHAPE_ID ? "default" : schema,
+      project_count: projects.length,
+      task_count: projects.reduce(
+        (total, project) => total + project.tasks.length,
+        0,
+      ),
     });
+    return imported;
   },
   renameProjectTask(projectId: string, taskId: string, name: string) {
     updateState((state) => ({
@@ -1894,21 +2098,30 @@ export const localStore = {
   },
   /** Starts a running entry today, saving the one already running (Start or Switch). */
   startTimer(timer: LocalTimerDraft) {
-    updateState((state) =>
+    const before = readState();
+    const after = updateState((state) =>
       applyStartTimer(state, timer, todayIsoDate(), {
         createId,
         now: Date.now,
       }),
     );
+    describeTimerStart(before, after);
   },
   /** Saves the running entry's form. It keeps running. */
   editRunningEntry(timerId: string, edit: RunningEntryEdit) {
+    const timer = readState().timers.find((item) => item._id === timerId);
+    const now = Date.now();
     updateState((state) =>
       applyEditRunningEntry(state, timerId, edit, { now: Date.now }),
     );
+    describeRunningEntryEdit(timer, edit, now);
   },
   /** Discards the running entry. Returns an undo token, or null when nothing changed. */
   cancelTimer(timerId: string) {
+    describeTimerDiscard(
+      readState().timers.find((item) => item._id === timerId),
+      Date.now(),
+    );
     return updateStateWithUndo((state) => applyCancelTimer(state, timerId));
   },
   saveManualTimeEntry(values: {
@@ -1919,47 +2132,57 @@ export const localStore = {
     note?: string;
     durationMs: number;
   }) {
-    updateState((state) =>
+    const before = readState();
+    const after = updateState((state) =>
       saveManualTimesheetEntry(state, values, {
         createId,
         now: Date.now,
       }),
     );
+    describeEntryCreate(before, after);
   },
   stageTimesheetImportRows(rows: TimesheetImportRow[]) {
-    updateState((state) =>
+    const before = readState();
+    const after = updateState((state) =>
       applyStageTimesheetImportRows(state, rows, {
         createId,
         now: Date.now,
       }),
     );
+    describeImportStage(before, after, rows.length);
   },
   /** Dismisses one import draft. Returns an undo token, or null when nothing changed. */
   dismissTimesheetImportDraft(draftId: string) {
-    return updateStateWithUndo((state) =>
-      applyDismissTimesheetImportDraft(state, draftId),
+    return withDraftCounts("timesheet_import.dismiss", () =>
+      updateStateWithUndo((state) =>
+        applyDismissTimesheetImportDraft(state, draftId),
+      ),
     );
   },
   /** Dismisses every import draft. Returns an undo token, or null when there were none. */
   dismissAllTimesheetImportDrafts() {
-    return updateStateWithUndo((state) =>
-      applyClearTimesheetImportDrafts(state),
+    return withDraftCounts("timesheet_import.dismiss", () =>
+      updateStateWithUndo((state) => applyClearTimesheetImportDrafts(state)),
     );
   },
   commitTimesheetImportDraft(draftId: string) {
-    updateState((state) =>
-      applyCommitTimesheetImportDraft(state, draftId, {
-        createId,
-        now: Date.now,
-      }),
+    withDraftCounts("timesheet_import.commit", () =>
+      updateState((state) =>
+        applyCommitTimesheetImportDraft(state, draftId, {
+          createId,
+          now: Date.now,
+        }),
+      ),
     );
   },
   commitReadyTimesheetImportDrafts() {
-    updateState((state) =>
-      applyCommitReadyTimesheetImportDrafts(state, {
-        createId,
-        now: Date.now,
-      }),
+    withDraftCounts("timesheet_import.commit", () =>
+      updateState((state) =>
+        applyCommitReadyTimesheetImportDrafts(state, {
+          createId,
+          now: Date.now,
+        }),
+      ),
     );
   },
   addWorkItem(workItem: LocalWorkItemDraft) {
@@ -1987,7 +2210,7 @@ export const localStore = {
       archiveMissingFromConnectionId?: string;
     },
   ) {
-    return updateStateWithResult((state) => {
+    const imported = updateStateWithResult((state) => {
       const imported = applySyncedWorkItemImport(
         applyWorkflowStateLifecycle(
           state,
@@ -2022,6 +2245,8 @@ export const localStore = {
         state: withDescriptionTimelogs(state, imported.state),
       };
     });
+    describeBacklogImport(workItems.length, imported);
+    return imported;
   },
   /** Archives the synced items a sync reports in a done category. */
   archiveDoneSyncedWorkItems(doneItems: BacklogDoneWorkItem[]) {
@@ -2291,7 +2516,8 @@ export const localStore = {
     change?: BacklogSettleChange,
     options?: CloseSubitemsOptions,
   ) {
-    return updateStateWithUndo((state) =>
+    const before = readState();
+    const token = updateStateWithUndo((state) =>
       applySettleBacklogItem(
         state,
         workItemId,
@@ -2300,6 +2526,8 @@ export const localStore = {
         options,
       ),
     );
+    describeSettle(before, readState(), workItemId, change, options);
+    return token;
   },
   /**
    * Moves a backlog item to a workflow state. A done state closes it and
@@ -2320,7 +2548,7 @@ export const localStore = {
     if (edits) {
       updateState((state) => applyUpdateWorkItem(state, workItemId, edits));
     }
-    return updateStateWithUndo((state) =>
+    const moved = updateStateWithUndo((state) =>
       applyMoveBacklogItemToState(
         edits
           ? withDescriptionTimelogs(
@@ -2335,6 +2563,8 @@ export const localStore = {
         moveOptions,
       ),
     );
+    describeMove(before, readState(), workItemId, moveOptions, moved !== null);
+    return moved;
   },
   /**
    * Writes another source state of the item's workflow state, after the Undo
@@ -2446,12 +2676,16 @@ export const localStore = {
       durationMs: number;
     },
   ) {
+    const entry = readState().timesheetEntries.find(
+      (item) => item._id === entryId,
+    );
     updateState((state) =>
       applyUpdateTimesheetEntry(state, entryId, values, {
         createId,
         now: Date.now,
       }),
     );
+    describeEntryUpdate(entry, values);
   },
   /** Deletes an entry. Returns an undo token, or null when nothing changed. */
   deleteTimesheetEntry(entryId: string) {
@@ -2576,6 +2810,8 @@ export const localStore = {
    */
   undo(token: string): UndoResult {
     if (lastUndo?.token !== token) {
+      describeStoreCommand("undo.restore", { undo: { result: "expired" } });
+      refuseStoreCommand("expired");
       return "expired";
     }
 
@@ -2584,16 +2820,22 @@ export const localStore = {
     lastUndo = undefined;
     try {
       releaseTeamPushHold();
-      return updateStateWithResult((state) => {
+      const result = updateStateWithResult((state) => {
         const restored = restoreUndo(state, undo);
+        if (restored.result === "stale") {
+          refuseStoreCommand(restored.staleReason);
+        }
         return {
-          ...restored,
+          result: restored.result,
           state: reconcileSourceWriteMappings(state, restored.state, {
             createId,
             now: Date.now,
           }),
         };
       });
+      if (result === "restored") countUndoChanges(undo);
+      describeStoreCommand("undo.restore", { undo: { result } });
+      return result;
     } catch (error) {
       // Another window wrote first. The refusal reloaded this window, so keep
       // the undo: a retry runs it against the fresh state, which says "stale"
@@ -2616,7 +2858,13 @@ export const localStore = {
    */
   runWithUndo<T>(run: () => T): { result: T; undoToken: string | null } {
     const before = readState();
-    const result = run();
+    undoGroupDepth += 1;
+    let result: T;
+    try {
+      result = run();
+    } finally {
+      undoGroupDepth -= 1;
+    }
     const after = readState();
     if (after === before) return { result, undoToken: null };
 
@@ -2627,9 +2875,11 @@ export const localStore = {
     return { result, undoToken: token };
   },
   saveTimer(timerId: string) {
-    updateState((state) =>
+    const before = readState();
+    const after = updateState((state) =>
       applySaveTimer(state, timerId, { createId, now: Date.now }),
     );
+    describeTimerStop(before, after, timerId);
   },
   /**
    * Remembers that Ajour asked to commit the week of `weekOf`, so it never asks
@@ -2662,9 +2912,11 @@ export const localStore = {
    * the result with an undo token, null when Ajour refused.
    */
   submitWeek(weekOf: string) {
-    return updateStateWithUndoResult((state) =>
+    const submitted = updateStateWithUndoResult((state) =>
       applySubmitWeek(state, weekOf, Date.now),
     );
+    describeWeekSubmit(weekOf, submitted.result);
+    return submitted;
   },
   /** Reopens a submitted week. Returns an undo token, or null when it was not submitted. */
   reopenWeek(weekOf: string) {
@@ -2767,12 +3019,572 @@ export const localStore = {
     );
   },
   setUserPreferences(preferences: Partial<UserPreferences>) {
-    updateState((state) => ({
-      ...state,
-      userPreferences: {
-        ...state.userPreferences,
-        ...preferences,
-      },
-    }));
+    const before = readState().userPreferences;
+    const after = updateState((state) => {
+      const userPreferences = { ...state.userPreferences, ...preferences };
+      return recordsEqual(userPreferences, state.userPreferences)
+        ? state
+        : { ...state, userPreferences };
+    }).userPreferences;
+    describeUserPreferences(before, after);
   },
 };
+
+/** A pull request change's event, by its type. */
+const PULL_REQUEST_COMMANDS = {
+  open: "pull_request.open",
+  settle: "pull_request.settle",
+  unsettle: "pull_request.unsettle",
+  snooze: "pull_request.snooze",
+  unsnooze: "pull_request.unsnooze",
+} as const satisfies Record<PullRequestCommand["type"], string>;
+
+/** A backlog item command whose first argument is the item's ID. */
+function backlogItemCommand<
+  Name extends
+    | "backlog_item.apply_timelog"
+    | "backlog_item.restore"
+    | "backlog_item.change_source_state"
+    | "backlog_item.complete_source_write"
+    | "backlog_item.fail_source_write"
+    | "backlog_item.unsettle"
+    | "backlog_item.snooze"
+    | "backlog_item.unsnooze"
+    | "backlog_item.pin"
+    | "backlog_item.unpin"
+    | "backlog_item.open"
+    | "backlog_item.archive"
+    | "backlog_item.delete"
+    | "backlog_item.resolve_description"
+    | "backlog_item.save_description",
+>(name: Name) {
+  return {
+    name,
+    fields: {
+      backlog_item: {
+        id: ([workItemId]: readonly [string, ...unknown[]]) => workItemId,
+      },
+    },
+  };
+}
+
+/** A command whose first argument is a project ID. */
+const projectIdFirst = {
+  project: { id: ([projectId]: readonly [string, ...unknown[]]) => projectId },
+};
+
+/** A command whose first two arguments are a project ID and a task ID. */
+const taskIdsFirst = {
+  project: { id: ([projectId]: readonly [string, ...unknown[]]) => projectId },
+  task: {
+    id: ([, taskId]: readonly [string, string, ...unknown[]]) => taskId,
+  },
+};
+
+/** The store's reads: they change nothing, so they emit no event. */
+type StoreRead =
+  "subscribe" | "snapshot" | "pendingUndoProjectIds" | "getTimeline";
+
+/**
+ * Each store command's wide event name, and how it reads its fields: from
+ * its arguments before it runs (`fields`), and from its result after
+ * (`resultFields`). Every command but the reads has a name, so a new command
+ * without one fails to compile, and a field the catalog doesn't declare for
+ * that name fails too. Commands whose fields need the state before and
+ * after describe themselves through `lib/store-command-fields.ts`. See
+ * docs/logging-strategy.md.
+ */
+const STORE_COMMANDS = {
+  syncPullRequests: {
+    name: "pull_request.apply_sync",
+    trigger: "system",
+    fields: {
+      plugin: { id: ([source]) => source.pluginId },
+      connection: { id: ([source]) => source.connectionId },
+      pull_request: {
+        received_count: ([, result]) => result.pullRequests.length,
+      },
+    },
+  },
+  changePullRequest: {
+    pick: (_id, command) => PULL_REQUEST_COMMANDS[command.type],
+    fallback: "pull_request.change",
+    fields: { pull_request: { id: ([id]) => id } },
+  },
+  acceptCalendarSuggestions: "suggestion.add",
+  dismissCalendarSuggestions: {
+    name: "suggestion.dismiss",
+    fields: { suggestion: { count: ([suggestions]) => suggestions.length } },
+  },
+  hideCalendarMeeting: "event_rule.hide",
+  forgetCalendarEventRule: {
+    name: "event_rule.forget",
+    fields: { event_rule: { id: ([ruleId]) => ruleId } },
+  },
+  removeConnectionCalendarData: "connection.delete",
+  applyTeamSyncRound: {
+    name: "team.apply_sync",
+    trigger: "system",
+    fields: { connection: { id: ([connectionId]) => connectionId } },
+    resultFields: { team_sync: { result: (result) => result.kind } },
+  },
+  shareProjectWithTeam: "project.share",
+  unshareProjectFromTeam: { name: "project.unshare", fields: projectIdFirst },
+  resolveTeamArrival: {
+    name: "team.resolve_arrival",
+    fields: {
+      connection: { id: ([connectionId]) => connectionId },
+      team: {
+        choice: ([, , choice]) =>
+          choice.kind === "link" ? "link" : "add_separately",
+      },
+    },
+    resultFields: { team: { result: (result) => result.kind } },
+  },
+  removeConnectionTeamData: "connection.delete",
+  removeConnectionPullRequests: "connection.delete",
+  createTeam: "team.create",
+  addProject: {
+    name: "project.create",
+    resultFields: { project: { id: (projectId) => projectId } },
+  },
+  updateProject: {
+    name: "project.update",
+    fields: {
+      project: {
+        id: ([projectId]) => projectId,
+        changed_fields: ([, patch]) => Object.keys(patch),
+      },
+    },
+  },
+  updateProjectWithUndo: {
+    name: "project.update",
+    fields: {
+      project: {
+        id: ([projectId]) => projectId,
+        changed_fields: ([, patch]) => Object.keys(patch),
+      },
+    },
+  },
+  reorderProjects: {
+    name: "project.reorder",
+    fields: { project: { count: ([orderedIds]) => orderedIds.length } },
+  },
+  archiveProject: { name: "project.archive", fields: projectIdFirst },
+  unarchiveProject: { name: "project.restore", fields: projectIdFirst },
+  addProjectTask: { name: "task.create", fields: projectIdFirst },
+  reorderProjectTask: { name: "task.reorder", fields: taskIdsFirst },
+  reorderTimesheetEntries: {
+    name: "time_entry.reorder",
+    fields: {
+      time_entry: {
+        count: ([, orderedIds]) => orderedIds.length,
+        to_day: ([localDate]) => localDate,
+      },
+    },
+  },
+  importProjectTasks: "task.import",
+  importProjectWorkbookRows: "project.import",
+  importProjectDataShapeProjects: "project.import",
+  renameProjectTask: {
+    name: "task.update",
+    fields: {
+      ...taskIdsFirst,
+      task: { ...taskIdsFirst.task, changed_fields: () => ["name"] },
+    },
+  },
+  updateProjectTask: {
+    name: "task.update",
+    fields: {
+      ...taskIdsFirst,
+      task: {
+        ...taskIdsFirst.task,
+        changed_fields: ([, , patch]) => Object.keys(patch),
+      },
+    },
+  },
+  setProjectTaskPinnedSlot: {
+    name: "task.pin",
+    fields: {
+      ...taskIdsFirst,
+      task: { ...taskIdsFirst.task, pinned_slot: ([, , slot]) => slot ?? null },
+    },
+  },
+  archiveProjectTask: { name: "task.archive", fields: taskIdsFirst },
+  unarchiveProjectTask: { name: "task.restore", fields: taskIdsFirst },
+  addWorkflowState: {
+    name: "workflow_state.create",
+    resultFields: { workflow_state: { id: (statusId) => statusId } },
+  },
+  updateWorkflowState: {
+    name: "workflow_state.update",
+    fields: {
+      workflow_state: {
+        id: ([statusId]) => statusId,
+        done: ([, updates]) =>
+          typeof updates === "object" ? updates.done : undefined,
+      },
+    },
+  },
+  deleteWorkflowState: {
+    name: "workflow_state.delete",
+    fields: { workflow_state: { id: ([statusId]) => statusId } },
+  },
+  autoMapSourceStates: { name: "workflow_state.auto_map", trigger: "system" },
+  setWorkflowStateWriteRule: {
+    name: "workflow_state.set_write_rule",
+    fields: {
+      workflow_state: {
+        id: ([rule]) => rule.workflowStateId,
+        write_rule: ([rule]) => rule.write?.kind ?? "cleared",
+      },
+    },
+  },
+  moveWorkflowState: {
+    name: "workflow_state.move",
+    fields: { workflow_state: { id: ([workflowStateId]) => workflowStateId } },
+  },
+  setWorkflowStateMapping: {
+    name: "workflow_state.map",
+    fields: {
+      workflow_state: {
+        id: ([mapping]) => mapping.workflowStateId ?? undefined,
+      },
+    },
+    resultFields: {
+      workflow_state: { closed_count: (result) => result.closedCount },
+    },
+  },
+  startTimer: "time_entry.start",
+  editRunningEntry: "time_entry.update",
+  cancelTimer: "time_entry.discard",
+  saveManualTimeEntry: "time_entry.create",
+  stageTimesheetImportRows: "timesheet_import.stage",
+  dismissTimesheetImportDraft: "timesheet_import.dismiss",
+  dismissAllTimesheetImportDrafts: "timesheet_import.dismiss",
+  commitTimesheetImportDraft: "timesheet_import.commit",
+  commitReadyTimesheetImportDrafts: "timesheet_import.commit",
+  addWorkItem: {
+    name: "backlog_item.create",
+    fields: {
+      backlog_item: { parent_id: ([draft]) => draft.parentWorkItemId },
+    },
+    resultFields: { backlog_item: { id: (workItemId) => workItemId } },
+  },
+  addSubtask: {
+    name: "backlog_item.create",
+    fields: { backlog_item: { parent_id: ([parentId]) => parentId } },
+    resultFields: { backlog_item: { id: (workItemId) => workItemId } },
+  },
+  importSyncedWorkItems: "backlog_import.commit",
+  archiveDoneSyncedWorkItems: {
+    name: "backlog.archive_done",
+    trigger: "system",
+    fields: {
+      backlog_import: { candidate_count: ([doneItems]) => doneItems.length },
+    },
+    resultFields: {
+      backlog_import: { archived_count: (archived) => archived },
+    },
+  },
+  returnItemsWithNewComments: {
+    name: "backlog_item.return",
+    trigger: "system",
+  },
+  applyBacklogSyncWorkItemUpdates: {
+    name: "backlog.apply_updates",
+    trigger: "system",
+    fields: {
+      backlog_import: { candidate_count: ([updates]) => updates.length },
+    },
+  },
+  keepLocalEstimateConflict: {
+    name: "backlog_item.resolve_estimate",
+    fields: {
+      backlog_item: {
+        id: ([workItemId]) => workItemId,
+        estimate_resolution: () => "keep_local",
+      },
+    },
+  },
+  takeSourceDescriptionWithUndo: backlogItemCommand(
+    "backlog_item.resolve_description",
+  ),
+  updateSyncedDescription: backlogItemCommand("backlog_item.save_description"),
+  acceptRemoteEstimateValue: {
+    name: "backlog_item.resolve_estimate",
+    fields: {
+      backlog_item: {
+        id: ([workItemId]) => workItemId,
+        estimate_resolution: () => "accept_source",
+      },
+    },
+  },
+  dismissEstimateIssue: {
+    name: "backlog_item.resolve_estimate",
+    fields: {
+      backlog_item: {
+        id: ([workItemId]) => workItemId,
+        estimate_resolution: () => "dismiss",
+      },
+    },
+  },
+  reorderWorkItems: {
+    name: "backlog_item.reorder",
+    fields: { backlog_item: { count: ([orderedIds]) => orderedIds.length } },
+  },
+  reorderWorkItemsWithUndo: {
+    name: "backlog_item.reorder",
+    fields: { backlog_item: { count: ([orderedIds]) => orderedIds.length } },
+  },
+  setBacklogSortMode: {
+    name: "backlog.sort",
+    fields: { backlog: { sort_mode: ([mode]) => mode } },
+  },
+  updateWorkItem: {
+    name: "backlog_item.update",
+    fields: {
+      backlog_item: {
+        id: ([workItemId]) => workItemId,
+        changed_fields: ([, patch]) => Object.keys(patch),
+      },
+    },
+  },
+  updateWorkItemWithUndo: {
+    name: "backlog_item.update",
+    fields: {
+      backlog_item: {
+        id: ([workItemId]) => workItemId,
+        changed_fields: ([, patch]) => Object.keys(patch),
+      },
+    },
+  },
+  saveWorkItemEdits: {
+    name: "backlog_item.update",
+    fields: {
+      backlog_item: {
+        id: ([workItemId]) => workItemId,
+        changed_fields: ([, patch]) => Object.keys(patch),
+      },
+    },
+  },
+  saveWorkItemDescriptionText: {
+    name: "backlog_item.update",
+    fields: {
+      backlog_item: {
+        id: ([workItemId]) => workItemId,
+        changed_fields: () => ["description"],
+      },
+    },
+  },
+  applyWorkItemEditsSince: {
+    name: "backlog_item.update",
+    fields: {
+      backlog_item: {
+        id: ([workItemId]) => workItemId,
+        changed_fields: ([, patch]) => Object.keys(patch),
+      },
+    },
+  },
+  saveNewWorkItem: {
+    name: "backlog_item.create",
+    fields: {
+      backlog_item: {
+        parent_id: ([draft]) => draft.parentWorkItemId,
+        closed: ([, closeIn]) => closeIn !== undefined,
+      },
+    },
+    resultFields: { backlog_item: { id: (result) => result.workItemId } },
+  },
+  applyTimelogWithUndo: backlogItemCommand("backlog_item.apply_timelog"),
+  restoreWorkItem: backlogItemCommand("backlog_item.restore"),
+  settleWorkItem: "backlog_item.settle",
+  moveWorkItemToState: "backlog_item.move",
+  changeWorkItemSourceState: backlogItemCommand(
+    "backlog_item.change_source_state",
+  ),
+  completeSourceWrite: {
+    ...backlogItemCommand("backlog_item.complete_source_write"),
+    trigger: "system",
+  },
+  failSourceWrite: {
+    ...backlogItemCommand("backlog_item.fail_source_write"),
+    trigger: "system",
+  },
+  applySettleRule: {
+    name: "settle_rule.set",
+    fields: { settle_rule: { mode: () => "apply" } },
+  },
+  askSettleRule: {
+    name: "settle_rule.set",
+    fields: { settle_rule: { mode: () => "ask" } },
+  },
+  unsettleWorkItem: backlogItemCommand("backlog_item.unsettle"),
+  snoozeWorkItem: backlogItemCommand("backlog_item.snooze"),
+  unsnoozeWorkItem: backlogItemCommand("backlog_item.unsnooze"),
+  pinWorkItem: backlogItemCommand("backlog_item.pin"),
+  unpinWorkItem: backlogItemCommand("backlog_item.unpin"),
+  markWorkItemOpened: backlogItemCommand("backlog_item.open"),
+  archiveWorkItem: backlogItemCommand("backlog_item.archive"),
+  deleteWorkItem: backlogItemCommand("backlog_item.delete"),
+  updateTimesheetEntry: "time_entry.update",
+  deleteTimesheetEntry: {
+    name: "time_entry.delete",
+    fields: { time_entry: { count: () => 1 } },
+  },
+  deleteTimesheetEntries: {
+    name: "time_entry.delete",
+    fields: { time_entry: { count: ([entryIds]) => entryIds.length } },
+  },
+  duplicateTimesheetEntry: {
+    name: "time_entry.duplicate",
+    fields: {
+      time_entry: {
+        count: () => 1,
+        mode: () => "copy",
+        to_day: ([, values]) => values.localDate,
+      },
+    },
+  },
+  moveTimesheetEntry: {
+    name: "time_entry.move",
+    fields: {
+      time_entry: {
+        count: () => 1,
+        mode: () => "cut",
+        to_day: ([, values]) => values.localDate,
+      },
+    },
+  },
+  pasteTimesheetEntries: {
+    name: "time_entry.paste",
+    fields: {
+      time_entry: {
+        count: ([entries]) => entries.length,
+        mode: ([, mode]) => mode,
+      },
+    },
+  },
+  relocateTimesheetEntries: {
+    pick: (_entries, mode) =>
+      mode === "copy" ? "time_entry.duplicate" : "time_entry.move",
+    fallback: "time_entry.move",
+    fields: {
+      time_entry: {
+        count: ([entries]) => entries.length,
+        mode: ([, mode]) => mode,
+      },
+    },
+  },
+  dropTimesheetEntries: {
+    name: "time_entry.drop",
+    fields: {
+      time_entry: {
+        count: ([entryIds]) => entryIds.length,
+        to_day: ([, localDate]) => localDate,
+      },
+    },
+  },
+  undo: "undo.restore",
+  forgetUndo: { name: "undo.expire", trigger: "system" },
+  // Only agent tools group their writes under one Undo today.
+  runWithUndo: { name: UNDO_GROUP, trigger: "agent" },
+  saveTimer: "time_entry.stop",
+  markCommitPrompted: {
+    name: "week.prompt_commit",
+    fields: { week: { week_of: ([weekOf]) => weekOf } },
+  },
+  markTimesheetEntriesCommitted: {
+    name: "time_entry.commit",
+    fields: { time_entry: { count: ([entryIds]) => entryIds.length } },
+  },
+  markTimesheetEntriesNotCommitted: {
+    name: "time_entry.uncommit",
+    fields: { time_entry: { count: ([entryIds]) => entryIds.length } },
+  },
+  submitWeek: "week.submit",
+  reopenWeek: {
+    name: "week.reopen",
+    fields: { week: { week_of: ([weekOf]) => weekOf } },
+  },
+  continueTimesheetEntry: {
+    name: "time_entry.continue",
+    fields: { time_entry: { id: ([entryId]) => entryId } },
+  },
+  addSampleActivity: "timeline.import",
+  importBrowserBuckets: "timeline.import",
+  setExtensionBridgeStatus: { name: "timeline.update", trigger: "system" },
+  upsertEditedBlock: "timeline.update",
+  updateImportedBrowserDraft: "timeline.update",
+  dismissBlock: "timeline.dismiss",
+  dismissImportedBrowserDraft: "timeline.dismiss",
+  commitBlock: "timeline.commit",
+  commitImportedBrowserDraft: "timeline.commit",
+  saveRuleFromBlock: "timeline.save_rule",
+  saveRuleFromImportedBrowserDraft: "timeline.save_rule",
+  setUserPreferences: "preferences.update",
+} satisfies StoreCommandTable<typeof store, StoreRead>;
+
+/**
+ * The local store. Each command emits one wide event, named from
+ * `STORE_COMMANDS`; a command run inside another unit folds into it.
+ */
+export const localStore = instrumentStoreCommands(store, STORE_COMMANDS);
+
+type Store = typeof store;
+type StoreCommandKey = keyof typeof STORE_COMMANDS;
+/** The event names a store command can take. */
+type CommandNameOf<Key extends StoreCommandKey> = SpecName<
+  (typeof STORE_COMMANDS)[Key]
+>;
+type CommandOf<Key extends StoreCommandKey> = Store[Key] extends (
+  ...args: infer Args
+) => infer Result
+  ? { args: Args; result: Result }
+  : never;
+type AnySpec = StoreCommandSpec<(...args: never[]) => unknown>;
+
+/**
+ * Runs the store command `key` with `args`, and lets the code around it add
+ * what only it knows to the command's event, such as where the entry form
+ * sits. `extend` runs inside the event, after the command. Because the
+ * command is the one named, its own fields always land on that event.
+ */
+export function runStoreCommandWith<Key extends StoreCommandKey>(
+  key: Key,
+  args: CommandOf<Key>["args"],
+  extend: (
+    unit: StoreCommandUnit<CommandNameOf<Key>>,
+    result: CommandOf<Key>["result"],
+  ) => void,
+): CommandOf<Key>["result"] {
+  const spec = STORE_COMMANDS[key] as AnySpec;
+  const command = localStore[key] as unknown as (
+    ...args: CommandOf<Key>["args"]
+  ) => CommandOf<Key>["result"];
+  return runStoreCommand(
+    resolveCommandName(spec, args) as CommandNameOf<Key>,
+    (unit) => {
+      const result = command.apply(localStore, args);
+      extend(unit, result);
+      return result;
+    },
+    (typeof spec === "object" && spec.trigger) || "user",
+  );
+}
+
+/**
+ * Opens the event of the store command `key` for a workflow that awaits
+ * before it runs it, such as a move that asks about subitems first. The
+ * workflow runs the command inside the handle's `enter`, never
+ * `unit.enter()`: only the writes made inside `enter` count as the
+ * command's own, so a command run through `unit.enter()` would report a
+ * real write as `noop`. It calls `finish` once in every path.
+ */
+export function startStoreCommandFor<Key extends StoreCommandKey>(key: Key) {
+  const spec = STORE_COMMANDS[key] as AnySpec;
+  return startStoreCommand(
+    resolveCommandName(spec, []) as CommandNameOf<Key>,
+    (typeof spec === "object" && spec.trigger) || "user",
+  );
+}

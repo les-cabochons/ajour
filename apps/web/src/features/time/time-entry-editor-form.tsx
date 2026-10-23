@@ -43,7 +43,7 @@ import { WeekLockChip } from "@/features/time/week-lock";
 import { TimeEntryFields } from "@/features/time/time-entry-fields";
 import { useOpenEntryEditor } from "@/lib/entry-editor-presence";
 import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
-import { localStore } from "@/lib/local-store";
+import { localStore, runStoreCommandWith } from "@/lib/local-store";
 import { getTimerDurationsMs } from "@/lib/timer-totals";
 import { cn, todayIsoDate } from "@/lib/utils";
 
@@ -150,9 +150,12 @@ export function TimeEntryEditorForm({
   className,
   initialFields,
   onFieldsChange,
+  host,
 }: {
   target: TimeEntryEditorTarget;
   onClose: () => void;
+  /** Where the form sits, for the wide event of the entry it saves. */
+  host: "side_panel" | "dialog" | "popover";
   /** An unsaved draft to resume instead of the target's saved values. */
   initialFields?: TimeEntryEditorFields;
   /** Reports every draft change, so a host can carry it to another container. */
@@ -249,29 +252,49 @@ export function TimeEntryEditorForm({
     return true;
   }
 
+  /** Records, on the save's event, where the form sits. */
+  const recordHost = (unit: {
+    set(fields: { time_entry: { host: typeof host } }): unknown;
+  }) => unit.set({ time_entry: { host } });
+
   function writeEntry(values: TimeEntryValues) {
     if (runningTimer) {
-      localStore.editRunningEntry(runningTimer._id, {
-        ...editor.metadata,
-        // Only a changed Hours resets the count; otherwise it keeps counting as is.
-        countedDurationMs:
-          values.durationMs === runningOriginal?.durationMs
-            ? undefined
-            : values.durationMs,
-      });
+      runStoreCommandWith(
+        "editRunningEntry",
+        [
+          runningTimer._id,
+          {
+            ...editor.metadata,
+            // Only a changed Hours resets the count; otherwise it keeps counting as is.
+            countedDurationMs:
+              values.durationMs === runningOriginal?.durationMs
+                ? undefined
+                : values.durationMs,
+          },
+        ],
+        recordHost,
+      );
       return;
     }
 
     if (entry) {
       if (values.localDate === entry.localDate) {
-        localStore.updateTimesheetEntry(entry._id, values);
+        runStoreCommandWith(
+          "updateTimesheetEntry",
+          [entry._id, values],
+          recordHost,
+        );
       } else {
         localStore.moveTimesheetEntry(entry._id, values);
       }
       return;
     }
 
-    localStore.saveManualTimeEntry({ ...values, workItemId });
+    runStoreCommandWith(
+      "saveManualTimeEntry",
+      [{ ...values, workItemId }],
+      recordHost,
+    );
     // Logged time changes the backlog item's estimates, so push them to its source.
     const workItem = workItemId
       ? state.workItems.find((item) => item._id === workItemId)

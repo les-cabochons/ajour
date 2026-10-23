@@ -41,6 +41,7 @@ import {
   SIDEBAR_MIN_WIDTH,
   clampSidebarWidth,
   resolveSidebarWidth,
+  saveSidebarLayout,
   updateSidebarLayout,
   useSidebarLayout,
 } from "@/lib/sidebar-layout";
@@ -85,7 +86,8 @@ function SidebarResizeHandle({
       onStateChange("hidden");
       return;
     }
-    updateSidebarLayout({ width: clampSidebarWidth(width) });
+    // Saved, and recorded, once the drag ends.
+    updateSidebarLayout({ width: clampSidebarWidth(width) }, { save: false });
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -113,6 +115,7 @@ function SidebarResizeHandle({
       className="ajour-sidebar-resize-handle"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
+      onLostPointerCapture={saveSidebarLayout}
       onDoubleClick={() => updateSidebarLayout({ width: undefined })}
       onKeyDown={handleKeyDown}
     />

@@ -1,3 +1,4 @@
+import { webcrypto } from "node:crypto";
 import ExcelJS from "exceljs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { extractTaskNamesFromWorkbook } from "./project-task-import";
@@ -70,6 +71,8 @@ describe("localStore.importProjectTasks", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.stubGlobal("crypto", {
+      // The renderer's wide events draw their IDs from it.
+      getRandomValues: webcrypto.getRandomValues.bind(webcrypto),
       randomUUID: vi.fn(() => `uuid-${Math.random().toString(16).slice(2)}`),
     });
     installMockWindow();

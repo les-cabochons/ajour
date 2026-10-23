@@ -1,3 +1,4 @@
+import { webcrypto } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   assertValidParentWorkItem,
@@ -45,6 +46,8 @@ describe("work item hierarchy", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.stubGlobal("crypto", {
+      // The renderer's wide events draw their IDs from it.
+      getRandomValues: webcrypto.getRandomValues.bind(webcrypto),
       randomUUID: vi.fn(() => `uuid-${Math.random().toString(16).slice(2)}`),
     });
     installMockWindow();

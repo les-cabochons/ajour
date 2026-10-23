@@ -1,3 +1,4 @@
+import { webcrypto } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 function installLegacyWindow() {
@@ -36,6 +37,8 @@ describe("activity logger removal", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.stubGlobal("crypto", {
+      // The renderer's wide events draw their IDs from it.
+      getRandomValues: webcrypto.getRandomValues.bind(webcrypto),
       randomUUID: vi.fn(() => `uuid-${Math.random().toString(16).slice(2)}`),
     });
     installLegacyWindow();

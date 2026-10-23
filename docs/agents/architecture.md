@@ -296,11 +296,13 @@ cannot be written.
 
 Follow `docs/logging-strategy.md`: one wide event per unit of work per runtime, through the runtime's emitter from `packages/wide-events`, not scattered debug strings. Events never hold content (ADR 0011).
 
+Every command of the local store emits one event, named in the store's typed command table (`STORE_COMMANDS` in `lib/local-store.ts`).
+
 Events go nowhere by default; `AJOUR_WIDE_EVENTS=console` prints them for a developer. Any sink that sends them elsewhere must be explicit, opt-in and filtered by each field's privacy class.
 
 ## Dependency Direction
 
-- Apps can depend on `@ajour/shared` and on `packages/wide-events`, whose root files the local API imports by relative path.
+- Apps can depend on `@ajour/shared` and on `packages/wide-events`, whose root files the local API imports by relative path and the web app through `@ajour/wide-events`. `apps/web/src/domain` never imports the emitter: the store, lib and feature seams emit.
 - `packages/shared` and `packages/wide-events` must not depend on app packages.
 - `apps/web/src/domain` must stay pure and must not import React, `features`, or `lib`.
 - `apps/web/src/lib` may depend on `domain`, but must not depend on `features`.

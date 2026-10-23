@@ -16,7 +16,7 @@ import {
 } from "@/features/backlog/close-subitems-dialog";
 import { requestSourceStateChoice } from "@/features/backlog/source-state-dialog";
 import { offerUndo } from "@/features/feedback/undo-toast";
-import { localStore } from "@/lib/local-store";
+import { localStore, startStoreCommandFor } from "@/lib/local-store";
 import { listBacklogSettleStates } from "@/lib/app-api";
 
 function readUnchangedItem(expected: LocalWorkItem) {
@@ -240,13 +240,54 @@ export async function moveBacklogItem(
   workItem: LocalWorkItem,
   workflowStateId: string | undefined,
   choices: BacklogMoveChoices,
+  options: {
+    patch?: Omit<WorkItemPatch, "workflowStateId">;
+    orderedIds?: string[];
+  } = {},
+): Promise<BacklogMoveResult> {
+  // The move's event opens before its dialogs, so a cancelled move is
+  // recorded too. The store command after them runs inside it and joins it.
+  const command = startStoreCommandFor("moveWorkItemToState");
+  try {
+    const result = await planMove(
+      command,
+      workItem,
+      workflowStateId,
+      choices,
+      options,
+    );
+    if (result.kind !== "moved") {
+      command.unit.set({
+        backlog_item: {
+          id: workItem._id,
+          workflow_state_from: workItem.workflowStateId,
+          workflow_state_to: workflowStateId,
+          result: result.kind,
+        },
+      });
+    }
+    if (result.kind === "cancelled") command.unit.cancel();
+    return result;
+  } catch (error) {
+    command.fail(error);
+    throw error;
+  } finally {
+    command.finish();
+  }
+}
+
+async function planMove(
+  unit: { enter<Result>(work: () => Result): Result },
+  workItem: LocalWorkItem,
+  workflowStateId: string | undefined,
+  choices: BacklogMoveChoices,
   {
     patch,
     orderedIds,
   }: {
     patch?: Omit<WorkItemPatch, "workflowStateId">;
     orderedIds?: string[];
-  } = {},
+  },
 ): Promise<BacklogMoveResult> {
   const cancelled = { kind: "cancelled" } as const;
   const state = localStore.snapshot();
@@ -260,7 +301,7 @@ export async function moveBacklogItem(
     return {
       kind: "unchanged",
       undoToken: patch
-        ? localStore.saveWorkItemEdits(workItem._id, patch)
+        ? unit.enter(() => localStore.saveWorkItemEdits(workItem._id, patch))
         : null,
     };
   }
@@ -349,15 +390,13 @@ export async function moveBacklogItem(
   }
   // Save the editor's other fields only after every move prompt succeeds.
   // Undo keeps them, and takes back what their timelog set with the move.
-  const undoToken = localStore.moveWorkItemToState(
-    workItem._id,
-    workflowStateId,
-    {
+  const undoToken = unit.enter(() =>
+    localStore.moveWorkItemToState(workItem._id, workflowStateId, {
       includeSubitems,
       sourceWrites,
       orderedIds,
       ...(patch ? { edits: patch } : {}),
-    },
+    }),
   );
   return {
     kind: "moved",

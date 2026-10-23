@@ -122,6 +122,11 @@ export default defineConfig(({ mode }) => {
       "import.meta.env.VITE_DESKTOP_SHELL": JSON.stringify(
         isDesktopMode ? "true" : "false",
       ),
+      // A developer's switch: AJOUR_WIDE_EVENTS=console prints the renderer's
+      // wide events in the devtools console. Off by default.
+      "import.meta.env.AJOUR_WIDE_EVENTS": JSON.stringify(
+        process.env.AJOUR_WIDE_EVENTS ?? "",
+      ),
     },
     plugins: [
       react(),

@@ -213,8 +213,9 @@ sink:
 - `current()` returns the active unit, so the code doing the work can add to
   it.
 
-The local API creates its emitter in `apps/api/src/events.ts`, and the
-desktop main process in `apps/desktop/electron/main-events.cjs`.
+The local API creates its emitter in `apps/api/src/events.ts`, the
+desktop main process in `apps/desktop/electron/main-events.cjs`, and the
+renderer in `apps/web/src/lib/wide-events.ts`.
 
 ## Sinks
 
@@ -228,9 +229,10 @@ the work does.
 - `console` prints one JSON line per event. `AJOUR_WIDE_EVENTS=console` turns
   it on in the terminal, for the local API and the main process.
   It is never on by default, and the local API prints nothing on stdout
-  without it. Run on its own (`just api-start`, through
-  `apps/api/src/standalone.ts`), the API says where it listens on stderr, so
-  stdout stays a clean stream of events.
+  without it. In the renderer, the same variable at dev or build time prints
+  the events in the devtools console. Run on its own (`just api-start`,
+  through `apps/api/src/standalone.ts`), the API says where it listens on
+  stderr, so stdout stays a clean stream of events.
 
 Logging plugins will later replace the sink without changing any event.
 
@@ -393,8 +395,94 @@ The order of outcomes is the package's: `worstOutcome()` and
 
 A session the runner began takes the run's trigger, `user`.
 
-The seams of #304 add the rest: store commands, boot and Undo (#307),
-`trigger` and `surface` (#309), and renderer jobs and navigation (#310).
+### The renderer (#307)
+
+The renderer creates its emitter at its first use. On desktop it reports the
+launch the main process hands over in `window.ajourDesktop.runtime.launch`
+(`LaunchContext`: `launch_id`, `app` and `device`), so every runtime reports
+one launch. Each field is checked and falls back on its own: the web build,
+or a main process that hands none over, makes its own launch ID, and the web
+build reports the `web` channel. Each window load gets its own window ID.
+The renderer knows neither the home folder nor the user data folder, so its
+events keep an error's type and code but leave its message out. Its sink
+also passes on only the fields the catalog declares for each event, so a
+field without a privacy class never leaves the renderer, whatever set it,
+and a field holds only strings, numbers, booleans, null and lists of them:
+an object or a function where a value belongs is dropped, and counted in
+`dropped_field_count`.
+
+- **Store commands.** `STORE_COMMANDS` in `apps/web/src/lib/local-store.ts`
+  names every command of the local store but its reads, so a new command
+  without a name fails to compile. A name may be picked from the arguments,
+  as a pull request change is by its type, with a fallback name for a call
+  it can't read. An entry may also read the command's own fields: `fields`
+  from its arguments, before it runs, so a refused command keeps them, and
+  `resultFields` from its result. Each is the catalog's field tree for the
+  command's name with a function in place of each field, so a field the
+  catalog doesn't declare fails to compile. Fields that need the state
+  before and after come from `lib/store-command-fields.ts`.
+  `lib/store-command-events.ts` runs each call as one `command` event:
+  - the write path counts `store_write_count` and `store_write_bytes`, sets
+    `store.revision_changed` when another window wrote since this one read,
+    and records `refused` with `locked_week` or `stale_window` before the
+    error leaves the command, so before it reaches the toast;
+  - the Undo capture counts the records changed per local state list
+    (`changed_project_count`, `changed_time_entry_count` and so on) and sets
+    `store.undo_offered`;
+  - a command that writes nothing ends `noop`, and one that writes twice
+    counts two writes on its one event. Only the writes made while a command
+    runs count as its own;
+  - a revision hint that could not be saved counts
+    `store_revision_hint_failure_count`.
+  - Writes, bytes and records changed are counters, so a command that folds
+    into another unit, such as a sync, adds them to that unit's event.
+  - The same command inside an open one joins it instead of folding. The
+    code around a command adds what only it knows with
+    `runStoreCommandWith(key, args, extend)`, which runs the command it names
+    by its key, so the fields can't land on another command's event: the
+    settle's behaviour and comment length, the entry form's host, and
+    whether Submit week showed the pace warning.
+  - A workflow that awaits before its command opens the event first with
+    `startStoreCommandFor(key)` and runs the command inside its `enter`, so
+    another command's write meanwhile isn't counted as its own. A failure
+    it attaches keeps a refusal already recorded. A move cancelled in its
+    subitem or source state dialog ends `cancelled`; a connection's delete
+    is one `connection.delete` with what it removed per kind, and `ok` once
+    the local API deleted it.
+  - `runWithUndo`, which only agent tools run their writes in, has the
+    trigger `agent`. It takes the name of the outermost command running
+    inside it when it first writes, and counts its change once.
+  - A command that finds nothing to change, such as one on a record that
+    doesn't exist, writes nothing and ends `noop`: a state whose values and
+    lists hold the same records is not a write.
+- **Folding across `await`.** Store commands are synchronous, so they fold
+  into the unit on top of the scope stack. An async unit leaves the stack at
+  its first `await`, and runs the store commands after it inside
+  `unit.enter()`; a store command's own workflow uses the `enter` of
+  `startStoreCommandFor`, which also counts its writes. A store command run
+  outside it emits its own event.
+- **`app.boot`** (`lib/app-boot.ts`) runs from loading the local state to
+  the first render: the load path, the migrations applied, the desktop
+  recovery's decision, reason and what a submitted week left out, the
+  state's size and its records per collection. The recovery's writes count
+  on it. A load that throws, or a first render that fails, ends it with the
+  error.
+- **`undo.restore`** is the Undo store command. A refused Undo says why:
+  `expired`, `changed_since`, `two_running_entries` or `would_lock_week`.
+- **`local_state.reload`** is another window's write, read from browser
+  storage.
+- **`preferences.update`** names the keys that changed, with their values
+  when they are enums, numbers or booleans: user preferences through the
+  store, and device UI settings through `lib/preference-events.ts`. A drag
+  of the sidebar or a side panel records one change when it ends.
+- **`app.error`** comes from `features/feedback/app-error-handler.ts`, the
+  window's one handler for uncaught errors and unhandled rejections, which
+  also shows a refused write as a toast, reported as `handled_by: toast`
+  (else `none`). It names the store command that threw. An error event without an error, such as a ResizeObserver warning,
+  is noise and emits nothing.
+
+The seams of #304 add the rest: `trigger` and `surface` (#309), and renderer
+jobs and navigation (#310).
 
 ### The desktop main process
 

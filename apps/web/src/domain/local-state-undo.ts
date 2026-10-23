@@ -89,6 +89,14 @@ export type LocalStateUndo = {
  */
 export type LocalStateUndoResult = "restored" | "stale";
 
+/**
+ * Why a restore is stale: a record changed again since, it would leave two
+ * running timers, or it would lock again a week that could not be submitted
+ * now.
+ */
+export type LocalStateUndoStaleReason =
+  "changed_since" | "two_running_entries" | "would_lock_week";
+
 /** Updates a replacement action's snapshots without hiding independent edits. */
 export function completeSourceWriteInUndo(
   undo: LocalStateUndo,
@@ -347,7 +355,13 @@ function restoreLoggedTime(
 export function restoreUndo(
   state: LocalAppState,
   undo: LocalStateUndo,
-): { state: LocalAppState; result: LocalStateUndoResult } {
+):
+  | { state: LocalAppState; result: "restored" }
+  | {
+      state: LocalAppState;
+      result: "stale";
+      staleReason: LocalStateUndoStaleReason;
+    } {
   const changedTimeEntries = undo.timesheetEntries.length > 0;
   const strictCollections = UNDO_COLLECTIONS.filter(
     (collection) => !(changedTimeEntries && collection === "workItems"),
@@ -362,12 +376,12 @@ export function restoreUndo(
       isUnchangedSinceAction(collection, state, undo[collection]),
     )
   ) {
-    return { state, result: "stale" };
+    return { state, result: "stale", staleReason: "changed_since" };
   }
 
   const timers = restoreCollection("timers", state, undo);
   if (timers.length > 1) {
-    return { state, result: "stale" };
+    return { state, result: "stale", staleReason: "two_running_entries" };
   }
 
   let workItems = changedTimeEntries
@@ -409,7 +423,7 @@ export function restoreUndo(
     calendarEventRules: restoreCollection("calendarEventRules", state, undo),
   };
   if (relocksWeekThatCannotSubmit(state, restored)) {
-    return { state, result: "stale" };
+    return { state, result: "stale", staleReason: "would_lock_week" };
   }
   return { state: restored, result: "restored" };
 }

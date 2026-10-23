@@ -1,5 +1,5 @@
 import { describe, expectTypeOf, it } from "vitest";
-import type { LaunchContext } from "../../../../packages/wide-events/index.ts";
+import type { LaunchContext } from "@ajour/wide-events";
 import type {} from "./desktop-bridge";
 
 type DesktopBridge = NonNullable<Window["ajourDesktop"]>;
