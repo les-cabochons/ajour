@@ -4,6 +4,7 @@ import { RiCloseLine } from "@remixicon/react";
 
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { withEventAttribution } from "@/lib/wide-events";
 
 /** How long an Undo toast stays. Hovering or focusing the toasts pauses it. */
 export const UNDO_TOAST_TIMEOUT_MS = 8000;
@@ -171,7 +172,9 @@ function ToastList() {
       if (!undoToast) return;
 
       event.preventDefault();
-      undoToast.data?.onUndo?.();
+      withEventAttribution({ surface: "shortcut" }, () =>
+        undoToast.data?.onUndo?.(),
+      );
     }
 
     window.addEventListener("keydown", handleKeyDown);
@@ -201,7 +204,10 @@ function ToastList() {
         {toast.data?.onUndo ? (
           <ToastPrimitive.Action
             className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-            onClick={toast.data.onUndo}
+            onClick={() => {
+              const onUndo = toast.data?.onUndo;
+              if (onUndo) withEventAttribution({ surface: "toast" }, onUndo);
+            }}
           >
             Undo
           </ToastPrimitive.Action>

@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
+import { withEventAttribution } from "@/lib/wide-events";
+import type { Surface } from "@ajour/wide-events";
 
 /**
  * Search params that ask a page to run one of its actions, such as
@@ -12,6 +14,7 @@ export interface ActionRequest {
   action: string;
   target?: string;
   parent?: string;
+  surface?: Surface;
 }
 
 /**
@@ -29,6 +32,7 @@ export function useActionRequest(
     action?: unknown;
     target?: unknown;
     parent?: unknown;
+    surface?: unknown;
   };
   const navigate = useNavigate();
   const handlerRef = useRef(handler);
@@ -37,6 +41,7 @@ export function useActionRequest(
   const action = typeof search.action === "string" ? search.action : undefined;
   const target = typeof search.target === "string" ? search.target : undefined;
   const parent = typeof search.parent === "string" ? search.parent : undefined;
+  const surface = search.surface === "palette" ? "palette" : undefined;
 
   useLayoutEffect(() => {
     handlerRef.current = handler;
@@ -61,9 +66,12 @@ export function useActionRequest(
         action: undefined,
         target: undefined,
         parent: undefined,
+        surface: undefined,
       })) as never,
       replace: true,
     });
-    handlerRef.current({ action, target, parent });
-  }, [action, navigate, parent, ready, target]);
+    withEventAttribution(surface ? { surface } : {}, () =>
+      handlerRef.current({ action, target, parent, surface }),
+    );
+  }, [action, navigate, parent, ready, surface, target]);
 }

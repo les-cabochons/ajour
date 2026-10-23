@@ -7,6 +7,81 @@ const TRACE_ID = /^[0-9a-f]{32}$/;
 const SPAN_ID = /^[0-9a-f]{16}$/;
 
 describe("one event per unit of work", () => {
+  it("applies dispatcher metadata to the next command and restores the default", () => {
+    const { events, recorded } = recordingEmitter();
+
+    const restore = events.set({ surface: "palette" });
+    events.run(
+      "time_entry.update",
+      { kind: "command", trigger: "user" },
+      () => {},
+    );
+    restore();
+    events.run(
+      "time_entry.update",
+      { kind: "command", trigger: "user" },
+      () => {},
+    );
+
+    expect(
+      recorded.map(({ trigger, surface }) => ({ trigger, surface })),
+    ).toEqual([
+      { trigger: "user", surface: "palette" },
+      { trigger: "user", surface: undefined },
+    ]);
+  });
+
+  it("lets an agent dispatcher override the default user trigger", () => {
+    const { events, recorded } = recordingEmitter();
+
+    const restore = events.set({ trigger: "agent" });
+    events.run(
+      "time_entry.update",
+      { kind: "command", trigger: "user" },
+      () => {},
+    );
+    restore();
+
+    expect(recorded[0]).toMatchObject({ trigger: "agent" });
+  });
+
+  it("does not attach a user surface to an agent or system unit", () => {
+    const { events, recorded } = recordingEmitter();
+
+    events.set({ surface: "palette" });
+    events.run(
+      "time_entry.update",
+      { kind: "command", trigger: "agent" },
+      () => {},
+    );
+    events.run(
+      "time_entry.update",
+      { kind: "command", trigger: "system" },
+      () => {},
+    );
+
+    expect(
+      recorded.map(({ trigger, surface }) => ({ trigger, surface })),
+    ).toEqual([
+      { trigger: "agent", surface: undefined },
+      { trigger: "system", surface: undefined },
+    ]);
+  });
+
+  it("keeps the root surface when a later scope ends", () => {
+    const { events, recorded } = recordingEmitter();
+    const unit = events.start("time_entry.update", {
+      kind: "command",
+      trigger: "user",
+      surface: "palette",
+    });
+    const restore = events.set({ surface: "button" });
+    restore();
+    unit.end();
+
+    expect(recorded[0]).toMatchObject({ surface: "palette" });
+  });
+
   it("emits one event with the envelope when a unit ends", () => {
     let now = Date.parse("2026-10-20T14:23:11.118Z");
     const { events, recorded } = recordingEmitter({ now: () => now });

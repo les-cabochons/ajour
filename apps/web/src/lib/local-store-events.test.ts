@@ -74,6 +74,7 @@ describe("store command events", () => {
       trigger: "user",
       counts: { store_write_count: 1 },
     });
+    expect(sink.events[0]).not.toHaveProperty("surface");
     expect(sink.events[0]!.counts!.store_write_bytes).toBe(
       browser.storage.get(STORAGE_KEY)!.length * 2,
     );

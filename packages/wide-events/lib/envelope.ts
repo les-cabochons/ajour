@@ -46,6 +46,7 @@ export type Trigger = "user" | "agent" | "schedule" | "boot" | "system";
 /** Where a user action came from. */
 export type Surface =
   | "button"
+  | "popover"
   | "shortcut"
   | "item_key"
   | "palette"
@@ -54,8 +55,7 @@ export type Surface =
   | "drag"
   | "editor"
   | "dialog"
-  | "toast"
-  | "link";
+  | "toast";
 
 export type Channel = "dev" | "nightly" | "stable" | "web";
 

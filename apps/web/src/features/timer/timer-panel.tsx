@@ -44,6 +44,7 @@ import {
 } from "@/domain/local-state";
 import { getDayStripDrop } from "@/lib/cross-day-entry-drag";
 import { localStore } from "@/lib/local-store";
+import { withEventAttribution } from "@/lib/wide-events";
 import {
   createSharedTableDragPointerSession,
   getSharedTableBlockDropIndex,
@@ -556,8 +557,10 @@ export function TimerPanel({
       },
       onEnd: (shouldCommit) => {
         entryPointerSessionRef.current = null;
-        if (shouldCommit) refreshDrop();
-        finishEntryDrag(shouldCommit);
+        withEventAttribution({ surface: "drag" }, () => {
+          if (shouldCommit) refreshDrop();
+          finishEntryDrag(shouldCommit);
+        });
       },
       onScroll: refreshDrop,
       onPressEnd: () => {

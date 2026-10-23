@@ -121,6 +121,8 @@ export interface Unit<C extends Catalog, Name extends EventName<C>> {
 }
 
 export interface Emitter<C extends Catalog> {
+  /** Sets source metadata for units started while the returned scope is active. */
+  set(attribution: { trigger?: Trigger; surface?: Surface }): () => void;
   /** Opens a unit of work. It emits when `end` is called. */
   start<Name extends EventName<C>>(
     name: Name,
@@ -145,11 +147,43 @@ type Fields = Record<string, unknown>;
 /** The most folded units' names, and failures, an event lists. */
 const MAX_STEPS = 50;
 
+const SURFACE_PRIORITY: Record<Surface, number> = {
+  button: 0,
+  context_menu: 1,
+  shortcut: 2,
+  item_key: 2,
+  palette: 2,
+  app_menu: 2,
+  drag: 3,
+  editor: 3,
+  dialog: 3,
+  popover: 3,
+  toast: 3,
+};
+
+function preferredAttribution(
+  values: readonly { trigger?: Trigger; surface?: Surface }[],
+) {
+  let trigger: Trigger | undefined;
+  let surface: Surface | undefined;
+  for (const value of values) {
+    if (value.trigger === "agent") trigger = "agent";
+    if (
+      value.surface &&
+      (surface === undefined ||
+        SURFACE_PRIORITY[value.surface] >= SURFACE_PRIORITY[surface])
+    ) {
+      surface = value.surface;
+    }
+  }
+  return { trigger, surface };
+}
+
 class UnitState {
   name: string;
   readonly kind: Kind;
-  readonly trigger: Trigger;
-  readonly surface?: Surface;
+  trigger: Trigger;
+  surface?: Surface;
   readonly startedAt: number;
   readonly traceId: string;
   readonly spanId: string;
@@ -213,6 +247,13 @@ class UnitState {
 
   get folded() {
     return this.root !== this;
+  }
+
+  setAttribution(attribution: { trigger?: Trigger; surface?: Surface }) {
+    if (attribution.trigger !== undefined)
+      this.root.trigger = attribution.trigger;
+    if (attribution.surface !== undefined && this.root.surface === undefined)
+      this.root.surface = attribution.surface;
   }
 
   set(fields: Fields) {
@@ -359,6 +400,7 @@ class EmitterState {
   readonly context: RuntimeContext;
   readonly scope: ScopeStore;
   readonly paths: { homeDirectory?: string; userDataPath?: string };
+  readonly attributions: { trigger?: Trigger; surface?: Surface }[] = [];
 
   constructor(options: EmitterOptions<Catalog>) {
     this.sink = options.sink ?? nowhere;
@@ -400,27 +442,53 @@ class EmitterState {
     return unit;
   }
 
+  set(attribution: { trigger?: Trigger; surface?: Surface }) {
+    this.attributions.push(attribution);
+    const active = this.active();
+    if (active) active.setAttribution(preferredAttribution(this.attributions));
+    let restored = false;
+    return () => {
+      if (restored) return;
+      restored = true;
+      const index = this.attributions.lastIndexOf(attribution);
+      if (index !== -1) this.attributions.splice(index, 1);
+    };
+  }
+
   start(name: string, init: UnitInit<Catalog, string>) {
+    const attribution = preferredAttribution(this.attributions);
+    const attributedInit = {
+      ...init,
+      trigger:
+        init.trigger === "user"
+          ? (attribution.trigger ?? init.trigger)
+          : init.trigger,
+      surface:
+        init.trigger === "user"
+          ? (init.surface ?? attribution.surface)
+          : init.surface,
+    };
     // A unit started from another runtime's span is that span's child.
     if (init.parent !== undefined) {
       const trace =
         typeof init.parent === "string"
           ? decodeTraceparent(init.parent)
           : init.parent;
-      return new UnitState(this, name, init, { fold: false, trace });
+      return new UnitState(this, name, attributedInit, { fold: false, trace });
     }
     const outer = this.active();
-    if (!outer) return new UnitState(this, name, init, { fold: false });
+    if (!outer)
+      return new UnitState(this, name, attributedInit, { fold: false });
     // A plugin operation crosses into the worker's runtime, so it always
     // emits its own event. So does detached work.
     if (init.detached || init.kind === "plugin_operation") {
-      return new UnitState(this, name, init, {
+      return new UnitState(this, name, attributedInit, {
         fold: false,
         trace: { trace_id: outer.traceId, span_id: outer.spanId },
         outer,
       });
     }
-    return new UnitState(this, name, init, { fold: true, outer });
+    return new UnitState(this, name, attributedInit, { fold: true, outer });
   }
 
   emit(unit: UnitState) {
@@ -467,6 +535,7 @@ export function createEmitter<C extends Catalog>(
 ): Emitter<C> {
   const state = new EmitterState(options);
   return {
+    set: (attribution) => state.set(attribution),
     start: ((name, init) => state.start(name, init)) as Emitter<C>["start"],
     run(name, init, work) {
       const unit = state.start(name, init);

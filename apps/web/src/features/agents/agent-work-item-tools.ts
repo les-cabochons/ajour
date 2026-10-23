@@ -53,6 +53,7 @@ import {
 import { saveSyncedDescription } from "@/lib/description-save";
 import { localStore } from "@/lib/local-store";
 import { queueSettleComment } from "@/lib/settle-comments";
+import { withEventAttribution } from "@/lib/wide-events";
 
 /**
  * Backlog item tools. Like the UI, they check the item's action set, and
@@ -275,7 +276,11 @@ async function saveAgentDescription(
   if (unchanged && !hasUnwrittenDescription(saved)) {
     return { outcome: "unchanged" as const };
   }
-  const result = await saveSyncedDescription(itemId, "save", allowedLoss, true);
+  const result = await withEventAttribution({ trigger: "agent" }, () =>
+    saveSyncedDescription(itemId, "save", allowedLoss, true, {
+      trigger: "agent",
+    }),
+  );
   switch (result.kind) {
     case "written":
       return result.merged
@@ -418,7 +423,9 @@ export async function runWorkItemWriteTool(
         throw new AgentToolRefusal("Pass at least one field to change.");
       }
       if (!syncedDescription) {
-        const undoToken = localStore.updateWorkItemWithUndo(item._id, patch);
+        const undoToken = withEventAttribution({ trigger: "agent" }, () =>
+          localStore.updateWorkItemWithUndo(item._id, patch),
+        );
         return outcome(item._id, undoToken, "Edited a backlog item");
       }
       // The text has no Undo: like the user's, it is written at once. The
@@ -427,19 +434,19 @@ export async function runWorkItemWriteTool(
       const unchanged = syncedDescription.description === item.description;
       const before = unchanged
         ? localStore.snapshot()
-        : localStore.saveWorkItemDescriptionText(
-            item._id,
-            syncedDescription.description,
+        : withEventAttribution({ trigger: "agent" }, () =>
+            localStore.saveWorkItemDescriptionText(
+              item._id,
+              syncedDescription.description,
+            ),
           );
       const descriptionSave = await saveAgentDescription(
         item._id,
         syncedDescription.allowedLoss,
         unchanged,
       );
-      const undoToken = localStore.applyWorkItemEditsSince(
-        item._id,
-        patch,
-        before,
+      const undoToken = withEventAttribution({ trigger: "agent" }, () =>
+        localStore.applyWorkItemEditsSince(item._id, patch, before),
       );
       const edited = outcome(item._id, undoToken, "Edited a backlog item");
       return { ...edited, output: { ...edited.output, descriptionSave } };
@@ -451,11 +458,17 @@ export async function runWorkItemWriteTool(
       const destination = requireWorkflowState(state, input.workflowStateId);
       let result;
       try {
-        result = await moveBacklogItem(item, destination._id, {
-          includeSubitems: (target) =>
-            resolveAgentIncludeSubitems(target, "close", input.includeSubitems),
-          chooseSourceState: chooseMoveSourceState(input.sourceState),
-        });
+        result = await withEventAttribution({ trigger: "agent" }, () =>
+          moveBacklogItem(item, destination._id, {
+            includeSubitems: (target) =>
+              resolveAgentIncludeSubitems(
+                target,
+                "close",
+                input.includeSubitems,
+              ),
+            chooseSourceState: chooseMoveSourceState(input.sourceState),
+          }),
+        );
       } catch (error) {
         if (!(error instanceof SourceStatesLoadError)) throw error;
         throw new AgentToolRefusal(
@@ -498,9 +511,9 @@ export async function runWorkItemWriteTool(
         "settle",
         input.includeSubitems,
       );
-      const undoToken = localStore.settleWorkItem(item._id, change, {
-        includeSubitems,
-      });
+      const undoToken = withEventAttribution({ trigger: "agent" }, () =>
+        localStore.settleWorkItem(item._id, change, { includeSubitems }),
+      );
       if (!undoToken) {
         throw new AgentToolRefusal(
           "The item changed while Ajour prepared the settle. Read it again with get_work_item.",
@@ -541,7 +554,9 @@ export async function runWorkItemWriteTool(
       if (until <= now) {
         throw new AgentToolRefusal("Pick a time in the future.");
       }
-      const undoToken = localStore.snoozeWorkItem(item._id, until);
+      const undoToken = withEventAttribution({ trigger: "agent" }, () =>
+        localStore.snoozeWorkItem(item._id, until),
+      );
       return outcome(item._id, undoToken, "Snoozed a backlog item");
     }
 
@@ -549,7 +564,9 @@ export async function runWorkItemWriteTool(
       const input = writeToolInputSchemas.archive_work_item.parse(rawInput);
       const item = findWorkItemOrRefuse(state, input.workItemId);
       assertAllowed(actionsFor(item), "archive");
-      const undoToken = localStore.archiveWorkItem(item._id);
+      const undoToken = withEventAttribution({ trigger: "agent" }, () =>
+        localStore.archiveWorkItem(item._id),
+      );
       return outcome(item._id, undoToken, "Archived a backlog item");
     }
 

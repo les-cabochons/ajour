@@ -93,6 +93,7 @@ import {
   saveSyncedDescription,
 } from "@/lib/description-save";
 import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
+import { withEventAttribution } from "@/lib/wide-events";
 
 /** Lets a host save the draft before it loads another item into the same form. */
 export interface BacklogItemEditorFormHandle {
@@ -156,6 +157,7 @@ export function BacklogItemEditorForm({
   ref,
   titleAs: Title = "h2",
   className,
+  surface = "editor",
   initialFields,
   onFieldsChange,
 }: {
@@ -170,11 +172,13 @@ export function BacklogItemEditorForm({
   /** A dialog host passes its title component so the heading labels the dialog. */
   titleAs?: ElementType;
   className?: string;
+  surface?: "editor" | "dialog";
   /** An unsaved draft to resume instead of the target's seed. */
   initialFields?: BacklogTaskEditorFields;
   /** Reports every draft change, so a host can carry it to another container. */
   onFieldsChange?: (fields: BacklogTaskEditorFields) => void;
 }) {
+  const editorSurface = surface;
   const state = useLocalState();
   const projects = useLocalProjects();
   const workItems = useLocalWorkItems();
@@ -367,11 +371,15 @@ export function BacklogItemEditorForm({
         )
           ? result.draft.workflowStateId
           : undefined;
-        const { undoToken } = localStore.saveNewWorkItem(
-          closeIn
-            ? { ...result.draft, workflowStateId: undefined }
-            : result.draft,
-          closeIn,
+        const { undoToken } = withEventAttribution(
+          { surface: editorSurface },
+          () =>
+            localStore.saveNewWorkItem(
+              closeIn
+                ? { ...result.draft, workflowStateId: undefined }
+                : result.draft,
+              closeIn,
+            ),
         );
         const doneName = workflowStates.find(
           (state) => state._id === closeIn,
@@ -413,20 +421,24 @@ export function BacklogItemEditorForm({
             .workItems.find((item) => item._id === workItem._id);
           if (!saved) return false;
           if (changesLifecycle) {
-            const moved = await moveBacklogItemWithUndo(
-              saved,
-              workflowStateId,
-              { patch },
+            const moved = await withEventAttribution(
+              { surface: editorSurface },
+              () => moveBacklogItemWithUndo(saved, workflowStateId, { patch }),
             );
             if (moved) writeDescription(patch, allowedLoss);
             return moved;
           }
           // A save has no Undo, unless the description's timelog also set
           // the project or task.
-          offerUndo(localStore.saveWorkItemEdits(workItem._id, result.patch), {
-            title: "Project and task set from the description",
-            subject: "backlog item",
-          });
+          withEventAttribution({ surface: editorSurface }, () =>
+            offerUndo(
+              localStore.saveWorkItemEdits(workItem._id, result.patch),
+              {
+                title: "Project and task set from the description",
+                subject: "backlog item",
+              },
+            ),
+          );
           writeDescription(result.patch, allowedLoss);
         }
         return true;
@@ -441,7 +453,11 @@ export function BacklogItemEditorForm({
     allowedLoss: readonly string[],
   ) {
     if (workItem && "description" in patch && descriptionWritesToSource) {
-      void saveSyncedDescription(workItem._id, "save", allowedLoss);
+      void withEventAttribution({ surface: editorSurface }, () =>
+        saveSyncedDescription(workItem._id, "save", allowedLoss, false, {
+          surface: editorSurface,
+        }),
+      );
     }
   }
 
@@ -546,7 +562,11 @@ export function BacklogItemEditorForm({
                 settleOpensDialog: settleOpensDialog(workItem),
                 otherSourceStateCount: getOtherSourceStates(workItem).length,
               })}
-              onAction={handleAction}
+              onAction={(actionId) =>
+                withEventAttribution({ surface: editorSurface }, () =>
+                  handleAction(actionId),
+                )
+              }
               label={`Actions for ${workItem.title}`}
             />
           ) : null}

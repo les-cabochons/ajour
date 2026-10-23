@@ -37,6 +37,7 @@ import {
   getShortcutPlatform,
 } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
+import { withEventAttribution } from "@/lib/wide-events";
 
 interface ObjectActionsProps<Id extends string> {
   actions: ObjectAction<Id>[];
@@ -90,7 +91,8 @@ export function ObjectActionItems<Id extends string>({
   actions,
   onAction,
   keys,
-}: ObjectActionsProps<Id>) {
+  surface,
+}: ObjectActionsProps<Id> & { surface: "button" | "context_menu" }) {
   return getObjectActionSections(actions).map((section, index) => (
     <React.Fragment key={section[0]!.id}>
       {index > 0 ? <DropdownMenuSeparator /> : null}
@@ -109,7 +111,7 @@ export function ObjectActionItems<Id extends string>({
               event.stopPropagation();
               // Only a locked item can be clicked while it has a reason.
               if (action.disabledReason) showToast(action.disabledReason);
-              else onAction(action.id);
+              else withEventAttribution({ surface }, () => onAction(action.id));
             }}
             className={cn(
               "flex-col items-stretch gap-0",
@@ -213,7 +215,12 @@ export function ObjectActionsButton<Id extends string>({
           triggerRef.current?.closest<HTMLElement>(FOCUS_ITEM_SELECTOR) ?? true
         }
       >
-        <ObjectActionItems actions={actions} onAction={onAction} keys={keys} />
+        <ObjectActionItems
+          actions={actions}
+          onAction={onAction}
+          keys={keys}
+          surface="button"
+        />
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -243,7 +250,12 @@ export function ObjectContextMenu<Id extends string>(
     <ContextMenu>
       <ContextMenuTrigger render={render}>{children}</ContextMenuTrigger>
       <ContextMenuContent>
-        <ObjectActionItems actions={actions} onAction={onAction} keys={keys} />
+        <ObjectActionItems
+          actions={actions}
+          onAction={onAction}
+          keys={keys}
+          surface="context_menu"
+        />
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -277,7 +289,10 @@ function NativeObjectContextMenu<Id extends string>({
     if (!request) return;
     const { actions: shown, keys: shownKeys } = latest.current;
     void showNativeContextMenu(shown, shownKeys, request).then((id) => {
-      if (id !== null) latest.current.onAction(id);
+      if (id !== null)
+        withEventAttribution({ surface: "context_menu" }, () =>
+          latest.current.onAction(id),
+        );
     });
   }, [request]);
 

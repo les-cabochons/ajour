@@ -19,6 +19,7 @@ import { useRunShortcut } from "@/lib/shortcut-handlers";
 import { requestUpdateCheck } from "@/lib/update-check-request";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { toggleSidebarDensity } from "@/lib/sidebar-layout";
+import { withEventAttribution } from "@/lib/wide-events";
 
 const isWindowsDesktopShell =
   isDesktopShell &&
@@ -35,21 +36,22 @@ function useAppMenuActionRunner() {
   const runShortcut = useRunShortcut();
 
   return useCallback(
-    (action: unknown) => {
-      const command = resolveAppMenuAction(action);
-      if (command?.kind === "shortcut") {
-        runShortcut(command.id);
-      } else if (command?.kind === "toggle-sidebar-density") {
-        toggleSidebarDensity();
-      } else if (command?.kind === "check-for-updates") {
-        // Opening General checks for updates. When it is already open, ask it.
-        if (router.state.location.pathname === "/settings/general") {
-          requestUpdateCheck();
-        } else {
-          void navigate({ to: "/settings/general" });
+    (action: unknown) =>
+      withEventAttribution({ surface: "app_menu" }, () => {
+        const command = resolveAppMenuAction(action);
+        if (command?.kind === "shortcut") {
+          runShortcut(command.id);
+        } else if (command?.kind === "toggle-sidebar-density") {
+          toggleSidebarDensity();
+        } else if (command?.kind === "check-for-updates") {
+          // Opening General checks for updates. When it is already open, ask it.
+          if (router.state.location.pathname === "/settings/general") {
+            requestUpdateCheck();
+          } else {
+            void navigate({ to: "/settings/general" });
+          }
         }
-      }
-    },
+      }),
     [navigate, router, runShortcut],
   );
 }

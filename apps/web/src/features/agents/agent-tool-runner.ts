@@ -43,6 +43,7 @@ import { getUncheckedChangeIds } from "@/lib/commit-selection";
 import { localStore } from "@/lib/local-store";
 import { StaleWindowError } from "@/lib/stale-window-error";
 import { getIsoWeekDates, todayIsoDate } from "@/lib/utils";
+import { withEventAttribution } from "@/lib/wide-events";
 
 /**
  * Runs the data tools an agent calls through the local API's bridge. Inputs
@@ -191,13 +192,23 @@ export async function runAgentToolCall(
           : [];
       return finishWrite(
         call,
-        runEntryWriteTool(call.tool, call.input, { projectPropertyPlugins }),
+        withEventAttribution({ trigger: "agent" }, () =>
+          runEntryWriteTool(call.tool as EntryWriteTool, call.input, {
+            projectPropertyPlugins,
+          }),
+        ),
       );
     }
     if (isWorkItemWriteTool(call.tool)) {
       return finishWrite(
         call,
-        await runWorkItemWriteTool(call.tool, call.input, call.client),
+        await withEventAttribution({ trigger: "agent" }, () =>
+          runWorkItemWriteTool(
+            call.tool as WorkItemWriteTool,
+            call.input,
+            call.client,
+          ),
+        ),
       );
     }
     if (call.tool === "post_work_item_comment") {

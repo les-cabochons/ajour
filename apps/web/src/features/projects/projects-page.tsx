@@ -82,6 +82,7 @@ import { handleItemKeyDown, TASK_ACTION_KEYS } from "@/lib/item-keys";
 import { useCurrentTeam } from "@/lib/session";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
+import { withEventAttribution } from "@/lib/wide-events";
 import {
   createSharedTableDragPointerSession,
   getSharedTableDropOrder,
@@ -778,36 +779,38 @@ function ProjectDetail({
 
   /** Runs the task action set from the row's right-click menu and "…" button. */
   function runTaskAction(task: LocalProjectTask, actionId: TaskActionId) {
-    switch (actionId) {
-      case "start-entry":
-        localStore.startTimer({
-          projectId: project._id,
-          taskId: task._id,
-          accumulatedDurationMs: 0,
-        });
-        return;
-      case "new-entry":
-        openNewEntryEditor(
-          { kind: "task", projectId: project._id, taskId: task._id },
-          { projectId: project._id, taskId: task._id },
-        );
-        return;
-      case "edit":
-        onOpenTask(task);
-        return;
-      case "assign-shortcut":
-        onAssignShortcut(task);
-        return;
-      case "archive":
-        offerUndo(localStore.archiveProjectTask(project._id, task._id), {
-          title: "Task archived",
-          subject: "project",
-        });
-        return;
-      case "restore":
-        localStore.unarchiveProjectTask(project._id, task._id);
-        return;
-    }
+    return withEventAttribution({ surface: "button" }, () => {
+      switch (actionId) {
+        case "start-entry":
+          localStore.startTimer({
+            projectId: project._id,
+            taskId: task._id,
+            accumulatedDurationMs: 0,
+          });
+          return;
+        case "new-entry":
+          openNewEntryEditor(
+            { kind: "task", projectId: project._id, taskId: task._id },
+            { projectId: project._id, taskId: task._id },
+          );
+          return;
+        case "edit":
+          onOpenTask(task);
+          return;
+        case "assign-shortcut":
+          onAssignShortcut(task);
+          return;
+        case "archive":
+          offerUndo(localStore.archiveProjectTask(project._id, task._id), {
+            title: "Task archived",
+            subject: "project",
+          });
+          return;
+        case "restore":
+          localStore.unarchiveProjectTask(project._id, task._id);
+          return;
+      }
+    });
   }
 
   function handleTaskPointerDown(
@@ -902,7 +905,9 @@ function ProjectDetail({
       },
       onEnd: (shouldCommit) => {
         taskPointerSessionRef.current = null;
-        finishTaskDrag(shouldCommit);
+        withEventAttribution({ surface: "drag" }, () =>
+          finishTaskDrag(shouldCommit),
+        );
       },
       onPressEnd: () => {
         taskPointerSessionRef.current = null;
@@ -1658,7 +1663,9 @@ export function ProjectsPage() {
       },
       onEnd: (shouldCommit) => {
         projectPointerSessionRef.current = null;
-        finishProjectDrag(shouldCommit);
+        withEventAttribution({ surface: "drag" }, () =>
+          finishProjectDrag(shouldCommit),
+        );
       },
       onPressEnd: () => {
         projectPointerSessionRef.current = null;
@@ -1918,23 +1925,25 @@ export function ProjectsPage() {
     project: LocalProject,
     actionId: ProjectActionId,
   ) => {
-    switch (actionId) {
-      case "edit":
-        openEditProjectModal(project);
-        return;
-      case "new-task":
-        openTaskEditor(project._id);
-        return;
-      case "archive":
-        offerUndo(localStore.archiveProject(project._id), {
-          title: "Project archived",
-          subject: "project",
-        });
-        return;
-      case "restore":
-        localStore.unarchiveProject(project._id);
-        return;
-    }
+    return withEventAttribution({ surface: "button" }, () => {
+      switch (actionId) {
+        case "edit":
+          openEditProjectModal(project);
+          return;
+        case "new-task":
+          openTaskEditor(project._id);
+          return;
+        case "archive":
+          offerUndo(localStore.archiveProject(project._id), {
+            title: "Project archived",
+            subject: "project",
+          });
+          return;
+        case "restore":
+          localStore.unarchiveProject(project._id);
+          return;
+      }
+    });
   };
 
   const handleProjectSubmit = (values: ProjectFormValues) => {
