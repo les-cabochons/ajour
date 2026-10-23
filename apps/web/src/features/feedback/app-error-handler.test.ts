@@ -76,7 +76,7 @@ describe("installAppErrorHandler", () => {
         kind: "crash",
         trigger: "system",
         outcome: "error",
-        crash: { origin: "uncaught_exception", handled_by_toast: false },
+        crash: { origin: "uncaught_exception", handled_by: "none" },
         error: { type: "TypeError" },
       },
     ]);
@@ -95,7 +95,7 @@ describe("installAppErrorHandler", () => {
     expect(sink.events).toMatchObject([
       {
         name: "app.error",
-        crash: { origin: "unhandled_rejection", handled_by_toast: true },
+        crash: { origin: "unhandled_rejection", handled_by: "toast" },
         error: { type: "LockedWeekError" },
       },
     ]);
@@ -122,7 +122,7 @@ describe("installAppErrorHandler", () => {
       "app.error",
     ]);
     expect(sink.events[1]).toMatchObject({
-      crash: { active_unit: "time_entry.delete", handled_by_toast: true },
+      crash: { active_unit: "time_entry.delete", handled_by: "toast" },
     });
   });
 

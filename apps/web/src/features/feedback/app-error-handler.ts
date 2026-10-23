@@ -42,7 +42,7 @@ export function installAppErrorHandler(
       crash: {
         origin,
         active_unit: storeCommandThatThrew(error),
-        handled_by_toast: refusal,
+        handled_by: refusal ? "toast" : "none",
       },
     });
     unit.fail(error);

@@ -507,11 +507,14 @@ export const catalog = defineCatalog({
     },
     "connection.delete": {
       kinds: ["command", "request"],
-      reasons: ["connection_not_found", ...requestReasons],
+      reasons: [
+        ...rendererEvents["connection.delete"].reasons,
+        "connection_not_found",
+        ...requestReasons,
+      ],
       fields: {
         ...requestFields,
-        plugin: { id: operational() },
-        connection: { id: operational() },
+        ...rendererEvents["connection.delete"].fields,
       },
     },
 
@@ -639,10 +642,17 @@ export const catalog = defineCatalog({
     },
     "backlog_import.commit": {
       kinds: ["command", "request"],
-      reasons: requestReasons,
+      reasons: [
+        ...rendererEvents["backlog_import.commit"].reasons,
+        ...requestReasons,
+      ],
       fields: {
         ...requestFields,
-        backlog_import: { committed_count: operational<number>() },
+        ...rendererEvents["backlog_import.commit"].fields,
+        backlog_import: {
+          ...rendererEvents["backlog_import.commit"].fields.backlog_import,
+          committed_count: operational<number>(),
+        },
       },
     },
 
@@ -828,7 +838,10 @@ export const catalog = defineCatalog({
         },
       },
     },
-    /** An error nothing else caught, or a startup that failed. */
+    /**
+     * An error nothing else caught, or a startup that failed. The renderer
+     * reports a refused write its toast showed as handled `toast`.
+     */
     "app.error": {
       kinds: ["crash"],
       fields: {
@@ -1197,8 +1210,15 @@ export const catalog = defineCatalog({
 
     "team.create": {
       kinds: ["command", "request", "plugin_operation"],
-      reasons: pluginRequestReasons,
-      fields: { ...requestFields, ...pluginOperationFields },
+      reasons: [
+        ...rendererEvents["team.create"].reasons,
+        ...pluginRequestReasons,
+      ],
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        ...rendererEvents["team.create"].fields,
+      },
     },
     /** One round of a team sync. */
     "team.sync": {
@@ -1240,10 +1260,14 @@ export const catalog = defineCatalog({
     },
     "project.import": {
       kinds: ["command", "request", "plugin_operation"],
-      reasons: pluginRequestReasons,
+      reasons: [
+        ...rendererEvents["project.import"].reasons,
+        ...pluginRequestReasons,
+      ],
       fields: {
         ...requestFields,
         ...pluginOperationFields,
+        ...rendererEvents["project.import"].fields,
         project_data: {
           project_count: operational<number>(),
           task_count: operational<number>(),

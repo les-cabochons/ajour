@@ -156,4 +156,32 @@ describe("the catalog", () => {
       ["time_entry.id", undefined],
     ]);
   });
+
+  it("keeps what the renderer and the other runtimes each declare for one event", () => {
+    const names = [
+      "project.import",
+      "team.create",
+      "connection.delete",
+    ] as const;
+    for (const name of names) {
+      const spec = catalog.events[name];
+      expect(spec.kinds).toContain("command");
+      expect(spec.reasons).toEqual(
+        expect.arrayContaining(["locked_week", "stale_window"]),
+      );
+      expect(spec.fields).toHaveProperty("store");
+      expect(spec.fields).toHaveProperty("http");
+    }
+    expect(
+      Object.keys(
+        catalog.events["backlog_import.commit"].fields.backlog_import,
+      ),
+    ).toEqual(expect.arrayContaining(["candidate_count", "committed_count"]));
+    expect(catalog.events["app.error"].fields.crash).toHaveProperty(
+      "handled_by",
+    );
+    expect(catalog.events["app.error"].fields.crash).not.toHaveProperty(
+      "handled_by_toast",
+    );
+  });
 });

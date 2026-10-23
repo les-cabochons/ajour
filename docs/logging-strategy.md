@@ -213,7 +213,7 @@ sink:
 - `current()` returns the active unit, so the code doing the work can add to
   it.
 
-The local API creates its emitter in `apps/api/src/events.ts`, and the
+The local API creates its emitter in `apps/api/src/events.ts`, the
 desktop main process in `apps/desktop/electron/main-events.cjs`, and the
 renderer in `apps/web/src/lib/wide-events.ts`.
 
@@ -477,8 +477,8 @@ an object or a function where a value belongs is dropped, and counted in
   of the sidebar or a side panel records one change when it ends.
 - **`app.error`** comes from `features/feedback/app-error-handler.ts`, the
   window's one handler for uncaught errors and unhandled rejections, which
-  also shows a refused write as a toast. It names the store command that
-  threw. An error event without an error, such as a ResizeObserver warning,
+  also shows a refused write as a toast, reported as `handled_by: toast`
+  (else `none`). It names the store command that threw. An error event without an error, such as a ResizeObserver warning,
   is noise and emits nothing.
 
 The seams of #304 add the rest: `trigger` and `surface` (#309), and renderer

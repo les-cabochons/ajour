@@ -215,18 +215,8 @@ export const rendererEvents = {
       },
     },
   },
-  /** An uncaught error or unhandled rejection. */
-  "app.error": {
-    kinds: ["crash"],
-    fields: {
-      crash: {
-        origin: operational<"uncaught_exception" | "unhandled_rejection">(),
-        /** The unit of work that was active, by name. */
-        active_unit: operational(),
-        handled_by_toast: operational<boolean>(),
-      },
-    },
-  },
+  // `app.error` is in ajour-catalog.ts: the main process and the local API
+  // report it too, and each runtime keeps its own `origin`s and `handled_by`.
   "undo.restore": command(
     {
       undo: {
