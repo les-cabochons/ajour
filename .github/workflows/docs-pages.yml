@@ -41,6 +41,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          # The runner image caches an older 22.x. Fetch the newest patch, which
+          # carries the latest security fixes.
+          check-latest: true
 
       - name: Enable Corepack
         run: corepack enable
