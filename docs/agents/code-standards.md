@@ -101,6 +101,8 @@ Add focused tests for:
 
 Prefer direct domain tests for rules and a smaller number of storage integration tests for persistence wiring. User-facing acceptance tests should use deterministic local fixtures and keep external plugin services outside the test path.
 
+A test that needs real components, menus or key events starts with `// @vitest-environment jsdom` and calls `installDomShims` and `renderRoutes` from `apps/web/src/test-support/dom.tsx`. `lib/dispatcher-event-attribution.test.tsx` is the model: it drives each dispatcher and reads the recorded event.
+
 For UI-only changes, run typecheck and consider a browser check for layout or interaction risk.
 
 For shared interaction changes, add direct state/geometry tests and verify every current caller. Pointer reordering currently serves backlog work items on the Backlog page and in the sidebar, timesheet entries, project tasks, and project navigation.

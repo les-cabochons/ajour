@@ -8,6 +8,8 @@ import {
   vi,
 } from "vitest";
 import { dataToolOutputSchemas } from "@ajour/shared/agent-tools";
+import type { AjourEvent } from "@ajour/wide-events/catalog.ts";
+import { createRecordingSink } from "@ajour/wide-events/sinks.ts";
 
 type DataToolName = keyof typeof dataToolOutputSchemas;
 
@@ -87,8 +89,22 @@ function installMockWindow() {
   });
 }
 
+/** The recorded command events, as the name, trigger and surface the dispatcher gave each. */
+function agentCommands(sink: { events: readonly AjourEvent[] }) {
+  return sink.events
+    .filter((event) => event.kind === "command")
+    .map((event) => ({
+      name: event.name,
+      trigger: event.trigger,
+      surface: event.surface ?? null,
+    }));
+}
+
 /** Loads a fresh store and runner, and a project "Acme" with a task "Build". */
 async function setup() {
+  const sink = createRecordingSink<AjourEvent>();
+  const { replaceEventSink } = await import("@/lib/wide-events");
+  replaceEventSink(sink);
   const { localStore } = await import("@/lib/local-store");
   const { runAgentToolCall } =
     await import("@/features/agents/agent-tool-runner");
@@ -102,6 +118,7 @@ async function setup() {
     .projects.find((candidate) => candidate.name === "Acme")!;
   const task = (name: string) =>
     project.tasks.find((candidate) => candidate.name === name)!;
+  sink.events.length = 0;
   let next = 0;
   // Every successful output must pass the schema the API checks it against.
   const call = async (tool: string, input: unknown = {}) => {
@@ -130,7 +147,7 @@ async function setup() {
     if (!change) throw new Error(`No change for ${entryId}.`);
     return { entryId, version: change.version };
   };
-  return { localStore, call, readChange, project, task };
+  return { localStore, call, readChange, project, task, sink };
 }
 
 // The first import of these heavy modules is slow and, under full-suite load,
@@ -236,7 +253,7 @@ describe("agent read tools", () => {
 
 describe("agent timer and entry tools", () => {
   it("starts an entry on a task, labels the Undo toast and can be undone", async () => {
-    const { call, localStore, project, task } = await setup();
+    const { call, localStore, project, task, sink } = await setup();
 
     const result = await call("start_timer", {
       projectId: project._id,
@@ -249,6 +266,9 @@ describe("agent timer and entry tools", () => {
       activity: { action: "Started an entry", objectTitle: "Acme · Build" },
     });
     expect(localStore.snapshot().timers[0]).toMatchObject({ note: "Pairing" });
+    expect(agentCommands(sink)).toEqual([
+      { name: "time_entry.start", trigger: "agent", surface: null },
+    ]);
     const [token, options] = offerUndo.mock.calls[0]!;
     expect(options.title).toBe("Claude Code: Started an entry");
     expect(localStore.undo(token)).toBe("restored");
@@ -656,7 +676,8 @@ describe("agent tools on submitted weeks", () => {
   }
 
   it("reports the status, and submits the week once every change is committed", async () => {
-    const { call, readChange, readVersion, entryId } = await committedWeek();
+    const { call, readChange, readVersion, entryId, sink } =
+      await committedWeek();
 
     expect(
       await call("get_week_status", { weekOf: "2026-10-18" }),
@@ -675,9 +696,13 @@ describe("agent tools on submitted weeks", () => {
         "Commit your changes first. The week of 2026-10-12 has 1 change that is not committed.",
     });
 
+    sink.events.length = 0;
     await call("mark_entries_committed", {
       changes: [await readChange(entryId)],
     });
+    expect(agentCommands(sink)).toEqual([
+      { name: "time_entry.commit", trigger: "agent", surface: null },
+    ]);
 
     expect(
       await call("get_week_status", { weekOf: "2026-10-12" }),
@@ -699,15 +724,17 @@ describe("agent tools on submitted weeks", () => {
       },
     });
     // A Sunday locks its Monday's week.
+    const version = await readVersion();
+    sink.events.length = 0;
     expect(
-      await call("submit_week", {
-        weekOf: "2026-10-18",
-        version: await readVersion(),
-      }),
+      await call("submit_week", { weekOf: "2026-10-18", version }),
     ).toMatchObject({
       ok: true,
       output: { weekOf: "2026-10-12", locked: true },
     });
+    expect(agentCommands(sink)).toEqual([
+      { name: "week.submit", trigger: "agent", surface: null },
+    ]);
     expect(offerUndo.mock.calls.at(-1)![1].title).toBe(
       "Claude Code: Submitted the week",
     );
@@ -1485,12 +1512,13 @@ describe("an agent's change to a synced description", () => {
   }
 
   it("writes it to the source through the user's save, marked as an agent's", async () => {
-    const { call, localStore } = await setup();
+    const { call, localStore, sink } = await setup();
     const workItemId = importDescribedItem(localStore, BASE);
     fetchPluginsOverview.mockResolvedValue(descriptionOverview("readWrite"));
     source(BASE);
 
     const mine = "Goal\n\nMy steps\n\nDone when";
+    sink.events.length = 0;
     expect(
       await call("edit_work_item", { workItemId, description: mine }),
     ).toMatchObject({
@@ -1513,6 +1541,15 @@ describe("an agent's change to a synced description", () => {
       localStore.snapshot().workItems.find((item) => item._id === workItemId)
         ?.descriptionSync,
     ).toMatchObject({ baseline: mine, remote: mine });
+    expect(agentCommands(sink)).toEqual([
+      { name: "backlog_item.update", trigger: "agent", surface: null },
+      {
+        name: "backlog_item.save_description",
+        trigger: "agent",
+        surface: null,
+      },
+      { name: "backlog_item.update", trigger: "agent", surface: null },
+    ]);
   });
 
   it("gives the other fields and what the timelog sets one Undo, which keeps the text", async () => {
