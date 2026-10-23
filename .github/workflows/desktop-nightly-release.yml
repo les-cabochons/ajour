@@ -98,9 +98,9 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
-          # The runner image caches an older 22.x. Fetch the newest patch, which
-          # carries the latest security fixes.
+          # Electron 44 runs the app on Node 24. Fetch the newest 24.x patch
+          # rather than the older one cached on the runner.
+          node-version: 24
           check-latest: true
 
       - name: Enable Corepack
