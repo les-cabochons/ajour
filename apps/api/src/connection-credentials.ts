@@ -27,7 +27,6 @@ import {
   redactPluginText,
   type ConnectionRedaction,
 } from "./plugin-errors.ts";
-import type { StoredConnection } from "./storage.ts";
 
 /** A field declaration as far as secrets go: a connection field or an agent task setting. */
 export interface SecretFieldDeclaration {
@@ -214,12 +213,26 @@ export function pluginErrorMessage(
   return connectionCredentials(plugin, ...configs).errorMessage(error);
 }
 
+/** The parts of a saved connection a plugin receives. */
+export interface SavedConnection {
+  id: string;
+  pluginId: string;
+  label: string;
+  tenantLabel: string;
+  autoSync: boolean;
+  autoSyncIntervalMinutes: number;
+  connectedAt: number;
+  lastSyncAt?: number;
+  lastError?: string;
+  config: PluginFieldValues;
+}
+
 /**
  * The connection as a plugin receives it: its config, secrets included, and
  * the fields Ajour owns that a plugin may read. Until the vault ships, an
  * API 3 plugin needs the secrets in plain text.
  */
-export function pluginConnection(connection: StoredConnection) {
+export function pluginConnection(connection: SavedConnection) {
   return {
     id: connection.id,
     pluginId: connection.pluginId,

@@ -176,25 +176,25 @@ describe("a connection's credentials for one request", () => {
 
 describe("the connection a plugin receives", () => {
   it("carries the plugin's config and Ajour's own fields, not its other settings", () => {
-    expect(
-      pluginConnection({
-        id: "c1",
-        pluginId: "azure_devops",
-        label: "Main",
-        tenantLabel: "Contoso",
-        autoSync: true,
-        autoSyncIntervalMinutes: 15,
-        pullRequestAutoSync: false,
-        agentAccess: "read",
-        allowLossyConversion: true,
-        config: { personalAccessToken: "persisted-secret" },
-        configSummary: { site: "Contoso" },
-        connectedAt: 1,
-        lastSyncAt: 2,
-        lastError: "Failed",
-        lastErrorAt: 3,
-      }),
-    ).toEqual({
+    // A saved connection as storage keeps it.
+    const saved = {
+      id: "c1",
+      pluginId: "azure_devops",
+      label: "Main",
+      tenantLabel: "Contoso",
+      autoSync: true,
+      autoSyncIntervalMinutes: 15,
+      pullRequestAutoSync: false,
+      agentAccess: "read",
+      allowLossyConversion: true,
+      config: { personalAccessToken: "persisted-secret" },
+      configSummary: { site: "Contoso" },
+      connectedAt: 1,
+      lastSyncAt: 2,
+      lastError: "Failed",
+      lastErrorAt: 3,
+    };
+    expect(pluginConnection(saved)).toEqual({
       id: "c1",
       pluginId: "azure_devops",
       label: "Main",
