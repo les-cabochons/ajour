@@ -39,6 +39,11 @@ import {
   connectionCredentials,
   editableValues as editableFieldValues,
 } from "./connection-credentials.ts";
+import {
+  runStateMigrations,
+  storedStateVersion,
+  type StoredStateRecord,
+} from "./state-migrations.ts";
 
 interface StoredConnection {
   id: string;
@@ -60,58 +65,6 @@ interface StoredConnection {
   lastError?: string;
   /** When the sync that set `lastError` failed. */
   lastErrorAt?: number;
-}
-
-interface AppApiStateV1 {
-  version?: 1;
-  connectors?: {
-    azureDevOps?: {
-      organizationUrl: string;
-      project: string;
-      personalAccessToken: string;
-      queryScope: string;
-      connectedAt: number;
-      lastSyncAt?: number;
-      lastError?: string;
-    };
-  };
-  backlogInbox?: Array<{
-    id?: string;
-    source?: "azure_devops";
-    sourceId?: string;
-    sourceUrl?: string;
-    title?: string;
-    note?: string;
-    pushedAt?: number;
-  }>;
-  seenBacklogKeys?: string[];
-}
-
-interface AppApiStateV2 {
-  version: 2;
-  connectors?: {
-    azureDevOpsConnections?: Array<{
-      id: string;
-      label: string;
-      tenantLabel: string;
-      organizationUrl: string;
-      project?: string;
-      personalAccessToken: string;
-      queryScope: string;
-      priorityFieldName?: string;
-      priorityFieldResolvedName?: string;
-      priorityFieldResolvedReferenceName?: string;
-      priorityFieldType?: string;
-      priorityFieldIsQueryable?: boolean;
-      autoSync?: boolean;
-      autoSyncIntervalMinutes?: number;
-      connectedAt: number;
-      lastSyncAt?: number;
-      lastError?: string;
-    }>;
-  };
-  stagedImports?: BacklogImportCandidate[];
-  seenImportKeys?: string[];
 }
 
 /**
@@ -345,21 +298,6 @@ function comparePluginManifests(left: PluginManifest, right: PluginManifest) {
   );
 }
 
-function normalizeOrganizationUrl(value: string) {
-  return value.replace(/\/+$/, "");
-}
-
-function compactFieldValues(
-  values: Record<string, string | number | boolean | undefined>,
-): PluginFieldValues {
-  return Object.fromEntries(
-    Object.entries(values).filter(
-      (entry): entry is [string, string | number | boolean] =>
-        entry[1] !== undefined,
-    ),
-  );
-}
-
 /** What the overview shows instead of a last error whose plugin is gone. */
 const UNINSTALLED_PLUGIN_LAST_ERROR =
   "Hidden because this plugin is no longer installed.";
@@ -470,273 +408,114 @@ function buildConnectionSummary(
   };
 }
 
-function migrateLegacyState(raw: AppApiStateV1): AppApiState {
+/**
+ * The current version's state from a migrated file: malformed records
+ * dropped, and the fields added without a new version filled with their
+ * defaults. Earlier versions reach this shape through `state-migrations.ts`.
+ */
+function normalizeState(migrated: StoredStateRecord): AppApiState {
+  const raw = migrated as Partial<AppApiState>;
   const defaults = createDefaultState();
-  const legacyConnection = raw.connectors?.azureDevOps
-    ? ({
-        id: "legacy_azure_devops",
-        pluginId: "azure_devops",
-        label: raw.connectors.azureDevOps.project,
-        tenantLabel: "Legacy tenant",
-        autoSync: false,
-        autoSyncIntervalMinutes: 15,
-        config: compactFieldValues({
-          organizationUrl: normalizeOrganizationUrl(
-            raw.connectors.azureDevOps.organizationUrl,
-          ),
-          project: raw.connectors.azureDevOps.project,
-          personalAccessToken: raw.connectors.azureDevOps.personalAccessToken,
-          queryScope: raw.connectors.azureDevOps.queryScope,
-        }),
-        configSummary: compactFieldValues({
-          organizationUrl: normalizeOrganizationUrl(
-            raw.connectors.azureDevOps.organizationUrl,
-          ),
-          queryScope: raw.connectors.azureDevOps.queryScope,
-        }),
-        connectedAt: raw.connectors.azureDevOps.connectedAt ?? Date.now(),
-        lastSyncAt: raw.connectors.azureDevOps.lastSyncAt,
-        lastError: raw.connectors.azureDevOps.lastError,
-      } satisfies StoredConnection)
-    : undefined;
-
-  const stagedImports = (raw.backlogInbox ?? [])
-    .filter(
-      (item): item is NonNullable<AppApiStateV1["backlogInbox"]>[number] =>
-        Boolean(item?.source && item.sourceId && item.title),
-    )
-    .map(
-      (item) =>
-        ({
-          id: item.id ?? `connector_${randomUUID()}`,
-          source: "azure_devops",
-          connectionId: legacyConnection?.id ?? "legacy_azure_devops",
-          connectionLabel: legacyConnection?.label ?? "Legacy Azure DevOps",
-          tenantLabel: legacyConnection?.tenantLabel ?? "Legacy tenant",
-          sourceId: item.sourceId!,
-          externalId: item.sourceId!.split("/").pop() ?? item.sourceId!,
-          sourceUrl: item.sourceUrl,
-          title: item.title!,
-          note: item.note,
-          workItemType: "Task",
-          depth: 0,
-          selectable: true,
-          selected: true,
-          childCount: 0,
-          pushedAt: item.pushedAt ?? Date.now(),
-        }) satisfies BacklogImportCandidate,
-    );
 
   return {
-    ...defaults,
-    connections: legacyConnection ? [legacyConnection] : [],
-    stagedImports,
-  };
-}
-
-function normalizeState(
-  raw: Partial<AppApiState | AppApiStateV1 | AppApiStateV2> | undefined,
-): AppApiState {
-  if (!raw) {
-    return createDefaultState();
-  }
-
-  if ("connections" in raw && Array.isArray(raw.connections)) {
-    const defaults = createDefaultState();
-
-    return {
-      version: 7,
-      connections: raw.connections
-        .filter((connection): connection is StoredConnection =>
-          Boolean(
-            connection?.id &&
-            connection.pluginId &&
-            connection.label &&
-            connection.tenantLabel &&
-            connection.config &&
-            typeof connection.autoSync === "boolean" &&
-            connection.autoSyncIntervalMinutes &&
-            connection.connectedAt,
-          ),
-        )
-        .map(
-          ({
-            pullRequestAutoSync,
-            agentAccess,
-            allowLossyConversion,
-            ...connection
-          }) => ({
-            ...connection,
-            // Ajour's own settings never live in the plugin's config.
-            config: Object.fromEntries(
-              Object.entries(connection.config).filter(
-                ([key]) => !AJOUR_CONNECTION_FIELD_IDS.has(key),
-              ),
-            ),
-            ...(allowLossyConversion === true ? { allowLossyConversion } : {}),
-            ...(typeof pullRequestAutoSync === "boolean"
-              ? { pullRequestAutoSync }
-              : {}),
-            // Anything else than a known level is None.
-            ...(agentAccessSchema.safeParse(agentAccess).success
-              ? { agentAccess }
-              : {}),
-          }),
-        )
-        .sort(compareConnections),
-      stagedImports: (raw.stagedImports ?? defaults.stagedImports)
-        .filter((item): item is BacklogImportCandidate =>
-          Boolean(
-            item?.id &&
-            item.source &&
-            item.connectionId &&
-            item.sourceId &&
-            item.title,
-          ),
-        )
-        .map((item) => ({
-          ...item,
-          selected: item.selectable ? item.selected : false,
-        }))
-        .sort(compareImports),
-      dismissedImportKeys: Array.from(
-        new Set(
-          (raw.dismissedImportKeys as string[] | undefined) ??
-            defaults.dismissedImportKeys,
+    version: 7,
+    connections: (Array.isArray(raw.connections) ? raw.connections : [])
+      .filter((connection): connection is StoredConnection =>
+        Boolean(
+          connection?.id &&
+          connection.pluginId &&
+          connection.label &&
+          connection.tenantLabel &&
+          connection.config &&
+          typeof connection.autoSync === "boolean" &&
+          connection.autoSyncIntervalMinutes &&
+          connection.connectedAt,
         ),
-      ),
-      connectorBacklogStatuses: (
-        (raw as AppApiState).connectorBacklogStatuses ??
-        defaults.connectorBacklogStatuses
       )
-        .filter((status): status is BacklogSourceStatus =>
-          Boolean(
-            status?.source &&
-            status.connectionId &&
-            status.connectionLabel &&
-            status.tenantLabel &&
-            status.key &&
-            status.label &&
-            status.lastSeenAt,
+      .map(
+        ({
+          pullRequestAutoSync,
+          agentAccess,
+          allowLossyConversion,
+          ...connection
+        }) => ({
+          ...connection,
+          // Ajour's own settings never live in the plugin's config.
+          config: Object.fromEntries(
+            Object.entries(connection.config).filter(
+              ([key]) => !AJOUR_CONNECTION_FIELD_IDS.has(key),
+            ),
           ),
-        )
-        .sort(compareBacklogStatuses),
-      disabledPluginIds: Array.from(
-        new Set(
-          (Array.isArray((raw as Partial<AppApiState>).disabledPluginIds)
-            ? (raw as Partial<AppApiState>).disabledPluginIds!
-            : defaults.disabledPluginIds
-          )
-            .filter(
-              (pluginId): pluginId is string =>
-                typeof pluginId === "string" && pluginId.trim().length > 0,
-            )
-            .map((pluginId) => pluginId.trim()),
-        ),
-      ).sort(),
-      disabledCapabilities: normalizeDisabledCapabilities(
-        (raw as Partial<AppApiState>).disabledCapabilities,
-      ),
-      pluginsEnabled:
-        typeof (raw as Partial<AppApiState>).pluginsEnabled === "boolean"
-          ? (raw as Partial<AppApiState>).pluginsEnabled!
-          : defaults.pluginsEnabled,
-      mcp: normalizeMcpState((raw as Partial<AppApiState>).mcp),
-      agentRunner: normalizeAgentRunnerState(
-        (raw as Partial<AppApiState>).agentRunner,
-      ),
-    };
-  }
-
-  if ("stagedImports" in raw || raw.version === 2) {
-    const defaults = createDefaultState();
-    const legacyConnections =
-      ((raw as AppApiStateV2).connectors?.azureDevOpsConnections ?? []).map(
-        (connection) => ({
-          id: connection.id,
-          pluginId: "azure_devops",
-          label: connection.label,
-          tenantLabel: connection.tenantLabel,
-          autoSync: connection.autoSync ?? false,
-          autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes ?? 15,
-          config: compactFieldValues({
-            organizationUrl: normalizeOrganizationUrl(
-              connection.organizationUrl,
-            ),
-            project: connection.project,
-            personalAccessToken: connection.personalAccessToken,
-            queryScope: connection.queryScope,
-            priorityFieldName: connection.priorityFieldName,
-          }),
-          configSummary: compactFieldValues({
-            organizationUrl: normalizeOrganizationUrl(
-              connection.organizationUrl,
-            ),
-            queryScope: connection.queryScope,
-            priorityFieldName: connection.priorityFieldName,
-            priorityFieldResolvedName: connection.priorityFieldResolvedName,
-            priorityFieldResolvedReferenceName:
-              connection.priorityFieldResolvedReferenceName,
-            priorityFieldType: connection.priorityFieldType,
-            priorityFieldIsQueryable: connection.priorityFieldIsQueryable,
-          }),
-          connectedAt: connection.connectedAt,
-          lastSyncAt: connection.lastSyncAt,
-          lastError: connection.lastError,
+          ...(allowLossyConversion === true ? { allowLossyConversion } : {}),
+          ...(typeof pullRequestAutoSync === "boolean"
+            ? { pullRequestAutoSync }
+            : {}),
+          // Anything else than a known level is None.
+          ...(agentAccessSchema.safeParse(agentAccess).success
+            ? { agentAccess }
+            : {}),
         }),
-      ) ?? defaults.connections;
-
-    return {
-      version: 7,
-      connections: legacyConnections.sort(compareConnections),
-      stagedImports: (raw.stagedImports ?? defaults.stagedImports)
-        .filter((item): item is BacklogImportCandidate =>
-          Boolean(
-            item?.id &&
-            item.source &&
-            item.connectionId &&
-            item.sourceId &&
-            item.title,
-          ),
-        )
-        .map((item) => ({
-          ...item,
-          selected: item.selectable ? item.selected : false,
-        }))
-        .sort(compareImports),
-      dismissedImportKeys: Array.from(
-        new Set(
-          "dismissedImportKeys" in raw
-            ? ((raw.dismissedImportKeys as string[] | undefined) ??
-                defaults.dismissedImportKeys)
-            : defaults.dismissedImportKeys,
-        ),
-      ),
-      connectorBacklogStatuses: (
-        (raw as AppApiState).connectorBacklogStatuses ??
-        defaults.connectorBacklogStatuses
       )
-        .filter((status): status is BacklogSourceStatus =>
-          Boolean(
-            status?.source &&
-            status.connectionId &&
-            status.connectionLabel &&
-            status.tenantLabel &&
-            status.key &&
-            status.label &&
-            status.lastSeenAt,
-          ),
+      .sort(compareConnections),
+    stagedImports: (raw.stagedImports ?? defaults.stagedImports)
+      .filter((item): item is BacklogImportCandidate =>
+        Boolean(
+          item?.id &&
+          item.source &&
+          item.connectionId &&
+          item.sourceId &&
+          item.title,
+        ),
+      )
+      .map((item) => ({
+        ...item,
+        selected: item.selectable ? item.selected : false,
+      }))
+      .sort(compareImports),
+    dismissedImportKeys: Array.from(
+      new Set(
+        (raw.dismissedImportKeys as string[] | undefined) ??
+          defaults.dismissedImportKeys,
+      ),
+    ),
+    connectorBacklogStatuses: (
+      raw.connectorBacklogStatuses ?? defaults.connectorBacklogStatuses
+    )
+      .filter((status): status is BacklogSourceStatus =>
+        Boolean(
+          status?.source &&
+          status.connectionId &&
+          status.connectionLabel &&
+          status.tenantLabel &&
+          status.key &&
+          status.label &&
+          status.lastSeenAt,
+        ),
+      )
+      .sort(compareBacklogStatuses),
+    disabledPluginIds: Array.from(
+      new Set(
+        (Array.isArray(raw.disabledPluginIds)
+          ? raw.disabledPluginIds!
+          : defaults.disabledPluginIds
         )
-        .sort(compareBacklogStatuses),
-      disabledPluginIds: defaults.disabledPluginIds,
-      disabledCapabilities: defaults.disabledCapabilities,
-      pluginsEnabled: defaults.pluginsEnabled,
-      mcp: { enabled: false, clients: [] },
-      agentRunner: { settings: defaultAgentRunnerSettings(), pluginValues: {} },
-    };
-  }
-
-  return migrateLegacyState(raw as AppApiStateV1);
+          .filter(
+            (pluginId): pluginId is string =>
+              typeof pluginId === "string" && pluginId.trim().length > 0,
+          )
+          .map((pluginId) => pluginId.trim()),
+      ),
+    ).sort(),
+    disabledCapabilities: normalizeDisabledCapabilities(
+      raw.disabledCapabilities,
+    ),
+    pluginsEnabled:
+      typeof raw.pluginsEnabled === "boolean"
+        ? raw.pluginsEnabled!
+        : defaults.pluginsEnabled,
+    mcp: normalizeMcpState(raw.mcp),
+    agentRunner: normalizeAgentRunnerState(raw.agentRunner),
+  };
 }
 
 /** Rename errors Windows gives for a moment while another process has the target open. */
@@ -804,12 +583,14 @@ function readStateFile(
     ) {
       return undefined;
     }
-    const raw = parsed as Partial<
-      AppApiState | AppApiStateV1 | AppApiStateV2
-    > | null;
+    if (parsed === null) {
+      return { state: createDefaultState(), versionFrom: 1 };
+    }
+    const raw = parsed as StoredStateRecord;
+    const versionFrom = storedStateVersion(raw);
     return {
-      state: normalizeState(raw ?? undefined),
-      versionFrom: typeof raw?.version === "number" ? raw.version : 1,
+      state: normalizeState(runStateMigrations(raw, versionFrom)),
+      versionFrom,
     };
   } catch {
     return undefined;
