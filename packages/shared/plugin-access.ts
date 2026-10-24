@@ -11,8 +11,8 @@ import type {
  * it. The Access section lists the summary, and consent on updates uses the
  * difference: an update widens access when it adds a capability, an auth
  * scheme, a host, a derived host, an endpoint, a public host, an MCP tool or
- * an agent prompt change, or switches to "Always ready" (spec #381). Nothing
- * else counts, removals included.
+ * an agent prompt change, marks an access choice always on, or switches to
+ * "Always ready" (spec #381). Nothing else counts, removals included.
  */
 
 export interface PluginAccessAuth {
@@ -65,6 +65,11 @@ export interface PluginAccessSummary {
   publicHosts: string[];
   mcpTools: PluginAccessMcpTool[];
   agentPrompts: PluginAccessPrompt[];
+  /**
+   * The access choices marked `always`, which are on without the user
+   * turning them on, with their endpoints and operations.
+   */
+  alwaysOnAccess: string[];
   startMode: PluginStartMode;
 }
 
@@ -78,6 +83,8 @@ export interface PluginAccessDifference {
   mcpTools: PluginAccessMcpTool[];
   /** Agent tasks whose prompt is new or changed. */
   agentPrompts: string[];
+  /** Access choices that are now always on: new ones, or ones that were off by default. */
+  alwaysOnAccess: string[];
   /** The update switches the plugin to "Always ready". */
   alwaysReady: boolean;
 }
@@ -93,6 +100,7 @@ export interface PluginAccessManifest {
     };
   };
   network?: PluginNetwork;
+  connectionAccess?: readonly { id: string; always: boolean }[];
   runtime?: { start: PluginStartMode };
 }
 
@@ -183,6 +191,10 @@ export function summarizePluginAccess(
         return { task: task.id, prompt };
       })
       .sort(byText((entry) => entry.task)),
+    alwaysOnAccess: (manifest.connectionAccess ?? [])
+      .filter((choice) => choice.always)
+      .map((choice) => choice.id)
+      .sort(),
     startMode: manifest.runtime?.start ?? "whenNeeded",
   };
 }
@@ -218,6 +230,7 @@ const EMPTY_SUMMARY: PluginAccessSummary = {
   publicHosts: [],
   mcpTools: [],
   agentPrompts: [],
+  alwaysOnAccess: [],
   startMode: "whenNeeded",
 };
 
@@ -258,6 +271,7 @@ export function pluginAccessDifference(
     agentPrompts: next.agentPrompts
       .filter((entry) => prompts.get(entry.task) !== entry.prompt)
       .map((entry) => entry.task),
+    alwaysOnAccess: added(before.alwaysOnAccess, next.alwaysOnAccess, String),
     alwaysReady:
       next.startMode === "alwaysReady" && before.startMode !== "alwaysReady",
   };
@@ -276,6 +290,7 @@ export function widensAccess(difference: PluginAccessDifference) {
       difference.publicHosts,
       difference.mcpTools,
       difference.agentPrompts,
+      difference.alwaysOnAccess,
     ].some((items) => items.length > 0)
   );
 }
