@@ -1,13 +1,18 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { defineConfig, type Plugin } from "vite";
+import type { AddressInfo } from "node:net";
+import { defineConfig, type Plugin, type ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
 import { configDefaults } from "vitest/config";
+import {
+  createWindowToken,
+  WINDOW_TOKEN_HEADER,
+} from "../api/src/window-token.ts";
 
-const INTERNAL_APP_API_HOST = "127.0.0.1";
-const INTERNAL_APP_API_PORT = "8787";
-const apiServerEntry = path.resolve(__dirname, "../api/src/server.ts");
+const INTERNAL_APP_API_HOST = process.env.AJOUR_APP_API_HOST ?? "127.0.0.1";
+const INTERNAL_APP_API_PORT = process.env.AJOUR_APP_API_PORT ?? "8787";
+const apiServerEntry = path.resolve(__dirname, "../api/src/standalone.ts");
 
 function vendorChunk(id: string) {
   if (id.includes("/exceljs/")) {
@@ -17,9 +22,17 @@ function vendorChunk(id: string) {
   return undefined;
 }
 
+/**
+ * Starts the local API beside the dev server, as Electron main does in the
+ * desktop app. The API answers only requests that carry this server's window
+ * token, so the page calls it on its own origin, through a proxy that adds
+ * the token to the page's own requests. Another site's requests are
+ * cross-site, so they get none.
+ */
 function internalAppApiPlugin(): Plugin {
   let apiProcess: ChildProcess | null = null;
   let isStopping = false;
+  const windowToken = createWindowToken();
 
   const stopApi = () => {
     if (!apiProcess || apiProcess.exitCode !== null || apiProcess.killed) {
@@ -70,57 +83,109 @@ function internalAppApiPlugin(): Plugin {
   return {
     name: "ajour-internal-app-api",
     apply: "serve",
+    config: () => ({
+      server: {
+        proxy: {
+          "/api": {
+            target: `http://${INTERNAL_APP_API_HOST}:${INTERNAL_APP_API_PORT}`,
+            configure(proxy) {
+              proxy.on("proxyReq", (proxyRequest, request) => {
+                proxyRequest.removeHeader(WINDOW_TOKEN_HEADER);
+                // The browser sets Sec-Fetch-Site, and no page can forge it.
+                if (request.headers["sec-fetch-site"] !== "same-origin") {
+                  return;
+                }
+                proxyRequest.setHeader(WINDOW_TOKEN_HEADER, windowToken);
+                // A same-origin GET carries no Origin, as the desktop
+                // window's cross-origin one does. The bridge needs it.
+                if (!request.headers.origin && request.headers.host) {
+                  proxyRequest.setHeader(
+                    "Origin",
+                    `http://${request.headers.host}`,
+                  );
+                }
+              });
+            },
+          },
+        },
+      },
+    }),
     configureServer(server) {
-      if (apiProcess) {
+      const { httpServer } = server;
+      if (apiProcess || !httpServer) {
         return;
       }
 
-      apiProcess = spawn(
-        process.execPath,
-        ["--watch", "--experimental-strip-types", apiServerEntry],
-        {
-          cwd: path.resolve(__dirname, "..", ".."),
-          env: {
-            ...process.env,
-            AJOUR_APP_API_HOST:
-              process.env.AJOUR_APP_API_HOST ?? INTERNAL_APP_API_HOST,
-            AJOUR_APP_API_PORT:
-              process.env.AJOUR_APP_API_PORT ?? INTERNAL_APP_API_PORT,
-          },
-          stdio: ["ignore", "pipe", "pipe"],
-        },
-      );
-
-      pipePrefixedOutput(apiProcess.stdout, server.config.logger, "info");
-      pipePrefixedOutput(apiProcess.stderr, server.config.logger, "error");
-
-      apiProcess.once("exit", (code, signal) => {
-        if (!isStopping && code !== 0) {
-          server.config.logger.error(
-            `[internal-app-api] exited unexpectedly (code: ${code ?? "null"}, signal: ${signal ?? "none"})`,
-          );
-        }
-
-        apiProcess = null;
-        isStopping = false;
+      // Once the dev server listens, so the API knows the page's origin.
+      httpServer.once("listening", () => {
+        const { port } = httpServer.address() as AddressInfo;
+        startApi(server, [
+          `http://127.0.0.1:${port}`,
+          `http://localhost:${port}`,
+        ]);
       });
-
-      server.httpServer?.once("close", stopApi);
+      httpServer.once("close", stopApi);
       process.once("SIGINT", stopApi);
       process.once("SIGTERM", stopApi);
     },
   };
+
+  function startApi(server: ViteDevServer, pageOrigins: string[]) {
+    if (apiProcess) {
+      return;
+    }
+
+    apiProcess = spawn(
+      process.execPath,
+      ["--watch", "--experimental-strip-types", apiServerEntry],
+      {
+        cwd: path.resolve(__dirname, "..", ".."),
+        env: {
+          ...process.env,
+          AJOUR_APP_API_HOST: INTERNAL_APP_API_HOST,
+          AJOUR_APP_API_PORT: INTERNAL_APP_API_PORT,
+          AJOUR_APP_API_ALLOWED_ORIGINS: [
+            ...pageOrigins,
+            process.env.AJOUR_APP_API_ALLOWED_ORIGINS ?? "",
+          ]
+            .filter(Boolean)
+            .join(","),
+          AJOUR_APP_API_WINDOW_TOKEN: windowToken,
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+
+    pipePrefixedOutput(apiProcess.stdout, server.config.logger, "info");
+    pipePrefixedOutput(apiProcess.stderr, server.config.logger, "error");
+
+    apiProcess.once("exit", (code, signal) => {
+      if (!isStopping && code !== 0) {
+        server.config.logger.error(
+          `[internal-app-api] exited unexpectedly (code: ${code ?? "null"}, signal: ${signal ?? "none"})`,
+        );
+      }
+
+      apiProcess = null;
+      isStopping = false;
+    });
+  }
 }
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ command, mode }) => {
   const isDesktopMode = mode === "desktop";
   const isTestMode = mode === "test" || process.env.VITEST === "true";
   const shouldStartInternalAppApi = !isDesktopMode && !isTestMode;
+  // The page calls the API through the dev server's proxy, on its own origin.
+  const callsApiThroughProxy = command === "serve" && shouldStartInternalAppApi;
 
   return {
     define: {
       "import.meta.env.VITE_DESKTOP_SHELL": JSON.stringify(
         isDesktopMode ? "true" : "false",
+      ),
+      "import.meta.env.VITE_APP_API_THROUGH_PROXY": JSON.stringify(
+        callsApiThroughProxy ? "true" : "false",
       ),
       // A developer's switch: AJOUR_WIDE_EVENTS=console prints the renderer's
       // wide events in the devtools console. Off by default.

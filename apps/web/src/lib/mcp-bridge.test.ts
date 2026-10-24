@@ -8,7 +8,8 @@ const { postMcpBridgeResult } = vi.hoisted(() => ({
   ),
 }));
 vi.mock("@/lib/app-api", () => ({
-  getAppApiBaseUrl: () => "http://api.test",
+  // Where the window calls /api, which may differ from where the API listens.
+  appApiUrl: (path: string) => `http://window-requests.test${path}`,
   postMcpBridgeResult,
 }));
 
@@ -72,6 +73,13 @@ describe("MCP bridge connection", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("opens the stream where the window sends its /api requests", () => {
+    connect();
+    expect(FakeEventSource.instances[0]!.url).toBe(
+      "http://window-requests.test/api/mcp/bridge",
+    );
   });
 
   it("reports reconnecting, apart from the first connecting, after the stream errors", () => {
