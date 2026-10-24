@@ -43,7 +43,9 @@ import { getUncheckedChangeIds } from "@/lib/commit-selection";
 import { localStore } from "@/lib/local-store";
 import { StaleWindowError } from "@/lib/stale-window-error";
 import { getIsoWeekDates, todayIsoDate } from "@/lib/utils";
-import { withEventAttribution } from "@/lib/wide-events";
+import type { AjourCatalog } from "@ajour/wide-events/catalog.ts";
+import type { Unit } from "@ajour/wide-events";
+import { reentry } from "@/lib/wide-events";
 
 /**
  * Runs the data tools an agent calls through the local API's bridge. Inputs
@@ -67,12 +69,12 @@ function formatZodError(error: ZodError) {
     .join(" ");
 }
 
-/** Project properties are optional context; without them the tool still answers. */
-function loadProjectPropertyPlugins(tool: string) {
-  return listProjectPropertyPlugins().catch((error: unknown) => {
-    console.warn(`Plugin project properties unavailable for ${tool}.`, error);
-    return [];
-  });
+/**
+ * Project properties are optional context; without them the tool still
+ * answers. The overview call counts as failed on the tool call's event.
+ */
+function loadProjectPropertyPlugins() {
+  return listProjectPropertyPlugins().catch(() => []);
 }
 
 /** Each read tool, typed against its output schema. */
@@ -106,8 +108,7 @@ const readTools: {
   list_work_item_comments: listCommentsForAgent,
   get_week_changes: async (rawInput) => {
     const input = readToolInputSchemas.get_week_changes.parse(rawInput);
-    const projectPropertyPlugins =
-      await loadProjectPropertyPlugins("get_week_changes");
+    const projectPropertyPlugins = await loadProjectPropertyPlugins();
     const weekDates = getIsoWeekDates(input.weekOf);
     return getWeekChangesForAgent(localStore.snapshot(), {
       weekDates,
@@ -121,8 +122,7 @@ const readTools: {
     return getWeekStatusForAgent(localStore.snapshot(), {
       weekDates: getWeekDates(input.weekOf),
       today: todayIsoDate(),
-      projectPropertyPlugins:
-        await loadProjectPropertyPlugins("get_week_status"),
+      projectPropertyPlugins: await loadProjectPropertyPlugins(),
     });
   },
 };
@@ -139,9 +139,11 @@ function isWorkItemWriteTool(tool: string): tool is WorkItemWriteTool {
 function finishWrite(
   call: BridgeToolCall,
   outcome: AgentWriteOutcome,
+  unit: AgentToolUnit | undefined,
 ): BridgeToolResult {
   const sourceWriteIds = outcome.sourceWriteIds ?? [];
   const settleComments = outcome.settleComments ?? [];
+  unit?.set({ agent_tool: { undo_offered: outcome.undoToken !== null } });
   offerUndo(outcome.undoToken, {
     title: `${call.client.name}: ${outcome.action}`,
     subject: outcome.undoSubject,
@@ -168,14 +170,21 @@ function finishWrite(
   };
 }
 
+/** The bridge's `agent_tool.call` job, which it hands the call it runs. */
+type AgentToolUnit = Unit<AjourCatalog, "agent_tool.call">;
+
 export async function runAgentToolCall(
   call: BridgeToolCall,
+  unit?: AgentToolUnit,
 ): Promise<BridgeToolResult> {
   const refuse = (error: string): BridgeToolResult => ({
     requestId: call.requestId,
     ok: false,
     error,
   });
+  // The bridge runs the call as a job: its writes after an `await` run in
+  // it again, so they fold into its one event.
+  const asAgent = reentry({ trigger: "agent" });
 
   try {
     if (isReadTool(call.tool)) {
@@ -187,32 +196,29 @@ export async function runAgentToolCall(
     }
     if (isEntryWriteTool(call.tool)) {
       const projectPropertyPlugins =
-        call.tool === "submit_week"
-          ? await loadProjectPropertyPlugins(call.tool)
-          : [];
-      return finishWrite(
-        call,
-        withEventAttribution({ trigger: "agent" }, () =>
+        call.tool === "submit_week" ? await loadProjectPropertyPlugins() : [];
+      return asAgent(() =>
+        finishWrite(
+          call,
           runEntryWriteTool(call.tool as EntryWriteTool, call.input, {
             projectPropertyPlugins,
           }),
+          unit,
         ),
       );
     }
     if (isWorkItemWriteTool(call.tool)) {
-      return finishWrite(
-        call,
-        await withEventAttribution({ trigger: "agent" }, () =>
-          runWorkItemWriteTool(
-            call.tool as WorkItemWriteTool,
-            call.input,
-            call.client,
-          ),
+      const outcome = await asAgent(() =>
+        runWorkItemWriteTool(
+          call.tool as WorkItemWriteTool,
+          call.input,
+          call.client,
         ),
       );
+      return asAgent(() => finishWrite(call, outcome, unit));
     }
     if (call.tool === "post_work_item_comment") {
-      return await postCommentForAgent(call);
+      return await postCommentForAgent(call, unit);
     }
     return refuse(`Ajour has no tool named ${call.tool}.`);
   } catch (error) {

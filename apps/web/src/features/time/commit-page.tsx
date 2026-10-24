@@ -298,8 +298,8 @@ export function CommitPage({
     // A failed overview leaves only Ajour's names; the page works.
     void listProjectPropertyPlugins()
       .then((next) => active && setPlugins(next))
-      .catch((error: unknown) => {
-        console.warn("Plugin project properties unavailable.", error);
+      // The overview call's own event records the failure.
+      .catch(() => {
         if (active) setPlugins([]);
       });
     return () => {

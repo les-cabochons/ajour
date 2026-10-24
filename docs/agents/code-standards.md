@@ -160,6 +160,7 @@ rg -n 'features/backlog/(work-item-estimates|work-item-hierarchy)' apps/web/src
 rg -n 'window.addEventListener\("pointer(move|up|cancel)"' apps/web/src/features
 rg -n '^function (formatPriorityInput|parsePriorityInput|formatEstimateInput|parseEstimateInput|buildManualTimeEntryNote)' apps/web/src/features/backlog
 rg -n 'console\.' apps/desktop/electron
+rg -n 'console\.' apps/web/src -g '!*.test.*'
 rg -n 'ipcMain\.(on|handle|once|handleOnce)\(' apps/desktop/electron --glob '!ipc-listeners.cjs'
 rg -n 'console\.' apps/api/src -g '!*.test.ts' -g '!standalone.ts'
 ```

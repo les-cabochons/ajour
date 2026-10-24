@@ -15,11 +15,15 @@ import {
 } from "@/domain/backlog/comments";
 import type { LocalWorkItem } from "@/domain/local-state";
 import { announcePostedComment } from "@/features/backlog/comment-threads";
+import type { AjourCatalog } from "@ajour/wide-events/catalog.ts";
+import type { Unit } from "@ajour/wide-events";
 import {
   agentCommentIds,
   queueAgentComment,
   takeAgentComment,
+  type PendingAgentComment,
 } from "@/lib/agent-comments";
+
 import {
   agentAccessAllows,
   readAgentCommentAccess,
@@ -28,6 +32,7 @@ import { listItemComments, postItemComment } from "@/lib/app-api";
 import { pendingCommentDeleteIds } from "@/lib/comment-deletes";
 import { keepCommentAsDraft } from "@/lib/comment-drafts";
 import { localStore } from "@/lib/local-store";
+import { reentry, wideEvents } from "@/lib/wide-events";
 
 /**
  * Comment tools for agents (map #234). The user allows them per connection:
@@ -83,19 +88,23 @@ export async function listCommentsForAgent(
 ): Promise<DataToolOutput<"list_work_item_comments">> {
   const input = readToolInputSchemas.list_work_item_comments.parse(rawInput);
   const item = findWorkItemOrRefuse(localStore.snapshot(), input.workItemId);
+  // The tool call's unit, which the call after the access check joins.
+  const enter = reentry();
   const source = await requireAgentCommentAccess(item, "read");
   let page;
   try {
     // The API checks Read again when the answer comes back.
-    page = await listItemComments(
-      source.pluginId,
-      source.connectionId,
-      {
-        sourceId: source.sourceId,
-        limit: input.limit,
-        ...(input.cursor ? { cursor: input.cursor } : {}),
-      },
-      { agent: true },
+    page = await enter(() =>
+      listItemComments(
+        source.pluginId,
+        source.connectionId,
+        {
+          sourceId: source.sourceId,
+          limit: input.limit,
+          ...(input.cursor ? { cursor: input.cursor } : {}),
+        },
+        { agent: true },
+      ),
     );
   } catch (error) {
     throw new AgentToolRefusal(
@@ -135,6 +144,7 @@ export async function listCommentsForAgent(
  */
 export async function postCommentForAgent(
   call: BridgeToolCall,
+  unit?: Unit<AjourCatalog, "agent_tool.call">,
 ): Promise<BridgeToolResult> {
   const input = writeToolInputSchemas.post_work_item_comment.parse(call.input);
   const item = findWorkItemOrRefuse(localStore.snapshot(), input.workItemId);
@@ -153,6 +163,7 @@ export async function postCommentForAgent(
     at: Date.now(),
   });
   const action = "Commented on a backlog item";
+  unit?.set({ agent_tool: { undo_offered: true } });
   let undone = false;
   showUndoToast({
     title: `${call.client.name}: ${action}`,
@@ -181,9 +192,35 @@ export async function postCommentForAgent(
  * refuses it, it becomes the item's comment draft, so the user can send or
  * discard it. A comment whose item was deleted goes with it.
  */
-export async function sendAgentComment(id: string) {
-  const entry = takeAgentComment(id);
-  if (!entry) return;
+export function sendAgentComment(id: string): Promise<void> {
+  return wideEvents.run(
+    "agent_comment.send",
+    { kind: "job", trigger: "system", detached: true },
+    async (job) => {
+      const entry = takeAgentComment(id);
+      if (!entry) {
+        job.set({ comment: { result: "gone" } }).end("noop");
+        return;
+      }
+      job.set({
+        backlog_item: { id: entry.itemId },
+        plugin: { id: entry.pluginId },
+        connection: { id: entry.connectionId },
+        comment: { body_length: entry.body.length },
+      });
+      await postAgentComment(job, entry);
+    },
+  );
+}
+
+async function postAgentComment(
+  job: Unit<AjourCatalog, "agent_comment.send">,
+  entry: PendingAgentComment,
+) {
+  const gone = () => job.set({ comment: { result: "gone" } }).end("noop");
+  const keptAsDraft = (
+    reason: "access_check_failed" | "agent_access" | "post_failed",
+  ) => job.set({ comment: { result: "kept_as_draft", draft_reason: reason } });
   // The item as it is now, still from the comment's thread.
   const currentItem = () => {
     const item = localStore
@@ -192,10 +229,16 @@ export async function sendAgentComment(id: string) {
     return item && isCommentSourceOf(item, entry) ? item : undefined;
   };
   const item = currentItem();
-  if (!item) return;
+  if (!item) {
+    gone();
+    return;
+  }
+  let checked = false;
   try {
     const current = await readAgentCommentAccess(item);
+    checked = true;
     if (!agentAccessAllows(current.access, "readWrite")) {
+      keptAsDraft("agent_access").refuse("agent_access");
       keepCommentAsDraft(entry.itemId, entry.body);
       showErrorToast({
         title: `${entry.clientName}'s comment on "${item.title}" wasn't posted`,
@@ -205,16 +248,23 @@ export async function sendAgentComment(id: string) {
       return;
     }
     // Deleted or moved while access was read: the comment goes with it.
-    if (!currentItem()) return;
+    if (!currentItem()) {
+      gone();
+      return;
+    }
     // The API checks Read and write again at the post itself.
-    const { comment } = await postItemComment(
-      entry.pluginId,
-      entry.connectionId,
-      { sourceId: entry.sourceId, body: entry.body },
-      { agent: true },
+    const { comment } = await job.enter(() =>
+      postItemComment(
+        entry.pluginId,
+        entry.connectionId,
+        { sourceId: entry.sourceId, body: entry.body },
+        { agent: true },
+      ),
     );
+    job.set({ comment: { result: "posted" } });
     announcePostedComment(entry, comment);
   } catch (error) {
+    keptAsDraft(checked ? "post_failed" : "access_check_failed").fail(error);
     keepCommentAsDraft(entry.itemId, entry.body);
     const title = localStore
       .snapshot()

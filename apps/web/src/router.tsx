@@ -11,89 +11,128 @@ import { lazy, Suspense, type ReactNode } from "react";
 import { PageSkeleton } from "@/components/page-skeleton";
 import { parseBacklogItemSearch } from "@/features/backlog/backlog-item-search";
 import { AppShell } from "@/features/layout/app-shell";
+import { trackPageChunk, watchRouteChanges } from "@/lib/route-events";
 import { ShortcutProvider } from "@/lib/shortcut-handlers";
 import { todayIsoDate } from "@/lib/utils";
 
-const TimePage = lazy(async () => {
-  const module = await import("@/features/time/time-page");
-  return { default: module.TimePage };
-});
-const CommitPage = lazy(async () => {
-  const module = await import("@/features/time/commit-page");
-  return { default: module.CommitPage };
-});
-const BacklogPage = lazy(async () => {
-  const module = await import("@/features/backlog/backlog-page");
-  return { default: module.BacklogPage };
-});
-const PullRequestsPage = lazy(async () => {
-  const module = await import("@/features/pull-requests/pull-requests-page");
-  return { default: module.PullRequestsPage };
-});
-const BacklogItemPage = lazy(async () => {
-  const module = await import("@/features/backlog/backlog-item-page");
-  return { default: module.BacklogItemPage };
-});
-const ProjectsPage = lazy(async () => {
-  const module = await import("@/features/projects/projects-page");
-  return { default: module.ProjectsPage };
-});
-const SettingsLayout = lazy(async () => {
-  const module = await import("@/features/settings/settings-layout");
-  return { default: module.SettingsLayout };
-});
-const SettingsIndex = lazy(async () => {
-  const module = await import("@/features/settings/settings-layout");
-  return { default: module.SettingsIndex };
-});
-const SettingsGeneralPage = lazy(async () => {
-  const module = await import("@/features/settings/settings-general-page");
-  return { default: module.SettingsGeneralPage };
-});
-const SettingsPluginsPage = lazy(async () => {
-  const module = await import("@/features/settings/settings-plugins-page");
-  return { default: module.SettingsPluginsPage };
-});
-const SettingsMcpPage = lazy(async () => {
-  const module = await import("@/features/settings/settings-mcp-page");
-  return { default: module.SettingsMcpPage };
-});
-const SettingsAgentsPage = lazy(async () => {
-  const module = await import("@/features/settings/settings-agents-page");
-  return { default: module.SettingsAgentsPage };
-});
+const TimePage = lazy(
+  trackPageChunk(async () => {
+    const module = await import("@/features/time/time-page");
+    return { default: module.TimePage };
+  }),
+);
+const CommitPage = lazy(
+  trackPageChunk(async () => {
+    const module = await import("@/features/time/commit-page");
+    return { default: module.CommitPage };
+  }),
+);
+const BacklogPage = lazy(
+  trackPageChunk(async () => {
+    const module = await import("@/features/backlog/backlog-page");
+    return { default: module.BacklogPage };
+  }),
+);
+const PullRequestsPage = lazy(
+  trackPageChunk(async () => {
+    const module = await import("@/features/pull-requests/pull-requests-page");
+    return { default: module.PullRequestsPage };
+  }),
+);
+const BacklogItemPage = lazy(
+  trackPageChunk(async () => {
+    const module = await import("@/features/backlog/backlog-item-page");
+    return { default: module.BacklogItemPage };
+  }),
+);
+const ProjectsPage = lazy(
+  trackPageChunk(async () => {
+    const module = await import("@/features/projects/projects-page");
+    return { default: module.ProjectsPage };
+  }),
+);
+const SettingsLayout = lazy(
+  trackPageChunk(async () => {
+    const module = await import("@/features/settings/settings-layout");
+    return { default: module.SettingsLayout };
+  }),
+);
+const SettingsIndex = lazy(
+  trackPageChunk(async () => {
+    const module = await import("@/features/settings/settings-layout");
+    return { default: module.SettingsIndex };
+  }),
+);
+const SettingsGeneralPage = lazy(
+  trackPageChunk(async () => {
+    const module = await import("@/features/settings/settings-general-page");
+    return { default: module.SettingsGeneralPage };
+  }),
+);
+const SettingsPluginsPage = lazy(
+  trackPageChunk(async () => {
+    const module = await import("@/features/settings/settings-plugins-page");
+    return { default: module.SettingsPluginsPage };
+  }),
+);
+const SettingsMcpPage = lazy(
+  trackPageChunk(async () => {
+    const module = await import("@/features/settings/settings-mcp-page");
+    return { default: module.SettingsMcpPage };
+  }),
+);
+const SettingsAgentsPage = lazy(
+  trackPageChunk(async () => {
+    const module = await import("@/features/settings/settings-agents-page");
+    return { default: module.SettingsAgentsPage };
+  }),
+);
 
-const SettingsBacklogPage = lazy(async () => {
-  const module = await import("@/features/settings/settings-backlog-page");
-  return { default: module.SettingsBacklogPage };
-});
-const SettingsCalendarPage = lazy(async () => {
-  const module = await import("@/features/settings/settings-calendar-page");
-  return { default: module.SettingsCalendarPage };
-});
-const SettingsWorkflowPage = lazy(async () => {
-  const module = await import("@/features/settings/settings-workflow-page");
-  return { default: module.SettingsWorkflowPage };
-});
-const SettingsProjectsPage = lazy(async () => {
-  const module = await import("@/features/settings/settings-projects-page");
-  return { default: module.SettingsProjectsPage };
-});
-const SettingsTimeEntriesPage = lazy(async () => {
-  const module = await import("@/features/settings/settings-export-page");
-  return { default: module.SettingsExportPage };
-});
-const SettingsSyncReviewPage = lazy(async () => {
-  const module =
-    await import("@/features/settings/settings-import-review-page");
-  return { default: module.SettingsImportReviewPage };
-});
+const SettingsBacklogPage = lazy(
+  trackPageChunk(async () => {
+    const module = await import("@/features/settings/settings-backlog-page");
+    return { default: module.SettingsBacklogPage };
+  }),
+);
+const SettingsCalendarPage = lazy(
+  trackPageChunk(async () => {
+    const module = await import("@/features/settings/settings-calendar-page");
+    return { default: module.SettingsCalendarPage };
+  }),
+);
+const SettingsWorkflowPage = lazy(
+  trackPageChunk(async () => {
+    const module = await import("@/features/settings/settings-workflow-page");
+    return { default: module.SettingsWorkflowPage };
+  }),
+);
+const SettingsProjectsPage = lazy(
+  trackPageChunk(async () => {
+    const module = await import("@/features/settings/settings-projects-page");
+    return { default: module.SettingsProjectsPage };
+  }),
+);
+const SettingsTimeEntriesPage = lazy(
+  trackPageChunk(async () => {
+    const module = await import("@/features/settings/settings-export-page");
+    return { default: module.SettingsExportPage };
+  }),
+);
+const SettingsSyncReviewPage = lazy(
+  trackPageChunk(async () => {
+    const module =
+      await import("@/features/settings/settings-import-review-page");
+    return { default: module.SettingsImportReviewPage };
+  }),
+);
 // Debug exists only in development builds, so production omits its chunk.
 const SettingsDebugPage = import.meta.env.DEV
-  ? lazy(async () => {
-      const module = await import("@/features/settings/settings-debug-page");
-      return { default: module.SettingsDebugPage };
-    })
+  ? lazy(
+      trackPageChunk(async () => {
+        const module = await import("@/features/settings/settings-debug-page");
+        return { default: module.SettingsDebugPage };
+      }),
+    )
   : null;
 
 // Not in the acceptance run (`--mode test`): its corner button sits over the
@@ -426,6 +465,7 @@ const routeTree = rootRoute.addChildren([
 ]);
 
 const router = createRouter({ routeTree });
+watchRouteChanges(router);
 
 declare module "@tanstack/react-router" {
   interface Register {

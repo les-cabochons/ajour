@@ -11,7 +11,7 @@ import {
 import { readBacklogDescription, writeBacklogDescription } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
 import { announceDescriptionConflicts } from "@/lib/sync-conflict-events";
-import { withEventAttribution } from "@/lib/wide-events";
+import { reentry } from "@/lib/wide-events";
 import type { Surface, Trigger } from "@ajour/wide-events";
 
 /**
@@ -67,6 +67,9 @@ export function saveSyncedDescription(
   forAgent = false,
   attribution: { trigger?: Trigger; surface?: Surface } = {},
 ): Promise<DescriptionSaveOutcome> {
+  // The unit the save started in, with its attribution: the store commands
+  // and local API calls after its awaits run in it again.
+  const enter = reentry(attribution);
   const draftAncestor =
     mode === "save" ? conflictedDrafts.get(itemId) : undefined;
   conflictedDrafts.delete(itemId);
@@ -75,8 +78,8 @@ export function saveSyncedDescription(
     .catch(() => undefined)
     .then(() =>
       draftAncestor !== undefined
-        ? recordDraftConflict(itemId, draftAncestor, attribution)
-        : runSave(itemId, mode, allowedLoss, forAgent, attribution),
+        ? recordDraftConflict(itemId, draftAncestor, enter)
+        : runSave(itemId, mode, allowedLoss, forAgent, enter),
     );
   saving.set(itemId, run);
   notify();
@@ -108,10 +111,13 @@ export function clearDescriptionDraftConflict(itemId: string) {
   conflictedDrafts.delete(itemId);
 }
 
+/** Runs work in the unit and attribution a save started with. */
+type Enter = <Result>(work: () => Result) => Result;
+
 function recordDraftConflict(
   itemId: string,
   ancestor: string,
-  attribution: { trigger?: Trigger; surface?: Surface },
+  enter: Enter,
 ): DescriptionSaveOutcome {
   const sync = findItem(itemId)?.descriptionSync;
   if (!sync) return { kind: "agreed" };
@@ -123,7 +129,7 @@ function recordDraftConflict(
       ...(sync.cut ? { cut: true } : {}),
     },
     ancestor,
-    attribution,
+    enter,
   );
 }
 
@@ -132,7 +138,7 @@ async function runSave(
   mode: "save" | "keepMine",
   allowedLoss: readonly string[],
   forAgent: boolean,
-  attribution: { trigger?: Trigger; surface?: Surface },
+  enter: Enter,
 ): Promise<DescriptionSaveOutcome> {
   const item = findItem(itemId);
   if (
@@ -148,11 +154,8 @@ async function runSave(
   const saved = item.description;
 
   try {
-    const { description: current } = await readBacklogDescription(
-      pluginId,
-      connectionId,
-      sourceId,
-      forAgent,
+    const { description: current } = await enter(() =>
+      readBacklogDescription(pluginId, connectionId, sourceId, forAgent),
     );
     const now = findItem(itemId);
     if (!now?.descriptionSync) return { kind: "agreed" };
@@ -182,7 +185,7 @@ async function runSave(
             current.text,
           );
     if (plan.kind === "agreed") {
-      withEventAttribution(attribution, () =>
+      enter(() =>
         localStore.updateSyncedDescription(itemId, (latest) =>
           descriptionSaved(latest, saved, current, Date.now()),
         ),
@@ -190,23 +193,25 @@ async function runSave(
       return plan;
     }
     if (plan.kind === "conflict")
-      return recordConflict(itemId, current, undefined, attribution);
+      return recordConflict(itemId, current, undefined, enter);
 
-    const result = await writeBacklogDescription(
-      pluginId,
-      connectionId,
-      {
-        sourceId,
-        text: plan.text,
-        expected: current.text,
-        ...(allowedLoss.length > 0 ? { allowedLoss: [...allowedLoss] } : {}),
-      },
-      forAgent,
+    const result = await enter(() =>
+      writeBacklogDescription(
+        pluginId,
+        connectionId,
+        {
+          sourceId,
+          text: plan.text,
+          expected: current.text,
+          ...(allowedLoss.length > 0 ? { allowedLoss: [...allowedLoss] } : {}),
+        },
+        forAgent,
+      ),
     );
     if (result.outcome === "conflict") {
-      return recordConflict(itemId, result.description, undefined, attribution);
+      return recordConflict(itemId, result.description, undefined, enter);
     }
-    withEventAttribution(attribution, () =>
+    enter(() =>
       localStore.updateSyncedDescription(itemId, (latest) =>
         descriptionSaved(latest, saved, result.description, Date.now()),
       ),
@@ -217,7 +222,7 @@ async function runSave(
       error instanceof Error && error.message
         ? error.message
         : "The source did not answer.";
-    withEventAttribution(attribution, () =>
+    enter(() =>
       localStore.updateSyncedDescription(itemId, (latest) =>
         descriptionWriteFailed(latest, message, Date.now()),
       ),
@@ -233,11 +238,11 @@ async function runSave(
 function recordConflict(
   itemId: string,
   source: BacklogSyncedDescription,
-  ancestor?: string,
-  attribution: { trigger?: Trigger; surface?: Surface } = {},
+  ancestor: string | undefined,
+  enter: Enter,
 ): DescriptionSaveOutcome {
   const before = findItem(itemId);
-  withEventAttribution(attribution, () =>
+  enter(() =>
     localStore.updateSyncedDescription(itemId, (latest) =>
       descriptionInConflict(latest, source, Date.now(), ancestor),
     ),

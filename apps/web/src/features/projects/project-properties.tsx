@@ -318,9 +318,8 @@ export function ProjectPropertiesCard({
     // rest of the card works.
     void listProjectPropertyPlugins()
       .then((next) => active && setPlugins(next))
-      .catch((error: unknown) => {
-        console.warn("Plugin project properties unavailable.", error);
-      });
+      // The overview call's own event records the failure.
+      .catch(() => undefined);
     void listTeamConnections()
       .then((next) => active && setTeams(next))
       .catch(() => undefined);

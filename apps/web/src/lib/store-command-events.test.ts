@@ -52,11 +52,11 @@ describe("the command table's types", () => {
   it("refuses at compile time a reader that returns the wrong type for its field", () => {
     const table = {
       reopenWeek: "week.reopen",
+      // @ts-expect-error A backlog item's ID is a string, not the draft.
       addWorkItem: {
         name: "backlog_item.create",
         fields: {
           backlog_item: {
-            // @ts-expect-error A backlog item's ID is a string, not the draft.
             id: ([draft]) => draft,
           },
         },

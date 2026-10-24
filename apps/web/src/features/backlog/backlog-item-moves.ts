@@ -346,22 +346,21 @@ async function planMove(
   const itemWrite =
     workflowStateId === undefined
       ? ""
-      : await resolveSourceWrite(
-          workItem,
-          workflowStateId,
-          name,
-          choices.chooseSourceState,
+      : await unit.enter(() =>
+          resolveSourceWrite(
+            workItem,
+            workflowStateId,
+            name,
+            choices.chooseSourceState,
+          ),
         );
   if (itemWrite === null) return cancelled;
   if (!readyToCommit()) return cancelled;
   if (itemWrite) sourceWrites[workItem._id] = itemWrite;
   if (includeSubitems && workflowStateId !== undefined) {
     for (const subitem of subitems) {
-      const write = await resolveSourceWrite(
-        subitem,
-        workflowStateId,
-        name,
-        undefined,
+      const write = await unit.enter(() =>
+        resolveSourceWrite(subitem, workflowStateId, name, undefined),
       );
       if (write === null) return cancelled;
       if (!readyToCommit()) return cancelled;

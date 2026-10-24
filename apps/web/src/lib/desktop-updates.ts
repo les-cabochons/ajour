@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import type { DesktopUpdateState } from "@/lib/desktop-bridge";
 import type { UpdateTrack } from "@/domain/local-state";
+import { traceCarrier } from "@/lib/wide-events";
 
 let snapshot: DesktopUpdateState = {
   status: "idle",
@@ -37,7 +38,7 @@ function subscribe(listener: () => void) {
     disconnect = window.ajourDesktop?.onUpdateStateChanged?.(receive);
     const requestedRevision = revision;
     void window.ajourDesktop
-      ?.getUpdateState?.()
+      ?.getUpdateState?.(traceCarrier())
       .then((state) => {
         // An event received while this snapshot was in flight is newer.
         if (
@@ -70,7 +71,7 @@ export function useDesktopUpdates() {
 
 export async function checkDesktopUpdates(track: UpdateTrack) {
   try {
-    await window.ajourDesktop?.checkForUpdates?.(track);
+    await window.ajourDesktop?.checkForUpdates?.(track, traceCarrier());
   } catch (error) {
     reportError(error);
   }
@@ -83,9 +84,13 @@ export async function applyDesktopUpdate(state: DesktopUpdateState) {
       await window.ajourDesktop?.updateAndRestart?.(
         state.result.track,
         state.result.latestVersion,
+        traceCarrier(),
       );
     } else if (state.result.releaseUrl) {
-      await window.ajourDesktop?.openUpdateRelease?.(state.result.releaseUrl);
+      await window.ajourDesktop?.openUpdateRelease?.(
+        state.result.releaseUrl,
+        traceCarrier(),
+      );
     }
   } catch (error) {
     reportError(error);

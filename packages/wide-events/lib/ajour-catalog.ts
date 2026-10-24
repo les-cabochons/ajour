@@ -266,6 +266,8 @@ export const catalog = defineCatalog({
         "bridge_timeout",
         "tool_failed",
         "output_mismatch",
+        /** In the renderer: the tool refused the call, with a sentence for the agent. */
+        "tool_refused",
         ...requestReasons,
       ],
       fields: {
@@ -282,22 +284,33 @@ export const catalog = defineCatalog({
           access: operational<"read" | "write" | "session">(),
           /** How long the renderer took to answer over the bridge. */
           bridge_ms: operational<number>(),
+          /** In the renderer: how long the call waited behind earlier calls. */
+          queue_ms: operational<number>(),
+          /** In the renderer: the write left an Undo behind. */
+          undo_offered: operational<boolean>(),
         },
       },
     },
-    /** The renderer's bridge stream, from open to close. */
+    /**
+     * The renderer's bridge stream, from open to close. The renderer's job
+     * ends `disconnected` when the API closed the stream for good.
+     */
     "mcp_bridge.connection": {
       kinds: ["job", "request"],
-      reasons: ["mcp_off", "no_origin", ...requestReasons],
+      reasons: ["mcp_off", "no_origin", "disconnected", ...requestReasons],
       fields: {
         ...requestFields,
-        /** The tool calls the stream carried to the renderer. */
-        mcp_bridge: { call_count: operational<number>() },
+        mcp_bridge: {
+          /** The tool calls the stream carried to the renderer. */
+          call_count: operational<number>(),
+          /** In the renderer: how often the stream reconnected on its own. */
+          reconnect_count: operational<number>(),
+        },
       },
     },
     /** The renderer's answer to a tool call it was sent over the bridge. */
     "mcp_bridge.result": {
-      kinds: ["request"],
+      kinds: ["command", "request"],
       reasons: requestReasons,
       fields: {
         ...requestFields,
@@ -306,7 +319,7 @@ export const catalog = defineCatalog({
       },
     },
     "mcp.status": {
-      kinds: ["request"],
+      kinds: ["command", "request"],
       reasons: requestReasons,
       fields: { ...requestFields },
     },
@@ -452,7 +465,7 @@ export const catalog = defineCatalog({
 
     /** The plugins overview, or the runnable plugins' manifests. */
     "plugin.list": {
-      kinds: ["request"],
+      kinds: ["command", "request"],
       reasons: requestReasons,
       fields: {
         ...requestFields,
@@ -541,19 +554,30 @@ export const catalog = defineCatalog({
           done_count: operational<number>(),
           work_item_update_count: operational<number>(),
           comment_fact_count: operational<number>(),
+          /** In the renderer: the items the answer added straight to the backlog. */
+          imported_count: operational<number>(),
         },
       },
     },
-    /** A settle's state or priority, written to the source after the Undo window. */
+    /**
+     * A settle's state or priority, written to the source after the Undo
+     * window. The renderer's job starts its own trace and joins the settle
+     * that caused it by the settle ID (#310).
+     */
     "backlog.write_source": {
       kinds: ["job", "request", "plugin_operation"],
-      reasons: pluginRequestReasons,
+      reasons: [...pluginRequestReasons, "superseded"],
       fields: {
         ...requestFields,
         ...pluginOperationFields,
+        backlog_item: { id: operational(), settle_id: operational() },
         source_write: {
           state_sent: operational<boolean>(),
           priority_sent: operational<boolean>(),
+          /** In the renderer: from the end of the Undo window until the send. */
+          delay_ms: operational<number>(),
+          /** In the renderer: `deferred` waits for the Undo window, `superseded` for a newer write. */
+          result: operational<"sent" | "failed" | "deferred" | "superseded">(),
         },
       },
     },
@@ -662,7 +686,8 @@ export const catalog = defineCatalog({
 
     /**
      * A synced backlog item's comments. Never their text or authors (ADR
-     * 0008). The renderer's hop adds Ajour's item ID and the cache hit (#310).
+     * 0008). The renderer's hop adds Ajour's item ID, never the item's ID in
+     * its source (ADR 0011), and whether the cache answered (#310).
      */
     "comment.list": {
       kinds: ["command", "request", "plugin_operation"],
@@ -670,20 +695,30 @@ export const catalog = defineCatalog({
       fields: {
         ...requestFields,
         ...pluginOperationFields,
+        backlog_item: { id: operational() },
         comment: {
           /** The newest comments, or an earlier page through a cursor. */
           page: operational<"latest" | "earlier">(),
           comment_count: operational<number>(),
+          /**
+           * In the renderer: the thread showed its cached newest page, so no
+           * request followed. A cache hit is a `command` event without one.
+           */
+          cache_hit: operational<boolean>(),
         },
       },
     },
-    /** A comment posted on a synced backlog item: its length, never its text. */
+    /**
+     * A comment posted on a synced backlog item: its length, never its text.
+     * The renderer's hop adds Ajour's item ID (#310).
+     */
     "comment.post": {
       kinds: ["command", "request", "plugin_operation"],
       reasons: pluginRequestReasons,
       fields: {
         ...requestFields,
         ...pluginOperationFields,
+        backlog_item: { id: operational() },
         comment: {
           body_length: operational<number>(),
           mention_count: operational<number>(),
@@ -696,22 +731,37 @@ export const catalog = defineCatalog({
       fields: {
         ...requestFields,
         ...pluginOperationFields,
+        backlog_item: { id: operational() },
         comment: {
           body_length: operational<number>(),
           mention_count: operational<number>(),
         },
       },
     },
-    /** Sent after the Undo window, so a job in the renderer. */
+    /**
+     * Sent after the Undo window, so a job in the renderer, which names
+     * Ajour's backlog item: the comment's ID in its source stays out (ADR
+     * 0011).
+     */
     "comment.delete": {
       kinds: ["job", "request", "plugin_operation"],
       reasons: pluginRequestReasons,
-      fields: { ...requestFields, ...pluginOperationFields },
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        backlog_item: { id: operational() },
+        /** In the renderer: from the delete until it was sent. */
+        comment: { queued_ms: operational<number>() },
+      },
     },
     "comment.react": {
       kinds: ["command", "request", "plugin_operation"],
       reasons: pluginRequestReasons,
-      fields: { ...requestFields, ...pluginOperationFields },
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        backlog_item: { id: operational() },
+      },
     },
     /** The people a mention can name, for the editor's @ suggestions. Never their names. */
     "mention.search": {
@@ -720,6 +770,7 @@ export const catalog = defineCatalog({
       fields: {
         ...requestFields,
         ...pluginOperationFields,
+        backlog_item: { id: operational() },
         mention: { result_count: operational<number>() },
       },
     },
@@ -1103,7 +1154,9 @@ export const catalog = defineCatalog({
 
     /**
      * A calendar's events for a date range. Never a title (ADR 0005). The
-     * renderer's hop adds whether it was forced and fresh from cache (#310).
+     * renderer's hop adds whether it was forced (#310). A fetch the cache
+     * answers emits nothing, so the 30-second refresh doesn't emit an event
+     * each time: there is no fresh-from-cache field.
      */
     "calendar.fetch": {
       kinds: ["job", "request", "plugin_operation"],
@@ -1114,6 +1167,8 @@ export const catalog = defineCatalog({
         calendar: {
           range_days: operational<number>(),
           event_count: operational<number>(),
+          /** In the renderer: Refresh fetched it, whatever the cache held. */
+          forced: operational<boolean>(),
         },
       },
     },
@@ -1130,6 +1185,12 @@ export const catalog = defineCatalog({
         pull_request: {
           tracked_count: operational<number>(),
           received_count: operational<number>(),
+          /** In the renderer: a reinstalled plugin's connection took back the records it kept. */
+          reattached: operational<boolean>(),
+          /** In the renderer: why the answer was not applied. */
+          discarded: operational<
+            "generation_changed" | "capability_off" | "connection_gone"
+          >(),
         },
       },
     },
@@ -1235,12 +1296,22 @@ export const catalog = defineCatalog({
           projects_received: operational<number>(),
           assigned_count: operational<number>(),
           has_more: operational<boolean>(),
+          // In the renderer, for the whole sync: its rounds and what they did.
+          round_count: operational<number>(),
+          created_count: operational<number>(),
+          updated_count: operational<number>(),
+          held_arrival_count: operational<number>(),
+          unsendable_count: operational<number>(),
+          /** Changes or pages were left for the next sync. */
+          incomplete: operational<boolean>(),
+          /** The connection now names another team, so its links were dropped. */
+          identity_changed: operational<boolean>(),
         },
       },
     },
     /** The schema plugins a project import or export can use. */
     "schema.list": {
-      kinds: ["request"],
+      kinds: ["command", "request"],
       reasons: requestReasons,
       fields: {
         ...requestFields,

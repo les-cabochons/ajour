@@ -29,16 +29,17 @@ export function subscribePostedComments(listener: PostedListener) {
 }
 
 /** The editor's @ suggestions, when the plugin can search people. */
-export function commentMentionSearch(source: CommentSource) {
+export function commentMentionSearch(source: CommentSource, itemId: string) {
   return source.capability.mentions
     ? {
         search: async (query: string) =>
           (
-            await searchItemPeople(source.pluginId, source.connectionId, {
-              sourceId: source.sourceId,
-              query,
-              limit: 20,
-            })
+            await searchItemPeople(
+              source.pluginId,
+              source.connectionId,
+              { sourceId: source.sourceId, query, limit: 20 },
+              { itemId },
+            )
           ).people,
       }
     : undefined;

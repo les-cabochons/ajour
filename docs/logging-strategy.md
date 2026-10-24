@@ -65,7 +65,8 @@ now they are exported nowhere.
   plugin methods `PLUGIN_OPERATION_EVENTS` in `apps/api/src/plugin-host.ts`
   (and the schema host's own). The main process's IPC channels are in
   `IPC_CHANNELS` (`apps/desktop/electron/ipc-channels.cjs`), which
-  `just typecheck` checks against the catalog.
+  `just typecheck` checks against the catalog. The renderer's local API
+  client functions are `APP_API_CLIENT` in `apps/web/src/lib/app-api.ts`.
 - A seam may refine the name once it knows the operation, with
   `unit.rename()`: an MCP request becomes `agent_tool.call` once its method is
   read.
@@ -247,6 +248,20 @@ outgoing call; a folded unit sends its outer unit's span. A delayed
 consequence of an action, such as a source write after the Undo window,
 starts its own trace and joins its cause through the domain ID that links
 them.
+
+The trace crosses every boundary (#310):
+
+- every local API call from the renderer sends the active unit's
+  `traceparent`, which the local API allows across origins;
+- every call through the desktop bridge passes `{ traceparent }` last, which
+  the preload passes on and the main process's IPC wrapper takes off;
+- the local API sends each tool call's `traceparent` to the renderer in the
+  bridge's `tool-call` message, and the renderer's run of the call is its
+  child.
+
+The bridge's own stream is an EventSource, which can't send a header, so the
+renderer's `mcp_bridge.connection` and the local API's request for it are two
+traces.
 
 ## Where events come from today
 
@@ -483,8 +498,68 @@ an object or a function where a value belongs is dropped, and counted in
   (else `none`). It names the store command that threw. An error event without an error, such as a ResizeObserver warning,
   is noise and emits nothing.
 
-The seams of #304 add the rest: `trigger` and `surface` (#309), and renderer
-jobs and navigation (#310).
+- **Local API calls** (#310). Every client function in `lib/app-api.ts`
+  names its event in `APP_API_CLIENT`: the request event of the route it
+  calls, so a new one fails to compile until it has a name. A call sends the
+  active unit's `traceparent`, and adds to that unit's counters:
+  `api_call_count`, `api_attempt_count` (retries included), `api_call_ms`
+  and `api_failed_call_count`, which also counts a call whose answer failed
+  its schema, not only one the API refused or never answered. A call made while no unit is active is its
+  own unit, a `command` (or a `job` for a name only a job opens), with its
+  method and status in `http`. A poll, such as the scheduler's tick, runs
+  its calls in `asPoll` and records nothing. The active unit is the one on
+  top of the scope when the call starts, so a job runs its calls inside its
+  own `enter`, and a workflow that awaits captures its unit with
+  `reentry()` and runs its later calls in it.
+- **Background jobs** (#310). Each is one `job` event per run, `detached`,
+  so one another unit started is its child span and still emits its own:
+  - `backlog.sync`, `pull_request.sync` and `team.sync`, in the client
+    functions that run them, whoever calls them: the user from Settings,
+    the scheduler (`schedule`), or a time entry saved on a synced item
+    (`system`). The store commands that apply the answer fold into the job.
+    A manual and a scheduled call of the same connection share one run.
+    The scheduler's 30-second tick records nothing.
+  - `calendar.fetch`, for each fetch of `CalendarEventCache`: forced by
+    Refresh (`user`) or not. A load the cache answers records nothing, by
+    decision: the 30-second refresh would emit an event each time, so there
+    is no fresh-from-cache field, which the #305 note on #310 had listed.
+  - `backlog.write_source`, each item's pending write, with the settle ID
+    that joins it to the settle, how long after the Undo window it went,
+    and its result: `sent`, `failed`, `deferred` while its Undo window is
+    open, or `superseded` by a newer write.
+  - `comment.delete`, with Ajour's item ID and how long it waited. The
+    comment's ID in its source stays out (ADR 0011).
+  - The comment calls the user makes from the item page, which are their own
+    `command` when no unit is active: `comment.list`, `comment.post`,
+    `comment.edit`, `comment.react` and `mention.search` carry Ajour's item
+    ID as `backlog_item.id`, never the item's ID in its source (ADR 0011).
+    A call inside another unit, such as an agent's, leaves that unit's
+    fields alone. A thread the cache answers is a `comment.list` command
+    with `comment.cache_hit` true and no request, and a load has it false.
+  - `settle_comment.send`, one per comment once its settle stands, and
+    `agent_comment.send`, one per agent comment after its Undo window: the
+    comment's length, never its text, and whether it was posted or kept as
+    a draft, and why.
+  - `agent_tool.call`, each tool call the bridge runs, a child of the local
+    API's tool call span: how long it waited behind earlier calls, and
+    whether its write left an Undo. Its writes fold into it, also those
+    after an `await`, which the tools run through `reentry()`.
+  - `mcp_bridge.connection`, each bridge stream from open to close, with the
+    calls it carried and its reconnects. A stream the local API closed for
+    good ends `disconnected`.
+  - `pending_writes.flush`, the launch flush of what a session that quit
+    during an Undo window left: how many of each kind. A launch that finds
+    nothing ends it `noop`. Each send is its own job, a child span of the
+    flush.
+- **`route.change`** (`lib/route-events.ts`, through the router's events):
+  one per navigation, from its start until its page rendered and its code
+  loaded. It names the routes it left and reached by their IDs, which are
+  patterns, never a parameter's value, with the app section, whether
+  another navigation took over before the page rendered, as a redirect
+  does, and the resolve, render and code chunk durations. A search or hash
+  change records nothing. The first navigation is the `boot`'s.
+- **The renderer's console calls are gone.** A failure they logged is on
+  the event of the unit that failed.
 
 ### The desktop main process
 

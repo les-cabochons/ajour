@@ -94,6 +94,11 @@ export function takeSettleComment(id: string) {
   return entry;
 }
 
+/** The comments waiting now, which the launch flush sends. */
+export function pendingSettleCommentCount() {
+  return queue.read().length;
+}
+
 export function settleCommentItemIds() {
   return [...new Set(queue.read().map((entry) => entry.itemId))];
 }

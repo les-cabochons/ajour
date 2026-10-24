@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PluginsOverview, TeamSyncRequest } from "@ajour/shared";
+import type { AjourEvent } from "@ajour/wide-events/catalog.ts";
+import { createRecordingSink } from "@ajour/wide-events/sinks.ts";
 
 const PLUGIN = "team";
 const CONNECTION = "acme";
@@ -370,6 +372,65 @@ describe("team sync service", () => {
     expect(
       localStore.snapshot().projects.find((p) => p._id === projectId)?.team,
     ).toBeUndefined();
+  });
+
+  it("runs as one team.sync job, with its rounds' calls and store commands in it", async () => {
+    const { syncTeamConnection } = await load();
+    const sink = createRecordingSink<AjourEvent>();
+    (await import("./wide-events")).replaceEventSink(sink);
+    stubApi(() => ({
+      cursor: "c1",
+      projects: [teamProject("r1", "Atlas canary")],
+    }));
+
+    await syncTeamConnection(PLUGIN, CONNECTION, { trigger: "schedule" });
+
+    expect(sink.events).toEqual([
+      expect.objectContaining({
+        name: "team.sync",
+        kind: "job",
+        trigger: "schedule",
+        outcome: "ok",
+        plugin: { id: PLUGIN },
+        connection: { id: CONNECTION },
+        team_sync: {
+          round_count: 1,
+          projects_sent: 0,
+          created_count: 1,
+          updated_count: 0,
+          held_arrival_count: 0,
+          unsendable_count: 0,
+          incomplete: false,
+        },
+        steps: ["team.apply_sync"],
+        // The identity read before and after the round, and the round.
+        counts: expect.objectContaining({
+          api_call_count: 3,
+          store_write_count: 1,
+        }),
+      }),
+    ]);
+    expect(JSON.stringify(sink.events)).not.toContain("canary");
+  });
+
+  it("refuses a sync whose team connection is gone, in its one event", async () => {
+    const { syncTeamConnection } = await load();
+    const sink = createRecordingSink<AjourEvent>();
+    (await import("./wide-events")).replaceEventSink(sink);
+    const api = stubApi(() => ({ cursor: "c1", projects: [] }));
+    api.overview = overviewWith(null);
+
+    await expect(syncTeamConnection(PLUGIN, CONNECTION)).rejects.toThrow();
+
+    expect(sink.events).toEqual([
+      expect.objectContaining({
+        name: "team.sync",
+        trigger: "user",
+        outcome: "refused",
+        outcome_reason: "connection_not_found",
+        error: { type: "Error" },
+      }),
+    ]);
   });
 });
 

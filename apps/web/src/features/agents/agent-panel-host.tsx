@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import {
   answerAgentQuestion,
+  asPoll,
   dismissAgentSession,
   markAgentsSeen,
   stopAgentRun,
@@ -56,9 +57,13 @@ export function AgentPanelHost() {
     .join(",");
   useEffect(() => {
     if (!runnerSessionKey && !currentRunId) return;
-    void refreshAgentRunner();
+    // Status reads that follow the run: polls, which record nothing.
+    void asPoll(() => refreshAgentRunner());
     if (!currentRunId) return;
-    const timer = setInterval(() => void refreshAgentRunner(), RUN_POLL_MS);
+    const timer = setInterval(
+      () => void asPoll(() => refreshAgentRunner()),
+      RUN_POLL_MS,
+    );
     return () => clearInterval(timer);
   }, [runnerSessionKey, currentRunId]);
 

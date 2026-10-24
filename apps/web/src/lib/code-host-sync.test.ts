@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AjourEvent } from "@ajour/wide-events/catalog.ts";
+import { createRecordingSink } from "@ajour/wide-events/sinks.ts";
 import {
   codeHostOverview as overview,
   pullRequestFacts as facts,
@@ -230,5 +232,68 @@ describe("code host sync persistence", () => {
       "Several earlier connections match this account: One, Two.",
     );
     expect(localStore.snapshot()).toBe(before);
+  });
+  it("runs as one pull_request.sync job, the store command that applies it folded in", async () => {
+    const api = await import("./app-api");
+    const sink = createRecordingSink<AjourEvent>();
+    (await import("./wide-events")).replaceEventSink(sink);
+    const { localStore } = await import("./local-store");
+    api.cachePluginsOverview(overview);
+    localStore.syncPullRequests(source, result);
+    sink.events.length = 0;
+    const fetch = vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === "POST" ? Response.json(result) : Response.json(overview),
+    );
+    vi.stubGlobal("fetch", fetch);
+
+    await api.syncCodeHostConnection("github", "work", {
+      trigger: "schedule",
+    });
+
+    expect(sink.events).toEqual([
+      expect.objectContaining({
+        name: "pull_request.sync",
+        kind: "job",
+        trigger: "schedule",
+        outcome: "ok",
+        plugin: { id: "github" },
+        connection: { id: "work" },
+        pull_request: { tracked_count: 1, received_count: 1 },
+        steps: ["pull_request.apply_sync"],
+        counts: expect.objectContaining({ api_call_count: 2 }),
+      }),
+    ]);
+    // Each call sent the job's span.
+    for (const [, init] of fetch.mock.calls) {
+      expect((init?.headers as Record<string, string>).traceparent).toBe(
+        `00-${sink.events[0]!.trace_id}-${sink.events[0]!.span_id}-01`,
+      );
+    }
+    expect(JSON.stringify(sink.events)).not.toContain(facts.title);
+  });
+
+  it("ends a sync whose answer lands after the plugin turned off as a noop that says why", async () => {
+    const api = await import("./app-api");
+    const sink = createRecordingSink<AjourEvent>();
+    (await import("./wide-events")).replaceEventSink(sink);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) =>
+        init?.method === "POST"
+          ? Response.json(result)
+          : Response.json({ ...overview, pluginsEnabled: false }),
+      ),
+    );
+
+    await api.syncCodeHostConnection("github", "work");
+
+    expect(sink.events).toEqual([
+      expect.objectContaining({
+        name: "pull_request.sync",
+        trigger: "user",
+        outcome: "noop",
+        pull_request: expect.objectContaining({ discarded: "capability_off" }),
+      }),
+    ]);
   });
 });

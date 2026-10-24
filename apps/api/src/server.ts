@@ -370,7 +370,10 @@ function writeJson(
   extraHeaders: Record<string, string> = {},
 ) {
   const headers = {
-    "Access-Control-Allow-Headers": `Content-Type, ${WINDOW_TOKEN_HEADER}`,
+    // The renderer sends `traceparent` on every call, so its request events
+    // join the renderer's trace. The window token is added by Electron main
+    // or the dev proxy.
+    "Access-Control-Allow-Headers": `Content-Type, ${WINDOW_TOKEN_HEADER}, traceparent`,
     "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
     ...extraHeaders,
   };

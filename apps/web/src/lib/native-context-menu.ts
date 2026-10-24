@@ -11,6 +11,7 @@ import {
   isDigitChord,
   type KeyChord,
 } from "@/lib/shortcuts";
+import { traceCarrier } from "@/lib/wide-events";
 
 /**
  * Native right-click menus in the desktop app. The main process draws them
@@ -214,6 +215,7 @@ export async function showNativeContextMenu<Id extends string>(
     const pickedId = await show(
       toNativeContextMenuItems(actions, keys),
       position,
+      traceCarrier(),
     );
     return (
       actions.find((action) => action.id === pickedId && !action.disabledReason)

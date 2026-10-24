@@ -7,6 +7,7 @@ import { AppPanel, MessagePanel } from "@/components/app-surface";
 import { Button } from "@/components/ui/button";
 import type { DevelopmentPluginSettings } from "@/lib/desktop-bridge";
 import { useLocalState } from "@/lib/local-hooks";
+import { traceCarrier } from "@/lib/wide-events";
 
 export function SettingsDebugPage() {
   const state = useLocalState();
@@ -24,7 +25,7 @@ export function SettingsDebugPage() {
       return;
     }
 
-    void loadSettings()
+    void loadSettings(traceCarrier())
       .then(setDevelopmentPlugins)
       .catch((error: unknown) =>
         setDevelopmentPluginError(
@@ -45,7 +46,7 @@ export function SettingsDebugPage() {
     setIsUpdatingDevelopmentPlugins(true);
     setDevelopmentPluginError(null);
     try {
-      const settings = await chooseDirectory();
+      const settings = await chooseDirectory(traceCarrier());
       if (settings) {
         setDevelopmentPlugins(settings);
       }
@@ -70,7 +71,7 @@ export function SettingsDebugPage() {
     setIsUpdatingDevelopmentPlugins(true);
     setDevelopmentPluginError(null);
     try {
-      setDevelopmentPlugins(await clearDirectories());
+      setDevelopmentPlugins(await clearDirectories(traceCarrier()));
     } catch (error) {
       setDevelopmentPluginError(
         error instanceof Error

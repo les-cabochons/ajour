@@ -97,7 +97,7 @@ function browserPlatform() {
   );
 }
 
-/** Events go nowhere unless a developer runs with AJOUR_WIDE_EVENTS=console. */
+/** Events go nowhere unless a developer sets AJOUR_WIDE_EVENTS to `console`. */
 function defaultSink(): Sink {
   return sinkFromSwitch(import.meta.env.AJOUR_WIDE_EVENTS);
 }
@@ -241,6 +241,34 @@ export function withEventAttribution<Result>(
   } finally {
     restore();
   }
+}
+
+/**
+ * Captures the active unit, so work after an `await` runs in it again: the
+ * renderer's scope stack loses it at the first `await`. `attribution`
+ * applies to that work too. Without an active unit, the work runs as it is.
+ */
+export function reentry(attribution?: {
+  trigger?: Trigger;
+  surface?: Surface;
+}): <Result>(work: () => Result) => Result {
+  const unit = wideEvents.current();
+  return (work) => {
+    const attributed = attribution
+      ? () => withEventAttribution(attribution, work)
+      : work;
+    return unit ? unit.enter(attributed) : attributed();
+  };
+}
+
+/**
+ * The `{ traceparent }` a desktop bridge call passes as its last argument,
+ * so the main process's IPC event joins the active unit's trace. Undefined
+ * when no unit is active.
+ */
+export function traceCarrier(): { traceparent: string } | undefined {
+  const unit = wideEvents.current();
+  return unit ? { traceparent: unit.traceparent() } : undefined;
 }
 
 /** Sends the renderer's events to `next` from now on. Tests pass a recording sink. */

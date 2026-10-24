@@ -46,6 +46,20 @@ export const rendererCounters = {
   changed_event_rule_count: operational<number>(),
   /** 1 when the action reordered the backlog. */
   changed_backlog_order_count: operational<number>(),
+  /**
+   * The local API calls a unit made (#310), each counted once whatever its
+   * retries: a job's own calls, and those of the commands folded into it.
+   */
+  api_call_count: operational<number>(),
+  /** Their fetch attempts, retries included. */
+  api_attempt_count: operational<number>(),
+  /** Their durations, added up: from the first attempt to the answer or the failure. */
+  api_call_ms: operational<number>(),
+  /**
+   * Those answered with an error status, that never reached the local API,
+   * or whose answer failed its schema.
+   */
+  api_failed_call_count: operational<number>(),
 } as const;
 
 /** Why the store refused a write: a submitted week, or another window's write. */
@@ -202,6 +216,94 @@ export const rendererEvents = {
         pull_request_count: operational<number>(),
         submitted_week_count: operational<number>(),
         workflow_state_count: operational<number>(),
+      },
+    },
+  },
+  /**
+   * One route change (#310), from the navigation's start until the page
+   * rendered and its code loaded. Routes are named by their IDs, which are
+   * patterns such as `/app/backlog/$itemId`: never a parameter's value.
+   */
+  "route.change": {
+    kinds: ["navigation"],
+    /** A newer navigation started while this page's code still loaded. */
+    reasons: ["superseded"],
+    fields: {
+      route: {
+        from_id: operational(),
+        to_id: operational(),
+        /** The app's section: the first segment of the route's path, such as `backlog`. */
+        section: operational(),
+        /** Another navigation took over before the page rendered, as a redirect does. */
+        redirected: operational<boolean>(),
+        /** The route the navigation first went to, when it redirected. */
+        redirected_from_id: operational(),
+        /** From the navigation's start until its routes resolved. */
+        resolve_ms: operational<number>(),
+        /** From resolved until the page rendered. */
+        render_ms: operational<number>(),
+        /** The page's code, when this navigation loaded it. */
+        chunk_ms: operational<number>(),
+      },
+    },
+  },
+  /**
+   * What a session that quit during an Undo window left to send, sent at
+   * launch: source writes, comment deletes, settle comments and agent
+   * comments. Each send is its own job, a child span of this one.
+   */
+  "pending_writes.flush": {
+    kinds: ["job"],
+    fields: {
+      flush: {
+        source_write_count: operational<number>(),
+        comment_delete_count: operational<number>(),
+        settle_comment_count: operational<number>(),
+        agent_comment_count: operational<number>(),
+      },
+    },
+  },
+  /**
+   * One comment typed with a settle, sent once the settle stands (ADR 0008).
+   * Its length, never its text.
+   */
+  "settle_comment.send": {
+    kinds: ["job"],
+    /** The settle ended before its comment went, or agents may no longer post. */
+    reasons: ["settle_ended", "agent_access"],
+    fields: {
+      backlog_item: { id: operational(), settle_id: operational() },
+      plugin: { id: operational() },
+      connection: { id: operational() },
+      comment: {
+        body_length: operational<number>(),
+        /** An agent settled the item and typed the comment. */
+        for_agent: operational<boolean>(),
+        result: operational<"posted" | "kept_as_draft" | "deferred" | "gone">(),
+        draft_reason: operational<
+          | "settle_ended"
+          | "access_check_failed"
+          | "agent_access"
+          | "post_failed"
+        >(),
+      },
+    },
+  },
+  /** One comment an agent posted, sent after its Undo window. Its length, never its text. */
+  "agent_comment.send": {
+    kinds: ["job"],
+    /** Agents may no longer post on the comment's connection. */
+    reasons: ["agent_access"],
+    fields: {
+      backlog_item: { id: operational() },
+      plugin: { id: operational() },
+      connection: { id: operational() },
+      comment: {
+        body_length: operational<number>(),
+        result: operational<"posted" | "kept_as_draft" | "gone">(),
+        draft_reason: operational<
+          "access_check_failed" | "agent_access" | "post_failed"
+        >(),
       },
     },
   },

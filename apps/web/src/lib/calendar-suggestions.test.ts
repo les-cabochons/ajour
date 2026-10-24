@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { AjourEvent } from "@ajour/wide-events/catalog.ts";
+import { createRecordingSink } from "@ajour/wide-events/sinks.ts";
 import type { CalendarListEventsResult } from "@ajour/shared";
 import { CalendarEventCache } from "@/lib/calendar-suggestions";
 
@@ -117,5 +119,78 @@ describe("CalendarEventCache", () => {
     expect(
       cache.get({ ...source, connectionId: "other" }, week),
     ).toBeUndefined();
+  });
+});
+
+describe("a calendar fetch's event", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** The app's cache, on the real local API client, with a recording sink. */
+  async function load(answer: () => Response) {
+    vi.resetModules();
+    const values = new Map<string, string>();
+    vi.stubGlobal("window", {
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+      localStorage: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => void values.set(key, value),
+      },
+    });
+    const fetch = vi.fn(async () => answer());
+    vi.stubGlobal("fetch", fetch);
+    const sink = createRecordingSink<AjourEvent>();
+    (await import("@/lib/wide-events")).replaceEventSink(sink);
+    const { calendarEventCache } = await import("@/lib/calendar-suggestions");
+    return { cache: calendarEventCache, fetch, recorded: sink.events };
+  }
+
+  it("is one job per fetch, and none for a load the cache answers", async () => {
+    const { cache, fetch, recorded } = await load(() =>
+      Response.json({ events: [event] }),
+    );
+
+    await cache.load(source, week, { maxAgeMs: 600_000 });
+    await cache.load(source, week, { maxAgeMs: 600_000 });
+    await cache.load(source, week, { maxAgeMs: 600_000, force: true });
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(recorded).toEqual([
+      expect.objectContaining({
+        name: "calendar.fetch",
+        kind: "job",
+        trigger: "system",
+        outcome: "ok",
+        plugin: { id: "ics" },
+        connection: { id: "work" },
+        calendar: { range_days: 7, forced: false, event_count: 1 },
+        counts: expect.objectContaining({ api_call_count: 1 }),
+      }),
+      expect.objectContaining({
+        name: "calendar.fetch",
+        trigger: "user",
+        calendar: { range_days: 7, forced: true, event_count: 1 },
+      }),
+    ]);
+    expect(JSON.stringify(recorded)).not.toContain("standup");
+  });
+
+  it("records a failed fetch, which the cache keeps in its entry", async () => {
+    const { cache, recorded } = await load(() =>
+      Response.json({ error: "Feed unreachable." }, { status: 502 }),
+    );
+
+    await cache.load(source, week, { maxAgeMs: 600_000 });
+
+    expect(cache.get(source, week)?.error).toBe("Feed unreachable.");
+    expect(recorded).toEqual([
+      expect.objectContaining({
+        name: "calendar.fetch",
+        outcome: "error",
+        error: { type: "Error" },
+        counts: expect.objectContaining({ api_failed_call_count: 1 }),
+      }),
+    ]);
   });
 });

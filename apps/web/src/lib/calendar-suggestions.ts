@@ -17,6 +17,7 @@ import {
   subscribePluginsOverview,
 } from "@/lib/app-api";
 import { useLocalState } from "@/lib/local-hooks";
+import { wideEvents } from "@/lib/wide-events";
 
 /*
  * Calendar events live only in memory (ADR 0005): a reload, or a week left
@@ -88,7 +89,8 @@ export class CalendarEventCache {
   /**
    * Fetches the range unless a fetch younger than `maxAgeMs` exists. `force`
    * fetches anyway, as Refresh does. Never rejects: a failure is in the entry,
-   * which keeps the events fetched before.
+   * which keeps the events fetched before. Each fetch is one `calendar.fetch`
+   * job; a load the cache or a running fetch answers is none.
    */
   load(
     source: Pick<CalendarSource, "pluginId" | "connectionId">,
@@ -108,13 +110,31 @@ export class CalendarEventCache {
     }
 
     this.set(key, { ...entry, loading: true });
-    const run = this.fetcher(source.pluginId, source.connectionId, {
-      from: range.from,
-      to: range.to,
-      timeZone: this.timeZone(),
-    })
+    // Refresh is the user's; a range that opens or goes stale, the app's.
+    const job = wideEvents.start("calendar.fetch", {
+      kind: "job",
+      trigger: options.force ? "user" : "system",
+      detached: true,
+    });
+    job.set({
+      plugin: { id: source.pluginId },
+      connection: { id: source.connectionId },
+      calendar: {
+        range_days: rangeDays(range),
+        forced: options.force === true,
+      },
+    });
+    const run = job
+      .enter(() =>
+        this.fetcher(source.pluginId, source.connectionId, {
+          from: range.from,
+          to: range.to,
+          timeZone: this.timeZone(),
+        }),
+      )
       .then(
         (result) => {
+          job.set({ calendar: { event_count: result.events.length } });
           this.set(key, {
             fetchedAt: this.now(),
             events: result.events,
@@ -122,6 +142,7 @@ export class CalendarEventCache {
           });
         },
         (error: unknown) => {
+          job.fail(error);
           const previous = this.entries.get(key);
           this.set(key, {
             fetchedAt: previous?.fetchedAt,
@@ -135,6 +156,7 @@ export class CalendarEventCache {
         },
       )
       .finally(() => {
+        job.end();
         this.pending.delete(key);
       });
     this.pending.set(key, run);
@@ -146,6 +168,16 @@ export class CalendarEventCache {
     this.version += 1;
     for (const listener of this.listeners) listener();
   }
+}
+
+/** The days a range spans, both ends included. */
+function rangeDays(range: CalendarRange) {
+  const days =
+    (Date.parse(`${range.to}T00:00:00Z`) -
+      Date.parse(`${range.from}T00:00:00Z`)) /
+      86_400_000 +
+    1;
+  return Number.isFinite(days) ? days : undefined;
 }
 
 function rangeKey(

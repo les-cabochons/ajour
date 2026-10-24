@@ -76,11 +76,15 @@ export class McpBridge {
     this.onAttach?.();
   }
 
-  /** Runs a data tool in the renderer. Rejects with a `BridgeCallError`. */
+  /**
+   * Runs a data tool in the renderer. Rejects with a `BridgeCallError`.
+   * `traceparent` is the tool call's span, which the renderer's run joins.
+   */
   call(
     tool: string,
     input: unknown,
     client: AgentClientRef,
+    traceparent?: string,
   ): Promise<BridgeToolResult> {
     if (!this.connected) {
       return Promise.reject(
@@ -95,7 +99,13 @@ export class McpBridge {
         reject(new BridgeCallError(BRIDGE_TIMEOUT_MESSAGE, "timeout"));
       }, this.timeoutMs);
       this.pending.set(requestId, { resolve, reject, timer });
-      this.send("tool-call", { requestId, tool, input, client });
+      this.send("tool-call", {
+        requestId,
+        tool,
+        input,
+        client,
+        ...(traceparent ? { traceparent } : {}),
+      });
       this.onStreamCall?.();
     });
   }

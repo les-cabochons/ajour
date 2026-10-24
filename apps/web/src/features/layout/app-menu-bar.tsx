@@ -19,7 +19,7 @@ import { useRunShortcut } from "@/lib/shortcut-handlers";
 import { requestUpdateCheck } from "@/lib/update-check-request";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { toggleSidebarDensity } from "@/lib/sidebar-layout";
-import { withEventAttribution } from "@/lib/wide-events";
+import { traceCarrier, withEventAttribution } from "@/lib/wide-events";
 
 const isWindowsDesktopShell =
   isDesktopShell &&
@@ -122,7 +122,7 @@ function WindowsMenuBar({
     if (item.type === "action") {
       runAction(item.action);
     } else if (item.type === "role") {
-      window.ajourDesktop?.runMenuItem?.(item.id);
+      window.ajourDesktop?.runMenuItem?.(item.id, traceCarrier());
     }
   }
 

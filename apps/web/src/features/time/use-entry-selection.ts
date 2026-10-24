@@ -54,6 +54,7 @@ import { copyTextToClipboard, readTextFromClipboard } from "@/lib/clipboard";
 import { FOCUS_ITEM_SELECTOR } from "@/lib/item-keys";
 import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
+import { traceCarrier } from "@/lib/wide-events";
 
 const ARROW_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
 
@@ -238,7 +239,7 @@ export function useEntrySelection({
   function copyFromMenu(mode: Exclude<ClipboardCommand, "paste">) {
     const runEditCommand = window.ajourDesktop?.runEditCommand;
     if (runEditCommand) {
-      runEditCommand(mode);
+      runEditCommand(mode, traceCarrier());
       return;
     }
 
