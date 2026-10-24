@@ -1,14 +1,18 @@
-import { pathToFileURL } from "node:url";
 import {
   PluginOperationRefused,
   PluginWorkerLifetime,
   type OperationRecord,
   type PluginCancelReason,
 } from "./plugin-worker-lifetime.ts";
+import {
+  projectDataShapeMethodArguments,
+  type ProjectDataShapeMethod,
+} from "./plugin-methods.ts";
+import type { PluginInvocation, PluginRuntime } from "./plugin-runtime.ts";
+import { WorkerPluginRuntime } from "./plugin-worker-runtime.ts";
 import type { PluginOperationEventName } from "./operation-events.ts";
 import type { ApiEvents } from "./events.ts";
 import {
-  PROJECT_DATA_SHAPE_PLUGIN_API_VERSION,
   projectDataShapeExportRequestSchema,
   projectDataShapeExportResponseSchema,
   projectDataShapeImportRequestSchema,
@@ -28,12 +32,13 @@ import {
 interface ProjectDataShapeHostOptions {
   pluginDirectories?: string[];
   requestTimeoutMs?: number;
-  workerScriptUrl?: URL;
+  /** What runs plugin code. A worker thread per operation by default. */
+  runtime?: PluginRuntime;
   /** Where each worker run's `plugin_operation` event goes. Nowhere by default. */
   events?: ApiEvents;
 }
 
-type PluginMethod = "exportProjects" | "importProjects";
+type PluginMethod = ProjectDataShapeMethod;
 
 /** The event each schema plugin method's worker run emits. */
 const SCHEMA_OPERATION_EVENTS = {
@@ -64,9 +69,7 @@ export class ProjectDataShapePluginManager {
       events: options.events,
       eventNames: SCHEMA_OPERATION_EVENTS,
       requestTimeoutMs: options.requestTimeoutMs ?? 30_000,
-      workerScriptUrl:
-        options.workerScriptUrl ??
-        new URL("./project-data-shape-worker.mjs", import.meta.url),
+      runtime: options.runtime ?? new WorkerPluginRuntime(),
     });
   }
 
@@ -92,7 +95,7 @@ export class ProjectDataShapePluginManager {
         const plugin = await this.getPlugin(pluginId, record);
         const params = projectDataShapeExportRequestSchema.parse({ projects });
         return {
-          workerData: this.invocationData(plugin, "exportProjects", params),
+          invocation: this.invocation(plugin, "exportProjects", params),
           parse: (result: unknown) => ({
             datasets: validateProjectDataShapeDatasets(
               plugin.manifest.capabilities.projectDataShape,
@@ -129,7 +132,7 @@ export class ProjectDataShapePluginManager {
           );
         }
         return {
-          workerData: this.invocationData(plugin, "importProjects", {
+          invocation: this.invocation(plugin, "importProjects", {
             datasets: validatedDatasets,
           }),
           parse: (result: unknown) =>
@@ -148,16 +151,18 @@ export class ProjectDataShapePluginManager {
     return await this.workers.cancel(error, reason);
   }
 
-  private invocationData(
+  private invocation(
     plugin: ResolvedProjectDataShapePlugin,
     method: PluginMethod,
-    params: unknown,
-  ) {
+    params: Record<string, unknown>,
+  ): PluginInvocation {
     return {
-      apiVersion: PROJECT_DATA_SHAPE_PLUGIN_API_VERSION,
-      entrypointUrl: pathToFileURL(plugin.entrypointPath).toString(),
+      pluginId: plugin.manifest.id,
+      packageDirectory: plugin.directory,
+      entrypoint: plugin.manifest.entrypoint,
+      apiVersion: plugin.manifest.apiVersion,
       method,
-      params,
+      args: projectDataShapeMethodArguments(method, params),
     };
   }
 

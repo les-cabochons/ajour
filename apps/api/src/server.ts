@@ -142,6 +142,8 @@ import {
   type PluginFailureReason,
 } from "./plugin-worker-lifetime.ts";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
+import type { PluginRuntime } from "./plugin-runtime.ts";
+import { WorkerPluginRuntime } from "./plugin-worker-runtime.ts";
 import {
   connectionlessPluginErrorMessage,
   connectionRedaction,
@@ -184,6 +186,11 @@ interface AppApiServerOptions {
   bundledPluginArchives?: string[];
   allowDevelopmentPlugins?: boolean;
   pluginRequestTimeoutMs?: number;
+  /**
+   * What runs plugin code, for both the plugin and the data-shape host. A
+   * worker thread per operation by default. Tests run plugins in process.
+   */
+  pluginRuntime?: PluginRuntime;
   projectDataShapePluginDirectories?: string[];
   allowedOrigins?: string[];
   /** How long a data tool waits for the renderer. Tests shorten it. */
@@ -919,6 +926,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   const allowDevelopmentPlugins =
     options.allowDevelopmentPlugins ??
     process.env.AJOUR_ALLOW_DEVELOPMENT_PLUGINS === "1";
+  const pluginRuntime = options.pluginRuntime ?? new WorkerPluginRuntime();
   const pluginManager = new PluginManager({
     installedPluginDirectory:
       options.installedPluginDirectory ??
@@ -929,6 +937,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     bundledPluginArchives: options.bundledPluginArchives,
     allowDevelopmentPlugins,
     requestTimeoutMs: options.pluginRequestTimeoutMs,
+    runtime: pluginRuntime,
     events,
     // The routes check activation before reading the request. This repeats
     // the check once the operation can be cancelled, so a capability turned
@@ -953,6 +962,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       options.projectDataShapePluginDirectories ??
       defaultProjectDataShapePluginDirectories(),
     requestTimeoutMs: options.pluginRequestTimeoutMs,
+    runtime: pluginRuntime,
     events,
   });
   const allowedOrigins = new Set(

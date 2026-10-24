@@ -1,10 +1,12 @@
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import {
   PluginOperationRefused,
   PluginWorkerLifetime,
   type PluginCancelReason,
 } from "./plugin-worker-lifetime.ts";
+import { pluginMethodArguments, type PluginMethod } from "./plugin-methods.ts";
+import type { PluginRuntime } from "./plugin-runtime.ts";
+import { WorkerPluginRuntime } from "./plugin-worker-runtime.ts";
 import {
   CALENDAR_EVENTS,
   CODE_HOST_EVENTS,
@@ -15,7 +17,6 @@ import type { ApiEvents } from "./events.ts";
 import { connectionSecretValues } from "./plugin-errors.ts";
 import { readFile, realpath } from "node:fs/promises";
 import {
-  PLUGIN_API_VERSION,
   pluginFieldValuesSchema,
   backlogPluginSyncResultSchema,
   pluginValidationResultSchema,
@@ -52,7 +53,6 @@ import {
   teamSyncRequestSchema,
   teamSyncResultSchema,
   type TeamCreateRequest,
-  type TeamPluginMethod,
   type TeamSyncRequest,
   type TeamSyncResult,
 } from "../../../packages/shared/team-sync.ts";
@@ -93,7 +93,8 @@ interface PluginHostOptions {
   bundledPluginArchives?: string[];
   allowDevelopmentPlugins?: boolean;
   requestTimeoutMs?: number;
-  workerScriptUrl?: URL;
+  /** What runs plugin code. A worker thread per operation by default. */
+  runtime?: PluginRuntime;
   /**
    * Runs once the operation is registered and before its worker starts, and
    * throws to refuse it. Deactivation saves its state and then cancels the
@@ -130,17 +131,7 @@ type PluginInvocationConnection = z.infer<
 export type PluginAdmission = (
   manifest: PluginManifest,
 ) => Promise<void> | void;
-export type PluginMethod =
-  | "validateConnection"
-  | "syncConnection"
-  | "listSettleStates"
-  | "writeSettle"
-  | "readDescription"
-  | "writeDescription"
-  | CodeHostOperation
-  | CalendarOperation
-  | BacklogCommentOperation
-  | TeamPluginMethod;
+export type { PluginMethod };
 /** The event each plugin method's worker run emits. A new method needs one. */
 export const PLUGIN_OPERATION_EVENTS = {
   validateConnection: "connection.save",
@@ -268,9 +259,7 @@ export class PluginManager {
       eventNames: PLUGIN_OPERATION_EVENTS,
       capabilityOf: capabilityOfMethod,
       requestTimeoutMs: options.requestTimeoutMs ?? 30_000,
-      workerScriptUrl:
-        options.workerScriptUrl ??
-        new URL("./plugin-worker.mjs", import.meta.url),
+      runtime: options.runtime ?? new WorkerPluginRuntime(),
     });
   }
 
@@ -652,7 +641,8 @@ export class PluginManager {
         requirement?.(plugin.manifest);
         // Discovery awaited, so shutdown or a package change may have started meanwhile.
         this.assertCanInvoke();
-        if (!plugin.entrypointPath) {
+        const entrypoint = plugin.manifest.entrypoint;
+        if (!plugin.entrypointPath || !entrypoint) {
           throw new PluginOperationRefused(
             `Plugin "${pluginId}" runs no code.`,
             "runs_no_code",
@@ -661,11 +651,13 @@ export class PluginManager {
         await this.operationGate?.(pluginId, method);
         await admit?.(plugin.manifest);
         return {
-          workerData: {
-            apiVersion: PLUGIN_API_VERSION,
-            entrypointUrl: pathToFileURL(plugin.entrypointPath).toString(),
+          invocation: {
+            pluginId,
+            packageDirectory: plugin.directory,
+            entrypoint,
+            apiVersion: plugin.manifest.apiVersion,
             method,
-            params,
+            args: pluginMethodArguments(method, params),
           },
           parse: (result: unknown) => schema.parse(result),
         };

@@ -1,14 +1,18 @@
-import { Worker } from "node:worker_threads";
 import type { AjourCatalog } from "../../../packages/wide-events/catalog.ts";
 import type { Unit } from "../../../packages/wide-events/index.ts";
 import { InvalidPluginResultError, withoutContent } from "./event-errors.ts";
 import type { PluginOperationEventName } from "./operation-events.ts";
 import { createApiEvents, type ApiEvents } from "./events.ts";
 import { nowhere } from "../../../packages/wide-events/sinks.ts";
+import {
+  cutPluginErrorMessage,
+  type PluginInvocation,
+  type PluginRunOutcome,
+  type PluginRuntime,
+} from "./plugin-runtime.ts";
 
 /** Each host owns its own lifetime instance, so plugin and data-shape quotas stay separate. */
 const MAX_CONCURRENT_OPERATIONS_PER_HOST = 4;
-const MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS = 4_096;
 
 /** Why a plugin operation was refused before its worker started. */
 export type PluginRefusalReason =
@@ -77,18 +81,9 @@ export class PluginWorkerFailure extends Error {
   }
 }
 
-/**
- * Cuts a plugin error the way plugin-worker.mjs does, ending it with "…". The
- * cut may split a secret, and the mark is how the host's redaction knows.
- */
-function cutErrorMessage(message: string) {
-  return message.length <= MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS
-    ? message
-    : `${message.slice(0, MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS - 1)}…`;
-}
-
-interface WorkerInvocation<T> {
-  workerData: unknown;
+/** What a host prepared for one operation: what to run, and how to read its result. */
+export interface PreparedOperation<T> {
+  invocation: PluginInvocation;
   parse(value: unknown): T;
 }
 
@@ -115,7 +110,8 @@ interface Operation {
 
 interface WorkerLifetimeOptions<TMethod extends string> {
   name: "Plugin" | "Schema plugin";
-  workerScriptUrl: URL;
+  /** What runs each operation's plugin code. */
+  runtime: PluginRuntime;
   requestTimeoutMs: number;
   /** Where each worker run's `plugin_operation` event goes. Nowhere by default. */
   events?: ApiEvents;
@@ -128,8 +124,8 @@ interface WorkerLifetimeOptions<TMethod extends string> {
 type OperationUnit = Unit<AjourCatalog, PluginOperationEventName>;
 
 /**
- * Bounds discovery and execution together, then terminates each worker
- * before releasing its slot. Each run emits one `plugin_operation` event,
+ * Bounds discovery and execution together, then terminates each run through
+ * the runtime before releasing its slot. Each run emits one `plugin_operation` event,
  * a child span of the unit that started it, with how it ended.
  */
 export class PluginWorkerLifetime<TMethod extends string> {
@@ -160,13 +156,13 @@ export class PluginWorkerLifetime<TMethod extends string> {
   }
 
   /**
-   * Runs one plugin method in a worker. `check` runs first, inside the
-   * operation's event, so a refusal it throws is recorded.
+   * Runs one plugin method through the runtime. `check` runs first, inside
+   * the operation's event, so a refusal it throws is recorded.
    */
   async run<T>(
     pluginId: string,
     method: TMethod,
-    prepare: (record: OperationRecord) => Promise<WorkerInvocation<T>>,
+    prepare: (record: OperationRecord) => Promise<PreparedOperation<T>>,
     options: { connectionId?: string; check?: () => void } = {},
   ): Promise<T> {
     // Who started the request that runs it started the operation too.
@@ -225,11 +221,11 @@ export class PluginWorkerLifetime<TMethod extends string> {
         operation = registered;
         this.operations.add(registered);
         try {
-          const invocation = await prepare(record);
+          const prepared = await prepare(record);
           if (registered.cancelled) throw registered.cancelled;
           this.assertRunning();
           unit.set({ worker: { prepare_ms: Date.now() - admittedAt } });
-          return await this.invoke(registered, method, invocation, unit);
+          return await this.invoke(registered, method, prepared, unit);
         } finally {
           this.operations.delete(registered);
           release();
@@ -309,10 +305,11 @@ export class PluginWorkerLifetime<TMethod extends string> {
   }
 
   /**
-   * The error a failed plugin call ends with, for both ways a worker fails:
-   * a message it posts, or an uncaught throw. The plugin's message is trimmed
-   * and cut, ending in "…". A message that is missing or blank becomes
-   * "Unknown plugin error.", so a failure is never shown as no error at all.
+   * The error a failed plugin call ends with, for both ways a plugin fails:
+   * an error it returns, or an uncaught throw. The plugin's message is
+   * trimmed and cut, ending in "…". A message that is missing or blank
+   * becomes "Unknown plugin error.", so a failure is never shown as no error
+   * at all.
    */
   private pluginFailure(
     message: unknown,
@@ -321,51 +318,65 @@ export class PluginWorkerLifetime<TMethod extends string> {
     const text = typeof message === "string" ? message.trim() : "";
     return new PluginWorkerFailure(
       text
-        ? cutErrorMessage(text)
+        ? cutPluginErrorMessage(text)
         : `Unknown ${this.options.name.toLowerCase()} error.`,
       reason,
     );
   }
 
+  /** The error a run that settled without a result ends with. */
+  private runFailure(
+    outcome: Exclude<PluginRunOutcome, { ok: true }>,
+    operation: Operation,
+    method: TMethod,
+  ): Error {
+    switch (outcome.failure) {
+      case "plugin_error":
+        return this.pluginFailure(outcome.message);
+      case "missing_export":
+        return this.pluginFailure(
+          `${this.options.name} does not export ${method}().`,
+        );
+      case "result_too_large":
+        return this.pluginFailure(
+          `${this.options.name} result exceeds the allowed size.`,
+          "result_too_large",
+        );
+      case "exited_early":
+        return new PluginWorkerFailure(
+          `${this.options.name} "${operation.pluginId}" exited before returning a result (code ${outcome.exitCode}).`,
+          "exited_early",
+        );
+      case "terminated":
+        // Only the lifetime terminates a run, and it has its error by then.
+        return new PluginWorkerFailure(
+          `${this.options.name} "${operation.pluginId}" stopped before returning a result.`,
+          "exited_early",
+        );
+    }
+  }
+
   private invoke<T>(
     operation: Operation,
     method: TMethod,
-    invocation: WorkerInvocation<T>,
+    prepared: PreparedOperation<T>,
     unit: OperationUnit,
   ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
-      const worker = new Worker(this.options.workerScriptUrl, {
-        env: {},
-        execArgv: [],
-        stdout: true,
-        stderr: true,
-        workerData: invocation.workerData,
-        resourceLimits: {
-          maxOldGenerationSizeMb: 128,
-          maxYoungGenerationSizeMb: 32,
-          stackSizeMb: 4,
-        },
-      });
+      const run = this.options.runtime.start(prepared.invocation);
       const startedAt = Date.now();
-      let settled = false;
       let finalizationPromise: Promise<void> | undefined;
       let timeout: ReturnType<typeof setTimeout> | undefined;
       const finalize = (error?: Error, result?: unknown) => {
         finalizationPromise ??= (async () => {
-          settled = true;
           if (timeout) clearTimeout(timeout);
-          worker.removeAllListeners();
-          try {
-            await worker.terminate();
-          } catch {
-            // The worker may already have exited after posting its result.
-          }
+          await run.terminate();
           unit.set({ worker: { worker_ms: Date.now() - startedAt } });
           if (error) {
             reject(error);
           } else {
             try {
-              resolve(invocation.parse(result));
+              resolve(prepared.parse(result));
             } catch (parseError) {
               // The message is about what the plugin returned: callers show
               // it, and the event holds its type and code only.
@@ -378,51 +389,17 @@ export class PluginWorkerLifetime<TMethod extends string> {
         return finalizationPromise;
       };
       operation.cancelWorker = (error) => finalize(error);
-      // An uncaught asynchronous throw in plugin code arrives here, past the
-      // worker's own cut, and may be any value.
-      worker.once("error", (error: unknown) => {
-        void finalize(
-          this.pluginFailure(
-            error instanceof Error ? error.message : undefined,
-          ),
-        );
-      });
-      worker.once(
-        "message",
-        (
-          message: {
-            ok?: boolean;
-            result?: unknown;
-            error?: unknown;
-            reason?: unknown;
-            bytes?: unknown;
-          } | null,
-        ) => {
-          if (typeof message?.bytes === "number") {
-            unit.set({ worker: { result_bytes: message.bytes } });
-          }
-          if (message?.ok === true) {
-            void finalize(undefined, message.result);
-          } else {
-            void finalize(
-              this.pluginFailure(
-                message?.error,
-                message?.reason === "result_too_large"
-                  ? "result_too_large"
-                  : "plugin_error",
-              ),
-            );
-          }
-        },
-      );
-      worker.once("exit", (code) => {
-        if (!settled)
-          void finalize(
-            new PluginWorkerFailure(
-              `${this.options.name} "${operation.pluginId}" exited before returning a result (code ${code}).`,
-              "exited_early",
-            ),
-          );
+      void run.settled.then((outcome) => {
+        // A run cancelled or timed out first already has its error.
+        if (finalizationPromise) return;
+        if ("resultBytes" in outcome && outcome.resultBytes !== undefined) {
+          unit.set({ worker: { result_bytes: outcome.resultBytes } });
+        }
+        if (outcome.ok) {
+          void finalize(undefined, outcome.result);
+        } else {
+          void finalize(this.runFailure(outcome, operation, method));
+        }
       });
       timeout = setTimeout(() => {
         void finalize(
@@ -432,8 +409,6 @@ export class PluginWorkerLifetime<TMethod extends string> {
           ),
         );
       }, this.options.requestTimeoutMs);
-      worker.stdout?.resume();
-      worker.stderr?.resume();
     });
   }
 }

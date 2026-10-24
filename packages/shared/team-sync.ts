@@ -17,8 +17,8 @@ export const TEAM_CAPABILITY_API_VERSION = 1;
 /**
  * What a team plugin exports. `createTeam(config, request)` gets the connection
  * form's values before the connection is saved; `syncTeamProjects(connection,
- * request)` gets a saved connection. Keep in sync with
- * apps/api/src/plugin-worker.mjs.
+ * request)` gets a saved connection. apps/api/src/plugin-methods.ts passes
+ * them their arguments.
  */
 export const teamPluginMethods = ["createTeam", "syncTeamProjects"] as const;
 export type TeamPluginMethod = (typeof teamPluginMethods)[number];
