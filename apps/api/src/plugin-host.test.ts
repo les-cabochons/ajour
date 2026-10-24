@@ -11,8 +11,6 @@ import {
 } from "node:fs/promises";
 import { create } from "tar";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { codeHostOperations } from "../../../packages/shared/code-host.ts";
-import { calendarOperations } from "../../../packages/shared/calendar.ts";
 import type { TeamProjectChange } from "../../../packages/shared/team-sync.ts";
 import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
@@ -983,16 +981,6 @@ describe("PluginManager", () => {
     ).resolves.toEqual({ items: [], workItemUpdates: [], commentFacts: [] });
   });
 
-  it("dispatches every code host operation in the worker", async () => {
-    const worker = await readFile(
-      new URL("./plugin-worker.mjs", import.meta.url),
-      "utf8",
-    );
-    for (const operation of Object.keys(codeHostOperations)) {
-      expect(worker).toContain(`"${operation}"`);
-    }
-  });
-
   it("runs calendar operations only for plugins that declare the capability", async () => {
     const root = await tempDir();
     const source = [
@@ -1069,16 +1057,6 @@ describe("PluginManager", () => {
     expect(capabilityOfMethod("syncPullRequests")).toBe("codeHost");
     expect(capabilityOfMethod("syncConnection")).toBe("connector");
     expect(capabilityOfMethod("validateConnection")).toBeUndefined();
-  });
-
-  it("dispatches every calendar operation in the worker", async () => {
-    const worker = await readFile(
-      new URL("./plugin-worker.mjs", import.meta.url),
-      "utf8",
-    );
-    for (const operation of Object.keys(calendarOperations)) {
-      expect(worker).toContain(`"${operation}"`);
-    }
   });
 
   it("loads a plugin that only declares agent tasks and reads its prompt", async () => {

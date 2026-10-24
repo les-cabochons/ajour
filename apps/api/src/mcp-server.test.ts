@@ -13,6 +13,10 @@ import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import { AgentSessions } from "./agent-sessions.ts";
 import { startAppApiServer, stopAppApiServer } from "./server.ts";
+import {
+  TEST_WINDOW_TOKEN,
+  windowTokenHeader,
+} from "./test-support/window-token.ts";
 
 const TEST_ORIGIN = "http://127.0.0.1:5173";
 const MCP_EVENT_NAMES: ReadonlySet<string> = new Set([
@@ -52,6 +56,7 @@ async function startTestApi(options: TestApiOptions = {}) {
     allowDevelopmentPlugins: false,
     projectDataShapePluginDirectories: [],
     allowedOrigins: [TEST_ORIGIN],
+    windowToken: TEST_WINDOW_TOKEN,
     eventSink: { emit: recordMcp },
     ...options,
   });
@@ -67,7 +72,11 @@ async function startTestApi(options: TestApiOptions = {}) {
 async function apiRequest(baseUrl: string, pathname: string, body?: unknown) {
   const response = await fetch(`${baseUrl}${pathname}`, {
     method: body === undefined ? "GET" : "POST",
-    headers: { Origin: TEST_ORIGIN, "Content-Type": "application/json" },
+    headers: {
+      ...windowTokenHeader,
+      Origin: TEST_ORIGIN,
+      "Content-Type": "application/json",
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   return { status: response.status, body: (await response.json()) as any };
@@ -98,7 +107,7 @@ async function openFakeRenderer(
 ) {
   const controller = new AbortController();
   const response = await fetch(`${baseUrl}/api/mcp/bridge`, {
-    headers: { Origin: TEST_ORIGIN },
+    headers: { ...windowTokenHeader, Origin: TEST_ORIGIN },
     signal: controller.signal,
   });
   const events: SseEvent[] = [];
@@ -242,6 +251,7 @@ describe("MCP settings routes", () => {
     const controller = new AbortController();
 
     const response = await fetch(`${baseUrl}/api/mcp/bridge`, {
+      headers: windowTokenHeader,
       signal: controller.signal,
     });
     controller.abort();
@@ -1263,7 +1273,11 @@ describe("agent runner routes", () => {
     const { baseUrl } = await startTestApi();
     const response = await fetch(`${baseUrl}/api/agent-runs`, {
       method: "POST",
-      headers: { Origin: TEST_ORIGIN, "Content-Type": "application/json" },
+      headers: {
+        ...windowTokenHeader,
+        Origin: TEST_ORIGIN,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
         pluginId: "nope",
         taskId: "nothing",
@@ -1280,7 +1294,7 @@ describe("agent runner routes", () => {
     const { baseUrl } = await startTestApi();
     const response = await fetch(`${baseUrl}/api/agent-runs/nope/stop`, {
       method: "POST",
-      headers: { Origin: TEST_ORIGIN },
+      headers: { ...windowTokenHeader, Origin: TEST_ORIGIN },
     });
     expect(response.status).toBe(404);
   });
@@ -1289,7 +1303,11 @@ describe("agent runner routes", () => {
     const { baseUrl } = await startTestApi();
     const update = await fetch(`${baseUrl}/api/agents/settings`, {
       method: "POST",
-      headers: { Origin: TEST_ORIGIN, "Content-Type": "application/json" },
+      headers: {
+        ...windowTokenHeader,
+        Origin: TEST_ORIGIN,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({ browserMode: "my-chrome" }),
     });
     const overview = (await update.json()) as {

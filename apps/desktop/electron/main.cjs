@@ -16,6 +16,7 @@ const {
   net,
   powerMonitor,
   protocol,
+  session,
   shell,
 } = require("electron");
 const { autoUpdater } = require("electron-updater");
@@ -69,6 +70,10 @@ const {
   getWindowsTitleBarOverlay,
 } = require("./window-chrome.cjs");
 const { watchWindow } = require("./window-recovery.cjs");
+const {
+  addWindowApiToken,
+  createWindowApiToken,
+} = require("./window-api-token.cjs");
 const {
   createUpdateCheckCoordinator,
   isAllowedReleaseUrl,
@@ -139,6 +144,9 @@ const iconPath = app.isPackaged
 const preloadPath = path.resolve(__dirname, "preload.cjs");
 const INTERNAL_APP_API_HOST = process.env.AJOUR_APP_API_HOST ?? "127.0.0.1";
 const INTERNAL_APP_API_PORT = Number(process.env.AJOUR_APP_API_PORT ?? 8787);
+// The local API answers only requests that carry this launch's token, which
+// main adds to the window's. It's kept in memory and never written anywhere.
+const windowApiToken = createWindowApiToken();
 const internalAppApiRuntimeRoot = app.isPackaged
   ? path.join(process.resourcesPath, "internal-app-runtime")
   : path.resolve(__dirname, "../../..");
@@ -920,6 +928,7 @@ async function ensureInternalAppApiRunning() {
       allowedOrigins: app.isPackaged
         ? ["app://local"]
         : ["http://127.0.0.1:5173"],
+      windowToken: windowApiToken,
       launch: apiLaunchOf(launch),
     }).catch((error) => {
       if (error?.code === "EADDRINUSE") {
@@ -1451,6 +1460,17 @@ if (!hasSingleInstanceLock) {
       if (!process.env.AJOUR_DESKTOP_RENDERER_URL) {
         registerStaticProtocol();
       }
+
+      // Before the window opens, so its first request to the API has it.
+      // The hook sits on the default session, so the window must stay that
+      // session's only user: plugin renderers use their own partitions, and
+      // moving the window to one would orphan the renderer's localStorage.
+      // Electron allows one onBeforeSendHeaders listener per session, so no
+      // other code may register one on it.
+      addWindowApiToken(session.defaultSession, {
+        apiOrigin: `http://${INTERNAL_APP_API_HOST}:${INTERNAL_APP_API_PORT}`,
+        token: windowApiToken,
+      });
 
       // Replaces Electron's default menu, which keeps Reload and DevTools in
       // packaged builds. Windows hides it under the title bar overlay. The

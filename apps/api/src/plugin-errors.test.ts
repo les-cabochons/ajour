@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   connectionRedaction,
-  connectionSecretValues,
   connectionlessPluginErrorMessage,
-  pluginErrorMessage,
-  redactConnectionSummary,
   redactPluginText,
 } from "./plugin-errors.ts";
+import {
+  connectionCredentials,
+  connectionSecretValues,
+} from "./connection-credentials.ts";
 
 // The redaction of one text, and its tests, live in packages/wide-events.
 // The summary and the request budget are the local API's.
@@ -19,6 +20,16 @@ const plugin = {
     { id: "teamSecret", secret: true },
   ],
 };
+
+const pluginErrorMessage = (
+  error: unknown,
+  ...rest: Parameters<typeof connectionCredentials>
+) => connectionCredentials(...rest).errorMessage(error);
+
+const redactConnectionSummary = (
+  summary: Record<string, string | number | boolean>,
+  secrets: readonly string[],
+) => connectionRedaction(secrets).summary(summary);
 
 describe("plugin error messages", () => {
   it("replaces a numeric secret, and a boolean one a field declares secret", () => {

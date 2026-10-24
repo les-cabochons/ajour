@@ -247,9 +247,17 @@ export type SyncBacklogConnectionResult = BacklogSyncResult & {
 };
 
 const DEFAULT_INTERNAL_APP_API_BASE_URL = "http://127.0.0.1:8787";
+/** Where the local API listens, as agents reach its `/mcp`. */
 const APP_API_BASE_URL = (
   import.meta.env.VITE_APP_API_BASE_URL ?? DEFAULT_INTERNAL_APP_API_BASE_URL
 ).replace(/\/+$/, "");
+/**
+ * Where the window sends its `/api` requests. The desktop app calls the API
+ * directly, and main adds the window token. In the browser, the dev server's
+ * proxy on the page's own origin adds it.
+ */
+const APP_API_REQUEST_BASE_URL =
+  import.meta.env.VITE_APP_API_THROUGH_PROXY === "true" ? "" : APP_API_BASE_URL;
 const APP_API_RETRY_DELAYS_MS = [150, 350] as const;
 let cachedPluginsOverview: PluginsOverview | null = null;
 let pluginsOverviewRevision = 0;
@@ -488,7 +496,7 @@ async function requestAppApi<T>(
   ) {
     try {
       observe.attempted();
-      response = await fetch(`${APP_API_BASE_URL}${path}`, {
+      response = await fetch(appApiUrl(path), {
         ...init,
         headers: {
           "Content-Type": "application/json",
@@ -542,6 +550,11 @@ async function requestAppApi<T>(
 
 export function getAppApiBaseUrl() {
   return APP_API_BASE_URL;
+}
+
+/** The URL the window calls for an `/api` path. */
+export function appApiUrl(path: string) {
+  return `${APP_API_REQUEST_BASE_URL}${path}`;
 }
 
 export function getAppApiDescription() {

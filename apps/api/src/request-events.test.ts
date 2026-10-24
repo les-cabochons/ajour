@@ -11,6 +11,12 @@ import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import { startAppApiServer, stopAppApiServer } from "./server.ts";
 import { AgentRunner } from "./agent-runner/runner.ts";
 import { AppApiStorage } from "./storage.ts";
+import { WINDOW_TOKEN_HEADER } from "./window-token.ts";
+import {
+  TEST_WINDOW_TOKEN,
+  windowRequestHeaders,
+  windowTokenHeader,
+} from "./test-support/window-token.ts";
 
 const APP_ORIGIN = "http://127.0.0.1:5173";
 const running: (() => Promise<void>)[] = [];
@@ -37,6 +43,7 @@ async function startTestApi(
     allowDevelopmentPlugins: false,
     projectDataShapePluginDirectories: [],
     allowedOrigins: [APP_ORIGIN],
+    windowToken: TEST_WINDOW_TOKEN,
     eventSink: sink,
     ...(await setup(root)),
   });
@@ -56,7 +63,10 @@ async function startTestApi(
   };
 }
 
-/** Sends one request with full control over its headers, Host included. */
+/**
+ * Sends one request as the window does, with full control over its headers,
+ * Host included.
+ */
 function send(
   port: number,
   options: {
@@ -73,7 +83,7 @@ function send(
         port,
         method: options.method ?? "GET",
         path: options.path,
-        headers: options.headers,
+        headers: { ...windowTokenHeader, ...options.headers },
       },
       (incoming) => {
         let body = "";
@@ -315,7 +325,7 @@ function dispatch(server: Server, url: string) {
       {
         method: "GET",
         url,
-        headers: { host: "127.0.0.1" },
+        headers: windowRequestHeaders,
         async *iterator() {},
       } as unknown as IncomingMessage,
       response as unknown as ServerResponse,
@@ -694,7 +704,7 @@ describe("route events", () => {
     await call(port, "/api/mcp/settings", { enabled: true });
     const controller = new AbortController();
     const stream = await fetch(`http://127.0.0.1:${port}/api/mcp/bridge`, {
-      headers: { Origin: APP_ORIGIN },
+      headers: { ...windowTokenHeader, Origin: APP_ORIGIN },
       signal: controller.signal,
     });
     expect(stream.status).toBe(200);
@@ -734,6 +744,7 @@ describe("request events: boundary and reasons", () => {
           method: "POST",
           path: "/api/mcp/settings",
           headers: {
+            ...windowTokenHeader,
             Origin: APP_ORIGIN,
             "Content-Type": "application/json",
             "Transfer-Encoding": "chunked",
@@ -785,7 +796,7 @@ describe("request events: boundary and reasons", () => {
       {
         method: "GET",
         url: "/api/health",
-        headers: { host: "127.0.0.1" },
+        headers: windowRequestHeaders,
         async *iterator() {},
       } as unknown as IncomingMessage,
       response as unknown as ServerResponse,
@@ -864,6 +875,7 @@ describe("request events: abandoned requests", () => {
       [
         "POST /api/mcp/settings HTTP/1.1",
         "Host: 127.0.0.1",
+        `${WINDOW_TOKEN_HEADER}: ${TEST_WINDOW_TOKEN}`,
         `Origin: ${APP_ORIGIN}`,
         "Content-Type: application/json",
         "Content-Length: 100",
@@ -905,6 +917,7 @@ describe("request events: abandoned requests", () => {
       method: "POST",
       path: `/api/teams/jira/connections/${connectionId}/sync`,
       headers: {
+        ...windowTokenHeader,
         Origin: APP_ORIGIN,
         "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(body),
@@ -949,6 +962,7 @@ describe("request events: abandoned requests", () => {
       method: "POST",
       path: `/api/teams/jira/connections/${connectionId}/sync`,
       headers: {
+        ...windowTokenHeader,
         Origin: APP_ORIGIN,
         "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(body),
@@ -1116,6 +1130,7 @@ describe("request events: what the server does is not a hang-up", () => {
       method: "POST",
       path: "/api/plugins/jira/connections",
       headers: {
+        ...windowTokenHeader,
         Origin: APP_ORIGIN,
         "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(body),
@@ -1128,9 +1143,12 @@ describe("request events: what the server does is not a hang-up", () => {
     await mkdir(path.join(root, "state.json"));
 
     const event = await eventually(events, "connection.save");
+    // Renaming the new state over a folder: Windows refuses with EPERM.
     expect(event).toMatchObject({
       outcome: "error",
-      error: expect.objectContaining({ code: "EISDIR" }),
+      error: expect.objectContaining({
+        code: process.platform === "win32" ? "EPERM" : "EISDIR",
+      }),
     });
     expect(event.http?.status_code).toBeUndefined();
   });
@@ -1169,6 +1187,7 @@ describe("request events: limits, sources and shutdown", () => {
       [
         "POST /api/mcp/settings HTTP/1.1",
         "Host: 127.0.0.1",
+        `${WINDOW_TOKEN_HEADER}: ${TEST_WINDOW_TOKEN}`,
         `Origin: ${APP_ORIGIN}`,
         "Content-Type: application/json",
         "Transfer-Encoding: chunked",
@@ -1222,6 +1241,7 @@ describe("request events: limits, sources and shutdown", () => {
       method: "POST",
       path: "/api/plugins/jira/connections",
       headers: {
+        ...windowTokenHeader,
         Origin: APP_ORIGIN,
         "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(body),
@@ -1249,6 +1269,7 @@ describe("request events: limits, sources and shutdown", () => {
       [
         "POST /api/mcp/settings HTTP/1.1",
         "Host: 127.0.0.1",
+        `${WINDOW_TOKEN_HEADER}: ${TEST_WINDOW_TOKEN}`,
         `Origin: ${APP_ORIGIN}`,
         "Content-Type: application/json",
         "Content-Length: 100",
@@ -1298,6 +1319,7 @@ describe("request events: what closes a connection", () => {
   const oversizedHead = [
     "POST /api/mcp/settings HTTP/1.1",
     "Host: 127.0.0.1",
+    `${WINDOW_TOKEN_HEADER}: ${TEST_WINDOW_TOKEN}`,
     `Origin: ${APP_ORIGIN}`,
     "Content-Type: application/json",
     "Transfer-Encoding: chunked",
@@ -1347,6 +1369,7 @@ describe("request events: what closes a connection", () => {
       [
         "GET /api/mcp/bridge HTTP/1.1",
         "Host: 127.0.0.1",
+        `${WINDOW_TOKEN_HEADER}: ${TEST_WINDOW_TOKEN}`,
         `Origin: ${APP_ORIGIN}`,
         "",
         "",
@@ -1376,6 +1399,7 @@ describe("request events: what closes a connection", () => {
       [
         "POST /api/mcp/settings HTTP/1.1",
         "Host: 127.0.0.1",
+        `${WINDOW_TOKEN_HEADER}: ${TEST_WINDOW_TOKEN}`,
         `Origin: ${APP_ORIGIN}`,
         "Content-Type: application/json",
         "Content-Length: 100",
@@ -1411,6 +1435,7 @@ describe("request events: what closes a connection", () => {
       [
         "POST /api/mcp/settings HTTP/1.1",
         "Host: 127.0.0.1",
+        `${WINDOW_TOKEN_HEADER}: ${TEST_WINDOW_TOKEN}`,
         `Origin: ${APP_ORIGIN}`,
         "Content-Type: application/json",
         "Transfer-Encoding: chunked",

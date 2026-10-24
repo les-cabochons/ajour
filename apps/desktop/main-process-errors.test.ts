@@ -942,7 +942,10 @@ describe("startup", () => {
       submenu?: { id?: string; click?: () => void }[];
     }[] = [];
     const writeLaunchVersion = vi.fn();
+    const defaultSession = { name: "window session" };
+    const addWindowApiToken = vi.fn();
     const context = vm.createContext({
+      addWindowApiToken,
       app,
       appMenuModel: getAppMenuModel({
         platform: "win32",
@@ -958,6 +961,8 @@ describe("startup", () => {
       events,
       existsSync: () => true,
       hasSingleInstanceLock,
+      INTERNAL_APP_API_HOST: "127.0.0.1",
+      INTERNAL_APP_API_PORT: 8787,
       INTERNAL_APP_API_STOP_TIMEOUT_MS: 10_000,
       mainWindow,
       path,
@@ -980,6 +985,8 @@ describe("startup", () => {
       registerStaticProtocol: vi.fn(),
       schedulePluginCatalogRefresh: vi.fn(),
       sendMenuAction: vi.fn(),
+      session: { defaultSession },
+      windowApiToken: "launch-token",
     });
     run(
       context,
@@ -992,6 +999,8 @@ describe("startup", () => {
       "if (!hasSingleInstanceLock)",
     );
     return {
+      addWindowApiToken,
+      defaultSession,
       app,
       dialog,
       createMainWindow,
@@ -1025,6 +1034,19 @@ describe("startup", () => {
       "The GPU process could not start.",
     );
     expect(runtime.app.quit).toHaveBeenCalledOnce();
+  });
+
+  it("adds the window token to the window's session before the window opens", async () => {
+    const runtime = startupRuntime();
+    await flush();
+
+    expect(runtime.addWindowApiToken).toHaveBeenCalledWith(
+      runtime.defaultSession,
+      { apiOrigin: "http://127.0.0.1:8787", token: "launch-token" },
+    );
+    expect(runtime.addWindowApiToken.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(runtime.createMainWindow).mock.invocationCallOrder[0]!,
+    );
   });
 
   it("starts without asking anything when the window opens", async () => {

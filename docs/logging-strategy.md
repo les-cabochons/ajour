@@ -294,7 +294,8 @@ The local API emits these (#305, #306):
   boundary, as the request's stream receives them and as the response
   writes them, so a chunked body, a stream and a refusal are counted too.
 - **A request that never reaches a route** stays `api.request`, refused
-  with `stopping`, `host_refused`, `origin_refused` or `no_route`, or
+  with `stopping`, `host_refused`, `origin_refused` (also an `/api` request
+  with no Origin), `token_refused` (an `/api` request without the window token) or `no_route`, or
   `unknown_operation` for an operation a route's table doesn't have.
 - **A request Ajour can't read** is refused with `invalid_request`: a body
   that isn't JSON or is too large, a malformed path segment, or a value the

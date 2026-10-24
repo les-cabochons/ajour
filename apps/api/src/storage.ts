@@ -1,6 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  open,
+  readdir,
+  readFile,
+  rename,
+  rm,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -34,11 +42,21 @@ import {
   agentRunnerSettingsSchema,
   type AgentRunnerSettings,
 } from "../../../packages/shared/agent-runs.ts";
+import { boundConnectionError, connectionRedaction } from "./plugin-errors.ts";
 import {
-  boundConnectionError,
-  connectionRedaction,
-  connectionSecretValues,
-} from "./plugin-errors.ts";
+  connectionCredentials,
+  editableValues as editableFieldValues,
+} from "./connection-credentials.ts";
+import {
+  runStateMigrations,
+  STATE_VERSION,
+  storedStateVersion,
+  type StoredStateRecord,
+} from "./state-migrations.ts";
+
+/** The random part of a temp file's name, as `randomUUID` writes it. */
+const TEMP_FILE_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 interface StoredConnection {
   id: string;
@@ -60,58 +78,6 @@ interface StoredConnection {
   lastError?: string;
   /** When the sync that set `lastError` failed. */
   lastErrorAt?: number;
-}
-
-interface AppApiStateV1 {
-  version?: 1;
-  connectors?: {
-    azureDevOps?: {
-      organizationUrl: string;
-      project: string;
-      personalAccessToken: string;
-      queryScope: string;
-      connectedAt: number;
-      lastSyncAt?: number;
-      lastError?: string;
-    };
-  };
-  backlogInbox?: Array<{
-    id?: string;
-    source?: "azure_devops";
-    sourceId?: string;
-    sourceUrl?: string;
-    title?: string;
-    note?: string;
-    pushedAt?: number;
-  }>;
-  seenBacklogKeys?: string[];
-}
-
-interface AppApiStateV2 {
-  version: 2;
-  connectors?: {
-    azureDevOpsConnections?: Array<{
-      id: string;
-      label: string;
-      tenantLabel: string;
-      organizationUrl: string;
-      project?: string;
-      personalAccessToken: string;
-      queryScope: string;
-      priorityFieldName?: string;
-      priorityFieldResolvedName?: string;
-      priorityFieldResolvedReferenceName?: string;
-      priorityFieldType?: string;
-      priorityFieldIsQueryable?: boolean;
-      autoSync?: boolean;
-      autoSyncIntervalMinutes?: number;
-      connectedAt: number;
-      lastSyncAt?: number;
-      lastError?: string;
-    }>;
-  };
-  stagedImports?: BacklogImportCandidate[];
-  seenImportKeys?: string[];
 }
 
 /**
@@ -213,7 +179,7 @@ function normalizeAgentRunnerState(raw: unknown): StoredAgentRunnerState {
 }
 
 interface AppApiStateV7 {
-  version: 7;
+  version: number;
   connections: StoredConnection[];
   stagedImports: BacklogImportCandidate[];
   dismissedImportKeys: string[];
@@ -279,7 +245,7 @@ function normalizeDisabledCapabilities(
 
 function createDefaultState(): AppApiState {
   return {
-    version: 7,
+    version: STATE_VERSION,
     connections: [],
     stagedImports: [],
     dismissedImportKeys: [],
@@ -345,21 +311,6 @@ function comparePluginManifests(left: PluginManifest, right: PluginManifest) {
   );
 }
 
-function normalizeOrganizationUrl(value: string) {
-  return value.replace(/\/+$/, "");
-}
-
-function compactFieldValues(
-  values: Record<string, string | number | boolean | undefined>,
-): PluginFieldValues {
-  return Object.fromEntries(
-    Object.entries(values).filter(
-      (entry): entry is [string, string | number | boolean] =>
-        entry[1] !== undefined,
-    ),
-  );
-}
-
 /** What the overview shows instead of a last error whose plugin is gone. */
 const UNINSTALLED_PLUGIN_LAST_ERROR =
   "Hidden because this plugin is no longer installed.";
@@ -404,18 +355,8 @@ function toEditableValues(
     autoSync: connection.autoSync,
     autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
     pullRequestAutoSync: syncsPullRequestsAutomatically(connection),
+    ...editableFieldValues(plugin.connectionFields, connection.config),
   };
-
-  for (const field of plugin.connectionFields) {
-    if (field.secret) {
-      continue;
-    }
-
-    const value = connection.config[field.id];
-    if (value !== undefined) {
-      editableValues[field.id] = value;
-    }
-  }
   // Ajour's own setting, set last so no plugin field or config can stand in.
   if (
     plugin.capabilities.connector?.comments ||
@@ -449,9 +390,9 @@ function buildConnectionSummary(
   // secret: an error stored before every route redacted plugin errors, or a
   // summary stored before saves redacted it. A stand-in says nothing about
   // which stored values are secret, so then none of their text is shown.
-  const redaction = connectionRedaction(
-    installed ? connectionSecretValues(plugin, [connection.config]) : [],
-  );
+  const redaction = installed
+    ? connectionCredentials(plugin, connection.config).redaction
+    : connectionRedaction([]);
 
   return {
     id: connection.id,
@@ -480,273 +421,142 @@ function buildConnectionSummary(
   };
 }
 
-function migrateLegacyState(raw: AppApiStateV1): AppApiState {
+/**
+ * The current version's state from a migrated file: malformed records
+ * dropped, and the fields added without a new version filled with their
+ * defaults. Earlier versions reach this shape through `state-migrations.ts`.
+ */
+function normalizeState(migrated: StoredStateRecord): AppApiState {
+  const raw = migrated as Partial<AppApiState>;
   const defaults = createDefaultState();
-  const legacyConnection = raw.connectors?.azureDevOps
-    ? ({
-        id: "legacy_azure_devops",
-        pluginId: "azure_devops",
-        label: raw.connectors.azureDevOps.project,
-        tenantLabel: "Legacy tenant",
-        autoSync: false,
-        autoSyncIntervalMinutes: 15,
-        config: compactFieldValues({
-          organizationUrl: normalizeOrganizationUrl(
-            raw.connectors.azureDevOps.organizationUrl,
-          ),
-          project: raw.connectors.azureDevOps.project,
-          personalAccessToken: raw.connectors.azureDevOps.personalAccessToken,
-          queryScope: raw.connectors.azureDevOps.queryScope,
-        }),
-        configSummary: compactFieldValues({
-          organizationUrl: normalizeOrganizationUrl(
-            raw.connectors.azureDevOps.organizationUrl,
-          ),
-          queryScope: raw.connectors.azureDevOps.queryScope,
-        }),
-        connectedAt: raw.connectors.azureDevOps.connectedAt ?? Date.now(),
-        lastSyncAt: raw.connectors.azureDevOps.lastSyncAt,
-        lastError: raw.connectors.azureDevOps.lastError,
-      } satisfies StoredConnection)
-    : undefined;
-
-  const stagedImports = (raw.backlogInbox ?? [])
-    .filter(
-      (item): item is NonNullable<AppApiStateV1["backlogInbox"]>[number] =>
-        Boolean(item?.source && item.sourceId && item.title),
-    )
-    .map(
-      (item) =>
-        ({
-          id: item.id ?? `connector_${randomUUID()}`,
-          source: "azure_devops",
-          connectionId: legacyConnection?.id ?? "legacy_azure_devops",
-          connectionLabel: legacyConnection?.label ?? "Legacy Azure DevOps",
-          tenantLabel: legacyConnection?.tenantLabel ?? "Legacy tenant",
-          sourceId: item.sourceId!,
-          externalId: item.sourceId!.split("/").pop() ?? item.sourceId!,
-          sourceUrl: item.sourceUrl,
-          title: item.title!,
-          note: item.note,
-          workItemType: "Task",
-          depth: 0,
-          selectable: true,
-          selected: true,
-          childCount: 0,
-          pushedAt: item.pushedAt ?? Date.now(),
-        }) satisfies BacklogImportCandidate,
-    );
 
   return {
-    ...defaults,
-    connections: legacyConnection ? [legacyConnection] : [],
-    stagedImports,
+    version: STATE_VERSION,
+    connections: (Array.isArray(raw.connections) ? raw.connections : [])
+      .filter((connection): connection is StoredConnection =>
+        Boolean(
+          connection?.id &&
+          connection.pluginId &&
+          connection.label &&
+          connection.tenantLabel &&
+          connection.config &&
+          typeof connection.autoSync === "boolean" &&
+          connection.autoSyncIntervalMinutes &&
+          connection.connectedAt,
+        ),
+      )
+      .map(
+        ({
+          pullRequestAutoSync,
+          agentAccess,
+          allowLossyConversion,
+          ...connection
+        }) => ({
+          ...connection,
+          // Ajour's own settings never live in the plugin's config.
+          config: Object.fromEntries(
+            Object.entries(connection.config).filter(
+              ([key]) => !AJOUR_CONNECTION_FIELD_IDS.has(key),
+            ),
+          ),
+          ...(allowLossyConversion === true ? { allowLossyConversion } : {}),
+          ...(typeof pullRequestAutoSync === "boolean"
+            ? { pullRequestAutoSync }
+            : {}),
+          // Anything else than a known level is None.
+          ...(agentAccessSchema.safeParse(agentAccess).success
+            ? { agentAccess }
+            : {}),
+        }),
+      )
+      .sort(compareConnections),
+    stagedImports: (raw.stagedImports ?? defaults.stagedImports)
+      .filter((item): item is BacklogImportCandidate =>
+        Boolean(
+          item?.id &&
+          item.source &&
+          item.connectionId &&
+          item.sourceId &&
+          item.title,
+        ),
+      )
+      .map((item) => ({
+        ...item,
+        selected: item.selectable ? item.selected : false,
+      }))
+      .sort(compareImports),
+    dismissedImportKeys: Array.from(
+      new Set(
+        (raw.dismissedImportKeys as string[] | undefined) ??
+          defaults.dismissedImportKeys,
+      ),
+    ),
+    connectorBacklogStatuses: (
+      raw.connectorBacklogStatuses ?? defaults.connectorBacklogStatuses
+    )
+      .filter((status): status is BacklogSourceStatus =>
+        Boolean(
+          status?.source &&
+          status.connectionId &&
+          status.connectionLabel &&
+          status.tenantLabel &&
+          status.key &&
+          status.label &&
+          status.lastSeenAt,
+        ),
+      )
+      .sort(compareBacklogStatuses),
+    disabledPluginIds: Array.from(
+      new Set(
+        (Array.isArray(raw.disabledPluginIds)
+          ? raw.disabledPluginIds!
+          : defaults.disabledPluginIds
+        )
+          .filter(
+            (pluginId): pluginId is string =>
+              typeof pluginId === "string" && pluginId.trim().length > 0,
+          )
+          .map((pluginId) => pluginId.trim()),
+      ),
+    ).sort(),
+    disabledCapabilities: normalizeDisabledCapabilities(
+      raw.disabledCapabilities,
+    ),
+    pluginsEnabled:
+      typeof raw.pluginsEnabled === "boolean"
+        ? raw.pluginsEnabled!
+        : defaults.pluginsEnabled,
+    mcp: normalizeMcpState(raw.mcp),
+    agentRunner: normalizeAgentRunnerState(raw.agentRunner),
   };
 }
 
-function normalizeState(
-  raw: Partial<AppApiState | AppApiStateV1 | AppApiStateV2> | undefined,
-): AppApiState {
-  if (!raw) {
-    return createDefaultState();
+/** Rename errors Windows gives for a moment while another process has the target open. */
+const TRANSIENT_RENAME_CODES = new Set(["EPERM", "EACCES", "EBUSY"]);
+const RENAME_ATTEMPTS = 5;
+
+/**
+ * Renames `from` over `to`. On Windows a rename over a file another process
+ * holds open, such as an antivirus scan, fails for a moment, so it is tried
+ * again a few times before the error stands.
+ */
+async function renameOver(from: string, to: string) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await rename(from, to);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException | undefined)?.code;
+      if (
+        attempt >= RENAME_ATTEMPTS ||
+        code === undefined ||
+        !TRANSIENT_RENAME_CODES.has(code)
+      ) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20 * attempt));
+    }
   }
-
-  if ("connections" in raw && Array.isArray(raw.connections)) {
-    const defaults = createDefaultState();
-
-    return {
-      version: 7,
-      connections: raw.connections
-        .filter((connection): connection is StoredConnection =>
-          Boolean(
-            connection?.id &&
-            connection.pluginId &&
-            connection.label &&
-            connection.tenantLabel &&
-            connection.config &&
-            typeof connection.autoSync === "boolean" &&
-            connection.autoSyncIntervalMinutes &&
-            connection.connectedAt,
-          ),
-        )
-        .map(
-          ({
-            pullRequestAutoSync,
-            agentAccess,
-            allowLossyConversion,
-            ...connection
-          }) => ({
-            ...connection,
-            // Ajour's own settings never live in the plugin's config.
-            config: Object.fromEntries(
-              Object.entries(connection.config).filter(
-                ([key]) => !AJOUR_CONNECTION_FIELD_IDS.has(key),
-              ),
-            ),
-            ...(allowLossyConversion === true ? { allowLossyConversion } : {}),
-            ...(typeof pullRequestAutoSync === "boolean"
-              ? { pullRequestAutoSync }
-              : {}),
-            // Anything else than a known level is None.
-            ...(agentAccessSchema.safeParse(agentAccess).success
-              ? { agentAccess }
-              : {}),
-          }),
-        )
-        .sort(compareConnections),
-      stagedImports: (raw.stagedImports ?? defaults.stagedImports)
-        .filter((item): item is BacklogImportCandidate =>
-          Boolean(
-            item?.id &&
-            item.source &&
-            item.connectionId &&
-            item.sourceId &&
-            item.title,
-          ),
-        )
-        .map((item) => ({
-          ...item,
-          selected: item.selectable ? item.selected : false,
-        }))
-        .sort(compareImports),
-      dismissedImportKeys: Array.from(
-        new Set(
-          (raw.dismissedImportKeys as string[] | undefined) ??
-            defaults.dismissedImportKeys,
-        ),
-      ),
-      connectorBacklogStatuses: (
-        (raw as AppApiState).connectorBacklogStatuses ??
-        defaults.connectorBacklogStatuses
-      )
-        .filter((status): status is BacklogSourceStatus =>
-          Boolean(
-            status?.source &&
-            status.connectionId &&
-            status.connectionLabel &&
-            status.tenantLabel &&
-            status.key &&
-            status.label &&
-            status.lastSeenAt,
-          ),
-        )
-        .sort(compareBacklogStatuses),
-      disabledPluginIds: Array.from(
-        new Set(
-          (Array.isArray((raw as Partial<AppApiState>).disabledPluginIds)
-            ? (raw as Partial<AppApiState>).disabledPluginIds!
-            : defaults.disabledPluginIds
-          )
-            .filter(
-              (pluginId): pluginId is string =>
-                typeof pluginId === "string" && pluginId.trim().length > 0,
-            )
-            .map((pluginId) => pluginId.trim()),
-        ),
-      ).sort(),
-      disabledCapabilities: normalizeDisabledCapabilities(
-        (raw as Partial<AppApiState>).disabledCapabilities,
-      ),
-      pluginsEnabled:
-        typeof (raw as Partial<AppApiState>).pluginsEnabled === "boolean"
-          ? (raw as Partial<AppApiState>).pluginsEnabled!
-          : defaults.pluginsEnabled,
-      mcp: normalizeMcpState((raw as Partial<AppApiState>).mcp),
-      agentRunner: normalizeAgentRunnerState(
-        (raw as Partial<AppApiState>).agentRunner,
-      ),
-    };
-  }
-
-  if ("stagedImports" in raw || raw.version === 2) {
-    const defaults = createDefaultState();
-    const legacyConnections =
-      ((raw as AppApiStateV2).connectors?.azureDevOpsConnections ?? []).map(
-        (connection) => ({
-          id: connection.id,
-          pluginId: "azure_devops",
-          label: connection.label,
-          tenantLabel: connection.tenantLabel,
-          autoSync: connection.autoSync ?? false,
-          autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes ?? 15,
-          config: compactFieldValues({
-            organizationUrl: normalizeOrganizationUrl(
-              connection.organizationUrl,
-            ),
-            project: connection.project,
-            personalAccessToken: connection.personalAccessToken,
-            queryScope: connection.queryScope,
-            priorityFieldName: connection.priorityFieldName,
-          }),
-          configSummary: compactFieldValues({
-            organizationUrl: normalizeOrganizationUrl(
-              connection.organizationUrl,
-            ),
-            queryScope: connection.queryScope,
-            priorityFieldName: connection.priorityFieldName,
-            priorityFieldResolvedName: connection.priorityFieldResolvedName,
-            priorityFieldResolvedReferenceName:
-              connection.priorityFieldResolvedReferenceName,
-            priorityFieldType: connection.priorityFieldType,
-            priorityFieldIsQueryable: connection.priorityFieldIsQueryable,
-          }),
-          connectedAt: connection.connectedAt,
-          lastSyncAt: connection.lastSyncAt,
-          lastError: connection.lastError,
-        }),
-      ) ?? defaults.connections;
-
-    return {
-      version: 7,
-      connections: legacyConnections.sort(compareConnections),
-      stagedImports: (raw.stagedImports ?? defaults.stagedImports)
-        .filter((item): item is BacklogImportCandidate =>
-          Boolean(
-            item?.id &&
-            item.source &&
-            item.connectionId &&
-            item.sourceId &&
-            item.title,
-          ),
-        )
-        .map((item) => ({
-          ...item,
-          selected: item.selectable ? item.selected : false,
-        }))
-        .sort(compareImports),
-      dismissedImportKeys: Array.from(
-        new Set(
-          "dismissedImportKeys" in raw
-            ? ((raw.dismissedImportKeys as string[] | undefined) ??
-                defaults.dismissedImportKeys)
-            : defaults.dismissedImportKeys,
-        ),
-      ),
-      connectorBacklogStatuses: (
-        (raw as AppApiState).connectorBacklogStatuses ??
-        defaults.connectorBacklogStatuses
-      )
-        .filter((status): status is BacklogSourceStatus =>
-          Boolean(
-            status?.source &&
-            status.connectionId &&
-            status.connectionLabel &&
-            status.tenantLabel &&
-            status.key &&
-            status.label &&
-            status.lastSeenAt,
-          ),
-        )
-        .sort(compareBacklogStatuses),
-      disabledPluginIds: defaults.disabledPluginIds,
-      disabledCapabilities: defaults.disabledCapabilities,
-      pluginsEnabled: defaults.pluginsEnabled,
-      mcp: { enabled: false, clients: [] },
-      agentRunner: { settings: defaultAgentRunnerSettings(), pluginValues: {} },
-    };
-  }
-
-  return migrateLegacyState(raw as AppApiStateV1);
 }
 
 /** The state file's path: the one given, else AJOUR_APP_API_STATE_PATH, else ~/.ajour. */
@@ -786,12 +596,14 @@ function readStateFile(
     ) {
       return undefined;
     }
-    const raw = parsed as Partial<
-      AppApiState | AppApiStateV1 | AppApiStateV2
-    > | null;
+    if (parsed === null) {
+      return { state: createDefaultState(), versionFrom: 1 };
+    }
+    const raw = parsed as StoredStateRecord;
+    const versionFrom = storedStateVersion(raw);
     return {
-      state: normalizeState(raw ?? undefined),
-      versionFrom: typeof raw?.version === "number" ? raw.version : 1,
+      state: normalizeState(runStateMigrations(raw, versionFrom)),
+      versionFrom,
     };
   } catch {
     return undefined;
@@ -1837,6 +1649,7 @@ export class AppApiStorage {
       detached: true,
     });
     try {
+      await this.removeOrphanedTempFiles();
       let state: AppApiState;
       if (existsSync(this.statePath)) {
         const text = await readFile(this.statePath, "utf8");
@@ -1870,14 +1683,53 @@ export class AppApiStorage {
     }
   }
 
+  /**
+   * Deletes the temp files an interrupted write left beside the state file:
+   * they hold the state, secrets in plain text, and nothing reads them. Runs
+   * before the first write, and only matches this file's own temp names.
+   */
+  private async removeOrphanedTempFiles(): Promise<void> {
+    const directory = path.dirname(this.statePath);
+    const prefix = `${path.basename(this.statePath)}.`;
+    try {
+      for (const entry of await readdir(directory, { withFileTypes: true })) {
+        if (!entry.isFile() || !entry.name.startsWith(prefix)) continue;
+        const middle = entry.name.slice(prefix.length);
+        if (!middle.endsWith(".tmp")) continue;
+        if (!TEMP_FILE_ID.test(middle.slice(0, -".tmp".length))) continue;
+        await rm(path.join(directory, entry.name), { force: true }).catch(
+          () => undefined,
+        );
+      }
+    } catch {
+      // No folder yet, or one that can't be listed: nothing to clean.
+    }
+  }
+
+  /**
+   * Saves the state whole or not at all: to a temp file beside the state
+   * file, flushed to disk, then renamed over it. A crash before the rename
+   * leaves the last complete file. Only once the file holds the new state
+   * does this storage read it from memory.
+   */
   private async writeState(state: AppApiState) {
-    this.cache = state;
     await mkdir(path.dirname(this.statePath), { recursive: true, mode: 0o700 });
-    await writeFile(this.statePath, `${JSON.stringify(state, null, 2)}\n`, {
-      encoding: "utf8",
-      mode: 0o600,
-    });
-    await chmod(this.statePath, 0o600);
+    const tempPath = `${this.statePath}.${randomUUID()}.tmp`;
+    try {
+      const file = await open(tempPath, "w", 0o600);
+      try {
+        await file.writeFile(`${JSON.stringify(state, null, 2)}\n`, "utf8");
+        await file.sync();
+      } finally {
+        await file.close();
+      }
+      await chmod(tempPath, 0o600);
+      await renameOver(tempPath, this.statePath);
+    } catch (error) {
+      await rm(tempPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
+    this.cache = state;
   }
 
   private mutate<T>(

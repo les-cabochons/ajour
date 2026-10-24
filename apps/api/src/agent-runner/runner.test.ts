@@ -580,6 +580,26 @@ describe("AgentRunner", () => {
     }
   });
 
+  it("never passes the window token to the CLI", async () => {
+    // The API that starts the run holds the launch's window token. Standalone,
+    // it arrives in the API's environment.
+    const windowToken = "window-token-canary-4f2a9c";
+    vi.stubEnv("AJOUR_APP_API_WINDOW_TOKEN", windowToken);
+    vi.stubEnv("FAKE_CLI_SECRET_PROBE", windowToken);
+    try {
+      const { runner, report } = await setup([{ exit: 0 }]);
+      await runner.start(request);
+      await settled(runner);
+      const line = JSON.parse((await readFile(report, "utf8")).trim());
+      expect(line.hasToken).toBe(true);
+      expect(line.ajourKeys).toEqual([]);
+      expect(line.secretSeenIn).toEqual([]);
+      expect(JSON.stringify(line.argv)).not.toContain(windowToken);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("logs one agent.run event without prompt or output", async () => {
     const { runner, events } = await setup([
       { stderr: "secret week data" },
@@ -1295,6 +1315,43 @@ describe("AgentRunner", () => {
       expect(task!.blockers).toEqual([]);
       expect(task!.values.url).toBe("https://wd.example/default");
     } finally {
+      delete fakeSettings[0]!.defaultValue;
+    }
+  });
+
+  it("leaves a secret setting out of the overview, declared or not, but still gives it to a run", async () => {
+    fakeSettings.push({
+      id: "token",
+      label: "Token",
+      type: "text" as const,
+      required: false,
+      secret: true,
+    });
+    fakeSettings[0]!.defaultValue = "https://wd.example/default";
+    try {
+      const { runner, sessions } = await setup([{ hang: true }], {
+        values: {
+          note: "a note",
+          token: "declared-secret-value",
+          // A secret the manifest no longer declares.
+          oldToken: "undeclared-secret-value",
+        },
+        weekLink: "{{settings.url}}?t={{settings.token}}",
+      });
+      const [task] = (await runner.overview()).tasks;
+      expect(task!.values).toEqual({
+        url: "https://wd.example/default",
+        note: "a note",
+      });
+      expect(JSON.stringify(task)).not.toContain("secret-value");
+      const run = await runner.start(request);
+      expect(sessions.get(run.sessionId)!.link?.url).toBe(
+        "https://wd.example/default?t=declared-secret-value",
+      );
+      runner.stop(run.id);
+      await settled(runner);
+    } finally {
+      fakeSettings.pop();
       delete fakeSettings[0]!.defaultValue;
     }
   });

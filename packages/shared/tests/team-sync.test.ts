@@ -22,7 +22,7 @@ import {
   teamSyncResultSchema,
 } from "../team-sync";
 
-/** `MAX_PLUGIN_RESULT_BYTES` in apps/api/src/plugin-worker.mjs. */
+/** `MAX_PLUGIN_RESULT_BYTES` in apps/api/src/plugin-runtime.ts. */
 const WORKER_RESULT_LIMIT_BYTES = 8 * 1024 * 1024;
 const teamCapability = { apiVersion: TEAM_CAPABILITY_API_VERSION };
 /** A 1 pixel PNG, as the canvas that rasterizes uploaded icons encodes them. */

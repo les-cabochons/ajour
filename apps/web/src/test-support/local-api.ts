@@ -8,6 +8,7 @@ import {
   startAppApiServer,
   stopAppApiServer,
 } from "../../../api/src/server.ts";
+import { WINDOW_TOKEN_HEADER } from "../../../api/src/window-token.ts";
 
 /*
  * The real local API, started on a free port with a temporary state file
@@ -20,14 +21,22 @@ const ICON = "<svg viewBox='0 0 16 16'><path d='M0 0h16v16H0z' /></svg>";
 /** The Ajour window's origin, which the API allows. */
 const APP_ORIGIN = "http://127.0.0.1:5173";
 
+/** The window token the test API starts with. */
+const WINDOW_TOKEN = "test-window-token";
+
 /**
- * Node's fetch, sending the Ajour window's origin as a browser would: stub
- * it as the global `fetch` for the renderer's calls.
+ * Node's fetch, sending the Ajour window's origin as a browser would and
+ * adding the window token to `/api` requests as Electron main does: stub it
+ * as the global `fetch` for the renderer's calls.
  */
 const nodeFetch = globalThis.fetch;
 export const fetchAsTheApp: typeof fetch = (input, init) => {
   const headers = new Headers(init?.headers);
   headers.set("Origin", APP_ORIGIN);
+  const url = new URL(input instanceof Request ? input.url : input.toString());
+  if (url.pathname.startsWith("/api/")) {
+    headers.set(WINDOW_TOKEN_HEADER, WINDOW_TOKEN);
+  }
   return nodeFetch(input, { ...init, headers });
 };
 
@@ -92,6 +101,7 @@ export async function startLocalApi() {
     allowDevelopmentPlugins: true,
     projectDataShapePluginDirectories: [],
     allowedOrigins: [APP_ORIGIN],
+    windowToken: WINDOW_TOKEN,
     eventSink: sink,
   });
   const { port } = server.address() as AddressInfo;

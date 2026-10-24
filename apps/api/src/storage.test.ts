@@ -786,3 +786,181 @@ describe("AppApiStorage", () => {
     expect(await storage.getAgentTaskValues("constructor")).toEqual({});
   });
 });
+
+describe("state files from earlier versions", () => {
+  const tempDirs: string[] = [];
+
+  afterEach(async () => {
+    await Promise.all(
+      tempDirs
+        .splice(0)
+        .map((dir) => rm(dir, { recursive: true, force: true })),
+    );
+  });
+
+  /** The state file as it is saved once a file in `saved` loads and changes. */
+  async function migrated(saved: object) {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-migrate-"));
+    tempDirs.push(tempDir);
+    const statePath = path.join(tempDir, "app-api-state.json");
+    await writeFile(statePath, `${JSON.stringify(saved)}\n`, "utf8");
+    await new AppApiStorage(statePath).setPluginSystemEnabled(true);
+    return JSON.parse(await readFile(statePath, "utf8")) as unknown;
+  }
+
+  const emptyCurrentState = {
+    version: 7,
+    connections: [],
+    stagedImports: [],
+    dismissedImportKeys: [],
+    connectorBacklogStatuses: [],
+    disabledPluginIds: [],
+    disabledCapabilities: {},
+    pluginsEnabled: true,
+    mcp: { enabled: false, clients: [] },
+    agentRunner: {
+      settings: { cli: null, browserMode: "ajour-chrome", model: "" },
+      pluginValues: {},
+    },
+  };
+
+  it("moves version 1's one Azure DevOps connection and its inbox to the current version", async () => {
+    await expect(
+      migrated({
+        connectors: {
+          azureDevOps: {
+            organizationUrl: "https://dev.azure.com/contoso/",
+            project: "Apollo",
+            personalAccessToken: "pat-v1-fixture",
+            queryScope: "assigned",
+            connectedAt: 100,
+            lastSyncAt: 200,
+          },
+        },
+        backlogInbox: [
+          {
+            id: "inbox-1",
+            source: "azure_devops",
+            sourceId: "https://dev.azure.com/contoso/Apollo/_workitems/edit/7",
+            title: "Fix login",
+            pushedAt: 300,
+          },
+          { id: "inbox-2", source: "azure_devops", sourceId: "8" },
+        ],
+        seenBacklogKeys: ["azure_devops:8"],
+      }),
+    ).resolves.toEqual({
+      ...emptyCurrentState,
+      connections: [
+        {
+          id: "legacy_azure_devops",
+          pluginId: "azure_devops",
+          label: "Apollo",
+          tenantLabel: "Legacy tenant",
+          autoSync: false,
+          autoSyncIntervalMinutes: 15,
+          config: {
+            organizationUrl: "https://dev.azure.com/contoso",
+            project: "Apollo",
+            personalAccessToken: "pat-v1-fixture",
+            queryScope: "assigned",
+          },
+          configSummary: {
+            organizationUrl: "https://dev.azure.com/contoso",
+            queryScope: "assigned",
+          },
+          connectedAt: 100,
+          lastSyncAt: 200,
+        },
+      ],
+      stagedImports: [
+        {
+          id: "inbox-1",
+          source: "azure_devops",
+          connectionId: "legacy_azure_devops",
+          connectionLabel: "Apollo",
+          tenantLabel: "Legacy tenant",
+          sourceId: "https://dev.azure.com/contoso/Apollo/_workitems/edit/7",
+          externalId: "7",
+          title: "Fix login",
+          workItemType: "Task",
+          depth: 0,
+          selectable: true,
+          selected: true,
+          childCount: 0,
+          pushedAt: 300,
+        },
+      ],
+    });
+  });
+
+  it("moves version 2's Azure DevOps connections to plugin connections", async () => {
+    await expect(
+      migrated({
+        version: 2,
+        connectors: {
+          azureDevOpsConnections: [
+            {
+              id: "ado-1",
+              label: "Main",
+              tenantLabel: "Contoso",
+              organizationUrl: "https://dev.azure.com/contoso/",
+              project: "Apollo",
+              personalAccessToken: "pat-v2-fixture",
+              queryScope: "assigned",
+              priorityFieldName: "Priority",
+              priorityFieldResolvedName: "Priority",
+              autoSync: true,
+              connectedAt: 100,
+              lastError: "Sync failed.",
+            },
+          ],
+        },
+        stagedImports: [],
+        dismissedImportKeys: ["azure_devops:ado-1:7"],
+        seenImportKeys: ["azure_devops:ado-1:8"],
+      }),
+    ).resolves.toEqual({
+      ...emptyCurrentState,
+      connections: [
+        {
+          id: "ado-1",
+          pluginId: "azure_devops",
+          label: "Main",
+          tenantLabel: "Contoso",
+          autoSync: true,
+          autoSyncIntervalMinutes: 15,
+          config: {
+            organizationUrl: "https://dev.azure.com/contoso",
+            project: "Apollo",
+            personalAccessToken: "pat-v2-fixture",
+            queryScope: "assigned",
+            priorityFieldName: "Priority",
+          },
+          configSummary: {
+            organizationUrl: "https://dev.azure.com/contoso",
+            queryScope: "assigned",
+            priorityFieldName: "Priority",
+            priorityFieldResolvedName: "Priority",
+          },
+          connectedAt: 100,
+          lastError: "Sync failed.",
+        },
+      ],
+      dismissedImportKeys: ["azure_devops:ado-1:7"],
+    });
+  });
+
+  it("keeps version 6's plugin choices and turns the plugin system on, as version 7 added it", async () => {
+    await expect(
+      migrated({
+        version: 6,
+        connections: [],
+        stagedImports: [],
+        dismissedImportKeys: [],
+        connectorBacklogStatuses: [],
+        disabledPluginIds: ["jira"],
+      }),
+    ).resolves.toEqual({ ...emptyCurrentState, disabledPluginIds: ["jira"] });
+  });
+});

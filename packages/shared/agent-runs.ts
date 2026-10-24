@@ -3,6 +3,7 @@ import {
   agentTaskPlacementSchema,
   pluginFieldSchema,
   pluginFieldValuesSchema,
+  removeSecretsSchema,
 } from "./plugins.ts";
 import { isoDateSchema } from "./agent-tools.ts";
 
@@ -30,8 +31,10 @@ export type AgentRunnerSettings = z.infer<typeof agentRunnerSettingsSchema>;
 export const agentRunnerSettingsUpdateSchema =
   agentRunnerSettingsSchema.partial();
 
+/** A secret setting left empty keeps its saved value, as a connection's does. */
 export const agentTaskSettingsUpdateSchema = z.object({
   values: pluginFieldValuesSchema,
+  removeSecrets: removeSecretsSchema.optional(),
 });
 
 export const agentCliStatusSchema = z.object({

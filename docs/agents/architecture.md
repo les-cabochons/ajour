@@ -95,8 +95,9 @@ range through `POST /api/calendars/:pluginId/connections/:connectionId/:operatio
 and Ajour never stores the events (ADR 0005). The route's request event,
 `calendar.fetch`, holds ids, range, count and outcome, never a title.
 A plugin may echo a secret connection value in an error. Every route that runs
-a plugin operation turns the error into a message with `pluginErrorMessage` in
-`apps/api/src/plugin-errors.ts`: each secret value of the connection becomes
+a plugin operation turns the error into a message with the connection's
+credentials from `apps/api/src/connection-credentials.ts`, the one module that
+reads and writes secret values: each secret value of the connection becomes
 `[secret]`, then the message is cut to 1,000 characters. A stored config key
 the manifest no longer declares counts as secret, except Ajour's own fields,
 and a value with spaces at its ends counts trimmed as well, because the host
@@ -177,10 +178,43 @@ error payloads are bounded. Because workers are threads rather than child
 processes, they cannot outlive the parent application or remain as orphan
 plugin processes.
 
+Both the plugin host and the data-shape host run every operation through one
+runtime port, `apps/api/src/plugin-runtime.ts`: start, settle and terminate,
+for a plugin id and its package directory. The worker lifetime keeps
+admission, quota, timeout, cancellation, wide events and result validation
+around it. The worker-thread runtime is the one the app uses; tests may run
+plugins in process with a fake. The arguments each plugin export receives
+come from one method table, `apps/api/src/plugin-methods.ts`, derived from the
+shared operation contracts.
+
+`/api` is the window's private channel. Whoever starts the local API
+generates a per-launch window token and keeps it in memory: Electron main, the
+vite dev server behind `just start`, or the standalone API, which reads
+`AJOUR_APP_API_WINDOW_TOKEN`. Main adds it to the window session's requests to
+`/api` through `webRequest`
+(`apps/desktop/electron/window-api-token.cjs`), and in the browser vite's dev
+proxy adds it to the page's same-origin requests, so page JavaScript never
+sees it. Every `/api` route but `/api/health` refuses a request without it
+with a bare 401 (`apps/api/src/window-token.ts`) and a request without an
+allowed Origin with a 403, and a request without a Host header is refused.
+The window's requests carry an Origin: the desktop window's are cross-origin,
+and the dev proxy adds one to a same-origin GET. `/api/health` answers anyone,
+so main can tell whether another Ajour holds the port. There is no token for
+scripting `/api`: scripts and agents use `/mcp` with an agent client, and the
+agent runner never passes the window token to a CLI (ADR 0004).
+
+The guarantee differs by runtime. In the desktop app, `/api` answers only the
+window: main injects the token on the default session, which the window must
+stay the only user of, and page JavaScript never sees it. Under `just start`,
+the vite dev proxy keeps out web pages (it adds the token only when
+`Sec-Fetch-Site` is `same-origin`, and the origin allowlist applies) but not
+local programs, which can reach the proxy as a page would. That is acceptable
+for development. Malware running as the user stays out of scope.
+
 Development plugin loading and browser-origin authorization are separate
 permissions. The local API accepts browser requests only from exact configured
-origins; enabling loose development directories must never broaden that
-allowlist. Plugin manifests and entrypoints must remain regular files within
+origins, in addition to the window token; enabling loose development
+directories must never broaden that allowlist. Plugin manifests and entrypoints must remain regular files within
 their canonical plugin directory without traversing symbolic-link ancestors.
 
 Worker threads isolate plugin JavaScript state, failures, event loops, and

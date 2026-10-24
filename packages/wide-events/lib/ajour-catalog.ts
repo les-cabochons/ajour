@@ -178,6 +178,8 @@ export const catalog = defineCatalog({
       reasons: [
         "host_refused",
         "origin_refused",
+        /** A request to `/api` without the window token, or with a wrong one. */
+        "token_refused",
         "no_route",
         /** A route that names its operations, called with one it doesn't have. */
         "unknown_operation",

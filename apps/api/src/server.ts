@@ -109,10 +109,12 @@ import {
   mcpClientCreateRequestSchema,
   mcpSettingsUpdateSchema,
 } from "../../../packages/shared/agent-tools.ts";
+import { RESERVED_CONNECTION_FIELD_IDS } from "./connection-values.ts";
 import {
-  mergeConnectionConfigForSave,
-  RESERVED_CONNECTION_FIELD_IDS,
-} from "./connection-values.ts";
+  connectionCredentials,
+  mergeSecretsForSave,
+  pluginConnection,
+} from "./connection-credentials.ts";
 import type { Sink } from "../../../packages/wide-events/sinks.ts";
 import { AgentSessions } from "./agent-sessions.ts";
 import {
@@ -142,14 +144,11 @@ import {
   type PluginFailureReason,
 } from "./plugin-worker-lifetime.ts";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
+import type { PluginRuntime } from "./plugin-runtime.ts";
+import { WorkerPluginRuntime } from "./plugin-worker-runtime.ts";
 import {
   connectionlessPluginErrorMessage,
-  connectionRedaction,
-  connectionSecretValues,
   errorMessage,
-  pluginErrorMessage,
-  redactConnectionSummary,
-  redactPluginText,
   type ConnectionRedaction,
 } from "./plugin-errors.ts";
 import {
@@ -162,6 +161,7 @@ import {
 import {
   decodeParams,
   matchRoute,
+  ROUTES,
   serveWithEvent,
   type RouteContext,
   type RouteHandlers,
@@ -169,6 +169,11 @@ import {
   type RouteParams,
   type Settlement,
 } from "./routes.ts";
+import {
+  createWindowToken,
+  holdsWindowToken,
+  WINDOW_TOKEN_HEADER,
+} from "./window-token.ts";
 import {
   AppApiStorage,
   resolveStatePath,
@@ -184,8 +189,20 @@ interface AppApiServerOptions {
   bundledPluginArchives?: string[];
   allowDevelopmentPlugins?: boolean;
   pluginRequestTimeoutMs?: number;
+  /**
+   * What runs plugin code, for both the plugin and the data-shape host. A
+   * worker thread per operation by default. Tests run plugins in process.
+   */
+  pluginRuntime?: PluginRuntime;
   projectDataShapePluginDirectories?: string[];
   allowedOrigins?: string[];
+  /**
+   * The launch's window token. Every `/api` route but `/api/health` answers
+   * only a request that carries it, as Electron main and vite's dev proxy add
+   * it. Whoever starts the API generates it and keeps it in memory. Without
+   * one, the API makes its own that nobody holds, so no caller reaches `/api`.
+   */
+  windowToken?: string;
   /** How long a data tool waits for the renderer. Tests shorten it. */
   mcpBridgeTimeoutMs?: number;
   /**
@@ -354,8 +371,9 @@ function writeJson(
 ) {
   const headers = {
     // The renderer sends `traceparent` on every call, so its request events
-    // join the renderer's trace.
-    "Access-Control-Allow-Headers": "Content-Type, traceparent",
+    // join the renderer's trace. The window token is added by Electron main
+    // or the dev proxy.
+    "Access-Control-Allow-Headers": `Content-Type, ${WINDOW_TOKEN_HEADER}, traceparent`,
     "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
     ...extraHeaders,
   };
@@ -559,22 +577,6 @@ function recordPluginFailure(
   } else {
     unit.fail(withoutContent(error), secrets ? { secrets } : {});
   }
-}
-
-/** The connection as a plugin receives it. */
-function invocationConnection(connection: StoredConnection) {
-  return {
-    id: connection.id,
-    pluginId: connection.pluginId,
-    label: connection.label,
-    tenantLabel: connection.tenantLabel,
-    autoSync: connection.autoSync,
-    autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
-    connectedAt: connection.connectedAt,
-    lastSyncAt: connection.lastSyncAt,
-    lastError: connection.lastError,
-    config: connection.config,
-  };
 }
 
 /**
@@ -921,6 +923,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   const allowDevelopmentPlugins =
     options.allowDevelopmentPlugins ??
     process.env.AJOUR_ALLOW_DEVELOPMENT_PLUGINS === "1";
+  const pluginRuntime = options.pluginRuntime ?? new WorkerPluginRuntime();
   const pluginManager = new PluginManager({
     installedPluginDirectory:
       options.installedPluginDirectory ??
@@ -931,6 +934,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     bundledPluginArchives: options.bundledPluginArchives,
     allowDevelopmentPlugins,
     requestTimeoutMs: options.pluginRequestTimeoutMs,
+    runtime: pluginRuntime,
     events,
     // The routes check activation before reading the request. This repeats
     // the check once the operation can be cancelled, so a capability turned
@@ -955,11 +959,16 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       options.projectDataShapePluginDirectories ??
       defaultProjectDataShapePluginDirectories(),
     requestTimeoutMs: options.pluginRequestTimeoutMs,
+    runtime: pluginRuntime,
     events,
   });
   const allowedOrigins = new Set(
     options.allowedOrigins ?? configuredAllowedOrigins(),
   );
+  if (options.windowToken === "") {
+    throw new Error("The window token can't be empty.");
+  }
+  const windowToken = options.windowToken ?? createWindowToken();
   // The bridge and the sessions publish through each other. Both closures
   // run after both constants exist, so the forward reference is safe.
   const mcpBridge: McpBridge = new McpBridge({
@@ -1068,19 +1077,26 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         });
         return;
       }
-      const parsed = parseAgentTaskValues(
-        agentTaskSettingFields(tasks),
-        payload.values,
-      );
+      const fields = agentTaskSettingFields(tasks);
+      const parsed = parseAgentTaskValues(fields, payload.values);
       if ("error" in parsed) {
         unit.refuse("invalid_request");
         writeJson(response, 400, { error: parsed.error });
         return;
       }
+      const saved = await storage.getAgentTaskValues(pluginId);
+      const values = readInput(() =>
+        mergeSecretsForSave(
+          fields,
+          parsed.values,
+          saved,
+          payload.removeSecrets,
+        ),
+      );
       unit.set({
-        agent_task: { field_count: Object.keys(parsed.values).length },
+        agent_task: { field_count: Object.keys(values).length },
       });
-      await storage.setAgentTaskValues(pluginId, parsed.values);
+      await storage.setAgentTaskValues(pluginId, values);
       writeJson(response, 200, await agentRunner.overview());
     },
 
@@ -1497,10 +1513,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         : null;
       // A config saved before Ajour kept its own fields out may hold one.
       const configForSave = withoutReservedFields(
-        mergeConnectionConfigForSave(
-          plugin,
-          parsedValues.config,
-          existingConnection?.config,
+        readInput(() =>
+          mergeSecretsForSave(
+            plugin.connectionFields,
+            parsedValues.config,
+            existingConnection?.config,
+            payload.removeSecrets,
+          ),
         ),
       );
       const capabilities = await storage.listEnabledCapabilities(
@@ -1525,22 +1544,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           call.admit,
         );
       } catch (error) {
-        recordPluginFailure(
-          unit,
-          error,
-          connectionSecretValues(call.manifest, [
-            configForSave,
-            existingConnection?.config,
-          ]),
+        const credentials = connectionCredentials(
+          call.manifest,
+          configForSave,
+          existingConnection?.config,
         );
-        writeJson(response, 400, {
-          error: pluginErrorMessage(
-            error,
-            call.manifest,
-            configForSave,
-            existingConnection?.config,
-          ),
-        });
+        recordPluginFailure(unit, error, credentials.secrets);
+        writeJson(response, 400, { error: credentials.errorMessage(error) });
         return;
       }
       const storedConnection = await storage.upsertConnection(pluginId, {
@@ -1557,14 +1567,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         // Redacted before it is stored: the normalized config may no
         // longer hold a value the plugin swapped out, such as a password
         // it traded for a token, so the overview couldn't find it later.
-        configSummary: redactConnectionSummary(
-          validation.connectionSummary,
-          connectionSecretValues(call.manifest, [
-            configForSave,
-            existingConnection?.config,
-            validation.normalizedConfig,
-          ]),
-        ),
+        configSummary: connectionCredentials(
+          call.manifest,
+          configForSave,
+          existingConnection?.config,
+          validation.normalizedConfig,
+        ).redaction.summary(validation.connectionSummary),
       });
       unit.set({ connection: { id: storedConnection.id } });
       const { overview, summary } = await findConnectionSummary(
@@ -1618,7 +1626,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         const result = backlogSettleStatesResultSchema.parse(
           await pluginManager.listSettleStates(
             target.pluginId,
-            invocationConnection(target.connection),
+            pluginConnection(target.connection),
             statesRequest,
             target.call.admit,
           ),
@@ -1659,7 +1667,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       try {
         const result = await pluginManager.writeSettle(
           target.pluginId,
-          invocationConnection(target.connection),
+          pluginConnection(target.connection),
           writeRequest,
           target.call.admit,
         );
@@ -1693,7 +1701,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       try {
         const result = await pluginManager.readDescription(
           target.pluginId,
-          invocationConnection(target.connection),
+          pluginConnection(target.connection),
           readRequestBody,
           target.call.admit,
         );
@@ -1750,7 +1758,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       try {
         const result = await pluginManager.writeDescription(
           target.pluginId,
-          invocationConnection(target.connection),
+          pluginConnection(target.connection),
           writeRequest,
           target.call.admit,
         );
@@ -1823,7 +1831,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       try {
         const fetched = await pluginManager.syncConnection(
           pluginId,
-          invocationConnection(connection),
+          pluginConnection(connection),
           payload.workItems,
           call.admit,
         );
@@ -1901,9 +1909,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             skippedCount: stageResult.skippedCount,
             workItemUpdates: redactFieldUpdateMessages(
               fetched.workItemUpdates,
-              connectionRedaction(
-                connectionSecretValues(call.manifest, [connection.config]),
-              ),
+              connectionCredentials(call.manifest, connection.config).redaction,
             ),
             doneItems,
             viewer: fetched.viewer,
@@ -1911,16 +1917,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           }),
         );
       } catch (error) {
-        recordPluginFailure(
-          unit,
-          error,
-          connectionSecretValues(call.manifest, [connection.config]),
-        );
-        const message = pluginErrorMessage(
-          error,
+        const credentials = connectionCredentials(
           call.manifest,
           connection.config,
         );
+        recordPluginFailure(unit, error, credentials.secrets);
+        const message = credentials.errorMessage(error);
         await storage.recordConnectionError(pluginId, connectionId, message);
         const { summary } = await findConnectionSummary(
           storage,
@@ -1992,7 +1994,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         const result = await pluginManager.runCodeHostOperation(
           pluginId,
           operation.data,
-          invocationConnection(connection),
+          pluginConnection(connection),
           codeHostRequest,
           call.admit,
         );
@@ -2006,16 +2008,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         }
         writeJson(response, 200, result);
       } catch (error) {
-        recordPluginFailure(
-          unit,
-          error,
-          connectionSecretValues(call.manifest, [connection.config]),
-        );
-        const message = pluginErrorMessage(
-          error,
+        const credentials = connectionCredentials(
           call.manifest,
           connection.config,
         );
+        recordPluginFailure(unit, error, credentials.secrets);
+        const message = credentials.errorMessage(error);
         if (operation.data === "syncPullRequests") {
           await storage.recordConnectionError(pluginId, connectionId, message);
         }
@@ -2149,7 +2147,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         const result = await pluginManager.runBacklogCommentOperation(
           pluginId,
           operation.data,
-          invocationConnection(connection),
+          pluginConnection(connection),
           commentRequest,
           admit,
         );
@@ -2172,13 +2170,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           refuseAgent();
           return;
         }
-        const secrets = connectionSecretValues(call.manifest, [
+        const credentials = connectionCredentials(
+          call.manifest,
           connection.config,
-        ]);
-        recordPluginFailure(unit, error, secrets);
-        writeJson(response, 502, {
-          error: redactPluginText(errorMessage(error), secrets),
-        });
+        );
+        recordPluginFailure(unit, error, credentials.secrets);
+        writeJson(response, 502, { error: credentials.errorMessage(error) });
       }
     },
 
@@ -2240,7 +2237,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         const result = await pluginManager.runCalendarOperation(
           pluginId,
           operation.data,
-          invocationConnection(connection),
+          pluginConnection(connection),
           calendarRequest,
           call.admit,
         );
@@ -2252,11 +2249,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         unit.set({ calendar: { event_count: result.events.length } });
         writeJson(response, 200, result);
       } catch (error) {
-        const secrets = connectionSecretValues(call.manifest, [
+        const credentials = connectionCredentials(
+          call.manifest,
           connection.config,
-        ]);
-        const message = redactPluginText(errorMessage(error), secrets);
-        recordPluginFailure(unit, error, secrets);
+        );
+        const message = credentials.errorMessage(error);
+        recordPluginFailure(unit, error, credentials.secrets);
         await storage.recordConnectionError(pluginId, connectionId, message);
         writeJson(response, 502, { error: message });
       }
@@ -2282,14 +2280,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           ),
         );
       } catch (error) {
-        recordPluginFailure(
-          unit,
-          error,
-          connectionSecretValues(call.manifest, [payload.values]),
+        const credentials = connectionCredentials(
+          call.manifest,
+          payload.values,
         );
-        writeJson(response, 502, {
-          error: pluginErrorMessage(error, call.manifest, payload.values),
-        });
+        recordPluginFailure(unit, error, credentials.secrets);
+        writeJson(response, 502, { error: credentials.errorMessage(error) });
       }
     },
 
@@ -2311,7 +2307,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       try {
         const result = await pluginManager.syncTeamProjects(
           pluginId,
-          invocationConnection(connection),
+          pluginConnection(connection),
           syncRequest,
           call.admit,
         );
@@ -2329,16 +2325,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         );
         writeJson(response, 200, result);
       } catch (error) {
-        recordPluginFailure(
-          unit,
-          error,
-          connectionSecretValues(call.manifest, [connection.config]),
-        );
-        const message = pluginErrorMessage(
-          error,
+        const credentials = connectionCredentials(
           call.manifest,
           connection.config,
         );
+        recordPluginFailure(unit, error, credentials.secrets);
+        const message = credentials.errorMessage(error);
         await storage.recordConnectionError(pluginId, connectionId, message);
         writeJson(response, 502, { error: message });
       }
@@ -2525,15 +2517,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     manifest: PluginManifest,
     connection: StoredConnection,
   ) {
-    recordPluginFailure(
-      unit,
-      error,
-      connectionSecretValues(manifest, [connection.config]),
-    );
+    const credentials = connectionCredentials(manifest, connection.config);
+    recordPluginFailure(unit, error, credentials.secrets);
     // The message reaches the user, and a description's is stored with the item.
-    writeJson(response, 502, {
-      error: pluginErrorMessage(error, manifest, connection.config),
-    });
+    writeJson(response, 502, { error: credentials.errorMessage(error) });
   }
 
   /**
@@ -2580,7 +2567,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   /**
    * Serves one request inside its event. The host check comes first, then
    * MCP, which has its own rules (bearer tokens, and no browser origins at
-   * all), then the origin check and the route table.
+   * all), then the origin check, the window token and the route table.
    */
   async function serveRequest(
     request: IncomingMessage,
@@ -2611,7 +2598,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           return;
         }
         if (
-          request.headers.host &&
+          !request.headers.host ||
           !isAllowedRequestHost(request.headers.host)
         ) {
           unit.refuse("host_refused");
@@ -2652,8 +2639,31 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           response.setHeader("Vary", "Origin");
         }
 
+        // A preflight carries no token and runs nothing.
         if (request.method === "OPTIONS") {
           writeJson(response, 204);
+          return;
+        }
+
+        // Only Ajour's window holds the token. The health check stays open,
+        // with no token and no Origin, so main can tell whether another
+        // Ajour holds the port.
+        if (
+          url.pathname !== ROUTES.health.path &&
+          !holdsWindowToken(request.headers[WINDOW_TOKEN_HEADER], windowToken)
+        ) {
+          unit.refuse("token_refused");
+          writeJson(response, 401);
+          return;
+        }
+
+        // The window's requests carry an Origin: the desktop window's are
+        // cross-origin, and the dev proxy adds one to a same-origin GET. A
+        // request without one, such as a no-cors redirect from another page
+        // in the window's session, is not the window's own.
+        if (url.pathname !== ROUTES.health.path && !requestOrigin) {
+          unit.refuse("origin_refused");
+          writeJson(response, 403, { error: "Request origin is not allowed." });
           return;
         }
 
@@ -2688,7 +2698,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           if (exchange.isHangUp(error)) return;
           // Ajour's own errors only. Only a route knows the connection whose
           // secrets a plugin error may echo, so each catches its plugin call
-          // and answers with `pluginErrorMessage`.
+          // and answers with its connection's credentials' `errorMessage`.
           routed.fail(withoutContent(error));
           if (error instanceof InvalidRequestError) {
             routed.refuse("invalid_request");

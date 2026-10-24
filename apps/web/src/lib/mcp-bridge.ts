@@ -10,7 +10,7 @@ import {
 import type { AjourCatalog } from "@ajour/wide-events/catalog.ts";
 import type { Unit } from "@ajour/wide-events";
 import type { AgentBridgeStatus } from "@/domain/agents/agent-indicator";
-import { getAppApiBaseUrl, postMcpBridgeResult } from "@/lib/app-api";
+import { appApiUrl, postMcpBridgeResult } from "@/lib/app-api";
 import { wideEvents } from "@/lib/wide-events";
 
 /**
@@ -119,7 +119,7 @@ export function connectMcpBridge(handlers: McpBridgeHandlers): () => void {
   let queue: Promise<void> = Promise.resolve();
 
   const open = () => {
-    const stream = new EventSource(`${getAppApiBaseUrl()}/api/mcp/bridge`);
+    const stream = new EventSource(appApiUrl("/api/mcp/bridge"));
     const job = wideEvents.start("mcp_bridge.connection", {
       kind: "job",
       trigger: "system",
