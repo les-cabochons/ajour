@@ -129,6 +129,7 @@ Runtime performance is a hard constraint. Visual polish never costs render time.
 - Follow the wide-events model in `docs/logging-strategy.md`: one event per unit of work per runtime, through the runtime's emitter from `packages/wide-events`.
 - Events never hold content (ADR 0011). A new field goes in the catalog with its privacy class, and an error message reaches an event only through `unit.fail()`, which scrubs it.
 - Test an event at its seam's highest level with a recording sink, and assert its name, kind, outcome, reason and the fields that matter.
+- A new kind of content gets a marked fixture in the privacy canary, and a new event a row in the catalog of `docs/logging-strategy.md`, which the catalog audit checks against the code. Both tests are described under Testing there.
 - Never log raw URLs, query strings, URL fragments, meeting contents, uncommitted notes, or private activity details to a remote sink by default.
 
 ## Verification

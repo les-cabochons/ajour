@@ -41,7 +41,7 @@ interface ProjectDataShapeHostOptions {
 type PluginMethod = ProjectDataShapeMethod;
 
 /** The event each schema plugin method's worker run emits. */
-const SCHEMA_OPERATION_EVENTS = {
+export const SCHEMA_OPERATION_EVENTS = {
   exportProjects: "project.export",
   importProjects: "project.import",
 } as const satisfies Record<PluginMethod, PluginOperationEventName>;

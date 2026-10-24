@@ -493,10 +493,11 @@ an object or a function where a value belongs is dropped, and counted in
   store, and device UI settings through `lib/preference-events.ts`. A drag
   of the sidebar or a side panel records one change when it ends.
 - **`app.error`** comes from `features/feedback/app-error-handler.ts`, the
-  window's one handler for uncaught errors and unhandled rejections, which
-  also shows a refused write as a toast, reported as `handled_by: toast`
-  (else `none`). It names the store command that threw. An error event without an error, such as a ResizeObserver warning,
-  is noise and emits nothing.
+  window's one handler for uncaught errors and unhandled rejections. That
+  handler also shows a refused write as a toast, and the event then says
+  `handled_by: toast` (else `none`). It names the store command that threw.
+  An error event without an error, such as a ResizeObserver warning, is
+  noise and emits nothing.
 
 - **Local API calls** (#310). Every client function in `lib/app-api.ts`
   names its event in `APP_API_CLIENT`: the request event of the route it
@@ -535,7 +536,9 @@ an object or a function where a value belongs is dropped, and counted in
     ID as `backlog_item.id`, never the item's ID in its source (ADR 0011).
     A call inside another unit, such as an agent's, leaves that unit's
     fields alone. A thread the cache answers is a `comment.list` command
-    with `comment.cache_hit` true and no request, and a load has it false.
+    with `comment.cache_hit` true and no request, once per cached page even
+    under React's StrictMode, which runs the effect twice in development. A
+    load, of the newest page or an earlier one, has it false.
   - `settle_comment.send`, one per comment once its settle stands, and
     `agent_comment.send`, one per agent comment after its Undo window: the
     comment's length, never its text, and whether it was posted or kept as
@@ -558,8 +561,10 @@ an object or a function where a value belongs is dropped, and counted in
   another navigation took over before the page rendered, as a redirect
   does, and the resolve, render and code chunk durations. A search or hash
   change records nothing. The first navigation is the `boot`'s.
-- **The renderer's console calls are gone.** A failure they logged is on
-  the event of the unit that failed.
+- **The renderer's console calls are gone**, as are the local API's and
+  the main process's. A failure they logged is on the event of the unit
+  that failed, and the code standards' consistency checks, which CI runs,
+  find any `console.` call left in runtime code.
 
 ### The desktop main process
 
@@ -629,6 +634,219 @@ The local API's stop, split into the agent runner and the plugins with the
 operations still running, is the local API's own `api.stop` (#306), not
 `app.quit`'s.
 
+## The catalog
+
+Every event of the catalog (`packages/wide-events/lib/ajour-catalog.ts`,
+with the renderer's entries from `renderer-catalog.ts`), the kinds it
+allows, and what emits it:
+
+- a **route** of the local API (`ROUTES`);
+- a **plugin method**, whose worker run is named from the plugin host's or
+  the schema host's table;
+- an **IPC channel** of the main process (`IPC_CHANNELS`);
+- a renderer **store command** (`STORE_COMMANDS`);
+- a **client call** the renderer makes when no unit is active
+  (`APP_API_CLIENT`);
+- the **local API**, the **main process** or the **renderer**, which start
+  the unit by its name: a job, a lifecycle unit, a crash or a navigation.
+
+The catalog audit (`apps/web/src/lib/wide-events-audit.test.ts`) builds this
+table from the code and fails when a row differs. It also checks that each
+table names catalog events its seam may open, that every entry is emitted
+and asserted by a test, and it runs every store command, route and IPC
+channel to read the event each emits.
+
+| Event                                | Kinds                              | Emitted by                                       |
+| ------------------------------------ | ---------------------------------- | ------------------------------------------------ |
+| `agent.run`                          | job                                | local API                                        |
+| `agent.session`                      | job                                | local API                                        |
+| `agent_client.create`                | command, request                   | route, client call                               |
+| `agent_client.revoke`                | command, request                   | route, client call                               |
+| `agent_comment.send`                 | job                                | renderer                                         |
+| `agent_run.start`                    | command, request                   | route, client call                               |
+| `agent_run.status`                   | request                            | route                                            |
+| `agent_run.stop`                     | command, request                   | route, client call                               |
+| `agent_runner.configure`             | command, request                   | route, client call                               |
+| `agent_runner.status`                | command, request                   | route, client call                               |
+| `agent_session.dismiss`              | command, request                   | route, client call                               |
+| `agent_session.mark_seen`            | command, request                   | route, client call                               |
+| `agent_task.configure`               | command, request                   | route, client call                               |
+| `agent_tool.call`                    | request, job                       | local API, renderer                              |
+| `api.health`                         | request                            | route                                            |
+| `api.request`                        | request                            | local API                                        |
+| `api.start`                          | lifecycle                          | local API                                        |
+| `api.stop`                           | lifecycle                          | local API                                        |
+| `app.boot`                           | lifecycle                          | renderer                                         |
+| `app.error`                          | crash                              | local API, main process, renderer                |
+| `app.launch`                         | lifecycle                          | main process                                     |
+| `app.lock_refused`                   | lifecycle                          | main process                                     |
+| `app.menu_model`                     | ipc                                | IPC channel                                      |
+| `app.quit`                           | lifecycle                          | main process                                     |
+| `app.runtime_info`                   | ipc                                | IPC channel                                      |
+| `app.second_launch`                  | lifecycle                          | main process                                     |
+| `backlog.apply_updates`              | command                            | store command                                    |
+| `backlog.archive_done`               | command                            | store command                                    |
+| `backlog.sort`                       | command                            | store command                                    |
+| `backlog.sync`                       | job, request, plugin_operation     | route, plugin method, client call, renderer      |
+| `backlog.write_source`               | job, request, plugin_operation     | route, plugin method, client call, renderer      |
+| `backlog_import.commit`              | command, request                   | route, store command, client call                |
+| `backlog_import.dismiss`             | command, request                   | route, client call                               |
+| `backlog_import.list`                | command, request                   | route, client call                               |
+| `backlog_import.restore`             | command, request                   | route, client call                               |
+| `backlog_import.select`              | command, request                   | route, client call                               |
+| `backlog_import.stage`               | command, request                   | route                                            |
+| `backlog_item.apply_timelog`         | command                            | store command                                    |
+| `backlog_item.archive`               | command                            | store command                                    |
+| `backlog_item.change_source_state`   | command                            | store command                                    |
+| `backlog_item.complete_source_write` | command                            | store command                                    |
+| `backlog_item.create`                | command                            | store command                                    |
+| `backlog_item.delete`                | command                            | store command                                    |
+| `backlog_item.fail_source_write`     | command                            | store command                                    |
+| `backlog_item.move`                  | command                            | store command                                    |
+| `backlog_item.open`                  | command                            | store command                                    |
+| `backlog_item.pin`                   | command                            | store command                                    |
+| `backlog_item.reorder`               | command                            | store command                                    |
+| `backlog_item.resolve_description`   | command                            | store command                                    |
+| `backlog_item.resolve_estimate`      | command                            | store command                                    |
+| `backlog_item.restore`               | command                            | store command                                    |
+| `backlog_item.return`                | command                            | store command                                    |
+| `backlog_item.save_description`      | command                            | store command                                    |
+| `backlog_item.settle`                | command                            | store command                                    |
+| `backlog_item.snooze`                | command                            | store command                                    |
+| `backlog_item.unpin`                 | command                            | store command                                    |
+| `backlog_item.unsettle`              | command                            | store command                                    |
+| `backlog_item.unsnooze`              | command                            | store command                                    |
+| `backlog_item.update`                | command                            | store command                                    |
+| `calendar.fetch`                     | job, request, plugin_operation     | route, plugin method, client call, renderer      |
+| `catalog.configure`                  | command, ipc                       | IPC channel                                      |
+| `catalog.get`                        | ipc                                | IPC channel                                      |
+| `catalog.get_settings`               | ipc                                | IPC channel                                      |
+| `catalog.refresh`                    | job                                | main process                                     |
+| `comment.delete`                     | job, request, plugin_operation     | route, plugin method, client call, renderer      |
+| `comment.edit`                       | command, request, plugin_operation | route, plugin method, client call                |
+| `comment.list`                       | command, request, plugin_operation | route, plugin method, client call, renderer      |
+| `comment.post`                       | command, request, plugin_operation | route, plugin method, client call                |
+| `comment.react`                      | command, request, plugin_operation | route, plugin method, client call                |
+| `connection.delete`                  | command, request                   | route, store command, client call                |
+| `connection.save`                    | command, request, plugin_operation | route, plugin method, client call                |
+| `context_menu.show`                  | ipc                                | IPC channel                                      |
+| `description.read`                   | command, request, plugin_operation | route, plugin method, client call                |
+| `description.write`                  | command, request, plugin_operation | route, plugin method, client call                |
+| `dev_plugins.configure`              | command, ipc                       | IPC channel                                      |
+| `dev_plugins.get_settings`           | ipc                                | IPC channel                                      |
+| `edit.run`                           | ipc                                | IPC channel                                      |
+| `event_rule.forget`                  | command                            | store command                                    |
+| `event_rule.hide`                    | command                            | store command                                    |
+| `local_state.recover`                | ipc                                | IPC channel                                      |
+| `local_state.reload`                 | job                                | renderer                                         |
+| `mcp.configure`                      | command, request                   | route, client call                               |
+| `mcp.request`                        | request                            | local API                                        |
+| `mcp.status`                         | command, request                   | route, client call                               |
+| `mcp_bridge.connection`              | job, request                       | route, renderer                                  |
+| `mcp_bridge.result`                  | command, request                   | route, client call                               |
+| `mention.search`                     | command, request, plugin_operation | route, plugin method, client call                |
+| `menu.run_item`                      | ipc                                | IPC channel                                      |
+| `pending_writes.flush`               | job                                | renderer                                         |
+| `plugin.activate`                    | command, request                   | route, client call                               |
+| `plugin.install`                     | command, ipc                       | IPC channel                                      |
+| `plugin.list`                        | command, request                   | route, client call                               |
+| `plugin.uninstall`                   | command, ipc                       | IPC channel                                      |
+| `plugin_system.toggle`               | command, request                   | route, client call                               |
+| `preferences.update`                 | command                            | store command, renderer                          |
+| `process.gone`                       | crash                              | main process                                     |
+| `project.archive`                    | command                            | store command                                    |
+| `project.create`                     | command                            | store command                                    |
+| `project.export`                     | command, request, plugin_operation | route, plugin method, client call                |
+| `project.import`                     | command, request, plugin_operation | route, plugin method, store command, client call |
+| `project.reorder`                    | command                            | store command                                    |
+| `project.restore`                    | command                            | store command                                    |
+| `project.share`                      | command                            | store command                                    |
+| `project.unshare`                    | command                            | store command                                    |
+| `project.update`                     | command                            | store command                                    |
+| `pull_request.apply_sync`            | command                            | store command                                    |
+| `pull_request.browse`                | command, request, plugin_operation | route, plugin method                             |
+| `pull_request.change`                | command                            | store command                                    |
+| `pull_request.comment`               | command, request, plugin_operation | route, plugin method                             |
+| `pull_request.load`                  | command, request, plugin_operation | route, plugin method                             |
+| `pull_request.load_conversation`     | command, request, plugin_operation | route, plugin method                             |
+| `pull_request.load_file`             | command, request, plugin_operation | route, plugin method                             |
+| `pull_request.mark_file_viewed`      | command, request, plugin_operation | route, plugin method                             |
+| `pull_request.merge`                 | command, request, plugin_operation | route, plugin method                             |
+| `pull_request.open`                  | command                            | store command                                    |
+| `pull_request.reply`                 | command, request, plugin_operation | route, plugin method                             |
+| `pull_request.resolve_thread`        | command, request, plugin_operation | route, plugin method                             |
+| `pull_request.settle`                | command                            | store command                                    |
+| `pull_request.snooze`                | command                            | store command                                    |
+| `pull_request.submit_review`         | command, request, plugin_operation | route, plugin method                             |
+| `pull_request.sync`                  | job, request, plugin_operation     | route, plugin method, client call, renderer      |
+| `pull_request.unsettle`              | command                            | store command                                    |
+| `pull_request.unsnooze`              | command                            | store command                                    |
+| `pull_request.update`                | command, request, plugin_operation | route, plugin method                             |
+| `question.answer`                    | command, request                   | route, client call                               |
+| `route.change`                       | navigation                         | renderer                                         |
+| `schema.list`                        | command, request                   | route, client call                               |
+| `settle_comment.send`                | job                                | renderer                                         |
+| `settle_rule.set`                    | command                            | store command                                    |
+| `source_state.list`                  | command, request, plugin_operation | route, plugin method, client call                |
+| `source_state.update`                | command, request                   | route, client call                               |
+| `storage.load`                       | lifecycle                          | local API                                        |
+| `suggestion.add`                     | command                            | store command                                    |
+| `suggestion.dismiss`                 | command                            | store command                                    |
+| `task.archive`                       | command                            | store command                                    |
+| `task.create`                        | command                            | store command                                    |
+| `task.import`                        | command                            | store command                                    |
+| `task.pin`                           | command                            | store command                                    |
+| `task.reorder`                       | command                            | store command                                    |
+| `task.restore`                       | command                            | store command                                    |
+| `task.update`                        | command                            | store command                                    |
+| `team.apply_sync`                    | command                            | store command                                    |
+| `team.create`                        | command, request, plugin_operation | route, plugin method, store command, client call |
+| `team.resolve_arrival`               | command                            | store command                                    |
+| `team.sync`                          | job, request, plugin_operation     | route, plugin method, client call, renderer      |
+| `time_entry.commit`                  | command                            | store command                                    |
+| `time_entry.continue`                | command                            | store command                                    |
+| `time_entry.create`                  | command                            | store command                                    |
+| `time_entry.delete`                  | command                            | store command                                    |
+| `time_entry.discard`                 | command                            | store command                                    |
+| `time_entry.drop`                    | command                            | store command                                    |
+| `time_entry.duplicate`               | command                            | store command                                    |
+| `time_entry.move`                    | command                            | store command                                    |
+| `time_entry.paste`                   | command                            | store command                                    |
+| `time_entry.reorder`                 | command                            | store command                                    |
+| `time_entry.start`                   | command                            | store command                                    |
+| `time_entry.stop`                    | command                            | store command                                    |
+| `time_entry.uncommit`                | command                            | store command                                    |
+| `time_entry.update`                  | command                            | store command                                    |
+| `timeline.commit`                    | command                            | store command                                    |
+| `timeline.dismiss`                   | command                            | store command                                    |
+| `timeline.import`                    | command                            | store command                                    |
+| `timeline.save_rule`                 | command                            | store command                                    |
+| `timeline.update`                    | command                            | store command                                    |
+| `timesheet_import.commit`            | command                            | store command                                    |
+| `timesheet_import.dismiss`           | command                            | store command                                    |
+| `timesheet_import.stage`             | command                            | store command                                    |
+| `undo.expire`                        | command                            | store command                                    |
+| `undo.group`                         | command                            | store command                                    |
+| `undo.restore`                       | command                            | store command                                    |
+| `update.check`                       | command, job, ipc                  | IPC channel, main process                        |
+| `update.get_state`                   | ipc                                | IPC channel                                      |
+| `update.install`                     | command, ipc, job                  | IPC channel, main process                        |
+| `update.open_release`                | command, ipc                       | IPC channel                                      |
+| `week.prompt_commit`                 | command                            | store command                                    |
+| `week.reopen`                        | command                            | store command                                    |
+| `week.submit`                        | command                            | store command                                    |
+| `window.load`                        | lifecycle                          | main process                                     |
+| `window.navigate`                    | navigation                         | main process                                     |
+| `window.set_theme`                   | ipc                                | IPC channel                                      |
+| `window.unresponsive`                | crash                              | main process                                     |
+| `workflow_state.auto_map`            | command                            | store command                                    |
+| `workflow_state.create`              | command                            | store command                                    |
+| `workflow_state.delete`              | command                            | store command                                    |
+| `workflow_state.map`                 | command                            | store command                                    |
+| `workflow_state.move`                | command                            | store command                                    |
+| `workflow_state.set_write_rule`      | command                            | store command                                    |
+| `workflow_state.update`              | command                            | store command                                    |
+
 ## Performance
 
 - No event on a high-frequency path: store reads and subscribers, the running
@@ -647,6 +865,21 @@ It never asserts the emitter's internals or field order. The package's own
 tests cover nesting and folding, every outcome path, trace context, the
 scrubber, field classes and the sinks. The local API's tests start the server
 with a recording sink (`eventSink`).
+
+Two tests hold the whole app to the model (#311):
+
+- **The privacy canary** (`apps/web/src/lib/wide-events-canary.test.ts`)
+  puts one marker in every kind of content, from the user, from a source
+  tool and from an agent, and runs time entries, backlog items with their
+  descriptions and comments, calendar suggestions, a connection with a
+  secret, an agent's tool calls and a plugin error that echoes the secret
+  through the renderer and the real local API. No event may hold the
+  marker, in a key or a value. The main process's part is in
+  `apps/desktop/main-process-errors.test.ts`. A scrubbed message may still
+  name a file below the user data path or the home folder, as ADR 0011
+  allows, so the canary marks only what the scrubber removes there.
+- **The catalog audit** (`apps/web/src/lib/wide-events-audit.test.ts`)
+  checks [the catalog](#the-catalog) against the code.
 
 ## Anti-patterns
 
