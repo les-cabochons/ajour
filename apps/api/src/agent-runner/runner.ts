@@ -40,6 +40,7 @@ import type {
   StdioServerSpec,
 } from "./adapter.ts";
 import { buildPrompt } from "./prompts.ts";
+import { editableValues } from "../connection-credentials.ts";
 
 /**
  * Runs one plugin agent task at a time: a per-run MCP client, a session the
@@ -233,7 +234,7 @@ export class AgentRunner {
     return {
       settings,
       clis,
-      tasks: await this.listTasks(settings, clis),
+      tasks: await this.listTasks(settings, clis, "hidden"),
       currentRun: this.active?.run ?? null,
     };
   }
@@ -267,9 +268,15 @@ export class AgentRunner {
     );
   }
 
+  /**
+   * The tasks of every enabled plugin with their values. `secrets` says
+   * whether the values hold the settings marked secret: a run needs them, an
+   * answer to the client never holds them.
+   */
   private async listTasks(
     settings: AgentRunnerSettings,
     clis: AgentCliStatus[],
+    secrets: "hidden" | "included",
   ): Promise<AgentTaskStatus[]> {
     const tasks: AgentTaskStatus[] = [];
     const mcpEnabled = (await this.options.storage.getMcpSettings()).enabled;
@@ -324,7 +331,10 @@ export class AgentRunner {
           placement: task.placement,
           estimateMinutes: task.estimateMinutes,
           settings: task.settings,
-          values,
+          values:
+            secrets === "included"
+              ? values
+              : editableValues([...sharedFields.values()], values),
           ...(task.weekLink ? { weekLink: task.weekLink } : {}),
           blockers,
         });
@@ -353,7 +363,7 @@ export class AgentRunner {
   private async launch(request: AgentRunStartRequest): Promise<AgentRun> {
     const settings = await this.options.storage.getAgentRunnerSettings();
     const clis = await this.detectClis();
-    const task = (await this.listTasks(settings, clis)).find(
+    const task = (await this.listTasks(settings, clis, "included")).find(
       (candidate) =>
         candidate.pluginId === request.pluginId &&
         candidate.taskId === request.taskId,

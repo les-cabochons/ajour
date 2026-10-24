@@ -14,7 +14,7 @@ import {
   type PluginOperationEventName,
 } from "./operation-events.ts";
 import type { ApiEvents } from "./events.ts";
-import { connectionSecretValues } from "./plugin-errors.ts";
+import { connectionSecretValues } from "./connection-credentials.ts";
 import { readFile, realpath } from "node:fs/promises";
 import {
   pluginFieldValuesSchema,

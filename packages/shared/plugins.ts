@@ -704,9 +704,16 @@ export const backlogSyncRequestSchema = z.object({
 });
 export type BacklogSyncRequest = z.infer<typeof backlogSyncRequestSchema>;
 
+/**
+ * The secret fields a save deletes. A secret left empty in `values` keeps
+ * its saved value, and a field listed here must be secret and left empty.
+ */
+export const removeSecretsSchema = z.array(z.string().min(1).max(120)).max(100);
+
 export const pluginConnectionSaveRequestSchema = z.object({
   id: z.string().trim().min(1).max(120).optional(),
   values: pluginFieldValuesSchema,
+  removeSecrets: removeSecretsSchema.optional(),
 });
 export type PluginConnectionSaveRequest = z.infer<
   typeof pluginConnectionSaveRequestSchema

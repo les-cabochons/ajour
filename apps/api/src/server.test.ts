@@ -1617,6 +1617,12 @@ describe("agent task settings route", () => {
                 settings: [
                   { id: "url", label: "Timesheet URL", type: "url" },
                   { id: "note", label: "Note", type: "text" },
+                  {
+                    id: "apiKey",
+                    label: "API key",
+                    type: "password",
+                    secret: true,
+                  },
                 ],
               },
               {
@@ -1645,15 +1651,23 @@ describe("agent task settings route", () => {
       "Enter week {{weekOf}} in {{settings.url}}.",
       "utf8",
     );
+    const statePath = path.join(root, "state.json");
     const server = createAppApiServer({
-      statePath: path.join(root, "state.json"),
+      statePath,
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
       allowDevelopmentPlugins: true,
       ...options,
     });
     servers.push(server);
+    statePaths.set(server, statePath);
     return server;
+  }
+
+  const statePaths = new WeakMap<Server, string>();
+  async function createServerWithState() {
+    const server = await createServer();
+    return { server, statePath: statePaths.get(server)! };
   }
 
   it(
@@ -1773,6 +1787,60 @@ describe("agent task settings route", () => {
     expect(submit.blockers.some((blocker) => blocker.includes("URL"))).toBe(
       false,
     );
+  });
+
+  it("keeps a secret setting out of its answers, keeps it when left empty, and removes it on request", async () => {
+    const KEY = "wd-key-5e0c7a91b3f2";
+    const { server, statePath } = await createServerWithState();
+    const storedValues = async () =>
+      (
+        JSON.parse(await readFile(statePath, "utf8")) as {
+          agentRunner: { pluginValues: Record<string, object> };
+        }
+      ).agentRunner.pluginValues.jira;
+
+    const saved = await save(server, "jira", {
+      url: "https://wd.example/t",
+      apiKey: KEY,
+    });
+    expect(saved.status).toBe(200);
+    expect(JSON.stringify(saved.body)).not.toContain(KEY);
+    await expect(storedValues()).resolves.toMatchObject({ apiKey: KEY });
+
+    const kept = await save(server, "jira", {
+      url: "https://wd.example/u",
+      apiKey: "",
+    });
+    expect(kept.status).toBe(200);
+    await expect(storedValues()).resolves.toEqual({
+      url: "https://wd.example/u",
+      apiKey: KEY,
+    });
+
+    const NEW_KEY = "wd-key-9a41d6c2e7b8";
+    const replaced = await save(server, "jira", {
+      url: "https://wd.example/u",
+      apiKey: NEW_KEY,
+    });
+    expect(replaced.status).toBe(200);
+    expect(JSON.stringify(replaced.body)).not.toContain(NEW_KEY);
+    await expect(storedValues()).resolves.toEqual({
+      url: "https://wd.example/u",
+      apiKey: NEW_KEY,
+    });
+
+    const removed = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: "/api/agents/plugins/jira/settings",
+      body: JSON.stringify({
+        values: { url: "https://wd.example/u" },
+        removeSecrets: ["apiKey"],
+      }),
+    });
+    expect(removed.status).toBe(200);
+    await expect(storedValues()).resolves.toEqual({
+      url: "https://wd.example/u",
+    });
   });
 });
 
@@ -3721,5 +3789,144 @@ describe("plugin errors that echo a secret", () => {
       expect(error).toMatch(/^Bad row x+…$/);
       expect(error).toHaveLength(1_000);
     }
+  });
+});
+
+describe("saving a connection's secrets", () => {
+  const tempDirs: string[] = [];
+  const servers: Server[] = [];
+  const TOKEN = "pat-3d9b0e71c4a2f6e8";
+  const NEW_TOKEN = "pat-81f4c0a9d2e37b56";
+
+  afterEach(async () => {
+    for (const server of servers.splice(0)) {
+      server.emit("close");
+    }
+    await Promise.all(
+      tempDirs
+        .splice(0)
+        .map((directory) => rm(directory, { recursive: true, force: true })),
+    );
+  });
+
+  async function createServer() {
+    const root = await mkdtemp(path.join(os.tmpdir(), "ajour-secret-save-"));
+    tempDirs.push(root);
+    const statePath = path.join(root, "state.json");
+    const pluginDirectory = await createPlugin(
+      path.join(root, "source"),
+      "export async function validateConnection(config) {\n  return { normalizedConfig: config, connectionSummary: {} };\n}",
+      "plugin.mjs",
+      {
+        connectionFields: [
+          { id: "label", label: "Label", type: "text", required: true },
+          { id: "tenantLabel", label: "Site", type: "text", required: true },
+          { id: "baseUrl", label: "Site URL", type: "url", required: true },
+          { id: "token", label: "API token", type: "password", secret: true },
+        ],
+      },
+    );
+    const server = createAppApiServer({
+      statePath,
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [pluginDirectory],
+      allowDevelopmentPlugins: true,
+    });
+    servers.push(server);
+    return { server, statePath };
+  }
+
+  const save = (
+    server: Server,
+    values: Record<string, unknown>,
+    extras: { id?: string; removeSecrets?: string[] } = {},
+  ) =>
+    dispatchJsonRequest(server, {
+      method: "POST",
+      path: "/api/plugins/jira/connections",
+      body: JSON.stringify({
+        ...extras,
+        values: {
+          label: "Main Jira",
+          tenantLabel: "Acme",
+          baseUrl: "https://acme.atlassian.net",
+          ...values,
+        },
+      }),
+    });
+
+  const storedConfig = async (statePath: string) =>
+    (
+      JSON.parse(await readFile(statePath, "utf8")) as {
+        connections: { config: Record<string, unknown> }[];
+      }
+    ).connections[0]!.config;
+
+  async function savedConnection(server: Server) {
+    const saved = await save(server, { token: TOKEN });
+    expect(saved.status).toBe(200);
+    return (saved.body as { connection: { id: string } }).connection.id;
+  }
+
+  it("keeps the saved secret when a save leaves it empty", async () => {
+    const { server, statePath } = await createServer();
+    const id = await savedConnection(server);
+
+    const saved = await save(server, { token: "" }, { id });
+
+    expect(saved.status).toBe(200);
+    expect(JSON.stringify(saved.body)).not.toContain(TOKEN);
+    await expect(storedConfig(statePath)).resolves.toMatchObject({
+      token: TOKEN,
+    });
+  });
+
+  it("replaces the saved secret with a new value", async () => {
+    const { server, statePath } = await createServer();
+    const id = await savedConnection(server);
+
+    const saved = await save(server, { token: NEW_TOKEN }, { id });
+
+    expect(saved.status).toBe(200);
+    expect(JSON.stringify(saved.body)).not.toContain(NEW_TOKEN);
+    await expect(storedConfig(statePath)).resolves.toMatchObject({
+      token: NEW_TOKEN,
+    });
+  });
+
+  it("deletes the saved secret a save asks to remove", async () => {
+    const { server, statePath } = await createServer();
+    const id = await savedConnection(server);
+
+    const saved = await save(
+      server,
+      { token: "" },
+      { id, removeSecrets: ["token"] },
+    );
+
+    expect(saved.status).toBe(200);
+    const config = await storedConfig(statePath);
+    expect(config).not.toHaveProperty("token");
+    expect(JSON.stringify(config)).not.toContain(TOKEN);
+  });
+
+  it("refuses to remove a field that isn't secret, or a secret the save also replaces", async () => {
+    const { server, statePath } = await createServer();
+    const id = await savedConnection(server);
+
+    for (const [values, removeSecrets] of [
+      [{}, ["baseUrl"]],
+      [{ token: NEW_TOKEN }, ["token"]],
+    ] as const) {
+      const refused = await save(server, values, {
+        id,
+        removeSecrets: [...removeSecrets],
+      });
+      expect(refused.status).toBe(400);
+      expect(JSON.stringify(refused.body)).not.toContain(NEW_TOKEN);
+    }
+    await expect(storedConfig(statePath)).resolves.toMatchObject({
+      token: TOKEN,
+    });
   });
 });

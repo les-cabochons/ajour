@@ -95,8 +95,9 @@ range through `POST /api/calendars/:pluginId/connections/:connectionId/:operatio
 and Ajour never stores the events (ADR 0005). The route's request event,
 `calendar.fetch`, holds ids, range, count and outcome, never a title.
 A plugin may echo a secret connection value in an error. Every route that runs
-a plugin operation turns the error into a message with `pluginErrorMessage` in
-`apps/api/src/plugin-errors.ts`: each secret value of the connection becomes
+a plugin operation turns the error into a message with the connection's
+credentials from `apps/api/src/connection-credentials.ts`, the one module that
+reads and writes secret values: each secret value of the connection becomes
 `[secret]`, then the message is cut to 1,000 characters. A stored config key
 the manifest no longer declares counts as secret, except Ajour's own fields,
 and a value with spaces at its ends counts trimmed as well, because the host

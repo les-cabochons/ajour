@@ -1128,9 +1128,12 @@ describe("request events: what the server does is not a hang-up", () => {
     await mkdir(path.join(root, "state.json"));
 
     const event = await eventually(events, "connection.save");
+    // Renaming the new state over a folder: Windows refuses with EPERM.
     expect(event).toMatchObject({
       outcome: "error",
-      error: expect.objectContaining({ code: "EISDIR" }),
+      error: expect.objectContaining({
+        code: process.platform === "win32" ? "EPERM" : "EISDIR",
+      }),
     });
     expect(event.http?.status_code).toBeUndefined();
   });
