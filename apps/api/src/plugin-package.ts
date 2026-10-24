@@ -24,6 +24,10 @@ import {
   type PluginManifest,
 } from "../../../packages/shared/plugins.ts";
 import {
+  PLUGIN_API_4,
+  pluginApi4ManifestSchema,
+} from "../../../packages/shared/plugin-api-4.ts";
+import {
   allowedTaskSlots,
   listTemplateSlots,
 } from "../../../packages/shared/agent-task-templates.ts";
@@ -322,9 +326,42 @@ export function resolvePluginEntrypoint(
   return entrypointPath;
 }
 
+/** Which plugin APIs the host admits besides the one it runs. */
+export interface PluginAdmissionPolicy {
+  /**
+   * Development builds admit plugin API 4 packages until the cut-over
+   * (#403). Packaged builds refuse them as built for a newer Ajour.
+   */
+  admitPluginApi4: boolean;
+}
+
+const PACKAGED_BUILD: PluginAdmissionPolicy = { admitPluginApi4: false };
+
+/**
+ * Validates a manifest against the schema of the plugin API it declares. An
+ * API 4 manifest must pass every API 4 rule even where it is refused, so a
+ * broken one is invalid rather than merely unavailable.
+ */
+function parsePluginManifest(
+  raw: unknown,
+  policy: PluginAdmissionPolicy,
+): PluginManifest {
+  if ((raw as { apiVersion?: unknown } | null)?.apiVersion === PLUGIN_API_4) {
+    const manifest = pluginApi4ManifestSchema.parse(raw);
+    if (!policy.admitPluginApi4) throw new IncompatiblePluginError(manifest);
+    return manifest;
+  }
+  const manifest = pluginManifestSchema.parse(raw);
+  if (manifest.apiVersion !== PLUGIN_API_VERSION) {
+    throw new IncompatiblePluginError(manifest);
+  }
+  return manifest;
+}
+
 export async function readPlugin(
   directory: string,
   source: ResolvedPlugin["source"],
+  policy: PluginAdmissionPolicy = PACKAGED_BUILD,
 ): Promise<ResolvedPlugin> {
   const pluginDirectory = path.resolve(directory);
   const canonicalPluginDirectory = await realpath(pluginDirectory);
@@ -336,11 +373,7 @@ export async function readPlugin(
     "Plugin manifest",
   );
   const rawManifest = await readFile(manifestPath, "utf8");
-  const manifest = pluginManifestSchema.parse(JSON.parse(rawManifest));
-
-  if (manifest.apiVersion !== PLUGIN_API_VERSION) {
-    throw new IncompatiblePluginError(manifest);
-  }
+  const manifest = parsePluginManifest(JSON.parse(rawManifest), policy);
 
   let entrypointPath: string | undefined;
   if (manifest.entrypoint) {
@@ -375,7 +408,10 @@ export async function readPlugin(
  * back in `unavailable`. Other invalid directories are skipped, and
  * `invalidCount` counts them, for the caller's event.
  */
-export async function discoverInstalledPlugins(pluginRoot: string): Promise<{
+export async function discoverInstalledPlugins(
+  pluginRoot: string,
+  policy: PluginAdmissionPolicy = PACKAGED_BUILD,
+): Promise<{
   plugins: ResolvedPlugin[];
   unavailable: UnavailablePlugin[];
   invalidCount: number;
@@ -397,7 +433,11 @@ export async function discoverInstalledPlugins(pluginRoot: string): Promise<{
 
     try {
       plugins.push(
-        await readPlugin(path.join(pluginRoot, entry.name), "installed"),
+        await readPlugin(
+          path.join(pluginRoot, entry.name),
+          "installed",
+          policy,
+        ),
       );
     } catch (error) {
       if (error instanceof IncompatiblePluginError) {
@@ -421,6 +461,7 @@ export async function discoverInstalledPlugins(pluginRoot: string): Promise<{
  */
 export async function reconcilePluginInstallRoot(
   pluginRoot: string,
+  policy: PluginAdmissionPolicy = PACKAGED_BUILD,
 ): Promise<number> {
   let failedBackups = 0;
   await mkdir(pluginRoot, { recursive: true, mode: 0o700 });
@@ -442,7 +483,7 @@ export async function reconcilePluginInstallRoot(
     }
 
     try {
-      const backupPlugin = await readPlugin(entryPath, "installed");
+      const backupPlugin = await readPlugin(entryPath, "installed", policy);
       const targetDirectory = path.join(pluginRoot, backupPlugin.manifest.id);
       if (await pathExists(targetDirectory)) {
         await rm(entryPath, { recursive: true, force: true });
@@ -461,6 +502,7 @@ export async function installPluginArchive(options: {
   archiveFilename: string;
   installRoot: string;
   replaceExisting?: boolean;
+  policy?: PluginAdmissionPolicy;
 }): Promise<InstalledPlugin> {
   if (
     !options.archiveFilename.toLowerCase().endsWith(PLUGIN_ARCHIVE_EXTENSION)
@@ -506,7 +548,7 @@ export async function installPluginArchive(options: {
           preservePaths: false,
           strict: true,
         });
-        return await readPlugin(payloadDirectory, "installed");
+        return await readPlugin(payloadDirectory, "installed", options.policy);
       },
     );
     const targetDirectory = path.join(
@@ -516,7 +558,11 @@ export async function installPluginArchive(options: {
     const targetExists = await pathExists(targetDirectory);
 
     if (targetExists && options.replaceExisting === false) {
-      const existingPlugin = await readPlugin(targetDirectory, "installed");
+      const existingPlugin = await readPlugin(
+        targetDirectory,
+        "installed",
+        options.policy,
+      );
       return {
         manifest: existingPlugin.manifest,
         directory: existingPlugin.directory,

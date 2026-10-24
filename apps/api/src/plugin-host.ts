@@ -16,6 +16,7 @@ import {
 import type { ApiEvents } from "./events.ts";
 import { connectionSecretValues } from "./connection-credentials.ts";
 import { readFile, realpath } from "node:fs/promises";
+import { isPluginApi4Manifest } from "../../../packages/shared/plugin-api-4.ts";
 import {
   pluginFieldValuesSchema,
   backlogPluginSyncResultSchema,
@@ -83,6 +84,7 @@ import {
   readPlugin,
   uninstallPluginPackage,
   type InstalledPlugin,
+  type PluginAdmissionPolicy,
   type ResolvedPlugin,
   type UnavailablePlugin,
 } from "./plugin-package.ts";
@@ -228,6 +230,7 @@ export class PluginManager {
   private readonly developmentPluginDirectories: string[];
   private readonly bundledPluginArchives: string[];
   private readonly allowDevelopmentPlugins: boolean;
+  private readonly admission: PluginAdmissionPolicy;
   private readonly operationGate?: PluginHostOptions["operationGate"];
   private readonly events?: ApiEvents;
   private readonly workers: PluginWorkerLifetime<PluginMethod>;
@@ -251,6 +254,8 @@ export class PluginManager {
       (archive) => path.resolve(archive),
     );
     this.allowDevelopmentPlugins = options.allowDevelopmentPlugins ?? false;
+    // Development builds admit plugin API 4 until the cut-over (#403).
+    this.admission = { admitPluginApi4: this.allowDevelopmentPlugins };
     this.operationGate = options.operationGate;
     this.events = options.events;
     this.workers = new PluginWorkerLifetime({
@@ -314,6 +319,7 @@ export class PluginManager {
         archiveFilename,
         installRoot: this.installedPluginDirectory,
         replaceExisting: true,
+        policy: this.admission,
       });
       if (installed.backupLeft) {
         this.events?.current()?.count("plugin_backup_failed");
@@ -638,6 +644,14 @@ export class PluginManager {
             params.config as PluginFieldValues | undefined,
           ]),
         );
+        // A worker thread would hand an API 4 plugin its secrets and the
+        // network. It runs only in the sandboxed renderer, which isn't built.
+        if (isPluginApi4Manifest(plugin.manifest)) {
+          throw new PluginOperationRefused(
+            `Plugin "${pluginId}" uses plugin API 4, which this version of Ajour can't run yet.`,
+            "not_supported",
+          );
+        }
         requirement?.(plugin.manifest);
         // Discovery awaited, so shutdown or a package change may have started meanwhile.
         this.assertCanInvoke();
@@ -754,6 +768,7 @@ export class PluginManager {
       const unavailable = new Map<string, UnavailablePlugin>();
       const installed = await discoverInstalledPlugins(
         this.installedPluginDirectory,
+        this.admission,
       );
 
       for (const plugin of installed.plugins) {
@@ -769,7 +784,11 @@ export class PluginManager {
       if (this.allowDevelopmentPlugins) {
         for (const directory of this.developmentPluginDirectories) {
           try {
-            const plugin = await readPlugin(directory, "development");
+            const plugin = await readPlugin(
+              directory,
+              "development",
+              this.admission,
+            );
             plugins.set(plugin.manifest.id, plugin);
             unavailable.delete(plugin.manifest.id);
           } catch {
@@ -802,6 +821,7 @@ export class PluginManager {
   private async installBundledPlugins() {
     const failedBackups = await reconcilePluginInstallRoot(
       this.installedPluginDirectory,
+      this.admission,
     );
     if (failedBackups > 0) {
       this.events?.current()?.count("plugin_backup_failed", failedBackups);
@@ -814,6 +834,7 @@ export class PluginManager {
           archiveFilename: path.basename(archivePath),
           installRoot: this.installedPluginDirectory,
           replaceExisting: false,
+          policy: this.admission,
         });
       } catch {
         this.events?.current()?.count("bundled_plugin_failed");
