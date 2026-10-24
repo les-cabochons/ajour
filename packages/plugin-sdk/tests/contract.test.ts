@@ -23,6 +23,34 @@ async function publishedSources() {
   return [...root, ...lib];
 }
 
+/**
+ * Every module a file's code names: `from "x"`, `import "x"` and
+ * `import("x")`. Comments don't count.
+ */
+function importedSpecifiers(text: string) {
+  const code = text
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+  return [
+    ...code.matchAll(/(?:\bfrom|\bimport)\s*\(?\s*["'`]([^"'`]+)["'`]/g),
+  ].map(([, specifier]) => specifier!);
+}
+
+describe("the self-containment check", () => {
+  it.each([
+    ['import { a } from "zod";', ["zod"]],
+    ["export type * from './lib/contract.js';", ["./lib/contract.js"]],
+    ['import "zod";', ["zod"]],
+    ['const z = await import("zod");', ["zod"]],
+    ["const z = await import ( 'zod' );", ["zod"]],
+    ["const z = import(`zod`);", ["zod"]],
+    ["// Import it as `import type {} from 'x'`.", []],
+    ["/* import('x') */", []],
+  ])("finds what %s imports", (text, expected) => {
+    expect(importedSpecifiers(text)).toEqual(expected);
+  });
+});
+
 describe("the SDK's contract", () => {
   it("matches Ajour's shared schemas", async () => {
     const { stderr } = await promisify(execFile)(process.execPath, [
@@ -37,8 +65,8 @@ describe("the SDK's contract", () => {
     const outside: string[] = [];
     for (const file of await publishedSources()) {
       const text = await readFile(path.join(packageRoot, file), "utf8");
-      for (const [, specifier] of text.matchAll(/\bfrom\s+"([^"]+)"/g)) {
-        if (!specifier!.startsWith("./")) outside.push(`${file}: ${specifier}`);
+      for (const specifier of importedSpecifiers(text)) {
+        if (!specifier.startsWith("./")) outside.push(`${file}: ${specifier}`);
       }
     }
 
