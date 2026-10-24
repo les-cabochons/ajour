@@ -6,6 +6,7 @@ import {
   backlogItemCommentFactsSchema,
   backlogPersonSchema,
 } from "./backlog-comments.ts";
+import { projectDataShapeDefinitionSchema } from "./project-data-shapes.ts";
 
 export const PLUGIN_API_VERSION = 3;
 
@@ -175,31 +176,39 @@ export type AgentTaskPlacement = z.infer<typeof agentTaskPlacementSchema>;
  * A task an agent runs for the plugin, from a prompt file. No plugin code
  * runs. See docs/specs/2026-10-15-ajour-agent-runner-design.md.
  */
-export const agentTaskSchema = z
-  .object({
-    id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/),
-    label: z.string().trim().min(1).max(60),
-    placement: agentTaskPlacementSchema,
-    /** A Markdown file inside the plugin folder, at most 64 KB. */
-    prompt: z.string().trim().min(1).max(240),
-    estimateMinutes: z.number().int().min(1).max(240),
-    /** URL template for the week in the external tool. Must give https. */
-    weekLink: z.string().trim().min(1).max(500).optional(),
-    settings: z.array(pluginFieldSchema).max(20).default([]),
-  })
-  .superRefine((task, context) => {
-    if (!task.weekLink) return;
-    const allowed = allowedTaskSlots(task.settings.map((field) => field.id));
-    for (const slot of listTemplateSlots(task.weekLink)) {
-      if (!allowed.has(slot)) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["weekLink"],
-          message: `The week link uses {{${slot}}}, which Ajour does not fill.`,
-        });
-      }
+export const agentTaskObjectSchema = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/),
+  label: z.string().trim().min(1).max(60),
+  placement: agentTaskPlacementSchema,
+  /** A Markdown file inside the plugin folder, at most 64 KB. */
+  prompt: z.string().trim().min(1).max(240),
+  estimateMinutes: z.number().int().min(1).max(240),
+  /** URL template for the week in the external tool. Must give https. */
+  weekLink: z.string().trim().min(1).max(500).optional(),
+  settings: z.array(pluginFieldSchema).max(20).default([]),
+});
+
+/** Every slot of a task's week link must be one Ajour fills. */
+export function checkAgentTaskWeekLink(
+  task: { weekLink?: string; settings: readonly { id: string }[] },
+  context: z.RefinementCtx,
+) {
+  if (!task.weekLink) return;
+  const allowed = allowedTaskSlots(task.settings.map((field) => field.id));
+  for (const slot of listTemplateSlots(task.weekLink)) {
+    if (!allowed.has(slot)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["weekLink"],
+        message: `The week link uses {{${slot}}}, which Ajour does not fill.`,
+      });
     }
-  });
+  }
+}
+
+export const agentTaskSchema = agentTaskObjectSchema.superRefine(
+  checkAgentTaskWeekLink,
+);
 export type AgentTask = z.infer<typeof agentTaskSchema>;
 
 /**
@@ -259,36 +268,36 @@ export type ProjectPropertiesCapability = z.infer<
  * Ajour settles its items locally, with no write. See ADR 0001, ADR 0003 and,
  * for `calendar`, ADR 0005.
  */
-export const pluginCapabilitiesSchema = z
-  .object({
-    connector: z
-      .object({
-        settle: z.boolean().optional(),
-        /** Comments on synced items. See ADR 0008. */
-        comments: backlogCommentsCapabilitySchema.optional(),
-        /** Two-way descriptions. See ADR 0009. */
-        description: backlogDescriptionCapabilitySchema.optional(),
-      })
-      .optional(),
-    codeHost: z.object({}).optional(),
-    calendar: z.object({}).optional(),
-    /** Keeps a team's shared projects in step. See ADR 0006. */
-    team: teamCapabilitySchema.optional(),
-    agentTask: z
-      .object({ tasks: z.array(agentTaskSchema).min(1).max(10) })
-      .optional(),
-    projectProperties: projectPropertiesSchema.optional(),
-  })
-  .refine(
-    (capabilities) =>
-      capabilities.connector !== undefined ||
-      capabilities.codeHost !== undefined ||
-      capabilities.calendar !== undefined ||
-      capabilities.team !== undefined ||
-      capabilities.agentTask !== undefined ||
-      capabilities.projectProperties !== undefined,
-    "A plugin must declare at least one capability: connector, codeHost, calendar, team, agentTask or projectProperties.",
-  );
+export const pluginCapabilitiesObjectSchema = z.object({
+  connector: z
+    .object({
+      settle: z.boolean().optional(),
+      /** Comments on synced items. See ADR 0008. */
+      comments: backlogCommentsCapabilitySchema.optional(),
+      /** Two-way descriptions. See ADR 0009. */
+      description: backlogDescriptionCapabilitySchema.optional(),
+    })
+    .optional(),
+  codeHost: z.object({}).optional(),
+  calendar: z.object({}).optional(),
+  /** Keeps a team's shared projects in step. See ADR 0006. */
+  team: teamCapabilitySchema.optional(),
+  agentTask: z
+    .object({ tasks: z.array(agentTaskSchema).min(1).max(10) })
+    .optional(),
+  projectProperties: projectPropertiesSchema.optional(),
+});
+
+export const pluginCapabilitiesSchema = pluginCapabilitiesObjectSchema.refine(
+  (capabilities) =>
+    capabilities.connector !== undefined ||
+    capabilities.codeHost !== undefined ||
+    capabilities.calendar !== undefined ||
+    capabilities.team !== undefined ||
+    capabilities.agentTask !== undefined ||
+    capabilities.projectProperties !== undefined,
+  "A plugin must declare at least one capability: connector, codeHost, calendar, team, agentTask or projectProperties.",
+);
 export type PluginCapabilities = z.infer<typeof pluginCapabilitiesSchema>;
 
 export function pluginHasBacklog(manifest: {
@@ -356,8 +365,11 @@ export function pluginRunsCode(manifest: { capabilities: PluginCapabilities }) {
   return pluginSwitchableCapabilities(manifest).length > 0;
 }
 
-/** The manifest fields, before the cross-field rules. The overview extends it. */
-const pluginManifestObjectSchema = z.object({
+/**
+ * The manifest fields, before the cross-field rules. The overview and the API
+ * 4 manifest (`plugin-api-4.ts`) extend it.
+ */
+export const pluginManifestObjectSchema = z.object({
   id: pluginIdSchema,
   version: z
     .string()
@@ -513,9 +525,14 @@ export type PluginConnectionSummary = z.infer<
  * fills the gap with a placeholder, and `unavailableReason` tells the user
  * why. An unavailable plugin is the one with `unavailableReason`; an absent
  * entrypoint only means the plugin runs no code. Plugin packages still go
- * through the strict manifest schema.
+ * through the strict manifest schema. An API 4 package admitted in a
+ * development build may declare only a project data shape, so the overview
+ * reads its capabilities without the at-least-one rule.
  */
 const pluginOverviewItemSchema = pluginManifestObjectSchema.extend({
+  capabilities: pluginCapabilitiesObjectSchema.extend({
+    projectDataShape: projectDataShapeDefinitionSchema.optional(),
+  }),
   entrypoint: z.string().trim().max(240).optional(),
   unavailableReason: z.string().max(1000).optional(),
 });

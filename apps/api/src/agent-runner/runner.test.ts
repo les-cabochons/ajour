@@ -101,9 +101,11 @@ function fakePlugins(
   prompt: string,
   weekLink: string,
   otherTasks: AgentTask[] = [],
+  apiVersion = 3,
 ) {
   const manifest = {
     id: "ajp-test",
+    apiVersion,
     displayName: "Workday",
     capabilities: {
       agentTask: {
@@ -139,6 +141,8 @@ async function setup(
     values?: Record<string, string>;
     weekLink?: string;
     otherTasks?: AgentTask[];
+    /** The plugin API the plugin's manifest declares. */
+    apiVersion?: number;
     /** Where runs make their folder, under the test's folder. */
     tempRoot?: string;
     findExecutable?: (name: string) => Promise<string | null>;
@@ -182,6 +186,7 @@ async function setup(
         "Enter week {{weekOf}} in {{settings.url}}.",
         options.weekLink ?? "{{settings.url}}?date={{weekOf}}",
         options.otherTasks,
+        options.apiVersion,
       ),
       ...(options.readPrompt
         ? { readAgentTaskPrompt: options.readPrompt }
@@ -950,6 +955,20 @@ describe("AgentRunner", () => {
     await expect(missing.runner.start(request)).rejects.toMatchObject({
       status: 400,
     });
+  });
+
+  it("shows a plugin API 4 task as not runnable yet, and refuses to start it", async () => {
+    const { runner, events } = await setup([], { apiVersion: 4 });
+
+    expect((await runner.overview()).tasks[0]!.blockers).toEqual([
+      "This version of Ajour can't run agent tasks of plugin API 4 yet",
+    ]);
+    await expect(runner.start(request)).rejects.toMatchObject({
+      status: 400,
+      message:
+        "This version of Ajour can't run agent tasks of plugin API 4 yet.",
+    });
+    expect(events).toEqual([]);
   });
 
   it("logs no agent.run for a start it refuses", async () => {
