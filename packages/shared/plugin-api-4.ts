@@ -9,6 +9,20 @@ import {
 } from "./plugins.ts";
 import { projectDataShapeDefinitionSchema } from "./project-data-shapes.ts";
 import { readToolInputSchemas, writeToolInputSchemas } from "./agent-tools.ts";
+import { getDomain, parse as parseHost } from "tldts";
+import {
+  DENIED_REQUEST_HEADER_PREFIXES,
+  DENIED_REQUEST_HEADERS,
+  endpointPatternMatches,
+  isDeniedHeaderName,
+  isEndpointPattern,
+} from "./plugin-request-rules.ts";
+
+export {
+  DENIED_REQUEST_HEADER_PREFIXES,
+  DENIED_REQUEST_HEADERS,
+  endpointPatternMatches,
+};
 
 /*
  * Plugin API 4: the manifest of a plugin that runs in its own sandboxed
@@ -92,74 +106,6 @@ export const pluginHttpMethods = [
 export const pluginHttpMethodSchema = z.enum(pluginHttpMethods);
 export type PluginHttpMethod = z.infer<typeof pluginHttpMethodSchema>;
 
-/** One literal path segment: RFC 3986 path characters, without wildcards. */
-const LITERAL_SEGMENT = /^[A-Za-z0-9\-._~!$&'()+,;=:@%]+$/;
-
-function decodedSegment(segment: string) {
-  try {
-    return decodeURIComponent(segment);
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * A segment that means itself once decoded: not `.` or `..`, and no slash or
- * backslash hidden behind percent-encoding.
- */
-function isLiteralSegment(segment: string) {
-  if (!LITERAL_SEGMENT.test(segment)) return false;
-  const decoded = decodedSegment(segment);
-  return (
-    decoded !== undefined &&
-    decoded !== "." &&
-    decoded !== ".." &&
-    !decoded.includes("/") &&
-    !decoded.includes("\\")
-  );
-}
-
-function pathSegments(path: string): string[] | undefined {
-  if (path === "/") return [];
-  if (!path.startsWith("/")) return undefined;
-  return path.slice(1).split("/");
-}
-
-/**
- * An endpoint pattern: a path relative to its host, where `*` matches one
- * segment and `**`, last, matches the rest, nothing included.
- */
-function isEndpointPattern(pattern: string) {
-  const segments = pathSegments(pattern);
-  return (
-    segments !== undefined &&
-    segments.every((segment, index) =>
-      segment === "**"
-        ? index === segments.length - 1
-        : segment === "*" || isLiteralSegment(segment),
-    )
-  );
-}
-
-/**
- * Whether a request path matches an endpoint pattern. Segments compare
- * exactly, case included. A path with an empty, `.` or `..` segment, or an
- * encoded slash, matches nothing.
- */
-export function endpointPatternMatches(pattern: string, path: string) {
-  const patternParts = pathSegments(pattern);
-  const pathParts = pathSegments(path);
-  if (!patternParts || !pathParts) return false;
-  if (!pathParts.every(isLiteralSegment)) return false;
-  for (const [index, part] of patternParts.entries()) {
-    if (part === "**") return true;
-    const actual = pathParts[index];
-    if (actual === undefined) return false;
-    if (part !== "*" && part !== actual) return false;
-  }
-  return patternParts.length === pathParts.length;
-}
-
 const accessChoiceIdSchema = z.string().regex(/^[a-z][A-Za-z0-9]{0,39}$/);
 
 export const pluginEndpointSchema = strictObject({
@@ -181,26 +127,65 @@ export type PluginEndpoint = z.infer<typeof pluginEndpointSchema>;
 
 const HOST_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
-/** A lowercase DNS name of at least two labels, whose last isn't a number. */
+/** The Public Suffix List, with its private section: github.io counts too. */
+const PUBLIC_SUFFIXES = { allowPrivateDomains: true } as const;
+
+/**
+ * A lowercase DNS name of at least two labels, and never an IP address in
+ * any form a URL parser reads as one, such as `127.0x1` or `2130706433`.
+ */
 function isDomainName(value: string) {
   const labels = value.split(".");
-  return (
-    value.length <= 253 &&
-    labels.length >= 2 &&
-    labels.every((label) => HOST_LABEL.test(label)) &&
-    !/^\d+$/.test(labels.at(-1)!)
-  );
+  if (
+    value.length > 253 ||
+    labels.length < 2 ||
+    !labels.every((label) => HOST_LABEL.test(label)) ||
+    /^\d+$/.test(labels.at(-1)!)
+  ) {
+    return false;
+  }
+  let hostname: string;
+  try {
+    hostname = new URL(`https://${value}`).hostname;
+  } catch {
+    return false;
+  }
+  return hostname === value && !parseHost(value).isIp;
+}
+
+/**
+ * The registrable domain of a host, such as `github.com` for
+ * `api.github.com` or `acme.github.io` for `x.acme.github.io`. Null for a
+ * public suffix itself, where anyone can register a name.
+ */
+function registrableDomain(host: string) {
+  return getDomain(host, PUBLIC_SUFFIXES);
+}
+
+function hostRuleDomain(whenHost: string) {
+  return whenHost.startsWith("*.") ? whenHost.slice(2) : whenHost;
 }
 
 function isHostRule(whenHost: string) {
-  return isDomainName(whenHost.startsWith("*.") ? whenHost.slice(2) : whenHost);
+  return isDomainName(hostRuleDomain(whenHost));
+}
+
+/** A rule on a public suffix would match hosts anyone can register. */
+function isRegistrableHostRule(whenHost: string) {
+  return registrableDomain(hostRuleDomain(whenHost)) !== null;
 }
 
 /**
  * Whether a host template stays within the address the user saved: it ends
- * with `{host}`, or it stays within the domain its rule matched.
+ * with `{host}`, or it stays within the registrable domain its rule matched,
+ * and under a `*.` rule it names the label `*` matched, so it reaches the
+ * user's own organisation.
  */
 function hostTemplateProblem(template: string, whenHost: string | undefined) {
+  // whenHost's own message says what is wrong with it.
+  if (whenHost && !(isHostRule(whenHost) && isRegistrableHostRule(whenHost))) {
+    return undefined;
+  }
   const labels = template.split(".");
   const wildcard = whenHost?.startsWith("*.") ?? false;
   for (const [index, label] of labels.entries()) {
@@ -210,15 +195,26 @@ function hostTemplateProblem(template: string, whenHost: string | undefined) {
       return "A derived host is made of host labels, {match} when whenHost starts with *., and {host} last.";
     }
   }
+  const matches = labels.filter((label) => label === "{match}").length;
+  if (matches > 1) return "A derived host holds {match} at most once.";
   if (labels.at(-1) === "{host}") return undefined;
-  const anchor = whenHost && (wildcard ? whenHost.slice(2) : whenHost);
-  if (!anchor || (template !== anchor && !template.endsWith(`.${anchor}`))) {
+  if (wildcard && matches === 0) {
+    return "Under a *. rule, a derived host names {match}, so it reaches the user's own host.";
+  }
+  const anchor = whenHost && hostRuleDomain(whenHost);
+  const host = template.replace("{match}", "x");
+  if (
+    !anchor ||
+    (template !== anchor && !template.endsWith(`.${anchor}`)) ||
+    !isDomainName(host) ||
+    registrableDomain(host) !== registrableDomain(anchor)
+  ) {
     return "A derived host stays within the address the user saved: end it with {host}, or stay within the domain whenHost names.";
   }
   return undefined;
 }
 
-const PATH_PREFIX = /^(?:\/[A-Za-z0-9\-._~!$&'()+,;=:@]+)+$/;
+const PATH_PREFIX = /^(?:\/[A-Za-z0-9\-._~!$&'()+,=:@]+)+$/;
 
 export const pluginDerivedHostFormSchema = strictObject({
   /**
@@ -233,6 +229,10 @@ export const pluginDerivedHostFormSchema = strictObject({
       isHostRule,
       "whenHost is a host such as dev.azure.com, or *. and a domain such as *.visualstudio.com.",
     )
+    .refine(
+      isRegistrableHostRule,
+      "whenHost may not be a public suffix such as github.io or co.uk, where anyone can register a name.",
+    )
     .optional(),
   /**
    * The host to send to: `{host}` is the base host and `{match}` the label
@@ -244,12 +244,7 @@ export const pluginDerivedHostFormSchema = strictObject({
     .string()
     .max(200)
     .refine(
-      (prefix) =>
-        PATH_PREFIX.test(prefix) &&
-        prefix
-          .split("/")
-          .slice(1)
-          .every((segment) => segment !== "." && segment !== ".."),
+      (prefix) => PATH_PREFIX.test(prefix) && isEndpointPattern(prefix),
       "A path prefix is a literal path such as /api/v3.",
     )
     .optional(),
@@ -316,8 +311,17 @@ export function deriveHostAddress(
       continue;
     }
     const host = form.host
-      .replace("{host}", baseHost)
-      .replace("{match}", match);
+      .replaceAll("{host}", baseHost)
+      .replaceAll("{match}", match);
+    // A base host on a public suffix, such as s3.amazonaws.com, could
+    // otherwise send a {match} host to someone else's name under it.
+    if (
+      host !== baseHost &&
+      (registrableDomain(host) === null ||
+        registrableDomain(host) !== registrableDomain(baseHost))
+    ) {
+      return undefined;
+    }
     const port = host === baseHost && base.port ? `:${base.port}` : "";
     const basePath =
       form.keepBasePath === false ? "" : base.pathname.replace(/\/+$/, "");
@@ -383,18 +387,6 @@ export const pluginAuthSchema = z.discriminatedUnion(
 export type PluginAuth = z.infer<typeof pluginAuthSchema>;
 export type PluginAuthScheme = PluginAuth["scheme"];
 
-/** Request headers a plugin may never set, whatever its manifest lists. */
-export const DENIED_REQUEST_HEADERS: readonly string[] = [
-  "authorization",
-  "cookie",
-  "host",
-  "forwarded",
-];
-export const DENIED_REQUEST_HEADER_PREFIXES: readonly string[] = [
-  "proxy-",
-  "x-forwarded-",
-];
-
 /** The headers an auth scheme sets, lowercase. */
 export function authSchemeHeaders(auth: PluginAuth | undefined): string[] {
   switch (auth?.scheme) {
@@ -417,14 +409,7 @@ export function isDeniedRequestHeader(
   name: string,
   auth: PluginAuth | undefined,
 ) {
-  const header = name.toLowerCase();
-  return (
-    DENIED_REQUEST_HEADERS.includes(header) ||
-    DENIED_REQUEST_HEADER_PREFIXES.some((prefix) =>
-      header.startsWith(prefix),
-    ) ||
-    authSchemeHeaders(auth).includes(header)
-  );
+  return isDeniedHeaderName(name, authSchemeHeaders(auth));
 }
 
 const headerNameSchema = z
