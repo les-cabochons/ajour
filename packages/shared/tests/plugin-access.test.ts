@@ -42,6 +42,7 @@ const NOTHING: PluginAccessDifference = {
   publicHosts: [],
   mcpTools: [],
   agentPrompts: [],
+  alwaysOnAccess: [],
   alwaysReady: false,
 };
 
@@ -223,6 +224,26 @@ describe("the access difference between two manifests", () => {
       { mcpTools: [{ task: "submit-week", tool: "list_projects" }] },
     ],
     [
+      "an access choice that is now always on",
+      azureDevOpsManifest,
+      (manifest) => {
+        manifest.connectionAccess[1].always = true;
+      },
+      { alwaysOnAccess: ["editWorkItems"] },
+    ],
+    [
+      "a new access choice that is always on",
+      azureDevOpsManifest,
+      (manifest) => {
+        manifest.connectionAccess.push({
+          id: "builds",
+          label: "Builds",
+          always: true,
+        });
+      },
+      { alwaysOnAccess: ["builds"] },
+    ],
+    [
       "a switch to always-ready",
       gitHubManifest,
       (manifest) => {
@@ -308,6 +329,13 @@ describe("the access difference between two manifests", () => {
       },
     ],
     [
+      "an access choice that is no longer always on",
+      azureDevOpsManifest,
+      (manifest) => {
+        manifest.connectionAccess[0].always = false;
+      },
+    ],
+    [
       "a removed MCP tool",
       workdayAgentManifest,
       (manifest) => {
@@ -330,6 +358,7 @@ describe("the access difference between two manifests", () => {
       ),
     ).toBe(true);
     expect(widensAccess({ ...NOTHING, alwaysReady: true })).toBe(true);
+    expect(widensAccess({ ...NOTHING, alwaysOnAccess: ["builds"] })).toBe(true);
   });
 
   it("lists everything a first API 4 release reaches, from API 3", () => {
@@ -412,6 +441,7 @@ describe("the access summary", () => {
       publicHosts: ["avatars.githubusercontent.com"],
       mcpTools: [],
       agentPrompts: [],
+      alwaysOnAccess: [],
       startMode: "whenNeeded",
     });
   });
