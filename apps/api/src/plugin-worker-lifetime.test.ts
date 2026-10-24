@@ -4,6 +4,18 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { PluginWorkerLifetime } from "./plugin-worker-lifetime.ts";
+import type { PluginInvocation } from "./plugin-runtime.ts";
+import { WorkerPluginRuntime } from "./plugin-worker-runtime.ts";
+
+/** The scripts these tests run ignore what they are asked to call. */
+const invocation: PluginInvocation = {
+  pluginId: "test",
+  packageDirectory: os.tmpdir(),
+  entrypoint: "plugin.mjs",
+  apiVersion: 3,
+  method: "sync",
+  args: [],
+};
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -37,7 +49,7 @@ describe("plugin worker lifetime", () => {
     if (source !== null) await writeFile(script, source);
     const host = new PluginWorkerLifetime<string>({
       name: "Plugin",
-      workerScriptUrl: pathToFileURL(script),
+      runtime: new WorkerPluginRuntime({ scriptUrl: pathToFileURL(script) }),
       requestTimeoutMs,
       eventNames: {
         sync: "backlog.sync",
@@ -50,7 +62,7 @@ describe("plugin worker lifetime", () => {
   }
 
   const passThrough = async () => ({
-    workerData: {},
+    invocation,
     parse: (value: unknown) => value,
   });
   const waitForWorkerStart = () =>
@@ -61,7 +73,7 @@ describe("plugin worker lifetime", () => {
     const preparation = deferred<void>();
     const prepare = async () => {
       await preparation.promise;
-      return { workerData: {}, parse: (value: unknown) => value };
+      return { invocation, parse: (value: unknown) => value };
     };
     const calls = Array.from({ length: 4 }, () =>
       host.run("test", "sync", prepare),
@@ -88,7 +100,7 @@ describe("plugin worker lifetime", () => {
     );
     await expect(
       host.run("test", "sync", async () => ({
-        workerData: {},
+        invocation,
         parse: (value) => Number(value),
       })),
     ).resolves.toBe(42);
@@ -100,7 +112,7 @@ describe("plugin worker lifetime", () => {
     const host = await lifetime("setInterval(()=>{},1000);", 40);
     await expect(
       host.run("test", "sync", async () => ({
-        workerData: {},
+        invocation,
         parse: (value) => value,
       })),
     ).rejects.toThrow("timed out");
@@ -110,7 +122,7 @@ describe("plugin worker lifetime", () => {
     );
     await expect(
       invalid.run("test", "sync", async () => ({
-        workerData: {},
+        invocation,
         parse: () => {
           throw new Error("Invalid response");
         },
