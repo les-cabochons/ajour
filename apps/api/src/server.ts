@@ -1057,19 +1057,26 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         });
         return;
       }
-      const parsed = parseAgentTaskValues(
-        agentTaskSettingFields(tasks),
-        payload.values,
-      );
+      const fields = agentTaskSettingFields(tasks);
+      const parsed = parseAgentTaskValues(fields, payload.values);
       if ("error" in parsed) {
         unit.refuse("invalid_request");
         writeJson(response, 400, { error: parsed.error });
         return;
       }
+      const saved = await storage.getAgentTaskValues(pluginId);
+      const values = readInput(() =>
+        mergeSecretsForSave(
+          fields,
+          parsed.values,
+          saved,
+          payload.removeSecrets,
+        ),
+      );
       unit.set({
-        agent_task: { field_count: Object.keys(parsed.values).length },
+        agent_task: { field_count: Object.keys(values).length },
       });
-      await storage.setAgentTaskValues(pluginId, parsed.values);
+      await storage.setAgentTaskValues(pluginId, values);
       writeJson(response, 200, await agentRunner.overview());
     },
 

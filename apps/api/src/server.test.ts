@@ -1617,6 +1617,12 @@ describe("agent task settings route", () => {
                 settings: [
                   { id: "url", label: "Timesheet URL", type: "url" },
                   { id: "note", label: "Note", type: "text" },
+                  {
+                    id: "apiKey",
+                    label: "API key",
+                    type: "password",
+                    secret: true,
+                  },
                 ],
               },
               {
@@ -1645,15 +1651,23 @@ describe("agent task settings route", () => {
       "Enter week {{weekOf}} in {{settings.url}}.",
       "utf8",
     );
+    const statePath = path.join(root, "state.json");
     const server = createAppApiServer({
-      statePath: path.join(root, "state.json"),
+      statePath,
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
       allowDevelopmentPlugins: true,
       ...options,
     });
     servers.push(server);
+    statePaths.set(server, statePath);
     return server;
+  }
+
+  const statePaths = new WeakMap<Server, string>();
+  async function createServerWithState() {
+    const server = await createServer();
+    return { server, statePath: statePaths.get(server)! };
   }
 
   it(
@@ -1773,6 +1787,48 @@ describe("agent task settings route", () => {
     expect(submit.blockers.some((blocker) => blocker.includes("URL"))).toBe(
       false,
     );
+  });
+
+  it("keeps a secret setting out of its answers, keeps it when left empty, and removes it on request", async () => {
+    const KEY = "wd-key-5e0c7a91b3f2";
+    const { server, statePath } = await createServerWithState();
+    const storedValues = async () =>
+      (
+        JSON.parse(await readFile(statePath, "utf8")) as {
+          agentRunner: { pluginValues: Record<string, object> };
+        }
+      ).agentRunner.pluginValues.jira;
+
+    const saved = await save(server, "jira", {
+      url: "https://wd.example/t",
+      apiKey: KEY,
+    });
+    expect(saved.status).toBe(200);
+    expect(JSON.stringify(saved.body)).not.toContain(KEY);
+    await expect(storedValues()).resolves.toMatchObject({ apiKey: KEY });
+
+    const kept = await save(server, "jira", {
+      url: "https://wd.example/u",
+      apiKey: "",
+    });
+    expect(kept.status).toBe(200);
+    await expect(storedValues()).resolves.toEqual({
+      url: "https://wd.example/u",
+      apiKey: KEY,
+    });
+
+    const removed = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: "/api/agents/plugins/jira/settings",
+      body: JSON.stringify({
+        values: { url: "https://wd.example/u" },
+        removeSecrets: ["apiKey"],
+      }),
+    });
+    expect(removed.status).toBe(200);
+    await expect(storedValues()).resolves.toEqual({
+      url: "https://wd.example/u",
+    });
   });
 });
 
