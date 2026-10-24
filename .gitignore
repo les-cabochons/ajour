@@ -44,6 +44,10 @@ apps/desktop/build/embedded-agent/
 plugins/*/dist/
 plugins/*/package/
 
+# Package build outputs, such as the plugin SDK's
+packages/*/dist/
+packages/*/*.tgz
+
 # Native agent build output
 apps/macos-agent/.build/
 
