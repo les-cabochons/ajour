@@ -177,6 +177,15 @@ error payloads are bounded. Because workers are threads rather than child
 processes, they cannot outlive the parent application or remain as orphan
 plugin processes.
 
+Both the plugin host and the data-shape host run every operation through one
+runtime port, `apps/api/src/plugin-runtime.ts`: start, settle and terminate,
+for a plugin id and its package directory. The worker lifetime keeps
+admission, quota, timeout, cancellation, wide events and result validation
+around it. The worker-thread runtime is the one the app uses; tests may run
+plugins in process with a fake. The arguments each plugin export receives
+come from one method table, `apps/api/src/plugin-methods.ts`, derived from the
+shared operation contracts.
+
 Development plugin loading and browser-origin authorization are separate
 permissions. The local API accepts browser requests only from exact configured
 origins; enabling loose development directories must never broaden that
