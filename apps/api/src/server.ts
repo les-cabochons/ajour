@@ -161,6 +161,7 @@ import {
 import {
   decodeParams,
   matchRoute,
+  ROUTES,
   serveWithEvent,
   type RouteContext,
   type RouteHandlers,
@@ -168,6 +169,11 @@ import {
   type RouteParams,
   type Settlement,
 } from "./routes.ts";
+import {
+  createWindowToken,
+  holdsWindowToken,
+  WINDOW_TOKEN_HEADER,
+} from "./window-token.ts";
 import {
   AppApiStorage,
   resolveStatePath,
@@ -190,6 +196,13 @@ interface AppApiServerOptions {
   pluginRuntime?: PluginRuntime;
   projectDataShapePluginDirectories?: string[];
   allowedOrigins?: string[];
+  /**
+   * The launch's window token. Every `/api` route but `/api/health` answers
+   * only a request that carries it, as Electron main and vite's dev proxy add
+   * it. Whoever starts the API generates it and keeps it in memory. Without
+   * one, the API makes its own that nobody holds, so no caller reaches `/api`.
+   */
+  windowToken?: string;
   /** How long a data tool waits for the renderer. Tests shorten it. */
   mcpBridgeTimeoutMs?: number;
   /**
@@ -357,7 +370,7 @@ function writeJson(
   extraHeaders: Record<string, string> = {},
 ) {
   const headers = {
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": `Content-Type, ${WINDOW_TOKEN_HEADER}`,
     "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
     ...extraHeaders,
   };
@@ -949,6 +962,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   const allowedOrigins = new Set(
     options.allowedOrigins ?? configuredAllowedOrigins(),
   );
+  if (options.windowToken === "") {
+    throw new Error("The window token can't be empty.");
+  }
+  const windowToken = options.windowToken ?? createWindowToken();
   // The bridge and the sessions publish through each other. Both closures
   // run after both constants exist, so the forward reference is safe.
   const mcpBridge: McpBridge = new McpBridge({
@@ -2547,7 +2564,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   /**
    * Serves one request inside its event. The host check comes first, then
    * MCP, which has its own rules (bearer tokens, and no browser origins at
-   * all), then the origin check and the route table.
+   * all), then the origin check, the window token and the route table.
    */
   async function serveRequest(
     request: IncomingMessage,
@@ -2578,7 +2595,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           return;
         }
         if (
-          request.headers.host &&
+          !request.headers.host ||
           !isAllowedRequestHost(request.headers.host)
         ) {
           unit.refuse("host_refused");
@@ -2619,8 +2636,31 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           response.setHeader("Vary", "Origin");
         }
 
+        // A preflight carries no token and runs nothing.
         if (request.method === "OPTIONS") {
           writeJson(response, 204);
+          return;
+        }
+
+        // Only Ajour's window holds the token. The health check stays open,
+        // with no token and no Origin, so main can tell whether another
+        // Ajour holds the port.
+        if (
+          url.pathname !== ROUTES.health.path &&
+          !holdsWindowToken(request.headers[WINDOW_TOKEN_HEADER], windowToken)
+        ) {
+          unit.refuse("token_refused");
+          writeJson(response, 401);
+          return;
+        }
+
+        // The window's requests carry an Origin: the desktop window's are
+        // cross-origin, and the dev proxy adds one to a same-origin GET. A
+        // request without one, such as a no-cors redirect from another page
+        // in the window's session, is not the window's own.
+        if (url.pathname !== ROUTES.health.path && !requestOrigin) {
+          unit.refuse("origin_refused");
+          writeJson(response, 403, { error: "Request origin is not allowed." });
           return;
         }
 

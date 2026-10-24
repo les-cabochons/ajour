@@ -84,6 +84,7 @@ async function runtime(
     process: { env: {} },
     INTERNAL_APP_API_HOST: "127.0.0.1",
     INTERNAL_APP_API_PORT: port,
+    windowApiToken: "launch-token",
     internalAppApiServer: ownedServer,
     internalAppApiStartPromise: null,
     internalAppApiStopPromise: null,
@@ -184,6 +185,19 @@ describe("desktop plugin runtime ownership", () => {
     });
     expect(app.install.mock.calls[0]?.[0]).toBe(
       app.context.internalAppApiServer,
+    );
+  });
+
+  it("starts the API with the launch's window token", async () => {
+    const free = await listen();
+    const port = portOf(free);
+    await new Promise<void>((resolve) => free.close(() => resolve()));
+    const app = await runtime(port);
+
+    await app.invoke("ajour:download-catalog-plugin");
+
+    expect(app.start).toHaveBeenCalledWith(
+      expect.objectContaining({ windowToken: "launch-token" }),
     );
   });
 

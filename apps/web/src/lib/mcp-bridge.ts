@@ -6,7 +6,7 @@ import {
   type BridgeToolResult,
 } from "@ajour/shared/agent-tools";
 import type { AgentBridgeStatus } from "@/domain/agents/agent-indicator";
-import { getAppApiBaseUrl, postMcpBridgeResult } from "@/lib/app-api";
+import { appApiUrl, postMcpBridgeResult } from "@/lib/app-api";
 
 /**
  * The Ajour window's end of the MCP bridge. The local API sends data tool
@@ -63,7 +63,7 @@ export function connectMcpBridge(handlers: McpBridgeHandlers): () => void {
   let queue: Promise<void> = Promise.resolve();
 
   const open = () => {
-    const stream = new EventSource(`${getAppApiBaseUrl()}/api/mcp/bridge`);
+    const stream = new EventSource(appApiUrl("/api/mcp/bridge"));
     source = stream;
     stream.onopen = () => handlers.onStatus("connected");
     stream.onerror = () => {
