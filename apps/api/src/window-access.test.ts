@@ -7,13 +7,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import { startAppApiServer, stopAppApiServer } from "./server.ts";
+import { TEST_WINDOW_TOKEN } from "./test-support/window-token.ts";
 import { WINDOW_TOKEN_HEADER } from "./window-token.ts";
 
 // `/api` is the window's private channel: Electron main, or vite's dev proxy,
 // adds the launch's token to every window request. Anything else on the
 // computer reaches only /api/health, and agents use /mcp.
 
-const WINDOW_TOKEN = "window-token-for-this-launch-only-0123456789";
+const WINDOW_TOKEN = TEST_WINDOW_TOKEN;
 const APP_ORIGIN = "app://local";
 const running: (() => Promise<void>)[] = [];
 
@@ -104,7 +105,9 @@ function sendHttp10(port: number, raw: string) {
   });
 }
 
-const windowHeaders = { [WINDOW_TOKEN_HEADER]: WINDOW_TOKEN };
+const tokenOnly = { [WINDOW_TOKEN_HEADER]: WINDOW_TOKEN };
+/** What the window sends: the token Electron main adds, and its own Origin. */
+const windowHeaders = { ...tokenOnly, Origin: APP_ORIGIN };
 
 describe("the local API answers only Ajour's window", () => {
   it.each([
@@ -150,7 +153,7 @@ describe("the local API answers only Ajour's window", () => {
 
     const response = await send(port, {
       path: "/api/mcp/settings",
-      headers: { ...windowHeaders, Origin: APP_ORIGIN },
+      headers: windowHeaders,
     });
 
     expect(response.status).toBe(200);
@@ -162,10 +165,54 @@ describe("the local API answers only Ajour's window", () => {
 
     const response = await send(port, {
       path: "/api/mcp/settings",
-      headers: { ...windowHeaders, Origin: "https://evil.example" },
+      headers: { ...tokenOnly, Origin: "https://evil.example" },
     });
 
     expect(response.status).toBe(403);
+  });
+
+  it.each(["/api/mcp/settings", "/api/plugins", "/api/no-such-route"])(
+    "refuses %s with the token but no Origin, as a no-cors redirect from another page would send it",
+    async (url) => {
+      const { port, events } = await startTestApi();
+
+      const response = await send(port, { path: url, headers: tokenOnly });
+
+      expect(response.status).toBe(403);
+      expect(response.headers["access-control-allow-origin"]).toBeUndefined();
+      await expect
+        .poll(() => events.filter((event) => event.kind === "request"))
+        .toEqual([
+          expect.objectContaining({
+            outcome: "refused",
+            outcome_reason: "origin_refused",
+            http: expect.objectContaining({ status_code: 403 }),
+          }),
+        ]);
+    },
+  );
+
+  it("answers /api/health without an Origin, as main's health poll sends it", async () => {
+    const { port } = await startTestApi();
+
+    const response = await send(port, { path: "/api/health" });
+
+    expect(response.status).toBe(200);
+  });
+
+  it.each([
+    ["a dot segment after the open health route", "/api/health/../plugins"],
+    ["an absolute-form request target", "http://evil.example/api/plugins"],
+  ])("refuses %s without the token", async (_name, target) => {
+    const { port } = await startTestApi();
+
+    const response = await send(port, {
+      path: target,
+      headers: { Origin: APP_ORIGIN },
+    });
+
+    expect(response.status).toBe(401);
+    expect(response.body).toBe("");
   });
 
   it("answers /api/health without the token, with only ok", async () => {
@@ -185,7 +232,7 @@ describe("the local API answers only Ajour's window", () => {
       // Node's parser refuses an HTTP/1.1 request without Host itself.
       const http11 = await send(port, {
         path: url,
-        headers: windowHeaders,
+        headers: tokenOnly,
         withoutHost: true,
       });
       // HTTP/1.0 doesn't require one, so the API refuses it.
@@ -204,7 +251,7 @@ describe("the local API answers only Ajour's window", () => {
 
     await send(port, {
       path: "/api/mcp/settings",
-      headers: { [WINDOW_TOKEN_HEADER]: "a-guess" },
+      headers: { [WINDOW_TOKEN_HEADER]: "a-guess", Origin: APP_ORIGIN },
     });
 
     await expect

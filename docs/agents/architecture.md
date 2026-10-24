@@ -195,11 +195,21 @@ vite dev server behind `just start`, or the standalone API, which reads
 (`apps/desktop/electron/window-api-token.cjs`), and in the browser vite's dev
 proxy adds it to the page's same-origin requests, so page JavaScript never
 sees it. Every `/api` route but `/api/health` refuses a request without it
-with a bare 401 (`apps/api/src/window-token.ts`), and a request without a Host
-header is refused. `/api/health` answers anyone, so main can tell whether
-another Ajour holds the port. There is no token for scripting `/api`: scripts
-and agents use `/mcp` with an agent client, and the agent runner never passes
-the window token to a CLI (ADR 0004).
+with a bare 401 (`apps/api/src/window-token.ts`) and a request without an
+allowed Origin with a 403, and a request without a Host header is refused.
+The window's requests carry an Origin: the desktop window's are cross-origin,
+and the dev proxy adds one to a same-origin GET. `/api/health` answers anyone,
+so main can tell whether another Ajour holds the port. There is no token for
+scripting `/api`: scripts and agents use `/mcp` with an agent client, and the
+agent runner never passes the window token to a CLI (ADR 0004).
+
+The guarantee differs by runtime. In the desktop app, `/api` answers only the
+window: main injects the token on the default session, which the window must
+stay the only user of, and page JavaScript never sees it. Under `just start`,
+the vite dev proxy keeps out web pages (it adds the token only when
+`Sec-Fetch-Site` is `same-origin`, and the origin allowlist applies) but not
+local programs, which can reach the proxy as a page would. That is acceptable
+for development. Malware running as the user stays out of scope.
 
 Development plugin loading and browser-origin authorization are separate
 permissions. The local API accepts browser requests only from exact configured

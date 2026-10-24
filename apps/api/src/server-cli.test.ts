@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, expect, it } from "vitest";
+import { TEST_WINDOW_ORIGIN } from "./test-support/window-token.ts";
 import { WINDOW_TOKEN_HEADER } from "./window-token.ts";
 
 const SERVER = fileURLToPath(new URL("./standalone.ts", import.meta.url));
@@ -73,10 +74,11 @@ it("answers the window with the token it was started with, and never prints it",
   const windowToken = "standalone-window-token-canary-81d3";
   const { output, baseUrl } = await startStandalone({
     AJOUR_APP_API_WINDOW_TOKEN: windowToken,
+    AJOUR_APP_API_ALLOWED_ORIGINS: TEST_WINDOW_ORIGIN,
   });
 
   const fromWindow = await fetch(`${baseUrl}/api/mcp/settings`, {
-    headers: { [WINDOW_TOKEN_HEADER]: windowToken },
+    headers: { [WINDOW_TOKEN_HEADER]: windowToken, Origin: TEST_WINDOW_ORIGIN },
   });
   const fromScript = await fetch(`${baseUrl}/api/mcp/settings`);
 

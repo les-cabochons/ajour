@@ -164,6 +164,6 @@ rg -n 'ipcMain\.(on|handle|once|handleOnce)\(' apps/desktop/electron --glob '!ip
 rg -n 'console\.' apps/api/src -g '!*.test.ts' -g '!standalone.ts'
 ```
 
-The standalone local API's "listening" line on stderr, in `apps/api/src/standalone.ts`, is the one `console.` call the local API keeps, by decision, for `just api-start`.
+The standalone local API's two stderr lines, in `apps/api/src/standalone.ts`, are the only `console.` calls the local API keeps, by decision, for `just api-start` and the web dev server: the "listening" line, and the note that no window token was given, so `/api` answers only `/api/health`.
 
 Feature code consumes pure behavior from `domain`, runtime behavior from `lib`, local wrappers from `apps/web/src/components/ui`, app-level surfaces from `apps/web/src/components/app-surface.tsx`, or feature-local modules that own repeated rendering.

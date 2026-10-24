@@ -14,7 +14,8 @@ The renderer runs every data tool through the object action sets and domain tran
 
 - Settings > MCP states that connected agents can read and change time entries and the backlog, and that their model provider receives that data.
 - Tokens are stored hashed and can be revoked per client. They block web pages, give per-client attribution in the agent panel and Undo toasts, and let the user cut off one agent.
-- `/api` answers only Ajour's window, through a per-launch token that main adds to the window's requests. Turning MCP on and creating, revoking and turning on agent clients go through `/api`, so no other local program can mint itself a client.
+- In the desktop app, `/api` answers only Ajour's window: main adds a per-launch token to the window's requests, and page JavaScript never sees it. Turning MCP on and creating, revoking and turning on agent clients go through `/api`, so a program that is not the window can't mint itself a client.
+- Under `just start`, the vite dev proxy adds the token only to same-origin requests, judged by `Sec-Fetch-Site` and `Origin`. That keeps web pages out, but not other local programs, which can reach the proxy as a page would. This is acceptable for development.
 - `/mcp` answers only agent clients, each with its own bearer token.
-- Malware running as the user stays out of scope: it can already read Ajour's data on disk. The tokens keep other local programs and web pages out, without claiming more.
+- Malware running as the user stays out of scope: it can already read Ajour's data on disk. The tokens keep web pages out, and in the desktop app other local programs too, without claiming more.
 - MCP works only while the Ajour window is open, because the renderer owns the data.

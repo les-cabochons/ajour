@@ -7,7 +7,8 @@ import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import { startAppApiServer, stopAppApiServer } from "./server.ts";
 import {
-  TEST_WINDOW_TOKEN,
+  TEST_WINDOW_ORIGIN,
+  windowServerOptions,
   windowTokenHeader,
 } from "./test-support/window-token.ts";
 
@@ -34,7 +35,7 @@ async function start(
     installedPluginDirectory: path.join(root, "installed"),
     allowDevelopmentPlugins: false,
     projectDataShapePluginDirectories: [],
-    windowToken: TEST_WINDOW_TOKEN,
+    ...windowServerOptions,
     eventSink: sink,
     ...options,
   });
@@ -124,10 +125,10 @@ describe("local API lifecycle events", () => {
     const { events, port } = await start(root);
 
     await fetch(`http://127.0.0.1:${port}/api/plugins`, {
-      headers: windowTokenHeader,
+      headers: { ...windowTokenHeader, Origin: TEST_WINDOW_ORIGIN },
     });
     await fetch(`http://127.0.0.1:${port}/api/plugins`, {
-      headers: windowTokenHeader,
+      headers: { ...windowTokenHeader, Origin: TEST_WINDOW_ORIGIN },
     });
 
     const loads = named(events, "storage.load");
@@ -156,7 +157,7 @@ describe("local API lifecycle events", () => {
     const { events, port } = await start(root);
 
     const response = await fetch(`http://127.0.0.1:${port}/api/plugins`, {
-      headers: windowTokenHeader,
+      headers: { ...windowTokenHeader, Origin: TEST_WINDOW_ORIGIN },
     });
 
     expect(response.status).toBe(400);
@@ -181,7 +182,7 @@ describe("local API lifecycle events", () => {
     const { events, port } = await start(root);
 
     const response = await fetch(`http://127.0.0.1:${port}/api/plugins`, {
-      headers: windowTokenHeader,
+      headers: { ...windowTokenHeader, Origin: TEST_WINDOW_ORIGIN },
     });
     const body = await response.text();
 
@@ -205,7 +206,7 @@ describe("local API lifecycle events", () => {
     const { events, port } = await start(root);
 
     const response = await fetch(`http://127.0.0.1:${port}/api/plugins`, {
-      headers: windowTokenHeader,
+      headers: { ...windowTokenHeader, Origin: TEST_WINDOW_ORIGIN },
     });
 
     expect(response.status).toBe(200);
@@ -237,7 +238,7 @@ describe("local API lifecycle events", () => {
       const { events, port } = await start(root);
 
       const response = await fetch(`http://127.0.0.1:${port}/api/plugins`, {
-        headers: windowTokenHeader,
+        headers: { ...windowTokenHeader, Origin: TEST_WINDOW_ORIGIN },
       });
       const body = await response.text();
 

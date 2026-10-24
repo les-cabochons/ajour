@@ -1462,6 +1462,11 @@ if (!hasSingleInstanceLock) {
       }
 
       // Before the window opens, so its first request to the API has it.
+      // The hook sits on the default session, so the window must stay that
+      // session's only user: plugin renderers use their own partitions, and
+      // moving the window to one would orphan the renderer's localStorage.
+      // Electron allows one onBeforeSendHeaders listener per session, so no
+      // other code may register one on it.
       addWindowApiToken(session.defaultSession, {
         apiOrigin: `http://${INTERNAL_APP_API_HOST}:${INTERNAL_APP_API_PORT}`,
         token: windowApiToken,

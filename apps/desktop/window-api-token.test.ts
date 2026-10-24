@@ -1,6 +1,9 @@
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
-import { WINDOW_TOKEN_HEADER as API_HEADER } from "../api/src/window-token.ts";
+import {
+  createWindowToken,
+  WINDOW_TOKEN_HEADER as API_HEADER,
+} from "../api/src/window-token.ts";
 
 const require = createRequire(import.meta.url);
 const { WINDOW_TOKEN_HEADER, addWindowApiToken, createWindowApiToken } =
@@ -88,6 +91,22 @@ describe("the window token main adds to the window's requests", () => {
     });
   });
 
+  it.each([
+    "http://127.0.0.1:8787/api",
+    "http://127.0.0.1:8787/API/plugins",
+    "http://127.0.0.1:8787/apis/plugins",
+    "http://127.0.0.1:87870/api/plugins",
+    "http://127.0.0.1:8787.evil.example/api/plugins",
+    "http://127.0.0.1:8787@evil.example/api/plugins",
+    "https://127.0.0.1:8787/api/plugins",
+    "not a url",
+  ])(
+    "adds no token unless the origin is exactly the API's and the path starts with /api/: %s",
+    (url) => {
+      expect(windowSession().send(url, {})).toEqual({});
+    },
+  );
+
   it("replaces a token the page set itself", () => {
     const sent = windowSession().send("http://127.0.0.1:8787/api/plugins", {
       "x-ajour-window-token": "page-guess",
@@ -98,6 +117,11 @@ describe("the window token main adds to the window's requests", () => {
 
   it("uses the header the local API reads", () => {
     expect(WINDOW_TOKEN_HEADER.toLowerCase()).toBe(API_HEADER);
+  });
+
+  it("makes tokens in the shape the local API makes its own", () => {
+    expect(createWindowApiToken()).toMatch(/^[A-Za-z0-9_-]{43}$/u);
+    expect(createWindowToken()).toMatch(/^[A-Za-z0-9_-]{43}$/u);
   });
 
   it("makes a new random token at each launch", () => {

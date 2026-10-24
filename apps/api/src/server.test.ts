@@ -20,7 +20,8 @@ import {
 } from "./server.ts";
 import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 import {
-  TEST_WINDOW_TOKEN,
+  TEST_WINDOW_ORIGIN,
+  windowServerOptions,
   windowRequestHeaders,
 } from "./test-support/window-token.ts";
 
@@ -150,6 +151,7 @@ async function dispatchJsonRequest(
       headers: Object.fromEntries(
         Object.entries({
           ...windowRequestHeaders,
+          origin: TEST_WINDOW_ORIGIN,
           ...options.headers,
         }).map(([key, value]) => [key.toLowerCase(), value]),
       ),
@@ -245,7 +247,7 @@ describe("plugin installation boundary", () => {
       ["plugin.json", "plugin.mjs"],
     );
     const server = createAppApiServer({
-      windowToken: TEST_WINDOW_TOKEN,
+      ...windowServerOptions,
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       allowDevelopmentPlugins: false,
@@ -328,7 +330,7 @@ describe("plugin installation boundary", () => {
         "plugin.mjs",
       ]);
       const server = createAppApiServer({
-        windowToken: TEST_WINDOW_TOKEN,
+        ...windowServerOptions,
         statePath,
         installedPluginDirectory: installedRoot,
         allowDevelopmentPlugins: false,
@@ -442,7 +444,7 @@ describe("plugin installation boundary", () => {
         "plugin.mjs",
       ]);
       const server = createAppApiServer({
-        windowToken: TEST_WINDOW_TOKEN,
+        ...windowServerOptions,
         statePath,
         installedPluginDirectory: installedRoot,
         allowDevelopmentPlugins: false,
@@ -469,7 +471,7 @@ describe("plugin installation boundary", () => {
   it("does not expose plugin package changes through the loopback HTTP server", async () => {
     const root = await tempDir();
     const server = createAppApiServer({
-      windowToken: TEST_WINDOW_TOKEN,
+      ...windowServerOptions,
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       allowDevelopmentPlugins: false,
@@ -507,7 +509,7 @@ describe("plugin installation boundary", () => {
   it("deactivates the plugin system and hides data-shape plugins", async () => {
     const root = await tempDir();
     const server = createAppApiServer({
-      windowToken: TEST_WINDOW_TOKEN,
+      ...windowServerOptions,
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       projectDataShapePluginDirectories: [],
@@ -540,7 +542,7 @@ describe("plugin installation boundary", () => {
     const root = await tempDir();
     const pluginDirectory = await createProjectDataShapePlugin(root);
     const server = createAppApiServer({
-      windowToken: TEST_WINDOW_TOKEN,
+      ...windowServerOptions,
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       projectDataShapePluginDirectories: [pluginDirectory],
@@ -619,7 +621,7 @@ describe("plugin installation boundary", () => {
     const inProcess = new InProcessPluginRuntime();
     const started: string[] = [];
     const server = createAppApiServer({
-      windowToken: TEST_WINDOW_TOKEN,
+      ...windowServerOptions,
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
@@ -672,7 +674,7 @@ describe("plugin installation boundary", () => {
   it("rejects browser requests from untrusted origins", async () => {
     const root = await tempDir();
     const server = createAppApiServer({
-      windowToken: TEST_WINDOW_TOKEN,
+      ...windowServerOptions,
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       allowDevelopmentPlugins: false,
@@ -696,7 +698,7 @@ describe("plugin installation boundary", () => {
   it("does not broaden allowed origins when development plugins are enabled", async () => {
     const root = await tempDir();
     const server = createAppApiServer({
-      windowToken: TEST_WINDOW_TOKEN,
+      ...windowServerOptions,
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       allowDevelopmentPlugins: true,
@@ -730,7 +732,7 @@ describe("plugin installation boundary", () => {
   it("rejects DNS-rebinding host headers", async () => {
     const root = await tempDir();
     const server = createAppApiServer({
-      windowToken: TEST_WINDOW_TOKEN,
+      ...windowServerOptions,
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       allowDevelopmentPlugins: false,
@@ -763,7 +765,7 @@ describe("plugin installation boundary", () => {
       ].join("\n"),
     );
     const server = createAppApiServer({
-      windowToken: TEST_WINDOW_TOKEN,
+      ...windowServerOptions,
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
@@ -881,7 +883,7 @@ describe("backlog settle routes", () => {
       capabilities ? { capabilities: { connector: capabilities } } : {},
     );
     const server = createAppApiServer({
-      windowToken: TEST_WINDOW_TOKEN,
+      ...windowServerOptions,
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
@@ -1091,7 +1093,7 @@ describe("code host routes", () => {
       { capabilities },
     );
     const server = createAppApiServer({
-      windowToken: TEST_WINDOW_TOKEN,
+      ...windowServerOptions,
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
@@ -1409,7 +1411,7 @@ describe("calendar routes", () => {
     const sink = createRecordingSink<AjourEvent>();
     const { events } = sink;
     const server = createAppApiServer({
-      windowToken: TEST_WINDOW_TOKEN,
+      ...windowServerOptions,
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
@@ -1671,7 +1673,7 @@ describe("agent task settings route", () => {
     );
     const statePath = path.join(root, "state.json");
     const server = createAppApiServer({
-      windowToken: TEST_WINDOW_TOKEN,
+      ...windowServerOptions,
       statePath,
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
@@ -1933,7 +1935,7 @@ describe("team routes", () => {
       },
     );
     const server = createAppApiServer({
-      windowToken: TEST_WINDOW_TOKEN,
+      ...windowServerOptions,
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
@@ -2236,7 +2238,7 @@ describe("backlog comment routes", () => {
     // The comment routes' request events only.
     const events: AjourEvent[] = [];
     const server = createAppApiServer({
-      windowToken: TEST_WINDOW_TOKEN,
+      ...windowServerOptions,
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
@@ -2845,7 +2847,7 @@ describe("backlog description routes", () => {
       },
     );
     const server = createAppApiServer({
-      windowToken: TEST_WINDOW_TOKEN,
+      ...windowServerOptions,
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
@@ -3142,7 +3144,7 @@ describe("plugin errors that echo a secret", () => {
       },
     );
     const server = createAppApiServer({
-      windowToken: TEST_WINDOW_TOKEN,
+      ...windowServerOptions,
       statePath,
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
@@ -3791,7 +3793,7 @@ describe("plugin errors that echo a secret", () => {
       ].join("\n"),
     );
     const server = createAppApiServer({
-      windowToken: TEST_WINDOW_TOKEN,
+      ...windowServerOptions,
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       projectDataShapePluginDirectories: [pluginDirectory],
@@ -3851,7 +3853,7 @@ describe("saving a connection's secrets", () => {
       },
     );
     const server = createAppApiServer({
-      windowToken: TEST_WINDOW_TOKEN,
+      ...windowServerOptions,
       statePath,
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],

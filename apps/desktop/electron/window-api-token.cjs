@@ -2,7 +2,9 @@ const { randomBytes } = require("node:crypto");
 
 /**
  * The header the local API reads the window token from. It matches
- * WINDOW_TOKEN_HEADER in apps/api/src/window-token.ts.
+ * WINDOW_TOKEN_HEADER in apps/api/src/window-token.ts. Main is CommonJS and
+ * the API is TypeScript that the packaged app copies, so they can't share a
+ * module; window-api-token.test.ts pins that the two agree.
  */
 const WINDOW_TOKEN_HEADER = "X-Ajour-Window-Token";
 

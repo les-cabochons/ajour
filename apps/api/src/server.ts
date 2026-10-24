@@ -2643,13 +2643,24 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         }
 
         // Only Ajour's window holds the token. The health check stays open,
-        // so main can tell whether another Ajour holds the port.
+        // with no token and no Origin, so main can tell whether another
+        // Ajour holds the port.
         if (
           url.pathname !== ROUTES.health.path &&
           !holdsWindowToken(request.headers[WINDOW_TOKEN_HEADER], windowToken)
         ) {
           unit.refuse("token_refused");
           writeJson(response, 401);
+          return;
+        }
+
+        // The window's requests carry an Origin: the desktop window's are
+        // cross-origin, and the dev proxy adds one to a same-origin GET. A
+        // request without one, such as a no-cors redirect from another page
+        // in the window's session, is not the window's own.
+        if (url.pathname !== ROUTES.health.path && !requestOrigin) {
+          unit.refuse("origin_refused");
+          writeJson(response, 403, { error: "Request origin is not allowed." });
           return;
         }
 
