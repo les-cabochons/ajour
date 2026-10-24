@@ -77,4 +77,29 @@ describe("the command table's types", () => {
     );
     expect(wrong).toBeTruthy();
   });
+
+  it("refuses at compile time that same wrong reader inside the command table", () => {
+    // The reader is typed apart from the table, so the only error left is the
+    // table's: its `fields` for the command's name.
+    const draftAsId = ([draft]: [{ title: string; description?: string }]) =>
+      draft;
+    const table = {
+      reopenWeek: "week.reopen",
+      // @ts-expect-error A backlog item's ID is a string, not the draft.
+      addWorkItem: {
+        name: "backlog_item.create",
+        fields: { backlog_item: { id: draftAsId } },
+      },
+    } satisfies StoreCommandTable<ExampleStore, "snapshot">;
+    const unknownField = {
+      reopenWeek: "week.reopen",
+      addWorkItem: {
+        name: "backlog_item.create",
+        // @ts-expect-error `fields` of backlog_item.create has no `secret`.
+        fields: { secret: { id: () => "x" } },
+      },
+    } satisfies StoreCommandTable<ExampleStore, "snapshot">;
+
+    expect(table && unknownField).toBeTruthy();
+  });
 });

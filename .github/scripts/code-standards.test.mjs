@@ -79,6 +79,37 @@ test("the console check finds a call in any runtime, and keeps its two exception
   ]);
 });
 
+test("the console check finds every way to reach console, not only a call", () => {
+  const bypasses = {
+    "optional call": "console?.log(value);",
+    "optional call, spaced": "console ?.warn(value);",
+    "computed access": 'console["error"](value);',
+    destructured: "const { warn } = console;",
+    "destructured, closing brace": "  warn,\n} = console;",
+    aliased: "const log = console;",
+    "on globalThis": "globalThis.console.log(value);",
+    "on window": "window.console.log(value);",
+    "global alias": "const log = globalThis.console;",
+    "property on the next line": "console\n  .log(value);",
+  };
+  for (const [name, text] of Object.entries(bypasses)) {
+    const matches = runOver(consoleCheck, { "apps/web/src/lib/a.ts": text });
+    assert.ok(matches.length > 0, `${name} is found`);
+  }
+  // Words and strings that only mention the console are not uses of it.
+  assert.deepEqual(
+    runOver(consoleCheck, {
+      "apps/web/src/lib/a.ts": [
+        "// Prints them in the devtools console. Nothing else.",
+        'const mode = "console";',
+        "const sink = createConsoleSink();",
+        "// the console sink prints events",
+      ].join("\n"),
+    }),
+    [],
+  );
+});
+
 test("the IPC check finds a channel registered outside the wrapper", () => {
   const matches = runOver(ipcCheck, {
     "apps/desktop/electron/main.cjs": [
@@ -95,6 +126,55 @@ test("the IPC check finds a channel registered outside the wrapper", () => {
     'apps/desktop/electron/main.cjs:3:ipcMain.on("ajour:raw-message", () => {});',
     'apps/desktop/electron/main.cjs:4:window.webContents.ipc.handle("ajour:raw-window", () => null);',
   ]);
+});
+
+test("the IPC check finds every way around the wrapper", () => {
+  const bypasses = {
+    "optional access": 'ipcMain?.handle("ajour:raw", () => null);',
+    "computed access": 'ipcMain["handle"]("ajour:raw", () => null);',
+    "an alias": "const raw = ipcMain;\nraw.handle(channel, handler);",
+    "an alias in an object": "const holder = { raw: ipcMain };",
+    "a renamed import": 'const { ipcMain: raw } = require("electron");',
+    "a handed-over object": "register(ipcMain);",
+    "a second argument": "createIpcListeners(ipcMain, { events }, ipcMain);",
+    "the member on the next line":
+      'ipcMain\n  .handle("ajour:raw", () => null);',
+    "an import with more names":
+      'const { app, ipcMain } = require("electron");',
+    "a member of electron": 'require("electron").ipcMain.on("a", () => {});',
+    "a quoted name": 'const raw = electron["ipcMain"];',
+    "ipc-message": 'window.webContents.on("ipc-message", () => {});',
+    "ipc-message-sync": 'webContents.on("ipc-message-sync", () => {});',
+    "a computed ipc": 'window.webContents["ipc"].handle("a", () => null);',
+    "a destructured ipc": "const { ipc: raw } = window.webContents;",
+  };
+  for (const [name, text] of Object.entries(bypasses)) {
+    const matches = runOver(ipcCheck, {
+      "apps/desktop/electron/main.cjs": text,
+    });
+    assert.ok(matches.length > 0, `${name} is found`);
+  }
+});
+
+test("the IPC check leaves the wrapper, its one import and its one call alone", () => {
+  assert.deepEqual(
+    runOver(ipcCheck, {
+      "apps/desktop/electron/main.cjs": [
+        'const { ipcMain } = require("electron");',
+        "const ipc = createIpcListeners(ipcMain, { events });",
+        'ipc.handle("ajour:get-update-state", getState);',
+        "// Every channel registers through `ipc`.",
+        'window.webContents.on("context-menu", () => {});',
+      ].join("\n"),
+      "apps/desktop/electron/ipc-listeners.cjs": [
+        "function createIpcListeners(ipcMain, { events }) {",
+        "  ipcMain.handle(channel, handler);",
+        '  ipcMain["on"](channel, handler);',
+        "}",
+      ].join("\n"),
+    }),
+    [],
+  );
 });
 
 test("reads globs as ripgrep does", () => {

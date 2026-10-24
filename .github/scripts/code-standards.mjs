@@ -41,7 +41,7 @@ function shellWords(line) {
 
 /**
  * One `rg` command as a check: its pattern, the paths it searches and its
- * globs. Only `-n` and `-g`/`--glob` are understood, so a command the script
+ * globs. Only `-n`, `-P` and `-g`/`--glob` are understood, so a command the script
  * can't run the way ripgrep would fails loudly instead of passing.
  */
 export function parseCheck(line) {
@@ -51,7 +51,8 @@ export function parseCheck(line) {
   const globs = [];
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
-    if (arg === "-n") continue;
+    // -P is PCRE2, which lookaheads need; JavaScript reads the same syntax.
+    if (arg === "-n" || arg === "-P") continue;
     if (arg === "-g" || arg === "--glob") {
       const glob = args[(index += 1)];
       if (glob === undefined) throw new Error(`A glob is missing: ${line}`);

@@ -127,6 +127,8 @@ export async function startLocalApi({
   const { port } = server.address() as AddressInfo;
   return {
     baseUrl: `http://127.0.0.1:${port}`,
+    /** The folder the API keeps its state in: what its events scrub as user data. */
+    userDataPath: root,
     events: sink.events,
     async stop() {
       await stopAppApiServer(server);

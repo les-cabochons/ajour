@@ -7,6 +7,8 @@ import {
   vi,
   type Mock,
 } from "vitest";
+import os from "node:os";
+import path from "node:path";
 import type { AjourEvent } from "@ajour/wide-events/catalog.ts";
 import { createRecordingSink } from "@ajour/wide-events/sinks.ts";
 import {
@@ -23,9 +25,11 @@ import {
  * secrets, from the user, from a source tool through its plugin and from an
  * agent. Representative flows then run through the renderer's store, its jobs
  * and its local API client, into the real local API and its plugin worker.
- * No event of any runtime may hold the marker, in a key or a value. A plugin
- * that echoes the connection's secret in its error still leaves none: the
- * message is scrubbed before it enters an event. A leak is fixed where the
+ * No event of any runtime may hold the marker, in a key or a value, except
+ * an error's message, which ADR 0011 lets keep what a plugin echoes (see
+ * MARKER_ALLOWED_IN). A plugin that echoes the connection's secret or URL in
+ * its error still leaves none: the message is scrubbed before it enters an
+ * event, and so are the home and user data folders. A leak is fixed where the
  * event is built, never here.
  */
 
@@ -58,6 +62,8 @@ const canaryPlugin: TestPlugin = {
       description: { write: true },
     },
     calendar: {},
+    codeHost: {},
+    team: { apiVersion: 1 },
   },
   connectionFields: [
     { id: "label", label: "Label", type: "text", required: true },
@@ -132,6 +138,9 @@ export async function postItemComment(connection, request) {
   if (request.body.includes("refuse me")) {
     throw new Error("Could not post with " + connection.config.token);
   }
+  if (request.body.includes("no such issue")) {
+    throw new Error("Issue " + MARKER + "-9 not found");
+  }
   return { comment: { id: "comment-" + MARKER + "-2", author: person, body: request.body, createdAt: "2026-10-17T10:00:00Z" } };
 }
 export async function editItemComment(connection, request) {
@@ -162,35 +171,218 @@ export async function listCalendarEvents(connection, request) {
     }],
   };
 }
+const REPOSITORY = "acme-" + MARKER + "/api";
+const CHANGED_PATH = "src/" + MARKER + "/secret.ts";
+const user = { login: "ana-" + MARKER, displayName: "Ana " + MARKER, isBot: false };
+function summary(number) {
+  return {
+    repository: REPOSITORY, number, id: "pr-" + MARKER + "-" + number,
+    url: "https://git.example.test/" + REPOSITORY + "/pull/" + number,
+    title: "Title " + MARKER, author: user, state: "open", draft: false,
+    createdAt: 1760000000000, updatedAt: 1760000100000,
+  };
+}
+export async function syncPullRequests(connection) {
+  check(connection);
+  return {
+    viewer: user, instanceUrl: "https://git.example.test",
+    pullRequests: [{
+      ...summary(7), viewerIsAuthor: false, headSha: "sha7", lastPushedAt: 1760000050000,
+      reviewRequests: [{ kind: "user", name: "Ana " + MARKER, includesViewer: true }],
+      reviews: [], comments: [{ id: "c-" + MARKER, author: user, createdAt: 1760000060000, mentionsViewer: false }],
+      checks: "success", mergeability: "mergeable",
+    }],
+  };
+}
+export async function getPullRequestContent(connection) {
+  check(connection);
+  return {
+    headSha: "sha7", baseSha: "base7",
+    files: [{ path: CHANGED_PATH, status: "modified", additions: 1, deletions: 0, patch: "+ Patch " + MARKER, binary: false }],
+  };
+}
+export async function getFileContent(connection, request) {
+  check(connection);
+  if (request.sha === "missing") {
+    throw new Error("Cannot read " + request.path + " in " + request.repository);
+  }
+  if (request.sha === "local") {
+    throw new Error("ENOENT: no such file or directory, open '" + request.path + "'");
+  }
+  return { kind: "text", content: "File " + MARKER };
+}
+export async function getPullRequestConversation(connection) {
+  check(connection);
+  return {
+    description: "Description " + MARKER,
+    timeline: [
+      { kind: "comment", id: "t-" + MARKER, author: user, body: "Comment " + MARKER, createdAt: 1760000060000 },
+      { kind: "event", id: "e-" + MARKER, text: "Renamed to " + MARKER, createdAt: 1760000070000 },
+    ],
+    threads: [{
+      id: "th-" + MARKER, path: CHANGED_PATH, side: "head", line: 3, resolved: false, outdated: false,
+      comments: [{ id: "tc-" + MARKER, author: user, body: "Thread " + MARKER, createdAt: 1760000080000 }],
+    }],
+    viewedPaths: [CHANGED_PATH], mergeMethods: ["squash"],
+  };
+}
+export async function browsePullRequests(connection) {
+  check(connection);
+  return { items: [summary(7)] };
+}
+export async function submitReview(connection, request) {
+  check(connection);
+  if (request.body && request.body.includes("refuse")) {
+    throw new Error("Review rejected: " + request.body + " with " + connection.config.token);
+  }
+  return { reviewId: "review-" + MARKER };
+}
+export async function postComment(connection, request) {
+  check(connection);
+  if (request.body.includes("refuse")) {
+    throw new Error("Cannot comment on " + request.repository + "#" + request.number);
+  }
+  return { commentId: "comment-" + MARKER };
+}
+export async function replyToThread(connection) {
+  check(connection);
+  return { commentId: "reply-" + MARKER };
+}
+export async function setThreadResolved(connection, request) {
+  check(connection);
+  return { resolved: request.resolved };
+}
+export async function setFileViewed(connection, request) {
+  check(connection);
+  return { viewed: request.viewed };
+}
+export async function updatePullRequest(connection, request) {
+  check(connection);
+  return { title: request.title ?? "Title " + MARKER, draft: false };
+}
+export async function mergePullRequest(connection) {
+  check(connection);
+  return { mergeCommitSha: "merge-" + MARKER };
+}
+export async function createTeam(config, request) {
+  if (request.name.includes("taken")) {
+    throw new Error("Team " + request.name + " exists, " + config.token);
+  }
+  return { values: { teamId: "team-" + MARKER } };
+}
+export async function syncTeamProjects(connection, request) {
+  check(connection);
+  const assigned = request.changes.flatMap((change) => [
+    { localId: change.localId, remoteId: "r-" + change.localId },
+    ...change.tasks.map((task) => ({ localId: task.localId, remoteId: "r-" + task.localId })),
+  ]);
+  return {
+    cursor: "cursor-" + MARKER,
+    projects: [{
+      remoteId: "team-" + MARKER, name: "Team project " + MARKER, displayName: "Team project " + MARKER,
+      code: "CODE-" + MARKER, color: "#123456", icon: { kind: "preset", name: "dot" }, status: "active",
+      tasks: [{ remoteId: "tt-" + MARKER, name: "Team task " + MARKER, status: "active", billable: true, budgetMs: null }],
+    }],
+    assigned,
+  };
+}
 `,
 };
 
+/**
+ * Where the marker may stay: an error's message, and nothing else. ADR 0011
+ * makes `error.message` a sensitive field: the scrubber removes the
+ * connection's secrets, URLs and the home and user data folders, and cuts it
+ * at 512 characters, but what a plugin echoes stays, such as `Issue KEY-1
+ * not found`, and so does a file's name once its folder is replaced. Every
+ * other field holds none, and no key does.
+ */
+const MARKER_ALLOWED_IN: ReadonlySet<string> = new Set(["error.message"]);
+
+/** A place in a value that holds the marker: a field's `path`, in its key or its value. */
+interface MarkedPlace {
+  path: string;
+  inKey: boolean;
+  shown: string;
+}
+
 /** Every place in `value` that holds the marker, in a key or a value. */
-function markedPaths(value: unknown, at: string): string[] {
+function markedPlaces(value: unknown, at: string): MarkedPlace[] {
   if (typeof value === "string") {
-    return MARKED.test(value) ? [`${at} = ${JSON.stringify(value)}`] : [];
+    return MARKED.test(value)
+      ? [{ path: at, inKey: false, shown: `${at} = ${JSON.stringify(value)}` }]
+      : [];
   }
   if (Array.isArray(value)) {
-    return value.flatMap((item, index) => markedPaths(item, `${at}[${index}]`));
+    return value.flatMap((item, index) =>
+      markedPlaces(item, `${at}[${index}]`),
+    );
   }
   if (typeof value === "object" && value !== null) {
     return Object.entries(value).flatMap(([key, child]) => {
-      const path = at ? `${at}.${key}` : key;
+      const childPath = at ? `${at}.${key}` : key;
       return [
-        ...(MARKED.test(key) ? [`the key ${path}`] : []),
-        ...markedPaths(child, path),
+        ...(MARKED.test(key)
+          ? [{ path: childPath, inKey: true, shown: `the key ${childPath}` }]
+          : []),
+        ...markedPlaces(child, childPath),
       ];
     });
   }
   return [];
 }
 
-/** Each leak, as the event that holds it and where, such as `api request x: error.message = "…"`. */
+/** Each leak, as the event that holds it and where, such as `api request x: plugin.id = "…"`. */
 function leaksIn(events: readonly AjourEvent[]) {
   return events.flatMap((event) =>
-    markedPaths(event, "").map(
-      (where) => `${event.runtime} ${event.kind} ${event.name}: ${where}`,
-    ),
+    markedPlaces(event, "")
+      .filter((place) => place.inKey || !MARKER_ALLOWED_IN.has(place.path))
+      .map(
+        (place) =>
+          `${event.runtime} ${event.kind} ${event.name}: ${place.shown}`,
+      ),
+  );
+}
+
+/** Every key and string in `value`. */
+function textsIn(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(textsIn);
+  if (typeof value === "object" && value !== null) {
+    return Object.entries(value).flatMap(([key, child]) => [
+      key,
+      ...textsIn(child),
+    ]);
+  }
+  return [];
+}
+
+/** A path with one separator and one case, to find it as the scrubber does. */
+const comparable = (text: string) => text.replace(/[\\/]+/g, "/").toLowerCase();
+
+/**
+ * What no event holds anywhere, an error's message included: the secret, any
+ * URL, and the home and user data folders. That is the scrubber's work.
+ */
+function survivorsIn(
+  events: readonly AjourEvent[],
+  folders: readonly string[],
+) {
+  return events.flatMap((event) =>
+    textsIn(event).flatMap((text) => {
+      const found = [
+        /tok-canary-leak-7q4x-secret/i.test(text) && "the secret",
+        /canary-leak-7q4x\.example\.test/i.test(text) && "the site",
+        /[a-z][a-z0-9+.-]*:\/\//i.test(text) && "a URL",
+        ...folders.map(
+          (folder) => comparable(text).includes(comparable(folder)) && folder,
+        ),
+      ].filter((what): what is string => typeof what === "string");
+      return found.map(
+        (what) =>
+          `${event.runtime} ${event.kind} ${event.name} holds ${what}: ${JSON.stringify(text)}`,
+      );
+    }),
   );
 }
 
@@ -212,7 +404,7 @@ const everything = () => [...renderer.events, ...api.events];
 /** Fails on any marked event, listing where each leak is. */
 function expectNoLeak(events: readonly AjourEvent[] = everything()) {
   expect(leaksIn(events)).toEqual([]);
-  expect(JSON.stringify(events)).not.toMatch(MARKED);
+  expect(survivorsIn(events, [os.homedir(), api.userDataPath])).toEqual([]);
 }
 
 /** Names of the events recorded since `from`, as `runtime kind name`. */
@@ -288,6 +480,7 @@ async function loadRenderer() {
     descriptions: await import("@/lib/description-save"),
     settle: await import("@/features/backlog/settle-dialog"),
     commentDeletes: await import("@/lib/comment-deletes"),
+    teamSync: await import("@/lib/team-sync"),
     calendar: await import("@/lib/calendar-suggestions"),
     calendarDomain: await import("@/domain/time/calendar-suggestions"),
     bridge: await import("@/lib/mcp-bridge"),
@@ -301,6 +494,21 @@ async function loadRenderer() {
 
 /** The connection the flows use, and one whose token the tracker revoked. */
 const connections = { work: "", revoked: "" };
+
+/** The repository and file of the plugin's pull request. */
+const REPOSITORY = `acme-${MARKER}/api`;
+const CHANGED_PATH = `src/${MARKER}/secret.ts`;
+
+/** A code host operation, called as the local API's route takes it. */
+const callCodeHost = (operation: string, body: unknown) =>
+  fetchAsTheApp(
+    `${api.baseUrl}/api/code-hosts/canary/connections/${connections.work}/${operation}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
 
 beforeAll(async () => {
   api = await startLocalApi({ plugin: canaryPlugin });
@@ -722,6 +930,159 @@ describe("the privacy canary", () => {
     expectNoLeak();
   });
 
+  it("keeps pull requests' repositories, files, reviews and comments out of every event", async () => {
+    const from = mark();
+    const synced = await app.appApi.syncCodeHostConnection(
+      "canary",
+      connections.work,
+    );
+    expect(synced.pullRequests[0]!.title).toContain(MARKER);
+    const [pullRequest] = app.localStore.snapshot().pullRequests ?? [];
+    expect(pullRequest!.facts.repository).toContain(MARKER);
+    app.localStore.changePullRequest(pullRequest!._id, {
+      type: "snooze",
+      until: Date.now() + 3_600_000,
+    });
+    app.localStore.changePullRequest(pullRequest!._id, { type: "unsnooze" });
+    app.localStore.changePullRequest(pullRequest!._id, { type: "settle" });
+
+    // The operations no screen of the renderer calls yet, as the routes take them.
+    const pull = { repository: REPOSITORY, number: 7 };
+    const anchor = { path: CHANGED_PATH, side: "head", line: 3 };
+    for (const [operation, body] of [
+      ["getPullRequestContent", pull],
+      [
+        "getFileContent",
+        { repository: REPOSITORY, sha: "sha7", path: CHANGED_PATH },
+      ],
+      ["getPullRequestConversation", pull],
+      [
+        "browsePullRequests",
+        { repository: REPOSITORY, state: "open", text: MARKER },
+      ],
+      [
+        "submitReview",
+        {
+          ...pull,
+          headSha: "sha7",
+          verdict: "comment",
+          body: `Review ${MARKER}`,
+          comments: [{ ...anchor, body: `Line comment ${MARKER}` }],
+        },
+      ],
+      [
+        "postComment",
+        {
+          ...pull,
+          body: `Comment ${MARKER}`,
+          anchor: { ...anchor, headSha: "sha7" },
+        },
+      ],
+      [
+        "replyToThread",
+        { ...pull, threadId: `th-${MARKER}`, body: `Reply ${MARKER}` },
+      ],
+      [
+        "setThreadResolved",
+        { ...pull, threadId: `th-${MARKER}`, resolved: true },
+      ],
+      ["setFileViewed", { ...pull, path: CHANGED_PATH, viewed: true }],
+      ["updatePullRequest", { ...pull, title: `Renamed ${MARKER}` }],
+      [
+        "mergePullRequest",
+        {
+          ...pull,
+          method: "squash",
+          headSha: "sha7",
+          commitTitle: `Merge ${MARKER}`,
+          commitMessage: `Merge body ${MARKER}`,
+        },
+      ],
+    ] as const) {
+      expect((await callCodeHost(operation, body)).status, operation).toBe(200);
+    }
+
+    expect(namesSince(from)).toEqual(
+      expect.arrayContaining([
+        "renderer job pull_request.sync",
+        "api request pull_request.sync",
+        "api plugin_operation pull_request.sync",
+        "renderer command pull_request.snooze",
+        "renderer command pull_request.settle",
+        ...[
+          "load",
+          "load_file",
+          "load_conversation",
+          "browse",
+          "submit_review",
+          "comment",
+          "reply",
+          "resolve_thread",
+          "mark_file_viewed",
+          "update",
+          "merge",
+        ].flatMap((name) => [
+          `api request pull_request.${name}`,
+          `api plugin_operation pull_request.${name}`,
+        ]),
+      ]),
+    );
+    expectNoLeak();
+  });
+
+  it("keeps a team's projects, tasks and name out of every event", async () => {
+    const from = mark();
+    const created = await app.appApi.createTeam("canary", {
+      values: {
+        label: `Work ${MARKER}`,
+        tenantLabel: `Site ${MARKER}`,
+        siteUrl: SITE,
+        token: SECRET,
+      },
+      team: { name: `Team ${MARKER}` },
+    });
+    expect(created.values.teamId).toContain(MARKER);
+
+    // The first sync brings the team's project here. Then a local project
+    // goes to the team, and the next sync sends it.
+    const sync = () =>
+      app.teamSync.syncTeamConnection("canary", connections.work);
+    const first = await sync();
+    expect(first.createdProjectIds).toHaveLength(1);
+    const mine = app.localStore
+      .snapshot()
+      .projects.find(
+        (project) => project.name.includes(MARKER) && !project.team,
+      )!;
+    const shared = app.localStore.shareProjectWithTeam(
+      connections.work,
+      mine._id,
+    );
+    expect(shared.result.kind).toBe("shared");
+    // The Undo toast closes, so the sync no longer waits for the project.
+    app.localStore.forgetUndo(shared.undoToken!);
+    const outcome = await sync();
+    expect(outcome.sentProjectCount).toBe(1);
+    expect(
+      app.localStore
+        .snapshot()
+        .projects.some((project) => project.name === `Team project ${MARKER}`),
+    ).toBe(true);
+
+    expect(namesSince(from)).toEqual(
+      expect.arrayContaining([
+        "renderer command team.create",
+        "api request team.create",
+        "api plugin_operation team.create",
+        "renderer command project.share",
+        "renderer job team.sync",
+        "api request team.sync",
+        "api plugin_operation team.sync",
+      ]),
+    );
+    expectNoLeak();
+  });
+
   it("keeps a plugin error that echoes the secret, and what breaks the contract, out of every event", async () => {
     const from = mark();
     await expect(
@@ -777,16 +1138,110 @@ describe("the privacy canary", () => {
       preventDefault: () => {},
     });
 
+    // Errors that echo what the plugin worked on: an issue's key, a pull
+    // request's repository and file, a review's body, a team's name, and a
+    // file under the home and user data folders.
+    await expect(
+      app.appApi.postItemComment(
+        "canary",
+        connections.work,
+        { sourceId: synced.sourceId!, body: "There is no such issue" },
+        { itemId: synced._id },
+      ),
+    ).rejects.toThrow();
+    const pull = { repository: REPOSITORY, number: 7 };
+    const homeFile = path.join(os.homedir(), MARKER, "plan.xlsx");
+    const dataFile = path.join(api.userDataPath, MARKER, "plan.xlsx");
+    const failing = [
+      [
+        "getFileContent",
+        { repository: REPOSITORY, sha: "missing", path: CHANGED_PATH },
+      ],
+      [
+        "getFileContent",
+        { repository: REPOSITORY, sha: "local", path: homeFile },
+      ],
+      [
+        "getFileContent",
+        { repository: REPOSITORY, sha: "local", path: dataFile },
+      ],
+      [
+        "submitReview",
+        {
+          ...pull,
+          headSha: "sha7",
+          verdict: "comment",
+          body: `Please refuse ${MARKER}`,
+          comments: [],
+        },
+      ],
+      ["postComment", { ...pull, body: `Please refuse ${MARKER}` }],
+    ] as const;
+    for (const [operation, body] of failing) {
+      expect((await callCodeHost(operation, body)).status, operation).toBe(502);
+    }
+    await expect(
+      app.appApi.createTeam("canary", {
+        values: {
+          label: "Work",
+          tenantLabel: "Site",
+          siteUrl: SITE,
+          token: SECRET,
+        },
+        team: { name: `Team ${MARKER} taken` },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      app.teamSync.syncTeamConnection("canary", connections.revoked),
+    ).rejects.toThrow();
+    await expect(
+      app.appApi.syncCodeHostConnection("canary", connections.revoked),
+    ).rejects.toThrow();
+
     const pluginFailure = api.events.find(
       (event) =>
         event.kind === "plugin_operation" &&
         event.name === "backlog.sync" &&
         event.outcome_reason === "plugin_error",
     );
-    // The scrubbed message stays: it says what failed, without the secret.
-    expect(pluginFailure?.error?.message).toContain("[secret]");
+    // The scrubbed message stays: it says what failed, without the secret
+    // or the URL.
+    expect(pluginFailure?.error?.message).toBe(
+      "The tracker refused [secret] at [url]",
+    );
+    // What a plugin echoes stays too, and is the only place the marker may be.
+    const messages = (name: string) =>
+      api.events
+        .filter(
+          (event) =>
+            event.kind === "plugin_operation" &&
+            event.name === name &&
+            event.outcome === "error",
+        )
+        .map((event) => event.error?.message);
+    expect(messages("comment.post")).toContain(`Issue ${MARKER}-9 not found`);
+    expect(messages("pull_request.load_file")).toEqual([
+      `Cannot read ${CHANGED_PATH} in ${REPOSITORY}`,
+      `ENOENT: no such file or directory, open '${path.join("~", MARKER, "plan.xlsx")}'`,
+      `ENOENT: no such file or directory, open '${path.join("[user data]", MARKER, "plan.xlsx")}'`,
+    ]);
+    expect(messages("pull_request.submit_review")).toEqual([
+      `Review rejected: Please refuse ${MARKER} with [secret]`,
+    ]);
+    expect(messages("pull_request.comment")).toEqual([
+      `Cannot comment on ${REPOSITORY}#7`,
+    ]);
+    expect(messages("team.create")).toEqual([
+      `Team Team ${MARKER} taken exists, [secret]`,
+    ]);
     expect(namesSince(from)).toEqual(
       expect.arrayContaining([
+        "api plugin_operation team.sync",
+        "api plugin_operation pull_request.sync",
+        "api plugin_operation pull_request.load_file",
+        "api plugin_operation pull_request.submit_review",
+        "api plugin_operation pull_request.comment",
+        "api plugin_operation team.create",
         "renderer job backlog.sync",
         "api request backlog.sync",
         "api plugin_operation backlog.sync",
@@ -824,5 +1279,66 @@ describe("the privacy canary", () => {
     // Every event of every flow, once more, with the marker everywhere.
     expect(everything().length).toBeGreaterThan(100);
     expectNoLeak();
+  });
+});
+
+describe("what the canary lets through", () => {
+  const event = (fields: Record<string, unknown>) =>
+    ({
+      runtime: "api",
+      kind: "request",
+      name: "x",
+      ...fields,
+    }) as unknown as AjourEvent;
+  const home = path.join(os.homedir(), "ana");
+
+  it("lets the marker stay in an error's message and nowhere else", () => {
+    expect(
+      leaksIn([
+        event({ error: { type: "Error", message: `Issue ${MARKER}-9 gone` } }),
+      ]),
+    ).toEqual([]);
+    for (const fields of [
+      { error: { type: MARKER, message: "gone" } },
+      { error: { type: "Error", message: "gone", code: MARKER } },
+      { error: { type: "Error", message: "gone", [MARKER]: "x" } },
+      { plugin: { id: MARKER } },
+      { [MARKER]: 1 },
+      { connection: { id: `c-${MARKER}` } },
+    ]) {
+      expect(leaksIn([event(fields)]), JSON.stringify(fields)).not.toEqual([]);
+    }
+  });
+
+  it("refuses the secret, a URL and the user's folders even in an error's message", () => {
+    const folders = [home, api.userDataPath];
+    for (const message of [
+      `refused ${SECRET}`,
+      `refused ${SECRET}-revoked`,
+      `at ${SITE}`,
+      `at ${SITE}/rest/api`,
+      "see https://example.test/a",
+      `no such file ${path.join(home, "plan.xlsx")}`,
+      `no such file ${path.join(api.userDataPath, "state.json")}`,
+      // As JSON escapes a Windows path.
+      `no such file ${JSON.stringify(path.join(home, "plan.xlsx")).slice(1, -1)}`,
+    ]) {
+      expect(
+        survivorsIn([event({ error: { message } })], folders),
+        message,
+      ).not.toEqual([]);
+    }
+    expect(
+      survivorsIn(
+        [
+          event({
+            error: {
+              message: `refused [secret] at [url], ~/plan.xlsx, [user data]/x, ${MARKER}`,
+            },
+          }),
+        ],
+        folders,
+      ),
+    ).toEqual([]);
   });
 });

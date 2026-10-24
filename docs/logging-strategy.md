@@ -871,13 +871,19 @@ Two tests hold the whole app to the model (#311):
 - **The privacy canary** (`apps/web/src/lib/wide-events-canary.test.ts`)
   puts one marker in every kind of content, from the user, from a source
   tool and from an agent, and runs time entries, backlog items with their
-  descriptions and comments, calendar suggestions, a connection with a
-  secret, an agent's tool calls and a plugin error that echoes the secret
-  through the renderer and the real local API. No event may hold the
-  marker, in a key or a value. The main process's part is in
-  `apps/desktop/main-process-errors.test.ts`. A scrubbed message may still
-  name a file below the user data path or the home folder, as ADR 0011
-  allows, so the canary marks only what the scrubber removes there.
+  descriptions and comments, calendar suggestions, pull requests (a sync,
+  then every code host operation, with marked repositories, paths, review
+  and comment bodies), a team (create and sync), a connection with a
+  secret, an agent's tool calls and plugin errors through the renderer and
+  the real local API. The marker may stay in one place, named in
+  `MARKER_ALLOWED_IN`: an error's `message`. ADR 0011 makes it a sensitive
+  field that keeps what a plugin echoes, such as `Issue KEY-1 not found`,
+  and the name of a file once its folder is replaced. Any other field or
+  key holding the marker fails the test. Even in a message, no secret, URL,
+  home folder or user data folder may remain. The main process's part is in
+  `apps/desktop/main-process-errors.test.ts`: IPC messages, URLs the window
+  opens, an installed archive, a catalog download, an uninstall, a
+  development plugin folder and an update release link, under the same rule.
 - **The catalog audit** (`apps/web/src/lib/wide-events-audit.test.ts`)
   checks [the catalog](#the-catalog) against the code.
 
