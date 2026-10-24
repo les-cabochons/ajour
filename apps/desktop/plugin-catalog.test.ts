@@ -60,12 +60,12 @@ author:
 license:
   name: MIT License
   spdxId: MIT
-  url: https://github.com/les-cabochons/ajc-azure-devops/blob/main/LICENSE
-website: https://github.com/les-cabochons/ajc-azure-devops#readme
+  url: https://github.com/les-cabochons/ajour-plugins/blob/main/plugins/azure-devops/LICENSE
+website: https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/azure-devops#readme
 repository:
   provider: github
-  slug: les-cabochons/ajc-azure-devops
-  url: https://github.com/les-cabochons/ajc-azure-devops
+  slug: les-cabochons/ajour-plugins
+  url: https://github.com/les-cabochons/ajour-plugins
 status: available
 compatibility:
   pluginApiVersion: 2
@@ -76,7 +76,7 @@ features:
 install:
   method: github-release
   allowPrereleases: true
-  assetPattern: '^azure_devops-[0-9A-Za-z.+-]+\\.ajour-connector$'
+  assetPattern: '^azure_devops-[0-9][0-9A-Za-z.+-]*\\.ajour-connector$'
 images:
   thumbnail: thumbnail.png
 tags:
@@ -218,7 +218,7 @@ describe("desktop plugin catalog", () => {
     async (capability) => {
       const cacheDirectory = await tempDirectory();
       const downloadUrl =
-        "https://github.com/les-cabochons/ajc-azure-devops/releases/download/v1.2.3/azure_devops-1.2.3.ajour-connector";
+        "https://github.com/les-cabochons/ajour-plugins/releases/download/v1.2.3/azure_devops-1.2.3.ajour-connector";
       const fetchImpl = vi.fn(async (input: string | URL | Request) => {
         const url = String(input);
         if (url === CATALOG_URL) return response(catalogYaml);
@@ -348,7 +348,7 @@ describe("desktop plugin catalog", () => {
       }
       if (
         url.startsWith(
-          "https://github.com/les-cabochons/ajc-azure-devops/releases/download/",
+          "https://github.com/les-cabochons/ajour-plugins/releases/download/",
         )
       ) {
         downloads.push(url);
@@ -376,7 +376,7 @@ describe("desktop plugin catalog", () => {
       prerelease: options.prerelease ?? true,
       assets: Array.from({ length: options.assets ?? 1 }, () => ({
         name,
-        browser_download_url: `https://github.com/les-cabochons/ajc-azure-devops/releases/download/v${version}/${name}`,
+        browser_download_url: `https://github.com/les-cabochons/ajour-plugins/releases/download/v${version}/${name}`,
       })),
     };
   }
@@ -431,6 +431,97 @@ describe("desktop plugin catalog", () => {
     await expect(
       newestAmbiguous.service.downloadPluginArchive("azure_devops"),
     ).rejects.toThrow("multiple matching plugin assets");
+  });
+
+  /** Serves `pages` as GitHub's pages of releases and records each request. */
+  function serviceWithReleasePages(pages: unknown[][]) {
+    const releaseRequests: URL[] = [];
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url === CATALOG_URL) return response(catalogYaml);
+      if (url === definitionUrl) return response(pluginYaml);
+      if (url === imageUrl) {
+        return response(Buffer.from("image"), {
+          headers: { "content-type": "image/png" },
+        });
+      }
+      if (url.includes("api.github.com/repos/")) {
+        const request = new URL(url);
+        releaseRequests.push(request);
+        const page = Number(request.searchParams.get("page") ?? "1");
+        return response(JSON.stringify(pages[page - 1] ?? []));
+      }
+      if (
+        url.startsWith(
+          "https://github.com/les-cabochons/ajour-plugins/releases/download/",
+        )
+      ) {
+        return response(Buffer.from("archive"));
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    });
+    return tempDirectory().then((cacheDirectory) => ({
+      releaseRequests,
+      service: createPluginCatalogService({
+        cacheDirectory,
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      }),
+    }));
+  }
+
+  /** A release of another plugin that publishes from the same repository. */
+  function otherPluginRelease(build: number) {
+    const name = `jira-1.0.0-main.${build}.aaaaaaa.ajour-connector`;
+    return {
+      tag_name: `v1.0.0-jira.main.${build}.aaaaaaa`,
+      draft: false,
+      prerelease: true,
+      assets: [
+        {
+          name,
+          browser_download_url: `https://github.com/les-cabochons/ajour-plugins/releases/download/v1.0.0-jira.main.${build}.aaaaaaa/${name}`,
+        },
+      ],
+    };
+  }
+
+  it("reads older pages of a shared repository's releases until one matches", async () => {
+    const newestPage = Array.from({ length: 100 }, (_, index) =>
+      otherPluginRelease(300 - index),
+    );
+    const { service, releaseRequests } = await serviceWithReleasePages([
+      newestPage,
+      [otherPluginRelease(200), release("1.0.0-main.150.bbbbbbb")],
+      [release("1.0.0-main.90.ccccccc")],
+    ]);
+
+    await service.refresh();
+    await expect(
+      service.downloadPluginArchive("azure_devops"),
+    ).resolves.toMatchObject({
+      archiveFilename: "azure_devops-1.0.0-main.150.bbbbbbb.ajour-connector",
+    });
+    expect(
+      releaseRequests.map((request) => [
+        request.searchParams.get("per_page"),
+        request.searchParams.get("page"),
+      ]),
+    ).toEqual([
+      ["100", "1"],
+      ["100", "2"],
+    ]);
+  });
+
+  it("stops at the last page of releases when none matches", async () => {
+    const { service, releaseRequests } = await serviceWithReleasePages([
+      [otherPluginRelease(2), otherPluginRelease(1)],
+    ]);
+
+    await service.refresh();
+    await expect(
+      service.downloadPluginArchive("azure_devops"),
+    ).rejects.toMatchObject({ code: "not_available" });
+    expect(releaseRequests).toHaveLength(1);
   });
 });
 

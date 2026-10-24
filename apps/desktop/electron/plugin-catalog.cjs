@@ -12,6 +12,8 @@ const CATALOG_URL = new URL("catalog.yaml", CATALOG_BASE_URL).toString();
 const MAX_CATALOG_BYTES = 256 * 1024;
 const MAX_IMAGE_BYTES = 1_000_000;
 const MAX_RELEASE_RESPONSE_BYTES = 2 * 1024 * 1024;
+const RELEASES_PER_PAGE = 100;
+const MAX_RELEASE_PAGES = 10;
 const MAX_PLUGIN_ARCHIVE_BYTES = 25 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 15_000;
 const CATALOG_ENTRY_PATH = /^plugins\/([a-z0-9][a-z0-9_-]*)\/plugin\.yaml$/u;
@@ -787,40 +789,47 @@ function createPluginCatalogService(options) {
         "This Ajour version cannot install packaged schema plugins yet.",
       );
     }
-    const releasesUrl = `https://api.github.com/repos/${entry.repository.slug}/releases?per_page=30`;
-    const releases = await fetchJson(releasesUrl);
-    if (!Array.isArray(releases)) {
-      throw new Error("GitHub returned an invalid release list.");
-    }
     const pattern = new RegExp(entry.install.assetPattern, "u");
     // GitHub lists releases by creation time, which follows build completion
     // order, not version order. Pick the highest version instead.
     const candidates = [];
-    releases.forEach((release, index) => {
-      if (
-        !isRecord(release) ||
-        release.draft === true ||
-        (release.prerelease === true && !entry.install.allowPrereleases) ||
-        !Array.isArray(release.assets)
-      ) {
-        return;
+    // Several plugins can publish from one repository, so the newest page may
+    // hold none of this plugin's releases. Read older pages until one does.
+    for (let page = 1; page <= MAX_RELEASE_PAGES; page += 1) {
+      const releasesUrl = `https://api.github.com/repos/${entry.repository.slug}/releases?per_page=${RELEASES_PER_PAGE}&page=${page}`;
+      const releases = await fetchJson(releasesUrl);
+      if (!Array.isArray(releases)) {
+        throw new Error("GitHub returned an invalid release list.");
       }
-      const matchingAssets = release.assets.filter(
-        (asset) =>
-          isRecord(asset) &&
-          typeof asset.name === "string" &&
-          pattern.test(asset.name),
-      );
-      if (matchingAssets.length === 0) {
-        return;
-      }
-      candidates.push({
-        release,
-        index,
-        matchingAssets,
-        version: parseReleaseVersion(release.tag_name),
+      releases.forEach((release, pageIndex) => {
+        if (
+          !isRecord(release) ||
+          release.draft === true ||
+          (release.prerelease === true && !entry.install.allowPrereleases) ||
+          !Array.isArray(release.assets)
+        ) {
+          return;
+        }
+        const matchingAssets = release.assets.filter(
+          (asset) =>
+            isRecord(asset) &&
+            typeof asset.name === "string" &&
+            pattern.test(asset.name),
+        );
+        if (matchingAssets.length === 0) {
+          return;
+        }
+        candidates.push({
+          release,
+          index: (page - 1) * RELEASES_PER_PAGE + pageIndex,
+          matchingAssets,
+          version: parseReleaseVersion(release.tag_name),
+        });
       });
-    });
+      if (candidates.length > 0 || releases.length < RELEASES_PER_PAGE) {
+        break;
+      }
+    }
     candidates.sort(compareReleaseCandidates);
     const best = candidates[0];
     if (best && best.matchingAssets.length > 1) {

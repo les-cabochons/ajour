@@ -137,15 +137,16 @@ The backlog editor module is feature-local because its vocabulary and commands b
 - Local API state file: `apps/api/src/storage.ts`. A write goes to a temp file beside the state file, is flushed, then renamed over it, so a crash leaves the last complete file; a rename Windows refuses for a moment is retried, and the file stays 0600. Versions and migrations: `apps/api/src/state-migrations.ts`, numbered steps run in order from the version a file was written in, then the current version's normalization in `storage.ts`. A new version appends one step.
 - Project data-shape manifest and dataset contracts: `packages/shared/project-data-shapes.ts`
 - Project data-shape discovery and worker orchestration: `apps/api/src/project-data-shape-plugin.ts` and `apps/api/src/project-data-shape-host.ts`
-- Standalone Workday shape plugin: `les-cabochons/ajp-workday`
+- Standalone Workday shape plugin: `plugins/workday-project-data` in `les-cabochons/ajour-plugins`
 - `@modelcontextprotocol/sdk`: the MCP server over Streamable HTTP in stateless mode, at `/mcp/ajour`. Transport, authentication and the tool table: `apps/api/src/mcp-server.ts`. Client tokens: `apps/api/src/mcp-clients.ts`. Sessions, questions and activity: `apps/api/src/agent-sessions.ts`. Tool schemas: `packages/shared/agent-tools.ts`. The renderer side: `apps/web/src/lib/mcp-bridge.ts` holds the bridge connection and `features/agents/agent-tool-runner.ts` runs the tools.
 - `@playwright/mcp`: the browser tools the agent runner gives a coding agent. Pinned to an exact version, never fetched with `npx @latest`. Owned by `apps/api/src/agent-runner/playwright-mcp.ts`.
 
 ## Plugins
 
-- Backlog plugin packages live in the standalone `les-cabochons/ajc-azure-devops`
-  and `les-cabochons/ajc-jira` repositories, and the GitHub code host in
-  `les-cabochons/ajc-github`.
+- The official plugin packages live in the standalone
+  `les-cabochons/ajour-plugins` repository, one folder under `plugins/` each:
+  the Azure DevOps and Jira backlog plugins, the GitHub code host, the ICS
+  calendar and the Workday plugins.
 - Each plugin compiles to local JavaScript modules and packages
   `plugin.json` plus `dist/` into one `.ajour-connector` archive.
 - Development builds load configured plugin directories; production builds
@@ -167,7 +168,7 @@ The backlog editor module is feature-local because its vocabulary and commands b
   `packages/shared/code-host.ts`, each called as
   `operation(connection, request)`. The API exposes them at
   `POST /api/code-hosts/:pluginId/connections/:connectionId/:operation`.
-  The GitHub code host lives in `les-cabochons/ajc-github`. See ADR 0002 and
+  The GitHub code host lives in `les-cabochons/ajour-plugins`. See ADR 0002 and
   ADR 0003.
 - A team plugin declares `"team": { "apiVersion": 1 }` and keeps a team's
   shared projects in step. Its payloads, page bounds and the team-owned fields
