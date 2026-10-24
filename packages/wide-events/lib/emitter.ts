@@ -147,6 +147,12 @@ type Fields = Record<string, unknown>;
 /** The most folded units' names, and failures, an event lists. */
 const MAX_STEPS = 50;
 
+/**
+ * Which surface a unit reports when dispatchers nest: the inner dispatcher
+ * wins when its priority is equal or higher. So a dialog's button reports
+ * `dialog`, and a dialog the palette opens reports `dialog` too. The rule is
+ * docs/logging-strategy.md's (Envelope, `surface`).
+ */
 const SURFACE_PRIORITY: Record<Surface, number> = {
   button: 0,
   context_menu: 1,

@@ -12,6 +12,15 @@ import { recordingEvents } from "./recording-events.ts";
 // main process's emitter, is a VM global with a recording sink.
 
 const require = createRequire(import.meta.url);
+
+/*
+ * The main process's part of the privacy canary (#311, ADR 0011), with the
+ * marker of apps/web/src/lib/wide-events-canary.test.ts: what the renderer
+ * sends, the URLs it opens and what a failure names carry it, and no event
+ * may hold it.
+ */
+const MARKER = "CANARY-LEAK-7Q4X";
+const MARKED = /canary-leak-7q4x/i;
 const { classifyNavigation } = require("./electron/navigation.cjs");
 const {
   createIpcListeners,
@@ -654,6 +663,43 @@ describe("IPC listeners", () => {
     expect(runtime.recorded[0]!.error!.message).not.toContain("alex");
   });
 
+  it("keeps what the renderer sends out of every IPC event: the privacy canary", async () => {
+    const runtime = ipcRuntime({
+      realMenu: true,
+      loadDesktopBootstrapLocalState: vi.fn(
+        (options: { report?: Record<string, unknown> }) => {
+          options.report!.source = "recovery_file";
+          // The state it found is the user's: the event counts records only.
+          return { timesheetEntries: [{ note: MARKER }] };
+        },
+      ),
+    });
+    const active = { sender: "active-window", cut: vi.fn(), copy: vi.fn() };
+
+    await runtime.pickFromContextMenu(
+      [`open:${MARKER}`, "settle"],
+      `open:${MARKER}`,
+    );
+    runtime.ipcMain.emit("ajour:run-menu-item", active, `role:${MARKER}`);
+    runtime.ipcMain.emit("ajour:run-edit-command", active, MARKER);
+    runtime.ipcMain.emit("ajour:set-theme-source", active, MARKER);
+    runtime.ipcMain.emit("ajour:set-window-chrome-theme", active, MARKER);
+    runtime.requestBootstrapState();
+
+    expect(runtime.recorded.map((event) => event.name)).toEqual([
+      "context_menu.show",
+      "menu.run_item",
+      "edit.run",
+      "window.set_theme",
+      "window.set_theme",
+      "local_state.recover",
+    ]);
+    expect(runtime.recorded[0]).toMatchObject({
+      context_menu: { picked: true, action_id: "other" },
+    });
+    expect(JSON.stringify(runtime.recorded)).not.toMatch(MARKED);
+  });
+
   it("answers the bootstrap request with null when the read fails", () => {
     const runtime = ipcRuntime({
       loadDesktopBootstrapLocalState: vi.fn(() => {
@@ -858,6 +904,22 @@ describe("the main window", () => {
       },
     ]);
     expect(JSON.stringify(navigations)).not.toMatch(/azure|alex|::1/);
+  });
+
+  it("keeps the URLs the window opens out of every event: the privacy canary", async () => {
+    const runtime = windowRuntime();
+    await runtime.createMainWindow();
+
+    runtime.navigate(`https://${MARKER}.example.test/${MARKER}?q=${MARKER}`);
+    runtime.navigate(`vscode://file/C:/Users/alex/${MARKER}.md`);
+    runtime.window.openHandler({ url: `https://example.test/#${MARKER}` });
+    runtime.window.openHandler({ url: `mailto:${MARKER}@example.test` });
+    await flush();
+
+    expect(
+      runtime.recorded.filter((event) => event.name === "window.navigate"),
+    ).toHaveLength(4);
+    expect(JSON.stringify(runtime.recorded)).not.toMatch(MARKED);
   });
 
   // Windows ends the session without before-quit, so the quit is recorded
@@ -1342,6 +1404,33 @@ describe("errors nothing else caught", () => {
     ]);
   });
 
+  it("keeps what a failure names out of its event, once scrubbed: the privacy canary", () => {
+    const runtime = crashRuntime();
+
+    runtime.emit(
+      "uncaughtExceptionMonitor",
+      new Error(
+        `Could not fetch https://${MARKER}.example.test/${MARKER}?token=${MARKER}`,
+      ),
+      "uncaughtException",
+    );
+    runtime.emit(
+      "unhandledRejection",
+      Object.assign(new Error(`Refused at https://example.test/${MARKER}`), {
+        code: "ECONNREFUSED",
+      }),
+    );
+
+    expect(runtime.recorded).toMatchObject([
+      {
+        name: "app.error",
+        error: { message: "Could not fetch [url]" },
+      },
+      { name: "app.error", error: { code: "ECONNREFUSED" } },
+    ]);
+    expect(JSON.stringify(runtime.recorded)).not.toMatch(MARKED);
+  });
+
   it("records an unhandled rejection", () => {
     const runtime = crashRuntime();
 
@@ -1373,5 +1462,422 @@ describe("errors nothing else caught", () => {
         "UnhandledPromiseRejectionWarning",
       ],
     ]);
+  });
+});
+
+/*
+ * The same rule as the web canary's (apps/web/src/lib/wide-events-canary.test.ts),
+ * for the one kind of event that names what a failure echoes here: the marker
+ * may stay in the error message of an `ipc` event, such as the archive or
+ * plugin a handler names when it refuses. ADR 0011 makes `error.message` a
+ * sensitive field: the scrubber replaces URLs, the user data folder and the
+ * home folder, but text a failure echoes stays, and so does the name of a file
+ * once its folder is replaced. Every other field holds none, and so does the
+ * message of every other kind of event.
+ */
+const MARKER_ALLOWED_IN: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ["ipc", new Set(["error.message"])],
+]);
+
+/** Where `value` holds the marker, as `path = "text"`, in a key or a value. */
+function markedPlaces(
+  value: unknown,
+  at = "",
+): { path: string; inKey: boolean; shown: string }[] {
+  if (typeof value === "string") {
+    return MARKED.test(value)
+      ? [{ path: at, inKey: false, shown: `${at} = ${JSON.stringify(value)}` }]
+      : [];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) =>
+      markedPlaces(item, `${at}[${index}]`),
+    );
+  }
+  if (typeof value === "object" && value !== null) {
+    return Object.entries(value).flatMap(([key, child]) => {
+      const childPath = at ? `${at}.${key}` : key;
+      return [
+        ...(MARKED.test(key)
+          ? [{ path: childPath, inKey: true, shown: `the key ${childPath}` }]
+          : []),
+        ...markedPlaces(child, childPath),
+      ];
+    });
+  }
+  return [];
+}
+
+/** Each place an event holds the marker that ADR 0011 does not allow. */
+function leaksIn(events: readonly unknown[]) {
+  return events.flatMap((event) =>
+    markedPlaces(event)
+      .filter(
+        (place) =>
+          place.inKey ||
+          !MARKER_ALLOWED_IN.get((event as { kind?: string }).kind ?? "")?.has(
+            place.path,
+          ),
+      )
+      .map((place) => `${(event as { name: string }).name}: ${place.shown}`),
+  );
+}
+
+/** Every key and string in `value`. */
+function textsIn(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(textsIn);
+  if (typeof value === "object" && value !== null) {
+    return Object.entries(value).flatMap(([key, child]) => [
+      key,
+      ...textsIn(child),
+    ]);
+  }
+  return [];
+}
+
+/** The folders the recording emitter scrubs, as the fixtures spell them. */
+const HOME = "C:\\Users\\alex";
+const USER_DATA = "C:\\Users\\alex\\AppData\\Roaming\\Ajour";
+
+/** A path with one separator and one case, to find it as the scrubber does. */
+const comparable = (text: string) => text.replace(/[\\/]+/g, "/").toLowerCase();
+
+/** What no event holds, an error's message included: any URL, the home or user data folder. */
+function survivorsIn(events: readonly unknown[]) {
+  return events.flatMap((event) =>
+    textsIn(event).flatMap((text) =>
+      [
+        /[a-z][a-z0-9+.-]*:\/\//i.test(text) && "a URL",
+        comparable(text).includes(comparable(HOME)) && "the home folder",
+        comparable(text).includes(comparable(USER_DATA)) &&
+          "the user data folder",
+      ]
+        .filter((what): what is string => typeof what === "string")
+        .map(
+          (what) =>
+            `${(event as { name: string }).name} holds ${what}: ${JSON.stringify(text)}`,
+        ),
+    ),
+  );
+}
+
+/** Fails on a marker where ADR 0011 allows none, and on a URL or folder anywhere. */
+function expectNoLeak(events: readonly unknown[]) {
+  expect(leaksIn(events)).toEqual([]);
+  expect(survivorsIn(events)).toEqual([]);
+}
+
+describe("plugin and update IPC: the privacy canary", () => {
+  const archivePath = `${HOME}\\Downloads\\${MARKER}.ajour-connector`;
+  const archive = {
+    archiveBytes: new Uint8Array(15),
+    archiveFilename: `${MARKER}.ajour-connector`,
+  };
+  const releaseUrl = `https://github.com/les-cabochons/ajour/releases/tag/${MARKER}`;
+
+  /** The plugin and update handlers of main.cjs, with the parts that touch the system replaced. */
+  function pluginRuntime({
+    packaged = true,
+    ...overrides
+  }: { packaged?: boolean } & Record<string, unknown> = {}) {
+    const handlers = new Map<
+      string,
+      (...args: unknown[]) => Promise<unknown>
+    >();
+    const { events, recorded } = recordingEvents();
+    const api = {
+      installPluginForServer: vi.fn(async (..._args: unknown[]) => ({
+        plugin: { id: "azure_devops", version: "1.2.3" },
+        replaced: false,
+      })),
+      uninstallPluginForServer: vi.fn(async (..._args: unknown[]) => ({})),
+    };
+    const context = vm.createContext({
+      events,
+      refusedSender,
+      isAllowedReleaseUrl: require("./electron/update-check.cjs")
+        .isAllowedReleaseUrl,
+      pluginInstallResultOf: require("./electron/plugin-install.cjs")
+        .pluginInstallResultOf,
+      // The real picker, over a dialog that picks a file that isn't there.
+      selectPluginArchive: require("./electron/plugin-install.cjs")
+        .selectPluginArchive,
+      dialog: { showOpenDialog: async () => ({ filePaths: [archivePath] }) },
+      app: { isPackaged: packaged },
+      mainWindow: { webContents: "active-window" },
+      shell: { openExternal: vi.fn(async () => undefined) },
+      ensureInternalAppApiRunning: async () => undefined,
+      internalAppApiServer: {},
+      internalAppApiModulePromise: Promise.resolve(api),
+      pluginCatalogService: { downloadPluginArchive: async () => archive },
+      selectDevelopmentPluginDirectory: async () =>
+        `${HOME}\\${MARKER}\\plugins`,
+      applyDevelopmentPluginDirectories: async () => undefined,
+      resolveDevelopmentPluginDirectories: () => [],
+      getDevelopmentPluginSettings: () => ({ directories: [] }),
+      ipc: createIpcListeners(
+        {
+          handle: (
+            name: string,
+            handler: (...args: unknown[]) => Promise<unknown>,
+          ) => void handlers.set(name, handler),
+        },
+        { events },
+      ),
+      ...overrides,
+    });
+    run(
+      context,
+      "function assertActiveDesktopWindow(",
+      "function assertDevelopmentBuild(",
+      "function pluginIdForEvent(",
+      "async function installPluginArchive(",
+      'ipc.handle("ajour:open-update-release"',
+      'ipc.handle("ajour:install-plugin"',
+      'ipc.handle("ajour:download-catalog-plugin"',
+      'ipc.handle("ajour:uninstall-plugin"',
+      "async function configureDevelopmentPluginDirectories(",
+      'ipc.handle("ajour:select-development-plugin-directory"',
+    );
+    return {
+      api,
+      context,
+      recorded,
+      invoke: (channel: string, ...args: unknown[]) =>
+        handlers.get(channel)!({ sender: "active-window" }, ...args),
+    };
+  }
+
+  it("keeps an archive's path and name out of the install's events, and its failure scrubbed", async () => {
+    // The picker fails on a file that isn't there, naming its path.
+    const missing = pluginRuntime();
+    await expect(missing.invoke("ajour:install-plugin")).rejects.toThrow(
+      MARKER,
+    );
+    // The API refuses the archive, naming its file.
+    const refused = pluginRuntime({
+      selectPluginArchive: async () => archive,
+    });
+    refused.api.installPluginForServer.mockRejectedValueOnce(
+      Object.assign(new Error(`${archive.archiveFilename} has no manifest`), {
+        code: "invalid_archive",
+      }),
+    );
+    await expect(refused.invoke("ajour:install-plugin")).rejects.toThrow(
+      "no manifest",
+    );
+    // The install works, for an archive of a marked name.
+    const installed = pluginRuntime({
+      selectPluginArchive: async () => archive,
+    });
+    await installed.invoke("ajour:install-plugin");
+
+    const recorded = [
+      ...missing.recorded,
+      ...refused.recorded,
+      ...installed.recorded,
+    ];
+    expect(recorded.map((event) => event.outcome)).toEqual([
+      "error",
+      "error",
+      "ok",
+    ]);
+    // What the picker echoes stays, with the home folder replaced.
+    expect(recorded[0]!.error!.message).toContain(
+      `~\\Downloads\\${MARKER}.ajour-connector`,
+    );
+    expect(recorded[1]!.error!.message).toBe(
+      `${archive.archiveFilename} has no manifest`,
+    );
+    expectNoLeak(recorded);
+  });
+
+  it("keeps a catalog download's plugin ID and URL out of its events", async () => {
+    const failing = pluginRuntime({
+      pluginCatalogService: {
+        downloadPluginArchive: async () => {
+          throw new Error(
+            `Could not download https://${MARKER}.example.test/${MARKER}.ajour-connector, archive ${MARKER} is not signed`,
+          );
+        },
+      },
+    });
+    // A plugin ID that is not one: the event names none.
+    await expect(
+      failing.invoke("ajour:download-catalog-plugin", MARKER),
+    ).rejects.toThrow("not signed");
+    const downloaded = pluginRuntime();
+    await downloaded.invoke("ajour:download-catalog-plugin", MARKER);
+    // A real plugin ID stays: it is Ajour's own.
+    await expect(
+      pluginRuntime().invoke("ajour:download-catalog-plugin", "azure_devops"),
+    ).resolves.toBeDefined();
+
+    const recorded = [...failing.recorded, ...downloaded.recorded];
+    expect(recorded[0]).toMatchObject({
+      outcome: "error",
+      plugin: { source: "catalog" },
+      error: {
+        message: `Could not download [url], archive ${MARKER} is not signed`,
+      },
+    });
+    expect(recorded[0]!.plugin?.id).toBeUndefined();
+    expect(recorded[1]).toMatchObject({ outcome: "ok" });
+    expectNoLeak(recorded);
+  });
+
+  it("keeps an uninstall's plugin ID and the folder its failure names out of its event", async () => {
+    const failing = pluginRuntime();
+    failing.api.uninstallPluginForServer.mockRejectedValueOnce(
+      new Error(
+        `Plugin ${MARKER} is not installed at ${USER_DATA}\\plugins\\${MARKER}`,
+      ),
+    );
+    await expect(
+      failing.invoke("ajour:uninstall-plugin", MARKER),
+    ).rejects.toThrow("not installed");
+    const uninstalled = pluginRuntime();
+    await uninstalled.invoke("ajour:uninstall-plugin", MARKER);
+
+    const recorded = [...failing.recorded, ...uninstalled.recorded];
+    expect(recorded[0]).toMatchObject({
+      outcome: "error",
+      plugin: { result: "failed" },
+      error: {
+        message: `Plugin ${MARKER} is not installed at [user data]\\plugins\\${MARKER}`,
+      },
+    });
+    expect(recorded[0]!.plugin?.id).toBeUndefined();
+    expect(recorded[1]).toMatchObject({
+      outcome: "ok",
+      plugin: { result: "uninstalled" },
+    });
+    expectNoLeak(recorded);
+  });
+
+  it("keeps a development plugin folder out of its events, and its failure scrubbed", async () => {
+    const applied = pluginRuntime({ packaged: false });
+    await applied.invoke("ajour:select-development-plugin-directory");
+    const cancelled = pluginRuntime({
+      packaged: false,
+      selectDevelopmentPluginDirectory: async () => null,
+    });
+    await cancelled.invoke("ajour:select-development-plugin-directory");
+    const rolledBack = pluginRuntime({
+      packaged: false,
+      applyDevelopmentPluginDirectories: async () => {
+        throw new Error(
+          `Cannot load plugins from ${HOME}\\${MARKER}\\plugins: ${MARKER} has no plugin.json`,
+        );
+      },
+    });
+    await expect(
+      rolledBack.invoke("ajour:select-development-plugin-directory"),
+    ).rejects.toThrow("plugin.json");
+
+    const recorded = [
+      ...applied.recorded,
+      ...cancelled.recorded,
+      ...rolledBack.recorded,
+    ];
+    expect(recorded.map((event) => event.dev_plugins?.result)).toEqual([
+      "applied",
+      "cancelled",
+      "rolled_back",
+    ]);
+    expect(recorded[2]!.error!.message).toBe(
+      `Cannot load plugins from ~\\${MARKER}\\plugins: ${MARKER} has no plugin.json`,
+    );
+    expectNoLeak(recorded);
+  });
+
+  it("keeps a release URL out of the open-release events, whether it is allowed, refused or fails", async () => {
+    const opened = pluginRuntime();
+    await opened.invoke("ajour:open-update-release", releaseUrl);
+    const refused = pluginRuntime();
+    await expect(
+      refused.invoke(
+        "ajour:open-update-release",
+        `https://${MARKER}.example.test/${MARKER}?token=${MARKER}`,
+      ),
+    ).rejects.toThrow("not allowed");
+    const failing = pluginRuntime({
+      shell: {
+        openExternal: async () => {
+          throw new Error(
+            `Could not open ${releaseUrl}: no application handles ${MARKER}`,
+          );
+        },
+      },
+    });
+    await expect(
+      failing.invoke("ajour:open-update-release", releaseUrl),
+    ).rejects.toThrow("no application");
+
+    const recorded = [
+      ...opened.recorded,
+      ...refused.recorded,
+      ...failing.recorded,
+    ];
+    expect(recorded).toMatchObject([
+      { outcome: "ok", update: { release_allowed: true } },
+      {
+        outcome: "refused",
+        outcome_reason: "url_not_allowed",
+        update: { release_allowed: false },
+      },
+      {
+        outcome: "error",
+        update: { release_allowed: true },
+        error: {
+          message: `Could not open [url]: no application handles ${MARKER}`,
+        },
+      },
+    ]);
+    expectNoLeak(recorded);
+  });
+
+  it("holds the rule itself: the marker only in an error's message, and no URL or folder anywhere", () => {
+    const event = (fields: Record<string, unknown>) => ({
+      name: "plugin.install",
+      kind: "ipc",
+      ...fields,
+    });
+    expect(
+      leaksIn([
+        event({ error: { type: "Error", message: `Plugin ${MARKER}` } }),
+      ]),
+    ).toEqual([]);
+    for (const kind of ["lifecycle", "navigation", "crash", "command"]) {
+      expect(
+        leaksIn([
+          event({
+            kind,
+            error: { type: "Error", message: `Plugin ${MARKER}` },
+          }),
+        ]),
+        kind,
+      ).not.toEqual([]);
+    }
+    for (const fields of [
+      { error: { type: MARKER, message: "x" } },
+      { error: { message: "x", code: MARKER } },
+      { plugin: { id: MARKER } },
+      { [MARKER]: 1 },
+    ]) {
+      expect(leaksIn([event(fields)]), JSON.stringify(fields)).not.toEqual([]);
+    }
+    for (const message of [
+      `at https://${MARKER}.example.test/x`,
+      `open ${HOME}\\Downloads\\a.ajour-connector`,
+      `open ${HOME.replace(/\\/g, "/")}/Downloads/a`,
+      `open ${USER_DATA}\\plugins`,
+      `open ${JSON.stringify(HOME).slice(1, -1)}`,
+    ]) {
+      expect(survivorsIn([event({ error: { message } })]), message).not.toEqual(
+        [],
+      );
+    }
   });
 });

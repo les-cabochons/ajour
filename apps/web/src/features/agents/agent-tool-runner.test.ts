@@ -1744,10 +1744,11 @@ describe("an agent's change to a synced description", () => {
   });
 
   it("reports a conflict to the agent, writing nothing", async () => {
-    const { call, localStore } = await setup();
+    const { call, localStore, sink } = await setup();
     const workItemId = importDescribedItem(localStore, BASE);
     fetchPluginsOverview.mockResolvedValue(descriptionOverview("readWrite"));
     source("Goal\n\nTheir steps\n\nDone when");
+    sink.events.length = 0;
 
     expect(
       await call("edit_work_item", {
@@ -1766,6 +1767,48 @@ describe("an agent's change to a synced description", () => {
       },
     });
     expect(writeBacklogDescription).not.toHaveBeenCalled();
+    // The conflict is recorded after the read's await, still as the agent's.
+    expect(agentCommands(sink)).toEqual([
+      { name: "backlog_item.update", trigger: "agent", surface: null },
+      {
+        name: "backlog_item.save_description",
+        trigger: "agent",
+        surface: null,
+      },
+      { name: "backlog_item.update", trigger: "agent", surface: null },
+    ]);
+  });
+
+  it("records a draft a sync put in conflict as the agent's, writing nothing", async () => {
+    const { call, localStore, sink } = await setup();
+    const workItemId = importDescribedItem(localStore, BASE);
+    fetchPluginsOverview.mockResolvedValue(descriptionOverview("readWrite"));
+    source(BASE);
+    const { markDescriptionDraftConflict } =
+      await import("@/lib/description-save");
+    markDescriptionDraftConflict(workItemId, BASE);
+    sink.events.length = 0;
+
+    expect(
+      await call("edit_work_item", {
+        workItemId,
+        description: "Goal\n\nMy steps\n\nDone when",
+      }),
+    ).toMatchObject({
+      ok: true,
+      output: { descriptionSave: { outcome: "conflict" } },
+    });
+    expect(readBacklogDescription).not.toHaveBeenCalled();
+    expect(writeBacklogDescription).not.toHaveBeenCalled();
+    expect(agentCommands(sink)).toEqual([
+      { name: "backlog_item.update", trigger: "agent", surface: null },
+      {
+        name: "backlog_item.save_description",
+        trigger: "agent",
+        surface: null,
+      },
+      { name: "backlog_item.update", trigger: "agent", surface: null },
+    ]);
   });
 
   it("refuses without Read and write on the connection, changing nothing", async () => {
@@ -1931,11 +1974,12 @@ describe("an agent's change to a synced description", () => {
   });
 
   it("keeps the text in Ajour and says why when the write fails", async () => {
-    const { call, localStore } = await setup();
+    const { call, localStore, sink } = await setup();
     const workItemId = importDescribedItem(localStore, BASE);
     fetchPluginsOverview.mockResolvedValue(descriptionOverview("readWrite"));
     source(BASE);
     writeBacklogDescription.mockRejectedValue(new Error("The token expired."));
+    sink.events.length = 0;
 
     expect(
       await call("edit_work_item", { workItemId, description: "Mine" }),
@@ -1952,6 +1996,16 @@ describe("an agent's change to a synced description", () => {
       localStore.snapshot().workItems.find((item) => item._id === workItemId)
         ?.description,
     ).toBe("Mine");
+    // The failure is recorded after the write's await, still as the agent's.
+    expect(agentCommands(sink)).toEqual([
+      { name: "backlog_item.update", trigger: "agent", surface: null },
+      {
+        name: "backlog_item.save_description",
+        trigger: "agent",
+        surface: null,
+      },
+      { name: "backlog_item.update", trigger: "agent", surface: null },
+    ]);
   });
 
   it("leaves a description that is not synced to the usual edit, with Undo", async () => {

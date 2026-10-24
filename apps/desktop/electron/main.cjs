@@ -9,7 +9,6 @@ const {
   BrowserWindow,
   clipboard,
   dialog,
-  ipcMain,
   Menu,
   nativeImage,
   nativeTheme,
@@ -19,6 +18,9 @@ const {
   session,
   shell,
 } = require("electron");
+// On its own line so the IPC check in code-standards.md can tell this import
+// from any other use of the object: only `createIpcListeners` may take it.
+const { ipcMain } = require("electron");
 const { autoUpdater } = require("electron-updater");
 const {
   buildAppMenuTemplate,

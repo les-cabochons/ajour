@@ -40,7 +40,7 @@ export const fetchAsTheApp: typeof fetch = (input, init) => {
   return nodeFetch(input, { ...init, headers });
 };
 
-/** A development plugin whose connections sync one backlog item. */
+/** The `jira` plugin's code. */
 const pluginSource = `
 export async function validateConnection(config) {
   return { normalizedConfig: config, connectionSummary: {} };
@@ -58,46 +58,66 @@ export async function syncConnection(connection) {
 }
 `;
 
-async function writePlugin(root: string) {
-  const directory = path.join(root, "plugins", "jira");
+/** A development plugin the test API loads: its manifest's own parts and its code. */
+export interface TestPlugin {
+  id: string;
+  displayName: string;
+  capabilities: Record<string, unknown>;
+  connectionFields: Record<string, unknown>[];
+  source: string;
+}
+
+/** The `jira` development plugin: its connections sync one backlog item. */
+const JIRA: TestPlugin = {
+  id: "jira",
+  displayName: "Jira",
+  capabilities: { connector: {} },
+  connectionFields: [
+    { id: "label", label: "Label", type: "text", required: true },
+    { id: "tenantLabel", label: "Site", type: "text", required: true },
+    {
+      id: "token",
+      label: "Token",
+      type: "password",
+      required: true,
+      secret: true,
+    },
+  ],
+  source: pluginSource,
+};
+
+async function writePlugin(root: string, plugin: TestPlugin) {
+  const directory = path.join(root, "plugins", plugin.id);
   await mkdir(directory, { recursive: true });
   await writeFile(
     path.join(directory, "plugin.json"),
     JSON.stringify({
-      id: "jira",
+      id: plugin.id,
       version: "1.0.0",
       apiVersion: 3,
-      displayName: "Jira",
+      displayName: plugin.displayName,
       description: "Test plugin.",
       iconSvg: ICON,
       entrypoint: "plugin.mjs",
-      capabilities: { connector: {} },
-      connectionFields: [
-        { id: "label", label: "Label", type: "text", required: true },
-        { id: "tenantLabel", label: "Site", type: "text", required: true },
-        {
-          id: "token",
-          label: "Token",
-          type: "password",
-          required: true,
-          secret: true,
-        },
-      ],
+      capabilities: plugin.capabilities,
+      connectionFields: plugin.connectionFields,
     }),
   );
-  await writeFile(path.join(directory, "plugin.mjs"), pluginSource);
+  await writeFile(path.join(directory, "plugin.mjs"), plugin.source);
   return directory;
 }
 
-/** Starts the local API with the `jira` development plugin. */
-export async function startLocalApi() {
+/** Starts the local API with a development plugin: `jira`, unless `plugin` names another. */
+export async function startLocalApi({
+  plugin = JIRA,
+}: { plugin?: TestPlugin } = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "ajour-web-trace-"));
   const sink = createRecordingSink<AjourEvent>();
   const server = await startAppApiServer({
     port: 0,
     statePath: path.join(root, "state.json"),
     installedPluginDirectory: path.join(root, "installed"),
-    developmentPluginDirectories: [await writePlugin(root)],
+    developmentPluginDirectories: [await writePlugin(root, plugin)],
     allowDevelopmentPlugins: true,
     projectDataShapePluginDirectories: [],
     allowedOrigins: [APP_ORIGIN],
@@ -107,6 +127,8 @@ export async function startLocalApi() {
   const { port } = server.address() as AddressInfo;
   return {
     baseUrl: `http://127.0.0.1:${port}`,
+    /** The folder the API keeps its state in: what its events scrub as user data. */
+    userDataPath: root,
     events: sink.events,
     async stop() {
       await stopAppApiServer(server);

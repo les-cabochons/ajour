@@ -84,6 +84,11 @@ jobs:
       - name: Test release planner
         run: node --test .github/scripts/release-plan.test.mjs
 
+      - name: Run the code standards' consistency checks
+        # The checks listed in docs/agents/code-standards.md, which must find
+        # nothing, and the tests of the script that runs them.
+        run: node --test .github/scripts/code-standards.test.mjs
+
       - name: Run workspace tests
         run: corepack pnpm test
 

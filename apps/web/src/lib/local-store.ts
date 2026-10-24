@@ -3031,7 +3031,7 @@ const store = {
 };
 
 /** A pull request change's event, by its type. */
-const PULL_REQUEST_COMMANDS = {
+export const PULL_REQUEST_COMMANDS = {
   open: "pull_request.open",
   settle: "pull_request.settle",
   unsettle: "pull_request.unsettle",
@@ -3091,10 +3091,11 @@ type StoreRead =
  * (`resultFields`). Every command but the reads has a name, so a new command
  * without one fails to compile, and a field the catalog doesn't declare for
  * that name fails too. Commands whose fields need the state before and
- * after describe themselves through `lib/store-command-fields.ts`. See
+ * after describe themselves through `lib/store-command-fields.ts`. The
+ * catalog audit (`lib/wide-events-audit.test.ts`) runs every entry. See
  * docs/logging-strategy.md.
  */
-const STORE_COMMANDS = {
+export const STORE_COMMANDS = {
   syncPullRequests: {
     name: "pull_request.apply_sync",
     trigger: "system",

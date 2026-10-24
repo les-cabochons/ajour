@@ -397,7 +397,7 @@ export function SettleDialogHost() {
               ) : null}
             </FieldContent>
           </Field>
-          {commentSource ? (
+          {commentSource && currentItem ? (
             <Field>
               <FieldLabel htmlFor="settle-comment">Comment</FieldLabel>
               <FieldContent>
@@ -411,7 +411,7 @@ export function SettleDialogHost() {
                   minLines={2}
                   mentions={commentMentionSearch(
                     commentSource,
-                    currentItem!._id,
+                    currentItem._id,
                   )}
                 />
                 {commentTooLong ? (

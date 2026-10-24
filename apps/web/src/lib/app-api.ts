@@ -397,16 +397,29 @@ export function asPoll<Result>(poll: () => Result): Result {
   }
 }
 
+/** The event a client function's call opens when no unit is active. */
+type ClientEvent<Client extends AppApiClientFunction> =
+  (typeof APP_API_CLIENT)[Client];
+
+/**
+ * A unit a client call opened, as any client event: each declares the
+ * request fields, `http` among them.
+ */
+type ClientUnit = Unit<AjourCatalog, ClientEventName>;
+
 /** The unit a call opens when no unit is active, named from the client table. */
-function startClientUnit(client: AppApiClientFunction, method: string) {
-  const name: ClientEventName = APP_API_CLIENT[client];
+function startClientUnit<Client extends AppApiClientFunction>(
+  client: Client,
+  method: string,
+): Unit<AjourCatalog, ClientEvent<Client>> {
+  const name = APP_API_CLIENT[client];
   const kinds: readonly string[] = catalog.events[name].kinds;
-  // Every client event declares the request fields, `http` among them.
   const unit = wideEvents.start(name, {
     kind: (kinds.includes("command") ? "command" : "job") as never,
     trigger: "user",
-  }) as unknown as Unit<AjourCatalog, "api.request">;
-  unit.set({
+  });
+  const request: ClientUnit = unit;
+  request.set({
     http: { method: method === "POST" || method === "DELETE" ? method : "GET" },
   });
   return unit;
@@ -420,23 +433,23 @@ function startClientUnit(client: AppApiClientFunction, method: string) {
  * makes it. The active unit is the one on top of the scope when the call
  * starts: a job runs its calls inside its own `enter`.
  */
-async function appApiRequest<T>(
-  client: AppApiClientFunction,
+async function appApiRequest<Client extends AppApiClientFunction, T>(
+  client: Client,
   path: string,
   init: RequestInit | undefined,
   schema: { parse: (value: unknown) => T },
-  eventFields?: CommentEventFields,
+  /** Adds the call's own fields to the unit it opens, typed as its event. */
+  describe?: (unit: Unit<AjourCatalog, ClientEvent<Client>>) => void,
 ): Promise<T> {
   const active = wideEvents.current();
-  const own =
+  const opened =
     active || polls > 0
       ? undefined
       : startClientUnit(client, init?.method ?? "GET");
   // Only a call that is its own unit names an item: a unit another seam
   // opened keeps the fields of its own event.
-  if (own && eventFields) {
-    (own as unknown as Unit<AjourCatalog, "comment.list">).set(eventFields);
-  }
+  if (opened) describe?.(opened);
+  const own: ClientUnit | undefined = opened;
   const unit = active ?? own;
   const traceparent = unit?.traceparent();
   const startedAt = Date.now();
@@ -869,27 +882,25 @@ export async function deletePluginConnection(
  * An agent's comment call carries `agent=1`, so the local API enforces the
  * connection's agent access at the operation (ADR 0004).
  */
-type CommentCaller = { agent?: boolean; cacheHit?: boolean } & CommentItem;
-type CommentEventFields = {
-  backlog_item?: { id: string };
-  comment?: { cache_hit: boolean };
-};
+type CommentCaller = { agent?: boolean } & CommentItem;
 /**
  * Ajour's own item, for the call's `backlog_item.id`. Never the item's ID in
  * its source, which is content (ADR 0011).
  */
 type CommentItem = { itemId?: string };
-const itemFields = (
-  caller?: CommentItem & { cacheHit?: boolean },
-): CommentEventFields | undefined =>
-  caller?.itemId || caller?.cacheHit !== undefined
-    ? {
-        ...(caller.itemId ? { backlog_item: { id: caller.itemId } } : {}),
-        ...(caller.cacheHit !== undefined
-          ? { comment: { cache_hit: caller.cacheHit } }
-          : {}),
-      }
-    : undefined;
+/** The comment calls' events, which name Ajour's item. */
+type CommentEvent = ClientEvent<
+  | "listItemComments"
+  | "postItemComment"
+  | "editItemComment"
+  | "setItemCommentReaction"
+  | "searchItemPeople"
+>;
+/** Names Ajour's item on the comment call's own event. */
+const describeItem =
+  (caller?: CommentItem) => (unit: Unit<AjourCatalog, CommentEvent>) => {
+    if (caller?.itemId) unit.set({ backlog_item: { id: caller.itemId } });
+  };
 const agentQuery = (caller?: CommentCaller) =>
   caller?.agent ? "?agent=1" : "";
 
@@ -897,14 +908,22 @@ export function listItemComments(
   pluginId: string,
   connectionId: string,
   request: BacklogListItemCommentsRequest,
-  caller?: CommentCaller,
+  caller?: CommentCaller & {
+    /** False for a load: the cache didn't answer, so the call went out. */
+    cacheHit?: boolean;
+  },
 ): Promise<BacklogListItemCommentsResult> {
   return appApiRequest(
     "listItemComments",
     `/api/backlog-comments/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/listItemComments${agentQuery(caller)}`,
     { method: "POST", body: JSON.stringify(request) },
     backlogListItemCommentsResultSchema,
-    itemFields(caller),
+    (unit) => {
+      describeItem(caller)(unit);
+      if (caller?.cacheHit !== undefined) {
+        unit.set({ comment: { cache_hit: caller.cacheHit } });
+      }
+    },
   );
 }
 
@@ -920,7 +939,7 @@ export function postItemComment(
     `/api/backlog-comments/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/postItemComment${agentQuery(caller)}`,
     { method: "POST", body: JSON.stringify(request) },
     backlogPostItemCommentResultSchema,
-    itemFields(caller),
+    describeItem(caller),
   );
 }
 
@@ -944,7 +963,7 @@ export function editItemComment(
     commentOperationPath(pluginId, connectionId, "editItemComment"),
     { method: "POST", body: JSON.stringify(request) },
     backlogEditItemCommentResultSchema,
-    itemFields(caller),
+    describeItem(caller),
   );
 }
 
@@ -974,7 +993,7 @@ export function searchItemPeople(
     commentOperationPath(pluginId, connectionId, "searchItemPeople"),
     { method: "POST", body: JSON.stringify(request) },
     backlogSearchItemPeopleResultSchema,
-    itemFields(caller),
+    describeItem(caller),
   );
 }
 
@@ -990,7 +1009,7 @@ export function setItemCommentReaction(
     commentOperationPath(pluginId, connectionId, "setItemCommentReaction"),
     { method: "POST", body: JSON.stringify(request) },
     backlogSetItemCommentReactionResultSchema,
-    itemFields(caller),
+    describeItem(caller),
   );
 }
 

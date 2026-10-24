@@ -101,11 +101,10 @@ const reactionNames: Record<BacklogReaction, string> = {
 const commentActionClassName =
   "hover:bg-foreground/10 aria-expanded:bg-foreground/20 active:bg-foreground/20 dark:hover:bg-foreground/10 dark:aria-expanded:bg-foreground/20 dark:active:bg-foreground/20";
 
+/** The newest page of a thread, and when it was fetched. */
+type FirstPage = { at: number; result: BacklogListItemCommentsResult };
 // The text of the newest page, held in memory only (ADR 0008).
-const firstPages = new Map<
-  string,
-  { at: number; result: BacklogListItemCommentsResult }
->();
+const firstPages = new Map<string, FirstPage>();
 // A comment posted from elsewhere makes the item's cached page stale, and
 // so does any load that began before it, mounted or not.
 const pageGenerations = new Map<string, number>();
@@ -233,22 +232,29 @@ export function BacklogItemComments({
     }
   }, [itemId]);
 
+  // The cached page this thread last reported a hit for. StrictMode runs the
+  // effect below twice on mount, and the second run must not report it again.
+  const reportedHit = useRef<FirstPage | undefined>(undefined);
   useEffect(() => {
     const cached = firstPages.get(key);
     if (cached && Date.now() - cached.at < CACHE_MS) {
       // No request follows, so the hit is its own event.
-      wideEvents.run(
-        "comment.list",
-        { kind: "command", trigger: "user" },
-        (command) =>
-          command.set({
-            backlog_item: { id: itemId },
-            comment: { cache_hit: true },
-          }),
-      );
+      if (reportedHit.current !== cached) {
+        reportedHit.current = cached;
+        wideEvents.run(
+          "comment.list",
+          { kind: "command", trigger: "user" },
+          (command) =>
+            command.set({
+              backlog_item: { id: itemId },
+              comment: { cache_hit: true },
+            }),
+        );
+      }
       setThread({ kind: "ready", ...cached.result, loadingEarlier: false });
       return;
     }
+    reportedHit.current = undefined;
     setThread({ kind: "loading" });
     void loadFirstPage();
   }, [key, itemId, loadFirstPage]);
@@ -268,7 +274,7 @@ export function BacklogItemComments({
         source.pluginId,
         source.connectionId,
         { sourceId: source.sourceId, limit: EARLIER_COMMENT_PAGE, cursor },
-        { itemId },
+        { itemId, cacheHit: false },
       );
       setThread((current) =>
         current.kind === "ready"
