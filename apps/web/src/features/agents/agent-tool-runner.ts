@@ -45,7 +45,7 @@ import { StaleWindowError } from "@/lib/stale-window-error";
 import { getIsoWeekDates, todayIsoDate } from "@/lib/utils";
 import type { AjourCatalog } from "@ajour/wide-events/catalog.ts";
 import type { Unit } from "@ajour/wide-events";
-import { reentry, wideEvents } from "@/lib/wide-events";
+import { reentry } from "@/lib/wide-events";
 
 /**
  * Runs the data tools an agent calls through the local API's bridge. Inputs
@@ -139,13 +139,11 @@ function isWorkItemWriteTool(tool: string): tool is WorkItemWriteTool {
 function finishWrite(
   call: BridgeToolCall,
   outcome: AgentWriteOutcome,
+  unit: AgentToolUnit | undefined,
 ): BridgeToolResult {
   const sourceWriteIds = outcome.sourceWriteIds ?? [];
   const settleComments = outcome.settleComments ?? [];
-  // The bridge's `agent_tool.call` job, when the bridge runs the call.
-  (
-    wideEvents.current() as Unit<AjourCatalog, "agent_tool.call"> | undefined
-  )?.set({ agent_tool: { undo_offered: outcome.undoToken !== null } });
+  unit?.set({ agent_tool: { undo_offered: outcome.undoToken !== null } });
   offerUndo(outcome.undoToken, {
     title: `${call.client.name}: ${outcome.action}`,
     subject: outcome.undoSubject,
@@ -172,8 +170,12 @@ function finishWrite(
   };
 }
 
+/** The bridge's `agent_tool.call` job, which it hands the call it runs. */
+type AgentToolUnit = Unit<AjourCatalog, "agent_tool.call">;
+
 export async function runAgentToolCall(
   call: BridgeToolCall,
+  unit?: AgentToolUnit,
 ): Promise<BridgeToolResult> {
   const refuse = (error: string): BridgeToolResult => ({
     requestId: call.requestId,
@@ -201,6 +203,7 @@ export async function runAgentToolCall(
           runEntryWriteTool(call.tool as EntryWriteTool, call.input, {
             projectPropertyPlugins,
           }),
+          unit,
         ),
       );
     }
@@ -212,10 +215,10 @@ export async function runAgentToolCall(
           call.client,
         ),
       );
-      return asAgent(() => finishWrite(call, outcome));
+      return asAgent(() => finishWrite(call, outcome, unit));
     }
     if (call.tool === "post_work_item_comment") {
-      return await postCommentForAgent(call);
+      return await postCommentForAgent(call, unit);
     }
     return refuse(`Ajour has no tool named ${call.tool}.`);
   } catch (error) {

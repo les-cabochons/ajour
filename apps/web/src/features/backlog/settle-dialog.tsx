@@ -409,7 +409,10 @@ export function SettleDialogHost() {
                   onSubmit={() => void settle()}
                   placeholder="Optional. Markdown supported."
                   minLines={2}
-                  mentions={commentMentionSearch(commentSource)}
+                  mentions={commentMentionSearch(
+                    commentSource,
+                    currentItem!._id,
+                  )}
                 />
                 {commentTooLong ? (
                   <FieldError>

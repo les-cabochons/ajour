@@ -39,6 +39,8 @@ const REOPEN_DELAY_MS = 3000;
 export interface McpBridgeHandlers {
   runToolCall(
     call: BridgeToolCall,
+    /** The call's `agent_tool.call` job, for the fields only the tool knows. */
+    unit: Unit<AjourCatalog, "agent_tool.call">,
   ): BridgeToolResult | Promise<BridgeToolResult>;
   onStatus(status: McpBridgeStatus): void;
   /** The API's agents snapshot, on attach and after every change. */
@@ -55,7 +57,7 @@ async function runSafely(
   unit: Unit<AjourCatalog, "agent_tool.call">,
 ): Promise<BridgeToolResult> {
   try {
-    return await handlers.runToolCall(call);
+    return await handlers.runToolCall(call, unit);
   } catch (error) {
     unit.fail(error, { reason: "tool_failed" });
     return {

@@ -55,7 +55,10 @@ export const rendererCounters = {
   api_attempt_count: operational<number>(),
   /** Their durations, added up: from the first attempt to the answer or the failure. */
   api_call_ms: operational<number>(),
-  /** Those answered with an error status, or that never reached the local API. */
+  /**
+   * Those answered with an error status, that never reached the local API,
+   * or whose answer failed its schema.
+   */
   api_failed_call_count: operational<number>(),
 } as const;
 

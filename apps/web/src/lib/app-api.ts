@@ -417,12 +417,18 @@ async function appApiRequest<T>(
   path: string,
   init: RequestInit | undefined,
   schema: { parse: (value: unknown) => T },
+  eventFields?: CommentEventFields,
 ): Promise<T> {
   const active = wideEvents.current();
   const own =
     active || polls > 0
       ? undefined
       : startClientUnit(client, init?.method ?? "GET");
+  // Only a call that is its own unit names an item: a unit another seam
+  // opened keeps the fields of its own event.
+  if (own && eventFields) {
+    (own as unknown as Unit<AjourCatalog, "comment.list">).set(eventFields);
+  }
   const unit = active ?? own;
   const traceparent = unit?.traceparent();
   const startedAt = Date.now();
@@ -850,7 +856,27 @@ export async function deletePluginConnection(
  * An agent's comment call carries `agent=1`, so the local API enforces the
  * connection's agent access at the operation (ADR 0004).
  */
-type CommentCaller = { agent?: boolean };
+type CommentCaller = { agent?: boolean; cacheHit?: boolean } & CommentItem;
+type CommentEventFields = {
+  backlog_item?: { id: string };
+  comment?: { cache_hit: boolean };
+};
+/**
+ * Ajour's own item, for the call's `backlog_item.id`. Never the item's ID in
+ * its source, which is content (ADR 0011).
+ */
+type CommentItem = { itemId?: string };
+const itemFields = (
+  caller?: CommentItem & { cacheHit?: boolean },
+): CommentEventFields | undefined =>
+  caller?.itemId || caller?.cacheHit !== undefined
+    ? {
+        ...(caller.itemId ? { backlog_item: { id: caller.itemId } } : {}),
+        ...(caller.cacheHit !== undefined
+          ? { comment: { cache_hit: caller.cacheHit } }
+          : {}),
+      }
+    : undefined;
 const agentQuery = (caller?: CommentCaller) =>
   caller?.agent ? "?agent=1" : "";
 
@@ -865,6 +891,7 @@ export function listItemComments(
     `/api/backlog-comments/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/listItemComments${agentQuery(caller)}`,
     { method: "POST", body: JSON.stringify(request) },
     backlogListItemCommentsResultSchema,
+    itemFields(caller),
   );
 }
 
@@ -880,6 +907,7 @@ export function postItemComment(
     `/api/backlog-comments/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/postItemComment${agentQuery(caller)}`,
     { method: "POST", body: JSON.stringify(request) },
     backlogPostItemCommentResultSchema,
+    itemFields(caller),
   );
 }
 
@@ -896,12 +924,14 @@ export function editItemComment(
   pluginId: string,
   connectionId: string,
   request: BacklogEditItemCommentRequest,
+  caller?: CommentItem,
 ): Promise<BacklogEditItemCommentResult> {
   return appApiRequest(
     "editItemComment",
     commentOperationPath(pluginId, connectionId, "editItemComment"),
     { method: "POST", body: JSON.stringify(request) },
     backlogEditItemCommentResultSchema,
+    itemFields(caller),
   );
 }
 
@@ -924,12 +954,14 @@ export function searchItemPeople(
   pluginId: string,
   connectionId: string,
   request: BacklogSearchItemPeopleRequest,
+  caller?: CommentItem,
 ): Promise<BacklogSearchItemPeopleResult> {
   return appApiRequest(
     "searchItemPeople",
     commentOperationPath(pluginId, connectionId, "searchItemPeople"),
     { method: "POST", body: JSON.stringify(request) },
     backlogSearchItemPeopleResultSchema,
+    itemFields(caller),
   );
 }
 
@@ -938,12 +970,14 @@ export function setItemCommentReaction(
   pluginId: string,
   connectionId: string,
   request: BacklogSetItemCommentReactionRequest,
+  caller?: CommentItem,
 ): Promise<BacklogSetItemCommentReactionResult> {
   return appApiRequest(
     "setItemCommentReaction",
     commentOperationPath(pluginId, connectionId, "setItemCommentReaction"),
     { method: "POST", body: JSON.stringify(request) },
     backlogSetItemCommentReactionResultSchema,
+    itemFields(caller),
   );
 }
 

@@ -223,7 +223,8 @@ describe("a tool call the bridge runs", () => {
     return wideEvents.run(
       "agent_tool.call",
       { kind: "job", trigger: "agent" },
-      () => runAgentToolCall({ requestId: "r1", tool, input, client }),
+      (unit) =>
+        runAgentToolCall({ requestId: "r1", tool, input, client }, unit),
     );
   }
 
@@ -266,6 +267,59 @@ describe("a tool call the bridge runs", () => {
         agent_tool: { undo_offered: true },
       }),
     ]);
+  });
+});
+
+describe("an agent move that reads the source's states", () => {
+  it("keeps the source states a move reads in the move's own event and trace", async () => {
+    const { call, localStore, sink } = await setup();
+    const workItemId = importSyncedItem(localStore);
+    const done = localStore
+      .snapshot()
+      .workflowStates.find((state) => state.done)!;
+    localStore.setWorkflowStateMapping({
+      source: "azure_devops",
+      connectionId: "ado-1",
+      sourceStatusKey: "closed",
+      sourceStatusLabel: "Closed",
+      workflowStateId: done._id,
+    });
+    // The real client, so the call it makes is counted, not mocked away.
+    const actual =
+      await vi.importActual<typeof import("@/lib/app-api")>("@/lib/app-api");
+    listBacklogSettleStates.mockImplementation(actual.listBacklogSettleStates);
+    const fetch = vi.fn(async () =>
+      Response.json({
+        states: [
+          { name: "Active", category: "In progress", done: false },
+          { name: "Closed", category: "Done", done: true },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetch);
+    sink.events.length = 0;
+
+    const result = await call("move_work_item", {
+      workItemId,
+      workflowStateId: done._id,
+    });
+
+    expect(result).toMatchObject({ ok: true });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(sink.events.map((event) => event.name)).not.toContain(
+      "source_state.list",
+    );
+    const moves = sink.events.filter((event) => event.kind === "command");
+    expect(moves).toEqual([
+      expect.objectContaining({
+        name: "backlog_item.move",
+        trigger: "agent",
+        counts: expect.objectContaining({ api_call_count: 1 }),
+      }),
+    ]);
+    const headers = (fetch.mock.calls[0] as unknown as [string, RequestInit])[1]
+      .headers as Record<string, string>;
+    expect(headers.traceparent).toContain(moves[0]!.trace_id);
   });
 });
 
@@ -1355,6 +1409,41 @@ describe("agent comment tools", () => {
     undone.onUndo();
     undone.onClose();
     expect(postItemComment).toHaveBeenCalledOnce();
+  });
+
+  it("says in the tool call's event that the comment offered an Undo", async () => {
+    const { localStore, sink } = await setup();
+    const workItemId = importSyncedItem(localStore);
+    fetchPluginsOverview.mockResolvedValue(pluginsOverview("readWrite"));
+    const { wideEvents } = await import("@/lib/wide-events");
+    const { runAgentToolCall } =
+      await import("@/features/agents/agent-tool-runner");
+    sink.events.length = 0;
+
+    const result = await wideEvents.run(
+      "agent_tool.call",
+      { kind: "job", trigger: "agent" },
+      (unit) =>
+        runAgentToolCall(
+          {
+            requestId: "r1",
+            tool: "post_work_item_comment",
+            input: { workItemId, body: "Canary text" },
+            client,
+          },
+          unit,
+        ),
+    );
+
+    expect(result).toMatchObject({ ok: true });
+    expect(sink.events).toEqual([
+      expect.objectContaining({
+        name: "agent_tool.call",
+        outcome: "ok",
+        agent_tool: { undo_offered: true },
+      }),
+    ]);
+    expect(JSON.stringify(sink.events)).not.toContain("Canary");
   });
 
   it("keeps a refused agent comment as the item's draft", async () => {

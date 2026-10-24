@@ -502,7 +502,8 @@ an object or a function where a value belongs is dropped, and counted in
   calls, so a new one fails to compile until it has a name. A call sends the
   active unit's `traceparent`, and adds to that unit's counters:
   `api_call_count`, `api_attempt_count` (retries included), `api_call_ms`
-  and `api_failed_call_count`. A call made while no unit is active is its
+  and `api_failed_call_count`, which also counts a call whose answer failed
+  its schema, not only one the API refused or never answered. A call made while no unit is active is its
   own unit, a `command` (or a `job` for a name only a job opens), with its
   method and status in `http`. A poll, such as the scheduler's tick, runs
   its calls in `asPoll` and records nothing. The active unit is the one on
@@ -518,13 +519,22 @@ an object or a function where a value belongs is dropped, and counted in
     A manual and a scheduled call of the same connection share one run.
     The scheduler's 30-second tick records nothing.
   - `calendar.fetch`, for each fetch of `CalendarEventCache`: forced by
-    Refresh (`user`) or not. A load the cache answers records nothing.
+    Refresh (`user`) or not. A load the cache answers records nothing, by
+    decision: the 30-second refresh would emit an event each time, so there
+    is no fresh-from-cache field, which the #305 note on #310 had listed.
   - `backlog.write_source`, each item's pending write, with the settle ID
     that joins it to the settle, how long after the Undo window it went,
     and its result: `sent`, `failed`, `deferred` while its Undo window is
     open, or `superseded` by a newer write.
   - `comment.delete`, with Ajour's item ID and how long it waited. The
     comment's ID in its source stays out (ADR 0011).
+  - The comment calls the user makes from the item page, which are their own
+    `command` when no unit is active: `comment.list`, `comment.post`,
+    `comment.edit`, `comment.react` and `mention.search` carry Ajour's item
+    ID as `backlog_item.id`, never the item's ID in its source (ADR 0011).
+    A call inside another unit, such as an agent's, leaves that unit's
+    fields alone. A thread the cache answers is a `comment.list` command
+    with `comment.cache_hit` true and no request, and a load has it false.
   - `settle_comment.send`, one per comment once its settle stands, and
     `agent_comment.send`, one per agent comment after its Undo window: the
     comment's length, never its text, and whether it was posted or kept as
@@ -537,8 +547,9 @@ an object or a function where a value belongs is dropped, and counted in
     calls it carried and its reconnects. A stream the local API closed for
     good ends `disconnected`.
   - `pending_writes.flush`, the launch flush of what a session that quit
-    during an Undo window left: how many of each kind. Each send is its own
-    job, a child span of the flush.
+    during an Undo window left: how many of each kind. A launch that finds
+    nothing ends it `noop`. Each send is its own job, a child span of the
+    flush.
 - **`route.change`** (`lib/route-events.ts`, through the router's events):
   one per navigation, from its start until its page rendered and its code
   loaded. It names the routes it left and reached by their IDs, which are

@@ -195,6 +195,30 @@ describe("the launch flush", () => {
     expect(JSON.stringify(sink.events)).not.toContain(CANARY);
   });
 
+  it("ends as a noop on a launch that finds nothing to send", async () => {
+    const sink = createRecordingSink<AjourEvent>();
+    (await import("@/lib/wide-events")).replaceEventSink(sink);
+    const fetch = stubApi();
+    const { flushPendingWrites } = await import("./pending-writes-flush");
+
+    await flushPendingWrites();
+
+    expect(sink.events).toEqual([
+      expect.objectContaining({
+        name: "pending_writes.flush",
+        kind: "job",
+        outcome: "noop",
+        flush: {
+          source_write_count: 0,
+          comment_delete_count: 0,
+          settle_comment_count: 0,
+          agent_comment_count: 0,
+        },
+      }),
+    ]);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("records a write still in its Undo window as deferred, and its failure when it goes", async () => {
     const sink = createRecordingSink<AjourEvent>();
     (await import("@/lib/wide-events")).replaceEventSink(sink);

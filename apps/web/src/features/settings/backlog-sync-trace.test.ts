@@ -122,6 +122,18 @@ describe("a backlog sync started from Settings", () => {
       trace_id: job.trace_id,
       parent_span_id: request.span_id,
     });
+    // The job is the trace's root, and the trace holds these three events.
+    expect(job.parent_span_id).toBeUndefined();
+    expect(
+      [...recorded, ...api.events]
+        .filter((event) => event.trace_id === job.trace_id)
+        .map((event) => `${event.runtime} ${event.kind} ${event.name}`)
+        .sort(),
+    ).toEqual([
+      "api plugin_operation backlog.sync",
+      "api request backlog.sync",
+      "renderer job backlog.sync",
+    ]);
     // One renderer event for the sync, and nothing it carried.
     expect(recorded.filter((event) => event.name === "backlog.sync")).toEqual([
       job,

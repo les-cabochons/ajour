@@ -684,7 +684,8 @@ export const catalog = defineCatalog({
 
     /**
      * A synced backlog item's comments. Never their text or authors (ADR
-     * 0008). The renderer's hop adds Ajour's item ID and the cache hit (#310).
+     * 0008). The renderer's hop adds Ajour's item ID, never the item's ID in
+     * its source (ADR 0011), and whether the cache answered (#310).
      */
     "comment.list": {
       kinds: ["command", "request", "plugin_operation"],
@@ -692,20 +693,30 @@ export const catalog = defineCatalog({
       fields: {
         ...requestFields,
         ...pluginOperationFields,
+        backlog_item: { id: operational() },
         comment: {
           /** The newest comments, or an earlier page through a cursor. */
           page: operational<"latest" | "earlier">(),
           comment_count: operational<number>(),
+          /**
+           * In the renderer: the thread showed its cached newest page, so no
+           * request followed. A cache hit is a `command` event without one.
+           */
+          cache_hit: operational<boolean>(),
         },
       },
     },
-    /** A comment posted on a synced backlog item: its length, never its text. */
+    /**
+     * A comment posted on a synced backlog item: its length, never its text.
+     * The renderer's hop adds Ajour's item ID (#310).
+     */
     "comment.post": {
       kinds: ["command", "request", "plugin_operation"],
       reasons: pluginRequestReasons,
       fields: {
         ...requestFields,
         ...pluginOperationFields,
+        backlog_item: { id: operational() },
         comment: {
           body_length: operational<number>(),
           mention_count: operational<number>(),
@@ -718,6 +729,7 @@ export const catalog = defineCatalog({
       fields: {
         ...requestFields,
         ...pluginOperationFields,
+        backlog_item: { id: operational() },
         comment: {
           body_length: operational<number>(),
           mention_count: operational<number>(),
@@ -743,7 +755,11 @@ export const catalog = defineCatalog({
     "comment.react": {
       kinds: ["command", "request", "plugin_operation"],
       reasons: pluginRequestReasons,
-      fields: { ...requestFields, ...pluginOperationFields },
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        backlog_item: { id: operational() },
+      },
     },
     /** The people a mention can name, for the editor's @ suggestions. Never their names. */
     "mention.search": {
@@ -752,6 +768,7 @@ export const catalog = defineCatalog({
       fields: {
         ...requestFields,
         ...pluginOperationFields,
+        backlog_item: { id: operational() },
         mention: { result_count: operational<number>() },
       },
     },
@@ -1135,7 +1152,9 @@ export const catalog = defineCatalog({
 
     /**
      * A calendar's events for a date range. Never a title (ADR 0005). The
-     * renderer's hop adds whether it was forced and fresh from cache (#310).
+     * renderer's hop adds whether it was forced (#310). A fetch the cache
+     * answers emits nothing, so the 30-second refresh doesn't emit an event
+     * each time: there is no fresh-from-cache field.
      */
     "calendar.fetch": {
       kinds: ["job", "request", "plugin_operation"],

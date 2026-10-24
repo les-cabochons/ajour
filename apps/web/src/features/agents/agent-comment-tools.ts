@@ -144,6 +144,7 @@ export async function listCommentsForAgent(
  */
 export async function postCommentForAgent(
   call: BridgeToolCall,
+  unit?: Unit<AjourCatalog, "agent_tool.call">,
 ): Promise<BridgeToolResult> {
   const input = writeToolInputSchemas.post_work_item_comment.parse(call.input);
   const item = findWorkItemOrRefuse(localStore.snapshot(), input.workItemId);
@@ -162,6 +163,7 @@ export async function postCommentForAgent(
     at: Date.now(),
   });
   const action = "Commented on a backlog item";
+  unit?.set({ agent_tool: { undo_offered: true } });
   let undone = false;
   showUndoToast({
     title: `${call.client.name}: ${action}`,

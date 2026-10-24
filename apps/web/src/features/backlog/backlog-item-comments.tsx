@@ -65,6 +65,7 @@ import {
   subscribePostedComments,
 } from "@/features/backlog/comment-threads";
 import { getShortcutPlatform } from "@/lib/shortcuts";
+import { wideEvents } from "@/lib/wide-events";
 import { getCommentsSeenAt, markCommentsSeen } from "@/lib/comments-seen";
 import type { LocalWorkItem } from "@/domain/local-state";
 
@@ -207,6 +208,7 @@ export function BacklogItemComments({
         current.pluginId,
         current.connectionId,
         { sourceId: current.sourceId, limit: FIRST_COMMENT_PAGE },
+        { itemId, cacheHit: false },
       );
       const result =
         postedDuringLoad.current.key === loadKey
@@ -229,17 +231,27 @@ export function BacklogItemComments({
             },
       );
     }
-  }, []);
+  }, [itemId]);
 
   useEffect(() => {
     const cached = firstPages.get(key);
     if (cached && Date.now() - cached.at < CACHE_MS) {
+      // No request follows, so the hit is its own event.
+      wideEvents.run(
+        "comment.list",
+        { kind: "command", trigger: "user" },
+        (command) =>
+          command.set({
+            backlog_item: { id: itemId },
+            comment: { cache_hit: true },
+          }),
+      );
       setThread({ kind: "ready", ...cached.result, loadingEarlier: false });
       return;
     }
     setThread({ kind: "loading" });
     void loadFirstPage();
-  }, [key, loadFirstPage]);
+  }, [key, itemId, loadFirstPage]);
 
   // Once the thread shows, this visit is the one the next divider counts from.
   const shown = thread.kind === "ready";
@@ -256,6 +268,7 @@ export function BacklogItemComments({
         source.pluginId,
         source.connectionId,
         { sourceId: source.sourceId, limit: EARLIER_COMMENT_PAGE, cursor },
+        { itemId },
       );
       setThread((current) =>
         current.kind === "ready"
@@ -315,6 +328,7 @@ export function BacklogItemComments({
       source.pluginId,
       source.connectionId,
       { sourceId: source.sourceId, commentId: comment.id, body },
+      { itemId },
     );
     updateComment(comment.id, () => edited);
   };
@@ -390,6 +404,7 @@ export function BacklogItemComments({
           reaction,
           reacted,
         },
+        { itemId },
       );
       updateComment(comment.id, (current) => ({ ...current, reactions }));
     } catch (error) {
@@ -469,7 +484,7 @@ export function BacklogItemComments({
           seenAt={seenAt}
           hidden={hidden}
           capability={source.capability}
-          mentions={commentMentionSearch(source)}
+          mentions={commentMentionSearch(source, itemId)}
           onShowEarlier={() => void loadEarlier()}
           onEdit={editComment}
           onDelete={deleteComment}
@@ -550,6 +565,7 @@ function CommentComposer({
         source.pluginId,
         source.connectionId,
         { sourceId: source.sourceId, body },
+        { itemId },
       );
       // Only what went out leaves the draft; text added meanwhile stays.
       const rest = draftAfterSend(getCommentDraft(itemId) ?? "", value);
@@ -581,7 +597,7 @@ function CommentComposer({
             onCancel={() => setOpen(false)}
             placeholder="Leave a comment. Markdown supported. Type @ to mention someone."
             minLines={3}
-            mentions={commentMentionSearch(source)}
+            mentions={commentMentionSearch(source, itemId)}
           />
           <div className="mt-2 flex min-h-7 items-center gap-2">
             {error ? (

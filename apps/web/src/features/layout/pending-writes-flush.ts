@@ -25,14 +25,18 @@ export function flushPendingWrites(): Promise<void> {
     "pending_writes.flush",
     { kind: "job", trigger: "boot" },
     async (job) => {
-      job.set({
-        flush: {
-          source_write_count: pendingSourceWriteCount(),
-          comment_delete_count: pendingCommentDeleteCount(),
-          settle_comment_count: pendingSettleCommentCount(),
-          agent_comment_count: agentCommentIds().length,
-        },
-      });
+      const flush = {
+        source_write_count: pendingSourceWriteCount(),
+        comment_delete_count: pendingCommentDeleteCount(),
+        settle_comment_count: pendingSettleCommentCount(),
+        agent_comment_count: agentCommentIds().length,
+      };
+      job.set({ flush });
+      // Most launches find nothing: an event that sent nothing is a `noop`.
+      if (Object.values(flush).every((count) => count === 0)) {
+        job.end("noop");
+        return;
+      }
       await Promise.all([
         sendPendingSourceWrites(),
         flushPendingCommentDeletes(),

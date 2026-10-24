@@ -219,4 +219,84 @@ describe("the local API client's events", () => {
     });
     expect(outside[0]).toBeUndefined();
   });
+
+  it("names Ajour's item on each comment call that is its own command, never a source ID", async () => {
+    const { api, events, recorded } = await load();
+    const person = { id: "person-canary", displayName: "Canary" };
+    const comment = {
+      id: "comment-canary",
+      author: person,
+      body: "Canary body",
+      createdAt: "2026-10-13T10:00:00Z",
+    };
+    const answers = [
+      { viewer: person, comments: [comment] },
+      { comment },
+      { comment },
+      { reactions: [] },
+      { people: [person] },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json(answers.shift())),
+    );
+    const caller = { itemId: "item-1" };
+    const ref = { sourceId: "source-canary-101" };
+
+    await api.listItemComments(
+      "azure_devops",
+      "ado-1",
+      { ...ref, limit: 5 },
+      { ...caller, cacheHit: false },
+    );
+    await api.postItemComment(
+      "azure_devops",
+      "ado-1",
+      { ...ref, body: "Canary body" },
+      caller,
+    );
+    await api.editItemComment(
+      "azure_devops",
+      "ado-1",
+      { ...ref, commentId: "comment-canary", body: "Canary body" },
+      caller,
+    );
+    await api.setItemCommentReaction(
+      "azure_devops",
+      "ado-1",
+      { ...ref, commentId: "comment-canary", reaction: "like", reacted: true },
+      caller,
+    );
+    await api.searchItemPeople(
+      "azure_devops",
+      "ado-1",
+      { ...ref, query: "", limit: 20 },
+      caller,
+    );
+    // A call made inside another unit leaves that unit's fields alone.
+    await events.wideEvents.run(
+      "pending_writes.flush",
+      { kind: "job", trigger: "boot" },
+      async () => {
+        answers.push({ people: [person] });
+        await api.searchItemPeople(
+          "azure_devops",
+          "ado-1",
+          { ...ref, query: "", limit: 20 },
+          caller,
+        );
+      },
+    );
+
+    expect(recorded.map((event) => [event.name, event.backlog_item])).toEqual([
+      ["comment.list", { id: "item-1" }],
+      ["comment.post", { id: "item-1" }],
+      ["comment.edit", { id: "item-1" }],
+      ["comment.react", { id: "item-1" }],
+      ["mention.search", { id: "item-1" }],
+      ["pending_writes.flush", undefined],
+    ]);
+    expect(recorded[0]).toMatchObject({ comment: { cache_hit: false } });
+    expect(JSON.stringify(recorded)).not.toMatch(/canary/i);
+  });
 });
