@@ -13,8 +13,8 @@ import { vi } from "vitest";
 
 /**
  * What jsdom lacks and the app's components read: media queries, resize
- * observers and pointer capture. Call it once, from a `// @vitest-environment
- * jsdom` test file.
+ * observers, pointer capture and scrolling. Call it once, from a
+ * `// @vitest-environment jsdom` test file.
  */
 export function installDomShims() {
   vi.stubGlobal("crypto", webcrypto);
@@ -54,6 +54,8 @@ export function installDomShims() {
   Element.prototype.releasePointerCapture ??= () => {};
   Element.prototype.hasPointerCapture ??= () => false;
   Element.prototype.scrollIntoView ??= () => {};
+  // jsdom defines it, but only to report "Not implemented" on every call.
+  window.scrollTo = (() => {}) as typeof window.scrollTo;
 }
 
 /**

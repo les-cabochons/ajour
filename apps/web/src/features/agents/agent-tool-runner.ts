@@ -183,44 +183,44 @@ export async function runAgentToolCall(
     error,
   });
   // The bridge runs the call as a job: its writes after an `await` run in
-  // it again, so they fold into its one event.
+  // it again, so they fold into its one event. The agent's attribution
+  // covers only the synchronous work inside each `asAgent`: in a work item
+  // write, only the code before its first `await`. The writes it makes after
+  // an `await` are attributed by their own `reentry` in
+  // agent-work-item-tools.ts, so a new write there needs one too, or it is
+  // recorded as the user's.
   const asAgent = reentry({ trigger: "agent" });
+  const tool = call.tool;
 
   try {
-    if (isReadTool(call.tool)) {
+    if (isReadTool(tool)) {
       return {
         requestId: call.requestId,
         ok: true,
-        output: await readTools[call.tool](call.input),
+        output: await readTools[tool](call.input),
       };
     }
-    if (isEntryWriteTool(call.tool)) {
+    if (isEntryWriteTool(tool)) {
       const projectPropertyPlugins =
-        call.tool === "submit_week" ? await loadProjectPropertyPlugins() : [];
+        tool === "submit_week" ? await loadProjectPropertyPlugins() : [];
       return asAgent(() =>
         finishWrite(
           call,
-          runEntryWriteTool(call.tool as EntryWriteTool, call.input, {
-            projectPropertyPlugins,
-          }),
+          runEntryWriteTool(tool, call.input, { projectPropertyPlugins }),
           unit,
         ),
       );
     }
-    if (isWorkItemWriteTool(call.tool)) {
+    if (isWorkItemWriteTool(tool)) {
       const outcome = await asAgent(() =>
-        runWorkItemWriteTool(
-          call.tool as WorkItemWriteTool,
-          call.input,
-          call.client,
-        ),
+        runWorkItemWriteTool(tool, call.input, call.client),
       );
       return asAgent(() => finishWrite(call, outcome, unit));
     }
-    if (call.tool === "post_work_item_comment") {
+    if (tool === "post_work_item_comment") {
       return await postCommentForAgent(call, unit);
     }
-    return refuse(`Ajour has no tool named ${call.tool}.`);
+    return refuse(`Ajour has no tool named ${tool}.`);
   } catch (error) {
     if (error instanceof AgentToolRefusal) return refuse(error.message);
     if (error instanceof LockedWeekError) return refuse(error.message);
