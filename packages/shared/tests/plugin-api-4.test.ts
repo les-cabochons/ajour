@@ -227,6 +227,9 @@ describe("the API 4 manifest", () => {
       "/**/x",
       "/a*b",
       "/_apis\\x",
+      "/_apis/a;b",
+      "/_apis/..;",
+      "/_apis/%00",
     ])("refuses %s", (path) => {
       const manifest = jiraManifest();
       manifest.network.endpoints = [{ method: "GET", path }];
@@ -282,6 +285,30 @@ describe("the API 4 manifest", () => {
       ["/repos/**", "/repos/../admin", false],
       ["/repos/**", "/repos/%2e%2e/admin", false],
       ["/repos/*", "/repos/a%2Fb", false],
+      ["/repos/*", "/repos/v1.2", true],
+      ["/repos/*", "/repos/a%20b", true],
+      ["/repos/*", "/repos/..;", false],
+      ["/repos/**", "/repos/..;/admin", false],
+      ["/repos/*", "/repos/.;x", false],
+      ["/repos/*", "/repos/..;foo", false],
+      ["/repos/*", "/repos/a;b", false],
+      ["/repos/*", "/repos/a%3Bb", false],
+      ["/repos/*", "/repos/..%00", false],
+      ["/repos/*", "/repos/a%00b", false],
+      ["/repos/*", "/repos/a%0Ab", false],
+      ["/repos/*", "/repos/a%1fb", false],
+      ["/repos/*", "/repos/a%7Fb", false],
+      ["/repos/*", "/repos/a\u0001b", false],
+      ["/repos/**", "/repos/%2E./admin", false],
+      ["/repos/**", "/repos/%2e%2e/admin", false],
+      ["/repos/**", "/repos/%252e%252e/admin", false],
+      ["/repos/**", "/repos/.../admin", false],
+      ["/repos/**", "/repos/..%20/admin", false],
+      ["/repos/*", "/repos/a%2fb", false],
+      ["/repos/*", "/repos/a%5cb", false],
+      ["/repos/*", "/repos/a%5Cb", false],
+      ["/repos/*", "/repos/a%255cb", false],
+      ["/repos/*", "/repos/a\\b", false],
     ])("%s matches %s: %s", (pattern, path, matches) => {
       expect(endpointPatternMatches(pattern, path)).toBe(matches);
     });
@@ -334,6 +361,40 @@ describe("the API 4 manifest", () => {
       [{ host: "{match}.{host}" }, "{match} without a wildcard"],
       [{ host: "{host}.evil.example" }, "a suffix after {host}"],
       [{ host: "{host}", pathPrefix: "/api/*" }, "a wildcard in the prefix"],
+      [
+        { whenHost: "*.github.io", host: "{match}.github.io" },
+        "a public suffix anyone can register under",
+      ],
+      [
+        { whenHost: "github.io", host: "attacker.github.io" },
+        "a fixed host under a public suffix",
+      ],
+      [{ whenHost: "*.co.uk", host: "{match}.co.uk" }, "a country suffix"],
+      [
+        { whenHost: "*.workers.dev", host: "{match}.evil.workers.dev" },
+        "a hosting suffix",
+      ],
+      [
+        { whenHost: "*.s3.amazonaws.com", host: "{match}.s3.amazonaws.com" },
+        "a private suffix",
+      ],
+      [
+        { whenHost: "amazonaws.com", host: "attacker.s3.amazonaws.com" },
+        "a host past a private suffix within the domain",
+      ],
+      [
+        { whenHost: "*.visualstudio.com", host: "vssps.visualstudio.com" },
+        "a *. rule whose host leaves out {match}",
+      ],
+      [
+        {
+          whenHost: "*.visualstudio.com",
+          host: "{match}.{match}.visualstudio.com",
+        },
+        "{match} twice",
+      ],
+      [{ whenHost: "127.0x1", host: "{host}" }, "an IP address as a rule"],
+      [{ whenHost: "0.0.0.1", host: "{host}" }, "a dotted IP address"],
     ])("refuses %j, %s", (form, _reason) => {
       const manifest = gitHubManifest();
       manifest.network.derivedHosts[0]!.forms = [
@@ -341,6 +402,68 @@ describe("the API 4 manifest", () => {
       ];
 
       expect(issuesOf(manifest)).not.toEqual([]);
+    });
+
+    it.each([
+      [{ whenHost: "github.com", host: "api.github.com" }],
+      [{ whenHost: "dev.azure.com", host: "vssps.{host}" }],
+      [{ whenHost: "dev.azure.com", host: "vssps.dev.azure.com" }],
+      [
+        {
+          whenHost: "*.visualstudio.com",
+          host: "{match}.vssps.visualstudio.com",
+        },
+      ],
+      [{ host: "{host}", pathPrefix: "/api/v3" }],
+    ])("accepts %j", (form) => {
+      const manifest = gitHubManifest();
+      manifest.network.derivedHosts[0]!.forms = [
+        form as (typeof manifest.network.derivedHosts)[number]["forms"][number],
+      ];
+
+      expect(issuesOf(manifest)).toEqual([]);
+    });
+
+    it.each([
+      ["https://acme.amazonaws.com", "https://x.acme.amazonaws.com"],
+      ["https://s3.amazonaws.com", undefined],
+    ])(
+      "derives from %s only within the base host's own domain",
+      (base, expected) => {
+        const derived = parsed(gitHubManifest()).network!.derivedHosts[0]!;
+        derived.forms = [
+          {
+            whenHost: "*.amazonaws.com",
+            host: "x.{match}.amazonaws.com",
+            keepBasePath: true,
+          },
+        ];
+
+        expect(deriveHostAddress(derived, base)).toBe(expected);
+      },
+    );
+
+    it.each(["/api/..;", "/api/;x", "/api/%2e%2e"])(
+      "refuses the path prefix %s",
+      (pathPrefix) => {
+        const manifest = gitHubManifest();
+        manifest.network.derivedHosts[0]!.forms = [
+          { host: "{host}", pathPrefix },
+        ];
+
+        expect(issuesOf(manifest)).not.toEqual([]);
+      },
+    );
+
+    it("refuses a whenHost that is a public suffix, and says why", () => {
+      const manifest = gitHubManifest();
+      manifest.network.derivedHosts[0]!.forms = [
+        { whenHost: "*.github.io", host: "{match}.github.io" },
+      ];
+
+      expect(issuesOf(manifest)).toEqual([
+        "whenHost may not be a public suffix such as github.io or co.uk, where anyone can register a name.",
+      ]);
     });
 
     it("refuses a catch-all form before the last one", () => {
@@ -370,6 +493,9 @@ describe("the API 4 manifest", () => {
       "Proxy-Authorization",
       "Forwarded",
       "X-Forwarded-For",
+      "X-HTTP-Method-Override",
+      "x-http-method",
+      "X-Method-Override",
     ])("refuses %s, which the denylist holds", (header) => {
       const manifest = jiraManifest();
       manifest.network.requestHeaders = ["Accept", header];
@@ -405,6 +531,7 @@ describe("the API 4 manifest", () => {
       expect(isDeniedRequestHeader("X-API-KEY", auth)).toBe(true);
       expect(isDeniedRequestHeader("proxy-connection", auth)).toBe(true);
       expect(isDeniedRequestHeader("Authorization", undefined)).toBe(true);
+      expect(isDeniedRequestHeader("X-Http-Method-Override", auth)).toBe(true);
       expect(isDeniedRequestHeader("Accept", auth)).toBe(false);
     });
 
@@ -429,6 +556,12 @@ describe("the API 4 manifest", () => {
       "avatars.githubusercontent.com/path",
       "*.githubusercontent.com",
       "127.0.0.1",
+      "127.0x1",
+      "0177.0.0.1",
+      "2130706433",
+      "0x7f.0.0.1",
+      "[::1]",
+      "::1",
       "localhost",
     ])("refuses %s", (publicHost) => {
       const manifest = gitHubManifest();
