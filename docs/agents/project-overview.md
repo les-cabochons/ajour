@@ -56,12 +56,12 @@ packages/example/ copy-me template for a new deep-module package
 docs/            project context (docs/agents), ADRs, frozen specs, architecture and strategy docs
 ```
 
-Installable plugin implementations are maintained in standalone
-repositories, including `les-cabochons/ajc-azure-devops`,
-`les-cabochons/ajc-jira`, `les-cabochons/ajc-github` and `les-cabochons/ajc-ics`.
+Installable plugin implementations are maintained outside Ajour. The official
+ones, Azure DevOps, Jira, GitHub, ICS and Workday, share the standalone
+`les-cabochons/ajour-plugins` repository.
 
 Provider-specific project data shapes are also standalone. The Workday shape is
-maintained in `les-cabochons/ajp-workday`; Ajour contains only the generic
+maintained in `les-cabochons/ajour-plugins`; Ajour contains only the generic
 shape contract, host, file adapters, and always-available default behavior.
 
 ## Command Surface

@@ -401,7 +401,7 @@ See [Test and debug](/developers/testing).
 
 ## 9. Package and install
 
-Copy `scripts/package-connector.mjs` and `scripts/connector-manifest.mjs` from [ajc-jira](https://github.com/les-cabochons/ajc-jira/tree/main/scripts). The first checks the manifest and writes the archive. Then:
+Copy `scripts/package-connector.mjs` and `scripts/connector-manifest.mjs` from [the Jira plugin](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/jira/scripts). The first checks the manifest and writes the archive. Then:
 
 ```sh
 pnpm package

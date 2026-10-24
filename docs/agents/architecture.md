@@ -288,7 +288,7 @@ each shape operation in an ephemeral worker. Deterministic project merge rules
 and persistence remain in the web domain and local store.
 
 Provider-specific shape plugins are maintained outside Ajour. The Workday
-implementation lives in `les-cabochons/ajp-workday`, imports no Ajour source,
+implementation lives in `les-cabochons/ajour-plugins`, imports no Ajour source,
 and targets this versioned host protocol. Ajour does not compile or bundle it.
 
 The desktop runtime must acquire Electron's single-instance lock before

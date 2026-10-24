@@ -57,4 +57,4 @@ If no transition leads to the status, the write fails with a message such as `Ji
 
 ## Source
 
-[les-cabochons/ajc-jira](https://github.com/les-cabochons/ajc-jira) on GitHub, MIT license.
+[plugins/jira](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/jira) in les-cabochons/ajour-plugins on GitHub, MIT license.
