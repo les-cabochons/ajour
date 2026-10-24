@@ -230,6 +230,8 @@ importers:
 
   packages/example: {}
 
+  packages/plugin-sdk: {}
+
   packages/shared:
     dependencies:
       zod:
