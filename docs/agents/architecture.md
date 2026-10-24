@@ -187,10 +187,24 @@ plugins in process with a fake. The arguments each plugin export receives
 come from one method table, `apps/api/src/plugin-methods.ts`, derived from the
 shared operation contracts.
 
+`/api` is the window's private channel. Whoever starts the local API
+generates a per-launch window token and keeps it in memory: Electron main, the
+vite dev server behind `just start`, or the standalone API, which reads
+`AJOUR_APP_API_WINDOW_TOKEN`. Main adds it to the window session's requests to
+`/api` through `webRequest`
+(`apps/desktop/electron/window-api-token.cjs`), and in the browser vite's dev
+proxy adds it to the page's same-origin requests, so page JavaScript never
+sees it. Every `/api` route but `/api/health` refuses a request without it
+with a bare 401 (`apps/api/src/window-token.ts`), and a request without a Host
+header is refused. `/api/health` answers anyone, so main can tell whether
+another Ajour holds the port. There is no token for scripting `/api`: scripts
+and agents use `/mcp` with an agent client, and the agent runner never passes
+the window token to a CLI (ADR 0004).
+
 Development plugin loading and browser-origin authorization are separate
 permissions. The local API accepts browser requests only from exact configured
-origins; enabling loose development directories must never broaden that
-allowlist. Plugin manifests and entrypoints must remain regular files within
+origins, in addition to the window token; enabling loose development
+directories must never broaden that allowlist. Plugin manifests and entrypoints must remain regular files within
 their canonical plugin directory without traversing symbolic-link ancestors.
 
 Worker threads isolate plugin JavaScript state, failures, event loops, and
