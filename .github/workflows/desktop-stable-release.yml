@@ -152,6 +152,9 @@ jobs:
           AJOUR_UPDATE_CHANNEL: latest
         run: ${{ matrix.command }}
 
+      - name: Check the packaged app's Electron fuses
+        run: corepack pnpm --filter @ajour/desktop exec node scripts/check-fuses.cjs
+
       - name: Upload desktop distributable
         uses: actions/upload-artifact@v4
         with:
