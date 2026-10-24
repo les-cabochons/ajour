@@ -3851,6 +3851,7 @@ describe("saving a connection's secrets", () => {
       },
     );
     const server = createAppApiServer({
+      windowToken: TEST_WINDOW_TOKEN,
       statePath,
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
