@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -737,6 +737,34 @@ function normalizeState(
   }
 
   return migrateLegacyState(raw as AppApiStateV1);
+}
+
+/** Rename errors Windows gives for a moment while another process has the target open. */
+const TRANSIENT_RENAME_CODES = new Set(["EPERM", "EACCES", "EBUSY"]);
+const RENAME_ATTEMPTS = 5;
+
+/**
+ * Renames `from` over `to`. On Windows a rename over a file another process
+ * holds open, such as an antivirus scan, fails for a moment, so it is tried
+ * again a few times before the error stands.
+ */
+async function renameOver(from: string, to: string) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await rename(from, to);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException | undefined)?.code;
+      if (
+        attempt >= RENAME_ATTEMPTS ||
+        code === undefined ||
+        !TRANSIENT_RENAME_CODES.has(code)
+      ) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20 * attempt));
+    }
+  }
 }
 
 /** The state file's path: the one given, else AJOUR_APP_API_STATE_PATH, else ~/.ajour. */
@@ -1860,14 +1888,30 @@ export class AppApiStorage {
     }
   }
 
+  /**
+   * Saves the state whole or not at all: to a temp file beside the state
+   * file, flushed to disk, then renamed over it. A crash before the rename
+   * leaves the last complete file. Only once the file holds the new state
+   * does this storage read it from memory.
+   */
   private async writeState(state: AppApiState) {
-    this.cache = state;
     await mkdir(path.dirname(this.statePath), { recursive: true, mode: 0o700 });
-    await writeFile(this.statePath, `${JSON.stringify(state, null, 2)}\n`, {
-      encoding: "utf8",
-      mode: 0o600,
-    });
-    await chmod(this.statePath, 0o600);
+    const tempPath = `${this.statePath}.${randomUUID()}.tmp`;
+    try {
+      const file = await open(tempPath, "w", 0o600);
+      try {
+        await file.writeFile(`${JSON.stringify(state, null, 2)}\n`, "utf8");
+        await file.sync();
+      } finally {
+        await file.close();
+      }
+      await chmod(tempPath, 0o600);
+      await renameOver(tempPath, this.statePath);
+    } catch (error) {
+      await rm(tempPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
+    this.cache = state;
   }
 
   private mutate<T>(
