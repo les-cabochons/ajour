@@ -26,8 +26,8 @@ import {
  * agent. Representative flows then run through the renderer's store, its jobs
  * and its local API client, into the real local API and its plugin worker.
  * No event of any runtime may hold the marker, in a key or a value, except
- * an error's message, which ADR 0011 lets keep what a plugin echoes (see
- * MARKER_ALLOWED_IN). A plugin that echoes the connection's secret or URL in
+ * the error message of a `plugin_operation` or `request` event, which ADR 0011
+ * lets keep what a plugin echoes (see MARKER_ALLOWED_IN). A plugin that echoes the connection's secret or URL in
  * its error still leaves none: the message is scrubbed before it enters an
  * event, and so are the home and user data folders. A leak is fixed where the
  * event is built, never here.
@@ -290,14 +290,20 @@ export async function syncTeamProjects(connection, request) {
 };
 
 /**
- * Where the marker may stay: an error's message, and nothing else. ADR 0011
- * makes `error.message` a sensitive field: the scrubber removes the
+ * Where the marker may stay: the error message of a `plugin_operation` event
+ * and of the `request` event of the call that ran it, and nothing else. ADR
+ * 0011 makes `error.message` a sensitive field: the scrubber removes the
  * connection's secrets, URLs and the home and user data folders, and cuts it
  * at 512 characters, but what a plugin echoes stays, such as `Issue KEY-1
- * not found`, and so does a file's name once its folder is replaced. Every
- * other field holds none, and no key does.
+ * not found`, and so does a file's name once its folder is replaced. Only
+ * those two kinds carry a plugin's echo, so a message of any other event
+ * that holds the marker is a leak from Ajour's own code. Every other field
+ * holds none, and no key does.
  */
-const MARKER_ALLOWED_IN: ReadonlySet<string> = new Set(["error.message"]);
+const MARKER_ALLOWED_IN: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ["plugin_operation", new Set(["error.message"])],
+  ["request", new Set(["error.message"])],
+]);
 
 /** A place in a value that holds the marker: a field's `path`, in its key or its value. */
 interface MarkedPlace {
@@ -336,7 +342,10 @@ function markedPlaces(value: unknown, at: string): MarkedPlace[] {
 function leaksIn(events: readonly AjourEvent[]) {
   return events.flatMap((event) =>
     markedPlaces(event, "")
-      .filter((place) => place.inKey || !MARKER_ALLOWED_IN.has(place.path))
+      .filter(
+        (place) =>
+          place.inKey || !MARKER_ALLOWED_IN.get(event.kind)?.has(place.path),
+      )
       .map(
         (place) =>
           `${event.runtime} ${event.kind} ${event.name}: ${place.shown}`,
@@ -1293,11 +1302,16 @@ describe("what the canary lets through", () => {
   const home = path.join(os.homedir(), "ana");
 
   it("lets the marker stay in an error's message and nowhere else", () => {
-    expect(
-      leaksIn([
-        event({ error: { type: "Error", message: `Issue ${MARKER}-9 gone` } }),
-      ]),
-    ).toEqual([]);
+    const echoed = {
+      error: { type: "Error", message: `Issue ${MARKER}-9 gone` },
+    };
+    for (const kind of ["request", "plugin_operation"]) {
+      expect(leaksIn([event({ kind, ...echoed })]), kind).toEqual([]);
+    }
+    // Ajour's own code never echoes a plugin, so its messages stay checked.
+    for (const kind of ["command", "job", "ipc", "lifecycle", "crash"]) {
+      expect(leaksIn([event({ kind, ...echoed })]), kind).not.toEqual([]);
+    }
     for (const fields of [
       { error: { type: MARKER, message: "gone" } },
       { error: { type: "Error", message: "gone", code: MARKER } },

@@ -1466,13 +1466,18 @@ describe("errors nothing else caught", () => {
 });
 
 /*
- * The same rule as the web canary's (apps/web/src/lib/wide-events-canary.test.ts):
- * the marker may stay in an error's message only. ADR 0011 makes
- * `error.message` a sensitive field: the scrubber replaces URLs, the user data
- * folder and the home folder, but text a failure echoes stays, and so does the
- * name of a file once its folder is replaced. Every other field holds none.
+ * The same rule as the web canary's (apps/web/src/lib/wide-events-canary.test.ts),
+ * for the one kind of event that names what a failure echoes here: the marker
+ * may stay in the error message of an `ipc` event, such as the archive or
+ * plugin a handler names when it refuses. ADR 0011 makes `error.message` a
+ * sensitive field: the scrubber replaces URLs, the user data folder and the
+ * home folder, but text a failure echoes stays, and so does the name of a file
+ * once its folder is replaced. Every other field holds none, and so does the
+ * message of every other kind of event.
  */
-const MARKER_ALLOWED_IN: ReadonlySet<string> = new Set(["error.message"]);
+const MARKER_ALLOWED_IN: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ["ipc", new Set(["error.message"])],
+]);
 
 /** Where `value` holds the marker, as `path = "text"`, in a key or a value. */
 function markedPlaces(
@@ -1507,7 +1512,13 @@ function markedPlaces(
 function leaksIn(events: readonly unknown[]) {
   return events.flatMap((event) =>
     markedPlaces(event)
-      .filter((place) => place.inKey || !MARKER_ALLOWED_IN.has(place.path))
+      .filter(
+        (place) =>
+          place.inKey ||
+          !MARKER_ALLOWED_IN.get((event as { kind?: string }).kind ?? "")?.has(
+            place.path,
+          ),
+      )
       .map((place) => `${(event as { name: string }).name}: ${place.shown}`),
   );
 }
@@ -1830,6 +1841,7 @@ describe("plugin and update IPC: the privacy canary", () => {
   it("holds the rule itself: the marker only in an error's message, and no URL or folder anywhere", () => {
     const event = (fields: Record<string, unknown>) => ({
       name: "plugin.install",
+      kind: "ipc",
       ...fields,
     });
     expect(
@@ -1837,6 +1849,17 @@ describe("plugin and update IPC: the privacy canary", () => {
         event({ error: { type: "Error", message: `Plugin ${MARKER}` } }),
       ]),
     ).toEqual([]);
+    for (const kind of ["lifecycle", "navigation", "crash", "command"]) {
+      expect(
+        leaksIn([
+          event({
+            kind,
+            error: { type: "Error", message: `Plugin ${MARKER}` },
+          }),
+        ]),
+        kind,
+      ).not.toEqual([]);
+    }
     for (const fields of [
       { error: { type: MARKER, message: "x" } },
       { error: { message: "x", code: MARKER } },

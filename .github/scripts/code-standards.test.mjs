@@ -90,7 +90,19 @@ test("the console check finds every way to reach console, not only a call", () =
     "on globalThis": "globalThis.console.log(value);",
     "on window": "window.console.log(value);",
     "global alias": "const log = globalThis.console;",
-    "property on the next line": "console\n  .log(value);",
+    "handed to a constructor": "new Logger({ sink: console });",
+    "handed to a call": "use(console, x);",
+    "handed over last": "use(x, console);",
+    returned: "  return console;",
+    "returned by an arrow": "const getLog = () => console;",
+    "chosen in a ternary": "const log = quiet ? nowhere : console;",
+    "a fallback": "const log = custom || console;",
+    "destructured key": "const { console: c } = globalThis;",
+    "destructured by name": "const { console } = globalThis;",
+    "computed on globalThis": 'globalThis["console"]',
+    "computed with single quotes": "window['console'];",
+    "a spaced alias": "const log = console",
+    "an alias without spaces": "const log=console;",
   };
   for (const [name, text] of Object.entries(bypasses)) {
     const matches = runOver(consoleCheck, { "apps/web/src/lib/a.ts": text });
@@ -104,6 +116,15 @@ test("the console check finds every way to reach console, not only a call", () =
         'const mode = "console";',
         "const sink = createConsoleSink();",
         "// the console sink prints events",
+        // A comment that wraps may end a line on the word.
+        "// Events go to the console",
+        "// log to the console",
+        "// A developer turns on the console sink with AJOUR_WIDE_EVENTS=console.",
+        "// AJOUR_WIDE_EVENTS=console prints them.",
+        "/** Set `AJOUR_WIDE_EVENTS=console` to print events. */",
+        'const hint = "set AJOUR_WIDE_EVENTS=console to print events";',
+        'const modes = ["console"];',
+        'if (value === "console") return sink;',
       ].join("\n"),
     }),
     [],
@@ -147,6 +168,12 @@ test("the IPC check finds every way around the wrapper", () => {
     "ipc-message-sync": 'webContents.on("ipc-message-sync", () => {});',
     "a computed ipc": 'window.webContents["ipc"].handle("a", () => null);',
     "a destructured ipc": "const { ipc: raw } = window.webContents;",
+    "a destructured ipc, renamed":
+      "const { ipc: r } = getWindow().webContents;",
+    "a destructured ipc, shorthand": "const { ipc } = wc;",
+    "a destructured ipc after another name": "const { id, ipc } = wc;",
+    "a destructured ipc over several lines": "const {\n  ipc,\n} = wc;",
+    "a renamed ipc over several lines": "const {\n  ipc: r,\n} = wc;",
   };
   for (const [name, text] of Object.entries(bypasses)) {
     const matches = runOver(ipcCheck, {
@@ -165,6 +192,8 @@ test("the IPC check leaves the wrapper, its one import and its one call alone", 
         'ipc.handle("ajour:get-update-state", getState);',
         "// Every channel registers through `ipc`.",
         'window.webContents.on("context-menu", () => {});',
+        "const { id, webContents } = window;",
+        "// the ipc, in a comment",
       ].join("\n"),
       "apps/desktop/electron/ipc-listeners.cjs": [
         "function createIpcListeners(ipcMain, { events }) {",
@@ -175,6 +204,16 @@ test("the IPC check leaves the wrapper, its one import and its one call alone", 
     }),
     [],
   );
+});
+
+test("the IPC check's allowed lines hold on a CRLF checkout, where ripgrep sees the carriage return", () => {
+  for (const line of [
+    'const { ipcMain } = require("electron");',
+    "const ipc = createIpcListeners(ipcMain, { events });",
+  ]) {
+    assert.equal(ipcCheck.pattern.test(`${line}\r`), false, line);
+    assert.equal(ipcCheck.pattern.test(`${line} // more\r`), true, line);
+  }
 });
 
 test("reads globs as ripgrep does", () => {
