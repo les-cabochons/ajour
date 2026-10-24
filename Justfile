@@ -162,6 +162,12 @@ release-test:
     echo >&2 "[1/1] Running release versioning tests"
     node --test .github/scripts/release-plan.test.mjs
 
+[doc("Runs the code standards' consistency checks, which must find nothing")]
+[group("app")]
+standards-check:
+    echo >&2 "[1/1] Running the consistency checks of docs/agents/code-standards.md"
+    node .github/scripts/code-standards.mjs
+
 [doc("Runs all workspace tests")]
 [group("app")]
 test:

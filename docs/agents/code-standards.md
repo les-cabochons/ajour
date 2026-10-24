@@ -140,6 +140,7 @@ just test
 just typecheck
 just build
 just format-check
+just standards-check
 ```
 
 `just test` runs tests across workspace packages that expose a test script, including the web and shared suites.
@@ -148,23 +149,23 @@ The `Tests` workflow (`.github/workflows/tests.yml`) runs the `just test` suites
 
 For a narrow change, run the closest focused tests first, then the broader checks if risk remains. For a visual change, start the app and inspect the affected view in a browser.
 
-These consistency checks should find nothing. A match is a boundary violation or an import from a retired path:
+These consistency checks should find nothing. A match is a boundary violation or an import from a retired path. `just standards-check` runs them, and so does CI on every pull request: `.github/scripts/code-standards.mjs` reads the commands below and runs each the way `rg` would, so this list is the only one.
 
 ```sh
 rg -n 'settings-panel|message-panel' apps/web/src/features
 rg -n 'type="checkbox"' apps/web/src/features
 rg -n '@base-ui/react' apps/web/src/features
-rg -n 'from "@/features/' apps/web/src/domain apps/web/src/lib
+rg -n 'from "@/features/' apps/web/src/domain apps/web/src/lib -g '!*.test.*'
 rg -n 'hours-input|project-task-budget|project-task-import-utils' apps/web/src
 rg -n 'features/backlog/(work-item-estimates|work-item-hierarchy)' apps/web/src
 rg -n 'window.addEventListener\("pointer(move|up|cancel)"' apps/web/src/features
 rg -n '^function (formatPriorityInput|parsePriorityInput|formatEstimateInput|parseEstimateInput|buildManualTimeEntryNote)' apps/web/src/features/backlog
-rg -n 'console\.' apps/desktop/electron
-rg -n 'console\.' apps/web/src -g '!*.test.*'
-rg -n 'ipcMain\.(on|handle|once|handleOnce)\(' apps/desktop/electron --glob '!ipc-listeners.cjs'
-rg -n 'console\.' apps/api/src -g '!*.test.ts' -g '!standalone.ts'
+rg -n '\bconsole\.[A-Za-z]' apps/api/src apps/desktop/electron apps/web/src packages -g '!*.test.*' -g '!test-support' -g '!tests' -g '!standalone.ts' -g '!packages/wide-events/lib/sinks.ts'
+rg -n 'ipcMain\.(on|once|handle|handleOnce|addListener|prependListener|prependOnceListener)\(|\.ipc\.(on|once|handle|handleOnce|addListener)\(' apps/desktop/electron -g '!ipc-listeners.cjs'
 ```
 
-The standalone local API's two stderr lines, in `apps/api/src/standalone.ts`, are the only `console.` calls the local API keeps, by decision, for `just api-start` and the web dev server: the "listening" line, and the note that no window token was given, so `/api` answers only `/api/health`.
+- **No `console.` call in runtime code**, in any runtime: the local API, the desktop main process and its preload, the renderer and the packages. A failure is recorded on the event of the unit that failed (`docs/logging-strategy.md`). Tests and test support may log. Two exceptions stand, by decision. The standalone local API's two stderr lines, in `apps/api/src/standalone.ts`, are for `just api-start` and the web dev server: the "listening" line, and the note that no window token was given, so `/api` answers only `/api/health`. And the wide-events console sink (`packages/wide-events/lib/sinks.ts`) prints events when a developer sets `AJOUR_WIDE_EVENTS=console`.
+- **No raw IPC registration.** Every IPC channel of the main process registers through `createIpcListeners` in `apps/desktop/electron/ipc-listeners.cjs`, so each call emits its `ipc` event. Nothing else calls `ipcMain.handle`, `ipcMain.on` or their variants, or `webContents.ipc`.
+- A test file in `domain` or `lib` may import a feature, as `lib/dispatcher-event-attribution.test.tsx` does to drive real dispatchers. Runtime code there may not.
 
 Feature code consumes pure behavior from `domain`, runtime behavior from `lib`, local wrappers from `apps/web/src/components/ui`, app-level surfaces from `apps/web/src/components/app-surface.tsx`, or feature-local modules that own repeated rendering.
