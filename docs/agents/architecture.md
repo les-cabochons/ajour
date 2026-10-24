@@ -296,6 +296,21 @@ starting the local API or any plugin operation. A second launch should focus
 the existing window and exit so concurrent application versions do not share
 the API port, state file, or installed-plugin directory.
 
+Release builds flip the Electron fuses decided in #231, through `electronFuses`
+in `apps/desktop/electron-builder.config.cjs`. `NODE_OPTIONS`, `--inspect` and
+the file protocol's extra privileges are off, and the app loads only from
+`app.asar`, whose integrity is checked. The release workflows read the fuses
+back with `apps/desktop/scripts/check-fuses.cjs` and fail when one differs. Two
+exceptions remain:
+
+- Run as Node stays on: the agent CLI starts Playwright MCP with Ajour's own
+  binary and `ELECTRON_RUN_AS_NODE=1` (`agent-runner/playwright-mcp.ts`), so
+  anyone who can start the binary can still run Node code as Ajour.
+- Integrity covers `app.asar` only, that is main and preload. The renderer
+  (`dist-desktop`) and the local API (`internal-app-runtime`) load from extra
+  resources, which the asar-only fuse doesn't restrict and integrity doesn't
+  check.
+
 ## Routing
 
 Routes are declared in `apps/web/src/router.tsx` with TanStack Router.
