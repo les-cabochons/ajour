@@ -15,6 +15,7 @@ const {
   net,
   powerMonitor,
   protocol,
+  safeStorage,
   session,
   shell,
 } = require("electron");
@@ -40,6 +41,7 @@ const {
   pluginInstallResultOf,
   selectPluginArchive,
 } = require("./plugin-install.cjs");
+const { createSafeStorageCipher } = require("./secret-cipher.cjs");
 const { createPluginCatalogService } = require("./plugin-catalog.cjs");
 const {
   loadPluginCatalogSettings,
@@ -80,6 +82,13 @@ const {
   createUpdateCheckCoordinator,
   isAllowedReleaseUrl,
 } = require("./update-check.cjs");
+
+// On macOS, safeStorage keeps its key in a keychain item named after the
+// app, so a development build takes a name of its own and never touches the
+// release build's key. A release build never changes its name: that would
+// lose the key, and every saved secret with it. The data folder is pinned
+// below, so the name doesn't move it.
+if (!app.isPackaged) app.setName("Ajour Dev");
 
 const DESKTOP_USER_DATA_DIRNAME = "Ajour";
 const stableUserDataPath =
@@ -802,6 +811,20 @@ function registerStaticProtocol() {
   });
 }
 
+/**
+ * The vault the local API keeps secrets in: a file beside the state file,
+ * encrypted by safeStorage. Only the API, in this process, writes it.
+ */
+function internalAppApiVault(apiModule, statePath) {
+  return new apiModule.FileSecretVault({
+    filePath: path.join(path.dirname(statePath), "app-api-vault.json"),
+    cipher: createSafeStorageCipher({
+      safeStorage,
+      platform: process.platform,
+    }),
+  });
+}
+
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -905,7 +928,8 @@ async function ensureInternalAppApiRunning() {
     internalAppApiModulePromise ??= import(
       pathToFileURL(internalAppApiEntryPath).toString()
     );
-    const { startAppApiServer } = await internalAppApiModulePromise;
+    const internalAppApiModule = await internalAppApiModulePromise;
+    const { startAppApiServer } = internalAppApiModule;
     if (typeof startAppApiServer !== "function") {
       throw Object.assign(
         new Error(
@@ -915,12 +939,14 @@ async function ensureInternalAppApiRunning() {
       );
     }
 
+    const statePath =
+      process.env.AJOUR_APP_API_STATE_PATH ??
+      path.join(app.getPath("userData"), "app-api-state.json");
     const apiServer = await startAppApiServer({
       host: INTERNAL_APP_API_HOST,
       port: INTERNAL_APP_API_PORT,
-      statePath:
-        process.env.AJOUR_APP_API_STATE_PATH ??
-        path.join(app.getPath("userData"), "app-api-state.json"),
+      statePath,
+      vault: internalAppApiVault(internalAppApiModule, statePath),
       installedPluginDirectory: path.join(app.getPath("userData"), "plugins"),
       developmentPluginDirectories: app.isPackaged
         ? []
