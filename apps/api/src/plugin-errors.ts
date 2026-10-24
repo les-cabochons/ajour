@@ -2,8 +2,8 @@
  * How a plugin's text leaves the plugin host. A plugin may echo the values it
  * was given, and some are secrets: an API token, a calendar address, a team
  * secret. Every response, stored last error and log that carries a plugin
- * error takes its message from `connectionCredentials(...).errorMessage`, or
- * `pluginErrorMessage`, in `connection-credentials.ts`. Text the plugin writes
+ * error takes its message from `connectionCredentials(...).errorMessage`, in
+ * `connection-credentials.ts`. Text the plugin writes
  * in a successful result, such as a field's sync message or the connection
  * summary, goes through one `ConnectionRedaction` per connection and request.
  *
@@ -57,19 +57,6 @@ export function redactPluginText(
   secrets: readonly string[],
 ): string {
   return connectionRedaction(secrets).text(text);
-}
-
-/**
- * The summary a plugin wrote for a connection, redacted as
- * `ConnectionRedaction.summary` does.
- */
-export function redactConnectionSummary<
-  Value extends string | number | boolean,
->(
-  summary: Readonly<Record<string, Value>>,
-  secrets: readonly string[],
-): Record<string, Value | string> {
-  return connectionRedaction(secrets).summary(summary);
 }
 
 /** The message of a thrown value, which need not be an `Error`. */

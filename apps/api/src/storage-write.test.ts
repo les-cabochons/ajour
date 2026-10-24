@@ -1,6 +1,15 @@
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp, readdir, readFile, rename, rm, stat } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppApiStorage } from "./storage.ts";
 
@@ -73,6 +82,38 @@ describe("AppApiStorage writes", () => {
         group.connections.map((item) => item.label),
       ),
     ).toEqual(["Before"]);
+  });
+
+  it("deletes the temp files an interrupted write left, on the first load and nothing else", async () => {
+    const { tempDir, statePath } = await tempStatePath();
+    await new AppApiStorage(statePath).upsertConnection(
+      "jira",
+      connection("Before"),
+    );
+    const orphan =
+      "app-api-state.json.0b9d5f0e-6a31-4c52-8f3a-2f6c1d7e9a44.tmp";
+    const kept = [
+      "notes.tmp",
+      "app-api-state.json.tmp",
+      "app-api-state.json.not-a-uuid.tmp",
+      "other.json.0b9d5f0e-6a31-4c52-8f3a-2f6c1d7e9a44.tmp",
+      "app-api-state.json.0b9d5f0e-6a31-4c52-8f3a-2f6c1d7e9a44.tmp.bak",
+    ];
+    await writeFile(path.join(tempDir, orphan), '{"token":"pat-leftover"}');
+    for (const name of kept) await writeFile(path.join(tempDir, name), "x");
+    // A folder that happens to carry the pattern is not a temp file.
+    const folder =
+      "app-api-state.json.1b9d5f0e-6a31-4c52-8f3a-2f6c1d7e9a44.tmp";
+    await mkdir(path.join(tempDir, folder));
+
+    const reloaded = new AppApiStorage(statePath);
+    await reloaded.getPluginsOverview([]);
+
+    const names = await readdir(tempDir);
+    expect(names).not.toContain(orphan);
+    expect(names.sort()).toEqual(
+      ["app-api-state.json", folder, ...kept].sort(),
+    );
   });
 
   it("retries a rename the operating system refuses for a moment, as Windows does while the file is open", async () => {

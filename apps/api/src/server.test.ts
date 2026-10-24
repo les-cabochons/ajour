@@ -1817,6 +1817,18 @@ describe("agent task settings route", () => {
       apiKey: KEY,
     });
 
+    const NEW_KEY = "wd-key-9a41d6c2e7b8";
+    const replaced = await save(server, "jira", {
+      url: "https://wd.example/u",
+      apiKey: NEW_KEY,
+    });
+    expect(replaced.status).toBe(200);
+    expect(JSON.stringify(replaced.body)).not.toContain(NEW_KEY);
+    await expect(storedValues()).resolves.toEqual({
+      url: "https://wd.example/u",
+      apiKey: NEW_KEY,
+    });
+
     const removed = await dispatchJsonRequest(server, {
       method: "POST",
       path: "/api/agents/plugins/jira/settings",

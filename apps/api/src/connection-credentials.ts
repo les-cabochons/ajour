@@ -119,23 +119,6 @@ export function editableValues(
 }
 
 /**
- * The values without the secret ones, for a response that shows every value
- * it holds, such as an agent task's: declared fields keep their place even
- * when the response adds defaults beside them.
- */
-export function withoutSecretValues(
-  fields: readonly SecretFieldDeclaration[],
-  values: Readonly<PluginFieldValues>,
-): PluginFieldValues {
-  const secretIds = new Set(
-    fields.filter((field) => field.secret).map((field) => field.id),
-  );
-  return Object.fromEntries(
-    Object.entries(values).filter(([fieldId]) => !secretIds.has(fieldId)),
-  );
-}
-
-/**
  * The plugin's secret field values in each config, as a message would show
  * them, without empty ones. A field may hold a string, a number or a boolean.
  * A stored key the manifest no longer declares counts as secret too, Ajour's
@@ -199,18 +182,6 @@ export function connectionCredentials(
     },
     errorMessage: (error) => redactPluginText(errorMessage(error), secrets),
   };
-}
-
-/**
- * The message a plugin error may carry out of the plugin host, for an
- * operation on a connection. See `connectionCredentials` for the configs.
- */
-export function pluginErrorMessage(
-  error: unknown,
-  plugin: SecretConnectionFields,
-  ...configs: (ConnectionValues | undefined)[]
-): string {
-  return connectionCredentials(plugin, ...configs).errorMessage(error);
 }
 
 /** The parts of a saved connection a plugin receives. */

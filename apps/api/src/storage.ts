@@ -1,6 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, open, readFile, rename, rm } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  open,
+  readdir,
+  readFile,
+  rename,
+  rm,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -41,9 +49,14 @@ import {
 } from "./connection-credentials.ts";
 import {
   runStateMigrations,
+  STATE_VERSION,
   storedStateVersion,
   type StoredStateRecord,
 } from "./state-migrations.ts";
+
+/** The random part of a temp file's name, as `randomUUID` writes it. */
+const TEMP_FILE_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 interface StoredConnection {
   id: string;
@@ -166,7 +179,7 @@ function normalizeAgentRunnerState(raw: unknown): StoredAgentRunnerState {
 }
 
 interface AppApiStateV7 {
-  version: 7;
+  version: number;
   connections: StoredConnection[];
   stagedImports: BacklogImportCandidate[];
   dismissedImportKeys: string[];
@@ -232,7 +245,7 @@ function normalizeDisabledCapabilities(
 
 function createDefaultState(): AppApiState {
   return {
-    version: 7,
+    version: STATE_VERSION,
     connections: [],
     stagedImports: [],
     dismissedImportKeys: [],
@@ -418,7 +431,7 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
   const defaults = createDefaultState();
 
   return {
-    version: 7,
+    version: STATE_VERSION,
     connections: (Array.isArray(raw.connections) ? raw.connections : [])
       .filter((connection): connection is StoredConnection =>
         Boolean(
@@ -1636,6 +1649,7 @@ export class AppApiStorage {
       detached: true,
     });
     try {
+      await this.removeOrphanedTempFiles();
       let state: AppApiState;
       if (existsSync(this.statePath)) {
         const text = await readFile(this.statePath, "utf8");
@@ -1666,6 +1680,29 @@ export class AppApiStorage {
       throw error;
     } finally {
       unit?.end();
+    }
+  }
+
+  /**
+   * Deletes the temp files an interrupted write left beside the state file:
+   * they hold the state, secrets in plain text, and nothing reads them. Runs
+   * before the first write, and only matches this file's own temp names.
+   */
+  private async removeOrphanedTempFiles(): Promise<void> {
+    const directory = path.dirname(this.statePath);
+    const prefix = `${path.basename(this.statePath)}.`;
+    try {
+      for (const entry of await readdir(directory, { withFileTypes: true })) {
+        if (!entry.isFile() || !entry.name.startsWith(prefix)) continue;
+        const middle = entry.name.slice(prefix.length);
+        if (!middle.endsWith(".tmp")) continue;
+        if (!TEMP_FILE_ID.test(middle.slice(0, -".tmp".length))) continue;
+        await rm(path.join(directory, entry.name), { force: true }).catch(
+          () => undefined,
+        );
+      }
+    } catch {
+      // No folder yet, or one that can't be listed: nothing to clean.
     }
   }
 

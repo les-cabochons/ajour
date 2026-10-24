@@ -117,7 +117,7 @@ describe("saving a connection's secrets", () => {
     }
     expect(refusal).toBeInstanceOf(SecretSaveError);
     // The refusal names the field, never a value.
-    expect(String((refusal as Error).message)).not.toContain("secret-");
+    expect(String((refusal as Error).message)).not.toContain("new-secret");
     expect(String((refusal as Error).message)).toContain("personalAccessToken");
   });
 

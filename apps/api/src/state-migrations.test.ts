@@ -51,7 +51,7 @@ describe("state migrations", () => {
     expect(storedStateVersion({ version: 2 })).toBe(2);
     expect(storedStateVersion({})).toBe(1);
     expect(storedStateVersion({ version: 7 })).toBe(1);
-    // A later version than this build knows reads as the current one.
+    // A later version than this build knows keeps its own number.
     expect(storedStateVersion({ version: 12, connections: [] })).toBe(12);
   });
 });

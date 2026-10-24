@@ -1299,6 +1299,43 @@ describe("AgentRunner", () => {
     }
   });
 
+  it("leaves a secret setting out of the overview, declared or not, but still gives it to a run", async () => {
+    fakeSettings.push({
+      id: "token",
+      label: "Token",
+      type: "text" as const,
+      required: false,
+      secret: true,
+    });
+    fakeSettings[0]!.defaultValue = "https://wd.example/default";
+    try {
+      const { runner, sessions } = await setup([{ hang: true }], {
+        values: {
+          note: "a note",
+          token: "declared-secret-value",
+          // A secret the manifest no longer declares.
+          oldToken: "undeclared-secret-value",
+        },
+        weekLink: "{{settings.url}}?t={{settings.token}}",
+      });
+      const [task] = (await runner.overview()).tasks;
+      expect(task!.values).toEqual({
+        url: "https://wd.example/default",
+        note: "a note",
+      });
+      expect(JSON.stringify(task)).not.toContain("secret-value");
+      const run = await runner.start(request);
+      expect(sessions.get(run.sessionId)!.link?.url).toBe(
+        "https://wd.example/default?t=declared-secret-value",
+      );
+      runner.stop(run.id);
+      await settled(runner);
+    } finally {
+      fakeSettings.pop();
+      delete fakeSettings[0]!.defaultValue;
+    }
+  });
+
   it("gives every task the default of the first task that declares a setting", async () => {
     fakeSettings[0]!.defaultValue = "https://wd.example/default";
     try {

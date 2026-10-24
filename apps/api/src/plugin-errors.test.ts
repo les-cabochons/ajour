@@ -2,12 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   connectionRedaction,
   connectionlessPluginErrorMessage,
-  redactConnectionSummary,
   redactPluginText,
 } from "./plugin-errors.ts";
 import {
+  connectionCredentials,
   connectionSecretValues,
-  pluginErrorMessage,
 } from "./connection-credentials.ts";
 
 // The redaction of one text, and its tests, live in packages/wide-events.
@@ -21,6 +20,16 @@ const plugin = {
     { id: "teamSecret", secret: true },
   ],
 };
+
+const pluginErrorMessage = (
+  error: unknown,
+  ...rest: Parameters<typeof connectionCredentials>
+) => connectionCredentials(...rest).errorMessage(error);
+
+const redactConnectionSummary = (
+  summary: Record<string, string | number | boolean>,
+  secrets: readonly string[],
+) => connectionRedaction(secrets).summary(summary);
 
 describe("plugin error messages", () => {
   it("replaces a numeric secret, and a boolean one a field declares secret", () => {

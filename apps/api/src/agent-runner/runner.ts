@@ -40,7 +40,7 @@ import type {
   StdioServerSpec,
 } from "./adapter.ts";
 import { buildPrompt } from "./prompts.ts";
-import { withoutSecretValues } from "../connection-credentials.ts";
+import { editableValues } from "../connection-credentials.ts";
 
 /**
  * Runs one plugin agent task at a time: a per-run MCP client, a session the
@@ -334,7 +334,7 @@ export class AgentRunner {
           values:
             secrets === "included"
               ? values
-              : withoutSecretValues([...sharedFields.values()], values),
+              : editableValues([...sharedFields.values()], values),
           ...(task.weekLink ? { weekLink: task.weekLink } : {}),
           blockers,
         });
