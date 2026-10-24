@@ -18,6 +18,7 @@ import {
   installPluginForServer,
   uninstallPluginForServer,
 } from "./server.ts";
+import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 
 const ICON = "<svg viewBox='0 0 16 16'><path d='M0 0h16v16H0z' /></svg>";
 
@@ -592,6 +593,69 @@ describe("plugin installation boundary", () => {
         ],
       },
     });
+  });
+
+  it("runs both hosts' plugins through the runtime it is given", async () => {
+    const root = await tempDir();
+    const pluginDirectory = await createPlugin(
+      path.join(root, "source"),
+      [
+        "export async function validateConnection(config) {",
+        "  return { normalizedConfig: config, connectionSummary: { site: config.baseUrl } };",
+        "}",
+      ].join("\n"),
+    );
+    const shapeDirectory = await createProjectDataShapePlugin(root);
+    const inProcess = new InProcessPluginRuntime();
+    const started: string[] = [];
+    const server = createAppApiServer({
+      statePath: path.join(root, "state.json"),
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [pluginDirectory],
+      projectDataShapePluginDirectories: [shapeDirectory],
+      allowDevelopmentPlugins: true,
+      pluginRuntime: {
+        start(invocation) {
+          started.push(`${invocation.pluginId}.${invocation.method}`);
+          return inProcess.start(invocation);
+        },
+      },
+    });
+    servers.push(server);
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: "/api/plugins/jira/connections",
+        body: JSON.stringify({
+          values: {
+            label: "Main Jira",
+            tenantLabel: "Acme",
+            autoSync: false,
+            autoSyncIntervalMinutes: 15,
+            baseUrl: "https://acme.atlassian.net",
+          },
+        }),
+      }),
+    ).resolves.toMatchObject({ status: 200 });
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: "/api/project-data-shapes/workday-project-data/export",
+        body: JSON.stringify({
+          projects: [
+            { name: "Mercury", color: "#123456", status: "active", tasks: [] },
+          ],
+        }),
+      }),
+    ).resolves.toEqual({
+      status: 200,
+      body: { datasets: [{ id: "projects", rows: [{ project: "Mercury" }] }] },
+    });
+    expect(started).toEqual([
+      "jira.validateConnection",
+      "workday-project-data.exportProjects",
+    ]);
   });
 
   it("rejects browser requests from untrusted origins", async () => {
