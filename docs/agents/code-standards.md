@@ -144,6 +144,8 @@ just format-check
 
 `just test` runs tests across workspace packages that expose a test script, including the web and shared suites.
 
+The `Tests` workflow (`.github/workflows/tests.yml`) runs the `just test` suites on Windows and macOS, and the `just acceptance-test` suite on Windows, for every pull request and every push to main. A test that cannot run on one OS is skipped with `skipIf` or `runIf`, a comment that says why, and, when the skip hides a defect, a linked open issue.
+
 For a narrow change, run the closest focused tests first, then the broader checks if risk remains. For a visual change, start the app and inspect the affected view in a browser.
 
 These consistency checks should find nothing. A match is a boundary violation or an import from a retired path:
