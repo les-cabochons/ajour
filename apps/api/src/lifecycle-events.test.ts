@@ -6,6 +6,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import { startAppApiServer, stopAppApiServer } from "./server.ts";
+import {
+  TEST_WINDOW_TOKEN,
+  windowTokenHeader,
+} from "./test-support/window-token.ts";
 
 const cleanups: (() => Promise<void>)[] = [];
 
@@ -30,6 +34,7 @@ async function start(
     installedPluginDirectory: path.join(root, "installed"),
     allowDevelopmentPlugins: false,
     projectDataShapePluginDirectories: [],
+    windowToken: TEST_WINDOW_TOKEN,
     eventSink: sink,
     ...options,
   });
@@ -118,8 +123,12 @@ describe("local API lifecycle events", () => {
     );
     const { events, port } = await start(root);
 
-    await fetch(`http://127.0.0.1:${port}/api/plugins`);
-    await fetch(`http://127.0.0.1:${port}/api/plugins`);
+    await fetch(`http://127.0.0.1:${port}/api/plugins`, {
+      headers: windowTokenHeader,
+    });
+    await fetch(`http://127.0.0.1:${port}/api/plugins`, {
+      headers: windowTokenHeader,
+    });
 
     const loads = named(events, "storage.load");
     expect(loads).toEqual([
@@ -146,7 +155,9 @@ describe("local API lifecycle events", () => {
     );
     const { events, port } = await start(root);
 
-    const response = await fetch(`http://127.0.0.1:${port}/api/plugins`);
+    const response = await fetch(`http://127.0.0.1:${port}/api/plugins`, {
+      headers: windowTokenHeader,
+    });
 
     expect(response.status).toBe(400);
     expect(named(events, "storage.load")).toEqual([
@@ -169,7 +180,9 @@ describe("local API lifecycle events", () => {
     await writeFile(path.join(root, "state.json"), "CANARY_SECRET_TOKEN");
     const { events, port } = await start(root);
 
-    const response = await fetch(`http://127.0.0.1:${port}/api/plugins`);
+    const response = await fetch(`http://127.0.0.1:${port}/api/plugins`, {
+      headers: windowTokenHeader,
+    });
     const body = await response.text();
 
     expect(response.status).toBe(400);
@@ -191,7 +204,9 @@ describe("local API lifecycle events", () => {
     await writeFile(path.join(root, "state.json"), "null");
     const { events, port } = await start(root);
 
-    const response = await fetch(`http://127.0.0.1:${port}/api/plugins`);
+    const response = await fetch(`http://127.0.0.1:${port}/api/plugins`, {
+      headers: windowTokenHeader,
+    });
 
     expect(response.status).toBe(200);
     expect(named(events, "storage.load")).toEqual([
@@ -221,7 +236,9 @@ describe("local API lifecycle events", () => {
       await writeFile(path.join(root, "state.json"), contents);
       const { events, port } = await start(root);
 
-      const response = await fetch(`http://127.0.0.1:${port}/api/plugins`);
+      const response = await fetch(`http://127.0.0.1:${port}/api/plugins`, {
+        headers: windowTokenHeader,
+      });
       const body = await response.text();
 
       expect(response.status).toBe(400);

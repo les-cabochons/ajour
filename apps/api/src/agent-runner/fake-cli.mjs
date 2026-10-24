@@ -5,13 +5,15 @@
 // after SIGTERM, only SIGKILL stops it), { "escapee": true } (starts a process
 // that inherits the output pipes and outlives the CLI, so the CLI's close
 // never comes while it runs). Also appends its pid, argv, its working folder,
-// whether AJOUR_MCP_TOKEN is set and the names of any other AJOUR_ variables
-// to FAKE_CLI_REPORT when set, and a { grandchildPid } line per escapee.
+// whether AJOUR_MCP_TOKEN is set, the names of any other AJOUR_ variables and
+// of any variable whose value holds FAKE_CLI_SECRET_PROBE to FAKE_CLI_REPORT
+// when set, and a { grandchildPid } line per escapee.
 import { spawn } from "node:child_process";
 import { appendFileSync } from "node:fs";
 
 const HANG = "setInterval(() => {}, 1000)";
 
+const probe = process.env.FAKE_CLI_SECRET_PROBE;
 if (process.env.FAKE_CLI_REPORT) {
   appendFileSync(
     process.env.FAKE_CLI_REPORT,
@@ -22,6 +24,12 @@ if (process.env.FAKE_CLI_REPORT) {
       ajourKeys: Object.keys(process.env).filter(
         (key) => key.startsWith("AJOUR_") && key !== "AJOUR_MCP_TOKEN",
       ),
+      secretSeenIn: Object.entries(process.env)
+        .filter(
+          ([key, value]) =>
+            probe && key !== "FAKE_CLI_SECRET_PROBE" && value?.includes(probe),
+        )
+        .map(([key]) => key),
       cwd: process.cwd(),
     }) + "\n",
   );
