@@ -12,6 +12,15 @@ import { recordingEvents } from "./recording-events.ts";
 // main process's emitter, is a VM global with a recording sink.
 
 const require = createRequire(import.meta.url);
+
+/*
+ * The main process's part of the privacy canary (#311, ADR 0011), with the
+ * marker of apps/web/src/lib/wide-events-canary.test.ts: what the renderer
+ * sends, the URLs it opens and what a failure names carry it, and no event
+ * may hold it.
+ */
+const MARKER = "CANARY-LEAK-7Q4X";
+const MARKED = /canary-leak-7q4x/i;
 const { classifyNavigation } = require("./electron/navigation.cjs");
 const {
   createIpcListeners,
@@ -654,6 +663,43 @@ describe("IPC listeners", () => {
     expect(runtime.recorded[0]!.error!.message).not.toContain("alex");
   });
 
+  it("keeps what the renderer sends out of every IPC event: the privacy canary", async () => {
+    const runtime = ipcRuntime({
+      realMenu: true,
+      loadDesktopBootstrapLocalState: vi.fn(
+        (options: { report?: Record<string, unknown> }) => {
+          options.report!.source = "recovery_file";
+          // The state it found is the user's: the event counts records only.
+          return { timesheetEntries: [{ note: MARKER }] };
+        },
+      ),
+    });
+    const active = { sender: "active-window", cut: vi.fn(), copy: vi.fn() };
+
+    await runtime.pickFromContextMenu(
+      [`open:${MARKER}`, "settle"],
+      `open:${MARKER}`,
+    );
+    runtime.ipcMain.emit("ajour:run-menu-item", active, `role:${MARKER}`);
+    runtime.ipcMain.emit("ajour:run-edit-command", active, MARKER);
+    runtime.ipcMain.emit("ajour:set-theme-source", active, MARKER);
+    runtime.ipcMain.emit("ajour:set-window-chrome-theme", active, MARKER);
+    runtime.requestBootstrapState();
+
+    expect(runtime.recorded.map((event) => event.name)).toEqual([
+      "context_menu.show",
+      "menu.run_item",
+      "edit.run",
+      "window.set_theme",
+      "window.set_theme",
+      "local_state.recover",
+    ]);
+    expect(runtime.recorded[0]).toMatchObject({
+      context_menu: { picked: true, action_id: "other" },
+    });
+    expect(JSON.stringify(runtime.recorded)).not.toMatch(MARKED);
+  });
+
   it("answers the bootstrap request with null when the read fails", () => {
     const runtime = ipcRuntime({
       loadDesktopBootstrapLocalState: vi.fn(() => {
@@ -858,6 +904,22 @@ describe("the main window", () => {
       },
     ]);
     expect(JSON.stringify(navigations)).not.toMatch(/azure|alex|::1/);
+  });
+
+  it("keeps the URLs the window opens out of every event: the privacy canary", async () => {
+    const runtime = windowRuntime();
+    await runtime.createMainWindow();
+
+    runtime.navigate(`https://${MARKER}.example.test/${MARKER}?q=${MARKER}`);
+    runtime.navigate(`vscode://file/C:/Users/alex/${MARKER}.md`);
+    runtime.window.openHandler({ url: `https://example.test/#${MARKER}` });
+    runtime.window.openHandler({ url: `mailto:${MARKER}@example.test` });
+    await flush();
+
+    expect(
+      runtime.recorded.filter((event) => event.name === "window.navigate"),
+    ).toHaveLength(4);
+    expect(JSON.stringify(runtime.recorded)).not.toMatch(MARKED);
   });
 
   // Windows ends the session without before-quit, so the quit is recorded
@@ -1340,6 +1402,33 @@ describe("errors nothing else caught", () => {
       },
       { name: "update.check" },
     ]);
+  });
+
+  it("keeps what a failure names out of its event, once scrubbed: the privacy canary", () => {
+    const runtime = crashRuntime();
+
+    runtime.emit(
+      "uncaughtExceptionMonitor",
+      new Error(
+        `Could not fetch https://${MARKER}.example.test/${MARKER}?token=${MARKER}`,
+      ),
+      "uncaughtException",
+    );
+    runtime.emit(
+      "unhandledRejection",
+      Object.assign(new Error(`Refused at https://example.test/${MARKER}`), {
+        code: "ECONNREFUSED",
+      }),
+    );
+
+    expect(runtime.recorded).toMatchObject([
+      {
+        name: "app.error",
+        error: { message: "Could not fetch [url]" },
+      },
+      { name: "app.error", error: { code: "ECONNREFUSED" } },
+    ]);
+    expect(JSON.stringify(runtime.recorded)).not.toMatch(MARKED);
   });
 
   it("records an unhandled rejection", () => {
