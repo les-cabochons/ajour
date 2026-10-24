@@ -15,7 +15,8 @@ permissions:
   contents: read
 
 # A newer push to the same pull request replaces the run in progress. Runs on
-# main are never cancelled, so every merge keeps its own result.
+# main are never cancelled: a run in progress always finishes, though GitHub
+# keeps only the newest of several queued runs.
 concurrency:
   group: tests-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -75,6 +76,11 @@ jobs:
       - name: Install dependencies
         run: corepack pnpm install --frozen-lockfile
 
+      - name: Typecheck and check module boundaries
+        # Both are system-independent, so one system runs them.
+        if: runner.os == 'Windows'
+        run: corepack pnpm typecheck && corepack pnpm lint:boundaries
+
       - name: Test release planner
         run: node --test .github/scripts/release-plan.test.mjs
 
@@ -112,7 +118,7 @@ jobs:
 
       # The acceptance web server is started through `just acceptance-server`.
       - name: Set up just
-        uses: extractions/setup-just@v2
+        uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
 
       - name: Find the pnpm store
         id: pnpm-store
