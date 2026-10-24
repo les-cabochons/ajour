@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { endpointPatternMatches } from "../../shared/plugin-api-4.ts";
+import {
+  DENIED_REQUEST_HEADER_PREFIXES,
+  DENIED_REQUEST_HEADERS,
+  endpointPatternMatches,
+} from "../../shared/plugin-api-4.ts";
 import type { PluginManifest } from "../index.ts";
 import { createFakeAjour, routeMatches } from "../testing.ts";
 
@@ -224,6 +228,89 @@ describe("the fake ajour.http", () => {
         }),
       ).resolves.toMatchObject({ status: 200 });
     });
+
+    it.each([
+      ...DENIED_REQUEST_HEADERS,
+      ...DENIED_REQUEST_HEADER_PREFIXES.map((prefix) => `${prefix}anything`),
+    ])("refuses the %s header, as the broker's denylist does", async (name) => {
+      const listed = createFakeAjour({
+        manifest: {
+          ...manifest,
+          network: { ...manifest.network, requestHeaders: [name] },
+        },
+        routes: [{ method: "GET", path: "/**", respond: {} }],
+      });
+
+      await expect(
+        listed.http({
+          connectionId: "c1",
+          method: "GET",
+          path: "/api/items/1",
+          headers: { [name.toUpperCase()]: "x" },
+        }),
+      ).rejects.toMatchObject({
+        code: "refused",
+        message: `A plugin may not set the ${name.toUpperCase()} header.`,
+      });
+    });
+  });
+
+  describe("with access choices", () => {
+    const withChoices: PluginManifest = {
+      ...manifest,
+      network: {
+        ...manifest.network,
+        endpoints: [
+          { method: "GET", path: "/api/items/*", access: "readItems" },
+          { method: "DELETE", path: "/api/items/*", access: "deleteItems" },
+        ],
+      },
+      connectionAccess: [
+        { id: "readItems", label: "Read items", always: true },
+        { id: "deleteItems", label: "Delete items" },
+      ],
+    };
+    const routes = [
+      { method: "GET", path: "/**", respond: {} },
+      { method: "DELETE", path: "/**", respond: {} },
+    ] as const;
+    const deleteItem = { method: "DELETE", path: "/api/items/1" } as const;
+
+    it("refuses an endpoint behind a choice the connection hasn't turned on", async () => {
+      const ajour = createFakeAjour({
+        manifest: withChoices,
+        routes,
+        access: { c2: ["deleteItems"] },
+      });
+
+      await expect(
+        ajour.http({ connectionId: "c1", ...deleteItem }),
+      ).rejects.toMatchObject({
+        code: "refused",
+        message:
+          'Connection c1 hasn\'t turned on the access choice "deleteItems".',
+      });
+    });
+
+    it("lets an endpoint through once the connection turns its choice on", async () => {
+      const ajour = createFakeAjour({
+        manifest: withChoices,
+        routes,
+        access: { c1: ["deleteItems"] },
+      });
+
+      await expect(
+        ajour.http({ connectionId: "c1", ...deleteItem }),
+      ).resolves.toMatchObject({ status: 200 });
+    });
+
+    it("keeps a choice marked always on for every connection", async () => {
+      const ajour = createFakeAjour({ manifest: withChoices, routes });
+
+      await expect(
+        ajour.http({ connectionId: "c1", method: "GET", path: "/api/items/1" }),
+      ).resolves.toMatchObject({ status: 200 });
+    });
   });
 });
 
@@ -283,6 +370,16 @@ describe("route patterns", () => {
     ["/repos/**", "/repos/../admin"],
     ["/repos/*", "/repos/a%2Fb"],
     ["/", "/"],
+    ["/repos/*", "/repos/..;"],
+    ["/repos/**", "/repos/..;/admin"],
+    ["/repos/*", "/repos/.;x"],
+    ["/repos/*", "/repos/..;foo"],
+    ["/repos/*", "/repos/..%00"],
+    ["/repos/*", "/repos/a%0Ab"],
+    ["/repos/**", "/repos/%2E./admin"],
+    ["/repos/**", "/repos/%252e%252e/admin"],
+    ["/repos/*", "/repos/a%5cb"],
+    ["/repos/*", "/repos/a%20b"],
   ])("match %s against %s as Ajour's broker does", (pattern, path) => {
     expect(routeMatches(pattern, path)).toBe(
       endpointPatternMatches(pattern, path),

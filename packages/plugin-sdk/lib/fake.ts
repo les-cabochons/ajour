@@ -10,6 +10,7 @@ import type {
   AjourRequestErrorCode,
   AjourResponse,
 } from "./runtime.js";
+import { endpointPatternMatches, isDeniedHeaderName } from "./request-rules.js";
 
 /** An answer a route gives. `json` is sent as the body, with its content type. */
 export interface FakeResponseInit {
@@ -71,6 +72,13 @@ export interface FakeAjourOptions {
    * doesn't declare.
    */
   manifest?: PluginManifest;
+  /**
+   * The access choices each connection turned on, by connection id. A choice
+   * marked `always` is on for every connection, and every other choice is
+   * off until listed here. With a manifest, an endpoint behind a choice
+   * that is off is refused, as the broker refuses it.
+   */
+  access?: Readonly<Record<string, readonly string[]>>;
 }
 
 export interface FakeLogLine {
@@ -86,52 +94,14 @@ export interface FakeAjour extends Ajour {
   readonly logs: FakeLogLine[];
 }
 
-/** The headers Ajour's broker never lets a plugin set. */
-const DENIED_HEADERS = ["authorization", "cookie", "host", "forwarded"];
-const DENIED_HEADER_PREFIXES = ["proxy-", "x-forwarded-"];
-
-const LITERAL_SEGMENT = /^[A-Za-z0-9\-._~!$&'()+,;=:@%]+$/;
-
-function isLiteralSegment(segment: string) {
-  if (!LITERAL_SEGMENT.test(segment)) return false;
-  let decoded: string;
-  try {
-    decoded = decodeURIComponent(segment);
-  } catch {
-    return false;
-  }
-  return (
-    decoded !== "." &&
-    decoded !== ".." &&
-    !decoded.includes("/") &&
-    !decoded.includes("\\")
-  );
-}
-
-function segmentsOf(path: string) {
-  if (path === "/") return [];
-  return path.startsWith("/") ? path.slice(1).split("/") : undefined;
-}
-
 /**
  * Whether a request path matches a path pattern, as Ajour's broker decides
  * it: `*` matches one segment, `**` the rest, and a path with an empty, `.`
- * or `..` segment, or an encoded slash, matches nothing.
+ * or `..` segment, a `;`, a control character, or an encoded slash, matches
+ * nothing.
  */
 export function routeMatches(pattern: string, path: string) {
-  const patternParts = segmentsOf(pattern);
-  const pathParts = segmentsOf(path);
-  if (!patternParts || !pathParts || !pathParts.every(isLiteralSegment)) {
-    return false;
-  }
-  for (const [index, part] of patternParts.entries()) {
-    if (part === "**") return true;
-    const actual = pathParts[index];
-    if (actual === undefined || (part !== "*" && part !== actual)) {
-      return false;
-    }
-  }
-  return patternParts.length === pathParts.length;
+  return endpointPatternMatches(pattern, path);
 }
 
 function requestError(
@@ -211,7 +181,11 @@ function authHeaders(manifest: PluginManifest) {
 }
 
 /** What the broker would refuse about the request, if anything. */
-function refusal(manifest: PluginManifest, request: AjourHttpRequest) {
+function refusal(
+  manifest: PluginManifest,
+  request: AjourHttpRequest,
+  turnedOn: readonly string[],
+) {
   const network = manifest.network;
   const where = request.host ? `host "${request.host}"` : "the base address";
   const describe = `${request.method} ${request.path}`;
@@ -227,12 +201,26 @@ function refusal(manifest: PluginManifest, request: AjourHttpRequest) {
     if (request.host && endpoints === undefined) {
       return `The manifest derives no host "${request.host}".`;
     }
-    const allowed = (endpoints ?? []).some(
+    const matching = (endpoints ?? []).filter(
       (endpoint) =>
         endpoint.method === request.method &&
-        routeMatches(endpoint.path, request.path),
+        endpointPatternMatches(endpoint.path, request.path),
     );
-    if (!allowed) return `The manifest allows no ${describe} on ${where}.`;
+    if (matching.length === 0) {
+      return `The manifest allows no ${describe} on ${where}.`;
+    }
+    const on = new Set([
+      ...turnedOn,
+      ...(manifest.connectionAccess ?? [])
+        .filter((choice) => choice.always)
+        .map((choice) => choice.id),
+    ]);
+    const open = matching.find(
+      (endpoint) => endpoint.access === undefined || on.has(endpoint.access),
+    );
+    if (!open) {
+      return `Connection ${request.connectionId} hasn't turned on the access choice "${matching[0]!.access}".`;
+    }
   }
   const listed = new Set(
     (network?.requestHeaders ?? []).map((header) => header.toLowerCase()),
@@ -240,11 +228,7 @@ function refusal(manifest: PluginManifest, request: AjourHttpRequest) {
   const denied = authHeaders(manifest);
   for (const name of Object.keys(request.headers ?? {})) {
     const header = name.toLowerCase();
-    if (
-      DENIED_HEADERS.includes(header) ||
-      DENIED_HEADER_PREFIXES.some((prefix) => header.startsWith(prefix)) ||
-      denied.includes(header)
-    ) {
+    if (isDeniedHeaderName(header, denied)) {
       return `A plugin may not set the ${name} header.`;
     }
     if (!listed.has(header)) {
@@ -300,7 +284,13 @@ export function createFakeAjour(options: FakeAjourOptions = {}): FakeAjour {
       };
       requests.push(recorded);
       if (request.signal?.aborted) throw abortError(request.signal);
-      const refused = manifest && refusal(manifest, request);
+      const refused =
+        manifest &&
+        refusal(
+          manifest,
+          request,
+          options.access?.[request.connectionId] ?? [],
+        );
       if (refused) throw requestError("refused", refused);
       const route = (options.routes ?? []).find(
         (candidate) =>

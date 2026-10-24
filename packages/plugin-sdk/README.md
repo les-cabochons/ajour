@@ -87,8 +87,8 @@ Leave `auth` out when the requests carry no credential. Generated secrets, the b
 ### Hosts and endpoints
 
 - **The base address** is the url field named by `network.baseAddress.field`. Every request is relative to it, and may not climb above its path, such as `/tfs/DefaultCollection`. With `allowOnPremises`, the user may mark a connection as on-premises, which lets it reach private addresses.
-- **Endpoints** list each method and path the plugin may call. `*` matches one segment and `**`, last, matches the rest. Paths are relative: an absolute URL is refused. Query strings and bodies aren't restricted.
-- **Derived hosts** are hosts the broker builds from the base address, each with its own endpoints. Each has forms, tried in order: `whenHost` picks the base hosts a form applies to, `host` builds the host, with `{host}` for the base host and `{match}` for the label `*` matched, and `pathPrefix` comes before every path. A form without `whenHost` applies to any base host and must be last. A derived host stays within the address the user saved: it ends with `{host}`, or stays within the domain `whenHost` names.
+- **Endpoints** list each method and path the plugin may call. `*` matches one segment and `**`, last, matches the rest. Paths are relative: an absolute URL is refused. A request path matches nothing when a segment is empty, is `.` or `..` once decoded (`%2e%2e` too), or holds a `;`, a control character such as `%00`, or an encoded slash or backslash. Query strings and bodies aren't restricted.
+- **Derived hosts** are hosts the broker builds from the base address, each with its own endpoints. Each has forms, tried in order: `whenHost` picks the base hosts a form applies to, `host` builds the host, with `{host}` for the base host and `{match}` for the label `*` matched, and `pathPrefix` comes before every path. A form without `whenHost` applies to any base host and must be last. A derived host stays within the address the user saved: it ends with `{host}`, or stays within the registrable domain `whenHost` names, and under a `*.` rule it holds `{match}` once. `whenHost` may not be a public suffix where anyone can register a name, such as `github.io`, `co.uk` or `workers.dev` (the [Public Suffix List](https://publicsuffix.org/), private section included), and no host is an IP address.
 
 GitHub's API is on `api.github.com` for github.com, and under `/api/v3` and `/api/graphql` on GitHub Enterprise:
 
@@ -117,7 +117,7 @@ Azure DevOps people search is `vssps.{host}` for `dev.azure.com`, and `{match}.v
 
 ### Headers and public hosts
 
-- **`requestHeaders`** lists the headers the plugin may set. A fixed denylist always wins: `Authorization`, `Cookie`, `Host`, `Forwarded`, every `Proxy-*` and `X-Forwarded-*` header, and any header the auth scheme sets.
+- **`requestHeaders`** lists the headers the plugin may set. A fixed denylist always wins: `Authorization`, `Cookie`, `Host`, `Forwarded`, the method overrides `X-HTTP-Method-Override`, `X-HTTP-Method` and `X-Method-Override`, every `Proxy-*` and `X-Forwarded-*` header, and any header the auth scheme sets.
 - **`publicHosts`** lists the hosts `ajour.publicFetch` may reach, over https and without credentials, such as `avatars.githubusercontent.com`.
 
 ### Connection access
@@ -130,11 +130,11 @@ Azure DevOps people search is `vssps.{host}` for `dev.azure.com`, and `{match}.v
 
 ### Agent tasks and project data shapes
 
-Each agent task lists the Ajour MCP `tools` its run may use, and gets only those. A project data shape is the `projectDataShape` capability, with data shape API 1's datasets.
+Each agent task lists the Ajour MCP `tools` its run may use, and gets only those. Until Ajour enforces that list, it lists API 4 agent tasks but doesn't run them. A project data shape is the `projectDataShape` capability, with data shape API 1's datasets.
 
 ### What needs the user's consent again
 
-An update installs inactive, until the user allows it, when it adds a capability, an auth scheme, a host, a derived host or one of its forms, an endpoint, a public host or an MCP tool, changes an agent task's prompt, or switches to `alwaysReady`. Nothing else does.
+An update installs inactive, until the user allows it, when it adds a capability, an auth scheme, a host, a derived host or one of its forms, an endpoint, a public host or an MCP tool, changes an agent task's prompt, marks an access choice `always` on, or switches to `alwaysReady`. Nothing else does.
 
 ## Plugin code
 
@@ -209,6 +209,8 @@ it("reads the user", async () => {
 ```
 
 A route may name a `connectionId` and a `host`, use `*` and `**` in its path, and answer with `{ status, headers, body }`, `{ json }`, or a function of the recorded request. A request no route answers fails, naming the request.
+
+With the manifest, an endpoint behind an access choice answers only for a connection that turned the choice on. Pass the choices each connection turned on as `access`, such as `access: { c1: ["editWorkItems"] }`. A choice marked `always` is on for every connection.
 
 ## Limits
 
