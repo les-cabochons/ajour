@@ -181,6 +181,18 @@ The backlog editor module is feature-local because its vocabulary and commands b
   which categories are done, and also reports Ajour's items that reached one,
   so Ajour archives them. The API returns those as `doneItems` and never stages
   them for review.
+- Plugin API 4 (spec #381) lands beside API 3. Its manifest schema, the
+  header denylist, endpoint patterns and derived hosts are in
+  `packages/shared/plugin-api-4.ts`. The access summary and the difference
+  between two manifests, which consent on updates uses, are in
+  `packages/shared/plugin-access.ts`. Until the cut-over (#403), the host
+  admits API 4 packages only in development builds (`PluginAdmissionPolicy`
+  in `apps/api/src/plugin-package.ts`) and never runs one in a worker thread.
+- The plugin SDK, `packages/plugin-sdk` (`@ajour/plugin-sdk`), is built for
+  npm: the contract types, the `ajour` global's types and the
+  `createFakeAjour` test fake. Its `lib/contract.ts` is generated from the
+  shared schemas by `scripts/generate-contract.mjs`, and its tests fail while
+  it is stale. The published files import nothing outside the package.
 - A settle's change to the source is a `pendingSourceWrite` on the work item,
   set by `settleBacklogItem` and cleared by `completeSourceWrite` or
   `failSourceWrite` in `domain/backlog/backlog-item-lifecycle.ts`. Undo drops
