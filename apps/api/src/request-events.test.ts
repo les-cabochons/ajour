@@ -17,6 +17,7 @@ import {
   windowRequestHeaders,
   windowTokenHeader,
 } from "./test-support/window-token.ts";
+import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
 
 const APP_ORIGIN = "http://127.0.0.1:5173";
 const running: (() => Promise<void>)[] = [];
@@ -45,6 +46,7 @@ async function startTestApi(
     allowedOrigins: [APP_ORIGIN],
     windowToken: TEST_WINDOW_TOKEN,
     eventSink: sink,
+    vault: new MemorySecretVault(),
     ...(await setup(root)),
   });
   const { port } = server.address() as AddressInfo;

@@ -809,7 +809,7 @@ describe("state files from earlier versions", () => {
   }
 
   const emptyCurrentState = {
-    version: 7,
+    version: 8,
     connections: [],
     stagedImports: [],
     dismissedImportKeys: [],
@@ -821,8 +821,14 @@ describe("state files from earlier versions", () => {
     agentRunner: {
       settings: { cli: null, browserMode: "ajour-chrome", model: "" },
       pluginValues: {},
+      pluginSecrets: {},
     },
   };
+  /**
+   * A file with a connection's token: without a vault, as here, the token
+   * can't move, so the file stays at version 7 until a launch with one.
+   */
+  const heldBeforeVault = { ...emptyCurrentState, version: 7 };
 
   it("moves version 1's one Azure DevOps connection and its inbox to the current version", async () => {
     await expect(
@@ -850,7 +856,7 @@ describe("state files from earlier versions", () => {
         seenBacklogKeys: ["azure_devops:8"],
       }),
     ).resolves.toEqual({
-      ...emptyCurrentState,
+      ...heldBeforeVault,
       connections: [
         {
           id: "legacy_azure_devops",
@@ -921,7 +927,7 @@ describe("state files from earlier versions", () => {
         seenImportKeys: ["azure_devops:ado-1:8"],
       }),
     ).resolves.toEqual({
-      ...emptyCurrentState,
+      ...heldBeforeVault,
       connections: [
         {
           id: "ado-1",

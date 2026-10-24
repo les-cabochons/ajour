@@ -514,10 +514,48 @@ export const pluginConnectionSummarySchema = z.object({
   selectedImportCount: z.number().int().nonnegative(),
   configSummary: pluginSummaryValuesSchema,
   editableValues: pluginFieldValuesSchema,
+  /**
+   * The secret fields the vault holds for the connection, never a value.
+   * `unreadable` is one that can't be decrypted on this computer.
+   */
+  secretFields: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(120),
+        state: z.enum(["saved", "unreadable"]),
+      }),
+    )
+    .optional(),
+  /** Why the connection's operations are refused for now, when they are. */
+  paused: z
+    .object({
+      reason: z.enum([
+        "vault_unavailable",
+        "secret_unreadable",
+        "not_in_vault",
+      ]),
+      message: z.string().max(1000),
+    })
+    .optional(),
 });
 export type PluginConnectionSummary = z.infer<
   typeof pluginConnectionSummarySchema
 >;
+
+/**
+ * Whether the vault can keep secrets on this computer: `unavailable` when
+ * it can't encrypt, with the reason, and `unreadable` when the key that
+ * encrypted it is gone, as after a restore on another computer.
+ */
+export const vaultStatusSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("available") }),
+  z.object({
+    state: z.literal("unavailable"),
+    reason: z.string().max(1000),
+  }),
+  z.object({ state: z.literal("unreadable") }),
+]);
+export type VaultStatusSummary = z.infer<typeof vaultStatusSchema>;
 
 /**
  * A plugin as the overview reports it. Saved connections can outlive their
@@ -605,6 +643,8 @@ export const pluginsOverviewSchema = z.object({
   connectionGroups: z.array(pluginOverviewGroupSchema),
   totalPendingImportCount: z.number().int().nonnegative(),
   totalSelectedImportCount: z.number().int().nonnegative(),
+  /** Absent from an API older than the vault. */
+  vault: vaultStatusSchema.optional(),
 });
 export type PluginsOverview = z.infer<typeof pluginsOverviewSchema>;
 
