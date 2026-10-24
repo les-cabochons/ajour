@@ -34,11 +34,11 @@ import {
   agentRunnerSettingsSchema,
   type AgentRunnerSettings,
 } from "../../../packages/shared/agent-runs.ts";
+import { boundConnectionError, connectionRedaction } from "./plugin-errors.ts";
 import {
-  boundConnectionError,
-  connectionRedaction,
-  connectionSecretValues,
-} from "./plugin-errors.ts";
+  connectionCredentials,
+  editableValues as editableFieldValues,
+} from "./connection-credentials.ts";
 
 interface StoredConnection {
   id: string;
@@ -404,18 +404,8 @@ function toEditableValues(
     autoSync: connection.autoSync,
     autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
     pullRequestAutoSync: syncsPullRequestsAutomatically(connection),
+    ...editableFieldValues(plugin.connectionFields, connection.config),
   };
-
-  for (const field of plugin.connectionFields) {
-    if (field.secret) {
-      continue;
-    }
-
-    const value = connection.config[field.id];
-    if (value !== undefined) {
-      editableValues[field.id] = value;
-    }
-  }
   // Ajour's own setting, set last so no plugin field or config can stand in.
   if (
     plugin.capabilities.connector?.comments ||
@@ -449,9 +439,9 @@ function buildConnectionSummary(
   // secret: an error stored before every route redacted plugin errors, or a
   // summary stored before saves redacted it. A stand-in says nothing about
   // which stored values are secret, so then none of their text is shown.
-  const redaction = connectionRedaction(
-    installed ? connectionSecretValues(plugin, [connection.config]) : [],
-  );
+  const redaction = installed
+    ? connectionCredentials(plugin, connection.config).redaction
+    : connectionRedaction([]);
 
   return {
     id: connection.id,

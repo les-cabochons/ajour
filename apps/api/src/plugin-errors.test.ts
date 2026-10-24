@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   connectionRedaction,
-  connectionSecretValues,
   connectionlessPluginErrorMessage,
-  pluginErrorMessage,
   redactConnectionSummary,
   redactPluginText,
 } from "./plugin-errors.ts";
+import {
+  connectionSecretValues,
+  pluginErrorMessage,
+} from "./connection-credentials.ts";
 
 // The redaction of one text, and its tests, live in packages/wide-events.
 // The summary and the request budget are the local API's.

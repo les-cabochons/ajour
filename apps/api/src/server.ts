@@ -109,10 +109,12 @@ import {
   mcpClientCreateRequestSchema,
   mcpSettingsUpdateSchema,
 } from "../../../packages/shared/agent-tools.ts";
+import { RESERVED_CONNECTION_FIELD_IDS } from "./connection-values.ts";
 import {
-  mergeConnectionConfigForSave,
-  RESERVED_CONNECTION_FIELD_IDS,
-} from "./connection-values.ts";
+  connectionCredentials,
+  mergeSecretsForSave,
+  pluginConnection,
+} from "./connection-credentials.ts";
 import type { Sink } from "../../../packages/wide-events/sinks.ts";
 import { AgentSessions } from "./agent-sessions.ts";
 import {
@@ -146,12 +148,7 @@ import type { PluginRuntime } from "./plugin-runtime.ts";
 import { WorkerPluginRuntime } from "./plugin-worker-runtime.ts";
 import {
   connectionlessPluginErrorMessage,
-  connectionRedaction,
-  connectionSecretValues,
   errorMessage,
-  pluginErrorMessage,
-  redactConnectionSummary,
-  redactPluginText,
   type ConnectionRedaction,
 } from "./plugin-errors.ts";
 import {
@@ -564,22 +561,6 @@ function recordPluginFailure(
   } else {
     unit.fail(withoutContent(error), secrets ? { secrets } : {});
   }
-}
-
-/** The connection as a plugin receives it. */
-function invocationConnection(connection: StoredConnection) {
-  return {
-    id: connection.id,
-    pluginId: connection.pluginId,
-    label: connection.label,
-    tenantLabel: connection.tenantLabel,
-    autoSync: connection.autoSync,
-    autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
-    connectedAt: connection.connectedAt,
-    lastSyncAt: connection.lastSyncAt,
-    lastError: connection.lastError,
-    config: connection.config,
-  };
 }
 
 /**
@@ -1505,10 +1486,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         : null;
       // A config saved before Ajour kept its own fields out may hold one.
       const configForSave = withoutReservedFields(
-        mergeConnectionConfigForSave(
-          plugin,
-          parsedValues.config,
-          existingConnection?.config,
+        readInput(() =>
+          mergeSecretsForSave(
+            plugin.connectionFields,
+            parsedValues.config,
+            existingConnection?.config,
+            payload.removeSecrets,
+          ),
         ),
       );
       const capabilities = await storage.listEnabledCapabilities(
@@ -1533,22 +1517,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           call.admit,
         );
       } catch (error) {
-        recordPluginFailure(
-          unit,
-          error,
-          connectionSecretValues(call.manifest, [
-            configForSave,
-            existingConnection?.config,
-          ]),
+        const credentials = connectionCredentials(
+          call.manifest,
+          configForSave,
+          existingConnection?.config,
         );
-        writeJson(response, 400, {
-          error: pluginErrorMessage(
-            error,
-            call.manifest,
-            configForSave,
-            existingConnection?.config,
-          ),
-        });
+        recordPluginFailure(unit, error, credentials.secrets);
+        writeJson(response, 400, { error: credentials.errorMessage(error) });
         return;
       }
       const storedConnection = await storage.upsertConnection(pluginId, {
@@ -1565,14 +1540,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         // Redacted before it is stored: the normalized config may no
         // longer hold a value the plugin swapped out, such as a password
         // it traded for a token, so the overview couldn't find it later.
-        configSummary: redactConnectionSummary(
-          validation.connectionSummary,
-          connectionSecretValues(call.manifest, [
-            configForSave,
-            existingConnection?.config,
-            validation.normalizedConfig,
-          ]),
-        ),
+        configSummary: connectionCredentials(
+          call.manifest,
+          configForSave,
+          existingConnection?.config,
+          validation.normalizedConfig,
+        ).redaction.summary(validation.connectionSummary),
       });
       unit.set({ connection: { id: storedConnection.id } });
       const { overview, summary } = await findConnectionSummary(
@@ -1626,7 +1599,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         const result = backlogSettleStatesResultSchema.parse(
           await pluginManager.listSettleStates(
             target.pluginId,
-            invocationConnection(target.connection),
+            pluginConnection(target.connection),
             statesRequest,
             target.call.admit,
           ),
@@ -1667,7 +1640,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       try {
         const result = await pluginManager.writeSettle(
           target.pluginId,
-          invocationConnection(target.connection),
+          pluginConnection(target.connection),
           writeRequest,
           target.call.admit,
         );
@@ -1701,7 +1674,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       try {
         const result = await pluginManager.readDescription(
           target.pluginId,
-          invocationConnection(target.connection),
+          pluginConnection(target.connection),
           readRequestBody,
           target.call.admit,
         );
@@ -1758,7 +1731,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       try {
         const result = await pluginManager.writeDescription(
           target.pluginId,
-          invocationConnection(target.connection),
+          pluginConnection(target.connection),
           writeRequest,
           target.call.admit,
         );
@@ -1831,7 +1804,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       try {
         const fetched = await pluginManager.syncConnection(
           pluginId,
-          invocationConnection(connection),
+          pluginConnection(connection),
           payload.workItems,
           call.admit,
         );
@@ -1909,9 +1882,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             skippedCount: stageResult.skippedCount,
             workItemUpdates: redactFieldUpdateMessages(
               fetched.workItemUpdates,
-              connectionRedaction(
-                connectionSecretValues(call.manifest, [connection.config]),
-              ),
+              connectionCredentials(call.manifest, connection.config).redaction,
             ),
             doneItems,
             viewer: fetched.viewer,
@@ -1919,16 +1890,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           }),
         );
       } catch (error) {
-        recordPluginFailure(
-          unit,
-          error,
-          connectionSecretValues(call.manifest, [connection.config]),
-        );
-        const message = pluginErrorMessage(
-          error,
+        const credentials = connectionCredentials(
           call.manifest,
           connection.config,
         );
+        recordPluginFailure(unit, error, credentials.secrets);
+        const message = credentials.errorMessage(error);
         await storage.recordConnectionError(pluginId, connectionId, message);
         const { summary } = await findConnectionSummary(
           storage,
@@ -2000,7 +1967,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         const result = await pluginManager.runCodeHostOperation(
           pluginId,
           operation.data,
-          invocationConnection(connection),
+          pluginConnection(connection),
           codeHostRequest,
           call.admit,
         );
@@ -2014,16 +1981,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         }
         writeJson(response, 200, result);
       } catch (error) {
-        recordPluginFailure(
-          unit,
-          error,
-          connectionSecretValues(call.manifest, [connection.config]),
-        );
-        const message = pluginErrorMessage(
-          error,
+        const credentials = connectionCredentials(
           call.manifest,
           connection.config,
         );
+        recordPluginFailure(unit, error, credentials.secrets);
+        const message = credentials.errorMessage(error);
         if (operation.data === "syncPullRequests") {
           await storage.recordConnectionError(pluginId, connectionId, message);
         }
@@ -2157,7 +2120,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         const result = await pluginManager.runBacklogCommentOperation(
           pluginId,
           operation.data,
-          invocationConnection(connection),
+          pluginConnection(connection),
           commentRequest,
           admit,
         );
@@ -2180,13 +2143,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           refuseAgent();
           return;
         }
-        const secrets = connectionSecretValues(call.manifest, [
+        const credentials = connectionCredentials(
+          call.manifest,
           connection.config,
-        ]);
-        recordPluginFailure(unit, error, secrets);
-        writeJson(response, 502, {
-          error: redactPluginText(errorMessage(error), secrets),
-        });
+        );
+        recordPluginFailure(unit, error, credentials.secrets);
+        writeJson(response, 502, { error: credentials.errorMessage(error) });
       }
     },
 
@@ -2248,7 +2210,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         const result = await pluginManager.runCalendarOperation(
           pluginId,
           operation.data,
-          invocationConnection(connection),
+          pluginConnection(connection),
           calendarRequest,
           call.admit,
         );
@@ -2260,11 +2222,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         unit.set({ calendar: { event_count: result.events.length } });
         writeJson(response, 200, result);
       } catch (error) {
-        const secrets = connectionSecretValues(call.manifest, [
+        const credentials = connectionCredentials(
+          call.manifest,
           connection.config,
-        ]);
-        const message = redactPluginText(errorMessage(error), secrets);
-        recordPluginFailure(unit, error, secrets);
+        );
+        const message = credentials.errorMessage(error);
+        recordPluginFailure(unit, error, credentials.secrets);
         await storage.recordConnectionError(pluginId, connectionId, message);
         writeJson(response, 502, { error: message });
       }
@@ -2290,14 +2253,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           ),
         );
       } catch (error) {
-        recordPluginFailure(
-          unit,
-          error,
-          connectionSecretValues(call.manifest, [payload.values]),
+        const credentials = connectionCredentials(
+          call.manifest,
+          payload.values,
         );
-        writeJson(response, 502, {
-          error: pluginErrorMessage(error, call.manifest, payload.values),
-        });
+        recordPluginFailure(unit, error, credentials.secrets);
+        writeJson(response, 502, { error: credentials.errorMessage(error) });
       }
     },
 
@@ -2319,7 +2280,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       try {
         const result = await pluginManager.syncTeamProjects(
           pluginId,
-          invocationConnection(connection),
+          pluginConnection(connection),
           syncRequest,
           call.admit,
         );
@@ -2337,16 +2298,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         );
         writeJson(response, 200, result);
       } catch (error) {
-        recordPluginFailure(
-          unit,
-          error,
-          connectionSecretValues(call.manifest, [connection.config]),
-        );
-        const message = pluginErrorMessage(
-          error,
+        const credentials = connectionCredentials(
           call.manifest,
           connection.config,
         );
+        recordPluginFailure(unit, error, credentials.secrets);
+        const message = credentials.errorMessage(error);
         await storage.recordConnectionError(pluginId, connectionId, message);
         writeJson(response, 502, { error: message });
       }
@@ -2533,15 +2490,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     manifest: PluginManifest,
     connection: StoredConnection,
   ) {
-    recordPluginFailure(
-      unit,
-      error,
-      connectionSecretValues(manifest, [connection.config]),
-    );
+    const credentials = connectionCredentials(manifest, connection.config);
+    recordPluginFailure(unit, error, credentials.secrets);
     // The message reaches the user, and a description's is stored with the item.
-    writeJson(response, 502, {
-      error: pluginErrorMessage(error, manifest, connection.config),
-    });
+    writeJson(response, 502, { error: credentials.errorMessage(error) });
   }
 
   /**
@@ -2696,7 +2648,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           if (exchange.isHangUp(error)) return;
           // Ajour's own errors only. Only a route knows the connection whose
           // secrets a plugin error may echo, so each catches its plugin call
-          // and answers with `pluginErrorMessage`.
+          // and answers with its connection's credentials' `errorMessage`.
           routed.fail(withoutContent(error));
           if (error instanceof InvalidRequestError) {
             routed.refuse("invalid_request");
