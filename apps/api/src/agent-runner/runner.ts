@@ -24,6 +24,7 @@ import {
   type PluginFieldValues,
 } from "../../../../packages/shared/plugins.ts";
 import { fillTemplate } from "../../../../packages/shared/agent-task-templates.ts";
+import { PLUGIN_API_4 } from "../../../../packages/shared/plugin-api-4.ts";
 import type { AjourCatalog } from "../../../../packages/wide-events/catalog.ts";
 import {
   errorIdentity,
@@ -86,6 +87,7 @@ interface RunnerPlugins {
   listPlugins(): Promise<
     {
       id: string;
+      apiVersion: number;
       displayName: string;
       capabilities: { agentTask?: { tasks: AgentTask[] } };
     }[]
@@ -308,6 +310,13 @@ export class AgentRunner {
           ...saved,
         };
         const blockers = [
+          // A run gets every MCP tool until the runner limits it to the
+          // tools an API 4 task declares (#396), so those tasks wait.
+          ...(plugin.apiVersion === PLUGIN_API_4
+            ? [
+                "This version of Ajour can't run agent tasks of plugin API 4 yet",
+              ]
+            : []),
           ...(mcpEnabled ? [] : ["Turn on MCP in Settings > MCP"]),
           ...(cli?.supported && cli.installed
             ? []
