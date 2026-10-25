@@ -345,6 +345,11 @@ API 4 packages in development builds of the desktop app, until the cut-over
   view's main frame by its ids, on origin `ajour-plugin://<id>`. Anything
   else is refused as `foreign_sender`, and the plugin comes from the sender,
   never the message.
+- **Ids that read as an IP address** (all digits, or `0x` followed by hex
+  digits, such as `2130706433`) are canonicalised to another host in the
+  plugin's origin, so the origin checks above never match and the plugin's
+  page is refused: such an id fails closed instead of reaching a different
+  origin. An id with a dot, such as `127.1`, never passes the id pattern.
 - **Failing closed** (`plugin-sandbox.cjs`): `--no-sandbox`,
   `--disable-gpu-sandbox`, `--single-process`, `--remote-debugging-port` or
   `-pipe`, `--inspect` in any form, an attached inspector,

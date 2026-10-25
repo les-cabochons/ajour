@@ -6,6 +6,10 @@
 // The worker's own fetch, WebSocket and XMLHttpRequest are refused by the
 // policy every file here carries, and by the session if one got past it.
 
+// Taken before the plugin's code loads, so code that replaces or wraps
+// `self.postMessage` can't change what Ajour's bootstrap sends to the page.
+const post = self.postMessage.bind(self);
+
 /** The calls waiting for the broker's answer, by id. */
 const waiting = new Map();
 let nextCallId = 1;
@@ -42,7 +46,7 @@ function call(type, payload, signal) {
   return new Promise((resolve, reject) => {
     const onAbort = () => {
       waiting.delete(callId);
-      self.postMessage({ type: "abort", callId });
+      post({ type: "abort", callId });
       reject(abortError());
     };
     signal?.addEventListener("abort", onAbort, { once: true });
@@ -51,7 +55,7 @@ function call(type, payload, signal) {
       if (answer?.ok) resolve(ajourResponse(answer.response));
       else reject(requestError(answer?.error));
     });
-    self.postMessage({ type, callId, ...payload });
+    post({ type, callId, ...payload });
   });
 }
 
@@ -77,7 +81,7 @@ Object.defineProperty(globalThis, "ajour", {
 // blocked attempt for the plugin's Access review. Only the directive is
 // sent, never the address.
 self.addEventListener("securitypolicyviolation", (event) => {
-  self.postMessage({
+  post({
     type: "blocked",
     directive: String(event.effectiveDirective ?? ""),
   });
@@ -115,9 +119,9 @@ async function run({ url, method, args }) {
     outcome = failure(error);
   }
   try {
-    self.postMessage({ type: "settled", outcome });
+    post({ type: "settled", outcome });
   } catch {
-    self.postMessage({
+    post({
       type: "settled",
       outcome: {
         ok: false,

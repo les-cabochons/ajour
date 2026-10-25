@@ -604,6 +604,28 @@ describe("the sandboxed renderer runtime", () => {
     ]);
   });
 
+  it("answers a closed renderer's origin with a 404 that carries the policy", async () => {
+    const { runtime, sessions, start, ready } = setUp();
+    start("jira");
+    await ready(0);
+    await runtime.closeAll();
+
+    const response = (await sessions
+      .get("ajour-plugin:jira")!
+      .handled.get("ajour-plugin")!({
+      url: "ajour-plugin://jira/lib/plugin.mjs",
+    })) as Response;
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get("content-security-policy")).toContain(
+      "connect-src 'none'",
+    );
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("content-type")).toBe(
+      "text/plain; charset=utf-8",
+    );
+  });
+
   it("closes every page as Ajour quits", async () => {
     const { runtime, views, start, ready } = setUp();
     const jira = start("jira");

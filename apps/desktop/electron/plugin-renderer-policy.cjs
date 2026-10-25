@@ -153,16 +153,18 @@ function resolvePluginFile(url, pluginId, packageDirectory) {
 
 /**
  * The headers every file of a plugin's origin carries: its type, the
- * policy, and no caching or sniffing.
+ * policy, and no caching or sniffing. Only Ajour's own page is HTML: a
+ * package file is never a page, whatever its name.
  *
  * @param {string} fileName
+ * @param {"host" | "package" | "none"} [kind]
  */
-function pluginFileHeaders(fileName) {
+function pluginFileHeaders(fileName, kind = "none") {
   const extension = path.extname(fileName).toLowerCase();
   return {
     "content-type": Object.hasOwn(CONTENT_TYPES, extension)
       ? CONTENT_TYPES[/** @type {keyof typeof CONTENT_TYPES} */ (extension)]
-      : extension === ".html" && fileName === "host.html"
+      : extension === ".html" && kind === "host"
         ? "text/html; charset=utf-8"
         : "application/octet-stream",
     "content-security-policy": PLUGIN_CONTENT_SECURITY_POLICY,
@@ -203,7 +205,9 @@ async function servePluginFile(
   try {
     if (resolved.kind === "host") {
       const body = await readFile(path.join(hostDirectory, resolved.file));
-      return new Response(body, { headers: pluginFileHeaders(resolved.file) });
+      return new Response(body, {
+        headers: pluginFileHeaders(resolved.file, "host"),
+      });
     }
     if (resolved.kind === "package") {
       const root = await realpath(packageDirectory);
@@ -213,7 +217,7 @@ async function servePluginFile(
       }
       const body = await readFile(real);
       return new Response(body, {
-        headers: pluginFileHeaders(path.basename(real)),
+        headers: pluginFileHeaders(path.basename(real), "package"),
       });
     }
   } catch {

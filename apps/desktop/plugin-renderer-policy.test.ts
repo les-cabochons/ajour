@@ -179,6 +179,26 @@ describe("serving a plugin's files", () => {
     );
   });
 
+  it("never serves a package's file named host.html as Ajour's page", async () => {
+    await writeFile(path.join(packageDirectory, "host.html"), "<p>mine</p>");
+
+    const response = await serve("ajour-plugin://jira/host.html");
+
+    expect(response.headers.get("content-type")).toBe(
+      "application/octet-stream",
+    );
+  });
+
+  it("serves Ajour's own page as a page", async () => {
+    await writeFile(path.join(hostDirectory, "host.html"), "<p>ajour</p>");
+
+    const response = await serve("ajour-plugin://jira/.ajour/host.html");
+
+    expect(response.headers.get("content-type")).toBe(
+      "text/html; charset=utf-8",
+    );
+  });
+
   it("never serves a package's page as a page", async () => {
     const response = await serve("ajour-plugin://jira/page.html");
 

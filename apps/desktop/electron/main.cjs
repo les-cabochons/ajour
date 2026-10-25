@@ -292,7 +292,10 @@ function schedulePluginCatalogRefresh() {
 // Every IPC channel registers through `ipc`, which emits each call's event,
 // named in ipc-channels.cjs. None can throw into the main process, and a
 // failed synchronous request answers null.
-const ipc = createIpcListeners(ipcMain, { events });
+const ipc = createIpcListeners(ipcMain, {
+  events,
+  windowSession: () => session.defaultSession,
+});
 
 // Read once per launch. A read that finds nothing or fails stays null until
 // the next launch, even when a crashed window reloads and asks again.
@@ -1190,6 +1193,8 @@ async function prepareToInstallUpdate() {
   const outcome = await stopInternalAppApiWithinTimeout();
   recordApiStop(quit, outcome, stopStartedAt);
   if (updateQuit?.quit === quit) updateQuit.outcome = outcome;
+  // The installer's quit skips before-quit, so the plugin pages close here.
+  await closePluginRenderers().catch(() => undefined);
   // The installer's quit skips before-quit's wait for the events.
   await whenEventsReady(
     INTERNAL_APP_API_STOP_TIMEOUT_MS - (Date.now() - stopStartedAt),

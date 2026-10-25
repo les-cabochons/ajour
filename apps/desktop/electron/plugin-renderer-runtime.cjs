@@ -8,6 +8,7 @@ const {
   pluginOfSender,
   pluginPartition,
   pluginRequestAllowed,
+  pluginFileHeaders,
   servePluginFile,
 } = require("./plugin-renderer-policy.cjs");
 const { rendererSandboxRefusal } = require("./plugin-sandbox.cjs");
@@ -281,7 +282,12 @@ function createPluginRendererRuntime({
       pluginSession.protocol.handle(PLUGIN_SCHEME, (request) => {
         const renderer = renderers.get(pluginId);
         // A closed renderer's package is served no more.
-        if (!renderer) return new Response("Not found", { status: 404 });
+        if (!renderer) {
+          return new Response("Not found", {
+            status: 404,
+            headers: pluginFileHeaders("404.txt"),
+          });
+        }
         return servePluginFile(request, {
           pluginId,
           packageDirectory: renderer.packageDirectory,

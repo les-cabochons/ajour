@@ -222,6 +222,14 @@ describe("quitting and installing an update", () => {
     expect(event.preventDefault).not.toHaveBeenCalled();
   });
 
+  it("closes every plugin renderer before an update installs, so none outlives the installer's quit", async () => {
+    const runtime = quitRuntime(async () => {});
+
+    await runtime.prepareToInstallUpdate();
+
+    expect(runtime.closePluginRenderers).toHaveBeenCalledOnce();
+  });
+
   it("installs the update after ten seconds when stopping the local API hangs", async () => {
     const runtime = quitRuntime(hangs);
     const prepared = vi.fn();
