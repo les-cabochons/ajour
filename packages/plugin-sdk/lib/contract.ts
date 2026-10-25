@@ -185,6 +185,7 @@ export type PluginManifest = {
             }[]
           | undefined;
         publicHosts?: string[] | undefined;
+        requestHeaders?: string[] | undefined;
         auth?:
           | { scheme: "bearer"; secretField: string }
           | { scheme: "basic"; secretField: string; userField: string }
@@ -197,7 +198,6 @@ export type PluginManifest = {
             }
           | { scheme: "secretAddress"; secretField: string }
           | undefined;
-        requestHeaders?: string[] | undefined;
       }
     | undefined;
   $schema?: string | undefined;
@@ -281,6 +281,7 @@ export type PluginNetwork = {
       }[]
     | undefined;
   publicHosts?: string[] | undefined;
+  requestHeaders?: string[] | undefined;
   auth?:
     | { scheme: "bearer"; secretField: string }
     | { scheme: "basic"; secretField: string; userField: string }
@@ -293,7 +294,6 @@ export type PluginNetwork = {
       }
     | { scheme: "secretAddress"; secretField: string }
     | undefined;
-  requestHeaders?: string[] | undefined;
 };
 
 /** A host derived from the base address, such as `api.{host}`. */
