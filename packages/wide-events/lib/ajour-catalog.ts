@@ -141,6 +141,12 @@ const pluginOperationReasons = [
   "not_supported",
   /** The route's own admission check refused the call, such as an agent's comment. */
   "agent_access",
+  /**
+   * The connection's access doesn't include the choice the operation needs,
+   * such as editing work items (#395); or a save turned it off while the
+   * operation ran.
+   */
+  "access_off",
   "uninstalled",
   "shutdown",
   "timeout",
@@ -705,6 +711,11 @@ export const catalog = defineCatalog({
           done_count: operational<number>(),
           work_item_update_count: operational<number>(),
           comment_fact_count: operational<number>(),
+          /**
+           * The items whose estimates the sync didn't upload: the connection
+           * can't edit work items, or the change waits for review (#395).
+           */
+          held_estimate_count: operational<number>(),
           /** In the renderer: the items the answer added straight to the backlog. */
           imported_count: operational<number>(),
         },

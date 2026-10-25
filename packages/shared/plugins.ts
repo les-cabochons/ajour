@@ -552,6 +552,11 @@ export const pluginConnectionSummarySchema = z.object({
   agentAccess: agentAccessSchema.optional(),
   /** Absent means off. See `connectionAllowsLossyConversion`. */
   allowLossyConversion: z.boolean().optional(),
+  /**
+   * The access choices that are on, those always on included. Absent when
+   * the plugin has none.
+   */
+  access: z.array(z.string().min(1).max(40)).max(20).optional(),
   connectedAt: z.number().int().positive(),
   lastSyncAt: z.number().int().positive().optional(),
   lastError: z.string().max(1000).optional(),
@@ -621,9 +626,28 @@ const pluginOverviewItemSchema = pluginManifestObjectSchema.extend({
 });
 export type PluginOverviewItem = z.infer<typeof pluginOverviewItemSchema>;
 
+/**
+ * A choice each connection of a plugin makes about what it may do, such as
+ * Azure DevOps's "Edit work items", with the token scope it needs and the
+ * plugin operations it unlocks. See `connection-access.ts`.
+ */
+export const connectionAccessChoiceSummarySchema = z.object({
+  id: z.string().min(1).max(40),
+  label: z.string().min(1).max(80),
+  description: z.string().max(300).optional(),
+  tokenScope: z.string().max(200).optional(),
+  always: z.boolean(),
+  operations: z.array(z.string().min(1).max(63)).max(50),
+});
+export type ConnectionAccessChoiceSummary = z.infer<
+  typeof connectionAccessChoiceSummarySchema
+>;
+
 export const pluginOverviewGroupSchema = z.object({
   plugin: pluginOverviewItemSchema,
   enabled: z.boolean(),
+  /** The access choices of its connections. Absent when it has none. */
+  connectionAccess: z.array(connectionAccessChoiceSummarySchema).optional(),
   /** Declared capabilities the user turned off. `enabled` still gates all. */
   inactiveCapabilities: z.array(switchableCapabilitySchema).optional(),
   connections: z.array(pluginConnectionSummarySchema),
@@ -781,6 +805,12 @@ export const backlogSyncEstimateFieldStateSchema = z.object({
   baselineValue: z.number().finite().nonnegative().optional(),
   remoteValue: z.number().finite().nonnegative().optional(),
   resolution: z.enum(["keep_local"]).optional(),
+  /**
+   * A change held on this computer because the connection couldn't edit
+   * work items: it doesn't upload until the user approves it in Sync review.
+   * Ajour's own mark, which plugins never see.
+   */
+  held: z.boolean().optional(),
 });
 export type BacklogSyncEstimateFieldState = z.infer<
   typeof backlogSyncEstimateFieldStateSchema
@@ -837,6 +867,12 @@ export const pluginConnectionSaveRequestSchema = z.object({
   values: pluginFieldValuesSchema,
   removeSecrets: removeSecretsSchema.optional(),
   secretExpiry: secretExpirySchema.optional(),
+  /**
+   * The access choices the user turned on. Absent keeps the saved ones; a
+   * new connection without it reads only. Only Ajour's settings send it:
+   * nothing a plugin returns changes a connection's access.
+   */
+  access: z.array(z.string().min(1).max(40)).max(20).optional(),
 });
 export type PluginConnectionSaveRequest = z.infer<
   typeof pluginConnectionSaveRequestSchema
@@ -1206,5 +1242,19 @@ export const backlogSyncResultSchema = z.object({
   doneItems: z.array(backlogDoneWorkItemSchema).default([]),
   viewer: backlogPersonSchema.optional(),
   commentFacts: z.array(backlogItemCommentFactsSchema).max(1000).default([]),
+  /**
+   * The estimate fields the sync didn't upload: the connection can't edit
+   * work items, or the user hasn't approved the change yet. Each stays as it
+   * is on this computer, held for review.
+   */
+  heldEstimates: z
+    .array(
+      z.object({
+        localWorkItemId: z.string().trim().min(1).max(200),
+        fields: z.array(backlogEstimateFieldKeySchema).min(1).max(3),
+      }),
+    )
+    .max(1000)
+    .default([]),
 });
 export type BacklogSyncResult = z.infer<typeof backlogSyncResultSchema>;

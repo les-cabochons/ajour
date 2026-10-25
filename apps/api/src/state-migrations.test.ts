@@ -74,7 +74,7 @@ describe("state migrations", () => {
   });
 
   it("ends at the current version, the last step's", () => {
-    expect(STATE_VERSION).toBe(8);
+    expect(STATE_VERSION).toBe(9);
     expect(STATE_MIGRATIONS.at(-1)?.version).toBe(STATE_VERSION);
     const versions = STATE_MIGRATIONS.map((step) => step.version);
     expect(versions).toEqual([...versions].sort((a, b) => a - b));

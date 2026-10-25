@@ -364,10 +364,11 @@ reason:
   `capability_off`, `host_stopping`, `package_change`, `not_installed`,
   `runs_no_code`, `not_supported` for a capability or feature the plugin
   doesn't declare, `invalid_request` for an import whose rows break the
-  plugin's definition, and `agent_access` for a comment call the user
-  doesn't allow;
-- cancelled: `system_off`, `plugin_off`, `capability_off`, `uninstalled` or
-  `shutdown`;
+  plugin's definition, `agent_access` for a comment call the user
+  doesn't allow, and `access_off` for an operation the connection's access
+  choices don't include, such as a write on a connection that reads only;
+- cancelled: `system_off`, `plugin_off`, `capability_off`, `uninstalled`,
+  `shutdown`, or `access_off` when a save turns off the choice it needs;
 - `timeout`;
 - errors: `result_too_large`, `invalid_result` (with the error's type and
   code only), `exited_early` and `plugin_error`, scrubbed of the
