@@ -217,13 +217,19 @@ export function SettingsVaultPage() {
                 group={group}
                 disabled={isMutatingPlugin}
                 onRemove={() => {
-                  void workflow.execute({
-                    type: "removeMissingData",
-                    pluginId: group.pluginId,
-                    pluginName: group.name,
-                  });
-                  // The group, and its Remove button, go: the heading stays.
-                  document.getElementById(VAULT_HEADING_ID)?.focus();
+                  void workflow
+                    .execute({
+                      type: "removeMissingData",
+                      pluginId: group.pluginId,
+                      pluginName: group.name,
+                    })
+                    .then((removed) => {
+                      // The group, and its Remove button, go: the heading
+                      // stays. A failed removal leaves the button to return to.
+                      if (removed) {
+                        document.getElementById(VAULT_HEADING_ID)?.focus();
+                      }
+                    });
                 }}
               />
             )}

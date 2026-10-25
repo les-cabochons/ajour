@@ -637,6 +637,51 @@ describe("saved secret states", () => {
     expect(summary?.paused).toBeUndefined();
   });
 
+  it("answers a failed sync, and counts it, when marking the secret rejected fails", async () => {
+    const api = await launch();
+    const id = await api.connect({ token: TOKEN, failWith: "401" });
+    let release!: () => void;
+    (globalThis as { __serviceGate?: Promise<void> }).__serviceGate =
+      new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    const list = api.vault.list.bind(api.vault);
+    try {
+      const reads = api.vault.decryptAttempts;
+      const failing = api.sync(id);
+      // The call has read the token and waits for the service.
+      while (api.vault.decryptAttempts === reads) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      // Marking the secret reads the vault's entries, which fail once.
+      api.vault.list = async () => {
+        api.vault.list = list;
+        throw new Error("The vault can't list its entries.");
+      };
+      release();
+
+      const answered = await failing;
+
+      expect(answered.status).toBe(502);
+      expect(answered.body).toMatchObject({
+        error: expect.stringContaining("401"),
+      });
+    } finally {
+      delete (globalThis as { __serviceGate?: Promise<void> }).__serviceGate;
+      api.vault.list = list;
+    }
+    const summary = await api.connectionOf("service", id);
+    expect(summary?.lastError).toContain("401");
+    expect(summary?.secretFields?.[0]).toMatchObject({ state: "saved" });
+    expect(removeEvents(api.events, "backlog.sync")).toContainEqual(
+      expect.objectContaining({
+        outcome: "error",
+        counts: { secrets_rejected_mark_failed: 1 },
+      }),
+    );
+  });
+
   it("lists the agent task secrets with their states, and removes one", async () => {
     const api = await launch();
     await api.send("POST", "/api/agents/plugins/service/settings", {

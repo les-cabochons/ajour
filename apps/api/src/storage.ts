@@ -878,6 +878,10 @@ export class AppApiStorage {
       );
       const saved = connection?.secrets?.fields ?? [];
       const vault = readAt === undefined ? undefined : await this.vaultView();
+      // A secret set at or before `readAt` is the one the call read, which
+      // the service refused. Equal timestamps count as the same secret, so a
+      // tie marks it: the safe side, since the user replaces a rejected
+      // token and a later one (`setAt > readAt`) is never marked.
       const targets = (fieldIds ?? saved).filter(
         (id) =>
           saved.includes(id) &&

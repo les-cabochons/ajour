@@ -599,6 +599,7 @@ function recordPluginFailure(
     refuse(reason?: PluginFailureReason): unknown;
     cancel(reason?: PluginFailureReason): unknown;
     fail(error: unknown, options?: FailOptions<PluginFailureReason>): unknown;
+    count(counter: "secrets_rejected_mark_failed"): unknown;
   },
   error: unknown,
   secrets?: readonly string[],
@@ -848,6 +849,8 @@ async function inactiveCapability(
  * status (`PluginRunOutcome`); the broker will report every 401 it sees.
  * A secret saved after the call read its secrets isn't marked, since the
  * service refused an older one.
+ * If marking fails, the failure is counted on the event and the call still ends
+ * with the plugin's error.
  */
 async function failedCall(
   storage: AppApiStorage,
@@ -859,9 +862,14 @@ async function failedCall(
   const credentials = call.credentials(connection.config);
   recordPluginFailure(unit, error, credentials.secrets);
   if (error instanceof PluginWorkerFailure && error.httpStatus === 401) {
-    await storage.markSecretsRejected(connection.pluginId, connection.id, {
-      readAt: connection.secretsReadAt,
-    });
+    // The plugin's answer and the connection's error matter more than the mark.
+    try {
+      await storage.markSecretsRejected(connection.pluginId, connection.id, {
+        readAt: connection.secretsReadAt,
+      });
+    } catch {
+      unit.count("secrets_rejected_mark_failed");
+    }
   }
   return credentials;
 }

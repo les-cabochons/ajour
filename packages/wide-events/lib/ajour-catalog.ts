@@ -171,6 +171,8 @@ export const catalog = defineCatalog({
     bundled_plugin_failed: operational<number>(),
     /** A leftover plugin backup that couldn't be restored or removed. */
     plugin_backup_failed: operational<number>(),
+    /** A plugin's 401 that couldn't be saved as a rejected secret. */
+    secrets_rejected_mark_failed: operational<number>(),
   },
   events: {
     ...rendererEvents,
