@@ -340,7 +340,12 @@ const STRIPPED_RESPONSE_HEADERS = new Set([
 ]);
 
 /** Headers that would name a secret address's final address. */
-const ADDRESS_HEADERS = new Set(["location", "content-location", "link"]);
+const ADDRESS_HEADERS = new Set([
+  "location",
+  "content-location",
+  "link",
+  "refresh",
+]);
 
 /**
  * The refusals Access review counts as blocked attempts: the plugin asked
@@ -518,10 +523,9 @@ function authOf(
       };
     }
     case "headerTemplate": {
-      const value = auth.template.replace(
-        "{secret}",
-        secretValue(connection, auth.secretField),
-      );
+      const secret = secretValue(connection, auth.secretField);
+      // A function, so a `$&` in the secret stays as it is.
+      const value = auth.template.replace("{secret}", () => secret);
       return {
         headers: { [auth.header.toLowerCase()]: value },
         credentials: [value],
@@ -1104,9 +1108,6 @@ export class CredentialBroker implements CredentialBrokerPort {
         const headers = requestHeaders(caller.manifest, request.headers, auth);
         // Already refused above; the auth scheme's own header, too.
         for (const name of authSchemeHeaders(auth)) delete headers[name];
-        const scrubber = new SecretScrubber(
-          secretForms(connection.secrets, target.credentials),
-        );
         return await this.exchange(
           {
             target,
@@ -1114,7 +1115,7 @@ export class CredentialBroker implements CredentialBrokerPort {
             headers,
             body,
             onPremises: connection.onPremises,
-            scrubber,
+            secrets: connection.secrets,
           },
           signal,
           exchange,
@@ -1184,13 +1185,19 @@ export class CredentialBroker implements CredentialBrokerPort {
       headers: Record<string, string>;
       body: Uint8Array | undefined;
       onPremises: boolean;
-      scrubber: SecretScrubber;
+      /** The connection's secret values, scrubbed from the answer. */
+      secrets: readonly string[];
     },
     signal: AbortSignal,
     exchange: Exchange,
   ): Promise<BrokerResponse> {
     const transport = this.options.transport!;
-    const { target, scrubber } = plan;
+    const { target } = plan;
+    /**
+     * The addresses a secret address redirected to: they often carry a
+     * signed token of their own, so they are scrubbed like the secret.
+     */
+    const visited: string[] = [];
     let url = target.url;
     let method = plan.method;
     let body = plan.body;
@@ -1248,6 +1255,7 @@ export class CredentialBroker implements CredentialBrokerPort {
           }
           next!.hash = "";
           url = next!;
+          if (target.secretAddress) visited.push(url.href);
           continue;
         }
         if (target.secretAddress) {
@@ -1255,11 +1263,14 @@ export class CredentialBroker implements CredentialBrokerPort {
           throw refused(
             "redirect_refused",
             follow
-              ? "The calendar address redirected more than 3 times."
-              : "The calendar address redirected to an address that isn't https.",
+              ? "The connection's secret address redirected more than 3 times."
+              : "The connection's secret address redirected to an address that isn't https.",
           );
         }
       }
+      const scrubber = new SecretScrubber(
+        secretForms([...plan.secrets, ...visited], target.credentials),
+      );
       return {
         status: response.status,
         headers: responseHeaders(
@@ -1348,7 +1359,7 @@ export class CredentialBroker implements CredentialBrokerPort {
             headers,
             body: undefined,
             onPremises: false,
-            scrubber: new SecretScrubber([]),
+            secrets: [],
           },
           signal,
           exchange,

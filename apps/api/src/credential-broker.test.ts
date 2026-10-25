@@ -303,6 +303,34 @@ describe("the credential broker", () => {
       }
     });
 
+    it("puts a secret into a header template as it is, $ patterns included", async () => {
+      const base = manifest();
+      const { operation, sent } = setup({
+        manifest: manifest({
+          network: {
+            ...base.network,
+            auth: {
+              scheme: "headerTemplate",
+              header: "X-Api-Key",
+              template: "Key {secret}",
+              secretField: "apiToken",
+            },
+          },
+        }),
+        connections: {
+          "ajc-jira": [jiraConnection({}, { apiToken: "a$&b$'c" })],
+        },
+      });
+
+      await operation().http({
+        connectionId: "jira_1",
+        method: "GET",
+        path: "/rest/api/3/myself",
+      });
+
+      expect(sent[0]!.headers["x-api-key"]).toBe("Key a$&b$'c");
+    });
+
     it("sends no credential when the manifest declares no auth scheme", async () => {
       const base = manifest();
       const { auth: _auth, ...network } = base.network!;
@@ -950,7 +978,9 @@ describe("the credential broker", () => {
               "content-type": "text/calendar",
               "content-location": request.url,
             },
-            body: bytes(`BEGIN:VCALENDAR\nURL:${feedAddress}\nEND:VCALENDAR`),
+            body: bytes(
+              `BEGIN:VCALENDAR\nURL:${feedAddress}\nSOURCE:${request.url}\nEND:VCALENDAR`,
+            ),
           };
         },
       });
@@ -969,8 +999,9 @@ describe("the credential broker", () => {
       ]);
       expect(response.status).toBe(200);
       expect(response.headers).toEqual({ "content-type": "text/calendar" });
+      // The address it ended at often carries a token of its own.
       expect(text(response.body)).toBe(
-        "BEGIN:VCALENDAR\nURL:[secret]\nEND:VCALENDAR",
+        "BEGIN:VCALENDAR\nURL:[secret]\nSOURCE:[secret]\nEND:VCALENDAR",
       );
     });
 
