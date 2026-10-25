@@ -206,6 +206,38 @@ export function connectionCredentials(
   };
 }
 
+/**
+ * The config an API 4 plugin's validation saves. Secret fields are
+ * host-owned: the plugin never saw them, so its answer can neither set nor
+ * drop one, and they come from the save itself. So do the fields the broker
+ * builds requests from (`networkFields`, see `pluginNetworkFieldIds`): the
+ * base address and the auth scheme's user. A plugin answering with another
+ * address, or another user, is ignored rather than refused: the validation's
+ * requests went to what the user entered, so that is what was proven, and a
+ * plugin's harmless clean-up, such as a trailing slash the broker drops
+ * anyway, doesn't fail the save. Of the rest of the plugin's answer only the
+ * declared fields stay: a key it adds, such as one of Ajour's own fields, an
+ * access choice or a value for the vault, is dropped.
+ */
+export function api4SavedConfig(
+  fields: readonly SecretFieldDeclaration[],
+  normalized: Readonly<PluginFieldValues>,
+  submitted: Readonly<PluginFieldValues>,
+  networkFields: readonly string[],
+): PluginFieldValues {
+  const userOwned = new Set(networkFields);
+  const saved: PluginFieldValues = {};
+  for (const field of fields) {
+    const from =
+      field.secret || userOwned.has(field.id) ? submitted : normalized;
+    // Own keys only: a field named like an Object method has no value.
+    if (Object.hasOwn(from, field.id) && from[field.id] !== undefined) {
+      saved[field.id] = from[field.id]!;
+    }
+  }
+  return saved;
+}
+
 /** The parts of a saved connection a plugin receives. */
 export interface SavedConnection {
   id: string;
@@ -218,6 +250,8 @@ export interface SavedConnection {
   lastSyncAt?: number;
   lastError?: string;
   config: PluginFieldValues;
+  /** The access choices it turned on, which only an API 4 plugin receives. */
+  access?: readonly string[];
 }
 
 /**
@@ -225,9 +259,12 @@ export interface SavedConnection {
  * the fields Ajour owns that a plugin may read. An API 3 plugin needs the
  * secrets in plain text, so until the cut-over (#403) the host decrypts a
  * connection's secrets from the vault only to build this, for its worker.
+ * An API 4 plugin gets it without the secrets, which the plugin host
+ * removes, and with its access choices.
  */
 export function pluginConnection(connection: SavedConnection) {
   return {
+    ...(connection.access ? { access: [...connection.access] } : {}),
     id: connection.id,
     pluginId: connection.pluginId,
     label: connection.label,

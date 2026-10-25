@@ -11,6 +11,7 @@ import { projectDataShapeDefinitionSchema } from "./project-data-shapes.ts";
 import { readToolInputSchemas, writeToolInputSchemas } from "./agent-tools.ts";
 import { getDomain, parse as parseHost } from "tldts";
 import {
+  connectionAccessOn,
   DENIED_REQUEST_HEADER_PREFIXES,
   DENIED_REQUEST_HEADERS,
   endpointPatternMatches,
@@ -19,6 +20,7 @@ import {
 } from "./plugin-request-rules.ts";
 
 export {
+  connectionAccessOn,
   DENIED_REQUEST_HEADER_PREFIXES,
   DENIED_REQUEST_HEADERS,
   endpointPatternMatches,
@@ -176,8 +178,11 @@ function hasReservedSuffix(host: string) {
   );
 }
 
-/** A host name that a plugin may name as a fixed address: not a reserved one. */
-function isPublicDomainName(value: string) {
+/**
+ * A host name that a plugin may name as a fixed address: not a reserved one.
+ * The broker also asks it of a name it cannot resolve itself.
+ */
+export function isPublicDomainName(value: string) {
   return isDomainName(value) && !hasReservedSuffix(value);
 }
 
@@ -472,6 +477,24 @@ export const pluginNetworkSchema = strictObject({
   publicHosts: z.array(publicHostSchema).max(20).default([]),
 });
 export type PluginNetwork = z.infer<typeof pluginNetworkSchema>;
+
+/**
+ * The connection fields the broker builds a request from: the base address,
+ * which every derived host comes from too, and the auth scheme's fields. Only
+ * the user sets them. A plugin's validation answer can't change one, so it
+ * can't send the saved credential to an address or as a user of its choosing.
+ */
+export function pluginNetworkFieldIds(
+  network: PluginNetwork | undefined,
+): string[] {
+  const ids = new Set<string>();
+  if (network?.baseAddress) ids.add(network.baseAddress.field);
+  if (network?.auth) {
+    ids.add(network.auth.secretField);
+    if (network.auth.scheme === "basic") ids.add(network.auth.userField);
+  }
+  return [...ids];
+}
 
 /**
  * A choice each connection makes about what it may do, such as Azure

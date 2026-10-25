@@ -165,12 +165,14 @@ export const validateConnection: PluginModule["validateConnection"] = async (
 ```
 
 - **`ajour.http({ connectionId, host?, method, path, query?, headers?, body?, signal? })`** sends a request through one of the plugin's own connections. `host` names a derived host. The response has `status`, `ok`, lowercase `headers`, `text()` and `json()`. An `AbortSignal` cancels the request.
-- **`ajour.publicFetch(url, { method?, headers?, signal? })`** fetches an https URL on a declared public host.
+- **`ajour.publicFetch(url, { method?, headers?, signal? })`** fetches an https URL on a declared public host, on its default port, with `GET` or `HEAD`. Its headers follow the rules of `ajour.http`: the denylist, then `requestHeaders`.
 - **`ajour.log(level, message, fields?)`** writes to Ajour's log. Fields hold ids and counts, never content or secrets.
 
 A refused request rejects with an `AjourRequestError` whose `code` is `refused`, `limit`, `timeout` or `network`. An aborted one rejects with an `AbortError`, as `fetch` does.
 
-Redirects: the broker follows same-origin redirects with the credential, up to 3. A cross-origin redirect comes back as the 3xx with its `Location`, without auth: request the new address only through a connection or public host the manifest allows. For a secret address, the broker follows https redirects to any host, up to 3, and never returns the final address.
+Redirects: the broker follows same-origin redirects with the credential, up to 3. A cross-origin redirect comes back as the 3xx with its `Location`, without auth: request the new address only through a connection or public host the manifest allows. For a secret address, the broker follows https redirects to any host, up to 3, and never returns the final address: a fourth redirect, or one away from https, is refused rather than handed back. Request a secret address with `GET`, `path: ""` and no query.
+
+What comes back: the broker removes `Set-Cookie`, `WWW-Authenticate` and any header that echoes a secret, and replaces every secret of the connection in the body with `[secret]`, also in the forms a service may echo it in, such as URL-encoded, JSON-escaped or base64. The body comes back decoded and whole, up to 8 MB. A request body may hold up to 4 MB, a request takes at most 20 s, and a plugin may have 6 requests in flight and send about 10 a second, with bursts of 60.
 
 ## Testing
 

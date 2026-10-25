@@ -46,6 +46,18 @@ const ipcFields = {
 export type HttpMethod =
   "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS" | "other";
 
+/** Where a broker request went: the connection's address, a derived host, a secret address, or a public host. */
+export type PluginRequestHostKind =
+  "base" | "derived" | "secret_address" | "public";
+
+/**
+ * How far the broker could judge the address that answered a request:
+ * `checked` against private addresses, `proxy` when a system proxy answered
+ * for it, which isn't judged, or `unknown` when the network stack named no
+ * address, so only the check before the request held (ADR 0010).
+ */
+export type PluginRequestAnswerAddress = "checked" | "proxy" | "unknown";
+
 /**
  * What every `request` event carries, whatever its route: the method, the
  * route's pattern (never its values), the status and the sizes.
@@ -515,6 +527,73 @@ export const catalog = defineCatalog({
           enabled: operational<boolean>(),
           /** Running plugin operations the turn-off cancelled. */
           operations_cancelled: operational<number>(),
+        },
+      },
+    },
+    /**
+     * One request an API 4 plugin sent through Ajour's broker: through one
+     * of its connections, or a public fetch. The path is the manifest's
+     * endpoint pattern it matched, never the path sent, and no header, body
+     * or query value is kept.
+     */
+    "plugin.request": {
+      kinds: ["job"],
+      reasons: [
+        /** The request isn't one: no connection id, an unknown method, a bad query or body. */
+        "invalid_request",
+        /** The plugin has no connection with that id: another plugin's looks the same. */
+        "connection_not_found",
+        /** The connection's credential can't be read now, so it is paused. */
+        "secret_unavailable",
+        ...inactiveReasons,
+        /** The manifest allows no such endpoint, host or address. */
+        "not_allowed",
+        /** A header the denylist holds or the manifest doesn't list. */
+        "header_refused",
+        /** The endpoint is behind an access choice the connection hasn't turned on. */
+        "access_off",
+        /** The connection's saved address can't be used. */
+        "invalid_address",
+        /** The host resolved, or answered, from a private address. */
+        "private_address",
+        /** A secret address redirected too often, or away from https. */
+        "redirect_refused",
+        /** Outside the desktop app, which has no network stack for plugins. */
+        "no_transport",
+        "request_too_large",
+        "response_too_large",
+        /** The answer couldn't be checked for secrets within the redaction's budget, so it was dropped. */
+        "unchecked_response",
+        "rate_limited",
+        "too_many_queued",
+        /** The plugin operation that sent it ended first. */
+        "operation_ended",
+        /** The plugin aborted it. */
+        "aborted",
+        "timeout",
+        /** The service couldn't be reached. */
+        "network",
+      ],
+      fields: {
+        plugin: { id: operational() },
+        connection: { id: operational() },
+        broker: {
+          method: operational<HttpMethod>(),
+          host_kind: operational<PluginRequestHostKind>(),
+          /** The manifest's endpoint pattern the path matched, such as `/rest/api/3/issue/*`. */
+          path_template: operational(),
+          status_code: operational<number>(),
+          /** Redirects the broker followed. */
+          redirects: operational<number>(),
+          request_bytes: operational<number>(),
+          response_bytes: operational<number>(),
+          on_premises: operational<boolean>(),
+          /** Sent while a connection was validated, before it was saved. */
+          pending: operational<boolean>(),
+          /** How long it waited for one of the plugin's request slots. */
+          queued_ms: operational<number>(),
+          /** Absent on-premises, where no address is judged. Its least judged exchange's. */
+          answer_address: operational<PluginRequestAnswerAddress>(),
         },
       },
     },

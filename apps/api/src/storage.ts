@@ -107,6 +107,18 @@ interface StoredConnection {
   agentAccess?: AgentAccess;
   /** Absent means off; see `connectionAllowsLossyConversion`. */
   allowLossyConversion?: boolean;
+  /**
+   * The user marked it on-premises, so the broker may send its requests to
+   * private addresses. Only a plugin whose manifest allows it may have it.
+   */
+  onPremises?: boolean;
+  /**
+   * The access choices it turned on (#395 adds their form). Absent or empty
+   * leaves only the choices the plugin marks always on.
+   */
+  access?: string[];
+  /** What the broker recorded for Access review. */
+  brokerActivity?: BrokerActivityRecord;
   /** The plugin's settings, without the secrets the vault holds. */
   config: PluginFieldValues;
   /**
@@ -121,6 +133,88 @@ interface StoredConnection {
   lastError?: string;
   /** When the sync that set `lastError` failed. */
   lastErrorAt?: number;
+}
+
+/**
+ * What the broker records for Access review (#394): the last request, and
+ * the requests its policy refused, with the last one's time.
+ */
+export interface BrokerActivityRecord {
+  lastRequestAt?: number;
+  blockedCount?: number;
+  lastBlockedAt?: number;
+}
+
+/**
+ * How long the broker's records gather in memory before they are written:
+ * a plugin can send ten refused requests a second, and each must not
+ * rewrite the state file. A crash loses one window at most.
+ */
+const BROKER_ACTIVITY_WINDOW_MS = 30_000;
+
+/** What a window gathered for one record, before it is written. */
+interface BrokerActivityDelta {
+  pluginId: string;
+  /** Absent for the plugin's own record. */
+  connectionId?: string;
+  lastRequestAt: number;
+  blocked: number;
+  lastBlockedAt?: number;
+}
+
+function normalizeBrokerActivity(
+  raw: unknown,
+): BrokerActivityRecord | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const value = raw as Record<string, unknown>;
+  const time = (candidate: unknown) =>
+    typeof candidate === "number" && Number.isFinite(candidate) && candidate > 0
+      ? candidate
+      : undefined;
+  const record: BrokerActivityRecord = {
+    ...(time(value.lastRequestAt)
+      ? { lastRequestAt: time(value.lastRequestAt) }
+      : {}),
+    ...(typeof value.blockedCount === "number" &&
+    Number.isInteger(value.blockedCount) &&
+    value.blockedCount > 0
+      ? { blockedCount: value.blockedCount }
+      : {}),
+    ...(time(value.lastBlockedAt)
+      ? { lastBlockedAt: time(value.lastBlockedAt) }
+      : {}),
+  };
+  return Object.keys(record).length > 0 ? record : undefined;
+}
+
+/** The record with what a window gathered for it. */
+function withBrokerActivity(
+  record: BrokerActivityRecord | undefined,
+  delta: BrokerActivityDelta,
+): BrokerActivityRecord {
+  const blockedCount = (record?.blockedCount ?? 0) + delta.blocked;
+  const lastBlockedAt = Math.max(
+    record?.lastBlockedAt ?? 0,
+    delta.lastBlockedAt ?? 0,
+  );
+  return {
+    lastRequestAt: Math.max(record?.lastRequestAt ?? 0, delta.lastRequestAt),
+    ...(blockedCount > 0 ? { blockedCount } : {}),
+    ...(lastBlockedAt > 0 ? { lastBlockedAt } : {}),
+  };
+}
+
+function normalizeAccess(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const ids = [
+    ...new Set(
+      raw.filter(
+        (id): id is string =>
+          typeof id === "string" && /^[a-z][A-Za-z0-9]{0,39}$/.test(id),
+      ),
+    ),
+  ].sort();
+  return ids.length > 0 ? ids : undefined;
 }
 
 /**
@@ -235,6 +329,11 @@ interface AppApiStateV8 {
   pluginsEnabled: boolean;
   mcp: StoredMcpState;
   agentRunner: StoredAgentRunnerState;
+  /**
+   * Per plugin, what the broker recorded for Access review across its
+   * requests, those that named no saved connection of the plugin included.
+   */
+  pluginBrokerActivity: Record<string, BrokerActivityRecord>;
 }
 
 type AppApiState = AppApiStateV8;
@@ -310,6 +409,7 @@ function createDefaultState(): AppApiState {
       pluginValues: {},
       pluginSecrets: {},
     },
+    pluginBrokerActivity: {},
   };
 }
 
@@ -621,9 +721,19 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
           agentAccess,
           allowLossyConversion,
           secrets,
+          onPremises,
+          access,
+          brokerActivity,
           ...connection
         }) => ({
           ...connection,
+          ...(onPremises === true ? { onPremises } : {}),
+          ...(normalizeAccess(access)
+            ? { access: normalizeAccess(access) }
+            : {}),
+          ...(normalizeBrokerActivity(brokerActivity)
+            ? { brokerActivity: normalizeBrokerActivity(brokerActivity) }
+            : {}),
           ...(normalizeSecretFields(secrets)
             ? { secrets: normalizeSecretFields(secrets) }
             : {}),
@@ -702,6 +812,17 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
         : defaults.pluginsEnabled,
     mcp: normalizeMcpState(raw.mcp),
     agentRunner: normalizeAgentRunnerState(raw.agentRunner),
+    pluginBrokerActivity: Object.fromEntries(
+      Object.entries(
+        typeof raw.pluginBrokerActivity === "object" &&
+          raw.pluginBrokerActivity !== null
+          ? raw.pluginBrokerActivity
+          : {},
+      ).flatMap(([pluginId, record]) => {
+        const normalized = normalizeBrokerActivity(record);
+        return normalized ? [[pluginId, normalized] as const] : [];
+      }),
+    ),
   };
 }
 
@@ -781,12 +902,24 @@ export class AppApiStorage {
   private readonly listManifests?: () => Promise<readonly SecretManifest[]>;
   /** Holders whose move into the vault failed this launch; tried again at the next. */
   private readonly failedMoves = new Set<string>();
+  /** The broker's records the current window gathered, not written yet. */
+  private readonly brokerActivityPending = new Map<
+    string,
+    BrokerActivityDelta
+  >();
+  private readonly brokerActivityWindowMs: number;
+  /** How many times each plugin's data was removed, for a flush in flight. */
+  private readonly brokerActivityRemovals = new Map<string, number>();
+  private brokerActivityWrittenAt = -Infinity;
+  private brokerActivityTimer?: ReturnType<typeof setTimeout>;
 
   /**
    * `events` receives a `storage.load` event for each load of the state file.
    * `vault` holds the secrets; without it, as in the standalone API, the
    * storage holds none. `manifests` lists every installed plugin's manifest,
    * runnable or not, for the move of secrets into the vault.
+   * `brokerActivityWindowMs` is how long the broker's records gather in
+   * memory between two writes, 30 s by default.
    */
   constructor(
     statePath?: string,
@@ -794,12 +927,15 @@ export class AppApiStorage {
       events?: ApiEvents;
       vault?: SecretVault;
       manifests?: () => Promise<readonly SecretManifest[]>;
+      brokerActivityWindowMs?: number;
     } = {},
   ) {
     this.statePath = resolveStatePath(statePath);
     this.events = options.events;
     this.vault = options.vault;
     this.listManifests = options.manifests;
+    this.brokerActivityWindowMs =
+      options.brokerActivityWindowMs ?? BROKER_ACTIVITY_WINDOW_MS;
   }
 
   /** The folder that holds the state file. Agent browser data lives next to it. */
@@ -1609,6 +1745,15 @@ export class AppApiStorage {
   async removePluginData(pluginId: string): Promise<void> {
     await this.mutate(async (state) => {
       await this.vault?.remove({ pluginId });
+      // The broker's records the window gathered for it go too, and those a
+      // flush in flight took before this ran must not bring it back.
+      this.brokerActivityRemovals.set(
+        pluginId,
+        (this.brokerActivityRemovals.get(pluginId) ?? 0) + 1,
+      );
+      for (const [key, delta] of this.brokerActivityPending) {
+        if (delta.pluginId === pluginId) this.brokerActivityPending.delete(key);
+      }
       return this.withoutPluginData(state, pluginId);
     });
   }
@@ -1634,6 +1779,11 @@ export class AppApiStorage {
         ),
         disabledCapabilities: Object.fromEntries(
           Object.entries(state.disabledCapabilities).filter(
+            ([candidate]) => candidate !== pluginId,
+          ),
+        ),
+        pluginBrokerActivity: Object.fromEntries(
+          Object.entries(state.pluginBrokerActivity).filter(
             ([candidate]) => candidate !== pluginId,
           ),
         ),
@@ -1698,6 +1848,8 @@ export class AppApiStorage {
       agentAccess?: AgentAccess;
       /** Undefined keeps the saved value. */
       allowLossyConversion?: boolean;
+      /** Undefined keeps the saved value. */
+      onPremises?: boolean;
       config: PluginFieldValues;
       configSummary: PluginSummaryValues;
     },
@@ -1737,6 +1889,13 @@ export class AppApiStorage {
           : {}),
         ...((input.allowLossyConversion ?? existing?.allowLossyConversion)
           ? { allowLossyConversion: true }
+          : {}),
+        ...((input.onPremises ?? existing?.onPremises)
+          ? { onPremises: true }
+          : {}),
+        ...(existing?.access ? { access: existing.access } : {}),
+        ...(existing?.brokerActivity
+          ? { brokerActivity: existing.brokerActivity }
           : {}),
         config: split?.values ?? input.config,
         ...((split?.secrets ?? existing?.secrets)
@@ -1957,6 +2116,170 @@ export class AppApiStorage {
         result: nextConnection,
       };
     });
+  }
+
+  /**
+   * Records one broker request of the plugin for Access review: its time,
+   * and whether the policy blocked it, on the plugin and on its connection
+   * when the request named a saved one. The records gather in memory, and
+   * the state file is written once per window at most: the first record
+   * after a quiet window at once, the rest when the window ends, and all of
+   * them on `flushBrokerActivity`, which the API calls as it stops.
+   */
+  async recordBrokerActivity(
+    pluginId: string,
+    connectionId: string | undefined,
+    kind: "request" | "blocked",
+    at: number,
+  ): Promise<void> {
+    const gather = (recordConnectionId: string | undefined) => {
+      const key = `${pluginId}\u0000${recordConnectionId ?? ""}`;
+      const delta = this.brokerActivityPending.get(key) ?? {
+        pluginId,
+        ...(recordConnectionId ? { connectionId: recordConnectionId } : {}),
+        lastRequestAt: 0,
+        blocked: 0,
+      };
+      delta.lastRequestAt = Math.max(delta.lastRequestAt, at);
+      if (kind === "blocked") {
+        delta.blocked += 1;
+        delta.lastBlockedAt = Math.max(delta.lastBlockedAt ?? 0, at);
+      }
+      this.brokerActivityPending.set(key, delta);
+    };
+    gather(undefined);
+    if (connectionId) gather(connectionId);
+    if (this.brokerActivityTimer) return;
+    const wait =
+      this.brokerActivityWrittenAt + this.brokerActivityWindowMs - Date.now();
+    if (wait <= 0) {
+      await this.flushBrokerActivity();
+      return;
+    }
+    this.brokerActivityTimer = setTimeout(() => {
+      this.brokerActivityTimer = undefined;
+      // Access review's records never fail anything; a failed write keeps
+      // them for the next.
+      this.flushBrokerActivity().catch(() => undefined);
+    }, wait);
+    this.brokerActivityTimer.unref?.();
+  }
+
+  /**
+   * Writes the broker's records gathered so far, if any. The API calls it as
+   * it stops, so a quit loses none.
+   */
+  async flushBrokerActivity(): Promise<void> {
+    clearTimeout(this.brokerActivityTimer);
+    this.brokerActivityTimer = undefined;
+    if (this.brokerActivityPending.size === 0) return;
+    const removals = new Map(this.brokerActivityRemovals);
+    const removedSince = (pluginId: string) =>
+      (this.brokerActivityRemovals.get(pluginId) ?? 0) !==
+      (removals.get(pluginId) ?? 0);
+    const deltas = [...this.brokerActivityPending.entries()];
+    this.brokerActivityPending.clear();
+    this.brokerActivityWrittenAt = Date.now();
+    try {
+      await this.mutate(async (current) => {
+        const pluginBrokerActivity = { ...current.pluginBrokerActivity };
+        const connections = [...current.connections];
+        for (const [, delta] of deltas) {
+          // A plugin removed since the records were taken keeps none.
+          if (removedSince(delta.pluginId)) continue;
+          if (delta.connectionId === undefined) {
+            pluginBrokerActivity[delta.pluginId] = withBrokerActivity(
+              Object.hasOwn(pluginBrokerActivity, delta.pluginId)
+                ? pluginBrokerActivity[delta.pluginId]
+                : undefined,
+              delta,
+            );
+            continue;
+          }
+          // A connection deleted since keeps no record.
+          const index = connections.findIndex(
+            (candidate) =>
+              candidate.pluginId === delta.pluginId &&
+              candidate.id === delta.connectionId,
+          );
+          if (index === -1) continue;
+          connections[index] = {
+            ...connections[index]!,
+            brokerActivity: withBrokerActivity(
+              connections[index]!.brokerActivity,
+              delta,
+            ),
+          };
+        }
+        return {
+          nextState: { ...current, connections, pluginBrokerActivity },
+          result: undefined,
+        };
+      });
+    } catch (error) {
+      // Kept for the next write, merged with what came since.
+      for (const [key, delta] of deltas) {
+        if (removedSince(delta.pluginId)) continue;
+        const since = this.brokerActivityPending.get(key);
+        this.brokerActivityPending.set(
+          key,
+          since
+            ? {
+                ...delta,
+                lastRequestAt: Math.max(
+                  delta.lastRequestAt,
+                  since.lastRequestAt,
+                ),
+                blocked: delta.blocked + since.blocked,
+                lastBlockedAt: Math.max(
+                  delta.lastBlockedAt ?? 0,
+                  since.lastBlockedAt ?? 0,
+                ),
+              }
+            : delta,
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * What the broker recorded for the plugin and each of its connections,
+   * with what the current window gathered.
+   */
+  async brokerActivity(pluginId: string): Promise<{
+    plugin?: BrokerActivityRecord;
+    connections: Record<string, BrokerActivityRecord>;
+  }> {
+    const state = await this.readState();
+    let plugin = Object.hasOwn(state.pluginBrokerActivity, pluginId)
+      ? state.pluginBrokerActivity[pluginId]
+      : undefined;
+    const connections = new Map(
+      state.connections
+        .filter((connection) => connection.pluginId === pluginId)
+        .map((connection) => [connection.id, connection.brokerActivity]),
+    );
+    for (const delta of this.brokerActivityPending.values()) {
+      if (delta.pluginId !== pluginId) continue;
+      if (delta.connectionId === undefined) {
+        plugin = withBrokerActivity(plugin, delta);
+      } else if (connections.has(delta.connectionId)) {
+        connections.set(
+          delta.connectionId,
+          withBrokerActivity(connections.get(delta.connectionId), delta),
+        );
+      }
+    }
+    return {
+      ...(plugin ? { plugin } : {}),
+      connections: Object.fromEntries(
+        [...connections].filter(
+          (entry): entry is [string, BrokerActivityRecord] =>
+            entry[1] !== undefined,
+        ),
+      ),
+    };
   }
 
   async stageImportItems(

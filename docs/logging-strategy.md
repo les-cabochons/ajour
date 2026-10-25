@@ -273,6 +273,7 @@ The local API emits these (#305, #306):
 | `mcp.request`, `agent_tool.call`      | `handleMcpRequest` in `apps/api/src/mcp-server.ts`, on the request's event                         |
 | `mcp_bridge.connection`               | the bridge route's request, which ends when the stream closes                                      |
 | one `plugin_operation` per worker run | `PluginWorkerLifetime`, for the plugin host and the schema host                                    |
+| `plugin.request`                      | `CredentialBroker` in `apps/api/src/credential-broker.ts`, for each request of an API 4 plugin     |
 | `api.start`, `api.stop`               | `startAppApiServer` and `stopAppApiServer` in `apps/api/src/server.ts`                             |
 | `storage.load`                        | `AppApiStorage`, for each load of the state file; one it can't read, at any depth, is `unreadable` |
 | `app.error`                           | `watchProcessCrashes` in `apps/api/src/events.ts`, which `apps/api/src/standalone.ts` turns on     |
@@ -371,6 +372,32 @@ reason:
 - errors: `result_too_large`, `invalid_result` (with the error's type and
   code only), `exited_early` and `plugin_error`, scrubbed of the
   connection's secrets.
+
+### Plugin requests
+
+Each request an API 4 plugin sends through the broker, through one of its
+connections or as a public fetch, emits one `plugin.request` event, kind
+`job`, as detached work: a child span of the plugin operation that sent it,
+whose span the plugin host hands the broker, so a renderer runtime's calls
+over IPC land under it too. It carries the plugin, the connection (absent
+for a public fetch and for one not saved yet, which `broker.pending` marks),
+the method, the host kind (`base`, `derived`, `secret_address` or `public`),
+the manifest's endpoint pattern the path matched (never the path itself),
+the status, the redirects followed, the sizes, whether the connection is
+on-premises, how long the request waited for a slot, and, unless it is
+on-premises, how far the address that answered could be judged
+(`broker.answer_address`: `checked`, `proxy` when a system proxy answered,
+or `unknown` when the network stack named none, so only the check before
+the request held). It never holds a header, a body, a query or an address.
+It ends with its own reason: refused for the policy (`connection_not_found`,
+`not_allowed`, `header_refused`, `access_off`, `private_address`,
+`invalid_address`, `redirect_refused`, `invalid_request`), a paused
+connection (`secret_unavailable`), an inactive plugin or capability,
+`no_transport` outside the desktop app, or a limit (`request_too_large`,
+`response_too_large`, `unchecked_response` for an answer the redaction
+couldn't check within its budgets, `rate_limited`, `too_many_queued`);
+cancelled for `aborted` or `operation_ended`; `timeout`; or an error for
+`network`, whose message is the broker's own.
 
 Plugin discovery skips an invalid package without a log line: the active
 event counts it in `counts.invalid_plugin`, as it counts a bundled archive
@@ -760,6 +787,7 @@ channel to read the event each emits.
 | `plugin.install`                     | command, ipc                       | IPC channel                                      |
 | `plugin.list`                        | command, request                   | route, client call                               |
 | `plugin.remove_data`                 | command, request                   | route, client call                               |
+| `plugin.request`                     | job                                | local API                                        |
 | `plugin.uninstall`                   | command, ipc                       | IPC channel                                      |
 | `plugin_system.toggle`               | command, request                   | route, client call                               |
 | `preferences.update`                 | command                            | store command, renderer                          |

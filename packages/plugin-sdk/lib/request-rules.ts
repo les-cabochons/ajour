@@ -92,6 +92,25 @@ export function endpointPatternMatches(pattern: string, path: string) {
 }
 
 /**
+ * The access choices of a connection that are on: the ones the manifest
+ * marks `always`, and the ones the connection turned on that the manifest
+ * still declares. An id it no longer declares, such as one an update
+ * dropped, is off. An endpoint behind a choice is allowed only while it is on.
+ */
+export function connectionAccessOn(
+  choices: readonly { readonly id: string; readonly always?: boolean }[],
+  turnedOn: readonly string[] = [],
+): string[] {
+  const declared = new Set(choices.map((choice) => choice.id));
+  return [
+    ...new Set([
+      ...choices.filter((choice) => choice.always).map((choice) => choice.id),
+      ...turnedOn.filter((id) => declared.has(id)),
+    ]),
+  ];
+}
+
+/**
  * Request headers a plugin may never set, whatever its manifest lists:
  * credentials, the host, headers that change the method a server runs or
  * rewrite its path or host, the client address, and the hop-by-hop and

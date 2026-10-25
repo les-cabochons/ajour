@@ -42,6 +42,7 @@ const {
   selectPluginArchive,
 } = require("./plugin-install.cjs");
 const { createSafeStorageCipher } = require("./secret-cipher.cjs");
+const { createBrokerNetwork } = require("./broker-transport.cjs");
 const { createPluginCatalogService } = require("./plugin-catalog.cjs");
 const {
   loadPluginCatalogSettings,
@@ -828,6 +829,16 @@ function internalAppApiVault(apiModule, statePath) {
   });
 }
 
+/**
+ * The broker's transport and resolver: `net.request` on a session of its
+ * own, made once, after `ready`, since a session can't exist before.
+ */
+let brokerNetwork = null;
+function internalAppApiBrokerNetwork() {
+  brokerNetwork ??= createBrokerNetwork({ net, session, randomUUID });
+  return brokerNetwork;
+}
+
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -950,6 +961,8 @@ async function ensureInternalAppApiRunning() {
       port: INTERNAL_APP_API_PORT,
       statePath,
       vault: internalAppApiVault(internalAppApiModule, statePath),
+      brokerTransport: internalAppApiBrokerNetwork().transport,
+      brokerResolver: internalAppApiBrokerNetwork().resolver,
       installedPluginDirectory: path.join(app.getPath("userData"), "plugins"),
       developmentPluginDirectories: app.isPackaged
         ? []
