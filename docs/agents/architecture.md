@@ -380,11 +380,22 @@ for that one operation, which the host closes once the operation settles.
   requests in flight per plugin with 64 waiting, and a rate of 10 a second
   with bursts of 60 (`BROKER_LIMITS`, `apps/api/src/broker-limits.ts`).
 - **Audit:** each request emits `plugin.request`, and the state file keeps,
-  per plugin and per connection, the last request and the blocked attempts
-  with the last one's time, for Access review (#394). The records gather in
-  memory and are written once per 30 s at most, and as the API stops, so a
-  crash loses one window at most. A blocked attempt is a request the policy
-  refused; a limit, a paused connection or a plugin turned off isn't one.
+  per plugin and per connection, the last request and the requests the
+  policy refused (`blockedCount`), with the last one's time, for Access
+  review (#394). A way out the sandbox closed (#390) is recorded apart, as
+  `blocked_direct` (`directBlockedCount`), and isn't a request. The records
+  gather in memory and are written once per 30 s at most, and as the API
+  stops, so a crash loses one window at most. A limit, a paused connection
+  or a plugin turned off isn't a refusal.
+- **Consent:** the state file keeps `pluginConsent`, per plugin, the version
+  the user turned on and the access summary it had
+  (`packages/shared/plugin-access.ts`). Turning a plugin on writes it; an
+  update decides against it (`apps/api/src/plugin-consent.ts`). Enablement
+  itself compares it with what the installed package reaches now:
+  `AppApiStorage.isPluginEnabled`, the operation gate and the overview treat
+  a plugin that reaches more as off, so a package changed under Ajour, by an
+  update stopped half way or in a development directory, never runs with
+  access the user didn't allow. A record that doesn't parse is dropped.
 
 `/api` is the window's private channel. Whoever starts the local API
 generates a per-launch window token and keeps it in memory: Electron main, the

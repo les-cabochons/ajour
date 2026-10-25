@@ -7,6 +7,7 @@ import {
   RiPuzzleLine as Puzzle,
   RiRobot2Line as Robot,
 } from "@remixicon/react";
+import type { ComponentProps } from "react";
 import type { PluginOverviewGroup } from "@ajour/shared";
 import { MessagePanel } from "@/components/app-surface";
 import { Button } from "@/components/ui/button";
@@ -14,12 +15,15 @@ import { Chip } from "@/components/ui/chip";
 import {
   describeAccess,
   describeBlockedAttempts,
-  describeLastRequest,
   describeLegacyAccess,
+  describeRefusedRequests,
+  FIRST_LIMITED_PLUGIN_API,
+  hasListedAccess,
   type AccessItem,
   type AccessItemKind,
   type AccessLabels,
 } from "@/domain/plugins/plugin-access-model";
+import { describeLastUse } from "@/domain/plugins/secret-state";
 
 const KIND_ICON: Record<AccessItemKind, typeof Globe> = {
   capability: Puzzle,
@@ -29,9 +33,6 @@ const KIND_ICON: Record<AccessItemKind, typeof Globe> = {
   runtime: Cpu,
 };
 
-/** The plugin API that declares what a plugin reaches. */
-const FIRST_LIMITED_PLUGIN_API = 4;
-
 function labelsOf(group: PluginOverviewGroup): AccessLabels {
   return {
     fields: group.plugin.connectionFields,
@@ -39,9 +40,17 @@ function labelsOf(group: PluginOverviewGroup): AccessLabels {
   };
 }
 
-/** Whether the plugin's access is limited and listed, as plugin API 4 makes it. */
-export function hasListedAccess(group: PluginOverviewGroup) {
-  return group.plugin.apiVersion >= FIRST_LIMITED_PLUGIN_API && !!group.access;
+/** A warning-colored line of the broker's records, such as blocked attempts. */
+function ActivityWarning({ children, ...props }: ComponentProps<"p">) {
+  return (
+    <p
+      className="flex items-start gap-2 text-sm text-[var(--warning)]"
+      {...props}
+    >
+      <Warning aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+      <span>{children}</span>
+    </p>
+  );
 }
 
 function EndpointDisclosure({ item }: { item: AccessItem }) {
@@ -49,10 +58,10 @@ function EndpointDisclosure({ item }: { item: AccessItem }) {
   if (endpoints.length === 0) return null;
   return (
     <details className="group mt-1 text-xs text-[var(--text-tertiary)]">
-      <summary className="flex w-fit cursor-pointer list-none items-center gap-1 select-none [&::-webkit-details-marker]:hidden">
+      <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded-[var(--control-radius)] outline-none select-none focus-visible:ring-2 focus-visible:ring-ring/40 [&::-webkit-details-marker]:hidden">
         <ChevronRight
           aria-hidden="true"
-          className="size-3.5 transition-transform group-open:rotate-90"
+          className="size-3.5 group-open:rotate-90"
         />
         {endpoints.length} endpoint{endpoints.length === 1 ? "" : "s"}
       </summary>
@@ -106,7 +115,7 @@ function AccessList({ items, label }: { items: AccessItem[]; label: string }) {
                   <Chip tone="accent">New endpoints</Chip>
                 ) : null}
               </p>
-              <p className="text-[13px] text-[var(--text-secondary)]">
+              <p className="text-sm text-[var(--text-secondary)]">
                 {item.detail}
               </p>
               <EndpointDisclosure item={item} />
@@ -140,6 +149,7 @@ export function PluginAccessSection({
           difference: group.pendingAccess?.difference,
         })
       : describeLegacyAccess(labels);
+  const refused = describeRefusedRequests(group.accessActivity, now);
   const blocked = describeBlockedAttempts(group.accessActivity, now);
 
   return (
@@ -148,24 +158,24 @@ export function PluginAccessSection({
         Access
       </h2>
       <p className="settings-section-desc">
+        {/* Only what holds before the cut-over (#403): until plugins run in
+            their sandbox, the broker limits the requests it is asked to
+            send, not every way out. */}
         {listed
-          ? "What this plugin can reach. Ajour enforces it: anything else is blocked."
+          ? "What this plugin can reach. Requests it makes through Ajour are limited to what is listed here."
           : "This plugin was built for an older plugin API, so Ajour can't limit it. Update it to move it onto one that does."}
       </p>
       {listed ? (
-        <p className="text-[13px] text-muted-foreground" data-access-activity>
-          {describeLastRequest(group.accessActivity, now)}
+        <p className="text-sm text-muted-foreground" data-access-activity>
+          {describeLastUse(group.accessActivity?.lastRequestAt, now)}.
         </p>
       ) : null}
       <AccessList items={items} label="Access" />
+      {refused ? (
+        <ActivityWarning data-access-refused>{refused}</ActivityWarning>
+      ) : null}
       {blocked ? (
-        <p
-          className="flex items-start gap-2 text-[13px] text-[var(--warning)]"
-          data-access-blocked
-        >
-          <Warning aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-          <span>{blocked}</span>
-        </p>
+        <ActivityWarning data-access-blocked>{blocked}</ActivityWarning>
       ) : null}
     </section>
   );
@@ -235,7 +245,7 @@ export function CatalogAccessSection({
           : "This plugin is built for an older plugin API, which Ajour can't limit. Its entry lists no addresses."}
       </p>
       {canDownload ? (
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           After the download the plugin stays inactive. Turning it on allows the
           access listed on its page.
         </p>

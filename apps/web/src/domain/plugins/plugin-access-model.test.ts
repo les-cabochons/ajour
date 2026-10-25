@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { PluginAccessDifference, PluginAccessView } from "@ajour/shared";
+import type {
+  PluginAccessDifference,
+  PluginAccessView,
+  PluginOverviewGroup,
+} from "@ajour/shared";
 import {
   describeAccess,
   describeBlockedAttempts,
-  describeLastRequest,
+  describeRefusedRequests,
+  FIRST_LIMITED_PLUGIN_API,
+  hasListedAccess,
 } from "./plugin-access-model";
 
 const MINUTE = 60_000;
@@ -54,6 +60,8 @@ const view: PluginAccessView = {
     agentPrompts: [{ task: "enter-week", prompt: "abc" }],
     alwaysOnAccess: [],
     accessOperations: [],
+    requestHeaders: [],
+    onPremises: false,
     startMode: "whenNeeded",
   },
   hostLabels: { vssps: "People in your organisation" },
@@ -75,6 +83,8 @@ const NOTHING: PluginAccessDifference = {
   alwaysOnAccess: [],
   accessOperations: [],
   ungatedOperations: [],
+  requestHeaders: [],
+  onPremises: false,
   alwaysReady: false,
 };
 
@@ -261,49 +271,153 @@ describe("the consent panel's lines", () => {
       },
     });
 
-    expect(items.map((item) => item.title)).toEqual([
-      "Pull requests",
-      "Edit work items",
-      "Search people",
-      "Actions that no longer wait for a choice",
+    expect(items.map((item) => [item.title, item.detail])).toEqual([
+      ["Code host", "A feature this plugin didn't have before."],
+      [
+        "Edit work items",
+        "Now always on. It no longer waits for you to turn it on.",
+      ],
+      ["Search people", "Now also lets a connection search people."],
+      [
+        "No longer behind an access choice: settle backlog items in the source",
+        "Either it runs without a choice now, or the update removed it.",
+      ],
     ]);
     expect(items.every((item) => item.isNew)).toBe(true);
+  });
+
+  it("names operations it has no words for as the plugin does", () => {
+    const [ungated] = describeAccess(view, labels, {
+      onlyNew: true,
+      difference: {
+        ...NOTHING,
+        ungatedOperations: ["exportReport", "postItemComment"],
+      },
+    });
+
+    expect(ungated).toMatchObject({
+      title:
+        "No longer behind an access choice: exportReport and post comments",
+      detail:
+        "Either they run without a choice now, or the update removed them.",
+    });
+  });
+
+  it("lists new request headers and connections that may now be on-premises", () => {
+    const items = describeAccess(
+      {
+        ...view,
+        summary: {
+          ...view.summary,
+          requestHeaders: ["accept", "if-match"],
+          onPremises: true,
+        },
+      },
+      labels,
+      {
+        onlyNew: true,
+        difference: {
+          ...NOTHING,
+          requestHeaders: ["if-match"],
+          onPremises: true,
+        },
+      },
+    );
+
+    expect(items.map((item) => [item.title, item.detail])).toEqual([
+      [
+        "Addresses on your own network",
+        "Only for a connection you mark on-premises.",
+      ],
+      ["Request headers", "It may set if-match on its requests."],
+    ]);
+  });
+});
+
+describe("the Access section's request headers and on-premises line", () => {
+  it("lists every header the plugin may set, and marks only the new ones' line", () => {
+    const items = describeAccess(
+      {
+        ...view,
+        summary: {
+          ...view.summary,
+          requestHeaders: ["accept", "content-type"],
+          onPremises: true,
+        },
+      },
+      labels,
+    );
+
+    expect(
+      items
+        .filter((item) => item.id === "headers" || item.id === "onPremises")
+        .map((item) => [item.title, item.detail, item.isNew]),
+    ).toEqual([
+      [
+        "Addresses on your own network",
+        "Only for a connection you mark on-premises.",
+        false,
+      ],
+      [
+        "Request headers",
+        "It may set accept and content-type on its requests.",
+        false,
+      ],
+    ]);
+  });
+
+  it("says nothing about headers or on-premises when the plugin has neither", () => {
+    expect(
+      describeAccess(view, labels).some(
+        (item) => item.id === "headers" || item.id === "onPremises",
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("which plugins list their access", () => {
+  const group = (apiVersion: number, withAccess: boolean) =>
+    ({
+      plugin: { apiVersion },
+      ...(withAccess ? { access: view } : {}),
+    }) as unknown as PluginOverviewGroup;
+
+  it("lists the access of a plugin API 4 plugin the API described", () => {
+    expect(hasListedAccess(group(FIRST_LIMITED_PLUGIN_API, true))).toBe(true);
+    expect(hasListedAccess(group(FIRST_LIMITED_PLUGIN_API, false))).toBe(false);
+    expect(hasListedAccess(group(3, true))).toBe(false);
   });
 });
 
 describe("the activity lines", () => {
   const now = new Date(2026, 9, 25, 15, 0).getTime();
+  const today = new Date(2026, 9, 25, 14, 32).getTime();
+  const earlier = new Date(2026, 9, 22, 9, 5).getTime();
 
-  it.each([
-    [undefined, "No requests yet."],
-    [{ lastRequestAt: now - 20_000 }, "Last request just now."],
-    [{ lastRequestAt: now - 3 * MINUTE }, "Last request 3 minutes ago."],
-    [{ lastRequestAt: now - MINUTE }, "Last request 1 minute ago."],
-    [{ lastRequestAt: now - 5 * 60 * MINUTE }, "Last request 5 hours ago."],
-    [{ lastRequestAt: now - 3 * 24 * 60 * MINUTE }, "Last request 3 days ago."],
-  ])("describes the last request of %j", (activity, expected) => {
-    expect(describeLastRequest(activity, now)).toBe(expected);
-  });
-
-  it("says nothing without blocked attempts", () => {
+  it("says nothing without refused requests or blocked attempts", () => {
+    expect(describeRefusedRequests(undefined, now)).toBeUndefined();
     expect(describeBlockedAttempts(undefined, now)).toBeUndefined();
-    expect(
-      describeBlockedAttempts({ lastRequestAt: now - MINUTE }, now),
-    ).toBeUndefined();
+    const onlyRequests = { lastRequestAt: now - MINUTE };
+    expect(describeRefusedRequests(onlyRequests, now)).toBeUndefined();
+    expect(describeBlockedAttempts(onlyRequests, now)).toBeUndefined();
   });
 
-  it("counts blocked attempts and says when the last one was", () => {
-    const today = new Date(2026, 9, 25, 14, 32).getTime();
-    expect(
-      describeBlockedAttempts({ blockedCount: 2, lastBlockedAt: today }, now),
-    ).toBe(
-      "Tried to connect directly, blocked. 2 times, last at 14:32. Ajour sends a plugin's requests only through its own connections.",
+  it("counts requests the broker refused, apart from ways out the sandbox blocked", () => {
+    const activity = {
+      refusedCount: 2,
+      lastRefusedAt: today,
+      directBlockedCount: 1,
+      lastDirectBlockedAt: earlier,
+    };
+
+    expect(describeRefusedRequests(activity, now)).toBe(
+      "Asked for access it doesn't have, refused. 2 times, last at 14:32.",
     );
-    const earlier = new Date(2026, 9, 22, 9, 5).getTime();
-    expect(
-      describeBlockedAttempts({ blockedCount: 1, lastBlockedAt: earlier }, now),
-    ).toBe(
+    expect(describeBlockedAttempts(activity, now)).toBe(
       "Tried to connect directly, blocked. 1 time, last on 22 Oct, 09:05. Ajour sends a plugin's requests only through its own connections.",
     );
+    expect(
+      describeBlockedAttempts({ refusedCount: 3, lastRefusedAt: today }, now),
+    ).toBeUndefined();
   });
 });

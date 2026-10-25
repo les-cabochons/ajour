@@ -1,7 +1,18 @@
 import { createRequire } from "node:module";
 import { expect, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
-import type { PluginCatalogEntry } from "@ajour/shared";
+import type {
+  PluginAccessDerivedHost,
+  PluginAccessDifference,
+  PluginAccessEndpoint,
+  PluginAccessSummary,
+  PluginAccessView,
+  PluginActivationUpdate,
+  PluginCatalogEntry,
+  PluginManifest,
+  PluginOverviewGroup,
+  PluginsOverview,
+} from "@ajour/shared";
 
 const { Given, When, Then } = createBdd();
 const { BUILT_IN_PLUGIN_CATALOG_ENTRIES: builtInEntries } = createRequire(
@@ -21,19 +32,18 @@ const MINUTE = 60_000;
 // real API reports it: the manifest's access, the broker's activity record,
 // and the access an update waits for the user to allow.
 
-type Json = Record<string, any>;
 type Table = { raw(): string[][] };
 
 interface Mock {
   /** The installed plugin's group, or none when the plugin isn't installed. */
-  group: Json | null;
+  group: PluginOverviewGroup | null;
   /** Bodies of the activation requests. */
-  activations: Json[];
+  activations: PluginActivationUpdate[];
 }
 
 let mock: Mock;
 
-function tracker(apiVersion: number, version = "1.0.0"): Json {
+function tracker(apiVersion: number, version = "1.0.0"): PluginManifest {
   return {
     id: "tracker",
     displayName: "Tracker",
@@ -76,7 +86,7 @@ function tracker(apiVersion: number, version = "1.0.0"): Json {
   };
 }
 
-const BASE_ENDPOINTS = [
+const BASE_ENDPOINTS: PluginAccessEndpoint[] = [
   { host: "base", method: "GET", path: "/rest/myself" },
   {
     host: "base",
@@ -85,15 +95,19 @@ const BASE_ENDPOINTS = [
     access: "editIssues",
   },
 ];
-const PEOPLE_FORM = {
+const PEOPLE_FORM: PluginAccessDerivedHost = {
   id: "people",
   whenHost: "tracker.example.com",
   host: "people.{host}",
   keepBasePath: true,
 };
-const PEOPLE_ENDPOINT = { host: "people", method: "GET", path: "/rest/people" };
+const PEOPLE_ENDPOINT: PluginAccessEndpoint = {
+  host: "people",
+  method: "GET",
+  path: "/rest/people",
+};
 
-function view(extra: Json = {}): Json {
+function view(extra: Partial<PluginAccessSummary> = {}): PluginAccessView {
   return {
     summary: {
       capabilities: ["agentTask", "connector"],
@@ -106,6 +120,8 @@ function view(extra: Json = {}): Json {
       agentPrompts: [{ task: "enter-week", prompt: "hash" }],
       alwaysOnAccess: [],
       accessOperations: [{ choice: "editIssues", operation: "writeSettle" }],
+      requestHeaders: [],
+      onPremises: false,
       startMode: "whenNeeded",
       ...extra,
     },
@@ -114,7 +130,7 @@ function view(extra: Json = {}): Json {
   };
 }
 
-const NOTHING_NEW = {
+const NOTHING_NEW: PluginAccessDifference = {
   capabilities: [],
   authSchemes: [],
   hosts: [],
@@ -126,10 +142,15 @@ const NOTHING_NEW = {
   alwaysOnAccess: [],
   accessOperations: [],
   ungatedOperations: [],
+  requestHeaders: [],
+  onPremises: false,
   alwaysReady: false,
 };
 
-function groupOf(extra: Json = {}, plugin = tracker(4)): Json {
+function groupOf(
+  extra: Partial<PluginOverviewGroup> = {},
+  plugin = tracker(4),
+): PluginOverviewGroup {
   return {
     plugin,
     enabled: true,
@@ -139,31 +160,33 @@ function groupOf(extra: Json = {}, plugin = tracker(4)): Json {
   };
 }
 
-function overviewOf(current: Mock) {
+function overviewOf(group: PluginOverviewGroup | null): PluginsOverview {
   return {
     pluginsEnabled: true,
-    plugins: current.group ? [current.group.plugin] : [],
-    connectionGroups: current.group ? [current.group] : [],
+    plugins: group ? [group.plugin] : [],
+    connectionGroups: group ? [group] : [],
     totalPendingImportCount: 0,
     totalSelectedImportCount: 0,
     vault: { state: "available" },
   };
 }
 
-async function installMock(page: Page, group: Json | null) {
+async function installMock(page: Page, group: PluginOverviewGroup | null) {
   mock = { group, activations: [] };
   const current = mock;
   const json = (body: unknown) => ({ status: 200, json: body, headers: cors });
   await page.route(`${apiUrl}/api/plugins`, (route) =>
-    route.fulfill(json(overviewOf(current))),
+    route.fulfill(json(overviewOf(current.group))),
   );
   await page.route(`${apiUrl}/api/plugins/*/activation`, async (route) => {
-    const body = route.request().postDataJSON() as Json;
+    const body = route.request().postDataJSON() as PluginActivationUpdate;
     current.activations.push(body);
-    current.group = { ...current.group, enabled: body.enabled };
-    // Allowing the access is what turns the plugin on: nothing is pending.
-    delete current.group.pendingAccess;
-    await route.fulfill(json(overviewOf(current)));
+    if (current.group) {
+      // Allowing the access is what turns the plugin on: nothing is pending.
+      const { pendingAccess: _allowed, ...group } = current.group;
+      current.group = { ...group, enabled: body.enabled };
+    }
+    await route.fulfill(json(overviewOf(current.group)));
   });
   await page.route(`${apiUrl}/api/project-data-shapes`, (route) =>
     route.fulfill(json({ plugins: [] })),
@@ -270,13 +293,58 @@ Given(
 );
 
 Given(
-  "the broker blocked it twice from connecting directly",
+  "its sandbox blocked it twice from connecting directly",
   async ({ page: _page }) => {
     mock.group!.accessActivity = {
       ...mock.group!.accessActivity,
-      blockedCount: 2,
-      lastBlockedAt: Date.now() - MINUTE,
+      directBlockedCount: 2,
+      lastDirectBlockedAt: Date.now() - MINUTE,
     };
+  },
+);
+
+Given(
+  "the broker refused 3 of its requests for access it doesn't have",
+  async ({ page: _page }) => {
+    mock.group!.accessActivity = {
+      ...mock.group!.accessActivity,
+      refusedCount: 3,
+      lastRefusedAt: Date.now() - MINUTE,
+    };
+  },
+);
+
+Given(
+  "an active Tracker plugin and a Tracker 1.0.1 file that reaches no more",
+  async ({ page }) => {
+    await installMock(page, groupOf());
+    // The API's answer to the install: the same access, so nothing pending.
+    const updated = groupOf({}, tracker(4, "1.0.1"));
+    await page.exposeFunction("ajourTestInstallTracker", () => {
+      mock.group = updated;
+      return {
+        plugin: updated.plugin,
+        replaced: true,
+        overview: overviewOf(updated),
+      };
+    });
+    await page.addInitScript(() => {
+      window.ajourDesktop = {
+        bootstrapLocalState: null,
+        runtime: {
+          automaticUpdatesEnabled: false,
+          developmentBuild: false,
+          platform: "win32",
+          version: "0.1.0",
+        },
+        installPlugin: () =>
+          (
+            window as unknown as {
+              ajourTestInstallTracker: () => Promise<never>;
+            }
+          ).ajourTestInstallTracker(),
+      };
+    });
   },
 );
 
@@ -343,6 +411,19 @@ When("I open the Tracker plugin page", async ({ page }) => {
   await page.goto("/settings/plugins/tracker");
 });
 
+When("I install the Tracker file from the Plugins page", async ({ page }) => {
+  await page.goto("/settings/plugins");
+  await page.getByRole("button", { name: "Install from file" }).click();
+});
+
+Then("Ajour says {string}", async ({ page }, text: string) => {
+  await expect(page.getByText(text, { exact: false }).first()).toBeVisible();
+});
+
+Then("Ajour does not say {string}", async ({ page }, text: string) => {
+  await expect(page.getByText(text, { exact: false })).toHaveCount(0);
+});
+
 // The Access section.
 
 Then("the Access section comes before Features", async ({ page }) => {
@@ -391,16 +472,33 @@ Then("the Access section says {string}", async ({ page }, text: string) => {
   await expect(accessSection(page)).toContainText(text);
 });
 
+Then(
+  "the Access section does not say {string}",
+  async ({ page }, text: string) => {
+    await expect(accessSection(page)).toBeVisible();
+    await expect(accessSection(page)).not.toContainText(text);
+  },
+);
+
 Then("the Access section warns {string}", async ({ page }, text: string) => {
   await expect(
     accessSection(page).locator("[data-access-blocked]"),
   ).toContainText(text);
 });
 
+Then(
+  "the Access section says the broker refused {string}",
+  async ({ page }, text: string) => {
+    await expect(
+      accessSection(page).locator("[data-access-refused]"),
+    ).toContainText(text);
+  },
+);
+
 Then("the Access section shows no blocked attempts", async ({ page }) => {
   await expect(accessSection(page)).toBeVisible();
   await expect(
-    accessSection(page).locator("[data-access-blocked]"),
+    accessSection(page).locator("[data-access-blocked], [data-access-refused]"),
   ).toHaveCount(0);
 });
 
@@ -504,7 +602,10 @@ Then(
 );
 
 Then("the activation request turned the plugin on", async () => {
-  await expect.poll(() => mock.activations).toEqual([{ enabled: true }]);
+  // For the version whose access the page listed.
+  await expect
+    .poll(() => mock.activations)
+    .toEqual([{ enabled: true, version: mock.group?.plugin.version }]);
 });
 
 Then(

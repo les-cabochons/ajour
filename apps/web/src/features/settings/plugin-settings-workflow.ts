@@ -362,10 +362,15 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
     try {
       switch (command.type) {
         case "activate": {
+          // Turning the plugin on allows the access its page listed, for the
+          // version the page showed: the API refuses if another is installed.
           const overview = await deps.setPluginEnabled(
             command.plugin.id,
             command.enabled,
             command.capability,
+            command.enabled && !command.capability
+              ? command.plugin.version
+              : undefined,
           );
           finish(
             command.capability

@@ -366,6 +366,28 @@ describe("saving a connection", () => {
     expect(onSaved).toHaveBeenCalledWith(connection);
   });
 
+  it("turns a plugin on for the version the user reviewed, and a capability without one", async () => {
+    const { deps } = dependencies();
+    const setPluginEnabled = vi.fn(async () => overview);
+    deps.setPluginEnabled = setPluginEnabled;
+    const workflow = createPluginSettingsWorkflow(deps);
+
+    await workflow.execute({ type: "activate", plugin, enabled: true });
+    await workflow.execute({ type: "activate", plugin, enabled: false });
+    await workflow.execute({
+      type: "activate",
+      plugin,
+      enabled: true,
+      capability: "connector",
+    });
+
+    expect(setPluginEnabled.mock.calls).toEqual([
+      ["test-connector", true, undefined, "1.0.0"],
+      ["test-connector", false, undefined, undefined],
+      ["test-connector", true, "connector", undefined],
+    ]);
+  });
+
   it("sends the reminder dates with the save", async () => {
     const { deps } = dependencies();
     deps.savePluginConnection = vi.fn(async () => {

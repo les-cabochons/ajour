@@ -37,15 +37,22 @@ Feature: Access review on the plugin page
 
   Scenario: An installed plugin shows its last request and blocked attempts
     Given an installed Tracker plugin on plugin API 4 that made a request 3 minutes ago
-    And the broker blocked it twice from connecting directly
+    And its sandbox blocked it twice from connecting directly
     When I open the Tracker plugin page
-    Then the Access section says "Last request 3 minutes ago."
+    Then the Access section says "Last used 3 minutes ago."
     And the Access section warns "Tried to connect directly, blocked. 2 times"
+
+  Scenario: Requests the broker refused are not attempts to connect directly
+    Given an installed Tracker plugin on plugin API 4 that made a request 3 minutes ago
+    And the broker refused 3 of its requests for access it doesn't have
+    When I open the Tracker plugin page
+    Then the Access section says the broker refused "Asked for access it doesn't have, refused. 3 times"
+    And the Access section does not say "Tried to connect directly"
 
   Scenario: A plugin that has made no request says so and shows no warning
     Given an installed Tracker plugin on plugin API 4
     When I open the Tracker plugin page
-    Then the Access section says "No requests yet."
+    Then the Access section says "Not used yet."
     And the Access section shows no blocked attempts
 
   Scenario: A plugin on an older plugin API says Ajour cannot limit it
@@ -81,7 +88,11 @@ Feature: Access review on the plugin page
       | The address in "Site URL"  |
     And the update panel shows the new endpoint "GET /rest/people"
 
-  Scenario: An update that reaches no more shows no panel
-    Given an installed Tracker plugin on plugin API 4
+  Scenario: An update that reaches no more keeps the plugin active and shows no panel
+    Given an active Tracker plugin and a Tracker 1.0.1 file that reaches no more
+    When I install the Tracker file from the Plugins page
+    Then Ajour says "Tracker 1.0.1 replaced the installed plugin."
+    And Ajour does not say "needs more access"
     When I open the Tracker plugin page
     Then the plugin page does not say "needs more access"
+    And the plugin is active

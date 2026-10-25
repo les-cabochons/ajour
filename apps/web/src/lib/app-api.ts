@@ -737,14 +737,21 @@ export async function getPluginsOverview(): Promise<PluginsOverview> {
 }
 
 /** Turns the plugin on or off, or only `capability` when given. */
+/**
+ * Turns a plugin, or one of its capabilities, on or off. `version` is the
+ * version whose access the user reviewed: the API refuses to turn on
+ * another.
+ */
 export async function setPluginEnabled(
   pluginId: string,
   enabled: boolean,
   capability?: SwitchableCapability,
+  version?: string,
 ): Promise<PluginsOverview> {
   const payload = pluginActivationUpdateSchema.parse({
     enabled,
     ...(capability ? { capability } : {}),
+    ...(version ? { version } : {}),
   });
   return cachePluginsOverview(
     await appApiRequest(
