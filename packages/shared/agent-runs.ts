@@ -57,6 +57,8 @@ export const agentTaskStatusSchema = z.object({
   settings: z.array(pluginFieldSchema),
   values: pluginFieldValuesSchema,
   weekLink: z.string().optional(),
+  /** Why the task has no week link, when its template uses a secret setting. */
+  weekLinkRefusal: z.string().optional(),
   /** Why the task cannot run now, such as "Fill in Workday timesheet URL". Empty when ready. */
   blockers: z.array(z.string()),
 });

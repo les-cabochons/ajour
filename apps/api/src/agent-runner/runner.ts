@@ -349,6 +349,17 @@ export class AgentRunner {
                 `Fill in ${field.label} in Settings > Plugins > ${plugin.displayName}`,
             ),
         ];
+        const secretSettings = fields.filter(
+          (field, index) => field.secret || task.settings[index]!.secret,
+        );
+        // The user opens the week link with a click, and its host is the
+        // plugin's to choose, so a secret setting never fills it.
+        const linkSlots = new Set(
+          task.weekLink ? listTemplateSlots(task.weekLink) : [],
+        );
+        const secretInLink = secretSettings.find((field) =>
+          linkSlots.has(`settings.${field.id}`),
+        );
         tasks.push({
           status: {
             pluginId: plugin.id,
@@ -362,7 +373,14 @@ export class AgentRunner {
               secrets === "included"
                 ? values
                 : editableValues([...sharedFields.values()], values),
-            ...(task.weekLink ? { weekLink: task.weekLink } : {}),
+            ...(task.weekLink && !secretInLink
+              ? { weekLink: task.weekLink }
+              : {}),
+            ...(secretInLink
+              ? {
+                  weekLinkRefusal: `The week link uses the secret setting ${secretInLink.label}. Ajour never puts a secret in a link.`,
+                }
+              : {}),
             blockers,
           },
           // An API 4 task's run gets only the tools it declares, and none
@@ -371,9 +389,7 @@ export class AgentRunner {
           ...(plugin.apiVersion === PLUGIN_API_4
             ? { tools: task.tools ?? [] }
             : {}),
-          secretSettings: fields.filter(
-            (field, index) => field.secret || task.settings[index]!.secret,
-          ),
+          secretSettings,
         });
       }
     }

