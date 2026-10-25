@@ -1651,6 +1651,19 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(response, 400, { error: credentials.errorMessage(error) });
         return;
       }
+      // The plugin may answer with a key it didn't declare, which goes to
+      // the vault as a secret does.
+      if (
+        await refuseSecretsWithoutVault(
+          unit,
+          response,
+          secretFields,
+          parsedValues.config,
+          validation.normalizedConfig,
+        )
+      ) {
+        return;
+      }
       const storedConnection = await storage.upsertConnection(
         pluginId,
         {
@@ -2589,20 +2602,25 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
    * Refuses a save that gives a secret field a value the vault can't keep:
    * there is no plain-text fallback. True when it refused. A save that
    * leaves every secret empty goes on, so a plugin without secrets works.
+   * `normalizedConfig`, the plugin's answer, counts too: a key the manifest
+   * doesn't declare goes to the vault, so it needs one as a secret does.
    */
   async function refuseSecretsWithoutVault(
     unit: Unit<AjourCatalog, "connection.save" | "agent_task.configure">,
     response: ServerResponse,
     fields: readonly SecretFieldDeclaration[],
     values: PluginFieldValues,
+    normalizedConfig?: PluginFieldValues,
   ) {
-    if (
-      !fields.some(
+    const declared = new Set(fields.map((field) => field.id));
+    const needsVault =
+      fields.some(
         (field) => field.secret && !isEmptySecretValue(values[field.id]),
-      )
-    ) {
-      return false;
-    }
+      ) ||
+      Object.entries(withoutReservedFields(normalizedConfig ?? {})).some(
+        ([id, value]) => !declared.has(id) && !isEmptySecretValue(value),
+      );
+    if (!needsVault) return false;
     const status = await storage.vaultStatus();
     if (status.state !== "unavailable") return false;
     unit.refuse("vault_unavailable");
@@ -2961,6 +2979,9 @@ export async function uninstallPluginForServer(
     throw new Error("Plugin uninstall requires an active app API runtime.");
   }
 
+  // Refused before the package goes: a vault that can't drop the plugin's
+  // secrets would leave its data behind a package that is already gone.
+  await runtime.storage.assertSecretsChangeable();
   const removedPlugin = await runtime.pluginManager.uninstallPlugin(pluginId);
   await runtime.storage.removePluginData(removedPlugin.id);
   return pluginUninstallResponseSchema.parse({

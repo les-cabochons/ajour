@@ -122,10 +122,22 @@ file:
   on Windows, is tried again for about 1.5 s. A file that still can't be
   read, or that a newer version saved, is never replaced: the vault reports
   `unavailable` with the reason and refuses every change until the next
-  launch. A malformed entry is unreadable alone, and the file keeps it, and
-  any entry or property this version doesn't know, as it was. Only a file
-  that isn't a vault at all is kept aside, under a name of its own, before a
-  new one is saved.
+  launch. A removal is refused the same way, with `VaultUnavailableError`
+  ("Ajour can't change saved secrets right now: <reason>. Restart Ajour and
+  try again."), never answered with zero: deleting a connection, removing a
+  secret with `removeSecrets` and uninstalling a plugin then change nothing,
+  so the state never forgets a secret the vault still holds. An uninstall
+  checks this before it removes the package. A malformed entry is unreadable
+  alone, and the file keeps it, and any entry or property this version
+  doesn't know, as it was. An empty or blank file is no vault yet. Only a
+  file that isn't a vault at all is kept aside, under a name of its own,
+  before a new one is saved; the status then says so (`unreadable`, "The
+  secrets file was damaged and set aside."), apart from a lost key.
+- **Dropped fields:** a field an update drops from the manifest, or stops
+  marking secret, stays in the vault and stays secret: the state file's
+  `secrets.fields` keeps it. A key a plugin's validation answers with that the
+  manifest doesn't declare goes to the vault too, so the standalone API, which
+  has no vault, refuses that save with the same 400 as a secret field.
 - **When it can't:** without encryption, or without a vault, as in the
   standalone API and the vite dev server, a save that sets a secret is refused
   with a 400 (`vault_unavailable`). A connection whose secret can't be read,

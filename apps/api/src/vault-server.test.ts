@@ -44,8 +44,9 @@ const SITE = "https://acme.atlassian.net";
 const TOKEN = "pat-5f2c8e1a9b7d4063";
 const AGENT_KEY = "wd-key-0b6e3a9c4f1d";
 const GONE_PASSWORD = "gone-pw-6c1f93ab";
+const SESSION = "sess-3d7a50e8c2b14f69";
 /** Every secret the fixtures hold. None may show up outside the vault. */
-const SECRETS = [TOKEN, AGENT_KEY, GONE_PASSWORD];
+const SECRETS = [TOKEN, AGENT_KEY, GONE_PASSWORD, SESSION];
 
 const baseFields = [
   { id: "label", label: "Label", type: "text", required: true },
@@ -100,6 +101,21 @@ const notes = {
     "}",
     "export async function syncConnection() {",
     "  return { items: [], workItemUpdates: [] };",
+    "}",
+  ].join("\n"),
+};
+
+/** A plugin whose validation answers with a key its manifest doesn't declare. */
+const trader = {
+  id: "trader",
+  connectionFields: baseFields,
+  capabilities: { connector: {} },
+  source: [
+    "export async function validateConnection(config) {",
+    `  return { normalizedConfig: { ...config, sessionId: ${JSON.stringify(SESSION)} }, connectionSummary: {} };`,
+    "}",
+    "export async function syncConnection() {",
+    "  return { items: [], workItems: [], workItemUpdates: [] };",
     "}",
   ].join("\n"),
 };
@@ -310,9 +326,15 @@ describe("secrets in the vault", () => {
           `/api/plugins/${pluginId}/connections/${connectionId}/sync`,
           { trigger: "manual", workItems: [] },
         ),
-      save: (pluginId: string, values: object, id?: string) =>
+      save: (
+        pluginId: string,
+        values: object,
+        id?: string,
+        removeSecrets?: string[],
+      ) =>
         send("POST", `/api/plugins/${pluginId}/connections`, {
           ...(id ? { id } : {}),
+          ...(removeSecrets ? { removeSecrets } : {}),
           values: {
             label: "Saved",
             tenantLabel: "Acme",
@@ -724,6 +746,126 @@ describe("secrets in the vault", () => {
     expect(vault.contents()).toEqual([]);
   });
 
+  describe("when the vault file can't be changed this launch", () => {
+    const FROZEN =
+      "Ajour couldn't read its vault file (EPERM), so it changes nothing in it until it starts again.";
+    const REFUSAL =
+      "Ajour can't change saved secrets right now: Ajour couldn't read its vault file (EPERM), so it changes nothing in it until it starts again. Restart Ajour and try again.";
+
+    async function frozenLaunch() {
+      const directory = await root({ ...plainState, disabledPluginIds: [] });
+      const first = new MemorySecretVault();
+      await (await launch(directory, { vault: first })).overview();
+      const vault = first.relaunch();
+      const api = await launch(directory, { vault });
+      await api.overview();
+      vault.faults.frozen = FROZEN;
+      return { directory, vault, api };
+    }
+
+    const entries = (vault: MemorySecretVault) =>
+      vault
+        .contents()
+        .map((entry) => `${entry.pluginId}/${entry.fieldId}`)
+        .sort();
+
+    it("refuses to delete a connection, and keeps it with its secret", async () => {
+      const { directory, vault, api } = await frozenLaunch();
+      const before = entries(vault);
+
+      await expect(api.remove("jira", "jira_main")).resolves.toEqual({
+        status: 400,
+        body: { error: REFUSAL },
+      });
+
+      expect(entries(vault)).toEqual(before);
+      await expect(
+        storedConnection(directory, "jira_main"),
+      ).resolves.toMatchObject({ secrets: { fields: ["token"] } });
+      expect(
+        api.events.find(
+          (event) =>
+            event.name === "connection.delete" && event.outcome === "refused",
+        ),
+      ).toMatchObject({ outcome_reason: "vault_unavailable" });
+    });
+
+    it("refuses to remove a secret from a connection, and keeps the field", async () => {
+      const { directory, vault, api } = await frozenLaunch();
+      const before = entries(vault);
+
+      const response = await api.save("jira", { token: "" }, "jira_main", [
+        "token",
+      ]);
+
+      expect(response).toEqual({ status: 400, body: { error: REFUSAL } });
+      expect(entries(vault)).toEqual(before);
+      await expect(
+        storedConnection(directory, "jira_main"),
+      ).resolves.toMatchObject({ secrets: { fields: ["token"] } });
+    });
+
+    it("refuses to uninstall a plugin, and leaves its package, connections and secrets", async () => {
+      const directory = await root();
+      const source = await writePlugin(path.join(directory, "source"), jira);
+      const archivePath = path.join(directory, "jira-1.0.0.ajour-connector");
+      await create({ cwd: source, file: archivePath, gzip: true }, [
+        "plugin.json",
+        "plugin.mjs",
+        "prompts",
+      ]);
+      const vault = new MemorySecretVault();
+      const server = createAppApiServer({
+        ...windowServerOptions,
+        vault,
+        statePath: path.join(directory, "state.json"),
+        installedPluginDirectory: path.join(directory, "installed"),
+        allowDevelopmentPlugins: false,
+      });
+      servers.push(server);
+      await installPluginForServer(
+        server,
+        await readFile(archivePath),
+        path.basename(archivePath),
+      );
+      const saved = await dispatchJsonRequest(server, {
+        method: "POST",
+        path: "/api/plugins/jira/connections",
+        body: JSON.stringify({
+          values: {
+            label: "Main",
+            tenantLabel: "Acme",
+            baseUrl: SITE,
+            token: TOKEN,
+          },
+        }),
+      });
+      expect(saved.status).toBe(200);
+      vault.faults.frozen = FROZEN;
+
+      await expect(uninstallPluginForServer(server, "jira")).rejects.toThrow(
+        REFUSAL,
+      );
+
+      expect(entries(vault)).toEqual(["jira/token"]);
+      const overview = await dispatchJsonRequest(server, {
+        method: "GET",
+        path: "/api/plugins",
+      });
+      expect(JSON.stringify(overview.body)).toContain('"id":"jira"');
+      const state = JSON.parse(await stateText(directory)) as {
+        connections: { pluginId: string }[];
+      };
+      expect(
+        state.connections.filter((entry) => entry.pluginId === "jira"),
+      ).toHaveLength(1);
+      // Once the vault can be changed, the same uninstall goes through.
+      vault.faults.frozen = undefined;
+      await uninstallPluginForServer(server, "jira");
+      expect(entries(vault)).toEqual([]);
+    });
+  });
+
   it("holds no secret in the standalone API: it refuses secret fields and saves the rest", async () => {
     const directory = await root(plainState);
     const api = await launch(directory);
@@ -748,6 +890,45 @@ describe("secrets in the vault", () => {
     });
     await expect(api.overview()).resolves.toMatchObject({
       vault: { state: "unavailable", reason: NO_VAULT_REASON },
+    });
+  });
+
+  it("refuses, clearly, a plugin's answer with a key it doesn't declare when there is no vault", async () => {
+    const directory = await root();
+    const api = await launch(directory, { plugins: [trader, notes] });
+
+    await expect(api.save("trader", {})).resolves.toEqual({
+      status: 400,
+      body: {
+        error: `Ajour can't protect credentials on this computer, so it can't save a secret. ${NO_VAULT_REASON}`,
+      },
+    });
+
+    expect(await stateText(directory).catch(() => "")).not.toContain("trader");
+    expect(
+      api.events.find(
+        (event) =>
+          event.name === "connection.save" && event.outcome === "refused",
+      ),
+    ).toMatchObject({ outcome_reason: "vault_unavailable" });
+  });
+
+  it("pauses a connection holding an undeclared key with vault_unavailable when there is no vault", async () => {
+    const directory = await root({
+      version: 7,
+      connections: [
+        connection("trader_1", "trader", { baseUrl: SITE, sessionId: SESSION }),
+      ],
+    });
+    const api = await launch(directory, { plugins: [trader, notes] });
+
+    const overview = await api.overview();
+
+    expect(pausedOf(overview, "trader_1")?.paused).toMatchObject({
+      reason: "vault_unavailable",
+    });
+    await expect(api.sync("trader", "trader_1")).resolves.toMatchObject({
+      status: 409,
     });
   });
 

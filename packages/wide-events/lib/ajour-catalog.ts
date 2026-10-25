@@ -548,6 +548,8 @@ export const catalog = defineCatalog({
       reasons: [
         ...rendererEvents["connection.delete"].reasons,
         "connection_not_found",
+        /** The vault can't drop the connection's secrets this launch. */
+        "vault_unavailable",
         ...requestReasons,
       ],
       fields: {

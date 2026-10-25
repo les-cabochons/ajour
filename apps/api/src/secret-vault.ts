@@ -66,7 +66,8 @@ export interface SecretEntryInfo extends SecretKey {
 export type VaultStatus =
   | { state: "available" }
   | { state: "unavailable"; reason: string }
-  | { state: "unreadable" };
+  /** `reason` tells a lost key from a file that was damaged. */
+  | { state: "unreadable"; reason?: string };
 
 /** One secret as a read finds it. */
 export type SecretRead =
@@ -85,6 +86,11 @@ export interface SecretSelection {
 
 export interface VaultOpened {
   status: VaultStatus;
+  /**
+   * Why no secret can be saved or removed this launch, when the vault file
+   * can't be read or is a newer version's. Undefined when changes are allowed.
+   */
+  changeRefusedReason?: string;
   entryCount: number;
   /** Temp files an interrupted save left that couldn't be deleted. */
   undeletableOrphans: number;
@@ -113,8 +119,9 @@ export interface SecretVault {
    */
   write(entries: readonly SecretWrite[]): Promise<void>;
   /**
-   * Deletes the selected entries, readable or not. Returns how many. A file
-   * that can't be changed this launch keeps them, and none is removed.
+   * Deletes the selected entries, readable or not. Returns how many. Throws
+   * `VaultUnavailableError` when the file can't be changed this launch: the
+   * entries stay, so the caller must not drop what points at them.
    */
   remove(selection: SecretSelection): Promise<number>;
 }
@@ -130,13 +137,18 @@ export interface SecretCipher {
   ): Promise<{ text: string; reEncrypt?: boolean }>;
 }
 
-/** A secret write refused because this computer can't encrypt it. */
+/**
+ * A change to the vault refused: a secret this computer can't encrypt
+ * (`save`), or a file that mustn't change this launch (`change`).
+ */
 export class VaultUnavailableError extends Error {
   readonly reason: string;
 
-  constructor(reason: string) {
+  constructor(reason: string, action: "save" | "change" = "save") {
     super(
-      `Ajour can't protect credentials on this computer, so it can't save a secret. ${reason}`,
+      action === "save"
+        ? `Ajour can't protect credentials on this computer, so it can't save a secret. ${reason}`
+        : `Ajour can't change saved secrets right now: ${reason.trim().replace(/[.\s]+$/, "")}. Restart Ajour and try again.`,
     );
     this.name = "VaultUnavailableError";
     this.reason = reason;
@@ -282,11 +294,16 @@ function delay(ms: number) {
 
 /** Why the vault changes nothing this launch, after its file couldn't be read. */
 function unreadFileReason(code: string) {
-  return `Ajour couldn't read its vault file (${code}), so it changes nothing in it until it starts again. Quit Ajour and open it again.`;
+  return `Ajour couldn't read its vault file (${code}), so it changes nothing in it until it starts again.`;
 }
 
 const NEWER_FILE_REASON =
   "The vault file was saved by a newer version of Ajour, so this one leaves it as it is. Update Ajour to use its credentials.";
+
+/** The reasons a vault is `unreadable`: its file was damaged, or its key is gone. */
+const DAMAGED_FILE_REASON = "The secrets file was damaged and set aside.";
+const LOST_KEY_REASON =
+  "The key that protected the saved secrets is gone from this computer.";
 
 export interface FileSecretVaultOptions {
   /** The vault file, beside the state file. */
@@ -415,6 +432,7 @@ export class FileSecretVault implements SecretVault {
   ): Promise<void> {
     await this.open();
     await this.serialized(async () => {
+      if (this.frozen) throw new VaultUnavailableError(this.frozen, "change");
       if (this.status.state === "unavailable") {
         throw new VaultUnavailableError(this.status.reason);
       }
@@ -467,7 +485,7 @@ export class FileSecretVault implements SecretVault {
   async remove(selection: SecretSelection): Promise<number> {
     await this.open();
     return await this.serialized(async () => {
-      if (this.frozen) return 0;
+      if (this.frozen) throw new VaultUnavailableError(this.frozen, "change");
       const next = new Map(
         [...this.entries].filter(([, entry]) => !selects(selection, entry)),
       );
@@ -492,7 +510,7 @@ export class FileSecretVault implements SecretVault {
     entries: Map<string, FileEntry> = this.entries,
     check: string | undefined = this.check,
   ) {
-    if (this.frozen) throw new VaultUnavailableError(this.frozen);
+    if (this.frozen) throw new VaultUnavailableError(this.frozen, "change");
     if (
       check === undefined &&
       !this.fileFound &&
@@ -631,9 +649,14 @@ export class FileSecretVault implements SecretVault {
       this.fileFound = true;
       this.frozen = unreadFileReason(found.errorCode);
     } else if (found.text !== undefined) {
-      this.fileFound = true;
-      const file = parseVaultFile(found.text);
-      if (file.kind === "newer") this.frozen = NEWER_FILE_REASON;
+      // An empty file holds no secret, as after a crash before the first
+      // save: it is no vault yet, not a damaged one to keep aside.
+      const blank = found.text.trim() === "";
+      this.fileFound = !blank;
+      const file = blank ? undefined : parseVaultFile(found.text);
+      if (!file) {
+        // Nothing to hold.
+      } else if (file.kind === "newer") this.frozen = NEWER_FILE_REASON;
       else if (file.kind === "not_a_vault") this.foundUnreadableFile = true;
       else {
         this.hold(file);
@@ -645,7 +668,7 @@ export class FileSecretVault implements SecretVault {
       if (this.frozen) {
         this.status = { state: "unavailable", reason: this.frozen };
       } else if (this.foundUnreadableFile) {
-        this.status = { state: "unreadable" };
+        this.status = { state: "unreadable", reason: DAMAGED_FILE_REASON };
       } else if (readable) {
         this.status = await this.checkKey();
       }
@@ -655,6 +678,7 @@ export class FileSecretVault implements SecretVault {
     }
     return {
       status: this.status,
+      ...(this.frozen ? { changeRefusedReason: this.frozen } : {}),
       entryCount: this.entries.size,
       undeletableOrphans: undeletable,
     };
@@ -685,7 +709,7 @@ export class FileSecretVault implements SecretVault {
       this.check = undefined;
       return { state: "available" };
     }
-    return { state: "unreadable" };
+    return { state: "unreadable", reason: LOST_KEY_REASON };
   }
 
   /** Encryption works when a value encrypted here decrypts back to itself. */

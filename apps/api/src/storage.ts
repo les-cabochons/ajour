@@ -729,6 +729,19 @@ export class AppApiStorage {
   }
 
   /**
+   * Throws `VaultUnavailableError` when the vault can't be changed this
+   * launch, so a caller with other work to do first, such as removing a
+   * package, can refuse before it starts what a refused removal would leave
+   * half done.
+   */
+  async assertSecretsChangeable(): Promise<void> {
+    const opened = await this.vault?.open();
+    if (opened?.changeRefusedReason) {
+      throw new VaultUnavailableError(opened.changeRefusedReason, "change");
+    }
+  }
+
+  /**
    * Moves into the vault what the state file still keeps of a secret: a
    * plugin that came back after its connections were sealed, or an update
    * that marks a field secret. `manifests` must list every installed plugin
@@ -1315,7 +1328,10 @@ export class AppApiStorage {
   /**
    * Deletes what a plugin's uninstall takes: its connections and their
    * vault entries, its agent task settings, staged items and statuses.
-   * Deactivating a plugin keeps all of them.
+   * Deactivating a plugin keeps all of them. Throws
+   * `VaultUnavailableError`, and changes nothing, when the vault can't drop
+   * the plugin's entries: the state would then forget secrets the vault
+   * still holds.
    */
   async removePluginData(pluginId: string): Promise<void> {
     await this.mutate(async (state) => {
@@ -1495,8 +1511,11 @@ export class AppApiStorage {
 
   /**
    * Deletes a connection with its staged items and statuses, and its vault
-   * entries first, so its secrets are gone even if the state can't be saved.
-   * A pending dismissal of its items can no longer be undone, since Undo
+   * entries first. When the vault can't drop them it throws
+   * `VaultUnavailableError` and keeps the connection, since the state would
+   * otherwise forget secrets the vault still holds. If the state then can't
+   * be saved, the secrets are gone and the connection stays, to be entered
+   * again. A pending dismissal of its items can no longer be undone, since Undo
    * would bring back items for a connection that is gone.
    */
   async deleteConnection(

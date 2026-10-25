@@ -22,6 +22,11 @@ export interface MemoryVaultFaults {
   readBack?: boolean;
   /** A write that holds one of these keys fails, as its encryption would. */
   failFor?: (key: SecretKey) => boolean;
+  /**
+   * The vault's file can't be changed this launch, for this reason: every
+   * write and removal is refused, as for a file Ajour couldn't read.
+   */
+  frozen?: string;
 }
 
 interface MemoryEntry {
@@ -96,6 +101,9 @@ export class MemorySecretVault implements SecretVault {
     }
     return {
       status: this.status,
+      ...(this.faults.frozen
+        ? { changeRefusedReason: this.faults.frozen }
+        : {}),
       entryCount: this.store.size,
       undeletableOrphans: 0,
     };
@@ -142,6 +150,9 @@ export class MemorySecretVault implements SecretVault {
 
   async write(entries: readonly SecretWrite[]): Promise<void> {
     const { status } = await this.open();
+    if (this.faults.frozen) {
+      throw new VaultUnavailableError(this.faults.frozen, "change");
+    }
     if (status.state === "unavailable") {
       throw new VaultUnavailableError(status.reason);
     }
@@ -176,6 +187,9 @@ export class MemorySecretVault implements SecretVault {
 
   async remove(selection: SecretSelection): Promise<number> {
     await this.open();
+    if (this.faults.frozen) {
+      throw new VaultUnavailableError(this.faults.frozen, "change");
+    }
     if (this.faults.save) throw new Error("The vault file couldn't be saved.");
     let removed = 0;
     for (const [id, entry] of this.store) {

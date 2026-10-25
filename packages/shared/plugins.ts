@@ -553,7 +553,11 @@ export const vaultStatusSchema = z.discriminatedUnion("state", [
     state: z.literal("unavailable"),
     reason: z.string().max(1000),
   }),
-  z.object({ state: z.literal("unreadable") }),
+  z.object({
+    state: z.literal("unreadable"),
+    /** Tells a key that is gone from a file that was damaged. */
+    reason: z.string().max(1000).optional(),
+  }),
 ]);
 export type VaultStatusSummary = z.infer<typeof vaultStatusSchema>;
 

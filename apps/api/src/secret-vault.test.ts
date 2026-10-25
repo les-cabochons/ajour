@@ -329,6 +329,68 @@ describe("the vault file", () => {
     ).resolves.toEqual([{ state: "set", value: TOKEN }]);
   });
 
+  it("gives a damaged file and a lost key their own reasons", async () => {
+    const damaged = await vaultPath();
+    await writeFile(damaged.filePath, "not a vault");
+    await expect(
+      new FileSecretVault({
+        filePath: damaged.filePath,
+        cipher: fakeCipher("a"),
+      }).open(),
+    ).resolves.toMatchObject({
+      status: {
+        state: "unreadable",
+        reason: "The secrets file was damaged and set aside.",
+      },
+    });
+
+    const lost = await vaultPath();
+    await new FileSecretVault({
+      filePath: lost.filePath,
+      cipher: fakeCipher("a"),
+    }).write([{ ...token, value: TOKEN }]);
+    const { status } = await new FileSecretVault({
+      filePath: lost.filePath,
+      cipher: fakeCipher("b"),
+    }).open();
+    expect(status).toMatchObject({ state: "unreadable" });
+    expect(status).toEqual({
+      state: "unreadable",
+      reason: expect.stringContaining("key"),
+    });
+    expect((status as { reason: string }).reason).not.toContain("damaged");
+  });
+
+  it("treats an empty or blank file as no vault yet, and keeps nothing aside", async () => {
+    for (const text of ["", "  \r\n\t\n"]) {
+      const { dir, filePath } = await vaultPath();
+      await writeFile(filePath, text);
+      const vault = new FileSecretVault({ filePath, cipher: fakeCipher("a") });
+      await expect(vault.open()).resolves.toMatchObject({
+        status: { state: "available" },
+        entryCount: 0,
+      });
+      await vault.write([{ ...token, value: TOKEN }]);
+      await expect(readdir(dir)).resolves.toEqual(["app-api-vault.json"]);
+      await expect(
+        new FileSecretVault({ filePath, cipher: fakeCipher("a") }).read([
+          token,
+        ]),
+      ).resolves.toEqual([{ state: "set", value: TOKEN }]);
+    }
+  });
+
+  it("refuses to remove from a newer version's file, rather than report nothing removed", async () => {
+    const { filePath } = await vaultPath();
+    const text = JSON.stringify({ version: 2, entries: [] });
+    await writeFile(filePath, text);
+    const vault = new FileSecretVault({ filePath, cipher: fakeCipher("a") });
+    await expect(vault.remove({ pluginId: "jira" })).rejects.toThrow(
+      /^Ajour can't change saved secrets right now: .*newer version.*\. Restart Ajour and try again\.$/,
+    );
+    await expect(readFile(filePath, "utf8")).resolves.toBe(text);
+  });
+
   it("reads the file again when another process holds it for a moment", async () => {
     const { filePath } = await vaultPath();
     await new FileSecretVault({ filePath, cipher: fakeCipher("a") }).write([
@@ -379,7 +441,14 @@ describe("the vault file", () => {
     await expect(vault.write([{ ...pin, value: "1234" }])).rejects.toThrow(
       VaultUnavailableError,
     );
-    await expect(vault.remove({ pluginId: "jira" })).resolves.toBe(0);
+    // A removal that did nothing would let a caller drop the state that
+    // points at the secret while the encrypted value stays in the file.
+    await expect(vault.remove({ pluginId: "jira" })).rejects.toThrow(
+      /^Ajour can't change saved secrets right now: .*couldn't read its vault file \(EPERM\).*\. Restart Ajour and try again\.$/,
+    );
+    await expect(vault.remove({ pluginId: "jira" })).rejects.toBeInstanceOf(
+      VaultUnavailableError,
+    );
     await vault.read([token], { usedAt: 999_999 });
 
     fileReads.hook = undefined;
