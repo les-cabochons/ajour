@@ -758,6 +758,7 @@ channel to read the event each emits.
 | `plugin.activate`                    | command, request                   | route, client call                               |
 | `plugin.install`                     | command, ipc                       | IPC channel                                      |
 | `plugin.list`                        | command, request                   | route, client call                               |
+| `plugin.request`                     | job                                | local API                                        |
 | `plugin.uninstall`                   | command, ipc                       | IPC channel                                      |
 | `plugin_system.toggle`               | command, request                   | route, client call                               |
 | `preferences.update`                 | command                            | store command, renderer                          |
