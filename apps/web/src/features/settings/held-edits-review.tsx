@@ -15,11 +15,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Value } from "@/components/ui/value";
 import { getPriorityLevelName } from "@/domain/backlog/priority";
 import type { LocalWorkItem } from "@/domain/local-state";
 import {
   canSendHeldEdit,
   discardHeldEdit,
+  heldEditBlocker,
   sendHeldEdit,
 } from "@/features/backlog/held-edit-review";
 import { usePluginsOverview } from "@/features/backlog/plugins-overview";
@@ -76,7 +78,7 @@ function HeldEditDetail({
           : undefined,
       ].filter(Boolean);
       return (
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           {parts.length > 0 ? parts.join(" · ") : "Its state in the source"}
         </p>
       );
@@ -84,7 +86,7 @@ function HeldEditDetail({
     case "estimate": {
       const state = item?.estimateSync?.[edit.field];
       return (
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           In Ajour: {item?.[edit.field] ?? "empty"} · In {sourceName}:{" "}
           {state?.remoteValue ?? state?.baselineValue ?? "empty"}
         </p>
@@ -92,7 +94,7 @@ function HeldEditDetail({
     }
     case "description":
       return (
-        <p className="line-clamp-2 text-[13px] break-words text-muted-foreground">
+        <p className="line-clamp-2 text-xs break-words text-muted-foreground">
           {item?.description?.trim() || "Empty"}
         </p>
       );
@@ -105,10 +107,67 @@ function HeldEditDetail({
       );
     case "commentDelete":
       return (
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           The comment stays hidden here until the delete is sent or discarded.
         </p>
       );
+  }
+}
+
+const pluginLinkClass = "text-primary underline-offset-2 hover:underline";
+
+/** Why a connection's held changes can't be sent now, and what to do. */
+function HeldGroupBlocker({
+  blocker,
+  pluginId,
+}: {
+  blocker: ReturnType<typeof heldEditBlocker>;
+  pluginId: string;
+}) {
+  if (blocker === undefined || blocker === "unknown") return null;
+  const link = (text: string) => (
+    <Link
+      to="/settings/plugins/$pluginId"
+      params={{ pluginId }}
+      className={pluginLinkClass}
+    >
+      {text}
+    </Link>
+  );
+  return (
+    <p className="text-xs text-muted-foreground" data-held-blocker={blocker}>
+      {blocker === "removed" ? (
+        <>
+          This connection was removed, so these can't be sent. Discard them, or
+          add the connection again.
+        </>
+      ) : blocker === "paused" ? (
+        <>This connection is paused. {link("Fix it")} to send these.</>
+      ) : (
+        <>
+          Editing work items is off for this connection. {link("Turn it on")} to
+          send these.
+        </>
+      )}
+    </p>
+  );
+}
+
+/** The confirmation's question, naming the kind of change. */
+export function discardTitle(edit: HeldEdit) {
+  switch (edit.kind) {
+    case "settle":
+      return "Discard this held settle?";
+    case "estimate":
+      return `Discard this held ${ESTIMATE_LABELS[edit.field].toLowerCase()} change?`;
+    case "description":
+      return "Discard this held description change?";
+    case "comment":
+      return "Discard this held comment?";
+    case "commentEdit":
+      return "Discard this held comment edit?";
+    case "commentDelete":
+      return "Discard this held comment deletion?";
   }
 }
 
@@ -189,7 +248,7 @@ export function HeldEditsReview({
       <h3 className="settings-subsection-title">
         {edits.length} {edits.length === 1 ? "change" : "changes"} held
       </h3>
-      <p className="text-[13px] text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         Made while editing work items was off. Nothing is sent until you send it
         here, and leaving this page keeps them.
       </p>
@@ -204,7 +263,7 @@ export function HeldEditsReview({
           connection?.label ??
           itemsById.get(first.itemId)?.sourceConnectionLabel ??
           "Connection";
-        const canSend = canSendHeldEdit(first, overview);
+        const blocker = heldEditBlocker(first, overview);
         return (
           <section
             key={`${first.pluginId}:${first.connectionId}`}
@@ -220,21 +279,12 @@ export function HeldEditsReview({
               <span className="text-sm font-medium text-foreground">
                 {label}
               </span>
-              <Badge variant="outline">{group.length} held</Badge>
+              <Value tone="muted" aria-label={`${group.length} held`}>
+                {group.length}
+              </Value>
             </div>
-            {canSend ? null : (
-              <p className="text-[13px] text-muted-foreground">
-                Editing work items is off for this connection.{" "}
-                <Link
-                  to="/settings/plugins/$pluginId"
-                  params={{ pluginId: first.pluginId }}
-                  className="text-primary underline-offset-2 hover:underline"
-                >
-                  Turn it on
-                </Link>{" "}
-                to send these.
-              </p>
-            )}
+            <HeldGroupBlocker blocker={blocker} pluginId={first.pluginId} />
+
             {group.map((edit) => {
               const item = itemsById.get(edit.itemId);
               const key = heldEditKey(edit);
@@ -285,7 +335,7 @@ export function HeldEditsReview({
                       <AlertDialogContent>
                         <AlertDialogHeader>
                           <AlertDialogTitle>
-                            Discard this {heldEditLabel(edit).toLowerCase()}?
+                            {discardTitle(edit)}
                           </AlertDialogTitle>
                           <AlertDialogDescription>
                             {discardEffect(edit, sourceName)}

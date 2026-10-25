@@ -1,7 +1,7 @@
 import { showErrorToast } from "@/components/ui/toast";
-import { deleteItemComment, isAccessOffError } from "@/lib/app-api";
+import { deleteItemComment } from "@/lib/app-api";
 import { createDeviceQueue } from "@/lib/device-queue";
-import { heldCommentDeleteIds, holdCommentEdit } from "@/lib/held-edits";
+import { heldCommentDeleteIds, holdRefusedComment } from "@/lib/held-edits";
 import { wideEvents } from "@/lib/wide-events";
 
 /**
@@ -122,15 +122,18 @@ export function sendCommentDelete(
         });
         return "sent";
       } catch (error) {
-        if (!isAccessOffError(error)) throw error;
-        holdCommentEdit({
-          kind: "commentDelete",
-          itemId: entry.itemId,
-          pluginId: entry.pluginId,
-          connectionId: entry.connectionId,
-          sourceId: entry.sourceId,
-          commentId: entry.commentId,
-        });
+        if (
+          !holdRefusedComment(error, {
+            kind: "commentDelete",
+            itemId: entry.itemId,
+            pluginId: entry.pluginId,
+            connectionId: entry.connectionId,
+            sourceId: entry.sourceId,
+            commentId: entry.commentId,
+          })
+        ) {
+          throw error;
+        }
         job.refuse("access_off");
         return "held";
       }

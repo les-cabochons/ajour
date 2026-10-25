@@ -13,7 +13,7 @@ import {
 } from "@/lib/app-api";
 import { isSourceWriteHeld } from "@/domain/backlog/held-edits";
 import { announceHeldEdit } from "@/lib/held-edit-notice";
-import { holdCommentEdit } from "@/lib/held-edits";
+import { holdRefusedComment } from "@/lib/held-edits";
 import {
   agentAccessAllows,
   readAgentCommentAccess,
@@ -326,9 +326,8 @@ async function sendSettleComment(
     announcePostedComment(entry, comment);
   } catch (error) {
     // Editing work items is off: the comment is held for review.
-    if (isAccessOffError(error)) {
-      job.set({ comment: { result: "held" } }).refuse("access_off");
-      holdCommentEdit({
+    if (
+      holdRefusedComment(error, {
         kind: "comment",
         itemId: workItemId,
         pluginId: entry.pluginId,
@@ -336,8 +335,9 @@ async function sendSettleComment(
         sourceId: entry.sourceId,
         body: entry.body,
         ...(entry.agentClient ? { agentClient: entry.agentClient } : {}),
-      });
-      announceHeldEdit(item);
+      })
+    ) {
+      job.set({ comment: { result: "held" } }).refuse("access_off");
       return;
     }
     keptAsDraft("post_failed").fail(error);

@@ -3,7 +3,12 @@ import {
   itemPeopleMatching,
   type CommentSource,
 } from "@/domain/backlog/comments";
-import { searchItemPeople } from "@/lib/app-api";
+import {
+  editItemComment,
+  postItemComment,
+  searchItemPeople,
+} from "@/lib/app-api";
+import { holdRefusedComment } from "@/lib/held-edits";
 
 type ThreadRef = Pick<CommentSource, "pluginId" | "connectionId" | "sourceId">;
 type PostedListener = (threadKey: string, comment: BacklogComment) => void;
@@ -29,6 +34,81 @@ export function subscribePostedComments(listener: PostedListener) {
   return () => {
     listeners.delete(listener);
   };
+}
+
+const ref = (source: ThreadRef): ThreadRef => ({
+  pluginId: source.pluginId,
+  connectionId: source.connectionId,
+  sourceId: source.sourceId,
+});
+
+/**
+ * Posts the user's comment on the item's thread. A connection that can't
+ * edit work items holds it for review in Sync review: `held`. Throws on any
+ * other failure.
+ */
+export async function postThreadComment(
+  source: ThreadRef,
+  itemId: string,
+  body: string,
+): Promise<BacklogComment | "held"> {
+  try {
+    return (
+      await postItemComment(
+        source.pluginId,
+        source.connectionId,
+        { sourceId: source.sourceId, body },
+        { itemId },
+      )
+    ).comment;
+  } catch (error) {
+    if (
+      !holdRefusedComment(error, {
+        kind: "comment",
+        itemId,
+        ...ref(source),
+        body,
+      })
+    ) {
+      throw error;
+    }
+    return "held";
+  }
+}
+
+/**
+ * Saves the user's edit of their comment, held for review as a post is when
+ * the connection can't edit work items.
+ */
+export async function saveThreadCommentEdit(
+  source: ThreadRef,
+  itemId: string,
+  commentId: string,
+  body: string,
+): Promise<BacklogComment | "held"> {
+  try {
+    return (
+      await editItemComment(
+        source.pluginId,
+        source.connectionId,
+        { sourceId: source.sourceId, commentId, body },
+        { itemId },
+      )
+    ).comment;
+  } catch (error) {
+    if (
+      !holdRefusedComment(error, {
+        kind: "commentEdit",
+        itemId,
+        ...ref(source),
+        commentId,
+        body,
+      })
+    ) {
+      throw error;
+    }
+    return "held";
+  }
 }
 
 /**

@@ -40,16 +40,10 @@ import {
   type CommentSource,
 } from "@/domain/backlog/comments";
 import {
-  isAccessOffError,
   isPluginApiMissing,
-  editItemComment,
   listItemComments,
-  postItemComment,
   setItemCommentReaction,
 } from "@/lib/app-api";
-import { announceHeldEdit } from "@/lib/held-edit-notice";
-import { holdCommentEdit } from "@/lib/held-edits";
-import { localStore } from "@/lib/local-store";
 import { usePluginsOverview } from "@/features/backlog/plugins-overview";
 import {
   cancelCommentDelete,
@@ -66,6 +60,8 @@ import {
 import {
   commentMentionSearch,
   commentThreadKey,
+  postThreadComment,
+  saveThreadCommentEdit,
   subscribePostedComments,
 } from "@/features/backlog/comment-threads";
 import { getShortcutPlatform } from "@/lib/shortcuts";
@@ -194,11 +190,6 @@ export function BacklogItemComments({
   const [seenAt] = useState(() => getCommentsSeenAt(itemId));
   const sourceRef = useRef(source);
   sourceRef.current = source;
-  /** Says a change to this thread was held: editing work items is off. */
-  const noticeHeld = () =>
-    announceHeldEdit(
-      localStore.snapshot().workItems.find((item) => item._id === itemId),
-    );
 
   // Comments posted elsewhere during a load, which its answer may predate.
   const postedDuringLoad = useRef<{ key: string; comments: BacklogComment[] }>({
@@ -342,27 +333,13 @@ export function BacklogItemComments({
    * connection that can't edit work items holds the edit for review.
    */
   const editComment = async (comment: BacklogComment, body: string) => {
-    try {
-      const { comment: edited } = await editItemComment(
-        source.pluginId,
-        source.connectionId,
-        { sourceId: source.sourceId, commentId: comment.id, body },
-        { itemId },
-      );
-      updateComment(comment.id, () => edited);
-    } catch (error) {
-      if (!isAccessOffError(error)) throw error;
-      holdCommentEdit({
-        kind: "commentEdit",
-        itemId,
-        pluginId: source.pluginId,
-        connectionId: source.connectionId,
-        sourceId: source.sourceId,
-        commentId: comment.id,
-        body,
-      });
-      noticeHeld();
-    }
+    const edited = await saveThreadCommentEdit(
+      source,
+      itemId,
+      comment.id,
+      body,
+    );
+    if (edited !== "held") updateComment(comment.id, () => edited);
   };
 
   /** Hides the comment now and deletes it once the Undo toast closes. */
@@ -391,7 +368,7 @@ export function BacklogItemComments({
             // A held delete keeps the comment hidden, as its pending delete
             // did, until Sync review sends or discards it.
             result === "held"
-              ? noticeHeld()
+              ? undefined
               : setThread((current) =>
                   current.kind === "ready"
                     ? {
@@ -597,39 +574,16 @@ function CommentComposer({
     setSending(true);
     setError(undefined);
     try {
-      const { comment } = await postItemComment(
-        source.pluginId,
-        source.connectionId,
-        { sourceId: source.sourceId, body },
-        { itemId },
-      );
+      // A held comment, as editing work items is off, leaves the composer
+      // as a sent one does.
+      const comment = await postThreadComment(source, itemId, body);
       // Only what went out leaves the draft; text added meanwhile stays.
       const rest = draftAfterSend(getCommentDraft(itemId) ?? "", value);
       setCommentDraft(itemId, rest);
       setText(rest);
       if (!rest) setOpen(false);
-      onPosted(comment);
+      if (comment !== "held") onPosted(comment);
     } catch (failure) {
-      // Editing work items is off: the comment is held for review, and
-      // leaves the composer as a sent one does.
-      if (isAccessOffError(failure)) {
-        holdCommentEdit({
-          kind: "comment",
-          itemId,
-          pluginId: source.pluginId,
-          connectionId: source.connectionId,
-          sourceId: source.sourceId,
-          body,
-        });
-        const rest = draftAfterSend(getCommentDraft(itemId) ?? "", value);
-        setCommentDraft(itemId, rest);
-        setText(rest);
-        if (!rest) setOpen(false);
-        announceHeldEdit(
-          localStore.snapshot().workItems.find((item) => item._id === itemId),
-        );
-        return;
-      }
       setError(
         failure instanceof Error
           ? failure.message

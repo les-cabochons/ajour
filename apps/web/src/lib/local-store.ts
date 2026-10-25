@@ -5,7 +5,12 @@ import {
   type CaptureSettings,
   type TeamSettings,
 } from "@ajour/shared";
-import { takeSourceDescription } from "@/domain/backlog/description-sync";
+import {
+  descriptionHeld as applyDescriptionHeld,
+  discardHeldDescription as applyDiscardHeldDescription,
+  releaseHeldDescription as applyReleaseHeldDescription,
+  takeSourceDescription,
+} from "@/domain/backlog/description-sync";
 import {
   discardHeldEstimate as applyDiscardHeldEstimate,
   holdPendingEstimates as applyHoldPendingEstimates,
@@ -1402,6 +1407,25 @@ function withDescriptionTimelogs(
   );
 }
 
+/** A step of a synced description, with the timelog of a text that changed. */
+function changeSyncedDescription(
+  state: LocalAppState,
+  workItemId: string,
+  change: (
+    item: LocalWorkItem,
+  ) => Pick<LocalWorkItem, "description" | "descriptionSync">,
+) {
+  const target = state.workItems.find((item) => item._id === workItemId);
+  if (!target?.descriptionSync) return state;
+  const next = {
+    ...state,
+    workItems: state.workItems.map((item) =>
+      item._id === workItemId ? { ...item, ...change(item) } : item,
+    ),
+  };
+  return withDescriptionTimelogs(state, next);
+}
+
 /**
  * Updates a backlog item, then applies its description's timelog if the
  * patch changed it, unless the patch sets the project or task itself.
@@ -2360,17 +2384,30 @@ const store = {
       item: LocalWorkItem,
     ) => Pick<LocalWorkItem, "description" | "descriptionSync">,
   ) {
-    updateState((state) => {
-      const target = state.workItems.find((item) => item._id === workItemId);
-      if (!target?.descriptionSync) return state;
-      const next = {
-        ...state,
-        workItems: state.workItems.map((item) =>
-          item._id === workItemId ? { ...item, ...change(item) } : item,
-        ),
-      };
-      return withDescriptionTimelogs(state, next);
-    });
+    updateState((state) => changeSyncedDescription(state, workItemId, change));
+  },
+  /**
+   * Holds the item's description: its connection refused the save because
+   * editing work items is off. The local text stays.
+   */
+  holdDescription(workItemId: string) {
+    updateState((state) =>
+      changeSyncedDescription(state, workItemId, (item) =>
+        applyDescriptionHeld(item, Date.now()),
+      ),
+    );
+  },
+  /** The user approved sending the held description; the save sends it. */
+  releaseHeldDescription(workItemId: string) {
+    updateState((state) =>
+      changeSyncedDescription(state, workItemId, applyReleaseHeldDescription),
+    );
+  },
+  /** The user discarded the held description; the source's text comes back. */
+  discardHeldDescription(workItemId: string) {
+    updateState((state) =>
+      changeSyncedDescription(state, workItemId, applyDiscardHeldDescription),
+    );
   },
   acceptRemoteEstimateValue(
     workItemId: string,
@@ -2635,6 +2672,23 @@ const store = {
   /** The user approved the held write; it goes as any pending write. */
   releaseHeldSourceWrite(workItemId: string) {
     updateState((state) => applyReleaseHeldSourceWrite(state, workItemId));
+  },
+  /**
+   * The user discarded the held write: nothing is sent, and the item goes
+   * back to where it was, as after a write that failed.
+   */
+  discardHeldSourceWrite(workItemId: string) {
+    updateState((state) => {
+      const item = state.workItems.find(
+        (candidate) => candidate._id === workItemId,
+      );
+      if (item?.pendingSourceWrite?.heldAt === undefined) return state;
+      return reconcileSourceWriteMappings(
+        state,
+        applyFailSourceWrite(state, workItemId),
+        { createId, now: Date.now },
+      );
+    });
   },
   /** Marks exactly the estimate fields a sync of the connection held. */
   markHeldEstimates(
@@ -3496,6 +3550,46 @@ export const STORE_COMMANDS = {
         id: ([workItemId]) => workItemId,
         held_edit: () => "settle",
         held_decision: () => "send",
+      },
+    },
+  },
+  holdDescription: {
+    name: "backlog_item.hold_edit",
+    trigger: "system",
+    fields: {
+      backlog_item: {
+        id: ([workItemId]) => workItemId,
+        held_edit: () => "description",
+      },
+    },
+  },
+  discardHeldSourceWrite: {
+    name: "backlog_item.review_held_edit",
+    fields: {
+      backlog_item: {
+        id: ([workItemId]) => workItemId,
+        held_edit: () => "settle",
+        held_decision: () => "discard",
+      },
+    },
+  },
+  releaseHeldDescription: {
+    name: "backlog_item.review_held_edit",
+    fields: {
+      backlog_item: {
+        id: ([workItemId]) => workItemId,
+        held_edit: () => "description",
+        held_decision: () => "send",
+      },
+    },
+  },
+  discardHeldDescription: {
+    name: "backlog_item.review_held_edit",
+    fields: {
+      backlog_item: {
+        id: ([workItemId]) => workItemId,
+        held_edit: () => "description",
+        held_decision: () => "discard",
       },
     },
   },

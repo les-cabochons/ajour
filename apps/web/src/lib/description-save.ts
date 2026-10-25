@@ -1,7 +1,6 @@
 import type { BacklogSyncedDescription } from "@ajour/shared";
 import { showErrorToast } from "@/components/ui/toast";
 import {
-  descriptionHeld,
   descriptionInConflict,
   descriptionSaved,
   descriptionWriteFailed,
@@ -229,11 +228,7 @@ async function runSave(
     // Editing work items is off on the connection: the text stays here,
     // held until the user approves sending it in Sync review (#395).
     if (isAccessOffError(error)) {
-      enter(() =>
-        localStore.updateSyncedDescription(itemId, (latest) =>
-          descriptionHeld(latest, Date.now()),
-        ),
-      );
+      enter(() => localStore.holdDescription(itemId));
       announceHeldEdit(item);
       return { kind: "held" };
     }

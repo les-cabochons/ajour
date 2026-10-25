@@ -4,6 +4,7 @@ import {
   holdEstimatePushes,
   withoutHeldEstimateUpdates,
 } from "@ajour/shared/connection-access";
+import type { AjourEvent } from "@ajour/wide-events/catalog.ts";
 import type {
   BacklogImportCandidate,
   BacklogSyncRequest,
@@ -66,9 +67,33 @@ const CHOICES = [
     id: "editWorkItems",
     label: "Edit work items",
     always: false,
-    operations: ["writeSettle", "postItemComment", "pushEstimates"],
+    operations: [
+      "writeSettle",
+      "writeDescription",
+      "postItemComment",
+      "editItemComment",
+      "deleteItemComment",
+      "pushEstimates",
+    ],
   },
 ];
+
+const PLUGIN = {
+  id: "azure_devops",
+  displayName: "Azure DevOps",
+  version: "1.1.0",
+  apiVersion: 3,
+  description: "Azure DevOps work items.",
+  iconSvg: "<svg />",
+  entrypoint: "plugin.mjs",
+  capabilities: {
+    connector: {
+      settle: true,
+      comments: { edit: true, delete: true },
+    },
+  },
+  connectionFields: [],
+};
 
 /**
  * The local API and its plugin, as far as these writes go: a write on a
@@ -80,7 +105,10 @@ function fakeApi() {
   const api = {
     editing: false,
     remote: { remainingEstimateHours: 5 } as Record<string, number>,
+    remoteDescription: "Source text",
     sent: [] as { route: string; body: unknown }[],
+    /** What Ajour's connection form saved. */
+    saves: [] as { access?: string[] }[],
   };
   const json = (status: number, body: unknown) =>
     Response.json(body, { status });
@@ -104,11 +132,66 @@ function fakeApi() {
     editableValues: {},
     access: connectionAccessOn(CHOICES, api.editing ? ["editWorkItems"] : []),
   });
+  const overview = () => ({
+    pluginsEnabled: true,
+    plugins: [PLUGIN],
+    connectionGroups: [
+      {
+        plugin: PLUGIN,
+        enabled: true,
+        connectionAccess: CHOICES,
+        connections: [connection()],
+      },
+    ],
+    totalPendingImportCount: 0,
+    totalSelectedImportCount: 0,
+  });
+  const comment = (body: string) => ({
+    comment: {
+      id: "c1",
+      author: { id: "me", displayName: "Me" },
+      body,
+      createdAt: "2026-10-25T10:00:00Z",
+    },
+  });
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: string, init?: RequestInit) => {
       const route = new URL(input).pathname;
       const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+      if (route === "/api/plugins" && !init?.method) {
+        return json(200, overview());
+      }
+      // Ajour's form saves the access, as the local API does.
+      if (route === "/api/plugins/azure_devops/connections") {
+        api.saves.push(body);
+        if (Array.isArray(body.access)) {
+          api.editing = body.access.includes("editWorkItems");
+        }
+        return json(200, { overview: overview(), connection: connection() });
+      }
+      if (route.endsWith("/editItemComment")) {
+        if (!api.editing) return refusal();
+        api.sent.push({ route: "commentEdit", body });
+        return json(200, comment(body.body));
+      }
+      if (route.endsWith("/deleteItemComment")) {
+        if (!api.editing) return refusal();
+        api.sent.push({ route: "commentDelete", body });
+        return json(200, {});
+      }
+      if (route.endsWith("/description")) {
+        return json(200, { description: { text: api.remoteDescription } });
+      }
+      if (route.endsWith("/description-write")) {
+        if (!api.editing) return refusal();
+        api.sent.push({ route: "description", body });
+        api.remoteDescription = body.text;
+        return json(200, {
+          outcome: "written",
+          description: { text: body.text },
+        });
+      }
       if (route.endsWith("/settle")) {
         if (!api.editing) return refusal();
         api.sent.push({ route: "settle", body });
@@ -117,14 +200,7 @@ function fakeApi() {
       if (route.endsWith("/postItemComment")) {
         if (!api.editing) return refusal();
         api.sent.push({ route: "comment", body });
-        return json(200, {
-          comment: {
-            id: "c1",
-            author: { id: "me", displayName: "Me" },
-            body: body.body,
-            createdAt: "2026-10-25T10:00:00Z",
-          },
-        });
+        return json(200, comment(body.body));
       }
       if (route.endsWith("/sync")) {
         const request = body as BacklogSyncRequest;
@@ -214,6 +290,27 @@ async function load() {
   const heldEdits = () => held.listHeldEdits(localStore.snapshot().workItems);
   const sync = () =>
     syncBacklogConnection("azure_devops", "contoso", { trigger: "manual" });
+  // The connection form's save, through the Settings workflow the page uses.
+  const { appPluginSettingsDependencies } =
+    await import("@/features/settings/use-plugin-settings-workflow");
+  const { createPluginSettingsWorkflow } =
+    await import("@/features/settings/plugin-settings-workflow");
+  const settings = createPluginSettingsWorkflow({
+    ...appPluginSettingsDependencies(),
+    subscribeCatalog: () => () => undefined,
+  });
+  const heldForReview: string[] = [];
+  const saveForm = async (access: string[]) => {
+    await settings.refresh();
+    return settings.execute({
+      type: "save",
+      pluginId: "azure_devops",
+      connectionId: "contoso",
+      values: { label: "Contoso" },
+      access,
+      onHeldForReview: (connectionId) => heldForReview.push(connectionId),
+    });
+  };
   return {
     localStore,
     sendPendingSourceWrites,
@@ -222,6 +319,8 @@ async function load() {
     item,
     heldEdits,
     sync,
+    saveForm,
+    heldForReview,
   };
 }
 
@@ -247,6 +346,7 @@ describe("held edits", () => {
       item,
       heldEdits,
       sync,
+      saveForm,
     } = await load();
     localStore.importSyncedWorkItems([candidate]);
     const itemId = item()._id;
@@ -257,6 +357,7 @@ describe("held edits", () => {
     });
     vi.setSystemTime(Date.parse("2026-10-25T09:01:00Z"));
     await sendPendingSourceWrites();
+    await sync();
     await sync();
 
     expect(api.sent).toEqual([]);
@@ -271,12 +372,8 @@ describe("held edits", () => {
       remainingEstimateHours: 2,
     });
 
-    // Editing turns on: that is no approval, so nothing goes.
-    api.editing = true;
-    localStore.holdPendingEstimates({
-      pluginId: "azure_devops",
-      connectionId: "contoso",
-    });
+    // Editing turns on in the form: that is no approval, so nothing goes.
+    await saveForm(["editWorkItems"]);
     await sendPendingSourceWrites();
     await sync();
     // Leaving Sync review without a decision keeps them too.
@@ -300,6 +397,193 @@ describe("held edits", () => {
       { localValue: 2, remoteValue: 7 },
     );
     expect(heldEdits()).toEqual([]);
+  });
+
+  it("holds an estimate no sync saw before the form's save turns editing on, sends nothing until review, and keeps every change when editing goes off again", async () => {
+    const api = fakeApi();
+    const {
+      localStore,
+      sendPendingSourceWrites,
+      item,
+      heldEdits,
+      sync,
+      saveForm,
+      heldForReview,
+    } = await load();
+    localStore.importSyncedWorkItems([candidate]);
+    const itemId = item()._id;
+    // Edited while editing was off; no sync has run since.
+    localStore.updateWorkItem(itemId, { remainingEstimateHours: 2 });
+    localStore.settleWorkItem(itemId, {
+      state: { name: "Waiting", done: false },
+    });
+    // Past the settle's Undo window.
+    vi.setSystemTime(Date.parse("2026-10-25T09:01:00Z"));
+    await sendPendingSourceWrites();
+    expect(heldEdits().map((edit) => edit.kind)).toEqual(["settle"]);
+
+    expect(await saveForm(["editWorkItems"])).toBe(true);
+
+    expect(api.saves.at(-1)).toMatchObject({ access: ["editWorkItems"] });
+    expect(
+      heldEdits()
+        .map((edit) => edit.kind)
+        .sort(),
+    ).toEqual(["estimate", "settle"]);
+    // The page takes the user to Sync review on them.
+    expect(heldForReview).toEqual(["contoso"]);
+    await sendPendingSourceWrites();
+    await sync();
+    expect(api.sent).toEqual([]);
+
+    // Editing goes off again: the changes stay held.
+    expect(await saveForm([])).toBe(true);
+    await sendPendingSourceWrites();
+    await sync();
+
+    expect(api.sent).toEqual([]);
+    expect(heldEdits()).toHaveLength(2);
+    expect(item()).toMatchObject({
+      status: "settled",
+      remainingEstimateHours: 2,
+    });
+  });
+
+  it("holds a comment post, a comment edit, a comment delete and a description save the connection refuses, through their own paths", async () => {
+    const api = fakeApi();
+    const { localStore, item, heldEdits } = await load();
+    localStore.importSyncedWorkItems([
+      { ...candidate, description: { text: "Source text" } },
+    ]);
+    const itemId = item()._id;
+    const thread = {
+      pluginId: "azure_devops",
+      connectionId: "contoso",
+      sourceId: "42",
+    };
+    const { postThreadComment, saveThreadCommentEdit } =
+      await import("@/features/backlog/comment-threads");
+    const { queueCommentDelete, sendCommentDelete, pendingCommentDeleteIds } =
+      await import("@/lib/comment-deletes");
+    const { saveSyncedDescription } = await import("@/lib/description-save");
+
+    expect(await postThreadComment(thread, itemId, "On it")).toBe("held");
+    expect(
+      await saveThreadCommentEdit(thread, itemId, "c7", "On it, today"),
+    ).toBe("held");
+    queueCommentDelete({ ...thread, commentId: "c8", itemId, at: 1 });
+    expect(await sendCommentDelete({ ...thread, commentId: "c8" })).toBe(
+      "held",
+    );
+    localStore.updateWorkItem(itemId, { description: "Mine" });
+    expect(await saveSyncedDescription(itemId, "save")).toEqual({
+      kind: "held",
+    });
+
+    expect(api.sent).toEqual([]);
+    expect(
+      heldEdits()
+        .map((edit) => edit.kind)
+        .sort(),
+    ).toEqual(["comment", "commentDelete", "commentEdit", "description"]);
+    // The deleted comment stays hidden, and the description as typed.
+    expect(pendingCommentDeleteIds(thread)).toEqual(new Set(["c8"]));
+    expect(item().description).toBe("Mine");
+  });
+
+  it("records sending and discarding a held description, and discarding a held settle, as reviews", async () => {
+    fakeApi();
+    const { createRecordingSink } = await import("@ajour/wide-events/sinks.ts");
+    const sink = createRecordingSink<AjourEvent>();
+    (await import("@/lib/wide-events")).replaceEventSink(sink);
+    const { localStore, sendPendingSourceWrites, review, item, heldEdits } =
+      await load();
+    localStore.importSyncedWorkItems([
+      { ...candidate, description: { text: "Source text" } },
+    ]);
+    const itemId = item()._id;
+    localStore.settleWorkItem(itemId, {
+      state: { name: "Waiting", done: false },
+    });
+    vi.setSystemTime(Date.parse("2026-10-25T09:01:00Z"));
+    await sendPendingSourceWrites();
+    localStore.updateWorkItem(itemId, { description: "Mine" });
+    const { saveSyncedDescription } = await import("@/lib/description-save");
+    await saveSyncedDescription(itemId, "save");
+    sink.events.length = 0;
+
+    const held = (kind: string) =>
+      heldEdits().find((edit) => edit.kind === kind)!;
+    await review.sendHeldEdit(held("description"));
+    review.discardHeldEdit(held("description"));
+    review.discardHeldEdit(held("settle"));
+
+    const reviews = sink.events
+      .filter((event) => event.name.startsWith("backlog_item."))
+      .map((event) => [
+        event.name,
+        (event as { backlog_item?: Record<string, unknown> }).backlog_item
+          ?.held_edit,
+        (event as { backlog_item?: Record<string, unknown> }).backlog_item
+          ?.held_decision,
+      ]);
+    expect(reviews).toEqual([
+      ["backlog_item.review_held_edit", "description", "send"],
+      // Still refused, so held again.
+      ["backlog_item.hold_edit", "description", undefined],
+      ["backlog_item.review_held_edit", "description", "discard"],
+      ["backlog_item.review_held_edit", "settle", "discard"],
+    ]);
+    expect(heldEdits()).toEqual([]);
+    expect(item()).toMatchObject({
+      status: "active",
+      description: "Source text",
+    });
+  });
+
+  it("says why a held change can't go: its connection removed, paused or still not editing", async () => {
+    fakeApi();
+    const { review } = await load();
+    const settle = {
+      kind: "settle" as const,
+      itemId: "i1",
+      pluginId: "azure_devops",
+      connectionId: "contoso",
+      at: 1,
+    };
+    const group = (connection: Record<string, unknown>) => ({
+      pluginsEnabled: true,
+      plugins: [PLUGIN],
+      connectionGroups: [
+        {
+          plugin: PLUGIN,
+          enabled: true,
+          connectionAccess: CHOICES,
+          connections: [{ id: "contoso", label: "Contoso", ...connection }],
+        },
+      ],
+      totalPendingImportCount: 0,
+      totalSelectedImportCount: 0,
+    });
+    const blocker = (connection?: Record<string, unknown>) =>
+      review.heldEditBlocker(
+        settle,
+        (connection
+          ? group(connection)
+          : { ...group({}), connectionGroups: [] }) as never,
+      );
+
+    expect(blocker()).toBe("removed");
+    expect(
+      blocker({
+        access: ["readBacklog", "editWorkItems"],
+        paused: { reason: "secret_rejected", message: "Rejected." },
+      }),
+    ).toBe("paused");
+    expect(blocker({ access: ["readBacklog"] })).toBe("editingOff");
+    expect(blocker({ access: ["readBacklog", "editWorkItems"] })).toBe(
+      undefined,
+    );
   });
 
   it("keeps a held comment until its post succeeds", async () => {

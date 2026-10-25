@@ -28,14 +28,9 @@ import {
   agentAccessAllows,
   readAgentCommentAccess,
 } from "@/lib/agent-comment-access";
-import {
-  isAccessOffError,
-  listItemComments,
-  postItemComment,
-} from "@/lib/app-api";
+import { listItemComments, postItemComment } from "@/lib/app-api";
 import { pendingCommentDeleteIds } from "@/lib/comment-deletes";
-import { announceHeldEdit } from "@/lib/held-edit-notice";
-import { holdCommentEdit } from "@/lib/held-edits";
+import { holdRefusedComment } from "@/lib/held-edits";
 import { keepCommentAsDraft } from "@/lib/comment-drafts";
 import { localStore } from "@/lib/local-store";
 import { reentry, wideEvents } from "@/lib/wide-events";
@@ -271,9 +266,8 @@ async function postAgentComment(
     announcePostedComment(entry, comment);
   } catch (error) {
     // Editing work items is off: the comment is held for review (#395).
-    if (isAccessOffError(error)) {
-      job.set({ comment: { result: "held" } }).refuse("access_off");
-      holdCommentEdit({
+    if (
+      holdRefusedComment(error, {
         kind: "comment",
         itemId: entry.itemId,
         pluginId: entry.pluginId,
@@ -281,8 +275,9 @@ async function postAgentComment(
         sourceId: entry.sourceId,
         body: entry.body,
         agentClient: entry.clientName,
-      });
-      announceHeldEdit(currentItem());
+      })
+    ) {
+      job.set({ comment: { result: "held" } }).refuse("access_off");
       return;
     }
     keptAsDraft(checked ? "post_failed" : "access_check_failed").fail(error);

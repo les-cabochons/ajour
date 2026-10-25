@@ -65,12 +65,9 @@ import {
   createPluginFormState,
   expiryForSave,
   secretFieldIds,
-  turnsAccessOn,
   type PluginFormState,
 } from "./plugin-form-state";
-import { EDIT_WORK_ITEMS_ACCESS } from "@ajour/shared/connection-access";
-import { heldEditCount, listHeldEdits, useHeldEdits } from "@/lib/held-edits";
-import { localStore } from "@/lib/local-store";
+import { heldEditCount, useHeldEdits } from "@/lib/held-edits";
 import {
   ConnectionAccessBadge,
   connectionEdits,
@@ -646,6 +643,7 @@ export function SettingsPluginsPage({
   const handleSave = async () => {
     if (!formState || !activePlugin) return;
     let saved: PluginConnectionSummary | undefined;
+    let heldForReview: string | undefined;
     const completed = await workflow.execute({
       type: "save",
       pluginId: formState.pluginId,
@@ -665,32 +663,19 @@ export function SettingsPluginsPage({
       onSaved: (connection) => {
         saved = connection;
       },
+      // Changes made while editing was off wait in Sync review.
+      onHeldForReview: (connectionId) => {
+        heldForReview = connectionId;
+      },
     });
     if (!completed) return;
     setFormState(null);
-    // Turning editing on is not approval to send what was held: changes
-    // made while it was off wait in Sync review, and the user goes there.
-    if (
-      formState.editingConnectionId &&
-      turnsAccessOn(formState, EDIT_WORK_ITEMS_ACCESS)
-    ) {
-      const connection = {
-        pluginId: formState.pluginId,
-        connectionId: formState.editingConnectionId,
-      };
-      localStore.holdPendingEstimates(connection);
-      const held = heldEditCount(
-        listHeldEdits(localStore.snapshot().workItems),
-        connection.pluginId,
-        connection.connectionId,
-      );
-      if (held > 0) {
-        void navigate({
-          to: "/settings/sync-review",
-          search: { held: connection.connectionId } as never,
-        });
-        return;
-      }
+    if (heldForReview) {
+      void navigate({
+        to: "/settings/sync-review",
+        search: { held: heldForReview } as never,
+      });
+      return;
     }
     if (formState.editingConnectionId || !pluginHasTeam(activePlugin)) return;
     if (!saved) return;
@@ -1079,7 +1064,10 @@ export function SettingsPluginsPage({
                       ) : null}
                       {group.plugin.capabilities.codeHost ||
                       group.plugin.capabilities.calendar ||
-                      group.plugin.capabilities.team ? (
+                      group.plugin.capabilities.team ||
+                      // Its held changes go with it: the user confirms that.
+                      heldEditCount(heldEdits, group.plugin.id, connection.id) >
+                        0 ? (
                         <AlertDialog>
                           <AlertDialogTrigger
                             render={
@@ -1102,6 +1090,11 @@ export function SettingsPluginsPage({
                                   group.plugin,
                                   connection.id,
                                   state,
+                                  heldEditCount(
+                                    heldEdits,
+                                    group.plugin.id,
+                                    connection.id,
+                                  ),
                                 )}
                               </AlertDialogDescription>
                             </AlertDialogHeader>

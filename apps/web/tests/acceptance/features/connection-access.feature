@@ -27,6 +27,12 @@ Feature: Connection access and held edits
     And nothing was sent to Azure DevOps
     When I send the held "Settle or move"
     Then the settle went to Azure DevOps
-    When I discard the held "Comment" and confirm
+    When I discard the held "Comment" and confirm "Discard this held comment?"
     Then Sync review shows no held changes
     And no comment was posted to Azure DevOps
+
+  Scenario: Removing a connection that holds changes says they are discarded
+    Given an Azure DevOps connection that reads only and holds a settle and a comment
+    When I open the Azure DevOps plugin page with its access
+    And I start removing the connection
+    Then the removal says "Its 2 held changes are discarded and never sent."

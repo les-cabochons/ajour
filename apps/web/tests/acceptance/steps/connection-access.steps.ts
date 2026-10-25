@@ -392,19 +392,28 @@ Then("the settle went to Azure DevOps", async () => {
 });
 
 When(
-  "I discard the held {string} and confirm",
-  async ({ page }, kind: string) => {
+  "I discard the held {string} and confirm {string}",
+  async ({ page }, kind: string, question: string) => {
     await page
       .locator("[data-held-edit]")
       .filter({ hasText: kind })
       .getByRole("button", { name: "Discard" })
       .click();
-    await page
-      .getByRole("alertdialog")
-      .getByRole("button", { name: "Discard" })
-      .click();
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog.getByText(question, { exact: true })).toBeVisible();
+    await dialog.getByRole("button", { name: "Discard" }).click();
   },
 );
+
+When("I start removing the connection", async ({ page }) => {
+  await page.getByRole("button", { name: "Remove", exact: true }).click();
+});
+
+Then("the removal says {string}", async ({ page }, text: string) => {
+  await expect(
+    page.getByRole("alertdialog").getByText(text, { exact: false }),
+  ).toBeVisible();
+});
 
 Then("Sync review shows no held changes", async ({ page }) => {
   await expect(page.getByRole("region", { name: "Held changes" })).toHaveCount(

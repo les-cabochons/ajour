@@ -16,6 +16,8 @@ import {
   FieldContent,
   FieldDescription,
   FieldLabel,
+  FieldLegend,
+  FieldSet,
 } from "@/components/ui/field";
 
 /*
@@ -68,7 +70,7 @@ export function HeldEditsLine({
 }) {
   if (count === 0) return null;
   return (
-    <p className="text-[13px] text-muted-foreground" data-held-count={count}>
+    <p className="text-xs text-muted-foreground" data-held-count={count}>
       {changes(count)} held.{" "}
       {editing ? (
         <Link
@@ -107,17 +109,13 @@ export function ConnectionAccessGroup({
 }) {
   if (choices.length === 0) return null;
   return (
-    <fieldset
-      aria-label="Access"
-      className="flex flex-col gap-3 desktop:col-span-2"
-    >
-      <div>
-        <h4 className="text-sm font-medium text-foreground">Access</h4>
-        <p className="text-[13px] text-muted-foreground">
-          Ajour blocks anything not chosen here, even when the token allows
-          more.
-        </p>
-      </div>
+    <FieldSet className="gap-3 desktop:col-span-2">
+      <FieldLegend variant="label" className="mb-0 text-foreground">
+        Access
+      </FieldLegend>
+      <p className="-mt-2 text-xs text-muted-foreground">
+        Ajour blocks anything not chosen here, even when the token allows more.
+      </p>
       {choices.map((choice) => {
         const checked = choice.always || access.includes(choice.id);
         const description = [
@@ -160,6 +158,6 @@ export function ConnectionAccessGroup({
           </div>
         );
       })}
-    </fieldset>
+    </FieldSet>
   );
 }

@@ -1,8 +1,11 @@
 import { useMemo, useSyncExternalStore } from "react";
 import { heldItemEdits, type HeldItemEdit } from "@/domain/backlog/held-edits";
 import type { LocalWorkItem } from "@/domain/local-state";
+import { isAccessOffError } from "@/lib/app-api";
 import { createDeviceQueue } from "@/lib/device-queue";
+import { announceHeldEdit } from "@/lib/held-edit-notice";
 import { useLocalWorkItems } from "@/lib/local-hooks";
+import { localStore } from "@/lib/local-store";
 
 /*
  * The held-edit store (#395): every change a connection refused because
@@ -12,7 +15,7 @@ import { useLocalWorkItems } from "@/lib/local-hooks";
  * the local state (`domain/backlog/held-edits.ts`). Comments, their edits
  * and their deletes wait here, in a device queue, as their pending
  * versions do. Nothing here is ever sent without the user's approval, nor
- * dropped without their Discard.
+ * dropped without their Discard or their removal of its connection.
  */
 
 export const HELD_COMMENTS_STORAGE_KEY = "ajour.held-comments";
@@ -122,6 +125,23 @@ export function holdCommentEdit(change: NewHeldComment): HeldCommentEdit {
   queue.write([...queue.read().filter((other) => !sameComment(other)), entry]);
   notify();
   return entry;
+}
+
+/**
+ * After a comment change failed: when its connection refused it because
+ * editing work items is off, holds it and says so once, and answers true.
+ * Any other failure answers false, for the caller to handle.
+ */
+export function holdRefusedComment(
+  error: unknown,
+  change: NewHeldComment,
+): boolean {
+  if (!isAccessOffError(error)) return false;
+  holdCommentEdit(change);
+  announceHeldEdit(
+    localStore.snapshot().workItems.find((item) => item._id === change.itemId),
+  );
+  return true;
 }
 
 /** The held change as saved now, as another window may have sent it. */

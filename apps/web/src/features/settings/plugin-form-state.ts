@@ -119,13 +119,6 @@ export function withAccessChoice(
   return { ...form, access: on ? [...rest, choiceId] : rest };
 }
 
-/** Whether the form turns the choice on, from off before. */
-export function turnsAccessOn(form: PluginFormState, choiceId: string) {
-  return (
-    form.access.includes(choiceId) && !form.initialAccess.includes(choiceId)
-  );
-}
-
 function sameAccess(left: readonly string[], right: readonly string[]) {
   return left.length === right.length && left.every((id) => right.includes(id));
 }

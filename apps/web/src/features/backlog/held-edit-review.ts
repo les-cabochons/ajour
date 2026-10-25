@@ -1,10 +1,6 @@
 import { connectionAccessAllows } from "@ajour/shared/connection-access";
 import type { PluginsOverview } from "@ajour/shared";
 import { showErrorToast } from "@/components/ui/toast";
-import {
-  discardHeldDescription,
-  releaseHeldDescription,
-} from "@/domain/backlog/description-sync";
 import { announcePostedComment } from "@/features/backlog/comment-threads";
 import { sendPendingSourceWrites } from "@/features/backlog/backlog-source-writes";
 import {
@@ -20,6 +16,8 @@ import { announceHeldEdit } from "@/lib/held-edit-notice";
 import {
   dropHeldCommentEdit,
   findHeldCommentEdit,
+  heldEditCount,
+  listHeldEdits,
   type HeldCommentEdit,
   type HeldEdit,
 } from "@/lib/held-edits";
@@ -51,23 +49,35 @@ export function heldEditOperation(edit: HeldEdit) {
   }
 }
 
-/** Whether the connection's access lets the held change go now. */
-export function canSendHeldEdit(
+/**
+ * Why the held change can't go now, or undefined when it can: its
+ * connection is gone (removed, or its plugin is), paused, or its access
+ * leaves editing off. Unknown while the overview hasn't loaded.
+ */
+export function heldEditBlocker(
   edit: HeldEdit,
   overview: PluginsOverview | null | undefined,
-) {
-  const group = overview?.connectionGroups.find(
+): "unknown" | "removed" | "paused" | "editingOff" | undefined {
+  if (!overview) return "unknown";
+  const group = overview.connectionGroups.find(
     (candidate) => candidate.plugin.id === edit.pluginId,
   );
   const connection = group?.connections.find(
     (candidate) => candidate.id === edit.connectionId,
   );
-  return Boolean(
-    group &&
-    connection &&
-    !connection.paused &&
-    connectionAccessAllows(group, connection, heldEditOperation(edit)),
-  );
+  if (!group || !connection) return "removed";
+  if (connection.paused) return "paused";
+  return connectionAccessAllows(group, connection, heldEditOperation(edit))
+    ? undefined
+    : "editingOff";
+}
+
+/** Whether the connection's access lets the held change go now. */
+export function canSendHeldEdit(
+  edit: HeldEdit,
+  overview: PluginsOverview | null | undefined,
+) {
+  return heldEditBlocker(edit, overview) === undefined;
 }
 
 function itemOf(itemId: string) {
@@ -99,7 +109,7 @@ export async function sendHeldEdit(edit: HeldEdit): Promise<void> {
       }
       return;
     case "description":
-      localStore.updateSyncedDescription(edit.itemId, releaseHeldDescription);
+      localStore.releaseHeldDescription(edit.itemId);
       await saveSyncedDescription(edit.itemId, "save");
       return;
     default:
@@ -182,15 +192,42 @@ export function discardHeldEdit(edit: HeldEdit) {
   switch (edit.kind) {
     case "settle":
       // As a write that failed: the item goes back to where it was.
-      localStore.failSourceWrite(edit.itemId);
+      localStore.discardHeldSourceWrite(edit.itemId);
       return;
     case "estimate":
       localStore.discardHeldEstimate(edit.itemId, edit.field);
       return;
     case "description":
-      localStore.updateSyncedDescription(edit.itemId, discardHeldDescription);
+      localStore.discardHeldDescription(edit.itemId);
       return;
     default:
       dropHeldCommentEdit(edit.id);
   }
+}
+
+/** Discards every change the connection holds, as when it is removed. */
+export function discardConnectionHeldEdits(connection: {
+  pluginId: string;
+  connectionId: string;
+}) {
+  for (const edit of listHeldEdits(localStore.snapshot().workItems)) {
+    if (
+      edit.pluginId === connection.pluginId &&
+      edit.connectionId === connection.connectionId
+    ) {
+      discardHeldEdit(edit);
+    }
+  }
+}
+
+/** How many changes the connection holds now. */
+export function connectionHeldEditCount(connection: {
+  pluginId: string;
+  connectionId: string;
+}) {
+  return heldEditCount(
+    listHeldEdits(localStore.snapshot().workItems),
+    connection.pluginId,
+    connection.connectionId,
+  );
 }

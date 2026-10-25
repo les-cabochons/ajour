@@ -2,6 +2,10 @@ import type { syncTeamConnection, TeamSyncOutcome } from "@/lib/team-sync";
 import type * as appApi from "@/lib/app-api";
 import type { LocalAppState } from "@/domain/local-state";
 import {
+  connectionAllowsOperation,
+  ESTIMATE_PUSH_OPERATION,
+} from "@ajour/shared/connection-access";
+import {
   pluginCatalogRefreshMinutesSchema,
   switchableCapabilityLabels,
 } from "@ajour/shared";
@@ -18,6 +22,8 @@ import type {
   ProjectDataShapePluginManifest,
   SwitchableCapability,
 } from "@ajour/shared";
+
+type HeldConnection = { pluginId: string; connectionId: string };
 
 export type PluginDisplayEntry = {
   catalog: PluginCatalogEntry;
@@ -49,6 +55,14 @@ export type PluginSettingsDependencies = Pick<
 > & {
   /** From `lib/team-sync.ts`: runs a team connection's rounds. */
   syncTeamConnection: typeof syncTeamConnection;
+  /**
+   * Held changes (#395), from `features/backlog/held-edit-review.ts` and
+   * the local store: holding the estimates a connection would upload, how
+   * many changes it holds, and discarding them.
+   */
+  holdPendingEstimates(connection: HeldConnection): void;
+  connectionHeldEditCount(connection: HeldConnection): number;
+  discardConnectionHeldEdits(connection: HeldConnection): void;
   subscribeCatalog(
     listener: (catalog: PluginCatalogResponse) => void,
   ): () => void;
@@ -73,6 +87,11 @@ type PluginSettingsCommand =
       access?: readonly string[];
       /** Gets the connection the API saved, such as a new one's ID. */
       onSaved?: (connection: PluginConnectionSummary) => void;
+      /**
+       * The save turned editing work items on while the connection holds
+       * changes: they wait for review, where the caller takes the user.
+       */
+      onHeldForReview?: (connectionId: string) => void;
     }
   | { type: "delete"; pluginId: string; connectionId: string }
   | {
@@ -333,6 +352,43 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
     await Promise.all([refreshPlugins(), refreshCatalog(), refreshShapes()]);
   }
 
+  /**
+   * Whether the save lets the connection upload estimates, which it could
+   * not before. A connection the overview doesn't list yet counts as one
+   * that couldn't: holding is the safe side.
+   */
+  function turnsEditingOn(command: {
+    pluginId: string;
+    connectionId?: string;
+    access?: readonly string[];
+  }) {
+    if (!command.access) return false;
+    const group = snapshot.overview?.connectionGroups.find(
+      (candidate) => candidate.plugin.id === command.pluginId,
+    );
+    const choices = group?.connectionAccess ?? [];
+    if (
+      !connectionAllowsOperation(
+        choices,
+        command.access,
+        ESTIMATE_PUSH_OPERATION,
+      )
+    ) {
+      return false;
+    }
+    const before = group?.connections.find(
+      (connection) => connection.id === command.connectionId,
+    );
+    return (
+      !before ||
+      !connectionAllowsOperation(
+        choices,
+        before.access,
+        ESTIMATE_PUSH_OPERATION,
+      )
+    );
+  }
+
   /** Runs one plugin operation at a time. Resolves false when skipped, cancelled, failed, or outlived. */
   async function execute(command: PluginSettingsCommand): Promise<boolean> {
     if (!active || snapshot.isMutatingPlugin) return false;
@@ -365,6 +421,17 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
           break;
         }
         case "save": {
+          // Turning editing on is not approval to send what was held. Every
+          // estimate the connection would upload is held before the save
+          // goes, so a sync during it, or a quit, sends none of them.
+          const held =
+            command.connectionId && turnsEditingOn(command)
+              ? {
+                  pluginId: command.pluginId,
+                  connectionId: command.connectionId,
+                }
+              : undefined;
+          if (held) deps.holdPendingEstimates(held);
           const result = await deps.savePluginConnection(
             command.pluginId,
             command.values,
@@ -377,16 +444,23 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
             result.overview,
           );
           if (isCurrent()) command.onSaved?.(result.connection);
+          // The changes held, those just now and before, wait in Sync review.
+          if (isCurrent() && held && deps.connectionHeldEditCount(held) > 0) {
+            command.onHeldForReview?.(held.connectionId);
+          }
           break;
         }
         case "delete": {
-          finish(
-            "Connection removed.",
-            await deps.deletePluginConnection(
-              command.pluginId,
-              command.connectionId,
-            ),
+          const overview = await deps.deletePluginConnection(
+            command.pluginId,
+            command.connectionId,
           );
+          // What it held goes with it, as its confirmation said.
+          deps.discardConnectionHeldEdits({
+            pluginId: command.pluginId,
+            connectionId: command.connectionId,
+          });
+          finish("Connection removed.", overview);
           break;
         }
         case "removeSecrets": {
@@ -410,6 +484,10 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
           );
           for (const connection of group?.connections ?? []) {
             await deps.deletePluginConnection(command.pluginId, connection.id);
+            deps.discardConnectionHeldEdits({
+              pluginId: command.pluginId,
+              connectionId: connection.id,
+            });
           }
           finish(
             `${command.pluginName} connections and saved secrets removed.`,
@@ -635,6 +713,8 @@ export function describeConnectionRemoval(
     LocalAppState,
     "pullRequests" | "calendarEventRules" | "projects"
   >,
+  /** The changes the connection holds, which the removal discards. */
+  heldCount = 0,
 ) {
   const ofConnection = (item: { pluginId: string; connectionId: string }) =>
     item.pluginId === plugin.id && item.connectionId === connectionId;
@@ -660,10 +740,15 @@ export function describeConnectionRemoval(
         ]
       : []),
   ];
-  const removal =
+  const removed =
     losses.length > 0
       ? `This removes the connection and its ${losses.join(" and ")} from this device.`
       : "This removes the connection from this device.";
+  // Changes held while editing was off go with it (#395).
+  const removal =
+    heldCount > 0
+      ? `${removed} Its ${count(heldCount, "held change is", "held changes are")} discarded and never sent.`
+      : removed;
   if (!plugin.capabilities.team) return removal;
   const shared = state.projects.filter(
     (project) => project.team?.connectionId === connectionId,
