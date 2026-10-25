@@ -61,6 +61,32 @@ function isHeaderValue(value: unknown): value is string {
   return typeof value === "string" && !/[\r\n\0]/.test(value);
 }
 
+/**
+ * What a secret address refuses that holds a user name or password, at
+ * request time and at save time. It names no part of the address.
+ */
+export const SECRET_ADDRESS_USERINFO_MESSAGE =
+  "The connection's secret address can't hold a user name or password. Enter it again in the connection's settings.";
+
+/** A secret address as the broker reads it: `webcal://` and `webcals://` are https. */
+function secretAddressUrl(text: string): URL {
+  return new URL(text.trim().replace(/^webcals?:\/\//i, "https://"));
+}
+
+/**
+ * Whether a secret address holds a user name or password, read as the broker
+ * reads it, so `webcal://me:pw@host/feed.ics` counts. An address that isn't
+ * one holds none: the broker refuses that later, with its own reason.
+ */
+export function secretAddressHoldsUserinfo(text: string): boolean {
+  try {
+    const url = secretAddressUrl(text);
+    return url.username !== "" || url.password !== "";
+  } catch {
+    return false;
+  }
+}
+
 /** The base address without a trailing slash, query or fragment. */
 function parseBaseAddress(value: unknown, onPremises: boolean): URL {
   const text = stringValue(value)?.trim();
@@ -253,10 +279,10 @@ export function targetOf(
         "A secret address takes only a GET with an empty path and no query.",
       );
     }
-    const text = secretValue(connection, auth.secretField).trim();
+    const text = secretValue(connection, auth.secretField);
     let url: URL;
     try {
-      url = new URL(text.replace(/^webcals?:\/\//i, "https://"));
+      url = secretAddressUrl(text);
     } catch {
       throw refused(
         "invalid_address",
@@ -268,6 +294,11 @@ export function targetOf(
         "invalid_address",
         "The connection's secret address must start with https:// or webcal://.",
       );
+    }
+    // The user name and password would ride along on the request, which a
+    // secret address was never meant to carry.
+    if (url.username || url.password) {
+      throw refused("invalid_address", SECRET_ADDRESS_USERINFO_MESSAGE);
     }
     url.hash = "";
     return {
