@@ -1,0 +1,28 @@
+{
+  "id": "fixture-tracker",
+  "version": "4.0.0",
+  "apiVersion": 4,
+  "displayName": "Fixture Tracker",
+  "iconSvg": "<svg viewBox='0 0 16 16'><path d='M0 0h16v16H0z' /></svg>",
+  "entrypoint": "lib/plugin.mjs",
+  "connectionFields": [
+    { "id": "baseUrl", "label": "Address", "type": "url", "required": true },
+    {
+      "id": "token",
+      "label": "Token",
+      "type": "password",
+      "required": true,
+      "secret": true
+    }
+  ],
+  "capabilities": { "connector": {} },
+  "network": {
+    "auth": { "scheme": "bearer", "secretField": "token" },
+    "baseAddress": { "field": "baseUrl", "allowOnPremises": true },
+    "endpoints": [
+      { "method": "GET", "path": "/api/me" },
+      { "method": "GET", "path": "/api/items" }
+    ],
+    "requestHeaders": ["Accept"]
+  }
+}

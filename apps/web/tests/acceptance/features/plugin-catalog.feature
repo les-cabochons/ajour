@@ -60,3 +60,15 @@ Feature: Browse plugin capabilities
     Then Jira offers an update from file instead of a catalog update
     When I update Jira from a file
     Then Jira is available with its saved connection
+
+  Scenario Outline: Say plugins are off when this computer can't sandbox them
+    Given plugins are off because "Ajour was started with --no-sandbox."
+    When I open the <view> for Jira at <width> pixels wide
+    Then the plugins page says "Plugins are turned off: this computer can't run them in a sandbox" with "Ajour was started with --no-sandbox."
+    And Jira shows as off with its saved connection
+    And Jira cannot be switched on or off, and says why
+
+    Examples:
+      | view    | width |
+      | catalog | 390   |
+      | details | 1280  |
