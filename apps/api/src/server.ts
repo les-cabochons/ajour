@@ -1146,7 +1146,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   // broker's refusals do, for the plugin's Access review.
   pluginRuntime.attach?.({
     recordBlocked: (pluginId, at) =>
-      storage.recordBrokerActivity(pluginId, undefined, "blocked", at),
+      storage.recordBrokerActivity(pluginId, undefined, "blocked_direct", at),
   });
   const broker: CredentialBroker = new CredentialBroker({
     ...(options.brokerTransport ? { transport: options.brokerTransport } : {}),

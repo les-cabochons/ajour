@@ -888,6 +888,36 @@ describe("AppApiStorage", () => {
       });
     });
 
+    it("counts a blocked direct attempt without taking it for a request", async () => {
+      const { storage, connectionId, onDisk } = await brokerStorage(60_000);
+
+      await storage.recordBrokerActivity(
+        "jira",
+        undefined,
+        "blocked_direct",
+        40,
+      );
+      await expect(storage.brokerActivity("jira")).resolves.toEqual({
+        plugin: { blockedCount: 1, lastBlockedAt: 40 },
+        connections: {},
+      });
+
+      await storage.recordBrokerActivity("jira", connectionId, "request", 10);
+      await storage.recordBrokerActivity(
+        "jira",
+        undefined,
+        "blocked_direct",
+        50,
+      );
+      await storage.flushBrokerActivity();
+
+      expect((await onDisk()).plugin).toEqual({
+        lastRequestAt: 10,
+        blockedCount: 2,
+        lastBlockedAt: 50,
+      });
+    });
+
     it("forgets what it held for a plugin whose data was removed", async () => {
       const { storage, connectionId, onDisk } = await brokerStorage(60_000);
 

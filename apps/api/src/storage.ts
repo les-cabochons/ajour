@@ -197,8 +197,12 @@ function withBrokerActivity(
     record?.lastBlockedAt ?? 0,
     delta.lastBlockedAt ?? 0,
   );
+  const lastRequestAt = Math.max(
+    record?.lastRequestAt ?? 0,
+    delta.lastRequestAt,
+  );
   return {
-    lastRequestAt: Math.max(record?.lastRequestAt ?? 0, delta.lastRequestAt),
+    ...(lastRequestAt > 0 ? { lastRequestAt } : {}),
     ...(blockedCount > 0 ? { blockedCount } : {}),
     ...(lastBlockedAt > 0 ? { lastBlockedAt } : {}),
   };
@@ -2120,7 +2124,8 @@ export class AppApiStorage {
 
   /**
    * Records one broker request of the plugin for Access review: its time,
-   * and whether the policy blocked it, on the plugin and on its connection
+   * and whether the policy blocked it (`blocked_direct` is a way out the
+   * sandbox closed, which counts as blocked but is not a request), on the plugin and on its connection
    * when the request named a saved one. The records gather in memory, and
    * the state file is written once per window at most: the first record
    * after a quiet window at once, the rest when the window ends, and all of
@@ -2129,7 +2134,7 @@ export class AppApiStorage {
   async recordBrokerActivity(
     pluginId: string,
     connectionId: string | undefined,
-    kind: "request" | "blocked",
+    kind: "request" | "blocked" | "blocked_direct",
     at: number,
   ): Promise<void> {
     const gather = (recordConnectionId: string | undefined) => {
@@ -2140,8 +2145,11 @@ export class AppApiStorage {
         lastRequestAt: 0,
         blocked: 0,
       };
-      delta.lastRequestAt = Math.max(delta.lastRequestAt, at);
-      if (kind === "blocked") {
+      // A blocked direct attempt never reached the broker, so it is not a request.
+      if (kind !== "blocked_direct") {
+        delta.lastRequestAt = Math.max(delta.lastRequestAt, at);
+      }
+      if (kind !== "request") {
         delta.blocked += 1;
         delta.lastBlockedAt = Math.max(delta.lastBlockedAt ?? 0, at);
       }
