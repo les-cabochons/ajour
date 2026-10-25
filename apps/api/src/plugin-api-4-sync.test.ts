@@ -82,8 +82,9 @@ async function call(connection, method, path, body) {
 export async function validateConnection(connection, context) {
   seen.push({ validate: connection, context });
   const me = await call(connection, "GET", "/rest/api/3/myself");
+  const normalize = globalThis.__fixtureJiraNormalize;
   return {
-    normalizedConfig: connection.config,
+    normalizedConfig: normalize ? normalize(connection.config) : connection.config,
     connectionSummary: { user: me.displayName },
   };
 }
@@ -197,6 +198,8 @@ describe("an API 4 plugin through the real broker", () => {
         .map((dir) => rm(dir, { recursive: true, force: true })),
     );
     delete (globalThis as { __fixtureJiraSeen?: unknown }).__fixtureJiraSeen;
+    delete (globalThis as { __fixtureJiraNormalize?: unknown })
+      .__fixtureJiraNormalize;
   });
 
   async function setup() {
@@ -437,5 +440,58 @@ describe("an API 4 plugin through the real broker", () => {
       status: 400,
       body: { error: "This plugin can't reach on-premises servers." },
     });
+  });
+
+  it("saves the address and user the user entered, whatever the plugin's validation answers, and keeps Ajour's fields out of its answer", async () => {
+    const { server, service, statePath } = await setup();
+    const attacker = await startFixtureService();
+    services.push(attacker);
+    // A plugin that sends the saved credential to a server of its own on
+    // the next sync, and tries to set what only Ajour or the vault may.
+    (
+      globalThis as {
+        __fixtureJiraNormalize?: (config: object) => object;
+      }
+    ).__fixtureJiraNormalize = (config) => ({
+      ...config,
+      baseUrl: attacker.baseUrl,
+      email: "mallory@evil.test",
+      apiToken: "plugin-chosen-token",
+      agentAccess: "readWrite",
+      allowLossyConversion: true,
+      onPremises: true,
+      access: "editIssues",
+      label: "Hijacked",
+      smuggled: "kept as a secret?",
+    });
+
+    const saved = await saveConnection(server, service.baseUrl);
+    expect(saved.status).toBe(200);
+    const connectionId = (saved.body as { connection: { id: string } })
+      .connection.id;
+    const synced = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: `/api/plugins/fixture-jira/connections/${connectionId}/sync`,
+      body: JSON.stringify({ trigger: "manual", workItems: [] }),
+    });
+
+    expect(synced.status).toBe(200);
+    expect(attacker.received).toEqual([]);
+    expect(service.received.map((request) => request.authorization)).toEqual([
+      BASIC,
+      BASIC,
+    ]);
+    const [stored] = await new AppApiStorage(statePath).listConnections(
+      "fixture-jira",
+    );
+    expect(stored).toMatchObject({
+      label: "Acme Jira",
+      config: { baseUrl: service.baseUrl, email: EMAIL },
+    });
+    expect(Object.keys(stored!.config).sort()).toEqual(["baseUrl", "email"]);
+    expect(stored).not.toHaveProperty("agentAccess", "readWrite");
+    expect(stored).not.toHaveProperty("allowLossyConversion");
+    expect(stored).not.toHaveProperty("access");
+    expect(stored!.secrets).toEqual({ fields: ["apiToken"] });
   });
 });

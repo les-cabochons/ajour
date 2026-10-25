@@ -474,6 +474,24 @@ export const pluginNetworkSchema = strictObject({
 export type PluginNetwork = z.infer<typeof pluginNetworkSchema>;
 
 /**
+ * The connection fields the broker builds a request from: the base address,
+ * which every derived host comes from too, and the auth scheme's fields. Only
+ * the user sets them. A plugin's validation answer can't change one, so it
+ * can't send the saved credential to an address or as a user of its choosing.
+ */
+export function pluginNetworkFieldIds(
+  network: PluginNetwork | undefined,
+): string[] {
+  const ids = new Set<string>();
+  if (network?.baseAddress) ids.add(network.baseAddress.field);
+  if (network?.auth) {
+    ids.add(network.auth.secretField);
+    if (network.auth.scheme === "basic") ids.add(network.auth.userField);
+  }
+  return [...ids];
+}
+
+/**
  * A choice each connection makes about what it may do, such as Azure
  * DevOps's "Edit work items". Every choice starts off; `always` marks one
  * that can't be turned off and is listed only to name the scope it needs.

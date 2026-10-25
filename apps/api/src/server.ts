@@ -133,6 +133,7 @@ import {
 } from "./credential-broker.ts";
 import {
   isPluginApi4Manifest,
+  pluginNetworkFieldIds,
   type PluginApi4Manifest,
 } from "../../../packages/shared/plugin-api-4.ts";
 import type { Sink } from "../../../packages/wide-events/sinks.ts";
@@ -1791,12 +1792,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(response, 400, { error: credentials.errorMessage(error) });
         return;
       }
-      // An API 4 plugin never saw the secrets, so they come from the save.
+      // An API 4 plugin never saw the secrets, so they come from the save,
+      // and so do the address and the user its credential is sent to.
       const normalizedConfig = isPluginApi4Manifest(plugin)
         ? api4SavedConfig(
             secretFields,
-            withoutReservedFields(validation.normalizedConfig),
+            validation.normalizedConfig,
             configForSave,
+            pluginNetworkFieldIds(plugin.network),
           )
         : validation.normalizedConfig;
       // The plugin may answer with a key it didn't declare, which goes to

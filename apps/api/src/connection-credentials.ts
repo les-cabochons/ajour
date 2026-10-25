@@ -207,18 +207,29 @@ export function connectionCredentials(
 /**
  * The config an API 4 plugin's validation saves. Secret fields are
  * host-owned: the plugin never saw them, so its answer can neither set nor
- * drop one, and they come from the save itself. Of the plugin's answer only
- * the declared fields that aren't secret stay.
+ * drop one, and they come from the save itself. So do the fields the broker
+ * builds requests from (`networkFields`, see `pluginNetworkFieldIds`): the
+ * base address and the auth scheme's user. A plugin answering with another
+ * address, or another user, is ignored rather than refused: the validation's
+ * requests went to what the user entered, so that is what was proven, and a
+ * plugin's harmless clean-up, such as a trailing slash the broker drops
+ * anyway, doesn't fail the save. Of the rest of the plugin's answer only the
+ * declared fields stay: a key it adds, such as one of Ajour's own fields, an
+ * access choice or a value for the vault, is dropped.
  */
 export function api4SavedConfig(
   fields: readonly SecretFieldDeclaration[],
   normalized: Readonly<PluginFieldValues>,
   submitted: Readonly<PluginFieldValues>,
+  networkFields: readonly string[],
 ): PluginFieldValues {
-  const saved = editableValues(fields, normalized);
+  const userOwned = new Set(networkFields);
+  const saved: PluginFieldValues = {};
   for (const field of fields) {
-    if (!field.secret) continue;
-    const value = submitted[field.id];
+    const value =
+      field.secret || userOwned.has(field.id)
+        ? submitted[field.id]
+        : normalized[field.id];
     if (value !== undefined) saved[field.id] = value;
   }
   return saved;
