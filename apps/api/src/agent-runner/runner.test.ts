@@ -9,6 +9,7 @@ import {
   createRecordingSink,
   type Sink,
 } from "../../../../packages/wide-events/sinks.ts";
+import type { AgentTaskMcpTool } from "../../../../packages/shared/plugin-api-4.ts";
 import { AgentSessions } from "../agent-sessions.ts";
 import { createApiEvents } from "../events.ts";
 import { claudeCodeAdapter } from "./adapters/claude-code.ts";
@@ -75,7 +76,7 @@ function fakeStorage({
   values: Record<string, string>;
   revoked: string[];
   /** Each client the runner created, with its tool scope when it has one. */
-  clients: { name: string; scope?: { tools: readonly string[] } }[];
+  clients: { name: string; scope?: { tools: readonly AgentTaskMcpTool[] } }[];
   revokeError?: Error;
   whileRevoking?: () => Promise<void>;
 }) {
@@ -89,7 +90,7 @@ function fakeStorage({
     getAgentTaskValues: async () => values,
     createMcpClient: async (
       name: string,
-      scope?: { tools: readonly string[] },
+      scope?: { tools: readonly AgentTaskMcpTool[] },
     ) => {
       clients.push({ name, ...(scope ? { scope } : {}) });
       return {
@@ -111,7 +112,7 @@ function fakePlugins(
   weekLink: string,
   otherTasks: AgentTask[] = [],
   apiVersion = 3,
-  tools?: string[],
+  tools?: AgentTaskMcpTool[],
 ) {
   const manifest = {
     id: "ajp-test",
@@ -155,7 +156,7 @@ async function setup(
     /** The plugin API the plugin's manifest declares. */
     apiVersion?: number;
     /** The MCP tools the first task declares, as on plugin API 4. */
-    tools?: string[];
+    tools?: AgentTaskMcpTool[];
     /** Where runs make their folder, under the test's folder. */
     tempRoot?: string;
     findExecutable?: (name: string) => Promise<string | null>;
@@ -185,7 +186,10 @@ async function setup(
   // Session ends go to the same sink, as in the server.
   const sessions = options.sessions ?? new AgentSessions({ events: apiEvents });
   const revoked: string[] = [];
-  const clients: { name: string; scope?: { tools: readonly string[] } }[] = [];
+  const clients: {
+    name: string;
+    scope?: { tools: readonly AgentTaskMcpTool[] };
+  }[] = [];
   const runner = new AgentRunner({
     storage: fakeStorage({
       cli: options.adapter?.id ?? "claude-code",
@@ -1042,6 +1046,15 @@ describe("AgentRunner", () => {
         name: "Enter in Workday run",
         scope: { tools: ["get_week_changes", "mark_entries_committed"] },
       },
+    ]);
+  });
+
+  it("gives a plugin API 4 task that somehow declares no tools a client with none", async () => {
+    const { runner, clients } = await setup([{ exit: 0 }], { apiVersion: 4 });
+    await runner.start(request);
+    await settled(runner);
+    expect(clients).toEqual([
+      { name: "Enter in Workday run", scope: { tools: [] } },
     ]);
   });
 

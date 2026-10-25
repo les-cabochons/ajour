@@ -28,6 +28,10 @@ import {
 } from "../../../packages/shared/plugins.ts";
 import type { McpSettings } from "../../../packages/shared/agent-tools.ts";
 import { removeOrphanedTempFiles, writeFileAtomically } from "./atomic-file.ts";
+import {
+  agentTaskMcpToolNames,
+  type AgentTaskMcpTool,
+} from "../../../packages/shared/plugin-api-4.ts";
 import { withoutContent } from "./event-errors.ts";
 import type { ApiEvents } from "./events.ts";
 import {
@@ -157,7 +161,7 @@ export interface StoredMcpClient {
    * an agent task run's client gets those its task declares (#396). Without
    * it, the client has every tool, as a client the user creates does.
    */
-  tools?: string[];
+  tools?: AgentTaskMcpTool[];
 }
 
 interface StoredMcpState {
@@ -186,15 +190,22 @@ function normalizeMcpState(raw: unknown): StoredMcpState {
 
 /**
  * A client limited to some tools stays limited: a list that isn't one of
- * names leaves it none, never every tool.
+ * names leaves it none, never every tool, and a name Ajour has no tool for
+ * is dropped.
  */
 function normalizeMcpClientTools(client: StoredMcpClient): StoredMcpClient {
   if (!Object.hasOwn(client, "tools")) return client;
-  const { tools } = client;
-  return Array.isArray(tools) &&
-    tools.every((tool: unknown) => typeof tool === "string")
-    ? client
-    : { ...client, tools: [] };
+  const { tools } = client as { tools: unknown };
+  return {
+    ...client,
+    tools:
+      Array.isArray(tools) &&
+      tools.every((tool: unknown) => typeof tool === "string")
+        ? tools.filter((tool): tool is AgentTaskMcpTool =>
+            agentTaskMcpToolNames.includes(tool),
+          )
+        : [],
+  };
 }
 
 interface AppApiStateV8 {

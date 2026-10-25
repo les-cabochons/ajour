@@ -1370,6 +1370,17 @@ describe("wide events on stdout", () => {
 
 describe("an agent task's declared tools", () => {
   type McpMessage = { method: string; params?: unknown };
+  /** A JSON-RPC result as the fake CLI reports it, or the replies of a batch. */
+  type McpResult = {
+    id: number;
+    result: {
+      tools?: { name: string }[];
+      structuredContent?: unknown;
+      content?: unknown;
+      isError?: boolean;
+    };
+  };
+  type McpReply = McpResult | McpResult[];
   const ICON = "<svg viewBox='0 0 16 16'><path d='M0 0h16v16H0z' /></svg>";
 
   /**
@@ -1481,7 +1492,8 @@ describe("an agent task's declared tools", () => {
       .trim()
       .split("\n")
       .map(
-        (line) => JSON.parse(line) as { mcp?: { status: number; reply: any } },
+        (line) =>
+          JSON.parse(line) as { mcp?: { status: number; reply: McpReply } },
       )
       .flatMap((line) => (line.mcp ? [line.mcp] : []));
     return { replies, logged };
@@ -1495,8 +1507,8 @@ describe("an agent task's declared tools", () => {
     "wait_for_answer",
   ];
 
-  const toolNames = (reply: any) =>
-    (reply.result.tools as { name: string }[]).map((tool) => tool.name).sort();
+  const toolNames = (reply: McpReply) =>
+    (reply as McpResult).result.tools!.map((tool) => tool.name).sort();
 
   it(
     "lists only the tools an API 4 task declares, with the session tools",
@@ -1533,8 +1545,10 @@ describe("an agent task's declared tools", () => {
       );
 
       const [declared, other] = replies;
-      expect(declared!.reply.result.structuredContent).toEqual(acmeProjects);
-      expect(other!.reply.result).toEqual({
+      expect((declared!.reply as McpResult).result.structuredContent).toEqual(
+        acmeProjects,
+      );
+      expect((other!.reply as McpResult).result).toEqual({
         content: [
           {
             type: "text",
@@ -1547,13 +1561,20 @@ describe("an agent task's declared tools", () => {
         logged
           .filter((event) => event.name === "agent_tool.call")
           .map((event) => ({
+            kind: event.kind,
             tool: event.agent_tool?.name,
             outcome: event.outcome,
             reason: event.outcome_reason,
           })),
       ).toEqual([
-        { tool: "list_projects", outcome: "ok", reason: undefined },
         {
+          kind: "request",
+          tool: "list_projects",
+          outcome: "ok",
+          reason: undefined,
+        },
+        {
+          kind: "request",
           tool: "get_running_timer",
           outcome: "refused",
           reason: "tool_not_declared",
@@ -1583,10 +1604,10 @@ describe("an agent task's declared tools", () => {
       );
 
       const byId = new Map(
-        (replies[0]!.reply as any[]).map((reply) => [reply.id, reply]),
+        (replies[0]!.reply as McpResult[]).map((reply) => [reply.id, reply]),
       );
-      expect(byId.get(1).result.structuredContent).toEqual(acmeProjects);
-      expect(byId.get(2).result).toMatchObject({
+      expect(byId.get(1)!.result.structuredContent).toEqual(acmeProjects);
+      expect(byId.get(2)!.result).toMatchObject({
         isError: true,
         content: [
           {

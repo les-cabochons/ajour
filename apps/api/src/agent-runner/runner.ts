@@ -27,7 +27,10 @@ import {
   fillTemplate,
   listTemplateSlots,
 } from "../../../../packages/shared/agent-task-templates.ts";
-import { PLUGIN_API_4 } from "../../../../packages/shared/plugin-api-4.ts";
+import {
+  PLUGIN_API_4,
+  type AgentTaskMcpTool,
+} from "../../../../packages/shared/plugin-api-4.ts";
 import type { AjourCatalog } from "../../../../packages/wide-events/catalog.ts";
 import {
   errorIdentity,
@@ -85,7 +88,7 @@ interface RunnerStorage {
   /** `tools`, when given, limits the client to those data tools. */
   createMcpClient(
     name: string,
-    scope?: { tools: readonly string[] },
+    scope?: { tools: readonly AgentTaskMcpTool[] },
   ): Promise<McpClientCreateResponse>;
   revokeMcpClient(clientId: string): Promise<boolean>;
 }
@@ -98,7 +101,9 @@ interface RunnerPlugins {
       displayName: string;
       capabilities: {
         // An API 4 task declares its MCP tools; an API 3 one declares none.
-        agentTask?: { tasks: (AgentTask & { tools?: readonly string[] })[] };
+        agentTask?: {
+          tasks: (AgentTask & { tools?: readonly AgentTaskMcpTool[] })[];
+        };
       };
     }[]
   >;
@@ -208,7 +213,7 @@ interface RunnerTask {
    * The data tools its run's MCP client is limited to. Without it, every
    * tool, as for an API 3 task.
    */
-  tools?: readonly string[];
+  tools?: readonly AgentTaskMcpTool[];
   /** Its settings marked secret, which never reach the agent. */
   secretSettings: readonly { id: string; label: string }[];
 }
@@ -423,9 +428,9 @@ export class AgentRunner {
     );
     if (!found)
       throw new AgentRunError("This agent task is not available.", 404);
-    const task = found.status;
-    if (task.blockers.length > 0)
-      throw new AgentRunError(`${task.blockers[0]}.`, 400);
+    const status = found.status;
+    if (status.blockers.length > 0)
+      throw new AgentRunError(`${status.blockers[0]}.`, 400);
     if (
       settings.browserMode === "ajour-chrome" &&
       !(await this.options.chromeInstalled())
@@ -438,14 +443,14 @@ export class AgentRunner {
     const cliStatus = clis.find((candidate) => candidate.id === settings.cli)!;
     // Every declared field has a slot: an unset optional one fills as "".
     const settingValues = Object.fromEntries(
-      task.settings.map((field) => [
+      status.settings.map((field) => [
         `settings.${field.id}`,
-        String(task.values[field.id] ?? ""),
+        String(status.values[field.id] ?? ""),
       ]),
     );
-    const weekLink = task.weekLink
+    const weekLink = status.weekLink
       ? safeHttpsUrl(
-          fillTemplate(task.weekLink, {
+          fillTemplate(status.weekLink, {
             ...settingValues,
             weekOf: request.weekOf,
             sessionId: "",
@@ -507,7 +512,7 @@ export class AgentRunner {
       step = "create_client";
       // The MCP server enforces the task's tools, whatever the CLI is told.
       const created = await this.options.storage.createMcpClient(
-        `${task.label} run`,
+        `${status.label} run`,
         ...(found.tools ? [{ tools: found.tools }] : []),
       );
       client = { id: created.client.id, name: created.client.name };
@@ -520,15 +525,15 @@ export class AgentRunner {
         this.options.sessions.begin(
           runClient,
           {
-            title: `${task.label}, week of ${request.weekOf}`,
-            estimateMinutes: task.estimateMinutes,
+            title: `${status.label}, week of ${request.weekOf}`,
+            estimateMinutes: status.estimateMinutes,
           },
           {
             runId,
             ...(weekLink
               ? {
                   link: {
-                    label: `Open the week in ${task.pluginName}`,
+                    label: `Open the week in ${status.pluginName}`,
                     url: weekLink,
                   },
                 }

@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { McpClientCreateResponse } from "../../../packages/shared/agent-tools.ts";
+import type { AgentTaskMcpTool } from "../../../packages/shared/plugin-api-4.ts";
 import type { AppApiStorage, StoredMcpClient } from "./storage.ts";
 
 /**
@@ -25,7 +26,10 @@ function hashMcpToken(token: string) {
 export async function createMcpClient(
   storage: AppApiStorage,
   name: string,
-  { now = Date.now(), tools }: { now?: number; tools?: readonly string[] } = {},
+  {
+    now = Date.now(),
+    tools,
+  }: { now?: number; tools?: readonly AgentTaskMcpTool[] } = {},
 ): Promise<McpClientCreateResponse> {
   const token = `ajour_${randomBytes(32).toString("base64url")}`;
   const client: StoredMcpClient = {

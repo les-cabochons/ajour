@@ -14,6 +14,7 @@ import {
   type SessionToolOutput,
   type WriteToolName,
 } from "../../../packages/shared/agent-tools.ts";
+import type { AgentTaskMcpTool } from "../../../packages/shared/plugin-api-4.ts";
 import type {
   AjourCatalog,
   McpMethod,
@@ -76,7 +77,7 @@ interface ToolCall {
   /** Set when the handler starts, and when it returns a result that isn't an error. */
   handler: "not_reached" | "entered" | "returned_ok";
   /** The Ajour data tool it names, when the client may not use it. */
-  undeclared?: ReadToolName | WriteToolName;
+  undeclared?: AgentTaskMcpTool;
 }
 
 /**
@@ -87,11 +88,7 @@ class McpExchange {
   readonly calls: ToolCall[] = [];
   private readonly byId = new Map<unknown, ToolCall>();
 
-  add(
-    unit: ToolCall["unit"],
-    id: unknown,
-    undeclared?: ReadToolName | WriteToolName,
-  ) {
+  add(unit: ToolCall["unit"], id: unknown, undeclared?: AgentTaskMcpTool) {
     const call: ToolCall = {
       unit,
       handler: "not_reached",
@@ -159,18 +156,16 @@ function calledTool(message: unknown): string {
 function toolScope(client: StoredMcpClient) {
   const declared =
     client.tools === undefined ? undefined : new Set(client.tools);
-  return (tool: ReadToolName | WriteToolName) =>
+  return (tool: AgentTaskMcpTool) =>
     declared === undefined || declared.has(tool);
 }
 
 /** The data tool a call names, when it is one of Ajour's. */
-function calledDataTool(
-  message: unknown,
-): ReadToolName | WriteToolName | undefined {
+function calledDataTool(message: unknown): AgentTaskMcpTool | undefined {
   const name = calledTool(message);
   return Object.hasOwn(readToolInputSchemas, name) ||
     Object.hasOwn(writeToolInputSchemas, name)
-    ? (name as ReadToolName | WriteToolName)
+    ? (name as AgentTaskMcpTool)
     : undefined;
 }
 
@@ -182,7 +177,7 @@ function calledDataTool(
 function refuseUndeclaredCall(
   id: string | number,
   call: ToolCall,
-  tool: ReadToolName | WriteToolName,
+  tool: AgentTaskMcpTool,
   client: AgentClientRef,
   context: McpRequestContext,
 ) {
@@ -315,10 +310,7 @@ const AJOUR_INSTRUCTIONS = [
 ].join("\n");
 
 /** Tool descriptions, by tool name. */
-const TOOL_DESCRIPTIONS: Record<
-  ReadToolName | WriteToolName | SessionToolName,
-  string
-> = {
+const TOOL_DESCRIPTIONS: Record<AgentTaskMcpTool | SessionToolName, string> = {
   get_running_timer:
     "The running entry, with its project, task, note and counted minutes. `running` is null when nothing runs.",
   list_time_entries:
@@ -424,7 +416,7 @@ async function withToolEvent(
  * schema. A mismatch is a bug in Ajour, so the indicator shows it.
  */
 function forwardToRenderer(
-  tool: ReadToolName | WriteToolName,
+  tool: AgentTaskMcpTool,
   input: unknown,
   client: AgentClientRef,
   context: McpRequestContext,
@@ -515,7 +507,7 @@ function runSessionTool<Name extends SessionToolName>(
 function registerTools(
   server: McpServer,
   client: AgentClientRef,
-  mayUse: (tool: ReadToolName | WriteToolName) => boolean,
+  mayUse: (tool: AgentTaskMcpTool) => boolean,
   context: McpRequestContext,
   exchange: McpExchange,
 ) {

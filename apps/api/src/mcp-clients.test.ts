@@ -106,6 +106,13 @@ describe("MCP clients", () => {
     expect(await authenticate(user.token)).not.toHaveProperty("tools");
 
     const state = JSON.parse(await readFile(statePath, "utf8"));
+    // A name Ajour has no tool for is dropped, and the others stay.
+    state.mcp.clients[0].tools = ["get_week_changes", "no_such_tool"];
+    await writeFile(statePath, JSON.stringify(state));
+    expect((await authenticate(created.token))?.tools).toEqual([
+      "get_week_changes",
+    ]);
+
     state.mcp.clients[0].tools = "every tool";
     await writeFile(statePath, JSON.stringify(state));
     expect((await authenticate(created.token))?.tools).toEqual([]);
