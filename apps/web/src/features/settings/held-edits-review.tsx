@@ -185,7 +185,7 @@ export function HeldEditsReview({
   };
 
   return (
-    <AppPanel aria-label="Held changes">
+    <AppPanel as="section" aria-label="Held changes">
       <h3 className="settings-subsection-title">
         {edits.length} {edits.length === 1 ? "change" : "changes"} held
       </h3>
