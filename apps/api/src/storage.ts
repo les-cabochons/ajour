@@ -38,11 +38,14 @@ import { boundConnectionError, connectionRedaction } from "./plugin-errors.ts";
 import {
   ConnectionPausedError,
   connectionCredentials,
+  decideSecretPause,
   editableValues as editableFieldValues,
   holderNeedsMove,
   holderNeedsSettling,
   nonSecretValues,
   readHolderSecrets,
+  redactionFields,
+  secretManifestOf,
   secretPauseMessage,
   splitSave,
   type HolderSecrets,
@@ -78,8 +81,7 @@ import {
 import {
   emptyVaultMigrationReport,
   holderId,
-  settleAgentTaskValues,
-  settleConnection,
+  settleHolders,
   type VaultMigrationReport,
 } from "./vault-migration.ts";
 
@@ -382,6 +384,14 @@ function toEditableValues(
   return editableValues;
 }
 
+function sealedKeyId(connection: StoredConnection) {
+  return secretKeyId({
+    pluginId: connection.pluginId,
+    connectionId: connection.id,
+    fieldId: null,
+  });
+}
+
 /** What the vault says about a connection's secrets, without reading one. */
 interface VaultView {
   status: VaultStatus;
@@ -401,48 +411,37 @@ function connectionSecretState(
   vault: VaultView,
 ): Pick<PluginConnectionSummary, "secretFields" | "paused"> {
   const fields = connection.secrets?.fields ?? [];
-  const secretFields = fields.map((id) => {
-    const unreadable = vault.unreadable.get(
+  const readable = (fieldId: string | null) =>
+    vault.unreadable.get(
       secretKeyId({
         pluginId: connection.pluginId,
         connectionId: connection.id,
-        fieldId: id,
+        fieldId,
       }),
-    );
-    return {
-      id,
-      state:
-        unreadable === false && vault.status.state === "available"
-          ? ("saved" as const)
-          : ("unreadable" as const),
-    };
+    ) === false && vault.status.state === "available";
+  const secretFields = fields.map((id) => ({
+    id,
+    state: readable(id) ? ("saved" as const) : ("unreadable" as const),
+  }));
+  const sealed = connection.secrets?.sealed === true;
+  const notMoved =
+    installed &&
+    holderNeedsMove(connectionHolder(connection), secretManifestOf(plugin));
+  const { pause, reason } = decideSecretPause({
+    needsVault: fields.length > 0 || sealed || notMoved,
+    status: vault.status,
+    unreadable:
+      secretFields.some((field) => field.state === "unreadable") ||
+      (sealed && vault.unreadable.get(sealedKeyId(connection)) === true),
+    notMoved,
   });
-  const needsVault = fields.length > 0 || connection.secrets?.sealed === true;
-  const pause =
-    needsVault && vault.status.state === "unavailable"
-      ? "vault_unavailable"
-      : secretFields.some((field) => field.state === "unreadable")
-        ? "secret_unreadable"
-        : installed &&
-            holderNeedsMove(connectionHolder(connection), {
-              id: plugin.id,
-              connectionFields: plugin.connectionFields,
-              agentTaskFields: [],
-            })
-          ? "not_in_vault"
-          : undefined;
   return {
     ...(secretFields.length > 0 ? { secretFields } : {}),
     ...(pause
       ? {
           paused: {
             reason: pause,
-            message: secretPauseMessage(
-              pause,
-              vault.status.state === "unavailable"
-                ? vault.status.reason
-                : undefined,
-            ),
+            message: secretPauseMessage(pause, reason),
           },
         }
       : {}),
@@ -465,7 +464,10 @@ function buildConnectionSummary(
   // summary stored before saves redacted it. A stand-in says nothing about
   // which stored values are secret, so then none of their text is shown.
   const redaction = installed
-    ? connectionCredentials(plugin, connection.config).redaction
+    ? connectionCredentials(
+        redactionFields(plugin.connectionFields, connection.secrets),
+        connection.config,
+      ).redaction
     : connectionRedaction([]);
 
   return {
@@ -766,46 +768,27 @@ export class AppApiStorage {
     if (!needed) return;
     await this.mutate(async (current) => {
       const report = emptyVaultMigrationReport();
-      const options = {
-        vault: this.vault,
-        manifests: byId,
-        skip: this.failedMoves,
-      };
-      const connections: StoredConnection[] = [];
-      for (const connection of current.connections) {
-        connections.push(
-          inScope(connection.pluginId)
-            ? ((await settleConnection(connection, options, report)) ??
-                connection)
-            : connection,
-        );
-      }
-      const pluginValues: StoredAgentRunnerState["pluginValues"] =
-        Object.create(null);
-      const pluginSecrets: StoredAgentRunnerState["pluginSecrets"] =
-        Object.create(null);
-      Object.assign(pluginSecrets, current.agentRunner.pluginSecrets);
-      for (const [pluginId, values] of Object.entries(
-        current.agentRunner.pluginValues,
-      )) {
-        const settled = inScope(pluginId)
-          ? await settleAgentTaskValues(
-              pluginId,
-              values,
-              current.agentRunner.pluginSecrets[pluginId],
-              options,
-              report,
-            )
-          : undefined;
-        pluginValues[pluginId] = settled?.values ?? values;
-        if (settled?.secrets) pluginSecrets[pluginId] = settled.secrets;
-      }
+      const settled = await settleHolders(
+        current.connections,
+        current.agentRunner,
+        {
+          vault: this.vault,
+          manifests: byId,
+          skip: this.failedMoves,
+          ...(only !== undefined ? { only } : {}),
+        },
+        report,
+      );
       for (const id of report.failed) this.failedMoves.add(id);
       return {
         nextState: {
           ...current,
-          connections: connections.sort(compareConnections),
-          agentRunner: { ...current.agentRunner, pluginValues, pluginSecrets },
+          connections: settled.connections.sort(compareConnections),
+          agentRunner: {
+            ...current.agentRunner,
+            pluginValues: settled.pluginValues,
+            pluginSecrets: settled.pluginSecrets,
+          },
         },
         result: undefined,
         afterWrite: () => this.removeSealedEntries(report),
@@ -1134,7 +1117,8 @@ export class AppApiStorage {
     manifest?: SecretManifest,
   ): Promise<PluginFieldValues> {
     const read = await this.readAgentTaskSecrets(pluginId, manifest);
-    return read.pause === "not_in_vault" && manifest
+    // Whatever the pause says, a secret still in plain text never reaches a run.
+    return manifest && holderNeedsMove(read.holder, manifest)
       ? nonSecretValues(read.holder, manifest, read.values)
       : read.values;
   }
@@ -2031,7 +2015,9 @@ export class AppApiStorage {
       // nothing reads them.
       const orphans = await removeOrphanedTempFiles(this.statePath);
       if (orphans.undeletable > 0) {
-        unit?.set({ storage: { orphans_undeletable: orphans.undeletable } });
+        unit?.set({
+          storage: { orphans_undeletable_count: orphans.undeletable },
+        });
       }
       if (this.vault) {
         const opened = await this.vault.open();
@@ -2040,7 +2026,7 @@ export class AppApiStorage {
             state: opened.status.state,
             entry_count: opened.entryCount,
             ...(opened.undeletableOrphans > 0
-              ? { orphans_undeletable: opened.undeletableOrphans }
+              ? { orphans_undeletable_count: opened.undeletableOrphans }
               : {}),
           },
         });

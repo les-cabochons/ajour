@@ -10,10 +10,11 @@
  * moves plain-text values into the vault, reads them back for a plugin
  * operation, and splits a save between the two files.
  *
- * A secret field is one the manifest marks `secret: true`. For redaction, a
- * stored key the manifest no longer declares counts as secret too, except
- * Ajour's own fields: a plugin update renamed or dropped its field, which may
- * have been secret, and the value stays until the connection is saved again.
+ * A secret field is one the manifest marks `secret: true`, or one the vault
+ * already holds. A stored key the manifest doesn't declare counts as secret
+ * too, except Ajour's own fields: a plugin update renamed or dropped its
+ * field, which may have been secret. It is redacted, and moves into the
+ * vault like any secret, so it never stays in plain text.
  *
  * A save keeps a saved secret the request leaves empty, replaces it with a
  * new value, and deletes it when the request lists the field in
@@ -21,19 +22,23 @@
  */
 
 import {
+  agentTaskSettingFields,
   pluginFieldValueSchema,
   pluginFieldValuesSchema,
   type PluginFieldValue,
   type PluginFieldValues,
+  type PluginManifest,
 } from "../../../packages/shared/plugins.ts";
 import type { StoredSecretFields } from "./agent-runner-state.ts";
 import { RESERVED_CONNECTION_FIELD_IDS } from "./connection-values.ts";
 import {
-  NO_VAULT_REASON,
+  NO_VAULT_STATUS,
   type SecretKey,
+  type SecretRead,
   type SecretSelection,
   type SecretVault,
   type SecretWrite,
+  type VaultStatus,
 } from "./secret-vault.ts";
 import {
   connectionRedaction,
@@ -244,6 +249,17 @@ export interface SecretManifest {
   agentTaskFields: readonly SecretFieldDeclaration[];
 }
 
+/** What a plugin's manifest says about its secrets. */
+export function secretManifestOf(manifest: PluginManifest): SecretManifest {
+  return {
+    id: manifest.id,
+    connectionFields: manifest.connectionFields,
+    agentTaskFields: agentTaskSettingFields(
+      manifest.capabilities.agentTask?.tasks ?? [],
+    ),
+  };
+}
+
 /**
  * Values that may hold secrets, of one owner: a connection's config, or the
  * agent task settings a plugin's tasks share (`connectionId` null).
@@ -337,15 +353,50 @@ export function effectiveSecretFields(
   return effective;
 }
 
-function secretFieldIds(
-  manifest: SecretManifest,
+/**
+ * The connection fields a connection's texts are redacted with: those of
+ * its manifest, with the ones the vault holds marked secret, so a field an
+ * update stopped marking secret is still redacted.
+ */
+export function redactionFields(
+  fields: readonly SecretFieldDeclaration[],
+  secrets: StoredSecretFields | undefined,
+): SecretConnectionFields {
+  return { connectionFields: effectiveSecretFields(fields, secrets) };
+}
+
+/**
+ * The keys of `values` that go to the vault, by the rule redaction uses:
+ * each field the manifest marks secret or the vault already holds, and each
+ * stored key the manifest doesn't declare, Ajour's own fields excepted. An
+ * update may have renamed a secret field, or a plugin's normalized config
+ * may hold a value it traded for, so an undeclared value is never kept in
+ * plain text.
+ */
+function secretIdsOf(
+  fields: readonly SecretFieldDeclaration[],
   holder: SecretHolder,
+  values: Readonly<PluginFieldValues>,
 ): Set<string> {
-  return new Set(
-    effectiveSecretFields(declaredFields(manifest, holder), holder.secrets)
+  const effective = effectiveSecretFields(fields, holder.secrets);
+  const declared = new Set(effective.map((field) => field.id));
+  const ids = new Set(
+    effective
       .filter((field) => field.secret && !isOwnField(holder, field.id))
       .map((field) => field.id),
   );
+  for (const id of Object.keys(values)) {
+    if (!declared.has(id) && !isOwnField(holder, id)) ids.add(id);
+  }
+  return ids;
+}
+
+function secretFieldIds(
+  manifest: SecretManifest,
+  holder: SecretHolder,
+  values: Readonly<PluginFieldValues> = holder.values,
+): Set<string> {
+  return secretIdsOf(declaredFields(manifest, holder), holder, values);
 }
 
 /** The values a holder keeps that nothing has checked for secrets. */
@@ -408,7 +459,7 @@ export function nonSecretValues(
   manifest: SecretManifest,
   values: PluginFieldValues,
 ): PluginFieldValues {
-  const secretIds = secretFieldIds(manifest, holder);
+  const secretIds = secretFieldIds(manifest, holder, values);
   return Object.fromEntries(
     Object.entries(values).filter(([id]) => !secretIds.has(id)),
   );
@@ -514,7 +565,8 @@ export async function moveHolderToVault(
       if (!unsealed) return { outcome: "failed" };
       values = { ...unsealed, ...holder.values };
     }
-    const secretIds = secretFieldIds(manifest, holder);
+    // A sealed value the returning manifest doesn't declare stays secret.
+    const secretIds = secretFieldIds(manifest, holder, values);
     const writes = Object.entries(values)
       .filter(([id, value]) => secretIds.has(id) && !isEmptySecretValue(value))
       .map(([id, value]) => ({
@@ -584,12 +636,48 @@ export interface HolderSecrets {
   reason?: string;
   /** The secret fields that couldn't be read. A save keeps their entries. */
   unreadable: string[];
+  /**
+   * For a holder sealed while its plugin was missing, how its sealed entry
+   * reads: `unavailable` when the vault can't be read now.
+   */
+  sealed?: SecretRead["state"] | "unavailable";
+}
+
+/** What decides whether a holder's connection pauses. */
+export interface SecretPauseFacts {
+  /** The holder has a secret in the vault, a sealed config, or one still in plain text. */
+  needsVault: boolean;
+  /** The vault's status: `NO_VAULT_STATUS` for an API without one. */
+  status: VaultStatus;
+  /** A secret it holds in the vault can't be read. */
+  unreadable: boolean;
+  /** A secret still sits in the state file (`holderNeedsMove`). */
+  notMoved: boolean;
+}
+
+/**
+ * Why a holder's secrets can't reach a plugin, if they can't, and the
+ * vault's reason when it is unavailable. The overview, which decrypts
+ * nothing, and a plugin operation, which reads the secrets, both decide here.
+ */
+export function decideSecretPause(facts: SecretPauseFacts): {
+  pause?: SecretPause;
+  reason?: string;
+} {
+  if (!facts.needsVault) return {};
+  if (facts.status.state === "unavailable") {
+    return { pause: "vault_unavailable", reason: facts.status.reason };
+  }
+  if (facts.unreadable) return { pause: "secret_unreadable" };
+  if (facts.notMoved) return { pause: "not_in_vault" };
+  return {};
 }
 
 /**
  * Reads a holder's secrets from the vault into its values. A secret that
  * can't be read is left out and pauses the holder, as do values that still
- * wait to move into the vault. `usedAt` records the read as a use, for a
+ * wait to move into the vault (`decideSecretPause`). A sealed config is read
+ * only to know whether it can be. `usedAt` records the read as a use, for a
  * plugin operation.
  */
 export async function readHolderSecrets(
@@ -601,50 +689,43 @@ export async function readHolderSecrets(
   const fields = holder.secrets?.fields ?? [];
   const sealed = holder.secrets?.sealed === true;
   const notMoved = holderNeedsMove(holder, manifest);
-  if (fields.length === 0 && !sealed) {
-    return {
-      values: { ...holder.values },
-      unreadable: [],
-      ...(notMoved ? { pause: "not_in_vault" as const } : {}),
-    };
-  }
-  if (!vault) {
-    return {
-      values: { ...holder.values },
-      unreadable: fields,
-      pause: "vault_unavailable",
-      reason: NO_VAULT_REASON,
-    };
-  }
-  const { status } = await vault.open();
-  if (status.state === "unavailable") {
-    return {
-      values: { ...holder.values },
-      unreadable: fields,
-      pause: "vault_unavailable",
-      reason: status.reason,
-    };
-  }
   const values: PluginFieldValues = { ...holder.values };
+  const needsVault = fields.length > 0 || sealed || notMoved;
+  if (!needsVault) return { values, unreadable: [] };
+  const status = vault ? (await vault.open()).status : NO_VAULT_STATUS;
+  if (!vault || status.state === "unavailable") {
+    return {
+      values,
+      unreadable: fields,
+      ...(sealed ? { sealed: "unavailable" as const } : {}),
+      ...decideSecretPause({ needsVault, status, unreadable: false, notMoved }),
+    };
+  }
+  const keys = fields.map((id) => holderKey(holder, id));
+  if (sealed) keys.push(holderKey(holder, null));
+  const reads = keys.length > 0 ? await vault.read(keys, options) : [];
   const unreadable: string[] = [];
-  const reads = await vault.read(
-    fields.map((id) => holderKey(holder, id)),
-    options,
-  );
-  reads.forEach((read, index) => {
-    const id = fields[index]!;
+  fields.forEach((id, index) => {
+    const read = reads[index]!;
     const value = read.state === "set" ? decodeValue(read.value) : undefined;
     if (value === undefined) unreadable.push(id);
     else values[id] = value;
   });
+  const sealedRead = sealed ? reads[fields.length]! : undefined;
+  const sealedState: HolderSecrets["sealed"] =
+    sealedRead?.state === "set" && !decodeSealed(sealedRead.value)
+      ? "unreadable"
+      : sealedRead?.state;
   return {
     values,
     unreadable,
-    ...(unreadable.length > 0
-      ? { pause: "secret_unreadable" as const }
-      : notMoved
-        ? { pause: "not_in_vault" as const }
-        : {}),
+    ...(sealedState ? { sealed: sealedState } : {}),
+    ...decideSecretPause({
+      needsVault,
+      status,
+      unreadable: unreadable.length > 0 || sealedState === "unreadable",
+      notMoved,
+    }),
   };
 }
 
@@ -666,7 +747,13 @@ export interface SplitSave {
  * changed is written, an unchanged one keeps its entry, and one the save
  * no longer holds is removed: removed on request, or dropped by the plugin.
  * An entry that can't be read is kept unless the save replaces or removes
- * it, since the plugin never saw it.
+ * it, since the plugin never saw it. A key the manifest doesn't declare is
+ * a secret too (`secretIdsOf`).
+ *
+ * A config sealed while its plugin was missing is replaced by the save only
+ * when it can't be read on this computer. One that wasn't split yet, because
+ * the vault can't be read now or its move failed this launch, still holds
+ * what the save would lose: the save is refused with `ConnectionPausedError`.
  */
 export function splitSave(
   holder: SecretHolder,
@@ -675,11 +762,17 @@ export function splitSave(
   previous: HolderSecrets,
   removeSecrets: readonly string[] = [],
 ): SplitSave {
-  const secretIds = new Set(
-    effectiveSecretFields(fields, holder.secrets)
-      .filter((field) => field.secret && !isOwnField(holder, field.id))
-      .map((field) => field.id),
-  );
+  if (
+    holder.secrets?.sealed &&
+    previous.sealed !== "unreadable" &&
+    previous.sealed !== "missing"
+  ) {
+    throw new ConnectionPausedError(
+      previous.pause === "vault_unavailable" ? previous.pause : "not_in_vault",
+      previous.reason,
+    );
+  }
+  const secretIds = secretIdsOf(fields, holder, next);
   const inVault = new Set(holder.secrets?.fields ?? []);
   const values: PluginFieldValues = {};
   const kept = new Set<string>();

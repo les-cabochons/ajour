@@ -20,6 +20,8 @@ export interface MemoryVaultFaults {
   save?: boolean;
   /** Each read gives back another value than the one written. */
   readBack?: boolean;
+  /** A write that holds one of these keys fails, as its encryption would. */
+  failFor?: (key: SecretKey) => boolean;
 }
 
 interface MemoryEntry {
@@ -143,7 +145,12 @@ export class MemorySecretVault implements SecretVault {
     if (status.state === "unavailable") {
       throw new VaultUnavailableError(status.reason);
     }
-    if (this.faults.encrypt) throw new Error("Encryption failed.");
+    if (
+      this.faults.encrypt ||
+      entries.some((entry) => this.faults.failFor?.(entry))
+    ) {
+      throw new Error("Encryption failed.");
+    }
     if (this.faults.save) throw new Error("The vault file couldn't be saved.");
     const setAt = Date.now();
     for (const { value, expiresAt, ...key } of entries) {

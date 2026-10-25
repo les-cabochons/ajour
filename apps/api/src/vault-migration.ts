@@ -24,6 +24,7 @@ import {
 import {
   normalizeAgentRunnerState,
   normalizeSecretFields,
+  type StoredAgentRunnerState,
   type StoredSecretFields,
 } from "./agent-runner-state.ts";
 import type { SecretSelection, SecretVault } from "./secret-vault.ts";
@@ -84,11 +85,62 @@ function isConnectionRecord(value: unknown): value is ConnectionSecretsRecord {
   );
 }
 
-interface PassOptions {
+export interface PassOptions {
   vault?: SecretVault;
   manifests: ReadonlyMap<string, SecretManifest>;
   /** Holders not to try again, as those that failed earlier this launch. */
   skip?: ReadonlySet<string>;
+  /** Only this plugin's holders; every plugin's when absent. */
+  only?: string;
+}
+
+/** A pass's result: the connections and the agent task settings after it. */
+export interface SettledHolders<T> {
+  connections: T[];
+  pluginValues: StoredAgentRunnerState["pluginValues"];
+  pluginSecrets: StoredAgentRunnerState["pluginSecrets"];
+}
+
+/**
+ * One pass of the move over every holder in scope: each connection, then
+ * each plugin's agent task settings. The state step and the storage's
+ * runtime pass both run it; `report` collects what it did.
+ */
+export async function settleHolders<T>(
+  connections: readonly T[],
+  agentRunner: Pick<StoredAgentRunnerState, "pluginValues" | "pluginSecrets">,
+  options: PassOptions,
+  report: VaultMigrationReport,
+): Promise<SettledHolders<T>> {
+  const inScope = (pluginId: string) =>
+    options.only === undefined || pluginId === options.only;
+  const nextConnections: T[] = [];
+  for (const connection of connections) {
+    const settled =
+      isConnectionRecord(connection) && inScope(connection.pluginId)
+        ? await settleConnection(connection, options, report)
+        : undefined;
+    nextConnections.push((settled as T | undefined) ?? connection);
+  }
+  const pluginValues: StoredAgentRunnerState["pluginValues"] =
+    Object.create(null);
+  const pluginSecrets: StoredAgentRunnerState["pluginSecrets"] =
+    Object.create(null);
+  Object.assign(pluginSecrets, agentRunner.pluginSecrets);
+  for (const [pluginId, values] of Object.entries(agentRunner.pluginValues)) {
+    const settled = inScope(pluginId)
+      ? await settleAgentTaskValues(
+          pluginId,
+          values,
+          agentRunner.pluginSecrets[pluginId],
+          options,
+          report,
+        )
+      : undefined;
+    pluginValues[pluginId] = settled?.values ?? values;
+    if (settled?.secrets) pluginSecrets[pluginId] = settled.secrets;
+  }
+  return { connections: nextConnections, pluginValues, pluginSecrets };
 }
 
 function emptyReport(): VaultMigrationReport {
@@ -229,35 +281,22 @@ export async function toVersion8(
     return { state: raw, complete: report.pending === 0 };
   }
 
-  const options: PassOptions = { vault: context.vault, manifests };
-  const nextConnections: unknown[] = [];
-  for (const connection of connections) {
-    nextConnections.push(
-      isConnectionRecord(connection)
-        ? ((await settleConnection(connection, options, report)) ?? connection)
-        : connection,
-    );
-  }
-  const pluginValues: Record<string, PluginFieldValues> = Object.create(null);
-  const pluginSecrets: Record<string, StoredSecretFields> = Object.create(null);
-  Object.assign(pluginSecrets, agentRunner.pluginSecrets);
-  for (const [pluginId, values] of Object.entries(agentRunner.pluginValues)) {
-    const settled = await settleAgentTaskValues(
-      pluginId,
-      values,
-      agentRunner.pluginSecrets[pluginId],
-      options,
-      report,
-    );
-    pluginValues[pluginId] = settled?.values ?? values;
-    if (settled?.secrets) pluginSecrets[pluginId] = settled.secrets;
-  }
+  const settled = await settleHolders(
+    connections,
+    agentRunner,
+    { vault: context.vault, manifests },
+    report,
+  );
   context.reportVaultMigration?.(report);
   return {
     state: {
       ...raw,
-      connections: nextConnections,
-      agentRunner: { ...agentRunner, pluginValues, pluginSecrets },
+      connections: settled.connections,
+      agentRunner: {
+        ...agentRunner,
+        pluginValues: settled.pluginValues,
+        pluginSecrets: settled.pluginSecrets,
+      },
     },
     complete: report.pending === 0,
   };

@@ -232,7 +232,7 @@ export const catalog = defineCatalog({
           /** The file exists but is not JSON. Every read fails until it is fixed. */
           unreadable: operational<boolean>(),
           /** Temp files an interrupted save left that couldn't be deleted. */
-          orphans_undeletable: operational<number>(),
+          orphans_undeletable_count: operational<number>(),
         },
         /** The vault, opened with the state: `none` for an API without one. */
         vault: {
@@ -240,7 +240,7 @@ export const catalog = defineCatalog({
             "available" | "unavailable" | "unreadable" | "none"
           >(),
           entry_count: operational<number>(),
-          orphans_undeletable: operational<number>(),
+          orphans_undeletable_count: operational<number>(),
         },
         /** The move of plain-text secrets into the vault, when a load ran it. */
         vault_migration: {

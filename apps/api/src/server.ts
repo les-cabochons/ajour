@@ -117,8 +117,9 @@ import {
   isEmptySecretValue,
   mergeSecretsForSave,
   pluginConnection,
+  redactionFields,
+  secretManifestOf,
   type SecretFieldDeclaration,
-  type SecretManifest,
 } from "./connection-credentials.ts";
 import { VaultUnavailableError, type SecretVault } from "./secret-vault.ts";
 import type { Sink } from "../../../packages/wide-events/sinks.ts";
@@ -142,7 +143,11 @@ import {
 } from "./agent-runner/cli-path.ts";
 import { playwrightMcpServer } from "./agent-runner/playwright-mcp.ts";
 import { AgentRunError, AgentRunner } from "./agent-runner/runner.ts";
-import { capabilityOfMethod, PluginManager } from "./plugin-host.ts";
+import {
+  capabilityOfMethod,
+  PluginManager,
+  type PluginAdmitted,
+} from "./plugin-host.ts";
 import {
   PluginOperationCancelled,
   PluginOperationRefused,
@@ -315,14 +320,26 @@ function collectAutoSyncItems(
  * waits, so the plugin host hands over, at admission, the manifest of the
  * package it runs, and the call's error and result are redacted with that
  * package's secret fields. Until then no plugin code has run, and the
- * manifest the route read stands in.
+ * manifest the route read stands in. `secrets`, the fields the vault holds
+ * for the call's connection, stay secret whatever the manifest says: the
+ * admission gives the host those fields too, for the call's own event.
  */
-function admittedCall(manifest: PluginManifest) {
+function admittedCall(
+  manifest: PluginManifest,
+  secrets?: StoredConnection["secrets"],
+) {
   const call = {
     manifest,
-    admit: (admitted: PluginManifest) => {
+    admit: (admitted: PluginManifest): PluginAdmitted => {
       call.manifest = admitted;
+      return redactionFields(admitted.connectionFields, secrets);
     },
+    /** The credentials of `configs`, with the admitted package's secret fields. */
+    credentials: (...configs: (PluginFieldValues | undefined)[]) =>
+      connectionCredentials(
+        redactionFields(call.manifest.connectionFields, secrets),
+        ...configs,
+      ),
   };
   return call;
 }
@@ -811,17 +828,6 @@ async function inactiveCapability(
     };
   }
   return undefined;
-}
-
-/** What a plugin's manifest says about its secrets. */
-function secretManifestOf(manifest: PluginManifest): SecretManifest {
-  return {
-    id: manifest.id,
-    connectionFields: manifest.connectionFields,
-    agentTaskFields: agentTaskSettingFields(
-      manifest.capabilities.agentTask?.tasks ?? [],
-    ),
-  };
 }
 
 /** Every installed plugin's secret fields, runnable or not, such as an API 3 package. */
@@ -1627,7 +1633,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           ...(existingConnection ? { id: existingConnection.id } : {}),
         },
       });
-      const call = admittedCall(plugin);
+      const call = admittedCall(plugin, existingConnection?.secrets);
       let validation: PluginValidationResult;
       try {
         validation = await pluginManager.validateConnection(
@@ -1637,8 +1643,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           call.admit,
         );
       } catch (error) {
-        const credentials = connectionCredentials(
-          call.manifest,
+        const credentials = call.credentials(
           configForSave,
           existingConnection?.config,
         );
@@ -1663,12 +1668,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           // Redacted before it is stored: the normalized config may no
           // longer hold a value the plugin swapped out, such as a password
           // it traded for a token, so the overview couldn't find it later.
-          configSummary: connectionCredentials(
-            call.manifest,
-            configForSave,
-            existingConnection?.config,
-            validation.normalizedConfig,
-          ).redaction.summary(validation.connectionSummary),
+          configSummary: call
+            .credentials(
+              configForSave,
+              existingConnection?.config,
+              validation.normalizedConfig,
+            )
+            .redaction.summary(validation.connectionSummary),
         },
         { fields: secretFields, removeSecrets: payload.removeSecrets },
       );
@@ -1732,13 +1738,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         unit.set({ source_state: { count: result.states.length } });
         writeJson(response, 200, result);
       } catch (error) {
-        failPluginCall(
-          response,
-          unit,
-          error,
-          target.call.manifest,
-          target.connection,
-        );
+        failPluginCall(response, unit, error, target.call, target.connection);
       }
     },
 
@@ -1771,13 +1771,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         );
         writeJson(response, 200, backlogSettleWriteResultSchema.parse(result));
       } catch (error) {
-        failPluginCall(
-          response,
-          unit,
-          error,
-          target.call.manifest,
-          target.connection,
-        );
+        failPluginCall(response, unit, error, target.call, target.connection);
       }
     },
 
@@ -1813,7 +1807,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           response,
           context.unit,
           error,
-          target.call.manifest,
+          target.call,
           target.connection,
         );
       }
@@ -1866,13 +1860,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           backlogWriteDescriptionResultSchema.parse(result),
         );
       } catch (error) {
-        failPluginCall(
-          response,
-          unit,
-          error,
-          target.call.manifest,
-          target.connection,
-        );
+        failPluginCall(response, unit, error, target.call, target.connection);
       }
     },
 
@@ -1930,7 +1918,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         },
       });
 
-      const call = admittedCall(plugin);
+      const call = admittedCall(plugin, connection.secrets);
       try {
         const fetched = await pluginManager.syncConnection(
           pluginId,
@@ -2012,7 +2000,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             skippedCount: stageResult.skippedCount,
             workItemUpdates: redactFieldUpdateMessages(
               fetched.workItemUpdates,
-              connectionCredentials(call.manifest, connection.config).redaction,
+              call.credentials(connection.config).redaction,
             ),
             doneItems,
             viewer: fetched.viewer,
@@ -2020,10 +2008,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           }),
         );
       } catch (error) {
-        const credentials = connectionCredentials(
-          call.manifest,
-          connection.config,
-        );
+        const credentials = call.credentials(connection.config);
         recordPluginFailure(unit, error, credentials.secrets);
         const message = credentials.errorMessage(error);
         await storage.recordConnectionError(pluginId, connectionId, message);
@@ -2097,7 +2082,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         codeHostOperations[operation.data].request.parse(codeHostBody),
       );
       unit.set(codeHostRequestFields(codeHostRequest));
-      const call = admittedCall(plugin);
+      const call = admittedCall(plugin, connection.secrets);
       try {
         const result = await pluginManager.runCodeHostOperation(
           pluginId,
@@ -2116,10 +2101,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         }
         writeJson(response, 200, result);
       } catch (error) {
-        const credentials = connectionCredentials(
-          call.manifest,
-          connection.config,
-        );
+        const credentials = call.credentials(connection.config);
         recordPluginFailure(unit, error, credentials.secrets);
         const message = credentials.errorMessage(error);
         if (operation.data === "syncPullRequests") {
@@ -2249,10 +2231,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       // Checked again at the plugin's admission, after the host's own
       // waits, so a revocation saved meanwhile stops a post.
       let refusedAtAdmission = false;
-      const call = admittedCall(plugin);
+      const call = admittedCall(plugin, connection.secrets);
       const admit = async (manifest: PluginManifest) => {
-        call.admit(manifest);
-        if (await agentAllowed()) return;
+        const admitted = call.admit(manifest);
+        if (await agentAllowed()) return admitted;
         refusedAtAdmission = true;
         throw new PluginOperationRefused(agentRefusal, "agent_access");
       };
@@ -2283,10 +2265,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           refuseAgent();
           return;
         }
-        const credentials = connectionCredentials(
-          call.manifest,
-          connection.config,
-        );
+        const credentials = call.credentials(connection.config);
         recordPluginFailure(unit, error, credentials.secrets);
         writeJson(response, 502, { error: credentials.errorMessage(error) });
       }
@@ -2350,7 +2329,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             1,
         },
       });
-      const call = admittedCall(plugin);
+      const call = admittedCall(plugin, connection.secrets);
       try {
         const result = await pluginManager.runCalendarOperation(
           pluginId,
@@ -2367,10 +2346,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         unit.set({ calendar: { event_count: result.events.length } });
         writeJson(response, 200, result);
       } catch (error) {
-        const credentials = connectionCredentials(
-          call.manifest,
-          connection.config,
-        );
+        const credentials = call.credentials(connection.config);
         const message = credentials.errorMessage(error);
         recordPluginFailure(unit, error, credentials.secrets);
         await storage.recordConnectionError(pluginId, connectionId, message);
@@ -2398,10 +2374,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           ),
         );
       } catch (error) {
-        const credentials = connectionCredentials(
-          call.manifest,
-          payload.values,
-        );
+        const credentials = call.credentials(payload.values);
         recordPluginFailure(unit, error, credentials.secrets);
         writeJson(response, 502, { error: credentials.errorMessage(error) });
       }
@@ -2426,7 +2399,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       }
       const syncRequest = await readRequest(request, teamSyncRequestSchema);
       unit.set({ team_sync: { projects_sent: syncRequest.changes.length } });
-      const call = admittedCall(plugin);
+      const call = admittedCall(plugin, connection.secrets);
       try {
         const result = await pluginManager.syncTeamProjects(
           pluginId,
@@ -2448,10 +2421,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         );
         writeJson(response, 200, result);
       } catch (error) {
-        const credentials = connectionCredentials(
-          call.manifest,
-          connection.config,
-        );
+        const credentials = call.credentials(connection.config);
         recordPluginFailure(unit, error, credentials.secrets);
         const message = credentials.errorMessage(error);
         await storage.recordConnectionError(pluginId, connectionId, message);
@@ -2611,7 +2581,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       pluginId,
       connection: withSecrets,
       plugin,
-      call: admittedCall(plugin),
+      call: admittedCall(plugin, withSecrets.secrets),
     };
   }
 
@@ -2680,10 +2650,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     response: ServerResponse,
     unit: Parameters<typeof recordPluginFailure>[0],
     error: unknown,
-    manifest: PluginManifest,
+    call: ReturnType<typeof admittedCall>,
     connection: StoredConnection,
   ) {
-    const credentials = connectionCredentials(manifest, connection.config);
+    const credentials = call.credentials(connection.config);
     recordPluginFailure(unit, error, credentials.secrets);
     // The message reaches the user, and a description's is stored with the item.
     writeJson(response, 502, { error: credentials.errorMessage(error) });

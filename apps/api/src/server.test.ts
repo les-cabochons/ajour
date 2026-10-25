@@ -305,9 +305,14 @@ describe("plugin installation boundary", () => {
         },
       ]);
       const savedState = JSON.parse(await readFile(statePath, "utf8"));
-      // Its config was checked against the manifest: no field is secret.
+      // Its config was checked against the manifest, which doesn't declare
+      // `token`: an undeclared value moves into the vault like a secret.
       expect(savedState.connections).toEqual([
-        { ...savedConnection, secrets: { fields: [] } },
+        {
+          ...savedConnection,
+          config: { baseUrl: savedConnection.config.baseUrl },
+          secrets: { fields: ["token"] },
+        },
       ]);
       expect(savedState.disabledPluginIds).toEqual(enabled ? [] : ["jira"]);
     },

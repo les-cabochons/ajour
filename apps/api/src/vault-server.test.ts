@@ -115,7 +115,55 @@ const gone = {
   source: notes.source,
 };
 
-type Fixture = typeof jira | typeof notes | typeof gone;
+/** Jira after an update renamed its secret field: `token` is no longer declared. */
+const jiraRenamed = {
+  ...jira,
+  connectionFields: [
+    ...baseFields,
+    {
+      id: "accessToken",
+      label: "Access token",
+      type: "password",
+      secret: true,
+    },
+  ],
+};
+
+/**
+ * Jira after an update dropped `secret: true` from its token, with a sync
+ * that echoes the token in its error.
+ */
+const jiraWithoutSecretFlag = {
+  ...jira,
+  connectionFields: [
+    ...baseFields,
+    { id: "token", label: "API token", type: "password" },
+  ],
+  source: [
+    "export async function validateConnection(config) {",
+    "  return { normalizedConfig: config, connectionSummary: {} };",
+    "}",
+    "export async function syncConnection(connection) {",
+    "  throw new Error('Token ' + connection.config.token + ' was refused.');",
+    "}",
+  ].join("\n"),
+};
+
+/** The missing plugin, back with other field ids than those its config holds. */
+const goneRenamed = {
+  ...gone,
+  connectionFields: [
+    ...baseFields,
+    { id: "apiKey", label: "API key", type: "password", secret: true },
+  ],
+};
+
+interface Fixture {
+  id: string;
+  connectionFields: object[];
+  capabilities: object;
+  source: string;
+}
 
 async function writePlugin(parent: string, plugin: Fixture) {
   const directory = path.join(parent, plugin.id);
@@ -700,6 +748,175 @@ describe("secrets in the vault", () => {
     });
     await expect(api.overview()).resolves.toMatchObject({
       vault: { state: "unavailable", reason: NO_VAULT_REASON },
+    });
+  });
+
+  it("moves a stored key the manifest no longer declares into the vault too", async () => {
+    const directory = await root({ ...plainState, disabledPluginIds: [] });
+    const vault = new MemorySecretVault();
+    // An update renamed `token` to `accessToken`.
+    const api = await launch(directory, {
+      vault,
+      plugins: [jiraRenamed, notes],
+    });
+
+    await api.overview();
+
+    const text = await stateText(directory);
+    for (const secret of SECRETS) expect(text).not.toContain(secret);
+    await expect(
+      storedConnection(directory, "jira_main"),
+    ).resolves.toMatchObject({
+      config: { baseUrl: SITE },
+      secrets: { fields: ["token"] },
+    });
+    // The plugin still gets the value it saved under its old id.
+    await expect(api.sync("jira", "jira_main")).resolves.toMatchObject({
+      status: 200,
+    });
+  });
+
+  it("keeps in the vault a sealed value that the returning plugin's manifest doesn't declare", async () => {
+    const directory = await root(plainState);
+    const vault = new MemorySecretVault();
+    await (await launch(directory, { vault })).overview();
+
+    const api = await launch(directory, {
+      vault: vault.relaunch(),
+      plugins: [jira, notes, goneRenamed],
+    });
+    await api.overview();
+
+    expect(await stateText(directory)).not.toContain(GONE_PASSWORD);
+    await expect(storedConnection(directory, "gone_1")).resolves.toMatchObject({
+      config: { baseUrl: SITE },
+      secrets: { fields: ["password"] },
+    });
+    expect(
+      vault
+        .contents()
+        .filter((entry) => entry.pluginId === "gone")
+        .map(({ fieldId, value }) => [fieldId, JSON.parse(value)]),
+    ).toEqual([["password", GONE_PASSWORD]]);
+  });
+
+  it("keeps a sealed config it couldn't split when its connection is saved", async () => {
+    const directory = await root(plainState);
+    const vault = new MemorySecretVault();
+    await (await launch(directory, { vault })).overview();
+
+    // The plugin is back, but this launch can't decrypt.
+    const locked = await launch(directory, {
+      vault: vault.relaunch({ unavailable: "No keyring (basic_text)." }),
+      plugins: [jira, notes, gone],
+    });
+    const saved = await locked.save("gone", { label: "Renamed" }, "gone_1");
+    expect(saved).toMatchObject({
+      status: 409,
+      body: {
+        error:
+          "Ajour can't protect credentials on this computer, so this connection is paused. No keyring (basic_text).",
+      },
+    });
+    expect(
+      vault
+        .contents()
+        .filter((entry) => entry.pluginId === "gone")
+        .map((entry) => entry.fieldId),
+    ).toEqual([null]);
+
+    const next = await launch(directory, {
+      vault: vault.relaunch(),
+      plugins: [jira, notes, gone],
+    });
+    await next.overview();
+    await expect(storedConnection(directory, "gone_1")).resolves.toMatchObject({
+      secrets: { fields: ["password"] },
+    });
+  });
+
+  it("redacts a secret the vault holds after an update drops its secret flag", async () => {
+    const directory = await root({ ...plainState, disabledPluginIds: [] });
+    const vault = new MemorySecretVault();
+    await (await launch(directory, { vault })).overview();
+
+    const api = await launch(directory, {
+      vault: vault.relaunch(),
+      plugins: [jiraWithoutSecretFlag, notes],
+    });
+    const failed = await api.sync("jira", "jira_main");
+
+    expect(failed.status).toBe(502);
+    expect(failed.body).toMatchObject({
+      error: "Token [secret] was refused.",
+    });
+    expect(
+      pausedOf(await api.overview(), "jira_main") as { lastError?: string },
+    ).toMatchObject({ lastError: "Token [secret] was refused." });
+  });
+
+  it("pauses a connection whose secret waits in plain text with the reason encryption is unavailable", async () => {
+    const directory = await root({ ...plainState, disabledPluginIds: [] });
+    const api = await launch(directory, {
+      vault: new MemorySecretVault({ unavailable: "No keyring (basic_text)." }),
+    });
+
+    const message =
+      "Ajour can't protect credentials on this computer, so this connection is paused. No keyring (basic_text).";
+    expect(pausedOf(await api.overview(), "jira_main")?.paused).toEqual({
+      reason: "vault_unavailable",
+      message,
+    });
+    await expect(api.sync("jira", "jira_main")).resolves.toEqual({
+      status: 409,
+      body: { error: message },
+    });
+    // The token stays where it was until a launch can move it.
+    expect(await stateText(directory)).toContain(TOKEN);
+  });
+
+  it("saves what moved when another holder fails in the same pass, and the next launch moves the rest", async () => {
+    const directory = await root({
+      ...plainState,
+      connections: [
+        ...plainState.connections,
+        connection("jira_second", "jira", { baseUrl: SITE, token: TOKEN }),
+      ],
+      disabledPluginIds: [],
+    });
+    const vault = new MemorySecretVault();
+    vault.faults = {
+      failFor: (key) => key.connectionId === "jira_second",
+    };
+    const first = await launch(directory, { vault });
+
+    const overview = await first.overview();
+
+    const kept = JSON.parse(await stateText(directory)) as {
+      version: number;
+      connections: { id: string; config: object; secrets?: object }[];
+    };
+    expect(kept.version).toBe(7);
+    const byId = new Map(kept.connections.map((entry) => [entry.id, entry]));
+    expect(byId.get("jira_main")).toMatchObject({
+      config: { baseUrl: SITE },
+      secrets: { fields: ["token"] },
+    });
+    expect(byId.get("jira_second")?.config).toHaveProperty("token");
+    expect(pausedOf(overview, "jira_second")?.paused?.reason).toBe(
+      "not_in_vault",
+    );
+    await expect(first.sync("jira", "jira_main")).resolves.toMatchObject({
+      status: 200,
+    });
+
+    const next = await launch(directory, { vault: vault.relaunch() });
+    await next.overview();
+    const moved = await stateText(directory);
+    for (const secret of SECRETS) expect(moved).not.toContain(secret);
+    expect(JSON.parse(moved).version).toBe(8);
+    await expect(next.sync("jira", "jira_second")).resolves.toMatchObject({
+      status: 200,
     });
   });
 });

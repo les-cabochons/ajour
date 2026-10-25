@@ -8,6 +8,7 @@ import {
   type PluginManifest,
 } from "../../../packages/shared/plugins.ts";
 import { AppApiStorage } from "./storage.ts";
+import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
 
 function buildPlugin(
   id: string,
@@ -784,6 +785,38 @@ describe("AppApiStorage", () => {
     expect(({} as Record<string, unknown>).x).toBeUndefined();
     expect(await storage.getAgentTaskValues("ajp")).toEqual({ a: "b" });
     expect(await storage.getAgentTaskValues("constructor")).toEqual({});
+  });
+
+  it("gives a run no secret still in plain text while encryption is unavailable", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
+    tempDirs.push(tempDir);
+    const statePath = path.join(tempDir, "app-api-state.json");
+    await writeFile(
+      statePath,
+      JSON.stringify({
+        version: 7,
+        connections: [],
+        agentRunner: {
+          pluginValues: {
+            workday: { url: "https://wd.example/t", apiKey: "wd-key-plain" },
+          },
+        },
+      }),
+      "utf8",
+    );
+    const manifest = {
+      id: "workday",
+      connectionFields: [],
+      agentTaskFields: [{ id: "url" }, { id: "apiKey", secret: true }],
+    };
+    const storage = new AppApiStorage(statePath, {
+      vault: new MemorySecretVault({ unavailable: "No keyring." }),
+      manifests: async () => [manifest],
+    });
+
+    expect(await storage.getAgentTaskValues("workday", manifest)).toEqual({
+      url: "https://wd.example/t",
+    });
   });
 });
 
