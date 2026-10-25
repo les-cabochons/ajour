@@ -12,14 +12,27 @@
  *
  * At its first use, `open()` proves encryption with an encrypt-and-decrypt
  * round trip, rather than trusting an availability flag, then decrypts the
- * check value the file keeps. When the check fails, the key that encrypted
- * the vault is gone, as after a restore on another computer, and every
- * entry is unreadable at once. When the check passes but one entry fails,
- * only that entry is. Either way decryption isn't tried again before the
- * next launch, and an unreadable entry is kept until it is replaced or
- * removed.
+ * check value the file keeps. When the check fails, each entry is tried
+ * once: those that decrypt stay usable, and the check is kept. When none
+ * does, the key that encrypted the vault is gone, as after a restore on
+ * another computer, and every entry is unreadable at once; the first new
+ * secret then starts over with a check under the current key. When the
+ * check passes but one entry fails, only that entry is unreadable. Either
+ * way decryption isn't tried again before the next launch, and an
+ * unreadable entry is kept until it is replaced or removed.
+ *
+ * Each ciphertext holds its entry's plugin, connection and field ids with
+ * the value, and a read checks them, so a ciphertext moved to another
+ * entry's place in the file doesn't decrypt there.
+ *
+ * Nothing is lost to a file Ajour can't read. A read that fails for a moment,
+ * as while an antivirus scan holds the file on Windows, is tried again. When
+ * the file still can't be read, the vault refuses every change until the
+ * next launch rather than replace it. An entry the file holds but this
+ * version can't make sense of is unreadable, and written back as it was.
  */
 
+import { randomUUID } from "node:crypto";
 import { readFile, rename } from "node:fs/promises";
 import { removeOrphanedTempFiles, writeFileAtomically } from "./atomic-file.ts";
 
@@ -94,10 +107,15 @@ export interface SecretVault {
   ): Promise<SecretRead[]>;
   /**
    * Encrypts and saves the entries, replacing any with the same key, all or
-   * none. Throws `VaultUnavailableError` when encryption isn't available.
+   * none, then checks the saved file gives each back. Throws
+   * `VaultUnavailableError` when encryption isn't available, or the file
+   * can't be changed this launch.
    */
   write(entries: readonly SecretWrite[]): Promise<void>;
-  /** Deletes the selected entries, readable or not. Returns how many. */
+  /**
+   * Deletes the selected entries, readable or not. Returns how many. A file
+   * that can't be changed this launch keeps them, and none is removed.
+   */
   remove(selection: SecretSelection): Promise<number>;
 }
 
@@ -153,51 +171,95 @@ export function selects(selection: SecretSelection, key: SecretKey) {
 const CHECK_TEXT = "ajour-vault-check";
 /** Skips saving `lastUsedAt` more than once a minute per entry. */
 const LAST_USED_RESOLUTION_MS = 60_000;
+/**
+ * Read errors Windows gives for a moment while another process, such as an
+ * antivirus scan, holds the file open.
+ */
+const TRANSIENT_READ_CODES = new Set(["EBUSY", "EPERM", "EACCES", "EAGAIN"]);
+/** The waits between attempts to read the file: about 1.5 s in all. */
+const READ_RETRY_DELAYS_MS = [25, 50, 100, 200, 400, 700] as const;
 
-interface StoredEntry extends SecretKey {
+/** An entry as the file keeps it, properties this version doesn't know included. */
+type FileEntry = SecretKey & Record<string, unknown>;
+
+/** An entry this version can decrypt, as far as its shape goes. */
+type StoredEntry = FileEntry & {
   ciphertext: string;
   setAt: number;
   lastUsedAt?: number;
   expiresAt?: number;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-interface VaultFile {
-  version: 1;
-  check: string;
-  entries: StoredEntry[];
+function keyOf(value: unknown): SecretKey | undefined {
+  if (!isRecord(value)) return undefined;
+  const { pluginId, connectionId, fieldId } = value;
+  if (
+    typeof pluginId !== "string" ||
+    !(connectionId === null || typeof connectionId === "string") ||
+    !(fieldId === null || typeof fieldId === "string")
+  ) {
+    return undefined;
+  }
+  return { pluginId, connectionId, fieldId };
 }
 
-function isStoredEntry(value: unknown): value is StoredEntry {
-  const entry = value as Partial<StoredEntry> | null;
+function isWellFormed(entry: FileEntry): entry is StoredEntry {
   return (
-    typeof entry === "object" &&
-    entry !== null &&
-    typeof entry.pluginId === "string" &&
-    (entry.connectionId === null || typeof entry.connectionId === "string") &&
-    (entry.fieldId === null || typeof entry.fieldId === "string") &&
     typeof entry.ciphertext === "string" &&
-    typeof entry.setAt === "number"
+    typeof entry.setAt === "number" &&
+    (entry.lastUsedAt === undefined || typeof entry.lastUsedAt === "number") &&
+    (entry.expiresAt === undefined || typeof entry.expiresAt === "number")
   );
 }
 
-/** The file's entries and check, or undefined for a file that isn't a vault. */
-function parseVaultFile(text: string): VaultFile | undefined {
-  try {
-    const parsed = JSON.parse(text) as Partial<VaultFile> | null;
-    if (
-      parsed === null ||
-      typeof parsed !== "object" ||
-      parsed.version !== 1 ||
-      typeof parsed.check !== "string" ||
-      !Array.isArray(parsed.entries) ||
-      !parsed.entries.every(isStoredEntry)
-    ) {
-      return undefined;
+type ParsedVaultFile =
+  | {
+      kind: "vault";
+      check?: string;
+      entries: unknown[];
+      /** Top-level properties this version doesn't know, written back. */
+      extras: Record<string, unknown>;
     }
-    return { version: 1, check: parsed.check, entries: parsed.entries };
+  /** Not JSON, or not a vault: kept aside at the next save. */
+  | { kind: "not_a_vault" }
+  /** A newer version's vault: left as it is. */
+  | { kind: "newer" };
+
+function parseVaultFile(text: string): ParsedVaultFile {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
   } catch {
-    return undefined;
+    return { kind: "not_a_vault" };
   }
+  if (!isRecord(parsed)) return { kind: "not_a_vault" };
+  const { version, check, entries, ...extras } = parsed;
+  if (version !== 1) {
+    return typeof version === "number" && version > 1
+      ? { kind: "newer" }
+      : { kind: "not_a_vault" };
+  }
+  if (!Array.isArray(entries)) return { kind: "not_a_vault" };
+  return {
+    kind: "vault",
+    ...(typeof check === "string" ? { check } : {}),
+    entries,
+    extras,
+  };
+}
+
+/** What a ciphertext holds: the value, bound to its entry's place. */
+function boundText(entry: SecretWrite) {
+  return JSON.stringify({
+    pluginId: entry.pluginId,
+    connectionId: entry.connectionId,
+    fieldId: entry.fieldId,
+    value: entry.value,
+  });
 }
 
 function toBase64(bytes: Uint8Array) {
@@ -214,11 +276,25 @@ function messageOf(error: unknown) {
     : "Encryption failed.";
 }
 
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Why the vault changes nothing this launch, after its file couldn't be read. */
+function unreadFileReason(code: string) {
+  return `Ajour couldn't read its vault file (${code}), so it changes nothing in it until it starts again. Quit Ajour and open it again.`;
+}
+
+const NEWER_FILE_REASON =
+  "The vault file was saved by a newer version of Ajour, so this one leaves it as it is. Update Ajour to use its credentials.";
+
 export interface FileSecretVaultOptions {
   /** The vault file, beside the state file. */
   filePath: string;
   cipher: SecretCipher;
   now?: () => number;
+  /** The waits between attempts to read a file another process holds. */
+  readRetryDelaysMs?: readonly number[];
 }
 
 /** The vault in a file, encrypted by `cipher`. Only this class writes it. */
@@ -226,22 +302,31 @@ export class FileSecretVault implements SecretVault {
   private readonly filePath: string;
   private readonly cipher: SecretCipher;
   private readonly now: () => number;
+  private readonly readRetryDelaysMs: readonly number[];
   private opening?: Promise<VaultOpened>;
   private status: VaultStatus = { state: "unavailable", reason: "" };
   private check?: string;
-  private entries = new Map<string, StoredEntry>();
-  /** Entries whose decryption failed this launch, never tried again. */
+  /** The entries with a key, by `secretKeyId`, as the file keeps them. */
+  private entries = new Map<string, FileEntry>();
+  /** Entries without a key this version can read, written back as they are. */
+  private unkeyed: unknown[] = [];
+  private extras: Record<string, unknown> = {};
+  /** Entries whose decryption failed this launch, or that are malformed. Never tried again. */
   private readonly unreadable = new Set<string>();
   /** When each entry's `lastUsedAt` was last saved. */
   private readonly savedLastUse = new Map<string, number>();
+  private fileFound = false;
   /** True when the file exists but isn't a vault: the next save keeps it aside. */
   private foundUnreadableFile = false;
+  /** Why the file mustn't change this launch: it couldn't be read, or is a newer version's. */
+  private frozen?: string;
   private queue: Promise<unknown> = Promise.resolve();
 
   constructor(options: FileSecretVaultOptions) {
     this.filePath = options.filePath;
     this.cipher = options.cipher;
     this.now = options.now ?? Date.now;
+    this.readRetryDelaysMs = options.readRetryDelaysMs ?? READ_RETRY_DELAYS_MS;
   }
 
   open(): Promise<VaultOpened> {
@@ -254,11 +339,13 @@ export class FileSecretVault implements SecretVault {
       pluginId: entry.pluginId,
       connectionId: entry.connectionId,
       fieldId: entry.fieldId,
-      setAt: entry.setAt,
-      ...(entry.lastUsedAt !== undefined
+      setAt: typeof entry.setAt === "number" ? entry.setAt : 0,
+      ...(typeof entry.lastUsedAt === "number"
         ? { lastUsedAt: entry.lastUsedAt }
         : {}),
-      ...(entry.expiresAt !== undefined ? { expiresAt: entry.expiresAt } : {}),
+      ...(typeof entry.expiresAt === "number"
+        ? { expiresAt: entry.expiresAt }
+        : {}),
       unreadable: this.unreadable.has(id),
     }));
   }
@@ -278,19 +365,21 @@ export class FileSecretVault implements SecretVault {
         reads.push({ state: "missing" });
         continue;
       }
-      if (this.status.state !== "available" || this.unreadable.has(id)) {
+      if (
+        this.status.state !== "available" ||
+        this.unreadable.has(id) ||
+        !isWellFormed(entry)
+      ) {
         reads.push({ state: "unreadable" });
         continue;
       }
       try {
-        const decrypted = await this.cipher.decrypt(
-          fromBase64(entry.ciphertext),
-        );
-        reads.push({ state: "set", value: decrypted.text });
+        const decrypted = await this.decryptEntry(entry);
+        reads.push({ state: "set", value: decrypted.value });
         if (decrypted.reEncrypt) {
           reEncrypt.push({
             ...key,
-            value: decrypted.text,
+            value: decrypted.value,
             ...(entry.expiresAt !== undefined
               ? { expiresAt: entry.expiresAt }
               : {}),
@@ -333,12 +422,14 @@ export class FileSecretVault implements SecretVault {
       const encrypted = await Promise.all(
         entries.map(async (entry) => ({
           entry,
-          ciphertext: toBase64(await this.cipher.encrypt(entry.value)),
+          ciphertext: toBase64(await this.cipher.encrypt(boundText(entry))),
         })),
       );
-      // An unreadable vault's key is gone. The first new secret starts over
-      // with a check value under the current key; the old entries stay
-      // unreadable, and the next launch finds each of them unreadable alone.
+      // No entry decrypts under the current key, so it is gone. The first
+      // new secret starts over with a check value under the current key; the
+      // old entries stay unreadable. A check that fails while some entry
+      // decrypts is never replaced: it may be another build's, whose
+      // entries the next launch of that build still reads.
       const rekey = this.status.state === "unreadable" || !this.check;
       const check = rekey
         ? toBase64(await this.cipher.encrypt(CHECK_TEXT))
@@ -348,13 +439,14 @@ export class FileSecretVault implements SecretVault {
       for (const { entry, ciphertext } of encrypted) {
         const id = secretKeyId(entry);
         const previous = next.get(id);
+        const keep = options.keepSetAt && previous && isWellFormed(previous);
         next.set(id, {
           pluginId: entry.pluginId,
           connectionId: entry.connectionId,
           fieldId: entry.fieldId,
           ciphertext,
-          setAt: options.keepSetAt && previous ? previous.setAt : setAt,
-          ...(options.keepSetAt && previous?.lastUsedAt !== undefined
+          setAt: keep ? previous.setAt : setAt,
+          ...(keep && previous.lastUsedAt !== undefined
             ? { lastUsedAt: previous.lastUsedAt }
             : {}),
           ...(entry.expiresAt !== undefined
@@ -368,18 +460,23 @@ export class FileSecretVault implements SecretVault {
         this.unreadable.delete(secretKeyId(entry));
       }
       if (rekey) this.status = { state: "available" };
+      await this.verifySaved(entries);
     });
   }
 
   async remove(selection: SecretSelection): Promise<number> {
     await this.open();
     return await this.serialized(async () => {
+      if (this.frozen) return 0;
       const next = new Map(
         [...this.entries].filter(([, entry]) => !selects(selection, entry)),
       );
       const removed = this.entries.size - next.size;
       if (removed === 0) return 0;
       await this.save(next);
+      for (const id of this.entries.keys()) {
+        if (!next.has(id)) this.unreadable.delete(id);
+      }
       return removed;
     });
   }
@@ -390,69 +487,167 @@ export class FileSecretVault implements SecretVault {
     return run;
   }
 
-  /** Saves `entries` and `check` whole, then holds them. */
+  /** Saves `entries` and `check` whole, with what this version can't read as it was, then holds them. */
   private async save(
-    entries: Map<string, StoredEntry> = this.entries,
+    entries: Map<string, FileEntry> = this.entries,
     check: string | undefined = this.check,
   ) {
-    if (check === undefined) {
+    if (this.frozen) throw new VaultUnavailableError(this.frozen);
+    if (
+      check === undefined &&
+      !this.fileFound &&
+      entries.size === 0 &&
+      this.unkeyed.length === 0
+    ) {
       // No secret was ever saved, so there is nothing to keep but an empty file.
-      if (entries.size === 0) {
-        this.entries = entries;
-        return;
-      }
-      throw new Error("The vault has no check value.");
+      this.entries = entries;
+      return;
     }
     if (this.foundUnreadableFile) {
-      // Kept for whoever can still read it; Ajour never reads it again.
-      await rename(this.filePath, `${this.filePath}.unreadable`);
+      // Kept for whoever can still read it, beside any kept before; Ajour
+      // never reads it again.
+      await rename(
+        this.filePath,
+        `${this.filePath}.unreadable-${this.now()}-${randomUUID().slice(0, 8)}`,
+      );
       this.foundUnreadableFile = false;
     }
-    const file: VaultFile = {
+    const file = {
+      ...this.extras,
       version: 1,
-      check,
-      entries: [...entries.values()],
+      ...(check !== undefined ? { check } : {}),
+      entries: [...entries.values(), ...this.unkeyed],
     };
     await writeFileAtomically(
       this.filePath,
       `${JSON.stringify(file, null, 2)}\n`,
     );
+    this.fileFound = true;
     this.entries = entries;
     this.check = check;
     for (const [id, entry] of entries) {
-      if (entry.lastUsedAt !== undefined)
+      if (typeof entry.lastUsedAt === "number")
         this.savedLastUse.set(id, entry.lastUsedAt);
+    }
+  }
+
+  /**
+   * Reads the file just saved and decrypts each entry written, so a value
+   * the disk didn't keep fails the write rather than the next launch.
+   */
+  private async verifySaved(written: readonly SecretWrite[]) {
+    const found = await this.readText();
+    const parsed =
+      found.text === undefined ? undefined : parseVaultFile(found.text);
+    const onDisk = new Map<string, FileEntry>();
+    if (parsed?.kind === "vault") {
+      for (const value of parsed.entries) {
+        const key = keyOf(value);
+        if (key) onDisk.set(secretKeyId(key), value as FileEntry);
+      }
+    }
+    const lost: string[] = [];
+    for (const entry of written) {
+      const id = secretKeyId(entry);
+      const saved = onDisk.get(id);
+      try {
+        if (!saved || !isWellFormed(saved)) throw new Error("Missing.");
+        const { value } = await this.decryptEntry(saved);
+        if (value !== entry.value) throw new Error("Changed.");
+      } catch {
+        lost.push(id);
+      }
+    }
+    if (lost.length > 0) {
+      for (const id of lost) this.unreadable.add(id);
+      throw new Error("The vault file didn't keep a secret it saved.");
+    }
+  }
+
+  /** The value a well-formed entry holds, if the ids inside its ciphertext are its own. */
+  private async decryptEntry(entry: StoredEntry) {
+    const { text, reEncrypt } = await this.cipher.decrypt(
+      fromBase64(entry.ciphertext),
+    );
+    const payload = JSON.parse(text) as unknown;
+    if (
+      !isRecord(payload) ||
+      payload.pluginId !== entry.pluginId ||
+      payload.connectionId !== entry.connectionId ||
+      payload.fieldId !== entry.fieldId ||
+      typeof payload.value !== "string"
+    ) {
+      throw new Error("The entry's ciphertext belongs to another entry.");
+    }
+    return { value: payload.value, reEncrypt: reEncrypt === true };
+  }
+
+  /**
+   * The file's text, tried again while another process holds the file.
+   * `errorCode` when it still can't be read; neither when it doesn't exist.
+   */
+  private async readText(): Promise<{ text?: string; errorCode?: string }> {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return { text: await readFile(this.filePath, "utf8") };
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException | undefined)?.code;
+        if (code === "ENOENT") return {};
+        const wait = this.readRetryDelaysMs[attempt];
+        if (code === undefined || !TRANSIENT_READ_CODES.has(code) || !wait) {
+          return { errorCode: code ?? "EIO" };
+        }
+        await delay(wait);
+      }
+    }
+  }
+
+  /** Holds the entries of a file this version reads. */
+  private hold(file: Extract<ParsedVaultFile, { kind: "vault" }>) {
+    this.check = file.check;
+    this.extras = file.extras;
+    for (const value of file.entries) {
+      const key = keyOf(value);
+      const id = key && secretKeyId(key);
+      if (!id || this.entries.has(id)) {
+        this.unkeyed.push(value);
+        continue;
+      }
+      const entry = value as FileEntry;
+      this.entries.set(id, entry);
+      if (!isWellFormed(entry)) {
+        this.unreadable.add(id);
+      } else if (entry.lastUsedAt !== undefined) {
+        this.savedLastUse.set(id, entry.lastUsedAt);
+      }
     }
   }
 
   private async load(): Promise<VaultOpened> {
     const { undeletable } = await removeOrphanedTempFiles(this.filePath);
-    let file: VaultFile | undefined;
-    let text: string | undefined;
-    try {
-      text = await readFile(this.filePath, "utf8");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        this.foundUnreadableFile = true;
+    const found = await this.readText();
+    let readable = false;
+    if (found.errorCode) {
+      this.fileFound = true;
+      this.frozen = unreadFileReason(found.errorCode);
+    } else if (found.text !== undefined) {
+      this.fileFound = true;
+      const file = parseVaultFile(found.text);
+      if (file.kind === "newer") this.frozen = NEWER_FILE_REASON;
+      else if (file.kind === "not_a_vault") this.foundUnreadableFile = true;
+      else {
+        this.hold(file);
+        readable = true;
       }
     }
-    if (text !== undefined) {
-      file = parseVaultFile(text);
-      if (!file) this.foundUnreadableFile = true;
-    }
-    for (const entry of file?.entries ?? []) {
-      this.entries.set(secretKeyId(entry), entry);
-      if (entry.lastUsedAt !== undefined) {
-        this.savedLastUse.set(secretKeyId(entry), entry.lastUsedAt);
-      }
-    }
-    this.check = file?.check;
     this.status = await this.proveEncryption();
     if (this.status.state === "available") {
-      if (this.foundUnreadableFile) {
+      if (this.frozen) {
+        this.status = { state: "unavailable", reason: this.frozen };
+      } else if (this.foundUnreadableFile) {
         this.status = { state: "unreadable" };
-      } else if (file && !(await this.checkPasses(file.check))) {
-        this.status = { state: "unreadable" };
+      } else if (readable) {
+        this.status = await this.checkKey();
       }
     }
     if (this.status.state === "unreadable") {
@@ -463,6 +658,34 @@ export class FileSecretVault implements SecretVault {
       entryCount: this.entries.size,
       undeletableOrphans: undeletable,
     };
+  }
+
+  /**
+   * Whether the entries are under a key this computer holds. The check value
+   * says so at once. When it fails, each entry is tried once: one that
+   * decrypts keeps the vault available.
+   */
+  private async checkKey(): Promise<VaultStatus> {
+    if (this.check !== undefined && (await this.checkPasses(this.check))) {
+      return { state: "available" };
+    }
+    let anyReadable = false;
+    for (const [id, entry] of this.entries) {
+      if (this.unreadable.has(id) || !isWellFormed(entry)) continue;
+      try {
+        await this.decryptEntry(entry);
+        anyReadable = true;
+      } catch {
+        this.unreadable.add(id);
+      }
+    }
+    if (anyReadable) return { state: "available" };
+    if (this.entries.size === 0) {
+      // No secret to lose: the first one saved writes a new check value.
+      this.check = undefined;
+      return { state: "available" };
+    }
+    return { state: "unreadable" };
   }
 
   /** Encryption works when a value encrypted here decrypts back to itself. */
