@@ -190,6 +190,7 @@ import {
 import {
   AppApiStorage,
   resolveStatePath,
+  type ConnectionWithSecrets,
   type StoredConnection,
 } from "./storage.ts";
 
@@ -838,22 +839,31 @@ async function inactiveCapability(
 }
 
 /**
- * A plugin call that failed with a 401 means the service refused the
- * connection's saved secrets: they are marked rejected, which pauses the
- * connection until the user replaces them. Only a 401 counts, and only when
- * the failure carries it. A plugin error is a message, so an API 3 plugin
- * is detected only when its error names the status (`PluginRunOutcome`);
- * the broker will report every 401 it sees.
+ * Records a failed plugin call on the request's event, and returns the
+ * connection's credentials for the message the user sees. A 401 means the
+ * service refused the connection's saved secrets: they are marked rejected,
+ * which pauses the connection until the user replaces them. Only a 401
+ * counts, and only when the failure carries it. A plugin error is a
+ * message, so an API 3 plugin is detected only when its error names the
+ * status (`PluginRunOutcome`); the broker will report every 401 it sees.
+ * A secret saved after the call read its secrets isn't marked, since the
+ * service refused an older one.
  */
-async function noteRejectedSecrets(
+async function failedCall(
   storage: AppApiStorage,
+  unit: Parameters<typeof recordPluginFailure>[0],
   error: unknown,
-  pluginId: string,
-  connectionId: string,
+  call: ReturnType<typeof admittedCall>,
+  connection: ConnectionWithSecrets,
 ) {
+  const credentials = call.credentials(connection.config);
+  recordPluginFailure(unit, error, credentials.secrets);
   if (error instanceof PluginWorkerFailure && error.httpStatus === 401) {
-    await storage.markSecretsRejected(pluginId, connectionId);
+    await storage.markSecretsRejected(connection.pluginId, connection.id, {
+      readAt: connection.secretsReadAt,
+    });
   }
+  return credentials;
 }
 
 /** The secret fields a form gave a value, which replaces the saved one. */
@@ -2168,9 +2178,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           }),
         );
       } catch (error) {
-        const credentials = call.credentials(connection.config);
-        recordPluginFailure(unit, error, credentials.secrets);
-        await noteRejectedSecrets(storage, error, pluginId, connectionId);
+        const credentials = await failedCall(
+          storage,
+          unit,
+          error,
+          call,
+          connection,
+        );
         const message = credentials.errorMessage(error);
         await storage.recordConnectionError(pluginId, connectionId, message);
         const { summary } = await findConnectionSummary(
@@ -2262,9 +2276,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         }
         writeJson(response, 200, result);
       } catch (error) {
-        const credentials = call.credentials(connection.config);
-        recordPluginFailure(unit, error, credentials.secrets);
-        await noteRejectedSecrets(storage, error, pluginId, connectionId);
+        const credentials = await failedCall(
+          storage,
+          unit,
+          error,
+          call,
+          connection,
+        );
         const message = credentials.errorMessage(error);
         if (operation.data === "syncPullRequests") {
           await storage.recordConnectionError(pluginId, connectionId, message);
@@ -2427,9 +2445,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           refuseAgent();
           return;
         }
-        const credentials = call.credentials(connection.config);
-        recordPluginFailure(unit, error, credentials.secrets);
-        await noteRejectedSecrets(storage, error, pluginId, connectionId);
+        const credentials = await failedCall(
+          storage,
+          unit,
+          error,
+          call,
+          connection,
+        );
         writeJson(response, 502, { error: credentials.errorMessage(error) });
       }
     },
@@ -2509,10 +2531,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         unit.set({ calendar: { event_count: result.events.length } });
         writeJson(response, 200, result);
       } catch (error) {
-        const credentials = call.credentials(connection.config);
+        const credentials = await failedCall(
+          storage,
+          unit,
+          error,
+          call,
+          connection,
+        );
         const message = credentials.errorMessage(error);
-        recordPluginFailure(unit, error, credentials.secrets);
-        await noteRejectedSecrets(storage, error, pluginId, connectionId);
         await storage.recordConnectionError(pluginId, connectionId, message);
         writeJson(response, 502, { error: message });
       }
@@ -2585,9 +2611,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         );
         writeJson(response, 200, result);
       } catch (error) {
-        const credentials = call.credentials(connection.config);
-        recordPluginFailure(unit, error, credentials.secrets);
-        await noteRejectedSecrets(storage, error, pluginId, connectionId);
+        const credentials = await failedCall(
+          storage,
+          unit,
+          error,
+          call,
+          connection,
+        );
         const message = credentials.errorMessage(error);
         await storage.recordConnectionError(pluginId, connectionId, message);
         writeJson(response, 502, { error: message });
@@ -2821,15 +2851,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     unit: Parameters<typeof recordPluginFailure>[0],
     error: unknown,
     call: ReturnType<typeof admittedCall>,
-    connection: StoredConnection,
+    connection: ConnectionWithSecrets,
   ) {
-    const credentials = call.credentials(connection.config);
-    recordPluginFailure(unit, error, credentials.secrets);
-    await noteRejectedSecrets(
+    const credentials = await failedCall(
       storage,
+      unit,
       error,
-      connection.pluginId,
-      connection.id,
+      call,
+      connection,
     );
     // The message reaches the user, and a description's is stored with the item.
     writeJson(response, 502, { error: credentials.errorMessage(error) });

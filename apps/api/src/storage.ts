@@ -123,8 +123,14 @@ interface StoredConnection {
   lastErrorAt?: number;
 }
 
-/** A connection whose `config` holds its secrets, read from the vault for one use. */
-export type ConnectionWithSecrets = StoredConnection;
+/**
+ * A connection whose `config` holds its secrets, read from the vault for one
+ * use. `secretsReadAt` is when that read started: a secret saved after it
+ * isn't the one the call used (`markSecretsRejected`).
+ */
+export type ConnectionWithSecrets = StoredConnection & {
+  secretsReadAt: number;
+};
 
 /** A connection field declaration list, for a save that splits secrets out. */
 export interface SecretSaveFields {
@@ -854,19 +860,32 @@ export class AppApiStorage {
    * `fieldIds`, every saved secret of the connection is marked: an API 3
    * plugin can't say which of them the service refused. Returns false when
    * the connection holds no saved secret.
+   *
+   * `readAt` is when the failed call read its secrets. A secret saved after
+   * that is a newer one than the service refused, so it isn't marked: a 401
+   * that arrives late must not fault the token the user just replaced.
    */
   async markSecretsRejected(
     pluginId: string,
     connectionId: string,
-    fieldIds?: readonly string[],
+    options: { fieldIds?: readonly string[]; readAt?: number } = {},
   ): Promise<boolean> {
+    const { fieldIds, readAt } = options;
     return this.mutate(async (state) => {
       const connection = state.connections.find(
         (candidate) =>
           candidate.pluginId === pluginId && candidate.id === connectionId,
       );
       const saved = connection?.secrets?.fields ?? [];
-      const targets = (fieldIds ?? saved).filter((id) => saved.includes(id));
+      const vault = readAt === undefined ? undefined : await this.vaultView();
+      const targets = (fieldIds ?? saved).filter(
+        (id) =>
+          saved.includes(id) &&
+          (readAt === undefined ||
+            (vault?.entries.get(
+              secretKeyId({ pluginId, connectionId, fieldId: id }),
+            )?.setAt ?? 0) <= readAt),
+      );
       if (!connection?.secrets || targets.length === 0) {
         return { nextState: state, result: false };
       }
@@ -1021,13 +1040,17 @@ export class AppApiStorage {
   ): Promise<(HolderSecrets & { connection: ConnectionWithSecrets }) | null> {
     const connection = await this.getConnection(pluginId, connectionId);
     if (!connection) return null;
+    const secretsReadAt = options.usedAt ?? Date.now();
     const read = await readHolderSecrets(
       connectionHolder(connection),
       manifest,
       this.vault,
       options,
     );
-    return { ...read, connection: { ...connection, config: read.values } };
+    return {
+      ...read,
+      connection: { ...connection, config: read.values, secretsReadAt },
+    };
   }
 
   /**
@@ -1424,13 +1447,32 @@ export class AppApiStorage {
     values: PluginFieldValues,
   ): Promise<SplitSave> {
     const previous = await readHolderSecrets(holder, undefined, this.vault);
+    // The dates held now, so a date the form repeats isn't a change.
+    const held =
+      this.vault && save.secretExpiry
+        ? await this.vault.list()
+        : ([] as SecretEntryInfo[]);
+    const currentExpiry: Record<string, number | undefined> = {};
+    for (const entry of held) {
+      if (
+        entry.pluginId === holder.pluginId &&
+        entry.connectionId === holder.connectionId &&
+        entry.fieldId !== null
+      ) {
+        currentExpiry[entry.fieldId] = entry.expiresAt;
+      }
+    }
     const split = splitSave(
       holder,
       save.fields,
       values,
       previous,
       save.removeSecrets,
-      { replaced: save.replacedSecrets, expiry: save.secretExpiry },
+      {
+        replaced: save.replacedSecrets,
+        expiry: save.secretExpiry,
+        currentExpiry,
+      },
     );
     if (split.writes.length > 0) {
       if (!this.vault) throw new VaultUnavailableError(NO_VAULT_REASON);

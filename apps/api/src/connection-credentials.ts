@@ -826,6 +826,12 @@ export interface SplitSaveExtra {
   replaced?: readonly string[];
   /** The reminder dates the form shows, by field ID. `null` clears one. */
   expiry?: Readonly<Record<string, number | null>>;
+  /**
+   * The reminder dates the vault holds now, by field ID. A date the form
+   * shows that equals the held one changes nothing, so it is not an update:
+   * a vault that can't be changed still takes a save that changes no secret.
+   */
+  currentExpiry?: Readonly<Record<string, number | undefined>>;
 }
 
 /**
@@ -906,10 +912,13 @@ export function splitSave(
   const removedMarks = [
     ...new Set([...(holder.secrets?.removed ?? []), ...removed]),
   ].filter((id) => !kept.has(id) && !renewed.has(id));
-  // The reminder date of a secret the save keeps as it is.
+  // The reminder date of a secret the save keeps as it is, when it changes.
   const expiryUpdates = Object.entries(extra.expiry ?? {}).flatMap(
     ([fieldId, expiresAt]) =>
-      kept.has(fieldId) && inVault.has(fieldId) && !written.has(fieldId)
+      kept.has(fieldId) &&
+      inVault.has(fieldId) &&
+      !written.has(fieldId) &&
+      (extra.currentExpiry?.[fieldId] ?? null) !== expiresAt
         ? [{ fieldId, expiresAt }]
         : [],
   );

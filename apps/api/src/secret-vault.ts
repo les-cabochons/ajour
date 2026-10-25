@@ -122,7 +122,8 @@ export interface SecretVault {
    * Sets or clears the reminder date of entries, without touching their
    * values. An entry the vault doesn't hold is skipped, and so is one it
    * can't read, because its value can't be carried over. Throws
-   * `VaultUnavailableError` when the file can't be changed this launch.
+   * `VaultUnavailableError` when the file can't be changed this launch and
+   * a date would change; a call that changes none succeeds.
    */
   setExpiry(
     updates: ReadonlyArray<SecretKey & { expiresAt: number | null }>,
@@ -502,7 +503,6 @@ export class FileSecretVault implements SecretVault {
   ): Promise<void> {
     await this.open();
     await this.serialized(async () => {
-      if (this.frozen) throw new VaultUnavailableError(this.frozen, "change");
       const next = new Map(this.entries);
       let changed = false;
       for (const { expiresAt, ...key } of updates) {
@@ -514,13 +514,18 @@ export class FileSecretVault implements SecretVault {
         next.set(id, { ...rest, ...(expiresAt === null ? {} : { expiresAt }) });
         changed = true;
       }
-      if (changed) await this.save(next);
+      // A frozen vault refuses a change, not a call that has none.
+      if (!changed) return;
+      if (this.frozen) throw new VaultUnavailableError(this.frozen, "change");
+      await this.save(next);
     });
   }
 
   async reopen(): Promise<VaultOpened> {
-    // Waits for what is running, then starts over with nothing held.
-    return await this.serialized(async () => {
+    // Waits for what is running, then starts over with nothing held. The new
+    // `opening` is set before the entries go, so a `list` or `read` that
+    // starts meanwhile waits for the new load instead of finding an empty vault.
+    const opened = this.serialized(async () => {
       this.entries = new Map();
       this.unkeyed = [];
       this.extras = {};
@@ -531,9 +536,10 @@ export class FileSecretVault implements SecretVault {
       this.foundUnreadableFile = false;
       this.frozen = undefined;
       this.status = { state: "unavailable", reason: "" };
-      this.opening = this.load();
-      return await this.opening;
+      return await this.load();
     });
+    this.opening = opened;
+    return await opened;
   }
 
   async remove(selection: SecretSelection): Promise<number> {

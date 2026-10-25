@@ -190,13 +190,19 @@ export class MemorySecretVault implements SecretVault {
     updates: ReadonlyArray<SecretKey & { expiresAt: number | null }>,
   ): Promise<void> {
     await this.open();
+    const changes = updates.flatMap(({ expiresAt, ...key }) => {
+      const id = secretKeyId(key);
+      const entry = this.store.get(id);
+      if (!entry || this.unreadable.has(id) || entry.lostKey) return [];
+      return (entry.expiresAt ?? null) === expiresAt
+        ? []
+        : [{ entry, expiresAt }];
+    });
+    if (changes.length === 0) return;
     if (this.faults.frozen) {
       throw new VaultUnavailableError(this.faults.frozen, "change");
     }
-    for (const { expiresAt, ...key } of updates) {
-      const id = secretKeyId(key);
-      const entry = this.store.get(id);
-      if (!entry || this.unreadable.has(id) || entry.lostKey) continue;
+    for (const { entry, expiresAt } of changes) {
       if (expiresAt === null) delete entry.expiresAt;
       else entry.expiresAt = expiresAt;
     }
