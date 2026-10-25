@@ -904,3 +904,28 @@ Then(
     await expect(page.locator('[data-secret-state="not_set"]')).toBeVisible();
   },
 );
+
+Then(
+  "the connection row warns {string} for the token",
+  async ({ page }, text: string) => {
+    await expect(
+      page
+        .locator('[data-secret-state="expiry-warning"]')
+        .filter({ hasText: text }),
+    ).toBeVisible();
+  },
+);
+
+Then("focus is on Replace for the token", async ({ page }) => {
+  await expect(
+    page.getByRole("button", { name: "Replace Personal access token" }),
+  ).toBeFocused();
+});
+
+Then("focus is on the token input", async ({ page }) => {
+  await expect(page.locator("#secret-token")).toBeFocused();
+});
+
+Then("focus is on the Vault heading", async ({ page }) => {
+  await expect(page.getByRole("heading", { name: "Vault" })).toBeFocused();
+});

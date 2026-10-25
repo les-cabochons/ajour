@@ -32,6 +32,7 @@ Feature: Saved secrets show their state
     Then the token has an empty password input and a Cancel button
     When I press Cancel on the token
     Then the token shows the saved chip saying "Saved"
+    And focus is on Replace for the token
 
   Scenario: Replace sends the new token and nothing else about the old one
     Given an Azure DevOps connection whose token is saved
@@ -54,6 +55,7 @@ Feature: Saved secrets show their state
     And I press Remove on the token and confirm
     Then the API was asked to remove the "token" secret
     And the token shows the not_set chip saying "Not set"
+    And focus is on the token input
     And the connection row says "Paused" and "Its token was removed. Edit the connection to add one and resume sync."
 
   Scenario: Set a reminder date on a token
@@ -63,6 +65,17 @@ Feature: Saved secrets show their state
     Then the token's expiry field says it is a reminder only
     When I update the connection
     Then the connection was saved with the reminder date "2031-03-14"
+
+  Scenario Outline: A token that expires soon, or has, warns on the connection row
+    Given an Azure DevOps connection whose token is <state>
+    When I open the Azure DevOps plugin page
+    Then the connection row warns "<text>" for the token
+    And the connection row says "Connected" and "Personal access token"
+
+    Examples:
+      | state              | text              |
+      | expiring in 5 days | Expires in 5 days |
+      | expired            | Expired on        |
 
   Scenario: A rejected token shows on the connection row and leads to Replace
     Given an Azure DevOps connection whose token is rejected
@@ -98,6 +111,7 @@ Feature: Saved secrets show their state
     When I open the Vault at 1280 pixels wide
     And I remove "Jira (not installed)" from the Vault and confirm
     Then the Vault no longer lists "Jira (not installed)"
+    And focus is on the Vault heading
     And the API was asked to remove the data of "jira"
 
   Scenario: Say when Ajour can't protect credentials, and try again

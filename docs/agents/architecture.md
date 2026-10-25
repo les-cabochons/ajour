@@ -159,9 +159,14 @@ file:
   `markSecretsRejected`, called when a failed plugin call carries
   `httpStatus: 401` on its `PluginWorkerFailure`, which an API 3 worker takes
   from a `status`, `statusCode` or `httpStatus` property of the error it threw;
-  the broker will set it from the response) and `removed` (the user deleted
+  the broker will set it from the response; it passes `readAt`, when the
+  call read its secrets, and a secret saved after that isn't marked, so a late
+  401 can't fault the token the user just replaced) and `removed` (the user deleted
   them). Either pauses a connection (`secret_rejected`; `secret_removed` when
   the manifest requires the field), until a save gives the field a new value.
+  A save's reminder dates reach the vault only when one differs from the
+  date it holds (`splitSave`'s `currentExpiry`), so a vault that can't be
+  changed still takes a save of other settings.
   `POST …/connections/:id/secrets/remove` deletes secrets without validating
   the rest of the connection, `POST /api/vault/retry` opens the vault again,
   and `DELETE /api/plugins/:id/data` removes the connections and secrets of a
