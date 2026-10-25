@@ -280,10 +280,11 @@ function createPluginRendererRuntime({
       });
       pluginSession.protocol.handle(PLUGIN_SCHEME, (request) => {
         const renderer = renderers.get(pluginId);
+        // A closed renderer's package is served no more.
+        if (!renderer) return new Response("Not found", { status: 404 });
         return servePluginFile(request, {
           pluginId,
-          // A closed renderer's package is served no more.
-          packageDirectory: renderer?.packageDirectory ?? hostDirectory,
+          packageDirectory: renderer.packageDirectory,
           hostDirectory,
         });
       });
