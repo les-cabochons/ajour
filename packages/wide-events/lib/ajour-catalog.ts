@@ -560,6 +560,8 @@ export const catalog = defineCatalog({
         "no_transport",
         "request_too_large",
         "response_too_large",
+        /** The answer couldn't be checked for secrets within the redaction's budget, so it was dropped. */
+        "unchecked_response",
         "rate_limited",
         "too_many_queued",
         /** The plugin operation that sent it ended first. */

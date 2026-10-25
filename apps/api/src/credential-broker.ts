@@ -57,7 +57,10 @@ import {
   sameAddress,
   unbracketed,
 } from "./broker-addresses.ts";
-import { SECRET_MARK, SecretScrubber, secretForms } from "./broker-scrub.ts";
+import {
+  SecretBytesRedaction,
+  secretEchoForms,
+} from "../../../packages/wide-events/secret-redaction.ts";
 
 // The port.
 
@@ -360,6 +363,14 @@ const BLOCKING_REASONS: ReadonlySet<BrokerReason> = new Set([
 ]);
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
+/**
+ * The longest address a secret address may redirect to, as long as a
+ * connection field may hold: each is scrubbed like the secret, and the
+ * forms of a longer one would pass what one redaction may hold
+ * (`MAX_FORM_BYTES`).
+ */
+const MAX_REDIRECT_ADDRESS = 4_096;
 
 const NOT_FOUND_MESSAGE = "This plugin has no connection with that id.";
 const NO_TRANSPORT_MESSAGE =
@@ -831,7 +842,7 @@ class Slots {
 /** The response headers a plugin may read: no cookie, challenge or echoed secret. */
 function responseHeaders(
   headers: Record<string, string>,
-  scrubber: SecretScrubber,
+  redaction: SecretBytesRedaction,
   secretAddress: boolean,
 ) {
   const kept: Record<string, string> = {};
@@ -839,7 +850,8 @@ function responseHeaders(
     const name = rawName.toLowerCase();
     if (STRIPPED_RESPONSE_HEADERS.has(name)) continue;
     if (secretAddress && ADDRESS_HEADERS.has(name)) continue;
-    if (scrubber.holdsSecret(value) || scrubber.holdsSecret(name)) continue;
+    // A header that holds a secret, or couldn't be checked, goes whole.
+    if (redaction.holdsSecret(`${name}: ${value}`) !== false) continue;
     kept[name] = value;
   }
   return kept;
@@ -1330,7 +1342,8 @@ export class CredentialBroker implements CredentialBrokerPort {
         // A same-origin redirect is followed only where the policy would
         // let the plugin send the request itself.
         const follow = target.secretAddress
-          ? next?.protocol === "https:"
+          ? next?.protocol === "https:" &&
+            next.href.length <= MAX_REDIRECT_ADDRESS
           : next !== undefined &&
             next.origin === origin &&
             target.allows(nextMethod, next);
@@ -1351,21 +1364,35 @@ export class CredentialBroker implements CredentialBrokerPort {
             "redirect_refused",
             follow
               ? "The connection's secret address redirected more than 3 times."
-              : "The connection's secret address redirected to an address that isn't https.",
+              : next !== undefined && next.href.length > MAX_REDIRECT_ADDRESS
+                ? "The connection's secret address redirected to an address too long to check."
+                : "The connection's secret address redirected to an address that isn't https.",
           );
         }
       }
-      const scrubber = new SecretScrubber(
-        secretForms([...plan.secrets, ...visited], target.credentials),
+      // The values built from a secret, such as a Basic credential, may be
+      // echoed too, and so may the addresses a secret address led to.
+      const redaction = new SecretBytesRedaction(
+        [...plan.secrets, ...visited, ...target.credentials].flatMap(
+          secretEchoForms,
+        ),
       );
+      const scrubbed = redaction.bytes(response.body);
+      if (scrubbed === undefined) {
+        throw new BrokerRequestError(
+          "limit",
+          "unchecked_response",
+          "The service's answer couldn't be checked for secrets, so it was dropped.",
+        );
+      }
       return {
         status: response.status,
         headers: responseHeaders(
           response.headers,
-          scrubber,
+          redaction,
           target.secretAddress,
         ),
-        body: scrubber.empty ? response.body : scrubber.bytes(response.body),
+        body: scrubbed,
       };
     }
   }
@@ -1465,5 +1492,3 @@ const nodeResolver: BrokerResolver = {
     return { addresses: answers.map((answer) => answer.address) };
   },
 };
-
-export { SECRET_MARK };

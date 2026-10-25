@@ -1172,6 +1172,94 @@ describe("the credential broker", () => {
       }
       expect(sent).toEqual([]);
     });
+
+    it("refuses a redirect to an address too long to scrub, rather than follow it", async () => {
+      const huge = `https://cdn.example.net/${"Zx81kQ-77/".repeat(500)}feed.ics`;
+      const { operation, sent } = setup({
+        manifest: ics,
+        connections: { "ajc-jira": [feed()] },
+        respond: () => ({ status: 302, headers: { location: huge } }),
+      });
+
+      const error = await refusal(
+        operation().http({ connectionId: "jira_1", method: "GET", path: "" }),
+      );
+
+      expect(error.reason).toBe("redirect_refused");
+      expect(error.message).toContain("too long");
+      expect(sent).toHaveLength(1);
+    });
+
+    describe("scrubs the forms a server echoes it in", () => {
+      const address =
+        "https://calendar.example.org/private-abc123/basic.ics?a=1&token=s3cr3t";
+      const redirected = "https://cdn.example.net/signed/Zx81kQ/feed.ics";
+      const cases: [string, string, string][] = [
+        [
+          "its path and query alone",
+          "Cannot GET /private-abc123/basic.ics?a=1&token=s3cr3t",
+          "Cannot GET [secret]",
+        ],
+        [
+          "HTML-escaped",
+          '<a href="https://calendar.example.org/private-abc123/basic.ics?a=1&amp;token=s3cr3t">',
+          '<a href="[secret]">',
+        ],
+        [
+          "with an uppercase host",
+          "at HTTPS://CALENDAR.EXAMPLE.ORG/private-abc123/basic.ics?a=1&token=s3cr3t.",
+          "at [secret].",
+        ],
+        [
+          "JSON-escaped, & as \\u0026",
+          '{"u":"https:\\/\\/calendar.example.org\\/private-abc123\\/basic.ics?a=1\\u0026token=s3cr3t"}',
+          '{"u":"[secret]"}',
+        ],
+        [
+          "one path segment",
+          "No calendar private-abc123 here",
+          "No calendar [secret] here",
+        ],
+        [
+          "a credential's query value",
+          "token s3cr3t expired",
+          "token [secret] expired",
+        ],
+        [
+          "where it redirected to, by its path",
+          "moved from /signed/Zx81kQ/feed.ics",
+          "moved from [secret]",
+        ],
+        [
+          "but not a common word of it",
+          "basic.ics and calendar.example.org",
+          "basic.ics and calendar.example.org",
+        ],
+      ];
+
+      it.each(cases)("%s", async (_name, echo, scrubbed) => {
+        const { operation } = setup({
+          manifest: ics,
+          connections: {
+            "ajc-jira": [
+              feed({ values: { feedUrl: address }, secrets: [address] }),
+            ],
+          },
+          respond: (request) =>
+            request.url === address
+              ? { status: 302, headers: { location: redirected } }
+              : { status: 200, body: bytes(echo) },
+        });
+
+        const response = await operation().http({
+          connectionId: "jira_1",
+          method: "GET",
+          path: "",
+        });
+
+        expect(text(response.body)).toBe(scrubbed);
+      });
+    });
   });
 
   describe("private addresses", () => {
@@ -1451,6 +1539,34 @@ describe("the credential broker", () => {
         reason: "too_many_queued",
       });
       expect(most).toBe(2);
+    });
+
+    it("drops an answer it can't check for secrets", async () => {
+      // Forms past what one redaction may hold: no real field is this long.
+      const huge = "k".repeat(1_000_000);
+      const { operation, requestEvents } = setup({
+        connections: {
+          "ajc-jira": [jiraConnection({ secrets: [huge] }, { apiToken: huge })],
+        },
+        respond: () => ({ status: 200, body: bytes("{}") }),
+      });
+
+      const error = await refusal(
+        operation().http({
+          connectionId: "jira_1",
+          method: "GET",
+          path: "/rest/api/3/myself",
+        }),
+      );
+
+      expect(error).toMatchObject({
+        code: "limit",
+        reason: "unchecked_response",
+      });
+      expect(requestEvents()[0]).toMatchObject({
+        outcome: "refused",
+        outcome_reason: "unchecked_response",
+      });
     });
 
     it("ends a request that takes too long with a timeout", async () => {

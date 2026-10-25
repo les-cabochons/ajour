@@ -10,7 +10,7 @@
 export const MAX_CONNECTION_ERROR_CHARACTERS = 1_000;
 
 /** What replaces a secret. */
-const SECRET_MARK = "[secret]";
+export const SECRET_MARK = "[secret]";
 
 /**
  * What a cut plugin error ends with. The plugin worker cuts a message before
