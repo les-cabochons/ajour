@@ -10,7 +10,7 @@ const { createIpcListeners, refusedSender } =
   require("./electron/ipc-listeners.cjs") as {
     createIpcListeners: (
       ipcMain: FakeIpcMain,
-      options: { events: unknown },
+      options: { events: unknown; windowSession?: () => unknown },
     ) => Ipc;
     refusedSender: (message: string) => Error;
   };
@@ -18,7 +18,7 @@ const { IPC_CHANNELS } = require("./electron/ipc-channels.cjs") as {
   IPC_CHANNELS: Record<string, { event: string; mode: string }>;
 };
 
-type Listener = (event: IpcEvent, ...args: unknown[]) => unknown;
+type Listener = (event: IpcEvent | WindowEvent, ...args: unknown[]) => unknown;
 
 interface Ipc {
   handle: (channel: string, listener: Listener) => void;
@@ -31,13 +31,19 @@ interface IpcEvent {
   returnValue?: unknown;
 }
 
+interface WindowEvent {
+  sender: { session: unknown };
+  senderFrame?: { url?: string; origin?: string } | null;
+  returnValue?: unknown;
+}
+
 /** `ipcMain`: `on` listeners are emitted, `handle` handlers are kept to invoke. */
 class FakeIpcMain extends EventEmitter {
   handlers = new Map<string, Listener>();
   handle(channel: string, handler: Listener) {
     this.handlers.set(channel, handler);
   }
-  invoke(channel: string, event: IpcEvent, ...args: unknown[]) {
+  invoke(channel: string, event: IpcEvent | WindowEvent, ...args: unknown[]) {
     return Promise.resolve().then(() =>
       this.handlers.get(channel)!(event, ...args),
     );
@@ -230,15 +236,144 @@ describe("main process IPC listeners", () => {
   });
 });
 
-describe("the IPC channel table", () => {
-  it("names every channel main.cjs registers, and only through the wrapper", async () => {
+describe("which pages may use the window's channels", () => {
+  const windowSession = { name: "default" };
+  const pluginSession = { name: "plugin" };
+
+  function setUpWithSession() {
+    const ipcMain = new FakeIpcMain();
+    const { events, recorded } = recordingEvents();
+    const ipc = createIpcListeners(ipcMain, {
+      events,
+      windowSession: () => windowSession,
+    });
+    return { ipcMain, recorded, ipc };
+  }
+
+  const fromWindow = (): WindowEvent => ({
+    sender: { session: windowSession },
+    senderFrame: {
+      url: "http://127.0.0.1:8787/",
+      origin: "http://127.0.0.1:8787",
+    },
+  });
+  const fromPluginPage = (): WindowEvent => ({
+    sender: { session: pluginSession },
+    senderFrame: {
+      url: "ajour-plugin://acme/host.html",
+      origin: "ajour-plugin://acme",
+    },
+  });
+
+  it("answers a sync channel only to the window, and leaks nothing to a plugin's page", () => {
+    const { ipcMain, ipc, recorded } = setUpWithSession();
+    let ran = 0;
+    ipc.answerSync("ajour:get-bootstrap-local-state", () => {
+      ran += 1;
+      return { secret: "state" };
+    });
+
+    const window = fromWindow();
+    ipcMain.emit("ajour:get-bootstrap-local-state", window);
+    const plugin = fromPluginPage();
+    ipcMain.emit("ajour:get-bootstrap-local-state", plugin);
+
+    expect(window.returnValue).toEqual({ secret: "state" });
+    expect(plugin.returnValue).toBeNull();
+    expect(ran).toBe(1);
+    expect(recorded[1]).toMatchObject({
+      outcome: "refused",
+      outcome_reason: "foreign_sender",
+      ipc: { sender_accepted: false },
+    });
+  });
+
+  it("refuses a page that is not in the window's session even at a web origin", () => {
+    const { ipcMain, ipc } = setUpWithSession();
+    ipc.answerSync("ajour:get-runtime-info", () => ({ version: "1" }));
+    const event: WindowEvent = {
+      sender: { session: pluginSession },
+      senderFrame: {
+        url: "https://example.com/",
+        origin: "https://example.com",
+      },
+    };
+
+    ipcMain.emit("ajour:get-runtime-info", event);
+
+    expect(event.returnValue).toBeNull();
+  });
+
+  it("refuses a plugin page's frame even when the sender is in the window's session", () => {
+    const { ipcMain, ipc } = setUpWithSession();
+    ipc.answerSync("ajour:get-app-menu", () => ({ menus: [] }));
+    const event: WindowEvent = {
+      sender: { session: windowSession },
+      senderFrame: { url: "ajour-plugin://acme/host.html" },
+    };
+
+    ipcMain.emit("ajour:get-app-menu", event);
+
+    expect(event.returnValue).toBeNull();
+  });
+
+  it("rejects an invoke and drops a message from a plugin's page", async () => {
+    const { ipcMain, ipc } = setUpWithSession();
+    const ran: string[] = [];
+    ipc.handle("ajour:get-update-state", () => {
+      ran.push("invoke");
+      return { status: "idle" };
+    });
+    ipc.onMessage("ajour:run-menu-item", () => {
+      ran.push("message");
+    });
+
+    await expect(
+      ipcMain.invoke("ajour:get-update-state", fromPluginPage()),
+    ).rejects.toThrow();
+    ipcMain.emit("ajour:run-menu-item", fromPluginPage(), "zoom-in");
+    await ipcMain.invoke("ajour:get-update-state", fromWindow());
+    ipcMain.emit("ajour:run-menu-item", fromWindow(), "zoom-in");
+
+    expect(ran).toEqual(["invoke", "message"]);
+  });
+
+  it("leaves the plugin renderer channel to the runtime's own sender check", async () => {
+    const { ipcMain, ipc } = setUpWithSession();
+    ipc.handle("ajour:plugin-renderer", () => "reached");
+
+    await expect(
+      ipcMain.invoke("ajour:plugin-renderer", fromPluginPage()),
+    ).resolves.toBe("reached");
+  });
+
+  it("is given the default session by main.cjs", async () => {
     const source = await readFile(
       new URL("./electron/main.cjs", import.meta.url),
       "utf8",
     );
 
+    expect(source).toMatch(
+      /createIpcListeners\(ipcMain,\s*\{[^}]*windowSession:\s*\(\)\s*=>\s*session\.defaultSession/,
+    );
+  });
+});
+
+describe("the IPC channel table", () => {
+  it("names every channel main.cjs registers, and only through the wrapper", async () => {
+    // The plugin renderer runtime registers its page's channel itself.
+    const source = (
+      await Promise.all(
+        ["./electron/main.cjs", "./electron/plugin-renderer-runtime.cjs"].map(
+          (file) => readFile(new URL(file, import.meta.url), "utf8"),
+        ),
+      )
+    ).join("\n");
+
     const registered = [
-      ...source.matchAll(/ipc\.(handle|onMessage|answerSync)\(\s*"([^"]+)"/g),
+      ...source.matchAll(
+        /\b(?:ipc|ipcListeners)\.(handle|onMessage|answerSync)\(\s*"([^"]+)"/g,
+      ),
     ].map(([, method, channel]) => [channel, method]);
 
     expect(source).not.toMatch(/ipcMain\.(handle|on|once|handleOnce)\(/);
@@ -266,11 +401,15 @@ describe("the IPC channel table", () => {
     }
   });
 
-  it("covers every channel the preload sends to", async () => {
-    const preload = await readFile(
-      new URL("./electron/preload.cjs", import.meta.url),
-      "utf8",
-    );
+  it("covers every channel the preloads send to", async () => {
+    // The window's preload, and the one of each plugin's hidden page.
+    const preload = (
+      await Promise.all(
+        ["./electron/preload.cjs", "./electron/plugin-host/preload.cjs"].map(
+          (file) => readFile(new URL(file, import.meta.url), "utf8"),
+        ),
+      )
+    ).join("\n");
 
     const sent = new Set(
       [

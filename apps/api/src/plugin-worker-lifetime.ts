@@ -6,9 +6,11 @@ import { createApiEvents, type ApiEvents } from "./events.ts";
 import { nowhere } from "../../../packages/wide-events/sinks.ts";
 import {
   cutPluginErrorMessage,
+  type PluginCrashCause,
   type PluginInvocation,
   type PluginRunOutcome,
   type PluginRuntime,
+  type PluginTerminateReason,
 } from "./plugin-runtime.ts";
 
 /** Each host owns its own lifetime instance, so plugin and data-shape quotas stay separate. */
@@ -27,7 +29,9 @@ export type PluginRefusalReason =
   | "not_supported"
   | "invalid_request"
   | "agent_access"
-  | "access_off";
+  | "access_off"
+  /** The runtime runs no plugin on this computer, such as without a sandbox. */
+  | "runtime_unavailable";
 
 /** Why a registered plugin operation was cancelled. */
 export type PluginCancelReason =
@@ -38,9 +42,21 @@ export type PluginCancelReason =
   | "shutdown"
   | "access_off";
 
-/** How a worker failed. */
+/** How a worker failed. `crashed`: the plugin's process ended under it. */
 export type WorkerFailureReason =
-  "timeout" | "result_too_large" | "exited_early" | "plugin_error";
+  "timeout" | "result_too_large" | "exited_early" | "crashed" | "plugin_error";
+
+/** The notice that says plugins are off on this computer, then why. */
+export const PLUGINS_TURNED_OFF_NOTICE =
+  "Plugins are turned off: this computer can't run them in a sandbox.";
+
+/** How a crash's cause reads in its error. */
+const CRASH_CAUSES: Record<PluginCrashCause, string> = {
+  crashed: "crashed",
+  oom: "ran out of memory",
+  killed: "was ended by the system",
+  memory: "went over its memory ceiling",
+};
 
 /**
  * A plugin operation turned away before its worker started, such as by a
@@ -375,6 +391,16 @@ export class PluginWorkerLifetime<TMethod extends string> {
           `${this.options.name} "${operation.pluginId}" exited before returning a result (code ${outcome.exitCode}).`,
           "exited_early",
         );
+      case "crashed":
+        return new PluginWorkerFailure(
+          `${this.options.name} "${operation.pluginId}" stopped before returning a result: its process ${CRASH_CAUSES[outcome.cause]}.`,
+          "crashed",
+        );
+      case "runtime_unavailable":
+        return new PluginOperationRefused(
+          `${PLUGINS_TURNED_OFF_NOTICE} ${outcome.reason}`.trim(),
+          "runtime_unavailable",
+        );
       case "terminated":
         // Only the lifetime terminates a run, and it has its error by then.
         return new PluginWorkerFailure(
@@ -395,10 +421,14 @@ export class PluginWorkerLifetime<TMethod extends string> {
       const startedAt = Date.now();
       let finalizationPromise: Promise<void> | undefined;
       let timeout: ReturnType<typeof setTimeout> | undefined;
-      const finalize = (error?: Error, result?: unknown) => {
+      const finalize = (
+        reason: PluginTerminateReason,
+        error?: Error,
+        result?: unknown,
+      ) => {
         finalizationPromise ??= (async () => {
           if (timeout) clearTimeout(timeout);
-          await run.terminate();
+          await run.terminate(reason);
           unit.set({ worker: { worker_ms: Date.now() - startedAt } });
           if (error) {
             reject(error);
@@ -416,21 +446,25 @@ export class PluginWorkerLifetime<TMethod extends string> {
         })();
         return finalizationPromise;
       };
-      operation.cancelWorker = (error) => finalize(error);
+      operation.cancelWorker = (error) => finalize("cancelled", error);
       void run.settled.then((outcome) => {
         // A run cancelled or timed out first already has its error.
         if (finalizationPromise) return;
         if ("resultBytes" in outcome && outcome.resultBytes !== undefined) {
           unit.set({ worker: { result_bytes: outcome.resultBytes } });
         }
+        if (!outcome.ok && outcome.failure === "crashed") {
+          unit.set({ worker: { crash_cause: outcome.cause } });
+        }
         if (outcome.ok) {
-          void finalize(undefined, outcome.result);
+          void finalize("settled", undefined, outcome.result);
         } else {
-          void finalize(this.runFailure(outcome, operation, method));
+          void finalize("settled", this.runFailure(outcome, operation, method));
         }
       });
       timeout = setTimeout(() => {
         void finalize(
+          "timeout",
           new PluginWorkerFailure(
             `${this.options.name} "${operation.pluginId}" timed out while handling ${method}.`,
             "timeout",

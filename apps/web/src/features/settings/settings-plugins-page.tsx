@@ -24,6 +24,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
+import { DisabledReason } from "@/components/disabled-reason";
 import {
   Empty,
   EmptyDescription,
@@ -206,6 +207,10 @@ function UpdatePluginButton({
   );
 }
 
+/** What the page says while plugins can't run in a sandbox. */
+const SANDBOX_OFF_TITLE =
+  "Plugins are turned off: this computer can't run them in a sandbox";
+
 /**
  * One catalog entry as a plain row: identity mark, name and status, the
  * description, a line of metadata, and the trailing action. Spacing between
@@ -217,6 +222,7 @@ function PluginCatalogRow({
   entry,
   canDownload,
   pluginsEnabled,
+  sandboxOffReason,
   isMutating,
   onDownload,
   onEnabledChange,
@@ -224,6 +230,8 @@ function PluginCatalogRow({
   entry: PluginDisplayEntry;
   canDownload: boolean;
   pluginsEnabled: boolean;
+  /** Set while plugins can't run in a sandbox: the switch can't be used. */
+  sandboxOffReason?: string;
   isMutating: boolean;
   onDownload: () => void;
   onEnabledChange: (enabled: boolean) => void;
@@ -281,17 +289,24 @@ function PluginCatalogRow({
           onUpdate={onDownload}
         />
       ) : pluginGroup ? (
-        <Switch
+        <DisabledReason
+          label={`${pluginGroup.enabled ? "Deactivate" : "Activate"} ${catalog.title}`}
+          reason={sandboxOffReason}
           className="shrink-0"
-          checked={pluginGroup.enabled}
-          disabled={
-            isMutating ||
-            !pluginsEnabled ||
-            pluginGroup.plugin.unavailableReason !== undefined
-          }
-          aria-label={`${pluginGroup.enabled ? "Deactivate" : "Activate"} ${catalog.title}`}
-          onCheckedChange={onEnabledChange}
-        />
+        >
+          <Switch
+            className="shrink-0"
+            checked={pluginGroup.enabled}
+            disabled={
+              isMutating ||
+              !pluginsEnabled ||
+              sandboxOffReason !== undefined ||
+              pluginGroup.plugin.unavailableReason !== undefined
+            }
+            aria-label={`${pluginGroup.enabled ? "Deactivate" : "Activate"} ${catalog.title}`}
+            onCheckedChange={onEnabledChange}
+          />
+        </DisabledReason>
       ) : !installed && catalog.status === "available" ? (
         <Button
           className="shrink-0"
@@ -714,11 +729,22 @@ export function SettingsPluginsPage({
       setFormState(null);
   };
 
+  // While plugins can't run in a sandbox, none can be turned on or off:
+  // a click would store a choice the user can't see take effect.
+  const sandboxOffReason =
+    overview?.sandbox?.state === "off" ? SANDBOX_OFF_TITLE : undefined;
+
   const renderMessages = () =>
     pluginApiMissing ? (
       <MessagePanel>{PLUGINS_NEED_DESKTOP_APP}</MessagePanel>
     ) : (
       <>
+        {overview?.sandbox?.state === "off" ? (
+          <MessagePanel tone="warning">
+            <p className="font-medium">{SANDBOX_OFF_TITLE}</p>
+            <p>{overview.sandbox.reason}</p>
+          </MessagePanel>
+        ) : null}
         {statusMessage ? <MessagePanel>{statusMessage}</MessagePanel> : null}
         {pluginError ? (
           <MessagePanel tone="warning">{pluginError}</MessagePanel>
@@ -781,18 +807,24 @@ export function SettingsPluginsPage({
                 <span className="text-sm text-muted-foreground">
                   {group.enabled ? "Active" : "Inactive"}
                 </span>
-                <Switch
-                  checked={group.enabled}
-                  disabled={
-                    isMutatingPlugin ||
-                    overview?.pluginsEnabled === false ||
-                    group.plugin.unavailableReason !== undefined
-                  }
-                  aria-label={`${group.enabled ? "Deactivate" : "Activate"} ${entry.title}`}
-                  onCheckedChange={(enabled) =>
-                    void handlePluginActivation(group, enabled)
-                  }
-                />
+                <DisabledReason
+                  label={`${group.enabled ? "Deactivate" : "Activate"} ${entry.title}`}
+                  reason={sandboxOffReason}
+                >
+                  <Switch
+                    checked={group.enabled}
+                    disabled={
+                      isMutatingPlugin ||
+                      overview?.pluginsEnabled === false ||
+                      sandboxOffReason !== undefined ||
+                      group.plugin.unavailableReason !== undefined
+                    }
+                    aria-label={`${group.enabled ? "Deactivate" : "Activate"} ${entry.title}`}
+                    onCheckedChange={(enabled) =>
+                      void handlePluginActivation(group, enabled)
+                    }
+                  />
+                </DisabledReason>
               </div>
             )
           }
@@ -857,6 +889,7 @@ export function SettingsPluginsPage({
           disabled={
             isMutatingPlugin ||
             overview?.pluginsEnabled === false ||
+            sandboxOffReason !== undefined ||
             Boolean(unavailableReason)
           }
           onChange={(capability, enabled) =>
@@ -1399,6 +1432,7 @@ export function SettingsPluginsPage({
                     entry={entry}
                     canDownload={canDownloadCatalogPlugins}
                     pluginsEnabled={overview?.pluginsEnabled ?? true}
+                    {...(sandboxOffReason ? { sandboxOffReason } : {})}
                     isMutating={isMutatingPlugin}
                     onDownload={() => void handleDownloadPlugin(entry.catalog)}
                     onEnabledChange={(enabled) =>

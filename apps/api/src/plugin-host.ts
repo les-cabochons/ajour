@@ -50,6 +50,7 @@ import {
   pluginValidationContextSchema,
   type PluginFieldValues,
   type PluginManifest,
+  type PluginSandboxStatus,
   type BacklogPluginSyncResult,
   type PluginValidationResult,
   type BacklogSettleStatesRequest,
@@ -303,6 +304,7 @@ export class PluginManager {
   private readonly events?: ApiEvents;
   private readonly workers: PluginWorkerLifetime<PluginMethod>;
   private readonly runsPluginApi4: boolean;
+  private readonly runtime: PluginRuntime;
   private readonly broker: CredentialBrokerPort;
   private activePackageReaders = 0;
   private packageReadersDrainedPromise?: Promise<void>;
@@ -329,6 +331,7 @@ export class PluginManager {
     this.operationGate = options.operationGate;
     this.events = options.events;
     const runtime: PluginRuntime = options.runtime ?? new WorkerPluginRuntime();
+    this.runtime = runtime;
     this.runsPluginApi4 = runtime.runsPluginApi4 === true;
     this.broker = options.broker ?? NO_BROKER;
     this.workers = new PluginWorkerLifetime({
@@ -343,6 +346,17 @@ export class PluginManager {
 
   get activeOperationCount() {
     return this.workers.activeOperationCount;
+  }
+
+  /**
+   * Whether plugins can run in their sandbox on this computer, when the
+   * runtime sandboxes them. Undefined for a runtime that doesn't, such as
+   * the worker threads alone.
+   */
+  sandboxStatus(): PluginSandboxStatus | undefined {
+    if (!this.runtime.unavailableReason) return undefined;
+    const reason = this.runtime.unavailableReason();
+    return reason === undefined ? { state: "on" } : { state: "off", reason };
   }
 
   async listPlugins(): Promise<PluginManifest[]> {

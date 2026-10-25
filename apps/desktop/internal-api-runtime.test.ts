@@ -99,6 +99,7 @@ async function runtime(
       transport: "broker-transport",
       resolver: "broker-resolver",
     }),
+    internalAppApiPluginApi4Runtime: () => "plugin-renderer-runtime",
     existsSync: () => true,
     app: { isPackaged: true, getPath: () => "/fixture" },
     mainWindow: { webContents: "active-window" },
@@ -219,6 +220,19 @@ describe("desktop plugin runtime ownership", () => {
         brokerTransport: "broker-transport",
         brokerResolver: "broker-resolver",
       }),
+    );
+  });
+
+  it("gives the API the sandboxed renderer runtime for plugin API 4", async () => {
+    const free = await listen();
+    const port = portOf(free);
+    await new Promise<void>((resolve) => free.close(() => resolve()));
+    const app = await runtime(port);
+
+    await app.invoke("ajour:download-catalog-plugin");
+
+    expect(app.start).toHaveBeenCalledWith(
+      expect.objectContaining({ pluginApi4Runtime: "plugin-renderer-runtime" }),
     );
   });
 
