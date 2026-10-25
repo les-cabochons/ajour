@@ -83,6 +83,18 @@ module.exports = {
       to: { path: "^apps/" },
     },
 
+    {
+      name: "api-test-support-is-for-tests",
+      comment:
+        "apps/api/src/test-support holds fakes, such as the in-process plugin runtime that loads plugin code into the API's own process. Only tests may import it, never the API itself.",
+      severity: "error",
+      from: {
+        path: "^apps/api/",
+        pathNot: ["\\.test\\.ts$", "^apps/api/src/test-support/"],
+      },
+      to: { path: "^apps/api/src/test-support/" },
+    },
+
     // --- Layering (optional, off by default) ----------------------------------
     // Interface-hiding controls HOW you import (through the entry points).
     // Layering controls WHICH packages may depend on which. Add your own rules

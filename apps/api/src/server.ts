@@ -172,7 +172,7 @@ import {
   type PluginFailureReason,
 } from "./plugin-worker-lifetime.ts";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
-import type { PluginRuntime } from "./plugin-runtime.ts";
+import { SplitPluginRuntime, type PluginRuntime } from "./plugin-runtime.ts";
 import { WorkerPluginRuntime } from "./plugin-worker-runtime.ts";
 import {
   connectionlessPluginErrorMessage,
@@ -223,6 +223,13 @@ interface AppApiServerOptions {
    * worker thread per operation by default. Tests run plugins in process.
    */
   pluginRuntime?: PluginRuntime;
+  /**
+   * What runs plugin API 4 packages, each in its sandbox: development
+   * builds of the desktop app pass the renderer runtime, until the cut-over
+   * (#403). `pluginRuntime` keeps running API 3 packages beside it. While it
+   * can't sandbox plugins, no plugin runs, and the overview says why.
+   */
+  pluginApi4Runtime?: PluginRuntime;
   projectDataShapePluginDirectories?: string[];
   allowedOrigins?: string[];
   /**
@@ -996,8 +1003,21 @@ async function getOverview(
       secretManifestOf,
     ),
   );
+  const overview = await storage.getPluginsOverview(plugins, unavailable);
+  const sandbox = pluginManager.sandboxStatus();
   return pluginsOverviewSchema.parse(
-    await storage.getPluginsOverview(plugins, unavailable),
+    // Without a sandbox no plugin runs, so none counts as on and their
+    // automatic syncs pause; their connections and data stay.
+    sandbox?.state === "off"
+      ? {
+          ...overview,
+          sandbox,
+          connectionGroups: overview.connectionGroups.map((group) => ({
+            ...group,
+            enabled: false,
+          })),
+        }
+      : { ...overview, ...(sandbox ? { sandbox } : {}) },
   );
 }
 
@@ -1115,7 +1135,19 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   const allowDevelopmentPlugins =
     options.allowDevelopmentPlugins ??
     process.env.AJOUR_ALLOW_DEVELOPMENT_PLUGINS === "1";
-  const pluginRuntime = options.pluginRuntime ?? new WorkerPluginRuntime();
+  const api3Runtime = options.pluginRuntime ?? new WorkerPluginRuntime();
+  const pluginRuntime: PluginRuntime = options.pluginApi4Runtime
+    ? new SplitPluginRuntime({
+        api3: api3Runtime,
+        api4: options.pluginApi4Runtime,
+      })
+    : api3Runtime;
+  // A way out the sandbox closed counts as a blocked attempt, as the
+  // broker's refusals do, for the plugin's Access review.
+  pluginRuntime.attach?.({
+    recordBlocked: (pluginId, at) =>
+      storage.recordBrokerActivity(pluginId, undefined, "blocked_direct", at),
+  });
   const broker: CredentialBroker = new CredentialBroker({
     ...(options.brokerTransport ? { transport: options.brokerTransport } : {}),
     ...(options.brokerResolver ? { resolver: options.brokerResolver } : {}),

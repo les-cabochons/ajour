@@ -18,6 +18,7 @@ const {
   safeStorage,
   session,
   shell,
+  WebContentsView,
 } = require("electron");
 // On its own line so the IPC check in code-standards.md can tell this import
 // from any other use of the object: only `createIpcListeners` may take it.
@@ -43,6 +44,11 @@ const {
 } = require("./plugin-install.cjs");
 const { createSafeStorageCipher } = require("./secret-cipher.cjs");
 const { createBrokerNetwork } = require("./broker-transport.cjs");
+const { PLUGIN_SCHEME } = require("./plugin-renderer-policy.cjs");
+const {
+  createPluginRendererRuntime,
+} = require("./plugin-renderer-runtime.cjs");
+const { launchSandboxRefusal } = require("./plugin-sandbox.cjs");
 const { createPluginCatalogService } = require("./plugin-catalog.cjs");
 const {
   loadPluginCatalogSettings,
@@ -147,6 +153,13 @@ protocol.registerSchemesAsPrivileged([
       corsEnabled: true,
       stream: true,
     },
+  },
+  {
+    // Each plugin's origin, `ajour-plugin://<id>` (plugin-renderer-runtime.cjs).
+    // Standard and secure only: no service workers, no CSP bypass, no fetch
+    // of it from anywhere else, no code cache.
+    scheme: PLUGIN_SCHEME,
+    privileges: { standard: true, secure: true },
   },
 ]);
 
@@ -279,7 +292,10 @@ function schedulePluginCatalogRefresh() {
 // Every IPC channel registers through `ipc`, which emits each call's event,
 // named in ipc-channels.cjs. None can throw into the main process, and a
 // failed synchronous request answers null.
-const ipc = createIpcListeners(ipcMain, { events });
+const ipc = createIpcListeners(ipcMain, {
+  events,
+  windowSession: () => session.defaultSession,
+});
 
 // Read once per launch. A read that finds nothing or fails stays null until
 // the next launch, even when a crashed window reloads and asks again.
@@ -839,6 +855,41 @@ function internalAppApiBrokerNetwork() {
   return brokerNetwork;
 }
 
+/**
+ * The runtime that runs plugin API 4 packages, each in a sandboxed renderer
+ * of its own, made once, after `ready`. Development builds only, until the
+ * cut-over (#403): release builds admit no API 4 package yet. Without a
+ * sandbox, as with `--no-sandbox` or on Linux, it runs no plugin and says why.
+ */
+let pluginRendererRuntime = null;
+function internalAppApiPluginApi4Runtime() {
+  if (app.isPackaged) return undefined;
+  pluginRendererRuntime ??= createPluginRendererRuntime({
+    app,
+    session,
+    WebContentsView,
+    ipcListeners: ipc,
+    events,
+    hostDirectory: path.join(__dirname, "plugin-host"),
+    preloadPath: path.join(__dirname, "plugin-host", "preload.cjs"),
+    platform: process.platform,
+    devTools: !app.isPackaged,
+    launchRefusal: launchSandboxRefusal({
+      argv: process.argv,
+      hasSwitch: (name) => app.commandLine.hasSwitch(name),
+      env: process.env,
+      platform: process.platform,
+      inspectorActive: require("node:inspector").url() !== undefined,
+    }),
+  });
+  return pluginRendererRuntime;
+}
+
+/** Closes every plugin renderer, so no plugin process outlives a quit. */
+async function closePluginRenderers() {
+  await pluginRendererRuntime?.closeAll();
+}
+
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -963,6 +1014,7 @@ async function ensureInternalAppApiRunning() {
       vault: internalAppApiVault(internalAppApiModule, statePath),
       brokerTransport: internalAppApiBrokerNetwork().transport,
       brokerResolver: internalAppApiBrokerNetwork().resolver,
+      pluginApi4Runtime: internalAppApiPluginApi4Runtime(),
       installedPluginDirectory: path.join(app.getPath("userData"), "plugins"),
       developmentPluginDirectories: app.isPackaged
         ? []
@@ -1141,6 +1193,8 @@ async function prepareToInstallUpdate() {
   const outcome = await stopInternalAppApiWithinTimeout();
   recordApiStop(quit, outcome, stopStartedAt);
   if (updateQuit?.quit === quit) updateQuit.outcome = outcome;
+  // The installer's quit skips before-quit, so the plugin pages close here.
+  await closePluginRenderers().catch(() => undefined);
   // The installer's quit skips before-quit's wait for the events.
   await whenEventsReady(
     INTERNAL_APP_API_STOP_TIMEOUT_MS - (Date.now() - stopStartedAt),
@@ -1604,6 +1658,8 @@ if (!hasSingleInstanceLock) {
     void stopInternalAppApiWithinTimeout().then(async (outcome) => {
       gracefulQuitStarted = true;
       recordApiStop(quit, outcome, stopStartedAt);
+      // The API cancelled their runs as it stopped; their pages close now.
+      await closePluginRenderers().catch(() => undefined);
       endQuit(quit, outcome);
       // Events recorded before the package loaded are lost if the process
       // exits first.

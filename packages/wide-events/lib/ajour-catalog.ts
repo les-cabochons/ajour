@@ -33,6 +33,17 @@ export type ApiStartFailure =
 /** How the local API's stop ended before a quit or an update. */
 export type ApiStop = "stopped" | "failed" | "timed_out";
 
+/** Why plugins are off on this computer (apps/desktop/electron/plugin-sandbox.cjs). */
+export type PluginSandboxCause =
+  | "launch_flag"
+  | "debugger"
+  | "environment"
+  | "unsupported_os"
+  | "renderer_not_sandboxed"
+  | "renderer_integrity"
+  | "renderer_unknown"
+  | "shared_process";
+
 /** What every IPC event carries: the channel, never its arguments. */
 const ipcFields = {
   channel: operational(),
@@ -119,6 +130,8 @@ const pluginOperationFields = {
     timeout_ms: operational<number>(),
     /** The serialized size of the worker's result. */
     result_bytes: operational<number>(),
+    /** Why the plugin's process ended under the run, when it `crashed`. */
+    crash_cause: operational<"crashed" | "oom" | "killed" | "memory">(),
   },
 } as const;
 
@@ -126,10 +139,11 @@ const pluginOperationFields = {
  * Every way a plugin operation ends other than `ok`. Refused: `capacity`,
  * the inactive reasons, `host_stopping`, `package_change`, `not_installed`,
  * `runs_no_code`, `not_supported` for a capability or feature the plugin
- * doesn't declare, and `agent_access` when its route's admission check
- * refuses it. Cancelled: the inactive reasons, `uninstalled` and
- * `shutdown`. Then `timeout`, and the errors `result_too_large`,
- * `invalid_result`, `exited_early` and `plugin_error`.
+ * doesn't declare, `agent_access` when its route's admission check
+ * refuses it, and `runtime_unavailable` when this computer can't sandbox
+ * plugins. Cancelled: the inactive reasons, `uninstalled` and `shutdown`.
+ * Then `timeout`, and the errors `result_too_large`, `invalid_result`,
+ * `exited_early`, `crashed` and `plugin_error`.
  */
 const pluginOperationReasons = [
   "capacity",
@@ -141,12 +155,16 @@ const pluginOperationReasons = [
   "not_supported",
   /** The route's own admission check refused the call, such as an agent's comment. */
   "agent_access",
+  /** Plugins are off: this computer can't run them in a sandbox. */
+  "runtime_unavailable",
   "uninstalled",
   "shutdown",
   "timeout",
   "result_too_large",
   "invalid_result",
   "exited_early",
+  /** The plugin's process ended under the run: `worker.crash_cause` says how. */
+  "crashed",
   "plugin_error",
 ] as const;
 
@@ -1025,6 +1043,8 @@ export const catalog = defineCatalog({
     "process.gone": {
       kinds: ["crash"],
       fields: {
+        /** The plugin whose renderer it was, for a `plugin_renderer`. */
+        plugin: { id: operational() },
         process: {
           type: operational(),
           /** Electron's reason, such as `crashed`, `oom` or `killed`. */
@@ -1070,6 +1090,85 @@ export const catalog = defineCatalog({
           source: operational<"will_navigate" | "window_open">(),
         },
       },
+    },
+    /**
+     * One message from a plugin's hidden page to its host (#390): never its
+     * arguments. A sender that isn't a registered plugin page's main frame on
+     * its own origin is `foreign_sender`; a run the page doesn't have,
+     * another plugin's included, is `unknown_run`.
+     */
+    "plugin_renderer.call": {
+      kinds: ["ipc"],
+      reasons: ["foreign_sender", "unknown_run"],
+      fields: {
+        ipc: ipcFields,
+        plugin: { id: operational() },
+        plugin_renderer: {
+          message: operational<
+            | "ready"
+            | "next"
+            | "settled"
+            | "http"
+            | "publicFetch"
+            | "abort"
+            | "blocked"
+            | "other"
+          >(),
+        },
+      },
+    },
+    /** A plugin's renderer opening, until its page loaded and its sandbox was checked. */
+    "plugin_renderer.open": {
+      kinds: ["lifecycle"],
+      reasons: [
+        "ready_timeout",
+        "load_failed",
+        /** Its process doesn't report the sandbox, so every plugin turned off. */
+        "not_sandboxed",
+      ],
+      fields: {
+        plugin: { id: operational() },
+        plugin_renderer: { open_ms: operational<number>() },
+        sandbox: { cause: operational<PluginSandboxCause>() },
+      },
+    },
+    /**
+     * A way out a plugin's sandbox closed: the kind of exit, never where it
+     * led. The renderer goes on.
+     */
+    "plugin_renderer.blocked": {
+      kinds: ["navigation"],
+      reasons: ["blocked"],
+      fields: {
+        plugin: { id: operational() },
+        blocked: {
+          /** `request`: its session cancelled one; `policy`: its page's policy refused one. */
+          exit: operational<
+            | "request"
+            | "policy"
+            | "permission"
+            | "device"
+            | "download"
+            | "navigation"
+            | "window_open"
+          >(),
+        },
+      },
+    },
+    /** Plugins turned off: this computer can't run them in a sandbox. */
+    "plugin_sandbox.off": {
+      kinds: ["lifecycle"],
+      reasons: [
+        "launch_flag",
+        "debugger",
+        "environment",
+        "unsupported_os",
+        "renderer_not_sandboxed",
+        "renderer_integrity",
+        "renderer_unknown",
+        "shared_process",
+      ],
+      fields: { sandbox: { cause: operational<PluginSandboxCause>() } },
     },
     /** The plugin index refreshed from the network, the cache or the built-in snapshot. */
     "catalog.refresh": {
