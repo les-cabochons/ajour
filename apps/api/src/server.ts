@@ -1178,7 +1178,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     // The routes check activation before reading the request. This repeats
     // the check once the operation can be cancelled, so a capability turned
     // off meanwhile never runs.
-    operationGate: async (pluginId, method, connectionId) => {
+    operationGate: async (pluginId, method, connectionId, manifest) => {
       const capability = capabilityOfMethod(method);
       if (!capability) return;
       const inactive = await inactiveCapability(
@@ -1193,11 +1193,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       }
       // The connection's access as saved now: a choice turned off while
       // the operation waited stops it here (#395).
-      if (!connectionId) return;
+      if (!connectionId || !manifest) return;
       const connection = await storage.getConnection(pluginId, connectionId);
-      const { plugin } = await findPlugin(pluginManager, pluginId);
-      if (!connection || !plugin) return;
-      const refusal = connectionAccessRefusal(plugin, connection, method);
+      if (!connection) return;
+      const refusal = connectionAccessRefusal(manifest, connection, method);
       if (refusal) throw refusal;
     },
   });

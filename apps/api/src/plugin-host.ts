@@ -126,6 +126,8 @@ interface PluginHostOptions {
     pluginId: string,
     method: PluginMethod,
     connectionId?: string,
+    /** The manifest of the package that runs it. */
+    manifest?: PluginManifest,
   ) => Promise<void>;
   /** Where each worker run's `plugin_operation` event goes. Nowhere by default. */
   events?: ApiEvents;
@@ -762,6 +764,7 @@ export class PluginManager {
             pluginId,
             method,
             typeof connection?.id === "string" ? connection.id : undefined,
+            plugin.manifest,
           );
           const admitted = await admit?.(plugin.manifest);
           // A field the vault holds stays secret after an update unmarks it.
