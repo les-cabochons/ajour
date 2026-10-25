@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
   RiArrowLeftLine as ArrowLeft,
   RiDeleteBinLine as Trash2,
@@ -65,8 +65,17 @@ import {
   createPluginFormState,
   expiryForSave,
   secretFieldIds,
+  turnsAccessOn,
   type PluginFormState,
 } from "./plugin-form-state";
+import { EDIT_WORK_ITEMS_ACCESS } from "@ajour/shared/connection-access";
+import { heldEditCount, listHeldEdits, useHeldEdits } from "@/lib/held-edits";
+import { localStore } from "@/lib/local-store";
+import {
+  ConnectionAccessBadge,
+  connectionEdits,
+  HeldEditsLine,
+} from "./connection-access-ui";
 import { type PluginReplaceTarget } from "./plugin-detail-search";
 import { PluginCapabilitySwitches } from "./plugin-capability-switches";
 import { PluginConnectionForm } from "./connection-form";
@@ -500,6 +509,8 @@ export function SettingsPluginsPage({
   replace?: PluginReplaceTarget;
 }) {
   const state = useLocalState();
+  const navigate = useNavigate();
+  const heldEdits = useHeldEdits();
   const isDevelopmentBuild =
     window.ajourDesktop?.runtime?.developmentBuild === true;
   const canInstallPlugins =
@@ -574,9 +585,21 @@ export function SettingsPluginsPage({
       capability,
     });
 
+  const accessChoicesOf = (pluginId: string) =>
+    pluginGroups.find((group) => group.plugin.id === pluginId)
+      ?.connectionAccess ?? [];
+
   const handleCreate = (plugin: PluginManifest) => {
     workflow.clearFeedback();
-    setFormState(createPluginFormState((formInstances.current += 1), plugin));
+    setFormState(
+      createPluginFormState(
+        (formInstances.current += 1),
+        plugin,
+        undefined,
+        undefined,
+        accessChoicesOf(plugin.id),
+      ),
+    );
   };
 
   /**
@@ -597,6 +620,7 @@ export function SettingsPluginsPage({
         replaceFieldId ??
           connection.secretFields?.find((secret) => secret.state === "rejected")
             ?.id,
+        accessChoicesOf(plugin.id),
       ),
     );
   };
@@ -635,12 +659,39 @@ export function SettingsPluginsPage({
         ),
       ),
       connectionId: formState.editingConnectionId ?? undefined,
+      ...(accessChoicesOf(formState.pluginId).length > 0
+        ? { access: formState.access }
+        : {}),
       onSaved: (connection) => {
         saved = connection;
       },
     });
     if (!completed) return;
     setFormState(null);
+    // Turning editing on is not approval to send what was held: changes
+    // made while it was off wait in Sync review, and the user goes there.
+    if (
+      formState.editingConnectionId &&
+      turnsAccessOn(formState, EDIT_WORK_ITEMS_ACCESS)
+    ) {
+      const connection = {
+        pluginId: formState.pluginId,
+        connectionId: formState.editingConnectionId,
+      };
+      localStore.holdPendingEstimates(connection);
+      const held = heldEditCount(
+        listHeldEdits(localStore.snapshot().workItems),
+        connection.pluginId,
+        connection.connectionId,
+      );
+      if (held > 0) {
+        void navigate({
+          to: "/settings/sync-review",
+          search: { held: connection.connectionId } as never,
+        });
+        return;
+      }
+    }
     if (formState.editingConnectionId || !pluginHasTeam(activePlugin)) return;
     if (!saved) return;
     const added = saved;
@@ -860,6 +911,15 @@ export function SettingsPluginsPage({
                 )}
                 vault={overview?.vault}
                 isMutating={isMutatingPlugin}
+                heldCount={
+                  groupFormState.editingConnectionId
+                    ? heldEditCount(
+                        heldEdits,
+                        group.plugin.id,
+                        groupFormState.editingConnectionId,
+                      )
+                    : 0
+                }
                 now={Date.now()}
                 onCancel={() => setFormState(null)}
                 onSave={() => void handleSave()}
@@ -906,6 +966,10 @@ export function SettingsPluginsPage({
                             {agentAccessLabel(group, connection)}
                           </Badge>
                         ) : null}
+                        <ConnectionAccessBadge
+                          group={group}
+                          connection={connection}
+                        />
                       </div>
                       <p className="text-[13px] break-words text-muted-foreground">
                         {connection.tenantLabel}
@@ -925,6 +989,15 @@ export function SettingsPluginsPage({
                           }
                         />
                       ) : null}
+                      <HeldEditsLine
+                        count={heldEditCount(
+                          heldEdits,
+                          group.plugin.id,
+                          connection.id,
+                        )}
+                        editing={connectionEdits(group, connection)}
+                        connectionId={connection.id}
+                      />
                       <ConnectionStatusNote
                         group={group}
                         connection={connection}

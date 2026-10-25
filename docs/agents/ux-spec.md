@@ -822,6 +822,24 @@ Decided in [Access review and credential management for existing plugins](https:
   - Two notices come first. "Ajour can't protect credentials on this computer" gives the reason and says connections that need a token are paused; Try again opens the vault again and runs the encryption check once more. "Saved secrets can't be read on this computer" gives the reason, as after moving Ajour's data to another computer, and says to paste each token again. It has no Try again, because pasting a token is what fixes it.
   - With no secret saved, the page says "No saved secrets".
 
+## Connection access and held edits
+
+Decided in [the connection access decisions](https://github.com/les-cabochons/ajour/issues/223#issuecomment-6322442188) and [the held-edit decisions](https://github.com/les-cabochons/ajour/issues/223#issuecomment-6322497778), built in [#395](https://github.com/les-cabochons/ajour/issues/395).
+
+- **Each connection chooses its access.** The connection form of a plugin with access choices, Azure DevOps today, ends with an **Access** group: "Ajour blocks anything not chosen here, even when the token allows more." Each choice is a checkbox whose description names the token scope it needs:
+  - Read the backlog: work items, queries, comments and descriptions. Always on. Work Items (Read).
+  - Edit work items: send estimates, settled and moved work, descriptions and comments. Work Items (Read & write).
+  - Pull requests: the pull requests you're involved in, and your teams' review requests. Code (Read), and Project and Team (Read) for teams.
+  - Search people across the organisation: @ suggestions from the whole organisation. Identity (Read).
+- **New connections, and connections from before access choices, read only.** Their settings and local values stay. Nothing writes to the source until the user turns a choice on, and the first sync after the update sends no change.
+- **Ajour enforces the choices, whatever the token allows.** The local API refuses a write, a pull request call or a people search whose choice is off before the plugin runs; reads that Azure DevOps sends as POST, such as queries and batch reads, still work. Turning a choice off cancels the calls it allowed that still run. With Pull requests off, the connection's pull requests don't sync, on the interval or by hand, and don't show. With people search off, the comment editor offers no @ suggestions on that connection.
+- **The connection row** shows "Reads backlog", or "Edits work items" once editing is on, after the sync-mode badge.
+- **A change refused because editing is off is held on this computer:** a settle or move, an estimate, a description, a comment, a comment edit and a comment delete. It is never rolled back or dropped: the item stays as the user left it, a deleted comment stays hidden, and a posted comment leaves the composer. A toast says "Held on this computer: editing work items is off for "<connection>". Turn it on to review and send the change.", once for a burst of holds. A sync of a connection that reads only uploads no estimate; the estimates it would have sent are held. A reaction is not held: it goes back, with the refusal as its error.
+- **The row and the Access group count them**: "N changes held. Turn on editing to review and send them." Once editing is on, the row's line links to Sync review instead.
+- **Turning editing on is not approval.** Saving the form with Edit work items newly on holds every estimate change the connection would upload, and, when it holds any change, opens Sync review on its held changes.
+- **Held changes in Sync review** come first, grouped by connection. Each shows its item, what kind of change it is and the change itself, with Send and Discard. Send is the approval: the change goes through its usual path, so a source that changed meanwhile still answers with a conflict, which then shows with the other issues. Send is disabled while the connection's access can't send it, and the group says how to turn editing on. Discard asks first, then drops the change and takes the source's side back: a settle's item returns to its state before, an estimate and a description take the source's value.
+- **Held changes stay** when the user leaves Sync review, restarts Ajour or turns editing off again. A held settle or move keeps its settle comment waiting with it.
+
 ## Consistency
 
 Decided in [Consistent dialogs, tooltips, loading and drags](https://github.com/les-cabochons/ajour/issues/28).

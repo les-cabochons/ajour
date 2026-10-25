@@ -61,6 +61,9 @@ export type PluginFormState = {
   /** The reminder dates as date text, by secret field. */
   initialExpiry: Record<string, string>;
   expiry: Record<string, string>;
+  /** The access choices turned on, those always on left out. */
+  initialAccess: readonly string[];
+  access: readonly string[];
   /** The secret field whose Replace opens at once, as when the Vault sent the user. */
   replaceFieldId?: string;
 };
@@ -73,8 +76,11 @@ export function createPluginFormState(
     id: string;
     editableValues: PluginFieldValues;
     secretFields?: ReadonlyArray<{ id: string; expiresAt?: number }>;
+    access?: readonly string[];
   },
   replaceFieldId?: string,
+  /** The plugin's access choices; a new connection starts with none on. */
+  accessChoices: ReadonlyArray<{ id: string; always: boolean }> = [],
 ): PluginFormState {
   const initialValues = buildPluginFormValues(
     plugin,
@@ -84,6 +90,11 @@ export function createPluginFormState(
     secretFieldIds(plugin),
     connection?.secretFields,
   );
+  const initialAccess = accessChoices
+    .filter(
+      (choice) => !choice.always && connection?.access?.includes(choice.id),
+    )
+    .map((choice) => choice.id);
   return {
     instance,
     pluginId: plugin.id,
@@ -92,18 +103,42 @@ export function createPluginFormState(
     values: initialValues,
     initialExpiry,
     expiry: initialExpiry,
+    initialAccess,
+    access: initialAccess,
     ...(replaceFieldId ? { replaceFieldId } : {}),
   };
 }
 
-/** Whether the form holds a change: a value or a reminder date. */
+/** The form's access with one choice turned on or off. */
+export function withAccessChoice(
+  form: PluginFormState,
+  choiceId: string,
+  on: boolean,
+): PluginFormState {
+  const rest = form.access.filter((id) => id !== choiceId);
+  return { ...form, access: on ? [...rest, choiceId] : rest };
+}
+
+/** Whether the form turns the choice on, from off before. */
+export function turnsAccessOn(form: PluginFormState, choiceId: string) {
+  return (
+    form.access.includes(choiceId) && !form.initialAccess.includes(choiceId)
+  );
+}
+
+function sameAccess(left: readonly string[], right: readonly string[]) {
+  return left.length === right.length && left.every((id) => right.includes(id));
+}
+
+/** Whether the form holds a change: a value, a reminder date or its access. */
 export function isPluginFormDirty(
   plugin: PluginManifest,
   form: PluginFormState,
 ) {
   return (
     !arePluginFormValuesEqual(plugin, form.values, form.initialValues) ||
-    !areExpiryDraftsEqual(form.expiry, form.initialExpiry)
+    !areExpiryDraftsEqual(form.expiry, form.initialExpiry) ||
+    !sameAccess(form.access, form.initialAccess)
   );
 }
 

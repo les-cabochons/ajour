@@ -7,6 +7,7 @@ import {
   type BacklogPerson,
   type PluginsOverview,
 } from "@ajour/shared";
+import { connectionAccessAllows } from "@ajour/shared/connection-access";
 import type { LocalWorkItem } from "@/domain/local-state";
 
 /**
@@ -21,6 +22,11 @@ export interface CommentSource {
   connectionId: string;
   sourceId: string;
   capability: BacklogCommentsCapability;
+  /**
+   * The connection's access leaves people search off, so the editor offers
+   * no @ suggestions: the plugin's search reaches the whole organisation.
+   */
+  peopleSearchOff?: true;
 }
 
 /**
@@ -44,13 +50,14 @@ export function commentSourceOf(
     (candidate) => candidate.plugin.id === item.source,
   );
   const capability = group?.plugin.capabilities.connector?.comments;
+  const connection = group?.connections.find(
+    (candidate) => candidate.id === item.sourceConnectionId,
+  );
   if (
     !group ||
     !capability ||
     !isCapabilityActive(group, "connector") ||
-    !group.connections.some(
-      (connection) => connection.id === item.sourceConnectionId,
-    )
+    !connection
   ) {
     return undefined;
   }
@@ -59,6 +66,9 @@ export function commentSourceOf(
     connectionId: item.sourceConnectionId,
     sourceId: item.sourceId,
     capability,
+    ...(connectionAccessAllows(group, connection, "searchItemPeople")
+      ? {}
+      : { peopleSearchOff: true as const }),
   };
 }
 

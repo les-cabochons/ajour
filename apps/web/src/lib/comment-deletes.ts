@@ -1,6 +1,7 @@
 import { showErrorToast } from "@/components/ui/toast";
-import { deleteItemComment } from "@/lib/app-api";
+import { deleteItemComment, isAccessOffError } from "@/lib/app-api";
 import { createDeviceQueue } from "@/lib/device-queue";
+import { heldCommentDeleteIds, holdCommentEdit } from "@/lib/held-edits";
 import { wideEvents } from "@/lib/wide-events";
 
 /**
@@ -52,12 +53,15 @@ const sameComment = (left: CommentRef, right: CommentRef) =>
   left.sourceId === right.sourceId &&
   left.commentId === right.commentId;
 
-/** The thread's comments that wait to be deleted, so it keeps them hidden. */
+/**
+ * The thread's comments that wait to be deleted, so it keeps them hidden:
+ * those in their Undo window, and those whose delete is held for review.
+ */
 export function pendingCommentDeleteIds(
   thread: Pick<CommentRef, "pluginId" | "connectionId" | "sourceId">,
 ) {
-  return new Set(
-    read()
+  return new Set([
+    ...read()
       .filter(
         (entry) =>
           entry.pluginId === thread.pluginId &&
@@ -65,7 +69,8 @@ export function pendingCommentDeleteIds(
           entry.sourceId === thread.sourceId,
       )
       .map((entry) => entry.commentId),
-  );
+    ...heldCommentDeleteIds(thread),
+  ]);
 }
 
 export function queueCommentDelete(entry: PendingCommentDelete) {
@@ -85,10 +90,14 @@ export function pendingCommentDeleteCount() {
 /**
  * Sends a queued delete, as one `comment.delete` job. It leaves the queue
  * first, so a second call never sends it twice, and ends `noop`. Throws when
- * the source tool refuses it. The job starts its own trace: it names Ajour's
- * backlog item, never the comment's ID in its source (ADR 0011).
+ * the source tool refuses it. A connection that can't edit work items holds
+ * it instead, and the comment stays hidden: it answers `held`. The job
+ * starts its own trace: it names Ajour's backlog item, never the comment's
+ * ID in its source (ADR 0011).
  */
-export function sendCommentDelete(comment: CommentRef): Promise<void> {
+export function sendCommentDelete(
+  comment: CommentRef,
+): Promise<"sent" | "held" | "gone"> {
   return wideEvents.run(
     "comment.delete",
     { kind: "job", trigger: "system", detached: true },
@@ -97,7 +106,7 @@ export function sendCommentDelete(comment: CommentRef): Promise<void> {
       const entry = entries.find((pending) => sameComment(pending, comment));
       if (!entry) {
         job.end("noop");
-        return;
+        return "gone";
       }
       job.set({
         backlog_item: { id: entry.itemId },
@@ -106,10 +115,25 @@ export function sendCommentDelete(comment: CommentRef): Promise<void> {
         comment: { queued_ms: Math.max(0, Date.now() - entry.at) },
       });
       write(entries.filter((pending) => !sameComment(pending, comment)));
-      await deleteItemComment(entry.pluginId, entry.connectionId, {
-        sourceId: entry.sourceId,
-        commentId: entry.commentId,
-      });
+      try {
+        await deleteItemComment(entry.pluginId, entry.connectionId, {
+          sourceId: entry.sourceId,
+          commentId: entry.commentId,
+        });
+        return "sent";
+      } catch (error) {
+        if (!isAccessOffError(error)) throw error;
+        holdCommentEdit({
+          kind: "commentDelete",
+          itemId: entry.itemId,
+          pluginId: entry.pluginId,
+          connectionId: entry.connectionId,
+          sourceId: entry.sourceId,
+          commentId: entry.commentId,
+        });
+        job.refuse("access_off");
+        return "held";
+      }
     },
   );
 }

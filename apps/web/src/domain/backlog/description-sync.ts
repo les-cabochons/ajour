@@ -95,14 +95,16 @@ export function reconcileDescription(
   if (takesSource) return agreed(source, remote);
 
   if (baseline !== undefined && comparedRemote === comparedBaseline) {
-    const writeError = item.descriptionSync?.writeError;
+    const { writeError, held } = item.descriptionSync ?? {};
     return {
       description: item.description,
-      // A local edit the last save could not write still waits, with why.
+      // A local edit the last save could not write still waits, with why,
+      // and one held for review stays held.
       descriptionSync: {
         baseline,
         ...sourceFacts(source, remote),
         ...(writeError ? { writeError } : {}),
+        ...(held ? { held } : {}),
       },
     };
   }
@@ -132,6 +134,7 @@ export function descriptionInConflict(
       ? item.descriptionSync?.baseline
       : storedText(ancestor);
   const previous = item.descriptionSync?.conflict;
+  const held = item.descriptionSync?.held;
   const sameConflict =
     previous !== undefined &&
     normalizeText(previous.localText) === normalizeText(item.description) &&
@@ -141,6 +144,7 @@ export function descriptionInConflict(
     descriptionSync: {
       ...(baseline === undefined ? {} : { baseline }),
       ...sourceFacts(source, remote),
+      ...(held ? { held } : {}),
       conflict: {
         detectedAt: sameConflict ? previous.detectedAt : now,
         localText: item.description ?? "",
@@ -276,6 +280,46 @@ export function descriptionWriteFailed(
       ...item.descriptionSync,
       writeError: { at: now, message },
     },
+  };
+}
+
+/**
+ * The description after a save its connection refused because editing work
+ * items is off: the local text stays, held for review. The first hold keeps
+ * its time.
+ */
+export function descriptionHeld(item: Described, now: number): Described {
+  if (!item.descriptionSync) return item;
+  const { writeError: _writeError, ...sync } = item.descriptionSync;
+  return {
+    description: item.description,
+    descriptionSync: { ...sync, held: sync.held ?? { at: now } },
+  };
+}
+
+/** The description with its hold lifted, as the user approved sending it. */
+export function releaseHeldDescription(item: Described): Described {
+  if (!item.descriptionSync?.held) return item;
+  const { held: _held, ...sync } = item.descriptionSync;
+  return { description: item.description, descriptionSync: sync };
+}
+
+/**
+ * Discard on a held description: the source's text from the last sync
+ * replaces the local one, and both sides agree on it.
+ */
+export function discardHeldDescription(item: Described): Described {
+  const sync = item.descriptionSync;
+  if (!sync?.held) return item;
+  const {
+    held: _held,
+    conflict: _conflict,
+    writeError: _writeError,
+    ...rest
+  } = sync;
+  return {
+    description: sync.remote || undefined,
+    descriptionSync: { ...rest, baseline: sync.remote },
   };
 }
 

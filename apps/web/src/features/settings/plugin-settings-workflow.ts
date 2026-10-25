@@ -69,6 +69,8 @@ type PluginSettingsCommand =
       connectionId?: string;
       /** The reminder date of each secret field, in epoch ms. `null` clears one. */
       secretExpiry?: Record<string, number | null>;
+      /** The access choices turned on. Undefined keeps the saved ones. */
+      access?: readonly string[];
       /** Gets the connection the API saved, such as a new one's ID. */
       onSaved?: (connection: PluginConnectionSummary) => void;
     }
@@ -368,6 +370,7 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
             command.values,
             command.connectionId,
             command.secretExpiry,
+            command.access,
           );
           finish(
             `${result.connection.label} connection ${command.connectionId ? "updated" : "added"}.`,

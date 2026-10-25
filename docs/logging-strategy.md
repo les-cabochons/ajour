@@ -738,6 +738,7 @@ channel to read the event each emits.
 | `backlog_item.create`                | command                            | store command                                    |
 | `backlog_item.delete`                | command                            | store command                                    |
 | `backlog_item.fail_source_write`     | command                            | store command                                    |
+| `backlog_item.hold_edit`             | command                            | store command                                    |
 | `backlog_item.move`                  | command                            | store command                                    |
 | `backlog_item.open`                  | command                            | store command                                    |
 | `backlog_item.pin`                   | command                            | store command                                    |
@@ -746,6 +747,7 @@ channel to read the event each emits.
 | `backlog_item.resolve_estimate`      | command                            | store command                                    |
 | `backlog_item.restore`               | command                            | store command                                    |
 | `backlog_item.return`                | command                            | store command                                    |
+| `backlog_item.review_held_edit`      | command                            | store command                                    |
 | `backlog_item.save_description`      | command                            | store command                                    |
 | `backlog_item.settle`                | command                            | store command                                    |
 | `backlog_item.snooze`                | command                            | store command                                    |

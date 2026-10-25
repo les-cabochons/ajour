@@ -141,6 +141,22 @@ export function connectionAllowsOperation(
 }
 
 /**
+ * Whether a connection as the overview lists it may run the operation: its
+ * plugin's choices, from the overview group, against the connection's.
+ */
+export function connectionAccessAllows(
+  group: { connectionAccess?: readonly ConnectionAccessChoice[] },
+  connection: { access?: readonly string[] },
+  operation: string,
+) {
+  return connectionAllowsOperation(
+    group.connectionAccess ?? [],
+    connection.access,
+    operation,
+  );
+}
+
+/**
  * What a save stores of the choices a user turned on: only those the plugin
  * declares and can turn off, once each, in the plugin's order.
  */
@@ -180,7 +196,14 @@ const ESTIMATE_FIELDS: readonly BacklogEstimateFieldKey[] = [
  * a conflict.
  */
 export function estimateFieldsToPush(
-  workItem: Pick<BacklogSyncWorkItem, BacklogEstimateFieldKey | "estimateSync">,
+  workItem: Partial<Record<BacklogEstimateFieldKey, number>> & {
+    estimateSync?: Partial<
+      Record<
+        BacklogEstimateFieldKey,
+        { baselineValue?: number; resolution?: "keep_local" } | undefined
+      >
+    >;
+  },
 ): BacklogEstimateFieldKey[] {
   return ESTIMATE_FIELDS.filter((field) => {
     const state = workItem.estimateSync?.[field];

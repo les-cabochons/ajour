@@ -739,7 +739,9 @@ export const catalog = defineCatalog({
           /** In the renderer: from the end of the Undo window until the send. */
           delay_ms: operational<number>(),
           /** In the renderer: `deferred` waits for the Undo window, `superseded` for a newer write. */
-          result: operational<"sent" | "failed" | "deferred" | "superseded">(),
+          result: operational<
+            "sent" | "failed" | "deferred" | "superseded" | "held"
+          >(),
         },
       },
     },

@@ -6,6 +6,15 @@ import {
   type TeamSettings,
 } from "@ajour/shared";
 import { takeSourceDescription } from "@/domain/backlog/description-sync";
+import {
+  discardHeldEstimate as applyDiscardHeldEstimate,
+  holdPendingEstimates as applyHoldPendingEstimates,
+  holdSourceWrite as applyHoldSourceWrite,
+  markHeldEstimates as applyMarkHeldEstimates,
+  releaseHeldEstimate as applyReleaseHeldEstimate,
+  releaseHeldSourceWrite as applyReleaseHeldSourceWrite,
+} from "@/domain/backlog/held-edits";
+import type { HeldEstimates } from "@ajour/shared/connection-access";
 import { todayIsoDate } from "@/lib/utils";
 import { wideEvents } from "@/lib/wide-events";
 import { recordsEqual } from "@/domain/records-equal";
@@ -2616,6 +2625,50 @@ const store = {
       ),
     );
   },
+  /**
+   * Holds the item's pending write: its connection refused it because
+   * editing work items is off. The item stays as the user left it.
+   */
+  holdSourceWrite(workItemId: string) {
+    updateState((state) => applyHoldSourceWrite(state, workItemId, Date.now()));
+  },
+  /** The user approved the held write; it goes as any pending write. */
+  releaseHeldSourceWrite(workItemId: string) {
+    updateState((state) => applyReleaseHeldSourceWrite(state, workItemId));
+  },
+  /** Marks exactly the estimate fields a sync of the connection held. */
+  markHeldEstimates(
+    connection: { pluginId: string; connectionId: string },
+    held: readonly HeldEstimates[],
+  ) {
+    updateState((state) =>
+      applyMarkHeldEstimates(state, connection, held, Date.now()),
+    );
+  },
+  /** Holds every estimate change of the connection, as editing turns on. */
+  holdPendingEstimates(connection: { pluginId: string; connectionId: string }) {
+    updateState((state) =>
+      applyHoldPendingEstimates(state, connection, Date.now()),
+    );
+  },
+  /** The user approved a held estimate; the next sync uploads it. */
+  releaseHeldEstimate(
+    workItemId: string,
+    fieldKey: LocalWorkItemEstimateFieldKey,
+  ) {
+    updateState((state) =>
+      applyReleaseHeldEstimate(state, workItemId, fieldKey),
+    );
+  },
+  /** The user discarded a held estimate; the source's value comes back. */
+  discardHeldEstimate(
+    workItemId: string,
+    fieldKey: LocalWorkItemEstimateFieldKey,
+  ) {
+    updateState((state) =>
+      applyDiscardHeldEstimate(state, workItemId, fieldKey),
+    );
+  },
   /** Applies a fixed change when items of the rule's source project settle. */
   applySettleRule(rule: LocalSettleRule) {
     updateState((state) => applySettleRule(state, rule));
@@ -3411,6 +3464,60 @@ export const STORE_COMMANDS = {
   failSourceWrite: {
     ...backlogItemCommand("backlog_item.fail_source_write"),
     trigger: "system",
+  },
+  holdSourceWrite: {
+    name: "backlog_item.hold_edit",
+    trigger: "system",
+    fields: {
+      backlog_item: {
+        id: ([workItemId]) => workItemId,
+        held_edit: () => "settle",
+      },
+    },
+  },
+  markHeldEstimates: {
+    name: "backlog_item.hold_edit",
+    trigger: "system",
+    fields: {
+      backlog_item: {
+        count: ([, held]) => held.length,
+        held_edit: () => "estimate",
+      },
+    },
+  },
+  holdPendingEstimates: {
+    name: "backlog_item.hold_edit",
+    fields: { backlog_item: { held_edit: () => "estimate" } },
+  },
+  releaseHeldSourceWrite: {
+    name: "backlog_item.review_held_edit",
+    fields: {
+      backlog_item: {
+        id: ([workItemId]) => workItemId,
+        held_edit: () => "settle",
+        held_decision: () => "send",
+      },
+    },
+  },
+  releaseHeldEstimate: {
+    name: "backlog_item.review_held_edit",
+    fields: {
+      backlog_item: {
+        id: ([workItemId]) => workItemId,
+        held_edit: () => "estimate",
+        held_decision: () => "send",
+      },
+    },
+  },
+  discardHeldEstimate: {
+    name: "backlog_item.review_held_edit",
+    fields: {
+      backlog_item: {
+        id: ([workItemId]) => workItemId,
+        held_edit: () => "estimate",
+        held_decision: () => "discard",
+      },
+    },
   },
   applySettleRule: {
     name: "settle_rule.set",

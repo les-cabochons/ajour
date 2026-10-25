@@ -386,6 +386,8 @@ describe("saving a connection", () => {
       { label: "Acme" },
       "c1",
       { token: 1_800_000_000_000, other: null },
+      // The access choices stay as saved.
+      undefined,
     );
   });
 });

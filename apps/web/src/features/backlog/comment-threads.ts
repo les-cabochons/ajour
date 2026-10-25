@@ -28,9 +28,12 @@ export function subscribePostedComments(listener: PostedListener) {
   };
 }
 
-/** The editor's @ suggestions, when the plugin can search people. */
+/**
+ * The editor's @ suggestions, when the plugin can search people and the
+ * connection's access allows it.
+ */
 export function commentMentionSearch(source: CommentSource, itemId: string) {
-  return source.capability.mentions
+  return source.capability.mentions && !source.peopleSearchOff
     ? {
         search: async (query: string) =>
           (

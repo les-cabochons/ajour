@@ -40,12 +40,16 @@ import {
   type CommentSource,
 } from "@/domain/backlog/comments";
 import {
+  isAccessOffError,
   isPluginApiMissing,
   editItemComment,
   listItemComments,
   postItemComment,
   setItemCommentReaction,
 } from "@/lib/app-api";
+import { announceHeldEdit } from "@/lib/held-edit-notice";
+import { holdCommentEdit } from "@/lib/held-edits";
+import { localStore } from "@/lib/local-store";
 import { usePluginsOverview } from "@/features/backlog/plugins-overview";
 import {
   cancelCommentDelete,
@@ -190,6 +194,11 @@ export function BacklogItemComments({
   const [seenAt] = useState(() => getCommentsSeenAt(itemId));
   const sourceRef = useRef(source);
   sourceRef.current = source;
+  /** Says a change to this thread was held: editing work items is off. */
+  const noticeHeld = () =>
+    announceHeldEdit(
+      localStore.snapshot().workItems.find((item) => item._id === itemId),
+    );
 
   // Comments posted elsewhere during a load, which its answer may predate.
   const postedDuringLoad = useRef<{ key: string; comments: BacklogComment[] }>({
@@ -328,15 +337,32 @@ export function BacklogItemComments({
     );
   };
 
-  /** Saves at once; a failure reaches the editor, which keeps the text. */
+  /**
+   * Saves at once; a failure reaches the editor, which keeps the text. A
+   * connection that can't edit work items holds the edit for review.
+   */
   const editComment = async (comment: BacklogComment, body: string) => {
-    const { comment: edited } = await editItemComment(
-      source.pluginId,
-      source.connectionId,
-      { sourceId: source.sourceId, commentId: comment.id, body },
-      { itemId },
-    );
-    updateComment(comment.id, () => edited);
+    try {
+      const { comment: edited } = await editItemComment(
+        source.pluginId,
+        source.connectionId,
+        { sourceId: source.sourceId, commentId: comment.id, body },
+        { itemId },
+      );
+      updateComment(comment.id, () => edited);
+    } catch (error) {
+      if (!isAccessOffError(error)) throw error;
+      holdCommentEdit({
+        kind: "commentEdit",
+        itemId,
+        pluginId: source.pluginId,
+        connectionId: source.connectionId,
+        sourceId: source.sourceId,
+        commentId: comment.id,
+        body,
+      });
+      noticeHeld();
+    }
   };
 
   /** Hides the comment now and deletes it once the Undo toast closes. */
@@ -361,21 +387,25 @@ export function BacklogItemComments({
       onClose: () => {
         if (undone) return;
         sendCommentDelete(ref).then(
-          () =>
-            setThread((current) =>
-              current.kind === "ready"
-                ? {
-                    ...current,
-                    comments: current.comments.filter(
-                      (candidate) => candidate.id !== comment.id,
-                    ),
-                    total:
-                      current.total === undefined
-                        ? undefined
-                        : current.total - 1,
-                  }
-                : current,
-            ),
+          (result) =>
+            // A held delete keeps the comment hidden, as its pending delete
+            // did, until Sync review sends or discards it.
+            result === "held"
+              ? noticeHeld()
+              : setThread((current) =>
+                  current.kind === "ready"
+                    ? {
+                        ...current,
+                        comments: current.comments.filter(
+                          (candidate) => candidate.id !== comment.id,
+                        ),
+                        total:
+                          current.total === undefined
+                            ? undefined
+                            : current.total - 1,
+                      }
+                    : current,
+                ),
           (error: unknown) => {
             unhide(comment.id);
             showErrorToast({
@@ -580,6 +610,26 @@ function CommentComposer({
       if (!rest) setOpen(false);
       onPosted(comment);
     } catch (failure) {
+      // Editing work items is off: the comment is held for review, and
+      // leaves the composer as a sent one does.
+      if (isAccessOffError(failure)) {
+        holdCommentEdit({
+          kind: "comment",
+          itemId,
+          pluginId: source.pluginId,
+          connectionId: source.connectionId,
+          sourceId: source.sourceId,
+          body,
+        });
+        const rest = draftAfterSend(getCommentDraft(itemId) ?? "", value);
+        setCommentDraft(itemId, rest);
+        setText(rest);
+        if (!rest) setOpen(false);
+        announceHeldEdit(
+          localStore.snapshot().workItems.find((item) => item._id === itemId),
+        );
+        return;
+      }
       setError(
         failure instanceof Error
           ? failure.message

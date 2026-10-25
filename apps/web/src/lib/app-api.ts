@@ -36,10 +36,12 @@ import {
   type BacklogImportCandidate,
   type PluginInstallResponse,
   type BacklogSyncWorkItem,
+  type BacklogSyncEstimateFieldState,
   type PluginsOverview,
   type BacklogSyncResult,
 } from "@ajour/shared";
 import { newDescriptionConflicts } from "@/domain/backlog/description-sync";
+import type { LocalWorkItemEstimateFieldState } from "@/domain/local-state";
 import { announceDescriptionConflicts } from "@/lib/sync-conflict-events";
 import {
   catalogPluginDownloadResponseSchema,
@@ -286,18 +288,30 @@ class AppApiUnavailableError extends Error {
  */
 export class AppApiError extends Error {
   readonly status: number;
+  /** The access choice a refusal names, when the connection's access is off. */
+  readonly accessOff?: string;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, accessOff?: string) {
     super(message);
     // `name` stays "Error": it is the `error.type` of the events a failed
     // call records, which a status doesn't change.
     this.status = status;
+    if (accessOff) this.accessOff = accessOff;
   }
 }
 
 /** The HTTP status the local API answered a failed request with, if it did. */
 export function appApiErrorStatus(error: unknown): number | undefined {
   return error instanceof AppApiError ? error.status : undefined;
+}
+
+/**
+ * Whether the local API refused the call because the connection's access
+ * doesn't include the choice it needs, such as editing work items (#395).
+ * Such a write is held on this computer instead of dropped.
+ */
+export function isAccessOffError(error: unknown): error is AppApiError {
+  return error instanceof AppApiError && error.accessOff !== undefined;
 }
 
 /**
@@ -567,19 +581,26 @@ async function requestAppApi<T>(
   observe.answered(response.status);
   if (!response.ok) {
     let detail = response.statusText || "Request failed";
+    let accessOff: string | undefined;
     try {
-      const payload = (await response.json()) as { error?: string };
+      const payload = (await response.json()) as {
+        error?: string;
+        reason?: unknown;
+        access?: unknown;
+      };
       if (
         typeof payload.error === "string" &&
         payload.error.trim().length > 0
       ) {
         detail = payload.error.trim();
       }
+      if (payload.reason === "access_off" && typeof payload.access === "string")
+        accessOff = payload.access;
     } catch {
       // Ignore non-JSON error responses.
     }
 
-    throw new AppApiError(detail, response.status);
+    throw new AppApiError(detail, response.status, accessOff);
   }
 
   return parseJsonResponse(response, schema);
@@ -837,6 +858,8 @@ export async function savePluginConnection(
   id?: string,
   /** The reminder date of each secret field, in epoch ms. `null` clears one. */
   secretExpiry?: Record<string, number | null>,
+  /** The access choices turned on. Undefined keeps the saved ones. */
+  access?: readonly string[],
 ): Promise<PluginConnectionSaveResponse> {
   const payload = pluginConnectionSaveRequestSchema.parse({
     id,
@@ -844,6 +867,7 @@ export async function savePluginConnection(
     ...(secretExpiry && Object.keys(secretExpiry).length > 0
       ? { secretExpiry }
       : {}),
+    ...(access ? { access: [...access] } : {}),
   });
   const result = await appApiRequest(
     "savePluginConnection",
@@ -1161,6 +1185,23 @@ export function syncBacklogConnection(
   );
 }
 
+/**
+ * What a sync sends of an estimate field's state: the values both sides
+ * agreed on and saw, Keep mine, and whether its change waits for review,
+ * which the API keeps from uploading.
+ */
+function syncEstimateField(
+  field: LocalWorkItemEstimateFieldState | undefined,
+): BacklogSyncEstimateFieldState | undefined {
+  if (!field) return undefined;
+  return {
+    baselineValue: field.baselineValue,
+    remoteValue: field.remoteValue,
+    resolution: field.resolution,
+    ...(field.held ? { held: true } : {}),
+  };
+}
+
 async function runBacklogSync(
   job: Unit<AjourCatalog, "backlog.sync">,
   pluginId: string,
@@ -1190,44 +1231,15 @@ async function runBacklogSync(
               : undefined,
           estimateSync: workItem.estimateSync
             ? {
-                originalEstimateHours: workItem.estimateSync
-                  .originalEstimateHours
-                  ? {
-                      baselineValue:
-                        workItem.estimateSync.originalEstimateHours
-                          .baselineValue,
-                      remoteValue:
-                        workItem.estimateSync.originalEstimateHours.remoteValue,
-                      resolution:
-                        workItem.estimateSync.originalEstimateHours.resolution,
-                    }
-                  : undefined,
-                remainingEstimateHours: workItem.estimateSync
-                  .remainingEstimateHours
-                  ? {
-                      baselineValue:
-                        workItem.estimateSync.remainingEstimateHours
-                          .baselineValue,
-                      remoteValue:
-                        workItem.estimateSync.remainingEstimateHours
-                          .remoteValue,
-                      resolution:
-                        workItem.estimateSync.remainingEstimateHours.resolution,
-                    }
-                  : undefined,
-                completedEstimateHours: workItem.estimateSync
-                  .completedEstimateHours
-                  ? {
-                      baselineValue:
-                        workItem.estimateSync.completedEstimateHours
-                          .baselineValue,
-                      remoteValue:
-                        workItem.estimateSync.completedEstimateHours
-                          .remoteValue,
-                      resolution:
-                        workItem.estimateSync.completedEstimateHours.resolution,
-                    }
-                  : undefined,
+                originalEstimateHours: syncEstimateField(
+                  workItem.estimateSync.originalEstimateHours,
+                ),
+                remainingEstimateHours: syncEstimateField(
+                  workItem.estimateSync.remainingEstimateHours,
+                ),
+                completedEstimateHours: syncEstimateField(
+                  workItem.estimateSync.completedEstimateHours,
+                ),
               }
             : undefined,
         }) satisfies BacklogSyncWorkItem,
@@ -1300,6 +1312,12 @@ async function runBacklogSync(
               payload.trigger === "auto" ? connectionId : undefined,
           })
         : { importedCount: 0, updatedCount: 0 };
+    // The estimate changes the connection didn't upload stay, held for
+    // review: editing work items is off, or the user hasn't approved them.
+    localStore.markHeldEstimates(
+      { pluginId, connectionId },
+      result.heldEstimates,
+    );
     localStore.applyBacklogSyncWorkItemUpdates(result.workItemUpdates);
     announceDescriptionConflicts(
       newDescriptionConflicts(beforeSync, localStore.snapshot().workItems),
