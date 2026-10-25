@@ -17,7 +17,10 @@ const LITERAL_SEGMENT = /^[A-Za-z0-9\-._~!$&'()+,=:@%]+$/;
  * with or without trailing dots or spaces, a slash or backslash, `;` path
  * parameters, and control characters.
  */
-function isUnsafeDecodedSegment(decoded: string) {
+function isUnsafeDecodedSegment(text: string) {
+  // NFKC folds look-alikes such as the fullwidth full stop (U+FF0E) and the
+  // one dot leader (U+2024) into the dots, slashes and `;` they stand for.
+  const decoded = text.normalize("NFKC");
   return (
     /^[.\s]+$/.test(decoded) ||
     /[/\\;]/.test(decoded) ||
@@ -36,14 +39,15 @@ function decodedSegment(segment: string) {
 /**
  * A segment that means itself: once decoded, and decoded again for a server
  * that decodes twice, it is not `.` or `..` and hides no slash, backslash,
- * `;` or control character.
+ * `;` or control character, and it holds no `%` still, which a third decode
+ * could turn into one. A literal `%` therefore can't be declared or requested.
  */
 function isLiteralSegment(segment: string) {
   if (!LITERAL_SEGMENT.test(segment)) return false;
   const once = decodedSegment(segment);
   if (once === undefined || isUnsafeDecodedSegment(once)) return false;
   const twice = decodedSegment(once) ?? once;
-  return !isUnsafeDecodedSegment(twice);
+  return !twice.includes("%") && !isUnsafeDecodedSegment(twice);
 }
 
 function pathSegments(path: string): string[] | undefined {
@@ -89,7 +93,9 @@ export function endpointPatternMatches(pattern: string, path: string) {
 
 /**
  * Request headers a plugin may never set, whatever its manifest lists:
- * credentials, the host, and headers that change the method a server runs.
+ * credentials, the host, headers that change the method a server runs or
+ * rewrite its path or host, the client address, and the hop-by-hop and
+ * framing headers that belong to the connection, not the plugin.
  */
 export const DENIED_REQUEST_HEADERS: readonly string[] = [
   "authorization",
@@ -99,6 +105,19 @@ export const DENIED_REQUEST_HEADERS: readonly string[] = [
   "x-http-method-override",
   "x-http-method",
   "x-method-override",
+  "x-original-url",
+  "x-rewrite-url",
+  "x-original-host",
+  "x-host",
+  "x-real-ip",
+  "content-length",
+  "transfer-encoding",
+  "connection",
+  "te",
+  "upgrade",
+  "keep-alive",
+  "trailer",
+  "expect",
 ];
 export const DENIED_REQUEST_HEADER_PREFIXES: readonly string[] = [
   "proxy-",

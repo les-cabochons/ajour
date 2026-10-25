@@ -11,8 +11,8 @@ import type {
  * it. The Access section lists the summary, and consent on updates uses the
  * difference: an update widens access when it adds a capability, an auth
  * scheme, a host, a derived host, an endpoint, a public host, an MCP tool or
- * an agent prompt change, marks an access choice always on, or switches to
- * "Always ready" (spec #381). Nothing else counts, removals included.
+ * an agent prompt change, marks an access choice always on, adds an operation
+ * to an access choice, or switches to "Always ready" (spec #381). Nothing else counts, removals included.
  */
 
 export interface PluginAccessAuth {
@@ -56,6 +56,12 @@ export interface PluginAccessPrompt {
   prompt: string;
 }
 
+/** An operation an access choice unlocks. */
+export interface PluginAccessOperation {
+  choice: string;
+  operation: string;
+}
+
 export interface PluginAccessSummary {
   capabilities: string[];
   authSchemes: PluginAccessAuth[];
@@ -70,6 +76,8 @@ export interface PluginAccessSummary {
    * turning them on, with their endpoints and operations.
    */
   alwaysOnAccess: string[];
+  /** Every operation each access choice unlocks. */
+  accessOperations: PluginAccessOperation[];
   startMode: PluginStartMode;
 }
 
@@ -85,6 +93,8 @@ export interface PluginAccessDifference {
   agentPrompts: string[];
   /** Access choices that are now always on: new ones, or ones that were off by default. */
   alwaysOnAccess: string[];
+  /** Operations an access choice now unlocks that it didn't before. */
+  accessOperations: PluginAccessOperation[];
   /** The update switches the plugin to "Always ready". */
   alwaysReady: boolean;
 }
@@ -100,7 +110,11 @@ export interface PluginAccessManifest {
     };
   };
   network?: PluginNetwork;
-  connectionAccess?: readonly { id: string; always: boolean }[];
+  connectionAccess?: readonly {
+    id: string;
+    always: boolean;
+    operations?: readonly string[];
+  }[];
   runtime?: { start: PluginStartMode };
 }
 
@@ -195,6 +209,14 @@ export function summarizePluginAccess(
       .filter((choice) => choice.always)
       .map((choice) => choice.id)
       .sort(),
+    accessOperations: (manifest.connectionAccess ?? [])
+      .flatMap((choice) =>
+        (choice.operations ?? []).map((operation) => ({
+          choice: choice.id,
+          operation,
+        })),
+      )
+      .sort(byText(accessOperationKey)),
     startMode: manifest.runtime?.start ?? "whenNeeded",
   };
 }
@@ -210,6 +232,10 @@ function endpointKey(endpoint: PluginAccessEndpoint) {
 
 function mcpToolKey(entry: PluginAccessMcpTool) {
   return `${entry.task}\u0000${entry.tool}`;
+}
+
+function accessOperationKey(entry: PluginAccessOperation) {
+  return `${entry.choice}\u0000${entry.operation}`;
 }
 
 function added<Item>(
@@ -231,6 +257,7 @@ const EMPTY_SUMMARY: PluginAccessSummary = {
   mcpTools: [],
   agentPrompts: [],
   alwaysOnAccess: [],
+  accessOperations: [],
   startMode: "whenNeeded",
 };
 
@@ -272,6 +299,11 @@ export function pluginAccessDifference(
       .filter((entry) => prompts.get(entry.task) !== entry.prompt)
       .map((entry) => entry.task),
     alwaysOnAccess: added(before.alwaysOnAccess, next.alwaysOnAccess, String),
+    accessOperations: added(
+      before.accessOperations,
+      next.accessOperations,
+      accessOperationKey,
+    ),
     alwaysReady:
       next.startMode === "alwaysReady" && before.startMode !== "alwaysReady",
   };
@@ -291,6 +323,7 @@ export function widensAccess(difference: PluginAccessDifference) {
       difference.mcpTools,
       difference.agentPrompts,
       difference.alwaysOnAccess,
+      difference.accessOperations,
     ].some((items) => items.length > 0)
   );
 }

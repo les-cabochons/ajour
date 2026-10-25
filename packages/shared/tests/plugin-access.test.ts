@@ -43,6 +43,7 @@ const NOTHING: PluginAccessDifference = {
   mcpTools: [],
   agentPrompts: [],
   alwaysOnAccess: [],
+  accessOperations: [],
   alwaysReady: false,
 };
 
@@ -244,6 +245,40 @@ describe("the access difference between two manifests", () => {
       { alwaysOnAccess: ["builds"] },
     ],
     [
+      "an operation added to an existing access choice",
+      azureDevOpsManifest,
+      (manifest) => {
+        manifest.connectionAccess[1].operations.push("deleteWorkItem");
+      },
+      {
+        accessOperations: [
+          { choice: "editWorkItems", operation: "deleteWorkItem" },
+        ],
+      },
+    ],
+    [
+      "an operation added to a choice that had none",
+      azureDevOpsManifest,
+      (manifest) => {
+        manifest.connectionAccess[0].operations = ["readBacklog"];
+      },
+      {
+        accessOperations: [{ choice: "readBacklog", operation: "readBacklog" }],
+      },
+    ],
+    [
+      "an operation moved to another access choice",
+      azureDevOpsManifest,
+      (manifest) => {
+        manifest.connectionAccess[2].operations.push("postItemComment");
+      },
+      {
+        accessOperations: [
+          { choice: "pullRequests", operation: "postItemComment" },
+        ],
+      },
+    ],
+    [
       "a switch to always-ready",
       gitHubManifest,
       (manifest) => {
@@ -336,6 +371,20 @@ describe("the access difference between two manifests", () => {
       },
     ],
     [
+      "a removed operation",
+      azureDevOpsManifest,
+      (manifest) => {
+        manifest.connectionAccess[1].operations.pop();
+      },
+    ],
+    [
+      "a reordered operation list",
+      azureDevOpsManifest,
+      (manifest) => {
+        manifest.connectionAccess[1].operations.reverse();
+      },
+    ],
+    [
       "a removed MCP tool",
       workdayAgentManifest,
       (manifest) => {
@@ -359,6 +408,19 @@ describe("the access difference between two manifests", () => {
     ).toBe(true);
     expect(widensAccess({ ...NOTHING, alwaysReady: true })).toBe(true);
     expect(widensAccess({ ...NOTHING, alwaysOnAccess: ["builds"] })).toBe(true);
+    expect(
+      widensAccess({
+        ...NOTHING,
+        accessOperations: [{ choice: "editWorkItems", operation: "delete" }],
+      }),
+    ).toBe(true);
+    expect(
+      widensAccess(
+        difference(azureDevOpsManifest, (manifest) => {
+          manifest.connectionAccess[1].operations.push("deleteWorkItem");
+        }),
+      ),
+    ).toBe(true);
   });
 
   it("lists everything a first API 4 release reaches, from API 3", () => {
@@ -442,8 +504,19 @@ describe("the access summary", () => {
       mcpTools: [],
       agentPrompts: [],
       alwaysOnAccess: [],
+      accessOperations: [],
       startMode: "whenNeeded",
     });
+  });
+
+  it("lists each access choice's operations, sorted", () => {
+    expect(summary(azureDevOpsManifest()).accessOperations).toEqual([
+      { choice: "editWorkItems", operation: "postItemComment" },
+      { choice: "editWorkItems", operation: "writeDescription" },
+      { choice: "editWorkItems", operation: "writeSettle" },
+      { choice: "peopleSearch", operation: "searchItemPeople" },
+      { choice: "pullRequests", operation: "syncPullRequests" },
+    ]);
   });
 
   it("needs every agent task's prompt, so a change can't go unseen", () => {

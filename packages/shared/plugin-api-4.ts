@@ -154,6 +154,34 @@ function isDomainName(value: string) {
 }
 
 /**
+ * Names reserved for local or private use, or that never resolve on the
+ * public internet. A fixed host a plugin names may not end in one.
+ * Wildcard DNS such as nip.io is the broker's to refuse, from the addresses a
+ * name resolves to.
+ */
+const RESERVED_SUFFIXES = [
+  "localhost",
+  "local",
+  "internal",
+  "test",
+  "invalid",
+  "example",
+  "home.arpa",
+  "lan",
+] as const;
+
+function hasReservedSuffix(host: string) {
+  return RESERVED_SUFFIXES.some(
+    (suffix) => host === suffix || host.endsWith(`.${suffix}`),
+  );
+}
+
+/** A host name that a plugin may name as a fixed address: not a reserved one. */
+function isPublicDomainName(value: string) {
+  return isDomainName(value) && !hasReservedSuffix(value);
+}
+
+/**
  * The registrable domain of a host, such as `github.com` for
  * `api.github.com` or `acme.github.io` for `x.acme.github.io`. Null for a
  * public suffix itself, where anyone can register a name.
@@ -206,7 +234,7 @@ function hostTemplateProblem(template: string, whenHost: string | undefined) {
   if (
     !anchor ||
     (template !== anchor && !template.endsWith(`.${anchor}`)) ||
-    !isDomainName(host) ||
+    !isPublicDomainName(host) ||
     registrableDomain(host) !== registrableDomain(anchor)
   ) {
     return "A derived host stays within the address the user saved: end it with {host}, or stay within the domain whenHost names.";
@@ -419,8 +447,8 @@ const headerNameSchema = z
 const publicHostSchema = z
   .string()
   .refine(
-    isDomainName,
-    "A public host is a host name such as avatars.githubusercontent.com, without a scheme, path or wildcard.",
+    isPublicDomainName,
+    "A public host is a public host name such as avatars.githubusercontent.com, without a scheme, path, wildcard, or a local name such as .local or .internal.",
   );
 
 export const pluginNetworkSchema = strictObject({

@@ -87,8 +87,8 @@ Leave `auth` out when the requests carry no credential. Generated secrets, the b
 ### Hosts and endpoints
 
 - **The base address** is the url field named by `network.baseAddress.field`. Every request is relative to it, and may not climb above its path, such as `/tfs/DefaultCollection`. With `allowOnPremises`, the user may mark a connection as on-premises, which lets it reach private addresses.
-- **Endpoints** list each method and path the plugin may call. `*` matches one segment and `**`, last, matches the rest. Paths are relative: an absolute URL is refused. A request path matches nothing when a segment is empty, is `.` or `..` once decoded (`%2e%2e` too), or holds a `;`, a control character such as `%00`, or an encoded slash or backslash. Query strings and bodies aren't restricted.
-- **Derived hosts** are hosts the broker builds from the base address, each with its own endpoints. Each has forms, tried in order: `whenHost` picks the base hosts a form applies to, `host` builds the host, with `{host}` for the base host and `{match}` for the label `*` matched, and `pathPrefix` comes before every path. A form without `whenHost` applies to any base host and must be last. A derived host stays within the address the user saved: it ends with `{host}`, or stays within the registrable domain `whenHost` names, and under a `*.` rule it holds `{match}` once. `whenHost` may not be a public suffix where anyone can register a name, such as `github.io`, `co.uk` or `workers.dev` (the [Public Suffix List](https://publicsuffix.org/), private section included), and no host is an IP address.
+- **Endpoints** list each method and path the plugin may call. `*` matches one segment and `**`, last, matches the rest. Paths are relative: an absolute URL is refused. A request path matches nothing when a segment is empty, is `.` or `..` once decoded (`%2e%2e` too), or holds a `;`, a control character such as `%00`, or an encoded slash or backslash. It also matches nothing when a segment still holds a `%` after two decodes (so a literal `%` can't be declared or requested), or when Unicode compatibility folding (NFKC) turns a segment into one of the above, as the fullwidth full stop (U+FF0E). A path ending in a slash has an empty last segment, so a trailing-slash path can't be declared or requested: `/graphql/` is not `/graphql`. Query strings and bodies aren't restricted.
+- **Derived hosts** are hosts the broker builds from the base address, each with its own endpoints. Each has forms, tried in order: `whenHost` picks the base hosts a form applies to, `host` builds the host, with `{host}` for the base host and `{match}` for the label `*` matched, and `pathPrefix` comes before every path. A form without `whenHost` applies to any base host and must be last. A derived host stays within the address the user saved: it ends with `{host}`, or stays within the registrable domain `whenHost` names, and under a `*.` rule it holds `{match}` once. `whenHost` may not be a public suffix where anyone can register a name, such as `github.io`, `co.uk` or `workers.dev` (the [Public Suffix List](https://publicsuffix.org/), private section included), and no host is an IP address. A fixed host, in a derived host or in `publicHosts`, may not end in a name reserved for local use or that never resolves publicly: `.localhost`, `.local`, `.internal`, `.test`, `.invalid`, `.example`, `.home.arpa` or `.lan`. Wildcard DNS such as nip.io isn't judged by name: the broker checks the addresses a host resolves to.
 
 GitHub's API is on `api.github.com` for github.com, and under `/api/v3` and `/api/graphql` on GitHub Enterprise:
 
@@ -117,7 +117,7 @@ Azure DevOps people search is `vssps.{host}` for `dev.azure.com`, and `{match}.v
 
 ### Headers and public hosts
 
-- **`requestHeaders`** lists the headers the plugin may set. A fixed denylist always wins: `Authorization`, `Cookie`, `Host`, `Forwarded`, the method overrides `X-HTTP-Method-Override`, `X-HTTP-Method` and `X-Method-Override`, every `Proxy-*` and `X-Forwarded-*` header, and any header the auth scheme sets.
+- **`requestHeaders`** lists the headers the plugin may set. A fixed denylist always wins: `Authorization`, `Cookie`, `Host`, `Forwarded`, the method overrides `X-HTTP-Method-Override`, `X-HTTP-Method` and `X-Method-Override`, the path and host rewrites `X-Original-URL`, `X-Rewrite-URL`, `X-Original-Host` and `X-Host`, `X-Real-IP`, the hop-by-hop and framing headers `Content-Length`, `Transfer-Encoding`, `Connection`, `TE`, `Upgrade`, `Keep-Alive`, `Trailer` and `Expect`, every `Proxy-*` and `X-Forwarded-*` header, and any header the auth scheme sets.
 - **`publicHosts`** lists the hosts `ajour.publicFetch` may reach, over https and without credentials, such as `avatars.githubusercontent.com`.
 
 ### Connection access
@@ -134,7 +134,7 @@ Each agent task lists the Ajour MCP `tools` its run may use, and gets only those
 
 ### What needs the user's consent again
 
-An update installs inactive, until the user allows it, when it adds a capability, an auth scheme, a host, a derived host or one of its forms, an endpoint, a public host or an MCP tool, changes an agent task's prompt, marks an access choice `always` on, or switches to `alwaysReady`. Nothing else does.
+An update installs inactive, until the user allows it, when it adds a capability, an auth scheme, a host, a derived host or one of its forms, an endpoint, a public host or an MCP tool, changes an agent task's prompt, marks an access choice `always` on, adds an operation to an access choice, or switches to `alwaysReady`. Nothing else does.
 
 ## Plugin code
 

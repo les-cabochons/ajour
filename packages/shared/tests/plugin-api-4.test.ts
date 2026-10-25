@@ -309,6 +309,17 @@ describe("the API 4 manifest", () => {
       ["/repos/*", "/repos/a%5Cb", false],
       ["/repos/*", "/repos/a%255cb", false],
       ["/repos/*", "/repos/a\\b", false],
+      ["/repos/*", "/repos/%2525", false],
+      ["/repos/*", "/repos/100%25", false],
+      ["/repos/*", "/repos/%25252e", false],
+      ["/repos/*", "/repos/%25zz", false],
+      ["/repos/**", "/repos/．．/admin", false],
+      ["/repos/**", "/repos/%EF%BC%8E%EF%BC%8E/admin", false],
+      ["/repos/**", "/repos/%E2%80%A4%E2%80%A4/admin", false],
+      ["/repos/**", "/repos/%E2%80%A4/admin", false],
+      ["/repos/*", "/repos/%EF%BC%8F", false],
+      ["/repos/*", "/repos/%EF%BC%9B", false],
+      ["/repos/*", "/repos/caf%C3%A9", true],
     ])("%s matches %s: %s", (pattern, path, matches) => {
       expect(endpointPatternMatches(pattern, path)).toBe(matches);
     });
@@ -396,6 +407,25 @@ describe("the API 4 manifest", () => {
       [{ whenHost: "127.0x1", host: "{host}" }, "an IP address as a rule"],
       [{ whenHost: "0.0.0.1", host: "{host}" }, "a dotted IP address"],
     ])("refuses %j, %s", (form, _reason) => {
+      const manifest = gitHubManifest();
+      manifest.network.derivedHosts[0]!.forms = [
+        form as (typeof manifest.network.derivedHosts)[number]["forms"][number],
+      ];
+
+      expect(issuesOf(manifest)).not.toEqual([]);
+    });
+
+    it.each([
+      [{ whenHost: "acme.local", host: "api.acme.local" }],
+      [{ whenHost: "acme.localhost", host: "api.acme.localhost" }],
+      [{ whenHost: "acme.internal", host: "api.acme.internal" }],
+      [{ whenHost: "acme.test", host: "api.acme.test" }],
+      [{ whenHost: "acme.invalid", host: "api.acme.invalid" }],
+      [{ whenHost: "acme.example", host: "api.acme.example" }],
+      [{ whenHost: "acme.home.arpa", host: "api.acme.home.arpa" }],
+      [{ whenHost: "acme.lan", host: "api.acme.lan" }],
+      [{ whenHost: "*.acme.local", host: "{match}.api.acme.local" }],
+    ])("refuses %j, a reserved or local name", (form) => {
       const manifest = gitHubManifest();
       manifest.network.derivedHosts[0]!.forms = [
         form as (typeof manifest.network.derivedHosts)[number]["forms"][number],
@@ -496,6 +526,21 @@ describe("the API 4 manifest", () => {
       "X-HTTP-Method-Override",
       "x-http-method",
       "X-Method-Override",
+      "X-Original-URL",
+      "X-Rewrite-URL",
+      "X-Original-Host",
+      "X-Host",
+      "X-Real-IP",
+      "X-Forwarded-Host",
+      "X-Forwarded-Proto",
+      "Content-Length",
+      "Transfer-Encoding",
+      "Connection",
+      "TE",
+      "Upgrade",
+      "Keep-Alive",
+      "Trailer",
+      "Expect",
     ])("refuses %s, which the denylist holds", (header) => {
       const manifest = jiraManifest();
       manifest.network.requestHeaders = ["Accept", header];
@@ -563,6 +608,15 @@ describe("the API 4 manifest", () => {
       "[::1]",
       "::1",
       "localhost",
+      "local",
+      "printer.local",
+      "app.localhost",
+      "db.internal",
+      "api.test",
+      "api.invalid",
+      "api.example",
+      "router.home.arpa",
+      "nas.lan",
     ])("refuses %s", (publicHost) => {
       const manifest = gitHubManifest();
       manifest.network.publicHosts = [publicHost];
