@@ -136,6 +136,7 @@ import { handleMcpRequest, MAX_WAIT_FOR_ANSWER_MS } from "./mcp-server.ts";
 import { claudeCodeAdapter } from "./agent-runner/adapters/claude-code.ts";
 import { codexAdapter } from "./agent-runner/adapters/codex.ts";
 import { opencodeAdapter } from "./agent-runner/adapters/opencode.ts";
+import type { AgentCliAdapter } from "./agent-runner/adapter.ts";
 import { isChromeInstalled } from "./agent-runner/chrome.ts";
 import {
   findExecutable,
@@ -243,6 +244,11 @@ interface AppApiServerOptions {
    * it refuses secret fields, and connections that need one pause.
    */
   vault?: SecretVault;
+  /**
+   * The agent CLIs the runner can start. Defaults to Claude Code, Codex and
+   * OpenCode. Tests replace them with the fake CLI.
+   */
+  agentCliAdapters?: AgentCliAdapter[];
 }
 
 /** The vault file the desktop app keeps beside the state file. */
@@ -1047,7 +1053,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           plugin && secretManifestOf(plugin),
         );
       },
-      createMcpClient: (name) => createMcpClient(storage, name),
+      createMcpClient: (name, scope) =>
+        createMcpClient(storage, name, scope ?? {}),
       revokeMcpClient: (clientId) =>
         storage.revokeMcpClient(clientId, Date.now()),
     },
@@ -1064,7 +1071,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       readAgentTaskPrompt: (pluginId, taskId) =>
         pluginManager.readAgentTaskPrompt(pluginId, taskId),
     },
-    adapters: [claudeCodeAdapter, codexAdapter, opencodeAdapter],
+    adapters: options.agentCliAdapters ?? [
+      claudeCodeAdapter,
+      codexAdapter,
+      opencodeAdapter,
+    ],
     findExecutable: (name, pathValue) => findExecutable(name, pathValue),
     loginShellPath:
       options.agentCliPath === undefined

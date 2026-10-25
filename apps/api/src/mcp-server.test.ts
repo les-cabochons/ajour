@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -13,6 +13,7 @@ import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import { AgentSessions } from "./agent-sessions.ts";
 import { startAppApiServer, stopAppApiServer } from "./server.ts";
+import { fakeCliAdapter } from "./test-support/fake-cli-adapter.ts";
 import {
   TEST_WINDOW_TOKEN,
   windowTokenHeader,
@@ -1365,4 +1366,256 @@ describe("wide events on stdout", () => {
       expect.objectContaining({ outcome_reason: "browser_origin" }),
     ]);
   });
+});
+
+describe("an agent task's declared tools", () => {
+  type McpMessage = { method: string; params?: unknown };
+  const ICON = "<svg viewBox='0 0 16 16'><path d='M0 0h16v16H0z' /></svg>";
+
+  /**
+   * A development plugin with one agent task, "Enter in Workday". On plugin
+   * API 4 the task declares `tools`; on API 3 it declares none.
+   */
+  async function createAgentTaskPlugin(
+    root: string,
+    task: { apiVersion: 3 | 4; tools?: string[] },
+  ) {
+    const directory = path.join(root, "plugins", "ajp-workday-agent");
+    await mkdir(path.join(directory, "prompts"), { recursive: true });
+    await writeFile(
+      path.join(directory, "plugin.json"),
+      JSON.stringify({
+        id: "ajp-workday-agent",
+        version: `${task.apiVersion}.0.0`,
+        apiVersion: task.apiVersion,
+        displayName: "Workday tasks",
+        description: "Test agent tasks.",
+        iconSvg: ICON,
+        capabilities: {
+          agentTask: {
+            tasks: [
+              {
+                id: "enter-week",
+                label: "Enter in Workday",
+                placement: "commit-week",
+                prompt: "prompts/enter-week.md",
+                estimateMinutes: 5,
+                ...(task.tools ? { tools: task.tools } : {}),
+              },
+            ],
+          },
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      path.join(directory, "prompts", "enter-week.md"),
+      "Enter the week of {{weekOf}}.",
+      "utf8",
+    );
+    return directory;
+  }
+
+  /**
+   * Starts the API with the plugin and the fake CLI as Claude Code, turns MCP
+   * on with a fake window that answers `list_projects`, and runs the task,
+   * whose CLI sends `requests` to Ajour's MCP server. Resolves with what each
+   * request got, once the run ended.
+   */
+  async function runTask(
+    task: { apiVersion: 3 | 4; tools?: string[] },
+    /** Each is one MCP request, or a batch. */
+    requests: (McpMessage | McpMessage[])[],
+  ) {
+    const root = await mkdtemp(path.join(os.tmpdir(), "ajour-agent-tools-"));
+    running.push(() =>
+      rm(root, { recursive: true, force: true, maxRetries: 5 }),
+    );
+    const pluginDirectory = await createAgentTaskPlugin(root, task);
+    const report = path.join(root, "report.jsonl");
+    // Where the runner finds `claude`. The fake CLI runs in its place.
+    const bin = path.join(root, "bin");
+    await mkdir(bin);
+    await writeFile(path.join(bin, "claude"), "#!/bin/sh\nexit 0\n", {
+      mode: 0o755,
+    });
+    let mcpUrl = "";
+    const { baseUrl, logged } = await startTestApi({
+      developmentPluginDirectories: [pluginDirectory],
+      allowDevelopmentPlugins: true,
+      agentCliPath: bin,
+      agentCliAdapters: [
+        fakeCliAdapter(
+          [...requests.map((request) => ({ mcp: request })), { exit: 0 }],
+          report,
+          () => mcpUrl,
+        ),
+      ],
+    });
+    mcpUrl = `${baseUrl}/mcp/ajour`;
+    await apiRequest(baseUrl, "/api/mcp/settings", { enabled: true });
+    const renderer = await openFakeRenderer(baseUrl, (call) =>
+      call.tool === "list_projects"
+        ? { requestId: call.requestId, ok: true, output: acmeProjects }
+        : undefined,
+    );
+    running.push(async () => renderer.close());
+    await apiRequest(baseUrl, "/api/agents/settings", {
+      cli: "claude-code",
+      browserMode: "my-chrome",
+    });
+    const started = await apiRequest(baseUrl, "/api/agent-runs", {
+      pluginId: "ajp-workday-agent",
+      taskId: "enter-week",
+      weekOf: "2026-10-12",
+    });
+    expect(started.body.error).toBeUndefined();
+    await vi.waitFor(
+      async () =>
+        expect(
+          (await apiRequest(baseUrl, "/api/agent-runs/current")).body.run,
+        ).toBeNull(),
+      { timeout: 10_000 },
+    );
+    const replies = (await readFile(report, "utf8"))
+      .trim()
+      .split("\n")
+      .map(
+        (line) => JSON.parse(line) as { mcp?: { status: number; reply: any } },
+      )
+      .flatMap((line) => (line.mcp ? [line.mcp] : []));
+    return { replies, logged };
+  }
+
+  const SESSION_TOOLS = [
+    "ask",
+    "begin_session",
+    "end_session",
+    "update_session",
+    "wait_for_answer",
+  ];
+
+  const toolNames = (reply: any) =>
+    (reply.result.tools as { name: string }[]).map((tool) => tool.name).sort();
+
+  it(
+    "lists only the tools an API 4 task declares, with the session tools",
+    { timeout: 20_000 },
+    async () => {
+      const { replies } = await runTask(
+        { apiVersion: 4, tools: ["list_projects", "get_week_status"] },
+        [{ method: "tools/list" }],
+      );
+
+      expect(replies).toHaveLength(1);
+      expect(toolNames(replies[0]!.reply)).toEqual(
+        ["get_week_status", "list_projects", ...SESSION_TOOLS].sort(),
+      );
+    },
+  );
+
+  it(
+    "lets the run call a tool its task declares, and refuses any other",
+    { timeout: 20_000 },
+    async () => {
+      const { replies, logged } = await runTask(
+        { apiVersion: 4, tools: ["list_projects"] },
+        [
+          {
+            method: "tools/call",
+            params: { name: "list_projects", arguments: {} },
+          },
+          {
+            method: "tools/call",
+            params: { name: "get_running_timer", arguments: {} },
+          },
+        ],
+      );
+
+      const [declared, other] = replies;
+      expect(declared!.reply.result.structuredContent).toEqual(acmeProjects);
+      expect(other!.reply.result).toEqual({
+        content: [
+          {
+            type: "text",
+            text: "This agent task doesn't declare the tool get_running_timer, so Ajour refuses it. Use only the tools that tools/list returns.",
+          },
+        ],
+        isError: true,
+      });
+      expect(
+        logged
+          .filter((event) => event.name === "agent_tool.call")
+          .map((event) => ({
+            tool: event.agent_tool?.name,
+            outcome: event.outcome,
+            reason: event.outcome_reason,
+          })),
+      ).toEqual([
+        { tool: "list_projects", outcome: "ok", reason: undefined },
+        {
+          tool: "get_running_timer",
+          outcome: "refused",
+          reason: "tool_not_declared",
+        },
+      ]);
+    },
+  );
+
+  it(
+    "refuses an undeclared tool inside a batch, and runs the declared one",
+    { timeout: 20_000 },
+    async () => {
+      const { replies } = await runTask(
+        { apiVersion: 4, tools: ["list_projects"] },
+        [
+          [
+            {
+              method: "tools/call",
+              params: { name: "list_projects", arguments: {} },
+            },
+            {
+              method: "tools/call",
+              params: { name: "stop_timer", arguments: {} },
+            },
+          ],
+        ],
+      );
+
+      const byId = new Map(
+        (replies[0]!.reply as any[]).map((reply) => [reply.id, reply]),
+      );
+      expect(byId.get(1).result.structuredContent).toEqual(acmeProjects);
+      expect(byId.get(2).result).toMatchObject({
+        isError: true,
+        content: [
+          {
+            text: expect.stringContaining(
+              "doesn't declare the tool stop_timer",
+            ),
+          },
+        ],
+      });
+    },
+  );
+
+  it(
+    "keeps every tool for an API 3 task's run, which declares none",
+    { timeout: 20_000 },
+    async () => {
+      const everyTool = await (async () => {
+        const { baseUrl } = await startTestApi();
+        const { token } = await enableMcpWithClient(baseUrl);
+        const agent = await connectAgent(baseUrl, token);
+        return (await agent.listTools()).tools.map((tool) => tool.name).sort();
+      })();
+
+      const { replies } = await runTask({ apiVersion: 3 }, [
+        { method: "tools/list" },
+      ]);
+
+      expect(everyTool).toContain("submit_week");
+      expect(toolNames(replies[0]!.reply)).toEqual(everyTool);
+    },
+  );
 });

@@ -152,6 +152,12 @@ export interface StoredMcpClient {
   createdAt: number;
   lastUsedAt?: number;
   revokedAt?: number;
+  /**
+   * The data tools the client may list and call, besides the session tools:
+   * an agent task run's client gets those its task declares (#396). Without
+   * it, the client has every tool, as a client the user creates does.
+   */
+  tools?: string[];
 }
 
 interface StoredMcpState {
@@ -166,14 +172,29 @@ function normalizeMcpState(raw: unknown): StoredMcpState {
   const value = (raw ?? {}) as Partial<StoredMcpState>;
   return {
     enabled: value.enabled === true,
-    clients: (Array.isArray(value.clients) ? value.clients : []).filter(
-      (client): client is StoredMcpClient =>
-        typeof client?.id === "string" &&
-        typeof client.name === "string" &&
-        typeof client.tokenHash === "string" &&
-        typeof client.createdAt === "number",
-    ),
+    clients: (Array.isArray(value.clients) ? value.clients : [])
+      .filter(
+        (client): client is StoredMcpClient =>
+          typeof client?.id === "string" &&
+          typeof client.name === "string" &&
+          typeof client.tokenHash === "string" &&
+          typeof client.createdAt === "number",
+      )
+      .map(normalizeMcpClientTools),
   };
+}
+
+/**
+ * A client limited to some tools stays limited: a list that isn't one of
+ * names leaves it none, never every tool.
+ */
+function normalizeMcpClientTools(client: StoredMcpClient): StoredMcpClient {
+  if (!Object.hasOwn(client, "tools")) return client;
+  const { tools } = client;
+  return Array.isArray(tools) &&
+    tools.every((tool: unknown) => typeof tool === "string")
+    ? client
+    : { ...client, tools: [] };
 }
 
 interface AppApiStateV8 {

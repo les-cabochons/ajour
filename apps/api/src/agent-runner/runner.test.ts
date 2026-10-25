@@ -67,12 +67,15 @@ function fakeStorage({
   cli,
   values,
   revoked,
+  clients,
   revokeError,
   whileRevoking,
 }: {
   cli: AgentCliId;
   values: Record<string, string>;
   revoked: string[];
+  /** Each client the runner created, with its tool scope when it has one. */
+  clients: { name: string; scope?: { tools: readonly string[] } }[];
   revokeError?: Error;
   whileRevoking?: () => Promise<void>;
 }) {
@@ -84,10 +87,16 @@ function fakeStorage({
       model: "",
     }),
     getAgentTaskValues: async () => values,
-    createMcpClient: async (name: string) => ({
-      client: { id: `c-${name}`, name, createdAt: 1 },
-      token: "ajour_test-token",
-    }),
+    createMcpClient: async (
+      name: string,
+      scope?: { tools: readonly string[] },
+    ) => {
+      clients.push({ name, ...(scope ? { scope } : {}) });
+      return {
+        client: { id: `c-${name}`, name, createdAt: 1 },
+        token: "ajour_test-token",
+      };
+    },
     revokeMcpClient: async (clientId: string) => {
       await whileRevoking?.();
       if (revokeError) throw revokeError;
@@ -102,6 +111,7 @@ function fakePlugins(
   weekLink: string,
   otherTasks: AgentTask[] = [],
   apiVersion = 3,
+  tools?: string[],
 ) {
   const manifest = {
     id: "ajp-test",
@@ -118,6 +128,7 @@ function fakePlugins(
             estimateMinutes: 10,
             weekLink,
             settings: fakeSettings,
+            ...(tools ? { tools } : {}),
           },
           ...otherTasks,
         ],
@@ -143,6 +154,8 @@ async function setup(
     otherTasks?: AgentTask[];
     /** The plugin API the plugin's manifest declares. */
     apiVersion?: number;
+    /** The MCP tools the first task declares, as on plugin API 4. */
+    tools?: string[];
     /** Where runs make their folder, under the test's folder. */
     tempRoot?: string;
     findExecutable?: (name: string) => Promise<string | null>;
@@ -172,11 +185,13 @@ async function setup(
   // Session ends go to the same sink, as in the server.
   const sessions = options.sessions ?? new AgentSessions({ events: apiEvents });
   const revoked: string[] = [];
+  const clients: { name: string; scope?: { tools: readonly string[] } }[] = [];
   const runner = new AgentRunner({
     storage: fakeStorage({
       cli: options.adapter?.id ?? "claude-code",
       values: options.values ?? { url: "https://wd.example/t" },
       revoked,
+      clients,
       revokeError: options.revokeError,
       whileRevoking: options.whileRevoking,
     }),
@@ -187,6 +202,7 @@ async function setup(
         options.weekLink ?? "{{settings.url}}?date={{weekOf}}",
         options.otherTasks,
         options.apiVersion,
+        options.tools,
       ),
       ...(options.readPrompt
         ? { readAgentTaskPrompt: options.readPrompt }
@@ -207,7 +223,7 @@ async function setup(
       : { killGraceMs: options.killGraceMs }),
   });
   runners.push({ runner, limitMs: shutdownLimitMs(options.killGraceMs) });
-  return { runner, sessions, revoked, events, work, report };
+  return { runner, sessions, revoked, clients, events, work, report };
 }
 
 const request = {
@@ -957,18 +973,30 @@ describe("AgentRunner", () => {
     });
   });
 
-  it("shows a plugin API 4 task as not runnable yet, and refuses to start it", async () => {
-    const { runner, events } = await setup([], { apiVersion: 4 });
-
-    expect((await runner.overview()).tasks[0]!.blockers).toEqual([
-      "This version of Ajour can't run agent tasks of plugin API 4 yet",
-    ]);
-    await expect(runner.start(request)).rejects.toMatchObject({
-      status: 400,
-      message:
-        "This version of Ajour can't run agent tasks of plugin API 4 yet.",
+  it("runs a plugin API 4 task with a client limited to the tools it declares", async () => {
+    const { runner, sessions, clients } = await setup([{ exit: 0 }], {
+      apiVersion: 4,
+      tools: ["get_week_changes", "mark_entries_committed"],
     });
-    expect(events).toEqual([]);
+
+    expect((await runner.overview()).tasks[0]!.blockers).toEqual([]);
+    const run = await runner.start(request);
+    await settled(runner);
+
+    expect(sessions.get(run.sessionId)!.state).toBe("done");
+    expect(clients).toEqual([
+      {
+        name: "Enter in Workday run",
+        scope: { tools: ["get_week_changes", "mark_entries_committed"] },
+      },
+    ]);
+  });
+
+  it("gives a plugin API 3 task's client every tool, as before", async () => {
+    const { runner, clients } = await setup([{ exit: 0 }]);
+    await runner.start(request);
+    await settled(runner);
+    expect(clients).toEqual([{ name: "Enter in Workday run" }]);
   });
 
   it("logs no agent.run for a start it refuses", async () => {

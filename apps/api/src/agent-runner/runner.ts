@@ -79,7 +79,11 @@ interface RunnerStorage {
   getMcpSettings(): Promise<{ enabled: boolean }>;
   getAgentRunnerSettings(): Promise<AgentRunnerSettings>;
   getAgentTaskValues(pluginId: string): Promise<PluginFieldValues>;
-  createMcpClient(name: string): Promise<McpClientCreateResponse>;
+  /** `tools`, when given, limits the client to those data tools. */
+  createMcpClient(
+    name: string,
+    scope?: { tools: readonly string[] },
+  ): Promise<McpClientCreateResponse>;
   revokeMcpClient(clientId: string): Promise<boolean>;
 }
 
@@ -89,7 +93,10 @@ interface RunnerPlugins {
       id: string;
       apiVersion: number;
       displayName: string;
-      capabilities: { agentTask?: { tasks: AgentTask[] } };
+      capabilities: {
+        // An API 4 task declares its MCP tools; an API 3 one declares none.
+        agentTask?: { tasks: (AgentTask & { tools?: readonly string[] })[] };
+      };
     }[]
   >;
   isPluginEnabled(pluginId: string): Promise<boolean>;
@@ -191,6 +198,16 @@ interface SessionEnding {
   error?: string;
 }
 
+/** A task as the runner sees it: what Settings shows, and what a run needs. */
+interface RunnerTask {
+  status: AgentTaskStatus;
+  /**
+   * The data tools its run's MCP client is limited to. Without it, every
+   * tool, as for an API 3 task.
+   */
+  tools?: readonly string[];
+}
+
 function defaultReadVersion(executable: string, pathValue: string) {
   return new Promise<string | undefined>((resolve) => {
     execFile(
@@ -236,7 +253,9 @@ export class AgentRunner {
     return {
       settings,
       clis,
-      tasks: await this.listTasks(settings, clis, "hidden"),
+      tasks: (await this.listTasks(settings, clis, "hidden")).map(
+        (task) => task.status,
+      ),
       currentRun: this.active?.run ?? null,
     };
   }
@@ -279,8 +298,8 @@ export class AgentRunner {
     settings: AgentRunnerSettings,
     clis: AgentCliStatus[],
     secrets: "hidden" | "included",
-  ): Promise<AgentTaskStatus[]> {
-    const tasks: AgentTaskStatus[] = [];
+  ): Promise<RunnerTask[]> {
+    const tasks: RunnerTask[] = [];
     const mcpEnabled = (await this.options.storage.getMcpSettings()).enabled;
     const cli = clis.find((candidate) => candidate.id === settings.cli);
     for (const plugin of await this.options.plugins.listPlugins()) {
@@ -310,13 +329,6 @@ export class AgentRunner {
           ...saved,
         };
         const blockers = [
-          // A run gets every MCP tool until the runner limits it to the
-          // tools an API 4 task declares (#396), so those tasks wait.
-          ...(plugin.apiVersion === PLUGIN_API_4
-            ? [
-                "This version of Ajour can't run agent tasks of plugin API 4 yet",
-              ]
-            : []),
           ...(mcpEnabled ? [] : ["Turn on MCP in Settings > MCP"]),
           ...(cli?.supported && cli.installed
             ? []
@@ -333,19 +345,27 @@ export class AgentRunner {
             ),
         ];
         tasks.push({
-          pluginId: plugin.id,
-          pluginName: plugin.displayName,
-          taskId: task.id,
-          label: task.label,
-          placement: task.placement,
-          estimateMinutes: task.estimateMinutes,
-          settings: task.settings,
-          values:
-            secrets === "included"
-              ? values
-              : editableValues([...sharedFields.values()], values),
-          ...(task.weekLink ? { weekLink: task.weekLink } : {}),
-          blockers,
+          status: {
+            pluginId: plugin.id,
+            pluginName: plugin.displayName,
+            taskId: task.id,
+            label: task.label,
+            placement: task.placement,
+            estimateMinutes: task.estimateMinutes,
+            settings: task.settings,
+            values:
+              secrets === "included"
+                ? values
+                : editableValues([...sharedFields.values()], values),
+            ...(task.weekLink ? { weekLink: task.weekLink } : {}),
+            blockers,
+          },
+          // An API 4 task's run gets only the tools it declares, and none
+          // if it somehow declares no list. API 3 tasks keep every tool
+          // until they move to API 4 (#402).
+          ...(plugin.apiVersion === PLUGIN_API_4
+            ? { tools: task.tools ?? [] }
+            : {}),
         });
       }
     }
@@ -372,13 +392,14 @@ export class AgentRunner {
   private async launch(request: AgentRunStartRequest): Promise<AgentRun> {
     const settings = await this.options.storage.getAgentRunnerSettings();
     const clis = await this.detectClis();
-    const task = (await this.listTasks(settings, clis, "included")).find(
+    const found = (await this.listTasks(settings, clis, "included")).find(
       (candidate) =>
-        candidate.pluginId === request.pluginId &&
-        candidate.taskId === request.taskId,
+        candidate.status.pluginId === request.pluginId &&
+        candidate.status.taskId === request.taskId,
     );
-    if (!task)
+    if (!found)
       throw new AgentRunError("This agent task is not available.", 404);
+    const task = found.status;
     if (task.blockers.length > 0)
       throw new AgentRunError(`${task.blockers[0]}.`, 400);
     if (
@@ -448,8 +469,10 @@ export class AgentRunner {
       );
 
       step = "create_client";
+      // The MCP server enforces the task's tools, whatever the CLI is told.
       const created = await this.options.storage.createMcpClient(
         `${task.label} run`,
+        ...(found.tools ? [{ tools: found.tools }] : []),
       );
       client = { id: created.client.id, name: created.client.name };
       event.set({ agent: { client_id: client.id } });

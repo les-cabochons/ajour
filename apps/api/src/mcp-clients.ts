@@ -17,10 +17,15 @@ function hashMcpToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
+/**
+ * Creates a client. `tools` limits it to those data tools, as an agent task
+ * run's client is limited to its task's. Without it, the client has every
+ * tool.
+ */
 export async function createMcpClient(
   storage: AppApiStorage,
   name: string,
-  now = Date.now(),
+  { now = Date.now(), tools }: { now?: number; tools?: readonly string[] } = {},
 ): Promise<McpClientCreateResponse> {
   const token = `ajour_${randomBytes(32).toString("base64url")}`;
   const client: StoredMcpClient = {
@@ -28,6 +33,7 @@ export async function createMcpClient(
     name,
     tokenHash: hashMcpToken(token),
     createdAt: now,
+    ...(tools ? { tools: [...tools] } : {}),
   };
   await storage.addMcpClient(client);
   return { client: { id: client.id, name, createdAt: now }, token };

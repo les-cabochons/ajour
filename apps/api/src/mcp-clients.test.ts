@@ -41,11 +41,9 @@ describe("MCP clients", () => {
   it("stores only the token's hash and authenticates with the token", async () => {
     const statePath = await tempStatePath();
     const storage = new AppApiStorage(statePath);
-    const created = await createMcpClient(
-      storage,
-      "Claude Code on this Mac",
-      1000,
-    );
+    const created = await createMcpClient(storage, "Claude Code on this Mac", {
+      now: 1000,
+    });
 
     const stateFile = await readFile(statePath, "utf8");
     expect(stateFile).not.toContain(created.token);
@@ -69,7 +67,7 @@ describe("MCP clients", () => {
 
   it("tells a missing, an unknown and a revoked token apart", async () => {
     const storage = new AppApiStorage(await tempStatePath());
-    const created = await createMcpClient(storage, "Codex", 1000);
+    const created = await createMcpClient(storage, "Codex", { now: 1000 });
 
     expect(await authenticateMcpRequest(storage, undefined)).toEqual({
       kind: "missing",
@@ -83,5 +81,33 @@ describe("MCP clients", () => {
       await authenticateMcpRequest(storage, `Bearer ${created.token}`),
     ).toMatchObject({ kind: "revoked", client: { name: "Codex" } });
     expect((await storage.getMcpSettings()).clients).toEqual([]);
+  });
+
+  it("keeps a run's client limited to its tools, and a damaged list leaves it none", async () => {
+    const statePath = await tempStatePath();
+    const created = await createMcpClient(
+      new AppApiStorage(statePath),
+      "Enter in Workday run",
+      { tools: ["get_week_changes"] },
+    );
+    const user = await createMcpClient(new AppApiStorage(statePath), "Codex");
+
+    // Read back by a new storage, as after a restart.
+    const authenticate = async (token: string) => {
+      const result = await authenticateMcpRequest(
+        new AppApiStorage(statePath),
+        `Bearer ${token}`,
+      );
+      return result.kind === "ok" ? result.client : undefined;
+    };
+    expect((await authenticate(created.token))?.tools).toEqual([
+      "get_week_changes",
+    ]);
+    expect(await authenticate(user.token)).not.toHaveProperty("tools");
+
+    const state = JSON.parse(await readFile(statePath, "utf8"));
+    state.mcp.clients[0].tools = "every tool";
+    await writeFile(statePath, JSON.stringify(state));
+    expect((await authenticate(created.token))?.tools).toEqual([]);
   });
 });
