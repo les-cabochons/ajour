@@ -34,6 +34,7 @@ import { TimerDock, TodayTotal } from "@/features/layout/timer-dock";
 import type { AppSidebarState } from "@/lib/app-sidebar";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
+import { leaveOpenDraft } from "@/lib/open-draft";
 import { isDesktopShell } from "@/lib/runtime";
 import { useSidebarSearch } from "@/lib/sidebar-search";
 import {
@@ -155,10 +156,15 @@ export function SidebarToggleButton({
 
 /**
  * Opens the Backlog page's editor on a new manual backlog item, through the
- * page's "create" action request so the page's draft guard runs first.
+ * page's "create" action request. The open page's side panel draft is saved
+ * first; a draft it cannot save keeps the user where they are.
  */
 function NewBacklogItemButton() {
   const navigate = useNavigate();
+  async function createBacklogItem() {
+    if (!(await leaveOpenDraft())) return;
+    void navigate({ to: "/backlog", search: { action: "create" } });
+  }
   return (
     <TooltipButton
       label="New backlog item"
@@ -167,9 +173,7 @@ function NewBacklogItemButton() {
           variant="ghost"
           size="icon"
           className="ajour-app-sidebar-toggle"
-          onClick={() =>
-            void navigate({ to: "/backlog", search: { action: "create" } })
-          }
+          onClick={() => void createBacklogItem()}
         />
       }
     >
