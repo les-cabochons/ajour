@@ -898,6 +898,70 @@ describe("AppApiStorage", () => {
 
       await expect(onDisk()).resolves.toEqual({ connections: {} });
     });
+
+    it("doesn't bring back the record of a plugin removed while a flush was in flight", async () => {
+      const { storage, connectionId, onDisk } = await brokerStorage(60_000);
+      await storage.recordBrokerActivity("jira", connectionId, "blocked", 1);
+      await storage.recordBrokerActivity("jira", undefined, "blocked", 2);
+
+      // The flush has taken the records when the removal runs, and writes after it.
+      const removal = storage.removePluginData("jira");
+      const flush = storage.flushBrokerActivity();
+      await Promise.all([removal, flush]);
+
+      await expect(onDisk()).resolves.toEqual({ connections: {} });
+      await expect(storage.brokerActivity("jira")).resolves.toEqual({
+        connections: {},
+      });
+    });
+
+    it("records a plugin installed again after its data was removed", async () => {
+      const { storage, onDisk } = await brokerStorage(60_000);
+      await storage.removePluginData("jira");
+
+      await storage.recordBrokerActivity("jira", undefined, "blocked", 7);
+      await storage.flushBrokerActivity();
+
+      expect((await onDisk()).plugin).toMatchObject({ blockedCount: 1 });
+    });
+
+    it("reads no record for a plugin id named like an Object method, and keeps its own", async () => {
+      const { storage, statePath, onDisk } = await brokerStorage(60_000);
+
+      await expect(storage.brokerActivity("constructor")).resolves.toEqual({
+        connections: {},
+      });
+      await expect(storage.brokerActivity("toString")).resolves.toEqual({
+        connections: {},
+      });
+
+      await storage.recordBrokerActivity(
+        "constructor",
+        undefined,
+        "blocked",
+        3,
+      );
+      await storage.recordBrokerActivity(
+        "constructor",
+        undefined,
+        "request",
+        4,
+      );
+      await storage.flushBrokerActivity();
+
+      const expected = {
+        plugin: { lastRequestAt: 4, blockedCount: 1, lastBlockedAt: 3 },
+        connections: {},
+      };
+      await expect(storage.brokerActivity("constructor")).resolves.toEqual(
+        expected,
+      );
+      const written = await new AppApiStorage(statePath).brokerActivity(
+        "constructor",
+      );
+      expect(written).toEqual(expected);
+      expect((await onDisk()).plugin).toBeUndefined();
+    });
   });
 });
 

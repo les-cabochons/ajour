@@ -851,6 +851,8 @@ export class AppApiStorage {
     BrokerActivityDelta
   >();
   private readonly brokerActivityWindowMs: number;
+  /** How many times each plugin's data was removed, for a flush in flight. */
+  private readonly brokerActivityRemovals = new Map<string, number>();
   private brokerActivityWrittenAt = -Infinity;
   private brokerActivityTimer?: ReturnType<typeof setTimeout>;
 
@@ -1502,7 +1504,12 @@ export class AppApiStorage {
   async removePluginData(pluginId: string): Promise<void> {
     await this.mutate(async (state) => {
       await this.vault?.remove({ pluginId });
-      // The broker's records the window gathered for it go too.
+      // The broker's records the window gathered for it go too, and those a
+      // flush in flight took before this ran must not bring it back.
+      this.brokerActivityRemovals.set(
+        pluginId,
+        (this.brokerActivityRemovals.get(pluginId) ?? 0) + 1,
+      );
       for (const [key, delta] of this.brokerActivityPending) {
         if (delta.pluginId === pluginId) this.brokerActivityPending.delete(key);
       }
@@ -1925,6 +1932,10 @@ export class AppApiStorage {
     clearTimeout(this.brokerActivityTimer);
     this.brokerActivityTimer = undefined;
     if (this.brokerActivityPending.size === 0) return;
+    const removals = new Map(this.brokerActivityRemovals);
+    const removedSince = (pluginId: string) =>
+      (this.brokerActivityRemovals.get(pluginId) ?? 0) !==
+      (removals.get(pluginId) ?? 0);
     const deltas = [...this.brokerActivityPending.entries()];
     this.brokerActivityPending.clear();
     this.brokerActivityWrittenAt = Date.now();
@@ -1933,9 +1944,13 @@ export class AppApiStorage {
         const pluginBrokerActivity = { ...current.pluginBrokerActivity };
         const connections = [...current.connections];
         for (const [, delta] of deltas) {
+          // A plugin removed since the records were taken keeps none.
+          if (removedSince(delta.pluginId)) continue;
           if (delta.connectionId === undefined) {
             pluginBrokerActivity[delta.pluginId] = withBrokerActivity(
-              pluginBrokerActivity[delta.pluginId],
+              Object.hasOwn(pluginBrokerActivity, delta.pluginId)
+                ? pluginBrokerActivity[delta.pluginId]
+                : undefined,
               delta,
             );
             continue;
@@ -1963,6 +1978,7 @@ export class AppApiStorage {
     } catch (error) {
       // Kept for the next write, merged with what came since.
       for (const [key, delta] of deltas) {
+        if (removedSince(delta.pluginId)) continue;
         const since = this.brokerActivityPending.get(key);
         this.brokerActivityPending.set(
           key,
@@ -1995,7 +2011,9 @@ export class AppApiStorage {
     connections: Record<string, BrokerActivityRecord>;
   }> {
     const state = await this.readState();
-    let plugin = state.pluginBrokerActivity[pluginId];
+    let plugin = Object.hasOwn(state.pluginBrokerActivity, pluginId)
+      ? state.pluginBrokerActivity[pluginId]
+      : undefined;
     const connections = new Map(
       state.connections
         .filter((connection) => connection.pluginId === pluginId)

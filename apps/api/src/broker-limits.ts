@@ -55,6 +55,8 @@ export class Slots {
           "The plugin sent too many requests at once.",
         );
       }
+      // The release that wakes this waiter hands its slot over, so a caller
+      // arriving before the waiter runs finds the slot taken.
       await new Promise<void>((resolve, reject) => {
         const wake = () => {
           signal.removeEventListener("abort", onAbort);
@@ -70,14 +72,16 @@ export class Slots {
       });
     } else if (signal.aborted) {
       throw abortError(signal);
+    } else {
+      this.running += 1;
     }
-    this.running += 1;
     let released = false;
     return () => {
       if (released) return;
       released = true;
-      this.running -= 1;
-      this.waiting.shift()?.();
+      const next = this.waiting.shift();
+      if (next) next();
+      else this.running -= 1;
     };
   }
 }

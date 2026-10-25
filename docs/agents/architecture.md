@@ -330,7 +330,13 @@ for that one operation, which the host closes once the operation settles.
   proxy's and isn't judged; the resolver names the proxies' own addresses
   from the PAC answer, so an answer from any other address, as when a PAC
   file falls back to `DIRECT`, is judged as an unproxied one, and when a
-  proxy's name doesn't resolve no proxied answer is judged. And when
+  proxy's name doesn't resolve no proxied answer is judged. Nor is the name
+  judged when the system resolver has no address for it and a proxy answers
+  for it, so the broker then refuses a name that is no public domain name:
+  a single label such as `intranet`, or one ending in `.local`, `.internal`,
+  `.lan` or `.home.arpa`, as a secret address's redirect could otherwise
+  reach the internal network through the proxy (on-premises connections
+  are exempt). And when
   `webRequest` gives no `ip` for a request, only the check before it held:
   the request goes on, and its event says `answer_address: "unknown"`
   (`checked` and `proxy` otherwise).
@@ -341,8 +347,10 @@ for that one operation, which the host closes once the operation settles.
   its changed forms too: URL-encoded, JSON- and HTML-escaped, base64, the
   Basic credential, and for a secret address and each address it redirected
   to, the address after its scheme, its path and query alone, and each path
-  segment or credential query value that isn't a common word (#338). Letters
-  match in any case. One pass covers every form, so an 8 MB answer full of
+  segment or credential query value that isn't a common word (#338). A bare
+  host is not scrubbed: only the address after its scheme, the path and
+  query, the segments and the values are, so an answer may still name the
+  host of a secret address. Letters match in any case. One pass covers every form, so an 8 MB answer full of
   matches takes tens of milliseconds; an answer it can't check within its
   budgets is dropped (`unchecked_response`). Errors are the broker's own, so
   a transport's message, which can name the address, never reaches the

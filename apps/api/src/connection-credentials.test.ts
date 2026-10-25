@@ -209,7 +209,7 @@ describe("the config an API 4 plugin's validation saves", () => {
         '"label"',
         '"__proto__":{"baseUrl":"https://attacker.example"},"constructor":{"x":1},"label"',
       ),
-    ) as Record<string, unknown>;
+    ) as Record<string, string | number | boolean>;
     expect(Object.hasOwn(hostile, "__proto__")).toBe(true);
 
     const saved = api4SavedConfig(declared, hostile, submitted, network);
