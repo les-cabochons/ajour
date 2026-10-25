@@ -178,8 +178,11 @@ function hasReservedSuffix(host: string) {
   );
 }
 
-/** A host name that a plugin may name as a fixed address: not a reserved one. */
-function isPublicDomainName(value: string) {
+/**
+ * A host name that a plugin may name as a fixed address: not a reserved one.
+ * The broker also asks it of a name it cannot resolve itself.
+ */
+export function isPublicDomainName(value: string) {
   return isDomainName(value) && !hasReservedSuffix(value);
 }
 

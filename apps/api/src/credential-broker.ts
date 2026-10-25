@@ -36,6 +36,7 @@
 import {
   authSchemeHeaders,
   connectionAccessOn,
+  isPublicDomainName,
   pluginHttpMethods,
   type PluginHttpMethod,
 } from "../../../packages/shared/plugin-api-4.ts";
@@ -523,6 +524,16 @@ export class CredentialBroker implements CredentialBrokerPort {
         "network",
         "The service's address couldn't be found.",
       );
+    }
+    // A proxy that answers for any name gives no local address to judge, so
+    // a name that is no public domain name, such as `intranet` or
+    // `wiki.corp.local`, could reach the internal network through it.
+    if (
+      resolved.proxied === true &&
+      resolved.addresses.length === 0 &&
+      !isPublicDomainName(hostname)
+    ) {
+      throw this.privateAddress();
     }
     return resolved.proxied === true
       ? {

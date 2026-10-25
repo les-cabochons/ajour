@@ -226,11 +226,12 @@ export function api4SavedConfig(
   const userOwned = new Set(networkFields);
   const saved: PluginFieldValues = {};
   for (const field of fields) {
-    const value =
-      field.secret || userOwned.has(field.id)
-        ? submitted[field.id]
-        : normalized[field.id];
-    if (value !== undefined) saved[field.id] = value;
+    const from =
+      field.secret || userOwned.has(field.id) ? submitted : normalized;
+    // Own keys only: a field named like an Object method has no value.
+    if (Object.hasOwn(from, field.id) && from[field.id] !== undefined) {
+      saved[field.id] = from[field.id]!;
+    }
   }
   return saved;
 }

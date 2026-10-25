@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PluginManifest } from "../../../packages/shared/plugins.ts";
 import {
+  api4SavedConfig,
   connectionCredentials,
   editableValues,
   mergeSecretsForSave,
@@ -143,6 +144,100 @@ describe("a connection's editable values", () => {
         droppedKey: "old-value",
       }),
     ).toEqual({ taskIconDisplayMode: "always" });
+  });
+});
+
+describe("the config an API 4 plugin's validation saves", () => {
+  const declared = [
+    { id: "label" },
+    { id: "baseUrl" },
+    { id: "email" },
+    { id: "apiToken", secret: true },
+    { id: "site" },
+  ];
+  const network = ["baseUrl", "email"];
+  const submitted = {
+    label: "Acme",
+    baseUrl: "https://acme.atlassian.net",
+    email: "ada@acme.test",
+    apiToken: "entered-token",
+    site: "eu",
+  };
+
+  it("keeps what the user entered for the secrets and the address, and the plugin's clean-up of the rest", () => {
+    expect(
+      api4SavedConfig(
+        declared,
+        { ...submitted, label: "Acme (EU)", apiToken: "other" },
+        submitted,
+        network,
+      ),
+    ).toEqual({ ...submitted, label: "Acme (EU)" });
+  });
+
+  it("ignores an answer that rewrites the address, the user or a secret", () => {
+    expect(
+      api4SavedConfig(
+        declared,
+        {
+          ...submitted,
+          baseUrl: "https://attacker.example",
+          email: "mallory@evil.test",
+          apiToken: "stolen",
+        },
+        submitted,
+        network,
+      ),
+    ).toEqual(submitted);
+  });
+
+  it("keeps only the declared keys, spelled exactly", () => {
+    // A plugin's answer crosses a JSON boundary, where `__proto__` is a key.
+    const hostile = JSON.parse(
+      JSON.stringify({
+        label: "Acme",
+        site: "eu",
+        BaseUrl: "https://attacker.example",
+        "baseUrl ": "https://attacker.example",
+        " baseUrl": "https://attacker.example",
+        "api token": "x",
+        agentAccess: "all",
+        onPremises: true,
+        access: ["editIssues"],
+        extra: "undeclared",
+      }).replace(
+        '"label"',
+        '"__proto__":{"baseUrl":"https://attacker.example"},"constructor":{"x":1},"label"',
+      ),
+    ) as Record<string, unknown>;
+    expect(Object.hasOwn(hostile, "__proto__")).toBe(true);
+
+    const saved = api4SavedConfig(declared, hostile, submitted, network);
+
+    expect(saved).toEqual({
+      label: "Acme",
+      baseUrl: submitted.baseUrl,
+      email: submitted.email,
+      apiToken: submitted.apiToken,
+      site: "eu",
+    });
+    expect(Object.keys(saved).sort()).toEqual(
+      ["apiToken", "baseUrl", "email", "label", "site"].sort(),
+    );
+    expect(Object.getPrototypeOf(saved)).toBe(Object.prototype);
+    expect(Object.hasOwn(saved, "__proto__")).toBe(false);
+    expect(Object.hasOwn(saved, "constructor")).toBe(false);
+  });
+
+  it("drops an optional value the plugin left out, rather than read one from the prototype", () => {
+    const saved = api4SavedConfig(
+      [{ id: "label" }, { id: "toString" }, { id: "constructor" }],
+      { label: "Acme" },
+      { label: "Acme" },
+      [],
+    );
+
+    expect(saved).toEqual({ label: "Acme" });
   });
 });
 

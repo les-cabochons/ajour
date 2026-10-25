@@ -1117,6 +1117,94 @@ describe("the credential broker", () => {
       );
     });
 
+    it("refuses, through a proxy that answers for any name, a redirect to a name no public DNS holds", async () => {
+      const throughProxy = {
+        async resolve() {
+          return { addresses: [], proxied: true };
+        },
+      };
+      for (const target of [
+        "https://intranet/",
+        "https://wiki.corp.local/",
+        "https://build.internal/feed.ics",
+        "https://nas.lan/",
+        "https://router.home.arpa/",
+        "https://localhost/",
+      ]) {
+        const { operation, sent } = setup({
+          manifest: ics,
+          connections: { "ajc-jira": [feed()] },
+          resolver: throughProxy,
+          respond: () => ({ status: 302, headers: { location: target } }),
+        });
+
+        const error = await refusal(
+          operation().http({ connectionId: "jira_1", method: "GET", path: "" }),
+        );
+
+        expect(error.reason, target).toBe("private_address");
+        expect(sent, target).toHaveLength(1);
+      }
+    });
+
+    it("follows, through a proxy, a redirect to a public domain name", async () => {
+      const { operation, sent } = setup({
+        manifest: ics,
+        connections: { "ajc-jira": [feed()] },
+        resolver: {
+          async resolve() {
+            return { addresses: [], proxied: true };
+          },
+        },
+        respond: () =>
+          sent.length === 1
+            ? {
+                status: 302,
+                headers: { location: "https://cdn.example.net/feed.ics" },
+              }
+            : { status: 200 },
+      });
+
+      const response = await operation().http({
+        connectionId: "jira_1",
+        method: "GET",
+        path: "",
+      });
+
+      expect(response.status).toBe(200);
+      expect(sent.map((request) => request.url)).toEqual([
+        "https://calendar.example.org/feeds/9d1c4b7e/basic.ics",
+        "https://cdn.example.net/feed.ics",
+      ]);
+    });
+
+    it("reaches a local name through a proxy for a connection marked on-premises", async () => {
+      const { operation, sent } = setup({
+        connections: {
+          "ajc-jira": [
+            jiraConnection(
+              { onPremises: true },
+              { baseUrl: "https://intranet" },
+            ),
+          ],
+        },
+        resolver: {
+          async resolve() {
+            return { addresses: [], proxied: true };
+          },
+        },
+        respond: () => ({ status: 200 }),
+      });
+
+      await operation().http({
+        connectionId: "jira_1",
+        method: "GET",
+        path: "/rest/api/3/myself",
+      });
+
+      expect(sent[0]!.url).toBe("https://intranet/rest/api/3/myself");
+    });
+
     it("refuses a fourth redirect, or one away from https, rather than hand the 3xx back", async () => {
       const always = setup({
         manifest: ics,
