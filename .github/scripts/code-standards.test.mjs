@@ -188,7 +188,10 @@ test("the IPC check leaves the wrapper, its one import and its one call alone", 
     runOver(ipcCheck, {
       "apps/desktop/electron/main.cjs": [
         'const { ipcMain } = require("electron");',
-        "const ipc = createIpcListeners(ipcMain, { events });",
+        "const ipc = createIpcListeners(ipcMain, {",
+        "  events,",
+        "  windowSession: () => session.defaultSession,",
+        "});",
         'ipc.handle("ajour:get-update-state", getState);',
         "// Every channel registers through `ipc`.",
         'window.webContents.on("context-menu", () => {});',
@@ -209,7 +212,7 @@ test("the IPC check leaves the wrapper, its one import and its one call alone", 
 test("the IPC check's allowed lines hold on a CRLF checkout, where ripgrep sees the carriage return", () => {
   for (const line of [
     'const { ipcMain } = require("electron");',
-    "const ipc = createIpcListeners(ipcMain, { events });",
+    "const ipc = createIpcListeners(ipcMain, {",
   ]) {
     assert.equal(ipcCheck.pattern.test(`${line}\r`), false, line);
     assert.equal(ipcCheck.pattern.test(`${line} // more\r`), true, line);
