@@ -255,7 +255,14 @@ function toVersion9(state: StoredStateRecord): StoredStateRecord {
     ...state,
     connections: state.connections.map((connection: unknown) =>
       typeof connection === "object" && connection !== null
-        ? { ...connection, access: [] }
+        ? {
+            ...connection,
+            // Version 8 may be held while the user changes a connection's
+            // access: a choice already saved stays.
+            access: Array.isArray((connection as { access?: unknown }).access)
+              ? (connection as { access: unknown[] }).access
+              : [],
+          }
         : connection,
     ),
   };
