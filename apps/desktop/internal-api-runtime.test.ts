@@ -95,6 +95,10 @@ async function runtime(
     }),
     internalAppApiEntryPath: "fixture/server.ts",
     internalAppApiVault: () => undefined,
+    internalAppApiBrokerNetwork: () => ({
+      transport: "broker-transport",
+      resolver: "broker-resolver",
+    }),
     existsSync: () => true,
     app: { isPackaged: true, getPath: () => "/fixture" },
     mainWindow: { webContents: "active-window" },
@@ -199,6 +203,22 @@ describe("desktop plugin runtime ownership", () => {
 
     expect(app.start).toHaveBeenCalledWith(
       expect.objectContaining({ windowToken: "launch-token" }),
+    );
+  });
+
+  it("gives the API's broker main's network stack", async () => {
+    const free = await listen();
+    const port = portOf(free);
+    await new Promise<void>((resolve) => free.close(() => resolve()));
+    const app = await runtime(port);
+
+    await app.invoke("ajour:download-catalog-plugin");
+
+    expect(app.start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        brokerTransport: "broker-transport",
+        brokerResolver: "broker-resolver",
+      }),
     );
   });
 
