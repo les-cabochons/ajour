@@ -68,7 +68,7 @@ describe("held edits on backlog items", () => {
   it("marks exactly the estimate fields a sync held, and clears the others", () => {
     const estimated = item({
       remainingEstimateHours: 2,
-      completedEstimateHours: 6,
+      completedEstimateHours: 3,
       estimateSync: {
         remainingEstimateHours: { baselineValue: 5, remoteValue: 5 },
         completedEstimateHours: {
@@ -103,6 +103,34 @@ describe("held edits on backlog items", () => {
     });
     // Another connection's items keep their own holds.
     expect(next.workItems[1]).toBe(otherConnection);
+  });
+
+  it("keeps a hold set after the sync's request was built while its change still waits", () => {
+    // Editing turned on mid-sync: the answer to the earlier request names
+    // nothing as held, yet the change has not been uploaded or reviewed.
+    const heldMidSync = item({
+      remainingEstimateHours: 1,
+      estimateSync: {
+        remainingEstimateHours: {
+          baselineValue: 4,
+          remoteValue: 4,
+          held: { at: 70 },
+        },
+      },
+    });
+
+    const next = markHeldEstimates(state(heldMidSync), connection, [], 100);
+
+    expect(next.workItems[0]).toBe(heldMidSync);
+    expect(heldItemEdits(next.workItems)).toEqual([
+      {
+        kind: "estimate",
+        ...connection,
+        itemId: "item-1",
+        field: "remainingEstimateHours",
+        at: 70,
+      },
+    ]);
   });
 
   it("holds every estimate change as editing turns on, even one no sync saw", () => {

@@ -1312,13 +1312,15 @@ async function runBacklogSync(
               payload.trigger === "auto" ? connectionId : undefined,
           })
         : { importedCount: 0, updatedCount: 0 };
+    localStore.applyBacklogSyncWorkItemUpdates(result.workItemUpdates);
     // The estimate changes the connection didn't upload stay, held for
     // review: editing work items is off, or the user hasn't approved them.
+    // After the answer, so a field it uploaded no longer differs and loses a
+    // hold set while the sync ran.
     localStore.markHeldEstimates(
       { pluginId, connectionId },
       result.heldEstimates,
     );
-    localStore.applyBacklogSyncWorkItemUpdates(result.workItemUpdates);
     announceDescriptionConflicts(
       newDescriptionConflicts(beforeSync, localStore.snapshot().workItems),
     );

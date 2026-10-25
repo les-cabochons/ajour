@@ -144,6 +144,7 @@ function withEstimateHold(
   item: LocalWorkItem,
   held: ReadonlySet<LocalWorkItemEstimateFieldKey>,
   now: number,
+  keep: ReadonlySet<LocalWorkItemEstimateFieldKey> = new Set(),
 ): LocalWorkItem {
   let changed = false;
   const estimateSync = { ...item.estimateSync };
@@ -154,7 +155,7 @@ function withEstimateHold(
       if (state?.held) continue;
       estimateSync[field] = { ...state, held: { at: now } };
       changed = true;
-    } else if (state?.held) {
+    } else if (state?.held && !keep.has(field)) {
       const { held: _held, ...rest } = state;
       estimateSync[field] = rest;
       changed = true;
@@ -164,9 +165,9 @@ function withEstimateHold(
 }
 
 /**
- * The connection's estimate holds after a sync: exactly the fields the sync
- * held. A field it uploaded, or one that no longer differs from the source,
- * isn't held any more.
+ * The connection's estimate holds after a sync: the fields the sync held,
+ * plus any hold whose change still waits to upload. A field it uploaded, or
+ * one that no longer differs from the source, isn't held any more.
  */
 export function markHeldEstimates(
   state: LocalAppState,
@@ -182,10 +183,14 @@ export function markHeldEstimates(
     if (!isOfConnection(item, connection.pluginId, connection.connectionId)) {
       return item;
     }
+    // A hold set after the sync's request was built (editing turned on
+    // mid-sync) isn't in the answer's list, yet its change still waits for
+    // review: only a field with nothing left to upload loses its hold.
     const next = withEstimateHold(
       item,
       fieldsByItem.get(item._id) ?? new Set(),
       now,
+      new Set(estimateFieldsToPush(item)),
     );
     changed ||= next !== item;
     return next;
