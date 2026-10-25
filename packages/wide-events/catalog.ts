@@ -7,6 +7,8 @@ export type {
   AjourEvent,
   HttpMethod,
   McpMethod,
+  PluginRequestAnswerAddress,
+  PluginRequestHostKind,
 } from "./lib/ajour-catalog.ts";
 export {
   defineCatalog,

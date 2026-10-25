@@ -11,6 +11,7 @@ import { projectDataShapeDefinitionSchema } from "./project-data-shapes.ts";
 import { readToolInputSchemas, writeToolInputSchemas } from "./agent-tools.ts";
 import { getDomain, parse as parseHost } from "tldts";
 import {
+  connectionAccessOn,
   DENIED_REQUEST_HEADER_PREFIXES,
   DENIED_REQUEST_HEADERS,
   endpointPatternMatches,
@@ -19,6 +20,7 @@ import {
 } from "./plugin-request-rules.ts";
 
 export {
+  connectionAccessOn,
   DENIED_REQUEST_HEADER_PREFIXES,
   DENIED_REQUEST_HEADERS,
   endpointPatternMatches,

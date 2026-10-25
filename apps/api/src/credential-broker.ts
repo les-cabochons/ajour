@@ -32,6 +32,7 @@
 
 import {
   authSchemeHeaders,
+  connectionAccessOn,
   deriveHostAddress,
   endpointPatternMatches,
   isDeniedRequestHeader,
@@ -42,12 +43,18 @@ import {
   type PluginHttpMethod,
 } from "../../../packages/shared/plugin-api-4.ts";
 import type { PluginFieldValues } from "../../../packages/shared/plugins.ts";
-import type { AjourCatalog } from "../../../packages/wide-events/catalog.ts";
+import type {
+  AjourCatalog,
+  PluginRequestAnswerAddress,
+  PluginRequestHostKind,
+  ReasonOf,
+} from "../../../packages/wide-events/catalog.ts";
 import type { Unit } from "../../../packages/wide-events/index.ts";
 import type { ApiEvents } from "./events.ts";
 import {
   isAddressLiteral,
   isPrivateAddress,
+  sameAddress,
   unbracketed,
 } from "./broker-addresses.ts";
 import { SECRET_MARK, SecretScrubber, secretForms } from "./broker-scrub.ts";
@@ -97,28 +104,14 @@ export interface BrokerResponse {
  */
 export type BrokerErrorCode = "refused" | "limit" | "timeout" | "network";
 
-/** What a refused, limited or failed request says, for its event. */
-export type BrokerReason =
-  | "invalid_request"
-  | "connection_not_found"
-  | "secret_unavailable"
-  | "system_off"
-  | "plugin_off"
-  | "capability_off"
-  | "not_allowed"
-  | "header_refused"
-  | "access_off"
-  | "invalid_address"
-  | "private_address"
-  | "redirect_refused"
-  | "no_transport"
-  | "request_too_large"
-  | "response_too_large"
-  | "rate_limited"
-  | "too_many_queued"
-  | "operation_ended"
-  | "timeout"
-  | "network";
+/**
+ * What a refused, limited or failed request says, for its event: the
+ * `plugin.request` event's reasons, but `aborted`, which is the plugin's.
+ */
+export type BrokerReason = Exclude<
+  ReasonOf<AjourCatalog, "plugin.request">,
+  "aborted"
+>;
 
 /** How `ajour.http` and `ajour.publicFetch` reject, apart from an abort. */
 export class BrokerRequestError extends Error {
@@ -244,7 +237,10 @@ export interface BrokerResolver {
   /**
    * Every address the host resolves to. `proxied` says the request goes
    * through a proxy, which connects for it: then the addresses may be
-   * empty, and the address that answers is the proxy's.
+   * empty, and the address that answers is the proxy's. `proxyAddresses`,
+   * when the resolver knows them, are the proxies' own: an answer from any
+   * other address, as when a PAC file falls back to `DIRECT`, is judged as
+   * an unproxied one.
    */
   resolve(
     hostname: string,
@@ -252,6 +248,7 @@ export interface BrokerResolver {
   ): Promise<{
     addresses: readonly string[];
     proxied?: boolean;
+    proxyAddresses?: readonly string[];
   }>;
 }
 
@@ -368,14 +365,18 @@ const NOT_FOUND_MESSAGE = "This plugin has no connection with that id.";
 const NO_TRANSPORT_MESSAGE =
   "Plugins reach the network only in the Ajour desktop app.";
 
-type HostKind = "base" | "derived" | "secret_address" | "public";
+type HostKind = PluginRequestHostKind;
 
 /** Where a request goes, once the policy allowed it. */
 interface Target {
   url: URL;
   hostKind: HostKind;
-  /** The path every request and same-origin redirect must stay under. */
-  basePath: string;
+  /**
+   * Whether the policy would allow a request with this method to this
+   * same-origin address, as a redirect leads: under the base path, to an
+   * endpoint of the host whose access choice is on.
+   */
+  allows(method: PluginHttpMethod, url: URL): boolean;
   pathTemplate?: string;
   /** Headers the broker attaches, lowercase. */
   authHeaders: Record<string, string>;
@@ -539,6 +540,28 @@ function authOf(
   }
 }
 
+/**
+ * The endpoints of `endpoints` the request's method and path match, and the
+ * first of them the connection's access choices open. `connection.access`
+ * holds the choices that are on (see `connectionOf`).
+ */
+function endpointsFor(
+  endpoints: readonly PluginEndpoint[],
+  connection: BrokerConnection,
+  method: PluginHttpMethod,
+  path: string,
+) {
+  const matching = endpoints.filter(
+    (endpoint) =>
+      endpoint.method === method && endpointPatternMatches(endpoint.path, path),
+  );
+  const on = new Set(connection.access);
+  const open = matching.find(
+    (endpoint) => endpoint.access === undefined || on.has(endpoint.access),
+  );
+  return { matching, open };
+}
+
 /** The endpoint of `endpoints` that allows the request, or a refusal. */
 function matchEndpoint(
   endpoints: readonly PluginEndpoint[],
@@ -548,25 +571,13 @@ function matchEndpoint(
   path: string,
   where: string,
 ): PluginEndpoint {
-  const matching = endpoints.filter(
-    (endpoint) =>
-      endpoint.method === method && endpointPatternMatches(endpoint.path, path),
-  );
+  const { matching, open } = endpointsFor(endpoints, connection, method, path);
   if (matching.length === 0) {
     throw refused(
       "not_allowed",
       `The plugin's manifest allows no ${method} request to that path on ${where}.`,
     );
   }
-  const on = new Set([
-    ...connection.access,
-    ...manifest.connectionAccess
-      .filter((choice) => choice.always)
-      .map((choice) => choice.id),
-  ]);
-  const open = matching.find(
-    (endpoint) => endpoint.access === undefined || on.has(endpoint.access),
-  );
   if (!open) {
     const choice = manifest.connectionAccess.find(
       (candidate) => candidate.id === matching[0]!.access,
@@ -619,7 +630,8 @@ function targetOf(
     return {
       url,
       hostKind: "secret_address",
-      basePath: "",
+      // A secret address follows https redirects to any host, by its own rule.
+      allows: () => false,
       authHeaders: {},
       credentials: [],
       secretAddress: true,
@@ -695,7 +707,14 @@ function targetOf(
   return {
     url,
     hostKind,
-    basePath,
+    allows: (method, next) =>
+      isUnder(next.pathname, basePath) &&
+      endpointsFor(
+        endpoints,
+        connection,
+        method,
+        next.pathname.slice(basePath.length),
+      ).open !== undefined,
     pathTemplate: endpoint.path,
     authHeaders: headers,
     credentials,
@@ -838,6 +857,8 @@ interface Exchange {
   responseBytes: number;
   onPremises: boolean;
   pending: boolean;
+  /** How far the address that answered could be judged; absent on-premises. */
+  answerAddress?: PluginRequestAnswerAddress;
 }
 
 export class CredentialBroker implements CredentialBrokerPort {
@@ -1042,6 +1063,9 @@ export class CredentialBroker implements CredentialBrokerPort {
         response_bytes: exchange.responseBytes,
         on_premises: exchange.onPremises,
         pending: exchange.pending,
+        ...(exchange.answerAddress
+          ? { answer_address: exchange.answerAddress }
+          : {}),
       },
     });
     if (error instanceof BrokerRequestError) {
@@ -1124,24 +1148,42 @@ export class CredentialBroker implements CredentialBrokerPort {
     );
   }
 
-  /** The caller's own connection: the pending one, or one it saved. */
+  /**
+   * The caller's own connection: the pending one, or one it saved. The
+   * same rules hold for both: on-premises counts only while the manifest
+   * allows it, and only the access choices that are on stay, those always on
+   * included and those the manifest no longer declares dropped.
+   */
   private async connectionOf(
     caller: BrokerCaller,
     connectionId: string,
   ): Promise<BrokerConnection> {
-    if (caller.pending && caller.pending.id === connectionId)
-      return caller.pending;
-    const connection = await this.options.connections.connection(
-      caller.pluginId,
-      connectionId,
-      caller.manifest,
-    );
+    const connection =
+      caller.pending && caller.pending.id === connectionId
+        ? caller.pending
+        : await this.options.connections.connection(
+            caller.pluginId,
+            connectionId,
+            caller.manifest,
+          );
     if (!connection) throw refused("connection_not_found", NOT_FOUND_MESSAGE);
-    return connection;
+    return {
+      ...connection,
+      onPremises:
+        connection.onPremises &&
+        caller.manifest.network?.baseAddress?.allowOnPremises === true,
+      access: connectionAccessOn(
+        caller.manifest.connectionAccess,
+        connection.access,
+      ),
+    };
   }
 
   /** Refuses an address the connection may not reach. */
-  private async checkAddress(url: URL, onPremises: boolean) {
+  private async checkAddress(
+    url: URL,
+    onPremises: boolean,
+  ): Promise<{ proxied: boolean; proxyAddresses?: readonly string[] }> {
     if (onPremises) return { proxied: false };
     const hostname = unbracketed(url.hostname);
     if (isAddressLiteral(url.hostname)) {
@@ -1149,7 +1191,7 @@ export class CredentialBroker implements CredentialBrokerPort {
       return { proxied: false };
     }
     const resolver = this.options.resolver ?? nodeResolver;
-    let resolved: { addresses: readonly string[]; proxied?: boolean };
+    let resolved: Awaited<ReturnType<BrokerResolver["resolve"]>>;
     try {
       resolved = await resolver.resolve(hostname, url.href);
     } catch {
@@ -1167,7 +1209,51 @@ export class CredentialBroker implements CredentialBrokerPort {
         "The service's address couldn't be found.",
       );
     }
-    return { proxied: resolved.proxied === true };
+    return resolved.proxied === true
+      ? {
+          proxied: true,
+          ...(resolved.proxyAddresses
+            ? { proxyAddresses: resolved.proxyAddresses }
+            : {}),
+        }
+      : { proxied: false };
+  }
+
+  /**
+   * Refuses an answer from a private address the connection may not reach,
+   * which the host's name pointed to after it was checked (ADR 0010's
+   * rebinding window), and records how far the address could be judged.
+   * Through a proxy the proxy answers, and its address isn't judged; one
+   * that answers from an address no proxy has, as when a PAC file falls
+   * back to `DIRECT`, is. With no address from the transport, the request
+   * stays allowed, and its event says so.
+   */
+  private checkAnswer(
+    remoteAddress: string | undefined,
+    route: { proxied: boolean; proxyAddresses?: readonly string[] },
+    exchange: Exchange,
+  ) {
+    let judged: PluginRequestAnswerAddress;
+    if (remoteAddress === undefined) {
+      judged = "unknown";
+    } else if (
+      route.proxied &&
+      (route.proxyAddresses === undefined ||
+        route.proxyAddresses.some((proxy) => sameAddress(proxy, remoteAddress)))
+    ) {
+      judged = "proxy";
+    } else {
+      if (isPrivateAddress(remoteAddress)) throw this.privateAddress();
+      judged = "checked";
+    }
+    // A request is as judged as its least judged exchange.
+    const order: PluginRequestAnswerAddress[] = ["checked", "proxy", "unknown"];
+    if (
+      exchange.answerAddress === undefined ||
+      order.indexOf(judged) > order.indexOf(exchange.answerAddress)
+    ) {
+      exchange.answerAddress = judged;
+    }
   }
 
   private privateAddress() {
@@ -1203,7 +1289,7 @@ export class CredentialBroker implements CredentialBrokerPort {
     let body = plan.body;
     const origin = url.origin;
     for (;;) {
-      const { proxied } = await this.checkAddress(url, plan.onPremises);
+      const route = await this.checkAddress(url, plan.onPremises);
       if (signal.aborted) throw abortError(signal);
       const response = await transport.send({
         url: url.href,
@@ -1216,14 +1302,8 @@ export class CredentialBroker implements CredentialBrokerPort {
         signal,
         maxResponseBytes: this.limits.responseBodyBytes,
       });
-      if (
-        !plan.onPremises &&
-        !proxied &&
-        response.remoteAddress !== undefined &&
-        isPrivateAddress(response.remoteAddress)
-      ) {
-        // The name pointed elsewhere when it was checked: drop the answer.
-        throw this.privateAddress();
+      if (!plan.onPremises) {
+        this.checkAnswer(response.remoteAddress, route, exchange);
       }
       if (response.body.byteLength > this.limits.responseBodyBytes) {
         throw Object.assign(new Error("too large"), {
@@ -1238,19 +1318,26 @@ export class CredentialBroker implements CredentialBrokerPort {
         } catch {
           next = undefined;
         }
+        // A 303, or a 301 or 302 after a POST, turns into a GET.
+        const nextMethod: PluginHttpMethod =
+          response.status === 303 ||
+          ((response.status === 301 || response.status === 302) &&
+            method === "POST")
+            ? method === "HEAD"
+              ? "HEAD"
+              : "GET"
+            : method;
+        // A same-origin redirect is followed only where the policy would
+        // let the plugin send the request itself.
         const follow = target.secretAddress
           ? next?.protocol === "https:"
           : next !== undefined &&
             next.origin === origin &&
-            isUnder(next.pathname, target.basePath);
+            target.allows(nextMethod, next);
         if (follow && exchange.redirects < this.limits.redirects) {
           exchange.redirects += 1;
-          if (
-            response.status === 303 ||
-            ((response.status === 301 || response.status === 302) &&
-              method === "POST")
-          ) {
-            method = method === "HEAD" ? "HEAD" : "GET";
+          if (response.status === 303 || nextMethod !== method) {
+            method = nextMethod;
             body = undefined;
           }
           next!.hash = "";
@@ -1350,7 +1437,8 @@ export class CredentialBroker implements CredentialBrokerPort {
             target: {
               url,
               hostKind: "public",
-              basePath: "",
+              // Any path of a declared public host: it has no endpoints.
+              allows: () => true,
               authHeaders: {},
               credentials: [],
               secretAddress: false,

@@ -455,6 +455,40 @@ describe("the credential broker", () => {
       expect(requestEvents()[0]?.connection).toBeUndefined();
     });
 
+    it("holds a connection being validated to the manifest's on-premises and access rules, as a saved one", async () => {
+      const closed = manifest({
+        network: {
+          ...manifest().network,
+          baseAddress: { field: "baseUrl" },
+        },
+      });
+      const local = jiraConnection(
+        { id: "pending-2", onPremises: true },
+        { baseUrl: "https://10.0.0.5/jira" },
+      );
+      const dropped = jiraConnection({ id: "pending-3", access: ["dropped"] });
+      const { operation, sent } = setup({ connections: { "ajc-jira": [] } });
+
+      const privateAddress = await refusal(
+        operation("ajc-jira", { manifest: closed, pending: local }).http({
+          connectionId: "pending-2",
+          method: "GET",
+          path: "/rest/api/3/myself",
+        }),
+      );
+      const accessOff = await refusal(
+        operation("ajc-jira", { pending: dropped }).http({
+          connectionId: "pending-3",
+          method: "PUT",
+          path: "/rest/api/3/issue/ENG-1",
+        }),
+      );
+
+      expect(privateAddress.reason).toBe("private_address");
+      expect(accessOff.reason).toBe("access_off");
+      expect(sent).toEqual([]);
+    });
+
     it("refuses every request outside the desktop app", async () => {
       const { operation } = setup({ noTransport: true });
 
@@ -916,6 +950,79 @@ describe("the credential broker", () => {
       expect(response.status).toBe(301);
     });
 
+    it("hands back a same-origin redirect to a path the manifest doesn't allow", async () => {
+      for (const location of [
+        "/rest/api/3/serverInfo",
+        "/rest/api/3/issue/ENG-1/../../admin",
+        "/rest/api/3/issue/ENG-1;jsessionid=1",
+        "/rest/api/3/issue/ENG-1/comment",
+      ]) {
+        const { operation, sent } = setup({
+          respond: (request) =>
+            request.url.endsWith("/myself")
+              ? { status: 302, headers: { location } }
+              : { status: 200 },
+        });
+
+        const response = await operation().http({
+          connectionId: "jira_1",
+          method: "GET",
+          path: "/rest/api/3/myself",
+        });
+
+        expect(sent, location).toHaveLength(1);
+        expect(response, location).toMatchObject({
+          status: 302,
+          headers: { location },
+        });
+      }
+    });
+
+    it("follows a same-origin redirect only to an endpoint whose access choice is on", async () => {
+      const editing = manifest({
+        network: {
+          ...manifest().network,
+          endpoints: [
+            { method: "PUT", path: "/rest/api/3/issue/ENG-1" },
+            {
+              method: "PUT",
+              path: "/rest/api/3/issue/*",
+              access: "editIssues",
+            },
+          ],
+        },
+      });
+      const respond = (request: BrokerTransportRequest) =>
+        request.url.endsWith("/ENG-1")
+          ? { status: 307, headers: { location: "/rest/api/3/issue/ENG-2" } }
+          : { status: 200 };
+      const off = setup({ manifest: editing, respond });
+      const on = setup({
+        manifest: editing,
+        respond,
+        connections: {
+          "ajc-jira": [jiraConnection({ access: ["editIssues"] })],
+        },
+      });
+      const put = {
+        connectionId: "jira_1",
+        method: "PUT" as const,
+        path: "/rest/api/3/issue/ENG-1",
+        body: "{}",
+      };
+
+      const handedBack = await off.operation().http(put);
+      const followed = await on.operation().http(put);
+
+      expect(handedBack.status).toBe(307);
+      expect(off.sent).toHaveLength(1);
+      expect(followed.status).toBe(200);
+      expect(on.sent.map((request) => request.url)).toEqual([
+        "https://acme.atlassian.net/rest/api/3/issue/ENG-1",
+        "https://acme.atlassian.net/rest/api/3/issue/ENG-2",
+      ]);
+    });
+
     it("turns a POST into a GET after a 303, without its body", async () => {
       const { operation, sent } = setup({
         respond: (request) =>
@@ -1188,6 +1295,52 @@ describe("the credential broker", () => {
         status: 200,
       });
       expect(sent).toHaveLength(1);
+    });
+
+    it("judges the address that answered a proxied request when it isn't the proxy's, as when a PAC file falls back to DIRECT", async () => {
+      const proxied = (remoteAddress: string) =>
+        setup({
+          resolver: {
+            async resolve() {
+              return {
+                addresses: ["151.101.1.69"],
+                proxied: true,
+                proxyAddresses: ["10.20.0.1"],
+              };
+            },
+          },
+          respond: () => ({ status: 200, remoteAddress }),
+        });
+      const throughProxy = proxied("10.20.0.1");
+      const direct = proxied("192.168.1.20");
+
+      await expect(
+        throughProxy.operation().http(request),
+      ).resolves.toMatchObject({ status: 200 });
+      const error = await refusal(direct.operation().http(request));
+
+      expect(throughProxy.requestEvents()[0]).toMatchObject({
+        broker: { answer_address: "proxy" },
+      });
+      expect(error.reason).toBe("private_address");
+    });
+
+    it("says in the event when nothing told it which address answered", async () => {
+      const unknown = setup({ respond: () => ({ status: 200 }) });
+      const known = setup({
+        respond: () => ({ status: 200, remoteAddress: "151.101.1.69" }),
+      });
+
+      await unknown.operation().http(request);
+      await known.operation().http(request);
+
+      expect(unknown.requestEvents()[0]).toMatchObject({
+        outcome: "ok",
+        broker: { answer_address: "unknown" },
+      });
+      expect(known.requestEvents()[0]).toMatchObject({
+        broker: { answer_address: "checked" },
+      });
     });
 
     it("fails with a network error when the host doesn't resolve", async () => {

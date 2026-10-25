@@ -874,7 +874,7 @@ async function inactiveCapability(
  * A plugin's own saved connection as the broker sends with it: its config
  * with the secrets the vault holds, read for this one request, and the
  * values to scrub. Undefined when the plugin has no connection with this id.
- * On-premises counts only while the manifest still allows it.
+ * The broker applies the manifest's on-premises and access rules to it.
  */
 async function brokerConnection(
   storage: AppApiStorage,
@@ -907,9 +907,8 @@ async function brokerConnection(
       redactionFields(manifest.connectionFields, connection.secrets),
       connection.config,
     ).secrets,
-    onPremises:
-      connection.onPremises === true &&
-      manifest.network?.baseAddress?.allowOnPremises === true,
+    // The broker counts it only while the manifest allows it.
+    onPremises: connection.onPremises === true,
     access: connection.access ?? [],
   };
 }

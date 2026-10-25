@@ -22,6 +22,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
 import {
+  connectionAccessOn,
   isPluginApi4Manifest,
   pluginApi4ConnectionSchema,
   type PluginApi4Connection,
@@ -157,24 +158,6 @@ const NEW_CONNECTION_DRAFT: PendingConnectionDraft = {
 const NO_BROKER: CredentialBrokerPort = new CredentialBroker({
   connections: { connection: async () => undefined },
 });
-
-/** The access choices of a connection that are on: the ones always on, and those it turned on. */
-function accessOn(
-  manifest: PluginApi4Manifest,
-  stored: readonly string[] = [],
-): string[] {
-  const declared = new Set(
-    manifest.connectionAccess.map((choice) => choice.id),
-  );
-  return [
-    ...new Set([
-      ...manifest.connectionAccess
-        .filter((choice) => choice.always)
-        .map((choice) => choice.id),
-      ...stored.filter((id) => declared.has(id)),
-    ]),
-  ];
-}
 
 const pluginInvocationConnectionSchema = z.object({
   id: z.string().min(1).max(120),
@@ -826,7 +809,10 @@ export class PluginManager {
     if (method === "validateConnection") {
       const config = params.config as PluginFieldValues;
       const draft = params.draft as PendingConnectionDraft;
-      const access = accessOn(manifest, draft.access);
+      const access = connectionAccessOn(
+        manifest.connectionAccess,
+        draft.access,
+      );
       const id = `pending-${randomUUID()}`;
       pending = {
         id,
@@ -860,7 +846,7 @@ export class PluginManager {
           ? { lastSyncAt: saved.lastSyncAt }
           : {}),
         config: visible(saved.config),
-        access: accessOn(manifest, saved.access),
+        access: connectionAccessOn(manifest.connectionAccess, saved.access),
       });
     }
     const traceparent = this.events?.current()?.traceparent();

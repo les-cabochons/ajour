@@ -17,12 +17,17 @@
  *   request carries a one-time marker header, which `onBeforeSendHeaders`
  *   takes off before it leaves, to tie the events to it. When no event
  *   names an address, the broker has only its check before the request: the
- *   DNS-rebinding window ADR 0010 states.
+ *   DNS-rebinding window ADR 0010 states, and the request's event says
+ *   `answer_address: "unknown"`.
  * - **The resolver** asks the session itself (`session.resolveHost`), so the
  *   check uses the resolver and cache the request will. When the system
  *   proxy carries the request, the proxy connects and may resolve names
  *   this computer can't: then an empty answer is allowed, and the address
- *   that answers is the proxy's, which the broker doesn't judge.
+ *   that answers is the proxy's, which the broker doesn't judge. The
+ *   resolver also names the proxies' own addresses from the PAC answer, so
+ *   an answer from any other address, as when the PAC falls back to
+ *   `DIRECT`, is judged as an unproxied one. When a proxy's name doesn't
+ *   resolve, no proxied answer is judged.
  *
  * Integrated Windows sign-in (NTLM and Negotiate) for on-premises
  * connections needs credentials included and the session's server
@@ -30,8 +35,34 @@
  * isn't turned on yet.
  */
 
+const { isIP } = require("node:net");
+
 const BROKER_PARTITION = "ajour-broker";
 const MARKER_HEADER = "x-ajour-broker-request";
+
+/**
+ * The proxy hosts a PAC answer lists, such as `PROXY a:8080; SOCKS5
+ * [fd00::5]:1080; DIRECT`, in order, without their ports or brackets.
+ */
+function proxyHosts(proxy) {
+  const hosts = [];
+  for (const entry of proxy.split(";")) {
+    const match = /^(?:PROXY|HTTPS|HTTP|SOCKS[45]?|QUIC)\s+(\S+)$/i.exec(
+      entry.trim(),
+    );
+    if (!match) continue;
+    const hostPort = match[1];
+    const bracketed = /^\[([^\]]+)\](?::\d+)?$/.exec(hostPort);
+    if (bracketed) {
+      hosts.push(bracketed[1]);
+    } else if (hostPort.split(":").length <= 2) {
+      hosts.push(hostPort.split(":")[0]);
+    } else {
+      hosts.push(hostPort);
+    }
+  }
+  return [...new Set(hosts)];
+}
 
 /** Response headers as the broker reads them: lowercase, repeated ones joined. */
 function flattenHeaders(headers) {
@@ -199,6 +230,27 @@ function createBrokerNetwork({ net, session, randomUUID }) {
     },
   };
 
+  /**
+   * Every address of the proxies a PAC answer lists, or undefined when one
+   * of their names doesn't resolve: then no proxied answer is judged.
+   */
+  const proxyAddresses = async (proxy) => {
+    const addresses = [];
+    for (const host of proxyHosts(proxy)) {
+      if (isIP(host) !== 0) {
+        addresses.push(host);
+        continue;
+      }
+      try {
+        const { endpoints } = await ses.resolveHost(host);
+        addresses.push(...endpoints.map((endpoint) => endpoint.address));
+      } catch {
+        return undefined;
+      }
+    }
+    return [...new Set(addresses)];
+  };
+
   const resolver = {
     /**
      * @param {string} hostname
@@ -207,16 +259,20 @@ function createBrokerNetwork({ net, session, randomUUID }) {
     async resolve(hostname, url) {
       const proxy = String(await ses.resolveProxy(url)).trim();
       const proxied = !/^DIRECT\b/i.test(proxy);
+      let addresses = [];
       try {
         const { endpoints } = await ses.resolveHost(hostname);
-        return {
-          addresses: endpoints.map((endpoint) => endpoint.address),
-          proxied,
-        };
+        addresses = endpoints.map((endpoint) => endpoint.address);
       } catch (error) {
-        if (proxied) return { addresses: [], proxied };
-        throw error;
+        if (!proxied) throw error;
       }
+      if (!proxied) return { addresses, proxied };
+      const proxies = await proxyAddresses(proxy);
+      return {
+        addresses,
+        proxied,
+        ...(proxies ? { proxyAddresses: proxies } : {}),
+      };
     },
   };
 

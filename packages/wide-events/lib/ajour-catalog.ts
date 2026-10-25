@@ -46,6 +46,18 @@ const ipcFields = {
 export type HttpMethod =
   "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS" | "other";
 
+/** Where a broker request went: the connection's address, a derived host, a secret address, or a public host. */
+export type PluginRequestHostKind =
+  "base" | "derived" | "secret_address" | "public";
+
+/**
+ * How far the broker could judge the address that answered a request:
+ * `checked` against private addresses, `proxy` when a system proxy answered
+ * for it, which isn't judged, or `unknown` when the network stack named no
+ * address, so only the check before the request held (ADR 0010).
+ */
+export type PluginRequestAnswerAddress = "checked" | "proxy" | "unknown";
+
 /**
  * What every `request` event carries, whatever its route: the method, the
  * route's pattern (never its values), the status and the sizes.
@@ -563,10 +575,7 @@ export const catalog = defineCatalog({
         connection: { id: operational() },
         broker: {
           method: operational<HttpMethod>(),
-          /** The connection's address, a derived host, a secret address, or a public host. */
-          host_kind: operational<
-            "base" | "derived" | "secret_address" | "public"
-          >(),
+          host_kind: operational<PluginRequestHostKind>(),
           /** The manifest's endpoint pattern the path matched, such as `/rest/api/3/issue/*`. */
           path_template: operational(),
           status_code: operational<number>(),
@@ -579,6 +588,8 @@ export const catalog = defineCatalog({
           pending: operational<boolean>(),
           /** How long it waited for one of the plugin's request slots. */
           queued_ms: operational<number>(),
+          /** Absent on-premises, where no address is judged. Its least judged exchange's. */
+          answer_address: operational<PluginRequestAnswerAddress>(),
         },
       },
     },

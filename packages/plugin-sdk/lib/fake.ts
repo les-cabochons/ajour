@@ -10,7 +10,11 @@ import type {
   AjourRequestErrorCode,
   AjourResponse,
 } from "./runtime.js";
-import { endpointPatternMatches, isDeniedHeaderName } from "./request-rules.js";
+import {
+  connectionAccessOn,
+  endpointPatternMatches,
+  isDeniedHeaderName,
+} from "./request-rules.js";
 
 /** An answer a route gives. `json` is sent as the body, with its content type. */
 export interface FakeResponseInit {
@@ -214,12 +218,9 @@ function refusal(
     if (matching.length === 0) {
       return `The manifest allows no ${describe} on ${where}.`;
     }
-    const on = new Set([
-      ...turnedOn,
-      ...(manifest.connectionAccess ?? [])
-        .filter((choice) => choice.always)
-        .map((choice) => choice.id),
-    ]);
+    const on = new Set(
+      connectionAccessOn(manifest.connectionAccess ?? [], turnedOn),
+    );
     const open = matching.find(
       (endpoint) => endpoint.access === undefined || on.has(endpoint.access),
     );

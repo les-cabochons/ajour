@@ -104,6 +104,34 @@ export function isAddressLiteral(host: string) {
 }
 
 /**
+ * Whether two addresses are the same, as a resolver and a network stack
+ * may write them differently: brackets, letter case, zero runs, and an IPv4
+ * address mapped into IPv6.
+ */
+export function sameAddress(left: string, right: string): boolean {
+  const canonical = (address: string) => {
+    const literal = unbracketed(address.trim()).split("%")[0]!;
+    if (isIP(literal) === 4) return literal;
+    const groups = expandIpv6(literal);
+    if (!groups) return literal.toLowerCase();
+    // ::ffff:a.b.c.d is a.b.c.d.
+    if (
+      groups.slice(0, 5).every((group) => group === 0) &&
+      groups[5] === 0xffff
+    ) {
+      return [
+        groups[6]! >> 8,
+        groups[6]! & 0xff,
+        groups[7]! >> 8,
+        groups[7]! & 0xff,
+      ].join(".");
+    }
+    return groups.map((group) => group.toString(16)).join(":");
+  };
+  return canonical(left) === canonical(right);
+}
+
+/**
  * Whether the broker refuses the address without on-premises: loopback,
  * private, link-local, unique local, carrier-grade NAT, unspecified,
  * multicast, reserved and documentation ranges, and every IPv4-mapped IPv6

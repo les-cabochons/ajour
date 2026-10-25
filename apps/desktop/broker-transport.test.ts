@@ -278,7 +278,12 @@ describe("the broker's Electron transport", () => {
         "intranet-only.example",
         "https://intranet-only.example/",
       ),
-    ).resolves.toEqual({ addresses: [], proxied: true });
+    ).resolves.toEqual({
+      addresses: [],
+      proxied: true,
+      proxyAddresses: ["151.101.1.69", "2a04:4e42::645"],
+    });
+    expect(ses.resolveHost).toHaveBeenLastCalledWith("proxy.corp");
 
     ses.resolveProxy.mockResolvedValue("DIRECT");
     ses.resolveHost.mockRejectedValueOnce(
@@ -287,5 +292,41 @@ describe("the broker's Electron transport", () => {
     await expect(
       network.resolver.resolve("nowhere.example", "https://nowhere.example/"),
     ).rejects.toThrow("ERR_NAME_NOT_RESOLVED");
+  });
+
+  it("names the proxies' own addresses, so the broker judges an answer from any other", async () => {
+    const { network, ses } = setup();
+    ses.resolveProxy.mockResolvedValue(
+      "PROXY 10.20.0.1:8080; SOCKS5 [fd00::5]:1080; HTTPS proxy.corp:443; DIRECT",
+    );
+
+    await expect(
+      network.resolver.resolve(
+        "acme.atlassian.net",
+        "https://acme.atlassian.net/",
+      ),
+    ).resolves.toEqual({
+      addresses: ["151.101.1.69", "2a04:4e42::645"],
+      proxied: true,
+      proxyAddresses: [
+        "10.20.0.1",
+        "fd00::5",
+        "151.101.1.69",
+        "2a04:4e42::645",
+      ],
+    });
+
+    // A proxy whose name doesn't resolve leaves the proxies unknown, and
+    // the broker judges no proxied answer.
+    ses.resolveHost.mockImplementation(async (host: string) => {
+      if (host === "proxy.corp") throw new Error("net::ERR_NAME_NOT_RESOLVED");
+      return { endpoints: [{ address: "151.101.1.69", family: "ipv4" }] };
+    });
+    await expect(
+      network.resolver.resolve(
+        "acme.atlassian.net",
+        "https://acme.atlassian.net/",
+      ),
+    ).resolves.toEqual({ addresses: ["151.101.1.69"], proxied: true });
   });
 });
