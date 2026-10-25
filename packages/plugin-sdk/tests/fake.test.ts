@@ -335,17 +335,70 @@ describe("the fake ajour.publicFetch", () => {
     ]);
   });
 
-  it.each(["https://evil.example/u/1", "http://avatars.example.com/u/1"])(
-    "refuses %s",
-    async (url) => {
-      const ajour = createFakeAjour({ manifest });
+  it.each([
+    "https://evil.example/u/1",
+    "http://avatars.example.com/u/1",
+    "https://avatars.example.com:8443/u/1",
+  ])("refuses %s", async (url) => {
+    const ajour = createFakeAjour({ manifest });
 
-      await expect(ajour.publicFetch(url)).rejects.toMatchObject({
-        name: "AjourRequestError",
-        code: "refused",
-      });
-    },
-  );
+    await expect(ajour.publicFetch(url)).rejects.toMatchObject({
+      name: "AjourRequestError",
+      code: "refused",
+    });
+  });
+
+  it("applies the header rules of ajour.http: the denylist, then the manifest's list", async () => {
+    const ajour = createFakeAjour({
+      manifest,
+      publicRoutes: [{ url: "https://avatars.example.com/u/1", respond: {} }],
+    });
+
+    await expect(
+      ajour.publicFetch("https://avatars.example.com/u/1", {
+        headers: { Accept: "image/png" },
+      }),
+    ).resolves.toMatchObject({ status: 200 });
+    for (const header of ["Authorization", "Cookie", "X-Custom"]) {
+      await expect(
+        ajour.publicFetch("https://avatars.example.com/u/1", {
+          headers: { [header]: "x" },
+        }),
+      ).rejects.toMatchObject({ code: "refused" });
+    }
+  });
+});
+
+describe("the fake ajour.http for a secret address", () => {
+  const feed: PluginManifest = {
+    ...manifest,
+    connectionFields: [
+      { id: "feedUrl", label: "Feed", type: "password", secret: true },
+    ],
+    capabilities: { calendar: {} },
+    network: { auth: { scheme: "secretAddress", secretField: "feedUrl" } },
+  };
+
+  it("takes a GET with an empty path, and no query", async () => {
+    const ajour = createFakeAjour({
+      manifest: feed,
+      routes: [
+        { method: "GET", path: "", respond: { body: "BEGIN:VCALENDAR" } },
+      ],
+    });
+
+    await expect(
+      ajour.http({ connectionId: "c1", method: "GET", path: "" }),
+    ).resolves.toMatchObject({ status: 200 });
+    await expect(
+      ajour.http({
+        connectionId: "c1",
+        method: "GET",
+        path: "",
+        query: { since: "2026-10-01" },
+      }),
+    ).rejects.toMatchObject({ code: "refused" });
+  });
 });
 
 describe("the fake ajour.log", () => {

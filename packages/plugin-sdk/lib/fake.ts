@@ -190,8 +190,13 @@ function refusal(
   const where = request.host ? `host "${request.host}"` : "the base address";
   const describe = `${request.method} ${request.path}`;
   if (network?.auth?.scheme === "secretAddress") {
-    if (request.host || request.method !== "GET" || request.path !== "") {
-      return "A secret address takes only a GET with an empty path.";
+    if (
+      request.host ||
+      request.method !== "GET" ||
+      request.path !== "" ||
+      request.query !== undefined
+    ) {
+      return "A secret address takes only a GET with an empty path and no query.";
     }
   } else {
     const endpoints = request.host
@@ -222,11 +227,21 @@ function refusal(
       return `Connection ${request.connectionId} hasn't turned on the access choice "${matching[0]!.access}".`;
     }
   }
+  return headerRefusal(manifest, request.headers, authHeaders(manifest));
+}
+
+/** A header the broker would refuse: the denylist wins, then the manifest's list. */
+function headerRefusal(
+  manifest: PluginManifest,
+  headers: Readonly<Record<string, string>> | undefined,
+  denied: readonly string[],
+) {
   const listed = new Set(
-    (network?.requestHeaders ?? []).map((header) => header.toLowerCase()),
+    (manifest.network?.requestHeaders ?? []).map((header) =>
+      header.toLowerCase(),
+    ),
   );
-  const denied = authHeaders(manifest);
-  for (const name of Object.keys(request.headers ?? {})) {
+  for (const name of Object.keys(headers ?? {})) {
     const header = name.toLowerCase();
     if (isDeniedHeaderName(header, denied)) {
       return `A plugin may not set the ${name} header.`;
@@ -238,20 +253,29 @@ function refusal(
   return undefined;
 }
 
-function publicRefusal(manifest: PluginManifest, url: string) {
+function publicRefusal(
+  manifest: PluginManifest,
+  url: string,
+  init: AjourPublicFetchInit,
+) {
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
     return `${url} is not an address.`;
   }
-  if (parsed.protocol !== "https:") {
-    return "ajour.publicFetch reaches https addresses only.";
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.port !== "" ||
+    parsed.username !== "" ||
+    parsed.password !== ""
+  ) {
+    return "ajour.publicFetch reaches https addresses on their default port, without a user name.";
   }
   if (!(manifest.network?.publicHosts ?? []).includes(parsed.hostname)) {
     return `The manifest declares no public host ${parsed.hostname}.`;
   }
-  return undefined;
+  return headerRefusal(manifest, init.headers, []);
 }
 
 /**
@@ -318,7 +342,7 @@ export function createFakeAjour(options: FakeAjourOptions = {}): FakeAjour {
       };
       publicRequests.push(recorded);
       if (init.signal?.aborted) throw abortError(init.signal);
-      const refused = manifest && publicRefusal(manifest, url);
+      const refused = manifest && publicRefusal(manifest, url, init);
       if (refused) throw requestError("refused", refused);
       const route = (options.publicRoutes ?? []).find(
         (candidate) =>
