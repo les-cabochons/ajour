@@ -157,6 +157,107 @@ jobs:
             apps/web/test-results
           retention-days: 7
 
+  # Decides whether a pull request can change what the desktop package holds.
+  # Pushes and manual runs always package.
+  desktop-changes:
+    name: Desktop package changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      package: ${{ steps.diff.outputs.package }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Look for changes that reach the desktop package
+        id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "package=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed=$(git diff --name-only "origin/$BASE_REF...HEAD")
+          echo "$changed"
+          if echo "$changed" | grep -qE '^(apps/desktop/|\.github/workflows/|pnpm-lock\.yaml$)'; then
+            echo "package=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "package=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Packages an unpacked app on both systems and reads its Electron fuses back,
+  # the way the release workflows do, without publishing or signing. macOS
+  # builds both architectures, because the unsigned binary is re-signed ad hoc
+  # after the fuses are flipped and must still start.
+  package:
+    name: Package (${{ matrix.name }})
+    needs: desktop-changes
+    if: needs.desktop-changes.outputs.package == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      # Packaging needs Electron's binary, so do not skip its download as the
+      # workflow-wide setting does.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: ""
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+          - name: macOS
+            os: macos-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          check-latest: true
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install pnpm on Windows
+        if: runner.os == 'Windows'
+        run: npm install --global pnpm@10.7.0
+
+      - name: Install dependencies
+        run: corepack pnpm install --frozen-lockfile
+
+      - name: Package an unpacked app
+        run: corepack pnpm --filter @ajour/desktop package
+
+      - name: Package the arm64 app
+        if: runner.os == 'macOS'
+        working-directory: apps/desktop
+        run: corepack pnpm exec electron-builder --config=electron-builder.config.cjs --mac dir --arm64 --publish=never
+
+      - name: Check the packaged apps' Electron fuses
+        run: corepack pnpm --filter @ajour/desktop exec node scripts/check-fuses.cjs
+
+      - name: Start the packaged binary as Node
+        # Run as Node is on, so the binary runs a script without a window.
+        # That shows the flipped, re-signed binary starts.
+        shell: bash
+        working-directory: apps/desktop/out/make
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            binary="mac-arm64/Ajour.app/Contents/MacOS/Ajour"
+          else
+            binary="win-unpacked/Ajour.exe"
+          fi
+          ELECTRON_RUN_AS_NODE=1 "./$binary" -e "console.log('node', process.version)"
+
   # electron:
   #   Placeholder for the real-Electron suites (the malicious-plugin and
   #   lifecycle suites of the Plugin API 4 migration, ticket #392). They will
