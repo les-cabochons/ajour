@@ -23,7 +23,7 @@ The folder holds:
 To back up Ajour, quit it and copy this folder.
 
 ::: warning Plugin credentials
-Connection tokens, such as an Azure DevOps personal access token, are stored in `app-api-vault.json`, encrypted with a key your operating system keeps for your user: the Windows data protection API, or the macOS keychain. Ajour moves tokens saved by earlier versions there at its first launch, and removes them from `app-api-state.json`. When the computer can't encrypt them, Ajour refuses to save a token rather than keep it in plain text, and the connections that need one pause.
+Connection tokens, such as an Azure DevOps personal access token, are stored in `app-api-vault.json`, encrypted with a key your operating system keeps for your user: the Windows data protection API, or the macOS keychain. Ajour moves tokens saved by earlier versions there at its first launch, and removes them from `app-api-state.json`. When the computer can't encrypt them, Ajour refuses to save a token rather than keep it in plain text, and the connections that need one pause. Ajour doesn't release a Linux build. One built from source stores no secret without a secret store such as GNOME Keyring or KWallet, and the coming sandboxed plugin host won't run plugins on Linux.
 
 Encryption keeps a copy of the folder from handing out your tokens. It doesn't stop programs running as you from asking the operating system to decrypt them. Installed plugin code still receives its connection's credentials, so give each token only the permissions its plugin needs, and an expiry date.
 :::
@@ -48,7 +48,7 @@ Ajour masks secret fields in its settings and redacts known connection secrets f
 
 ## Back up, export or delete data
 
-Quit Ajour before copying its data folder. A copy includes browser sessions, so protect it like the original. Its credentials stay encrypted with your user's key on this computer: restored on another computer, or after an administrator resets your Windows password, they can't be read. Ajour then says so once, keeps each connection's settings and data, and pauses its sync until you enter its token again. The app's [exports](/projects/import-export) cover the data offered by each export format, not a complete backup of this folder.
+Quit Ajour before copying its data folder. A copy includes browser sessions, so protect it like the original. Its credentials stay encrypted with a key your operating system keeps for your user. A copy restored on another computer usually can't read them, unless the key moved too, as macOS Migration Assistant can copy the keychain. After an administrator resets your Windows password, they can't be read either. Ajour then keeps each connection's settings and data, and pauses its sync until you enter its token again. The app's [exports](/projects/import-export) cover the data offered by each export format, not a complete backup of this folder.
 
 Removing a connection deletes its saved credentials from the vault. It does not revoke a token at the provider or delete records already sent to a source tool, a team backend or an AI provider. Turn a plugin off to stop its sync without deleting its data or credentials. Uninstalling it removes its connections and all its credentials; imported backlog items remain.
 

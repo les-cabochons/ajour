@@ -109,33 +109,59 @@ file:
   and `agentRunner.pluginSecrets` per plugin.
 - **Checks:** the vault proves encryption with a round trip at its first use,
   after `ready`. A check value it keeps tells a vault encrypted under a lost
-  key: then every entry is unreadable at once. An entry that fails alone is
-  marked alone. A failed decryption isn't tried again before the next launch,
-  and an unreadable entry is kept until it is replaced or removed.
+  key. When the check fails, each entry is tried once: those that decrypt
+  stay usable and the check is never replaced; when none does, every entry is
+  unreadable at once, and the first new secret writes a new check. An entry
+  that fails alone is marked alone. A failed decryption isn't tried again
+  before the next launch, and an unreadable entry is kept until it is
+  replaced or removed. Each ciphertext holds its plugin, connection and field
+  ids with the value, so one moved to another entry's place doesn't decrypt
+  there. A write reads the saved file back and decrypts what it wrote.
+- **Never lost to a bad read:** a read of the vault file that fails with
+  `EBUSY`, `EPERM`, `EACCES` or `EAGAIN`, as while an antivirus scan holds it
+  on Windows, is tried again for about 1.5 s. A file that still can't be
+  read, or that a newer version saved, is never replaced: the vault reports
+  `unavailable` with the reason and refuses every change until the next
+  launch. A malformed entry is unreadable alone, and the file keeps it, and
+  any entry or property this version doesn't know, as it was. Only a file
+  that isn't a vault at all is kept aside, under a name of its own, before a
+  new one is saved.
 - **When it can't:** without encryption, or without a vault, as in the
   standalone API and the vite dev server, a save that sets a secret is refused
   with a 400 (`vault_unavailable`). A connection whose secret can't be read,
   or still waits in plain text, is paused: its operations answer 409
-  (`secret_unavailable`). A connection without secrets always runs. The
-  overview reports `vault` and each connection's `secretFields` and `paused`.
+  (`secret_unavailable`). The pause says `vault_unavailable`, with the
+  reason, whenever the vault can't be used, then `secret_unreadable`, then
+  `not_in_vault` (`decideSecretPause` in `connection-credentials.ts`). A
+  connection without secrets always runs. The overview reports `vault` and
+  each connection's `secretFields` and `paused`. A save of a connection whose
+  config was sealed and not split yet is refused with the same 409, so it
+  can't drop the sealed entry; one whose sealed entry can't be read replaces
+  it.
 - **The move:** state version 8 (`apps/api/src/vault-migration.ts`) moves each
   plain-text secret, of every plugin, active or not, and of agent task
   settings: encrypt, write, read back, and only then drop it from the state
   file. A failure keeps the plain text and holds the file at version 7, so the
   next launch tries again. The values of a plugin whose package is missing are
-  sealed whole, as one entry, and split when the plugin comes back. The
-  storage runs the same move at runtime, for an update that marks a field
-  secret. There is no downgrade.
+  sealed whole, as one entry, and split when the plugin comes back. A stored
+  key the manifest doesn't declare, Ajour's own fields excepted, moves as a
+  secret, the rule redaction uses, so a renamed field never stays in plain
+  text. The storage runs the same move at runtime, for an update that marks a
+  field secret. There is no downgrade.
 - **Use:** `AppApiStorage.connectionForOperation` decrypts a connection's
   secrets only to build an API 3 worker's connection, and records the use.
   Until the cut-over (#403) the plugin still sees them in plain text.
 - **Deletion:** removing a connection or uninstalling a plugin deletes its
   entries; deactivating keeps them.
-- **App names:** development builds take the app name "Ajour Dev" before
-  `ready`, so on macOS their key is a keychain item of its own. Release
-  builds never change their name. The data folder stays pinned either way, so
-  a development build pointed at the release's folder on macOS can't read the
-  release's secrets: give it its own with `AJOUR_USER_DATA_PATH`.
+- **App names and data folders:** development builds take the app name
+  "Ajour Dev" before `ready`, so on macOS their key is a keychain item of its
+  own, and keep their data in `appData/Ajour Dev`, beside the release's
+  `appData/Ajour`. Release builds never change either. `AJOUR_USER_DATA_PATH`
+  points any build at another folder, as a worktree's checks do with a temp
+  folder. A development build pointed at the release's folder can't read the
+  release's secrets on macOS, but it doesn't harm them: the release build
+  still decrypts their entries, even after the development build saved a
+  check value of its own.
 
 A plugin may echo a secret connection value in an error. Every route that runs
 a plugin operation turns the error into a message with the connection's
