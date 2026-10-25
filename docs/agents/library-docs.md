@@ -181,6 +181,30 @@ The backlog editor module is feature-local because its vocabulary and commands b
   which categories are done, and also reports Ajour's items that reached one,
   so Ajour archives them. The API returns those as `doneItems` and never stages
   them for review.
+- Plugin API 4 (spec #381) lands beside API 3. Its manifest schema and
+  derived hosts are in `packages/shared/plugin-api-4.ts`. The request rules
+  the broker and the SDK's fake share, which paths an endpoint pattern
+  matches and the header denylist, are in
+  `packages/shared/plugin-request-rules.ts`, which imports nothing. The
+  access summary and the difference between two manifests, which consent on
+  updates uses, are in `packages/shared/plugin-access.ts`. Until the
+  cut-over (#403), the host admits API 4 packages only in development builds
+  (`PluginAdmissionPolicy` in `apps/api/src/plugin-package.ts`), never runs
+  one in a worker thread, and the agent runner doesn't run an API 4 agent
+  task until it enforces the task's declared tools (#396).
+- `tldts`: the Public Suffix List, private section included, for
+  `@ajour/shared`. Only `plugin-api-4.ts` uses it, to refuse a derived host
+  rule on a suffix where anyone can register a name, such as `github.io`, and
+  a derived host outside the registrable domain of its rule or base host. The
+  packaged app copies it into the internal API runtime
+  (`apps/desktop/scripts/prepare-internal-api.cjs`).
+- The plugin SDK, `packages/plugin-sdk` (`@ajour/plugin-sdk`), is built for
+  npm: the contract types, the `ajour` global's types and the
+  `createFakeAjour` test fake. `scripts/generate-contract.mjs` generates its
+  `lib/contract.ts` from the shared schemas and copies
+  `plugin-request-rules.ts` to `lib/request-rules.ts`, and its tests fail
+  while either is stale. The published files import nothing outside the
+  package.
 - A settle's change to the source is a `pendingSourceWrite` on the work item,
   set by `settleBacklogItem` and cleared by `completeSourceWrite` or
   `failSourceWrite` in `domain/backlog/backlog-item-lifecycle.ts`. Undo drops

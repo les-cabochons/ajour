@@ -1,0 +1,46 @@
+{
+  "name": "@ajour/plugin-sdk",
+  "version": "0.1.0",
+  "description": "Types, the ajour runtime and a test fake for Ajour plugins on plugin API 4.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/les-cabochons/ajour.git",
+    "directory": "packages/plugin-sdk"
+  },
+  "keywords": [
+    "ajour",
+    "plugin"
+  ],
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
+    },
+    "./globals": {
+      "types": "./dist/globals.d.ts",
+      "default": "./dist/globals.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "generate": "node scripts/generate-contract.mjs",
+    "prepack": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.build.json --noEmit"
+  }
+}

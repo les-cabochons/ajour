@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "allowImportingTsExtensions": false,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM"],
+    "types": [],
+    "paths": {},
+    "rootDir": ".",
+    "outDir": "dist"
+  },
+  "include": ["index.ts", "testing.ts", "globals.ts", "lib"]
+}
