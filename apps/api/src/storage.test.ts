@@ -8,6 +8,7 @@ import {
   type PluginManifest,
 } from "../../../packages/shared/plugins.ts";
 import { AppApiStorage } from "./storage.ts";
+import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
 
 function buildPlugin(
   id: string,
@@ -785,6 +786,38 @@ describe("AppApiStorage", () => {
     expect(await storage.getAgentTaskValues("ajp")).toEqual({ a: "b" });
     expect(await storage.getAgentTaskValues("constructor")).toEqual({});
   });
+
+  it("gives a run no secret still in plain text while encryption is unavailable", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
+    tempDirs.push(tempDir);
+    const statePath = path.join(tempDir, "app-api-state.json");
+    await writeFile(
+      statePath,
+      JSON.stringify({
+        version: 7,
+        connections: [],
+        agentRunner: {
+          pluginValues: {
+            workday: { url: "https://wd.example/t", apiKey: "wd-key-plain" },
+          },
+        },
+      }),
+      "utf8",
+    );
+    const manifest = {
+      id: "workday",
+      connectionFields: [],
+      agentTaskFields: [{ id: "url" }, { id: "apiKey", secret: true }],
+    };
+    const storage = new AppApiStorage(statePath, {
+      vault: new MemorySecretVault({ unavailable: "No keyring." }),
+      manifests: async () => [manifest],
+    });
+
+    expect(await storage.getAgentTaskValues("workday", manifest)).toEqual({
+      url: "https://wd.example/t",
+    });
+  });
 });
 
 describe("state files from earlier versions", () => {
@@ -809,7 +842,7 @@ describe("state files from earlier versions", () => {
   }
 
   const emptyCurrentState = {
-    version: 7,
+    version: 8,
     connections: [],
     stagedImports: [],
     dismissedImportKeys: [],
@@ -821,8 +854,14 @@ describe("state files from earlier versions", () => {
     agentRunner: {
       settings: { cli: null, browserMode: "ajour-chrome", model: "" },
       pluginValues: {},
+      pluginSecrets: {},
     },
   };
+  /**
+   * A file with a connection's token: without a vault, as here, the token
+   * can't move, so the file stays at version 7 until a launch with one.
+   */
+  const heldBeforeVault = { ...emptyCurrentState, version: 7 };
 
   it("moves version 1's one Azure DevOps connection and its inbox to the current version", async () => {
     await expect(
@@ -850,7 +889,7 @@ describe("state files from earlier versions", () => {
         seenBacklogKeys: ["azure_devops:8"],
       }),
     ).resolves.toEqual({
-      ...emptyCurrentState,
+      ...heldBeforeVault,
       connections: [
         {
           id: "legacy_azure_devops",
@@ -921,7 +960,7 @@ describe("state files from earlier versions", () => {
         seenImportKeys: ["azure_devops:ado-1:8"],
       }),
     ).resolves.toEqual({
-      ...emptyCurrentState,
+      ...heldBeforeVault,
       connections: [
         {
           id: "ado-1",

@@ -94,6 +94,7 @@ async function runtime(
       uninstallPluginForServer: uninstall,
     }),
     internalAppApiEntryPath: "fixture/server.ts",
+    internalAppApiVault: () => undefined,
     existsSync: () => true,
     app: { isPackaged: true, getPath: () => "/fixture" },
     mainWindow: { webContents: "active-window" },

@@ -111,10 +111,17 @@ import {
 } from "../../../packages/shared/agent-tools.ts";
 import { RESERVED_CONNECTION_FIELD_IDS } from "./connection-values.ts";
 import {
+  ConnectionPausedError,
   connectionCredentials,
+  effectiveSecretFields,
+  isEmptySecretValue,
   mergeSecretsForSave,
   pluginConnection,
+  redactionFields,
+  secretManifestOf,
+  type SecretFieldDeclaration,
 } from "./connection-credentials.ts";
+import { VaultUnavailableError, type SecretVault } from "./secret-vault.ts";
 import type { Sink } from "../../../packages/wide-events/sinks.ts";
 import { AgentSessions } from "./agent-sessions.ts";
 import {
@@ -136,7 +143,11 @@ import {
 } from "./agent-runner/cli-path.ts";
 import { playwrightMcpServer } from "./agent-runner/playwright-mcp.ts";
 import { AgentRunError, AgentRunner } from "./agent-runner/runner.ts";
-import { capabilityOfMethod, PluginManager } from "./plugin-host.ts";
+import {
+  capabilityOfMethod,
+  PluginManager,
+  type PluginAdmitted,
+} from "./plugin-host.ts";
 import {
   PluginOperationCancelled,
   PluginOperationRefused,
@@ -225,7 +236,17 @@ interface AppApiServerOptions {
    * shell's PATH. Tests point it at a fake CLI.
    */
   agentCliPath?: string;
+  /**
+   * Where secrets live, encrypted by the operating system. The desktop app
+   * passes a `FileSecretVault` with Electron's `safeStorage`; tests pass a
+   * fake. Without one, as in the standalone API, the API holds no secrets:
+   * it refuses secret fields, and connections that need one pause.
+   */
+  vault?: SecretVault;
 }
+
+/** The vault file the desktop app keeps beside the state file. */
+export { FileSecretVault } from "./secret-vault.ts";
 
 interface AppApiRuntime {
   events: ApiEvents;
@@ -299,14 +320,26 @@ function collectAutoSyncItems(
  * waits, so the plugin host hands over, at admission, the manifest of the
  * package it runs, and the call's error and result are redacted with that
  * package's secret fields. Until then no plugin code has run, and the
- * manifest the route read stands in.
+ * manifest the route read stands in. `secrets`, the fields the vault holds
+ * for the call's connection, stay secret whatever the manifest says: the
+ * admission gives the host those fields too, for the call's own event.
  */
-function admittedCall(manifest: PluginManifest) {
+function admittedCall(
+  manifest: PluginManifest,
+  secrets?: StoredConnection["secrets"],
+) {
   const call = {
     manifest,
-    admit: (admitted: PluginManifest) => {
+    admit: (admitted: PluginManifest): PluginAdmitted => {
       call.manifest = admitted;
+      return redactionFields(admitted.connectionFields, secrets);
     },
+    /** The credentials of `configs`, with the admitted package's secret fields. */
+    credentials: (...configs: (PluginFieldValues | undefined)[]) =>
+      connectionCredentials(
+        redactionFields(call.manifest.connectionFields, secrets),
+        ...configs,
+      ),
   };
   return call;
 }
@@ -797,6 +830,14 @@ async function inactiveCapability(
   return undefined;
 }
 
+/** Every installed plugin's secret fields, runnable or not, such as an API 3 package. */
+async function installedSecretManifests(pluginManager: PluginManager) {
+  const { plugins, unavailable } = await pluginManager.inspectPlugins();
+  return [...plugins, ...unavailable.map((plugin) => plugin.manifest)].map(
+    secretManifestOf,
+  );
+}
+
 /** The plugins overview. `unit`, the overview's own request, gets its counts. */
 async function getOverview(
   storage: AppApiStorage,
@@ -812,6 +853,13 @@ async function getOverview(
       discovery_ms: Date.now() - startedAt,
     },
   });
+  // A plugin back since its connections were sealed is split here, before
+  // its form shows their settings.
+  await storage.settleSecrets(
+    [...plugins, ...unavailable.map((plugin) => plugin.manifest)].map(
+      secretManifestOf,
+    ),
+  );
   return pluginsOverviewSchema.parse(
     await storage.getPluginsOverview(plugins, unavailable),
   );
@@ -919,7 +967,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     launch: options.launch,
     userDataPath: path.dirname(statePath),
   });
-  const storage = new AppApiStorage(statePath, { events });
+  const storage = new AppApiStorage(statePath, {
+    events,
+    vault: options.vault,
+    // Called only once the plugin manager below exists.
+    manifests: async () => installedSecretManifests(pluginManager),
+  });
   const allowDevelopmentPlugins =
     options.allowDevelopmentPlugins ??
     process.env.AJOUR_ALLOW_DEVELOPMENT_PLUGINS === "1";
@@ -983,7 +1036,17 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     storage: {
       getMcpSettings: () => storage.getMcpSettings(),
       getAgentRunnerSettings: () => storage.getAgentRunnerSettings(),
-      getAgentTaskValues: (pluginId) => storage.getAgentTaskValues(pluginId),
+      // A run gets the secrets the vault can give back; a secret still in
+      // plain text, or one that can't be read, is left out.
+      getAgentTaskValues: async (pluginId) => {
+        const plugin = (await pluginManager.listPlugins()).find(
+          (candidate) => candidate.id === pluginId,
+        );
+        return storage.getAgentTaskValues(
+          pluginId,
+          plugin && secretManifestOf(plugin),
+        );
+      },
       createMcpClient: (name) => createMcpClient(storage, name),
       revokeMcpClient: (clientId) =>
         storage.revokeMcpClient(clientId, Date.now()),
@@ -1067,10 +1130,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       const payload = await readRequest(request, agentTaskSettingsUpdateSchema);
       const { pluginId } = params;
       unit.set({ plugin: { id: pluginId } });
-      const tasks = (await pluginManager.listPlugins()).find(
+      const taskPlugin = (await pluginManager.listPlugins()).find(
         (plugin) => plugin.id === pluginId,
-      )?.capabilities.agentTask?.tasks;
-      if (!tasks) {
+      );
+      const tasks = taskPlugin?.capabilities.agentTask?.tasks;
+      if (!taskPlugin || !tasks) {
         unit.refuse("no_agent_task");
         writeJson(response, 404, {
           error: "This plugin has no agent tasks.",
@@ -1084,19 +1148,35 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(response, 400, { error: parsed.error });
         return;
       }
-      const saved = await storage.getAgentTaskValues(pluginId);
+      const manifest = secretManifestOf(taskPlugin);
+      await storage.settleSecrets([manifest], pluginId);
+      const saved = await storage.readAgentTaskSecrets(pluginId, manifest);
+      const secretFields = effectiveSecretFields(fields, saved.holder.secrets);
+      if (
+        await refuseSecretsWithoutVault(
+          unit,
+          response,
+          secretFields,
+          parsed.values,
+        )
+      ) {
+        return;
+      }
       const values = readInput(() =>
         mergeSecretsForSave(
-          fields,
+          secretFields,
           parsed.values,
-          saved,
+          saved.values,
           payload.removeSecrets,
         ),
       );
       unit.set({
         agent_task: { field_count: Object.keys(values).length },
       });
-      await storage.setAgentTaskValues(pluginId, values);
+      await storage.setAgentTaskValues(pluginId, values, {
+        fields: secretFields,
+        removeSecrets: payload.removeSecrets,
+      });
       writeJson(response, 200, await agentRunner.overview());
     },
 
@@ -1508,14 +1588,33 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         });
         return;
       }
-      const existingConnection = payload.id
-        ? await storage.getConnection(pluginId, payload.id)
+      const manifest = secretManifestOf(plugin);
+      await storage.settleSecrets([manifest], pluginId);
+      // The saved connection with the secrets the vault can give back, so a
+      // secret the save leaves empty stays.
+      const existing = payload.id
+        ? await storage.readConnectionSecrets(pluginId, payload.id, manifest)
         : null;
+      const existingConnection = existing?.connection ?? null;
+      const secretFields = effectiveSecretFields(
+        plugin.connectionFields,
+        existingConnection?.secrets,
+      );
+      if (
+        await refuseSecretsWithoutVault(
+          unit,
+          response,
+          secretFields,
+          parsedValues.config,
+        )
+      ) {
+        return;
+      }
       // A config saved before Ajour kept its own fields out may hold one.
       const configForSave = withoutReservedFields(
         readInput(() =>
           mergeSecretsForSave(
-            plugin.connectionFields,
+            secretFields,
             parsedValues.config,
             existingConnection?.config,
             payload.removeSecrets,
@@ -1534,7 +1633,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           ...(existingConnection ? { id: existingConnection.id } : {}),
         },
       });
-      const call = admittedCall(plugin);
+      const call = admittedCall(plugin, existingConnection?.secrets);
       let validation: PluginValidationResult;
       try {
         validation = await pluginManager.validateConnection(
@@ -1544,8 +1643,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           call.admit,
         );
       } catch (error) {
-        const credentials = connectionCredentials(
-          call.manifest,
+        const credentials = call.credentials(
           configForSave,
           existingConnection?.config,
         );
@@ -1553,27 +1651,46 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(response, 400, { error: credentials.errorMessage(error) });
         return;
       }
-      const storedConnection = await storage.upsertConnection(pluginId, {
-        id: payload.id,
-        label: parsedValues.label,
-        tenantLabel: parsedValues.tenantLabel,
-        autoSync: parsedValues.autoSync,
-        autoSyncIntervalMinutes: parsedValues.autoSyncIntervalMinutes,
-        pullRequestAutoSync: parsedValues.pullRequestAutoSync,
-        agentAccess: parsedValues.agentAccess,
-        allowLossyConversion: parsedValues.allowLossyConversion,
-        // The plugin's answer can't set a field Ajour owns.
-        config: withoutReservedFields(validation.normalizedConfig),
-        // Redacted before it is stored: the normalized config may no
-        // longer hold a value the plugin swapped out, such as a password
-        // it traded for a token, so the overview couldn't find it later.
-        configSummary: connectionCredentials(
-          call.manifest,
-          configForSave,
-          existingConnection?.config,
+      // The plugin may answer with a key it didn't declare, which goes to
+      // the vault as a secret does.
+      if (
+        await refuseSecretsWithoutVault(
+          unit,
+          response,
+          secretFields,
+          parsedValues.config,
           validation.normalizedConfig,
-        ).redaction.summary(validation.connectionSummary),
-      });
+        )
+      ) {
+        return;
+      }
+      const storedConnection = await storage.upsertConnection(
+        pluginId,
+        {
+          id: payload.id,
+          label: parsedValues.label,
+          tenantLabel: parsedValues.tenantLabel,
+          autoSync: parsedValues.autoSync,
+          autoSyncIntervalMinutes: parsedValues.autoSyncIntervalMinutes,
+          pullRequestAutoSync: parsedValues.pullRequestAutoSync,
+          agentAccess: parsedValues.agentAccess,
+          allowLossyConversion: parsedValues.allowLossyConversion,
+          // The plugin's answer can't set a field Ajour owns. Its secrets
+          // go to the vault, and the state file keeps the rest.
+          config: withoutReservedFields(validation.normalizedConfig),
+          // Redacted before it is stored: the normalized config may no
+          // longer hold a value the plugin swapped out, such as a password
+          // it traded for a token, so the overview couldn't find it later.
+          configSummary: call
+            .credentials(
+              configForSave,
+              existingConnection?.config,
+              validation.normalizedConfig,
+            )
+            .redaction.summary(validation.connectionSummary),
+        },
+        { fields: secretFields, removeSecrets: payload.removeSecrets },
+      );
       unit.set({ connection: { id: storedConnection.id } });
       const { overview, summary } = await findConnectionSummary(
         storage,
@@ -1634,13 +1751,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         unit.set({ source_state: { count: result.states.length } });
         writeJson(response, 200, result);
       } catch (error) {
-        failPluginCall(
-          response,
-          unit,
-          error,
-          target.call.manifest,
-          target.connection,
-        );
+        failPluginCall(response, unit, error, target.call, target.connection);
       }
     },
 
@@ -1673,13 +1784,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         );
         writeJson(response, 200, backlogSettleWriteResultSchema.parse(result));
       } catch (error) {
-        failPluginCall(
-          response,
-          unit,
-          error,
-          target.call.manifest,
-          target.connection,
-        );
+        failPluginCall(response, unit, error, target.call, target.connection);
       }
     },
 
@@ -1715,7 +1820,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           response,
           context.unit,
           error,
-          target.call.manifest,
+          target.call,
           target.connection,
         );
       }
@@ -1768,13 +1873,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           backlogWriteDescriptionResultSchema.parse(result),
         );
       } catch (error) {
-        failPluginCall(
-          response,
-          unit,
-          error,
-          target.call.manifest,
-          target.connection,
-        );
+        failPluginCall(response, unit, error, target.call, target.connection);
       }
     },
 
@@ -1806,7 +1905,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         return;
       }
 
-      const connection = await storage.getConnection(pluginId, connectionId);
+      // Paused, with a 409, when a secret it needs can't reach the plugin.
+      const connection = await storage.connectionForOperation(
+        pluginId,
+        connectionId,
+        secretManifestOf(plugin),
+      );
       if (!connection) {
         unit.refuse("connection_not_found");
         writeJson(response, 404, {
@@ -1827,7 +1931,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         },
       });
 
-      const call = admittedCall(plugin);
+      const call = admittedCall(plugin, connection.secrets);
       try {
         const fetched = await pluginManager.syncConnection(
           pluginId,
@@ -1909,7 +2013,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             skippedCount: stageResult.skippedCount,
             workItemUpdates: redactFieldUpdateMessages(
               fetched.workItemUpdates,
-              connectionCredentials(call.manifest, connection.config).redaction,
+              call.credentials(connection.config).redaction,
             ),
             doneItems,
             viewer: fetched.viewer,
@@ -1917,10 +2021,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           }),
         );
       } catch (error) {
-        const credentials = connectionCredentials(
-          call.manifest,
-          connection.config,
-        );
+        const credentials = call.credentials(connection.config);
         recordPluginFailure(unit, error, credentials.secrets);
         const message = credentials.errorMessage(error);
         await storage.recordConnectionError(pluginId, connectionId, message);
@@ -1976,7 +2077,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(response, 409, { error: inactive.message });
         return;
       }
-      const connection = await storage.getConnection(pluginId, connectionId);
+      // Paused, with a 409, when a secret it needs can't reach the plugin.
+      const connection = await storage.connectionForOperation(
+        pluginId,
+        connectionId,
+        secretManifestOf(plugin),
+      );
       if (!connection) {
         unit.refuse("connection_not_found");
         writeJson(response, 404, { error: "Connection not found." });
@@ -1989,7 +2095,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         codeHostOperations[operation.data].request.parse(codeHostBody),
       );
       unit.set(codeHostRequestFields(codeHostRequest));
-      const call = admittedCall(plugin);
+      const call = admittedCall(plugin, connection.secrets);
       try {
         const result = await pluginManager.runCodeHostOperation(
           pluginId,
@@ -2008,10 +2114,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         }
         writeJson(response, 200, result);
       } catch (error) {
-        const credentials = connectionCredentials(
-          call.manifest,
-          connection.config,
-        );
+        const credentials = call.credentials(connection.config);
         recordPluginFailure(unit, error, credentials.secrets);
         const message = credentials.errorMessage(error);
         if (operation.data === "syncPullRequests") {
@@ -2053,7 +2156,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(response, 409, { error: inactive.message });
         return;
       }
-      const connection = await storage.getConnection(pluginId, connectionId);
+      // Paused, with a 409, when a secret it needs can't reach the plugin.
+      const connection = await storage.connectionForOperation(
+        pluginId,
+        connectionId,
+        secretManifestOf(plugin),
+      );
       if (!connection) {
         unit.refuse("connection_not_found");
         writeJson(response, 404, { error: "Connection not found." });
@@ -2136,10 +2244,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       // Checked again at the plugin's admission, after the host's own
       // waits, so a revocation saved meanwhile stops a post.
       let refusedAtAdmission = false;
-      const call = admittedCall(plugin);
+      const call = admittedCall(plugin, connection.secrets);
       const admit = async (manifest: PluginManifest) => {
-        call.admit(manifest);
-        if (await agentAllowed()) return;
+        const admitted = call.admit(manifest);
+        if (await agentAllowed()) return admitted;
         refusedAtAdmission = true;
         throw new PluginOperationRefused(agentRefusal, "agent_access");
       };
@@ -2170,10 +2278,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           refuseAgent();
           return;
         }
-        const credentials = connectionCredentials(
-          call.manifest,
-          connection.config,
-        );
+        const credentials = call.credentials(connection.config);
         recordPluginFailure(unit, error, credentials.secrets);
         writeJson(response, 502, { error: credentials.errorMessage(error) });
       }
@@ -2209,7 +2314,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(response, 409, { error: inactive.message });
         return;
       }
-      const connection = await storage.getConnection(pluginId, connectionId);
+      // Paused, with a 409, when a secret it needs can't reach the plugin.
+      const connection = await storage.connectionForOperation(
+        pluginId,
+        connectionId,
+        secretManifestOf(plugin),
+      );
       if (!connection) {
         unit.refuse("connection_not_found");
         writeJson(response, 404, { error: "Connection not found." });
@@ -2232,7 +2342,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             1,
         },
       });
-      const call = admittedCall(plugin);
+      const call = admittedCall(plugin, connection.secrets);
       try {
         const result = await pluginManager.runCalendarOperation(
           pluginId,
@@ -2249,10 +2359,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         unit.set({ calendar: { event_count: result.events.length } });
         writeJson(response, 200, result);
       } catch (error) {
-        const credentials = connectionCredentials(
-          call.manifest,
-          connection.config,
-        );
+        const credentials = call.credentials(connection.config);
         const message = credentials.errorMessage(error);
         recordPluginFailure(unit, error, credentials.secrets);
         await storage.recordConnectionError(pluginId, connectionId, message);
@@ -2280,10 +2387,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           ),
         );
       } catch (error) {
-        const credentials = connectionCredentials(
-          call.manifest,
-          payload.values,
-        );
+        const credentials = call.credentials(payload.values);
         recordPluginFailure(unit, error, credentials.secrets);
         writeJson(response, 502, { error: credentials.errorMessage(error) });
       }
@@ -2295,7 +2399,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
       const plugin = await teamPlugin(pluginId, response, unit, false);
       if (!plugin) return;
-      const connection = await storage.getConnection(pluginId, connectionId);
+      // Paused, with a 409, when a secret it needs can't reach the plugin.
+      const connection = await storage.connectionForOperation(
+        pluginId,
+        connectionId,
+        secretManifestOf(plugin),
+      );
       if (!connection) {
         unit.refuse("connection_not_found");
         writeJson(response, 404, { error: "Connection not found." });
@@ -2303,7 +2412,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       }
       const syncRequest = await readRequest(request, teamSyncRequestSchema);
       unit.set({ team_sync: { projects_sent: syncRequest.changes.length } });
-      const call = admittedCall(plugin);
+      const call = admittedCall(plugin, connection.secrets);
       try {
         const result = await pluginManager.syncTeamProjects(
           pluginId,
@@ -2325,10 +2434,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         );
         writeJson(response, 200, result);
       } catch (error) {
-        const credentials = connectionCredentials(
-          call.manifest,
-          connection.config,
-        );
+        const credentials = call.credentials(connection.config);
         recordPluginFailure(unit, error, credentials.secrets);
         const message = credentials.errorMessage(error);
         await storage.recordConnectionError(pluginId, connectionId, message);
@@ -2473,7 +2579,55 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       writeJson(response, 409, { error: unsupported });
       return undefined;
     }
-    return { pluginId, connection, plugin, call: admittedCall(plugin) };
+    // Paused, with a 409, when a secret it needs can't reach the plugin.
+    const withSecrets = await storage.connectionForOperation(
+      pluginId,
+      connectionId,
+      secretManifestOf(plugin),
+    );
+    if (!withSecrets) {
+      unit.refuse("connection_not_found");
+      writeJson(response, 404, { error: "Plugin connection not found." });
+      return undefined;
+    }
+    return {
+      pluginId,
+      connection: withSecrets,
+      plugin,
+      call: admittedCall(plugin, withSecrets.secrets),
+    };
+  }
+
+  /**
+   * Refuses a save that gives a secret field a value the vault can't keep:
+   * there is no plain-text fallback. True when it refused. A save that
+   * leaves every secret empty goes on, so a plugin without secrets works.
+   * `normalizedConfig`, the plugin's answer, counts too: a key the manifest
+   * doesn't declare goes to the vault, so it needs one as a secret does.
+   */
+  async function refuseSecretsWithoutVault(
+    unit: Unit<AjourCatalog, "connection.save" | "agent_task.configure">,
+    response: ServerResponse,
+    fields: readonly SecretFieldDeclaration[],
+    values: PluginFieldValues,
+    normalizedConfig?: PluginFieldValues,
+  ) {
+    const declared = new Set(fields.map((field) => field.id));
+    const needsVault =
+      fields.some(
+        (field) => field.secret && !isEmptySecretValue(values[field.id]),
+      ) ||
+      Object.entries(withoutReservedFields(normalizedConfig ?? {})).some(
+        ([id, value]) => !declared.has(id) && !isEmptySecretValue(value),
+      );
+    if (!needsVault) return false;
+    const status = await storage.vaultStatus();
+    if (status.state !== "unavailable") return false;
+    unit.refuse("vault_unavailable");
+    writeJson(response, 400, {
+      error: new VaultUnavailableError(status.reason).message,
+    });
+    return true;
   }
 
   /**
@@ -2514,10 +2668,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     response: ServerResponse,
     unit: Parameters<typeof recordPluginFailure>[0],
     error: unknown,
-    manifest: PluginManifest,
+    call: ReturnType<typeof admittedCall>,
     connection: StoredConnection,
   ) {
-    const credentials = connectionCredentials(manifest, connection.config);
+    const credentials = call.credentials(connection.config);
     recordPluginFailure(unit, error, credentials.secrets);
     // The message reaches the user, and a description's is stored with the item.
     writeJson(response, 502, { error: credentials.errorMessage(error) });
@@ -2696,6 +2850,23 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           // The client hung up, and the error is its interrupted body or
           // connection: the seam ends the request `cancelled`.
           if (exchange.isHangUp(error)) return;
+          // A connection whose secrets can't reach its plugin is paused,
+          // and a secret the vault can't encrypt is refused: neither is a
+          // failure of Ajour's, and neither message holds a secret.
+          if (error instanceof ConnectionPausedError) {
+            (routed as Unit<AjourCatalog, "backlog.sync">).refuse(
+              "secret_unavailable",
+            );
+            writeJson(response, 409, { error: error.message });
+            return;
+          }
+          if (error instanceof VaultUnavailableError) {
+            (routed as Unit<AjourCatalog, "connection.save">).refuse(
+              "vault_unavailable",
+            );
+            writeJson(response, 400, { error: error.message });
+            return;
+          }
           // Ajour's own errors only. Only a route knows the connection whose
           // secrets a plugin error may echo, so each catches its plugin call
           // and answers with its connection's credentials' `errorMessage`.
@@ -2767,6 +2938,9 @@ export async function installPluginForServer(
     throw new Error("Plugin installation requires an active app API runtime.");
   }
 
+  // The state loads, and its secrets move into the vault, before the
+  // package change: the load lists the plugins, which waits for that change.
+  await runtime.storage.ready();
   const before = await runtime.pluginManager.inspectPlugins();
   const installedPlugin = await runtime.pluginManager.installPluginArchive(
     archiveBytes,
@@ -2805,6 +2979,9 @@ export async function uninstallPluginForServer(
     throw new Error("Plugin uninstall requires an active app API runtime.");
   }
 
+  // Refused before the package goes: a vault that can't drop the plugin's
+  // secrets would leave its data behind a package that is already gone.
+  await runtime.storage.assertSecretsChangeable();
   const removedPlugin = await runtime.pluginManager.uninstallPlugin(pluginId);
   await runtime.storage.removePluginData(removedPlugin.id);
   return pluginUninstallResponseSchema.parse({

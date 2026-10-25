@@ -55,7 +55,7 @@ As a plugin author:
 - Talk only to the tool your plugin is for. Check that URLs built from user input or synced data point at the connection's site before sending credentials.
 - Ask for the smallest token permissions that work, and say which in your README.
 - Never put secrets in `connectionSummary`, error messages or item fields. Ajour shows those in the UI. Ajour replaces secret connection values with `[secret]` in error messages, field sync messages and the connection summary, and treats a `normalizedConfig` key the manifest doesn't declare as secret, but do not rely on it.
-- Remember that Ajour stores connection values, secrets included, unencrypted in a file only the user can read.
+- Mark every credential field `secret: true`. Ajour keeps secret values encrypted by the operating system, decrypts them only to run your plugin, and refuses to save one where it can't encrypt it. It stores the other connection values unencrypted in a file only the user can read.
 
 ## API versions
 

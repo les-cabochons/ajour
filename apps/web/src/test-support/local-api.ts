@@ -9,6 +9,7 @@ import {
   stopAppApiServer,
 } from "../../../api/src/server.ts";
 import { WINDOW_TOKEN_HEADER } from "../../../api/src/window-token.ts";
+import { MemorySecretVault } from "../../../api/src/test-support/memory-secret-vault.ts";
 
 /*
  * The real local API, started on a free port with a temporary state file
@@ -123,6 +124,8 @@ export async function startLocalApi({
     allowedOrigins: [APP_ORIGIN],
     windowToken: WINDOW_TOKEN,
     eventSink: sink,
+    // The desktop app's vault, in memory: the standalone API holds no secret.
+    vault: new MemorySecretVault(),
   });
   const { port } = server.address() as AddressInfo;
   return {

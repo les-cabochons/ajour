@@ -9,6 +9,13 @@
  * update `AppApiState` in `storage.ts`. `STATE_VERSION` follows the last
  * step. A step never runs twice on a file: once saved, the file carries
  * the version it reached.
+ *
+ * A step may be asynchronous and use the load's context, such as the vault
+ * and the plugins' manifests. Such a step may also fail partway, as when
+ * the vault can't encrypt: it then returns `holdVersion(state)`, the state
+ * with whatever it did, and the file stays at the version before it, so the
+ * step runs again at the next load. The steps after it wait until it
+ * completes, since they may count on it.
  */
 
 import { randomUUID } from "node:crypto";
@@ -16,14 +23,39 @@ import type {
   BacklogImportCandidate,
   PluginFieldValues,
 } from "../../../packages/shared/plugins.ts";
+import { toVersion8, type VaultStepContext } from "./vault-migration.ts";
 
 /** A state file's JSON root, whatever its version. */
 export type StoredStateRecord = Record<string, unknown>;
 
+/**
+ * What a load gives its steps: the vault, the installed plugins' manifests
+ * and where the vault step reports what it did.
+ */
+export type StateMigrationContext = VaultStepContext;
+
+/** A step that did what it could: the file keeps the version before it. */
+class HeldStateMigration {
+  readonly state: StoredStateRecord;
+
+  constructor(state: StoredStateRecord) {
+    this.state = state;
+  }
+}
+
+export function holdVersion(state: StoredStateRecord): HeldStateMigration {
+  return new HeldStateMigration(state);
+}
+
+type StepResult = StoredStateRecord | HeldStateMigration;
+
 export interface StateMigration {
   /** The version the step produces, from the one the step before produced. */
   readonly version: number;
-  migrate(state: StoredStateRecord): StoredStateRecord;
+  migrate(
+    state: StoredStateRecord,
+    context: StateMigrationContext,
+  ): StepResult | Promise<StepResult>;
 }
 
 /** Version 1: one Azure DevOps connection and its inbox. */
@@ -217,6 +249,14 @@ export const STATE_MIGRATIONS: readonly StateMigration[] = [
   { version: 5, migrate: toVersion5 },
   { version: 6, migrate: toVersion6 },
   { version: 7, migrate: toVersion7 },
+  // Secrets move into the vault (#388). Held until every one has moved.
+  {
+    version: 8,
+    migrate: async (state, context) => {
+      const { state: next, complete } = await toVersion8(state, context);
+      return complete ? next : holdVersion(next);
+    },
+  },
 ];
 
 /** The version this build writes. */
@@ -243,18 +283,27 @@ export function storedStateVersion(raw: StoredStateRecord): number {
 
 /**
  * The state after every step above `fromVersion`, in order, stamped with
- * the version the last step reached.
+ * the version the last step reached. A file of a later version than the
+ * last step's is stamped with the last step's. A step that holds the
+ * version stops the run there, and the state is stamped with the version
+ * before it.
  */
-export function runStateMigrations(
+export async function runStateMigrations(
   raw: StoredStateRecord,
   fromVersion: number,
   steps: readonly StateMigration[] = STATE_MIGRATIONS,
-): StoredStateRecord {
+  context: StateMigrationContext = {},
+): Promise<StoredStateRecord> {
   let state = raw;
+  let reached = fromVersion;
   for (const step of steps) {
-    if (step.version > fromVersion) {
-      state = { ...step.migrate(state), version: step.version };
+    if (step.version <= fromVersion) continue;
+    const result = await step.migrate(state, context);
+    if (result instanceof HeldStateMigration) {
+      return { ...result.state, version: reached };
     }
+    state = { ...result, version: step.version };
+    reached = step.version;
   }
   const current = steps.at(-1)?.version;
   return current === undefined ? state : { ...state, version: current };

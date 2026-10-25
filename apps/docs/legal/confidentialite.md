@@ -11,7 +11,7 @@ next: false
 
 # Politique de confidentialité
 
-Dernière mise à jour : 21 octobre 2026
+Dernière mise à jour : 24 octobre 2026
 
 <a href="/legal/privacy" lang="en">English version</a> · [Conditions d'utilisation](/legal/conditions)
 
@@ -37,11 +37,11 @@ L'import et l'export de projets et d'entrées de temps lisent ou écrivent des f
 
 ### Identifiants et accès des plugins
 
-Dans la version actuelle, les jetons de connexion et les autres champs secrets sont conservés sans chiffrement dans le fichier local `app-api-state.json`. Ajour restreint les permissions de ce fichier, masque les champs secrets dans les paramètres et retire les secrets de connexion connus des erreurs et des résumés des plugins. Ces mesures réduisent les divulgations accidentelles. Elles n'isolent pas les identifiants du code des plugins installés ni des autres programmes qui s'exécutent sous votre compte utilisateur.
+Les jetons de connexion et les autres champs secrets, des connexions comme des paramètres des tâches d'agent, sont conservés dans le fichier local `app-api-vault.json`, chiffrés avec une clé que votre système d'exploitation garde pour votre compte utilisateur. Le fichier `app-api-state.json` indique seulement quels champs secrets sont renseignés. Ajour refuse d'enregistrer un secret quand l'ordinateur ne peut pas le chiffrer et ne le conserve jamais en clair à la place. Il masque aussi les champs secrets dans les paramètres et retire les secrets de connexion connus des erreurs et des résumés des plugins. Ces mesures réduisent les divulgations accidentelles, par exemple par une copie du dossier de données. Elles n'isolent pas les identifiants du code des plugins installés ni des autres programmes qui s'exécutent sous votre compte utilisateur.
 
-Ajour transmet actuellement à un plugin les identifiants de sa connexion. Le code du plugin s'exécute avec les permissions de votre compte utilisateur, peut lire les fichiers locaux et peut faire des requêtes réseau. Il ne s'exécute pas dans un bac à sable. Installez des plugins auxquels vous faites confiance, donnez à chaque jeton le moins de permissions possible et protégez le dossier de données ainsi que ses sauvegardes.
+Ajour déchiffre actuellement les identifiants d'une connexion pour les transmettre au plugin de cette connexion. Le code du plugin s'exécute avec les permissions de votre compte utilisateur, peut lire les fichiers locaux et peut faire des requêtes réseau. Il ne s'exécute pas dans un bac à sable. Installez des plugins auxquels vous faites confiance, donnez à chaque jeton le moins de permissions possible et protégez le dossier de données ainsi que ses sauvegardes.
 
-Nous sommes responsables de la manière dont Ajour traite les identifiants. Le courtier d'identifiants prévu gardera les secrets hors du code des plugins, les conservera localement avec le chiffrement du système d'exploitation et fera les requêtes authentifiées autorisées pour les plugins. Des bacs à sable distincts sont aussi prévus. Ces protections ne sont pas encore disponibles et ne constituent pas des garanties sur la version actuelle. Même avec un courtier, un plugin pourrait faire un mauvais usage des données ou des actions auxquelles vous lui donnez accès.
+Nous sommes responsables de la manière dont Ajour traite les identifiants. Le courtier d'identifiants prévu gardera les secrets hors du code des plugins et fera les requêtes authentifiées autorisées pour les plugins. Des bacs à sable distincts sont aussi prévus. Ces protections ne sont pas encore disponibles et ne constituent pas des garanties sur la version actuelle. Même avec un courtier, un plugin pourrait faire un mauvais usage des données ou des actions auxquelles vous lui donnez accès.
 
 ### Requêtes réseau et services connectés
 

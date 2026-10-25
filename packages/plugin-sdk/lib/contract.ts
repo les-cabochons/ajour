@@ -396,13 +396,13 @@ export type BacklogSyncResult = {
     description?:
       | { text: string; lost?: string[] | undefined; cut?: boolean | undefined }
       | undefined;
+    state?: string | undefined;
     originalEstimateHours?: number | undefined;
     remainingEstimateHours?: number | undefined;
     completedEstimateHours?: number | undefined;
     sourceUrl?: string | undefined;
     note?: string | undefined;
     projectName?: string | undefined;
-    state?: string | undefined;
     stateCategory?: string | undefined;
     stateDone?: boolean | undefined;
     assignedTo?: string | undefined;
@@ -551,8 +551,8 @@ export type CodeHostOperations = {
           threadId?: string | undefined;
         }[];
         url: string;
-        title: string;
         state: "merged" | "open" | "closed";
+        title: string;
         repository: string;
         draft: boolean;
         viewerIsAuthor: boolean;
@@ -725,8 +725,8 @@ export type CodeHostOperations = {
         createdAt: number;
         updatedAt: number;
         url: string;
-        title: string;
         state: "merged" | "open" | "closed";
+        title: string;
         repository: string;
         draft: boolean;
         closedAt?: number | undefined;

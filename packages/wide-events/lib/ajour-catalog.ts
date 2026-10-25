@@ -146,6 +146,10 @@ const pluginRequestReasons = [
   ...requestReasons,
   ...pluginOperationReasons,
   "connection_not_found",
+  /** The connection's secrets can't reach the plugin now, so it is paused. */
+  "secret_unavailable",
+  /** A save with a secret the vault can't encrypt on this computer. */
+  "vault_unavailable",
 ] as const;
 
 /**
@@ -227,6 +231,25 @@ export const catalog = defineCatalog({
           bytes: operational<number>(),
           /** The file exists but is not JSON. Every read fails until it is fixed. */
           unreadable: operational<boolean>(),
+          /** Temp files an interrupted save left that couldn't be deleted. */
+          orphans_undeletable_count: operational<number>(),
+        },
+        /** The vault, opened with the state: `none` for an API without one. */
+        vault: {
+          state: operational<
+            "available" | "unavailable" | "unreadable" | "none"
+          >(),
+          entry_count: operational<number>(),
+          orphans_undeletable_count: operational<number>(),
+        },
+        /** The move of plain-text secrets into the vault, when a load ran it. */
+        vault_migration: {
+          /** Connections and agent task settings moved, or checked and clean. */
+          moved_count: operational<number>(),
+          /** Those still holding a secret in plain text, paused until the next launch. */
+          pending_count: operational<number>(),
+          /** Whether the state file without the moved secrets was saved. */
+          saved: operational<boolean>(),
         },
       },
     },
@@ -453,7 +476,7 @@ export const catalog = defineCatalog({
     },
     "agent_task.configure": {
       kinds: ["command", "request"],
-      reasons: ["no_agent_task", ...requestReasons],
+      reasons: ["no_agent_task", "vault_unavailable", ...requestReasons],
       fields: {
         ...requestFields,
         plugin: { id: operational() },
@@ -525,6 +548,8 @@ export const catalog = defineCatalog({
       reasons: [
         ...rendererEvents["connection.delete"].reasons,
         "connection_not_found",
+        /** The vault can't drop the connection's secrets this launch. */
+        "vault_unavailable",
         ...requestReasons,
       ],
       fields: {

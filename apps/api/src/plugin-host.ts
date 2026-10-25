@@ -14,7 +14,10 @@ import {
   type PluginOperationEventName,
 } from "./operation-events.ts";
 import type { ApiEvents } from "./events.ts";
-import { connectionSecretValues } from "./connection-credentials.ts";
+import {
+  connectionSecretValues,
+  type SecretConnectionFields,
+} from "./connection-credentials.ts";
 import { readFile, realpath } from "node:fs/promises";
 import { isPluginApi4Manifest } from "../../../packages/shared/plugin-api-4.ts";
 import {
@@ -128,11 +131,16 @@ type PluginInvocationConnection = z.infer<
  * Runs at admission, right before the worker starts, with the manifest of the
  * package the call runs, and throws to refuse the call. The local API keeps
  * that manifest to redact the call's error and result with the secret fields
- * of the package that ran, even when an update landed while it waited.
+ * of the package that ran, even when an update landed while it waited. It
+ * may answer with the connection fields to redact the call's own event
+ * with: the manifest's, with those the vault holds still marked secret.
  */
 export type PluginAdmission = (
   manifest: PluginManifest,
-) => Promise<void> | void;
+) => Promise<PluginAdmitted | void> | PluginAdmitted | void;
+
+/** What an admission answers: the fields the call's secrets are found with. */
+export type PluginAdmitted = SecretConnectionFields;
 export type { PluginMethod };
 /** The event each plugin method's worker run emits. A new method needs one. */
 export const PLUGIN_OPERATION_EVENTS = {
@@ -638,12 +646,11 @@ export class PluginManager {
           source: plugin.source,
           apiVersion: plugin.manifest.apiVersion,
         });
-        record.secrets(
-          connectionSecretValues(plugin.manifest, [
-            connection?.config,
-            params.config as PluginFieldValues | undefined,
-          ]),
-        );
+        const configs = [
+          connection?.config,
+          params.config as PluginFieldValues | undefined,
+        ];
+        record.secrets(connectionSecretValues(plugin.manifest, configs));
         // A worker thread would hand an API 4 plugin its secrets and the
         // network. It runs only in the sandboxed renderer, which isn't built.
         if (isPluginApi4Manifest(plugin.manifest)) {
@@ -663,7 +670,9 @@ export class PluginManager {
           );
         }
         await this.operationGate?.(pluginId, method);
-        await admit?.(plugin.manifest);
+        const admitted = await admit?.(plugin.manifest);
+        // A field the vault holds stays secret after an update unmarks it.
+        if (admitted) record.secrets(connectionSecretValues(admitted, configs));
         return {
           invocation: {
             pluginId,
