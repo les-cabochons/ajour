@@ -620,6 +620,35 @@ describe("held edits", () => {
     expect(stored()).toEqual([]);
   });
 
+  it("doesn't keep a draft of a comment the source accepted when what follows throws", async () => {
+    const api = fakeApi();
+    api.editing = true;
+    const { localStore, held, review, item, heldEdits } = await load();
+    const { subscribePostedComments } =
+      await import("@/features/backlog/comment-threads");
+    const { getCommentDraft } = await import("@/lib/comment-drafts");
+    localStore.importSyncedWorkItems([candidate]);
+    held.holdCommentEdit({
+      kind: "comment",
+      itemId: item()._id,
+      pluginId: "azure_devops",
+      connectionId: "contoso",
+      sourceId: "42",
+      body: "Waiting on the client",
+    });
+    // The thread's listener fails after the source took the comment.
+    subscribePostedComments(() => {
+      throw new Error("The thread failed to show it.");
+    });
+
+    await review.sendHeldEdit(heldEdits()[0]!).catch(() => undefined);
+
+    expect(api.sent.map((sent) => sent.route)).toEqual(["comment"]);
+    expect(heldEdits()).toEqual([]);
+    // A draft would post the comment a second time.
+    expect(getCommentDraft(item()._id)).toBeUndefined();
+  });
+
   it("holds a comment refused while editing is off, and keeps every held change across a restart", async () => {
     fakeApi();
     const first = await load();

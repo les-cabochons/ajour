@@ -7,6 +7,7 @@ import type {
 import {
   createPluginSettingsWorkflow,
   describeConnectionRemoval,
+  describeMissingPluginRemoval,
   describeTeamSync,
   type PluginSettingsDependencies,
 } from "./plugin-settings-workflow";
@@ -659,6 +660,18 @@ describe("describeConnectionRemoval", () => {
       ),
     ).toBe(
       "This removes the connection and its 1 saved pull request and 2 remembered meetings from this device.",
+    );
+  });
+});
+
+describe("describeMissingPluginRemoval", () => {
+  it("counts the held changes the removal discards, as a connection's removal does", () => {
+    expect(describeMissingPluginRemoval(0)).not.toContain("held change");
+    expect(describeMissingPluginRemoval(1)).toContain(
+      "Its 1 held change is discarded and never sent.",
+    );
+    expect(describeMissingPluginRemoval(3)).toContain(
+      "Its 3 held changes are discarded and never sent.",
     );
   });
 });

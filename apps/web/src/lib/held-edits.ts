@@ -202,14 +202,16 @@ export function listHeldEdits(
   );
 }
 
-/** How many changes the connection holds. */
+/** How many changes the connection holds, or all of the plugin's without one. */
 export function heldEditCount(
   edits: readonly HeldEdit[],
   pluginId: string,
-  connectionId: string,
+  connectionId?: string,
 ) {
   return edits.filter(
-    (edit) => edit.pluginId === pluginId && edit.connectionId === connectionId,
+    (edit) =>
+      edit.pluginId === pluginId &&
+      (connectionId === undefined || edit.connectionId === connectionId),
   ).length;
 }
 

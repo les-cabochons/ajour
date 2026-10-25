@@ -698,6 +698,24 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
   };
 }
 
+/** The sentence that says a removal discards the held changes, or nothing. */
+function describeHeldDiscard(heldCount: number) {
+  return heldCount > 0
+    ? `Its ${heldCount} ${heldCount === 1 ? "held change is" : "held changes are"} discarded and never sent.`
+    : "";
+}
+
+/**
+ * What removing a missing plugin's data deletes from this computer, for its
+ * confirmation. The held changes of its connections go with them.
+ */
+export function describeMissingPluginRemoval(heldCount = 0) {
+  const removal =
+    "This deletes its saved connections and secrets from this computer, and the connections' local pull requests, calendar data and team data with them. Backlog items already synced stay.";
+  const discarded = describeHeldDiscard(heldCount);
+  return `${removal}${discarded ? ` ${discarded}` : ""} To use the plugin again, download it and add its connections again.`;
+}
+
 /**
  * What removing a connection deletes from this device, for its confirmation:
  * the saved pull requests of a code host and the remembered meetings of a
@@ -745,10 +763,8 @@ export function describeConnectionRemoval(
       ? `This removes the connection and its ${losses.join(" and ")} from this device.`
       : "This removes the connection from this device.";
   // Changes held while editing was off go with it (#395).
-  const removal =
-    heldCount > 0
-      ? `${removed} Its ${count(heldCount, "held change is", "held changes are")} discarded and never sent.`
-      : removed;
+  const discarded = describeHeldDiscard(heldCount);
+  const removal = discarded ? `${removed} ${discarded}` : removed;
   if (!plugin.capabilities.team) return removal;
   const shared = state.projects.filter(
     (project) => project.team?.connectionId === connectionId,

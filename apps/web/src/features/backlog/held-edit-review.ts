@@ -126,6 +126,8 @@ async function sendHeldComment(edit: HeldCommentEdit) {
   if (!entry || sendingComments.has(entry.id)) return;
   sendingComments.add(entry.id);
   const title = itemOf(entry.itemId)?.title ?? "an item";
+  let posted:
+    Awaited<ReturnType<typeof postItemComment>>["comment"] | undefined;
   try {
     if (entry.kind === "comment") {
       const { comment } = await postItemComment(
@@ -137,8 +139,7 @@ async function sendHeldComment(edit: HeldCommentEdit) {
           ? { agent: true, itemId: entry.itemId }
           : { itemId: entry.itemId },
       );
-      dropHeldCommentEdit(entry.id);
-      announcePostedComment(entry, comment);
+      posted = comment;
     } else if (entry.kind === "commentEdit") {
       await editItemComment(
         entry.pluginId,
@@ -150,13 +151,11 @@ async function sendHeldComment(edit: HeldCommentEdit) {
         },
         { itemId: entry.itemId },
       );
-      dropHeldCommentEdit(entry.id);
     } else {
       await deleteItemComment(entry.pluginId, entry.connectionId, {
         sourceId: entry.sourceId,
         commentId: entry.commentId,
       });
-      dropHeldCommentEdit(entry.id);
     }
   } catch (error) {
     // Still held: editing was turned off again meanwhile.
@@ -182,9 +181,14 @@ async function sendHeldComment(edit: HeldCommentEdit) {
         description: `${errorText(error)} It's still held in Sync review.`,
       });
     }
+    return;
   } finally {
     sendingComments.delete(entry.id);
   }
+  // The source took it: nothing after this may keep a draft, which would
+  // post the comment a second time.
+  dropHeldCommentEdit(entry.id);
+  if (posted) announcePostedComment(entry, posted);
 }
 
 /** Drops one held change: nothing is sent, and the source's side comes back. */
