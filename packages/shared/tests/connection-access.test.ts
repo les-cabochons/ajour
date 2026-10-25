@@ -9,7 +9,7 @@ import {
   withoutHeldEstimateUpdates,
 } from "../connection-access";
 import { pluginApi4ManifestSchema } from "../plugin-api-4";
-import type { BacklogSyncWorkItem } from "../plugins";
+import type { BacklogSyncRequestWorkItem } from "../plugins";
 import { azureDevOpsManifest } from "./fixtures/api-4-manifests";
 
 const azureApi3 = { id: "azure_devops", apiVersion: 3 };
@@ -99,7 +99,7 @@ describe("connection access", () => {
 });
 
 describe("held estimate uploads", () => {
-  const item: BacklogSyncWorkItem = {
+  const item: BacklogSyncRequestWorkItem = {
     localWorkItemId: "local-1",
     sourceId: "42",
     originalEstimateHours: 8,
@@ -140,7 +140,7 @@ describe("held estimate uploads", () => {
   });
 
   it("holds only the fields the user hasn't approved when the connection can edit", () => {
-    const marked: BacklogSyncWorkItem = {
+    const marked: BacklogSyncRequestWorkItem = {
       ...item,
       estimateSync: {
         ...item.estimateSync,

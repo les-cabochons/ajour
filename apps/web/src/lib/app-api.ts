@@ -35,8 +35,8 @@ import {
   type PluginFieldValues,
   type BacklogImportCandidate,
   type PluginInstallResponse,
-  type BacklogSyncWorkItem,
-  type BacklogSyncEstimateFieldState,
+  type BacklogSyncRequestWorkItem,
+  type BacklogSyncRequestEstimateFieldState,
   type PluginsOverview,
   type BacklogSyncResult,
 } from "@ajour/shared";
@@ -1192,7 +1192,7 @@ export function syncBacklogConnection(
  */
 function syncEstimateField(
   field: LocalWorkItemEstimateFieldState | undefined,
-): BacklogSyncEstimateFieldState | undefined {
+): BacklogSyncRequestEstimateFieldState | undefined {
   if (!field) return undefined;
   return {
     baselineValue: field.baselineValue,
@@ -1242,7 +1242,7 @@ async function runBacklogSync(
                 ),
               }
             : undefined,
-        }) satisfies BacklogSyncWorkItem,
+        }) satisfies BacklogSyncRequestWorkItem,
     );
   const payload = backlogSyncRequestSchema.parse({
     trigger,

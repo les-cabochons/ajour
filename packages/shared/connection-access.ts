@@ -3,6 +3,7 @@ import type { PluginConnectionAccessChoice } from "./plugin-api-4.ts";
 import { connectionAccessOn } from "./plugin-request-rules.ts";
 import type {
   BacklogEstimateFieldKey,
+  BacklogSyncRequestWorkItem,
   BacklogSyncWorkItem,
   BacklogSyncWorkItemUpdate,
 } from "./plugins.ts";
@@ -230,7 +231,7 @@ export interface HeldEstimates {
  * the user to review.
  */
 export function holdEstimatePushes(
-  workItems: readonly BacklogSyncWorkItem[],
+  workItems: readonly BacklogSyncRequestWorkItem[],
   holdAll: boolean,
 ): { workItems: BacklogSyncWorkItem[]; held: HeldEstimates[] } {
   const held: HeldEstimates[] = [];
@@ -259,8 +260,10 @@ export function holdEstimatePushes(
 }
 
 /** The work item without Ajour's `held` marks, which plugins never see. */
-function stripHeldFlags(workItem: BacklogSyncWorkItem): BacklogSyncWorkItem {
-  if (!workItem.estimateSync) return workItem;
+function stripHeldFlags(
+  workItem: BacklogSyncRequestWorkItem,
+): BacklogSyncWorkItem {
+  if (!workItem.estimateSync) return workItem as BacklogSyncWorkItem;
   const estimateSync: BacklogSyncWorkItem["estimateSync"] = {};
   for (const field of ESTIMATE_FIELDS) {
     const state = workItem.estimateSync[field];

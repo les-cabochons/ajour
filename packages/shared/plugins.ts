@@ -805,12 +805,6 @@ export const backlogSyncEstimateFieldStateSchema = z.object({
   baselineValue: z.number().finite().nonnegative().optional(),
   remoteValue: z.number().finite().nonnegative().optional(),
   resolution: z.enum(["keep_local"]).optional(),
-  /**
-   * A change held on this computer because the connection couldn't edit
-   * work items: it doesn't upload until the user approves it in Sync review.
-   * Ajour's own mark, which plugins never see.
-   */
-  held: z.boolean().optional(),
 });
 export type BacklogSyncEstimateFieldState = z.infer<
   typeof backlogSyncEstimateFieldStateSchema
@@ -840,9 +834,41 @@ export const backlogSyncWorkItemSchema = z.object({
 });
 export type BacklogSyncWorkItem = z.infer<typeof backlogSyncWorkItemSchema>;
 
+/**
+ * An estimate field as Ajour's own sync request sends it to the local API:
+ * `held` marks a change held on this computer because the connection
+ * couldn't edit work items, which doesn't upload until the user approves it
+ * in Sync review. The API strips the mark, so plugins never see it.
+ */
+export const backlogSyncRequestEstimateFieldStateSchema =
+  backlogSyncEstimateFieldStateSchema.extend({
+    held: z.boolean().optional(),
+  });
+export type BacklogSyncRequestEstimateFieldState = z.infer<
+  typeof backlogSyncRequestEstimateFieldStateSchema
+>;
+
+/** A synced item as Ajour's own sync request sends it, held marks included. */
+export const backlogSyncRequestWorkItemSchema =
+  backlogSyncWorkItemSchema.extend({
+    estimateSync: z
+      .object({
+        originalEstimateHours:
+          backlogSyncRequestEstimateFieldStateSchema.optional(),
+        remainingEstimateHours:
+          backlogSyncRequestEstimateFieldStateSchema.optional(),
+        completedEstimateHours:
+          backlogSyncRequestEstimateFieldStateSchema.optional(),
+      })
+      .optional(),
+  });
+export type BacklogSyncRequestWorkItem = z.infer<
+  typeof backlogSyncRequestWorkItemSchema
+>;
+
 export const backlogSyncRequestSchema = z.object({
   trigger: z.enum(["manual", "auto", "source_write"]).default("manual"),
-  workItems: z.array(backlogSyncWorkItemSchema).max(1000).default([]),
+  workItems: z.array(backlogSyncRequestWorkItemSchema).max(1000).default([]),
 });
 export type BacklogSyncRequest = z.infer<typeof backlogSyncRequestSchema>;
 

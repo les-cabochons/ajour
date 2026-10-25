@@ -153,6 +153,16 @@ export type PluginManifest = {
         passToPlugin?: boolean | undefined;
       }[]
     | undefined;
+  connectionAccess?:
+    | {
+        id: string;
+        label: string;
+        description?: string | undefined;
+        always?: boolean | undefined;
+        tokenScope?: string | undefined;
+        operations?: string[] | undefined;
+      }[]
+    | undefined;
   network?:
     | {
         endpoints?:
@@ -201,16 +211,6 @@ export type PluginManifest = {
       }
     | undefined;
   $schema?: string | undefined;
-  connectionAccess?:
-    | {
-        id: string;
-        label: string;
-        description?: string | undefined;
-        always?: boolean | undefined;
-        tokenScope?: string | undefined;
-        operations?: string[] | undefined;
-      }[]
-    | undefined;
   runtime?:
     | {
         start?: "whenNeeded" | "alwaysReady" | undefined;
@@ -333,8 +333,8 @@ export type PluginConnection = {
   tenantLabel: string;
   autoSync: boolean;
   autoSyncIntervalMinutes: number;
-  connectedAt: number;
   access: string[];
+  connectedAt: number;
   config: Record<string, string | number | boolean>;
   lastSyncAt?: number | undefined;
 };
