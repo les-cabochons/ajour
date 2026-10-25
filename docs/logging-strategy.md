@@ -389,6 +389,14 @@ text or argument enters its event:
   notification, which gets no reply.
 - A handler that throws ends `error` with the error's type, and an output the
   SDK rejects after the handler returned ends `error` with `output_mismatch`.
+- A call that the Ajour window ran but the tool declined, with a sentence for
+  the agent, ends `refused` with `tool_refused`. That is the tool working as
+  designed, not a bug.
+- A call from an agent task run's client to a data tool its task doesn't
+  declare (plugin API 4, #396) ends `refused` with `tool_not_declared`, and
+  never reaches the window. The event names the tool and its `access`, and the
+  refusal reaches the agent as an error result that names the tool. The tool
+  is not registered for that client, so `tools/list` doesn't show it either.
 - A JSON-RPC error reply records its code only.
 - A request the transport rejects before any reply, such as one with the
   wrong `jsonrpc` version, ends by its HTTP status: `refused` for a 4xx and

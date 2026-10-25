@@ -463,6 +463,9 @@ One "Submit week" button, styled the same, sits in the Day and Week headers at e
 
 - The page leads with the week's total against its target, a progress bar, and warnings such as days under target or entries without a task.
 - On the Commit page, Submit week remains available beside a plugin's submit-week task, including while agent tasks load. It locks the week in Ajour without starting an agent or submitting to the external timesheet. The plugin task stays primary when the week is ready. Both actions retain the uncommitted-change and running-entry guards; manual submission keeps its pace confirmation, Undo and Reopen week. Submit week waits while an agent task starts or runs, with the reason "An agent task is already running.", because the task may submit the week itself.
+- A plugin API 4 agent task runs like an API 3 one: no "can't run yet" reason shows for it any more. Its run sees only the Ajour MCP data tools its plugin declares for it, plus the session tools, and a call to any other is refused with a message that names the tool; the run's activity shows the refusal. API 3 tasks keep every tool until their plugin moves to API 4.
+- A secret setting never reaches an agent. Starting a task whose prompt uses one fails with "The task's prompt uses the secret setting <label>. Ajour never gives a secret to an agent." (400), and the run does not start.
+- A secret setting never fills a task's week link either, since the user opens the link with a click and its host is the plugin's. A task whose week link uses one has no "Open the week in <plugin>" link on the Commit page, and the week summary says in its place "The week link uses the secret setting <label>. Ajour never puts a secret in a link." A run of that task starts without a link. This holds for every plugin API version.
 - The total and warnings follow the current selection.
 - Submitting under the week target still asks for confirmation.
 

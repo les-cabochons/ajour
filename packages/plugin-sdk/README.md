@@ -130,7 +130,7 @@ Azure DevOps people search is `vssps.{host}` for `dev.azure.com`, and `{match}.v
 
 ### Agent tasks and project data shapes
 
-Each agent task lists the Ajour MCP `tools` its run may use, and gets only those. Until Ajour enforces that list, it lists API 4 agent tasks but doesn't run them. A project data shape is the `projectDataShape` capability, with data shape API 1's datasets.
+Each agent task lists the Ajour MCP `tools` its run may use, and gets only those. Ajour refuses a call to any other tool. A project data shape is the `projectDataShape` capability, with data shape API 1's datasets.
 
 ### What needs the user's consent again
 

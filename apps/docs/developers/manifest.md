@@ -141,7 +141,7 @@ The prompt and `weekLink` can use these slots. A slot Ajour does not know fails 
 
 :::
 
-A setting marked `secret` can fill `weekLink`, which only the user sees, but never the prompt: the prompt goes to the agent. Ajour refuses to run a task whose prompt uses one.
+A setting marked `secret` can fill neither the prompt nor `weekLink`. The prompt goes to the agent, and the user opens the week link with a click, to a host the plugin chooses. Ajour refuses to run a task whose prompt uses a secret setting, and a `weekLink` that uses one is not shown: the Commit page says why in its place.
 
 ### What the agent gets
 
