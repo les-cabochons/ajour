@@ -363,3 +363,51 @@ When("I update Jira from a file", async ({ page }) => {
     .getByRole("button", { name: "Update from file", exact: true })
     .click();
 });
+
+Given("plugins are off because {string}", async ({ page }, reason: string) => {
+  // The local API turns every plugin off while this computer can't
+  // sandbox them, and says why.
+  const overview: PluginsOverview = {
+    ...updatedJiraOverview,
+    connectionGroups: updatedJiraOverview.connectionGroups.map((group) => ({
+      ...group,
+      enabled: false,
+    })),
+    sandbox: { state: "off", reason },
+  };
+  await page.route("**/api/plugins", (route) =>
+    route.fulfill({
+      json: overview,
+      headers: { "access-control-allow-origin": "*" },
+    }),
+  );
+  await page.route("**/api/project-data-shapes", (route) =>
+    route.fulfill({
+      json: { plugins: [] },
+      headers: { "access-control-allow-origin": "*" },
+    }),
+  );
+});
+
+Then(
+  "the plugins page says {string} with {string}",
+  async ({ page }, title: string, reason: string) => {
+    const notice = page.getByText(title, { exact: true }).locator("xpath=..");
+    await expect(notice).toBeVisible();
+    await expect(notice.getByText(reason, { exact: true })).toBeVisible();
+    const box = await notice.boundingBox();
+    expect(box!.x + box!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+    await page.screenshot({
+      path: `test-results/plugins-off-${page.viewportSize()!.width}.png`,
+    });
+  },
+);
+
+Then("Jira shows as off with its saved connection", async ({ page }) => {
+  if (page.url().endsWith("/jira")) {
+    await expect(page.getByText("My Jira", { exact: true })).toBeVisible();
+  }
+  await expect(
+    page.getByRole("switch", { name: "Activate Jira", exact: true }),
+  ).not.toBeChecked();
+});

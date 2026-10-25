@@ -683,6 +683,14 @@ export function SettingsPluginsPage({
       <MessagePanel>{PLUGINS_NEED_DESKTOP_APP}</MessagePanel>
     ) : (
       <>
+        {overview?.sandbox?.state === "off" ? (
+          <MessagePanel tone="warning">
+            <p className="font-medium">
+              Plugins are turned off: this computer can't run them in a sandbox
+            </p>
+            <p>{overview.sandbox.reason}</p>
+          </MessagePanel>
+        ) : null}
         {statusMessage ? <MessagePanel>{statusMessage}</MessagePanel> : null}
         {pluginError ? (
           <MessagePanel tone="warning">{pluginError}</MessagePanel>
