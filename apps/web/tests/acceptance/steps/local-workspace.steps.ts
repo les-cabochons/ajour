@@ -1608,6 +1608,36 @@ When('I open a new entry from the timer dock "+"', async ({ page }) => {
   await page.getByRole("button", { name: "Create time entry" }).click();
 });
 
+When('I open a new entry from the idle timer dock "+"', async ({ page }) => {
+  await page
+    .getByRole("region", { name: "Timer", exact: true })
+    .getByRole("button", { name: "Create time entry" })
+    .click();
+});
+
+When(
+  "I create the backlog item {string} from the sidebar header",
+  async ({ page }, title: string) => {
+    await page
+      .getByRole("navigation", { name: "Primary navigation" })
+      .getByRole("button", { name: "New backlog item", exact: true })
+      .click();
+    const editor = page.getByRole("complementary", {
+      name: "Backlog item editor",
+    });
+    await editor
+      .getByRole("textbox", { name: "Item", exact: true })
+      .fill(title);
+    await editor.getByRole("button", { name: "Save", exact: true }).click();
+  },
+);
+
+Then("the sidebar lists {string}", async ({ page }, title: string) => {
+  await expect(
+    page.getByRole("navigation", { name: "Primary navigation" }),
+  ).toContainText(title);
+});
+
 When("I open the running entry from the timer dock", async ({ page }) => {
   await page
     .getByRole("region", { name: "Running entry" })

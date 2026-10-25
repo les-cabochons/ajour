@@ -1,6 +1,9 @@
 import { useMemo, useRef, type KeyboardEvent, type PointerEvent } from "react";
-import { useRouterState } from "@tanstack/react-router";
-import { RiSideBarLine as SidebarIcon } from "@remixicon/react";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
+import {
+  RiAddLine as PlusIcon,
+  RiSideBarLine as SidebarIcon,
+} from "@remixicon/react";
 import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,11 +30,7 @@ import {
   SidebarViewSwitcher,
   type SidebarViewOption,
 } from "@/features/layout/sidebar-view-switcher";
-import {
-  NewEntryButton,
-  TimerDock,
-  TodayTotal,
-} from "@/features/layout/timer-dock";
+import { TimerDock, TodayTotal } from "@/features/layout/timer-dock";
 import type { AppSidebarState } from "@/lib/app-sidebar";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
@@ -155,9 +154,34 @@ export function SidebarToggleButton({
 }
 
 /**
+ * Opens the Backlog page's editor on a new manual backlog item, through the
+ * page's "create" action request so the page's draft guard runs first.
+ */
+function NewBacklogItemButton() {
+  const navigate = useNavigate();
+  return (
+    <TooltipButton
+      label="New backlog item"
+      render={
+        <Button
+          variant="ghost"
+          size="icon"
+          className="ajour-app-sidebar-toggle"
+          onClick={() =>
+            void navigate({ to: "/backlog", search: { action: "create" } })
+          }
+        />
+      }
+    >
+      <PlusIcon />
+    </TooltipButton>
+  );
+}
+
+/**
  * The app sidebar on desktop widths, from the top: the sidebar toggle and the
  * logo beside the macOS traffic lights (in the corner elsewhere), the view
- * switcher with Search, the project filter and New entry, the
+ * switcher with Search, the project filter and New backlog item, the
  * timer dock, the work list, narrowed by the search and the filter, then a foot
  * row with Settings and Commit week, icons only. Search
  * expands into a search box in place of the switcher. It shows beside the
@@ -262,7 +286,7 @@ export function AppNavigationSidebar({
             ordering={state.backlogSortMode}
             onOrderingChange={(mode) => localStore.setBacklogSortMode(mode)}
           />
-          <NewEntryButton className="ajour-app-sidebar-toggle border-0" />
+          <NewBacklogItemButton />
         </span>
       </div>
 
