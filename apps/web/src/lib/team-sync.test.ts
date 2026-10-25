@@ -43,6 +43,7 @@ function overviewWith(teamId: string | null): PluginsOverview {
   };
   return {
     pluginsEnabled: true,
+    unsignedPluginsEnabled: true,
     plugins: [plugin],
     connectionGroups: [
       {

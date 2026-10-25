@@ -29,7 +29,7 @@ Feature: Browse plugin capabilities
   Scenario: Say which catalog entries need a newer Ajour
     Given the catalog skipped an entry this Ajour cannot read
     When I open the plugins catalog
-    Then the catalog says "This version of Ajour can't read these catalog entries: future-plugin. Update Ajour to see them."
+    Then the catalog says "Ajour can't show these plugins: future-plugin. Another source lists them first, or they need a newer Ajour."
     And the catalog does not say it was loaded from its local cache
 
   Scenario Outline: Update an incompatible installed plugin without removing its connections
@@ -60,3 +60,18 @@ Feature: Browse plugin capabilities
     Then Jira offers an update from file instead of a catalog update
     When I update Jira from a file
     Then Jira is available with its saved connection
+
+  Scenario: Review a plugin source before adding it
+    Given Alice's unsigned plugin source can be added
+    When I open the plugins catalog
+    And I add the plugin source "https://codeberg.org/alice/plugins"
+    Then Ajour shows the source's plugins and warns that it isn't signed
+    When I confirm adding the source
+    Then Alice's plugins is listed as an unsigned source
+
+  Scenario: Install from a file only once unsigned installs are allowed
+    Given plugins can be installed from a file
+    When I open the plugins catalog
+    Then installing from a file waits for unsigned installs to be allowed
+    When I allow installing unsigned plugins
+    Then I can install a plugin from a file

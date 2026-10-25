@@ -9,6 +9,7 @@ import {
 
 const overview: PluginsOverview = {
   pluginsEnabled: true,
+  unsignedPluginsEnabled: true,
   plugins: [],
   connectionGroups: [],
   totalPendingImportCount: 0,

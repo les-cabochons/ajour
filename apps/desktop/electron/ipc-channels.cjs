@@ -62,6 +62,15 @@ const IPC_CHANNELS = {
     mode: "invoke",
   },
   "ajour:download-catalog-plugin": { event: "plugin.install", mode: "invoke" },
+  "ajour:inspect-plugin-source": {
+    event: "catalog.inspect_source",
+    mode: "invoke",
+  },
+  "ajour:add-plugin-source": { event: "catalog.add_source", mode: "invoke" },
+  "ajour:remove-plugin-source": {
+    event: "catalog.remove_source",
+    mode: "invoke",
+  },
   "ajour:uninstall-plugin": { event: "plugin.uninstall", mode: "invoke" },
   "ajour:get-development-plugin-settings": {
     event: "dev_plugins.get_settings",

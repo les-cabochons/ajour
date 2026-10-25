@@ -45,10 +45,32 @@ function portOf(server: Server) {
   return (server.address() as AddressInfo).port;
 }
 
+const SIGNED_ORIGIN = {
+  kind: "source",
+  signed: true,
+  sourceUrl: "https://github.com/les-cabochons/ajour-plugins",
+  official: true,
+  commit: "888d80ba3fa8d53889011f03a5ab7848b0e06328",
+  installedAt: "2026-10-24T12:00:00.000Z",
+};
+
 async function runtime(
   port: number,
   ownedServer: Server | null = null,
-  { select }: { select?: () => Promise<unknown> } = {},
+  {
+    select,
+    allowUnsignedInstalls = true,
+    answer = 0,
+    catalogEntries = [],
+    downloaded,
+  }: {
+    select?: () => Promise<unknown>;
+    allowUnsignedInstalls?: boolean;
+    /** The warning's button the person picks: 0 installs, 1 cancels. */
+    answer?: number;
+    catalogEntries?: unknown[];
+    downloaded?: Record<string, unknown>;
+  } = {},
 ) {
   const source = await readFile(
     new URL("./electron/main.cjs", import.meta.url),
@@ -73,6 +95,7 @@ async function runtime(
     archiveFilename: "fixture.ajour-connector",
   };
   const { events, recorded } = recordingEvents();
+  const showMessageBox = vi.fn(async () => ({ response: answer }));
   const context = vm.createContext({
     http,
     path,
@@ -97,11 +120,16 @@ async function runtime(
     existsSync: () => true,
     app: { isPackaged: true, getPath: () => "/fixture" },
     mainWindow: { webContents: "active-window" },
-    dialog: {},
+    dialog: { showMessageBox },
+    pluginCatalogSettings: { allowUnsignedInstalls },
     selectPluginArchive: select ?? (async () => archive),
     pluginInstallResultOf,
     assertActiveDesktopWindow: () => {},
-    pluginCatalogService: { downloadPluginArchive: async () => archive },
+    pluginCatalogService: {
+      getCurrentCatalog: () => ({ entries: catalogEntries }),
+      downloadPluginArchive: async () =>
+        downloaded ?? { ...archive, signed: true, origin: SIGNED_ORIGIN },
+    },
     ipc: createIpcListeners(
       {
         handle(
@@ -134,6 +162,7 @@ async function runtime(
     start,
     install,
     uninstall,
+    showMessageBox,
     invoke: (channel: string) => {
       const handler = handlers.get(channel);
       if (!handler) throw new Error(`Missing IPC handler: ${channel}`);
@@ -271,6 +300,7 @@ describe("desktop plugin runtime ownership", () => {
           id: "azure_devops",
           version: "1.2.3",
           source: "catalog",
+          signed: true,
           replaced: true,
           result: "updated",
           archive_bytes: 15,
@@ -279,6 +309,101 @@ describe("desktop plugin runtime ownership", () => {
         },
       },
     ]);
+    expect(app.install.mock.calls[0]?.[3]).toEqual({
+      enableAfterInstall: false,
+      origin: SIGNED_ORIGIN,
+    });
+    expect(app.showMessageBox).not.toHaveBeenCalled();
+  });
+
+  it("warns before every install from a file, which installs unsigned", async () => {
+    const owned = await listen();
+    const app = await runtime(portOf(owned), owned);
+
+    await app.invoke("ajour:install-plugin");
+    await app.invoke("ajour:install-plugin");
+
+    expect(app.showMessageBox).toHaveBeenCalledTimes(2);
+    expect(app.showMessageBox.mock.calls[0]?.[1]).toMatchObject({
+      type: "warning",
+      message: "Install fixture.ajour-connector?",
+      cancelId: 1,
+    });
+    expect(app.install).toHaveBeenCalledTimes(2);
+    // No origin: the API records a file install as unsigned.
+    expect(app.install.mock.calls[0]?.[3]).toBeUndefined();
+    expect(app.recorded[0]).toMatchObject({
+      outcome: "ok",
+      plugin: { source: "archive", signed: false },
+    });
+  });
+
+  it("refuses an unsigned install while unsigned installs are off, without asking", async () => {
+    const owned = await listen();
+    const app = await runtime(portOf(owned), owned, {
+      allowUnsignedInstalls: false,
+    });
+
+    await expect(app.invoke("ajour:install-plugin")).rejects.toThrow(
+      "Installing unsigned plugins is off",
+    );
+    expect(app.showMessageBox).not.toHaveBeenCalled();
+    expect(app.install).not.toHaveBeenCalled();
+    expect(app.recorded[0]).toMatchObject({
+      outcome: "error",
+      plugin: { signed: false, result: "unsigned_not_allowed" },
+    });
+  });
+
+  it("downloads an unsigned catalog plugin only after the warning, and keeps its origin", async () => {
+    const owned = await listen();
+    const unsignedOrigin = {
+      kind: "source",
+      signed: false,
+      sourceUrl: "https://codeberg.org/alice/plugins",
+      commit: SIGNED_ORIGIN.commit,
+      installedAt: SIGNED_ORIGIN.installedAt,
+    };
+    const entry = {
+      id: "azure_devops",
+      title: "Azure DevOps",
+      version: "2.0.0",
+      source: {
+        url: unsignedOrigin.sourceUrl,
+        name: "Alice's plugins",
+        signed: false,
+      },
+    };
+    const declined = await runtime(portOf(owned), owned, {
+      answer: 1,
+      catalogEntries: [entry],
+    });
+    await expect(
+      declined.invoke("ajour:download-catalog-plugin"),
+    ).resolves.toBeNull();
+    expect(declined.install).not.toHaveBeenCalled();
+    expect(declined.recorded[0]).toMatchObject({
+      outcome: "cancelled",
+      plugin: { result: "cancelled", signed: false },
+    });
+
+    const accepted = await runtime(portOf(owned), owned, {
+      catalogEntries: [entry],
+      downloaded: {
+        archiveBytes: Buffer.from("fixture archive"),
+        archiveFilename: "azure_devops-2.0.0.ajour-connector",
+        signed: false,
+        origin: unsignedOrigin,
+      },
+    });
+    await accepted.invoke("ajour:download-catalog-plugin");
+    expect(accepted.showMessageBox.mock.calls[0]?.[1]).toMatchObject({
+      message: "Install Azure DevOps 2.0.0, an unsigned plugin?",
+    });
+    expect(accepted.install.mock.calls[0]?.[3]).toEqual({
+      enableAfterInstall: false,
+      origin: unsignedOrigin,
+    });
   });
 
   it("uses its owned healthy runtime without starting another server", async () => {

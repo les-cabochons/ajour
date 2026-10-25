@@ -39,8 +39,12 @@ export type PluginSettingsDependencies = Pick<
   | "syncBacklogConnection"
   | "installPlugin"
   | "setPluginSystemEnabled"
+  | "setUnsignedPluginsEnabled"
   | "configurePluginCatalog"
   | "downloadCatalogPlugin"
+  | "inspectPluginSource"
+  | "addPluginSource"
+  | "removePluginSource"
   | "uninstallPlugin"
   | "isPluginApiMissing"
 > & {
@@ -72,7 +76,12 @@ type PluginSettingsCommand =
   | { type: "teamSync"; pluginId: string; connectionId: string }
   | { type: "install" }
   | { type: "system"; enabled: boolean }
-  | { type: "download"; pluginId: string }
+  /** Lets unsigned plugins run, or deactivates every one of them. */
+  | { type: "unsigned"; enabled: boolean }
+  | { type: "download"; pluginId: string; sourceUrl?: string }
+  /** Adds a source, or approves its current key: `keyFingerprint` is the one shown. */
+  | { type: "addSource"; url: string; keyFingerprint: string | null }
+  | { type: "removeSource"; url: string; name: string }
   | { type: "uninstall"; plugin: PluginManifest };
 
 /** Fallback error text when a command fails with a non-Error value. */
@@ -84,7 +93,10 @@ const commandFailureMessages: Record<PluginSettingsCommand["type"], string> = {
   teamSync: "Unable to sync the team's projects.",
   install: "Unable to install the plugin.",
   system: "Unable to update the plugin system.",
+  unsigned: "Unable to change unsigned plugins.",
   download: "Unable to download the plugin.",
+  addSource: "Unable to add the plugin source.",
+  removeSource: "Unable to remove the plugin source.",
   uninstall: "Unable to uninstall the plugin.",
 };
 
@@ -132,11 +144,11 @@ function localCatalogEntry(
               : "project-data-shape",
   );
   return {
-    schemaVersion: 2,
     id: plugin.id,
     title: plugin.displayName,
     description:
       plugin.description ?? "Locally installed Ajour plugin capability.",
+    version: plugin.version,
     author: {
       name: "Local plugin",
       url: "https://github.com/les-cabochons/ajour",
@@ -144,13 +156,6 @@ function localCatalogEntry(
     license: {
       name: "See plugin package",
       spdxId: "LicenseRef-Plugin",
-      url: "https://github.com/les-cabochons/ajour",
-    },
-    website: "https://github.com/les-cabochons/ajour",
-    repository: {
-      provider: "github",
-      slug: "les-cabochons/ajour",
-      url: "https://github.com/les-cabochons/ajour",
     },
     status: "available",
     compatibility: { pluginApiVersion: plugin.apiVersion },
@@ -205,7 +210,7 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
   let snapshot: PluginSettingsSnapshot = {
     overview: deps.getCachedPluginsOverview(),
     catalog: null,
-    catalogSettings: { refreshMinutes: 15 },
+    catalogSettings: { refreshMinutes: 15, allowUnsignedInstalls: false },
     dataShapePlugins: [],
     displayEntries: [],
     pluginError: null,
@@ -438,8 +443,49 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
           );
           break;
         }
+        case "unsigned": {
+          finish(
+            command.enabled
+              ? "Unsigned plugins can run again. Each one is back to its own activation."
+              : "Unsigned plugins deactivated. Signed plugins keep running.",
+            await deps.setUnsignedPluginsEnabled(command.enabled),
+          );
+          break;
+        }
+        case "addSource": {
+          const catalog = await deps.addPluginSource(
+            command.url,
+            command.keyFingerprint,
+          );
+          if (!isCurrent()) return false;
+          revisions.catalog += 1;
+          update({ catalog, catalogError: null });
+          const source = catalog.sources.find(
+            (candidate) => candidate.url === command.url,
+          );
+          finish(
+            `${source?.name ?? "The source"} is ${command.keyFingerprint ? "trusted with its key" : "added"}.`,
+          );
+          break;
+        }
+        case "removeSource": {
+          const catalog = await deps.removePluginSource(command.url);
+          if (!isCurrent()) return false;
+          revisions.catalog += 1;
+          update({ catalog, catalogError: null });
+          finish(
+            `${command.name} removed. Plugins you installed from it stay installed.`,
+          );
+          break;
+        }
         case "download": {
-          const { result } = await deps.downloadCatalogPlugin(command.pluginId);
+          const outcome = await deps.downloadCatalogPlugin(
+            command.pluginId,
+            command.sourceUrl,
+          );
+          // Null: the person cancelled at the unsigned plugin warning.
+          if (!outcome) return false;
+          const { result } = outcome;
           // A download over an installed package is an update.
           finish(
             result.replaced
@@ -476,6 +522,7 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
     const isLatest = beginRead("settings");
     try {
       const catalogSettings = await deps.configurePluginCatalog({
+        ...snapshot.catalogSettings,
         refreshMinutes,
       });
       if (!isLatest()) return;
@@ -497,8 +544,37 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
     }
   }
 
+  /** Allows installing unsigned plugins, each after a warning, or stops it. */
+  async function setAllowUnsignedInstalls(allowUnsignedInstalls: boolean) {
+    const isLatest = beginRead("settings");
+    try {
+      const catalogSettings = await deps.configurePluginCatalog({
+        ...snapshot.catalogSettings,
+        allowUnsignedInstalls,
+      });
+      if (!isLatest()) return;
+      update({
+        catalogSettings,
+        statusMessage: allowUnsignedInstalls
+          ? "Unsigned plugins can be installed. Ajour warns you each time."
+          : "Unsigned plugins can't be installed.",
+      });
+    } catch (error) {
+      if (isLatest())
+        update({
+          pluginError: errorMessage(
+            error,
+            "Unable to change unsigned plugin installs.",
+          ),
+        });
+    }
+  }
+
   return {
     getSnapshot: () => snapshot,
+    /** Reads a source before it is added. Not a mutation: nothing waits on it. */
+    inspectSource: (url: string) => deps.inspectPluginSource(url),
+    setAllowUnsignedInstalls,
     subscribe(listener: () => void) {
       listeners.add(listener);
       return () => {
