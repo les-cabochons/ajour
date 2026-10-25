@@ -204,6 +204,26 @@ export function connectionCredentials(
   };
 }
 
+/**
+ * The config an API 4 plugin's validation saves. Secret fields are
+ * host-owned: the plugin never saw them, so its answer can neither set nor
+ * drop one, and they come from the save itself. Of the plugin's answer only
+ * the declared fields that aren't secret stay.
+ */
+export function api4SavedConfig(
+  fields: readonly SecretFieldDeclaration[],
+  normalized: Readonly<PluginFieldValues>,
+  submitted: Readonly<PluginFieldValues>,
+): PluginFieldValues {
+  const saved = editableValues(fields, normalized);
+  for (const field of fields) {
+    if (!field.secret) continue;
+    const value = submitted[field.id];
+    if (value !== undefined) saved[field.id] = value;
+  }
+  return saved;
+}
+
 /** The parts of a saved connection a plugin receives. */
 export interface SavedConnection {
   id: string;
@@ -216,6 +236,8 @@ export interface SavedConnection {
   lastSyncAt?: number;
   lastError?: string;
   config: PluginFieldValues;
+  /** The access choices it turned on, which only an API 4 plugin receives. */
+  access?: readonly string[];
 }
 
 /**
@@ -223,9 +245,12 @@ export interface SavedConnection {
  * the fields Ajour owns that a plugin may read. An API 3 plugin needs the
  * secrets in plain text, so until the cut-over (#403) the host decrypts a
  * connection's secrets from the vault only to build this, for its worker.
+ * An API 4 plugin gets it without the secrets, which the plugin host
+ * removes, and with its access choices.
  */
 export function pluginConnection(connection: SavedConnection) {
   return {
+    ...(connection.access ? { access: [...connection.access] } : {}),
     id: connection.id,
     pluginId: connection.pluginId,
     label: connection.label,

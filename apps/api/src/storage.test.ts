@@ -856,6 +856,7 @@ describe("state files from earlier versions", () => {
       pluginValues: {},
       pluginSecrets: {},
     },
+    pluginBrokerActivity: {},
   };
   /**
    * A file with a connection's token: without a vault, as here, the token

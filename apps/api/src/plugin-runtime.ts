@@ -6,7 +6,15 @@
  *
  * The worker-thread runtime (`plugin-worker-runtime.ts`) is the one Ajour
  * ships today. Tests may use the in-process fake in `test-support/`.
+ *
+ * An API 4 plugin reaches the network only through the broker its
+ * invocation carries (`credential-broker.ts`): a runtime hands the plugin's
+ * `ajour.http` and `ajour.publicFetch` calls to it, in process or over IPC.
+ * A runtime that can't keep the plugin from everything else, such as the
+ * worker thread, never runs one.
  */
+
+import type { OperationBroker } from "./credential-broker.ts";
 
 /** The largest result, as `v8.serialize` counts it, a runtime returns. */
 export const MAX_PLUGIN_RESULT_BYTES = 8 * 1024 * 1024;
@@ -27,6 +35,11 @@ export interface PluginInvocation {
   method: string;
   /** What the export receives, in order. See `plugin-methods.ts`. */
   args: readonly unknown[];
+  /**
+   * For an API 4 plugin, the broker of this one operation: the plugin's
+   * only way to the network. The host closes it once the operation settles.
+   */
+  broker?: OperationBroker;
 }
 
 /** How a run ended, as its runtime saw it. */
@@ -70,6 +83,11 @@ export interface PluginRun {
 
 /** Runs plugin operations. One instance may serve several hosts. */
 export interface PluginRuntime {
+  /**
+   * Whether it runs API 4 plugins, whose code must reach nothing but the
+   * broker. The host refuses an API 4 operation on any other runtime.
+   */
+  readonly runsPluginApi4?: boolean;
   /** Starts one operation. It never throws: a failure to start settles the run. */
   start(invocation: PluginInvocation): PluginRun;
 }

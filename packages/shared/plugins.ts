@@ -456,10 +456,19 @@ const allowLossyField: PluginField = {
   capability: "connector",
 };
 
+/**
+ * Whether the user marked the connection on-premises, so Ajour's broker may
+ * send its requests to private addresses: only for a plugin API 4 plugin
+ * whose manifest allows it (`network.baseAddress.allowOnPremises`). Ajour
+ * owns the setting; its form field comes with the connection access work.
+ */
+export const ON_PREMISES_FIELD_ID = "onPremises";
+
 /** The connection fields Ajour owns, which a plugin cannot declare. */
 export const AJOUR_CONNECTION_FIELD_IDS: ReadonlySet<string> = new Set([
   AGENT_ACCESS_FIELD_ID,
   ALLOW_LOSSY_FIELD_ID,
+  ON_PREMISES_FIELD_ID,
 ]);
 
 /**

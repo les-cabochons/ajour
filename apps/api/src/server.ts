@@ -63,6 +63,7 @@ import {
   teamCreateRouteRequestSchema,
   AGENT_ACCESS_FIELD_ID,
   ALLOW_LOSSY_FIELD_ID,
+  ON_PREMISES_FIELD_ID,
   agentAccessAllows,
   agentAccessSchema,
   connectionAgentAccess,
@@ -112,6 +113,7 @@ import {
 import { RESERVED_CONNECTION_FIELD_IDS } from "./connection-values.ts";
 import {
   ConnectionPausedError,
+  api4SavedConfig,
   connectionCredentials,
   effectiveSecretFields,
   isEmptySecretValue,
@@ -122,6 +124,17 @@ import {
   type SecretFieldDeclaration,
 } from "./connection-credentials.ts";
 import { VaultUnavailableError, type SecretVault } from "./secret-vault.ts";
+import {
+  BrokerRequestError,
+  CredentialBroker,
+  type BrokerConnection,
+  type BrokerResolver,
+  type BrokerTransport,
+} from "./credential-broker.ts";
+import {
+  isPluginApi4Manifest,
+  type PluginApi4Manifest,
+} from "../../../packages/shared/plugin-api-4.ts";
 import type { Sink } from "../../../packages/wide-events/sinks.ts";
 import { AgentSessions } from "./agent-sessions.ts";
 import {
@@ -148,6 +161,7 @@ import {
   capabilityOfMethod,
   PluginManager,
   type PluginAdmitted,
+  type PluginMethod,
 } from "./plugin-host.ts";
 import {
   PluginOperationCancelled,
@@ -249,6 +263,15 @@ interface AppApiServerOptions {
    * OpenCode. Tests replace them with the fake CLI.
    */
   agentCliAdapters?: AgentCliAdapter[];
+  /**
+   * How the broker sends an API 4 plugin's requests. The desktop app passes
+   * Electron's `net.request` on a session of the broker's own; tests pass a
+   * fake. Without one, as in the standalone API, every request is refused:
+   * plugins need the desktop app.
+   */
+  brokerTransport?: BrokerTransport;
+  /** How the broker resolves a host, as its transport would. Node's `dns.lookup` by default. */
+  brokerResolver?: BrokerResolver;
 }
 
 /** The vault file the desktop app keeps beside the state file. */
@@ -728,6 +751,15 @@ function parseConnectionValues(values: PluginFieldValues) {
           ALLOW_LOSSY_FIELD_ID,
         );
 
+  // Undefined keeps the saved value.
+  const onPremises =
+    parsedValues[ON_PREMISES_FIELD_ID] === undefined
+      ? undefined
+      : parseBooleanValue(
+          parsedValues[ON_PREMISES_FIELD_ID],
+          ON_PREMISES_FIELD_ID,
+        );
+
   const config = Object.fromEntries(
     Object.entries(parsedValues).filter(
       ([key]) => !RESERVED_CONNECTION_FIELD_IDS.has(key),
@@ -742,6 +774,7 @@ function parseConnectionValues(values: PluginFieldValues) {
     pullRequestAutoSync,
     agentAccess,
     allowLossyConversion,
+    onPremises,
     config,
   };
 }
@@ -834,6 +867,50 @@ async function inactiveCapability(
     };
   }
   return undefined;
+}
+
+/**
+ * A plugin's own saved connection as the broker sends with it: its config
+ * with the secrets the vault holds, read for this one request, and the
+ * values to scrub. Undefined when the plugin has no connection with this id.
+ * On-premises counts only while the manifest still allows it.
+ */
+async function brokerConnection(
+  storage: AppApiStorage,
+  pluginId: string,
+  connectionId: string,
+  manifest: PluginApi4Manifest,
+): Promise<BrokerConnection | undefined> {
+  let connection: StoredConnection | null;
+  try {
+    connection = await storage.connectionForOperation(
+      pluginId,
+      connectionId,
+      secretManifestOf(manifest),
+    );
+  } catch (error) {
+    if (error instanceof ConnectionPausedError) {
+      throw new BrokerRequestError(
+        "refused",
+        "secret_unavailable",
+        error.message,
+      );
+    }
+    throw error;
+  }
+  if (!connection) return undefined;
+  return {
+    id: connection.id,
+    values: connection.config,
+    secrets: connectionCredentials(
+      redactionFields(manifest.connectionFields, connection.secrets),
+      connection.config,
+    ).secrets,
+    onPremises:
+      connection.onPremises === true &&
+      manifest.network?.baseAddress?.allowOnPremises === true,
+    access: connection.access ?? [],
+  };
 }
 
 /** Every installed plugin's secret fields, runnable or not, such as an API 3 package. */
@@ -983,7 +1060,39 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     options.allowDevelopmentPlugins ??
     process.env.AJOUR_ALLOW_DEVELOPMENT_PLUGINS === "1";
   const pluginRuntime = options.pluginRuntime ?? new WorkerPluginRuntime();
+  const broker: CredentialBroker = new CredentialBroker({
+    ...(options.brokerTransport ? { transport: options.brokerTransport } : {}),
+    ...(options.brokerResolver ? { resolver: options.brokerResolver } : {}),
+    events,
+    connections: {
+      connection: (pluginId, connectionId, manifest) =>
+        brokerConnection(storage, pluginId, connectionId, manifest),
+      // As the operation gate, again at each request, so a plugin or a
+      // capability turned off stops the requests still waiting.
+      operationRefusal: async (pluginId, method) => {
+        const capability = capabilityOfMethod(method as PluginMethod);
+        if (!capability) return undefined;
+        const inactive = await inactiveCapability(
+          storage,
+          pluginId,
+          capability,
+          new Set([pluginId]),
+          "it sends requests",
+        );
+        return inactive
+          ? { reason: inactive.reason, message: inactive.message }
+          : undefined;
+      },
+    },
+    activity: {
+      recordRequest: (pluginId, connectionId, at) =>
+        storage.recordBrokerActivity(pluginId, connectionId, "request", at),
+      recordBlocked: (pluginId, connectionId, at) =>
+        storage.recordBrokerActivity(pluginId, connectionId, "blocked", at),
+    },
+  });
   const pluginManager = new PluginManager({
+    broker,
     installedPluginDirectory:
       options.installedPluginDirectory ??
       defaultInstalledPluginDirectory(options.statePath),
@@ -1644,6 +1753,18 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           ...(existingConnection ? { id: existingConnection.id } : {}),
         },
       });
+      // Only a plugin whose manifest allows it reaches private addresses.
+      const allowsOnPremises =
+        isPluginApi4Manifest(plugin) &&
+        plugin.network?.baseAddress?.allowOnPremises === true;
+      if (parsedValues.onPremises === true && !allowsOnPremises) {
+        readInput(() => {
+          throw new Error("This plugin can't reach on-premises servers.");
+        });
+      }
+      const onPremises =
+        allowsOnPremises &&
+        (parsedValues.onPremises ?? existingConnection?.onPremises ?? false);
       const call = admittedCall(plugin, existingConnection?.secrets);
       let validation: PluginValidationResult;
       try {
@@ -1652,6 +1773,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           configForSave,
           { capabilities },
           call.admit,
+          {
+            label: parsedValues.label,
+            tenantLabel: parsedValues.tenantLabel,
+            autoSync: parsedValues.autoSync,
+            autoSyncIntervalMinutes: parsedValues.autoSyncIntervalMinutes,
+            onPremises,
+            access: existingConnection?.access ?? [],
+          },
         );
       } catch (error) {
         const credentials = call.credentials(
@@ -1662,6 +1791,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(response, 400, { error: credentials.errorMessage(error) });
         return;
       }
+      // An API 4 plugin never saw the secrets, so they come from the save.
+      const normalizedConfig = isPluginApi4Manifest(plugin)
+        ? api4SavedConfig(
+            secretFields,
+            withoutReservedFields(validation.normalizedConfig),
+            configForSave,
+          )
+        : validation.normalizedConfig;
       // The plugin may answer with a key it didn't declare, which goes to
       // the vault as a secret does.
       if (
@@ -1670,7 +1807,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           response,
           secretFields,
           parsedValues.config,
-          validation.normalizedConfig,
+          normalizedConfig,
         )
       ) {
         return;
@@ -1686,9 +1823,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           pullRequestAutoSync: parsedValues.pullRequestAutoSync,
           agentAccess: parsedValues.agentAccess,
           allowLossyConversion: parsedValues.allowLossyConversion,
+          onPremises,
           // The plugin's answer can't set a field Ajour owns. Its secrets
           // go to the vault, and the state file keeps the rest.
-          config: withoutReservedFields(validation.normalizedConfig),
+          config: withoutReservedFields(normalizedConfig),
           // Redacted before it is stored: the normalized config may no
           // longer hold a value the plugin swapped out, such as a password
           // it traded for a token, so the overview couldn't find it later.
@@ -1696,7 +1834,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             .credentials(
               configForSave,
               existingConnection?.config,
-              validation.normalizedConfig,
+              normalizedConfig,
             )
             .redaction.summary(validation.connectionSummary),
         },

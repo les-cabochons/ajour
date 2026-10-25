@@ -79,12 +79,27 @@ function argumentsOf(
   return table[method]!.map((name) => params[name]);
 }
 
+/**
+ * Where plugin API 4 differs: `validateConnection` receives the connection,
+ * without its secrets, so its requests can name it to the broker.
+ */
+const PLUGIN_API_4_METHOD_ARGUMENTS: Record<PluginMethod, ArgumentNames> = {
+  ...PLUGIN_METHOD_ARGUMENTS,
+  validateConnection: ["connection", "context"],
+};
+
 /** The arguments a plugin export receives from the host's named parameters. */
 export function pluginMethodArguments(
   method: PluginMethod,
   params: Record<string, unknown>,
+  apiVersion = 3,
 ): unknown[] {
-  return argumentsOf(PLUGIN_METHOD_ARGUMENTS, "plugin", method, params);
+  return argumentsOf(
+    apiVersion === 4 ? PLUGIN_API_4_METHOD_ARGUMENTS : PLUGIN_METHOD_ARGUMENTS,
+    "plugin",
+    method,
+    params,
+  );
 }
 
 /** The arguments a data-shape export receives from the host's named parameters. */
