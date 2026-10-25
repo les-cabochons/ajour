@@ -291,6 +291,8 @@ export const catalog = defineCatalog({
         "output_mismatch",
         /** In the renderer: the tool refused the call, with a sentence for the agent. */
         "tool_refused",
+        /** An agent task run's client called a tool its task doesn't declare. */
+        "tool_not_declared",
         ...requestReasons,
       ],
       fields: {

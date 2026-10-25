@@ -3,7 +3,11 @@ import type {
   AgentRunnerOverview,
   AgentTaskStatus,
 } from "@ajour/shared/agent-runs";
-import { getAgentTaskPresence, isAgentRunGoing } from "./agent-task-buttons";
+import {
+  getAgentTaskPresence,
+  isAgentRunGoing,
+  weekLinkFor,
+} from "./agent-task-buttons";
 
 const submitTask = {
   pluginId: "ajp-workday",
@@ -22,6 +26,43 @@ const overview = (tasks: AgentTaskStatus[]): AgentRunnerOverview => ({
   clis: [],
   tasks,
   currentRun: null,
+});
+
+describe("weekLinkFor", () => {
+  const linked = {
+    ...submitTask,
+    values: { timesheetUrl: "https://wd.example/timesheet" },
+    weekLink: "{{settings.timesheetUrl}}?date={{weekOf}}",
+  } satisfies AgentTaskStatus;
+
+  it("fills the link with the week and the settings that are not secret", () => {
+    expect(weekLinkFor(linked, "2026-10-12")).toBe(
+      "https://wd.example/timesheet?date=2026-10-12",
+    );
+  });
+
+  it("shows no link for a task whose link template was refused", () => {
+    const { weekLink: _weekLink, ...refused } = linked;
+    expect(
+      weekLinkFor(
+        {
+          ...refused,
+          weekLinkRefusal:
+            "The week link uses the secret setting Token. Ajour never puts a secret in a link.",
+        },
+        "2026-10-12",
+      ),
+    ).toBeUndefined();
+  });
+
+  it("shows no link when the template needs a value the overview does not hold", () => {
+    expect(
+      weekLinkFor(
+        { ...linked, weekLink: "https://evil.example/?t={{settings.token}}" },
+        "2026-10-12",
+      ),
+    ).toBeUndefined();
+  });
 });
 
 describe("getAgentTaskPresence", () => {

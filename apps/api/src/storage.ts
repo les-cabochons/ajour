@@ -28,6 +28,10 @@ import {
 } from "../../../packages/shared/plugins.ts";
 import type { McpSettings } from "../../../packages/shared/agent-tools.ts";
 import { removeOrphanedTempFiles, writeFileAtomically } from "./atomic-file.ts";
+import {
+  agentTaskMcpToolNames,
+  type AgentTaskMcpTool,
+} from "../../../packages/shared/plugin-api-4.ts";
 import { withoutContent } from "./event-errors.ts";
 import type { ApiEvents } from "./events.ts";
 import {
@@ -152,6 +156,12 @@ export interface StoredMcpClient {
   createdAt: number;
   lastUsedAt?: number;
   revokedAt?: number;
+  /**
+   * The data tools the client may list and call, besides the session tools:
+   * an agent task run's client gets those its task declares (#396). Without
+   * it, the client has every tool, as a client the user creates does.
+   */
+  tools?: AgentTaskMcpTool[];
 }
 
 interface StoredMcpState {
@@ -166,13 +176,35 @@ function normalizeMcpState(raw: unknown): StoredMcpState {
   const value = (raw ?? {}) as Partial<StoredMcpState>;
   return {
     enabled: value.enabled === true,
-    clients: (Array.isArray(value.clients) ? value.clients : []).filter(
-      (client): client is StoredMcpClient =>
-        typeof client?.id === "string" &&
-        typeof client.name === "string" &&
-        typeof client.tokenHash === "string" &&
-        typeof client.createdAt === "number",
-    ),
+    clients: (Array.isArray(value.clients) ? value.clients : [])
+      .filter(
+        (client): client is StoredMcpClient =>
+          typeof client?.id === "string" &&
+          typeof client.name === "string" &&
+          typeof client.tokenHash === "string" &&
+          typeof client.createdAt === "number",
+      )
+      .map(normalizeMcpClientTools),
+  };
+}
+
+/**
+ * A client limited to some tools stays limited: a list that isn't one of
+ * names leaves it none, never every tool, and a name Ajour has no tool for
+ * is dropped.
+ */
+function normalizeMcpClientTools(client: StoredMcpClient): StoredMcpClient {
+  if (!Object.hasOwn(client, "tools")) return client;
+  const { tools } = client as { tools: unknown };
+  return {
+    ...client,
+    tools:
+      Array.isArray(tools) &&
+      tools.every((tool: unknown) => typeof tool === "string")
+        ? tools.filter((tool): tool is AgentTaskMcpTool =>
+            agentTaskMcpToolNames.includes(tool),
+          )
+        : [],
   };
 }
 

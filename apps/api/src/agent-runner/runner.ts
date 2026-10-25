@@ -23,8 +23,14 @@ import {
   type AgentTask,
   type PluginFieldValues,
 } from "../../../../packages/shared/plugins.ts";
-import { fillTemplate } from "../../../../packages/shared/agent-task-templates.ts";
-import { PLUGIN_API_4 } from "../../../../packages/shared/plugin-api-4.ts";
+import {
+  fillTemplate,
+  listTemplateSlots,
+} from "../../../../packages/shared/agent-task-templates.ts";
+import {
+  PLUGIN_API_4,
+  type AgentTaskMcpTool,
+} from "../../../../packages/shared/plugin-api-4.ts";
 import type { AjourCatalog } from "../../../../packages/wide-events/catalog.ts";
 import {
   errorIdentity,
@@ -79,7 +85,11 @@ interface RunnerStorage {
   getMcpSettings(): Promise<{ enabled: boolean }>;
   getAgentRunnerSettings(): Promise<AgentRunnerSettings>;
   getAgentTaskValues(pluginId: string): Promise<PluginFieldValues>;
-  createMcpClient(name: string): Promise<McpClientCreateResponse>;
+  /** `tools`, when given, limits the client to those data tools. */
+  createMcpClient(
+    name: string,
+    scope?: { tools: readonly AgentTaskMcpTool[] },
+  ): Promise<McpClientCreateResponse>;
   revokeMcpClient(clientId: string): Promise<boolean>;
 }
 
@@ -89,7 +99,12 @@ interface RunnerPlugins {
       id: string;
       apiVersion: number;
       displayName: string;
-      capabilities: { agentTask?: { tasks: AgentTask[] } };
+      capabilities: {
+        // An API 4 task declares its MCP tools; an API 3 one declares none.
+        agentTask?: {
+          tasks: (AgentTask & { tools?: readonly AgentTaskMcpTool[] })[];
+        };
+      };
     }[]
   >;
   isPluginEnabled(pluginId: string): Promise<boolean>;
@@ -191,6 +206,18 @@ interface SessionEnding {
   error?: string;
 }
 
+/** A task as the runner sees it: what Settings shows, and what a run needs. */
+interface RunnerTask {
+  status: AgentTaskStatus;
+  /**
+   * The data tools its run's MCP client is limited to. Without it, every
+   * tool, as for an API 3 task.
+   */
+  tools?: readonly AgentTaskMcpTool[];
+  /** Its settings marked secret, which never reach the agent. */
+  secretSettings: readonly { id: string; label: string }[];
+}
+
 function defaultReadVersion(executable: string, pathValue: string) {
   return new Promise<string | undefined>((resolve) => {
     execFile(
@@ -236,7 +263,9 @@ export class AgentRunner {
     return {
       settings,
       clis,
-      tasks: await this.listTasks(settings, clis, "hidden"),
+      tasks: (await this.listTasks(settings, clis, "hidden")).map(
+        (task) => task.status,
+      ),
       currentRun: this.active?.run ?? null,
     };
   }
@@ -279,8 +308,8 @@ export class AgentRunner {
     settings: AgentRunnerSettings,
     clis: AgentCliStatus[],
     secrets: "hidden" | "included",
-  ): Promise<AgentTaskStatus[]> {
-    const tasks: AgentTaskStatus[] = [];
+  ): Promise<RunnerTask[]> {
+    const tasks: RunnerTask[] = [];
     const mcpEnabled = (await this.options.storage.getMcpSettings()).enabled;
     const cli = clis.find((candidate) => candidate.id === settings.cli);
     for (const plugin of await this.options.plugins.listPlugins()) {
@@ -310,13 +339,6 @@ export class AgentRunner {
           ...saved,
         };
         const blockers = [
-          // A run gets every MCP tool until the runner limits it to the
-          // tools an API 4 task declares (#396), so those tasks wait.
-          ...(plugin.apiVersion === PLUGIN_API_4
-            ? [
-                "This version of Ajour can't run agent tasks of plugin API 4 yet",
-              ]
-            : []),
           ...(mcpEnabled ? [] : ["Turn on MCP in Settings > MCP"]),
           ...(cli?.supported && cli.installed
             ? []
@@ -332,20 +354,47 @@ export class AgentRunner {
                 `Fill in ${field.label} in Settings > Plugins > ${plugin.displayName}`,
             ),
         ];
+        const secretSettings = fields.filter(
+          (field, index) => field.secret || task.settings[index]!.secret,
+        );
+        // The user opens the week link with a click, and its host is the
+        // plugin's to choose, so a secret setting never fills it.
+        const linkSlots = new Set(
+          task.weekLink ? listTemplateSlots(task.weekLink) : [],
+        );
+        const secretInLink = secretSettings.find((field) =>
+          linkSlots.has(`settings.${field.id}`),
+        );
         tasks.push({
-          pluginId: plugin.id,
-          pluginName: plugin.displayName,
-          taskId: task.id,
-          label: task.label,
-          placement: task.placement,
-          estimateMinutes: task.estimateMinutes,
-          settings: task.settings,
-          values:
-            secrets === "included"
-              ? values
-              : editableValues([...sharedFields.values()], values),
-          ...(task.weekLink ? { weekLink: task.weekLink } : {}),
-          blockers,
+          status: {
+            pluginId: plugin.id,
+            pluginName: plugin.displayName,
+            taskId: task.id,
+            label: task.label,
+            placement: task.placement,
+            estimateMinutes: task.estimateMinutes,
+            settings: task.settings,
+            values:
+              secrets === "included"
+                ? values
+                : editableValues([...sharedFields.values()], values),
+            ...(task.weekLink && !secretInLink
+              ? { weekLink: task.weekLink }
+              : {}),
+            ...(secretInLink
+              ? {
+                  weekLinkRefusal: `The week link uses the secret setting ${secretInLink.label}. Ajour never puts a secret in a link.`,
+                }
+              : {}),
+            blockers,
+          },
+          // An API 4 task's run gets only the tools it declares, and none
+          // if it somehow declares no list. API 3 tasks keep every tool
+          // until they move to API 4 (#402).
+          ...(plugin.apiVersion === PLUGIN_API_4
+            ? { tools: task.tools ?? [] }
+            : {}),
+          secretSettings,
         });
       }
     }
@@ -372,15 +421,16 @@ export class AgentRunner {
   private async launch(request: AgentRunStartRequest): Promise<AgentRun> {
     const settings = await this.options.storage.getAgentRunnerSettings();
     const clis = await this.detectClis();
-    const task = (await this.listTasks(settings, clis, "included")).find(
+    const found = (await this.listTasks(settings, clis, "included")).find(
       (candidate) =>
-        candidate.pluginId === request.pluginId &&
-        candidate.taskId === request.taskId,
+        candidate.status.pluginId === request.pluginId &&
+        candidate.status.taskId === request.taskId,
     );
-    if (!task)
+    if (!found)
       throw new AgentRunError("This agent task is not available.", 404);
-    if (task.blockers.length > 0)
-      throw new AgentRunError(`${task.blockers[0]}.`, 400);
+    const status = found.status;
+    if (status.blockers.length > 0)
+      throw new AgentRunError(`${status.blockers[0]}.`, 400);
     if (
       settings.browserMode === "ajour-chrome" &&
       !(await this.options.chromeInstalled())
@@ -393,14 +443,14 @@ export class AgentRunner {
     const cliStatus = clis.find((candidate) => candidate.id === settings.cli)!;
     // Every declared field has a slot: an unset optional one fills as "".
     const settingValues = Object.fromEntries(
-      task.settings.map((field) => [
+      status.settings.map((field) => [
         `settings.${field.id}`,
-        String(task.values[field.id] ?? ""),
+        String(status.values[field.id] ?? ""),
       ]),
     );
-    const weekLink = task.weekLink
+    const weekLink = status.weekLink
       ? safeHttpsUrl(
-          fillTemplate(task.weekLink, {
+          fillTemplate(status.weekLink, {
             ...settingValues,
             weekOf: request.weekOf,
             sessionId: "",
@@ -446,10 +496,24 @@ export class AgentRunner {
         request.pluginId,
         request.taskId,
       );
+      // The prompt goes to the CLI, and the agent's model at its provider,
+      // so a secret setting never fills it.
+      const promptSlots = new Set(listTemplateSlots(taskPrompt));
+      const secretInPrompt = found.secretSettings.find((field) =>
+        promptSlots.has(`settings.${field.id}`),
+      );
+      if (secretInPrompt) {
+        throw new AgentRunError(
+          `The task's prompt uses the secret setting ${secretInPrompt.label}. Ajour never gives a secret to an agent.`,
+          400,
+        );
+      }
 
       step = "create_client";
+      // The MCP server enforces the task's tools, whatever the CLI is told.
       const created = await this.options.storage.createMcpClient(
-        `${task.label} run`,
+        `${status.label} run`,
+        ...(found.tools ? [{ tools: found.tools }] : []),
       );
       client = { id: created.client.id, name: created.client.name };
       event.set({ agent: { client_id: client.id } });
@@ -461,15 +525,15 @@ export class AgentRunner {
         this.options.sessions.begin(
           runClient,
           {
-            title: `${task.label}, week of ${request.weekOf}`,
-            estimateMinutes: task.estimateMinutes,
+            title: `${status.label}, week of ${request.weekOf}`,
+            estimateMinutes: status.estimateMinutes,
           },
           {
             runId,
             ...(weekLink
               ? {
                   link: {
-                    label: `Open the week in ${task.pluginName}`,
+                    label: `Open the week in ${status.pluginName}`,
                     url: weekLink,
                   },
                 }
@@ -489,7 +553,15 @@ export class AgentRunner {
         prompt: buildPrompt({
           taskPrompt,
           values: {
-            ...settingValues,
+            // Without the secret ones, so none can fill the prompt.
+            ...Object.fromEntries(
+              Object.entries(settingValues).filter(
+                ([slot]) =>
+                  !found.secretSettings.some(
+                    (field) => slot === `settings.${field.id}`,
+                  ),
+              ),
+            ),
             weekOf: request.weekOf,
             sessionId: session.id,
           },
