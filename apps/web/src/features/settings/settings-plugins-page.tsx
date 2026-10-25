@@ -940,7 +940,8 @@ export function SettingsPluginsPage({
                           disabled={
                             isMutatingPlugin ||
                             overview?.pluginsEnabled === false ||
-                            !isCapabilityActive(group, "connector")
+                            !isCapabilityActive(group, "connector") ||
+                            Boolean(connection.paused)
                           }
                           onClick={() =>
                             void workflow.execute({
@@ -961,7 +962,8 @@ export function SettingsPluginsPage({
                             disabled={
                               isMutatingPlugin ||
                               overview?.pluginsEnabled === false ||
-                              !isCapabilityActive(group, "team")
+                              !isCapabilityActive(group, "team") ||
+                              Boolean(connection.paused)
                             }
                             onClick={() =>
                               void workflow.execute({

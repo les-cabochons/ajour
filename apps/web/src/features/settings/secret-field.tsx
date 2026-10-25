@@ -85,6 +85,41 @@ export function SecretFieldInput({
         {field.label}
       </FieldLabel>
       <FieldContent>
+        {existing ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Chip tone={state.tone} data-secret-state={state.kind}>
+              {state.label}
+            </Chip>
+            {hasSecret ? (
+              <span className="text-xs text-[var(--text-tertiary)]">
+                {describeLastUse(summary.lastUsedAt, now)}
+              </span>
+            ) : null}
+            <span className="flex-1" />
+            {hasSecret && !replacing ? (
+              <>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={blocked || binding.busy}
+                  aria-label={`Replace ${field.label}`}
+                  onClick={() => setReplacing(true)}
+                >
+                  {state.kind === "rejected" ? "Replace token" : "Replace"}
+                </Button>
+                {binding.onRemove ? (
+                  <RemoveSecretButton
+                    label={field.label}
+                    effect={binding.removeEffect}
+                    disabled={blocked || binding.busy}
+                    onRemove={binding.onRemove}
+                  />
+                ) : null}
+              </>
+            ) : null}
+          </div>
+        ) : null}
         {showInput ? (
           <div className="flex gap-2">
             <Input
@@ -110,41 +145,6 @@ export function SecretFieldInput({
               >
                 Cancel
               </Button>
-            ) : null}
-          </div>
-        ) : null}
-        {existing && !replacing ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <Chip tone={state.tone} data-secret-state={state.kind}>
-              {state.label}
-            </Chip>
-            {hasSecret ? (
-              <span className="text-xs text-[var(--text-tertiary)]">
-                {describeLastUse(summary.lastUsedAt, now)}
-              </span>
-            ) : null}
-            <span className="flex-1" />
-            {hasSecret ? (
-              <>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={blocked || binding.busy}
-                  aria-label={`Replace ${field.label}`}
-                  onClick={() => setReplacing(true)}
-                >
-                  {state.kind === "rejected" ? "Replace token" : "Replace"}
-                </Button>
-                {binding.onRemove ? (
-                  <RemoveSecretButton
-                    label={field.label}
-                    effect={binding.removeEffect}
-                    disabled={blocked || binding.busy}
-                    onRemove={binding.onRemove}
-                  />
-                ) : null}
-              </>
             ) : null}
           </div>
         ) : null}

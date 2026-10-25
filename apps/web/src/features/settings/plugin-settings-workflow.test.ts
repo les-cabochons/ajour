@@ -413,11 +413,9 @@ describe("saved secrets", () => {
       }),
     ).resolves.toBe(true);
 
-    expect(deps.removeConnectionSecrets).toHaveBeenCalledWith(
-      plugin.id,
-      "c1",
-      ["token"],
-    );
+    expect(deps.removeConnectionSecrets).toHaveBeenCalledWith(plugin.id, "c1", [
+      "token",
+    ]);
     expect(workflow.getSnapshot().overview).toBe(paused);
     expect(workflow.getSnapshot().statusMessage).toBe(
       "Removed the saved secret from Acme.",

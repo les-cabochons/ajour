@@ -133,18 +133,22 @@ function groupRows(group: PluginOverviewGroup, now: number): VaultRow[] {
 export function buildVaultGroups(
   overview: Pick<PluginsOverview, "connectionGroups">,
   now: number,
+  /** Better names for plugins, by ID, such as the catalog's. */
+  names: ReadonlyMap<string, string> = new Map(),
 ): VaultGroup[] {
   const groups = overview.connectionGroups.flatMap((group) => {
     const missing = group.missing === true;
     const rows = groupRows(group, now);
+    // An installed plugin names itself; a missing one has only its ID.
+    const name = missing
+      ? (names.get(group.plugin.id) ?? group.plugin.displayName)
+      : group.plugin.displayName;
     return rows.length === 0
       ? []
       : [
           {
             pluginId: group.plugin.id,
-            title: missing
-              ? `${group.plugin.displayName} (not installed)`
-              : group.plugin.displayName,
+            title: missing ? `${name} (not installed)` : name,
             installed: !missing,
             rows,
           },

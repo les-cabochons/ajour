@@ -60,7 +60,11 @@ function ReplaceButton({ row }: { row: VaultRow }) {
 
 function VaultRowView({ row }: { row: VaultRow }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--border-subtle)] py-3 last:border-b-0">
+    <div
+      role="group"
+      aria-label={`${row.owner}, ${row.kind}`}
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border py-3 last:border-b-0"
+    >
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium break-words text-foreground">
           {row.owner}
@@ -131,15 +135,29 @@ function RemoveMissingPlugin({
 export function SettingsVaultPage() {
   const {
     overview,
+    displayEntries,
     pluginError,
     pluginApiMissing,
     statusMessage,
     isMutatingPlugin,
     workflow,
   } = usePluginSettingsWorkflow();
+  // A missing plugin has no manifest to name it, but the catalog may.
   const groups = useMemo(
-    () => (overview ? buildVaultGroups(overview, Date.now()) : []),
-    [overview],
+    () =>
+      overview
+        ? buildVaultGroups(
+            overview,
+            Date.now(),
+            new Map(
+              displayEntries.map((entry) => [
+                entry.catalog.id,
+                entry.catalog.title,
+              ]),
+            ),
+          )
+        : [],
+    [overview, displayEntries],
   );
   const notice = vaultNotice(overview?.vault);
 

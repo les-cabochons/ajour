@@ -73,6 +73,22 @@ describe("the automatic sync scheduler", () => {
     expect(sink.events).toEqual([]);
   });
 
+  it("leaves a connection paused for its secret alone, as it would only fail", async () => {
+    const overview = overviewSyncedAt(1);
+    overview.connectionGroups[0]!.connections[0]!.paused = {
+      reason: "secret_rejected",
+      message: "The service rejected this connection's saved token.",
+    };
+    const fetch = stubApi(overview);
+
+    render(<BacklogAutoSyncScheduler />);
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(sink.events).toEqual([]);
+  });
+
   it("records one scheduled job for each sync it starts, and nothing for the tick", async () => {
     const fetch = stubApi(overviewSyncedAt(1));
 

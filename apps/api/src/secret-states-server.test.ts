@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import type { Server } from "node:http";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import { createAppApiServer } from "./server.ts";
 import { dispatchJsonRequest } from "./test-support/dispatch-json-request.ts";
@@ -18,7 +18,8 @@ const SITE = "https://acme.atlassian.net";
 const TOKEN = "pat-0a91c7e35b2d4f68";
 const NEW_TOKEN = "pat-7d4e1b90a3c85f26";
 const AGENT_KEY = "wd-key-5b8e0c3a9d17";
-const SECRETS = [TOKEN, NEW_TOKEN, AGENT_KEY, "pw-3e91ab", "memo-0b17"];
+const FEED = "https://cal.example/private/feed-6d20c4e9.ics";
+const SECRETS = [TOKEN, NEW_TOKEN, AGENT_KEY, FEED, "pw-3e91ab", "memo-0b17"];
 const DAY = 86_400_000;
 
 const baseFields = [
@@ -42,6 +43,8 @@ const service = {
     },
     // A secret the plugin doesn't require.
     { id: "note", label: "Note", type: "password", secret: true },
+    // A secret address: a url field, which a form once showed as text.
+    { id: "feed", label: "Feed address", type: "url", secret: true },
   ],
   capabilities: {
     connector: {},
@@ -196,6 +199,7 @@ describe("saved secret states", () => {
           plugin: { id: string };
           connections: Summary[];
           agentTaskSecretFields?: Array<{ id: string; state: string }>;
+          missing?: boolean;
         }>;
       };
     };
@@ -271,6 +275,29 @@ describe("saved secret states", () => {
       expiresAt,
       lastUsedAt: expect.any(Number),
     });
+  });
+
+  it("never sends a secret back, whatever its field's type, and keeps it out of the state file", async () => {
+    const api = await launch();
+    const id = await api.connect({ token: TOKEN, feed: FEED });
+
+    const summary = await api.connectionOf("service", id);
+
+    // The secret address is a url field, but it is a secret like the token.
+    expect(summary?.editableValues).toMatchObject({ baseUrl: SITE });
+    expect(summary?.editableValues).not.toHaveProperty("feed");
+    expect(summary?.editableValues).not.toHaveProperty("token");
+    expect(summary?.secretFields?.map((secret) => secret.id)).toEqual([
+      "feed",
+      "token",
+    ]);
+    expect(JSON.stringify(summary)).not.toContain(FEED);
+    const state = await readFile(
+      path.join(api.directory, "state.json"),
+      "utf8",
+    );
+    expect(state).not.toContain(FEED);
+    expect(state).not.toContain(TOKEN);
   });
 
   it("changes a reminder date without a new token, clears it, and starts a replaced token without one", async () => {
@@ -523,6 +550,13 @@ describe("saved secret states", () => {
       (group) => group.plugin.id === "gone",
     );
     expect(missing?.connections).toHaveLength(1);
+    // The overview says it stands in for a plugin that isn't installed.
+    expect(missing?.missing).toBe(true);
+    expect(
+      (await api.overview()).connectionGroups.find(
+        (group) => group.plugin.id === "service",
+      )?.missing,
+    ).toBeUndefined();
 
     await expect(
       api.send("DELETE", "/api/plugins/service/data"),

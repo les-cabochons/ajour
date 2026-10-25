@@ -167,6 +167,24 @@ hero, the capability band is a plain line of text ("External service → Plugin
 → Local backlog") above the feature badges. Never fetch remote images from the
 renderer. Dialogs and `MessagePanel` notices are the only framed surfaces.
 
+### Secret field and Vault
+
+Files: `apps/web/src/features/settings/secret-field.tsx`, `connection-form.tsx`, `connection-status-ui.tsx`, `settings-vault-page.tsx`; the state model is `apps/web/src/domain/plugins/secret-state.ts`, `connection-status.ts` and `vault-model.ts`
+Last updated: 2026-10-25
+
+**Secret field.** `PluginFieldInput` renders `SecretFieldInput` for every field a plugin marks `secret`, whatever its type, in connection forms and in agent task settings. No mask and no saved value: the API sends none, and a form starts every secret empty. Patterns used: `Field`, `Chip`, `Button`, `AlertDialog` and `DateField`; nothing new.
+
+- A new connection shows the password input alone. An existing connection shows a row: the state `Chip` (`describeSecret`), the last use in `text-xs` tertiary, then Replace (outline `sm`) and Remove (ghost `sm`) trailing. A field with no secret shows the "Not set" chip over its input.
+- Replace opens an empty `type="password"` input with Cancel beside it, and keeps the chip above. A secret the service refused (Token rejected) opens with Replace open.
+- Remove opens an `AlertDialog` that says what happens to the connection, and acts at once, not with the form's Save.
+- Under it, a `DateField` labelled "<Field> expires on (optional)" and the line "A reminder only. Ajour keeps using it after this date." It shows once the field holds or is given a secret.
+- The chip tones are the `Chip` ones: neutral for Saved, warning for "Expires in N days" and Not set, danger for Expired, Token rejected and "Can't be read on this computer". Every chip carries `data-secret-state` for tests.
+- The form takes its state from the overview's `secretFields`, never from a value. `PluginFormState` holds the typed values and the reminder dates as date text; `expiryForSave` turns them into the end of each local day.
+
+**Connection row status.** `ConnectionStatusChip` and `ConnectionStatusNote` show `connectionStatus`: Connected, Paused, Unavailable, Error, Token rejected or "Can't be read on this computer", and under the name why sync is paused. A paused connection's Sync buttons are disabled.
+
+**Vault page.** `/settings/vault`, cardless like the other settings pages: an `h1`, then one `settings-section` per plugin, headed by its name, in alphabetical order, with plugins that are not installed last as "<Plugin> (not installed)" with a ghost Remove (an `AlertDialog`). A row is a `role="group"` named "<owner>, <kind>": the owner (connection label, or "Agent tasks") and under it "<kind> · <last use>" in `text-xs` tertiary, the state `Chip`, and Replace as a `Button` rendered as a link to the plugin page, which opens the form with Replace open (`?connection=<id>&field=<id>`, or `?field=<id>` for task settings). Rows are bordered with `border-border`, no outer frame, and wrap on narrow widths. The two failures of the vault show first as `MessagePanel` warnings; "Ajour can't protect credentials on this computer" has an outline Try again.
+
 ### Application updates
 
 Files: `apps/web/src/features/settings/application-updates-settings.tsx`, `apps/web/src/features/layout/sidebar-footer.tsx`, `apps/web/src/lib/desktop-updates.ts`
