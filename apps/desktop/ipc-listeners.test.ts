@@ -232,13 +232,19 @@ describe("main process IPC listeners", () => {
 
 describe("the IPC channel table", () => {
   it("names every channel main.cjs registers, and only through the wrapper", async () => {
-    const source = await readFile(
-      new URL("./electron/main.cjs", import.meta.url),
-      "utf8",
-    );
+    // The plugin renderer runtime registers its page's channel itself.
+    const source = (
+      await Promise.all(
+        ["./electron/main.cjs", "./electron/plugin-renderer-runtime.cjs"].map(
+          (file) => readFile(new URL(file, import.meta.url), "utf8"),
+        ),
+      )
+    ).join("\n");
 
     const registered = [
-      ...source.matchAll(/ipc\.(handle|onMessage|answerSync)\(\s*"([^"]+)"/g),
+      ...source.matchAll(
+        /\b(?:ipc|ipcListeners)\.(handle|onMessage|answerSync)\(\s*"([^"]+)"/g,
+      ),
     ].map(([, method, channel]) => [channel, method]);
 
     expect(source).not.toMatch(/ipcMain\.(handle|on|once|handleOnce)\(/);
@@ -266,11 +272,15 @@ describe("the IPC channel table", () => {
     }
   });
 
-  it("covers every channel the preload sends to", async () => {
-    const preload = await readFile(
-      new URL("./electron/preload.cjs", import.meta.url),
-      "utf8",
-    );
+  it("covers every channel the preloads send to", async () => {
+    // The window's preload, and the one of each plugin's hidden page.
+    const preload = (
+      await Promise.all(
+        ["./electron/preload.cjs", "./electron/plugin-host/preload.cjs"].map(
+          (file) => readFile(new URL(file, import.meta.url), "utf8"),
+        ),
+      )
+    ).join("\n");
 
     const sent = new Set(
       [

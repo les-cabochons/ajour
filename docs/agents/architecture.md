@@ -290,19 +290,85 @@ Both the plugin host and the data-shape host run every operation through one
 runtime port, `apps/api/src/plugin-runtime.ts`: start, settle and terminate,
 for a plugin id and its package directory. The worker lifetime keeps
 admission, quota, timeout, cancellation, wide events and result validation
-around it. The worker-thread runtime is the one the app uses; tests may run
-plugins in process with a fake. The arguments each plugin export receives
-come from one method table, `apps/api/src/plugin-methods.ts`, derived from the
-shared operation contracts.
+around it. The worker-thread runtime runs plugin API 3 packages; tests may run
+plugins in process with a fake, which only tests may import: dependency-cruiser
+keeps the API's own code out of `apps/api/src/test-support/`. The lifetime
+terminates each run with why it ended, `settled`, `timeout` or `cancelled`,
+so a runtime that keeps a process per plugin closes it on a timeout only. A
+run may also end `crashed`, with its process's cause (`crashed`, `oom`,
+`killed`, or `memory` for a ceiling), or `runtime_unavailable`, a refusal
+recorded as such, never as the plugin's error. The arguments each plugin
+export receives come from one method table, `apps/api/src/plugin-methods.ts`,
+derived from the shared operation contracts.
 
 An API 4 plugin reaches the network only through the credential broker,
 `apps/api/src/credential-broker.ts` (#389, decided in #219, #229 and ADR
 0010). The plugin host runs an API 4 operation only on a runtime that says it
-keeps the plugin to the broker (`runsPluginApi4`): the worker thread doesn't,
-so until the sandboxed renderer runtime (#390) only the in-process test
-runtime runs one. The operation receives its connection without the secrets
-and with its access choices that are on, and its invocation carries a broker
-for that one operation, which the host closes once the operation settles.
+keeps the plugin to the broker (`runsPluginApi4`): the worker thread doesn't.
+The operation receives its connection without the secrets and with its
+access choices that are on, and its invocation carries a broker for that one
+operation, which the host closes once the operation settles.
+
+**The sandboxed renderer runtime** (#390, decided in #231 and ADR 0007) runs
+API 4 packages in development builds of the desktop app, until the cut-over
+(#403); `startAppApiServer`'s `pluginApi4Runtime` takes it, and
+`SplitPluginRuntime` keeps API 3 packages on worker threads beside it.
+
+- **The renderer** (`apps/desktop/electron/plugin-renderer-runtime.cjs`): one
+  hidden `WebContentsView` per plugin, owned by main and never attached to a
+  window, with `sandbox`, context isolation, no Node and DevTools only in
+  development builds, on the in-memory partition `ajour-plugin:<id>`. Its
+  origin is `ajour-plugin://<id>`, a standard secure scheme with no other
+  privilege, served only from the installed package by that session's
+  `protocol.handle` (`plugin-renderer-policy.cjs`): no path leaves the
+  package, links included, and every file carries the CSP `default-src
+'self'; worker-src 'self'; connect-src 'none'; frame-src 'none'` (with no
+  object, base or form), `no-store` and `nosniff`. Ajour's own files sit
+  under `/.ajour/` (`electron/plugin-host/`).
+- **Plugin code runs in a dedicated worker**, one per operation, started by
+  Ajour's page script from Ajour's bootstrap, which gives it the SDK's
+  `ajour` global. `ajour.http` and `ajour.publicFetch` are messages to the
+  page, which relays them through the preload's one function, `invoke`, on
+  the IPC channel `ajour:plugin-renderer`, to the broker of that run. The
+  page pulls its commands (start, stop) through the same function. Which run
+  a call belongs to comes from the worker that sent it, and main finds the
+  run only among the sender's own.
+- **Exits closed** on each plugin session: `webRequest` cancels everything
+  but `ajour-plugin://<id>/`; a dead proxy (`http://0.0.0.0:0`) with
+  `<-loopback>`; WebRTC limited to `disable_non_proxied_udp`; no service
+  worker (the scheme doesn't allow them, the CSP blocks them, and a worker
+  has none to register); permission request and check handlers, device
+  pickers and downloads refused; navigation, redirects, `window.open` and
+  `<webview>` refused.
+- **IPC identity:** a call is taken only from a view the runtime registered,
+  from its main frame, read synchronously: attached, with no parent, the
+  view's main frame by its ids, on origin `ajour-plugin://<id>`. Anything
+  else is refused as `foreign_sender`, and the plugin comes from the sender,
+  never the message.
+- **Failing closed** (`plugin-sandbox.cjs`): `--no-sandbox`,
+  `--disable-gpu-sandbox`, `--single-process`, `--remote-debugging-port` or
+  `-pipe`, `--inspect` in any form, an attached inspector,
+  `ELECTRON_DISABLE_SANDBOX`, or a system other than Windows and macOS turn
+  every plugin off at launch. So does a renderer whose process, read from
+  `app.getAppMetrics()` after Ajour's page loaded and before plugin code
+  runs, isn't `sandboxed`, isn't `untrusted` on Windows, or is another
+  plugin's. Every run then settles `runtime_unavailable`, API 3 included,
+  the overview reports `sandbox: { state: "off", reason }` and every plugin
+  as off, and there is no override.
+- **Blocked attempts**: a request the session cancelled, a CSP violation the
+  bootstrap reports, a denied permission or device, a download, a
+  navigation or `window.open` emits `plugin_renderer.blocked` with the kind
+  of exit and counts as a blocked attempt in the broker's records
+  (`PluginRuntimeHost.recordBlocked`), at most 20 a second per plugin. The
+  renderer goes on.
+- **Lifecycle, for now** (#391 adds start modes, limits and the crash
+  budget): a renderer opens at its plugin's first call and closes 2 minutes
+  after its last, at a timeout, when its package moves, and as Ajour quits.
+  A settled or cancelled run stops its own worker only. A
+  `render-process-gone` fails the renderer's runs as `crashed` with its
+  cause. The real-Electron check `apps/desktop/scripts/check-plugin-sandbox.mjs`
+  (`corepack pnpm --filter @ajour/desktop check:plugin-sandbox`) proves the
+  above with fixture plugins and seeds seam 3 (#392).
 
 - **The port** is `CredentialBrokerPort.forOperation(caller)`
   (`apps/api/src/broker-port.ts`), with the plugin id from the runtime,

@@ -2,6 +2,8 @@
 
 Ajour treats every plugin as possibly malicious, including its own. Today a plugin runs in a worker thread inside the Electron main process, with the user's permissions, and can read any other plugin's credentials from the state file. Instead, each plugin runs in its own hidden Electron renderer under the Chromium OS sandbox, with its own `ajour-plugin://<id>` origin and partition, context isolation and no Node. Its preload exposes one function that calls the host, and the host knows which plugin is calling from the IPC sender, never from anything the plugin sends. The full model is on #229.
 
+Note (#231, built in #390): the plugin's code runs in a dedicated worker inside Ajour's host page, never in the page itself. Ajour's own page script owns the renderer, starts the worker from Ajour's bootstrap, and relays the worker's calls to the one preload function. The worker has no DOM, so DNS prefetch, frames, popups, navigation, printing, file pickers and `RTCPeerConnection` are gone at the source.
+
 Two guarantees stay separate in code, tests and docs:
 
 - **G1, hard and tested.** No plugin can obtain another plugin's credentials, storage or identity by any path: the API, the filesystem, forged IPC, the network, logs or errors. No plugin's code holds any credential, not even its own (ADR 0010).

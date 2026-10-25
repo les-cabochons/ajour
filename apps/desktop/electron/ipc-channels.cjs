@@ -75,6 +75,9 @@ const IPC_CHANNELS = {
     event: "dev_plugins.configure",
     mode: "invoke",
   },
+  // The one channel of a plugin's hidden page, not the window's
+  // (plugin-renderer-runtime.cjs).
+  "ajour:plugin-renderer": { event: "plugin_renderer.call", mode: "invoke" },
 };
 
 module.exports = {
