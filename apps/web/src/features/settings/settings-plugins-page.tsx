@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   RiArrowLeftLine as ArrowLeft,
@@ -62,19 +62,18 @@ import {
   syncsPullRequestsAutomatically,
 } from "@ajour/shared";
 import {
-  arePluginFormValuesEqual,
-  buildPluginFormValues,
-  canSubmitPluginForm,
-  isPluginFieldShown,
-  normalizePluginFormValuesForSave,
+  createPluginFormState,
+  expiryForSave,
+  type PluginFormState,
 } from "./plugin-form-state";
+import { type PluginReplaceTarget } from "./plugin-detail-search";
 import { PluginCapabilitySwitches } from "./plugin-capability-switches";
-import { PluginFieldInput } from "./plugin-settings-ui";
+import { PluginConnectionForm } from "./connection-form";
 import {
-  HeldArrivalsLine,
-  TeamCreateField,
-  TeamPickerDialog,
-} from "./team-connection-ui";
+  ConnectionStatusChip,
+  ConnectionStatusNote,
+} from "./connection-status-ui";
+import { HeldArrivalsLine, TeamPickerDialog } from "./team-connection-ui";
 import { PluginAgentTasks } from "./agent-task-settings";
 import {
   canInstallCatalogPlugin,
@@ -85,15 +84,6 @@ import {
   PluginInfoList,
   pluginCapabilitiesLabel,
 } from "./plugin-catalog-ui";
-
-type PluginFormState = {
-  /** Which opening of the form this is, so a late result finds its own. */
-  instance: number;
-  pluginId: string;
-  editingConnectionId: string | null;
-  initialValues: PluginFieldValues;
-  values: PluginFieldValues;
-};
 
 type PluginCatalogFilter = "all" | PluginCatalogCapability;
 
@@ -500,7 +490,14 @@ function PluginDetailHeader({
   );
 }
 
-export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
+export function SettingsPluginsPage({
+  pluginId,
+  replace,
+}: {
+  pluginId?: string;
+  /** The secret the Vault sent the user to replace. */
+  replace?: PluginReplaceTarget;
+}) {
   const state = useLocalState();
   const isDevelopmentBuild =
     window.ajourDesktop?.runtime?.developmentBuild === true;
@@ -563,14 +560,6 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
     ? (pluginGroups.find((group) => group.plugin.id === formState.pluginId)
         ?.plugin ?? pluginsById.get(formState.pluginId))
     : undefined;
-  const isFormDirty =
-    formState && activePlugin
-      ? !arePluginFormValuesEqual(
-          activePlugin,
-          formState.values,
-          formState.initialValues,
-        )
-      : false;
 
   const handlePluginActivation = (
     group: PluginOverviewGroup,
@@ -585,34 +574,49 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
     });
 
   const handleCreate = (plugin: PluginManifest) => {
-    const initialValues = buildPluginFormValues(plugin);
     workflow.clearFeedback();
-    setFormState({
-      instance: (formInstances.current += 1),
-      pluginId: plugin.id,
-      editingConnectionId: null,
-      initialValues,
-      values: initialValues,
-    });
+    setFormState(createPluginFormState((formInstances.current += 1), plugin));
   };
 
+  /**
+   * Opens the connection's form. `replaceFieldId` opens that secret's Replace
+   * at once; without it, a secret the service refused opens its own.
+   */
   const handleEdit = (
     plugin: PluginManifest,
     connection: PluginConnectionSummary,
+    replaceFieldId?: string,
   ) => {
-    const initialValues = buildPluginFormValues(
-      plugin,
-      connection.editableValues,
-    );
     workflow.clearFeedback();
-    setFormState({
-      instance: (formInstances.current += 1),
-      pluginId: plugin.id,
-      editingConnectionId: connection.id,
-      initialValues,
-      values: initialValues,
-    });
+    setFormState(
+      createPluginFormState(
+        (formInstances.current += 1),
+        plugin,
+        connection,
+        replaceFieldId ??
+          connection.secretFields?.find((secret) => secret.state === "rejected")
+            ?.id,
+      ),
+    );
   };
+
+  // The Vault's Replace opens the connection's form with Replace open, once
+  // the overview lists the connection.
+  const openedReplace = useRef<string | null>(null);
+  useEffect(() => {
+    if (!replace?.connectionId || !pluginId) return;
+    const key = `${pluginId}/${replace.connectionId}/${replace.fieldId}`;
+    if (openedReplace.current === key) return;
+    const group = pluginGroups.find(
+      (candidate) => candidate.plugin.id === pluginId,
+    );
+    const connection = group?.connections.find(
+      (candidate) => candidate.id === replace.connectionId,
+    );
+    if (!group || !connection) return;
+    openedReplace.current = key;
+    handleEdit(group.plugin, connection, replace.fieldId);
+  }, [pluginGroups, pluginId, replace]);
 
   const handleSave = async () => {
     if (!formState || !activePlugin) return;
@@ -620,9 +624,8 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
     const completed = await workflow.execute({
       type: "save",
       pluginId: formState.pluginId,
-      values: normalizePluginFormValuesForSave(activePlugin, formState.values, {
-        allowSavedSecrets: Boolean(formState.editingConnectionId),
-      }),
+      values: formState.values,
+      secretExpiry: expiryForSave(formState.expiry),
       connectionId: formState.editingConnectionId ?? undefined,
       onSaved: (connection) => {
         saved = connection;
@@ -839,108 +842,30 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
             </div>
 
             {groupFormState ? (
-              <AppPanel className="pb-4">
-                <div>
-                  <h3 className="text-sm font-medium text-foreground">
-                    {groupFormState.editingConnectionId
-                      ? `Edit ${group.plugin.displayName} connection`
-                      : `New ${group.plugin.displayName} connection`}
-                  </h3>
-                  <p className="mt-0.5 text-[13px] text-muted-foreground">
-                    {groupFormState.editingConnectionId
-                      ? "Update this connection without re-entering unchanged secrets."
-                      : "The connection is validated by the plugin and stored locally."}
-                  </p>
-                </div>
-                <FieldGroup className="desktop:grid desktop:grid-cols-2 desktop:gap-x-6 desktop:gap-y-5">
-                  {pluginConnectionFormFields(group.plugin).map((field) => {
-                    if (
-                      !isPluginFieldShown(
-                        group.plugin,
-                        field,
-                        groupFormState.values,
-                        group.inactiveCapabilities,
-                      )
-                    ) {
-                      return null;
-                    }
-
-                    return (
-                      <PluginFieldInput
-                        key={field.id}
-                        field={field}
-                        value={groupFormState.values[field.id]}
-                        onChange={(nextValue) =>
-                          setFormState((current) =>
-                            current
-                              ? {
-                                  ...current,
-                                  values: {
-                                    ...current.values,
-                                    [field.id]: nextValue,
-                                  },
-                                }
-                              : current,
-                          )
-                        }
-                      />
-                    );
-                  })}
-                  {pluginHasTeam(group.plugin) &&
-                  !groupFormState.editingConnectionId ? (
-                    <TeamCreateField
-                      pluginId={group.plugin.id}
-                      values={groupFormState.values}
-                      disabled={
-                        isMutatingPlugin || !isCapabilityActive(group, "team")
-                      }
-                      onCreated={(created) =>
-                        // Only into the form that asked: one closed or
-                        // opened anew meanwhile keeps its own values.
-                        setFormState((current) =>
-                          current &&
-                          current.instance === groupFormState.instance
-                            ? {
-                                ...current,
-                                values: { ...current.values, ...created },
-                              }
-                            : current,
-                        )
-                      }
-                    />
-                  ) : null}
-                </FieldGroup>
-                <div className="flex flex-wrap justify-end gap-3 pt-2">
-                  <Button
-                    variant="outline"
-                    disabled={isMutatingPlugin}
-                    onClick={() => setFormState(null)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    disabled={
-                      isMutatingPlugin ||
-                      !isFormDirty ||
-                      !canSubmitPluginForm(
-                        activePlugin,
-                        groupFormState.values,
-                        {
-                          allowSavedSecrets: Boolean(
-                            groupFormState.editingConnectionId,
-                          ),
-                          inactiveCapabilities: group.inactiveCapabilities,
-                        },
-                      )
-                    }
-                    onClick={() => void handleSave()}
-                  >
-                    {groupFormState.editingConnectionId
-                      ? "Update connection"
-                      : "Add connection"}
-                  </Button>
-                </div>
-              </AppPanel>
+              <PluginConnectionForm
+                group={group}
+                form={groupFormState}
+                setForm={setFormState}
+                connection={group.connections.find(
+                  (connection) =>
+                    connection.id === groupFormState.editingConnectionId,
+                )}
+                vault={overview?.vault}
+                isMutating={isMutatingPlugin}
+                now={Date.now()}
+                onCancel={() => setFormState(null)}
+                onSave={() => void handleSave()}
+                onRemoveSecret={(fieldId) =>
+                  groupFormState.editingConnectionId
+                    ? void workflow.execute({
+                        type: "removeSecrets",
+                        pluginId: group.plugin.id,
+                        connectionId: groupFormState.editingConnectionId,
+                        fieldIds: [fieldId],
+                      })
+                    : undefined
+                }
+              />
             ) : null}
 
             {group.connections.length === 0 ? (
@@ -960,18 +885,11 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                         <h3 className="min-w-0 text-sm font-medium break-words text-foreground">
                           {connection.label}
                         </h3>
-                        <Chip
-                          tone={connection.lastError ? "danger" : "neutral"}
-                        >
-                          {unavailableReason
-                            ? "Unavailable"
-                            : overview?.pluginsEnabled === false ||
-                                !group.enabled
-                              ? "Paused"
-                              : connection.lastError
-                                ? "Error"
-                                : "Connected"}
-                        </Chip>
+                        <ConnectionStatusChip
+                          group={group}
+                          connection={connection}
+                          pluginsEnabled={overview?.pluginsEnabled !== false}
+                        />
                         <Badge variant="outline">
                           {syncModeLabel(group, connection)}
                         </Badge>
@@ -999,11 +917,11 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                           }
                         />
                       ) : null}
-                      {connection.lastError ? (
-                        <p className="text-sm break-words text-destructive">
-                          {connection.lastError}
-                        </p>
-                      ) : null}
+                      <ConnectionStatusNote
+                        group={group}
+                        connection={connection}
+                        pluginsEnabled={overview?.pluginsEnabled !== false}
+                      />
                     </div>
                     <div className="flex shrink-0 flex-wrap gap-2">
                       <Button
@@ -1162,6 +1080,10 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
           <PluginAgentTasks
             pluginId={group.plugin.id}
             tasks={group.plugin.capabilities.agentTask.tasks}
+            replaceFieldId={
+              replace?.connectionId ? undefined : replace?.fieldId
+            }
+            vault={overview?.vault}
           />
         ) : null}
 

@@ -618,6 +618,12 @@ export const pluginOverviewGroupSchema = z.object({
   /** Declared capabilities the user turned off. `enabled` still gates all. */
   inactiveCapabilities: z.array(switchableCapabilitySchema).optional(),
   connections: z.array(pluginConnectionSummarySchema),
+  /**
+   * The plugin's package is not installed: saved connections or secrets
+   * outlived it, and `plugin` is a stand-in. Absent when it is installed,
+   * even when it can't run.
+   */
+  missing: z.boolean().optional(),
   /** The secrets of the plugin's agent task settings the vault holds. */
   agentTaskSecretFields: z.array(secretFieldSummarySchema).optional(),
   /** The agent task settings kept whole in the vault while the package is missing. */

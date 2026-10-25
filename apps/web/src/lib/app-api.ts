@@ -280,6 +280,26 @@ class AppApiUnavailableError extends Error {
 }
 
 /**
+ * A request the local API answered with an error. The message is the API's
+ * own; `status` keeps the HTTP status, so a caller can tell a paused
+ * connection (409) from a failure of the service (502).
+ */
+export class AppApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "AppApiError";
+    this.status = status;
+  }
+}
+
+/** The HTTP status the local API answered a failed request with, if it did. */
+export function appApiErrorStatus(error: unknown): number | undefined {
+  return error instanceof AppApiError ? error.status : undefined;
+}
+
+/**
  * True when the app API is unreachable because Ajour runs as a plain web
  * app. In the desktop app the API is internal, so an unreachable API stays a
  * real failure that the page reports.
@@ -343,6 +363,9 @@ export const APP_API_CLIENT = {
   upsertBacklogSourceStatuses: "source_state.update",
   savePluginConnection: "connection.save",
   deletePluginConnection: "connection.delete",
+  removeConnectionSecrets: "connection.remove_secrets",
+  removeMissingPluginData: "plugin.remove_data",
+  retryVault: "vault.retry",
   listItemComments: "comment.list",
   postItemComment: "comment.post",
   editItemComment: "comment.edit",
@@ -555,7 +578,7 @@ async function requestAppApi<T>(
       // Ignore non-JSON error responses.
     }
 
-    throw new Error(detail);
+    throw new AppApiError(detail, response.status);
   }
 
   return parseJsonResponse(response, schema);
@@ -811,8 +834,14 @@ export async function savePluginConnection(
   pluginId: string,
   values: PluginFieldValues,
   id?: string,
+  /** The reminder date of each secret field, in epoch ms. `null` clears one. */
+  secretExpiry?: Record<string, number | null>,
 ): Promise<PluginConnectionSaveResponse> {
-  const payload = pluginConnectionSaveRequestSchema.parse({ id, values });
+  const payload = pluginConnectionSaveRequestSchema.parse({
+    id,
+    values,
+    ...(secretExpiry ? { secretExpiry } : {}),
+  });
   const result = await appApiRequest(
     "savePluginConnection",
     `/api/plugins/${encodeURIComponent(pluginId)}/connections`,
@@ -875,6 +904,54 @@ export async function deletePluginConnection(
   } finally {
     command.finish();
   }
+}
+
+/**
+ * Deletes saved secrets of a connection. The connection keeps its settings
+ * and data, and pauses until a new secret is saved if its plugin requires one.
+ */
+export async function removeConnectionSecrets(
+  pluginId: string,
+  connectionId: string,
+  fieldIds: string[],
+): Promise<PluginConnectionSaveResponse> {
+  const result = await appApiRequest(
+    "removeConnectionSecrets",
+    `/api/plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/secrets/remove`,
+    { method: "POST", body: JSON.stringify({ fieldIds }) },
+    pluginConnectionSaveResponseSchema,
+  );
+  cachePluginsOverview(result.overview);
+  return result;
+}
+
+/**
+ * Deletes the connections and saved secrets of a plugin whose package is
+ * missing. Synced backlog items stay.
+ */
+export async function removeMissingPluginData(
+  pluginId: string,
+): Promise<PluginsOverview> {
+  return cachePluginsOverview(
+    await appApiRequest(
+      "removeMissingPluginData",
+      `/api/plugins/${encodeURIComponent(pluginId)}/data`,
+      { method: "DELETE" },
+      pluginsOverviewSchema,
+    ),
+  );
+}
+
+/** Opens the vault again, which re-runs the encryption round trip. */
+export async function retryVault(): Promise<PluginsOverview> {
+  return cachePluginsOverview(
+    await appApiRequest(
+      "retryVault",
+      "/api/vault/retry",
+      { method: "POST" },
+      pluginsOverviewSchema,
+    ),
+  );
 }
 
 /** A page of a synced item's comments, newest last (ADR 0008). */
@@ -1457,11 +1534,22 @@ export async function updateAgentRunnerSettings(
 export async function saveAgentTaskSettings(
   pluginId: string,
   values: PluginFieldValues,
+  /** Secret settings to delete. A secret left empty in `values` keeps its saved value. */
+  removeSecrets?: string[],
+  /** The reminder date of each secret setting, in epoch ms. `null` clears one. */
+  secretExpiry?: Record<string, number | null>,
 ) {
   return appApiRequest(
     "saveAgentTaskSettings",
     `/api/agents/plugins/${encodeURIComponent(pluginId)}/settings`,
-    { method: "POST", body: JSON.stringify({ values }) },
+    {
+      method: "POST",
+      body: JSON.stringify({
+        values,
+        ...(removeSecrets?.length ? { removeSecrets } : {}),
+        ...(secretExpiry ? { secretExpiry } : {}),
+      }),
+    },
     agentRunnerOverviewSchema,
   );
 }

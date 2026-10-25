@@ -1133,6 +1133,7 @@ export class AppApiStorage {
         inactiveCapabilities: (
           state.disabledCapabilities[plugin.id] ?? []
         ).filter((capability) => pluginHasCapability(plugin, capability)),
+        ...(missingPluginIds.has(plugin.id) ? { missing: true } : {}),
         ...(agentTaskSecretFields.length > 0 ? { agentTaskSecretFields } : {}),
         ...(agentTaskSealedConfig ? { agentTaskSealedConfig } : {}),
         connections: state.connections

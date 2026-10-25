@@ -7,6 +7,7 @@ import {
   RiDownloadLine as Download,
   RiFolderChartLine as FolderKanban,
   RiInboxLine as Inbox,
+  RiKey2Line as Vault,
   RiListCheck3 as ListTodo,
   RiPuzzle2Line as Puzzle,
   RiRobot2Line as Agents,
@@ -54,6 +55,7 @@ export function getSettingsGroups(
       pages: [
         { to: "/settings/general", label: "General", icon: Settings },
         { to: "/settings/plugins", label: "Plugins", icon: Puzzle },
+        { to: "/settings/vault", label: "Vault", icon: Vault },
         { to: "/settings/mcp", label: "MCP", icon: Agents },
         { to: "/settings/agents", label: "Agents", icon: Terminal },
         // Debug exists only in development builds.
