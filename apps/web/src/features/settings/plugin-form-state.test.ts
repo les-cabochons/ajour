@@ -266,12 +266,13 @@ describe("plugin form state", () => {
     expect(expiryForSave(initial, initial, ["note"])).toEqual({ note: null });
   });
 
-  it("keeps a task form while the overview refreshes what a secret last did, and starts it over when its state or date changes", () => {
+  it("keeps a task form while the overview refreshes what a secret last did, and starts it over when it is replaced, or its state or date changes", () => {
     const saved = { id: "apiKey", state: "saved" as const, setAt: 1 };
 
     const key = secretFieldsKey([saved]);
 
     expect(secretFieldsKey([{ ...saved, lastUsedAt: 99 }])).toBe(key);
+    expect(secretFieldsKey([{ ...saved, setAt: 2 }])).not.toBe(key);
     expect(
       secretFieldsKey([{ ...saved, state: "rejected" as const }]),
     ).not.toBe(key);

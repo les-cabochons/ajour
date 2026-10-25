@@ -393,12 +393,18 @@ async function installMock(page: Page, initial: Partial<Mock>) {
     `${apiUrl}/api/agents/plugins/workday-agent/settings`,
     async (route) => {
       const body = route.request().postDataJSON() as {
+        values?: Record<string, unknown>;
         removeSecrets?: string[];
       };
       current.agentSaves.push(body);
-      current.agentSecrets = current.agentSecrets.filter(
-        (secret) => !body.removeSecrets?.includes(secret.id),
-      );
+      current.agentSecrets = current.agentSecrets
+        .filter((secret) => !body.removeSecrets?.includes(secret.id))
+        // A new value replaces the saved secret, which sets it again.
+        .map((secret) =>
+          body.values?.[secret.id]
+            ? { ...secret, setAt: Date.now(), lastUsedAt: undefined }
+            : secret,
+        );
       await fulfill(route, agentOverview(current));
     },
   );
@@ -884,6 +890,26 @@ Then(
     await expect(page.locator("#secret-apiKey")).toHaveCount(0);
   },
 );
+
+When("I replace the API key with {string}", async ({ page }, token: string) => {
+  await page.getByRole("button", { name: "Replace API key" }).click();
+  await page.locator("#secret-apiKey").fill(token);
+});
+
+When("I save the task settings", async ({ page }) => {
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect.poll(() => mock.agentSaves.length).toBe(1);
+});
+
+Then("the API key is back to its saved state", async ({ page }) => {
+  await expect(page.locator("#secret-apiKey")).toHaveCount(0);
+  await expect(page.locator('[data-secret-state="saved"]')).toContainText(
+    "Saved",
+  );
+  await expect(
+    page.getByRole("button", { name: "Replace API key" }),
+  ).toBeVisible();
+});
 
 When(
   "I press Remove on the {string} and confirm",

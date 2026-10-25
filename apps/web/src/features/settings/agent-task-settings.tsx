@@ -86,8 +86,9 @@ export function PluginAgentTasks({
       </AppPanel>
       {fields.length > 0 ? (
         <TaskSettingsForm
-          // A saved secret's state or reminder date changing starts the form
-          // over. Its last use changes with each run and doesn't.
+          // A saved secret replaced, or its state or reminder date changing,
+          // starts the form over. Its last use changes with each run and
+          // doesn't.
           key={`${pluginId}/${secretFieldsKey(secretFields)}`}
           fields={fields}
           initialValues={sharedValues(statuses, fields)}

@@ -158,16 +158,27 @@ export function expiryForSave(
 }
 
 /**
- * Starts a form over when a saved secret's state or reminder date changes,
- * and only then. Its last use changes with every sync and the form is
- * usually open while one runs, so it is left out: remounting would drop what
- * the user typed.
+ * Starts a form over when a saved secret is replaced, or its state or
+ * reminder date changes, and only then. Replacing sets a new `setAt`, so the
+ * pasted token and the open Replace go. Its last use changes with every sync
+ * and the form is usually open while one runs, so it is left out: remounting
+ * would drop what the user typed.
  */
 export function secretFieldsKey<
-  Field extends { id: string; state: string; expiresAt?: number },
+  Field extends {
+    id: string;
+    state: string;
+    setAt?: number;
+    expiresAt?: number;
+  },
 >(secretFields: readonly Field[]) {
   return JSON.stringify(
-    secretFields.map(({ id, state, expiresAt }) => [id, state, expiresAt]),
+    secretFields.map(({ id, state, setAt, expiresAt }) => [
+      id,
+      state,
+      setAt,
+      expiresAt,
+    ]),
   );
 }
 

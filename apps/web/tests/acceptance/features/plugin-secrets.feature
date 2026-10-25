@@ -133,3 +133,10 @@ Feature: Saved secrets show their state
     Then the API key shows the saved chip saying "Saved"
     When I press Remove on the "API key" and confirm
     Then the API was asked to remove the agent task "apiKey" secret
+
+  Scenario: A saved agent task secret returns to its saved state after Save
+    Given the Workday agent has a saved secret API key
+    When I open the Workday agent plugin page
+    And I replace the API key with "key-new-1234"
+    And I save the task settings
+    Then the API key is back to its saved state
