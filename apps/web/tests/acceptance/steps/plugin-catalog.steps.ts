@@ -411,3 +411,17 @@ Then("Jira shows as off with its saved connection", async ({ page }) => {
     page.getByRole("switch", { name: "Activate Jira", exact: true }),
   ).not.toBeChecked();
 });
+
+Then("Jira cannot be switched on or off, and says why", async ({ page }) => {
+  // A click on a switch that looked usable would store a choice that does
+  // nothing while plugins are off.
+  await expect(
+    page.getByRole("switch", { name: "Activate Jira", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByLabel(
+      "Activate Jira: Plugins are turned off: this computer can't run them in a sandbox",
+      { exact: true },
+    ),
+  ).toBeVisible();
+});

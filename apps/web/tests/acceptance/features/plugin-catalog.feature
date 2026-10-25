@@ -66,6 +66,7 @@ Feature: Browse plugin capabilities
     When I open the <view> for Jira at <width> pixels wide
     Then the plugins page says "Plugins are turned off: this computer can't run them in a sandbox" with "Ajour was started with --no-sandbox."
     And Jira shows as off with its saved connection
+    And Jira cannot be switched on or off, and says why
 
     Examples:
       | view    | width |
