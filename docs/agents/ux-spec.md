@@ -137,7 +137,11 @@ Each nav label matches its page title. Old routes are removed, not redirected.
 | Sync review  | Sync review                    | `/settings/sync-review`  |
 | Debug        | Debug                          | `/settings/debug`        |
 
-The Plugins page tabs are **All · Backlog · Code hosts · Calendars · Agent tasks · Schemas**. The tabs wrap on narrow windows. Agent task plugins can be downloaded from the catalog. A catalog entry this Ajour version can't read is left out, and the page names it and says to update Ajour.
+The Plugins page tabs are **All · Backlog · Code hosts · Calendars · Agent tasks · Schemas**. The tabs wrap on narrow windows. Agent task plugins can be downloaded from the catalog. A plugin a source lists that this Ajour version can't read, or that an earlier source already lists, is left out, and the page names it.
+
+The catalog lists every plugin of the person's **plugin sources** (ADR 0012). Plugin sources, below the list, shows each source with its state (Signed, Unsigned, Key not approved, Key changed, Signature missing, Signature invalid, Unreachable), its address, plugin count and key fingerprint. Adding a source reads it first and shows its plugins and key in a dialog; nothing is saved until the person confirms. Remove asks first, and keeps the plugins installed from it. Review approves the key a source is signed with now. The official source is listed by default and can be removed and added back.
+
+A plugin that didn't come from a signed source shows an **Unsigned** badge. **Allow installing unsigned plugins** is off by default; while it is off, Install from file and Update from file are disabled and an unsigned download is refused. When it is on, every unsigned install or update shows the desktop's own warning dialog, every time. **Deactivate unsigned plugins** pauses every unsigned plugin without changing its own switch, which is disabled while the deactivation holds. **Update** appears when the plugin's own source lists a newer version; nothing updates on its own.
 
 ## App shell
 

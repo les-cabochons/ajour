@@ -85,7 +85,7 @@ Ajour checks a plugin's `apiVersion` exactly. A plugin for API `3` works with Aj
   { icon: 'excel', title: 'Schema API', text: 'Map projects and tasks to a file layout.', link: '/developers/schema-api' },
   { icon: 'shield', title: 'Runtime and limits', text: 'Where plugins run and what they may use.', link: '/developers/runtime' },
   { icon: 'test', title: 'Test and debug', text: 'Unit tests, development builds and error messages.', link: '/developers/testing' },
-  { icon: 'upload', title: 'Publish a plugin', text: 'Package, release and list your plugin in the catalog.', link: '/developers/publish' },
+  { icon: 'upload', title: 'Publish a plugin', text: 'List your plugins in a repository with a signed ajour.json.', link: '/developers/publish' },
 ]" />
 
 The best examples are the official plugins, in [les-cabochons/ajour-plugins](https://github.com/les-cabochons/ajour-plugins). [Jira](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/jira) is the smallest backlog plugin, [Azure DevOps](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/azure-devops) shows configurable priorities and comments, [GitHub](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/github) is a backlog plugin and a code host, [ICS](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/ics) is a calendar, and [Workday (agent)](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/workday-agent) declares agent tasks and project properties.

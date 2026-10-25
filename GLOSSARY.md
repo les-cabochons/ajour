@@ -198,6 +198,14 @@ _Avoid_: Cancel, delete (for a running entry)
 An installable extension of Ajour that provides one or more capabilities: backlog, schema, code host, calendar, team or sign-in. When a plugin provides more than one of backlog, code host, calendar and team, the user turns each on and off separately, as Backlog items, Pull requests, Calendar events and Projects.
 _Avoid_: Extension, add-on, integration, connector
 
+**Plugin source**:
+A git repository with an `ajour.json` that lists plugins, their versions and the hashes of their files. The user keeps a list of them; the official one is there by default. See ADR 0012.
+_Avoid_: Catalog, index, store, marketplace
+
+**Signed plugin**:
+A plugin installed from a plugin source whose `ajour.json` signature verified with the key the user approved or an official key. Any other plugin is **unsigned**, including one installed from a file.
+_Avoid_: Verified, trusted, official plugin
+
 **Connection**:
 One place a plugin talks to, such as an Azure DevOps organisation or a Jira site, with its own settings. Its credentials are either its own or an account it may use through a grant. A plugin can have several connections.
 _Avoid_: Integration, instance, account (for a connection)

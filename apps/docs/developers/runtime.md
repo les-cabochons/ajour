@@ -45,10 +45,11 @@ When a call times out, Ajour ends the worker and reports `Plugin "<id>" timed ou
 
 Worker threads keep plugins apart from Ajour's code and from each other, but they are not a security sandbox. A plugin runs with the user's permissions: it can read files and reach the network. Ajour's protections are about how plugins get in, not what they do once running:
 
-- Plugins install only through the desktop app's file chooser or catalog. The local API has no install route.
+- Plugins install only through the desktop app, from a file or a plugin source. The local API has no install route.
 - The local API listens on loopback only, and checks the `Host` and `Origin` of every request.
 - Archives cannot hold symlinks, absolute paths or `..` entries.
-- Catalog downloads come only from the plugin's GitHub releases.
+- A plugin from a source installs only the files its `ajour.json` lists, at the commit it names, each checked against its SHA-256. A signed source must stay signed with the key the person approved.
+- An unsigned plugin installs only when the person allowed unsigned plugins, after a warning each time, and **Deactivate unsigned plugins** stops every one of them.
 
 As a plugin author:
 
@@ -62,7 +63,7 @@ As a plugin author:
 Ajour accepts a plugin only if its `apiVersion` equals Ajour's plugin API version, today `3`. There is no range. Schema plugins have their own version, `1`, checked the same way. When the version changes:
 
 - Installed plugins with another version stay installed but show as unavailable, with the reason. Their connections and items stay.
-- The catalog offers an update once a release with the new version exists.
+- Ajour offers an update once the plugin's source lists a version for the new API.
 - Installing an archive with another version fails.
 
 Watch Ajour's releases, and publish a new version of your plugin when the API version changes.

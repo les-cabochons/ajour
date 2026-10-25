@@ -41,7 +41,7 @@ N'utilisez pas notre site Web pour diffuser des logiciels malveillants, obtenir 
 
 ## Plugins et protection des identifiants
 
-L'auteur d'un plugin est responsable de son code, du comportement qu'il annonce et de sa licence. La présence dans le catalogue ne constitue pas une certification de sécurité. La validation du catalogue vérifie le format des entrées, pas le code de chaque plugin. Installez des plugins d'auteurs auxquels vous faites confiance.
+L'auteur d'un plugin est responsable de son code, du comportement qu'il annonce et de sa licence. La liste d'une source de plugins, et sa signature, ne constitue pas une certification de sécurité. Une signature montre qui a publié un plugin et que personne ne l'a modifié depuis, pas que son code a été examiné. Installez des plugins d'auteurs auxquels vous faites confiance.
 
 Nous restons responsables d'Ajour lui-même, y compris de la manière dont il traite les identifiants. Dans la version actuelle, Ajour masque les paramètres secrets et retire les secrets de connexion connus des erreurs et des résumés des plugins. Les identifiants sont toutefois conservés localement sans chiffrement et transmis au plugin concerné. Le code des plugins ne s'exécute pas dans un bac à sable et peut lire les fichiers accessibles à votre compte utilisateur, y compris les autres identifiants enregistrés.
 

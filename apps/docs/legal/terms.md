@@ -39,7 +39,7 @@ Do not use our website to distribute malware, gain unauthorised access or disrup
 
 ## Plugins and credential protection
 
-Each plugin's author is responsible for that plugin's code, declared behaviour and licence. A catalog listing is not a security certification. Catalog validation checks entry format; it does not amount to a review of every plugin's code. Install plugins from authors you trust.
+Each plugin's author is responsible for that plugin's code, declared behaviour and licence. A plugin source's listing, and its signature, is not a security certification. A signature shows who published a plugin and that nobody changed it since; it does not amount to a review of the plugin's code. Install plugins from authors you trust.
 
 We remain responsible for Ajour itself, including how it handles credentials. In the current release, Ajour masks secret settings and redacts known connection secrets from plugin errors and summaries. Credentials are nevertheless stored unencrypted locally and passed to the relevant plugin. Plugin code is not sandboxed and can read files accessible to your user, including other stored credentials.
 
