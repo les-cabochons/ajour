@@ -270,6 +270,62 @@ plugins in process with a fake. The arguments each plugin export receives
 come from one method table, `apps/api/src/plugin-methods.ts`, derived from the
 shared operation contracts.
 
+An API 4 plugin reaches the network only through the credential broker,
+`apps/api/src/credential-broker.ts` (#389, decided in #219, #229 and ADR
+0010). The plugin host runs an API 4 operation only on a runtime that says it
+keeps the plugin to the broker (`runsPluginApi4`): the worker thread doesn't,
+so until the sandboxed renderer runtime (#390) only the in-process test
+runtime runs one. The operation receives its connection without the secrets
+and with its access choices that are on, and its invocation carries a broker
+for that one operation, which the host closes once the operation settles.
+
+- **The port** is `CredentialBrokerPort.forOperation(caller)`, with the
+  plugin id from the runtime, never from the plugin, the admitted manifest
+  and the plugin method. A request names a connection, a derived host, a
+  method, a relative path, a query, headers and a body, never a URL or a
+  credential. The transport and the resolver are injected through
+  `startAppApiServer`: main passes `net.request` on an in-memory
+  `ajour-broker` session, with manual redirects and no credentials or cache,
+  and `session.resolveHost` (`apps/desktop/electron/broker-transport.cjs`).
+  Without a transport, as in the standalone API, every request is refused:
+  plugins need the desktop app.
+- **The connection** is looked up among the caller's own connections only,
+  so another plugin's id and an unknown one give the same error. Its secrets
+  are read from the vault for each request. A validation sends with the
+  connection being saved, under a `pending-` id that only its own operation's
+  broker knows; it is never stored. The save keeps the secrets of the form,
+  since the plugin's answer never holds one.
+- **The policy:** the URL is built from the saved base address and never
+  climbs above its path, or from a derived host (`deriveHostAddress`); the
+  path must match an endpoint of the host with the shared matcher
+  (`endpointPatternMatches`), and an endpoint behind an access choice needs
+  the choice on, read at dispatch; headers must be listed, and the fixed
+  denylist always wins. Same-origin redirects under the base path are
+  followed with the credential, up to 3; any other comes back as the 3xx. A
+  secret address follows https redirects to any host, up to 3, and never
+  hands back its final address. `ajour.publicFetch` reaches only declared
+  public hosts, over https, without credentials.
+- **Private addresses** are refused, from every address the host resolves to
+  and from the address that answered, when the transport can tell, unless
+  the connection is on-premises: a flag Ajour owns (`onPremises`), allowed
+  only when the manifest says `allowOnPremises`. Through a system proxy the
+  proxy connects, so its own address isn't judged. A DNS-rebinding window
+  remains between the two checks (ADR 0010).
+- **The answer** loses `Set-Cookie`, `WWW-Authenticate` and any header that
+  holds a secret, and every secret of the connection is replaced by
+  `[secret]` in the body, in its changed forms too: URL-encoded, JSON-escaped,
+  base64, the Basic credential and the forms of an address (#338). Errors are
+  the broker's own, so a transport's message, which can name the address,
+  never reaches the plugin.
+- **Limits:** 4 MB per request body, 8 MB per answer, 20 s per request, 6
+  requests in flight per plugin with 64 waiting, and a rate of 10 a second
+  with bursts of 60 (`BROKER_LIMITS`).
+- **Audit:** each request emits `plugin.request`, and the state file keeps,
+  per plugin and per connection, the last request (once a minute at most)
+  and the blocked attempts with the last one's time, for Access review
+  (#394). A blocked attempt is a request the policy refused; a limit, a
+  paused connection or a plugin turned off isn't one.
+
 `/api` is the window's private channel. Whoever starts the local API
 generates a per-launch window token and keeps it in memory: Electron main, the
 vite dev server behind `just start`, or the standalone API, which reads
