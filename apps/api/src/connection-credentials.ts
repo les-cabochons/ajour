@@ -51,6 +51,8 @@ import {
 export interface SecretFieldDeclaration {
   id: string;
   secret?: boolean;
+  /** A required secret the user removed pauses its connection. */
+  required?: boolean;
 }
 
 /** The part of a plugin manifest that says which connection fields are secret. */
@@ -284,11 +286,19 @@ export type SecretPause =
   /** The vault holds the secret, but it can't be read on this computer. */
   | "secret_unreadable"
   /** A secret still sits in the state file, waiting to move into the vault. */
-  | "not_in_vault";
+  | "not_in_vault"
+  /** The service answered 401 to a saved secret. A new secret resumes it. */
+  | "secret_rejected"
+  /** The user removed a secret the connection requires. A new one resumes it. */
+  | "secret_removed";
 
 /** The message a paused connection's refused operation answers with. */
 export function secretPauseMessage(pause: SecretPause, reason?: string) {
   switch (pause) {
+    case "secret_rejected":
+      return "The service rejected this connection's saved token, so sync is paused. Replace the token to resume it.";
+    case "secret_removed":
+      return "This connection's token was removed, so it is paused. Add a token to resume it.";
     case "vault_unavailable":
       return `Ajour can't protect credentials on this computer, so this connection is paused.${reason ? ` ${reason}` : ""}`;
     case "secret_unreadable":
@@ -307,6 +317,34 @@ export class ConnectionPausedError extends Error {
     this.name = "ConnectionPausedError";
     this.pause = pause;
   }
+}
+
+/** The rejected and removed marks of a holder's secrets, to carry into a rewrite of them. */
+function statusMarks(secrets: StoredSecretFields | undefined) {
+  return {
+    ...(secrets?.rejected?.length ? { rejected: secrets.rejected } : {}),
+    ...(secrets?.removed?.length ? { removed: secrets.removed } : {}),
+  };
+}
+
+/**
+ * Whether the holder's secrets are marked as refused by the service, or
+ * removed by the user when the manifest requires them. Either pauses a
+ * connection until the user adds a new secret.
+ */
+export function secretStatusPause(
+  secrets: StoredSecretFields | undefined,
+  manifest: Pick<SecretManifest, "connectionFields"> | undefined,
+): { rejected: boolean; removed: boolean } {
+  const required = new Set(
+    (manifest?.connectionFields ?? [])
+      .filter((field) => field.required)
+      .map((field) => field.id),
+  );
+  return {
+    rejected: (secrets?.rejected?.length ?? 0) > 0,
+    removed: (secrets?.removed ?? []).some((id) => required.has(id)),
+  };
 }
 
 function holderKey(holder: SecretHolder, fieldId: string | null): SecretKey {
@@ -523,7 +561,10 @@ export async function moveHolderToVault(
     return holderNeedsCheck(holder, manifest)
       ? {
           outcome: "moved",
-          holder: { ...holder, secrets: { fields: [] } },
+          holder: {
+            ...holder,
+            secrets: { fields: [], ...statusMarks(holder.secrets) },
+          },
           secrets: [],
         }
       : { outcome: "unchanged" };
@@ -548,7 +589,11 @@ export async function moveHolderToVault(
               isOwnField(holder, id),
             ),
           ),
-          secrets: { fields: [], sealed: true },
+          secrets: {
+            fields: [],
+            sealed: true,
+            ...statusMarks(holder.secrets),
+          },
         },
         // Nothing says which values are secret. A plugin that is missing
         // shows neither its stored last error nor its summary.
@@ -599,6 +644,7 @@ export async function moveHolderToVault(
               ...writes.map((write) => write.fieldId!),
             ]),
           ).sort(),
+          ...statusMarks(holder.secrets),
         },
       },
       secrets: connectionSecretValues(
@@ -653,6 +699,10 @@ export interface SecretPauseFacts {
   unreadable: boolean;
   /** A secret still sits in the state file (`holderNeedsMove`). */
   notMoved: boolean;
+  /** The service refused a saved secret with a 401 (`secretStatusPause`). */
+  rejected?: boolean;
+  /** The user removed a secret the connection requires. */
+  removed?: boolean;
 }
 
 /**
@@ -664,12 +714,15 @@ export function decideSecretPause(facts: SecretPauseFacts): {
   pause?: SecretPause;
   reason?: string;
 } {
-  if (!facts.needsVault) return {};
-  if (facts.status.state === "unavailable") {
-    return { pause: "vault_unavailable", reason: facts.status.reason };
+  if (facts.needsVault) {
+    if (facts.status.state === "unavailable") {
+      return { pause: "vault_unavailable", reason: facts.status.reason };
+    }
+    if (facts.unreadable) return { pause: "secret_unreadable" };
+    if (facts.notMoved) return { pause: "not_in_vault" };
   }
-  if (facts.unreadable) return { pause: "secret_unreadable" };
-  if (facts.notMoved) return { pause: "not_in_vault" };
+  if (facts.rejected) return { pause: "secret_rejected" };
+  if (facts.removed) return { pause: "secret_removed" };
   return {};
 }
 
@@ -691,14 +744,38 @@ export async function readHolderSecrets(
   const notMoved = holderNeedsMove(holder, manifest);
   const values: PluginFieldValues = { ...holder.values };
   const needsVault = fields.length > 0 || sealed || notMoved;
-  if (!needsVault) return { values, unreadable: [] };
+  // Agent task settings are never paused: a run is blocked by a required
+  // setting that has no value.
+  const marks =
+    holder.connectionId === null
+      ? {}
+      : secretStatusPause(holder.secrets, manifest);
+  if (!needsVault) {
+    return {
+      values,
+      unreadable: [],
+      ...decideSecretPause({
+        needsVault,
+        status: NO_VAULT_STATUS,
+        unreadable: false,
+        notMoved,
+        ...marks,
+      }),
+    };
+  }
   const status = vault ? (await vault.open()).status : NO_VAULT_STATUS;
   if (!vault || status.state === "unavailable") {
     return {
       values,
       unreadable: fields,
       ...(sealed ? { sealed: "unavailable" as const } : {}),
-      ...decideSecretPause({ needsVault, status, unreadable: false, notMoved }),
+      ...decideSecretPause({
+        needsVault,
+        status,
+        unreadable: false,
+        notMoved,
+        ...marks,
+      }),
     };
   }
   const keys = fields.map((id) => holderKey(holder, id));
@@ -725,6 +802,7 @@ export async function readHolderSecrets(
       status,
       unreadable: unreadable.length > 0 || sealedState === "unreadable",
       notMoved,
+      ...marks,
     }),
   };
 }
@@ -738,6 +816,16 @@ export interface SplitSave {
   writes: SecretWrite[];
   /** The entries the save no longer needs. */
   removals: Array<string | null>;
+  /** New reminder dates of secrets the save keeps as they are. `null` clears one. */
+  expiryUpdates: Array<{ fieldId: string; expiresAt: number | null }>;
+}
+
+/** What a save adds to the values it submits. */
+export interface SplitSaveExtra {
+  /** The secret fields the form gave a value, even one equal to the saved. */
+  replaced?: readonly string[];
+  /** The reminder dates the form shows, by field ID. `null` clears one. */
+  expiry?: Readonly<Record<string, number | null>>;
 }
 
 /**
@@ -761,6 +849,7 @@ export function splitSave(
   next: PluginFieldValues,
   previous: HolderSecrets,
   removeSecrets: readonly string[] = [],
+  extra: SplitSaveExtra = {},
 ): SplitSave {
   if (
     holder.secrets?.sealed &&
@@ -790,7 +879,13 @@ export function splitSave(
       previous.values[id] === undefined ||
       encodeValue(previous.values[id]!) !== encodeValue(value!)
     ) {
-      writes.push({ ...holderKey(holder, id), value: encodeValue(value!) });
+      const expiresAt = extra.expiry?.[id];
+      writes.push({
+        ...holderKey(holder, id),
+        value: encodeValue(value!),
+        // A new secret starts without the old one's reminder date.
+        ...(typeof expiresAt === "number" ? { expiresAt } : {}),
+      });
     }
   }
   const removed = new Set(removeSecrets);
@@ -801,10 +896,32 @@ export function splitSave(
     (id) => !kept.has(id),
   );
   if (holder.secrets?.sealed) removals.push(null);
+  const written = new Set(writes.map((write) => write.fieldId));
+  // A secret the save gives a value, even the same one again, is no longer
+  // refused or removed.
+  const renewed = new Set([...(extra.replaced ?? []), ...written]);
+  const rejected = (holder.secrets?.rejected ?? []).filter(
+    (id) => kept.has(id) && !renewed.has(id),
+  );
+  const removedMarks = [
+    ...new Set([...(holder.secrets?.removed ?? []), ...removed]),
+  ].filter((id) => !kept.has(id) && !renewed.has(id));
+  // The reminder date of a secret the save keeps as it is.
+  const expiryUpdates = Object.entries(extra.expiry ?? {}).flatMap(
+    ([fieldId, expiresAt]) =>
+      kept.has(fieldId) && inVault.has(fieldId) && !written.has(fieldId)
+        ? [{ fieldId, expiresAt }]
+        : [],
+  );
   return {
     values,
-    secrets: { fields: [...kept].sort() },
+    secrets: {
+      fields: [...kept].sort(),
+      ...(rejected.length > 0 ? { rejected: rejected.sort() } : {}),
+      ...(removedMarks.length > 0 ? { removed: removedMarks.sort() } : {}),
+    },
     writes,
     removals,
+    expiryUpdates,
   };
 }

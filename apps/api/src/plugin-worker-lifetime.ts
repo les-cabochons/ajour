@@ -74,10 +74,17 @@ export type PluginFailureReason =
 /** A worker that timed out, exited early, or ended with the plugin's error. */
 export class PluginWorkerFailure extends Error {
   readonly reason: WorkerFailureReason;
+  /** The HTTP status the plugin's error named, if it did. See `PluginRunOutcome`. */
+  readonly httpStatus: number | undefined;
 
-  constructor(message: string, reason: WorkerFailureReason) {
+  constructor(
+    message: string,
+    reason: WorkerFailureReason,
+    httpStatus?: number,
+  ) {
     super(message);
     this.reason = reason;
+    this.httpStatus = httpStatus;
   }
 }
 
@@ -314,6 +321,7 @@ export class PluginWorkerLifetime<TMethod extends string> {
   private pluginFailure(
     message: unknown,
     reason: WorkerFailureReason = "plugin_error",
+    httpStatus?: number,
   ): Error {
     const text = typeof message === "string" ? message.trim() : "";
     return new PluginWorkerFailure(
@@ -321,6 +329,7 @@ export class PluginWorkerLifetime<TMethod extends string> {
         ? cutPluginErrorMessage(text)
         : `Unknown ${this.options.name.toLowerCase()} error.`,
       reason,
+      httpStatus,
     );
   }
 
@@ -332,7 +341,11 @@ export class PluginWorkerLifetime<TMethod extends string> {
   ): Error {
     switch (outcome.failure) {
       case "plugin_error":
-        return this.pluginFailure(outcome.message);
+        return this.pluginFailure(
+          outcome.message,
+          "plugin_error",
+          outcome.httpStatus,
+        );
       case "missing_export":
         return this.pluginFailure(
           `${this.options.name} does not export ${method}().`,

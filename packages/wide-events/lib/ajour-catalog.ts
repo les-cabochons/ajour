@@ -559,6 +559,49 @@ export const catalog = defineCatalog({
         ...rendererEvents["connection.delete"].fields,
       },
     },
+    /** Saved secrets of a connection deleted, which pauses it until a new one is saved. */
+    "connection.remove_secrets": {
+      kinds: ["command", "request"],
+      reasons: [
+        "connection_not_found",
+        /** The field isn't one the plugin marks secret. */
+        "not_secret",
+        /** The vault can't drop the secrets this launch. */
+        "vault_unavailable",
+        ...requestReasons,
+      ],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        connection: { id: operational() },
+        secret: { field_count: operational<number>() },
+      },
+    },
+    /** The connections and saved secrets of a plugin whose package is missing deleted. */
+    "plugin.remove_data": {
+      kinds: ["command", "request"],
+      reasons: [
+        /** The plugin is installed: uninstall it instead. */
+        "installed",
+        "vault_unavailable",
+        ...requestReasons,
+      ],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+      },
+    },
+    /** The vault opened again, after a failure that may have passed. */
+    "vault.retry": {
+      kinds: ["command", "request"],
+      reasons: requestReasons,
+      fields: {
+        ...requestFields,
+        vault: {
+          state: operational<"available" | "unavailable" | "unreadable">(),
+        },
+      },
+    },
 
     // Backlog.
 

@@ -119,6 +119,21 @@ export interface SecretVault {
    */
   write(entries: readonly SecretWrite[]): Promise<void>;
   /**
+   * Sets or clears the reminder date of entries, without touching their
+   * values. An entry the vault doesn't hold is skipped, and so is one it
+   * can't read, because its value can't be carried over. Throws
+   * `VaultUnavailableError` when the file can't be changed this launch.
+   */
+  setExpiry(
+    updates: ReadonlyArray<SecretKey & { expiresAt: number | null }>,
+  ): Promise<void>;
+  /**
+   * Opens the vault again from the start: the encryption round trip and the
+   * checks, as at a launch. For "Try again" after a failure that may have
+   * passed, such as a keychain that was locked.
+   */
+  reopen(): Promise<VaultOpened>;
+  /**
    * Deletes the selected entries, readable or not. Returns how many. Throws
    * `VaultUnavailableError` when the file can't be changed this launch: the
    * entries stay, so the caller must not drop what points at them.
@@ -479,6 +494,45 @@ export class FileSecretVault implements SecretVault {
       }
       if (rekey) this.status = { state: "available" };
       await this.verifySaved(entries);
+    });
+  }
+
+  async setExpiry(
+    updates: ReadonlyArray<SecretKey & { expiresAt: number | null }>,
+  ): Promise<void> {
+    await this.open();
+    await this.serialized(async () => {
+      if (this.frozen) throw new VaultUnavailableError(this.frozen, "change");
+      const next = new Map(this.entries);
+      let changed = false;
+      for (const { expiresAt, ...key } of updates) {
+        const id = secretKeyId(key);
+        const entry = next.get(id);
+        if (!entry || this.unreadable.has(id) || !isWellFormed(entry)) continue;
+        const { expiresAt: previous, ...rest } = entry;
+        if ((previous ?? null) === expiresAt) continue;
+        next.set(id, { ...rest, ...(expiresAt === null ? {} : { expiresAt }) });
+        changed = true;
+      }
+      if (changed) await this.save(next);
+    });
+  }
+
+  async reopen(): Promise<VaultOpened> {
+    // Waits for what is running, then starts over with nothing held.
+    return await this.serialized(async () => {
+      this.entries = new Map();
+      this.unkeyed = [];
+      this.extras = {};
+      this.check = undefined;
+      this.unreadable.clear();
+      this.savedLastUse.clear();
+      this.fileFound = false;
+      this.foundUnreadableFile = false;
+      this.frozen = undefined;
+      this.status = { state: "unavailable", reason: "" };
+      this.opening = this.load();
+      return await this.opening;
     });
   }
 

@@ -24,6 +24,8 @@ import {
   type PluginOverviewItem,
   type PluginsOverview,
   type PluginSummaryValues,
+  type SecretEntrySummary,
+  type SecretFieldSummary,
   type SwitchableCapability,
 } from "../../../packages/shared/plugins.ts";
 import type { McpSettings } from "../../../packages/shared/agent-tools.ts";
@@ -51,6 +53,7 @@ import {
   redactionFields,
   secretManifestOf,
   secretPauseMessage,
+  secretStatusPause,
   splitSave,
   type HolderSecrets,
   type SplitSave,
@@ -72,6 +75,8 @@ import {
   NO_VAULT_STATUS,
   secretKeyId,
   VaultUnavailableError,
+  type SecretEntryInfo,
+  type SecretKey,
   type SecretVault,
   type VaultStatus,
 } from "./secret-vault.ts";
@@ -127,6 +132,10 @@ export interface SecretSaveFields {
   fields: readonly SecretFieldDeclaration[];
   /** The secret fields the save removes. */
   removeSecrets?: readonly string[];
+  /** The secret fields the form gave a value, even one equal to the saved. */
+  replacedSecrets?: readonly string[];
+  /** The reminder dates the form shows, by field ID. `null` clears one. */
+  secretExpiry?: Readonly<Record<string, number | null>>;
 }
 
 function needsSettling(
@@ -416,19 +425,66 @@ function toEditableValues(
   return editableValues;
 }
 
-function sealedKeyId(connection: StoredConnection) {
-  return secretKeyId({
-    pluginId: connection.pluginId,
-    connectionId: connection.id,
-    fieldId: null,
-  });
-}
-
 /** What the vault says about a connection's secrets, without reading one. */
 interface VaultView {
   status: VaultStatus;
-  /** The entries the vault holds, by `secretKeyId`, and whether each is unreadable. */
-  unreadable: ReadonlyMap<string, boolean>;
+  /** The entries the vault holds, by `secretKeyId`. */
+  entries: ReadonlyMap<string, SecretEntryInfo>;
+}
+
+/** What the overview says about one entry: never a value, only its state and dates. */
+function entrySummary(
+  key: SecretKey,
+  vault: VaultView,
+): Pick<SecretFieldSummary, "setAt" | "lastUsedAt" | "expiresAt"> & {
+  readable: boolean;
+} {
+  const info = vault.entries.get(secretKeyId(key));
+  return {
+    readable: info?.unreadable === false && vault.status.state === "available",
+    ...(info ? { setAt: info.setAt } : {}),
+    ...(info?.lastUsedAt !== undefined ? { lastUsedAt: info.lastUsedAt } : {}),
+    ...(info?.expiresAt !== undefined ? { expiresAt: info.expiresAt } : {}),
+  };
+}
+
+/** The saved secret fields of a holder and their states. */
+function secretFieldSummaries(
+  owner: Pick<SecretHolder, "pluginId" | "connectionId">,
+  secrets: StoredSecretFields | undefined,
+  vault: VaultView,
+): SecretFieldSummary[] {
+  const rejected = new Set(secrets?.rejected);
+  return (secrets?.fields ?? []).map((id) => {
+    const { readable, ...dates } = entrySummary(
+      { ...owner, fieldId: id },
+      vault,
+    );
+    return {
+      id,
+      // A secret that can't be read can't be said to be refused.
+      state: !readable
+        ? ("unreadable" as const)
+        : rejected.has(id)
+          ? ("rejected" as const)
+          : ("saved" as const),
+      ...dates,
+    };
+  });
+}
+
+/** A holder's settings kept whole in the vault, while their plugin is missing. */
+function sealedSummary(
+  owner: Pick<SecretHolder, "pluginId" | "connectionId">,
+  secrets: StoredSecretFields | undefined,
+  vault: VaultView,
+): SecretEntrySummary | undefined {
+  if (secrets?.sealed !== true) return undefined;
+  const { readable, ...dates } = entrySummary(
+    { ...owner, fieldId: null },
+    vault,
+  );
+  return { state: readable ? "saved" : "unreadable", ...dates };
 }
 
 /**
@@ -441,21 +497,12 @@ function connectionSecretState(
   plugin: PluginManifest,
   installed: boolean,
   vault: VaultView,
-): Pick<PluginConnectionSummary, "secretFields" | "paused"> {
+): Pick<PluginConnectionSummary, "secretFields" | "sealedConfig" | "paused"> {
   const fields = connection.secrets?.fields ?? [];
-  const readable = (fieldId: string | null) =>
-    vault.unreadable.get(
-      secretKeyId({
-        pluginId: connection.pluginId,
-        connectionId: connection.id,
-        fieldId,
-      }),
-    ) === false && vault.status.state === "available";
-  const secretFields = fields.map((id) => ({
-    id,
-    state: readable(id) ? ("saved" as const) : ("unreadable" as const),
-  }));
-  const sealed = connection.secrets?.sealed === true;
+  const owner = { pluginId: connection.pluginId, connectionId: connection.id };
+  const secretFields = secretFieldSummaries(owner, connection.secrets, vault);
+  const sealedConfig = sealedSummary(owner, connection.secrets, vault);
+  const sealed = sealedConfig !== undefined;
   const notMoved =
     installed &&
     holderNeedsMove(connectionHolder(connection), secretManifestOf(plugin));
@@ -464,11 +511,15 @@ function connectionSecretState(
     status: vault.status,
     unreadable:
       secretFields.some((field) => field.state === "unreadable") ||
-      (sealed && vault.unreadable.get(sealedKeyId(connection)) === true),
+      sealedConfig?.state === "unreadable",
     notMoved,
+    ...(installed
+      ? secretStatusPause(connection.secrets, secretManifestOf(plugin))
+      : {}),
   });
   return {
     ...(secretFields.length > 0 ? { secretFields } : {}),
+    ...(sealedConfig ? { sealedConfig } : {}),
     ...(pause
       ? {
           paused: {
@@ -760,6 +811,122 @@ export class AppApiStorage {
     return this.vault ? (await this.vault.open()).status : NO_VAULT_STATUS;
   }
 
+  /** What the vault says about every secret it holds, without reading one. */
+  async vaultView(): Promise<VaultView> {
+    const status = await this.vaultStatus();
+    return {
+      status,
+      entries: new Map(
+        (this.vault ? await this.vault.list() : []).map((entry) => [
+          secretKeyId(entry),
+          entry,
+        ]),
+      ),
+    };
+  }
+
+  /**
+   * Opens the vault again, for "Try again" after a failure that may have
+   * passed. Secrets that failed to move into it at this launch are tried
+   * again at the next operation.
+   */
+  async reopenVault(): Promise<VaultStatus> {
+    if (!this.vault) return NO_VAULT_STATUS;
+    const { status } = await this.vault.reopen();
+    this.failedMoves.clear();
+    return status;
+  }
+
+  /** A plugin's agent task settings that the vault holds, with their states. */
+  async agentTaskSecretFields(pluginId: string): Promise<SecretFieldSummary[]> {
+    if (UNSAFE_KEYS.has(pluginId)) return [];
+    const state = await this.readState();
+    return secretFieldSummaries(
+      { pluginId, connectionId: null },
+      state.agentRunner.pluginSecrets[pluginId],
+      await this.vaultView(),
+    );
+  }
+
+  /**
+   * Marks a connection's saved secrets as refused by the service (a 401),
+   * which pauses the connection until the user adds a new one. Without
+   * `fieldIds`, every saved secret of the connection is marked: an API 3
+   * plugin can't say which of them the service refused. Returns false when
+   * the connection holds no saved secret.
+   */
+  async markSecretsRejected(
+    pluginId: string,
+    connectionId: string,
+    fieldIds?: readonly string[],
+  ): Promise<boolean> {
+    return this.mutate(async (state) => {
+      const connection = state.connections.find(
+        (candidate) =>
+          candidate.pluginId === pluginId && candidate.id === connectionId,
+      );
+      const saved = connection?.secrets?.fields ?? [];
+      const targets = (fieldIds ?? saved).filter((id) => saved.includes(id));
+      if (!connection?.secrets || targets.length === 0) {
+        return { nextState: state, result: false };
+      }
+      const rejected = [
+        ...new Set([...(connection.secrets.rejected ?? []), ...targets]),
+      ].sort();
+      return {
+        nextState: this.replaceConnection(state, {
+          ...connection,
+          secrets: { ...connection.secrets, rejected },
+        }),
+        result: true,
+      };
+    });
+  }
+
+  /**
+   * Deletes saved secrets of a connection and says they were removed, so a
+   * required one pauses the connection until a new one is saved. The
+   * connection's other settings and its data stay. Null when the connection
+   * doesn't exist. Throws `VaultUnavailableError` when the vault can't be
+   * changed this launch; nothing changes then.
+   */
+  async removeConnectionSecrets(
+    pluginId: string,
+    connectionId: string,
+    fieldIds: readonly string[],
+  ): Promise<StoredConnection | null> {
+    return this.mutate(async (state) => {
+      const connection = state.connections.find(
+        (candidate) =>
+          candidate.pluginId === pluginId && candidate.id === connectionId,
+      );
+      if (!connection) return { nextState: state, result: null };
+      const secrets = connection.secrets ?? { fields: [] };
+      const targets = fieldIds.filter((id) => secrets.fields.includes(id));
+      if (targets.length > 0) {
+        await this.vault?.remove({ pluginId, connectionId, fieldIds: targets });
+      }
+      const removed = [...new Set([...(secrets.removed ?? []), ...fieldIds])];
+      const rejected = (secrets.rejected ?? []).filter(
+        (id) => !fieldIds.includes(id),
+      );
+      const { rejected: _previouslyRejected, ...kept } = secrets;
+      const next: StoredConnection = {
+        ...connection,
+        secrets: {
+          ...kept,
+          fields: secrets.fields.filter((id) => !targets.includes(id)),
+          removed: removed.sort(),
+          ...(rejected.length > 0 ? { rejected } : {}),
+        },
+      };
+      return {
+        nextState: this.replaceConnection(state, next),
+        result: next,
+      };
+    });
+  }
+
   /**
    * Throws `VaultUnavailableError` when the vault can't be changed this
    * launch, so a caller with other work to do first, such as removing a
@@ -908,16 +1075,8 @@ export class AppApiStorage {
     }> = [],
   ): Promise<PluginsOverview> {
     const state = await this.readState();
-    const status = await this.vaultStatus();
-    const vault: VaultView = {
-      status,
-      unreadable: new Map(
-        (this.vault ? await this.vault.list() : []).map((entry) => [
-          secretKeyId(entry),
-          entry.unreadable,
-        ]),
-      ),
-    };
+    const vault = await this.vaultView();
+    const status = vault.status;
     const pluginMap = new Map<string, PluginOverviewItem>(
       plugins.map((plugin) => [plugin.id, plugin] as const),
     );
@@ -941,30 +1100,54 @@ export class AppApiStorage {
       }
     }
 
+    // A missing plugin may still have agent task settings in the vault.
+    for (const pluginId of Object.keys(state.agentRunner.pluginSecrets)) {
+      if (!pluginMap.has(pluginId)) {
+        missingPluginIds.add(pluginId);
+        pluginMap.set(pluginId, createMissingPluginManifest(pluginId));
+      }
+    }
+
     const allPlugins = Array.from(pluginMap.values()).sort(
       comparePluginManifests,
     );
-    const connectionGroups = allPlugins.map((plugin) => ({
-      plugin,
-      enabled:
-        state.pluginsEnabled &&
-        plugin.unavailableReason === undefined &&
-        !state.disabledPluginIds.includes(plugin.id),
-      inactiveCapabilities: (
-        state.disabledCapabilities[plugin.id] ?? []
-      ).filter((capability) => pluginHasCapability(plugin, capability)),
-      connections: state.connections
-        .filter((connection) => connection.pluginId === plugin.id)
-        .map((connection) =>
-          buildConnectionSummary(
-            state,
-            connection,
-            plugin,
-            !missingPluginIds.has(plugin.id),
-            vault,
+    const connectionGroups = allPlugins.map((plugin) => {
+      const agentTaskSecrets = state.agentRunner.pluginSecrets[plugin.id];
+      const agentOwner = { pluginId: plugin.id, connectionId: null };
+      const agentTaskSecretFields = secretFieldSummaries(
+        agentOwner,
+        agentTaskSecrets,
+        vault,
+      );
+      const agentTaskSealedConfig = sealedSummary(
+        agentOwner,
+        agentTaskSecrets,
+        vault,
+      );
+      return {
+        plugin,
+        enabled:
+          state.pluginsEnabled &&
+          plugin.unavailableReason === undefined &&
+          !state.disabledPluginIds.includes(plugin.id),
+        inactiveCapabilities: (
+          state.disabledCapabilities[plugin.id] ?? []
+        ).filter((capability) => pluginHasCapability(plugin, capability)),
+        ...(agentTaskSecretFields.length > 0 ? { agentTaskSecretFields } : {}),
+        ...(agentTaskSealedConfig ? { agentTaskSealedConfig } : {}),
+        connections: state.connections
+          .filter((connection) => connection.pluginId === plugin.id)
+          .map((connection) =>
+            buildConnectionSummary(
+              state,
+              connection,
+              plugin,
+              !missingPluginIds.has(plugin.id),
+              vault,
+            ),
           ),
-        ),
-    }));
+      };
+    });
 
     return {
       vault: status,
@@ -1246,10 +1429,21 @@ export class AppApiStorage {
       values,
       previous,
       save.removeSecrets,
+      { replaced: save.replacedSecrets, expiry: save.secretExpiry },
     );
     if (split.writes.length > 0) {
       if (!this.vault) throw new VaultUnavailableError(NO_VAULT_REASON);
       await this.vault.write(split.writes);
+    }
+    if (split.expiryUpdates.length > 0 && this.vault) {
+      await this.vault.setExpiry(
+        split.expiryUpdates.map(({ fieldId, expiresAt }) => ({
+          pluginId: holder.pluginId,
+          connectionId: holder.connectionId,
+          fieldId,
+          expiresAt,
+        })),
+      );
     }
     const fieldIds = split.removals.filter(
       (fieldId): fieldId is string => fieldId !== null,

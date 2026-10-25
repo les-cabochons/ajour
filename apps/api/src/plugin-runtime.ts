@@ -42,6 +42,14 @@ export type PluginRunOutcome =
       /** The plugin threw or rejected. Its message, when it was an Error. */
       failure: "plugin_error";
       message?: string;
+      /**
+       * The HTTP status the plugin's error carries, when the error says one:
+       * a `status`, `statusCode` or `httpStatus` property holding an integer
+       * from 100 to 599. A runtime that makes the plugin's requests, as the
+       * broker will, sets it from the response instead. Only a 401 has a
+       * meaning to the host: the connection's secret was rejected.
+       */
+      httpStatus?: number;
     }
   | { ok: false; failure: "missing_export" }
   | { ok: false; failure: "result_too_large"; resultBytes: number }
@@ -72,6 +80,22 @@ export interface PluginRun {
 export interface PluginRuntime {
   /** Starts one operation. It never throws: a failure to start settles the run. */
   start(invocation: PluginInvocation): PluginRun;
+}
+
+/** The HTTP status a thrown value carries, if it names one (see `PluginRunOutcome`). */
+export function httpStatusOf(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  for (const key of ["httpStatus", "statusCode", "status"] as const) {
+    const value = (error as Record<string, unknown>)[key];
+    if (
+      Number.isInteger(value) &&
+      (value as number) >= 100 &&
+      (value as number) <= 599
+    ) {
+      return value as number;
+    }
+  }
+  return undefined;
 }
 
 /** Cuts a plugin error message, ending it with "…" so redaction knows. */

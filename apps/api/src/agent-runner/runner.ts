@@ -22,6 +22,7 @@ import {
   agentTaskSettingFields,
   type AgentTask,
   type PluginFieldValues,
+  type SecretFieldSummary,
 } from "../../../../packages/shared/plugins.ts";
 import {
   fillTemplate,
@@ -85,6 +86,8 @@ interface RunnerStorage {
   getMcpSettings(): Promise<{ enabled: boolean }>;
   getAgentRunnerSettings(): Promise<AgentRunnerSettings>;
   getAgentTaskValues(pluginId: string): Promise<PluginFieldValues>;
+  /** The plugin's secret settings the vault holds, with their states. Never a value. */
+  getAgentTaskSecretFields?(pluginId: string): Promise<SecretFieldSummary[]>;
   /** `tools`, when given, limits the client to those data tools. */
   createMcpClient(
     name: string,
@@ -321,6 +324,8 @@ export class AgentRunner {
         agentTaskSettingFields(pluginTasks).map((field) => [field.id, field]),
       );
       const saved = await this.options.storage.getAgentTaskValues(plugin.id);
+      const secretFields =
+        await this.options.storage.getAgentTaskSecretFields?.(plugin.id);
       for (const task of pluginTasks) {
         // Each task still decides which settings it requires.
         const fields = task.settings.map((field) => ({
@@ -378,6 +383,7 @@ export class AgentRunner {
               secrets === "included"
                 ? values
                 : editableValues([...sharedFields.values()], values),
+            ...(secretFields?.length ? { secretFields } : {}),
             ...(task.weekLink && !secretInLink
               ? { weekLink: task.weekLink }
               : {}),
