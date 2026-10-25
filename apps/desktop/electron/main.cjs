@@ -90,7 +90,10 @@ const {
 // below, so the name doesn't move it.
 if (!app.isPackaged) app.setName("Ajour Dev");
 
-const DESKTOP_USER_DATA_DIRNAME = "Ajour";
+// A development build keeps its data in a folder of its own, so it never
+// opens the release build's vault with another key. AJOUR_USER_DATA_PATH
+// still points either build anywhere.
+const DESKTOP_USER_DATA_DIRNAME = app.isPackaged ? "Ajour" : "Ajour Dev";
 const stableUserDataPath =
   process.env.AJOUR_USER_DATA_PATH ??
   path.join(app.getPath("appData"), DESKTOP_USER_DATA_DIRNAME);
