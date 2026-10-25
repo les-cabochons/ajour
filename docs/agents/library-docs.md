@@ -30,7 +30,7 @@ Use this file as the local index for important library choices. Check official d
 - Feature code should import app controls from `apps/web/src/components/ui`, not directly from Base UI, shadcn internals, or other primitive packages.
 - Base UI is wrapped by local files such as `button.tsx`, `checkbox.tsx`, `dialog.tsx`, `dropdown-menu.tsx`, `context-menu.tsx`, `input.tsx`, `popover.tsx`, `select.tsx`, `switch.tsx`, and `tabs.tsx`.
 - App-specific repeated surfaces live in `apps/web/src/components/app-surface.tsx`.
-- The plugin settings form renders plugin fields through `apps/web/src/features/settings/plugin-settings-ui.tsx`.
+- The plugin settings form renders plugin fields through `apps/web/src/features/settings/plugin-settings-ui.tsx`. A secret field, of any type, is `secret-field.tsx`: it shows the saved secret's state, never a value. The connection form is `connection-form.tsx`, the Vault page `settings-vault-page.tsx`, and their rules (chips, last use, reminder dates, the Vault's groups and notices, a connection row's status) are pure modules in `apps/web/src/domain/plugins/`.
 - Settings exposes installed capabilities through `/settings/plugins`; the catalog owns activation and links to `/settings/plugins/$pluginId`, where plugin-specific forms and connection actions live.
 - Use `@remixicon/react` for icons. Keep icon imports in feature modules or local UI modules; do not inline custom SVGs for common actions.
 - Render markdown text, such as backlog item descriptions, through `Markdown` in `apps/web/src/components/markdown.tsx`. It lazy-loads the parser from `markdown-renderer.tsx`, so do not import `react-markdown` elsewhere.

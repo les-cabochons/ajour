@@ -94,7 +94,8 @@ export function PluginConnectionForm({
 
           return (
             <PluginFieldInput
-              key={field.id}
+              // A form opened anew starts its secret fields over.
+              key={`${form.instance}/${field.id}`}
               field={field}
               value={form.values[field.id]}
               onChange={(nextValue) =>

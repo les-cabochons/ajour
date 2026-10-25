@@ -13,7 +13,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import {
   Empty,
@@ -36,25 +36,21 @@ function ReplaceButton({ row }: { row: VaultRow }) {
   const { replace } = row;
   if (!replace) return null;
   return (
-    <Button
-      size="sm"
-      variant="outline"
-      aria-label={`Replace ${row.owner} ${row.kind}`}
-      render={
-        <Link
-          to="/settings/plugins/$pluginId"
-          params={{ pluginId: replace.pluginId }}
-          search={
-            replace.type === "connection"
-              ? { connection: replace.connectionId, field: replace.fieldId }
-              : { field: replace.fieldId }
-          }
-          replace
-        />
+    // A link that looks like the outline button: it goes to a page.
+    <Link
+      to="/settings/plugins/$pluginId"
+      params={{ pluginId: replace.pluginId }}
+      search={
+        replace.type === "connection"
+          ? { connection: replace.connectionId, field: replace.fieldId }
+          : { field: replace.fieldId }
       }
+      replace
+      aria-label={`Replace ${row.owner} ${row.kind}`}
+      className={buttonVariants({ variant: "outline", size: "sm" })}
     >
       {row.state.kind === "rejected" ? "Replace token" : "Replace"}
-    </Button>
+    </Link>
   );
 }
 

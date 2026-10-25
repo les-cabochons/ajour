@@ -289,7 +289,8 @@ export class AppApiError extends Error {
 
   constructor(message: string, status: number) {
     super(message);
-    this.name = "AppApiError";
+    // `name` stays "Error": it is the `error.type` of the events a failed
+    // call records, which a status doesn't change.
     this.status = status;
   }
 }
@@ -840,7 +841,9 @@ export async function savePluginConnection(
   const payload = pluginConnectionSaveRequestSchema.parse({
     id,
     values,
-    ...(secretExpiry ? { secretExpiry } : {}),
+    ...(secretExpiry && Object.keys(secretExpiry).length > 0
+      ? { secretExpiry }
+      : {}),
   });
   const result = await appApiRequest(
     "savePluginConnection",
@@ -1547,7 +1550,9 @@ export async function saveAgentTaskSettings(
       body: JSON.stringify({
         values,
         ...(removeSecrets?.length ? { removeSecrets } : {}),
-        ...(secretExpiry ? { secretExpiry } : {}),
+        ...(secretExpiry && Object.keys(secretExpiry).length > 0
+          ? { secretExpiry }
+          : {}),
       }),
     },
     agentRunnerOverviewSchema,
