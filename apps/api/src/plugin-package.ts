@@ -27,11 +27,9 @@ import {
   PLUGIN_API_4,
   pluginApi4ManifestSchema,
 } from "../../../packages/shared/plugin-api-4.ts";
+import type { PluginAccessView } from "../../../packages/shared/plugin-access-schemas.ts";
 import {
   pluginAccessView,
-  type PluginAccessView,
-} from "../../../packages/shared/plugin-access-schemas.ts";
-import {
   summarizePluginAccess,
   type PluginAccessManifest,
 } from "../../../packages/shared/plugin-access.ts";

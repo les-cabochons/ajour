@@ -190,7 +190,10 @@ The backlog editor module is feature-local because its vocabulary and commands b
   (`connectionAccessOn`), are in
   `packages/shared/plugin-request-rules.ts`, which imports nothing. The
   access summary and the difference between two manifests, which consent on
-  updates uses, are in `packages/shared/plugin-access.ts`. Until the
+  updates uses, are in `packages/shared/plugin-access.ts`; its zod schemas
+  for the overview and the stored consent are in
+  `plugin-access-schemas.ts`, and `apps/api/src/plugin-consent.ts` decides
+  what an update does to activation. Until the
   cut-over (#403), the host admits API 4 packages only in development builds
   (`PluginAdmissionPolicy` in `apps/api/src/plugin-package.ts`), never runs
   one in a worker thread, and the agent runner doesn't run an API 4 agent

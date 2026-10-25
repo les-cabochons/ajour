@@ -19,6 +19,19 @@ import type {
   SwitchableCapability,
 } from "@ajour/shared";
 
+/**
+ * The sentence an install or update adds when it left the plugin off, waiting
+ * for the user to allow the access it added.
+ */
+function needsMoreAccess(overview: PluginsOverview, pluginId: string) {
+  const pending = overview.connectionGroups.find(
+    (group) => group.plugin.id === pluginId,
+  )?.pendingAccess;
+  return pending
+    ? ` It needs more access and stays inactive until you allow it.`
+    : "";
+}
+
 export type PluginDisplayEntry = {
   catalog: PluginCatalogEntry;
   pluginGroup?: PluginOverviewGroup;
@@ -476,7 +489,7 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
           // A cancelled file picker returns null.
           if (!result) return false;
           finish(
-            `${result.plugin.displayName} ${result.plugin.version} ${result.replaced ? "replaced the installed plugin" : "installed"}.`,
+            `${result.plugin.displayName} ${result.plugin.version} ${result.replaced ? "replaced the installed plugin" : "installed"}.${needsMoreAccess(result.overview, result.plugin.id)}`,
             result.overview,
           );
           break;
@@ -500,8 +513,8 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
           // A download over an installed package is an update.
           finish(
             result.replaced
-              ? `${result.plugin.displayName} updated to ${result.plugin.version}.`
-              : `${result.plugin.displayName} ${result.plugin.version} downloaded. Activate it when you are ready to configure it.`,
+              ? `${result.plugin.displayName} updated to ${result.plugin.version}.${needsMoreAccess(result.overview, result.plugin.id)}`
+              : `${result.plugin.displayName} ${result.plugin.version} downloaded. Review its access, then activate it when you are ready.`,
             result.overview,
           );
           break;

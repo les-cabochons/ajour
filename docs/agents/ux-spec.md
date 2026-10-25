@@ -822,6 +822,25 @@ Decided in [Access review and credential management for existing plugins](https:
   - Two notices come first. "Ajour can't protect credentials on this computer" gives the reason and says connections that need a token are paused; Try again opens the vault again and runs the encryption check once more. "Saved secrets can't be read on this computer" gives the reason, as after moving Ajour's data to another computer, and says to paste each token again. It has no Try again, because pasting a token is what fixes it.
   - With no secret saved, the page says "No saved secrets".
 
+## Access review and consent
+
+Decided in [Access review and credential management for existing plugins](https://github.com/les-cabochons/ajour/issues/222), variant A of its prototype, built in [#394](https://github.com/les-cabochons/ajour/issues/394).
+
+- **The Access section** sits on each plugin's page before Features, in plain words:
+  - Each host the plugin reaches: the address a connection saves ("The address in "Site URL"") and each derived host under the name its plugin gives it, with the address it works out. The endpoints of a host, as method and path, sit behind a disclosure ("N endpoints"), each with the access choice that unlocks it.
+  - Public hosts, which Ajour reaches without a credential.
+  - The credential: the connection field Ajour adds to each request, which the plugin never sees. A secret address is the credential and the destination.
+  - Each agent task and the Ajour tools it gets, or "Gets no Ajour tools.".
+  - The start mode: "Loads when needed" or "Always ready", which keeps the plugin loaded and uses about 30 MB.
+  - An installed plugin also says "Last request N minutes ago." (or "No requests yet.") and, when the broker refused any, "Tried to connect directly, blocked. N times, last at 14:32." Both come from the broker's records, which are written every 30 seconds.
+- **A catalog plugin** that isn't installed has the same section, saying its addresses, credential, agent tasks and start mode are listed once it is downloaded, because the catalog doesn't carry them, and that it stays inactive until turned on.
+- **A plugin on plugin API 3** says "This plugin was built for an older plugin API, so Ajour can't limit it. Update it to move it onto one that does." and lists what it can do without limits: any address, each connection's saved settings as saved, and every Ajour tool for its agent tasks.
+- **Turning a plugin on is the consent.** A download stays inactive. Ajour records the access the plugin had, and its version, when the user turns it on. A plugin installed from a file for the first time stays on, as before, and a plugin that was on before Ajour recorded consent counts as having been allowed what it reached then.
+- **An update that reaches more** installs inactive, and keeps connections and settings. The page shows a warning, "Version N needs more access", listing only what is new, each line marked New and with only its new endpoints, and "Allow and activate". The Access section marks the same items New. Allow and activate turns the plugin on, which records the new access. This holds for catalog updates and file updates alike, and while the plugin stays inactive the update's status message says it needs more access.
+  - An update reaches more when it adds a capability, host, derived host, endpoint, public host, auth scheme or MCP tool, changes an agent task's prompt, switches the plugin to "Always ready", or turns an access choice always on or adds an operation to one.
+  - It also reaches more when it removes a gate: an endpoint no longer behind its access choice, or behind another one, or an operation that no longer sits behind any choice. A removed operation can't be told from an ungated one, so it counts. An endpoint put behind a choice, and any other removal, does not.
+  - An update that reaches no more keeps the plugin as it was, active or not.
+
 ## Consistency
 
 Decided in [Consistent dialogs, tooltips, loading and drags](https://github.com/les-cabochons/ajour/issues/28).

@@ -77,6 +77,11 @@ import {
 import { HeldArrivalsLine, TeamPickerDialog } from "./team-connection-ui";
 import { PluginAgentTasks } from "./agent-task-settings";
 import {
+  CatalogAccessSection,
+  PluginAccessSection,
+  PluginAccessUpdatePanel,
+} from "./plugin-access-section";
+import {
   canInstallCatalogPlugin,
   canUpdateFromCatalog,
   PluginCapabilityBand,
@@ -789,9 +794,18 @@ export function SettingsPluginsPage({
               </p>
             </MessagePanel>
           ) : null}
+          <PluginAccessUpdatePanel
+            group={group}
+            disabled={isMutatingPlugin || overview?.pluginsEnabled === false}
+            onAllow={() => void handlePluginActivation(group, true)}
+          />
           {renderMessages()}
           <PluginCapabilityBand entry={entry} />
         </PluginDetailHeader>
+
+        {unavailableReason || group.missing ? null : (
+          <PluginAccessSection group={group} now={Date.now()} />
+        )}
 
         <section className="settings-section">
           <h2 className="settings-section-title">Features</h2>
@@ -808,7 +822,7 @@ export function SettingsPluginsPage({
             The plugin system is deactivated. All plugin execution and sync are
             paused until you enable it from the Plugins catalog.
           </MessagePanel>
-        ) : !group.enabled && !unavailableReason ? (
+        ) : !group.enabled && !unavailableReason && !group.pendingAccess ? (
           <MessagePanel>
             This plugin is inactive. Its saved connections and imported data are
             preserved, but sync is paused until you reactivate it.
@@ -1226,6 +1240,13 @@ export function SettingsPluginsPage({
           {renderMessages()}
           <PluginCapabilityBand entry={catalogEntry} />
         </PluginDetailHeader>
+
+        {available && !installed ? (
+          <CatalogAccessSection
+            pluginApiVersion={catalogEntry.compatibility.pluginApiVersion}
+            canDownload={canDownloadThisEntry}
+          />
+        ) : null}
 
         <section className="settings-section">
           <h2 className="settings-section-title">Features</h2>

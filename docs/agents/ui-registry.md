@@ -185,6 +185,19 @@ Last updated: 2026-10-25
 
 **Vault page.** `/settings/vault`, cardless like the other settings pages: an `h1`, then one `settings-section` per plugin, headed by its name, in alphabetical order, with plugins that are not installed last as "<Plugin> (not installed)" with a ghost Remove (an `AlertDialog`). A row is a `role="group"` named "<owner>, <kind>": the owner (connection label, or "Agent tasks") and under it "<kind> · <last use>" in `text-xs` tertiary, the state `Chip`, and Replace as a `Link` styled with `buttonVariants` (outline, `sm`) to the plugin page, which opens the form with Replace open (`?connection=<id>&field=<id>`, or `?field=<id>` for task settings). Rows are bordered with `border-border`, no outer frame, and wrap on narrow widths. The two failures of the vault show first as `MessagePanel` warnings; "Ajour can't protect credentials on this computer" has an outline Try again.
 
+### Access list and consent panel
+
+Files: `apps/web/src/features/settings/plugin-access-section.tsx`; the lines come from `apps/web/src/domain/plugins/plugin-access-model.ts`
+Last updated: 2026-10-25
+
+`PluginAccessSection` is a `settings-section` titled Access, placed before Features on an installed plugin's page. `CatalogAccessSection` stands in for a plugin that isn't downloaded. Patterns used: `MessagePanel`, `Chip`, `Button`; nothing new.
+
+- **The access list** is a `ul` of items: a 16px icon (globe for hosts, key for the credential, robot for agent tasks, cpu for the start mode, puzzle for a new capability), a `text-sm font-medium` title, a `text-[13px]` detail, and under a host a native `details` disclosure, "N endpoints", in `text-xs` tertiary. Endpoints are `font-mono`, each with its access choice after a dot. Every item carries `data-access-item` for tests.
+- **New** is the accent `Chip`, after the title of an item that is new, or "New endpoints" on an item whose host is old. A new endpoint carries its own New chip in the disclosure.
+- **Activity** is a `text-[13px]` line under the description. Blocked attempts are a warning-colored line with an icon, `data-access-blocked`.
+- **The consent panel**, `PluginAccessUpdatePanel`, is a warning `MessagePanel` (`data-access-update`) in the page header's notices: the title "Version N needs more access", a line saying it stays inactive and that connections and settings are kept, the access list of new items only, and the primary Button "Allow and activate". It is disabled while another plugin change runs.
+- **The model** (`describeAccess`) takes the overview's access view and, for an update, its difference. With `onlyNew` it lists only the new items with only their new endpoints, so the panel and the section say the same thing. `describeLegacyAccess` lists what a plugin API 3 plugin can do without limits.
+
 ### Application updates
 
 Files: `apps/web/src/features/settings/application-updates-settings.tsx`, `apps/web/src/features/layout/sidebar-footer.tsx`, `apps/web/src/lib/desktop-updates.ts`

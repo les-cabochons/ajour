@@ -1,11 +1,32 @@
-import { z } from "zod";
+import type {
+  PluginAccessView,
+  PluginAccessAuth,
+  PluginAccessHost,
+  PluginAccessDerivedHost,
+  PluginAccessEndpoint,
+  PluginAccessMcpTool,
+  PluginAccessPrompt,
+  PluginAccessOperation,
+  PluginAccessSummary,
+  PluginAccessDifference,
+} from "./plugin-access-schemas.ts";
 import type {
   PluginAuth,
-  PluginAuthScheme,
-  PluginHttpMethod,
   PluginNetwork,
   PluginStartMode,
 } from "./plugin-api-4.ts";
+
+export type {
+  PluginAccessAuth,
+  PluginAccessHost,
+  PluginAccessDerivedHost,
+  PluginAccessEndpoint,
+  PluginAccessMcpTool,
+  PluginAccessPrompt,
+  PluginAccessOperation,
+  PluginAccessSummary,
+  PluginAccessDifference,
+} from "./plugin-access-schemas.ts";
 
 /*
  * What a plugin reaches, read from its manifest, and what an update adds to
@@ -18,96 +39,6 @@ import type {
  * choice, or behind another one, and an operation that no longer sits behind
  * any choice. Other removals don't count.
  */
-
-export interface PluginAccessAuth {
-  scheme: PluginAuthScheme;
-  /** The connection fields the scheme reads, user field first. */
-  fields: string[];
-}
-
-/** An address the connection saves, which the broker sends requests to. */
-export interface PluginAccessHost {
-  kind: "baseAddress" | "secretAddress";
-  field: string;
-}
-
-/** One form of a derived host: a rule on the base host and what it builds. */
-export interface PluginAccessDerivedHost {
-  id: string;
-  whenHost?: string;
-  host: string;
-  pathPrefix?: string;
-  keepBasePath: boolean;
-}
-
-export interface PluginAccessEndpoint {
-  /** `base`, or a derived host's id. */
-  host: string;
-  method: PluginHttpMethod;
-  path: string;
-  /** The access choice that unlocks it. */
-  access?: string;
-}
-
-export interface PluginAccessMcpTool {
-  task: string;
-  tool: string;
-}
-
-export interface PluginAccessPrompt {
-  task: string;
-  /** The prompt's text, or a collision-resistant digest of it. */
-  prompt: string;
-}
-
-/** An operation an access choice unlocks. */
-export interface PluginAccessOperation {
-  choice: string;
-  operation: string;
-}
-
-export interface PluginAccessSummary {
-  capabilities: string[];
-  authSchemes: PluginAccessAuth[];
-  hosts: PluginAccessHost[];
-  derivedHosts: PluginAccessDerivedHost[];
-  endpoints: PluginAccessEndpoint[];
-  publicHosts: string[];
-  mcpTools: PluginAccessMcpTool[];
-  agentPrompts: PluginAccessPrompt[];
-  /**
-   * The access choices marked `always`, which are on without the user
-   * turning them on, with their endpoints and operations.
-   */
-  alwaysOnAccess: string[];
-  /** Every operation each access choice unlocks. */
-  accessOperations: PluginAccessOperation[];
-  startMode: PluginStartMode;
-}
-
-export interface PluginAccessDifference {
-  capabilities: string[];
-  authSchemes: PluginAccessAuth[];
-  hosts: PluginAccessHost[];
-  derivedHosts: PluginAccessDerivedHost[];
-  endpoints: PluginAccessEndpoint[];
-  publicHosts: string[];
-  mcpTools: PluginAccessMcpTool[];
-  /** Agent tasks whose prompt is new or changed. */
-  agentPrompts: string[];
-  /** Access choices that are now always on: new ones, or ones that were off by default. */
-  alwaysOnAccess: string[];
-  /** Operations an access choice now unlocks that it didn't before. */
-  accessOperations: PluginAccessOperation[];
-  /**
-   * Operations that sat behind an access choice and no longer sit behind
-   * any. The manifest can't tell a removed operation from an ungated one,
-   * so both count.
-   */
-  ungatedOperations: string[];
-  /** The update switches the plugin to "Always ready". */
-  alwaysReady: boolean;
-}
 
 /**
  * The manifest fields access reads. An API 3 manifest has no network and no
@@ -381,4 +312,25 @@ export function widensAccess(difference: PluginAccessDifference) {
       difference.ungatedOperations,
     ].some((items) => items.length > 0)
   );
+}
+
+/** The summary with the labels the manifest gives its hosts and access choices. */
+export function pluginAccessView(
+  manifest: PluginAccessManifest,
+  summary: PluginAccessSummary,
+): PluginAccessView {
+  return {
+    summary,
+    hostLabels: Object.fromEntries(
+      (manifest.network?.derivedHosts ?? []).flatMap((host) =>
+        host.label ? [[host.id, host.label]] : [],
+      ),
+    ),
+    choices: (manifest.connectionAccess ?? []).map((choice) => ({
+      id: choice.id,
+      label: choice.label ?? choice.id,
+      ...(choice.tokenScope ? { tokenScope: choice.tokenScope } : {}),
+      always: choice.always,
+    })),
+  };
 }
