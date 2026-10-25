@@ -162,6 +162,21 @@ export const ROUTES = {
     path: "/api/plugins/:pluginId/connections/:connectionId",
     name: "connection.delete",
   },
+  connectionSecretsRemove: {
+    method: "POST",
+    path: "/api/plugins/:pluginId/connections/:connectionId/secrets/remove",
+    name: "connection.remove_secrets",
+  },
+  pluginDataRemove: {
+    method: "DELETE",
+    path: "/api/plugins/:pluginId/data",
+    name: "plugin.remove_data",
+  },
+  vaultRetry: {
+    method: "POST",
+    path: "/api/vault/retry",
+    name: "vault.retry",
+  },
   settleStateList: {
     method: "POST",
     path: "/api/plugins/:pluginId/connections/:connectionId/settle-states",

@@ -73,6 +73,40 @@ describe("the automatic sync scheduler", () => {
     expect(sink.events).toEqual([]);
   });
 
+  it("leaves a connection paused for its secret alone, as it would only fail, and still syncs the others that are due", async () => {
+    const overview = overviewSyncedAt(1);
+    const [paused] = overview.connectionGroups[0]!.connections;
+    paused!.paused = {
+      reason: "secret_rejected",
+      message: "The service rejected this connection's saved token.",
+    };
+    // A second connection of the same plugin, due too, with its token intact.
+    overview.connectionGroups[0]!.connections.push({
+      ...structuredClone(paused!),
+      id: "other",
+      label: "Other",
+      paused: undefined,
+    });
+    const fetch = stubApi(overview);
+
+    render(<BacklogAutoSyncScheduler />);
+    await waitFor(() => expect(sink.events).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(sink.events).toEqual([
+      expect.objectContaining({
+        name: "pull_request.sync",
+        outcome: "ok",
+        connection: { id: "other" },
+      }),
+    ]);
+    const urls = fetch.mock.calls.map(([url]) => String(url));
+    expect(urls.some((url) => url.includes("/connections/other/"))).toBe(true);
+    expect(
+      urls.some((url) => url.includes(`/connections/${paused!.id}/`)),
+    ).toBe(false);
+  });
+
   it("records one scheduled job for each sync it starts, and nothing for the tick", async () => {
     const fetch = stubApi(overviewSyncedAt(1));
 

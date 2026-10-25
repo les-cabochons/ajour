@@ -4,6 +4,7 @@ import { serialize } from "node:v8";
 import {
   MAX_PLUGIN_RESULT_BYTES,
   cutPluginErrorMessage,
+  httpStatusOf,
   type PluginInvocation,
   type PluginRun,
   type PluginRunOutcome,
@@ -65,6 +66,9 @@ export class InProcessPluginRuntime implements PluginRuntime {
         failure: "plugin_error",
         ...(error instanceof Error
           ? { message: cutPluginErrorMessage(error.message) }
+          : {}),
+        ...(httpStatusOf(error) !== undefined
+          ? { httpStatus: httpStatusOf(error) }
           : {}),
       };
     }

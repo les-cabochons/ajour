@@ -19,6 +19,16 @@ export interface StoredSecretFields {
   fields: string[];
   /** The vault holds all the values as one entry, sealed while the plugin was missing. */
   sealed?: true;
+  /**
+   * The fields whose secret the service refused with a 401. Replacing the
+   * secret clears the mark; until then the holder is paused.
+   */
+  rejected?: string[];
+  /**
+   * The fields the user removed. A removed field the manifest requires
+   * pauses the holder until a new secret is saved.
+   */
+  removed?: string[];
 }
 
 export interface StoredAgentRunnerState {
@@ -66,7 +76,25 @@ export function normalizeSecretFields(
       ),
     ),
   ).sort();
-  return record.sealed === true ? { fields, sealed: true } : { fields };
+  const names = (value: unknown) =>
+    Array.isArray(value)
+      ? Array.from(
+          new Set(
+            value.filter(
+              (field): field is string =>
+                typeof field === "string" && !UNSAFE_KEYS.has(field),
+            ),
+          ),
+        ).sort()
+      : [];
+  const rejected = names(record.rejected);
+  const removed = names(record.removed);
+  return {
+    fields,
+    ...(record.sealed === true ? { sealed: true as const } : {}),
+    ...(rejected.length > 0 ? { rejected } : {}),
+    ...(removed.length > 0 ? { removed } : {}),
+  };
 }
 
 export function normalizeAgentRunnerState(

@@ -81,9 +81,12 @@ export function BacklogAutoSyncScheduler() {
           group.connections
             .filter(
               (connection) =>
-                !connection.lastSyncAt ||
-                now - connection.lastSyncAt >=
-                  connection.autoSyncIntervalMinutes * 60_000,
+                // A connection paused for its secret (a rejected token, a
+                // removed one) waits for the user: syncing it only fails.
+                !connection.paused &&
+                (!connection.lastSyncAt ||
+                  now - connection.lastSyncAt >=
+                    connection.autoSyncIntervalMinutes * 60_000),
             )
             .map((connection) => ({
               pluginId: group.plugin.id,
