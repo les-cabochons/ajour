@@ -464,7 +464,10 @@ Then(
     const chip = page.locator(`[data-secret-state="${kind}"]`);
     await expect(chip).toHaveCount(1);
     await expect(chip).toContainText(text);
-    await page.screenshot({ path: `test-results/secret-field-${kind}.png` });
+    await page
+      .locator('[data-slot="field"]')
+      .filter({ has: chip })
+      .screenshot({ path: `test-results/secret-field-${kind}.png` });
   },
 );
 
