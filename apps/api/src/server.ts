@@ -1178,7 +1178,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     // The routes check activation before reading the request. This repeats
     // the check once the operation can be cancelled, so a capability turned
     // off meanwhile never runs.
-    operationGate: async (pluginId, method, connectionId, manifest) => {
+    operationGate: async (
+      pluginId,
+      method,
+      connectionId,
+      manifest,
+      request,
+    ) => {
       const capability = capabilityOfMethod(method);
       if (!capability) return;
       const inactive = await inactiveCapability(
@@ -1196,7 +1202,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       if (!connectionId || !manifest) return;
       const connection = await storage.getConnection(pluginId, connectionId);
       if (!connection) return;
-      const refusal = connectionAccessRefusal(manifest, connection, method);
+      const refusal = connectionAccessRefusal(
+        manifest,
+        connection,
+        method,
+        request,
+      );
       if (refusal) throw refusal;
     },
   });
@@ -2671,7 +2682,16 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         refuseAgent();
         return;
       }
-      if (refuseAccessOff(response, unit, plugin, connection, operation.data)) {
+      if (
+        refuseAccessOff(
+          response,
+          unit,
+          plugin,
+          connection,
+          operation.data,
+          commentRequest,
+        )
+      ) {
         return;
       }
       // Checked again at the plugin's admission, after the host's own
@@ -3143,8 +3163,15 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     plugin: PluginManifest,
     connection: StoredConnection,
     operation: string,
+    /** The call's input, when the choice depends on it. */
+    request?: unknown,
   ) {
-    const refusal = connectionAccessRefusal(plugin, connection, operation);
+    const refusal = connectionAccessRefusal(
+      plugin,
+      connection,
+      operation,
+      request,
+    );
     if (!refusal) return false;
     unit.refuse("access_off");
     writeJson(response, 403, accessOffAnswer(refusal));

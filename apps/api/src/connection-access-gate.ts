@@ -43,17 +43,20 @@ export function accessOffMessage(
 
 /**
  * The refusal of `operation` on the connection as saved, or undefined when
- * its access allows it.
+ * its access allows it. `request` is the call's input, when the choice
+ * depends on it, as a people search's query does.
  */
 export function connectionAccessRefusal(
   plugin: Parameters<typeof connectionAccessChoicesOf>[0],
   connection: { label: string; access?: readonly string[] },
   operation: string,
+  request?: unknown,
 ): ConnectionAccessOff | undefined {
   const choice = accessRefusalOf(
     connectionAccessChoicesOf(plugin),
     connection.access,
     operation,
+    request,
   );
   return choice
     ? new ConnectionAccessOff(accessOffMessage(connection, choice), choice.id)

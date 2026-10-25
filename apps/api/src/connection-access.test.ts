@@ -297,6 +297,14 @@ describe("connection access", () => {
       post(comments(id, "listItemComments"), { sourceId: "1", limit: 20 }),
       post(route(id, "sync"), { trigger: "manual", workItems: [] }),
     ]);
+    // A bare @ reads only the item's own people.
+    reads.push(
+      await post(comments(id, "searchItemPeople"), {
+        sourceId: "1",
+        query: "",
+        limit: 5,
+      }),
+    );
 
     expect(refused.map((answer) => answer.status)).toEqual([
       403, 403, 403, 403, 403, 403, 403,
@@ -318,7 +326,9 @@ describe("connection access", () => {
       reason: "access_off",
       access: "editWorkItems",
     });
-    expect(reads.map((answer) => answer.status)).toEqual([200, 200, 200, 200]);
+    expect(reads.map((answer) => answer.status)).toEqual([
+      200, 200, 200, 200, 200,
+    ]);
     expect(
       calls()
         .map((call) => call.method)
@@ -327,6 +337,7 @@ describe("connection access", () => {
       "listItemComments",
       "listSettleStates",
       "readDescription",
+      "searchItemPeople",
       "syncConnection",
     ]);
   });

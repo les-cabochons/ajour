@@ -117,14 +117,29 @@ export function accessChoiceOfOperation(
 }
 
 /**
+ * Whether the call needs the choice of its operation. A people search with
+ * no query, the bare @, returns the item's own people, such as its assignee
+ * and commenters (the plugin contract asks no more of it): reading the
+ * backlog covers that. Only a typed query looks the organisation up.
+ */
+function needsItsChoice(operation: string, request: unknown) {
+  if (operation !== "searchItemPeople" || request === undefined) return true;
+  const query = (request as { query?: unknown } | null)?.query;
+  return typeof query !== "string" || query.trim() !== "";
+}
+
+/**
  * The choice the operation needs and the connection has off, or undefined
- * when the operation may run. `turnedOn` is what the connection saved.
+ * when the operation may run. `turnedOn` is what the connection saved, and
+ * `request`, when given, the call's input.
  */
 export function accessRefusalOf(
   choices: readonly ConnectionAccessChoice[],
   turnedOn: readonly string[] | undefined,
   operation: string,
+  request?: unknown,
 ): ConnectionAccessChoice | undefined {
+  if (!needsItsChoice(operation, request)) return undefined;
   const choice = accessChoiceOfOperation(choices, operation);
   if (!choice) return undefined;
   return connectionAccessOn(choices, turnedOn).includes(choice.id)

@@ -1,5 +1,8 @@
 import type { BacklogComment } from "@ajour/shared";
-import type { CommentSource } from "@/domain/backlog/comments";
+import {
+  itemPeopleMatching,
+  type CommentSource,
+} from "@/domain/backlog/comments";
 import { searchItemPeople } from "@/lib/app-api";
 
 type ThreadRef = Pick<CommentSource, "pluginId" | "connectionId" | "sourceId">;
@@ -29,21 +32,24 @@ export function subscribePostedComments(listener: PostedListener) {
 }
 
 /**
- * The editor's @ suggestions, when the plugin can search people and the
- * connection's access allows it.
+ * The editor's @ suggestions, when the plugin can search people. While the
+ * connection's access leaves people search off, they come from the item's
+ * own people, which a search without a query returns, matched here.
  */
 export function commentMentionSearch(source: CommentSource, itemId: string) {
-  return source.capability.mentions && !source.peopleSearchOff
-    ? {
-        search: async (query: string) =>
-          (
-            await searchItemPeople(
-              source.pluginId,
-              source.connectionId,
-              { sourceId: source.sourceId, query, limit: 20 },
-              { itemId },
-            )
-          ).people,
-      }
-    : undefined;
+  if (!source.capability.mentions) return undefined;
+  const search = async (query: string) =>
+    (
+      await searchItemPeople(
+        source.pluginId,
+        source.connectionId,
+        { sourceId: source.sourceId, query, limit: 20 },
+        { itemId },
+      )
+    ).people;
+  return {
+    search: source.peopleSearchOff
+      ? async (query: string) => itemPeopleMatching(await search(""), query)
+      : search,
+  };
 }

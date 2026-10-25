@@ -58,6 +58,24 @@ describe("connection access", () => {
     expect(refused(["pullRequests"], "syncPullRequests")).toBeUndefined();
   });
 
+  it("lets a bare @ read the item's own people while people search is off, and refuses a typed one", () => {
+    const choices = connectionAccessChoicesOf(azureApi3);
+    const refused = (turnedOn: string[], query: string) =>
+      accessRefusalOf(choices, turnedOn, "searchItemPeople", {
+        sourceId: "1",
+        query,
+        limit: 20,
+      })?.id;
+
+    // An empty query reads the item's assignee and commenters: Work Items
+    // (Read), which reading the backlog covers.
+    expect(refused([], "")).toBeUndefined();
+    expect(refused([], "  ")).toBeUndefined();
+    // A typed query looks the organisation up.
+    expect(refused([], "an")).toBe("peopleSearch");
+    expect(refused(["peopleSearch"], "an")).toBeUndefined();
+  });
+
   it("lets reads run on a connection that only reads", () => {
     const choices = connectionAccessChoicesOf(azureApi3);
 

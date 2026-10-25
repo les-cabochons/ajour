@@ -23,10 +23,30 @@ export interface CommentSource {
   sourceId: string;
   capability: BacklogCommentsCapability;
   /**
-   * The connection's access leaves people search off, so the editor offers
-   * no @ suggestions: the plugin's search reaches the whole organisation.
+   * The connection's access leaves people search off: a typed query would
+   * look the whole organisation up, so the editor suggests only the item's
+   * own people, those a bare @ returns.
    */
   peopleSearchOff?: true;
+}
+
+/**
+ * The item's own people a query names, while people search is off: each
+ * word typed starts a word of the name or the email.
+ */
+export function itemPeopleMatching(
+  people: readonly BacklogPerson[],
+  query: string,
+): BacklogPerson[] {
+  const typed = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  return people.filter((person) => {
+    const words = [person.displayName, person.email ?? ""]
+      .join(" ")
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean);
+    return typed.every((part) => words.some((word) => word.startsWith(part)));
+  });
 }
 
 /**
