@@ -269,8 +269,11 @@ export const rendererEvents = {
    */
   "settle_comment.send": {
     kinds: ["job"],
-    /** The settle ended before its comment went, or agents may no longer post. */
-    reasons: ["settle_ended", "agent_access"],
+    /**
+     * The settle ended before its comment went, agents may no longer post,
+     * or the connection can't edit work items, so the comment is held.
+     */
+    reasons: ["settle_ended", "agent_access", "access_off"],
     fields: {
       backlog_item: { id: operational(), settle_id: operational() },
       plugin: { id: operational() },
@@ -279,7 +282,9 @@ export const rendererEvents = {
         body_length: operational<number>(),
         /** An agent settled the item and typed the comment. */
         for_agent: operational<boolean>(),
-        result: operational<"posted" | "kept_as_draft" | "deferred" | "gone">(),
+        result: operational<
+          "posted" | "kept_as_draft" | "deferred" | "gone" | "held"
+        >(),
         draft_reason: operational<
           | "settle_ended"
           | "access_check_failed"
@@ -292,15 +297,18 @@ export const rendererEvents = {
   /** One comment an agent posted, sent after its Undo window. Its length, never its text. */
   "agent_comment.send": {
     kinds: ["job"],
-    /** Agents may no longer post on the comment's connection. */
-    reasons: ["agent_access"],
+    /**
+     * Agents may no longer post on the comment's connection, or the
+     * connection can't edit work items, so the comment is held.
+     */
+    reasons: ["agent_access", "access_off"],
     fields: {
       backlog_item: { id: operational() },
       plugin: { id: operational() },
       connection: { id: operational() },
       comment: {
         body_length: operational<number>(),
-        result: operational<"posted" | "kept_as_draft" | "gone">(),
+        result: operational<"posted" | "kept_as_draft" | "gone" | "held">(),
         draft_reason: operational<
           "access_check_failed" | "agent_access" | "post_failed"
         >(),
@@ -579,6 +587,26 @@ export const rendererEvents = {
   "backlog_item.save_description": command(backlogItem),
   "backlog_item.complete_source_write": command(backlogItem),
   "backlog_item.fail_source_write": command(backlogItem),
+  /**
+   * A change the connection refused because editing work items is off, held
+   * on this computer for review (#395): a settle or move, or the estimates a
+   * sync didn't upload, with how many items hold some.
+   */
+  "backlog_item.hold_edit": command({
+    backlog_item: {
+      id: operational(),
+      count: operational<number>(),
+      held_edit: operational<"settle" | "estimate" | "description">(),
+    },
+  }),
+  /** The user sent or discarded a held change in Sync review. */
+  "backlog_item.review_held_edit": command({
+    backlog_item: {
+      id: operational(),
+      held_edit: operational<"settle" | "estimate" | "description">(),
+      held_decision: operational<"send" | "discard">(),
+    },
+  }),
   "backlog_item.return": command({}),
   "backlog.sort": command({ backlog: { sort_mode: operational() } }),
   "backlog.archive_done": command(backlogImport),

@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import type {
   CodeHostPullRequestFacts,
   CodeHostSyncResult,
+  PluginsOverview,
 } from "@ajour/shared";
 import {
   AmbiguousRetainedConnectionError,
   changePullRequest,
   CLOSED_RETENTION_MS,
+  enabledCodeHostGroups,
   findRetainedConnection,
   isPullRequestReturned,
   reattachPullRequests,
@@ -607,5 +609,52 @@ describe("pull request lifecycle", () => {
         ),
       ).toThrow("Several earlier connections match this account: Work, Work.");
     });
+  });
+});
+
+describe("pull requests of a connection whose access leaves them off", () => {
+  const choices = [
+    {
+      id: "readBacklog",
+      label: "Read the backlog",
+      always: true,
+      operations: [],
+    },
+    {
+      id: "pullRequests",
+      label: "Pull requests",
+      always: false,
+      operations: ["syncPullRequests"],
+    },
+  ];
+  const overview = (connections: { id: string; access: string[] }[]) =>
+    ({
+      pluginsEnabled: true,
+      plugins: [],
+      totalPendingImportCount: 0,
+      totalSelectedImportCount: 0,
+      connectionGroups: [
+        {
+          plugin: { id: "azure_devops", capabilities: { codeHost: {} } },
+          enabled: true,
+          connectionAccess: choices,
+          connections,
+        },
+      ],
+    }) as unknown as PluginsOverview;
+
+  it("keeps only the connections that read pull requests, and hides a plugin with none", () => {
+    const both = overview([
+      { id: "contoso", access: ["readBacklog"] },
+      { id: "fabrikam", access: ["readBacklog", "pullRequests"] },
+    ]);
+    const none = overview([{ id: "contoso", access: ["readBacklog"] }]);
+
+    expect(
+      enabledCodeHostGroups(both).map((group) =>
+        group.connections.map((candidate) => candidate.id),
+      ),
+    ).toEqual([["fabrikam"]]);
+    expect(enabledCodeHostGroups(none)).toEqual([]);
   });
 });

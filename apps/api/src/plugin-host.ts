@@ -119,9 +119,19 @@ interface PluginHostOptions {
    * Runs once the operation is registered and before its worker starts, and
    * throws to refuse it. Deactivation saves its state and then cancels the
    * registered operations, so an operation either sees the new state here or
-   * is cancelled.
+   * is cancelled. A saved connection's operation names it, so its access
+   * is checked the same way: a save that turns a choice off cancels the
+   * operations it gates.
    */
-  operationGate?: (pluginId: string, method: PluginMethod) => Promise<void>;
+  operationGate?: (
+    pluginId: string,
+    method: PluginMethod,
+    connectionId?: string,
+    /** The manifest of the package that runs it. */
+    manifest?: PluginManifest,
+    /** The operation's request, for a choice that depends on it. */
+    request?: unknown,
+  ) => Promise<void>;
   /** Where each worker run's `plugin_operation` event goes. Nowhere by default. */
   events?: ApiEvents;
   /**
@@ -439,6 +449,25 @@ export class PluginManager {
     return await this.workers.cancel(error, reason, pluginId);
   }
 
+  /**
+   * Cancels the running operations of one connection whose method `methods`
+   * keeps, as when a save turns off the access they need.
+   */
+  async cancelConnectionOperations(
+    pluginId: string,
+    connectionId: string,
+    methods: (method: PluginMethod) => boolean,
+    error: Error,
+  ): Promise<number> {
+    return await this.workers.cancel(
+      error,
+      "access_off",
+      pluginId,
+      methods,
+      connectionId,
+    );
+  }
+
   /** Cancels the running operations of one capability, such as a pull request sync. */
   async cancelCapabilityOperations(
     pluginId: string,
@@ -747,7 +776,13 @@ export class PluginManager {
               "runs_no_code",
             );
           }
-          await this.operationGate?.(pluginId, method);
+          await this.operationGate?.(
+            pluginId,
+            method,
+            typeof connection?.id === "string" ? connection.id : undefined,
+            plugin.manifest,
+            params.request,
+          );
           const admitted = await admit?.(plugin.manifest);
           // A field the vault holds stays secret after an update unmarks it.
           if (admitted)

@@ -250,6 +250,10 @@ _Avoid_: Permissions, scopes, capabilities (a capability is what a plugin provid
 Something one connection may do that the user turns on for that connection, such as "Edit work items", which unlocks part of a plugin's access and names the token scope it needs. Every access choice starts off, except one the plugin marks as always on.
 _Avoid_: Permission, scope, toggle, feature flag
 
+**Held change**:
+A change to a synced item that its connection refused because its access choices don't include editing work items, such as a settle, an estimate, a description or a comment. Ajour keeps it on this computer, as the user left it, and sends it only when the user approves it in Sync review. Turning editing on is not that approval.
+_Avoid_: Queued write, pending change (a pending write still goes on its own), draft
+
 ### Agents
 
 **Agent**:

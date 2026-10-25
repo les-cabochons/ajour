@@ -69,6 +69,7 @@ function answer(
     skippedCount: 0,
     workItemUpdates: [],
     doneItems: [],
+    heldEstimates: [],
     viewer: me,
     commentFacts: [
       {
