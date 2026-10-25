@@ -32,6 +32,8 @@ import type { McpSettings } from "../../../packages/shared/agent-tools.ts";
 import {
   pluginAccessActivitySchema,
   pluginConsentSchema,
+  type PluginAccessActivity,
+  type PluginAccessSummary,
   type PluginAccessView,
   type PluginConsent,
   type PluginPendingAccess,
@@ -147,13 +149,39 @@ interface StoredConnection {
 }
 
 /**
- * What the broker records for Access review (#394): the last request, and
- * the requests its policy refused, with the last one's time.
+ * What the broker records for Access review (#394): the last request, the
+ * requests its policy refused (`blocked`), and the ways out of the sandbox
+ * the plugin tried and the renderer closed (`directBlocked`, #390), each
+ * with the last one's time.
  */
 export interface BrokerActivityRecord {
   lastRequestAt?: number;
   blockedCount?: number;
   lastBlockedAt?: number;
+  directBlockedCount?: number;
+  lastDirectBlockedAt?: number;
+}
+
+/** What the broker records for one request, or one blocked way out. */
+export type BrokerActivityKind = "request" | "blocked" | "blocked_direct";
+
+/** The record as Access review shows it. */
+function accessActivityOf(
+  record: BrokerActivityRecord | undefined,
+): PluginAccessActivity | undefined {
+  if (!record) return undefined;
+  const activity: PluginAccessActivity = {
+    ...(record.lastRequestAt ? { lastRequestAt: record.lastRequestAt } : {}),
+    ...(record.blockedCount ? { refusedCount: record.blockedCount } : {}),
+    ...(record.lastBlockedAt ? { lastRefusedAt: record.lastBlockedAt } : {}),
+    ...(record.directBlockedCount
+      ? { directBlockedCount: record.directBlockedCount }
+      : {}),
+    ...(record.lastDirectBlockedAt
+      ? { lastDirectBlockedAt: record.lastDirectBlockedAt }
+      : {}),
+  };
+  return Object.keys(activity).length > 0 ? activity : undefined;
 }
 
 /**
@@ -171,6 +199,8 @@ interface BrokerActivityDelta {
   lastRequestAt: number;
   blocked: number;
   lastBlockedAt?: number;
+  directBlocked: number;
+  lastDirectBlockedAt?: number;
 }
 
 function normalizeBrokerActivity(
@@ -182,17 +212,27 @@ function normalizeBrokerActivity(
     typeof candidate === "number" && Number.isFinite(candidate) && candidate > 0
       ? candidate
       : undefined;
+  const count = (candidate: unknown) =>
+    typeof candidate === "number" &&
+    Number.isInteger(candidate) &&
+    candidate > 0
+      ? candidate
+      : undefined;
   const record: BrokerActivityRecord = {
     ...(time(value.lastRequestAt)
       ? { lastRequestAt: time(value.lastRequestAt) }
       : {}),
-    ...(typeof value.blockedCount === "number" &&
-    Number.isInteger(value.blockedCount) &&
-    value.blockedCount > 0
-      ? { blockedCount: value.blockedCount }
+    ...(count(value.blockedCount)
+      ? { blockedCount: count(value.blockedCount) }
       : {}),
     ...(time(value.lastBlockedAt)
       ? { lastBlockedAt: time(value.lastBlockedAt) }
+      : {}),
+    ...(count(value.directBlockedCount)
+      ? { directBlockedCount: count(value.directBlockedCount) }
+      : {}),
+    ...(time(value.lastDirectBlockedAt)
+      ? { lastDirectBlockedAt: time(value.lastDirectBlockedAt) }
       : {}),
   };
   return Object.keys(record).length > 0 ? record : undefined;
@@ -203,15 +243,27 @@ function withBrokerActivity(
   record: BrokerActivityRecord | undefined,
   delta: BrokerActivityDelta,
 ): BrokerActivityRecord {
+  const lastRequestAt = Math.max(
+    record?.lastRequestAt ?? 0,
+    delta.lastRequestAt,
+  );
   const blockedCount = (record?.blockedCount ?? 0) + delta.blocked;
   const lastBlockedAt = Math.max(
     record?.lastBlockedAt ?? 0,
     delta.lastBlockedAt ?? 0,
   );
+  const directBlockedCount =
+    (record?.directBlockedCount ?? 0) + delta.directBlocked;
+  const lastDirectBlockedAt = Math.max(
+    record?.lastDirectBlockedAt ?? 0,
+    delta.lastDirectBlockedAt ?? 0,
+  );
   return {
-    lastRequestAt: Math.max(record?.lastRequestAt ?? 0, delta.lastRequestAt),
+    ...(lastRequestAt > 0 ? { lastRequestAt } : {}),
     ...(blockedCount > 0 ? { blockedCount } : {}),
     ...(lastBlockedAt > 0 ? { lastBlockedAt } : {}),
+    ...(directBlockedCount > 0 ? { directBlockedCount } : {}),
+    ...(lastDirectBlockedAt > 0 ? { lastDirectBlockedAt } : {}),
   };
 }
 
@@ -432,6 +484,16 @@ function createDefaultState(): AppApiState {
 }
 
 /**
+ * The plugins that can run, each with what it reaches now: undefined where
+ * that isn't known, as for a request of an operation the gate already let
+ * through.
+ */
+export type RunnablePlugins = ReadonlyMap<
+  string,
+  PluginAccessSummary | undefined
+>;
+
+/**
  * What the installed version reaches beyond what the user allowed, when it
  * is more. A plugin never turned on has nothing allowed, and shows nothing:
  * turning it on is the first consent.
@@ -449,6 +511,19 @@ function pendingAccessOf(
   return widensAccess(difference)
     ? { version: plugin.version, difference }
     : undefined;
+}
+
+/** Whether the plugin reaches more now than the user allowed. */
+function reachesMoreThanAllowed(
+  consents: Record<string, PluginConsent>,
+  pluginId: string,
+  reaches: PluginAccessSummary | undefined,
+) {
+  return (
+    reaches !== undefined &&
+    Object.hasOwn(consents, pluginId) &&
+    widensAccess(pluginAccessDifference(consents[pluginId]!.access, reaches))
+  );
 }
 
 function compareConnections(left: StoredConnection, right: StoredConnection) {
@@ -1345,20 +1420,25 @@ export class AppApiStorage {
       const pendingAccess = accessView
         ? pendingAccessOf(state.pluginConsent, plugin, accessView)
         : undefined;
-      const accessActivity = pluginAccessActivitySchema.safeParse(
-        this.brokerActivityIn(state, plugin.id).plugin,
-      );
+      const accessActivity = accessView
+        ? pluginAccessActivitySchema.safeParse(
+            accessActivityOf(this.brokerActivityIn(state, plugin.id).plugin),
+          )
+        : undefined;
       return {
         plugin,
         ...(accessView ? { access: accessView } : {}),
         ...(pendingAccess ? { pendingAccess } : {}),
-        ...(accessView && accessActivity.success
+        ...(accessActivity?.success && accessActivity.data
           ? { accessActivity: accessActivity.data }
           : {}),
+        // As `isPluginEnabled`: a package that reaches more than the user
+        // allowed is off, whatever the switch says.
         enabled:
           state.pluginsEnabled &&
           plugin.unavailableReason === undefined &&
-          !state.disabledPluginIds.includes(plugin.id),
+          !state.disabledPluginIds.includes(plugin.id) &&
+          !pendingAccess,
         inactiveCapabilities: (
           state.disabledCapabilities[plugin.id] ?? []
         ).filter((capability) => pluginHasCapability(plugin, capability)),
@@ -1405,15 +1485,27 @@ export class AppApiStorage {
     };
   }
 
+  /**
+   * Whether the plugin may run: it can run, the plugin system and the plugin
+   * are on, and it reaches no more than the user allowed. The last holds
+   * whatever wrote the switch, so a package changed under it, by an update
+   * that stopped half way or a development directory, stays off until the
+   * user allows it.
+   */
   async isPluginEnabled(
     pluginId: string,
-    availablePluginIds: ReadonlySet<string>,
+    runnable: RunnablePlugins,
   ): Promise<boolean> {
     const state = await this.readState();
     return (
-      availablePluginIds.has(pluginId) &&
+      runnable.has(pluginId) &&
       state.pluginsEnabled &&
-      !state.disabledPluginIds.includes(pluginId)
+      !state.disabledPluginIds.includes(pluginId) &&
+      !reachesMoreThanAllowed(
+        state.pluginConsent,
+        pluginId,
+        runnable.get(pluginId),
+      )
     );
   }
 
@@ -1421,10 +1513,10 @@ export class AppApiStorage {
   async isPluginCapabilityEnabled(
     pluginId: string,
     capability: SwitchableCapability,
-    availablePluginIds: ReadonlySet<string>,
+    runnable: RunnablePlugins,
   ): Promise<boolean> {
     return (
-      (await this.isPluginEnabled(pluginId, availablePluginIds)) &&
+      (await this.isPluginEnabled(pluginId, runnable)) &&
       !(await this.readState()).disabledCapabilities[pluginId]?.includes(
         capability,
       )
@@ -2218,16 +2310,18 @@ export class AppApiStorage {
 
   /**
    * Records one broker request of the plugin for Access review: its time,
-   * and whether the policy blocked it, on the plugin and on its connection
-   * when the request named a saved one. The records gather in memory, and
-   * the state file is written once per window at most: the first record
+   * and whether the policy blocked it (`blocked`), on the plugin and on its
+   * connection when the request named a saved one. `blocked_direct` is a
+   * way out the sandbox closed (#390): it never reached the broker, so it
+   * is counted apart and is not a request. The records gather in memory,
+   * and the state file is written once per window at most: the first record
    * after a quiet window at once, the rest when the window ends, and all of
    * them on `flushBrokerActivity`, which the API calls as it stops.
    */
   async recordBrokerActivity(
     pluginId: string,
     connectionId: string | undefined,
-    kind: "request" | "blocked",
+    kind: BrokerActivityKind,
     at: number,
   ): Promise<void> {
     const gather = (recordConnectionId: string | undefined) => {
@@ -2237,8 +2331,17 @@ export class AppApiStorage {
         ...(recordConnectionId ? { connectionId: recordConnectionId } : {}),
         lastRequestAt: 0,
         blocked: 0,
+        directBlocked: 0,
       };
-      delta.lastRequestAt = Math.max(delta.lastRequestAt, at);
+      if (kind === "blocked_direct") {
+        delta.directBlocked += 1;
+        delta.lastDirectBlockedAt = Math.max(
+          delta.lastDirectBlockedAt ?? 0,
+          at,
+        );
+      } else {
+        delta.lastRequestAt = Math.max(delta.lastRequestAt, at);
+      }
       if (kind === "blocked") {
         delta.blocked += 1;
         delta.lastBlockedAt = Math.max(delta.lastBlockedAt ?? 0, at);

@@ -4,8 +4,9 @@ import { z } from "zod";
  * The access shapes as zod schemas, for the overview that carries them to the
  * Access section and for the consent the state keeps. Nothing here imports
  * plugin API 4's schemas as values: they import `plugins.ts`, which imports
- * this file, so the enums below repeat theirs and the annotations check that
- * they still agree.
+ * this file, so the enums below repeat theirs. They still agree because
+ * `summarizePluginAccess` builds these shapes from API 4's manifest types:
+ * an auth scheme or method these don't list fails to compile there.
  */
 
 export interface PluginAccessAuth {
@@ -71,6 +72,10 @@ export interface PluginAccessSummary {
   alwaysOnAccess: string[];
   /** Every operation each access choice unlocks. */
   accessOperations: PluginAccessOperation[];
+  /** The request headers the plugin may set, in lower case. */
+  requestHeaders: string[];
+  /** A connection may be marked on-premises, which lets it reach private addresses. */
+  onPremises: boolean;
   startMode: "whenNeeded" | "alwaysReady";
 }
 
@@ -94,6 +99,10 @@ export interface PluginAccessDifference {
    * so both count.
    */
   ungatedOperations: string[];
+  /** Request headers the plugin may now set. */
+  requestHeaders: string[];
+  /** A connection may now be marked on-premises. */
+  onPremises: boolean;
   /** The update switches the plugin to "Always ready". */
   alwaysReady: boolean;
 }
@@ -152,6 +161,8 @@ export const pluginAccessSummarySchema: z.ZodType<PluginAccessSummary> =
       .max(10),
     alwaysOnAccess: z.array(shortText).max(10),
     accessOperations: z.array(operationSchema).max(500),
+    requestHeaders: z.array(shortText).max(30),
+    onPremises: z.boolean(),
     startMode: z.enum(["whenNeeded", "alwaysReady"]),
   });
 
@@ -168,6 +179,8 @@ export const pluginAccessDifferenceSchema: z.ZodType<PluginAccessDifference> =
     alwaysOnAccess: z.array(shortText).max(10),
     accessOperations: z.array(operationSchema).max(500),
     ungatedOperations: z.array(shortText).max(500),
+    requestHeaders: z.array(shortText).max(30),
+    onPremises: z.boolean(),
     alwaysReady: z.boolean(),
   });
 
@@ -232,16 +245,25 @@ export const pluginPendingAccessSchema: z.ZodType<PluginPendingAccess> =
     difference: pluginAccessDifferenceSchema,
   });
 
-/** What the broker recorded for a plugin's requests, for the Access section. */
+/**
+ * What the broker recorded for a plugin's requests, for the Access section:
+ * the last request, the requests it refused because they asked for access
+ * the plugin doesn't have, and the ways out of its sandbox the plugin tried,
+ * which the renderer blocked.
+ */
 export interface PluginAccessActivity {
   lastRequestAt?: number;
-  blockedCount?: number;
-  lastBlockedAt?: number;
+  refusedCount?: number;
+  lastRefusedAt?: number;
+  directBlockedCount?: number;
+  lastDirectBlockedAt?: number;
 }
 
 export const pluginAccessActivitySchema: z.ZodType<PluginAccessActivity> =
   z.object({
     lastRequestAt: z.number().positive().optional(),
-    blockedCount: z.number().int().positive().optional(),
-    lastBlockedAt: z.number().positive().optional(),
+    refusedCount: z.number().int().positive().optional(),
+    lastRefusedAt: z.number().positive().optional(),
+    directBlockedCount: z.number().int().positive().optional(),
+    lastDirectBlockedAt: z.number().positive().optional(),
   });

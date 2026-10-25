@@ -211,7 +211,7 @@ describe("plugin installation boundary", () => {
   });
 
   it.each([true, false])(
-    "updates an outdated package and preserves its connections and enabled=%s choice",
+    "updates an outdated package, preserves its connections, and holds it off for consent when it was on (on=%s)",
     async (enabled) => {
       const root = await tempDir();
       const installedRoot = path.join(root, "installed");
@@ -288,15 +288,27 @@ describe("plugin installation boundary", () => {
       );
 
       expect(update.replaced).toBe(true);
-      // An update keeps the activation state instead of switching the plugin off.
+      // The version replaced couldn't run, so nothing was allowed: a plugin
+      // left on waits for the user to allow everything the update reaches,
+      // and one left off stays off with nothing pending (#394).
       expect(update.overview.connectionGroups).toEqual([
         expect.objectContaining({
           plugin: expect.not.objectContaining({
             unavailableReason: expect.anything(),
           }),
-          enabled,
+          enabled: false,
         }),
       ]);
+      expect(update.overview.connectionGroups[0]?.pendingAccess).toEqual(
+        enabled
+          ? expect.objectContaining({
+              version: "1.0.0",
+              difference: expect.objectContaining({
+                capabilities: ["connector"],
+              }),
+            })
+          : undefined,
+      );
       expect(update.overview.connectionGroups[0]?.connections).toMatchObject([
         {
           id: savedConnection.id,
@@ -314,7 +326,7 @@ describe("plugin installation boundary", () => {
           secrets: { fields: ["token"] },
         },
       ]);
-      expect(savedState.disabledPluginIds).toEqual(enabled ? [] : ["jira"]);
+      expect(savedState.disabledPluginIds).toEqual(["jira"]);
     },
   );
 

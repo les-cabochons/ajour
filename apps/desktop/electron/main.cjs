@@ -544,7 +544,11 @@ ipc.handle("ajour:install-plugin", async (event) => {
     return null;
   }
 
-  return await installPluginArchive(unit, selectedArchive);
+  // A first install stays inactive, as a download does: turning it on is
+  // the consent to what it reaches.
+  return await installPluginArchive(unit, selectedArchive, {
+    enableAfterInstall: false,
+  });
 });
 
 ipc.handle("ajour:get-plugin-catalog", async (event) => {

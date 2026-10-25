@@ -45,6 +45,8 @@ const NOTHING: PluginAccessDifference = {
   alwaysOnAccess: [],
   accessOperations: [],
   ungatedOperations: [],
+  requestHeaders: [],
+  onPremises: false,
   alwaysReady: false,
 };
 
@@ -287,6 +289,26 @@ describe("the access difference between two manifests", () => {
       },
       { alwaysReady: true },
     ],
+    [
+      "a request header",
+      azureDevOpsManifest,
+      (manifest) => {
+        manifest.network.requestHeaders.push("If-Match");
+      },
+      { requestHeaders: ["if-match"] },
+    ],
+    [
+      "connections that may be on-premises",
+      () => {
+        const manifest = gitHubManifest();
+        manifest.network.baseAddress.allowOnPremises = false;
+        return manifest;
+      },
+      (manifest) => {
+        manifest.network.baseAddress.allowOnPremises = true;
+      },
+      { onPremises: true },
+    ],
   ])("lists only %s that was added", (_name, base, change, expected) => {
     expect(difference(base, change)).toEqual({ ...NOTHING, ...expected });
   });
@@ -356,12 +378,26 @@ describe("the access difference between two manifests", () => {
       },
     ],
     [
-      "another memory ceiling, header list and access choice",
+      "another memory ceiling, a removed header and a new access choice",
       azureDevOpsManifest,
       (manifest) => {
         manifest.runtime = { memoryCeilingMb: 1024 };
-        manifest.network.requestHeaders.push("If-Match");
+        manifest.network.requestHeaders.pop();
         manifest.connectionAccess.push({ id: "builds", label: "Builds" });
+      },
+    ],
+    [
+      "a header written in another case",
+      azureDevOpsManifest,
+      (manifest) => {
+        manifest.network.requestHeaders = ["accept", "CONTENT-TYPE"];
+      },
+    ],
+    [
+      "connections that may no longer be on-premises",
+      gitHubManifest,
+      (manifest) => {
+        manifest.network.baseAddress.allowOnPremises = false;
       },
     ],
     [
@@ -408,6 +444,10 @@ describe("the access difference between two manifests", () => {
       ),
     ).toBe(true);
     expect(widensAccess({ ...NOTHING, alwaysReady: true })).toBe(true);
+    expect(widensAccess({ ...NOTHING, onPremises: true })).toBe(true);
+    expect(widensAccess({ ...NOTHING, requestHeaders: ["if-match"] })).toBe(
+      true,
+    );
     expect(widensAccess({ ...NOTHING, alwaysOnAccess: ["builds"] })).toBe(true);
     expect(
       widensAccess({
@@ -506,6 +546,8 @@ describe("the access summary", () => {
       agentPrompts: [],
       alwaysOnAccess: [],
       accessOperations: [],
+      requestHeaders: ["accept", "content-type", "x-github-api-version"],
+      onPremises: true,
       startMode: "whenNeeded",
     });
   });

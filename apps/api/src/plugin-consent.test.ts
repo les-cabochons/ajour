@@ -12,6 +12,11 @@ import {
 import { dispatchJsonRequest } from "./test-support/dispatch-json-request.ts";
 import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
 import { windowServerOptions } from "./test-support/window-token.ts";
+import { decideUpdateConsent } from "./plugin-consent.ts";
+import {
+  NO_PLUGIN_ACCESS,
+  type PluginAccessSummary,
+} from "../../../packages/shared/plugin-access.ts";
 
 /*
  * Consent on installs and updates (#394), at seam 1: a server built from
@@ -99,13 +104,12 @@ describe("consent on plugin installs and updates", () => {
     return directory;
   }
 
-  /** An archive of the plugin the manifest describes. */
-  async function archive(
-    root: string,
+  /** The files of the plugin the manifest describes, in `directory`. */
+  async function writePackage(
+    directory: string,
     value: Json,
     prompt = "Enter the week {{weekOf}}.",
   ) {
-    const directory = path.join(root, `source-${value.version}-${Date.now()}`);
     await mkdir(path.join(directory, "prompts"), { recursive: true });
     await writeFile(
       path.join(directory, "plugin.json"),
@@ -118,6 +122,12 @@ describe("consent on plugin installs and updates", () => {
       prompt,
       "utf8",
     );
+  }
+
+  /** An archive of the plugin the manifest describes. */
+  async function archive(root: string, value: Json, prompt?: string) {
+    const directory = path.join(root, `source-${value.version}-${Date.now()}`);
+    await writePackage(directory, value, prompt);
     const file = path.join(root, `tracker-${value.version}.ajour-connector`);
     await create({ cwd: directory, file, gzip: true }, [
       "plugin.json",
@@ -127,13 +137,16 @@ describe("consent on plugin installs and updates", () => {
     return { bytes: await readFile(file), name: path.basename(file) };
   }
 
-  function startServer(root: string) {
+  function startServer(
+    root: string,
+    options: { developmentPluginDirectories?: string[] } = {},
+  ) {
     const server = createAppApiServer({
       ...windowServerOptions,
       vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
-      developmentPluginDirectories: [],
+      developmentPluginDirectories: options.developmentPluginDirectories ?? [],
       projectDataShapePluginDirectories: [],
       // A development build admits API 4 packages until the cut-over (#403).
       allowDevelopmentPlugins: true,
@@ -174,6 +187,16 @@ describe("consent on plugin installs and updates", () => {
       body: JSON.stringify({ enabled }),
     });
     expect(response.status).toBe(200);
+  }
+
+  /** A backlog sync, which the activation gate answers before anything runs. */
+  async function sync(server: Server) {
+    const response = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: `/api/plugins/${ID}/connections/saved-tracker/sync`,
+      body: "{}",
+    });
+    return { status: response.status, body: response.body };
   }
 
   /** Downloads the first version and turns it on, as the user does. */
@@ -452,20 +475,314 @@ describe("consent on plugin installs and updates", () => {
     state.pluginBrokerActivity = {
       [ID]: {
         lastRequestAt: 1_700_000_000_000,
+        // Requests the broker refused, and ways out the sandbox closed.
         blockedCount: 2,
         lastBlockedAt: 1_700_000_100_000,
+        directBlockedCount: 3,
+        lastDirectBlockedAt: 1_700_000_200_000,
       },
     };
     await writeFile(statePath, JSON.stringify(state), "utf8");
 
     const restarted = startServer(root);
 
+    expect((await group(restarted)).accessActivity).toEqual({
+      lastRequestAt: 1_700_000_000_000,
+      refusedCount: 2,
+      lastRefusedAt: 1_700_000_100_000,
+      directBlockedCount: 3,
+      lastDirectBlockedAt: 1_700_000_200_000,
+    });
+  });
+
+  it("drops a stored consent record that doesn't parse", async () => {
+    const root = await tempDir();
+    const first = startServer(root);
+    await downloadAndActivate(first, root);
+    first.emit("close");
+    const statePath = path.join(root, "state.json");
+    const state = JSON.parse(await readFile(statePath, "utf8"));
+    state.pluginConsent[ID] = { version: "1.0.0", access: { hosts: "all" } };
+    state.pluginConsent.other = "not a record";
+    await writeFile(statePath, JSON.stringify(state), "utf8");
+
+    const restarted = startServer(root);
+
+    // Nothing allowed is on file: the plugin keeps its switch, and nothing
+    // is pending until it is turned on again.
+    const loaded = await group(restarted);
+    expect(loaded.enabled).toBe(true);
+    expect(loaded.pendingAccess).toBeUndefined();
+    await activate(restarted, true);
+    restarted.emit("close");
+    const rewritten = JSON.parse(await readFile(statePath, "utf8"));
+    expect(Object.keys(rewritten.pluginConsent)).toEqual([ID]);
+    expect(rewritten.pluginConsent[ID].access.hosts).toEqual([
+      { kind: "baseAddress", field: "baseUrl" },
+    ]);
+  });
+
+  it("keeps a first install from a file off, and after an uninstall too", async () => {
+    const root = await tempDir();
+    const server = startServer(root);
+
+    // The desktop installs a file as it downloads from the catalog.
+    await install(server, root, manifest("1.0.0"), {
+      enableAfterInstall: false,
+    });
+    expect((await group(server)).enabled).toBe(false);
+    await activate(server, true);
+
+    await uninstallPluginForServer(server, ID);
+    await install(server, root, manifest("1.0.0"), {
+      enableAfterInstall: false,
+    });
+    expect(await group(server)).toMatchObject({ enabled: false });
+    expect((await group(server)).pendingAccess).toBeUndefined();
+  });
+
+  it("holds off a plugin whose package reaches more after a crash between the package change and its state", async () => {
+    const root = await tempDir();
+    const first = startServer(root);
+    await downloadAndActivate(first, root);
+    first.emit("close");
+
+    // As Ajour killed after the rename: the new package is in place, and the
+    // state is the one written for the old one.
+    await writePackage(
+      path.join(root, "installed", ID),
+      manifest("1.1.0", (value) => {
+        value.network.endpoints.push({ method: "GET", path: "/rest/people" });
+      }),
+    );
+    const restarted = startServer(root);
+
     expect(await group(restarted)).toMatchObject({
-      accessActivity: {
-        lastRequestAt: 1_700_000_000_000,
-        blockedCount: 2,
-        lastBlockedAt: 1_700_000_100_000,
+      enabled: false,
+      pendingAccess: {
+        version: "1.1.0",
+        difference: {
+          endpoints: [{ host: "base", method: "GET", path: "/rest/people" }],
+        },
       },
     });
+    await expect(sync(restarted)).resolves.toEqual({
+      status: 409,
+      body: { error: "Activate this plugin before syncing." },
+    });
+  });
+
+  it("holds off a development plugin whose manifest gains a host", async () => {
+    const root = await tempDir();
+    const directory = path.join(root, "development", ID);
+    await writePackage(directory, manifest("1.0.0"));
+    const server = startServer(root, {
+      developmentPluginDirectories: [directory],
+    });
+    await activate(server, true);
+    expect((await group(server)).enabled).toBe(true);
+
+    await writePackage(
+      directory,
+      manifest("1.0.0", (value) => {
+        value.network.publicHosts = ["avatars.example.com"];
+      }),
+    );
+
+    expect(await group(server)).toMatchObject({
+      enabled: false,
+      pendingAccess: { difference: { publicHosts: ["avatars.example.com"] } },
+    });
+    await expect(sync(server)).resolves.toMatchObject({ status: 409 });
+
+    // Allowing it turns it on again.
+    await activate(server, true);
+    expect(await group(server)).toMatchObject({ enabled: true });
+    expect((await group(server)).pendingAccess).toBeUndefined();
+  });
+
+  it("refuses to allow a version other than the one the user reviewed", async () => {
+    const root = await tempDir();
+    const server = startServer(root);
+    await downloadAndActivate(server, root);
+    await install(
+      server,
+      root,
+      manifest("1.1.0", (value) => {
+        value.network.publicHosts = ["avatars.example.com"];
+      }),
+    );
+
+    const stale = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: `/api/plugins/${ID}/activation`,
+      body: JSON.stringify({ enabled: true, version: "1.0.0" }),
+    });
+
+    expect(stale.status).toBe(409);
+    expect(stale.body).toEqual({
+      error:
+        "Fixture tracker is now version 1.1.0. Review its access, then turn it on again.",
+    });
+    expect(await group(server)).toMatchObject({
+      enabled: false,
+      pendingAccess: { version: "1.1.0" },
+    });
+
+    const reviewed = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: `/api/plugins/${ID}/activation`,
+      body: JSON.stringify({ enabled: true, version: "1.1.0" }),
+    });
+    expect(reviewed.status).toBe(200);
+    expect(await group(server)).toMatchObject({ enabled: true });
+  });
+
+  it("holds an update of a plugin that was on but couldn't run, listing everything as new", async () => {
+    const root = await tempDir();
+    // An older plugin API's package, on: no consent was ever recorded.
+    await writePackage(path.join(root, "installed", ID), {
+      id: ID,
+      version: "0.9.0",
+      apiVersion: 2,
+      displayName: "Fixture tracker",
+      iconSvg: ICON,
+      entrypoint: "plugin.mjs",
+      capabilities: { connector: {} },
+      connectionFields: manifest("0.9.0").connectionFields,
+    });
+    const server = startServer(root);
+    expect((await group(server)).plugin.unavailableReason).toBeDefined();
+
+    await install(server, root, manifest("1.0.0"));
+
+    const held = await group(server);
+    expect(held).toMatchObject({
+      enabled: false,
+      pendingAccess: {
+        version: "1.0.0",
+        difference: {
+          capabilities: ["agentTask", "connector"],
+          hosts: [{ kind: "baseAddress", field: "baseUrl" }],
+          endpoints: [
+            {
+              host: "base",
+              method: "PUT",
+              path: "/rest/issue/*",
+              access: "editIssues",
+            },
+            { host: "base", method: "GET", path: "/rest/myself" },
+            { host: "base", method: "POST", path: "/rest/search" },
+          ],
+          mcpTools: [{ task: "enter-week", tool: "get_week_status" }],
+          agentPrompts: ["enter-week"],
+        },
+      },
+    });
+  });
+});
+
+describe("what an update does to activation", () => {
+  const reaches = (change: Partial<PluginAccessSummary> = {}) => ({
+    ...NO_PLUGIN_ACCESS,
+    capabilities: ["connector"],
+    hosts: [{ kind: "baseAddress" as const, field: "baseUrl" }],
+    ...change,
+  });
+  const allowed = { version: "1.0.0", access: reaches(), at: 1 };
+  const wider = reaches({ publicHosts: ["avatars.example.com"] });
+
+  it("carries the allowance of a plugin left on to an update that reaches no more", () => {
+    expect(
+      decideUpdateConsent({
+        consent: allowed,
+        previous: { version: "1.0.0", access: reaches() },
+        wasOn: true,
+        next: { version: "1.0.1", access: reaches() },
+        at: 5,
+      }),
+    ).toEqual({
+      turnOff: false,
+      record: { version: "1.0.1", access: reaches(), at: 5 },
+    });
+  });
+
+  it("records nothing for a plugin left off, when the update reaches no more", () => {
+    expect(
+      decideUpdateConsent({
+        consent: allowed,
+        previous: { version: "1.0.0", access: reaches() },
+        wasOn: false,
+        next: { version: "1.0.1", access: reaches() },
+        at: 5,
+      }),
+    ).toEqual({ turnOff: false });
+  });
+
+  it("turns off an update that reaches more than was allowed, and keeps the allowance", () => {
+    expect(
+      decideUpdateConsent({
+        consent: allowed,
+        previous: { version: "1.0.0", access: reaches() },
+        wasOn: true,
+        next: { version: "1.1.0", access: wider },
+        at: 5,
+      }),
+    ).toEqual({ turnOff: true });
+  });
+
+  it("compares with what the user allowed, not with the version replaced", () => {
+    // The version replaced was already wider, and waiting for consent.
+    expect(
+      decideUpdateConsent({
+        consent: allowed,
+        previous: { version: "1.1.0", access: wider },
+        wasOn: true,
+        next: { version: "1.1.1", access: wider },
+        at: 5,
+      }),
+    ).toEqual({ turnOff: true });
+  });
+
+  it("takes a plugin on without a record to have been allowed what its previous version reached", () => {
+    expect(
+      decideUpdateConsent({
+        consent: undefined,
+        previous: { version: "1.0.0", access: reaches() },
+        wasOn: true,
+        next: { version: "1.1.0", access: wider },
+        at: 5,
+      }),
+    ).toEqual({
+      turnOff: true,
+      record: { version: "1.0.0", access: reaches(), at: 5 },
+    });
+  });
+
+  it("takes a plugin on that couldn't run to have been allowed nothing", () => {
+    expect(
+      decideUpdateConsent({
+        consent: undefined,
+        previous: { version: "0.9.0" },
+        wasOn: true,
+        next: { version: "1.0.0", access: reaches() },
+        at: 5,
+      }),
+    ).toEqual({
+      turnOff: true,
+      record: { version: "0.9.0", access: NO_PLUGIN_ACCESS, at: 5 },
+    });
+  });
+
+  it("leaves a plugin the user never turned on as it was", () => {
+    expect(
+      decideUpdateConsent({
+        consent: undefined,
+        previous: { version: "1.0.0", access: reaches() },
+        wasOn: false,
+        next: { version: "1.1.0", access: wider },
+        at: 5,
+      }),
+    ).toEqual({ turnOff: false });
   });
 });

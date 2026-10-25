@@ -1,4 +1,5 @@
 import {
+  NO_PLUGIN_ACCESS,
   pluginAccessDifference,
   widensAccess,
   type PluginAccessSummary,
@@ -19,16 +20,16 @@ export interface UpdateConsentDecision {
 
 /**
  * Decides an update against what the user allowed. Without a record, a
- * plugin that was on and could run is taken to have been allowed what its
- * previous version reached, as those turned on before Ajour recorded consent.
- * With neither, nothing was allowed and the update changes nothing about
- * activation: a plugin the user never turned on stays off, and one that
- * could not run before keeps the state it had.
+ * plugin that was on is taken to have been allowed what its previous version
+ * reached, as those turned on before Ajour recorded consent: nothing, when
+ * that version couldn't run, so the update stays off and lists everything as
+ * new. A plugin the user never turned on was allowed nothing, and the update
+ * leaves it off.
  */
 export function decideUpdateConsent(input: {
   consent: PluginConsent | undefined;
-  /** The version replaced, absent when it could not run. */
-  previous: { version: string; access: PluginAccessSummary } | undefined;
+  /** The version replaced, without access when it couldn't run. */
+  previous: { version: string; access?: PluginAccessSummary } | undefined;
   /** Whether the user had the plugin on before the update. */
   wasOn: boolean;
   next: { version: string; access: PluginAccessSummary };
@@ -37,8 +38,12 @@ export function decideUpdateConsent(input: {
   const { consent, previous, wasOn, next, at } = input;
   const baseline: PluginConsent | undefined =
     consent ??
-    (previous && wasOn
-      ? { version: previous.version, access: previous.access, at }
+    (wasOn
+      ? {
+          version: previous?.version ?? "",
+          access: previous?.access ?? NO_PLUGIN_ACCESS,
+          at,
+        }
       : undefined);
   if (!baseline) return { turnOff: false };
 

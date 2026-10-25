@@ -405,7 +405,7 @@ describe("AppApiStorage", () => {
     const statePath = path.join(tempDir, "app-api-state.json");
     const storage = new AppApiStorage(statePath);
     const jiraPlugin = buildPlugin("jira", "Jira");
-    const availablePluginIds = new Set(["jira"]);
+    const availablePluginIds = new Map([["jira", undefined]]);
 
     await storage.upsertConnection("jira", {
       label: "Main Jira",
@@ -443,7 +443,7 @@ describe("AppApiStorage", () => {
       reloadedStorage.isPluginEnabled("jira", availablePluginIds),
     ).resolves.toBe(true);
     await expect(
-      reloadedStorage.isPluginEnabled("jira", new Set()),
+      reloadedStorage.isPluginEnabled("jira", new Map()),
     ).resolves.toBe(false);
   });
 
@@ -456,7 +456,7 @@ describe("AppApiStorage", () => {
       ...buildPlugin("github", "GitHub"),
       capabilities: { connector: {}, codeHost: {} },
     };
-    const available = new Set(["github"]);
+    const available = new Map([["github", undefined]]);
 
     await storage.setPluginCapabilityEnabled("github", "codeHost", false);
 
@@ -509,7 +509,10 @@ describe("AppApiStorage", () => {
     );
 
     const reloaded = new AppApiStorage(statePath);
-    const available = new Set(["github", "jira"]);
+    const available = new Map([
+      ["github", undefined],
+      ["jira", undefined],
+    ]);
     await expect(
       reloaded.isPluginCapabilityEnabled("github", "codeHost", available),
     ).resolves.toBe(false);
@@ -524,7 +527,7 @@ describe("AppApiStorage", () => {
     const statePath = path.join(tempDir, "app-api-state.json");
     const storage = new AppApiStorage(statePath);
     const jiraPlugin = buildPlugin("jira", "Jira");
-    const availablePluginIds = new Set(["jira"]);
+    const availablePluginIds = new Map([["jira", undefined]]);
 
     await storage.setPluginSystemEnabled(false);
     await expect(
@@ -615,7 +618,7 @@ describe("AppApiStorage", () => {
       items: [{ source: "Legacy Source", label: "Active" }],
     });
     await expect(
-      storage.isPluginEnabled("jira", new Set(["jira"])),
+      storage.isPluginEnabled("jira", new Map([["jira", undefined]])),
     ).resolves.toBe(true);
   });
 

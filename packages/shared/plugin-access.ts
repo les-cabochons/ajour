@@ -32,12 +32,15 @@ export type {
  * What a plugin reaches, read from its manifest, and what an update adds to
  * it. The Access section lists the summary, and consent on updates uses the
  * difference: an update widens access when it adds a capability, an auth
- * scheme, a host, a derived host, an endpoint, a public host, an MCP tool or
- * an agent prompt change, marks an access choice always on, adds an operation
- * to an access choice, or switches to "Always ready" (spec #381). It also
- * widens when it removes a gate: an endpoint no longer behind its access
- * choice, or behind another one, and an operation that no longer sits behind
- * any choice. Other removals don't count.
+ * scheme, a host, a derived host, an endpoint, a public host, a request
+ * header, an MCP tool or an agent prompt change, lets a connection be marked
+ * on-premises, marks an access choice always on, adds an operation to an
+ * access choice, or switches to "Always ready" (spec #381). It also widens
+ * when it removes a gate: an endpoint no longer behind its access choice, or
+ * behind another one. An operation that was behind an access choice and is
+ * behind none now counts too: the manifest lists only gated operations, so
+ * one that now runs without a choice can't be told from one that was
+ * removed. Other removals don't count.
  */
 
 /**
@@ -160,6 +163,12 @@ export function summarizePluginAccess(
         })),
       )
       .sort(byText(accessOperationKey)),
+    requestHeaders: [
+      ...new Set(
+        (network?.requestHeaders ?? []).map((header) => header.toLowerCase()),
+      ),
+    ].sort(),
+    onPremises: network?.baseAddress?.allowOnPremises === true,
     startMode: manifest.runtime?.start ?? "whenNeeded",
   };
 }
@@ -204,7 +213,8 @@ function added<Item>(
   return next.filter((item) => !known.has(key(item)));
 }
 
-const EMPTY_SUMMARY: PluginAccessSummary = {
+/** What a plugin that reaches nothing reaches: the baseline of a first consent. */
+export const NO_PLUGIN_ACCESS: Readonly<PluginAccessSummary> = Object.freeze({
   capabilities: [],
   authSchemes: [],
   hosts: [],
@@ -215,8 +225,10 @@ const EMPTY_SUMMARY: PluginAccessSummary = {
   agentPrompts: [],
   alwaysOnAccess: [],
   accessOperations: [],
+  requestHeaders: [],
+  onPremises: false,
   startMode: "whenNeeded",
-};
+});
 
 function endpointTriple(endpoint: PluginAccessEndpoint) {
   return [endpoint.host, endpoint.path, endpoint.method].join("\u0000");
@@ -253,7 +265,7 @@ export function pluginAccessDifference(
   previous: PluginAccessSummary | undefined,
   next: PluginAccessSummary,
 ): PluginAccessDifference {
-  const before = previous ?? EMPTY_SUMMARY;
+  const before = previous ?? NO_PLUGIN_ACCESS;
   const prompts = new Map(
     before.agentPrompts.map((entry) => [entry.task, entry.prompt] as const),
   );
@@ -289,6 +301,8 @@ export function pluginAccessDifference(
       accessOperationKey,
     ),
     ungatedOperations: ungated(before.accessOperations, next.accessOperations),
+    requestHeaders: added(before.requestHeaders, next.requestHeaders, String),
+    onPremises: next.onPremises && !before.onPremises,
     alwaysReady:
       next.startMode === "alwaysReady" && before.startMode !== "alwaysReady",
   };
@@ -298,6 +312,7 @@ export function pluginAccessDifference(
 export function widensAccess(difference: PluginAccessDifference) {
   return (
     difference.alwaysReady ||
+    difference.onPremises ||
     [
       difference.capabilities,
       difference.authSchemes,
@@ -310,6 +325,7 @@ export function widensAccess(difference: PluginAccessDifference) {
       difference.alwaysOnAccess,
       difference.accessOperations,
       difference.ungatedOperations,
+      difference.requestHeaders,
     ].some((items) => items.length > 0)
   );
 }

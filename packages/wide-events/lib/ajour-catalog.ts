@@ -518,7 +518,13 @@ export const catalog = defineCatalog({
     /** A plugin, or one of its capabilities, turned on or off. */
     "plugin.activate": {
       kinds: ["command", "request"],
-      reasons: ["not_installed", "not_supported", ...requestReasons],
+      reasons: [
+        "not_installed",
+        "not_supported",
+        /** The plugin was updated since the user reviewed its access. */
+        "version_changed",
+        ...requestReasons,
+      ],
       fields: {
         ...requestFields,
         plugin: { id: operational() },

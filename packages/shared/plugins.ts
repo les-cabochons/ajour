@@ -728,6 +728,11 @@ export const pluginSystemActivationUpdateSchema = z.object({
 export const pluginActivationUpdateSchema = z.object({
   enabled: z.boolean(),
   capability: switchableCapabilitySchema.optional(),
+  /**
+   * The version whose access the user reviewed. Turning the plugin on is
+   * refused when another is installed now.
+   */
+  version: z.string().trim().min(1).max(200).optional(),
 });
 export type PluginActivationUpdate = z.infer<
   typeof pluginActivationUpdateSchema

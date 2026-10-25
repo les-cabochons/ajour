@@ -93,7 +93,10 @@ import {
   type BacklogCommentOperationResult,
 } from "../../../packages/shared/backlog-comments.ts";
 import { z } from "zod";
-import type { PluginAccessView } from "../../../packages/shared/plugin-access-schemas.ts";
+import type {
+  PluginAccessSummary,
+  PluginAccessView,
+} from "../../../packages/shared/plugin-access-schemas.ts";
 import {
   discoverInstalledPlugins,
   installPluginArchive,
@@ -119,9 +122,13 @@ interface PluginHostOptions {
    * Runs once the operation is registered and before its worker starts, and
    * throws to refuse it. Deactivation saves its state and then cancels the
    * registered operations, so an operation either sees the new state here or
-   * is cancelled.
+   * is cancelled. `reaches` is what the package about to run reaches.
    */
-  operationGate?: (pluginId: string, method: PluginMethod) => Promise<void>;
+  operationGate?: (
+    pluginId: string,
+    method: PluginMethod,
+    reaches: PluginAccessSummary,
+  ) => Promise<void>;
   /** Where each worker run's `plugin_operation` event goes. Nowhere by default. */
   events?: ApiEvents;
   /**
@@ -741,7 +748,7 @@ export class PluginManager {
               "runs_no_code",
             );
           }
-          await this.operationGate?.(pluginId, method);
+          await this.operationGate?.(pluginId, method, plugin.access.summary);
           const admitted = await admit?.(plugin.manifest);
           // A field the vault holds stays secret after an update unmarks it.
           if (admitted)
