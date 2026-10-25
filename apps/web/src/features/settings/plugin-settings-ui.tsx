@@ -10,17 +10,44 @@ import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
 import { cn } from "@/lib/utils";
 import type { PluginField, PluginFieldValue } from "@ajour/shared";
-import { SAVED_SECRET_MASK } from "./plugin-form-state";
+import { SecretFieldInput, type SecretFieldBinding } from "./secret-field";
 
+/**
+ * One field of a connection or agent task form. A field marked secret, of any
+ * type, is a `SecretFieldInput` whatever its type says, so a secret address
+ * is never shown as text. Its `secret` binding says how its saved state and
+ * reminder date behave; without one it is a field for a new secret.
+ */
 function PluginFieldInput({
   field,
   value,
   onChange,
+  secret,
 }: {
   field: PluginField;
   value: PluginFieldValue | undefined;
   onChange: (nextValue: PluginFieldValue) => void;
+  secret?: SecretFieldBinding;
 }) {
+  if (field.secret) {
+    return (
+      <SecretFieldInput
+        field={field}
+        value={typeof value === "string" ? value : ""}
+        onChange={onChange}
+        binding={
+          secret ?? {
+            existing: false,
+            expiry: "",
+            onExpiryChange: () => {},
+            now: Date.now(),
+            removeEffect: "",
+          }
+        }
+      />
+    );
+  }
+
   const isWideField =
     field.type === "checkbox" ||
     field.type === "password" ||
@@ -90,15 +117,6 @@ function PluginFieldInput({
           min={field.min}
           max={field.max}
           step={field.step}
-          onFocus={() => {
-            if (
-              field.type === "password" &&
-              field.secret &&
-              value === SAVED_SECRET_MASK
-            ) {
-              onChange("");
-            }
-          }}
           onChange={(event) => {
             if (field.type === "number") {
               const nextValue = Number(event.target.value);

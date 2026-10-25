@@ -126,16 +126,22 @@ The app is not in production. The rename ships with no migration code, no redire
 
 Each nav label matches its page title. Old routes are removed, not redirected.
 
-| Nav label    | Page title                     | Route                    |
-| ------------ | ------------------------------ | ------------------------ |
-| General      | General                        | `/settings/general`      |
-| Plugins      | Plugins                        | `/settings/plugins`      |
-| Backlog      | Backlog                        | `/settings/backlog`      |
-| Workflow     | Workflow                       | `/settings/workflow`     |
-| Projects     | Projects                       | `/settings/projects`     |
-| Time entries | Import and export time entries | `/settings/time-entries` |
-| Sync review  | Sync review                    | `/settings/sync-review`  |
-| Debug        | Debug                          | `/settings/debug`        |
+The pages sit in three groups, **App**, **Work** and **Data**, in this order. Pull requests also appears under Work in the narrow view, and Calendar only while a calendar plugin is on.
+
+| Group | Nav label    | Page title                     | Route                    |
+| ----- | ------------ | ------------------------------ | ------------------------ |
+| App   | General      | General                        | `/settings/general`      |
+| App   | Plugins      | Plugins                        | `/settings/plugins`      |
+| App   | Vault        | Vault                          | `/settings/vault`        |
+| App   | MCP          | MCP                            | `/settings/mcp`          |
+| App   | Agents       | Agents                         | `/settings/agents`       |
+| App   | Debug        | Debug                          | `/settings/debug`        |
+| Work  | Backlog      | Backlog                        | `/settings/backlog`      |
+| Work  | Workflow     | Workflow                       | `/settings/workflow`     |
+| Work  | Projects     | Projects                       | `/settings/projects`     |
+| Work  | Calendar     | Calendar                       | `/settings/calendar`     |
+| Data  | Time entries | Import and export time entries | `/settings/time-entries` |
+| Data  | Sync review  | Sync review                    | `/settings/sync-review`  |
 
 The Plugins page tabs are **All · Backlog · Code hosts · Calendars · Agent tasks · Schemas**. The tabs wrap on narrow windows. Agent task plugins can be downloaded from the catalog. A catalog entry this Ajour version can't read is left out, and the page names it and says to update Ajour.
 
@@ -792,6 +798,29 @@ Decided in [Settings and Sync review under the new conventions](https://github.c
 - The Debug page only exists in development builds.
 - Settings > Backlog lists, for each connection, the source projects seen in syncs, each with its settle rule. See the Backlog sidebar section.
 - A connection whose plugin provides comments or writes descriptions has Ajour's own "Agent access" select, after the plugin's fields: None (the default), Read, or Read and write (map #234, spec #301). A plugin cannot declare or preset it. While it is not None, the connection's row shows what agents may do: "Agents read comments", "Agents read and write comments", "Agents read and write comments and descriptions", or "Agents change descriptions" for a plugin without comments. The MCP tools check it at each call: `list_work_item_comments` needs Read, and `post_work_item_comment` and `settle_work_item`'s `comment` need Read and write. `edit_work_item`'s change to a synced description needs Read and write, and goes through the user's save: the read-only rule, the length limit, then the read, merge and write with no Undo for the text, reported in `descriptionSave` as written, merged, unchanged, conflict or failed. Lossy text is refused unless the connection has Allow lossy conversion on, which then stands for Save anyway. The checks run on the item after reading the settings; a change to the description meanwhile refuses the edit, and resending the text of a description in conflict reports the conflict. The call's other fields and what the timelog sets share one Undo, taken after the write. An agent's description read and write carry `agent=1` too, and the API checks Read and write before the plugin runs. An agent's comment waits for its own Undo toast, titled "<Client>: Commented on a backlog item", and a refused post, or access taken back before it goes, keeps it as the item's comment draft. Every check reads the connection from the local API at that moment, never a cached overview, and the local API enforces it too: an agent's comment call carries `agent=1`, and the API checks the stored access before the plugin runs and, for a read, again before the text leaves.
+
+## Saved secrets and the Vault
+
+Decided in [Access review and credential management for existing plugins](https://github.com/les-cabochons/ajour/issues/222), built in [#393](https://github.com/les-cabochons/ajour/issues/393). Secrets live in the vault, encrypted by the operating system ([#233](https://github.com/les-cabochons/ajour/issues/233)).
+
+- **A saved secret is never shown.** A form never holds its value, and there is no mask. This applies to every field a plugin marks secret, whatever its type: a token, a password, or a secret calendar address, which a form used to show as text. Agent task settings marked secret get the same field.
+- **A secret field in a connection form** shows a state chip, the last use, and Replace and Remove, in place of an input:
+  - Saved.
+  - "Expires in N days", from a week before its reminder date, and "Expires today". "Expired on 21 Oct 2026" after it.
+  - Token rejected, after a 401 from the service, and only then.
+  - "Can't be read on this computer", for a secret the vault can't decrypt.
+  - Not set, for a field with no secret, such as one the user removed. A field that is not set shows its input at once.
+  - Replace opens an empty password input with Cancel. Saving the form with the input empty keeps the saved secret. A form opened for a rejected secret starts with Replace open, and a chip stays above the input.
+  - Remove asks first, then deletes the secret now, without saving the rest of the form. The connection keeps its settings and synced data and pauses until a new secret is saved, when its plugin requires the secret. A secret the plugin doesn't require is only deleted.
+  - Replace, Remove and the input are disabled while Ajour can't protect credentials on this computer, with the reason in place of the help text.
+- **The connection row** also warns about a reminder date, with the field's name and the chip "Expires in N days" or "Expired on …", while the connection stays connected: Ajour keeps using the secret.
+- **The reminder date** is an optional date under each secret field, "<Field> expires on (optional)", with the line "A reminder only. Ajour keeps using it after this date." It counts to the end of that day. Replacing a secret starts the new one without a date unless the form gives one.
+- **A 401** from a plugin call marks the connection's saved secrets rejected. The connection row shows the chip "Token rejected" in place of Error, with "<Plugin> refused the token. Sync is paused. Edit the connection to replace it.", and sync is paused: its Sync buttons are disabled and the automatic sync leaves it alone. Saving a new secret resumes it. Another status, such as a 403, only sets the Error chip and the last error. Plugins on API 3 report errors as messages, so only an error that names its HTTP status is recognised; the broker reports every 401 once plugins use it.
+- **Settings > Vault**, between Plugins and MCP, lists every secret Ajour holds, never a value, grouped by plugin by name. A plugin whose package is missing comes last, as "<Plugin> (not installed)".
+  - A row shows the connection (or "Agent tasks" for a plugin's task settings), the kind of secret (the field's label), the last use, a state chip and Replace. Replace opens the connection's form with Replace open, or the plugin's task settings.
+  - A missing plugin's connections show as "Saved settings and secrets", because nothing says which of their settings are secret. Its group has Remove, which asks first, then deletes the plugin's connections and saved secrets, and the connections' local pull requests, calendar data and team data with them. Synced backlog items stay.
+  - Two notices come first. "Ajour can't protect credentials on this computer" gives the reason and says connections that need a token are paused; Try again opens the vault again and runs the encryption check once more. "Saved secrets can't be read on this computer" gives the reason, as after moving Ajour's data to another computer, and says to paste each token again. It has no Try again, because pasting a token is what fixes it.
+  - With no secret saved, the page says "No saved secrets".
 
 ## Consistency
 

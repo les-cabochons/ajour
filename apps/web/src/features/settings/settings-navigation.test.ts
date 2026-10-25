@@ -49,6 +49,14 @@ describe("getSettingsGroups", () => {
     expect(work(false)).not.toContain("/settings/calendar");
   });
 
+  it("lists Vault between Plugins and MCP in the App group", () => {
+    const labels = getSettingsGroups("wide")[0]!.pages.map(
+      (page) => page.label,
+    );
+    expect(labels.slice(labels.indexOf("Plugins"))[1]).toBe("Vault");
+    expect(labels.indexOf("MCP")).toBe(labels.indexOf("Vault") + 1);
+  });
+
   it("lists Agents after MCP in the App group", () => {
     const app = getSettingsGroups("wide")[0]!;
     const labels = app.pages.map((page) => page.label);

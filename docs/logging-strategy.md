@@ -763,6 +763,7 @@ channel to read the event each emits.
 | `comment.post`                       | command, request, plugin_operation | route, plugin method, client call                |
 | `comment.react`                      | command, request, plugin_operation | route, plugin method, client call                |
 | `connection.delete`                  | command, request                   | route, store command, client call                |
+| `connection.remove_secrets`          | command, request                   | route, client call                               |
 | `connection.save`                    | command, request, plugin_operation | route, plugin method, client call                |
 | `context_menu.show`                  | ipc                                | IPC channel                                      |
 | `description.read`                   | command, request, plugin_operation | route, plugin method, client call                |
@@ -785,6 +786,7 @@ channel to read the event each emits.
 | `plugin.activate`                    | command, request                   | route, client call                               |
 | `plugin.install`                     | command, ipc                       | IPC channel                                      |
 | `plugin.list`                        | command, request                   | route, client call                               |
+| `plugin.remove_data`                 | command, request                   | route, client call                               |
 | `plugin.request`                     | job                                | local API                                        |
 | `plugin.uninstall`                   | command, ipc                       | IPC channel                                      |
 | `plugin_system.toggle`               | command, request                   | route, client call                               |
@@ -868,6 +870,7 @@ channel to read the event each emits.
 | `update.get_state`                   | ipc                                | IPC channel                                      |
 | `update.install`                     | command, ipc, job                  | IPC channel, main process                        |
 | `update.open_release`                | command, ipc                       | IPC channel                                      |
+| `vault.retry`                        | command, request                   | route, client call                               |
 | `week.prompt_commit`                 | command                            | store command                                    |
 | `week.reopen`                        | command                            | store command                                    |
 | `week.submit`                        | command                            | store command                                    |

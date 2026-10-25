@@ -79,6 +79,9 @@ function dependencies() {
     setPluginEnabled: unused,
     savePluginConnection: unused,
     deletePluginConnection: unused,
+    removeConnectionSecrets: unused,
+    removeMissingPluginData: unused,
+    retryVault: unused,
     syncBacklogConnection: unused,
     syncTeamConnection: unused,
     installPlugin: vi.fn(async () => null),
@@ -361,6 +364,145 @@ describe("saving a connection", () => {
       }),
     ).resolves.toBe(true);
     expect(onSaved).toHaveBeenCalledWith(connection);
+  });
+
+  it("sends the reminder dates with the save", async () => {
+    const { deps } = dependencies();
+    deps.savePluginConnection = vi.fn(async () => {
+      throw new Error("stop");
+    });
+    const workflow = createPluginSettingsWorkflow(deps);
+
+    await workflow.execute({
+      type: "save",
+      pluginId: plugin.id,
+      values: { label: "Acme" },
+      connectionId: "c1",
+      secretExpiry: { token: 1_800_000_000_000, other: null },
+    });
+
+    expect(deps.savePluginConnection).toHaveBeenCalledWith(
+      plugin.id,
+      { label: "Acme" },
+      "c1",
+      { token: 1_800_000_000_000, other: null },
+    );
+  });
+});
+
+describe("saved secrets", () => {
+  it("removes a saved secret and takes the overview the API answers with", async () => {
+    const { deps } = dependencies();
+    const paused = {
+      ...overview,
+      connectionGroups: [{ ...overview.connectionGroups[0]!, connections: [] }],
+      totalPendingImportCount: 0,
+    };
+    deps.removeConnectionSecrets = vi.fn(async () => ({
+      overview: paused,
+      connection: { label: "Acme" } as never,
+    }));
+    const workflow = createPluginSettingsWorkflow(deps);
+
+    await expect(
+      workflow.execute({
+        type: "removeSecrets",
+        pluginId: plugin.id,
+        connectionId: "c1",
+        fieldIds: ["token"],
+      }),
+    ).resolves.toBe(true);
+
+    expect(deps.removeConnectionSecrets).toHaveBeenCalledWith(plugin.id, "c1", [
+      "token",
+    ]);
+    expect(workflow.getSnapshot().overview).toBe(paused);
+    expect(workflow.getSnapshot().statusMessage).toBe(
+      "Removed the saved secret from Acme.",
+    );
+  });
+
+  it("reads the overview again after a refused sync, so the row shows Token rejected", async () => {
+    const { deps } = dependencies();
+    deps.syncBacklogConnection = vi.fn(async () => {
+      throw new Error("The service answered 401.");
+    });
+    const workflow = createPluginSettingsWorkflow(deps);
+    const reads = vi.mocked(deps.getPluginsOverview).mock.calls.length;
+
+    await workflow.execute({
+      type: "sync",
+      pluginId: plugin.id,
+      connectionId: "c1",
+    });
+
+    await vi.waitFor(() =>
+      expect(vi.mocked(deps.getPluginsOverview).mock.calls.length).toBe(
+        reads + 1,
+      ),
+    );
+    // The new overview doesn't hide why the sync failed.
+    await vi.waitFor(() =>
+      expect(workflow.getSnapshot().pluginError).toBe(
+        "The service answered 401.",
+      ),
+    );
+  });
+
+  it("opens the vault again and says whether it works now", async () => {
+    const { deps } = dependencies();
+    deps.retryVault = vi.fn(async () => ({
+      ...overview,
+      vault: { state: "available" as const },
+    }));
+    const workflow = createPluginSettingsWorkflow(deps);
+
+    await workflow.execute({ type: "retryVault" });
+
+    expect(workflow.getSnapshot().statusMessage).toBe(
+      "Ajour can protect credentials on this computer.",
+    );
+    expect(workflow.getSnapshot().overview?.vault).toEqual({
+      state: "available",
+    });
+  });
+
+  it("removes a missing plugin's connections, then the rest of its data", async () => {
+    const { deps } = dependencies();
+    const missing = {
+      ...overview,
+      connectionGroups: [
+        {
+          ...overview.connectionGroups[0]!,
+          connections: [{ id: "a" }, { id: "b" }] as never,
+        },
+      ],
+    };
+    deps.getCachedPluginsOverview = () => missing;
+    deps.deletePluginConnection = vi.fn(async () => missing);
+    deps.removeMissingPluginData = vi.fn(async () => overview);
+    const workflow = createPluginSettingsWorkflow(deps);
+
+    await workflow.execute({
+      type: "removeMissingData",
+      pluginId: plugin.id,
+      pluginName: "Jira",
+    });
+
+    expect(deps.deletePluginConnection).toHaveBeenNthCalledWith(
+      1,
+      plugin.id,
+      "a",
+    );
+    expect(deps.deletePluginConnection).toHaveBeenNthCalledWith(
+      2,
+      plugin.id,
+      "b",
+    );
+    expect(deps.removeMissingPluginData).toHaveBeenCalledWith(plugin.id);
+    expect(workflow.getSnapshot().statusMessage).toBe(
+      "Jira connections and saved secrets removed.",
+    );
   });
 });
 

@@ -239,6 +239,8 @@ describe("plugin runtime port", () => {
           "  return { text: connection.label + ':' + request.sourceId };",
           "}",
           "export async function writeSettle() { throw 'not an Error'; }",
+          "export async function writeDescription() { throw Object.assign(new Error('Refused.'), { status: 401 }); }",
+          "export async function readComments() { throw Object.assign(new Error('Odd.'), { status: 1000 }); }",
           "export async function listSettleStates() { return 'x'.repeat(9 * 1024 * 1024); }",
         ].join("\n"),
       );
@@ -262,6 +264,19 @@ describe("plugin runtime port", () => {
       await expect(settle("writeSettle")).resolves.toEqual({
         ok: false,
         failure: "plugin_error",
+      });
+      // A plugin error that names an HTTP status passes it on, which is how
+      // the host tells a rejected secret (401) from any other failure.
+      await expect(settle("writeDescription")).resolves.toEqual({
+        ok: false,
+        failure: "plugin_error",
+        message: "Refused.",
+        httpStatus: 401,
+      });
+      await expect(settle("readComments")).resolves.toEqual({
+        ok: false,
+        failure: "plugin_error",
+        message: "Odd.",
       });
       await expect(settle("syncConnection")).resolves.toEqual({
         ok: false,

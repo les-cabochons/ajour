@@ -501,6 +501,44 @@ export function connectionAllowsLossyConversion(
   return connection.allowLossyConversion === true;
 }
 
+/**
+ * What the overview says about one entry of the vault, never its value.
+ * `unreadable` is an entry that can't be decrypted on this computer.
+ */
+export const secretEntrySummarySchema = z.object({
+  state: z.enum(["saved", "unreadable"]),
+  setAt: z.number().int().nonnegative().optional(),
+  lastUsedAt: z.number().int().positive().optional(),
+  /** The user's reminder date, in epoch milliseconds. Ajour keeps using the secret after it. */
+  expiresAt: z.number().int().positive().optional(),
+});
+export type SecretEntrySummary = z.infer<typeof secretEntrySummarySchema>;
+
+/**
+ * A saved secret field. `rejected` is one the service refused with a 401: the
+ * connection is paused until the secret is replaced.
+ */
+export const secretFieldSummarySchema = z.object({
+  id: z.string().min(1).max(120),
+  state: z.enum(["saved", "unreadable", "rejected"]),
+  setAt: z.number().int().nonnegative().optional(),
+  lastUsedAt: z.number().int().positive().optional(),
+  expiresAt: z.number().int().positive().optional(),
+});
+export type SecretFieldSummary = z.infer<typeof secretFieldSummarySchema>;
+
+/** Why a connection's operations are refused because of its secrets. */
+export const connectionPauseReasons = [
+  "vault_unavailable",
+  "secret_unreadable",
+  "not_in_vault",
+  /** The service answered 401 to the saved secret. */
+  "secret_rejected",
+  /** The user removed a secret the connection needs. */
+  "secret_removed",
+] as const;
+export type ConnectionPauseReason = (typeof connectionPauseReasons)[number];
+
 export const pluginConnectionSummarySchema = z.object({
   id: z.string().min(1).max(120),
   pluginId: backlogSourceSchema,
@@ -525,24 +563,18 @@ export const pluginConnectionSummarySchema = z.object({
   editableValues: pluginFieldValuesSchema,
   /**
    * The secret fields the vault holds for the connection, never a value.
-   * `unreadable` is one that can't be decrypted on this computer.
+   * A declared secret field that isn't listed is not set.
    */
-  secretFields: z
-    .array(
-      z.object({
-        id: z.string().min(1).max(120),
-        state: z.enum(["saved", "unreadable"]),
-      }),
-    )
-    .optional(),
+  secretFields: z.array(secretFieldSummarySchema).optional(),
+  /**
+   * The connection's settings, kept whole in the vault while its plugin's
+   * package is missing, because nothing says which of them are secret.
+   */
+  sealedConfig: secretEntrySummarySchema.optional(),
   /** Why the connection's operations are refused for now, when they are. */
   paused: z
     .object({
-      reason: z.enum([
-        "vault_unavailable",
-        "secret_unreadable",
-        "not_in_vault",
-      ]),
+      reason: z.enum(connectionPauseReasons),
       message: z.string().max(1000),
     })
     .optional(),
@@ -595,6 +627,16 @@ export const pluginOverviewGroupSchema = z.object({
   /** Declared capabilities the user turned off. `enabled` still gates all. */
   inactiveCapabilities: z.array(switchableCapabilitySchema).optional(),
   connections: z.array(pluginConnectionSummarySchema),
+  /**
+   * The plugin's package is not installed: saved connections or secrets
+   * outlived it, and `plugin` is a stand-in. Absent when it is installed,
+   * even when it can't run.
+   */
+  missing: z.boolean().optional(),
+  /** The secrets of the plugin's agent task settings the vault holds. */
+  agentTaskSecretFields: z.array(secretFieldSummarySchema).optional(),
+  /** The agent task settings kept whole in the vault while the package is missing. */
+  agentTaskSealedConfig: secretEntrySummarySchema.optional(),
 });
 export type PluginOverviewGroup = z.infer<typeof pluginOverviewGroupSchema>;
 
@@ -780,14 +822,33 @@ export type BacklogSyncRequest = z.infer<typeof backlogSyncRequestSchema>;
  */
 export const removeSecretsSchema = z.array(z.string().min(1).max(120)).max(100);
 
+/**
+ * The reminder date of secret fields, in epoch milliseconds, by field ID.
+ * `null` clears it. A field the save doesn't list keeps its date, unless
+ * the save gives it a new value, which starts without one.
+ */
+export const secretExpirySchema = z.record(
+  z.string().min(1).max(120),
+  z.number().int().positive().nullable(),
+);
+
 export const pluginConnectionSaveRequestSchema = z.object({
   id: z.string().trim().min(1).max(120).optional(),
   values: pluginFieldValuesSchema,
   removeSecrets: removeSecretsSchema.optional(),
+  secretExpiry: secretExpirySchema.optional(),
 });
 export type PluginConnectionSaveRequest = z.infer<
   typeof pluginConnectionSaveRequestSchema
 >;
+
+/**
+ * Deletes saved secrets of a connection without saving the rest of its form.
+ * The connection is paused until a new one is added.
+ */
+export const connectionSecretsRemoveRequestSchema = z.object({
+  fieldIds: removeSecretsSchema.min(1),
+});
 
 export const pluginConnectionSaveResponseSchema = z.object({
   overview: pluginsOverviewSchema,

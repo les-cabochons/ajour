@@ -55,7 +55,8 @@ interface LaunchOptions {
 export class MemorySecretVault implements SecretVault {
   faults: MemoryVaultFaults = {};
   private readonly store: Map<string, MemoryEntry>;
-  private readonly launch: LaunchOptions;
+  /** How this launch goes. A test changes it to say the computer recovered. */
+  launch: LaunchOptions;
   private status?: VaultStatus;
   private readonly unreadable = new Set<string>();
   /** How many entries a read tried to decrypt, for the "never in a loop" rule. */
@@ -183,6 +184,35 @@ export class MemorySecretVault implements SecretVault {
     for (const entry of this.store.values()) {
       if (entry.lostKey) this.unreadable.add(secretKeyId(entry.key));
     }
+  }
+
+  async setExpiry(
+    updates: ReadonlyArray<SecretKey & { expiresAt: number | null }>,
+  ): Promise<void> {
+    await this.open();
+    const changes = updates.flatMap(({ expiresAt, ...key }) => {
+      const id = secretKeyId(key);
+      const entry = this.store.get(id);
+      if (!entry || this.unreadable.has(id) || entry.lostKey) return [];
+      return (entry.expiresAt ?? null) === expiresAt
+        ? []
+        : [{ entry, expiresAt }];
+    });
+    if (changes.length === 0) return;
+    if (this.faults.frozen) {
+      throw new VaultUnavailableError(this.faults.frozen, "change");
+    }
+    for (const { entry, expiresAt } of changes) {
+      if (expiresAt === null) delete entry.expiresAt;
+      else entry.expiresAt = expiresAt;
+    }
+  }
+
+  /** Starts over as a launch does: `launch` decides what the round trip finds. */
+  async reopen(): Promise<VaultOpened> {
+    this.status = undefined;
+    this.unreadable.clear();
+    return this.open();
   }
 
   async remove(selection: SecretSelection): Promise<number> {

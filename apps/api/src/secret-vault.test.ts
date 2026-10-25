@@ -391,6 +391,38 @@ describe("the vault file", () => {
     await expect(readFile(filePath, "utf8")).resolves.toBe(text);
   });
 
+  it("takes a reminder-date update that changes nothing from a vault that can't be changed", async () => {
+    const { filePath } = await vaultPath();
+    const text = JSON.stringify({ version: 2, entries: [] });
+    await writeFile(filePath, text);
+    const vault = new FileSecretVault({ filePath, cipher: fakeCipher("a") });
+
+    // The form repeats the saved dates; none of them is a change.
+    await expect(
+      vault.setExpiry([{ ...token, expiresAt: null }]),
+    ).resolves.toBeUndefined();
+    await expect(readFile(filePath, "utf8")).resolves.toBe(text);
+  });
+
+  it("lets a list or read made during a reopen wait for the new load", async () => {
+    const { filePath } = await vaultPath();
+    await new FileSecretVault({ filePath, cipher: fakeCipher("a") }).write([
+      { ...token, value: TOKEN },
+    ]);
+    const vault = new FileSecretVault({ filePath, cipher: fakeCipher("a") });
+    await vault.open();
+
+    const reopening = vault.reopen();
+    const [listed, read] = await Promise.all([
+      vault.list(),
+      vault.read([token]),
+    ]);
+    await reopening;
+
+    expect(listed).toHaveLength(1);
+    expect(read).toEqual([{ state: "set", value: TOKEN }]);
+  });
+
   it("reads the file again when another process holds it for a moment", async () => {
     const { filePath } = await vaultPath();
     await new FileSecretVault({ filePath, cipher: fakeCipher("a") }).write([

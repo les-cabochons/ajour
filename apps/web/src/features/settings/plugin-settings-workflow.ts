@@ -36,6 +36,9 @@ export type PluginSettingsDependencies = Pick<
   | "setPluginEnabled"
   | "savePluginConnection"
   | "deletePluginConnection"
+  | "removeConnectionSecrets"
+  | "removeMissingPluginData"
+  | "retryVault"
   | "syncBacklogConnection"
   | "installPlugin"
   | "setPluginSystemEnabled"
@@ -64,10 +67,22 @@ type PluginSettingsCommand =
       pluginId: string;
       values: PluginFieldValues;
       connectionId?: string;
+      /** The reminder date of each secret field, in epoch ms. `null` clears one. */
+      secretExpiry?: Record<string, number | null>;
       /** Gets the connection the API saved, such as a new one's ID. */
       onSaved?: (connection: PluginConnectionSummary) => void;
     }
   | { type: "delete"; pluginId: string; connectionId: string }
+  | {
+      type: "removeSecrets";
+      pluginId: string;
+      connectionId: string;
+      fieldIds: string[];
+    }
+  /** Deletes the connections and secrets of a plugin whose package is missing. */
+  | { type: "removeMissingData"; pluginId: string; pluginName: string }
+  /** Opens the vault again, to find out whether it works now. */
+  | { type: "retryVault" }
   | { type: "sync"; pluginId: string; connectionId: string }
   | { type: "teamSync"; pluginId: string; connectionId: string }
   | { type: "install" }
@@ -80,6 +95,9 @@ const commandFailureMessages: Record<PluginSettingsCommand["type"], string> = {
   activate: "Unable to update the plugin.",
   save: "Unable to save the plugin connection.",
   delete: "Unable to delete the plugin connection.",
+  removeSecrets: "Unable to remove the saved secret.",
+  removeMissingData: "Unable to remove the saved connections and secrets.",
+  retryVault: "Unable to open the vault again.",
   sync: "Unable to sync backlog items.",
   teamSync: "Unable to sync the team's projects.",
   install: "Unable to install the plugin.",
@@ -349,6 +367,7 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
             command.pluginId,
             command.values,
             command.connectionId,
+            command.secretExpiry,
           );
           finish(
             `${result.connection.label} connection ${command.connectionId ? "updated" : "added"}.`,
@@ -364,6 +383,44 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
               command.pluginId,
               command.connectionId,
             ),
+          );
+          break;
+        }
+        case "removeSecrets": {
+          const result = await deps.removeConnectionSecrets(
+            command.pluginId,
+            command.connectionId,
+            command.fieldIds,
+          );
+          finish(
+            `Removed the saved secret from ${result.connection.label}.`,
+            result.overview,
+          );
+          break;
+        }
+        case "removeMissingData": {
+          // Each connection goes the way a removed one does, which also
+          // clears what the app kept of it locally. The plugin's agent task
+          // settings and anything else left go with the last call.
+          const group = snapshot.overview?.connectionGroups.find(
+            (candidate) => candidate.plugin.id === command.pluginId,
+          );
+          for (const connection of group?.connections ?? []) {
+            await deps.deletePluginConnection(command.pluginId, connection.id);
+          }
+          finish(
+            `${command.pluginName} connections and saved secrets removed.`,
+            await deps.removeMissingPluginData(command.pluginId),
+          );
+          break;
+        }
+        case "retryVault": {
+          const overview = await deps.retryVault();
+          finish(
+            overview.vault?.state === "available"
+              ? "Ajour can protect credentials on this computer."
+              : "Ajour still can't protect credentials on this computer.",
+            overview,
           );
           break;
         }
@@ -460,8 +517,21 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
       }
       return isCurrent();
     } catch (error) {
-      if (epoch === generation)
-        update(pluginFailure(error, commandFailureMessages[command.type]));
+      if (epoch === generation) {
+        const failure = pluginFailure(
+          error,
+          commandFailureMessages[command.type],
+        );
+        update(failure);
+        // A refused sync can change what the rows say: the API marks a
+        // rejected token (401), and answers 409 once a connection is paused.
+        // Reading the overview clears the error, so it is shown again.
+        if (command.type === "sync" || command.type === "teamSync") {
+          void refreshPlugins().then(() => {
+            if (isCurrent()) update(failure);
+          });
+        }
+      }
       return false;
     } finally {
       if (epoch === generation) update({ isMutatingPlugin: false });

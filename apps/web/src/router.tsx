@@ -7,6 +7,10 @@ import {
   createRouter,
 } from "@tanstack/react-router";
 import { parseSyncReviewSearch } from "@/features/backlog/sync-conflicts";
+import {
+  parsePluginDetailSearch,
+  replaceTargetOf,
+} from "@/features/settings/plugin-detail-search";
 import { lazy, Suspense, type ReactNode } from "react";
 import { PageSkeleton } from "@/components/page-skeleton";
 import { parseBacklogItemSearch } from "@/features/backlog/backlog-item-search";
@@ -73,6 +77,12 @@ const SettingsPluginsPage = lazy(
   trackPageChunk(async () => {
     const module = await import("@/features/settings/settings-plugins-page");
     return { default: module.SettingsPluginsPage };
+  }),
+);
+const SettingsVaultPage = lazy(
+  trackPageChunk(async () => {
+    const module = await import("@/features/settings/settings-vault-page");
+    return { default: module.SettingsVaultPage };
   }),
 );
 const SettingsMcpPage = lazy(
@@ -329,14 +339,30 @@ const settingsPluginsRoute = createRoute({
 const settingsPluginDetailRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/plugins/$pluginId",
+  // The Vault's Replace names the secret to replace.
+  validateSearch: parsePluginDetailSearch,
   component: () => {
     const { pluginId } = settingsPluginDetailRoute.useParams();
+    const search = settingsPluginDetailRoute.useSearch();
     return (
       <RouteSuspense>
-        <SettingsPluginsPage pluginId={pluginId} />
+        <SettingsPluginsPage
+          pluginId={pluginId}
+          replace={replaceTargetOf(search)}
+        />
       </RouteSuspense>
     );
   },
+});
+
+const settingsVaultRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/vault",
+  component: () => (
+    <RouteSuspense>
+      <SettingsVaultPage />
+    </RouteSuspense>
+  ),
 });
 
 const settingsMcpRoute = createRoute({
@@ -451,6 +477,7 @@ const routeTree = rootRoute.addChildren([
       settingsGeneralRoute,
       settingsPluginsRoute,
       settingsPluginDetailRoute,
+      settingsVaultRoute,
       settingsMcpRoute,
       settingsAgentsRoute,
       settingsBacklogRoute,

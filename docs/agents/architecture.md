@@ -150,6 +150,27 @@ file:
   config was sealed and not split yet is refused with the same 409, so it
   can't drop the sealed entry; one whose sealed entry can't be read replaces
   it.
+- **What the window sees (#393):** the overview lists each secret field with
+  its state (`saved`, `unreadable`, `rejected`) and when it was set, last used
+  and its reminder date (`expiresAt`, set by a save's `secretExpiry`), a
+  missing plugin's sealed config, and the plugin's agent task secrets. A group
+  stands in for a plugin that isn't installed with `missing: true`. The state
+  file also records which fields were `rejected` (the service answered 401:
+  `markSecretsRejected`, called when a failed plugin call carries
+  `httpStatus: 401` on its `PluginWorkerFailure`, which an API 3 worker takes
+  from a `status`, `statusCode` or `httpStatus` property of the error it threw;
+  the broker will set it from the response; it passes `readAt`, when the
+  call read its secrets, and a secret saved after that isn't marked, so a late
+  401 can't fault the token the user just replaced) and `removed` (the user deleted
+  them). Either pauses a connection (`secret_rejected`; `secret_removed` when
+  the manifest requires the field), until a save gives the field a new value.
+  A save's reminder dates reach the vault only when one differs from the
+  date it holds (`splitSave`'s `currentExpiry`), so a vault that can't be
+  changed still takes a save of other settings.
+  `POST …/connections/:id/secrets/remove` deletes secrets without validating
+  the rest of the connection, `POST /api/vault/retry` opens the vault again,
+  and `DELETE /api/plugins/:id/data` removes the connections and secrets of a
+  plugin that isn't installed.
 - **The move:** state version 8 (`apps/api/src/vault-migration.ts`) moves each
   plain-text secret, of every plugin, active or not, and of agent task
   settings: encrypt, write, read back, and only then drop it from the state

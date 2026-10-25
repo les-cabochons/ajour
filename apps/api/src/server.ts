@@ -60,6 +60,7 @@ import {
   backlogImportSelectionResponseSchema,
   backlogImportSelectionUpdateSchema,
   pluginsOverviewSchema,
+  connectionSecretsRemoveRequestSchema,
   teamCreateRouteRequestSchema,
   AGENT_ACCESS_FIELD_ID,
   ALLOW_LOSSY_FIELD_ID,
@@ -204,6 +205,7 @@ import {
 import {
   AppApiStorage,
   resolveStatePath,
+  type ConnectionWithSecrets,
   type StoredConnection,
 } from "./storage.ts";
 
@@ -626,6 +628,7 @@ function recordPluginFailure(
     refuse(reason?: PluginFailureReason): unknown;
     cancel(reason?: PluginFailureReason): unknown;
     fail(error: unknown, options?: FailOptions<PluginFailureReason>): unknown;
+    count(counter: "secrets_rejected_mark_failed"): unknown;
   },
   error: unknown,
   secrets?: readonly string[],
@@ -918,6 +921,51 @@ async function brokerConnection(
   };
 }
 
+/**
+ * Records a failed plugin call on the request's event, and returns the
+ * connection's credentials for the message the user sees. A 401 means the
+ * service refused the connection's saved secrets: they are marked rejected,
+ * which pauses the connection until the user replaces them. Only a 401
+ * counts, and only when the failure carries it. A plugin error is a
+ * message, so an API 3 plugin is detected only when its error names the
+ * status (`PluginRunOutcome`); the broker will report every 401 it sees.
+ * A secret saved after the call read its secrets isn't marked, since the
+ * service refused an older one.
+ * If marking fails, the failure is counted on the event and the call still ends
+ * with the plugin's error.
+ */
+async function failedCall(
+  storage: AppApiStorage,
+  unit: Parameters<typeof recordPluginFailure>[0],
+  error: unknown,
+  call: ReturnType<typeof admittedCall>,
+  connection: ConnectionWithSecrets,
+) {
+  const credentials = call.credentials(connection.config);
+  recordPluginFailure(unit, error, credentials.secrets);
+  if (error instanceof PluginWorkerFailure && error.httpStatus === 401) {
+    // The plugin's answer and the connection's error matter more than the mark.
+    try {
+      await storage.markSecretsRejected(connection.pluginId, connection.id, {
+        readAt: connection.secretsReadAt,
+      });
+    } catch {
+      unit.count("secrets_rejected_mark_failed");
+    }
+  }
+  return credentials;
+}
+
+/** The secret fields a form gave a value, which replaces the saved one. */
+function givenSecrets(
+  fields: readonly SecretFieldDeclaration[],
+  submitted: PluginFieldValues,
+) {
+  return fields
+    .filter((field) => field.secret && !isEmptySecretValue(submitted[field.id]))
+    .map((field) => field.id);
+}
+
 /** Every installed plugin's secret fields, runnable or not, such as an API 3 package. */
 async function installedSecretManifests(pluginManager: PluginManager) {
   const { plugins, unavailable } = await pluginManager.inspectPlugins();
@@ -1170,6 +1218,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           plugin && secretManifestOf(plugin),
         );
       },
+      getAgentTaskSecretFields: (pluginId) =>
+        storage.agentTaskSecretFields(pluginId),
       createMcpClient: (name, scope) =>
         createMcpClient(storage, name, scope ?? {}),
       revokeMcpClient: (clientId) =>
@@ -1304,6 +1354,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       await storage.setAgentTaskValues(pluginId, values, {
         fields: secretFields,
         removeSecrets: payload.removeSecrets,
+        replacedSecrets: givenSecrets(secretFields, parsed.values),
+        secretExpiry: payload.secretExpiry,
       });
       writeJson(response, 200, await agentRunner.overview());
     },
@@ -1848,7 +1900,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             )
             .redaction.summary(validation.connectionSummary),
         },
-        { fields: secretFields, removeSecrets: payload.removeSecrets },
+        {
+          fields: secretFields,
+          removeSecrets: payload.removeSecrets,
+          replacedSecrets: givenSecrets(secretFields, parsedValues.config),
+          secretExpiry: payload.secretExpiry,
+        },
       );
       unit.set({ connection: { id: storedConnection.id } });
       const { overview, summary } = await findConnectionSummary(
@@ -1884,6 +1941,85 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       writeJson(response, 200, await getOverview(storage, pluginManager));
     },
 
+    connectionSecretsRemove: async ({ request, response, params, unit }) => {
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      const { connectionId } = params;
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+      const payload = await readRequest(
+        request,
+        connectionSecretsRemoveRequestSchema,
+      );
+      unit.set({ secret: { field_count: payload.fieldIds.length } });
+      const existing = await storage.getConnection(pluginId, connectionId);
+      if (!existing) {
+        unit.refuse("connection_not_found");
+        writeJson(response, 404, { error: "Plugin connection not found." });
+        return;
+      }
+      const { plugin } = await findPlugin(pluginManager, pluginId);
+      // The fields the plugin marks secret, and those the vault holds.
+      const secretIds = new Set(
+        effectiveSecretFields(plugin?.connectionFields ?? [], existing.secrets)
+          .filter((field) => field.secret)
+          .map((field) => field.id),
+      );
+      const notSecret = payload.fieldIds.find((id) => !secretIds.has(id));
+      if (notSecret !== undefined) {
+        unit.refuse("not_secret");
+        writeJson(response, 400, {
+          error: `Plugin field "${notSecret}" is not a secret, so it can't be removed.`,
+        });
+        return;
+      }
+      await storage.removeConnectionSecrets(
+        pluginId,
+        connectionId,
+        payload.fieldIds,
+      );
+      const { overview, summary } = await findConnectionSummary(
+        storage,
+        pluginManager,
+        pluginId,
+        connectionId,
+      );
+      writeJson(
+        response,
+        200,
+        pluginConnectionSaveResponseSchema.parse({
+          overview,
+          connection: summary,
+        }),
+      );
+    },
+
+    pluginDataRemove: async ({ response, params, unit }) => {
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      unit.set({ plugin: { id: pluginId } });
+      const { plugins, unavailable } = await pluginManager.inspectPlugins();
+      if (
+        plugins.some((plugin) => plugin.id === pluginId) ||
+        unavailable.some((plugin) => plugin.manifest.id === pluginId)
+      ) {
+        unit.refuse("installed");
+        writeJson(response, 409, {
+          error:
+            "This plugin is installed. Uninstall it to remove its connections and saved secrets.",
+        });
+        return;
+      }
+      // Refused before anything goes: a vault that can't drop the secrets
+      // would leave them behind a connection that is already gone.
+      await storage.assertSecretsChangeable();
+      await storage.removePluginData(pluginId);
+      writeJson(response, 200, await getOverview(storage, pluginManager));
+    },
+
+    vaultRetry: async ({ response, unit }) => {
+      const status = await storage.reopenVault();
+      unit.set({ vault: { state: status.state } });
+      writeJson(response, 200, await getOverview(storage, pluginManager));
+    },
+
     settleStateList: async (context) => {
       const target = await backlogTarget(
         context,
@@ -1910,7 +2046,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         unit.set({ source_state: { count: result.states.length } });
         writeJson(response, 200, result);
       } catch (error) {
-        failPluginCall(response, unit, error, target.call, target.connection);
+        await failPluginCall(
+          response,
+          unit,
+          error,
+          target.call,
+          target.connection,
+        );
       }
     },
 
@@ -1943,7 +2085,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         );
         writeJson(response, 200, backlogSettleWriteResultSchema.parse(result));
       } catch (error) {
-        failPluginCall(response, unit, error, target.call, target.connection);
+        await failPluginCall(
+          response,
+          unit,
+          error,
+          target.call,
+          target.connection,
+        );
       }
     },
 
@@ -1975,7 +2123,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           backlogReadDescriptionResultSchema.parse(result),
         );
       } catch (error) {
-        failPluginCall(
+        await failPluginCall(
           response,
           context.unit,
           error,
@@ -2032,7 +2180,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           backlogWriteDescriptionResultSchema.parse(result),
         );
       } catch (error) {
-        failPluginCall(response, unit, error, target.call, target.connection);
+        await failPluginCall(
+          response,
+          unit,
+          error,
+          target.call,
+          target.connection,
+        );
       }
     },
 
@@ -2180,8 +2334,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           }),
         );
       } catch (error) {
-        const credentials = call.credentials(connection.config);
-        recordPluginFailure(unit, error, credentials.secrets);
+        const credentials = await failedCall(
+          storage,
+          unit,
+          error,
+          call,
+          connection,
+        );
         const message = credentials.errorMessage(error);
         await storage.recordConnectionError(pluginId, connectionId, message);
         const { summary } = await findConnectionSummary(
@@ -2273,8 +2432,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         }
         writeJson(response, 200, result);
       } catch (error) {
-        const credentials = call.credentials(connection.config);
-        recordPluginFailure(unit, error, credentials.secrets);
+        const credentials = await failedCall(
+          storage,
+          unit,
+          error,
+          call,
+          connection,
+        );
         const message = credentials.errorMessage(error);
         if (operation.data === "syncPullRequests") {
           await storage.recordConnectionError(pluginId, connectionId, message);
@@ -2437,8 +2601,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           refuseAgent();
           return;
         }
-        const credentials = call.credentials(connection.config);
-        recordPluginFailure(unit, error, credentials.secrets);
+        const credentials = await failedCall(
+          storage,
+          unit,
+          error,
+          call,
+          connection,
+        );
         writeJson(response, 502, { error: credentials.errorMessage(error) });
       }
     },
@@ -2518,9 +2687,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         unit.set({ calendar: { event_count: result.events.length } });
         writeJson(response, 200, result);
       } catch (error) {
-        const credentials = call.credentials(connection.config);
+        const credentials = await failedCall(
+          storage,
+          unit,
+          error,
+          call,
+          connection,
+        );
         const message = credentials.errorMessage(error);
-        recordPluginFailure(unit, error, credentials.secrets);
         await storage.recordConnectionError(pluginId, connectionId, message);
         writeJson(response, 502, { error: message });
       }
@@ -2593,8 +2767,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         );
         writeJson(response, 200, result);
       } catch (error) {
-        const credentials = call.credentials(connection.config);
-        recordPluginFailure(unit, error, credentials.secrets);
+        const credentials = await failedCall(
+          storage,
+          unit,
+          error,
+          call,
+          connection,
+        );
         const message = credentials.errorMessage(error);
         await storage.recordConnectionError(pluginId, connectionId, message);
         writeJson(response, 502, { error: message });
@@ -2823,15 +3002,20 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
    * Answers a failed plugin call on a connection with the plugin's error,
    * redacted, and records it on the request's event.
    */
-  function failPluginCall(
+  async function failPluginCall(
     response: ServerResponse,
     unit: Parameters<typeof recordPluginFailure>[0],
     error: unknown,
     call: ReturnType<typeof admittedCall>,
-    connection: StoredConnection,
+    connection: ConnectionWithSecrets,
   ) {
-    const credentials = call.credentials(connection.config);
-    recordPluginFailure(unit, error, credentials.secrets);
+    const credentials = await failedCall(
+      storage,
+      unit,
+      error,
+      call,
+      connection,
+    );
     // The message reaches the user, and a description's is stored with the item.
     writeJson(response, 502, { error: credentials.errorMessage(error) });
   }
