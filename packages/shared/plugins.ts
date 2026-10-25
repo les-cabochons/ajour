@@ -603,6 +603,19 @@ export const vaultStatusSchema = z.discriminatedUnion("state", [
 export type VaultStatusSummary = z.infer<typeof vaultStatusSchema>;
 
 /**
+ * Whether this computer can run plugins in their sandbox. While it can't,
+ * no plugin runs, and `reason` says why, such as Ajour started with
+ * `--no-sandbox`. There is no override. Absent where plugins don't run in a
+ * sandbox yet: release builds until the cut-over (#403) and the standalone
+ * API.
+ */
+export const pluginSandboxStatusSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("on") }),
+  z.object({ state: z.literal("off"), reason: z.string().max(1000) }),
+]);
+export type PluginSandboxStatus = z.infer<typeof pluginSandboxStatusSchema>;
+
+/**
  * A plugin as the overview reports it. Saved connections can outlive their
  * plugin (uninstalled, or rejected for another plugin API version), so the API
  * fills the gap with a placeholder, and `unavailableReason` tells the user
@@ -700,6 +713,8 @@ export const pluginsOverviewSchema = z.object({
   totalSelectedImportCount: z.number().int().nonnegative(),
   /** Absent from an API older than the vault. */
   vault: vaultStatusSchema.optional(),
+  /** See `pluginSandboxStatusSchema`. While it is off, every group is off too. */
+  sandbox: pluginSandboxStatusSchema.optional(),
 });
 export type PluginsOverview = z.infer<typeof pluginsOverviewSchema>;
 

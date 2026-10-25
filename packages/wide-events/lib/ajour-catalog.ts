@@ -119,6 +119,8 @@ const pluginOperationFields = {
     timeout_ms: operational<number>(),
     /** The serialized size of the worker's result. */
     result_bytes: operational<number>(),
+    /** Why the plugin's process ended under the run, when it `crashed`. */
+    crash_cause: operational<"crashed" | "oom" | "killed" | "memory">(),
   },
 } as const;
 
@@ -126,10 +128,11 @@ const pluginOperationFields = {
  * Every way a plugin operation ends other than `ok`. Refused: `capacity`,
  * the inactive reasons, `host_stopping`, `package_change`, `not_installed`,
  * `runs_no_code`, `not_supported` for a capability or feature the plugin
- * doesn't declare, and `agent_access` when its route's admission check
- * refuses it. Cancelled: the inactive reasons, `uninstalled` and
- * `shutdown`. Then `timeout`, and the errors `result_too_large`,
- * `invalid_result`, `exited_early` and `plugin_error`.
+ * doesn't declare, `agent_access` when its route's admission check
+ * refuses it, and `runtime_unavailable` when this computer can't sandbox
+ * plugins. Cancelled: the inactive reasons, `uninstalled` and `shutdown`.
+ * Then `timeout`, and the errors `result_too_large`, `invalid_result`,
+ * `exited_early`, `crashed` and `plugin_error`.
  */
 const pluginOperationReasons = [
   "capacity",
@@ -141,12 +144,16 @@ const pluginOperationReasons = [
   "not_supported",
   /** The route's own admission check refused the call, such as an agent's comment. */
   "agent_access",
+  /** Plugins are off: this computer can't run them in a sandbox. */
+  "runtime_unavailable",
   "uninstalled",
   "shutdown",
   "timeout",
   "result_too_large",
   "invalid_result",
   "exited_early",
+  /** The plugin's process ended under the run: `worker.crash_cause` says how. */
+  "crashed",
   "plugin_error",
 ] as const;
 
