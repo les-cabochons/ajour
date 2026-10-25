@@ -302,6 +302,40 @@ describe("held edits", () => {
     expect(heldEdits()).toEqual([]);
   });
 
+  it("keeps a held comment until its post succeeds", async () => {
+    const api = fakeApi();
+    const { localStore, held, review, item, heldEdits } = await load();
+    localStore.importSyncedWorkItems([candidate]);
+    held.holdCommentEdit({
+      kind: "comment",
+      itemId: item()._id,
+      pluginId: "azure_devops",
+      connectionId: "contoso",
+      sourceId: "42",
+      body: "Waiting on the client",
+    });
+    const stored = () =>
+      JSON.parse(storage.get(held.HELD_COMMENTS_STORAGE_KEY) ?? "[]");
+
+    // Still refused: it stays held.
+    await review.sendHeldEdit(heldEdits()[0]!);
+    expect(stored()).toHaveLength(1);
+
+    // While the post runs, Ajour could quit: the comment is still held.
+    api.editing = true;
+    const sending = review.sendHeldEdit(heldEdits()[0]!);
+    expect(stored()).toHaveLength(1);
+    await sending;
+
+    expect(api.sent).toEqual([
+      {
+        route: "comment",
+        body: { sourceId: "42", body: "Waiting on the client" },
+      },
+    ]);
+    expect(stored()).toEqual([]);
+  });
+
   it("holds a comment refused while editing is off, and keeps every held change across a restart", async () => {
     fakeApi();
     const first = await load();

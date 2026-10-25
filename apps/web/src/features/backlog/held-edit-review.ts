@@ -18,8 +18,9 @@ import { keepCommentAsDraft } from "@/lib/comment-drafts";
 import { saveSyncedDescription } from "@/lib/description-save";
 import { announceHeldEdit } from "@/lib/held-edit-notice";
 import {
-  restoreHeldCommentEdit,
-  takeHeldCommentEdit,
+  dropHeldCommentEdit,
+  findHeldCommentEdit,
+  type HeldCommentEdit,
   type HeldEdit,
 } from "@/lib/held-edits";
 import { localStore } from "@/lib/local-store";
@@ -106,9 +107,14 @@ export async function sendHeldEdit(edit: HeldEdit): Promise<void> {
   }
 }
 
-async function sendHeldComment(edit: HeldEdit) {
-  const entry = takeHeldCommentEdit("id" in edit ? edit.id : "");
-  if (!entry) return;
+/** The held comment changes being sent, so a second Send waits for the first. */
+const sendingComments = new Set<string>();
+
+async function sendHeldComment(edit: HeldCommentEdit) {
+  // It stays held until the source took it, so a quit meanwhile keeps it.
+  const entry = findHeldCommentEdit(edit.id);
+  if (!entry || sendingComments.has(entry.id)) return;
+  sendingComments.add(entry.id);
   const title = itemOf(entry.itemId)?.title ?? "an item";
   try {
     if (entry.kind === "comment") {
@@ -121,6 +127,7 @@ async function sendHeldComment(edit: HeldEdit) {
           ? { agent: true, itemId: entry.itemId }
           : { itemId: entry.itemId },
       );
+      dropHeldCommentEdit(entry.id);
       announcePostedComment(entry, comment);
     } else if (entry.kind === "commentEdit") {
       await editItemComment(
@@ -133,38 +140,40 @@ async function sendHeldComment(edit: HeldEdit) {
         },
         { itemId: entry.itemId },
       );
+      dropHeldCommentEdit(entry.id);
     } else {
       await deleteItemComment(entry.pluginId, entry.connectionId, {
         sourceId: entry.sourceId,
         commentId: entry.commentId,
       });
+      dropHeldCommentEdit(entry.id);
     }
   } catch (error) {
     // Still held: editing was turned off again meanwhile.
     if (isAccessOffError(error)) {
-      restoreHeldCommentEdit(entry);
       announceHeldEdit(itemOf(entry.itemId));
       return;
     }
     if (entry.kind === "comment") {
+      // The draft keeps it now, where the user can fix and post it.
       keepCommentAsDraft(entry.itemId, entry.body);
+      dropHeldCommentEdit(entry.id);
       showErrorToast({
         title: `Couldn't post the comment on "${title}"`,
         description: `${errorText(error)} It's kept as a draft on the item.`,
       });
-    } else if (entry.kind === "commentEdit") {
-      // Never lost: it waits here again.
-      restoreHeldCommentEdit(entry);
+    } else {
+      // Never lost: it waits here.
       showErrorToast({
-        title: `Couldn't save the comment edit on "${title}"`,
+        title:
+          entry.kind === "commentEdit"
+            ? `Couldn't save the comment edit on "${title}"`
+            : `The comment on "${title}" wasn't deleted`,
         description: `${errorText(error)} It's still held in Sync review.`,
       });
-    } else {
-      showErrorToast({
-        title: `The comment on "${title}" wasn't deleted`,
-        description: errorText(error),
-      });
     }
+  } finally {
+    sendingComments.delete(entry.id);
   }
 }
 
@@ -182,6 +191,6 @@ export function discardHeldEdit(edit: HeldEdit) {
       localStore.updateSyncedDescription(edit.itemId, discardHeldDescription);
       return;
     default:
-      takeHeldCommentEdit(edit.id);
+      dropHeldCommentEdit(edit.id);
   }
 }

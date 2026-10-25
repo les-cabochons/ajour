@@ -124,22 +124,19 @@ export function holdCommentEdit(change: NewHeldComment): HeldCommentEdit {
   return entry;
 }
 
-/** Takes the held change out, to send or discard it. Undefined once gone. */
-export function takeHeldCommentEdit(id: string): HeldCommentEdit | undefined {
-  const entries = queue.read();
-  const entry = entries.find((candidate) => candidate.id === id);
-  if (!entry) return undefined;
-  queue.write(entries.filter((candidate) => candidate.id !== id));
-  notify();
-  return entry;
+/** The held change as saved now, as another window may have sent it. */
+export function findHeldCommentEdit(id: string): HeldCommentEdit | undefined {
+  return queue.read().find((candidate) => candidate.id === id);
 }
 
-/** Puts a held change back, as after a send that was refused again. */
-export function restoreHeldCommentEdit(entry: HeldCommentEdit) {
-  queue.write([
-    ...queue.read().filter((candidate) => candidate.id !== entry.id),
-    entry,
-  ]);
+/**
+ * Drops the held change: once it was sent, or the user discarded it. A
+ * send drops it only after it succeeded, so a quit while it runs keeps it.
+ */
+export function dropHeldCommentEdit(id: string) {
+  const entries = queue.read();
+  if (!entries.some((candidate) => candidate.id === id)) return;
+  queue.write(entries.filter((candidate) => candidate.id !== id));
   notify();
 }
 
