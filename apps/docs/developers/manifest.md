@@ -119,6 +119,7 @@ A task can run once the user has turned on MCP, picked an installed agent in **S
 | `estimateMinutes` | number | A whole number from 1 to 240: how long a run usually takes. The agent panel uses it to tell a slow run from a stuck one.                                                                                         |
 | `weekLink`        | string | Optional. A URL template for **Open the week in…**, up to 500 characters. Shown only when it fills to an `https:` URL.                                                                                           |
 | `settings`        | array  | Optional. Up to 20 fields with the [connection field](#connection-fields) keys. The user fills them on the plugin's page, under Tasks. Tasks share a setting by its `id`: declare it in each task that uses it.  |
+| `tools`           | array  | Plugin API 4 only, and required there. The Ajour MCP data tools the task's run may use, such as `get_week_changes`. The run's agent sees only these and the session tools; Ajour refuses a call to any other.    |
 
 A `submit-week` task looks the same, such as `"id": "submit-week"`, `"label": "Check Workday and submit"`, `"placement": "submit-week"`, `"prompt": "prompts/submit-week.md"`. Its prompt ends with the `submit_week` tool.
 
@@ -139,6 +140,8 @@ The prompt and `weekLink` can use these slots. A slot Ajour does not know fails 
 | `{{settings.<id>}}` | The value of the task setting `<id>`, its default, or empty when unset. |
 
 :::
+
+A setting marked `secret` can fill `weekLink`, which only the user sees, but never the prompt: the prompt goes to the agent. Ajour refuses to run a task whose prompt uses one.
 
 ### What the agent gets
 

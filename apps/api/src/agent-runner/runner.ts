@@ -23,7 +23,10 @@ import {
   type AgentTask,
   type PluginFieldValues,
 } from "../../../../packages/shared/plugins.ts";
-import { fillTemplate } from "../../../../packages/shared/agent-task-templates.ts";
+import {
+  fillTemplate,
+  listTemplateSlots,
+} from "../../../../packages/shared/agent-task-templates.ts";
 import { PLUGIN_API_4 } from "../../../../packages/shared/plugin-api-4.ts";
 import type { AjourCatalog } from "../../../../packages/wide-events/catalog.ts";
 import {
@@ -206,6 +209,8 @@ interface RunnerTask {
    * tool, as for an API 3 task.
    */
   tools?: readonly string[];
+  /** Its settings marked secret, which never reach the agent. */
+  secretSettings: readonly { id: string; label: string }[];
 }
 
 function defaultReadVersion(executable: string, pathValue: string) {
@@ -366,6 +371,9 @@ export class AgentRunner {
           ...(plugin.apiVersion === PLUGIN_API_4
             ? { tools: task.tools ?? [] }
             : {}),
+          secretSettings: fields.filter(
+            (field, index) => field.secret || task.settings[index]!.secret,
+          ),
         });
       }
     }
@@ -467,6 +475,18 @@ export class AgentRunner {
         request.pluginId,
         request.taskId,
       );
+      // The prompt goes to the CLI, and the agent's model at its provider,
+      // so a secret setting never fills it.
+      const promptSlots = new Set(listTemplateSlots(taskPrompt));
+      const secretInPrompt = found.secretSettings.find((field) =>
+        promptSlots.has(`settings.${field.id}`),
+      );
+      if (secretInPrompt) {
+        throw new AgentRunError(
+          `The task's prompt uses the secret setting ${secretInPrompt.label}. Ajour never gives a secret to an agent.`,
+          400,
+        );
+      }
 
       step = "create_client";
       // The MCP server enforces the task's tools, whatever the CLI is told.
@@ -512,7 +532,15 @@ export class AgentRunner {
         prompt: buildPrompt({
           taskPrompt,
           values: {
-            ...settingValues,
+            // Without the secret ones, so none can fill the prompt.
+            ...Object.fromEntries(
+              Object.entries(settingValues).filter(
+                ([slot]) =>
+                  !found.secretSettings.some(
+                    (field) => slot === `settings.${field.id}`,
+                  ),
+              ),
+            ),
             weekOf: request.weekOf,
             sessionId: session.id,
           },

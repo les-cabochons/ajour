@@ -621,6 +621,59 @@ describe("AgentRunner", () => {
     }
   });
 
+  describe("a setting marked secret", () => {
+    const secret = "secret-setting-canary-7d1e";
+    const withSecretSetting = async (run: () => Promise<void>) => {
+      fakeSettings.push({
+        id: "token",
+        label: "Workday token",
+        type: "text" as const,
+        required: false,
+        secret: true,
+      });
+      vi.stubEnv("FAKE_CLI_SECRET_PROBE", secret);
+      try {
+        await run();
+      } finally {
+        fakeSettings.pop();
+        vi.unstubAllEnvs();
+      }
+    };
+
+    it("never reaches the CLI's arguments, environment or files", async () => {
+      await withSecretSetting(async () => {
+        const { runner, report } = await setup([{ exit: 0 }], {
+          values: { url: "https://wd.example/t", token: secret },
+        });
+        await runner.start(request);
+        await settled(runner);
+        const line = JSON.parse((await readFile(report, "utf8")).trim());
+        expect(line.secretSeenIn).toEqual([]);
+        expect(line.secretSeenInFiles).toEqual([]);
+        expect(JSON.stringify(line.argv)).not.toContain(secret);
+      });
+    });
+
+    it("refuses a task whose prompt uses it, before the CLI starts", async () => {
+      await withSecretSetting(async () => {
+        const { runner, report, clients, events } = await setup([{ exit: 0 }], {
+          values: { url: "https://wd.example/t", token: secret },
+          readPrompt: async () => "Sign in with {{settings.token}}.",
+        });
+        await expect(runner.start(request)).rejects.toMatchObject({
+          status: 400,
+          message:
+            "The task's prompt uses the secret setting Workday token. Ajour never gives a secret to an agent.",
+        });
+        expect(clients).toEqual([]);
+        await expect(readFile(report, "utf8")).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+        expect(JSON.stringify(events)).not.toContain(secret);
+      });
+    });
+  });
+
   it("logs one agent.run event without prompt or output", async () => {
     const { runner, events } = await setup([
       { stderr: "secret week data" },
