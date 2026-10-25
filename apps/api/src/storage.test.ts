@@ -1002,6 +1002,7 @@ describe("state files from earlier versions", () => {
       pluginSecrets: {},
     },
     pluginBrokerActivity: {},
+    pluginConsent: {},
   };
   /**
    * A file with a connection's token: without a vault, as here, the token

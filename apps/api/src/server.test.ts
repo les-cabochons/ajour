@@ -393,7 +393,11 @@ describe("plugin installation boundary", () => {
       expect(update.replaced).toBe(true);
       expect(update.overview.connectionGroups).toEqual([
         expect.objectContaining({
-          enabled: true,
+          // A new capability is more access, so the update waits for consent.
+          enabled: false,
+          pendingAccess: expect.objectContaining({
+            difference: expect.objectContaining({ capabilities: [added] }),
+          }),
           inactiveCapabilities: [added],
           connections: [expect.objectContaining(after)],
         }),

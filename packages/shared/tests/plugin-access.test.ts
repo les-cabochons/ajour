@@ -44,6 +44,7 @@ const NOTHING: PluginAccessDifference = {
   agentPrompts: [],
   alwaysOnAccess: [],
   accessOperations: [],
+  ungatedOperations: [],
   alwaysReady: false,
 };
 
@@ -371,10 +372,10 @@ describe("the access difference between two manifests", () => {
       },
     ],
     [
-      "a removed operation",
+      "an endpoint that now sits behind an access choice",
       azureDevOpsManifest,
       (manifest) => {
-        manifest.connectionAccess[1].operations.pop();
+        manifest.network.endpoints[1].access = "editWorkItems";
       },
     ],
     [
@@ -528,5 +529,129 @@ describe("the access summary", () => {
         },
       ),
     ).toThrow('The prompt of agent task "submit-week" is missing.');
+  });
+});
+
+describe("an update that removes a gate", () => {
+  // A gate is the access choice an endpoint or operation sits behind. Taking
+  // it away, or swapping it, reaches more than the user allowed.
+  it.each<
+    [
+      string,
+      () => Manifest,
+      (manifest: Manifest) => void,
+      Partial<PluginAccessDifference>,
+    ]
+  >([
+    [
+      "an endpoint moved out of its access choice",
+      azureDevOpsManifest,
+      (manifest) => {
+        delete manifest.network.endpoints[3].access;
+      },
+      {
+        endpoints: [
+          { host: "base", method: "PATCH", path: "/_apis/wit/workitems/*" },
+        ],
+      },
+    ],
+    [
+      "an endpoint moved to another access choice",
+      azureDevOpsManifest,
+      (manifest) => {
+        manifest.network.endpoints[3].access = "pullRequests";
+      },
+      {
+        endpoints: [
+          {
+            host: "base",
+            method: "PATCH",
+            path: "/_apis/wit/workitems/*",
+            access: "pullRequests",
+          },
+        ],
+      },
+    ],
+    [
+      "an endpoint on a derived host moved out of its access choice",
+      azureDevOpsManifest,
+      (manifest) => {
+        delete manifest.network.derivedHosts[0].endpoints[0].access;
+      },
+      {
+        endpoints: [
+          { host: "vssps", method: "GET", path: "/_apis/identities" },
+        ],
+      },
+    ],
+    [
+      "an operation moved from a choice into an always-on one",
+      azureDevOpsManifest,
+      (manifest) => {
+        manifest.connectionAccess[1].operations = [
+          "postItemComment",
+          "writeDescription",
+        ];
+        manifest.connectionAccess[0].operations = ["writeSettle"];
+      },
+      {
+        accessOperations: [{ choice: "readBacklog", operation: "writeSettle" }],
+      },
+    ],
+    [
+      "a write operation moved to another choice",
+      azureDevOpsManifest,
+      (manifest) => {
+        manifest.connectionAccess[1].operations = [
+          "postItemComment",
+          "writeDescription",
+        ];
+        manifest.connectionAccess[2].operations.push("writeSettle");
+      },
+      {
+        accessOperations: [
+          { choice: "pullRequests", operation: "writeSettle" },
+        ],
+      },
+    ],
+    [
+      "an operation no longer behind any choice",
+      azureDevOpsManifest,
+      (manifest) => {
+        manifest.connectionAccess[1].operations = [
+          "postItemComment",
+          "writeDescription",
+        ];
+      },
+      { ungatedOperations: ["writeSettle"] },
+    ],
+    [
+      "a choice deleted with its operations",
+      azureDevOpsManifest,
+      (manifest) => {
+        manifest.connectionAccess.splice(3, 1);
+        manifest.network.derivedHosts[0].endpoints[0].access = undefined;
+      },
+      {
+        endpoints: [
+          { host: "vssps", method: "GET", path: "/_apis/identities" },
+        ],
+        ungatedOperations: ["searchItemPeople"],
+      },
+    ],
+  ])("widens access for %s", (_name, base, change, expected) => {
+    const result = difference(base, change);
+
+    expect(result).toMatchObject(expected);
+    expect(widensAccess(result)).toBe(true);
+  });
+
+  it("does not widen access when an open endpoint is put behind a choice", () => {
+    const result = difference(azureDevOpsManifest, (manifest) => {
+      manifest.network.endpoints[1].access = "editWorkItems";
+    });
+
+    expect(result.endpoints).toEqual([]);
+    expect(widensAccess(result)).toBe(false);
   });
 });

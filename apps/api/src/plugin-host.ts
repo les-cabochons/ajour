@@ -93,6 +93,7 @@ import {
   type BacklogCommentOperationResult,
 } from "../../../packages/shared/backlog-comments.ts";
 import { z } from "zod";
+import type { PluginAccessView } from "../../../packages/shared/plugin-access-schemas.ts";
 import {
   discoverInstalledPlugins,
   installPluginArchive,
@@ -343,6 +344,8 @@ export class PluginManager {
   async inspectPlugins(): Promise<{
     plugins: PluginManifest[];
     unavailable: UnavailablePlugin[];
+    /** What each runnable plugin reaches, by plugin ID. */
+    access: Map<string, PluginAccessView>;
   }> {
     this.assertRunning();
     const { plugins, unavailable } = await this.discoverPlugins();
@@ -351,6 +354,11 @@ export class PluginManager {
         .map((plugin) => plugin.manifest)
         .sort(comparePlugins),
       unavailable: Array.from(unavailable.values()),
+      access: new Map(
+        Array.from(plugins.values()).map(
+          (plugin) => [plugin.manifest.id, plugin.access] as const,
+        ),
+      ),
     };
   }
 

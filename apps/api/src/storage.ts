@@ -29,6 +29,17 @@ import {
   type SwitchableCapability,
 } from "../../../packages/shared/plugins.ts";
 import type { McpSettings } from "../../../packages/shared/agent-tools.ts";
+import {
+  pluginAccessActivitySchema,
+  pluginConsentSchema,
+  type PluginAccessView,
+  type PluginConsent,
+  type PluginPendingAccess,
+} from "../../../packages/shared/plugin-access-schemas.ts";
+import {
+  pluginAccessDifference,
+  widensAccess,
+} from "../../../packages/shared/plugin-access.ts";
 import { removeOrphanedTempFiles, writeFileAtomically } from "./atomic-file.ts";
 import {
   agentTaskMcpToolNames,
@@ -334,6 +345,12 @@ interface AppApiStateV8 {
    * requests, those that named no saved connection of the plugin included.
    */
   pluginBrokerActivity: Record<string, BrokerActivityRecord>;
+  /**
+   * Per plugin, the version the user allowed and what it reached. Turning
+   * the plugin on records it; an update that reaches more is compared
+   * against it (#394). Absent for a plugin never turned on.
+   */
+  pluginConsent: Record<string, PluginConsent>;
 }
 
 type AppApiState = AppApiStateV8;
@@ -410,7 +427,28 @@ function createDefaultState(): AppApiState {
       pluginSecrets: {},
     },
     pluginBrokerActivity: {},
+    pluginConsent: {},
   };
+}
+
+/**
+ * What the installed version reaches beyond what the user allowed, when it
+ * is more. A plugin never turned on has nothing allowed, and shows nothing:
+ * turning it on is the first consent.
+ */
+function pendingAccessOf(
+  consents: Record<string, PluginConsent>,
+  plugin: PluginManifest,
+  view: PluginAccessView,
+): PluginPendingAccess | undefined {
+  if (!Object.hasOwn(consents, plugin.id)) return undefined;
+  const difference = pluginAccessDifference(
+    consents[plugin.id]!.access,
+    view.summary,
+  );
+  return widensAccess(difference)
+    ? { version: plugin.version, difference }
+    : undefined;
 }
 
 function compareConnections(left: StoredConnection, right: StoredConnection) {
@@ -821,6 +859,20 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
       ).flatMap(([pluginId, record]) => {
         const normalized = normalizeBrokerActivity(record);
         return normalized ? [[pluginId, normalized] as const] : [];
+      }),
+    ),
+    pluginConsent: Object.fromEntries(
+      Object.entries(
+        typeof raw.pluginConsent === "object" &&
+          raw.pluginConsent !== null &&
+          !Array.isArray(raw.pluginConsent)
+          ? raw.pluginConsent
+          : {},
+      ).flatMap(([pluginId, record]) => {
+        // A record that doesn't parse is dropped: the plugin then has no
+        // consent on file, and turning it on records it again.
+        const parsed = pluginConsentSchema.safeParse(record);
+        return parsed.success ? [[pluginId, parsed.data] as const] : [];
       }),
     ),
   };
@@ -1236,6 +1288,8 @@ export class AppApiStorage {
       manifest: PluginManifest;
       reason: string;
     }> = [],
+    /** What each runnable plugin reaches, by plugin ID. */
+    accessViews: ReadonlyMap<string, PluginAccessView> = new Map(),
   ): Promise<PluginsOverview> {
     const state = await this.readState();
     const vault = await this.vaultView();
@@ -1287,8 +1341,20 @@ export class AppApiStorage {
         agentTaskSecrets,
         vault,
       );
+      const accessView = accessViews.get(plugin.id);
+      const pendingAccess = accessView
+        ? pendingAccessOf(state.pluginConsent, plugin, accessView)
+        : undefined;
+      const accessActivity = pluginAccessActivitySchema.safeParse(
+        this.brokerActivityIn(state, plugin.id).plugin,
+      );
       return {
         plugin,
+        ...(accessView ? { access: accessView } : {}),
+        ...(pendingAccess ? { pendingAccess } : {}),
+        ...(accessView && accessActivity.success
+          ? { accessActivity: accessActivity.data }
+          : {}),
         enabled:
           state.pluginsEnabled &&
           plugin.unavailableReason === undefined &&
@@ -1654,6 +1720,33 @@ export class AppApiStorage {
       .catch(() => undefined);
   }
 
+  /** What the user allowed of the plugin, when they turned it on. */
+  async getPluginConsent(pluginId: string): Promise<PluginConsent | undefined> {
+    const { pluginConsent } = await this.readState();
+    return Object.hasOwn(pluginConsent, pluginId)
+      ? pluginConsent[pluginId]
+      : undefined;
+  }
+
+  /** Records what the user allowed: the version and what it reaches. */
+  async recordPluginConsent(
+    pluginId: string,
+    consent: PluginConsent,
+  ): Promise<void> {
+    await this.mutate(async (state) => ({
+      nextState: {
+        ...state,
+        pluginConsent: { ...state.pluginConsent, [pluginId]: consent },
+      },
+      result: undefined,
+    }));
+  }
+
+  /** Whether the user left the plugin on, whatever the plugin system's own switch says. */
+  async isPluginSwitchedOn(pluginId: string): Promise<boolean> {
+    return !(await this.readState()).disabledPluginIds.includes(pluginId);
+  }
+
   async setPluginEnabled(pluginId: string, enabled: boolean): Promise<void> {
     await this.mutate(async (state) => {
       const disabledPluginIds = enabled
@@ -1784,6 +1877,11 @@ export class AppApiStorage {
         ),
         pluginBrokerActivity: Object.fromEntries(
           Object.entries(state.pluginBrokerActivity).filter(
+            ([candidate]) => candidate !== pluginId,
+          ),
+        ),
+        pluginConsent: Object.fromEntries(
+          Object.entries(state.pluginConsent).filter(
             ([candidate]) => candidate !== pluginId,
           ),
         ),
@@ -2251,7 +2349,16 @@ export class AppApiStorage {
     plugin?: BrokerActivityRecord;
     connections: Record<string, BrokerActivityRecord>;
   }> {
-    const state = await this.readState();
+    return this.brokerActivityIn(await this.readState(), pluginId);
+  }
+
+  private brokerActivityIn(
+    state: AppApiState,
+    pluginId: string,
+  ): {
+    plugin?: BrokerActivityRecord;
+    connections: Record<string, BrokerActivityRecord>;
+  } {
     let plugin = Object.hasOwn(state.pluginBrokerActivity, pluginId)
       ? state.pluginBrokerActivity[pluginId]
       : undefined;

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type {
   PluginAuth,
   PluginAuthScheme,
@@ -12,7 +13,10 @@ import type {
  * difference: an update widens access when it adds a capability, an auth
  * scheme, a host, a derived host, an endpoint, a public host, an MCP tool or
  * an agent prompt change, marks an access choice always on, adds an operation
- * to an access choice, or switches to "Always ready" (spec #381). Nothing else counts, removals included.
+ * to an access choice, or switches to "Always ready" (spec #381). It also
+ * widens when it removes a gate: an endpoint no longer behind its access
+ * choice, or behind another one, and an operation that no longer sits behind
+ * any choice. Other removals don't count.
  */
 
 export interface PluginAccessAuth {
@@ -95,6 +99,12 @@ export interface PluginAccessDifference {
   alwaysOnAccess: string[];
   /** Operations an access choice now unlocks that it didn't before. */
   accessOperations: PluginAccessOperation[];
+  /**
+   * Operations that sat behind an access choice and no longer sit behind
+   * any. The manifest can't tell a removed operation from an ungated one,
+   * so both count.
+   */
+  ungatedOperations: string[];
   /** The update switches the plugin to "Always ready". */
   alwaysReady: boolean;
 }
@@ -114,6 +124,8 @@ export interface PluginAccessManifest {
     id: string;
     always: boolean;
     operations?: readonly string[];
+    label?: string;
+    tokenScope?: string;
   }[];
   runtime?: { start: PluginStartMode };
 }
@@ -238,6 +250,20 @@ function accessOperationKey(entry: PluginAccessOperation) {
   return `${entry.choice}\u0000${entry.operation}`;
 }
 
+function ungated(
+  previous: readonly PluginAccessOperation[],
+  next: readonly PluginAccessOperation[],
+) {
+  const gated = new Set(next.map((entry) => entry.operation));
+  return [
+    ...new Set(
+      previous
+        .map((entry) => entry.operation)
+        .filter((operation) => !gated.has(operation)),
+    ),
+  ].sort();
+}
+
 function added<Item>(
   previous: readonly Item[],
   next: readonly Item[],
@@ -260,6 +286,33 @@ const EMPTY_SUMMARY: PluginAccessSummary = {
   accessOperations: [],
   startMode: "whenNeeded",
 };
+
+function endpointTriple(endpoint: PluginAccessEndpoint) {
+  return [endpoint.host, endpoint.path, endpoint.method].join("\u0000");
+}
+
+/**
+ * The endpoints `next` reaches that `previous` didn't, or no longer behind
+ * the gate they had. An endpoint that was open and is now behind an access
+ * choice is narrower, and doesn't count; behind a different choice, or open
+ * after being gated, does.
+ */
+function widenedEndpoints(
+  previous: readonly PluginAccessEndpoint[],
+  next: readonly PluginAccessEndpoint[],
+) {
+  const gates = new Map<string, Set<string>>();
+  for (const endpoint of previous) {
+    const key = endpointTriple(endpoint);
+    gates.set(key, (gates.get(key) ?? new Set()).add(endpoint.access ?? ""));
+  }
+  return next.filter((endpoint) => {
+    const before = gates.get(endpointTriple(endpoint));
+    if (!before) return true;
+    const gate = endpoint.access ?? "";
+    return !before.has(gate) && !(gate !== "" && before.has(""));
+  });
+}
 
 /**
  * What `next` reaches that `previous` doesn't. Without a previous summary, as
@@ -292,7 +345,7 @@ export function pluginAccessDifference(
         String(form.keepBasePath),
       ].join("\u0000"),
     ),
-    endpoints: added(before.endpoints, next.endpoints, endpointKey),
+    endpoints: widenedEndpoints(before.endpoints, next.endpoints),
     publicHosts: added(before.publicHosts, next.publicHosts, String),
     mcpTools: added(before.mcpTools, next.mcpTools, mcpToolKey),
     agentPrompts: next.agentPrompts
@@ -304,6 +357,7 @@ export function pluginAccessDifference(
       next.accessOperations,
       accessOperationKey,
     ),
+    ungatedOperations: ungated(before.accessOperations, next.accessOperations),
     alwaysReady:
       next.startMode === "alwaysReady" && before.startMode !== "alwaysReady",
   };
@@ -324,6 +378,7 @@ export function widensAccess(difference: PluginAccessDifference) {
       difference.agentPrompts,
       difference.alwaysOnAccess,
       difference.accessOperations,
+      difference.ungatedOperations,
     ].some((items) => items.length > 0)
   );
 }

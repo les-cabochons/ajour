@@ -1,5 +1,5 @@
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import {
   access,
@@ -28,6 +28,14 @@ import {
   pluginApi4ManifestSchema,
 } from "../../../packages/shared/plugin-api-4.ts";
 import {
+  pluginAccessView,
+  type PluginAccessView,
+} from "../../../packages/shared/plugin-access-schemas.ts";
+import {
+  summarizePluginAccess,
+  type PluginAccessManifest,
+} from "../../../packages/shared/plugin-access.ts";
+import {
   allowedTaskSlots,
   listTemplateSlots,
 } from "../../../packages/shared/agent-task-templates.ts";
@@ -45,6 +53,8 @@ export interface ResolvedPlugin {
   /** Absent for a plugin that runs no code. */
   entrypointPath?: string;
   source: "development" | "installed";
+  /** What the package reaches, as Access review lists it. */
+  access: PluginAccessView;
 }
 
 /**
@@ -140,6 +150,8 @@ export interface InstalledPlugin {
   directory: string;
   replaced: boolean;
   installed: boolean;
+  /** What the installed package reaches. */
+  access: PluginAccessView;
   /** The replaced package's backup couldn't be removed; the next start removes it. */
   backupLeft?: true;
 }
@@ -386,20 +398,29 @@ export async function readPlugin(
     );
   }
   // Read every prompt once so a bad one fails the install, not the first run.
+  // Access review keeps a hash of each, so a changed prompt is seen without
+  // storing its text.
+  const agentPrompts: Record<string, string> = {};
   for (const task of manifest.capabilities.agentTask?.tasks ?? []) {
-    await readAgentTaskPromptFile(
+    const prompt = await readAgentTaskPromptFile(
       pluginDirectory,
       canonicalPluginDirectory,
       manifest,
       task,
     );
+    agentPrompts[task.id] = createHash("sha256").update(prompt).digest("hex");
   }
+  const accessManifest = manifest as PluginAccessManifest;
 
   return {
     manifest,
     directory: pluginDirectory,
     entrypointPath,
     source,
+    access: pluginAccessView(
+      accessManifest,
+      summarizePluginAccess(accessManifest, { agentPrompts }),
+    ),
   };
 }
 
@@ -568,6 +589,7 @@ export async function installPluginArchive(options: {
         directory: existingPlugin.directory,
         replaced: false,
         installed: false,
+        access: existingPlugin.access,
       };
     }
 
@@ -603,6 +625,7 @@ export async function installPluginArchive(options: {
       directory: targetDirectory,
       replaced: targetExists,
       installed: true,
+      access: stagedPlugin.access,
       ...(backupLeft ? { backupLeft: true as const } : {}),
     };
   } finally {

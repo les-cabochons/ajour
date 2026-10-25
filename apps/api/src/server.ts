@@ -165,6 +165,7 @@ import {
   type PluginAdmitted,
   type PluginMethod,
 } from "./plugin-host.ts";
+import { decideUpdateConsent } from "./plugin-consent.ts";
 import {
   PluginOperationCancelled,
   PluginOperationRefused,
@@ -981,7 +982,7 @@ async function getOverview(
   unit?: Unit<AjourCatalog, "plugin.list">,
 ) {
   const startedAt = Date.now();
-  const { plugins, unavailable } = await pluginManager.inspectPlugins();
+  const { plugins, unavailable, access } = await pluginManager.inspectPlugins();
   unit?.set({
     plugin_list: {
       plugin_count: plugins.length,
@@ -997,7 +998,7 @@ async function getOverview(
     ),
   );
   return pluginsOverviewSchema.parse(
-    await storage.getPluginsOverview(plugins, unavailable),
+    await storage.getPluginsOverview(plugins, unavailable, access),
   );
 }
 
@@ -1709,6 +1710,19 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         }
         writeJson(response, 200, await getOverview(storage, pluginManager));
         return;
+      }
+      // Turning a plugin on is the user's consent to what it reaches.
+      if (payload.enabled) {
+        const access = (await pluginManager.inspectPlugins()).access.get(
+          pluginId,
+        );
+        if (access) {
+          await storage.recordPluginConsent(pluginId, {
+            version: plugin.version,
+            access: access.summary,
+            at: Date.now(),
+          });
+        }
       }
       await storage.setPluginEnabled(pluginId, payload.enabled);
       if (!payload.enabled) {
@@ -3294,13 +3308,38 @@ export async function installPluginForServer(
     // with activation state meant for the old one.
     async (installed) => {
       // An update keeps the activation the user chose for the previous version.
+      const pluginId = installed.manifest.id;
       if (!installed.replaced && options.enableAfterInstall === false) {
-        await runtime.storage.setPluginEnabled(installed.manifest.id, false);
+        await runtime.storage.setPluginEnabled(pluginId, false);
       }
       const previous = [
         ...before.plugins,
         ...before.unavailable.map((plugin) => plugin.manifest),
-      ].find((plugin) => plugin.id === installed.manifest.id);
+      ].find((plugin) => plugin.id === pluginId);
+      if (installed.replaced) {
+        // An update that reaches more than the user allowed installs off, and
+        // the plugin page asks for their consent.
+        const previousAccess = before.access.get(pluginId);
+        const decision = decideUpdateConsent({
+          consent: await runtime.storage.getPluginConsent(pluginId),
+          previous:
+            previous && previousAccess
+              ? { version: previous.version, access: previousAccess.summary }
+              : undefined,
+          wasOn: await runtime.storage.isPluginSwitchedOn(pluginId),
+          next: {
+            version: installed.manifest.version,
+            access: installed.access.summary,
+          },
+          at: Date.now(),
+        });
+        if (decision.record) {
+          await runtime.storage.recordPluginConsent(pluginId, decision.record);
+        }
+        if (decision.turnOff) {
+          await runtime.storage.setPluginEnabled(pluginId, false);
+        }
+      }
       await applyCapabilityDefaults(
         runtime.storage,
         installed.manifest,
