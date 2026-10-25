@@ -133,14 +133,41 @@ export function buildExpiryDrafts(
 }
 
 /**
- * The reminder dates a save sends: each secret field's date, or `null` to
- * clear it. A date that isn't a whole date text counts as none.
+ * The reminder dates a save sends: a secret field's date, or `null` to clear
+ * it. A date that isn't a whole date text counts as none. With `initial`, only
+ * the dates the user changed go, because a date the vault already holds is
+ * not an update, and a vault that can't be changed still takes a save that
+ * changes no secret. A field in `replaced` has a new secret, which starts
+ * without a date unless the save gives one, so its date goes as shown.
  */
 export function expiryForSave(
   drafts: Readonly<Record<string, string>>,
+  initial?: Readonly<Record<string, string>>,
+  replaced: readonly string[] = [],
 ): Record<string, number | null> {
   return Object.fromEntries(
-    Object.entries(drafts).map(([id, text]) => [id, dateTextToExpiry(text)]),
+    Object.entries(drafts)
+      .filter(
+        ([id, text]) =>
+          !initial ||
+          replaced.includes(id) ||
+          text.trim() !== (initial[id] ?? "").trim(),
+      )
+      .map(([id, text]) => [id, dateTextToExpiry(text)]),
+  );
+}
+
+/**
+ * Starts a form over when a saved secret's state or reminder date changes,
+ * and only then. Its last use changes with every sync and the form is
+ * usually open while one runs, so it is left out: remounting would drop what
+ * the user typed.
+ */
+export function secretFieldsKey<
+  Field extends { id: string; state: string; expiresAt?: number },
+>(secretFields: readonly Field[]) {
+  return JSON.stringify(
+    secretFields.map(({ id, state, expiresAt }) => [id, state, expiresAt]),
   );
 }
 

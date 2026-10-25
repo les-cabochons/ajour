@@ -9,6 +9,7 @@ import {
   canSubmitPluginForm,
   expiryForSave,
   isPluginFieldShown,
+  secretFieldsKey,
 } from "./plugin-form-state";
 
 const plugin: PluginManifest = {
@@ -235,6 +236,47 @@ describe("plugin form state", () => {
     expect(expiryForSave({ personalAccessToken: "" })).toEqual({
       personalAccessToken: null,
     });
+  });
+
+  it("sends only the reminder dates that changed, so a save that touches no date asks nothing of the vault", () => {
+    const initial = { token: "2026-10-28", note: "", feed: "" };
+
+    expect(expiryForSave(initial, initial)).toEqual({});
+    expect(
+      expiryForSave(
+        { token: "2026-11-02", note: "", feed: "2026-12-01" },
+        initial,
+      ),
+    ).toEqual({
+      token: new Date(2026, 10, 2, 23, 59, 59, 999).getTime(),
+      feed: new Date(2026, 11, 1, 23, 59, 59, 999).getTime(),
+    });
+    // Emptying the date clears it.
+    expect(expiryForSave({ ...initial, token: "" }, initial)).toEqual({
+      token: null,
+    });
+  });
+
+  it("sends the date shown with a secret that is replaced, since the new secret starts without one", () => {
+    const initial = { token: "2026-10-28", note: "" };
+
+    expect(expiryForSave(initial, initial, ["token"])).toEqual({
+      token: new Date(2026, 9, 28, 23, 59, 59, 999).getTime(),
+    });
+    expect(expiryForSave(initial, initial, ["note"])).toEqual({ note: null });
+  });
+
+  it("keeps a task form while the overview refreshes what a secret last did, and starts it over when its state or date changes", () => {
+    const saved = { id: "apiKey", state: "saved" as const, setAt: 1 };
+
+    const key = secretFieldsKey([saved]);
+
+    expect(secretFieldsKey([{ ...saved, lastUsedAt: 99 }])).toBe(key);
+    expect(
+      secretFieldsKey([{ ...saved, state: "rejected" as const }]),
+    ).not.toBe(key);
+    expect(secretFieldsKey([{ ...saved, expiresAt: 5 }])).not.toBe(key);
+    expect(secretFieldsKey([])).not.toBe(key);
   });
 
   it("accepts an empty date or a whole one, and tells when dates changed", () => {

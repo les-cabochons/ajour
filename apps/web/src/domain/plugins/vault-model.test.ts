@@ -3,7 +3,7 @@ import type {
   PluginConnectionSummary,
   PluginOverviewGroup,
 } from "@ajour/shared";
-import { connectionStatus } from "./connection-status";
+import { connectionStatus, expiryWarnings } from "./connection-status";
 import { buildVaultGroups, vaultNotice } from "./vault-model";
 
 const NOW = new Date(2026, 9, 25, 10, 0, 0).getTime();
@@ -83,6 +83,12 @@ describe("buildVaultGroups", () => {
       "Azure DevOps",
       "Calendar (ICS)",
       "Jira (not installed)",
+    ]);
+    // The name alone, for a dialog, so no one cuts the suffix off a title.
+    expect(groups.map((entry) => entry.name)).toEqual([
+      "Azure DevOps",
+      "Calendar (ICS)",
+      "Jira",
     ]);
     expect(groups[0]!.rows).toMatchObject([
       {
@@ -249,5 +255,52 @@ describe("connectionStatus", () => {
     expect(
       connectionStatus({ ...base, unavailable: true, connection: { paused } }),
     ).toMatchObject({ label: "Unavailable" });
+  });
+});
+
+describe("expiryWarnings", () => {
+  const labelOf = (id: string) => (id === "token" ? "API token" : id);
+  const day = 86_400_000;
+
+  it("warns on a connection's row from a week before a reminder date, and after it", () => {
+    expect(
+      expiryWarnings(
+        [
+          { id: "token", state: "saved", expiresAt: NOW + 3 * day },
+          { id: "note", state: "saved", expiresAt: NOW - 4 * day },
+          { id: "feed", state: "saved", expiresAt: NOW + 30 * day },
+          { id: "none", state: "saved" },
+        ],
+        labelOf,
+        NOW,
+      ),
+    ).toEqual([
+      {
+        fieldId: "token",
+        label: "API token",
+        text: "Expires in 3 days",
+        tone: "warning",
+      },
+      {
+        fieldId: "note",
+        label: "note",
+        text: "Expired on 21 Oct 2026",
+        tone: "danger",
+      },
+    ]);
+  });
+
+  it("leaves a rejected or unreadable secret to the connection's own chip", () => {
+    expect(
+      expiryWarnings(
+        [
+          { id: "token", state: "rejected", expiresAt: NOW - day },
+          { id: "note", state: "unreadable", expiresAt: NOW - day },
+        ],
+        labelOf,
+        NOW,
+      ),
+    ).toEqual([]);
+    expect(expiryWarnings(undefined, labelOf, NOW)).toEqual([]);
   });
 });

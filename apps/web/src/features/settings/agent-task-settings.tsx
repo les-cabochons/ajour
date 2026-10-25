@@ -17,6 +17,7 @@ import {
   areExpiryDraftsValid,
   buildExpiryDrafts,
   expiryForSave,
+  secretFieldsKey,
 } from "@/features/settings/plugin-form-state";
 import { PluginFieldInput } from "@/features/settings/plugin-settings-ui";
 import { getPluginsOverview, saveAgentTaskSettings } from "@/lib/app-api";
@@ -85,8 +86,9 @@ export function PluginAgentTasks({
       </AppPanel>
       {fields.length > 0 ? (
         <TaskSettingsForm
-          // A saved secret's state or reminder date changing starts the form over.
-          key={`${pluginId}/${JSON.stringify(secretFields)}`}
+          // A saved secret's state or reminder date changing starts the form
+          // over. Its last use changes with each run and doesn't.
+          key={`${pluginId}/${secretFieldsKey(secretFields)}`}
           fields={fields}
           initialValues={sharedValues(statuses, fields)}
           secretFields={secretFields}
@@ -173,9 +175,10 @@ function TaskSettingsForm({
   const secretIds = fields
     .filter((field) => field.secret)
     .map((field) => field.id);
-  const [expiry, setExpiry] = useState(() =>
+  const [initialExpiry] = useState(() =>
     buildExpiryDrafts(secretIds, secretFields),
   );
+  const [expiry, setExpiry] = useState(initialExpiry);
   const blockedReason = vaultBlockedReason(vault);
   const now = Date.now();
 
@@ -186,7 +189,13 @@ function TaskSettingsForm({
         aria-label="Task settings"
         onSubmit={(event) => {
           event.preventDefault();
-          void onSave(values, { secretExpiry: expiryForSave(expiry) });
+          void onSave(values, {
+            secretExpiry: expiryForSave(
+              expiry,
+              initialExpiry,
+              secretIds.filter((id) => String(values[id] ?? "").trim() !== ""),
+            ),
+          });
         }}
       >
         <FieldGroup className="desktop:grid desktop:grid-cols-2 desktop:gap-x-6 desktop:gap-y-5">

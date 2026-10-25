@@ -3,7 +3,10 @@ import type {
   PluginOverviewGroup,
 } from "@ajour/shared";
 import { Chip } from "@/components/ui/chip";
-import { connectionStatusIn } from "@/domain/plugins/connection-status";
+import {
+  connectionStatusIn,
+  expiryWarnings,
+} from "@/domain/plugins/connection-status";
 
 type StatusProps = {
   group: Pick<PluginOverviewGroup, "plugin" | "enabled">;
@@ -36,13 +39,33 @@ export function ConnectionStatusNote({
   pluginsEnabled,
 }: StatusProps) {
   const status = connectionStatusIn(group, connection, pluginsEnabled);
+  const labels = new Map(
+    group.plugin.connectionFields.map((field) => [field.id, field.label]),
+  );
+  // Ajour keeps using a secret past its reminder date, so this only warns.
+  const warnings = expiryWarnings(
+    connection.secretFields,
+    (id) => labels.get(id) ?? id,
+    Date.now(),
+  );
   return (
     <>
       {status.note ? (
-        <p className="text-[13px] break-words text-muted-foreground">
+        <p className="text-sm break-words text-muted-foreground">
           {status.note}
         </p>
       ) : null}
+      {warnings.map((warning) => (
+        <p
+          key={warning.fieldId}
+          className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
+        >
+          <span className="break-words">{warning.label}</span>
+          <Chip tone={warning.tone} data-secret-state="expiry-warning">
+            {warning.text}
+          </Chip>
+        </p>
+      ))}
       {connection.lastError && !status.needsSecret ? (
         <p className="text-sm break-words text-destructive">
           {connection.lastError}

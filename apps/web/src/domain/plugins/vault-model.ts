@@ -43,6 +43,8 @@ export interface VaultGroup {
   pluginId: string;
   /** The plugin's name, then "(not installed)" when its package is missing. */
   title: string;
+  /** The plugin's name alone. */
+  name: string;
   installed: boolean;
   rows: VaultRow[];
 }
@@ -149,6 +151,7 @@ export function buildVaultGroups(
           {
             pluginId: group.plugin.id,
             title: missing ? `${name} (not installed)` : name,
+            name,
             installed: !missing,
             rows,
           },

@@ -64,6 +64,7 @@ import {
 import {
   createPluginFormState,
   expiryForSave,
+  secretFieldIds,
   type PluginFormState,
 } from "./plugin-form-state";
 import { type PluginReplaceTarget } from "./plugin-detail-search";
@@ -625,7 +626,14 @@ export function SettingsPluginsPage({
       type: "save",
       pluginId: formState.pluginId,
       values: formState.values,
-      secretExpiry: expiryForSave(formState.expiry),
+      // Only the dates the user changed, and those of secrets pasted anew.
+      secretExpiry: expiryForSave(
+        formState.expiry,
+        formState.initialExpiry,
+        secretFieldIds(activePlugin).filter(
+          (id) => String(formState.values[id] ?? "").trim() !== "",
+        ),
+      ),
       connectionId: formState.editingConnectionId ?? undefined,
       onSaved: (connection) => {
         saved = connection;

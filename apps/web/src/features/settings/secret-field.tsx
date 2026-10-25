@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PluginField, SecretFieldSummary } from "@ajour/shared";
 import {
   AlertDialog,
@@ -71,6 +71,7 @@ export function SecretFieldInput({
   binding: SecretFieldBinding;
 }) {
   const [replacing, setReplacing] = useState(binding.startReplacing === true);
+  const cancelled = useRef(false);
   const { summary, existing, now } = binding;
   const hasSecret = existing && summary !== undefined;
   const state = describeSecret(summary, now);
@@ -78,6 +79,15 @@ export function SecretFieldInput({
   const blocked = binding.blockedReason !== undefined;
   const showInput = !hasSecret || replacing;
   const showExpiry = hasSecret || value.trim() !== "";
+  const replaceId = `${inputId}-replace`;
+  const replaceText = state.kind === "rejected" ? "Replace token" : "Replace";
+
+  // Cancel takes its own button away: focus goes to Replace, which comes back.
+  useEffect(() => {
+    if (replacing || !cancelled.current) return;
+    cancelled.current = false;
+    document.getElementById(replaceId)?.focus();
+  }, [replacing, replaceId]);
 
   return (
     <Field className="desktop:col-span-2">
@@ -99,21 +109,28 @@ export function SecretFieldInput({
             {hasSecret && !replacing ? (
               <>
                 <Button
+                  id={replaceId}
                   type="button"
                   size="sm"
                   variant="outline"
                   disabled={blocked || binding.busy}
-                  aria-label={`Replace ${field.label}`}
+                  // The name starts with the visible text, so voice control can say it.
+                  aria-label={`${replaceText} ${field.label}`}
                   onClick={() => setReplacing(true)}
                 >
-                  {state.kind === "rejected" ? "Replace token" : "Replace"}
+                  {replaceText}
                 </Button>
                 {binding.onRemove ? (
                   <RemoveSecretButton
                     label={field.label}
                     effect={binding.removeEffect}
                     disabled={blocked || binding.busy}
-                    onRemove={binding.onRemove}
+                    onRemove={() => {
+                      binding.onRemove?.();
+                      // Remove takes its button away: focus goes to the input
+                      // the field shows once nothing is saved.
+                      focusWhenPresent(inputId);
+                    }}
                   />
                 ) : null}
               </>
@@ -140,6 +157,7 @@ export function SecretFieldInput({
                 variant="outline"
                 onClick={() => {
                   onChange("");
+                  cancelled.current = true;
                   setReplacing(false);
                 }}
               >
@@ -181,6 +199,25 @@ export function SecretFieldInput({
       </FieldContent>
     </Field>
   );
+}
+
+/**
+ * Focuses the element once it exists. A saved secret's Remove button goes
+ * with the secret, possibly with the whole form, so the next stable element
+ * isn't there yet. Gives up after about a second.
+ */
+function focusWhenPresent(id: string) {
+  let frames = 0;
+  const attempt = () => {
+    const element = document.getElementById(id);
+    if (element) {
+      element.focus();
+      return;
+    }
+    frames += 1;
+    if (frames < 60) requestAnimationFrame(attempt);
+  };
+  requestAnimationFrame(attempt);
 }
 
 function RemoveSecretButton({

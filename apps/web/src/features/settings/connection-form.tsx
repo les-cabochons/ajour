@@ -73,7 +73,7 @@ export function PluginConnectionForm({
             ? `Edit ${plugin.displayName} connection`
             : `New ${plugin.displayName} connection`}
         </h3>
-        <p className="mt-0.5 text-[13px] text-muted-foreground">
+        <p className="mt-0.5 text-sm text-muted-foreground">
           {editing
             ? "Update this connection without re-entering unchanged secrets."
             : "The connection is validated by the plugin and stored locally."}

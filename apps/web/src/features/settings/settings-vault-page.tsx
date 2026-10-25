@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Link } from "@tanstack/react-router";
 import { RiDeleteBinLine as Trash2 } from "@remixicon/react";
-import { MessagePanel } from "@/components/app-surface";
+import { MessagePanel, ResultLine } from "@/components/app-surface";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,11 +30,14 @@ import {
 import { usePluginSettingsWorkflow } from "./use-plugin-settings-workflow";
 
 const PLUGINS_NEED_DESKTOP_APP = "Plugins need the desktop app.";
+/** Where focus goes when a Remove takes the button that was focused away. */
+const VAULT_HEADING_ID = "vault-heading";
 
 /** Where Replace goes: the connection's form with Replace open, or the plugin's task settings. */
 function ReplaceButton({ row }: { row: VaultRow }) {
   const { replace } = row;
   if (!replace) return null;
+  const text = row.state.kind === "rejected" ? "Replace token" : "Replace";
   return (
     // A link that looks like the outline button: it goes to a page.
     <Link
@@ -46,10 +49,11 @@ function ReplaceButton({ row }: { row: VaultRow }) {
           : { field: replace.fieldId }
       }
       replace
-      aria-label={`Replace ${row.owner} ${row.kind}`}
+      // The name starts with the visible text, so voice control can say it.
+      aria-label={`${text} ${row.owner} ${row.kind}`}
       className={buttonVariants({ variant: "outline", size: "sm" })}
     >
-      {row.state.kind === "rejected" ? "Replace token" : "Replace"}
+      {text}
     </Link>
   );
 }
@@ -106,9 +110,10 @@ function RemoveMissingPlugin({
         <AlertDialogHeader>
           <AlertDialogTitle>Remove {group.title}?</AlertDialogTitle>
           <AlertDialogDescription>
-            This deletes its saved connections and secrets from this computer.
-            Backlog items already synced stay. To use the plugin again, download
-            it and add its connections again.
+            This deletes its saved connections and secrets from this computer,
+            and the connections' local pull requests, calendar data and team
+            data with them. Backlog items already synced stay. To use the plugin
+            again, download it and add its connections again.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -160,7 +165,13 @@ export function SettingsVaultPage() {
   return (
     <div className="settings-sections">
       <section className="settings-section">
-        <h1 className="text-lg font-semibold text-foreground">Vault</h1>
+        <h1
+          id={VAULT_HEADING_ID}
+          tabIndex={-1}
+          className="text-lg font-semibold text-foreground outline-none"
+        >
+          Vault
+        </h1>
         <p className="settings-section-desc">
           Every secret Ajour holds on this computer, encrypted by the operating
           system. Ajour never shows or copies a saved value, and plugins never
@@ -189,9 +200,7 @@ export function SettingsVaultPage() {
                 ) : null}
               </MessagePanel>
             ) : null}
-            {statusMessage ? (
-              <MessagePanel>{statusMessage}</MessagePanel>
-            ) : null}
+            {statusMessage ? <ResultLine>{statusMessage}</ResultLine> : null}
             {pluginError ? (
               <MessagePanel tone="warning">{pluginError}</MessagePanel>
             ) : null}
@@ -207,13 +216,15 @@ export function SettingsVaultPage() {
               <RemoveMissingPlugin
                 group={group}
                 disabled={isMutatingPlugin}
-                onRemove={() =>
+                onRemove={() => {
                   void workflow.execute({
                     type: "removeMissingData",
                     pluginId: group.pluginId,
-                    pluginName: group.title.replace(" (not installed)", ""),
-                  })
-                }
+                    pluginName: group.name,
+                  });
+                  // The group, and its Remove button, go: the heading stays.
+                  document.getElementById(VAULT_HEADING_ID)?.focus();
+                }}
               />
             )}
           </div>
@@ -231,7 +242,7 @@ export function SettingsVaultPage() {
             <EmptyTitle className="font-sans text-sm font-medium tracking-normal text-foreground">
               No saved secrets
             </EmptyTitle>
-            <EmptyDescription className="text-[13px]">
+            <EmptyDescription className="text-sm">
               Tokens and secret addresses you save in a plugin's connection
               appear here.
             </EmptyDescription>
