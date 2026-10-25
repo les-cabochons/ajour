@@ -110,8 +110,8 @@ if (process.argv.includes("--check")) {
     }
   }
   if (stale.length > 0) {
-    console.error(
-      `Stale: ${stale.join(", ")}. Run: corepack pnpm --filter @ajour/plugin-sdk generate`,
+    process.stderr.write(
+      `Stale: ${stale.join(", ")}. Run: corepack pnpm --filter @ajour/plugin-sdk generate\n`,
     );
     process.exit(1);
   }
