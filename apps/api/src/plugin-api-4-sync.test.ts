@@ -227,6 +227,7 @@ describe("an API 4 plugin through the real broker", () => {
       allowDevelopmentPlugins: true,
       pluginRuntime: new InProcessPluginRuntime(),
       brokerTransport: nodeBrokerTransport(),
+      brokerActivityWindowMs: 0,
       eventSink: sink,
     });
     const seen = () =>

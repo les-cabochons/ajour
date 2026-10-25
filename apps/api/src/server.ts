@@ -273,6 +273,11 @@ interface AppApiServerOptions {
   brokerTransport?: BrokerTransport;
   /** How the broker resolves a host, as its transport would. Node's `dns.lookup` by default. */
   brokerResolver?: BrokerResolver;
+  /**
+   * How long the broker's records for Access review gather in memory
+   * between two writes of the state file: 30 s by default.
+   */
+  brokerActivityWindowMs?: number;
 }
 
 /** The vault file the desktop app keeps beside the state file. */
@@ -1055,6 +1060,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     vault: options.vault,
     // Called only once the plugin manager below exists.
     manifests: async () => installedSecretManifests(pluginManager),
+    ...(options.brokerActivityWindowMs !== undefined
+      ? { brokerActivityWindowMs: options.brokerActivityWindowMs }
+      : {}),
   });
   const allowDevelopmentPlugins =
     options.allowDevelopmentPlugins ??
@@ -3043,6 +3051,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     void agentRunner.shutdown();
     void pluginManager.shutdown();
     void projectDataShapePluginManager.shutdown();
+    // What the broker gathered for Access review since its last write.
+    storage.flushBrokerActivity().catch(() => undefined);
   });
   return server;
 }
@@ -3237,6 +3247,9 @@ export async function stopAppApiServer(server: Server): Promise<void> {
       runtime?.projectDataShapePluginManager.shutdown(),
     ]);
     unit?.set({ api: { plugins_ms: Date.now() - phaseStartedAt } });
+    // No plugin sends a request now: write what the broker gathered for
+    // Access review since its last write, so a quit loses none.
+    await runtime?.storage.flushBrokerActivity().catch(() => undefined);
     phaseStartedAt = Date.now();
     // The connections still open are cut off by the stop, not by their
     // clients: their requests end `cancelled` with `stopping`.

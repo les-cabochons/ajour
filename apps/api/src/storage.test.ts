@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   pluginsOverviewSchema,
   type BacklogImportCandidateInput,
@@ -816,6 +816,87 @@ describe("AppApiStorage", () => {
 
     expect(await storage.getAgentTaskValues("workday", manifest)).toEqual({
       url: "https://wd.example/t",
+    });
+  });
+
+  describe("the broker's records for Access review", () => {
+    async function brokerStorage(windowMs: number) {
+      const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
+      tempDirs.push(tempDir);
+      const statePath = path.join(tempDir, "app-api-state.json");
+      const storage = new AppApiStorage(statePath, {
+        brokerActivityWindowMs: windowMs,
+      });
+      const connection = await storage.upsertConnection("jira", {
+        label: "Acme",
+        tenantLabel: "Acme",
+        autoSync: false,
+        autoSyncIntervalMinutes: 15,
+        config: {},
+        configSummary: {},
+      });
+      /** What the state file holds, read by a storage of its own. */
+      const onDisk = async () =>
+        await new AppApiStorage(statePath).brokerActivity("jira");
+      return { storage, connectionId: connection.id, statePath, onDisk };
+    }
+
+    it("keeps a burst of blocked attempts in memory, writing the file once in the window and all of them on flush", async () => {
+      const { storage, connectionId, statePath, onDisk } =
+        await brokerStorage(60_000);
+      const writes: string[] = [];
+
+      for (let at = 1; at <= 50; at += 1) {
+        await storage.recordBrokerActivity("jira", connectionId, "blocked", at);
+        writes.push(await readFile(statePath, "utf8"));
+      }
+
+      // The first attempt is written at once, the others wait for the window.
+      expect(new Set(writes.slice(1)).size).toBe(1);
+      expect((await onDisk()).plugin).toMatchObject({ blockedCount: 1 });
+      await expect(storage.brokerActivity("jira")).resolves.toEqual({
+        plugin: { lastRequestAt: 50, blockedCount: 50, lastBlockedAt: 50 },
+        connections: {
+          [connectionId]: {
+            lastRequestAt: 50,
+            blockedCount: 50,
+            lastBlockedAt: 50,
+          },
+        },
+      });
+
+      await storage.flushBrokerActivity();
+
+      await expect(onDisk()).resolves.toEqual(
+        await storage.brokerActivity("jira"),
+      );
+    });
+
+    it("writes what a window gathered once it ends", async () => {
+      const { storage, connectionId, onDisk } = await brokerStorage(30);
+
+      await storage.recordBrokerActivity("jira", connectionId, "request", 10);
+      await storage.recordBrokerActivity("jira", connectionId, "request", 20);
+      await storage.recordBrokerActivity("jira", connectionId, "blocked", 25);
+
+      await vi.waitFor(async () => {
+        expect((await onDisk()).connections[connectionId]).toEqual({
+          lastRequestAt: 25,
+          blockedCount: 1,
+          lastBlockedAt: 25,
+        });
+      });
+    });
+
+    it("forgets what it held for a plugin whose data was removed", async () => {
+      const { storage, connectionId, onDisk } = await brokerStorage(60_000);
+
+      await storage.recordBrokerActivity("jira", connectionId, "blocked", 1);
+      await storage.recordBrokerActivity("jira", undefined, "blocked", 2);
+      await storage.removePluginData("jira");
+      await storage.flushBrokerActivity();
+
+      await expect(onDisk()).resolves.toEqual({ connections: {} });
     });
   });
 });
