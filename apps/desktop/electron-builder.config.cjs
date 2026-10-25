@@ -55,15 +55,19 @@ module.exports = {
   // runAsNode stays on: the agent runner has the agent CLI start Playwright
   // MCP with the app's own binary and ELECTRON_RUN_AS_NODE=1
   // (apps/api/src/agent-runner/playwright-mcp.ts). Until that moves off it,
-  // anyone who can start Ajour.exe can run Node code as Ajour.
+  // anyone who can start Ajour.exe can run Node code as Ajour. #415 tracks
+  // moving Playwright MCP to HTTP so release builds can turn it off.
   //
   // Asar integrity covers app.asar only, that is main and preload. The
   // renderer (dist-desktop) and the local API (internal-app-runtime) load
   // from extra resources, which onlyLoadAppFromAsar doesn't restrict and
-  // integrity doesn't check.
+  // integrity doesn't check. They are loose files in the per-user install
+  // folder, so a process that can write there can change code that main
+  // imports. Same-user malware is out of scope, and runAsNode being on
+  // already gives such a process equal power.
   //
-  // The macOS build is unsigned, so the flipped arm64 binary is re-signed
-  // ad hoc or it won't start.
+  // The macOS build is unsigned, so every flipped .app (x64 and arm64) is
+  // re-signed ad hoc or it won't start.
   electronFuses: {
     runAsNode: true,
     enableNodeOptionsEnvironmentVariable: false,

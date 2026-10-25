@@ -29,4 +29,5 @@ Two guarantees stay separate in code, tests and docs:
   - Ajour itself holds access tokens while it makes a call.
   - On Windows, DPAPI protects secrets from other users, not from other apps of the same user. The sandbox is what protects them from a compromised plugin.
   - An attacker who already runs code as the user, or has admin rights, is out of scope.
+  - Release builds keep the Electron run-as-node fuse on, because the agent runner starts Playwright MCP through it. Anyone who can start Ajour's binary can run Node code as Ajour until #415 moves that to HTTP.
 - Plugin API 4 drops compatibility with API 3. Ajour ports its own plugins.

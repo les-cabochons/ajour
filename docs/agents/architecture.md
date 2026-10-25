@@ -305,11 +305,15 @@ exceptions remain:
 
 - Run as Node stays on: the agent CLI starts Playwright MCP with Ajour's own
   binary and `ELECTRON_RUN_AS_NODE=1` (`agent-runner/playwright-mcp.ts`), so
-  anyone who can start the binary can still run Node code as Ajour.
+  anyone who can start the binary can still run Node code as Ajour. #415
+  tracks moving Playwright MCP to HTTP so release builds can turn it off.
 - Integrity covers `app.asar` only, that is main and preload. The renderer
   (`dist-desktop`) and the local API (`internal-app-runtime`) load from extra
   resources, which the asar-only fuse doesn't restrict and integrity doesn't
-  check.
+  check. They are loose files in the per-user install folder, so a process
+  that can write there can change code that main imports. Same-user malware is
+  out of scope, and run as Node being on already gives such a process equal
+  power.
 
 ## Routing
 

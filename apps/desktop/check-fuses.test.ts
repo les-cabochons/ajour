@@ -3,6 +3,8 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
+import { FuseV1Options } from "@electron/fuses";
+import { FuseState, SENTINEL } from "@electron/fuses/dist/constants";
 import { afterEach, describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
@@ -11,21 +13,15 @@ const { electronFuses } = require("./electron-builder.config.cjs") as {
   electronFuses: Record<string, boolean>;
 };
 
-const SENTINEL = "dL7pKGdnNz796PbbjQWNKmHXBZaB9tsX";
-/** The fuse wire's order in Electron's binary. */
-const WIRE_ORDER = [
-  "runAsNode",
-  "enableCookieEncryption",
-  "enableNodeOptionsEnvironmentVariable",
-  "enableNodeCliInspectArguments",
-  "enableEmbeddedAsarIntegrityValidation",
-  "onlyLoadAppFromAsar",
-  "loadBrowserProcessSpecificV8Snapshot",
-  "grantFileProtocolExtraPrivileges",
-];
-const ENABLED = "1".charCodeAt(0);
-const DISABLED = "0".charCodeAt(0);
-const INHERITED = 144;
+const { ENABLE, DISABLE, INHERIT } = FuseState;
+/**
+ * The fuses in the order of Electron's fuse wire, under the builder's names:
+ * the option's name with a lower-case first letter.
+ */
+const WIRE_ORDER = Object.entries(FuseV1Options)
+  .filter((entry): entry is [string, number] => typeof entry[1] === "number")
+  .sort(([, left], [, right]) => left - right)
+  .map(([option]) => option.charAt(0).toLowerCase() + option.slice(1));
 
 const temporaryDirectories: string[] = [];
 
@@ -45,22 +41,22 @@ async function temporaryDirectory() {
 async function writeBinary(
   file: string,
   overrides: Record<string, number> = {},
+  slices = 1,
 ) {
   const wire = WIRE_ORDER.map((fuse) => {
     if (fuse in overrides) return overrides[fuse]!;
-    if (!(fuse in electronFuses)) return INHERITED;
-    return electronFuses[fuse] ? ENABLED : DISABLED;
+    if (!(fuse in electronFuses)) return INHERIT;
+    return electronFuses[fuse] ? ENABLE : DISABLE;
   });
   await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(
-    file,
-    Buffer.concat([
-      Buffer.from("leading bytes"),
-      Buffer.from(SENTINEL),
-      Buffer.from([1, wire.length, ...wire]),
-      Buffer.from("trailing bytes"),
-    ]),
-  );
+  const slice = Buffer.concat([
+    Buffer.from("leading bytes"),
+    Buffer.from(SENTINEL),
+    Buffer.from([1, wire.length, ...wire]),
+    Buffer.from("trailing bytes"),
+  ]);
+  // A universal binary holds one slice per architecture.
+  await writeFile(file, Buffer.concat(Array(slices).fill(slice)));
 }
 
 function run(args: string[]) {
@@ -94,7 +90,7 @@ describe("check-fuses", () => {
   it("fails and names the fuse when a packaged app differs", async () => {
     const root = await temporaryDirectory();
     await writeBinary(path.join(root, "win-unpacked/Ajour.exe"), {
-      onlyLoadAppFromAsar: DISABLED,
+      onlyLoadAppFromAsar: DISABLE,
     });
 
     const result = run(["--out", root]);
@@ -106,7 +102,7 @@ describe("check-fuses", () => {
   it("fails when a configured fuse is left to Electron's default", async () => {
     const root = await temporaryDirectory();
     await writeBinary(path.join(root, "win-unpacked/Ajour.exe"), {
-      enableNodeOptionsEnvironmentVariable: INHERITED,
+      enableNodeOptionsEnvironmentVariable: INHERIT,
     });
 
     const result = run(["--out", root]);
@@ -115,6 +111,16 @@ describe("check-fuses", () => {
     expect(result.output).toMatch(
       /enableNodeOptionsEnvironmentVariable.*expected off.*inherited/,
     );
+  });
+
+  it("fails on a universal binary, which holds a fuse wire per architecture", async () => {
+    const root = await temporaryDirectory();
+    await writeBinary(path.join(root, "win-unpacked/Ajour.exe"), {}, 2);
+
+    const result = run(["--out", root]);
+
+    expect(result.status).toBe(1);
+    expect(result.output).toContain("2 fuse wires");
   });
 
   it("fails when the output folder holds no packaged app", async () => {
