@@ -414,7 +414,12 @@ describe("the credential broker", () => {
         duration_ms: _h,
         ...secondFacts
       } = second!;
-      expect(firstFacts).toEqual(secondFacts);
+      // Apart from times, the two events say the same.
+      const withoutTimes = (facts: typeof firstFacts) => ({
+        ...facts,
+        broker: { ...facts.broker, queued_ms: 0 },
+      });
+      expect(withoutTimes(firstFacts)).toEqual(withoutTimes(secondFacts));
       expect(activity).toEqual([
         { kind: "blocked", pluginId: "ajc-jira" },
         { kind: "blocked", pluginId: "ajc-jira" },
