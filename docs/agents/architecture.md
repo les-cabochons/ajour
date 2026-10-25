@@ -218,8 +218,12 @@ titles, descriptions and comments, passes as it is. When the plugin is no
 longer installed, nothing says which stored values are secret, so it shows
 "Hidden because this plugin is no longer installed." instead, and no summary.
 The rules in this section apply to every such plugin, which must remain
-physically and logically separate from the application. A plugin owns its external-system
-authentication, transport, field discovery, and remote read/write behavior. It
+physically and logically separate from the application. A plugin owns its
+requests and its data mapping: field discovery, and what it reads from and
+writes to its external system. Ajour owns the credentials and the transport
+(ADR 0010): an API 4 plugin never sees a secret and reaches the network only
+through the credential broker below. Until the cut-over (#403), an API 3
+plugin still receives its secrets and sends its own requests. A plugin
 must ship a manifest, a runnable entrypoint, its assets, and all required
 runtime dependencies without importing Ajour repository source or other
 application internals.
@@ -279,52 +283,79 @@ runtime runs one. The operation receives its connection without the secrets
 and with its access choices that are on, and its invocation carries a broker
 for that one operation, which the host closes once the operation settles.
 
-- **The port** is `CredentialBrokerPort.forOperation(caller)`, with the
-  plugin id from the runtime, never from the plugin, the admitted manifest
-  and the plugin method. A request names a connection, a derived host, a
-  method, a relative path, a query, headers and a body, never a URL or a
-  credential. The transport and the resolver are injected through
-  `startAppApiServer`: main passes `net.request` on an in-memory
-  `ajour-broker` session, with manual redirects and no credentials or cache,
-  and `session.resolveHost` (`apps/desktop/electron/broker-transport.cjs`).
-  Without a transport, as in the standalone API, every request is refused:
-  plugins need the desktop app.
+- **The port** is `CredentialBrokerPort.forOperation(caller)`
+  (`apps/api/src/broker-port.ts`), with the plugin id from the runtime,
+  never from the plugin, the admitted manifest and the plugin method. A
+  request names a connection, a derived host, a method, a relative path, a
+  query, headers and a body, never a URL or a credential. The transport and
+  the resolver are injected through `startAppApiServer`: main passes
+  `net.request` on an in-memory `ajour-broker` session, with manual
+  redirects and no credentials or cache, and `session.resolveHost`
+  (`apps/desktop/electron/broker-transport.cjs`). Without a transport, as in
+  the standalone API, every request is refused: plugins need the desktop
+  app.
 - **The connection** is looked up among the caller's own connections only,
   so another plugin's id and an unknown one give the same error. Its secrets
   are read from the vault for each request. A validation sends with the
   connection being saved, under a `pending-` id that only its own operation's
-  broker knows; it is never stored. The save keeps the secrets of the form,
-  since the plugin's answer never holds one.
-- **The policy:** the URL is built from the saved base address and never
-  climbs above its path, or from a derived host (`deriveHostAddress`); the
-  path must match an endpoint of the host with the shared matcher
-  (`endpointPatternMatches`), and an endpoint behind an access choice needs
-  the choice on, read at dispatch; headers must be listed, and the fixed
-  denylist always wins. Same-origin redirects under the base path are
-  followed with the credential, up to 3; any other comes back as the 3xx. A
-  secret address follows https redirects to any host, up to 3, and never
-  hands back its final address. `ajour.publicFetch` reaches only declared
-  public hosts, over https, without credentials.
+  broker knows; it is never stored. The same rules hold for both: on-premises
+  counts only while the manifest allows it, and only the access choices that
+  are on stay, an id the manifest no longer declares dropped
+  (`connectionAccessOn`). The save takes the secrets from the form, since the
+  plugin's answer never holds one, and the base address and the Basic user
+  too (`pluginNetworkFieldIds`): a validation answer that changes them is
+  ignored, not refused, because the validation's requests went to
+  what the user entered, so a plugin can't send the saved credential to an
+  address or as a user of its choosing. Of the rest of its answer only the
+  declared fields stay.
+- **The policy** (`apps/api/src/broker-policy.ts`): the URL is built from
+  the saved base address and never climbs above its path, or from a derived
+  host (`deriveHostAddress`); the path must match an endpoint of the host
+  with the shared matcher (`endpointPatternMatches`), and an endpoint behind
+  an access choice needs the choice on, read at dispatch; headers must be
+  listed, and the fixed denylist always wins. A same-origin redirect is
+  followed with the credential, up to 3, only where the plugin could send
+  the request itself: under the base path, to an endpoint of the host for
+  the method the redirect leads to, with its access choice on. Any other
+  comes back as the 3xx. A secret address follows https redirects to any
+  host, up to 3, to an address of 4,096 characters at most, and never hands
+  back its final address. `ajour.publicFetch` reaches only declared public
+  hosts, over https, without credentials.
 - **Private addresses** are refused, from every address the host resolves to
   and from the address that answered, when the transport can tell, unless
   the connection is on-premises: a flag Ajour owns (`onPremises`), allowed
-  only when the manifest says `allowOnPremises`. Through a system proxy the
-  proxy connects, so its own address isn't judged. A DNS-rebinding window
-  remains between the two checks (ADR 0010).
+  only when the manifest says `allowOnPremises`. A DNS-rebinding window
+  remains between the two checks (ADR 0010). Two gaps sit beside it. Through
+  a system proxy the proxy connects, so the address that answers is the
+  proxy's and isn't judged; the resolver names the proxies' own addresses
+  from the PAC answer, so an answer from any other address, as when a PAC
+  file falls back to `DIRECT`, is judged as an unproxied one, and when a
+  proxy's name doesn't resolve no proxied answer is judged. And when
+  `webRequest` gives no `ip` for a request, only the check before it held:
+  the request goes on, and its event says `answer_address: "unknown"`
+  (`checked` and `proxy` otherwise).
 - **The answer** loses `Set-Cookie`, `WWW-Authenticate` and any header that
   holds a secret, and every secret of the connection is replaced by
-  `[secret]` in the body, in its changed forms too: URL-encoded, JSON-escaped,
-  base64, the Basic credential and the forms of an address (#338). Errors are
-  the broker's own, so a transport's message, which can name the address,
-  never reaches the plugin.
+  `[secret]` in the body, whatever its type, with the shared redaction
+  (`SecretBytesRedaction` in `packages/wide-events/secret-redaction.ts`), in
+  its changed forms too: URL-encoded, JSON- and HTML-escaped, base64, the
+  Basic credential, and for a secret address and each address it redirected
+  to, the address after its scheme, its path and query alone, and each path
+  segment or credential query value that isn't a common word (#338). Letters
+  match in any case. One pass covers every form, so an 8 MB answer full of
+  matches takes tens of milliseconds; an answer it can't check within its
+  budgets is dropped (`unchecked_response`). Errors are the broker's own, so
+  a transport's message, which can name the address, never reaches the
+  plugin.
 - **Limits:** 4 MB per request body, 8 MB per answer, 20 s per request, 6
   requests in flight per plugin with 64 waiting, and a rate of 10 a second
-  with bursts of 60 (`BROKER_LIMITS`).
+  with bursts of 60 (`BROKER_LIMITS`, `apps/api/src/broker-limits.ts`).
 - **Audit:** each request emits `plugin.request`, and the state file keeps,
-  per plugin and per connection, the last request (once a minute at most)
-  and the blocked attempts with the last one's time, for Access review
-  (#394). A blocked attempt is a request the policy refused; a limit, a
-  paused connection or a plugin turned off isn't one.
+  per plugin and per connection, the last request and the blocked attempts
+  with the last one's time, for Access review (#394). The records gather in
+  memory and are written once per 30 s at most, and as the API stops, so a
+  crash loses one window at most. A blocked attempt is a request the policy
+  refused; a limit, a paused connection or a plugin turned off isn't one.
 
 `/api` is the window's private channel. Whoever starts the local API
 generates a per-launch window token and keeps it in memory: Electron main, the

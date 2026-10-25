@@ -384,15 +384,20 @@ for a public fetch and for one not saved yet, which `broker.pending` marks),
 the method, the host kind (`base`, `derived`, `secret_address` or `public`),
 the manifest's endpoint pattern the path matched (never the path itself),
 the status, the redirects followed, the sizes, whether the connection is
-on-premises and how long the request waited for a slot. It never holds a
-header, a body, a query or an address. It ends with its own reason: refused
-for the policy (`connection_not_found`, `not_allowed`, `header_refused`,
-`access_off`, `private_address`, `invalid_address`, `redirect_refused`,
-`invalid_request`), a paused connection (`secret_unavailable`), an
-inactive plugin or capability, `no_transport` outside the desktop app, or a
-limit (`request_too_large`, `response_too_large`, `rate_limited`,
-`too_many_queued`); cancelled for `aborted` or `operation_ended`; `timeout`;
-or an error for `network`, whose message is the broker's own.
+on-premises, how long the request waited for a slot, and, unless it is
+on-premises, how far the address that answered could be judged
+(`broker.answer_address`: `checked`, `proxy` when a system proxy answered,
+or `unknown` when the network stack named none, so only the check before
+the request held). It never holds a header, a body, a query or an address.
+It ends with its own reason: refused for the policy (`connection_not_found`,
+`not_allowed`, `header_refused`, `access_off`, `private_address`,
+`invalid_address`, `redirect_refused`, `invalid_request`), a paused
+connection (`secret_unavailable`), an inactive plugin or capability,
+`no_transport` outside the desktop app, or a limit (`request_too_large`,
+`response_too_large`, `unchecked_response` for an answer the redaction
+couldn't check within its budgets, `rate_limited`, `too_many_queued`);
+cancelled for `aborted` or `operation_ended`; `timeout`; or an error for
+`network`, whose message is the broker's own.
 
 Plugin discovery skips an invalid package without a log line: the active
 event counts it in `counts.invalid_plugin`, as it counts a bundled archive
