@@ -77,7 +77,7 @@ Then(
   "the catalog does not say it was loaded from its local cache",
   async ({ page }) => {
     await expect(
-      page.getByText("The catalog was loaded from its local cache", {
+      page.getByText("Some plugin sources couldn't be read", {
         exact: false,
       }),
     ).toHaveCount(0);
@@ -200,6 +200,7 @@ const savedJiraConnection = {
 };
 const oldJiraOverview: PluginsOverview = {
   pluginsEnabled: true,
+  unsignedPluginsEnabled: true,
   plugins: [oldJira],
   connectionGroups: [
     { plugin: oldJira, enabled: false, connections: [savedJiraConnection] },
@@ -259,6 +260,11 @@ Given("an installed Jira plugin uses an older plugin API", async ({ page }) => {
           return { type: "plugin", result: await update() };
         },
         installPlugin: update,
+        // A file install is unsigned: updating from one needs the switch on.
+        getPluginCatalogSettings: async () => ({
+          refreshMinutes: 15,
+          allowUnsignedInstalls: true,
+        }),
       });
     },
     { plugin: updatedJira, overview: updatedJiraOverview },
@@ -362,6 +368,142 @@ When("I update Jira from a file", async ({ page }) => {
   await page
     .getByRole("button", { name: "Update from file", exact: true })
     .click();
+});
+
+const ALICE = "https://codeberg.org/alice/plugins";
+
+Given("Alice's unsigned plugin source can be added", async ({ page }) => {
+  await page.addInitScript((url) => {
+    const desktop = window.ajourDesktop!;
+    const original = desktop.getPluginCatalog!;
+    Object.assign(desktop, {
+      inspectPluginSource: async () => ({
+        url,
+        name: "Alice's plugins",
+        official: false,
+        hostKind: "gitea",
+        signed: false,
+        plugins: [{ id: "weather", name: "Weather", version: "1.0.0" }],
+        alreadyAdded: false,
+      }),
+      addPluginSource: async (added: string, keyFingerprint: string | null) => {
+        if (added !== url || keyFingerprint !== null) {
+          throw new Error("Unexpected source");
+        }
+        return {
+          ...(await original()),
+          sources: [
+            {
+              url,
+              name: "Alice's plugins",
+              official: false,
+              hostKind: "gitea",
+              state: "unsigned",
+              pluginCount: 1,
+            },
+          ],
+        };
+      },
+    });
+  }, ALICE);
+});
+
+When("I add the plugin source {string}", async ({ page }, address: string) => {
+  await page.getByLabel("Add a source", { exact: true }).fill(address);
+  await page
+    .getByRole("button", { name: "Add source", exact: true })
+    .first()
+    .click();
+});
+
+Then(
+  "Ajour shows the source's plugins and warns that it isn't signed",
+  async ({ page }) => {
+    const dialog = page.getByRole("dialog");
+    await expect(
+      dialog.getByRole("heading", { name: "Add Alice's plugins?" }),
+    ).toBeVisible();
+    await expect(dialog.getByText("Weather", { exact: true })).toBeVisible();
+    await expect(
+      dialog.getByText("This source isn't signed", { exact: false }),
+    ).toBeVisible();
+    await page.screenshot({ path: "test-results/plugin-source-review.png" });
+  },
+);
+
+When("I confirm adding the source", async ({ page }) => {
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Add source", exact: true })
+    .click();
+});
+
+Then("Alice's plugins is listed as an unsigned source", async ({ page }) => {
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(
+    page.getByText("Alice's plugins is added.", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Remove Alice's plugins", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("codeberg.org/alice/plugins · 1 plugin", { exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: "test-results/plugin-sources.png",
+    fullPage: true,
+  });
+});
+
+Given("plugins can be installed from a file", async ({ page }) => {
+  await page.addInitScript(() => {
+    let settings = { refreshMinutes: 15, allowUnsignedInstalls: false };
+    Object.assign(window.ajourDesktop!, {
+      installPlugin: async () => null,
+      getPluginCatalogSettings: async () => settings,
+      configurePluginCatalog: async (next: typeof settings) => {
+        settings = next;
+        return settings;
+      },
+    });
+  });
+});
+
+Then(
+  "installing from a file waits for unsigned installs to be allowed",
+  async ({ page }) => {
+    await expect(
+      page.getByRole("button", { name: "Install from file", exact: true }),
+    ).toBeDisabled();
+    await expect(
+      page.getByRole("switch", {
+        name: "Allow installing unsigned plugins",
+        exact: true,
+      }),
+    ).not.toBeChecked();
+  },
+);
+
+When("I allow installing unsigned plugins", async ({ page }) => {
+  await page
+    .getByRole("switch", {
+      name: "Allow installing unsigned plugins",
+      exact: true,
+    })
+    .click();
+});
+
+Then("I can install a plugin from a file", async ({ page }) => {
+  await expect(
+    page.getByText(
+      "Unsigned plugins can be installed. Ajour warns you each time.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Install from file", exact: true }),
+  ).toBeEnabled();
+  await page.screenshot({ path: "test-results/plugin-unsigned-switches.png" });
 });
 
 Given("plugins are off because {string}", async ({ page }, reason: string) => {

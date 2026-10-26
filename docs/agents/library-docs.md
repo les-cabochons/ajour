@@ -107,10 +107,17 @@ The backlog editor module is feature-local because its vocabulary and commands b
   `apps/desktop/electron/automatic-update.cjs`
 - Update checks cross the context-isolated preload/IPC bridge; the renderer does
   not fetch releases or open arbitrary external URLs directly.
-- Plugin-index validation, image caching, built-in fallback, and release
-  download: `apps/desktop/electron/plugin-catalog.cjs` and
-  `apps/desktop/electron/plugin-catalog-seed.cjs`
-- Catalog refresh persistence: `apps/desktop/electron/plugin-catalog-settings.cjs`
+- Plugin sources (ADR 0012): reading `ajour.json` per host, signature and
+  trust checks, hashed file downloads and packing:
+  `apps/desktop/electron/plugin-sources.cjs`. The catalog over every source,
+  its cache and built-in fallback: `apps/desktop/electron/plugin-catalog.cjs`
+  and `apps/desktop/electron/plugin-catalog-seed.cjs`
+- Catalog settings, the source list with pinned keys, and Allow installing
+  unsigned plugins: `apps/desktop/electron/plugin-catalog-settings.cjs`. The
+  unsigned install warning: `confirmUnsignedInstall` in
+  `apps/desktop/electron/main.cjs`
+- Plugin origins and Deactivate unsigned plugins: `apps/api/src/storage.ts`
+  (`pluginOrigins`, `unsignedPluginsEnabled`)
 - Main-process failures:
   - Every IPC channel registers through `apps/desktop/electron/ipc-listeners.cjs` (`ipc.handle`, `ipc.onMessage`, `ipc.answerSync`), so none can throw into main, a failed `sendSync` request answers null, and each call emits its wide event. The channel table, with each channel's event, is `apps/desktop/electron/ipc-channels.cjs`, which `just typecheck` checks against the catalog. `just typecheck` also checks main.cjs's registrations against the table (`apps/desktop/tsconfig.json`, loose JS checking). No code registers with `ipcMain` directly.
   - `apps/desktop/electron/window-recovery.cjs` reloads a crashed window, but the third crash within a minute asks Reload or Quit instead. It also asks about a hung window or a failed load.

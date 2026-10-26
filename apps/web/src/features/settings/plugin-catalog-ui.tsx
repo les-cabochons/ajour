@@ -7,8 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
   PLUGIN_API_VERSION,
+  comparePluginVersions,
+  isSignedPlugin,
   type PluginCatalogCapability,
   type PluginCatalogEntry,
+  type PluginOrigin,
+  type PluginOverviewItem,
 } from "@ajour/shared";
 
 const featureDescriptions: Record<string, string> = {
@@ -60,6 +64,52 @@ export function canUpdateFromCatalog(entry: PluginCatalogEntry) {
     entry.install !== undefined &&
     canInstallCatalogPlugin(entry) &&
     entry.compatibility.pluginApiVersion === PLUGIN_API_VERSION
+  );
+}
+
+/**
+ * Whether the catalog offers an installed plugin an update: a compatible
+ * package over one this Ajour cannot run, or a newer version. Only the source
+ * the plugin came from updates it, so another source's plugin of the same id
+ * never replaces it.
+ */
+export function catalogOffersUpdate(
+  entry: PluginCatalogEntry,
+  plugin: Pick<PluginOverviewItem, "version" | "unavailableReason" | "origin">,
+) {
+  if (!canUpdateFromCatalog(entry)) return false;
+  if (
+    plugin.origin?.sourceUrl !== undefined &&
+    entry.source?.url !== plugin.origin.sourceUrl
+  ) {
+    return false;
+  }
+  return (
+    plugin.unavailableReason !== undefined ||
+    comparePluginVersions(entry.version, plugin.version) > 0
+  );
+}
+
+/**
+ * Whether Ajour vouches for the plugin: an installed one by where it came
+ * from, one not installed yet by its source's signature.
+ */
+export function isEntrySigned(
+  entry: PluginCatalogEntry,
+  installed?: Pick<PluginOverviewItem, "origin">,
+) {
+  return installed ? isSignedPlugin(installed) : entry.source?.signed === true;
+}
+
+/** The plain "Unsigned" mark, beside a plugin's status. */
+export function UnsignedBadge() {
+  return (
+    <Badge
+      variant="outline"
+      title="Ajour can't check who made this plugin or that nobody changed it."
+    >
+      Unsigned
+    </Badge>
   );
 }
 
@@ -229,12 +279,53 @@ function ExternalValue({
   );
 }
 
+/** Where an installed plugin came from, or the source that lists it. */
+function sourceValue(
+  entry: PluginCatalogEntry,
+  origin?: PluginOrigin,
+): ReactNode {
+  if (origin?.kind === "file") return "Installed from a file";
+  const url = origin?.sourceUrl ?? entry.source?.url;
+  const name = origin?.sourceName ?? entry.source?.name;
+  if (!url) return "Not listed by a plugin source";
+  const official = origin?.official ?? entry.source?.official;
+  return (
+    <ExternalValue href={url}>
+      {name ?? url}
+      {official ? " (official)" : ""}
+    </ExternalValue>
+  );
+}
+
+function signatureValue(
+  entry: PluginCatalogEntry,
+  installed?: Pick<PluginOverviewItem, "origin">,
+) {
+  const signed = isEntrySigned(entry, installed);
+  const fingerprint = installed
+    ? installed.origin?.keyFingerprint
+    : entry.source?.keyFingerprint;
+  return signed ? (
+    <span>
+      Signed{fingerprint ? " · key " : ""}
+      {fingerprint ? (
+        <span className="font-mono text-xs">{fingerprint}</span>
+      ) : null}
+    </span>
+  ) : (
+    "Unsigned"
+  );
+}
+
 function PluginInfoList({
   entry,
   version,
+  installed,
 }: {
   entry: PluginCatalogEntry;
   version?: string;
+  /** The installed plugin, whose origin says where it came from. */
+  installed?: Pick<PluginOverviewItem, "origin">;
 }) {
   const rows: Array<[string, ReactNode]> = [
     [
@@ -246,9 +337,13 @@ function PluginInfoList({
     ["Capabilities", pluginCapabilitiesLabel(entry)],
     [
       "License",
-      <ExternalValue href={entry.license.url}>
-        {entry.license.name}
-      </ExternalValue>,
+      entry.license.url ? (
+        <ExternalValue href={entry.license.url}>
+          {entry.license.name}
+        </ExternalValue>
+      ) : (
+        entry.license.name
+      ),
     ],
     [
       "Compatibility",
@@ -264,16 +359,26 @@ function PluginInfoList({
           ],
         ]
       : []),
-    [
-      "Website",
-      <ExternalValue href={entry.website}>Visit website</ExternalValue>,
-    ],
-    [
-      "Repository",
-      <ExternalValue href={entry.repository.url}>
-        {entry.repository.slug}
-      </ExternalValue>,
-    ],
+    ["Source", sourceValue(entry, installed?.origin)],
+    ["Signature", signatureValue(entry, installed)],
+    ...(entry.website
+      ? [
+          [
+            "Website",
+            <ExternalValue href={entry.website}>Visit website</ExternalValue>,
+          ] as [string, ReactNode],
+        ]
+      : []),
+    ...(entry.repository
+      ? [
+          [
+            "Repository",
+            <ExternalValue href={entry.repository.url}>
+              {entry.repository.slug}
+            </ExternalValue>,
+          ] as [string, ReactNode],
+        ]
+      : []),
     [
       "Tags",
       <span className="flex flex-wrap gap-1.5">

@@ -638,6 +638,20 @@ export const catalog = defineCatalog({
         },
       },
     },
+    /** Unsigned plugins allowed to run again, or all of them deactivated. */
+    "unsigned_plugins.toggle": {
+      kinds: ["command", "request"],
+      reasons: requestReasons,
+      fields: {
+        ...requestFields,
+        activation: {
+          enabled: operational<boolean>(),
+          /** Installed plugins without a signed origin, when turned off. */
+          unsigned_plugin_count: operational<number>(),
+          operations_cancelled: operational<number>(),
+        },
+      },
+    },
     /** A connection's settings validated by its plugin and saved. */
     "connection.save": {
       kinds: ["command", "request", "plugin_operation"],
@@ -1189,23 +1203,29 @@ export const catalog = defineCatalog({
       ],
       fields: { sandbox: { cause: operational<PluginSandboxCause>() } },
     },
-    /** The plugin index refreshed from the network, the cache or the built-in snapshot. */
+    /**
+     * Every plugin source read again: from the network, the saved listings or
+     * the built-in snapshot. Counts only: a source's address is content.
+     */
     "catalog.refresh": {
       kinds: ["job"],
       fields: {
         catalog: {
           trigger: operational<"launch" | "interval" | "request">(),
           source: operational<"network" | "cache" | "built_in">(),
-          /** The index file's HTTP status, absent when the request failed. */
-          status: operational<number>(),
-          /** Whether the index request was conditional. */
-          revalidated: operational<boolean>(),
           entry_count: operational<number>(),
-          definitions_fetched: operational<number>(),
-          definitions_revalidated: operational<number>(),
-          definitions_failed: operational<number>(),
+          sources_total: operational<number>(),
+          sources_read: operational<number>(),
+          /** Unreachable, so their saved listing was used. */
+          sources_cached: operational<number>(),
+          /** Unreachable with nothing saved, or with an unreadable listing. */
+          sources_unreachable: operational<number>(),
+          sources_signed: operational<number>(),
+          sources_unsigned: operational<number>(),
+          /** A changed key, a lost signature or one that does not match. */
+          sources_blocked: operational<number>(),
           images_fetched: operational<number>(),
-          images_revalidated: operational<number>(),
+          images_cached: operational<number>(),
           images_failed: operational<number>(),
           skipped_plugin_ids: operational<string[]>(),
           bytes: operational<number>(),
@@ -1230,6 +1250,52 @@ export const catalog = defineCatalog({
         catalog: {
           refresh_minutes_before: operational<number>(),
           refresh_minutes_after: operational<number>(),
+          allow_unsigned_installs_before: operational<boolean>(),
+          allow_unsigned_installs_after: operational<boolean>(),
+        },
+      },
+    },
+    /** A plugin source read before the person adds it. Never its address. */
+    "catalog.inspect_source": {
+      kinds: ["ipc"],
+      reasons: ["foreign_sender"],
+      fields: {
+        ipc: ipcFields,
+        source: {
+          host_kind: operational<"github" | "gitlab" | "gitea">(),
+          official: operational<boolean>(),
+          signed: operational<boolean>(),
+          plugin_count: operational<number>(),
+          result: operational<"read" | "failed">(),
+        },
+      },
+    },
+    /** A plugin source added, or the key it is signed with approved. */
+    "catalog.add_source": {
+      kinds: ["command", "ipc"],
+      reasons: ["foreign_sender"],
+      fields: {
+        ipc: ipcFields,
+        source: {
+          host_kind: operational<"github" | "gitlab" | "gitea">(),
+          official: operational<boolean>(),
+          signed: operational<boolean>(),
+          source_count: operational<number>(),
+          result: operational<
+            "added" | "key_approved" | "key_mismatch" | "failed"
+          >(),
+        },
+      },
+    },
+    "catalog.remove_source": {
+      kinds: ["command", "ipc"],
+      reasons: ["foreign_sender"],
+      fields: {
+        ipc: ipcFields,
+        source: {
+          official: operational<boolean>(),
+          source_count: operational<number>(),
+          result: operational<"removed" | "not_found">(),
         },
       },
     },
@@ -1394,6 +1460,8 @@ export const catalog = defineCatalog({
           dialog_ms: operational<number>(),
           download_ms: operational<number>(),
           install_ms: operational<number>(),
+          /** Whether the plugin came from a source whose signature verified. */
+          signed: operational<boolean>(),
           result: operational<
             | "installed"
             | "updated"
@@ -1401,6 +1469,7 @@ export const catalog = defineCatalog({
             | "busy"
             | "invalid_archive"
             | "not_available"
+            | "unsigned_not_allowed"
             | "api_unavailable"
             | "failed"
           >(),

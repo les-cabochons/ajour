@@ -4,6 +4,7 @@ import type {
   PluginUninstallResponse,
   PluginCatalogResponse,
   PluginCatalogSettings,
+  PluginSourceInspection,
 } from "@ajour/shared";
 import type { LaunchContext } from "@ajour/wide-events";
 import type {
@@ -186,10 +187,26 @@ declare global {
       onPluginCatalogUpdated?: (
         callback: (catalog: PluginCatalogResponse) => void,
       ) => () => void;
+      /** Null when the person cancels the unsigned plugin warning. */
       downloadCatalogPlugin?: (
         pluginId: string,
+        sourceUrl: string | undefined,
         trace?: TraceCarrier,
-      ) => Promise<CatalogPluginDownloadResponse>;
+      ) => Promise<CatalogPluginDownloadResponse | null>;
+      inspectPluginSource?: (
+        url: string,
+        trace?: TraceCarrier,
+      ) => Promise<PluginSourceInspection>;
+      /** Adds the source, or approves its key; `keyFingerprint` is what the person saw. */
+      addPluginSource?: (
+        url: string,
+        keyFingerprint: string | null,
+        trace?: TraceCarrier,
+      ) => Promise<PluginCatalogResponse>;
+      removePluginSource?: (
+        url: string,
+        trace?: TraceCarrier,
+      ) => Promise<PluginCatalogResponse>;
       uninstallPlugin?: (
         pluginId: string,
         trace?: TraceCarrier,

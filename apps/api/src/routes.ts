@@ -122,6 +122,11 @@ export const ROUTES = {
     path: "/api/plugins/activation",
     name: "plugin_system.toggle",
   },
+  unsignedPluginsToggle: {
+    method: "POST",
+    path: "/api/plugins/unsigned-activation",
+    name: "unsigned_plugins.toggle",
+  },
   schemaList: {
     method: "GET",
     path: "/api/project-data-shapes",

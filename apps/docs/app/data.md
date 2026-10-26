@@ -17,7 +17,7 @@ The folder holds:
 - **`app-api-state.json`**: plugin connections, items waiting in Sync review, MCP clients and agent task settings. It records which secret fields are set, never their values.
 - **`app-api-vault.json`**: the vault, with the secrets of connections and agent task settings, such as tokens and secret calendar addresses, encrypted by your operating system.
 - **`plugins/`**: installed plugins.
-- **`plugin-catalog/`**: a cache of the plugin catalog.
+- **`plugin-catalog/`**: the last listing read from each plugin source, and its plugins' images.
 - **`agent-browser-profile/`**: the browser profile used by agent tasks in their separate browser mode. It keeps cookies, sessions and other browser data, including a Workday sign-in, between runs. An agent attached to your own browser uses that browser's profile instead.
 
 To back up Ajour, quit it and copy this folder.
@@ -33,12 +33,12 @@ Encryption keeps a copy of the folder from handing out your tokens. It doesn't s
 Ajour makes these network requests, some of them on a timer:
 
 - **GitHub releases**, to check for updates on startup, every 4 hours and when you ask, in the desktop app. Updates download only when you choose to update.
-- **The plugin catalog** on GitHub, at launch and every 15 minutes by default. Its images also come from GitHub and are cached locally. Downloading a plugin contacts GitHub releases and its download hosts.
+- **Your plugin sources**, at launch and every 15 minutes by default: the official one on GitHub, and each repository you add, on its own host. Ajour reads their `ajour.json` and its signature, and plugin images, which it caches locally. Downloading a plugin reads its files from the same host. Adding a source on an unknown host first asks that host which kind of git server it is.
 - **The tools you connect**, such as Azure DevOps, Jira, GitHub or your calendar, when you press **Sync**, on the connection's timer, and when you open a week or an item's comments.
 - **Your team's backend**, through a team plugin, for the project and task fields you share. This does not include time entries or their notes. The operator of that backend controls its storage and retention.
 - **Your AI provider and the sites an agent visits**, when you use [MCP or an agent task](/app/agents). The agent can send the data it reads, including time entries, notes and browser content, to the provider you configured. A task can also enter your timesheet into a service such as Workday.
 
-Each contacted service receives ordinary request information, including your IP address. Update and catalog requests do not include your time entries or connection tokens. Exporting data to a destination you choose or opening an external link can also send information outside your device.
+Each contacted service receives ordinary request information, including your IP address. Update and plugin source requests do not include your time entries or connection tokens. Exporting data to a destination you choose or opening an external link can also send information outside your device.
 
 ## What plugins can see
 
