@@ -148,7 +148,7 @@ When the user picks **Keep local** in Sync review, the field comes with `resolut
 
 Return each field's result in `workItemUpdates`, with `nextBaselineValue` set to the value both sides now agree on. If a write fails, return `status: "error"` and a `message`, and leave out `nextBaselineValue`. Ajour replaces secret connection values in the message with `[secret]`. Do not throw: the other fields and items still sync.
 
-Skip fields the user did not map. The official plugins ship this logic in `src/estimate-sync.ts`. Copy it from [ajc-jira](https://github.com/les-cabochons/ajc-jira/blob/main/src/estimate-sync.ts).
+Skip fields the user did not map. The official plugins ship this logic in `src/estimate-sync.ts`. Copy it from [the Jira plugin](https://github.com/les-cabochons/ajour-plugins/blob/main/plugins/jira/src/estimate-sync.ts).
 
 ### Comments on settled items
 
