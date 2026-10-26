@@ -655,14 +655,15 @@ export class CredentialBroker implements CredentialBrokerPort {
             : method;
         // A same-origin redirect is followed only where the policy would
         // let the plugin send the request itself.
-        // A secret address's redirect is held to the rule of the saved
-        // address too: no user name or password, which would ride along.
+        // Every redirect is held to the rule of the saved address too: no
+        // user name or password, which would ride along.
         const hasUserinfo = Boolean(next?.username || next?.password);
         const follow = target.secretAddress
           ? next?.protocol === "https:" &&
             !hasUserinfo &&
             next.href.length <= MAX_REDIRECT_ADDRESS
           : next !== undefined &&
+            !hasUserinfo &&
             next.origin === origin &&
             target.allows(nextMethod, next);
         if (follow && exchange.redirects < this.limits.redirects) {

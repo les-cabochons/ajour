@@ -950,6 +950,27 @@ describe("the credential broker", () => {
       expect(response.status).toBe(301);
     });
 
+    it("hands back a same-origin redirect to an address that holds a user name or password", async () => {
+      const { operation, sent } = setup({
+        respond: (request) => {
+          if (!request.url.endsWith("/myself")) return { status: 200 };
+          const location = new URL("/rest/api/3/issue/ENG-5", request.url);
+          location.username = "me";
+          location.password = "pw";
+          return { status: 302, headers: { location: location.href } };
+        },
+      });
+
+      const response = await operation().http({
+        connectionId: "jira_1",
+        method: "GET",
+        path: "/rest/api/3/myself",
+      });
+
+      expect(sent).toHaveLength(1);
+      expect(response.status).toBe(302);
+    });
+
     it("hands back a same-origin redirect to a path the manifest doesn't allow", async () => {
       for (const location of [
         "/rest/api/3/serverInfo",
@@ -1262,7 +1283,9 @@ describe("the credential broker", () => {
 
         expect(error.reason, address).toBe("invalid_address");
         expect(error.message, address).toContain("user name or password");
-        expect(error.message, address).not.toMatch(/me|pw|example|9d1c4b7e/);
+        expect(error.message, address).not.toMatch(
+          /\bme\b|pw|example|9d1c4b7e/,
+        );
         expect(sent, address).toEqual([]);
       }
     });
@@ -1287,7 +1310,7 @@ describe("the credential broker", () => {
 
         expect(error.reason, location).toBe("redirect_refused");
         expect(error.message, location).toContain("user name or password");
-        expect(error.message, location).not.toMatch(/me|pw|example/);
+        expect(error.message, location).not.toMatch(/\bme\b|pw|example/);
         expect(sent, location).toHaveLength(1);
       }
     });
