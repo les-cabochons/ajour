@@ -8,8 +8,8 @@ import { z } from "zod";
  * docs/specs/2026-10-16-team-project-sync-design.md.
  *
  * Only team-owned fields cross this boundary. Time entries, tracked totals,
- * notes, budget consumption, pinned slots, plugin properties, order and the
- * budget adjustment never do.
+ * notes, budget consumption, pinned slots, favorites, plugin properties, order
+ * and the budget adjustment never do.
  */
 
 export const TEAM_CAPABILITY_API_VERSION = 1;

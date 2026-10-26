@@ -495,6 +495,28 @@ Feature: Open the local time workspace
     When I save one hour to the selected project and task
     Then the time entry uses project "aaa xyz" and task "222 000"
 
+  Scenario: Star tasks and projects from the task menu
+    Given I have projects with searchable tasks
+    When I open today's time workspace
+    And I open the new time-entry project and task picker
+    And I browse the tasks in project "aaa xyz"
+    And I star "111 000" in the task menu
+    And I star "222 000" in the task menu
+    Then the task menu is still open
+    When I return to the project list
+    And I star "[BBB] bbb zyx" in the task menu
+    And I open "[BBB] bbb zyx" in the task menu
+    And I star "333 000" in the task menu
+    And I return to the project list
+    Then the task menu's Favorites list "333 000, [BBB] bbb zyx, 222 000" and "1 more favorite"
+    When I open "1 more favorite" in the task menu
+    Then the task menu lists "333 000, [BBB] bbb zyx, 222 000, 111 000"
+    When I unstar "[BBB] bbb zyx" in the task menu
+    Then the task menu lists "333 000, 222 000, 111 000"
+    When I return to the project list
+    And I search for project and task "222"
+    Then only the non-billable "222 000" row says "Non-billable"
+
   Scenario: Install a packaged plugin from local files
     Given I have no saved Ajour workspace
     When I install a packaged plugin from settings

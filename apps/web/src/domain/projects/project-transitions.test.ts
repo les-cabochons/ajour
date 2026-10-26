@@ -544,7 +544,13 @@ describe("favorites", () => {
     expect(favoriteIds(projects)).toEqual(["alpha-task-1"]);
     expect(
       favoriteIds(
-        setProjectTaskStatus(projects, "alpha", "alpha-task-2", "active", () => 1),
+        setProjectTaskStatus(
+          projects,
+          "alpha",
+          "alpha-task-2",
+          "active",
+          () => 1,
+        ),
       ),
     ).toEqual(["alpha-task-2", "alpha-task-1"]);
   });

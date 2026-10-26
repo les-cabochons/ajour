@@ -1307,6 +1307,82 @@ When(
   },
 );
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Matches a row whose text starts with `name`, before its count or tags. */
+function startsWith(name: string) {
+  return new RegExp(`^${escapeRegExp(name)}`);
+}
+
+/** The task menu's rows, or the rows of one of its sections. */
+function taskMenuRows(page: Page, section?: string) {
+  const list = page.locator("[cmdk-list]");
+  const scope = section
+    ? list.locator("[cmdk-group]").filter({
+        has: page.locator("[cmdk-group-heading]", {
+          hasText: new RegExp(`^${section}$`),
+        }),
+      })
+    : list;
+  return scope.locator("[cmdk-item]");
+}
+
+async function toggleTaskMenuStar(page: Page, name: string, add: boolean) {
+  const row = taskMenuRows(page)
+    .filter({ hasText: startsWith(name) })
+    .first();
+  await row.hover();
+  await row
+    .getByRole("button", {
+      name: add ? `Add ${name} to favorites` : `Remove ${name} from favorites`,
+    })
+    .click();
+}
+
+When("I star {string} in the task menu", async ({ page }, name: string) => {
+  await toggleTaskMenuStar(page, name, true);
+});
+
+When("I unstar {string} in the task menu", async ({ page }, name: string) => {
+  await toggleTaskMenuStar(page, name, false);
+});
+
+When("I open {string} in the task menu", async ({ page }, row: string) => {
+  await taskMenuRows(page).filter({ hasText: row }).first().click();
+});
+
+Then("the task menu is still open", async ({ page }) => {
+  await expect(page.locator("[cmdk-list]")).toBeVisible();
+});
+
+Then(
+  "the task menu's Favorites list {string} and {string}",
+  async ({ page }, names: string, more: string) => {
+    await expect(taskMenuRows(page, "Favorites")).toHaveText([
+      ...names.split(", ").map(startsWith),
+      more,
+    ]);
+  },
+);
+
+Then("the task menu lists {string}", async ({ page }, names: string) => {
+  await expect(
+    taskMenuRows(page).filter({ hasNotText: "Back to projects" }),
+  ).toHaveText(names.split(", ").map(startsWith));
+});
+
+Then(
+  "only the non-billable {string} row says {string}",
+  async ({ page }, name: string, tag: string) => {
+    const rows = taskMenuRows(page, "Tasks").filter({ hasText: name });
+    await expect(rows).toHaveCount(2);
+    await expect(rows.filter({ hasText: tag })).toHaveCount(1);
+    await expect(rows.filter({ hasText: tag })).toContainText("[BBB] bbb zyx");
+  },
+);
+
 When("I select the matching project and task", async ({ page }) => {
   await expect(page.getByText("222 000", { exact: true })).toBeVisible();
   await page.keyboard.press("Enter");

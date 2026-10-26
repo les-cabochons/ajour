@@ -3382,7 +3382,10 @@ export const STORE_COMMANDS = {
   setProjectFavorite: {
     name: "project.favorite",
     fields: {
-      project: { ...projectIdFirst.project, favorite: ([, favorite]) => favorite },
+      project: {
+        ...projectIdFirst.project,
+        favorite: ([, favorite]) => favorite,
+      },
     },
   },
   archiveProjectTask: { name: "task.archive", fields: taskIdsFirst },
