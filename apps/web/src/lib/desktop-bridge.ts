@@ -4,8 +4,13 @@ import type {
   PluginUninstallResponse,
   PluginCatalogResponse,
   PluginCatalogSettings,
+  PluginSourceInspection,
 } from "@ajour/shared";
 import type { LaunchContext } from "@ajour/wide-events";
+import type {
+  LocalLogSettings,
+  LocalLogStatus,
+} from "@ajour/wide-events/local-log-file.ts";
 import type {
   LocalAppState,
   ThemeMode,
@@ -101,6 +106,9 @@ export interface TraceCarrier {
   traceparent: string;
 }
 
+/** The local log file's settings, state and folder, from the main process (ADR 0014). */
+export type DesktopLogsStatus = LocalLogStatus & { settings: LocalLogSettings };
+
 declare global {
   interface Window {
     ajourDesktop?: {
@@ -179,10 +187,26 @@ declare global {
       onPluginCatalogUpdated?: (
         callback: (catalog: PluginCatalogResponse) => void,
       ) => () => void;
+      /** Null when the person cancels the unsigned plugin warning. */
       downloadCatalogPlugin?: (
         pluginId: string,
+        sourceUrl: string | undefined,
         trace?: TraceCarrier,
-      ) => Promise<CatalogPluginDownloadResponse>;
+      ) => Promise<CatalogPluginDownloadResponse | null>;
+      inspectPluginSource?: (
+        url: string,
+        trace?: TraceCarrier,
+      ) => Promise<PluginSourceInspection>;
+      /** Adds the source, or approves its key; `keyFingerprint` is what the person saw. */
+      addPluginSource?: (
+        url: string,
+        keyFingerprint: string | null,
+        trace?: TraceCarrier,
+      ) => Promise<PluginCatalogResponse>;
+      removePluginSource?: (
+        url: string,
+        trace?: TraceCarrier,
+      ) => Promise<PluginCatalogResponse>;
       uninstallPlugin?: (
         pluginId: string,
         trace?: TraceCarrier,
@@ -196,6 +220,14 @@ declare global {
       clearDevelopmentPluginDirectories?: (
         trace?: TraceCarrier,
       ) => Promise<DevelopmentPluginSettings>;
+      getLogsStatus?: (trace?: TraceCarrier) => Promise<DesktopLogsStatus>;
+      /** Saves the local log file's settings. Those left out stay. */
+      configureLogs?: (
+        settings: Partial<LocalLogSettings>,
+        trace?: TraceCarrier,
+      ) => Promise<DesktopLogsStatus>;
+      /** Delete all logs: the folder goes. */
+      deleteAllLogs?: (trace?: TraceCarrier) => Promise<DesktopLogsStatus>;
     };
   }
 }

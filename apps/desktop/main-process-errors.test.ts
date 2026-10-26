@@ -90,7 +90,15 @@ afterEach(() => {
 describe("quitting and installing an update", () => {
   function quitRuntime(
     stopInternalAppApi: () => Promise<void>,
-    { loaded = true, quitTrigger = "other" } = {},
+    {
+      loaded = true,
+      quitTrigger = "other",
+      flushLogs = async () => {},
+    }: {
+      loaded?: boolean;
+      quitTrigger?: string;
+      flushLogs?: () => Promise<void>;
+    } = {},
   ) {
     const handlers = new Map<string, (event: unknown) => void>();
     const app = {
@@ -109,7 +117,13 @@ describe("quitting and installing an update", () => {
       order.push("plugin renderers closed");
     });
     app.quit.mockImplementation(() => order.push("quit"));
+    const localLogs = {
+      flush: vi.fn(flushLogs),
+      startSweeps: vi.fn(),
+      drainSync: vi.fn(),
+    };
     const context = vm.createContext({
+      localLogs,
       closePluginRenderers,
       app,
       events,
@@ -149,6 +163,7 @@ describe("quitting and installing an update", () => {
       attach,
       automaticUpdateController,
       closePluginRenderers,
+      localLogs,
       order,
       emit: (name: string) => handlers.get(name)?.({ preventDefault: vi.fn() }),
       quit() {
@@ -190,6 +205,25 @@ describe("quitting and installing an update", () => {
     expect(runtime.order).toEqual(["plugin renderers closed", "quit"]);
   });
 
+  it("writes what the local log file holds before it quits", async () => {
+    let written = () => {};
+    const runtime = quitRuntime(async () => {}, {
+      flushLogs: () =>
+        new Promise<void>((resolve) => {
+          written = resolve;
+        }),
+    });
+
+    runtime.quit();
+    await flush();
+    expect(runtime.localLogs.flush).toHaveBeenCalledOnce();
+    expect(runtime.app.quit).not.toHaveBeenCalled();
+
+    written();
+    await flush();
+    expect(runtime.app.quit).toHaveBeenCalledOnce();
+  });
+
   it("still quits when stopping the local API fails", async () => {
     const runtime = quitRuntime(fails);
 
@@ -209,6 +243,19 @@ describe("quitting and installing an update", () => {
 
     expect(runtime.app.exit).toHaveBeenCalledWith(0);
     expect(runtime.app.quit).not.toHaveBeenCalled();
+  });
+
+  // app.exit skips will-quit, which is where the log file is drained.
+  it("writes the log file's waiting events before it exits on a timed-out stop", async () => {
+    const runtime = quitRuntime(hangs);
+
+    runtime.quit();
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(runtime.localLogs.drainSync).toHaveBeenCalledOnce();
+    expect(
+      runtime.localLogs.drainSync.mock.invocationCallOrder[0]!,
+    ).toBeLessThan(runtime.app.exit.mock.invocationCallOrder[0]!);
   });
 
   it("installs the update when stopping the local API fails, as quitting does", async () => {
@@ -391,6 +438,19 @@ describe("quitting and installing an update", () => {
     expect(
       runtime.automaticUpdateController.installerQuitting,
     ).toHaveBeenCalledOnce();
+  });
+
+  // An update install's events end after the last flush: the installer's quit ends one at will-quit.
+  it("writes the log file's waiting events at will-quit, after the installer's quit ended its event", () => {
+    const runtime = quitRuntime(async () => {});
+
+    runtime.emit("will-quit");
+
+    expect(runtime.localLogs.drainSync).toHaveBeenCalledOnce();
+    expect(
+      runtime.automaticUpdateController.installerQuitting.mock
+        .invocationCallOrder[0],
+    ).toBeLessThan(runtime.localLogs.drainSync.mock.invocationCallOrder[0]!);
   });
 
   // The installer's quit skips before-quit's wait, so preparation waits.
@@ -1026,6 +1086,7 @@ describe("startup", () => {
     const dialog = { showErrorBox: vi.fn() };
     const { events, recorded, attach } = recordingEvents({ loaded });
     const powerMonitor = new EventEmitter();
+    const localLogs = { flush: async () => {}, startSweeps: vi.fn() };
     let menuTemplate: {
       submenu?: { id?: string; click?: () => void }[];
     }[] = [];
@@ -1053,6 +1114,7 @@ describe("startup", () => {
       events,
       existsSync: () => true,
       hasSingleInstanceLock,
+      localLogs,
       INTERNAL_APP_API_HOST: "127.0.0.1",
       INTERNAL_APP_API_PORT: 8787,
       INTERNAL_APP_API_STOP_TIMEOUT_MS: 10_000,
@@ -1103,6 +1165,7 @@ describe("startup", () => {
       writeLaunchVersion,
       context,
       powerMonitor,
+      localLogs,
       /** Clicks a menu item of the app menu main.cjs built. */
       clickMenuItem(id: string) {
         menuTemplate
@@ -1113,6 +1176,15 @@ describe("startup", () => {
       emit: (name: string, ...args: unknown[]) => handlers.get(name)?.(...args),
     };
   }
+
+  it("starts the local log file's retention sweeps only in the process that holds the lock", async () => {
+    const holder = startupRuntime();
+    const second = startupRuntime({ hasSingleInstanceLock: false });
+    await flush();
+
+    expect(holder.localLogs.startSweeps).toHaveBeenCalledOnce();
+    expect(second.localLogs.startSweeps).not.toHaveBeenCalled();
+  });
 
   it("says why and quits when the window cannot be created", async () => {
     const runtime = startupRuntime({
@@ -1654,14 +1726,21 @@ describe("plugin and update IPC: the privacy canary", () => {
       // The real picker, over a dialog that picks a file that isn't there.
       selectPluginArchive: require("./electron/plugin-install.cjs")
         .selectPluginArchive,
-      dialog: { showOpenDialog: async () => ({ filePaths: [archivePath] }) },
+      dialog: {
+        showOpenDialog: async () => ({ filePaths: [archivePath] }),
+        showMessageBox: async () => ({ response: 0 }),
+      },
+      pluginCatalogSettings: { allowUnsignedInstalls: true },
       app: { isPackaged: packaged },
       mainWindow: { webContents: "active-window" },
       shell: { openExternal: vi.fn(async () => undefined) },
       ensureInternalAppApiRunning: async () => undefined,
       internalAppApiServer: {},
       internalAppApiModulePromise: Promise.resolve(api),
-      pluginCatalogService: { downloadPluginArchive: async () => archive },
+      pluginCatalogService: {
+        getCurrentCatalog: () => ({ entries: [] }),
+        downloadPluginArchive: async () => ({ ...archive, signed: true }),
+      },
       selectDevelopmentPluginDirectory: async () =>
         `${HOME}\\${MARKER}\\plugins`,
       applyDevelopmentPluginDirectories: async () => undefined,
@@ -1683,6 +1762,8 @@ describe("plugin and update IPC: the privacy canary", () => {
       "function assertActiveDesktopWindow(",
       "function assertDevelopmentBuild(",
       "function pluginIdForEvent(",
+      "function assertSourceAddress(",
+      "async function confirmUnsignedInstall(",
       "async function installPluginArchive(",
       'ipc.handle("ajour:open-update-release"',
       'ipc.handle("ajour:install-plugin"',
@@ -1747,6 +1828,7 @@ describe("plugin and update IPC: the privacy canary", () => {
   it("keeps a catalog download's plugin ID and URL out of its events", async () => {
     const failing = pluginRuntime({
       pluginCatalogService: {
+        getCurrentCatalog: () => ({ entries: [] }),
         downloadPluginArchive: async () => {
           throw new Error(
             `Could not download https://${MARKER}.example.test/${MARKER}.ajour-connector, archive ${MARKER} is not signed`,

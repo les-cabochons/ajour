@@ -405,7 +405,7 @@ describe("AppApiStorage", () => {
     const statePath = path.join(tempDir, "app-api-state.json");
     const storage = new AppApiStorage(statePath);
     const jiraPlugin = buildPlugin("jira", "Jira");
-    const availablePluginIds = new Set(["jira"]);
+    const availablePluginIds = new Map([["jira", undefined]]);
 
     await storage.upsertConnection("jira", {
       label: "Main Jira",
@@ -443,7 +443,7 @@ describe("AppApiStorage", () => {
       reloadedStorage.isPluginEnabled("jira", availablePluginIds),
     ).resolves.toBe(true);
     await expect(
-      reloadedStorage.isPluginEnabled("jira", new Set()),
+      reloadedStorage.isPluginEnabled("jira", new Map()),
     ).resolves.toBe(false);
   });
 
@@ -456,7 +456,7 @@ describe("AppApiStorage", () => {
       ...buildPlugin("github", "GitHub"),
       capabilities: { connector: {}, codeHost: {} },
     };
-    const available = new Set(["github"]);
+    const available = new Map([["github", undefined]]);
 
     await storage.setPluginCapabilityEnabled("github", "codeHost", false);
 
@@ -509,7 +509,10 @@ describe("AppApiStorage", () => {
     );
 
     const reloaded = new AppApiStorage(statePath);
-    const available = new Set(["github", "jira"]);
+    const available = new Map([
+      ["github", undefined],
+      ["jira", undefined],
+    ]);
     await expect(
       reloaded.isPluginCapabilityEnabled("github", "codeHost", available),
     ).resolves.toBe(false);
@@ -524,7 +527,7 @@ describe("AppApiStorage", () => {
     const statePath = path.join(tempDir, "app-api-state.json");
     const storage = new AppApiStorage(statePath);
     const jiraPlugin = buildPlugin("jira", "Jira");
-    const availablePluginIds = new Set(["jira"]);
+    const availablePluginIds = new Map([["jira", undefined]]);
 
     await storage.setPluginSystemEnabled(false);
     await expect(
@@ -549,6 +552,98 @@ describe("AppApiStorage", () => {
     await expect(
       reloaded.isPluginEnabled("jira", availablePluginIds),
     ).resolves.toBe(false);
+  });
+
+  it("records where each plugin came from and reports it in the overview", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
+    tempDirs.push(tempDir);
+    const statePath = path.join(tempDir, "app-api-state.json");
+    const storage = new AppApiStorage(statePath);
+    const signedOrigin = {
+      kind: "source" as const,
+      signed: true,
+      sourceUrl: "https://github.com/les-cabochons/ajour-plugins",
+      sourceName: "Ajour official plugins",
+      official: true,
+      keyFingerprint: "3f2a 9c1d 77e0 b4a2",
+      commit: "888d80ba3fa8d53889011f03a5ab7848b0e06328",
+      installedAt: "2026-10-24T12:00:00.000Z",
+    };
+
+    await storage.setPluginOrigin("jira", signedOrigin);
+
+    const reloaded = new AppApiStorage(statePath);
+    const overview = pluginsOverviewSchema.parse(
+      await reloaded.getPluginsOverview([
+        buildPlugin("jira", "Jira"),
+        buildPlugin("local", "Local"),
+      ]),
+    );
+    expect(overview.plugins).toMatchObject([
+      { id: "jira", origin: signedOrigin },
+      { id: "local" },
+    ]);
+    expect(overview.plugins[1]).not.toHaveProperty("origin");
+
+    await reloaded.removePluginData("jira");
+    const persisted = JSON.parse(await readFile(statePath, "utf8"));
+    expect(persisted.pluginOrigins).toEqual({});
+  });
+
+  it("deactivates every unsigned plugin without touching signed ones or individual choices", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
+    tempDirs.push(tempDir);
+    const statePath = path.join(tempDir, "app-api-state.json");
+    const storage = new AppApiStorage(statePath);
+    const available = new Map([
+      ["signed", undefined],
+      ["unsigned", undefined],
+      ["file", undefined],
+    ]);
+    await storage.setPluginOrigin("signed", {
+      kind: "source",
+      signed: true,
+      installedAt: "2026-10-24T12:00:00.000Z",
+    });
+    await storage.setPluginOrigin("file", {
+      kind: "file",
+      signed: false,
+      installedAt: "2026-10-24T12:00:00.000Z",
+    });
+    await expect(storage.getUnsignedPluginsEnabled()).resolves.toBe(true);
+
+    await storage.setUnsignedPluginsEnabled(false);
+
+    const reloaded = new AppApiStorage(statePath);
+    await expect(reloaded.getUnsignedPluginsEnabled()).resolves.toBe(false);
+    for (const [id, enabled] of [
+      ["signed", true],
+      ["unsigned", false],
+      ["file", false],
+    ] as const) {
+      await expect(reloaded.isPluginEnabled(id, available)).resolves.toBe(
+        enabled,
+      );
+    }
+    await expect(
+      reloaded.getPluginsOverview([
+        buildPlugin("file", "File"),
+        buildPlugin("signed", "Signed"),
+        buildPlugin("unsigned", "Unsigned"),
+      ]),
+    ).resolves.toMatchObject({
+      unsignedPluginsEnabled: false,
+      connectionGroups: [
+        { plugin: { id: "file" }, enabled: false },
+        { plugin: { id: "signed" }, enabled: true },
+        { plugin: { id: "unsigned" }, enabled: false },
+      ],
+    });
+
+    await reloaded.setUnsignedPluginsEnabled(true);
+    await expect(reloaded.isPluginEnabled("file", available)).resolves.toBe(
+      true,
+    );
   });
 
   // Regression: a plugin that fails to load (for example an older plugin API
@@ -615,7 +710,7 @@ describe("AppApiStorage", () => {
       items: [{ source: "Legacy Source", label: "Active" }],
     });
     await expect(
-      storage.isPluginEnabled("jira", new Set(["jira"])),
+      storage.isPluginEnabled("jira", new Map([["jira", undefined]])),
     ).resolves.toBe(true);
   });
 
@@ -888,7 +983,7 @@ describe("AppApiStorage", () => {
       });
     });
 
-    it("counts a blocked direct attempt without taking it for a request", async () => {
+    it("counts a blocked direct attempt apart, without taking it for a request or a refusal", async () => {
       const { storage, connectionId, onDisk } = await brokerStorage(60_000);
 
       await storage.recordBrokerActivity(
@@ -898,7 +993,7 @@ describe("AppApiStorage", () => {
         40,
       );
       await expect(storage.brokerActivity("jira")).resolves.toEqual({
-        plugin: { blockedCount: 1, lastBlockedAt: 40 },
+        plugin: { directBlockedCount: 1, lastDirectBlockedAt: 40 },
         connections: {},
       });
 
@@ -913,8 +1008,8 @@ describe("AppApiStorage", () => {
 
       expect((await onDisk()).plugin).toEqual({
         lastRequestAt: 10,
-        blockedCount: 2,
-        lastBlockedAt: 50,
+        directBlockedCount: 2,
+        lastDirectBlockedAt: 50,
       });
     });
 
@@ -1025,6 +1120,9 @@ describe("state files from earlier versions", () => {
     disabledPluginIds: [],
     disabledCapabilities: {},
     pluginsEnabled: true,
+    // Added to version 7 without a new version: older files read the defaults.
+    unsignedPluginsEnabled: true,
+    pluginOrigins: {},
     mcp: { enabled: false, clients: [] },
     agentRunner: {
       settings: { cli: null, browserMode: "ajour-chrome", model: "" },
@@ -1033,6 +1131,7 @@ describe("state files from earlier versions", () => {
     },
     pluginBrokerActivity: {},
     pluginRuntimeSettings: {},
+    pluginConsent: {},
   };
   /**
    * A file with a connection's token: without a vault, as here, the token

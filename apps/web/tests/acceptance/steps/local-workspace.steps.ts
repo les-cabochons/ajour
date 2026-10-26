@@ -2076,6 +2076,10 @@ When("I install a packaged plugin from settings", async ({ page }) => {
           pluginId: string;
           overview: typeof response.overview;
         }>;
+        getPluginCatalogSettings: () => Promise<{
+          refreshMinutes: 15;
+          allowUnsignedInstalls: boolean;
+        }>;
       };
     };
     desktopWindow.ajourDesktop = {
@@ -2083,6 +2087,11 @@ When("I install a packaged plugin from settings", async ({ page }) => {
       runtime: { developmentBuild: false },
       installPlugin: () => desktopWindow.acceptanceInstallPlugin(),
       uninstallPlugin: () => desktopWindow.acceptanceUninstallPlugin(),
+      // A plugin from a file is unsigned: installing one needs the switch on.
+      getPluginCatalogSettings: async () => ({
+        refreshMinutes: 15,
+        allowUnsignedInstalls: true,
+      }),
     };
   }, installResponse);
 
@@ -2139,8 +2148,12 @@ Then("the inactive plugin remains configurable", async ({ page }) => {
   await page.getByRole("link", { name: "View Example" }).click();
   await expect(page).toHaveURL(/\/settings\/plugins\/example$/);
   await expect(page.getByText("This plugin is inactive.")).toBeVisible();
+  // Saving waits until the plugin is on: the button is there, and says so.
   await expect(
     page.getByRole("button", { name: "Add a connection" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByText("Activate this plugin to save a connection."),
   ).toBeVisible();
 });
 

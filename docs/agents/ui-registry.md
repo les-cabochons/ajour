@@ -107,7 +107,7 @@ The redesign direction decided on 2026-10-14: Linear's density and structure, Ve
 ### Plugin Catalog And Detail
 
 Files: `apps/web/src/features/settings/settings-plugins-page.tsx`, `plugin-catalog-ui.tsx`, `plugin-settings-ui.tsx`
-Last updated: 2026-10-13
+Last updated: 2026-10-25
 
 | Property         | Class or token                                                                                    |
 | ---------------- | ------------------------------------------------------------------------------------------------- |
@@ -125,18 +125,28 @@ Last updated: 2026-10-13
 
 **Pattern notes:**
 The catalog page carries no cards. The header holds the page title, Install
-from file, and two `SettingRow`s: the Plugin system switch and the Refresh
-catalog select. Below it the category tabs (All, Backlog, Code hosts,
+from file, and four `SettingRow`s: the Plugin system, Allow installing
+unsigned plugins and Deactivate unsigned plugins switches, and the Refresh
+catalog select. Install from file stays disabled, with a title saying why,
+while unsigned installs are off. Below it the category tabs (All, Backlog, Code hosts,
 Calendars, Agent tasks, Schemas) sit over a single-column list of plain rows: identity mark, name with
 a status badge, a two-line description, and a meta line with capabilities and
 version, such as "Backlog · Code host · v1.2.0". The trailing action is the
 activation `Switch` for an installed plugin, or Download for an available
 remote backlog, code host, calendar, team or agent task plugin. Rows are separated by spacing and only tint on
-hover. Catalog entries merge normalized Ajour-index metadata with installed
-backlog and schema capabilities; a plugin with several capabilities appears
+hover. Catalog entries merge the normalized listings of the plugin sources with
+installed backlog and schema capabilities; a plugin with several capabilities appears
 under each tab. The filter tabs wrap with compact spacing below 768px so every filter
 fits at 320px. Only an installed plugin can be activated. Manual file
 installation remains a separate action.
+
+A plugin that didn't come from a signed source carries an outline
+**Unsigned** badge after its status badge, in the row and on its detail page,
+where Information also has Source and Signature rows. When the plugin's own
+source lists a newer version, the row's meta line ends with "v1.2.0
+available" and Update sits before the activation switch. An unsigned plugin
+blocked by Deactivate unsigned plugins keeps its switch disabled, and its
+detail page says why in a warning `MessagePanel`.
 
 An unavailable installed plugin shows its reason in the catalog row and a
 notice on its detail page. Update downloads a compatible catalog package over
@@ -167,6 +177,33 @@ hero, the capability band is a plain line of text ("External service → Plugin
 → Local backlog") above the feature badges. Never fetch remote images from the
 renderer. Dialogs and `MessagePanel` notices are the only framed surfaces.
 
+### Plugin Sources
+
+Files: `apps/web/src/features/settings/plugin-sources-ui.tsx`
+Last updated: 2026-10-25
+
+**Pattern notes:**
+A `settings-section` below the catalog list, titled Plugin sources, with no
+frame. Each source is a plain row: its name, an Official `Badge
+variant="secondary"` when it is, and a state badge: secondary for Signed,
+outline for Unsigned and Key not approved, destructive for Key changed,
+Signature missing, Signature invalid and Unreachable. A meta line in
+`text-xs text-[var(--text-tertiary)]` gives the address without `https://`,
+the plugin count and the key fingerprint in monospace. A blocked or
+unreachable source adds its message in `text-[13px] text-muted-foreground`.
+Review (outline) appears for a key to approve; Remove (outline, trash icon)
+confirms in an `AlertDialog`. Rows stack their actions below the text under
+768px.
+
+Add a source is a `Field` with the address `Input` and an outline Add source
+button, and Add the official source as a ghost button when the official
+source is missing. Pressing Add source reads the source first; the review
+`Dialog` shows the address, the key fingerprint in monospace or a warning
+`MessagePanel` for an unsigned source, the third-party note, and the plugins
+with their versions in a scrolling list. Its primary action is Add source,
+Trust this key or Accept unsigned. Errors show under the field in
+`text-destructive`.
+
 ### Plugin Advanced section and the suspended notice
 
 Files: `apps/web/src/features/settings/plugin-runtime-settings.tsx`, placed by `settings-plugins-page.tsx`
@@ -193,6 +230,19 @@ Last updated: 2026-10-25
 **Connection row status.** `ConnectionStatusChip` and `ConnectionStatusNote` show `connectionStatus` (and, under the name, `expiryWarnings`: a field's name with an expiry chip): Connected, Paused, Unavailable, Error, Token rejected or "Can't be read on this computer", and under the name why sync is paused. A paused connection's Sync buttons are disabled.
 
 **Vault page.** `/settings/vault`, cardless like the other settings pages: an `h1`, then one `settings-section` per plugin, headed by its name, in alphabetical order, with plugins that are not installed last as "<Plugin> (not installed)" with a ghost Remove (an `AlertDialog`). A row is a `role="group"` named "<owner>, <kind>": the owner (connection label, or "Agent tasks") and under it "<kind> · <last use>" in `text-xs` tertiary, the state `Chip`, and Replace as a `Link` styled with `buttonVariants` (outline, `sm`) to the plugin page, which opens the form with Replace open (`?connection=<id>&field=<id>`, or `?field=<id>` for task settings). Rows are bordered with `border-border`, no outer frame, and wrap on narrow widths. The two failures of the vault show first as `MessagePanel` warnings; "Ajour can't protect credentials on this computer" has an outline Try again.
+
+### Access list and consent panel
+
+Files: `apps/web/src/features/settings/plugin-access-section.tsx`; the lines come from `apps/web/src/domain/plugins/plugin-access-model.ts`
+Last updated: 2026-10-25
+
+`PluginAccessSection` is a `settings-section` titled Access, placed before Features on an installed plugin's page. `CatalogAccessSection` stands in for a plugin that isn't downloaded. Patterns used: `MessagePanel`, `Chip`, `Button`; nothing new.
+
+- **The access list** is a `ul` of items: a 16px icon (globe for hosts, key for the credential, robot for agent tasks, cpu for the start mode, puzzle for a new capability), a `text-sm font-medium` title, a `text-sm` detail, and under a host a native `details` disclosure, "N endpoints", in `text-xs` tertiary. Its `summary` has the 2px focus ring, and the chevron turns without a transition. Endpoints are `font-mono`, each with its access choice after a dot. Every item carries `data-access-item` for tests.
+- **New** is the accent `Chip`, after the title of an item that is new, or "New endpoints" on an item whose host is old. A new endpoint carries its own New chip in the disclosure.
+- **Activity** is a `text-sm` line under the description, worded by `describeLastUse` as on the Vault page. Refused requests (`data-access-refused`) and blocked attempts to connect directly (`data-access-blocked`) are each a warning-colored line with an icon.
+- **The consent panel**, `PluginAccessUpdatePanel`, is a warning `MessagePanel` (`data-access-update`) in the page header's notices: the title "Version N needs more access", a line saying it stays inactive and that connections and settings are kept, the access list of new items only, and the primary Button "Allow and activate". It is disabled while another plugin change runs.
+- **The model** (`describeAccess`) takes the overview's access view and, for an update, its difference. With `onlyNew` it lists only the new items with only their new endpoints, so the panel and the section say the same thing. `describeLegacyAccess` lists what a plugin API 3 plugin can do without limits.
 
 ### Connection access and held edits
 

@@ -869,6 +869,8 @@ describe("secrets in the vault", () => {
   it("holds no secret in the standalone API: it refuses secret fields and saves the rest", async () => {
     const directory = await root(plainState);
     const api = await launch(directory);
+    // Saving a connection waits until the plugin is on.
+    await api.activate("jira", true);
 
     await expect(api.save("jira", { token: TOKEN })).resolves.toEqual({
       status: 400,
@@ -884,7 +886,6 @@ describe("secrets in the vault", () => {
       status: 200,
     });
     // A token saved in plain text before never reaches a plugin from here.
-    await api.activate("jira", true);
     await expect(api.sync("jira", "jira_main")).resolves.toMatchObject({
       status: 409,
     });

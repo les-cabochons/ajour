@@ -1,5 +1,5 @@
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import {
   access,
@@ -27,6 +27,12 @@ import {
   PLUGIN_API_4,
   pluginApi4ManifestSchema,
 } from "../../../packages/shared/plugin-api-4.ts";
+import type { PluginAccessView } from "../../../packages/shared/plugin-access-schemas.ts";
+import {
+  pluginAccessView,
+  summarizePluginAccess,
+  type PluginAccessManifest,
+} from "../../../packages/shared/plugin-access.ts";
 import {
   allowedTaskSlots,
   listTemplateSlots,
@@ -37,7 +43,15 @@ const MAX_PLUGIN_FILES = 2_000;
 const MAX_PLUGIN_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_PLUGIN_EXTRACTED_BYTES = 100 * 1024 * 1024;
 const ALLOWED_ARCHIVE_ENTRY_TYPES = new Set(["File", "Directory"]);
-const ALLOWED_ENTRYPOINT_EXTENSIONS = new Set([".cjs", ".js", ".mjs"]);
+// Plugins ship TypeScript as written; Node strips the types when the worker
+// imports the entrypoint, so only erasable syntax runs.
+const ALLOWED_ENTRYPOINT_EXTENSIONS = new Set([
+  ".cjs",
+  ".js",
+  ".mjs",
+  ".mts",
+  ".ts",
+]);
 
 export interface ResolvedPlugin {
   manifest: PluginManifest;
@@ -45,6 +59,8 @@ export interface ResolvedPlugin {
   /** Absent for a plugin that runs no code. */
   entrypointPath?: string;
   source: "development" | "installed";
+  /** What the package reaches, as Access review lists it. */
+  access: PluginAccessView;
 }
 
 /**
@@ -140,6 +156,8 @@ export interface InstalledPlugin {
   directory: string;
   replaced: boolean;
   installed: boolean;
+  /** What the installed package reaches. */
+  access: PluginAccessView;
   /** The replaced package's backup couldn't be removed; the next start removes it. */
   backupLeft?: true;
 }
@@ -319,7 +337,7 @@ export function resolvePluginEntrypoint(
     )
   ) {
     throw new Error(
-      `Plugin "${manifest.id}" entrypoint must be compiled JavaScript.`,
+      `Plugin "${manifest.id}" entrypoint must be a JavaScript or TypeScript file.`,
     );
   }
 
@@ -335,14 +353,14 @@ export interface PluginAdmissionPolicy {
   admitPluginApi4: boolean;
 }
 
-const PACKAGED_BUILD: PluginAdmissionPolicy = { admitPluginApi4: false };
+export const PACKAGED_BUILD: PluginAdmissionPolicy = { admitPluginApi4: false };
 
 /**
  * Validates a manifest against the schema of the plugin API it declares. An
  * API 4 manifest must pass every API 4 rule even where it is refused, so a
  * broken one is invalid rather than merely unavailable.
  */
-function parsePluginManifest(
+export function parsePluginManifest(
   raw: unknown,
   policy: PluginAdmissionPolicy,
 ): PluginManifest {
@@ -386,20 +404,29 @@ export async function readPlugin(
     );
   }
   // Read every prompt once so a bad one fails the install, not the first run.
+  // Access review keeps a hash of each, so a changed prompt is seen without
+  // storing its text.
+  const agentPrompts: Record<string, string> = {};
   for (const task of manifest.capabilities.agentTask?.tasks ?? []) {
-    await readAgentTaskPromptFile(
+    const prompt = await readAgentTaskPromptFile(
       pluginDirectory,
       canonicalPluginDirectory,
       manifest,
       task,
     );
+    agentPrompts[task.id] = createHash("sha256").update(prompt).digest("hex");
   }
+  const accessManifest = manifest as PluginAccessManifest;
 
   return {
     manifest,
     directory: pluginDirectory,
     entrypointPath,
     source,
+    access: pluginAccessView(
+      accessManifest,
+      summarizePluginAccess(accessManifest, { agentPrompts }),
+    ),
   };
 }
 
@@ -568,6 +595,7 @@ export async function installPluginArchive(options: {
         directory: existingPlugin.directory,
         replaced: false,
         installed: false,
+        access: existingPlugin.access,
       };
     }
 
@@ -603,6 +631,7 @@ export async function installPluginArchive(options: {
       directory: targetDirectory,
       replaced: targetExists,
       installed: true,
+      access: stagedPlugin.access,
       ...(backupLeft ? { backupLeft: true as const } : {}),
     };
   } finally {

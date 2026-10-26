@@ -8,6 +8,7 @@ import {
   pluginManifestObjectSchema,
 } from "./plugins.ts";
 import { projectDataShapeDefinitionSchema } from "./project-data-shapes.ts";
+import { PLUGIN_API_4 } from "./plugin-api-4-version.ts";
 import { readToolInputSchemas, writeToolInputSchemas } from "./agent-tools.ts";
 import { getDomain, parse as parseHost } from "tldts";
 import {
@@ -44,7 +45,7 @@ export {
  * passes one to a plugin and never accepts one back.
  */
 
-export const PLUGIN_API_4 = 4;
+export { PLUGIN_API_4 };
 
 export { PLUGIN_MEMORY_CEILING_MB, pluginStartModeSchema };
 export type { PluginStartMode };

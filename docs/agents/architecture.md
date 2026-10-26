@@ -500,11 +500,22 @@ API 4 packages in development builds of the desktop app, until the cut-over
   requests in flight per plugin with 64 waiting, and a rate of 10 a second
   with bursts of 60 (`BROKER_LIMITS`, `apps/api/src/broker-limits.ts`).
 - **Audit:** each request emits `plugin.request`, and the state file keeps,
-  per plugin and per connection, the last request and the blocked attempts
-  with the last one's time, for Access review (#394). The records gather in
-  memory and are written once per 30 s at most, and as the API stops, so a
-  crash loses one window at most. A blocked attempt is a request the policy
-  refused; a limit, a paused connection or a plugin turned off isn't one.
+  per plugin and per connection, the last request and the requests the
+  policy refused (`blockedCount`), with the last one's time, for Access
+  review (#394). A way out the sandbox closed (#390) is recorded apart, as
+  `blocked_direct` (`directBlockedCount`), and isn't a request. The records
+  gather in memory and are written once per 30 s at most, and as the API
+  stops, so a crash loses one window at most. A limit, a paused connection
+  or a plugin turned off isn't a refusal.
+- **Consent:** the state file keeps `pluginConsent`, per plugin, the version
+  the user turned on and the access summary it had
+  (`packages/shared/plugin-access.ts`). Turning a plugin on writes it; an
+  update decides against it (`apps/api/src/plugin-consent.ts`). Enablement
+  itself compares it with what the installed package reaches now:
+  `AppApiStorage.isPluginEnabled`, the operation gate and the overview treat
+  a plugin that reaches more as off, so a package changed under Ajour, by an
+  update stopped half way or in a development directory, never runs with
+  access the user didn't allow. A record that doesn't parse is dropped.
 
 `/api` is the window's private channel. Whoever starts the local API
 generates a per-launch window token and keeps it in memory: Electron main, the
@@ -573,17 +584,21 @@ system on restores the user's previous per-plugin configuration. Catalog
 browsing, managed downloads, manual archive installation, and Debug-directory
 configuration remain available while execution is disabled.
 
-The desktop main process owns the Ajour plugin-index boundary. It fetches and
-strictly validates catalog definitions, release metadata, and optional artwork;
-caches catalog files and images below Electron user data; and gives the renderer
-only normalized metadata and local data URLs. Conditional requests check for
-catalog and image updates at launch and on a configurable interval (15 minutes
+The desktop main process owns the plugin source boundary (ADR 0012). It reads
+each source's `ajour.json` and `ajour.json.sig` from the source's host,
+verifies the Ed25519 signature against the pinned or official key, strictly
+validates the listing, caches the last good listing and its images below
+Electron user data, and gives the renderer only normalized metadata and local
+data URLs. It refreshes at launch and on a configurable interval (15 minutes
 by default, with launch-only refresh available). A built-in snapshot of the
-index keeps the catalog usable on first launch when the remote index is
-unreachable; the validated remote catalog replaces it when available. Catalog plugin downloads
-reuse the validated managed-package installer and are inactive until the user
-explicitly activates them. The existing local-file installer retains its
-current behavior.
+official source keeps the catalog usable until that source was read once.
+A download reads the plugin's files at the commit the listing names, checks
+each against its SHA-256, packs them for the managed-package installer, and
+installs them inactive until the user activates them. Every unsigned install,
+from a source or a file, needs the user's Allow installing unsigned plugins
+setting and passes a warning dialog shown by the main process. The local API
+records each plugin's origin, and refuses to run unsigned plugins while the
+user deactivated them.
 
 ## Project Data Shape Plugins
 
@@ -606,10 +621,24 @@ The web app owns file selection, downloads, and format adapters. Excel is the
 current adapter: `lib/workbook-sheets.ts` reads a workbook into sheets for
 import, and `features/settings/settings-projects.ts` writes datasets for
 export. The API validates manifests, requests, datasets, and results, and runs
-each shape operation in an ephemeral worker. Deterministic project merge rules
+each shape operation in a worker or sandboxed renderer that lives for that
+operation only (see below). Deterministic project merge rules
 and persistence remain in the web domain and local store. A file whose shape
 names no project imports only through Import tasks… on a project, into that
 project.
+
+A shape is either a data shape API 1 package, which runs in a worker like a
+plugin API 3 package until the cut-over (#403), or a plugin API 4 package that
+declares the `projectDataShape` capability in its main manifest, with no
+network, no connection fields and Load when needed. The data-shape host starts
+both through the runtime port, so the split runtime sends an API 4 shape to its
+own sandboxed renderer. Development builds admit API 4 shapes; a packaged build
+does not. The dataset contract is the same for both. The data-shape host reads
+the same development plugin directories as the plugin host (Settings > Debug,
+`AJOUR_DEV_PLUGIN_DIRS`). A renderer and its storage are keyed by plugin id, so
+a shape that takes the id of a plugin host package from another folder is
+refused, with the reason in its error. A shape may also declare no connection
+access.
 
 Provider-specific shape plugins are maintained outside Ajour. The Workday
 implementation lives in `les-cabochons/ajour-plugins`, imports no Ajour source,
@@ -675,7 +704,7 @@ Follow `docs/logging-strategy.md`: one wide event per unit of work per runtime, 
 
 Every command of the local store emits one event, named in the store's typed command table (`STORE_COMMANDS` in `lib/local-store.ts`).
 
-Events go nowhere by default; `AJOUR_WIDE_EVENTS=console` prints them for a developer. Any sink that sends them elsewhere must be explicit, opt-in and filtered by each field's privacy class.
+Events go nowhere by default; `AJOUR_WIDE_EVENTS=console` prints them for a developer. Any sink that sends them elsewhere must be explicit, opt-in and filtered by each field's privacy class. The first is the desktop's local log file (ADR 0014), built into the main process and off until the user turns it on: main's events and the local API's share its sink, and its privacy filter reads each field's class from the catalog.
 
 ## Dependency Direction
 

@@ -1,60 +1,48 @@
 # Publish a plugin
 
-Users can install your plugin two ways: from a file you give them, or from the catalog in **Settings › Plugins**. The catalog downloads releases from your plugin's GitHub repository.
+Users can install your plugin two ways: from your [plugin source](/developers/plugin-source), a repository they add in **Settings › Plugins**, or from a file you give them. Both install the same files. A plugin from a source you sign is **signed**; any other is **unsigned**, and installing it needs **Allow installing unsigned plugins**, with a warning each time.
 
-## Package format
+## Publish from a repository
 
-A plugin package is a `.ajour-connector` file: a gzip tar archive with `plugin.json` and the `dist/` folder at its root.
+Your repository needs an `ajour.json` at its root that lists your plugins. The official plugins keep their tooling in one file with no dependencies, [`scripts/ajour-source.mjs`](https://github.com/les-cabochons/ajour-plugins/blob/main/scripts/ajour-source.mjs). Copy it, then:
 
-```text
-github_issues-0.1.0.ajour-connector
-  plugin.json
-  dist/
-    package.json      {"type": "module"}
-    plugin.js
-```
+1. Create your signing key once, outside the repository:
 
-The official plugins build it with `scripts/package-connector.mjs`. Copy it, with `scripts/connector-manifest.mjs`, from [the Jira plugin](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/jira/scripts). It checks that:
+   ```sh
+   node scripts/ajour-source.mjs keygen
+   ```
 
-- `plugin.json` passes Ajour's manifest rules, with `apiVersion` 3. This copy accepts the backlog and code host capabilities only, so adapt it for others.
-- `package.json` and `plugin.json` have the same version.
-- The entry point is a compiled JavaScript file inside `dist/`.
+   It asks for a passphrase and writes an encrypted key to `~/.ajour/signing-key.json`. Keep that file out of cloud-synced folders, and use a long passphrase. It prints your key's fingerprint: publish it in your README so people can check it when they add your source.
 
-It writes `package/<id>-<version>.ajour-connector`.
+2. Commit and push your plugin's changes, with a new `version` in `plugin.json` for every plugin that changed.
 
-A plugin that runs no code, such as one with only agent tasks, packs `plugin.json` and its prompt files instead. See the [Workday (agent) script](https://github.com/les-cabochons/ajour-plugins/blob/main/plugins/workday-agent/scripts/package-connector.mjs).
+3. Write and sign the listing:
+
+   ```sh
+   node scripts/ajour-source.mjs release
+   ```
+
+   It pins every plugin to the commit you just pushed, hashes its files, writes `ajour.json` and signs it into `ajour.json.sig`. It refuses a plugin whose files changed while its version didn't.
+
+4. Commit `ajour.json` and `ajour.json.sig`, and push.
+
+Ajour picks up the new versions at its next refresh, every 15 minutes by default, and offers **Update** to people who have your plugin.
+
+Pass `--unsigned` to `release` to publish without a signature. Your plugins then install only for people who allowed unsigned plugins, after a warning each time.
 
 ## Share a file
 
-Send the archive. Users install it with **Settings › Plugins › Install from file**, in the desktop app. A plugin installed from a file starts active, and one downloaded from the catalog starts off. Installing a newer file with the same `id` replaces the plugin and keeps its connections and whether it was on. A capability that the update adds starts off, if the plugin has more than one that the user can turn on and off.
+For testing, or for people who don't add your source, build an archive:
 
-## Release on GitHub
+```sh
+node scripts/ajour-source.mjs package <folder>
+```
 
-For the catalog, publish each version as a GitHub release of your plugin's repository, with the archive attached:
-
-- Tag the release with the version, such as `v0.1.0`.
-- Attach exactly one archive that matches your catalog entry's `assetPattern`, such as `github_issues-0.1.0.ajour-connector`.
-
-When a user presses **Download**, or **Update** on a plugin built for an older API, Ajour reads the repository's releases, newest first, 100 at a time until a page holds a matching archive, skips drafts, skips pre-releases unless your entry allows them, and installs the archive of the highest version.
-
-The official plugins share one repository and publish a pre-release from every push to `main` that changes the plugin, with a version such as `1.0.0-main.130.9aac30e`. The tag carries the plugin in its pre-release part, `v1.0.0-jira.main.130.9aac30e`, so it stays unique and Ajour still reads it as a version. Their workflow is [`.github/workflows/build.yml`](https://github.com/les-cabochons/ajour-plugins/blob/main/.github/workflows/build.yml): it tests, stamps the version, packages, and runs `gh release create`.
-
-## List it in the catalog
-
-The catalog lives in [les-cabochons/ajour-plugins-index](https://github.com/les-cabochons/ajour-plugins-index). To add your plugin:
-
-1. Fork the repository.
-2. Add `plugins/<id>/plugin.yaml`. See [Catalog entry](/developers/catalog-entry).
-3. Add the path to `catalog.yaml`.
-4. Run `just validate`.
-5. Open a pull request.
-
-Once merged, Ajour picks up the entry at its next catalog refresh, every 15 minutes by default. You do not need to update the index for new versions: **Download** always takes your newest release. Users who already installed your plugin do not get new versions from the catalog, though. Tell them to install the new archive with **Install from file**.
+It writes `package/<id>-<version>.ajour-connector`: a gzip tar archive of the files your plugin lists, with `plugin.json` at its root. Users install it with **Install from file**, once they allowed unsigned plugins. A first install starts off, whether it comes from a file or is downloaded from a source. Installing a newer file with the same `id` replaces the plugin and keeps its connections and whether it was on. A capability that the update adds starts off, if the plugin has more than one that the user can turn on and off.
 
 ## When the plugin API changes
 
 A plugin works only with Ajour versions that use the same plugin API version. When Ajour moves to a new version:
 
 1. Update your types and code, and set `apiVersion` in `plugin.json`.
-2. Release the new version.
-3. Update `compatibility.pluginApiVersion` in your catalog entry, so Ajour offers the update.
+2. Release a new version. `pluginApiVersion` in `ajour.json` follows `plugin.json`, and Ajour offers the update once the person runs a version of Ajour that uses it.

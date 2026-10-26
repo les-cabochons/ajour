@@ -55,6 +55,7 @@ const {
   sweepOrphanedRenderers,
 } = require("./plugin-renderer-sweep.cjs");
 const { createPluginCatalogService } = require("./plugin-catalog.cjs");
+const { isOfficialSourceUrl } = require("./plugin-sources.cjs");
 const {
   loadPluginCatalogSettings,
   savePluginCatalogSettings,
@@ -66,6 +67,7 @@ const {
   selectDevelopmentPluginDirectory,
 } = require("./development-plugin-settings.cjs");
 const { createIpcListeners, refusedSender } = require("./ipc-listeners.cjs");
+const { createLocalLogs } = require("./local-logs.cjs");
 const {
   loadDesktopBootstrapLocalState,
 } = require("./local-state-bootstrap.cjs");
@@ -74,7 +76,9 @@ const {
   apiStopOf,
   createLaunchContext,
   createMainEvents,
+  loadLocalLogFile,
   loadMainEmitter,
+  loadMainSink,
   readLaunchVersion,
   triggerOf,
   writeLaunchVersion,
@@ -187,12 +191,40 @@ const internalAppApiEntryPath = app.isPackaged
   ? path.join(internalAppApiRuntimeRoot, "apps/api/src/server.ts")
   : path.resolve(__dirname, "../../api/src/server.ts");
 
+const wideEventsRoot = path.join(
+  internalAppApiRuntimeRoot,
+  "packages/wide-events",
+);
+// The local log file (ADR 0014): off until the user turns it on, and then
+// one NDJSON file per UTC day in userData/logs/events. Only the process that
+// holds the single instance lock opens it: the one that lost the lock opens
+// nothing, so its app.lock_refused event never reaches the file.
+const localLogs = createLocalLogs({
+  settingsPath: path.join(app.getPath("userData"), "local-log-settings.json"),
+  events,
+  open: (settings) =>
+    hasSingleInstanceLock
+      ? loadLocalLogFile({
+          packageRoot: wideEventsRoot,
+          directory: path.join(app.getPath("userData"), "logs", "events"),
+          settings,
+        })
+      : null,
+});
+// The one sink of main's events and the local API's: the console with
+// AJOUR_WIDE_EVENTS=console, and the local log file. Undefined when the
+// package can't load, so the local API falls back to the switch.
+const mainEventSink = loadMainSink({
+  packageRoot: wideEventsRoot,
+  sinkSwitch: process.env.AJOUR_WIDE_EVENTS,
+  logFile: localLogs.file,
+}).catch(() => undefined);
 void loadMainEmitter({
-  packageRoot: path.join(internalAppApiRuntimeRoot, "packages/wide-events"),
+  packageRoot: wideEventsRoot,
   launch,
   homeDirectory: app.getPath("home"),
   userDataPath: app.getPath("userData"),
-  sinkSwitch: process.env.AJOUR_WIDE_EVENTS,
+  sink: mainEventSink,
 }).then(
   (createEmitter) => events.attach(createEmitter),
   () => events.abandon(),
@@ -248,10 +280,36 @@ const pluginCatalogSettingsPath = path.join(
 let pluginCatalogSettings = loadPluginCatalogSettings(
   pluginCatalogSettingsPath,
 );
+/** Saves the catalog settings with `changes`, keeping the rest. */
+function updatePluginCatalogSettings(changes) {
+  pluginCatalogSettings = savePluginCatalogSettings(pluginCatalogSettingsPath, {
+    ...pluginCatalogSettings,
+    ...changes,
+  });
+  return pluginCatalogSettings;
+}
+
 const pluginCatalogService = createPluginCatalogService({
   cacheDirectory: path.join(app.getPath("userData"), "plugin-catalog"),
   fetchImpl: net.fetch,
+  getSources: () => pluginCatalogSettings.sources,
+  // The host family is found once, when a source is first read.
+  onHostKind: (url, hostKind) => {
+    updatePluginCatalogSettings({
+      sources: pluginCatalogSettings.sources.map((source) =>
+        source.url === url ? { ...source, hostKind } : source,
+      ),
+    });
+  },
 });
+
+/** The catalog settings the renderer may read and change. */
+function pluginCatalogSettingsForRenderer() {
+  return {
+    refreshMinutes: pluginCatalogSettings.refreshMinutes,
+    allowUnsignedInstalls: pluginCatalogSettings.allowUnsignedInstalls,
+  };
+}
 
 /**
  * Refreshes the plugin catalog, once at a time. It never rejects, so its
@@ -482,6 +540,42 @@ function pluginIdForEvent(pluginId) {
     : undefined;
 }
 
+/** A source address as the renderer sends it, or nothing usable. */
+function assertSourceAddress(url) {
+  if (typeof url !== "string" || url.length < 1 || url.length > 500) {
+    throw new Error("Enter the repository's address.");
+  }
+  return url;
+}
+
+/**
+ * Asks before every unsigned install, in the main process so no renderer
+ * can skip it. Throws `unsigned_not_allowed` while unsigned installs are
+ * off, and resolves false when the person cancels.
+ */
+async function confirmUnsignedInstall(unit, { message, detail }) {
+  unit?.set({ plugin: { signed: false } });
+  if (!pluginCatalogSettings.allowUnsignedInstalls) {
+    throw Object.assign(
+      new Error(
+        "Installing unsigned plugins is off. Turn on Allow unsigned plugins in Settings, Plugins to install this one.",
+      ),
+      { code: "unsigned_not_allowed" },
+    );
+  }
+  const { response } = await dialog.showMessageBox(mainWindow, {
+    type: "warning",
+    title: "Unsigned plugin",
+    message,
+    detail: `${detail}\n\nAn unsigned plugin runs with the access you give its connections. Install it only if you trust the person who made it.`,
+    buttons: ["Install", "Cancel"],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+  });
+  return response === 0;
+}
+
 /**
  * Installs a plugin archive through the local API, and adds what the install
  * did to `unit`, the call's `plugin.install` event.
@@ -565,7 +659,27 @@ ipc.handle("ajour:install-plugin", async (event) => {
     return null;
   }
 
-  return await installPluginArchive(unit, selectedArchive);
+  // A file carries no signature: Ajour can't tell who made it.
+  let confirmed;
+  try {
+    confirmed = await confirmUnsignedInstall(unit, {
+      message: `Install ${selectedArchive.archiveFilename}?`,
+      detail:
+        "Ajour can't check who made a plugin installed from a file, or that nobody changed it.",
+    });
+  } catch (error) {
+    unit?.set({ plugin: { result: pluginInstallResultOf(error) } });
+    throw error;
+  }
+  if (!confirmed) {
+    unit?.set({ plugin: { result: "cancelled" } }).cancel();
+    return null;
+  }
+  // A first install stays inactive, as a download does: turning it on is
+  // the consent to what it reaches.
+  return await installPluginArchive(unit, selectedArchive, {
+    enableAfterInstall: false,
+  });
 });
 
 ipc.handle("ajour:get-plugin-catalog", async (event) => {
@@ -578,30 +692,140 @@ ipc.handle("ajour:get-plugin-catalog", async (event) => {
 
 ipc.handle("ajour:get-plugin-catalog-settings", async (event) => {
   assertActiveDesktopWindow(event, "read plugin catalog settings");
-  return pluginCatalogSettings;
+  return pluginCatalogSettingsForRenderer();
 });
 
 ipc.handle("ajour:configure-plugin-catalog", async (event, settings) => {
   assertActiveDesktopWindow(event, "configure the plugin catalog");
-  const before = pluginCatalogSettings.refreshMinutes;
-  pluginCatalogSettings = savePluginCatalogSettings(
-    pluginCatalogSettingsPath,
-    settings,
-  );
+  const before = pluginCatalogSettingsForRenderer();
+  updatePluginCatalogSettings({
+    ...(settings?.refreshMinutes !== undefined
+      ? { refreshMinutes: settings.refreshMinutes }
+      : {}),
+    ...(typeof settings?.allowUnsignedInstalls === "boolean"
+      ? { allowUnsignedInstalls: settings.allowUnsignedInstalls }
+      : {}),
+  });
   events.current()?.set({
     catalog: {
-      refresh_minutes_before: before,
+      refresh_minutes_before: before.refreshMinutes,
       refresh_minutes_after: pluginCatalogSettings.refreshMinutes,
+      allow_unsigned_installs_before: before.allowUnsignedInstalls,
+      allow_unsigned_installs_after:
+        pluginCatalogSettings.allowUnsignedInstalls,
     },
   });
   schedulePluginCatalogRefresh();
-  return pluginCatalogSettings;
+  return pluginCatalogSettingsForRenderer();
 });
 
-ipc.handle("ajour:download-catalog-plugin", async (event, pluginId) => {
+ipc.handle("ajour:inspect-plugin-source", async (event, url) => {
+  assertActiveDesktopWindow(event, "read a plugin source");
+  const unit = events.current();
+  try {
+    const { publicKey: _publicKey, ...inspection } =
+      await pluginCatalogService.inspectSource(assertSourceAddress(url));
+    unit?.set({
+      source: {
+        host_kind: inspection.hostKind,
+        official: inspection.official,
+        signed: inspection.signed,
+        plugin_count: inspection.plugins.length,
+        result: "read",
+      },
+    });
+    return inspection;
+  } catch (error) {
+    unit?.set({ source: { result: "failed" } });
+    throw error;
+  }
+});
+
+/**
+ * Adds a source, or approves the key it is signed with now. The renderer
+ * sends the fingerprint the person saw; the source is read again here and
+ * must still show it, so what is pinned is what was approved.
+ */
+ipc.handle("ajour:add-plugin-source", async (event, url, keyFingerprint) => {
+  assertActiveDesktopWindow(event, "add a plugin source");
+  const unit = events.current();
+  if (keyFingerprint !== null && typeof keyFingerprint !== "string") {
+    throw new Error("The key fingerprint is invalid.");
+  }
+  let inspection;
+  try {
+    inspection = await pluginCatalogService.inspectSource(
+      assertSourceAddress(url),
+    );
+  } catch (error) {
+    unit?.set({ source: { result: "failed" } });
+    throw error;
+  }
+  unit?.set({
+    source: {
+      host_kind: inspection.hostKind,
+      official: inspection.official,
+      signed: inspection.signed,
+    },
+  });
+  if ((inspection.keyFingerprint ?? null) !== keyFingerprint) {
+    unit?.set({ source: { result: "key_mismatch" } });
+    throw new Error(
+      "The source changed while you were reviewing it. Review it again.",
+    );
+  }
+  const saved = {
+    url: inspection.url,
+    hostKind: inspection.hostKind,
+    ...(inspection.publicKey ? { publicKey: inspection.publicKey } : {}),
+  };
+  const existing = pluginCatalogSettings.sources.some(
+    (source) => source.url === inspection.url,
+  );
+  updatePluginCatalogSettings({
+    sources: existing
+      ? pluginCatalogSettings.sources.map((source) =>
+          source.url === inspection.url ? saved : source,
+        )
+      : [...pluginCatalogSettings.sources, saved],
+  });
+  unit?.set({
+    source: {
+      result: existing ? "key_approved" : "added",
+      source_count: pluginCatalogSettings.sources.length,
+    },
+  });
+  return await refreshPluginCatalog("request");
+});
+
+ipc.handle("ajour:remove-plugin-source", async (event, url) => {
+  assertActiveDesktopWindow(event, "remove a plugin source");
+  const unit = events.current();
+  const sourceUrl = assertSourceAddress(url);
+  const remaining = pluginCatalogSettings.sources.filter(
+    (source) => source.url !== sourceUrl,
+  );
+  unit?.set({
+    source: {
+      official: isOfficialSourceUrl(sourceUrl),
+      result:
+        remaining.length < pluginCatalogSettings.sources.length
+          ? "removed"
+          : "not_found",
+    },
+  });
+  updatePluginCatalogSettings({ sources: remaining });
+  unit?.set({ source: { source_count: remaining.length } });
+  return await refreshPluginCatalog("request");
+});
+
+// `url` names the plugin's source, when more than one lists it.
+ipc.handle("ajour:download-catalog-plugin", async (event, pluginId, url) => {
   assertActiveDesktopWindow(event, "download a plugin");
   const unit = events.current();
-  unit?.set({ plugin: { source: "catalog", id: pluginIdForEvent(pluginId) } });
+  unit?.set({
+    plugin: { source: "catalog", id: pluginIdForEvent(pluginId) },
+  });
   if (!app.isPackaged) {
     unit?.refuse("development_build");
     throw new Error(
@@ -615,19 +839,58 @@ ipc.handle("ajour:download-catalog-plugin", async (event, pluginId) => {
   ) {
     throw new Error("The catalog plugin identifier is invalid.");
   }
+  if (url !== undefined && url !== null) {
+    assertSourceAddress(url);
+  }
+
+  const entry = pluginCatalogService
+    .getCurrentCatalog()
+    .entries.find(
+      (candidate) =>
+        candidate.id === pluginId && (!url || candidate.source?.url === url),
+    );
+  // Asked before the download, every time the plugin is unsigned.
+  if (entry && !entry.source?.signed) {
+    let confirmed;
+    try {
+      confirmed = await confirmUnsignedInstall(unit, {
+        message: `Install ${entry.title} ${entry.version}, an unsigned plugin?`,
+        detail: `${entry.source?.name ?? "Its source"} doesn't sign its plugins with a key you approved, so Ajour can't check who made this one.`,
+      });
+    } catch (error) {
+      unit?.set({ plugin: { result: pluginInstallResultOf(error) } });
+      throw error;
+    }
+    if (!confirmed) {
+      unit?.set({ plugin: { result: "cancelled" } }).cancel();
+      return null;
+    }
+  }
 
   const downloadStartedAt = Date.now();
   let downloaded;
   try {
-    downloaded = await pluginCatalogService.downloadPluginArchive(pluginId);
+    downloaded = await pluginCatalogService.downloadPluginArchive(
+      pluginId,
+      url || undefined,
+    );
   } catch (error) {
     unit?.set({ plugin: { result: pluginInstallResultOf(error) } });
     throw error;
   } finally {
     unit?.set({ plugin: { download_ms: Date.now() - downloadStartedAt } });
   }
+  // An unsigned plugin installs only after the warning above.
+  if (!downloaded.signed && entry?.source?.signed !== false) {
+    unit?.set({ plugin: { result: "cancelled" } }).cancel();
+    throw new Error(
+      "The plugin's source changed while it downloaded. Try again.",
+    );
+  }
+  unit?.set({ plugin: { signed: downloaded.signed } });
   const result = await installPluginArchive(unit, downloaded, {
     enableAfterInstall: false,
+    origin: downloaded.origin,
   });
   return { type: "plugin", result };
 });
@@ -675,6 +938,23 @@ ipc.handle("ajour:uninstall-plugin", async (event, pluginId) => {
     unit?.set({ plugin: { result: "failed" } });
     throw error;
   }
+});
+
+// The local log file's settings page (ADR 0014). Settings › Diagnostics
+// reads its state, saves its settings and deletes every log.
+ipc.handle("ajour:get-logs-status", async (event) => {
+  assertActiveDesktopWindow(event, "read the log settings");
+  return await localLogs.status();
+});
+
+ipc.handle("ajour:configure-logs", async (event, settings) => {
+  assertActiveDesktopWindow(event, "configure logging");
+  return await localLogs.configure(settings);
+});
+
+ipc.handle("ajour:delete-all-logs", async (event) => {
+  assertActiveDesktopWindow(event, "delete the logs");
+  return await localLogs.deleteAll();
 });
 
 ipc.handle("ajour:get-development-plugin-settings", async (event) => {
@@ -1043,6 +1323,7 @@ async function ensureInternalAppApiRunning() {
         : ["http://127.0.0.1:5173"],
       windowToken: windowApiToken,
       launch: apiLaunchOf(launch),
+      eventSink: await mainEventSink,
     }).catch((error) => {
       if (error?.code === "EADDRINUSE") {
         throw internalAppApiPortInUseError(error);
@@ -1178,17 +1459,18 @@ function endQuit(quit, outcome) {
 
 /**
  * Resolves once the wide-events package has loaded and taken the events
- * recorded before it, or after `withinMs`, so no exit path waits longer than
- * quitting allows.
+ * recorded before it, and the local log file has written what it holds, or
+ * after `withinMs`, so no exit path waits longer than quitting allows.
  */
 function whenEventsReady(withinMs) {
   let timer;
   const deadline = new Promise((resolve) => {
     timer = setTimeout(resolve, Math.max(0, withinMs));
   });
-  return Promise.race([events.ready, deadline]).finally(() =>
-    clearTimeout(timer),
-  );
+  return Promise.race([
+    events.ready.then(() => localLogs.flush()),
+    deadline,
+  ]).finally(() => clearTimeout(timer));
 }
 
 /**
@@ -1504,6 +1786,9 @@ if (!hasSingleInstanceLock) {
     events,
   });
 
+  // The local log file's retention sweep, now and every hour, only in the
+  // process that holds the lock and writes the file.
+  localLogs.startSweeps();
   // From the process start until the window has loaded.
   const launchUnit = events.start("app.launch", {
     kind: "lifecycle",
@@ -1697,6 +1982,8 @@ if (!hasSingleInstanceLock) {
         // threads, so they end with it. Nothing holds close, beforeunload or
         // will-quit, so app.quit would end it too, as it does when an update
         // installs after a timed-out stop.
+        // app.exit skips will-quit: write what the log file still holds.
+        localLogs.drainSync();
         app.exit(0);
         return;
       }
@@ -1707,6 +1994,11 @@ if (!hasSingleInstanceLock) {
   // An update install's event waits for the app to quit for the installer.
   app.on("will-quit", () => {
     automaticUpdateController.installerQuitting();
+    // On a normal quit, endQuit runs before whenEventsReady, so the last
+    // flush already holds the quit's event. An update install is the path that
+    // ends events after it: the installer's quit ends the update's event here,
+    // and the process exits before the batch timer. Write them now.
+    localLogs.drainSync();
   });
 
   app.on("window-all-closed", () => {

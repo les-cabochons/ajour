@@ -25,6 +25,7 @@ const plugin = {
 };
 const overview: PluginsOverview = {
   pluginsEnabled: true,
+  unsignedPluginsEnabled: true,
   plugins: [plugin],
   connectionGroups: [{ plugin, enabled: true, connections: [] }],
   totalPendingImportCount: 0,
@@ -42,6 +43,7 @@ const shape: ProjectDataShapePluginManifest = {
 };
 const catalog: PluginCatalogResponse = {
   entries: [],
+  sources: [],
   source: "cache",
   checkedAt: "2026-10-10T00:00:00Z",
 };
@@ -68,6 +70,7 @@ function dependencies() {
     getPluginCatalog: vi.fn(async () => catalog),
     getPluginCatalogSettings: vi.fn(async () => ({
       refreshMinutes: 15 as const,
+      allowUnsignedInstalls: false,
     })),
     getProjectDataShapePlugins: vi.fn(async () => [shape]),
     subscribePluginsOverview: vi.fn((listener) => {
@@ -92,8 +95,15 @@ function dependencies() {
       ...overview,
       pluginsEnabled: enabled,
     })),
+    setUnsignedPluginsEnabled: vi.fn(async (enabled) => ({
+      ...overview,
+      unsignedPluginsEnabled: enabled,
+    })),
     configurePluginCatalog: vi.fn(async (settings) => settings),
     downloadCatalogPlugin: unused,
+    inspectPluginSource: unused,
+    addPluginSource: unused,
+    removePluginSource: unused,
     uninstallPlugin: unused,
     isPluginApiMissing: (error) => error === missingApiError,
     holdPendingEstimates: vi.fn(),
@@ -138,7 +148,6 @@ describe("plugin settings workflow", () => {
           .displayEntries.find((entry) => entry.catalog.id === plugin.id)
           ?.catalog,
       ).toMatchObject({
-        schemaVersion: 2,
         capabilities: expected,
         features,
       });
@@ -258,14 +267,112 @@ describe("plugin settings workflow", () => {
     });
   });
 
+  it("deactivates every unsigned plugin and says so", async () => {
+    const { deps } = dependencies();
+    const workflow = createPluginSettingsWorkflow(deps);
+
+    await expect(
+      workflow.execute({ type: "unsigned", enabled: false }),
+    ).resolves.toBe(true);
+
+    expect(deps.setUnsignedPluginsEnabled).toHaveBeenCalledWith(false);
+    expect(workflow.getSnapshot()).toMatchObject({
+      overview: { unsignedPluginsEnabled: false },
+      statusMessage:
+        "Unsigned plugins deactivated. Signed plugins keep running.",
+    });
+  });
+
+  it("keeps the refresh interval when unsigned installs change, and the other way round", async () => {
+    const { deps } = dependencies();
+    const workflow = createPluginSettingsWorkflow(deps);
+
+    await workflow.setAllowUnsignedInstalls(true);
+    await workflow.setCatalogRefreshInterval(60);
+
+    expect(deps.configurePluginCatalog).toHaveBeenNthCalledWith(1, {
+      refreshMinutes: 15,
+      allowUnsignedInstalls: true,
+    });
+    expect(deps.configurePluginCatalog).toHaveBeenNthCalledWith(2, {
+      refreshMinutes: 60,
+      allowUnsignedInstalls: true,
+    });
+    expect(workflow.getSnapshot().catalogSettings).toEqual({
+      refreshMinutes: 60,
+      allowUnsignedInstalls: true,
+    });
+  });
+
+  it("changes nothing when the person cancels at the unsigned plugin warning", async () => {
+    const { deps } = dependencies();
+    deps.downloadCatalogPlugin = vi.fn(async () => null);
+    const workflow = createPluginSettingsWorkflow(deps);
+
+    await expect(
+      workflow.execute({
+        type: "download",
+        pluginId: "weather",
+        sourceUrl: "https://codeberg.org/alice/plugins",
+      }),
+    ).resolves.toBe(false);
+
+    expect(deps.downloadCatalogPlugin).toHaveBeenCalledWith(
+      "weather",
+      "https://codeberg.org/alice/plugins",
+    );
+    expect(workflow.getSnapshot()).toMatchObject({
+      pluginError: null,
+      statusMessage: null,
+      isMutatingPlugin: false,
+    });
+  });
+
+  it("adds a source and shows what it lists", async () => {
+    const { deps } = dependencies();
+    const withSource: PluginCatalogResponse = {
+      ...catalog,
+      sources: [
+        {
+          url: "https://codeberg.org/alice/plugins",
+          name: "Alice's plugins",
+          official: false,
+          hostKind: "gitea",
+          state: "unsigned",
+          pluginCount: 1,
+        },
+      ],
+    };
+    deps.addPluginSource = vi.fn(async () => withSource);
+    const workflow = createPluginSettingsWorkflow(deps);
+
+    await workflow.execute({
+      type: "addSource",
+      url: "https://codeberg.org/alice/plugins",
+      keyFingerprint: null,
+    });
+
+    expect(deps.addPluginSource).toHaveBeenCalledWith(
+      "https://codeberg.org/alice/plugins",
+      null,
+    );
+    expect(workflow.getSnapshot()).toMatchObject({
+      catalog: { sources: [{ name: "Alice's plugins" }] },
+      statusMessage: "Alice's plugins is added.",
+    });
+  });
+
   it("keeps a changed catalog interval when startup settings arrive later", async () => {
     const { deps } = dependencies();
-    const startup = deferred<{ refreshMinutes: 15 }>();
+    const startup = deferred<{
+      refreshMinutes: 15;
+      allowUnsignedInstalls: boolean;
+    }>();
     deps.getPluginCatalogSettings = () => startup.promise;
     const workflow = createPluginSettingsWorkflow(deps);
     const disconnect = workflow.connect();
     await workflow.setCatalogRefreshInterval(60);
-    startup.resolve({ refreshMinutes: 15 });
+    startup.resolve({ refreshMinutes: 15, allowUnsignedInstalls: false });
     await startup.promise;
     expect(workflow.getSnapshot().catalogSettings.refreshMinutes).toBe(60);
     disconnect();
@@ -370,6 +477,28 @@ describe("saving a connection", () => {
       }),
     ).resolves.toBe(true);
     expect(onSaved).toHaveBeenCalledWith(connection);
+  });
+
+  it("turns a plugin on for the version the user reviewed, and a capability without one", async () => {
+    const { deps } = dependencies();
+    const setPluginEnabled = vi.fn(async () => overview);
+    deps.setPluginEnabled = setPluginEnabled;
+    const workflow = createPluginSettingsWorkflow(deps);
+
+    await workflow.execute({ type: "activate", plugin, enabled: true });
+    await workflow.execute({ type: "activate", plugin, enabled: false });
+    await workflow.execute({
+      type: "activate",
+      plugin,
+      enabled: true,
+      capability: "connector",
+    });
+
+    expect(setPluginEnabled.mock.calls).toEqual([
+      ["test-connector", true, undefined, "1.0.0"],
+      ["test-connector", false, undefined, undefined],
+      ["test-connector", true, "connector", undefined],
+    ]);
   });
 
   it("sends the reminder dates with the save", async () => {
@@ -478,6 +607,29 @@ describe("turning editing work items on", () => {
 
     expect(onHeldForReview).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ["inactive", { enabled: false }],
+    ["held for more access", { enabled: false, pendingAccess: {} }],
+  ])(
+    "holds nothing for a save the server refuses because the plugin is %s",
+    async (_state, change) => {
+      const { deps, onHeldForReview, save } = setUp(2);
+      const off = {
+        ...withAccess,
+        connectionGroups: [{ ...withAccess.connectionGroups[0]!, ...change }],
+      } as PluginsOverview;
+      deps.getCachedPluginsOverview = () => off;
+      deps.savePluginConnection = vi.fn(async () => {
+        throw new Error("Activate this plugin before saving a connection.");
+      });
+
+      await expect(save(["editWorkItems"])).resolves.toBe(false);
+
+      expect(deps.holdPendingEstimates).not.toHaveBeenCalled();
+      expect(onHeldForReview).not.toHaveBeenCalled();
+    },
+  );
 
   it("holds nothing more for a save that leaves editing off", async () => {
     const { deps, onHeldForReview, save } = setUp(2);

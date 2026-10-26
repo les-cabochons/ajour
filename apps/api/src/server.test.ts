@@ -211,7 +211,7 @@ describe("plugin installation boundary", () => {
   });
 
   it.each([true, false])(
-    "updates an outdated package and preserves its connections and enabled=%s choice",
+    "updates an outdated package, preserves its connections, and holds it off for consent when it was on (on=%s)",
     async (enabled) => {
       const root = await tempDir();
       const installedRoot = path.join(root, "installed");
@@ -288,15 +288,27 @@ describe("plugin installation boundary", () => {
       );
 
       expect(update.replaced).toBe(true);
-      // An update keeps the activation state instead of switching the plugin off.
+      // The version replaced couldn't run, so nothing was allowed: a plugin
+      // left on waits for the user to allow everything the update reaches,
+      // and one left off stays off with nothing pending (#394).
       expect(update.overview.connectionGroups).toEqual([
         expect.objectContaining({
           plugin: expect.not.objectContaining({
             unavailableReason: expect.anything(),
           }),
-          enabled,
+          enabled: false,
         }),
       ]);
+      expect(update.overview.connectionGroups[0]?.pendingAccess).toEqual(
+        enabled
+          ? expect.objectContaining({
+              version: "1.0.0",
+              difference: expect.objectContaining({
+                capabilities: ["connector"],
+              }),
+            })
+          : undefined,
+      );
       expect(update.overview.connectionGroups[0]?.connections).toMatchObject([
         {
           id: savedConnection.id,
@@ -316,7 +328,7 @@ describe("plugin installation boundary", () => {
           access: [],
         },
       ]);
-      expect(savedState.disabledPluginIds).toEqual(enabled ? [] : ["jira"]);
+      expect(savedState.disabledPluginIds).toEqual(["jira"]);
     },
   );
 
@@ -395,7 +407,11 @@ describe("plugin installation boundary", () => {
       expect(update.replaced).toBe(true);
       expect(update.overview.connectionGroups).toEqual([
         expect.objectContaining({
-          enabled: true,
+          // A new capability is more access, so the update waits for consent.
+          enabled: false,
+          pendingAccess: expect.objectContaining({
+            difference: expect.objectContaining({ capabilities: [added] }),
+          }),
           inactiveCapabilities: [added],
           connections: [expect.objectContaining(after)],
         }),
@@ -438,6 +454,79 @@ describe("plugin installation boundary", () => {
       status: 404,
       body: {
         error: "No route for DELETE /api/plugins/plugins/jira",
+      },
+    });
+  });
+
+  it("records a signed install's origin and deactivates unsigned plugins on request", async () => {
+    const root = await tempDir();
+    const source = [
+      "export async function validateConnection(config) {",
+      "  return { normalizedConfig: config, connectionSummary: {} };",
+      "}",
+    ].join("\n");
+    const server = createAppApiServer({
+      ...windowServerOptions,
+      statePath: path.join(root, "state.json"),
+      installedPluginDirectory: path.join(root, "installed"),
+      allowDevelopmentPlugins: false,
+    });
+    servers.push(server);
+    async function archiveOf(id: string) {
+      const directory = await createPlugin(
+        path.join(root, "source", id),
+        source,
+        "plugin.mjs",
+        { id },
+      );
+      const archivePath = path.join(root, `${id}-1.0.0.ajour-connector`);
+      await create({ cwd: directory, file: archivePath, gzip: true }, [
+        "plugin.json",
+        "plugin.mjs",
+      ]);
+      return readFile(archivePath);
+    }
+    const signedOrigin = {
+      kind: "source" as const,
+      signed: true,
+      sourceUrl: "https://github.com/les-cabochons/ajour-plugins",
+      sourceName: "Ajour official plugins",
+      official: true,
+      keyFingerprint: "3f2a 9c1d 77e0 b4a2",
+      commit: "888d80ba3fa8d53889011f03a5ab7848b0e06328",
+      installedAt: "2026-10-24T12:00:00.000Z",
+    };
+
+    await installPluginForServer(
+      server,
+      await archiveOf("jira"),
+      "jira-1.0.0.ajour-connector",
+      { origin: signedOrigin },
+    );
+    const fileInstall = await installPluginForServer(
+      server,
+      await archiveOf("local"),
+      "local-1.0.0.ajour-connector",
+    );
+
+    expect(fileInstall.overview.plugins).toMatchObject([
+      { id: "jira", origin: signedOrigin },
+      { id: "local", origin: { kind: "file", signed: false } },
+    ]);
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: "/api/plugins/unsigned-activation",
+        body: JSON.stringify({ enabled: false }),
+      }),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: {
+        unsignedPluginsEnabled: false,
+        connectionGroups: [
+          { plugin: { id: "jira" }, enabled: true },
+          { plugin: { id: "local" }, enabled: false },
+        ],
       },
     });
   });
@@ -542,6 +631,82 @@ describe("plugin installation boundary", () => {
           },
         ],
       },
+    });
+  });
+
+  it("reads data shapes from the development plugin directories, as the plugin host does", async () => {
+    const root = await tempDir();
+    const shapeDirectory = await createProjectDataShapePlugin(root);
+    const options = {
+      ...windowServerOptions,
+      vault: new MemorySecretVault(),
+      statePath: path.join(root, "state.json"),
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [shapeDirectory],
+    };
+    const development = createAppApiServer({
+      ...options,
+      allowDevelopmentPlugins: true,
+    });
+    servers.push(development);
+    const packaged = createAppApiServer({
+      ...options,
+      allowDevelopmentPlugins: false,
+    });
+    servers.push(packaged);
+
+    await expect(
+      dispatchJsonRequest(development, {
+        method: "GET",
+        path: "/api/project-data-shapes",
+      }),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { plugins: [{ id: "workday-project-data" }] },
+    });
+    await expect(
+      dispatchJsonRequest(packaged, {
+        method: "GET",
+        path: "/api/project-data-shapes",
+      }),
+    ).resolves.toEqual({ status: 200, body: { plugins: [] } });
+  });
+
+  it("refuses a data shape that takes the id of a plugin from another folder", async () => {
+    const root = await tempDir();
+    const pluginDirectory = await createPlugin(
+      path.join(root, "source"),
+      "export async function validateConnection(config) { return { normalizedConfig: config, connectionSummary: {} }; }",
+    );
+    const shapeDirectory = await createProjectDataShapePlugin(root);
+    const manifestPath = path.join(shapeDirectory, "plugin.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    await writeFile(manifestPath, JSON.stringify({ ...manifest, id: "jira" }));
+    const server = createAppApiServer({
+      ...windowServerOptions,
+      vault: new MemorySecretVault(),
+      statePath: path.join(root, "state.json"),
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [pluginDirectory, shapeDirectory],
+      allowDevelopmentPlugins: true,
+    });
+    servers.push(server);
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "GET",
+        path: "/api/project-data-shapes",
+      }),
+    ).resolves.toEqual({ status: 200, body: { plugins: [] } });
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: "/api/project-data-shapes/jira/export",
+        body: JSON.stringify({ projects: [] }),
+      }),
+    ).resolves.toMatchObject({
+      status: 400,
+      body: { error: expect.stringContaining("shares its id") },
     });
   });
 

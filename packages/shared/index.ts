@@ -8,6 +8,8 @@ export * from "./lib/rules/engine";
 export * from "./lib/validation/schemas";
 export * from "./plugins";
 export * from "./plugin-lifecycle";
+export * from "./plugin-access";
+export * from "./plugin-access-schemas";
 export * from "./backlog-comments";
 export * from "./project-data-shapes";
 export * from "./plugin-catalog";

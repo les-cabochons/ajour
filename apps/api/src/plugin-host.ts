@@ -107,6 +107,10 @@ import {
   type BacklogCommentOperationResult,
 } from "../../../packages/shared/backlog-comments.ts";
 import { z } from "zod";
+import type {
+  PluginAccessSummary,
+  PluginAccessView,
+} from "../../../packages/shared/plugin-access-schemas.ts";
 import {
   discoverInstalledPlugins,
   installPluginArchive,
@@ -132,13 +136,15 @@ interface PluginHostOptions {
    * Runs once the operation is registered and before its worker starts, and
    * throws to refuse it. Deactivation saves its state and then cancels the
    * registered operations, so an operation either sees the new state here or
-   * is cancelled. A saved connection's operation names it, so its access
-   * is checked the same way: a save that turns a choice off cancels the
-   * operations it gates.
+   * is cancelled. `reaches` is what the package about to run reaches. A
+   * saved connection's operation names it, so its access is checked the
+   * same way: a save that turns a choice off cancels the operations it
+   * gates.
    */
   operationGate?: (
     pluginId: string,
     method: PluginMethod,
+    reaches: PluginAccessSummary,
     connectionId?: string,
     /** The manifest of the package that runs it. */
     manifest?: PluginManifest,
@@ -158,7 +164,7 @@ interface PluginHostOptions {
    */
   pluginState?: (
     pluginId: string,
-    availablePluginIds: ReadonlySet<string>,
+    runnable: ReadonlyMap<string, PluginAccessSummary | undefined>,
   ) => Promise<{ on: boolean; settings: PluginRuntimeSettings }>;
   /** The crash budget's clock. Tests move it. */
   now?: () => number;
@@ -432,8 +438,13 @@ export class PluginManager {
         const { plugins } = await this.discoverPlugins();
         const ready: ReadyPlugin[] = [];
         const stopped: string[] = [];
-        // The plugins a call may reach, as the call path counts them.
-        const available = new Set(plugins.keys());
+        // The plugins that can run, each with what it reaches now, as the
+        // call path counts them: a plugin held for consent isn't kept ready.
+        const available = new Map(
+          [...plugins.values()].map(
+            (plugin) => [plugin.manifest.id, plugin.access.summary] as const,
+          ),
+        );
         for (const plugin of plugins.values()) {
           const manifest = plugin.manifest;
           if (!isPluginApi4Manifest(manifest) || !manifest.entrypoint) continue;
@@ -491,6 +502,8 @@ export class PluginManager {
   async inspectPlugins(): Promise<{
     plugins: PluginManifest[];
     unavailable: UnavailablePlugin[];
+    /** What each runnable plugin reaches, by plugin ID. */
+    access: Map<string, PluginAccessView>;
   }> {
     this.assertRunning();
     const { plugins, unavailable } = await this.discoverPlugins();
@@ -499,7 +512,29 @@ export class PluginManager {
         .map((plugin) => plugin.manifest)
         .sort(comparePlugins),
       unavailable: Array.from(unavailable.values()),
+      access: new Map(
+        Array.from(plugins.values()).map(
+          (plugin) => [plugin.manifest.id, plugin.access] as const,
+        ),
+      ),
     };
+  }
+
+  /**
+   * The folder of every package this host holds, runnable or not, by plugin
+   * id. The data shape host checks its own packages against it.
+   */
+  async packageDirectories(): Promise<Map<string, string>> {
+    this.assertRunning();
+    const { plugins, unavailable } = await this.discoverPlugins();
+    const directories = new Map<string, string>();
+    for (const plugin of unavailable.values()) {
+      directories.set(plugin.manifest.id, plugin.directory);
+    }
+    for (const plugin of plugins.values()) {
+      directories.set(plugin.manifest.id, plugin.directory);
+    }
+    return directories;
   }
 
   /**
@@ -915,6 +950,7 @@ export class PluginManager {
           await this.operationGate?.(
             pluginId,
             method,
+            plugin.access.summary,
             typeof connection?.id === "string" ? connection.id : undefined,
             plugin.manifest,
             params.request,
@@ -928,7 +964,12 @@ export class PluginManager {
           if (isPluginApi4Manifest(plugin.manifest)) {
             lifecycle = lifecycleOf(
               plugin.manifest,
-              (await this.pluginState?.(pluginId, new Set([pluginId])))
+              (
+                await this.pluginState?.(
+                  pluginId,
+                  new Map([[pluginId, plugin.access.summary]]),
+                )
+              )
                 ?.settings ?? DEFAULT_PLUGIN_RUNTIME_SETTINGS,
             );
             const prepared = this.prepareApi4(

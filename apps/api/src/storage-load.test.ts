@@ -52,7 +52,7 @@ describe("AppApiStorage first load", () => {
       );
 
     const storage = new AppApiStorage(statePath);
-    const available = new Set(["github"]);
+    const available = new Map([["github", undefined]]);
     const firstRead = storage.isPluginCapabilityEnabled(
       "github",
       "codeHost",

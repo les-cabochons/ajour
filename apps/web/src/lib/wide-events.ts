@@ -1,8 +1,4 @@
-import {
-  catalog,
-  envelopeFields,
-  type AjourCatalog,
-} from "@ajour/wide-events/catalog.ts";
+import { catalog, type AjourCatalog } from "@ajour/wide-events/catalog.ts";
 import {
   createEmitter,
   type Channel,
@@ -11,6 +7,7 @@ import {
 } from "@ajour/wide-events";
 import type { Surface, Trigger } from "@ajour/wide-events";
 import {
+  createPrivacyFilter,
   nowhere,
   sinkFromSwitch,
   type Sink,
@@ -102,97 +99,38 @@ function defaultSink(): Sink {
   return sinkFromSwitch(import.meta.env.AJOUR_WIDE_EVENTS);
 }
 
-type Tree = { readonly [key: string]: unknown };
-
-function isField(node: unknown) {
-  const privacy = (node as { privacy?: unknown } | null)?.privacy;
-  return privacy === "operational" || privacy === "sensitive";
-}
-
-/** A value a field may hold: a string, number, boolean or null, or a list of them. */
-function isFieldValue(value: unknown): boolean {
-  if (Array.isArray(value)) return value.every(isScalar);
-  return isScalar(value);
-}
-
-function isScalar(value: unknown) {
-  return (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  );
-}
-
 /**
- * `value` with only the fields `tree` declares, each holding a field value,
- * or undefined when none is left. `drop` counts each field it leaves out.
- */
-function declaredOnly(
-  value: unknown,
-  tree: unknown,
-  drop: () => void,
-): unknown {
-  if (isField(tree)) {
-    if (isFieldValue(value)) return value;
-    drop();
-    return undefined;
-  }
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    drop();
-    return undefined;
-  }
-  const kept: Record<string, unknown> = {};
-  let empty = true;
-  for (const [key, child] of Object.entries(value)) {
-    if (!Object.hasOwn(tree as Tree, key)) {
-      drop();
-      continue;
-    }
-    const declared = declaredOnly(child, (tree as Tree)[key], drop);
-    if (declared !== undefined) {
-      kept[key] = declared;
-      empty = false;
-    }
-  }
-  return empty ? undefined : kept;
-}
-
-/**
- * Passes on only what the catalog declares, so a field without a privacy
- * class never leaves the renderer, whatever set it, and a field holds only
- * strings, numbers, booleans, null and lists of them: an object or a
- * function where a value belongs is dropped, never passed through. Each
- * drop counts in `dropped_field_count`. It also drops each error's message,
+ * Passes on only what the catalog declares, through the shared privacy
+ * filter, so a field without a privacy class never leaves the renderer,
+ * whatever set it, and a field holds only what the catalog says it holds
+ * (see `createPrivacyFilter`): an object or a function where a value
+ * belongs is dropped, never passed through. Each drop counts in
+ * `dropped_field_count`. It also drops each error's message,
  * keeping its type and code: the renderer knows neither the home folder nor
  * the user data folder, so its scrubber could leave either in a message.
  */
 function catalogedOnly(target: Sink): Sink {
+  const filter = createPrivacyFilter(catalog);
   return {
     emit(event) {
-      const fields = (catalog.events as Record<string, { fields: Tree }>)[
-        event.name
-      ]?.fields;
-      const kept: Record<string, unknown> = {};
       let dropped = 0;
-      const drop = () => {
-        dropped += 1;
+      // The renderer's own sink has no user setting for sensitive fields:
+      // the sink it feeds decides about them, so they stay.
+      const kept = filter(event, {
+        includeSensitive: true,
+        onDrop: () => {
+          dropped += 1;
+        },
+      }) as Record<string, unknown> & {
+        error?: Record<string, unknown>;
+        counts?: Record<string, number>;
       };
-      for (const [key, value] of Object.entries(event)) {
-        if (Object.hasOwn(envelopeFields, key)) kept[key] = value;
-        else if (fields && Object.hasOwn(fields, key)) {
-          const declared = declaredOnly(value, fields[key], drop);
-          if (declared !== undefined) kept[key] = declared;
-        } else {
-          drop();
-        }
-      }
-      if (event.error?.message !== undefined) {
-        const { message: _message, ...error } = event.error;
+      if (kept.error && "message" in kept.error) {
+        const { message: _message, ...error } = kept.error;
         kept.error = error;
       }
       if (dropped > 0) {
-        kept.counts = { ...event.counts, dropped_field_count: dropped };
+        kept.counts = { ...kept.counts, dropped_field_count: dropped };
       }
       target.emit(kept as typeof event);
     },

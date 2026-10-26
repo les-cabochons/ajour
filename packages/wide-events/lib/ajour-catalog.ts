@@ -44,6 +44,12 @@ export type PluginSandboxCause =
   | "renderer_unknown"
   | "shared_process";
 
+/** Whether the local log file writes (local-log-file.ts). */
+export type LocalLogState = "off" | "on" | "warning";
+
+/** Why the local log file stopped writing. */
+export type LocalLogWarning = "disk_full" | "no_permission" | "write_failed";
+
 /** What every IPC event carries: the channel, never its arguments. */
 const ipcFields = {
   channel: operational(),
@@ -101,7 +107,12 @@ const requestReasons = [
  * Why a plugin activation or capability check refuses work. They double as
  * plugin operation reasons, so a request and its operation say the same.
  */
-const inactiveReasons = ["system_off", "plugin_off", "capability_off"] as const;
+const inactiveReasons = [
+  "system_off",
+  "plugin_off",
+  "needs_consent",
+  "capability_off",
+] as const;
 
 /**
  * What every `plugin_operation` event carries: one worker run, in the plugin
@@ -546,7 +557,13 @@ export const catalog = defineCatalog({
     /** A plugin, or one of its capabilities, turned on or off. */
     "plugin.activate": {
       kinds: ["command", "request"],
-      reasons: ["not_installed", "not_supported", ...requestReasons],
+      reasons: [
+        "not_installed",
+        "not_supported",
+        /** The plugin was updated since the user reviewed its access. */
+        "version_changed",
+        ...requestReasons,
+      ],
       fields: {
         ...requestFields,
         plugin: { id: operational() },
@@ -674,6 +691,20 @@ export const catalog = defineCatalog({
         ...requestFields,
         activation: {
           enabled: operational<boolean>(),
+          operations_cancelled: operational<number>(),
+        },
+      },
+    },
+    /** Unsigned plugins allowed to run again, or all of them deactivated. */
+    "unsigned_plugins.toggle": {
+      kinds: ["command", "request"],
+      reasons: requestReasons,
+      fields: {
+        ...requestFields,
+        activation: {
+          enabled: operational<boolean>(),
+          /** Installed plugins without a signed origin, when turned off. */
+          unsigned_plugin_count: operational<number>(),
           operations_cancelled: operational<number>(),
         },
       },
@@ -1284,23 +1315,29 @@ export const catalog = defineCatalog({
       ],
       fields: { sandbox: { cause: operational<PluginSandboxCause>() } },
     },
-    /** The plugin index refreshed from the network, the cache or the built-in snapshot. */
+    /**
+     * Every plugin source read again: from the network, the saved listings or
+     * the built-in snapshot. Counts only: a source's address is content.
+     */
     "catalog.refresh": {
       kinds: ["job"],
       fields: {
         catalog: {
           trigger: operational<"launch" | "interval" | "request">(),
           source: operational<"network" | "cache" | "built_in">(),
-          /** The index file's HTTP status, absent when the request failed. */
-          status: operational<number>(),
-          /** Whether the index request was conditional. */
-          revalidated: operational<boolean>(),
           entry_count: operational<number>(),
-          definitions_fetched: operational<number>(),
-          definitions_revalidated: operational<number>(),
-          definitions_failed: operational<number>(),
+          sources_total: operational<number>(),
+          sources_read: operational<number>(),
+          /** Unreachable, so their saved listing was used. */
+          sources_cached: operational<number>(),
+          /** Unreachable with nothing saved, or with an unreadable listing. */
+          sources_unreachable: operational<number>(),
+          sources_signed: operational<number>(),
+          sources_unsigned: operational<number>(),
+          /** A changed key, a lost signature or one that does not match. */
+          sources_blocked: operational<number>(),
           images_fetched: operational<number>(),
-          images_revalidated: operational<number>(),
+          images_cached: operational<number>(),
           images_failed: operational<number>(),
           skipped_plugin_ids: operational<string[]>(),
           bytes: operational<number>(),
@@ -1325,6 +1362,52 @@ export const catalog = defineCatalog({
         catalog: {
           refresh_minutes_before: operational<number>(),
           refresh_minutes_after: operational<number>(),
+          allow_unsigned_installs_before: operational<boolean>(),
+          allow_unsigned_installs_after: operational<boolean>(),
+        },
+      },
+    },
+    /** A plugin source read before the person adds it. Never its address. */
+    "catalog.inspect_source": {
+      kinds: ["ipc"],
+      reasons: ["foreign_sender"],
+      fields: {
+        ipc: ipcFields,
+        source: {
+          host_kind: operational<"github" | "gitlab" | "gitea">(),
+          official: operational<boolean>(),
+          signed: operational<boolean>(),
+          plugin_count: operational<number>(),
+          result: operational<"read" | "failed">(),
+        },
+      },
+    },
+    /** A plugin source added, or the key it is signed with approved. */
+    "catalog.add_source": {
+      kinds: ["command", "ipc"],
+      reasons: ["foreign_sender"],
+      fields: {
+        ipc: ipcFields,
+        source: {
+          host_kind: operational<"github" | "gitlab" | "gitea">(),
+          official: operational<boolean>(),
+          signed: operational<boolean>(),
+          source_count: operational<number>(),
+          result: operational<
+            "added" | "key_approved" | "key_mismatch" | "failed"
+          >(),
+        },
+      },
+    },
+    "catalog.remove_source": {
+      kinds: ["command", "ipc"],
+      reasons: ["foreign_sender"],
+      fields: {
+        ipc: ipcFields,
+        source: {
+          official: operational<boolean>(),
+          source_count: operational<number>(),
+          result: operational<"removed" | "not_found">(),
         },
       },
     },
@@ -1346,6 +1429,64 @@ export const catalog = defineCatalog({
       kinds: ["ipc"],
       reasons: ["foreign_sender"],
       fields: { ipc: ipcFields },
+    },
+    /** Saving the local log file's settings (ADR 0014). */
+    "logs.configure": {
+      kinds: ["command", "ipc"],
+      reasons: ["foreign_sender", "invalid_settings"],
+      fields: {
+        ipc: ipcFields,
+        logs: {
+          enabled_before: operational<boolean>(),
+          enabled_after: operational<boolean>(),
+          retention_days: operational<number>(),
+          size_limit_mb: operational<number>(),
+          include_sensitive: operational<boolean>(),
+        },
+      },
+    },
+    /** The local log file's settings, state and what its folder holds. */
+    "logs.status": {
+      kinds: ["ipc"],
+      reasons: ["foreign_sender"],
+      fields: {
+        ipc: ipcFields,
+        logs: {
+          state: operational<LocalLogState>(),
+          warning: operational<LocalLogWarning>(),
+          file_count: operational<number>(),
+          storage_bytes: operational<number>(),
+          /** Events dropped since launch because too many waited to be written. */
+          dropped_event_count: operational<number>(),
+        },
+      },
+    },
+    /** Delete all logs: the local log file's folder goes. */
+    "logs.delete_all": {
+      kinds: ["command", "ipc"],
+      reasons: ["foreign_sender"],
+      fields: {
+        ipc: ipcFields,
+        logs: {
+          deleted_file_count: operational<number>(),
+          deleted_bytes: operational<number>(),
+        },
+      },
+    },
+    /** A retention sweep of the local log file's folder: at launch, hourly, or once its limits change. */
+    "logs.sweep": {
+      kinds: ["job"],
+      fields: {
+        logs: {
+          trigger: operational<"launch" | "interval" | "settings">(),
+          deleted_file_count: operational<number>(),
+          deleted_bytes: operational<number>(),
+          file_count: operational<number>(),
+          storage_bytes: operational<number>(),
+          /** Events dropped since launch, as in `logs.status`. */
+          dropped_event_count: operational<number>(),
+        },
+      },
     },
     /** An application update check, asked for or on its schedule. */
     "update.check": {
@@ -1431,6 +1572,8 @@ export const catalog = defineCatalog({
           dialog_ms: operational<number>(),
           download_ms: operational<number>(),
           install_ms: operational<number>(),
+          /** Whether the plugin came from a source whose signature verified. */
+          signed: operational<boolean>(),
           result: operational<
             | "installed"
             | "updated"
@@ -1438,6 +1581,7 @@ export const catalog = defineCatalog({
             | "busy"
             | "invalid_archive"
             | "not_available"
+            | "unsigned_not_allowed"
             | "api_unavailable"
             | "failed"
           >(),
@@ -1507,7 +1651,7 @@ export const catalog = defineCatalog({
           legacy_folder_count: operational<number>(),
           bytes_scanned: operational<number>(),
           /** Each collection's record count in the state found, never a record. */
-          record_counts: operational<Record<string, number>>(),
+          record_counts: operational<Record<string, number>>("numbers"),
           /** A reload after a crash gets this launch's first answer. */
           cached: operational<boolean>(),
         },

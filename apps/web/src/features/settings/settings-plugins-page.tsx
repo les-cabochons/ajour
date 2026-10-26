@@ -56,6 +56,7 @@ import {
   connectionAgentAccess,
   isCapabilityActive,
   isCapabilitySwitchedOn,
+  isSignedPlugin,
   pluginConnectionFormFields,
   pluginHasBacklog,
   pluginHasTeam,
@@ -63,6 +64,7 @@ import {
   syncsPullRequestsAutomatically,
 } from "@ajour/shared";
 import {
+  connectionSaveBlock,
   createPluginFormState,
   expiryForSave,
   secretFieldIds,
@@ -84,18 +86,26 @@ import {
 import { HeldArrivalsLine, TeamPickerDialog } from "./team-connection-ui";
 import { PluginAgentTasks } from "./agent-task-settings";
 import {
+  CatalogAccessSection,
+  PluginAccessSection,
+  PluginAccessUpdatePanel,
+} from "./plugin-access-section";
+import {
   PluginAdvancedSettings,
   PluginSuspendedNotice,
 } from "./plugin-runtime-settings";
 import {
   canInstallCatalogPlugin,
-  canUpdateFromCatalog,
+  catalogOffersUpdate,
+  isEntrySigned,
   PluginCapabilityBand,
   PluginCapabilityList,
   PluginIdentityMark,
   PluginInfoList,
   pluginCapabilitiesLabel,
+  UnsignedBadge,
 } from "./plugin-catalog-ui";
+import { PluginSourcesSection } from "./plugin-sources-ui";
 
 type PluginCatalogFilter = "all" | PluginCatalogCapability;
 
@@ -178,8 +188,9 @@ function EmptyListText({
 }
 
 /**
- * Downloads the catalog package again over an installed package Ajour cannot
- * run. Replacing a package keeps its connections and activation state.
+ * Downloads the plugin again from its source: a newer version, or a
+ * compatible package over one Ajour cannot run. Replacing a package keeps its
+ * connections and activation state.
  */
 function UpdatePluginButton({
   title,
@@ -226,6 +237,7 @@ function PluginCatalogRow({
   entry,
   canDownload,
   pluginsEnabled,
+  unsignedPluginsEnabled,
   sandboxOffReason,
   isMutating,
   onDownload,
@@ -234,6 +246,7 @@ function PluginCatalogRow({
   entry: PluginDisplayEntry;
   canDownload: boolean;
   pluginsEnabled: boolean;
+  unsignedPluginsEnabled: boolean;
   /** Set while plugins can't run in a sandbox: the switch can't be used. */
   sandboxOffReason?: string;
   isMutating: boolean;
@@ -243,6 +256,21 @@ function PluginCatalogRow({
   const { catalog, pluginGroup, dataShapePlugin } = entry;
   const installed = Boolean(pluginGroup || dataShapePlugin);
   const unavailableReason = pluginGroup?.plugin.unavailableReason;
+  const signed = isEntrySigned(
+    catalog,
+    pluginGroup?.plugin ?? (dataShapePlugin ? {} : undefined),
+  );
+  const offersUpdate = pluginGroup
+    ? catalogOffersUpdate(catalog, pluginGroup.plugin)
+    : false;
+  const update = offersUpdate ? (
+    <UpdatePluginButton
+      title={catalog.title}
+      canDownload={canDownload}
+      isMutating={isMutating}
+      onUpdate={onDownload}
+    />
+  ) : null;
   const version = pluginGroup?.plugin.version ?? dataShapePlugin?.version;
   const statusLabel = unavailableReason
     ? "Unavailable"
@@ -275,6 +303,7 @@ function PluginCatalogRow({
             <Badge variant={installed ? "secondary" : "outline"}>
               {statusLabel}
             </Badge>
+            {signed ? null : <UnsignedBadge />}
           </span>
           <span className="line-clamp-2 text-[13px] leading-5 text-muted-foreground">
             {unavailableReason ?? catalog.description}
@@ -282,35 +311,36 @@ function PluginCatalogRow({
           <span className="text-xs text-[var(--text-tertiary)]">
             {pluginCapabilitiesLabel(catalog)}
             {version ? ` · v${version}` : null}
+            {offersUpdate && !unavailableReason
+              ? ` · v${catalog.version} available`
+              : null}
           </span>
         </span>
       </Link>
-      {unavailableReason && canUpdateFromCatalog(catalog) ? (
-        <UpdatePluginButton
-          title={catalog.title}
-          canDownload={canDownload}
-          isMutating={isMutating}
-          onUpdate={onDownload}
-        />
+      {unavailableReason && offersUpdate ? (
+        update
       ) : pluginGroup ? (
-        <DisabledReason
-          label={`${pluginGroup.enabled ? "Deactivate" : "Activate"} ${catalog.title}`}
-          reason={sandboxOffReason}
-          className="shrink-0"
-        >
-          <Switch
-            className="shrink-0"
-            checked={pluginGroup.enabled}
-            disabled={
-              isMutating ||
-              !pluginsEnabled ||
-              sandboxOffReason !== undefined ||
-              pluginGroup.plugin.unavailableReason !== undefined
-            }
-            aria-label={`${pluginGroup.enabled ? "Deactivate" : "Activate"} ${catalog.title}`}
-            onCheckedChange={onEnabledChange}
-          />
-        </DisabledReason>
+        <span className="flex shrink-0 items-center gap-3">
+          {update}
+          <DisabledReason
+            label={`${pluginGroup.enabled ? "Deactivate" : "Activate"} ${catalog.title}`}
+            reason={sandboxOffReason}
+          >
+            <Switch
+              className="shrink-0"
+              checked={pluginGroup.enabled}
+              disabled={
+                isMutating ||
+                !pluginsEnabled ||
+                (!unsignedPluginsEnabled && !signed) ||
+                sandboxOffReason !== undefined ||
+                pluginGroup.plugin.unavailableReason !== undefined
+              }
+              aria-label={`${pluginGroup.enabled ? "Deactivate" : "Activate"} ${catalog.title}`}
+              onCheckedChange={onEnabledChange}
+            />
+          </DisabledReason>
+        </span>
       ) : !installed && catalog.status === "available" ? (
         <Button
           className="shrink-0"
@@ -344,9 +374,13 @@ function PluginsHeader({
   filter,
   onFilterChange,
   pluginsEnabled,
+  unsignedPluginsEnabled,
+  allowUnsignedInstalls,
   refreshMinutes,
   canConfigureRefresh,
   onPluginsEnabledChange,
+  onUnsignedPluginsEnabledChange,
+  onAllowUnsignedInstallsChange,
   onRefreshMinutesChange,
   children,
 }: {
@@ -356,9 +390,13 @@ function PluginsHeader({
   filter: PluginCatalogFilter;
   onFilterChange: (filter: PluginCatalogFilter) => void;
   pluginsEnabled: boolean;
+  unsignedPluginsEnabled: boolean;
+  allowUnsignedInstalls: boolean;
   refreshMinutes: PluginCatalogSettings["refreshMinutes"];
   canConfigureRefresh: boolean;
   onPluginsEnabledChange: (enabled: boolean) => void;
+  onUnsignedPluginsEnabledChange: (enabled: boolean) => void;
+  onAllowUnsignedInstallsChange: (allow: boolean) => void;
   onRefreshMinutesChange: (
     refreshMinutes: PluginCatalogSettings["refreshMinutes"],
   ) => void;
@@ -380,7 +418,15 @@ function PluginsHeader({
             </p>
           </div>
           {canInstall ? (
-            <Button disabled={isMutating} onClick={onInstall}>
+            <Button
+              disabled={isMutating || !allowUnsignedInstalls}
+              title={
+                allowUnsignedInstalls
+                  ? undefined
+                  : "A plugin from a file is unsigned. Allow installing unsigned plugins first."
+              }
+              onClick={onInstall}
+            >
               <Upload data-icon="inline-start" />
               Install from file
             </Button>
@@ -397,6 +443,34 @@ function PluginsHeader({
               disabled={isMutating}
               aria-label={`${pluginsEnabled ? "Deactivate" : "Activate"} all plugins`}
               onCheckedChange={onPluginsEnabledChange}
+            />
+          </SettingRow>
+          <SettingRow
+            label="Allow installing unsigned plugins"
+            description="Plugins from a file or from a source without an approved key. Ajour warns you before each one."
+          >
+            <Switch
+              checked={allowUnsignedInstalls}
+              disabled={!canConfigureRefresh}
+              aria-label={`${allowUnsignedInstalls ? "Stop" : "Allow"} installing unsigned plugins`}
+              onCheckedChange={onAllowUnsignedInstallsChange}
+            />
+          </SettingRow>
+          <SettingRow
+            label="Deactivate unsigned plugins"
+            description="Stops every installed unsigned plugin without removing it. Signed plugins keep running."
+          >
+            <Switch
+              checked={!unsignedPluginsEnabled}
+              disabled={isMutating || !pluginsEnabled}
+              aria-label={
+                unsignedPluginsEnabled
+                  ? "Deactivate all unsigned plugins"
+                  : "Let unsigned plugins run again"
+              }
+              onCheckedChange={(deactivate) =>
+                onUnsignedPluginsEnabledChange(!deactivate)
+              }
             />
           </SettingRow>
           <SettingRow label="Refresh catalog" labelFor="plugin-catalog-refresh">
@@ -727,7 +801,12 @@ export function SettingsPluginsPage({
     }
   };
   const handleDownloadPlugin = (entry: PluginCatalogEntry) =>
-    workflow.execute({ type: "download", pluginId: entry.id });
+    workflow.execute({
+      type: "download",
+      pluginId: entry.id,
+      sourceUrl: entry.source?.url,
+    });
+  const unsignedPluginsEnabled = overview?.unsignedPluginsEnabled ?? true;
   const handleUninstallPlugin = async (group: PluginOverviewGroup) => {
     if (await workflow.execute({ type: "uninstall", plugin: group.plugin }))
       setFormState(null);
@@ -755,14 +834,13 @@ export function SettingsPluginsPage({
         ) : null}
         {catalog?.warning ? (
           <MessagePanel tone="warning">
-            The catalog was loaded from its local cache. Artwork and metadata
-            will refresh when the index is reachable.
+            Some plugin sources couldn't be read, so Ajour shows what it saved
+            from them last. They refresh when they are reachable.
           </MessagePanel>
         ) : null}
         {catalog?.skippedPluginIds?.length ? (
           <MessagePanel>
-            This version of Ajour can't read these catalog entries:{" "}
-            {catalog.skippedPluginIds.join(", ")}. Update Ajour to see them.
+            {`Ajour can't show these plugins: ${catalog.skippedPluginIds.join(", ")}. Another source lists them first, or they need a newer Ajour.`}
           </MessagePanel>
         ) : null}
         {catalogError ? (
@@ -781,6 +859,28 @@ export function SettingsPluginsPage({
     const groupFormState =
       formState?.pluginId === group.plugin.id ? formState : null;
     const { unavailableReason } = group.plugin;
+    const signed = isSignedPlugin(group.plugin);
+    const blockedAsUnsigned = !unsignedPluginsEnabled && !signed;
+    // Saving runs the plugin, so it waits until the plugin may run (on, its
+    // access allowed, and signed or unsigned plugins on); the form says so
+    // and names the way out.
+    const saveBlock = unavailableReason
+      ? undefined
+      : connectionSaveBlock(
+          group,
+          overview?.pluginsEnabled !== false,
+          unsignedPluginsEnabled,
+        );
+    const offersUpdate =
+      catalogOffersUpdate(entry, group.plugin) && canDownloadCatalogPlugins;
+    const update = (
+      <UpdatePluginButton
+        title={entry.title}
+        canDownload={canDownloadCatalogPlugins}
+        isMutating={isMutatingPlugin}
+        onUpdate={() => void handleDownloadPlugin(entry)}
+      />
+    );
 
     return (
       <>
@@ -788,19 +888,19 @@ export function SettingsPluginsPage({
           entry={entry}
           iconSvg={group.plugin.iconSvg}
           action={
-            unavailableReason &&
-            canUpdateFromCatalog(entry) &&
-            canDownloadCatalogPlugins ? (
-              <UpdatePluginButton
-                title={entry.title}
-                canDownload={canDownloadCatalogPlugins}
-                isMutating={isMutatingPlugin}
-                onUpdate={() => void handleDownloadPlugin(entry)}
-              />
+            unavailableReason && offersUpdate ? (
+              update
             ) : unavailableReason && canInstallPlugins ? (
               <Button
                 variant="outline"
-                disabled={isMutatingPlugin}
+                disabled={
+                  isMutatingPlugin || !catalogSettings.allowUnsignedInstalls
+                }
+                title={
+                  catalogSettings.allowUnsignedInstalls
+                    ? undefined
+                    : "A plugin from a file is unsigned. Allow installing unsigned plugins first."
+                }
                 onClick={() => void workflow.execute({ type: "install" })}
               >
                 <Upload data-icon="inline-start" />
@@ -808,6 +908,7 @@ export function SettingsPluginsPage({
               </Button>
             ) : (
               <div className="flex w-full items-center justify-between gap-3 desktop:w-auto desktop:justify-end">
+                {offersUpdate ? update : null}
                 <span className="text-sm text-muted-foreground">
                   {group.enabled ? "Active" : "Inactive"}
                 </span>
@@ -821,6 +922,7 @@ export function SettingsPluginsPage({
                       isMutatingPlugin ||
                       overview?.pluginsEnabled === false ||
                       sandboxOffReason !== undefined ||
+                      blockedAsUnsigned ||
                       group.plugin.unavailableReason !== undefined
                     }
                     aria-label={`${group.enabled ? "Deactivate" : "Activate"} ${entry.title}`}
@@ -840,7 +942,13 @@ export function SettingsPluginsPage({
               <Badge variant={group.enabled ? "secondary" : "outline"}>
                 {group.enabled ? "Active" : "Inactive"}
               </Badge>
+              {signed ? null : <UnsignedBadge />}
               <Badge variant="outline">Version {group.plugin.version}</Badge>
+              {offersUpdate && !unavailableReason ? (
+                <Badge variant="outline">
+                  Version {entry.version} available
+                </Badge>
+              ) : null}
               <Badge variant="outline">
                 {group.connections.length} connection
                 {group.connections.length === 1 ? "" : "s"}
@@ -861,6 +969,11 @@ export function SettingsPluginsPage({
               </p>
             </MessagePanel>
           ) : null}
+          <PluginAccessUpdatePanel
+            group={group}
+            disabled={isMutatingPlugin || overview?.pluginsEnabled === false}
+            onAllow={() => void handlePluginActivation(group, true)}
+          />
           <PluginSuspendedNotice
             group={group}
             disabled={isMutatingPlugin}
@@ -872,6 +985,10 @@ export function SettingsPluginsPage({
           <PluginCapabilityBand entry={entry} />
         </PluginDetailHeader>
 
+        {unavailableReason || group.missing ? null : (
+          <PluginAccessSection group={group} now={Date.now()} />
+        )}
+
         <section className="settings-section">
           <h2 className="settings-section-title">Features</h2>
           <PluginCapabilityList entry={entry} />
@@ -879,7 +996,11 @@ export function SettingsPluginsPage({
 
         <section className="settings-section">
           <h2 className="settings-section-title">Information</h2>
-          <PluginInfoList entry={entry} version={group.plugin.version} />
+          <PluginInfoList
+            entry={entry}
+            version={group.plugin.version}
+            installed={group.plugin}
+          />
         </section>
 
         {overview?.pluginsEnabled === false ? (
@@ -887,7 +1008,12 @@ export function SettingsPluginsPage({
             The plugin system is deactivated. All plugin execution and sync are
             paused until you enable it from the Plugins catalog.
           </MessagePanel>
-        ) : !group.enabled && !unavailableReason ? (
+        ) : blockedAsUnsigned ? (
+          <MessagePanel tone="warning">
+            Unsigned plugins are deactivated, and this one is unsigned. Turn off
+            Deactivate unsigned plugins in Plugins to run it again.
+          </MessagePanel>
+        ) : !group.enabled && !unavailableReason && !group.pendingAccess ? (
           <MessagePanel>
             This plugin is inactive. Its saved connections and imported data are
             preserved, but sync is paused until you reactivate it.
@@ -915,12 +1041,14 @@ export function SettingsPluginsPage({
                 <h2 className="settings-section-title">Configuration</h2>
                 <p className="settings-section-desc mt-1">
                   Manage the local connections used by this plugin.
+                  {saveBlock ? ` ${saveBlock.hint}` : ""}
                 </p>
               </div>
               <Button
                 disabled={
                   isMutatingPlugin ||
                   overview?.pluginsEnabled === false ||
+                  !group.enabled ||
                   Boolean(unavailableReason)
                 }
                 onClick={() => handleCreate(group.plugin)}
@@ -940,6 +1068,7 @@ export function SettingsPluginsPage({
                 )}
                 vault={overview?.vault}
                 isMutating={isMutatingPlugin}
+                saveHint={saveBlock?.hint}
                 heldCount={
                   groupFormState.editingConnectionId
                     ? heldEditCount(
@@ -1337,17 +1466,28 @@ export function SettingsPluginsPage({
               <Badge variant="outline">
                 Plugin API {catalogEntry.compatibility.pluginApiVersion}
               </Badge>
-              {dataShapePlugin ? (
-                <Badge variant="outline">
-                  Version {dataShapePlugin.version}
-                </Badge>
-              ) : null}
+              {isEntrySigned(
+                catalogEntry,
+                dataShapePlugin ? {} : undefined,
+              ) ? null : (
+                <UnsignedBadge />
+              )}
+              <Badge variant="outline">
+                Version {dataShapePlugin?.version ?? catalogEntry.version}
+              </Badge>
             </>
           }
         >
           {renderMessages()}
           <PluginCapabilityBand entry={catalogEntry} />
         </PluginDetailHeader>
+
+        {available && !installed ? (
+          <CatalogAccessSection
+            pluginApiVersion={catalogEntry.compatibility.pluginApiVersion}
+            canDownload={canDownloadThisEntry}
+          />
+        ) : null}
 
         <section className="settings-section">
           <h2 className="settings-section-title">Features</h2>
@@ -1358,14 +1498,15 @@ export function SettingsPluginsPage({
           <h2 className="settings-section-title">Information</h2>
           <PluginInfoList
             entry={catalogEntry}
-            version={dataShapePlugin?.version}
+            version={dataShapePlugin?.version ?? catalogEntry.version}
+            installed={dataShapePlugin ? {} : undefined}
           />
         </section>
 
         {catalogEntry.status === "coming-soon" ? (
           <MessagePanel>
-            {catalogEntry.title} is listed in the Ajour plugin index, but no
-            installable release is available yet.
+            {catalogEntry.title} is listed by its source, but it can't be
+            installed yet.
           </MessagePanel>
         ) : installed ? (
           <MessagePanel>
@@ -1404,8 +1545,8 @@ export function SettingsPluginsPage({
             <AllPluginsLink />
             {renderMessages()}
             <MessagePanel tone="warning">
-              That plugin is not present in the Ajour index or installed on this
-              device.
+              None of your plugin sources lists that plugin, and it isn't
+              installed on this device.
             </MessagePanel>
           </section>
         )}
@@ -1433,12 +1574,20 @@ export function SettingsPluginsPage({
         filter={catalogFilter}
         onFilterChange={setCatalogFilter}
         pluginsEnabled={overview?.pluginsEnabled ?? true}
+        unsignedPluginsEnabled={unsignedPluginsEnabled}
+        allowUnsignedInstalls={catalogSettings.allowUnsignedInstalls}
         refreshMinutes={catalogSettings.refreshMinutes}
         canConfigureRefresh={Boolean(
           window.ajourDesktop?.configurePluginCatalog,
         )}
         onPluginsEnabledChange={(enabled) =>
           void workflow.execute({ type: "system", enabled })
+        }
+        onUnsignedPluginsEnabledChange={(enabled) =>
+          void workflow.execute({ type: "unsigned", enabled })
+        }
+        onAllowUnsignedInstallsChange={(allow) =>
+          void workflow.setAllowUnsignedInstalls(allow)
         }
         onRefreshMinutesChange={(refreshMinutes) =>
           void workflow.setCatalogRefreshInterval(refreshMinutes)
@@ -1455,6 +1604,7 @@ export function SettingsPluginsPage({
                     entry={entry}
                     canDownload={canDownloadCatalogPlugins}
                     pluginsEnabled={overview?.pluginsEnabled ?? true}
+                    unsignedPluginsEnabled={unsignedPluginsEnabled}
                     {...(sandboxOffReason ? { sandboxOffReason } : {})}
                     isMutating={isMutatingPlugin}
                     onDownload={() => void handleDownloadPlugin(entry.catalog)}
@@ -1494,6 +1644,22 @@ export function SettingsPluginsPage({
           </p>
         </>
       </PluginsHeader>
+      <PluginSourcesSection
+        sources={catalog?.sources ?? []}
+        canManage={Boolean(window.ajourDesktop?.addPluginSource)}
+        isMutating={isMutatingPlugin}
+        onInspect={workflow.inspectSource}
+        onAdd={(url, keyFingerprint) =>
+          workflow.execute({ type: "addSource", url, keyFingerprint })
+        }
+        onRemove={(source) =>
+          void workflow.execute({
+            type: "removeSource",
+            url: source.url,
+            name: source.name ?? source.url,
+          })
+        }
+      />
     </div>
   );
 }

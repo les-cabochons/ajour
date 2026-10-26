@@ -8,6 +8,7 @@ import {
   pluginRuntimeSettingsUpdateSchema,
   pluginSystemActivationUpdateSchema,
   type PluginRuntimeSettingsUpdate,
+  unsignedPluginsActivationUpdateSchema,
   pluginInstallResponseSchema,
   pluginUninstallResponseSchema,
   backlogSettleStatesRequestSchema,
@@ -46,7 +47,8 @@ import { newDescriptionConflicts } from "@/domain/backlog/description-sync";
 import type { LocalWorkItemEstimateFieldState } from "@/domain/local-state";
 import { announceDescriptionConflicts } from "@/lib/sync-conflict-events";
 import {
-  catalogPluginDownloadResponseSchema,
+  catalogPluginDownloadOutcomeSchema,
+  pluginSourceInspectionSchema,
   pluginCatalogResponseSchema,
   pluginCatalogSettingsSchema,
 } from "@ajour/shared";
@@ -378,6 +380,7 @@ export const APP_API_CLIENT = {
   setPluginRuntimeSettings: "plugin.runtime_update",
   resumePlugin: "plugin.resume",
   setPluginSystemEnabled: "plugin_system.toggle",
+  setUnsignedPluginsEnabled: "unsigned_plugins.toggle",
   getBacklogSourceStatuses: "source_state.list",
   upsertBacklogSourceStatuses: "source_state.update",
   savePluginConnection: "connection.save",
@@ -634,7 +637,10 @@ export async function getPluginCatalog() {
 export async function getPluginCatalogSettings() {
   const getSettings = window.ajourDesktop?.getPluginCatalogSettings;
   if (!getSettings) {
-    return pluginCatalogSettingsSchema.parse({ refreshMinutes: 15 });
+    return pluginCatalogSettingsSchema.parse({
+      refreshMinutes: 15,
+      allowUnsignedInstalls: false,
+    });
   }
   return pluginCatalogSettingsSchema.parse(await getSettings(traceCarrier()));
 }
@@ -651,18 +657,55 @@ export async function configurePluginCatalog(settings: PluginCatalogSettings) {
   );
 }
 
-export async function downloadCatalogPlugin(pluginId: string) {
+/** Null when the person cancelled at the unsigned plugin warning. */
+export async function downloadCatalogPlugin(
+  pluginId: string,
+  sourceUrl?: string,
+) {
   const download = window.ajourDesktop?.downloadCatalogPlugin;
   if (!download) {
     throw new Error(
       "Plugin downloads are available in the production desktop app.",
     );
   }
-  const result = catalogPluginDownloadResponseSchema.parse(
-    await download(pluginId, traceCarrier()),
+  const result = catalogPluginDownloadOutcomeSchema.parse(
+    await download(pluginId, sourceUrl, traceCarrier()),
   );
-  cachePluginsOverview(result.result.overview);
+  if (result) cachePluginsOverview(result.result.overview);
   return result;
+}
+
+function sourceBridge<
+  Name extends "inspectPluginSource" | "addPluginSource" | "removePluginSource",
+>(name: Name) {
+  const method = window.ajourDesktop?.[name];
+  if (!method) {
+    throw new Error("Plugin sources are available in the desktop app.");
+  }
+  return method;
+}
+
+/** Reads a plugin source before it is added: its name, plugins and key. */
+export async function inspectPluginSource(url: string) {
+  return pluginSourceInspectionSchema.parse(
+    await sourceBridge("inspectPluginSource")(url, traceCarrier()),
+  );
+}
+
+/** Adds a plugin source, or approves the key it is signed with now. */
+export async function addPluginSource(
+  url: string,
+  keyFingerprint: string | null,
+) {
+  return pluginCatalogResponseSchema.parse(
+    await sourceBridge("addPluginSource")(url, keyFingerprint, traceCarrier()),
+  );
+}
+
+export async function removePluginSource(url: string) {
+  return pluginCatalogResponseSchema.parse(
+    await sourceBridge("removePluginSource")(url, traceCarrier()),
+  );
 }
 
 export async function getProjectDataShapePlugins() {
@@ -762,15 +805,21 @@ export async function getPluginsOverview(): Promise<PluginsOverview> {
   return cachePluginsOverview(overview);
 }
 
-/** Turns the plugin on or off, or only `capability` when given. */
+/**
+ * Turns a plugin, or one of its capabilities, on or off. `version` is the
+ * version whose access the user reviewed: the API refuses to turn on
+ * another.
+ */
 export async function setPluginEnabled(
   pluginId: string,
   enabled: boolean,
   capability?: SwitchableCapability,
+  version?: string,
 ): Promise<PluginsOverview> {
   const payload = pluginActivationUpdateSchema.parse({
     enabled,
     ...(capability ? { capability } : {}),
+    ...(version ? { version } : {}),
   });
   return cachePluginsOverview(
     await appApiRequest(
@@ -827,6 +876,24 @@ export async function setPluginSystemEnabled(
     await appApiRequest(
       "setPluginSystemEnabled",
       "/api/plugins/activation",
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+      pluginsOverviewSchema,
+    ),
+  );
+}
+
+/** Lets unsigned plugins run again, or deactivates all of them. */
+export async function setUnsignedPluginsEnabled(
+  enabled: boolean,
+): Promise<PluginsOverview> {
+  const payload = unsignedPluginsActivationUpdateSchema.parse({ enabled });
+  return cachePluginsOverview(
+    await appApiRequest(
+      "setUnsignedPluginsEnabled",
+      "/api/plugins/unsigned-activation",
       {
         method: "POST",
         body: JSON.stringify(payload),

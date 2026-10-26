@@ -1,461 +1,49 @@
-const { randomUUID } = require("node:crypto");
+// The plugin catalog: every plugin the person's plugin sources list. The
+// main process reads the sources (plugin-sources.cjs), keeps the last good
+// listing of each on disk, and hands the renderer normalized entries.
+const { createHash, randomUUID } = require("node:crypto");
 const { mkdir, readFile, rename, writeFile } = require("node:fs/promises");
 const path = require("node:path");
-const YAML = require("yaml");
 const {
   BUILT_IN_PLUGIN_CATALOG_ENTRIES,
 } = require("./plugin-catalog-seed.cjs");
+const {
+  BLOCKED_TRUST_STATES,
+  OFFICIAL_SOURCE_PUBLIC_KEYS,
+  assessSourceTrust,
+  createPluginArchive,
+  createSourceReader,
+  isOfficialSourceUrl,
+  keyFingerprint,
+  normalizeSourceUrl,
+  parseSourceManifest,
+  parseSourceSignature,
+  sourceParts,
+  verifySourceSignature,
+} = require("./plugin-sources.cjs");
 
-const CATALOG_BASE_URL =
-  "https://raw.githubusercontent.com/les-cabochons/ajour-plugins-index/main/";
-const CATALOG_URL = new URL("catalog.yaml", CATALOG_BASE_URL).toString();
-const MAX_CATALOG_BYTES = 256 * 1024;
-const MAX_IMAGE_BYTES = 1_000_000;
-const MAX_RELEASE_RESPONSE_BYTES = 2 * 1024 * 1024;
-const RELEASES_PER_PAGE = 100;
-const MAX_RELEASE_PAGES = 10;
 const MAX_PLUGIN_ARCHIVE_BYTES = 25 * 1024 * 1024;
-const REQUEST_TIMEOUT_MS = 15_000;
-const CATALOG_ENTRY_PATH = /^plugins\/([a-z0-9][a-z0-9_-]*)\/plugin\.yaml$/u;
-const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
-const REPOSITORY_SLUG = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
-const IMAGE_PATH = /^(thumbnail|hero)\.(png|jpe?g|webp|avif)$/u;
-const IMAGE_CONTENT_TYPES = {
-  ".avif": "image/avif",
-  ".jpeg": "image/jpeg",
-  ".jpg": "image/jpeg",
-  ".png": "image/png",
-  ".webp": "image/webp",
-};
-
-function isRecord(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function assertRecord(value, label) {
-  if (!isRecord(value)) {
-    throw new Error(`${label} must be an object.`);
-  }
-  return value;
-}
-
-function assertExactKeys(value, allowedKeys, requiredKeys, label) {
-  const record = assertRecord(value, label);
-  for (const key of Object.keys(record)) {
-    if (!allowedKeys.includes(key)) {
-      throw new Error(`${label}.${key} is not supported.`);
-    }
-  }
-  for (const key of requiredKeys) {
-    if (!(key in record)) {
-      throw new Error(`${label}.${key} is required.`);
-    }
-  }
-  return record;
-}
-
-function assertString(value, label, options = {}) {
-  const minimum = options.minimum ?? 1;
-  const maximum = options.maximum ?? 500;
-  if (
-    typeof value !== "string" ||
-    value.length < minimum ||
-    value.length > maximum ||
-    (options.pattern && !options.pattern.test(value))
-  ) {
-    throw new Error(`${label} has an invalid value.`);
-  }
-  return value;
-}
-
-function assertHttpsUrl(value, label) {
-  const text = assertString(value, label);
-  const url = new URL(text);
-  if (url.protocol !== "https:") {
-    throw new Error(`${label} must use HTTPS.`);
-  }
-  return url.toString();
-}
-
-const CATALOG_SCHEMA_VERSION = 2;
-const PLUGIN_CAPABILITIES = new Set([
+const MAX_IMAGE_BYTES = 1_000_000;
+const INSTALLABLE_CAPABILITIES = new Set([
   "connector",
   "codeHost",
   "calendar",
   "team",
   "agentTask",
-  "schema",
 ]);
+const IMAGE_EXTENSION = /\.(png|jpe?g|webp|avif)$/iu;
+const SHA256 = /^[0-9a-f]{64}$/u;
+const BLOCKED_MESSAGES = {
+  key_changed:
+    "This source is now signed with a different key. Check with its publisher before you approve the new key.",
+  signature_missing:
+    "This source used to be signed and its signature is gone. Its plugins are hidden until it is signed again.",
+  bad_signature:
+    "This source's signature does not match its listing. Its plugins are hidden.",
+};
 
-function assertCapabilityList(value, id) {
-  if (!Array.isArray(value) || value.length < 1 || value.length > 3) {
-    throw new Error(
-      `Plugin "${id}" must declare between 1 and 3 capabilities.`,
-    );
-  }
-  if (
-    value.some((capability) => !PLUGIN_CAPABILITIES.has(capability)) ||
-    new Set(value).size !== value.length
-  ) {
-    throw new Error(`Plugin "${id}" declares an unsupported capability.`);
-  }
-  return [...value];
-}
-
-const RELEASE_VERSION_PATTERN =
-  /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/u;
-
-/** Parses "v1.2.3-main.10.abc1234" into numbers and prerelease identifiers. */
-function parseReleaseVersion(tagName) {
-  if (typeof tagName !== "string") {
-    return null;
-  }
-  const match = RELEASE_VERSION_PATTERN.exec(tagName.trim());
-  if (!match) {
-    return null;
-  }
-  return {
-    core: [Number(match[1]), Number(match[2]), Number(match[3])],
-    prerelease: match[4] ? match[4].split(".") : [],
-  };
-}
-
-function comparePrereleaseIdentifiers(left, right) {
-  const leftNumeric = /^\d+$/u.test(left);
-  const rightNumeric = /^\d+$/u.test(right);
-  if (leftNumeric && rightNumeric) {
-    return Number(left) - Number(right);
-  }
-  if (leftNumeric !== rightNumeric) {
-    return leftNumeric ? -1 : 1;
-  }
-  return left < right ? -1 : left > right ? 1 : 0;
-}
-
-/** Semantic version precedence: negative when `left` is older. */
-function compareReleaseVersions(left, right) {
-  for (let index = 0; index < 3; index += 1) {
-    const difference = left.core[index] - right.core[index];
-    if (difference !== 0) {
-      return difference;
-    }
-  }
-  if (left.prerelease.length === 0 || right.prerelease.length === 0) {
-    return right.prerelease.length - left.prerelease.length;
-  }
-  const length = Math.max(left.prerelease.length, right.prerelease.length);
-  for (let index = 0; index < length; index += 1) {
-    if (left.prerelease[index] === undefined) return -1;
-    if (right.prerelease[index] === undefined) return 1;
-    const difference = comparePrereleaseIdentifiers(
-      left.prerelease[index],
-      right.prerelease[index],
-    );
-    if (difference !== 0) {
-      return difference;
-    }
-  }
-  return 0;
-}
-
-/** Newest version first; tags without a version last, in GitHub's order. */
-function compareReleaseCandidates(left, right) {
-  if (left.version && right.version) {
-    return (
-      compareReleaseVersions(right.version, left.version) ||
-      left.index - right.index
-    );
-  }
-  if (left.version || right.version) {
-    return left.version ? -1 : 1;
-  }
-  return left.index - right.index;
-}
-
-function assertSlugList(value, label) {
-  if (!Array.isArray(value) || value.length < 1 || value.length > 12) {
-    throw new Error(`${label} must contain between 1 and 12 values.`);
-  }
-  const values = value.map((item, index) =>
-    assertString(item, `${label}[${index}]`, { maximum: 80, pattern: SLUG }),
-  );
-  if (new Set(values).size !== values.length) {
-    throw new Error(`${label} contains duplicate values.`);
-  }
-  return values;
-}
-
-function normalizeNamedLink(value, label) {
-  const record = assertExactKeys(
-    value,
-    ["name", "url"],
-    ["name", "url"],
-    label,
-  );
-  return {
-    name: assertString(record.name, `${label}.name`, { maximum: 100 }),
-    url: assertHttpsUrl(record.url, `${label}.url`),
-  };
-}
-
-function normalizeCatalogEntry(value, expectedId) {
-  const allowed = [
-    "schemaVersion",
-    "id",
-    "title",
-    "description",
-    "author",
-    "license",
-    "website",
-    "repository",
-    "status",
-    "compatibility",
-    "capabilities",
-    "features",
-    "install",
-    "images",
-    "tags",
-  ];
-  const required = allowed.filter(
-    (key) => key !== "install" && key !== "images",
-  );
-  const raw = assertExactKeys(value, allowed, required, `plugin ${expectedId}`);
-  if (raw.schemaVersion !== CATALOG_SCHEMA_VERSION) {
-    throw new Error(
-      `Plugin "${expectedId}" uses an unsupported catalog schema.`,
-    );
-  }
-  const id = assertString(raw.id, "plugin.id", {
-    maximum: 64,
-    pattern: /^[a-z0-9][a-z0-9_-]{1,63}$/u,
-  });
-  if (id !== expectedId) {
-    throw new Error(
-      `Plugin id "${id}" does not match catalog path "${expectedId}".`,
-    );
-  }
-  const capabilities = assertCapabilityList(raw.capabilities, id);
-  if (!["available", "coming-soon", "deprecated"].includes(raw.status)) {
-    throw new Error(`Plugin "${id}" has an unsupported status.`);
-  }
-
-  const license = assertExactKeys(
-    raw.license,
-    ["name", "spdxId", "url"],
-    ["name", "spdxId", "url"],
-    "plugin.license",
-  );
-  const repository = assertExactKeys(
-    raw.repository,
-    ["provider", "slug", "url"],
-    ["provider", "slug", "url"],
-    "plugin.repository",
-  );
-  if (repository.provider !== "github") {
-    throw new Error(`Plugin "${id}" must use a GitHub repository.`);
-  }
-  const repositorySlug = assertString(
-    repository.slug,
-    "plugin.repository.slug",
-    {
-      maximum: 200,
-      pattern: REPOSITORY_SLUG,
-    },
-  );
-  const repositoryUrl = assertHttpsUrl(repository.url, "plugin.repository.url");
-  if (repositoryUrl !== `https://github.com/${repositorySlug}`) {
-    throw new Error(`Plugin "${id}" repository URL does not match its slug.`);
-  }
-
-  const compatibility = assertExactKeys(
-    raw.compatibility,
-    ["pluginApiVersion"],
-    ["pluginApiVersion"],
-    "plugin.compatibility",
-  );
-  if (
-    !Number.isInteger(compatibility.pluginApiVersion) ||
-    compatibility.pluginApiVersion < 1
-  ) {
-    throw new Error(`Plugin "${id}" has an invalid API version.`);
-  }
-
-  let install;
-  if (raw.install !== undefined) {
-    const installRecord = assertExactKeys(
-      raw.install,
-      ["method", "allowPrereleases", "assetPattern"],
-      ["method", "allowPrereleases", "assetPattern"],
-      "plugin.install",
-    );
-    if (
-      installRecord.method !== "github-release" ||
-      typeof installRecord.allowPrereleases !== "boolean"
-    ) {
-      throw new Error(`Plugin "${id}" has an invalid install method.`);
-    }
-    const assetPattern = assertString(
-      installRecord.assetPattern,
-      "plugin.install.assetPattern",
-      { minimum: 3, maximum: 200 },
-    );
-    if (!assetPattern.startsWith("^") || !assetPattern.endsWith("$")) {
-      throw new Error(`Plugin "${id}" asset pattern must be anchored.`);
-    }
-    const compiledPattern = new RegExp(assetPattern, "u");
-    if (compiledPattern.test("")) {
-      throw new Error(
-        `Plugin "${id}" asset pattern must not match an empty name.`,
-      );
-    }
-    install = {
-      method: "github-release",
-      allowPrereleases: installRecord.allowPrereleases,
-      assetPattern,
-    };
-  }
-  if (raw.status === "available" && !install) {
-    throw new Error(`Available plugin "${id}" is missing install metadata.`);
-  }
-  if (raw.status === "coming-soon" && install) {
-    throw new Error(`Coming-soon plugin "${id}" must not be installable.`);
-  }
-
-  let imagePaths;
-  if (raw.images !== undefined) {
-    const images = assertExactKeys(
-      raw.images,
-      ["thumbnail", "hero"],
-      [],
-      "plugin.images",
-    );
-    imagePaths = {};
-    for (const [role, imagePath] of Object.entries(images)) {
-      imagePaths[role] = assertString(imagePath, `plugin.images.${role}`, {
-        maximum: 100,
-        pattern: IMAGE_PATH,
-      });
-    }
-    if (Object.keys(imagePaths).length === 0) {
-      throw new Error(`Plugin "${id}" image metadata is empty.`);
-    }
-  }
-
-  return {
-    entry: {
-      schemaVersion: CATALOG_SCHEMA_VERSION,
-      id,
-      title: assertString(raw.title, "plugin.title", { maximum: 80 }),
-      description: assertString(raw.description, "plugin.description", {
-        maximum: 500,
-      }),
-      author: normalizeNamedLink(raw.author, "plugin.author"),
-      license: {
-        name: assertString(license.name, "plugin.license.name", {
-          maximum: 80,
-        }),
-        spdxId: assertString(license.spdxId, "plugin.license.spdxId", {
-          maximum: 80,
-          pattern: /^[A-Za-z0-9-.+]+$/u,
-        }),
-        url: assertHttpsUrl(license.url, "plugin.license.url"),
-      },
-      website: assertHttpsUrl(raw.website, "plugin.website"),
-      repository: {
-        provider: "github",
-        slug: repositorySlug,
-        url: repositoryUrl,
-      },
-      status: raw.status,
-      compatibility: { pluginApiVersion: compatibility.pluginApiVersion },
-      capabilities,
-      features: assertSlugList(raw.features, "plugin.features"),
-      ...(install ? { install } : {}),
-      tags: assertSlugList(raw.tags, "plugin.tags"),
-    },
-    imagePaths,
-  };
-}
-
-function parseCatalog(value) {
-  const raw = assertExactKeys(
-    value,
-    ["schemaVersion", "entries"],
-    ["schemaVersion", "entries"],
-    "catalog",
-  );
-  if (
-    raw.schemaVersion !== CATALOG_SCHEMA_VERSION ||
-    !Array.isArray(raw.entries) ||
-    raw.entries.length < 1
-  ) {
-    throw new Error("The plugin catalog has an unsupported schema.");
-  }
-  if (raw.entries.length > 256) {
-    throw new Error("The plugin catalog contains too many entries.");
-  }
-  const seen = new Set();
-  return raw.entries.map((entry, index) => {
-    const text = assertString(entry, `catalog.entries[${index}]`, {
-      maximum: 120,
-    });
-    const match = text.match(CATALOG_ENTRY_PATH);
-    if (!match || seen.has(text)) {
-      throw new Error(`Catalog entry "${text}" is invalid or duplicated.`);
-    }
-    seen.add(text);
-    return { path: text, id: match[1] };
-  });
-}
-
-async function readBoundedResponse(response, maximumBytes) {
-  const contentLength = Number(response.headers?.get?.("content-length") ?? 0);
-  if (Number.isFinite(contentLength) && contentLength > maximumBytes) {
-    throw new Error(`Download exceeds the ${maximumBytes}-byte limit.`);
-  }
-  if (!response.body?.getReader) {
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (bytes.byteLength > maximumBytes) {
-      throw new Error(`Download exceeds the ${maximumBytes}-byte limit.`);
-    }
-    return bytes;
-  }
-  const reader = response.body.getReader();
-  const chunks = [];
-  let total = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > maximumBytes) {
-        await reader.cancel();
-        throw new Error(`Download exceeds the ${maximumBytes}-byte limit.`);
-      }
-      chunks.push(Buffer.from(value));
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  return Buffer.concat(chunks, total);
-}
-
-function conditionalHeaders(resource) {
-  const headers = {};
-  if (resource?.etag) headers["If-None-Match"] = resource.etag;
-  if (resource?.lastModified)
-    headers["If-Modified-Since"] = resource.lastModified;
-  return headers;
-}
-
-async function fetchWithTimeout(fetchImpl, url, options = {}) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  try {
-    return await fetchImpl(url, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
-  }
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function atomicWrite(file, contents) {
@@ -468,11 +56,11 @@ async function atomicWrite(file, contents) {
 async function loadCache(cacheFile) {
   try {
     const parsed = JSON.parse(await readFile(cacheFile, "utf8"));
-    if (!isRecord(parsed) || !isRecord(parsed.resources))
-      return { resources: {} };
-    return parsed;
+    return isRecord(parsed) && isRecord(parsed.sources)
+      ? parsed
+      : { sources: {} };
   } catch {
-    return { resources: {} };
+    return { sources: {} };
   }
 }
 
@@ -481,128 +69,200 @@ function notAvailable(message) {
   return Object.assign(new Error(message), { code: "not_available" });
 }
 
+/** The plugin entry the renderer shows, from one plugin of a listing. */
+function catalogEntry(source, listing, plugin, images) {
+  const { repoPath } = sourceParts(source.url);
+  return {
+    id: plugin.id,
+    title: plugin.name,
+    description: plugin.description,
+    version: plugin.version,
+    author: plugin.author,
+    license: plugin.license,
+    ...(plugin.website ? { website: plugin.website } : {}),
+    repository: { slug: repoPath, url: source.url },
+    source: {
+      url: source.url,
+      name: listing.manifest.name,
+      official: isOfficialSourceUrl(source.url),
+      signed: listing.trust.signed,
+      ...(listing.trust.fingerprint
+        ? { keyFingerprint: listing.trust.fingerprint }
+        : {}),
+    },
+    status: plugin.status,
+    compatibility: { pluginApiVersion: plugin.pluginApiVersion },
+    capabilities: plugin.capabilities,
+    features: plugin.features,
+    tags: plugin.tags,
+    ...(plugin.status !== "coming-soon" && plugin.files
+      ? { install: { method: "source" } }
+      : {}),
+    ...(Object.keys(images).length > 0 ? { images } : {}),
+  };
+}
+
+/**
+ * @param {{
+ *   fetchImpl: typeof fetch,
+ *   cacheDirectory: string,
+ *   getSources: () => Array<{ url: string, hostKind?: string, publicKey?: string }>,
+ *   onHostKind?: (url: string, hostKind: string) => void,
+ *   officialKeys?: readonly string[],
+ *   now?: () => Date,
+ * }} options
+ */
 function createPluginCatalogService(options) {
-  const fetchImpl = options.fetchImpl;
+  const reader = createSourceReader({ fetchImpl: options.fetchImpl });
   const cacheDirectory = path.resolve(options.cacheDirectory);
-  const cacheFile = path.join(cacheDirectory, "catalog-cache.json");
+  const cacheFile = path.join(cacheDirectory, "sources-cache.json");
   const imageDirectory = path.join(cacheDirectory, "images");
+  const officialKeys = options.officialKeys ?? OFFICIAL_SOURCE_PUBLIC_KEYS;
   const now = options.now ?? (() => new Date());
   /** @type {Record<string, any>} */
   let currentCatalog = {
     entries: BUILT_IN_PLUGIN_CATALOG_ENTRIES,
+    sources: [],
     checkedAt: now().toISOString(),
     source: "cache",
     warning:
-      "Showing the built-in plugin catalog until the Ajour plugin index can be refreshed.",
+      "Showing the built-in plugin list until Ajour can read your plugin sources.",
   };
   /** Whether the current catalog is still the built-in snapshot. */
   let builtIn = true;
+  /** The listings of the last refresh, by source URL, for downloads. */
+  let listings = new Map();
 
-  /**
-   * Fetches the index (`counter` absent) or an entry's definition, and counts
-   * what happened to the request in `stats`.
-   */
-  async function fetchText(url, cache, warnings, stats, counter) {
-    const previous = cache.resources[url];
-    try {
-      const headers = conditionalHeaders(previous);
-      if (!counter) stats.revalidated = Object.keys(headers).length > 0;
-      const response = await fetchWithTimeout(fetchImpl, url, { headers });
-      if (!counter) stats.status = response.status;
-      if (response.status === 304 && typeof previous?.body === "string") {
-        if (counter) stats[`${counter}_revalidated`] += 1;
-        return previous.body;
-      }
-      if (!response.ok) {
-        throw new Error(`Request returned HTTP ${response.status}.`);
-      }
-      const bytes = await readBoundedResponse(response, MAX_CATALOG_BYTES);
-      stats.bytes += bytes.byteLength;
-      const body = bytes.toString("utf8");
-      cache.resources[url] = {
-        body,
-        etag: response.headers.get("etag") ?? undefined,
-        lastModified: response.headers.get("last-modified") ?? undefined,
-      };
-      if (counter) stats[`${counter}_fetched`] += 1;
-      return body;
-    } catch (error) {
-      if (counter) stats[`${counter}_failed`] += 1;
-      else delete stats.status;
-      if (typeof previous?.body === "string") {
-        warnings.push(
-          `Using cached catalog metadata for ${url}: ${error.message}`,
-        );
-        return previous.body;
-      }
-      throw error;
-    }
+  function trustOf(source, manifestBytes, signatureBytes) {
+    return assessSourceTrust({
+      manifestBytes,
+      signatureBytes,
+      pinnedPublicKey: source.publicKey,
+      official: isOfficialSourceUrl(source.url),
+      officialKeys,
+    });
   }
 
-  async function fetchImage(
-    url,
-    pluginId,
-    role,
-    imagePath,
-    cache,
-    warnings,
-    stats,
-  ) {
-    const previous = cache.resources[url];
-    const extension = path.extname(imagePath).toLowerCase();
-    const contentType = IMAGE_CONTENT_TYPES[extension];
-    const fileName = `${pluginId}-${role}${extension}`;
-    const file = path.join(imageDirectory, fileName);
-    let bytes;
+  async function hostKindOf(source) {
+    if (source.hostKind) return source.hostKind;
+    const hostKind = await reader.detectHostKind(source.url);
+    options.onHostKind?.(source.url, hostKind);
+    return hostKind;
+  }
+
+  /** Artwork from the image cache by hash, or the source, checked either way. */
+  async function imageDataUrl(source, plugin, role, stats) {
+    const image = plugin.images?.[role];
+    if (!image || !SHA256.test(image.sha256)) return undefined;
+    const extension = (
+      image.path.match(IMAGE_EXTENSION)?.[0] ?? ""
+    ).toLowerCase();
+    const file = path.join(imageDirectory, `${image.sha256}${extension}`);
     try {
-      const response = await fetchWithTimeout(fetchImpl, url, {
-        headers: conditionalHeaders(previous),
-      });
-      if (response.status === 304 && previous?.fileName === fileName) {
-        bytes = await readFile(file);
-        stats.images_revalidated += 1;
-      } else {
-        if (!response.ok) {
-          throw new Error(`Request returned HTTP ${response.status}.`);
-        }
-        const responseType = response.headers
-          .get("content-type")
-          ?.split(";", 1)[0];
-        if (responseType && responseType !== contentType) {
-          throw new Error(
-            `Image response used unexpected type ${responseType}.`,
-          );
-        }
-        bytes = await readBoundedResponse(response, MAX_IMAGE_BYTES);
-        stats.bytes += bytes.byteLength;
-        await atomicWrite(file, bytes);
-        cache.resources[url] = {
-          fileName,
-          contentType,
-          etag: response.headers.get("etag") ?? undefined,
-          lastModified: response.headers.get("last-modified") ?? undefined,
-        };
-        stats.images_fetched += 1;
+      const cached = await readFile(file);
+      if (
+        cached.byteLength === image.size &&
+        cached.byteLength <= MAX_IMAGE_BYTES &&
+        createHash("sha256").update(cached).digest("hex") === image.sha256
+      ) {
+        stats.images_cached += 1;
+        const type = extension === ".jpg" ? ".jpeg" : extension;
+        return `data:image/${type.slice(1)};base64,${cached.toString("base64")}`;
       }
+    } catch {
+      // Not cached yet.
+    }
+    const dataUrl = await reader.readImage(source, plugin, role);
+    stats.images_fetched += 1;
+    await atomicWrite(
+      file,
+      Buffer.from(dataUrl.slice(dataUrl.indexOf(",") + 1), "base64"),
+    );
+    return dataUrl;
+  }
+
+  /**
+   * Reads one source, or its saved listing when it is unreachable, and how
+   * far Ajour trusts it.
+   * @returns {Promise<{ status: Record<string, any>, listing?: any, hostKind?: string }>}
+   */
+  async function readSource(source, cache, stats, warnings) {
+    let hostKind;
+    let manifestBytes;
+    let signatureBytes;
+    try {
+      hostKind = await hostKindOf(source);
+      ({ manifestBytes, signatureBytes } = await reader.readListing({
+        url: source.url,
+        hostKind,
+      }));
+      stats.sources_read += 1;
+      stats.bytes +=
+        manifestBytes.byteLength + (signatureBytes?.byteLength ?? 0);
+      cache.sources[source.url] = {
+        hostKind,
+        manifest: manifestBytes.toString("base64"),
+        ...(signatureBytes
+          ? { signature: signatureBytes.toString("base64") }
+          : {}),
+      };
     } catch (error) {
-      stats.images_failed += 1;
-      if (previous?.fileName === fileName) {
-        try {
-          bytes = await readFile(file);
-          warnings.push(
-            `Using cached artwork for ${pluginId}: ${error.message}`,
-          );
-        } catch {
-          throw error;
-        }
-      } else {
-        throw error;
+      const cached = cache.sources[source.url];
+      if (!isRecord(cached) || typeof cached.manifest !== "string") {
+        stats.sources_unreachable += 1;
+        return { status: { state: "unreachable", message: error.message } };
       }
+      stats.sources_cached += 1;
+      warnings.push(
+        `Using the saved listing of ${source.url}: ${error.message}`,
+      );
+      hostKind = source.hostKind ?? cached.hostKind;
+      manifestBytes = Buffer.from(cached.manifest, "base64");
+      signatureBytes =
+        typeof cached.signature === "string"
+          ? Buffer.from(cached.signature, "base64")
+          : null;
     }
-    if (bytes.byteLength < 1 || bytes.byteLength > MAX_IMAGE_BYTES) {
-      throw new Error(`Artwork for ${pluginId} has an invalid size.`);
+
+    // A cached listing goes through the same checks as a fresh one.
+    const trust = trustOf(source, manifestBytes, signatureBytes);
+    if (BLOCKED_TRUST_STATES.has(trust.state)) {
+      stats.sources_blocked += 1;
+      return {
+        status: {
+          state: trust.state,
+          hostKind,
+          ...(trust.fingerprint ? { keyFingerprint: trust.fingerprint } : {}),
+          message: BLOCKED_MESSAGES[trust.state],
+        },
+      };
     }
-    return `data:${contentType};base64,${bytes.toString("base64")}`;
+    let manifest;
+    try {
+      manifest = parseSourceManifest(manifestBytes, {
+        skipInvalidPlugins: true,
+      });
+    } catch (error) {
+      stats.sources_unreachable += 1;
+      return {
+        status: {
+          state: "unreachable",
+          hostKind,
+          message: `Its ajour.json can't be read. ${error.message}`,
+        },
+      };
+    }
+    stats[trust.signed ? "sources_signed" : "sources_unsigned"] += 1;
+    return {
+      hostKind,
+      listing: { manifest, trust, hostKind },
+      status: {
+        state: trust.state,
+        name: manifest.name,
+        hostKind,
+        ...(trust.fingerprint ? { keyFingerprint: trust.fingerprint } : {}),
+      },
+    };
   }
 
   async function refreshFromNetwork(stats) {
@@ -610,88 +270,111 @@ function createPluginCatalogService(options) {
     const cache = await loadCache(cacheFile);
     const warnings = [];
     const skippedPluginIds = [];
-    const catalogText = await fetchText(CATALOG_URL, cache, warnings, stats);
-    const catalogEntries = parseCatalog(
-      YAML.parse(catalogText, {
-        schema: "core",
-        strict: true,
-        uniqueKeys: true,
-      }),
-    );
     const entries = [];
-    for (const catalogEntry of catalogEntries) {
-      const definitionUrl = new URL(
-        catalogEntry.path,
-        CATALOG_BASE_URL,
-      ).toString();
-      const definitionText = await fetchText(
-        definitionUrl,
-        cache,
-        warnings,
-        stats,
-        "definitions",
-      );
-      let normalized;
-      try {
-        normalized = normalizeCatalogEntry(
-          YAML.parse(definitionText, {
-            schema: "core",
-            strict: true,
-            uniqueKeys: true,
-          }),
-          catalogEntry.id,
+    const statuses = [];
+    const nextListings = new Map();
+    const configured = options.getSources();
+    stats.sources_total = configured.length;
+
+    for (const source of configured) {
+      const official = isOfficialSourceUrl(source.url);
+      const read = await readSource(source, cache, stats, warnings);
+      const approvedKeyFingerprint = source.publicKey
+        ? keyFingerprint(Buffer.from(source.publicKey, "base64"))
+        : undefined;
+      let pluginCount = 0;
+      if (!read.listing && official && read.status.state === "unreachable") {
+        // Until the official source was read once, show what Ajour ships with.
+        for (const entry of BUILT_IN_PLUGIN_CATALOG_ENTRIES) {
+          if (!entries.some((candidate) => candidate.id === entry.id)) {
+            entries.push(entry);
+            pluginCount += 1;
+          }
+        }
+        warnings.push(
+          "Showing the built-in list of the official plugins until Ajour can read their source.",
         );
-      } catch {
-        // One entry this Ajour version cannot read, such as a newer
-        // capability, must not hide the rest of the catalog. It is not a
-        // cache fallback, so it stays out of the warnings; the refresh's
-        // event lists it.
-        skippedPluginIds.push(catalogEntry.id);
-        continue;
       }
-      const images = {};
-      for (const [role, imagePath] of Object.entries(
-        normalized.imagePaths ?? {},
-      )) {
-        const imageUrl = new URL(
-          `${path.posix.dirname(catalogEntry.path)}/${imagePath}`,
-          CATALOG_BASE_URL,
-        ).toString();
-        try {
-          images[`${role}DataUrl`] = await fetchImage(
-            imageUrl,
-            normalized.entry.id,
-            role,
-            imagePath,
-            cache,
-            warnings,
-            stats,
-          );
-        } catch (error) {
-          warnings.push(
-            `Artwork unavailable for ${normalized.entry.id}: ${error.message}`,
-          );
+      if (read.listing) {
+        nextListings.set(source.url, read.listing);
+        skippedPluginIds.push(...read.listing.manifest.skippedPluginIds);
+        for (const plugin of read.listing.manifest.plugins) {
+          // The first source that lists an id wins; the person orders sources.
+          if (entries.some((entry) => entry.id === plugin.id)) {
+            skippedPluginIds.push(plugin.id);
+            continue;
+          }
+          const images = {};
+          for (const role of ["thumbnail", "hero"]) {
+            try {
+              const dataUrl = await imageDataUrl(
+                { url: source.url, hostKind: read.hostKind },
+                plugin,
+                role,
+                stats,
+              );
+              if (dataUrl) images[`${role}DataUrl`] = dataUrl;
+            } catch (error) {
+              stats.images_failed += 1;
+              warnings.push(
+                `Artwork unavailable for ${plugin.id}: ${error.message}`,
+              );
+            }
+          }
+          entries.push(catalogEntry(source, read.listing, plugin, images));
+          pluginCount += 1;
         }
       }
-      entries.push({
-        ...normalized.entry,
-        ...(Object.keys(images).length > 0 ? { images } : {}),
+      statuses.push({
+        url: source.url,
+        official,
+        pluginCount,
+        ...read.status,
+        ...(approvedKeyFingerprint &&
+        approvedKeyFingerprint !== read.status.keyFingerprint
+          ? { approvedKeyFingerprint }
+          : {}),
+        ...(read.status.message
+          ? { message: read.status.message.slice(0, 500) }
+          : {}),
       });
     }
+
+    if (
+      configured.length > 0 &&
+      stats.sources_read + stats.sources_cached + stats.sources_blocked === 0
+    ) {
+      // Nothing read and nothing saved: keep what the catalog showed.
+      throw Object.assign(
+        new Error(
+          statuses.find((status) => status.message)?.message ??
+            "No plugin source could be read.",
+        ),
+        { statuses },
+      );
+    }
+
     const checkedAt = now().toISOString();
+    // Only listings of sources still configured stay cached.
+    const keptSources = Object.fromEntries(
+      Object.entries(cache.sources).filter(([url]) =>
+        configured.some((source) => source.url === url),
+      ),
+    );
     await atomicWrite(
       cacheFile,
-      JSON.stringify({ resources: cache.resources, checkedAt }, null, 2),
+      JSON.stringify({ sources: keptSources, checkedAt }, null, 2),
     );
+    listings = nextListings;
+    const usedCache = warnings.length > 0;
     currentCatalog = {
       entries,
+      sources: statuses,
       checkedAt,
-      source: warnings.length > 0 ? "cache" : "network",
-      ...(warnings.length > 0
-        ? { warning: warnings.join(" ").slice(0, 1_000) }
-        : {}),
+      source: usedCache ? "cache" : "network",
+      ...(usedCache ? { warning: warnings.join(" ").slice(0, 1_000) } : {}),
       ...(skippedPluginIds.length > 0
-        ? { skippedPluginIds: skippedPluginIds.slice(0, 100) }
+        ? { skippedPluginIds: [...new Set(skippedPluginIds)].slice(0, 100) }
         : {}),
     };
     builtIn = false;
@@ -699,20 +382,23 @@ function createPluginCatalogService(options) {
   }
 
   /**
-   * Refreshes the catalog. Never rejects: a refresh that fails keeps the
-   * current catalog, the cached one or the built-in snapshot. So `unit`, the
-   * refresh's `catalog.refresh` event, gets its outcome here: what came from
-   * the network, the cache and the snapshot, and the error when it failed.
+   * Refreshes the catalog from every source. Never rejects: a refresh that
+   * fails keeps the current catalog or the built-in snapshot. `unit`, the
+   * refresh's `catalog.refresh` event, gets its outcome here.
    */
-  /** @param {{ unit?: any }} [options] */
+  /** @param {{ unit?: any }} [refreshOptions] */
   async function refresh({ unit } = {}) {
     const stats = {
       bytes: 0,
-      definitions_fetched: 0,
-      definitions_revalidated: 0,
-      definitions_failed: 0,
+      sources_total: 0,
+      sources_read: 0,
+      sources_cached: 0,
+      sources_unreachable: 0,
+      sources_signed: 0,
+      sources_unsigned: 0,
+      sources_blocked: 0,
       images_fetched: 0,
-      images_revalidated: 0,
+      images_cached: 0,
       images_failed: 0,
     };
     const record = () =>
@@ -738,10 +424,11 @@ function createPluginCatalogService(options) {
       unit?.fail(error);
       currentCatalog = {
         ...currentCatalog,
+        ...(Array.isArray(error?.statuses) ? { sources: error.statuses } : {}),
         checkedAt: now().toISOString(),
         source: "cache",
         warning:
-          `The Ajour plugin index could not be refreshed. ${error.message}`.slice(
+          `Ajour could not read the plugin sources. ${error.message}`.slice(
             0,
             1_000,
           ),
@@ -751,136 +438,142 @@ function createPluginCatalogService(options) {
     }
   }
 
-  async function fetchJson(url) {
-    const response = await fetchWithTimeout(fetchImpl, url, {
-      headers: {
-        Accept: "application/vnd.github+json",
-        "User-Agent": "Ajour-plugin-catalog",
-      },
+  /**
+   * Reads a source before it is added, so the person sees its name, its
+   * plugins and the key that signs it. `publicKey` stays in the main process.
+   */
+  async function inspectSource(input) {
+    const url = normalizeSourceUrl(input);
+    const official = isOfficialSourceUrl(url);
+    const configured = options
+      .getSources()
+      .find((source) => source.url === url);
+    const hostKind = await hostKindOf({ url, hostKind: configured?.hostKind });
+    const { manifestBytes, signatureBytes } = await reader.readListing({
+      url,
+      hostKind,
     });
-    if (!response.ok) {
-      throw new Error(
-        `GitHub release lookup returned HTTP ${response.status}.`,
-      );
+    const manifest = parseSourceManifest(manifestBytes, {
+      skipInvalidPlugins: true,
+    });
+    let publicKey;
+    let fingerprint;
+    if (signatureBytes) {
+      const signature = parseSourceSignature(signatureBytes);
+      if (!verifySourceSignature(manifestBytes, signature)) {
+        throw new Error(
+          "This source's signature does not match its listing. Don't add it.",
+        );
+      }
+      publicKey = signature.publicKey.toString("base64");
+      fingerprint = keyFingerprint(signature.publicKey);
+      if (
+        official &&
+        officialKeys.length > 0 &&
+        !officialKeys.includes(publicKey)
+      ) {
+        throw new Error(
+          "The official source is signed with a key this Ajour does not know. Don't add it.",
+        );
+      }
     }
-    return JSON.parse(
-      (
-        await readBoundedResponse(response, MAX_RELEASE_RESPONSE_BYTES)
-      ).toString("utf8"),
-    );
+    return {
+      url,
+      name: manifest.name,
+      official,
+      hostKind,
+      signed: Boolean(publicKey),
+      ...(fingerprint ? { keyFingerprint: fingerprint } : {}),
+      publicKey,
+      plugins: manifest.plugins.map((plugin) => ({
+        id: plugin.id,
+        name: plugin.name,
+        version: plugin.version,
+      })),
+      alreadyAdded: Boolean(configured),
+    };
   }
 
-  async function downloadPluginArchive(pluginId) {
-    const catalog = currentCatalog ?? (await refresh());
-    const entry = catalog.entries.find(
-      (candidate) => candidate.id === pluginId,
+  /**
+   * Downloads a plugin from the source that lists it, at the commit the
+   * listing names, checks every file, and packs them for the installer.
+   * `origin` is what the API records, so the person can tell signed from
+   * unsigned later.
+   */
+  async function downloadPluginArchive(pluginId, sourceUrl) {
+    const entry = currentCatalog.entries.find(
+      (candidate) =>
+        candidate.id === pluginId &&
+        (sourceUrl === undefined || candidate.source.url === sourceUrl),
     );
     if (!entry || entry.status !== "available" || !entry.install) {
       throw notAvailable(`Plugin "${pluginId}" is not available for download.`);
     }
     if (
-      !entry.capabilities.includes("connector") &&
-      !entry.capabilities.includes("codeHost") &&
-      !entry.capabilities.includes("calendar") &&
-      !entry.capabilities.includes("team") &&
-      !entry.capabilities.includes("agentTask")
+      !entry.capabilities.some((capability) =>
+        INSTALLABLE_CAPABILITIES.has(capability),
+      )
     ) {
       throw notAvailable(
         "This Ajour version cannot install packaged schema plugins yet.",
       );
     }
-    const pattern = new RegExp(entry.install.assetPattern, "u");
-    // GitHub lists releases by creation time, which follows build completion
-    // order, not version order. Pick the highest version instead.
-    const candidates = [];
-    // Several plugins can publish from one repository, so the newest page may
-    // hold none of this plugin's releases. Read older pages until one does.
-    for (let page = 1; page <= MAX_RELEASE_PAGES; page += 1) {
-      const releasesUrl = `https://api.github.com/repos/${entry.repository.slug}/releases?per_page=${RELEASES_PER_PAGE}&page=${page}`;
-      const releases = await fetchJson(releasesUrl);
-      if (!Array.isArray(releases)) {
-        throw new Error("GitHub returned an invalid release list.");
-      }
-      releases.forEach((release, pageIndex) => {
-        if (
-          !isRecord(release) ||
-          release.draft === true ||
-          (release.prerelease === true && !entry.install.allowPrereleases) ||
-          !Array.isArray(release.assets)
-        ) {
-          return;
-        }
-        const matchingAssets = release.assets.filter(
-          (asset) =>
-            isRecord(asset) &&
-            typeof asset.name === "string" &&
-            pattern.test(asset.name),
-        );
-        if (matchingAssets.length === 0) {
-          return;
-        }
-        candidates.push({
-          release,
-          index: (page - 1) * RELEASES_PER_PAGE + pageIndex,
-          matchingAssets,
-          version: parseReleaseVersion(release.tag_name),
-        });
-      });
-      if (candidates.length > 0 || releases.length < RELEASES_PER_PAGE) {
-        break;
-      }
-    }
-    candidates.sort(compareReleaseCandidates);
-    const best = candidates[0];
-    if (best && best.matchingAssets.length > 1) {
-      throw new Error(
-        `Release ${best.release.tag_name ?? "unknown"} has multiple matching plugin assets.`,
-      );
-    }
-    const selectedAsset = best?.matchingAssets[0];
-    if (!selectedAsset) {
+    const listing = listings.get(entry.source.url);
+    const plugin = listing?.manifest.plugins.find(
+      (candidate) => candidate.id === pluginId,
+    );
+    if (!listing || !plugin?.files) {
       throw notAvailable(
-        `No compatible release asset is available for ${entry.title}.`,
+        `Ajour has not read ${entry.title}'s source yet. Refresh and try again.`,
       );
     }
-    const archiveFilename = assertString(
-      selectedAsset.name,
-      "release asset name",
-      { maximum: 240 },
-    );
-    const downloadUrl = assertHttpsUrl(
-      selectedAsset.browser_download_url,
-      "release download URL",
-    );
-    const expectedPrefix = `https://github.com/${entry.repository.slug}/releases/download/`;
-    if (!downloadUrl.startsWith(expectedPrefix)) {
-      throw new Error("GitHub returned an unexpected plugin download URL.");
+    const source = { url: entry.source.url, hostKind: listing.hostKind };
+    const files = await reader.readPluginFiles(source, plugin);
+    const manifestFile = files.find((file) => file.path === "plugin.json");
+    let manifest;
+    try {
+      manifest = JSON.parse(manifestFile.bytes.toString("utf8"));
+    } catch {
+      throw new Error(`${entry.title}'s plugin.json is not valid JSON.`);
     }
-    const response = await fetchWithTimeout(fetchImpl, downloadUrl, {
-      headers: { "User-Agent": "Ajour-plugin-catalog" },
-    });
-    if (!response.ok) {
-      throw new Error(`Plugin download returned HTTP ${response.status}.`);
+    if (manifest?.id !== plugin.id || manifest?.version !== plugin.version) {
+      throw new Error(
+        `${entry.title}'s plugin.json does not match its listing in ajour.json.`,
+      );
     }
-    const archiveBytes = await readBoundedResponse(
-      response,
-      MAX_PLUGIN_ARCHIVE_BYTES,
-    );
-    if (archiveBytes.byteLength < 1) {
-      throw new Error("The downloaded plugin archive is empty.");
+    const archiveBytes = createPluginArchive(files);
+    if (archiveBytes.byteLength > MAX_PLUGIN_ARCHIVE_BYTES) {
+      throw new Error(`${entry.title} is larger than Ajour installs.`);
     }
-    return { archiveBytes, archiveFilename, entry };
+    return {
+      archiveBytes,
+      archiveFilename: `${plugin.id}-${plugin.version}.ajour-connector`,
+      entry,
+      signed: listing.trust.signed,
+      origin: {
+        kind: "source",
+        signed: listing.trust.signed,
+        sourceUrl: entry.source.url,
+        sourceName: listing.manifest.name,
+        official: isOfficialSourceUrl(entry.source.url),
+        ...(listing.trust.signed && listing.trust.fingerprint
+          ? { keyFingerprint: listing.trust.fingerprint }
+          : {}),
+        commit: plugin.commit,
+        installedAt: now().toISOString(),
+      },
+    };
   }
 
   return {
     refresh,
     getCurrentCatalog: () => currentCatalog,
+    inspectSource,
     downloadPluginArchive,
   };
 }
 
 module.exports = {
-  CATALOG_URL,
   MAX_IMAGE_BYTES,
   MAX_PLUGIN_ARCHIVE_BYTES,
   createPluginCatalogService,

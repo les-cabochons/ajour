@@ -2,20 +2,16 @@
 
 The Calendar address (ICS) plugin shows the meetings in your Google Calendar, Outlook or Exchange calendar in the Time view, so you can add them as time entries. See [Calendar suggestions](/time/calendar-suggestions). It reads the calendar's private address, so it needs no sign-in. It never writes to your calendar.
 
-::: info Not in the catalog yet
-The catalog does not list this plugin. Install it from a file, as below.
-:::
-
 ## Set up
 
-1. Download the latest `ics-….ajour-connector` file from the [GitHub releases](https://github.com/les-cabochons/ajour-plugins/releases?q=ics) of the official plugins.
-2. In **Settings › Plugins**, press **Install from file** and choose the file. The plugin starts turned on.
+1. In **Settings › Plugins**, open the **Calendars** tab and press **Download** on **Calendar address (ICS)**. The plugin starts turned off.
+2. Turn on its switch.
 3. Get your calendar's address. See below.
 4. Open the plugin, press **Add a connection**, fill in the fields below, and press **Add connection**.
 
 Your meetings then show in the Time view, and **Settings › Calendar** appears.
 
-To update the plugin, download a newer file and press **Install from file** again. Ajour keeps its connections.
+When a newer version comes out, the plugin shows **Update**. Ajour keeps its connections.
 
 ## Get your calendar's address
 

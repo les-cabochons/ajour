@@ -63,6 +63,15 @@ const IPC_CHANNELS = {
     mode: "invoke",
   },
   "ajour:download-catalog-plugin": { event: "plugin.install", mode: "invoke" },
+  "ajour:inspect-plugin-source": {
+    event: "catalog.inspect_source",
+    mode: "invoke",
+  },
+  "ajour:add-plugin-source": { event: "catalog.add_source", mode: "invoke" },
+  "ajour:remove-plugin-source": {
+    event: "catalog.remove_source",
+    mode: "invoke",
+  },
   "ajour:uninstall-plugin": { event: "plugin.uninstall", mode: "invoke" },
   "ajour:get-development-plugin-settings": {
     event: "dev_plugins.get_settings",
@@ -76,6 +85,10 @@ const IPC_CHANNELS = {
     event: "dev_plugins.configure",
     mode: "invoke",
   },
+  // The local log file's settings (local-logs.cjs, ADR 0014).
+  "ajour:get-logs-status": { event: "logs.status", mode: "invoke" },
+  "ajour:configure-logs": { event: "logs.configure", mode: "invoke" },
+  "ajour:delete-all-logs": { event: "logs.delete_all", mode: "invoke" },
   // The one channel of a plugin's hidden page, not the window's
   // (plugin-renderer-runtime.cjs).
   "ajour:plugin-renderer": {
