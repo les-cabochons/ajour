@@ -1249,6 +1249,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       defaultProjectDataShapePluginDirectories(),
     requestTimeoutMs: options.pluginRequestTimeoutMs,
     runtime: pluginRuntime,
+    admitPluginApi4: allowDevelopmentPlugins,
     events,
   });
   const allowedOrigins = new Set(

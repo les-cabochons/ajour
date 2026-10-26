@@ -26,6 +26,7 @@ import {
 } from "../../../packages/shared/project-data-shapes.ts";
 import {
   readProjectDataShapePlugin,
+  type ProjectDataShapeAdmissionPolicy,
   type ResolvedProjectDataShapePlugin,
 } from "./project-data-shape-plugin.ts";
 
@@ -34,6 +35,11 @@ interface ProjectDataShapeHostOptions {
   requestTimeoutMs?: number;
   /** What runs plugin code. A worker thread per operation by default. */
   runtime?: PluginRuntime;
+  /**
+   * Whether plugin API 4 data shape packages are admitted. Development builds
+   * admit them until the cut-over (#403); a packaged build lists none.
+   */
+  admitPluginApi4?: boolean;
   /** Where each worker run's `plugin_operation` event goes. Nowhere by default. */
   events?: ApiEvents;
 }
@@ -59,17 +65,22 @@ function comparePlugins(
 export class ProjectDataShapePluginManager {
   private readonly pluginDirectories: string[];
   private readonly events?: ApiEvents;
+  private readonly admission: ProjectDataShapeAdmissionPolicy;
+  private readonly runsPluginApi4: boolean;
   private readonly workers: PluginWorkerLifetime<PluginMethod>;
 
   constructor(options: ProjectDataShapeHostOptions = {}) {
     this.pluginDirectories = options.pluginDirectories ?? [];
     this.events = options.events;
+    this.admission = { admitPluginApi4: options.admitPluginApi4 ?? false };
+    const runtime = options.runtime ?? new WorkerPluginRuntime();
+    this.runsPluginApi4 = runtime.runsPluginApi4 === true;
     this.workers = new PluginWorkerLifetime({
       name: "Schema plugin",
       events: options.events,
       eventNames: SCHEMA_OPERATION_EVENTS,
       requestTimeoutMs: options.requestTimeoutMs ?? 30_000,
-      runtime: options.runtime ?? new WorkerPluginRuntime(),
+      runtime,
     });
   }
 
@@ -170,7 +181,10 @@ export class ProjectDataShapePluginManager {
     const plugins = new Map<string, ResolvedProjectDataShapePlugin>();
     for (const directory of this.pluginDirectories) {
       try {
-        const plugin = await readProjectDataShapePlugin(directory);
+        const plugin = await readProjectDataShapePlugin(
+          directory,
+          this.admission,
+        );
         plugins.set(plugin.manifest.id, plugin);
       } catch {
         // Skipped, as an invalid plugin package is: the event counts it.
@@ -193,6 +207,14 @@ export class ProjectDataShapePluginManager {
       source: "development",
       apiVersion: plugin.manifest.apiVersion,
     });
+    // A worker thread would give an API 4 plugin the network. It runs only
+    // in a runtime that keeps it to the broker.
+    if (plugin.manifest.apiVersion >= 4 && !this.runsPluginApi4) {
+      throw new PluginOperationRefused(
+        `Schema plugin "${pluginId}" uses plugin API 4, which this version of Ajour can't run yet.`,
+        "not_supported",
+      );
+    }
     return plugin;
   }
 }

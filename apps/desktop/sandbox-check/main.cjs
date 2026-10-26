@@ -246,7 +246,7 @@ async function main() {
       path.join(FIXTURES, "fixture-tracker"),
       path.join(FIXTURES, "fixture-escape"),
     ],
-    projectDataShapePluginDirectories: [],
+    projectDataShapePluginDirectories: [path.join(FIXTURES, "fixture-shape")],
     allowDevelopmentPlugins: true,
     pluginApi4Runtime: runtime,
     brokerActivityWindowMs: 0,
@@ -541,6 +541,41 @@ async function main() {
       ),
     };
     report("lifecycle", { afterCancel, afterTimeout, afterCrash, escapePid });
+
+    // 7. A project data shape, an API 4 package without network or
+    //    connection fields, exports and imports in a renderer of its own.
+    const shapeProjects = [
+      { name: "Mercury", color: "#123456", status: "active", tasks: [] },
+      {
+        name: "Venus",
+        color: "#654321",
+        status: "archived",
+        tasks: [{ name: "Task", status: "active", billable: true }],
+      },
+    ];
+    const listed = await request("GET", "/api/project-data-shapes");
+    const exported = await request(
+      "POST",
+      "/api/project-data-shapes/fixture-shape/export",
+      { projects: shapeProjects },
+    );
+    const imported = await request(
+      "POST",
+      "/api/project-data-shapes/fixture-shape/import",
+      { datasets: exported.body?.datasets ?? [] },
+    );
+    report("dataShape", {
+      listed: (listed.body?.plugins ?? []).map((plugin) => ({
+        id: plugin.id,
+        apiVersion: plugin.apiVersion,
+      })),
+      exportStatus: exported.status,
+      datasets: exported.body?.datasets ?? null,
+      importStatus: imported.status,
+      projects: imported.body?.projects ?? null,
+      error: exported.body?.error ?? imported.body?.error ?? null,
+      rendererOpen: "fixture-shape" in runtime.rendererProcessIds(),
+    });
   }
 
   const appPids = app.getAppMetrics().map((metric) => metric.pid);
