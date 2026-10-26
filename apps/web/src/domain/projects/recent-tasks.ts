@@ -21,9 +21,8 @@ export function taskUseKey(projectId: string, taskId: string) {
 }
 
 /**
- * When each task was last used: the latest save of one of its entries, or the
- * start of a running entry on it. Nothing is stored for this; saving and
- * starting are the use.
+ * When each task was last used: the latest save of one of its entries, by
+ * its first save, Stop or an edit, or the start of a running entry on it.
  */
 export function getTaskLastUsedTimes(
   timesheetEntries: readonly LocalTimesheetEntry[],
@@ -41,7 +40,11 @@ export function getTaskLastUsedTimes(
   };
 
   for (const entry of timesheetEntries) {
-    use(entry.projectId, entry.taskId, entry.committedAt);
+    use(
+      entry.projectId,
+      entry.taskId,
+      Math.max(entry.committedAt, entry.usedAt ?? -Infinity),
+    );
   }
   for (const timer of timers) {
     use(timer.projectId, timer.taskId, timer.startedAt);

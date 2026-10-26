@@ -75,6 +75,15 @@ describe("recent tasks", () => {
     expect(recent[0]?.usedAt).toBe(30);
   });
 
+  it("counts a continued entry's Stop, which keeps its first save time", () => {
+    const projects = [project("p", ["a", "b"])];
+    const continued = { ...entry("p", "a", 10), usedAt: 40 };
+
+    expect(
+      ids(getRecentTasks(projects, [continued, entry("p", "b", 30)], [])),
+    ).toEqual(["a", "b"]);
+  });
+
   it("leaves out entries without a task, gone tasks and archived ones", () => {
     const projects = [
       project("p", ["a", "archived-b"]),

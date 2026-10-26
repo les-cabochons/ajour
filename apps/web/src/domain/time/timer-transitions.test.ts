@@ -346,6 +346,29 @@ describe("timer and timesheet entry lifecycle", () => {
     });
   });
 
+  it("keeps a continued entry's place and stamps when Stop saved it", () => {
+    const originalEntry = createEntry();
+    const state = createState({
+      timesheetEntries: [originalEntry],
+      timers: [
+        createRunningTimer({
+          startedAt: 900,
+          localDate: originalEntry.localDate,
+          projectId: originalEntry.projectId,
+          taskId: originalEntry.taskId,
+          entryId: originalEntry._id,
+        }),
+      ],
+    });
+
+    const saved = saveTimer(state, "timer-1", createFactories(5_000));
+
+    expect(saved.timesheetEntries[0]).toMatchObject({
+      committedAt: originalEntry.committedAt,
+      usedAt: 5_000,
+    });
+  });
+
   it("replaces a restarted entry and keeps its source blocks", () => {
     const originalEntry = createEntry({ sourceBlockIds: ["browser:1"] });
     const state = createState({

@@ -265,7 +265,7 @@ The project and task picker of the entry editor, the Week Grid's new row and cal
 
 ### Recent tasks
 
-- Recent tasks lists tasks only, never projects, newest first. A task is used when time is saved to it or a running entry starts on it; nothing else is stored.
+- Recent tasks lists tasks only, never projects, newest first. A task is used when an entry on it is saved, by its first save, Stop or an edit, or when a running entry starts on it. A continued entry keeps its place in the Day view, so each entry stores when it was last saved apart from its first save.
 - Each row shows the project's icon and how long ago the task was used, such as "5m", "2h", "3d" or "2w".
 - The start view shows the first 3 recent tasks that are not favorites, so it never repeats a row. "More recent tasks" opens the Recent page with the 10 tasks used last, favorites included. It works like the Favorites page.
 - Archived tasks and tasks in archived projects are left out.
