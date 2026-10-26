@@ -132,4 +132,10 @@ contextBridge.exposeInMainWorld("ajourDesktop", {
       "ajour:clear-development-plugin-directories",
       ...traced(trace),
     ),
+  getLogsStatus: (trace) =>
+    ipcRenderer.invoke("ajour:get-logs-status", ...traced(trace)),
+  configureLogs: (settings, trace) =>
+    ipcRenderer.invoke("ajour:configure-logs", settings, ...traced(trace)),
+  deleteAllLogs: (trace) =>
+    ipcRenderer.invoke("ajour:delete-all-logs", ...traced(trace)),
 });

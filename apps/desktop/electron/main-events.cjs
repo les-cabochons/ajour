@@ -69,24 +69,67 @@ function apiLaunchOf(launch) {
   };
 }
 
+/** Imports one of the wide-events package's entry points from `packageRoot`. */
+function loadEntry(packageRoot, file) {
+  return import(pathToFileURL(path.join(packageRoot, file)).toString());
+}
+
+/**
+ * Loads the package's local log file (ADR 0014), which writes the events of
+ * `directory`'s day files with the stored `settings`. Nothing is created on
+ * disk until an event is written.
+ */
+async function loadLocalLogFile({ packageRoot, directory, settings }) {
+  const [{ createLocalLogFile }, { catalog }] = await Promise.all([
+    loadEntry(packageRoot, "local-log-file.ts"),
+    loadEntry(packageRoot, "catalog.ts"),
+  ]);
+  return createLocalLogFile({ directory, catalog, settings });
+}
+
+/**
+ * The one sink the main process's events and the local API's share: the
+ * console when the developer switch asks for it, and the local log file
+ * once `logFile` resolves to it. Each gets every event; the file keeps only
+ * what its privacy filter lets through. Without either, it is `nowhere`.
+ */
+async function loadMainSink({
+  packageRoot,
+  sinkSwitch = undefined,
+  write = undefined,
+  logFile = undefined,
+}) {
+  const [{ fanOut, sinkFromSwitch }, file] = await Promise.all([
+    loadEntry(packageRoot, "sinks.ts"),
+    Promise.resolve(logFile).catch(() => null),
+  ]);
+  return fanOut(
+    sinkFromSwitch(sinkSwitch, write),
+    ...(file ? [file.sink] : []),
+  );
+}
+
 /**
  * Loads the wide-events package from `packageRoot` the way the main process
  * loads the local API, and resolves a factory for the main process's emitter.
  * The factory takes the clock and the scope, which `createMainEvents` owns.
+ * Its events go to `sink` when given, as main.cjs gives `loadMainSink`'s, or
+ * else where the developer switch sends them.
  */
 async function loadMainEmitter({
   packageRoot,
   launch,
   homeDirectory,
   userDataPath,
-  sinkSwitch,
+  sinkSwitch = undefined,
   write = undefined,
+  sink: givenSink = undefined,
 }) {
-  const load = (file) =>
-    import(pathToFileURL(path.join(packageRoot, file)).toString());
-  const [{ createEmitter }, { catalog }, { sinkFromSwitch }] =
-    await Promise.all([load("index.ts"), load("catalog.ts"), load("sinks.ts")]);
-  const sink = sinkFromSwitch(sinkSwitch, write);
+  const [{ createEmitter }, { catalog }, sink] = await Promise.all([
+    loadEntry(packageRoot, "index.ts"),
+    loadEntry(packageRoot, "catalog.ts"),
+    givenSink ?? loadMainSink({ packageRoot, sinkSwitch, write }),
+  ]);
   return (now, scope) =>
     createEmitter({
       catalog,
@@ -328,7 +371,9 @@ module.exports = {
   apiStopOf,
   createLaunchContext,
   createMainEvents,
+  loadLocalLogFile,
   loadMainEmitter,
+  loadMainSink,
   readLaunchVersion,
   triggerOf,
   writeLaunchVersion,

@@ -5,6 +5,15 @@ import {
   projectDataShapePluginManifestSchema,
   type ProjectDataShapePluginManifest,
 } from "../../../packages/shared/project-data-shapes.ts";
+import {
+  PLUGIN_API_4,
+  isPluginApi4Manifest,
+} from "../../../packages/shared/plugin-api-4.ts";
+import {
+  PACKAGED_BUILD,
+  parsePluginManifest,
+  type PluginAdmissionPolicy,
+} from "./plugin-package.ts";
 
 const ALLOWED_ENTRYPOINT_EXTENSIONS = new Set([
   ".cjs",
@@ -53,8 +62,65 @@ async function assertRegularPluginFile(
   }
 }
 
+function dataShapeApi1Manifest(raw: unknown): ProjectDataShapePluginManifest {
+  const manifest = projectDataShapePluginManifestSchema.parse(raw);
+  if (manifest.apiVersion !== PROJECT_DATA_SHAPE_PLUGIN_API_VERSION) {
+    throw new Error(
+      `Schema plugin "${manifest.id}" requires API version ${manifest.apiVersion}; this app supports version ${PROJECT_DATA_SHAPE_PLUGIN_API_VERSION}.`,
+    );
+  }
+  return manifest;
+}
+
+/**
+ * The data shape of a plugin API 4 package. The host gives it no connection
+ * and no broker, so it may declare no network or connection fields, and it
+ * is loaded when needed: nothing of it stays ready between operations.
+ */
+function dataShapeOfApi4Package(
+  raw: unknown,
+  policy: PluginAdmissionPolicy,
+): ProjectDataShapePluginManifest {
+  // The plugin host's own check: every API 4 rule applies, and a build that
+  // does not admit API 4 refuses the package.
+  const manifest = parsePluginManifest(raw, policy);
+  if (!isPluginApi4Manifest(manifest)) {
+    throw new Error("Schema plugin is not a plugin API 4 package.");
+  }
+  const label = `Schema plugin "${manifest.id}"`;
+  const projectDataShape = manifest.capabilities.projectDataShape;
+  if (!projectDataShape) {
+    throw new Error(`${label} declares no project data shape.`);
+  }
+  if (manifest.network !== undefined) {
+    throw new Error(`${label} may not declare network access.`);
+  }
+  if (manifest.connectionFields.length > 0) {
+    throw new Error(`${label} may not declare connection fields.`);
+  }
+  if (manifest.connectionAccess.length > 0) {
+    throw new Error(`${label} may not declare connection access.`);
+  }
+  if (manifest.runtime.start !== "whenNeeded") {
+    throw new Error(`${label} must load when needed.`);
+  }
+  return projectDataShapePluginManifestSchema.parse({
+    id: manifest.id,
+    version: manifest.version,
+    apiVersion: manifest.apiVersion,
+    displayName: manifest.displayName,
+    ...(manifest.description !== undefined
+      ? { description: manifest.description }
+      : {}),
+    iconSvg: manifest.iconSvg,
+    entrypoint: manifest.entrypoint,
+    capabilities: { projectDataShape },
+  });
+}
+
 export async function readProjectDataShapePlugin(
   directory: string,
+  policy: PluginAdmissionPolicy = PACKAGED_BUILD,
 ): Promise<ResolvedProjectDataShapePlugin> {
   const pluginDirectory = path.resolve(directory);
   const canonicalPluginDirectory = await realpath(pluginDirectory);
@@ -66,14 +132,11 @@ export async function readProjectDataShapePlugin(
     "Schema plugin manifest",
   );
 
-  const manifest = projectDataShapePluginManifestSchema.parse(
-    JSON.parse(await readFile(manifestPath, "utf8")),
-  );
-  if (manifest.apiVersion !== PROJECT_DATA_SHAPE_PLUGIN_API_VERSION) {
-    throw new Error(
-      `Schema plugin "${manifest.id}" requires API version ${manifest.apiVersion}; this app supports version ${PROJECT_DATA_SHAPE_PLUGIN_API_VERSION}.`,
-    );
-  }
+  const raw: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
+  const manifest =
+    (raw as { apiVersion?: unknown } | null)?.apiVersion === PLUGIN_API_4
+      ? dataShapeOfApi4Package(raw, policy)
+      : dataShapeApi1Manifest(raw);
   if (path.isAbsolute(manifest.entrypoint)) {
     throw new Error(
       `Schema plugin "${manifest.id}" entrypoint must be relative.`,
