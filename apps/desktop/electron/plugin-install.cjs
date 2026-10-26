@@ -79,14 +79,20 @@ async function selectPluginArchive(
  * The codes an install failure carries when its cause is known: the
  * package itself, or the plugin host being busy.
  */
-const KNOWN_RESULTS = new Set(["invalid_archive", "not_available", "busy"]);
+const KNOWN_RESULTS = new Set([
+  "invalid_archive",
+  "not_available",
+  "busy",
+  "unsigned_not_allowed",
+]);
 
 /**
  * A failed install's result for its `plugin.install` event, from the code
  * the error carries: `invalid_archive` from the local API's installer
  * (apps/api/src/plugin-package.ts) or from picking an archive here,
- * `not_available` from the catalog, and `busy` from the plugin host while
- * plugin operations run (apps/api/src/plugin-host.ts). Anything else is the
+ * `not_available` from the catalog, `busy` from the plugin host while
+ * plugin operations run (apps/api/src/plugin-host.ts), and
+ * `unsigned_not_allowed` when unsigned installs are off. Anything else is the
  * machine or Ajour failing.
  */
 function pluginInstallResultOf(error) {

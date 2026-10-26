@@ -281,7 +281,10 @@ export function desktopBridgeScript() {
   window.ajourDesktop = {
     runtime: { automaticUpdatesEnabled: false, developmentBuild: false, platform: "web", version: "1.4.0" },
     getPluginCatalog: async () => ({ entries, checkedAt: new Date().toISOString(), source: "network" }),
-    getPluginCatalogSettings: async () => ({ refreshMinutes: 15 }),
+    getPluginCatalogSettings: async () => ({
+      refreshMinutes: 15,
+      allowUnsignedInstalls: false,
+    }),
     configurePluginCatalog: async (settings) => settings,
     onPluginCatalogUpdated: () => () => {},
     downloadCatalogPlugin: async () => { throw new Error("Not in screenshots"); },

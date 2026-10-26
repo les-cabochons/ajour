@@ -630,12 +630,45 @@ export type PluginSandboxStatus = z.infer<typeof pluginSandboxStatusSchema>;
  * development build may declare only a project data shape, so the overview
  * reads its capabilities without the at-least-one rule.
  */
+/** A plugin source key's fingerprint: 16 hex characters in groups of four. */
+export const pluginKeyFingerprintSchema = z
+  .string()
+  .regex(/^[0-9a-f]{4}(?: [0-9a-f]{4}){3}$/);
+
+/**
+ * Where an installed plugin came from, as Ajour recorded it at install. A
+ * plugin is signed only when it came from a plugin source whose `ajour.json`
+ * signature verified; a file install, a development folder and a plugin
+ * installed before Ajour kept origins are unsigned.
+ */
+export const pluginOriginSchema = z.object({
+  kind: z.enum(["source", "file"]),
+  signed: z.boolean(),
+  sourceUrl: z.string().url().max(500).optional(),
+  sourceName: z.string().trim().min(1).max(80).optional(),
+  official: z.boolean().optional(),
+  keyFingerprint: pluginKeyFingerprintSchema.optional(),
+  commit: z
+    .string()
+    .regex(/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/)
+    .optional(),
+  installedAt: z.string().datetime(),
+});
+export type PluginOrigin = z.infer<typeof pluginOriginSchema>;
+
+/** Whether the plugin came from a plugin source whose signature verified. */
+export function isSignedPlugin(plugin: { origin?: PluginOrigin }) {
+  return plugin.origin?.signed === true;
+}
+
 const pluginOverviewItemSchema = pluginManifestObjectSchema.extend({
   capabilities: pluginCapabilitiesObjectSchema.extend({
     projectDataShape: projectDataShapeDefinitionSchema.optional(),
   }),
   entrypoint: z.string().trim().max(240).optional(),
   unavailableReason: z.string().max(1000).optional(),
+  /** Absent for a plugin with no recorded origin, which counts as unsigned. */
+  origin: pluginOriginSchema.optional(),
 });
 export type PluginOverviewItem = z.infer<typeof pluginOverviewItemSchema>;
 
@@ -731,6 +764,11 @@ export function isCapabilityActive(
 
 export const pluginsOverviewSchema = z.object({
   pluginsEnabled: z.boolean(),
+  /**
+   * False when the user deactivated every unsigned plugin. An overview cached
+   * before the switch existed reads as true.
+   */
+  unsignedPluginsEnabled: z.boolean().default(true),
   plugins: z.array(pluginOverviewItemSchema),
   connectionGroups: z.array(pluginOverviewGroupSchema),
   totalPendingImportCount: z.number().int().nonnegative(),
@@ -743,6 +781,11 @@ export const pluginsOverviewSchema = z.object({
 export type PluginsOverview = z.infer<typeof pluginsOverviewSchema>;
 
 export const pluginSystemActivationUpdateSchema = z.object({
+  enabled: z.boolean(),
+});
+
+/** Lets unsigned plugins run, or deactivates all of them. */
+export const unsignedPluginsActivationUpdateSchema = z.object({
   enabled: z.boolean(),
 });
 
