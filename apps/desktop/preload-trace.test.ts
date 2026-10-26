@@ -3,13 +3,13 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import vm from "node:vm";
 import { describe, expect, it } from "vitest";
-import { recordingEvents } from "./recording-events.ts";
+import { noWindowSession, recordingEvents } from "./recording-events.ts";
 
 const require = createRequire(import.meta.url);
 const { createIpcListeners } = require("./electron/ipc-listeners.cjs") as {
   createIpcListeners: (
     ipcMain: FakeIpcMain,
-    options: { events: unknown },
+    options: { events: unknown; windowSession: () => unknown },
   ) => {
     handle: (channel: string, listener: Listener) => void;
     onMessage: (channel: string, listener: Listener) => void;
@@ -40,7 +40,11 @@ class FakeIpcMain extends EventEmitter {
 async function loadPreload({ runtime = null }: { runtime?: unknown } = {}) {
   const ipcMain = new FakeIpcMain();
   const { events, recorded } = recordingEvents();
-  const ipc = createIpcListeners(ipcMain, { events });
+  // The fake sender carries no session: the window's is none.
+  const ipc = createIpcListeners(ipcMain, {
+    events,
+    windowSession: noWindowSession,
+  });
   const sender = { sender: "window" };
   // IPC sends a structured clone, as Electron does.
   const ipcRenderer = {

@@ -822,6 +822,33 @@ describe("the credential broker", () => {
       expect(text(sent[0]!.body!)).toBe('{"jql":"project = ENG"}');
     });
 
+    it("refuses a header value the network stack would refuse, before anything is sent", async () => {
+      const { operation, sent } = setup();
+      const broker = operation();
+
+      for (const value of ["price in €", "a\u0001b", "a\u007fb", "Ā"]) {
+        const error = await refusal(
+          broker.http({
+            connectionId: "jira_1",
+            method: "GET",
+            path: "/rest/api/3/myself",
+            headers: { Accept: value },
+          }),
+        );
+        expect(error.reason, JSON.stringify(value)).toBe("invalid_request");
+      }
+      expect(sent).toEqual([]);
+
+      // Tab, space, printable ASCII and Latin-1 are the values Electron takes.
+      await broker.http({
+        connectionId: "jira_1",
+        method: "GET",
+        path: "/rest/api/3/myself",
+        headers: { Accept: "a\tb ~ éÿ" },
+      });
+      expect(sent).toHaveLength(1);
+    });
+
     it("refuses the header a header template sets", async () => {
       const base = manifest();
       const { operation } = setup({
@@ -1460,6 +1487,75 @@ describe("the credential broker", () => {
       }
     });
 
+    it("connects a public name only to the addresses it checked, and keeps the name for the service", async () => {
+      const resolver = fakeResolver({
+        "acme.atlassian.net": ["151.101.1.69", "2a04:4e42::645"],
+      });
+      const { operation, sent, requestEvents } = setup({ resolver });
+
+      await operation().http(request);
+
+      // Resolved once, and the request goes to those addresses only: a name
+      // that rebinds after the check can't move it elsewhere.
+      expect(resolver.asked).toEqual(["acme.atlassian.net"]);
+      expect(sent).toHaveLength(1);
+      expect(sent[0]).toMatchObject({
+        url: "https://acme.atlassian.net/rest/api/3/myself",
+        connectTo: ["151.101.1.69", "2a04:4e42::645"],
+      });
+      expect(requestEvents()[0]).toMatchObject({
+        outcome: "ok",
+        broker: { answer_address: "pinned" },
+      });
+    });
+
+    it("pins a public IPv6 answer, and refuses the IPv6 and IPv4-mapped forms of a private one before sending", async () => {
+      const ipv6 = setup({
+        resolver: fakeResolver({
+          "acme.atlassian.net": ["2606:4700:4700::1111"],
+        }),
+      });
+      await ipv6.operation().http(request);
+      expect(ipv6.sent[0]!.connectTo).toEqual(["2606:4700:4700::1111"]);
+
+      for (const address of [
+        "::ffff:127.0.0.1",
+        "::ffff:7f00:1",
+        "::ffff:10.0.0.7",
+        "::ffff:169.254.169.254",
+        "::127.0.0.1",
+        "[::1]",
+        "0:0:0:0:0:0:0:1",
+        "fe80::1%eth0",
+        "fd00:ec2::254",
+        "2002:a00:1::",
+        "ff02::1",
+      ]) {
+        const { operation, sent } = setup({
+          resolver: fakeResolver({ "acme.atlassian.net": [address] }),
+        });
+        const error = await refusal(operation().http(request));
+        expect(error.reason, address).toBe("private_address");
+        expect(sent, address).toEqual([]);
+      }
+    });
+
+    it("refuses a public name that resolves to this computer, as wildcard DNS does, before sending", async () => {
+      for (const [baseUrl, address] of [
+        ["https://127.0.0.1.nip.io", "127.0.0.1"],
+        ["https://10.0.0.7.sslip.io", "10.0.0.7"],
+        ["https://localtest.me", "::1"],
+      ] as const) {
+        const { operation, sent } = setup({
+          connections: { "ajc-jira": [jiraConnection({}, { baseUrl })] },
+          resolver: fakeResolver({ [new URL(baseUrl).hostname]: [address] }),
+        });
+        const error = await refusal(operation().http(request));
+        expect(error.reason, baseUrl).toBe("private_address");
+        expect(sent, baseUrl).toEqual([]);
+      }
+    });
+
     it("refuses an address literal that is private", async () => {
       for (const baseUrl of [
         "https://127.0.0.1",
@@ -1476,7 +1572,7 @@ describe("the credential broker", () => {
       }
     });
 
-    it("drops the answer of a host that rebound to a private address after it was checked", async () => {
+    it("refuses and drops the answer a transport reports from a private address, even on a pinned request", async () => {
       const { operation, sent, activity } = setup({
         respond: () => ({
           status: 200,
@@ -1493,6 +1589,67 @@ describe("the credential broker", () => {
       expect(activity).toEqual([
         { kind: "blocked", pluginId: "ajc-jira", connectionId: "jira_1" },
       ]);
+    });
+
+    it("pins each redirect to its own host's checked addresses, and refuses one to a name that resolves privately before following it", async () => {
+      const ics = manifest({
+        connectionFields: [
+          {
+            id: "feedUrl",
+            label: "Feed address",
+            type: "password",
+            required: true,
+            secret: true,
+          },
+        ],
+        capabilities: { calendar: {} },
+        network: { auth: { scheme: "secretAddress", secretField: "feedUrl" } },
+        connectionAccess: [],
+      });
+      const feedAddress = "https://calendar.example.org/feeds/9d1c4b7e.ics";
+      const feed = jiraConnection({
+        values: { feedUrl: feedAddress },
+        secrets: [feedAddress],
+      });
+      const redirectTo = (location: string) =>
+        setup({
+          manifest: ics,
+          connections: { "ajc-jira": [feed] },
+          resolver: fakeResolver({
+            "calendar.example.org": ["151.101.1.69"],
+            "cdn.example.net": ["2a04:4e42::645"],
+            "rebind.example.net": ["192.168.1.20"],
+          }),
+          respond: (sent) =>
+            sent.url === feedAddress
+              ? { status: 302, headers: { location } }
+              : { status: 200 },
+        });
+
+      const followed = redirectTo("https://cdn.example.net/feed.ics");
+      await followed.operation().http({
+        connectionId: "jira_1",
+        method: "GET",
+        path: "",
+      });
+      const refusedHop = redirectTo("https://rebind.example.net/feed.ics");
+      const error = await refusal(
+        refusedHop
+          .operation()
+          .http({ connectionId: "jira_1", method: "GET", path: "" }),
+      );
+
+      expect(
+        followed.sent.map(({ url, connectTo }) => ({ url, connectTo })),
+      ).toEqual([
+        { url: feedAddress, connectTo: ["151.101.1.69"] },
+        {
+          url: "https://cdn.example.net/feed.ics",
+          connectTo: ["2a04:4e42::645"],
+        },
+      ]);
+      expect(error.reason).toBe("private_address");
+      expect(refusedHop.sent.map(({ url }) => url)).toEqual([feedAddress]);
     });
 
     it("checks each redirect's host again", async () => {
@@ -1534,6 +1691,32 @@ describe("the credential broker", () => {
 
       expect(response.status).toBe(200);
       expect(sent[0]!.url).toBe("http://10.0.0.5:8080/jira/rest/api/3/myself");
+      // Nothing is judged on-premises, so nothing is pinned.
+      expect(sent[0]!.connectTo).toBeUndefined();
+    });
+
+    it("reaches a public name that resolves privately for a connection marked on-premises, without pinning it", async () => {
+      const resolver = fakeResolver({ "jira.acme.example": ["10.0.0.5"] });
+      const { operation, sent, requestEvents } = setup({
+        connections: {
+          "ajc-jira": [
+            jiraConnection(
+              { onPremises: true },
+              { baseUrl: "https://jira.acme.example" },
+            ),
+          ],
+        },
+        resolver,
+      });
+
+      await expect(operation().http(request)).resolves.toMatchObject({
+        status: 200,
+      });
+
+      expect(resolver.asked).toEqual([]);
+      expect(sent).toHaveLength(1);
+      expect(sent[0]!.connectTo).toBeUndefined();
+      expect(requestEvents()[0]!.broker).not.toHaveProperty("answer_address");
     });
 
     it("sends through a proxy that resolves the host itself, and doesn't judge the proxy's address", async () => {
@@ -1546,6 +1729,8 @@ describe("the credential broker", () => {
         status: 200,
       });
       expect(sent).toHaveLength(1);
+      // The proxy connects, so the broker has no address to pin.
+      expect(sent[0]!.connectTo).toBeUndefined();
     });
 
     it("judges the address that answered a proxied request when it isn't the proxy's, as when a PAC file falls back to DIRECT", async () => {
@@ -1576,9 +1761,17 @@ describe("the credential broker", () => {
       expect(error.reason).toBe("private_address");
     });
 
-    it("says in the event when nothing told it which address answered", async () => {
-      const unknown = setup({ respond: () => ({ status: 200 }) });
+    it("says in the event when nothing told it which address answered an unpinned request", async () => {
+      // An address literal can't rebind, so it isn't pinned: the address
+      // that answered is judged after the request, when the stack names it.
+      const literal = {
+        connections: {
+          "ajc-jira": [jiraConnection({}, { baseUrl: "https://151.101.1.69" })],
+        },
+      };
+      const unknown = setup({ ...literal, respond: () => ({ status: 200 }) });
       const known = setup({
+        ...literal,
         respond: () => ({ status: 200, remoteAddress: "151.101.1.69" }),
       });
 

@@ -209,7 +209,10 @@ async function main() {
       now: clock,
     }),
   );
-  const ipcListeners = createIpcListeners(ipcMain, { events });
+  const ipcListeners = createIpcListeners(ipcMain, {
+    events,
+    windowSession: () => session.defaultSession,
+  });
   const runtime = createPluginRendererRuntime({
     app,
     session,

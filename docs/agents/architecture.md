@@ -435,11 +435,13 @@ API 4 packages in development builds of the desktop app, until the cut-over
   request names a connection, a derived host, a method, a relative path, a
   query, headers and a body, never a URL or a credential. The transport and
   the resolver are injected through `startAppApiServer`: main passes
-  `net.request` on an in-memory `ajour-broker` session, with manual
-  redirects and no credentials or cache, and `session.resolveHost`
-  (`apps/desktop/electron/broker-transport.cjs`). Without a transport, as in
-  the standalone API, every request is refused: plugins need the desktop
-  app.
+  `net.request` on in-memory sessions of its own, with manual redirects and
+  no credentials or cache, and `session.resolveHost`
+  (`apps/desktop/electron/broker-transport.cjs`). A pinned request goes on
+  `ajour-broker-pinned`, whose only route is the pinning tunnel
+  (`broker-pinning-tunnel.cjs`, below); any other on `ajour-broker`, which
+  follows the system proxy and PAC. Without a transport, as in the
+  standalone API, every request is refused: plugins need the desktop app.
 - **The connection** is looked up among the caller's own connections only,
   so another plugin's id and an unknown one give the same error. Its secrets
   are read from the vault for each request. A validation sends with the
@@ -473,13 +475,33 @@ API 4 packages in development builds of the desktop app, until the cut-over
   (`secretAddressHoldsUserinfo`, `broker-policy.ts`), since the plugin never
   sees the address and can't check it. `ajour.publicFetch` reaches only declared public
   hosts, over https, without credentials.
-- **Private addresses** are refused, from every address the host resolves to
-  and from the address that answered, when the transport can tell, unless
-  the connection is on-premises: a flag Ajour owns (`onPremises`), allowed
-  only when the manifest says `allowOnPremises`. A DNS-rebinding window
-  remains between the two checks (ADR 0010). Two gaps sit beside it. Through
-  a system proxy the proxy connects, so the address that answers is the
-  proxy's and isn't judged; the resolver names the proxies' own addresses
+- **Private addresses** are refused unless the connection is on-premises: a
+  flag Ajour owns (`onPremises`), allowed only when the manifest says
+  `allowOnPremises`. The broker resolves the host once per request and per
+  redirect, refuses it when any address is private (loopback, private,
+  link-local, unique local, carrier-grade NAT, multicast, reserved, and
+  every IPv4-mapped IPv6 address, `broker-addresses.ts`), and otherwise pins
+  the exchange to those addresses (`connectTo`), so nothing is sent to a
+  name that resolves privately, as wildcard DNS such as `127.0.0.1.nip.io`
+  does, and a name that rebinds after the check can't move the request.
+  `net.request` can't be told where to connect, so the pinned session's
+  only proxy is a CONNECT tunnel main runs on loopback, with no bypass, not
+  even for loopback: for each CONNECT it opens a TCP connection to an
+  address pinned for that host and port, and never resolves a name. A host
+  with no live pin gets 403 and nothing is connected, so another program on
+  this computer can reach through it only a public address the broker is
+  reaching then; anything but a CONNECT is closed unanswered. A pin holds
+  IP addresses only (the tunnel would otherwise resolve a name), the tunnel
+  holds at most 64 connections, gives up on an address that doesn't connect
+  within 10 seconds, and ends with the app at `will-quit`. TLS runs
+  inside the tunnel, so the Host header, the server name and the
+  certificate check stay the name's. The real-Electron check
+  (`sandbox-check/broker-pinning.cjs`) proves it. Its event says
+  `answer_address: "pinned"`. What isn't pinned is judged by the address
+  that answered, when the transport can tell (ADR 0010): an address
+  literal, which can't rebind, and a request through a system proxy, where
+  the proxy connects. Through a system proxy the address that answers is
+  the proxy's and isn't judged; the resolver names the proxies' own addresses
   from the PAC answer, so an answer from any other address, as when a PAC
   file falls back to `DIRECT`, is judged as an unproxied one, and when a
   proxy's name doesn't resolve no proxied answer is judged. Nor is the name
@@ -488,10 +510,17 @@ API 4 packages in development builds of the desktop app, until the cut-over
   a single label such as `intranet`, or one ending in `.local`, `.internal`,
   `.lan` or `.home.arpa`, as a secret address's redirect could otherwise
   reach the internal network through the proxy (on-premises connections
-  are exempt). And when
-  `webRequest` gives no `ip` for a request, only the check before it held:
-  the request goes on, and its event says `answer_address: "unknown"`
-  (`checked` and `proxy` otherwise).
+  are exempt). A public-looking name that only the proxy resolves, such as
+  `127.0.0.1.nip.io` on a network whose local DNS can't resolve it, passes
+  that check and the proxy then connects to wherever it resolves: no list
+  of such names is robust, and refusing every name this computer can't
+  resolve would break the proxies that exist to resolve them, so it is a
+  stated limit (ADR 0010). A PAC file's fallback to `DIRECT` connects where the proxy
+  would have, unpinned, so a name that rebinds then is caught only by the
+  check of the address that answered, after the request was sent. And
+  when `webRequest` gives no `ip` for an unpinned request, only the check
+  before it held: the request goes on, and its event says
+  `answer_address: "unknown"` (`checked` and `proxy` otherwise).
 - **The answer** loses `Set-Cookie`, `WWW-Authenticate` and any header that
   holds a secret, and every secret of the connection is replaced by
   `[secret]` in the body, whatever its type, with the shared redaction

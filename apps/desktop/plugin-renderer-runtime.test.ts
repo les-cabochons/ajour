@@ -6,7 +6,7 @@ import path from "node:path";
 import { setFlagsFromString } from "node:v8";
 import { runInNewContext } from "node:vm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { recordingEvents } from "./recording-events.ts";
+import { noWindowSession, recordingEvents } from "./recording-events.ts";
 
 /*
  * The sandboxed renderer runtime (#390) against a stand-in for Electron: what
@@ -28,7 +28,7 @@ const policy = require("./electron/plugin-renderer-policy.cjs") as {
 const { createIpcListeners } = require("./electron/ipc-listeners.cjs") as {
   createIpcListeners: (
     ipcMain: unknown,
-    options: { events: unknown },
+    options: { events: unknown; windowSession: () => unknown },
   ) => unknown;
 };
 
@@ -178,7 +178,8 @@ function setUp(
       handle: (channel: string, handler: () => unknown) =>
         handlers.set(channel, handler),
     },
-    { events },
+    // The plugin renderer's channel checks its senders itself.
+    { events, windowSession: noWindowSession },
   );
   const views: {
     options: { webPreferences: Record<string, unknown> };

@@ -5,7 +5,7 @@ import path from "node:path";
 import vm from "node:vm";
 import { createRequire } from "node:module";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { recordingEvents } from "./recording-events.ts";
+import { noWindowSession, recordingEvents } from "./recording-events.ts";
 
 const require = createRequire(import.meta.url);
 const {
@@ -149,7 +149,8 @@ async function runtime(
         // The slice registers the logs channels too, which these tests don't call.
         on() {},
       },
-      { events },
+      // The fake senders carry no session: the window's is none.
+      { events, windowSession: noWindowSession },
     ),
   });
 
