@@ -76,8 +76,8 @@ const projectDataShapePluginSource = [
   "export async function exportProjects(projects) {",
   "  return { datasets: [{ id: 'projects', rows: projects.map((project) => ({ project: project.name })) }] };",
   "}",
-  "export async function importProjects(datasets) {",
-  "  return { projects: datasets[0].rows.map((row) => ({ name: row.project, color: '#123456', status: 'active', tasks: [] })) };",
+  "export async function importProjects(sheets) {",
+  "  return { projects: sheets[0].rows.map((row) => ({ name: row[0], color: '#123456', status: 'active', tasks: [] })) };",
   "}",
 ].join("\n");
 
@@ -543,7 +543,7 @@ describe("plugin installation boundary", () => {
         method: "POST",
         path: "/api/project-data-shapes/workday-project-data/import",
         body: JSON.stringify({
-          datasets: [{ id: "projects", rows: [{ project: "Mercury" }] }],
+          sheets: [{ name: "Projects", rows: [["Mercury"]] }],
         }),
       }),
     ).resolves.toEqual({
@@ -3794,7 +3794,7 @@ describe("plugin errors that echo a secret", () => {
 
     for (const [operation, body] of [
       ["export", { projects: [] }],
-      ["import", { datasets: [{ id: "projects", rows: [] }] }],
+      ["import", { sheets: [{ name: "Projects", rows: [] }] }],
     ] as const) {
       const response = await dispatchJsonRequest(server, {
         method: "POST",

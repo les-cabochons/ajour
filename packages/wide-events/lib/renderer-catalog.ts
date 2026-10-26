@@ -489,7 +489,10 @@ export const rendererEvents = {
   "task.import": command({
     ...projectId,
     task_import: {
+      /** `default` for task names from column C, or the plugin ID of the schema. */
+      schema: operational(),
       imported_count: operational<number>(),
+      updated_count: operational<number>(),
       duplicate_count: operational<number>(),
       blank_count: operational<number>(),
       header_count: operational<number>(),

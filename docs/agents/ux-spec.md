@@ -151,7 +151,7 @@ Decided in [App shell and collapsible sidebar](https://github.com/les-cabochons/
 
 ### Desktop widths
 
-- The app sidebar is expanded (resizable, see the Backlog sidebar section for widths) or hidden. There is no icon rail. From the top: Hide sidebar and the logo, the view switcher with Search and the project filter, the timer dock, then the work list. Its fixed footer has Settings and Commit icon buttons at the left. Commit opens the selected date's week. The desktop app's update button sits at the right.
+- The app sidebar is expanded (resizable, see the Backlog sidebar section for widths) or hidden. There is no icon rail. From the top: Hide sidebar and the logo, the view switcher with Search, the project filter and New backlog item (+), the timer dock, then the work list. New backlog item opens the Backlog page with a blank backlog item editor; time entries start from the timer dock's "+". Its fixed footer has Settings and Commit icon buttons at the left. Commit opens the selected date's week. The desktop app's update button sits at the right.
 - Hide sidebar and the logo sit on the titlebar's row, as in T3 Code: right of the traffic lights on macOS, in the window's top left corner elsewhere. Hide sidebar sits where Show sidebar sits in the titlebar, so the button does not move when the sidebar toggles.
 - The view switcher works like ChatGPT's: the open view's name, such as "Time", opens a menu of Time, Backlog, Pull requests (only while a code host plugin is enabled) and Projects with their live counts, today's total next to Time, the number of listed items next to Backlog, and next to Pull requests the number that need the user, as a filled badge when any returned. A check marks the open view. A backlog item's page belongs to Backlog, unless it was opened from the sidebar while Time, Projects or Pull requests showed: that view stays selected.
 - Cmd+B (Ctrl+B on Windows), Hide sidebar next to the logo and Show sidebar at the start of the titlebar toggle it. The View menu gets "Show sidebar" or "Hide sidebar" once the menu bar exists. There is no second shortcut.
@@ -594,7 +594,7 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 
 - Editing a backlog item uses the editor form, in the peek slot on wide windows and the full-width dialog in the narrow view, with the entry editor's rules: explicit Save (button, Enter in the title, Cmd+Enter), Escape or × discards, outside clicks do nothing.
 - The form holds title, workflow state, priority, project and task mapping, description, the estimates with their "Reset to subitem total" buttons, and "Keep when missing from sync" for synced items. Its header has the "…" action menu.
-- "New backlog item" in the page header opens a blank form. "Add subitem" opens it with the parent set.
+- "New backlog item" in the page header, or the "+" at the top of the app sidebar, opens a blank form. "Add subitem" opens it with the parent set.
 - Start entry stays on hover, in the "…" menu and in the peek. Entries start on today.
 
 ## Application updates
@@ -680,7 +680,7 @@ Decided after the prototype on branch `prototype/backlog-sidebar`: variant B is 
 
 Like T3 Code's thread card, resting the mouse on a backlog row shows a card beside the sidebar with what the row has no room for.
 
-- It opens after the pointer rests on one row for 800ms, so moving down the list shows nothing. Once it shows, moving to another row moves it there after 150ms.
+- It opens after the pointer rests on one row for 800ms, so moving down the list shows nothing. Once it shows, moving to another row moves it there at once.
 - From top to bottom: the whole title; where the item comes from, as its source tool's logo, the organization and the source project, such as "les-cabochons / ajour", with its id at the end, such as "1234" or "PAY-12"; and on a subitem, its parent's title. A manual item has no source line.
 - Then the subitems, open ones first, with their workflow state's ring and the closed count over the total, such as "1/3". Eight show, then "n more".
 - Then the pull requests whose title names the item, open ones first: the state icon, the number and the title. Five show, then "n more". Code hosts do not report links to backlog items, so the title is the link: a key such as "PAY-12" names the item from any repository, and a number such as "#1234" only from the same GitHub repository, or the same Azure DevOps organization, where every project shares the numbers. Only the pull requests the Pull requests page lists count, so none show while no code host is enabled.
@@ -783,6 +783,8 @@ Decided in [Projects pages under the new conventions](https://github.com/les-cab
 - "New project" in the list header and Edit from the project's action set open the project form as a standard dialog: name, display name, code, icon and color. On the project page, these fields change in place instead.
 - Editing a task uses the side panel, with the same Save and Escape rules as entries. It holds name, billable, budget and adjustment, and the pinned slot. The inline task editor that saved on outside click goes away.
 - The project page has no "…" menu and no top bar actions. Like the backlog item page, it edits in place: click the title to rename the display name, and the Properties card on the right changes full name, code, color and icon. Each edit saves on Enter, blur or pick, with Undo; Escape cancels. "Import tasks…" and Archive (Restore when archived) sit at the bottom of the card. An archived project's fields are read-only.
+- "Import tasks…" reads the file with the schema picked in Settings › Projects when it is a plugin, and merges the tasks into the project by name: new names are added, known tasks take the file's status, billable and budget. A file for another project, or with several projects, changes nothing and says why. With Ajour default, it adds the task names in column C of the first worksheet.
+- In Settings › Projects, a schema without an export layout only imports. The Export projects section then says so, and names Ajour default for exports. A file whose schema names no project is refused there, and points to "Import tasks…".
 - "New task" under the task list opens a blank task panel.
 - A task row shows its pinned slot, such as "3", next to its name.
 - The old Projects command dialog is removed. Cmd+K offers "Create project" and "Create task in…".

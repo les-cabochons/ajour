@@ -52,6 +52,7 @@ import {
   describeRunningEntryEdit,
   describeSettle,
   describeShare,
+  describeSchemaTaskImport,
   describeSuggestionAdd,
   describeTaskImport,
   describeTimerDiscard,
@@ -222,8 +223,10 @@ import {
 } from "@/domain/time/timeline-transitions";
 import {
   importProjectDataShapeProjects as applyProjectDataShapeImport,
+  importProjectDataShapeTasks as applyProjectDataShapeTaskImport,
   importProjectTasks as applyProjectTaskImport,
   importProjectWorkbookRows as applyProjectWorkbookImport,
+  type ProjectTaskMergeResult,
   type ProjectTransferRow,
   type ProjectWorkbookImportResult,
 } from "@/domain/projects/project-import";
@@ -1993,6 +1996,31 @@ const store = {
     });
     return imported;
   },
+  /** Merges the one project a schema plugin read for Import tasks… into `projectId`. */
+  importProjectDataShapeTasks(
+    projectId: string,
+    schema: string,
+    projects: ProjectDataShapeImportProject[],
+  ) {
+    const imported = updateStateWithResult<ProjectTaskMergeResult>((state) => {
+      const operation = applyProjectDataShapeTaskImport(
+        state.projects,
+        projectId,
+        projects,
+        {
+          createTask: (task) =>
+            createProjectTask(task, { createId, now: Date.now }),
+          now: Date.now,
+        },
+      );
+      return {
+        state: { ...state, projects: operation.projects },
+        result: operation.result,
+      };
+    });
+    describeSchemaTaskImport(projectId, schema, imported);
+    return imported;
+  },
   renameProjectTask(projectId: string, taskId: string, name: string) {
     updateState((state) => ({
       ...state,
@@ -3294,6 +3322,7 @@ export const STORE_COMMANDS = {
   importProjectTasks: "task.import",
   importProjectWorkbookRows: "project.import",
   importProjectDataShapeProjects: "project.import",
+  importProjectDataShapeTasks: "task.import",
   renameProjectTask: {
     name: "task.update",
     fields: {

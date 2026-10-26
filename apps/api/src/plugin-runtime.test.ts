@@ -334,8 +334,8 @@ describe("plugin runtime port", () => {
         "export async function exportProjects(projects) {",
         "  return { datasets: [{ id: 'projects', rows: projects.map((project) => ({ project: project.name })) }] };",
         "}",
-        "export async function importProjects(datasets) {",
-        "  return { projects: datasets[0].rows.map((row) => ({ name: row.project, color: '#123456', status: 'active', tasks: [] })) };",
+        "export async function importProjects(sheets) {",
+        "  return { projects: sheets[0].rows.map((row) => ({ name: row[0], color: '#123456', status: 'active', tasks: [] })) };",
         "}",
       ].join("\n"),
     );
@@ -359,7 +359,7 @@ describe("plugin runtime port", () => {
     });
     await expect(
       manager.importProjects("workday-project-data", [
-        { id: "projects", rows: [{ project: "Mercury" }] },
+        { name: "Projects", rows: [["Mercury"]] },
       ]),
     ).resolves.toEqual({ projects: [mercury] });
     expect(

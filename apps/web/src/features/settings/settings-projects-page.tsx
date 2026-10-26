@@ -22,6 +22,7 @@ import {
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import { ProjectIcon } from "@/lib/project-icons";
+import { readWorkbookSheets } from "@/lib/workbook-sheets";
 import {
   DEFAULT_PROJECT_DATA_SHAPE_ID,
   buildProjectDataShapeExportProjects,
@@ -29,7 +30,6 @@ import {
   createProjectDataShapeWorkbook,
   createProjectTransferWorkbook,
   downloadProjectTransferWorkbook,
-  parseProjectDataShapeWorkbook,
   parseProjectTransferWorkbook,
 } from "./settings-projects";
 
@@ -46,16 +46,16 @@ function formatProjectImportSummary(result: {
   const parts = [];
 
   if (result.createdProjectCount > 0) {
-    parts.push(formatCount(result.createdProjectCount, "project created"));
+    parts.push(`${formatCount(result.createdProjectCount, "project")} created`);
   }
   if (result.mergedProjectCount > 0) {
-    parts.push(formatCount(result.mergedProjectCount, "project merged"));
+    parts.push(`${formatCount(result.mergedProjectCount, "project")} merged`);
   }
   if (result.addedTaskCount > 0) {
-    parts.push(formatCount(result.addedTaskCount, "task added"));
+    parts.push(`${formatCount(result.addedTaskCount, "task")} added`);
   }
   if (result.updatedTaskCount > 0) {
-    parts.push(formatCount(result.updatedTaskCount, "task updated"));
+    parts.push(`${formatCount(result.updatedTaskCount, "task")} updated`);
   }
 
   return parts.length > 0 ? `${parts.join(" · ")}.` : "No projects changed.";
@@ -143,6 +143,10 @@ export function SettingsProjectsPage() {
     ? selectedShapePlugin.id
     : DEFAULT_PROJECT_DATA_SHAPE_ID;
   const selectedShapeName = selectedShapePlugin?.displayName ?? "Ajour default";
+  // A schema without an export layout only imports.
+  const selectedShapeExports =
+    !selectedShapePlugin ||
+    selectedShapePlugin.capabilities.projectDataShape.datasets !== undefined;
 
   function handleShapeChange(shapeId: string) {
     localStore.setUserPreferences({ projectDataShapeId: shapeId });
@@ -211,12 +215,9 @@ export function SettingsProjectsPage() {
       setIsTransferring(true);
       const workbookBytes = await selectedImportFile.arrayBuffer();
       const result = selectedShapePlugin
-        ? await parseProjectDataShapeWorkbook(
-            workbookBytes,
-            selectedShapePlugin.capabilities.projectDataShape,
-          )
-            .then((datasets) =>
-              importProjectsWithDataShape(selectedShapePlugin.id, datasets),
+        ? await readWorkbookSheets(workbookBytes)
+            .then((sheets) =>
+              importProjectsWithDataShape(selectedShapePlugin.id, sheets),
             )
             .then((response) =>
               localStore.importProjectDataShapeProjects(response.projects),
@@ -289,116 +290,125 @@ export function SettingsProjectsPage() {
 
       <section className="settings-section">
         <h2 className="settings-section-title">Export projects</h2>
-        <p className="settings-section-desc">
-          Select the projects to export using the {selectedShapeName} schema.
-          Excel controls the file format; the schema controls its fields.
-        </p>
+        {selectedShapeExports ? (
+          <p className="settings-section-desc">
+            Select the projects to export using the {selectedShapeName} schema.
+            Excel controls the file format; the schema controls its fields.
+          </p>
+        ) : (
+          <p className="settings-section-desc">
+            The {selectedShapeName} schema only imports. To export, choose Ajour
+            default.
+          </p>
+        )}
 
-        <AppPanel>
-          <SettingRow
-            label="Projects"
-            description={
-              sortedProjects.length === 0
-                ? "No projects are available yet."
-                : `${formatCount(selectedProjects.length, "project")} selected · ${formatCount(selectedTaskCount, "task")} included`
-            }
-          >
-            {sortedProjects.length === 0 ? null : (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-
-                  onClick={() =>
-                    setSelectedProjectIds(
-                      sortedProjects.map((project) => project._id),
-                    )
-                  }
-                >
-                  Select all
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-
-                  onClick={() => setSelectedProjectIds([])}
-                >
-                  Clear
-                </Button>
-              </>
-            )}
-          </SettingRow>
-
-          {sortedProjects.length === 0 ? null : (
-            <div className="-mx-2 grid gap-x-6 gap-y-1 desktop:grid-cols-2">
-              {sortedProjects.map((project) => {
-                const isSelected = selectedProjectIds.includes(project._id);
-                return (
-                  <label
-                    key={project._id}
-                    className="flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 hover:bg-[var(--hover-bg)]"
-                  >
-                    <Checkbox
-                      checked={isSelected}
-                      onCheckedChange={(checked) =>
-                        setProjectSelection(project._id, checked)
-                      }
-                      className="mt-0.5"
-                    />
-                    <div className="flex min-w-0 flex-col gap-0.5">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <ProjectIcon
-                          icon={project.icon}
-                          color={project.color}
-                          className="size-3.5 shrink-0"
-                        />
-                        <span className="truncate text-sm font-medium text-foreground">
-                          {project.name}
-                        </span>
-                      </div>
-                      <p className="text-xs text-[var(--text-tertiary)]">
-                        {[
-                          project.code,
-                          project.status,
-                          formatCount(project.tasks.length, "task"),
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </p>
-                    </div>
-                  </label>
-                );
-              })}
-            </div>
-          )}
-
-          <SettingRow
-            label="Excel workbook"
-            description={
-              <>
-                <p>Filename: {buildProjectTransferFilename()}</p>
-                <p className="mt-1 text-xs text-[var(--text-tertiary)]">
-                  Projects without tasks still export one row so they can be
-                  re-imported later.
-                </p>
-              </>
-            }
-          >
-            <Button
-              type="button"
-              onClick={handleExport}
-              disabled={selectedProjectIds.length === 0 || isTransferring}
+        {selectedShapeExports ? (
+          <AppPanel>
+            <SettingRow
+              label="Projects"
+              description={
+                sortedProjects.length === 0
+                  ? "No projects are available yet."
+                  : `${formatCount(selectedProjects.length, "project")} selected · ${formatCount(selectedTaskCount, "task")} included`
+              }
             >
-              <Download className="h-4 w-4" />
-              Export to Excel
-            </Button>
-          </SettingRow>
+              {sortedProjects.length === 0 ? null : (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
 
-          {exportMessage ? <ResultLine>{exportMessage}</ResultLine> : null}
-          {exportError ? (
-            <MessagePanel tone="warning">{exportError}</MessagePanel>
-          ) : null}
-        </AppPanel>
+                    onClick={() =>
+                      setSelectedProjectIds(
+                        sortedProjects.map((project) => project._id),
+                      )
+                    }
+                  >
+                    Select all
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+
+                    onClick={() => setSelectedProjectIds([])}
+                  >
+                    Clear
+                  </Button>
+                </>
+              )}
+            </SettingRow>
+
+            {sortedProjects.length === 0 ? null : (
+              <div className="-mx-2 grid gap-x-6 gap-y-1 desktop:grid-cols-2">
+                {sortedProjects.map((project) => {
+                  const isSelected = selectedProjectIds.includes(project._id);
+                  return (
+                    <label
+                      key={project._id}
+                      className="flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 hover:bg-[var(--hover-bg)]"
+                    >
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={(checked) =>
+                          setProjectSelection(project._id, checked)
+                        }
+                        className="mt-0.5"
+                      />
+                      <div className="flex min-w-0 flex-col gap-0.5">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <ProjectIcon
+                            icon={project.icon}
+                            color={project.color}
+                            className="size-3.5 shrink-0"
+                          />
+                          <span className="truncate text-sm font-medium text-foreground">
+                            {project.name}
+                          </span>
+                        </div>
+                        <p className="text-xs text-[var(--text-tertiary)]">
+                          {[
+                            project.code,
+                            project.status,
+                            formatCount(project.tasks.length, "task"),
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+
+            <SettingRow
+              label="Excel workbook"
+              description={
+                <>
+                  <p>Filename: {buildProjectTransferFilename()}</p>
+                  <p className="mt-1 text-xs text-[var(--text-tertiary)]">
+                    Projects without tasks still export one row so they can be
+                    re-imported later.
+                  </p>
+                </>
+              }
+            >
+              <Button
+                type="button"
+                onClick={handleExport}
+                disabled={selectedProjectIds.length === 0 || isTransferring}
+              >
+                <Download className="h-4 w-4" />
+                Export to Excel
+              </Button>
+            </SettingRow>
+
+            {exportMessage ? <ResultLine>{exportMessage}</ResultLine> : null}
+            {exportError ? (
+              <MessagePanel tone="warning">{exportError}</MessagePanel>
+            ) : null}
+          </AppPanel>
+        ) : null}
       </section>
 
       <section className="settings-section">
@@ -412,7 +422,11 @@ export function SettingsProjectsPage() {
           <SettingRow
             label="Workbook"
             labelFor="project-import-file"
-            description="Choose a .xlsx file with a Projects sheet."
+            description={
+              selectedShapePlugin
+                ? `Choose a .xlsx file the ${selectedShapeName} schema reads.`
+                : "Choose a .xlsx file with a Projects sheet."
+            }
             stacked
           >
             <FileField

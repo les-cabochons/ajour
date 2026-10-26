@@ -498,14 +498,14 @@ describe("plugin operation events: validation and pre-flight", () => {
     expect(JSON.stringify(logged)).not.toContain("Secret heading");
   });
 
-  it("refuses an import whose rows break the definition, without their text", async () => {
+  it("refuses an import past the sheet limits, without the sheet's text", async () => {
     const { host, logged } = await schemaHost("return { datasets: [] };");
 
     await expect(
       host.importProjects("workday", [
-        { id: "projects", rows: [{ "Private heading": "Acme" }] },
+        { name: "Private heading ".repeat(20), rows: [["Acme"]] },
       ]),
-    ).rejects.toThrow("Private heading");
+    ).rejects.toThrow("at most 255");
 
     expect(operations(logged)).toEqual([
       expect.objectContaining({

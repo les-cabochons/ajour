@@ -61,6 +61,8 @@ Use this file as the local index for important library choices. Check official d
 - Project task import normalization: `apps/web/src/domain/projects/task-import.ts`
 - Project task/workbook import transitions and the canonical transfer-row contract: `apps/web/src/domain/projects/project-import.ts`
 - Format-neutral project dataset workbook adapter and built-in default shape: `apps/web/src/features/settings/settings-projects.ts`
+- Excel workbook loading and the sheets a schema plugin imports from: `apps/web/src/lib/workbook-sheets.ts`
+- Import tasks… on a project, through the picked schema plugin or column C: `apps/web/src/features/projects/project-task-import.ts`
 - Project/task creation, hydration, ordering, edits, and archive transitions: `apps/web/src/domain/projects/project-transitions.ts`
 - Persisted project icon contract: `apps/web/src/domain/projects/project-icon.ts`
 

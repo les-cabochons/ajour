@@ -80,7 +80,7 @@ describe("plugin method table", () => {
       projectDataShapeMethodArguments("exportProjects", { projects: [] }),
     ).toEqual([[]]);
     expect(
-      projectDataShapeMethodArguments("importProjects", { datasets: [] }),
+      projectDataShapeMethodArguments("importProjects", { sheets: [] }),
     ).toEqual([[]]);
   });
 });

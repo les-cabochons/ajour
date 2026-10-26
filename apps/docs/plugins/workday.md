@@ -4,31 +4,41 @@
 The Workday plugin is not available yet. The catalog lists it under **Schemas** as **Coming soon**.
 :::
 
-The Workday plugin is a schema. It maps your projects and tasks to the column layout Workday imports and exports, so you can move your project list between Ajour and Workday as an Excel file.
+The Workday plugin is a schema. It reads the Excel files Workday exports for a project, so you can create the project and its tasks in Ajour from them. It only imports: to export projects, pick **Ajour default**.
 
-It does not connect to Workday. It never signs in to Workday, reads from it or writes to it. Ajour reads and writes the file. The plugin only decides which columns the file has and how each project and task becomes a row.
+It does not connect to Workday. It never signs in to Workday, reads from it or writes to it. Ajour reads the file. The plugin only finds the project and its tasks in it.
 
-## How it maps projects
+It reads Workday in French.
 
-The file has one row per task, or one row for a project with no tasks.
+## Import a project
 
-| Column             | Contents                        |
-| ------------------ | ------------------------------- |
-| `project`          | The project's full name         |
-| `code`             | The project code                |
-| `color`            | The project color               |
-| `status`           | `active` or `archived`          |
-| `task`             | The task's name                 |
-| `task_status`      | `active` or `archived`          |
-| `billable`         | `billable` or `non_billable`    |
-| `budget_hours`     | The task's budget, in hours     |
-| `adjustment_hours` | The task's adjustment, in hours |
+In Workday, open the project and export it to Excel. The file is named after the project, such as `114599_Peoples_Group_-_Support_&_Maintenance_[Q-08315].xlsx`, and has a **Récapitulatif** sheet.
 
-On import, the plugin also accepts `true`, `yes`, `false` and `no` for billable, and a decimal comma in hours. It skips blank rows, and tells you the row number of a row it cannot read.
+In **Settings › Projects**, pick **Workday** under **Schema**, choose the file under **Import projects** and press **Import workbook**. Ajour creates the project, or merges it into the project of the same name:
 
-## Use it
+| Ajour             | Workday                                                   |
+| ----------------- | --------------------------------------------------------- |
+| Full name         | **Nom du projet**, without the ID                         |
+| Code              | **Identifiant du projet**                                 |
+| Archived          | **Inactif** is **Oui**                                    |
+| One task per line | **Ressources des tâches**, the **Tâche de projet** column |
 
-Once installed, pick **Workday** under **Schema** in **Settings › Projects**, then export or import. See [Import and export](/projects/import-export).
+A task named **Regular**, Workday's task with no name of its own, takes its phase's name, such as **Soutien et optimisation**. Two tasks with the same name in different phases become one task.
+
+Import the file again to add the project's new tasks. Tasks you added in Ajour stay.
+
+## Import a project plan
+
+The project plan export, `View_Project_Planner_Composite_View.xlsx`, also says which tasks are closed or not billable, but not which project it is for. Open the project in Ajour and choose **Import tasks…** in its properties, with **Workday** picked under **Schema** in **Settings › Projects**. Ajour adds the new tasks and updates the others:
+
+| Ajour        | Workday                                                                |
+| ------------ | ---------------------------------------------------------------------- |
+| Task name    | **Nom personnalisé de la tâche**, or the phase's name when it is empty |
+| Archived     | **Fermé** is **Oui**                                                   |
+| Not billable | **Non facturable** is **Oui**                                          |
+| Budget       | **Heures estimatives**, when above 0                                   |
+
+A task closed in Workday is archived in Ajour. A task you archived in Ajour stays archived, even when Workday has it open. When two tasks share a name, the open one wins.
 
 ## And the timesheet?
 

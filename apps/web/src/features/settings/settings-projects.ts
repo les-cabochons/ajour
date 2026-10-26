@@ -1,4 +1,3 @@
-import type ExcelJS from "exceljs";
 import {
   BUILT_IN_PROJECT_DATA_SHAPE_ID,
   validateProjectDataShapeDatasets,
@@ -16,6 +15,11 @@ import type {
   ProjectTransferStatus,
 } from "@/domain/projects/project-import";
 import { formatTaskImportName } from "@/domain/projects/task-import";
+import {
+  loadWorkbook,
+  toWorkbookArrayBuffer,
+  workbookCellValue,
+} from "@/lib/workbook-sheets";
 
 export type {
   ProjectTransferRow,
@@ -105,16 +109,6 @@ export const DEFAULT_PROJECT_DATA_SHAPE_DEFINITION = {
   ],
 } satisfies ProjectDataShapeDefinition;
 
-function toArrayBuffer(workbookBytes: ArrayBuffer | Uint8Array) {
-  if (workbookBytes instanceof ArrayBuffer) {
-    return workbookBytes.slice(0);
-  }
-
-  const normalized = new ArrayBuffer(workbookBytes.byteLength);
-  new Uint8Array(normalized).set(workbookBytes);
-  return normalized;
-}
-
 function normalizeImportHeader(value: unknown) {
   return formatTaskImportName(String(value ?? ""))
     .toLowerCase()
@@ -123,37 +117,6 @@ function normalizeImportHeader(value: unknown) {
 
 function normalizeImportCell(value: unknown) {
   return formatTaskImportName(String(value ?? ""));
-}
-
-function workbookCellValue(
-  value: ExcelJS.CellValue,
-): string | number | boolean | null {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return value;
-  }
-
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
-
-  if (typeof value === "object" && "result" in value) {
-    const result = value.result;
-    if (
-      result === null ||
-      typeof result === "string" ||
-      typeof result === "number" ||
-      typeof result === "boolean"
-    ) {
-      return result;
-    }
-  }
-
-  return String(value ?? "");
 }
 
 function normalizeHoursValue(
@@ -313,7 +276,7 @@ function truncateExcelWorksheetName(value: string, maxLength: number): string {
 function excelWorksheetNames(definition: ProjectDataShapeDefinition): string[] {
   const usedNames = new Set<string>();
 
-  return definition.datasets.map((dataset, datasetIndex) => {
+  return (definition.datasets ?? []).map((dataset, datasetIndex) => {
     const sanitizedName = dataset.displayName
       .trim()
       .replace(/[\\/*?:[\]]/gu, "_")
@@ -341,10 +304,14 @@ function excelWorksheetNames(definition: ProjectDataShapeDefinition): string[] {
   });
 }
 
+/** Writes a schema's exported datasets, one worksheet each. */
 export async function createProjectDataShapeWorkbook(
   definition: ProjectDataShapeDefinition,
   datasets: ProjectDataShapeDataset[],
 ): Promise<ArrayBuffer> {
+  if (!definition.datasets) {
+    throw new Error("This schema only imports.");
+  }
   const validatedDatasets = validateProjectDataShapeDatasets(
     definition,
     datasets,
@@ -373,33 +340,26 @@ export async function createProjectDataShapeWorkbook(
   }
 
   const workbookBytes = await workbook.xlsx.writeBuffer();
-  return toArrayBuffer(workbookBytes as ArrayBuffer | Uint8Array);
+  return toWorkbookArrayBuffer(workbookBytes as ArrayBuffer | Uint8Array);
 }
 
+/**
+ * Reads a workbook laid out as the definition's datasets, the way
+ * `createProjectDataShapeWorkbook` writes it: one worksheet per dataset, with
+ * the column headers in row 1. Ajour's built-in schema imports with it.
+ */
 export async function parseProjectDataShapeWorkbook(
   buffer: ArrayBuffer | Uint8Array,
   definition: ProjectDataShapeDefinition,
 ): Promise<ProjectDataShapeDataset[]> {
-  let workbook: ExcelJS.Workbook;
-
-  try {
-    const ExcelJSModule = await import("exceljs");
-    workbook = new ExcelJSModule.default.Workbook();
-    await workbook.xlsx.load(toArrayBuffer(buffer));
-  } catch (error) {
-    throw new Error(
-      error instanceof Error && error.message
-        ? `Unable to read Excel file: ${error.message}`
-        : "Unable to read Excel file.",
-    );
-  }
-
+  const workbook = await loadWorkbook(buffer);
+  const datasetDefinitions = definition.datasets ?? [];
   const worksheetNames = excelWorksheetNames(definition);
 
-  return definition.datasets.map((datasetDefinition, datasetIndex) => {
+  return datasetDefinitions.map((datasetDefinition, datasetIndex) => {
     const sheet =
       workbook.getWorksheet(worksheetNames[datasetIndex]) ??
-      (definition.datasets.length === 1 && datasetIndex === 0
+      (datasetDefinitions.length === 1 && datasetIndex === 0
         ? workbook.worksheets[0]
         : undefined);
     if (!sheet) {
@@ -541,21 +501,11 @@ export function buildProjectTransferFilename() {
   return `projects-${year}-${month}-${day}.xlsx`;
 }
 
-function toBlobPart(workbookBytes: ArrayBuffer | Uint8Array): ArrayBuffer {
-  if (workbookBytes instanceof ArrayBuffer) {
-    return workbookBytes.slice(0);
-  }
-
-  const normalized = new ArrayBuffer(workbookBytes.byteLength);
-  new Uint8Array(normalized).set(workbookBytes);
-  return normalized;
-}
-
 export function downloadProjectTransferWorkbook(
   workbookBytes: ArrayBuffer | Uint8Array,
   filename: string,
 ) {
-  const blob = new Blob([toBlobPart(workbookBytes)], {
+  const blob = new Blob([toWorkbookArrayBuffer(workbookBytes)], {
     type: workbookMimeType,
   });
   const url = window.URL.createObjectURL(blob);
