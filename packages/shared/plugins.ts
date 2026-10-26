@@ -7,6 +7,15 @@ import {
   backlogPersonSchema,
 } from "./backlog-comments.ts";
 import { projectDataShapeDefinitionSchema } from "./project-data-shapes.ts";
+import {
+  pluginRuntimeSummarySchema,
+  pluginSuspensionSchema,
+} from "./plugin-lifecycle.ts";
+import {
+  pluginAccessActivitySchema,
+  pluginAccessViewSchema,
+  pluginPendingAccessSchema,
+} from "./plugin-access-schemas.ts";
 
 export const PLUGIN_API_VERSION = 3;
 
@@ -698,6 +707,18 @@ export const pluginOverviewGroupSchema = z.object({
   inactiveCapabilities: z.array(switchableCapabilitySchema).optional(),
   connections: z.array(pluginConnectionSummarySchema),
   /**
+   * What the installed plugin reaches, for the Access section. Absent for a
+   * plugin that isn't installed or can't run.
+   */
+  access: pluginAccessViewSchema.optional(),
+  /**
+   * Set when an update added access the user hasn't allowed. The plugin is
+   * off until they allow it, and this lists only what is new.
+   */
+  pendingAccess: pluginPendingAccessSchema.optional(),
+  /** What the broker recorded for the plugin's requests. */
+  accessActivity: pluginAccessActivitySchema.optional(),
+  /**
    * The plugin's package is not installed: saved connections or secrets
    * outlived it, and `plugin` is a stand-in. Absent when it is installed,
    * even when it can't run.
@@ -707,6 +728,16 @@ export const pluginOverviewGroupSchema = z.object({
   agentTaskSecretFields: z.array(secretFieldSummarySchema).optional(),
   /** The agent task settings kept whole in the vault while the package is missing. */
   agentTaskSealedConfig: secretEntrySummarySchema.optional(),
+  /**
+   * How a plugin API 4 renderer starts and its memory ceiling: the
+   * manifest's and the user's. Absent for other plugins.
+   */
+  runtime: pluginRuntimeSummarySchema.optional(),
+  /**
+   * The plugin kept stopping, so its calls fail at once: "This plugin keeps
+   * stopping", until Turn back on or a restart of Ajour.
+   */
+  suspended: pluginSuspensionSchema.optional(),
 });
 export type PluginOverviewGroup = z.infer<typeof pluginOverviewGroupSchema>;
 
@@ -793,6 +824,11 @@ export const unsignedPluginsActivationUpdateSchema = z.object({
 export const pluginActivationUpdateSchema = z.object({
   enabled: z.boolean(),
   capability: switchableCapabilitySchema.optional(),
+  /**
+   * The version whose access the user reviewed. Turning the plugin on is
+   * refused when another is installed now.
+   */
+  version: z.string().trim().min(1).max(200).optional(),
 });
 export type PluginActivationUpdate = z.infer<
   typeof pluginActivationUpdateSchema

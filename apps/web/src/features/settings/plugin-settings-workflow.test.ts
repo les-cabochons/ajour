@@ -81,6 +81,8 @@ function dependencies() {
     }),
     subscribeCatalog: () => () => {},
     setPluginEnabled: unused,
+    setPluginRuntimeSettings: unused,
+    resumePlugin: unused,
     savePluginConnection: unused,
     deletePluginConnection: unused,
     removeConnectionSecrets: unused,
@@ -477,6 +479,28 @@ describe("saving a connection", () => {
     expect(onSaved).toHaveBeenCalledWith(connection);
   });
 
+  it("turns a plugin on for the version the user reviewed, and a capability without one", async () => {
+    const { deps } = dependencies();
+    const setPluginEnabled = vi.fn(async () => overview);
+    deps.setPluginEnabled = setPluginEnabled;
+    const workflow = createPluginSettingsWorkflow(deps);
+
+    await workflow.execute({ type: "activate", plugin, enabled: true });
+    await workflow.execute({ type: "activate", plugin, enabled: false });
+    await workflow.execute({
+      type: "activate",
+      plugin,
+      enabled: true,
+      capability: "connector",
+    });
+
+    expect(setPluginEnabled.mock.calls).toEqual([
+      ["test-connector", true, undefined, "1.0.0"],
+      ["test-connector", false, undefined, undefined],
+      ["test-connector", true, "connector", undefined],
+    ]);
+  });
+
   it("sends the reminder dates with the save", async () => {
     const { deps } = dependencies();
     deps.savePluginConnection = vi.fn(async () => {
@@ -583,6 +607,29 @@ describe("turning editing work items on", () => {
 
     expect(onHeldForReview).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ["inactive", { enabled: false }],
+    ["held for more access", { enabled: false, pendingAccess: {} }],
+  ])(
+    "holds nothing for a save the server refuses because the plugin is %s",
+    async (_state, change) => {
+      const { deps, onHeldForReview, save } = setUp(2);
+      const off = {
+        ...withAccess,
+        connectionGroups: [{ ...withAccess.connectionGroups[0]!, ...change }],
+      } as PluginsOverview;
+      deps.getCachedPluginsOverview = () => off;
+      deps.savePluginConnection = vi.fn(async () => {
+        throw new Error("Activate this plugin before saving a connection.");
+      });
+
+      await expect(save(["editWorkItems"])).resolves.toBe(false);
+
+      expect(deps.holdPendingEstimates).not.toHaveBeenCalled();
+      expect(onHeldForReview).not.toHaveBeenCalled();
+    },
+  );
 
   it("holds nothing more for a save that leaves editing off", async () => {
     const { deps, onHeldForReview, save } = setUp(2);

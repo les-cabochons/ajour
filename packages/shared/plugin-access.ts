@@ -1,103 +1,47 @@
 import type {
+  PluginAccessView,
+  PluginAccessAuth,
+  PluginAccessHost,
+  PluginAccessDerivedHost,
+  PluginAccessEndpoint,
+  PluginAccessMcpTool,
+  PluginAccessPrompt,
+  PluginAccessOperation,
+  PluginAccessSummary,
+  PluginAccessDifference,
+} from "./plugin-access-schemas.ts";
+import type {
   PluginAuth,
-  PluginAuthScheme,
-  PluginHttpMethod,
   PluginNetwork,
   PluginStartMode,
 } from "./plugin-api-4.ts";
+
+export type {
+  PluginAccessAuth,
+  PluginAccessHost,
+  PluginAccessDerivedHost,
+  PluginAccessEndpoint,
+  PluginAccessMcpTool,
+  PluginAccessPrompt,
+  PluginAccessOperation,
+  PluginAccessSummary,
+  PluginAccessDifference,
+} from "./plugin-access-schemas.ts";
 
 /*
  * What a plugin reaches, read from its manifest, and what an update adds to
  * it. The Access section lists the summary, and consent on updates uses the
  * difference: an update widens access when it adds a capability, an auth
- * scheme, a host, a derived host, an endpoint, a public host, an MCP tool or
- * an agent prompt change, marks an access choice always on, adds an operation
- * to an access choice, or switches to "Always ready" (spec #381). Nothing else counts, removals included.
+ * scheme, a host, a derived host, an endpoint, a public host, a request
+ * header, an MCP tool or an agent prompt change, lets a connection be marked
+ * on-premises, marks an access choice always on, adds an operation to an
+ * access choice, or switches to "Always ready" (spec #381). It also widens
+ * when it removes a gate: an endpoint no longer behind its access choice, or
+ * behind another one. An operation that was behind an access choice and is
+ * behind none now counts too: the manifest lists only gated operations, so
+ * one that now runs without a choice can't be told from one that was
+ * removed. Other removals don't count.
  */
-
-export interface PluginAccessAuth {
-  scheme: PluginAuthScheme;
-  /** The connection fields the scheme reads, user field first. */
-  fields: string[];
-}
-
-/** An address the connection saves, which the broker sends requests to. */
-export interface PluginAccessHost {
-  kind: "baseAddress" | "secretAddress";
-  field: string;
-}
-
-/** One form of a derived host: a rule on the base host and what it builds. */
-export interface PluginAccessDerivedHost {
-  id: string;
-  whenHost?: string;
-  host: string;
-  pathPrefix?: string;
-  keepBasePath: boolean;
-}
-
-export interface PluginAccessEndpoint {
-  /** `base`, or a derived host's id. */
-  host: string;
-  method: PluginHttpMethod;
-  path: string;
-  /** The access choice that unlocks it. */
-  access?: string;
-}
-
-export interface PluginAccessMcpTool {
-  task: string;
-  tool: string;
-}
-
-export interface PluginAccessPrompt {
-  task: string;
-  /** The prompt's text, or a collision-resistant digest of it. */
-  prompt: string;
-}
-
-/** An operation an access choice unlocks. */
-export interface PluginAccessOperation {
-  choice: string;
-  operation: string;
-}
-
-export interface PluginAccessSummary {
-  capabilities: string[];
-  authSchemes: PluginAccessAuth[];
-  hosts: PluginAccessHost[];
-  derivedHosts: PluginAccessDerivedHost[];
-  endpoints: PluginAccessEndpoint[];
-  publicHosts: string[];
-  mcpTools: PluginAccessMcpTool[];
-  agentPrompts: PluginAccessPrompt[];
-  /**
-   * The access choices marked `always`, which are on without the user
-   * turning them on, with their endpoints and operations.
-   */
-  alwaysOnAccess: string[];
-  /** Every operation each access choice unlocks. */
-  accessOperations: PluginAccessOperation[];
-  startMode: PluginStartMode;
-}
-
-export interface PluginAccessDifference {
-  capabilities: string[];
-  authSchemes: PluginAccessAuth[];
-  hosts: PluginAccessHost[];
-  derivedHosts: PluginAccessDerivedHost[];
-  endpoints: PluginAccessEndpoint[];
-  publicHosts: string[];
-  mcpTools: PluginAccessMcpTool[];
-  /** Agent tasks whose prompt is new or changed. */
-  agentPrompts: string[];
-  /** Access choices that are now always on: new ones, or ones that were off by default. */
-  alwaysOnAccess: string[];
-  /** Operations an access choice now unlocks that it didn't before. */
-  accessOperations: PluginAccessOperation[];
-  /** The update switches the plugin to "Always ready". */
-  alwaysReady: boolean;
-}
 
 /**
  * The manifest fields access reads. An API 3 manifest has no network and no
@@ -114,6 +58,8 @@ export interface PluginAccessManifest {
     id: string;
     always: boolean;
     operations?: readonly string[];
+    label?: string;
+    tokenScope?: string;
   }[];
   runtime?: { start: PluginStartMode };
 }
@@ -217,6 +163,12 @@ export function summarizePluginAccess(
         })),
       )
       .sort(byText(accessOperationKey)),
+    requestHeaders: [
+      ...new Set(
+        (network?.requestHeaders ?? []).map((header) => header.toLowerCase()),
+      ),
+    ].sort(),
+    onPremises: network?.baseAddress?.allowOnPremises === true,
     startMode: manifest.runtime?.start ?? "whenNeeded",
   };
 }
@@ -238,6 +190,20 @@ function accessOperationKey(entry: PluginAccessOperation) {
   return `${entry.choice}\u0000${entry.operation}`;
 }
 
+function ungated(
+  previous: readonly PluginAccessOperation[],
+  next: readonly PluginAccessOperation[],
+) {
+  const gated = new Set(next.map((entry) => entry.operation));
+  return [
+    ...new Set(
+      previous
+        .map((entry) => entry.operation)
+        .filter((operation) => !gated.has(operation)),
+    ),
+  ].sort();
+}
+
 function added<Item>(
   previous: readonly Item[],
   next: readonly Item[],
@@ -247,7 +213,8 @@ function added<Item>(
   return next.filter((item) => !known.has(key(item)));
 }
 
-const EMPTY_SUMMARY: PluginAccessSummary = {
+/** What a plugin that reaches nothing reaches: the baseline of a first consent. */
+export const NO_PLUGIN_ACCESS: Readonly<PluginAccessSummary> = Object.freeze({
   capabilities: [],
   authSchemes: [],
   hosts: [],
@@ -258,8 +225,37 @@ const EMPTY_SUMMARY: PluginAccessSummary = {
   agentPrompts: [],
   alwaysOnAccess: [],
   accessOperations: [],
+  requestHeaders: [],
+  onPremises: false,
   startMode: "whenNeeded",
-};
+});
+
+function endpointTriple(endpoint: PluginAccessEndpoint) {
+  return [endpoint.host, endpoint.path, endpoint.method].join("\u0000");
+}
+
+/**
+ * The endpoints `next` reaches that `previous` didn't, or no longer behind
+ * the gate they had. An endpoint that was open and is now behind an access
+ * choice is narrower, and doesn't count; behind a different choice, or open
+ * after being gated, does.
+ */
+function widenedEndpoints(
+  previous: readonly PluginAccessEndpoint[],
+  next: readonly PluginAccessEndpoint[],
+) {
+  const gates = new Map<string, Set<string>>();
+  for (const endpoint of previous) {
+    const key = endpointTriple(endpoint);
+    gates.set(key, (gates.get(key) ?? new Set()).add(endpoint.access ?? ""));
+  }
+  return next.filter((endpoint) => {
+    const before = gates.get(endpointTriple(endpoint));
+    if (!before) return true;
+    const gate = endpoint.access ?? "";
+    return !before.has(gate) && !(gate !== "" && before.has(""));
+  });
+}
 
 /**
  * What `next` reaches that `previous` doesn't. Without a previous summary, as
@@ -269,7 +265,7 @@ export function pluginAccessDifference(
   previous: PluginAccessSummary | undefined,
   next: PluginAccessSummary,
 ): PluginAccessDifference {
-  const before = previous ?? EMPTY_SUMMARY;
+  const before = previous ?? NO_PLUGIN_ACCESS;
   const prompts = new Map(
     before.agentPrompts.map((entry) => [entry.task, entry.prompt] as const),
   );
@@ -292,7 +288,7 @@ export function pluginAccessDifference(
         String(form.keepBasePath),
       ].join("\u0000"),
     ),
-    endpoints: added(before.endpoints, next.endpoints, endpointKey),
+    endpoints: widenedEndpoints(before.endpoints, next.endpoints),
     publicHosts: added(before.publicHosts, next.publicHosts, String),
     mcpTools: added(before.mcpTools, next.mcpTools, mcpToolKey),
     agentPrompts: next.agentPrompts
@@ -304,6 +300,9 @@ export function pluginAccessDifference(
       next.accessOperations,
       accessOperationKey,
     ),
+    ungatedOperations: ungated(before.accessOperations, next.accessOperations),
+    requestHeaders: added(before.requestHeaders, next.requestHeaders, String),
+    onPremises: next.onPremises && !before.onPremises,
     alwaysReady:
       next.startMode === "alwaysReady" && before.startMode !== "alwaysReady",
   };
@@ -313,6 +312,7 @@ export function pluginAccessDifference(
 export function widensAccess(difference: PluginAccessDifference) {
   return (
     difference.alwaysReady ||
+    difference.onPremises ||
     [
       difference.capabilities,
       difference.authSchemes,
@@ -324,6 +324,29 @@ export function widensAccess(difference: PluginAccessDifference) {
       difference.agentPrompts,
       difference.alwaysOnAccess,
       difference.accessOperations,
+      difference.ungatedOperations,
+      difference.requestHeaders,
     ].some((items) => items.length > 0)
   );
+}
+
+/** The summary with the labels the manifest gives its hosts and access choices. */
+export function pluginAccessView(
+  manifest: PluginAccessManifest,
+  summary: PluginAccessSummary,
+): PluginAccessView {
+  return {
+    summary,
+    hostLabels: Object.fromEntries(
+      (manifest.network?.derivedHosts ?? []).flatMap((host) =>
+        host.label ? [[host.id, host.label]] : [],
+      ),
+    ),
+    choices: (manifest.connectionAccess ?? []).map((choice) => ({
+      id: choice.id,
+      label: choice.label ?? choice.id,
+      ...(choice.tokenScope ? { tokenScope: choice.tokenScope } : {}),
+      always: choice.always,
+    })),
+  };
 }

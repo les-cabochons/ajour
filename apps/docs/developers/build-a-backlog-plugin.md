@@ -335,7 +335,7 @@ Or open **Settings › Debug › Development plugin directory** in the developme
 Then:
 
 1. Open **Settings › Plugins**. **GitHub Issues** shows as installed.
-2. Open it, press **Add a connection**, paste a token and press **Add connection**. `validateConnection` runs.
+2. Open it, turn it on, press **Add a connection**, paste a token and press **Add connection**. `validateConnection` runs.
 3. Press **Sync**. Your issues show in **Settings › Sync review**. Import a few.
 4. Settle one with <kbd>Shift</kbd> <kbd>E</kbd> and pick **Closed**. When the Undo toast closes, the issue closes on GitHub.
 

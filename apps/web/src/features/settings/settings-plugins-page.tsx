@@ -64,6 +64,7 @@ import {
   syncsPullRequestsAutomatically,
 } from "@ajour/shared";
 import {
+  connectionSaveBlock,
   createPluginFormState,
   expiryForSave,
   secretFieldIds,
@@ -84,6 +85,15 @@ import {
 } from "./connection-status-ui";
 import { HeldArrivalsLine, TeamPickerDialog } from "./team-connection-ui";
 import { PluginAgentTasks } from "./agent-task-settings";
+import {
+  CatalogAccessSection,
+  PluginAccessSection,
+  PluginAccessUpdatePanel,
+} from "./plugin-access-section";
+import {
+  PluginAdvancedSettings,
+  PluginSuspendedNotice,
+} from "./plugin-runtime-settings";
 import {
   canInstallCatalogPlugin,
   catalogOffersUpdate,
@@ -851,6 +861,16 @@ export function SettingsPluginsPage({
     const { unavailableReason } = group.plugin;
     const signed = isSignedPlugin(group.plugin);
     const blockedAsUnsigned = !unsignedPluginsEnabled && !signed;
+    // Saving runs the plugin, so it waits until the plugin may run (on, its
+    // access allowed, and signed or unsigned plugins on); the form says so
+    // and names the way out.
+    const saveBlock = unavailableReason
+      ? undefined
+      : connectionSaveBlock(
+          group,
+          overview?.pluginsEnabled !== false,
+          unsignedPluginsEnabled,
+        );
     const offersUpdate =
       catalogOffersUpdate(entry, group.plugin) && canDownloadCatalogPlugins;
     const update = (
@@ -949,9 +969,25 @@ export function SettingsPluginsPage({
               </p>
             </MessagePanel>
           ) : null}
+          <PluginAccessUpdatePanel
+            group={group}
+            disabled={isMutatingPlugin || overview?.pluginsEnabled === false}
+            onAllow={() => void handlePluginActivation(group, true)}
+          />
+          <PluginSuspendedNotice
+            group={group}
+            disabled={isMutatingPlugin}
+            onTurnBackOn={() =>
+              void workflow.execute({ type: "resume", plugin: group.plugin })
+            }
+          />
           {renderMessages()}
           <PluginCapabilityBand entry={entry} />
         </PluginDetailHeader>
+
+        {unavailableReason || group.missing ? null : (
+          <PluginAccessSection group={group} now={Date.now()} />
+        )}
 
         <section className="settings-section">
           <h2 className="settings-section-title">Features</h2>
@@ -977,7 +1013,7 @@ export function SettingsPluginsPage({
             Unsigned plugins are deactivated, and this one is unsigned. Turn off
             Deactivate unsigned plugins in Plugins to run it again.
           </MessagePanel>
-        ) : !group.enabled && !unavailableReason ? (
+        ) : !group.enabled && !unavailableReason && !group.pendingAccess ? (
           <MessagePanel>
             This plugin is inactive. Its saved connections and imported data are
             preserved, but sync is paused until you reactivate it.
@@ -1005,12 +1041,14 @@ export function SettingsPluginsPage({
                 <h2 className="settings-section-title">Configuration</h2>
                 <p className="settings-section-desc mt-1">
                   Manage the local connections used by this plugin.
+                  {saveBlock ? ` ${saveBlock.hint}` : ""}
                 </p>
               </div>
               <Button
                 disabled={
                   isMutatingPlugin ||
                   overview?.pluginsEnabled === false ||
+                  !group.enabled ||
                   Boolean(unavailableReason)
                 }
                 onClick={() => handleCreate(group.plugin)}
@@ -1030,6 +1068,7 @@ export function SettingsPluginsPage({
                 )}
                 vault={overview?.vault}
                 isMutating={isMutatingPlugin}
+                saveHint={saveBlock?.hint}
                 heldCount={
                   groupFormState.editingConnectionId
                     ? heldEditCount(
@@ -1344,6 +1383,18 @@ export function SettingsPluginsPage({
             </div>
           </section>
         ) : null}
+
+        <PluginAdvancedSettings
+          group={group}
+          disabled={isMutatingPlugin || Boolean(unavailableReason)}
+          onSave={(settings) =>
+            void workflow.execute({
+              type: "runtime",
+              plugin: group.plugin,
+              settings,
+            })
+          }
+        />
       </>
     );
   };
@@ -1430,6 +1481,13 @@ export function SettingsPluginsPage({
           {renderMessages()}
           <PluginCapabilityBand entry={catalogEntry} />
         </PluginDetailHeader>
+
+        {available && !installed ? (
+          <CatalogAccessSection
+            pluginApiVersion={catalogEntry.compatibility.pluginApiVersion}
+            canDownload={canDownloadThisEntry}
+          />
+        ) : null}
 
         <section className="settings-section">
           <h2 className="settings-section-title">Features</h2>

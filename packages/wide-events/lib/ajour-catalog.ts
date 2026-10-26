@@ -134,7 +134,12 @@ const requestReasons = [
  * Why a plugin activation or capability check refuses work. They double as
  * plugin operation reasons, so a request and its operation say the same.
  */
-const inactiveReasons = ["system_off", "plugin_off", "capability_off"] as const;
+const inactiveReasons = [
+  "system_off",
+  "plugin_off",
+  "needs_consent",
+  "capability_off",
+] as const;
 
 /**
  * What every `plugin_operation` event carries: one worker run, in the plugin
@@ -173,8 +178,8 @@ const pluginOperationFields = {
  * the inactive reasons, `host_stopping`, `package_change`, `not_installed`,
  * `runs_no_code`, `not_supported` for a capability or feature the plugin
  * doesn't declare, `agent_access` when its route's admission check
- * refuses it, and `runtime_unavailable` when this computer can't sandbox
- * plugins. Cancelled: the inactive reasons, `uninstalled` and `shutdown`.
+ * refuses it, `runtime_unavailable` when this computer can't sandbox
+ * plugins, and `suspended` while the plugin keeps stopping. Cancelled: the inactive reasons, `uninstalled` and `shutdown`.
  * Then `timeout`, and the errors `result_too_large`, `invalid_result`,
  * `exited_early`, `crashed` and `plugin_error`.
  */
@@ -196,6 +201,8 @@ const pluginOperationReasons = [
   "access_off",
   /** Plugins are off: this computer can't run them in a sandbox. */
   "runtime_unavailable",
+  /** The plugin stopped 3 times in 10 minutes, so it runs nothing until Turn back on. */
+  "suspended",
   "uninstalled",
   "shutdown",
   "timeout",
@@ -282,6 +289,8 @@ export const catalog = defineCatalog({
         api: {
           port: operational<number>(),
           agent_runner_ms: operational<number>(),
+          /** How long the running requests and plugin operations took to finish, up to the drain's 5 s. */
+          drain_ms: operational<number>(),
           plugins_ms: operational<number>(),
           close_ms: operational<number>(),
           plugin_operations_running: operational<number>(),
@@ -575,7 +584,13 @@ export const catalog = defineCatalog({
     /** A plugin, or one of its capabilities, turned on or off. */
     "plugin.activate": {
       kinds: ["command", "request"],
-      reasons: ["not_installed", "not_supported", ...requestReasons],
+      reasons: [
+        "not_installed",
+        "not_supported",
+        /** The plugin was updated since the user reviewed its access. */
+        "version_changed",
+        ...requestReasons,
+      ],
       fields: {
         ...requestFields,
         plugin: { id: operational() },
@@ -584,6 +599,48 @@ export const catalog = defineCatalog({
           enabled: operational<boolean>(),
           /** Running plugin operations the turn-off cancelled. */
           operations_cancelled: operational<number>(),
+        },
+      },
+    },
+    /** An API 4 plugin's Advanced section saved: Start and Memory ceiling. */
+    "plugin.runtime_update": {
+      kinds: ["command", "request"],
+      reasons: ["not_installed", "not_supported", ...requestReasons],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        plugin_runtime: {
+          start: operational<"plugin" | "whenNeeded" | "alwaysReady">(),
+          memory_ceiling_mb: operational<number>(),
+        },
+      },
+    },
+    /** Turn back on, for a plugin that kept stopping. */
+    "plugin.resume": {
+      kinds: ["command", "request"],
+      reasons: requestReasons,
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        /** False when the plugin wasn't suspended. */
+        plugin_runtime: { resumed: operational<boolean>() },
+      },
+    },
+    /**
+     * A plugin's renderer stopped 3 times in 10 minutes, by crashes, memory
+     * kills or timeouts, so the plugin runs nothing until Turn back on or a
+     * restart of Ajour.
+     */
+    "plugin.suspended": {
+      kinds: ["lifecycle"],
+      fields: {
+        plugin: { id: operational() },
+        suspension: {
+          /** The last stop's cause. */
+          cause: operational<
+            "crashed" | "oom" | "killed" | "memory" | "timeout"
+          >(),
+          stops: operational<number>(),
         },
       },
     },
@@ -1188,8 +1245,63 @@ export const catalog = defineCatalog({
       ],
       fields: {
         plugin: { id: operational() },
-        plugin_renderer: { open_ms: operational<number>() },
+        plugin_renderer: {
+          open_ms: operational<number>(),
+          /** Its start mode is "Always ready": it never closes for being idle. */
+          always_ready: operational<boolean>(),
+        },
         sandbox: { cause: operational<PluginSandboxCause>() },
+      },
+    },
+    /**
+     * A plugin's renderer that had opened, closed (#391): idle for 2 minutes,
+     * a call past its time, above its memory ceiling, its process gone, its
+     * page failed to load, its package changed, its plugin turned off or
+     * suspended, plugins off, or Ajour quitting.
+     */
+    "plugin_renderer.close": {
+      kinds: ["lifecycle"],
+      fields: {
+        plugin: { id: operational() },
+        plugin_renderer: {
+          close_reason: operational<
+            | "idle"
+            | "package_change"
+            | "plugin_off"
+            | "quit"
+            | "timeout"
+            | "memory"
+            | "crashed"
+            | "failed"
+            | "sandbox_off"
+          >(),
+          /** From the start of its opening to its close. */
+          life_ms: operational<number>(),
+          always_ready: operational<boolean>(),
+          memory_ceiling_mb: operational<number>(),
+          /** Its process's memory at the last sample, when one was read. */
+          memory_mb: operational<number>(),
+        },
+      },
+    },
+    /**
+     * The launch's sweep of plugin renderers a previous session left
+     * running (#391), by the process ids it recorded: how many it found
+     * listed, ended, found gone already, and left alone because another
+     * program now holds the id.
+     */
+    "plugin_renderer.sweep": {
+      kinds: ["lifecycle"],
+      reasons: ["unreadable_record", "query_failed", "still_running"],
+      fields: {
+        sweep: {
+          recorded: operational<number>(),
+          ended: operational<number>(),
+          gone: operational<number>(),
+          not_ours: operational<number>(),
+          still_running: operational<number>(),
+          sweep_ms: operational<number>(),
+        },
       },
     },
     /**

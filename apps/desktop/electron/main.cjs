@@ -49,6 +49,11 @@ const {
   createPluginRendererRuntime,
 } = require("./plugin-renderer-runtime.cjs");
 const { launchSandboxRefusal } = require("./plugin-sandbox.cjs");
+const {
+  PROCESS_RECORD_FILE,
+  createProcessRecord,
+  sweepOrphanedRenderers,
+} = require("./plugin-renderer-sweep.cjs");
 const { createPluginCatalogService } = require("./plugin-catalog.cjs");
 const { isOfficialSourceUrl } = require("./plugin-sources.cjs");
 const {
@@ -676,7 +681,11 @@ ipc.handle("ajour:install-plugin", async (event) => {
     unit?.set({ plugin: { result: "cancelled" } }).cancel();
     return null;
   }
-  return await installPluginArchive(unit, selectedArchive);
+  // A first install stays inactive, as a download does: turning it on is
+  // the consent to what it reaches.
+  return await installPluginArchive(unit, selectedArchive, {
+    enableAfterInstall: false,
+  });
 });
 
 ipc.handle("ajour:get-plugin-catalog", async (event) => {
@@ -1163,6 +1172,14 @@ function internalAppApiBrokerNetwork() {
 }
 
 /**
+ * The launch's sweep of plugin renderers a previous session left running,
+ * started right after the single-instance lock. No plugin renderer opens
+ * before it ends.
+ */
+/** @type {Promise<unknown>} */
+let pluginRendererSweep = Promise.resolve();
+
+/**
  * The runtime that runs plugin API 4 packages, each in a sandboxed renderer
  * of its own, made once, after `ready`. Development builds only, until the
  * cut-over (#403): release builds admit no API 4 package yet. Without a
@@ -1188,6 +1205,10 @@ function internalAppApiPluginApi4Runtime() {
       platform: process.platform,
       inspectorActive: require("node:inspector").url() !== undefined,
     }),
+    processRecord: createProcessRecord(
+      path.join(app.getPath("userData"), PROCESS_RECORD_FILE),
+    ),
+    whenSwept: pluginRendererSweep,
   });
   return pluginRendererRuntime;
 }
@@ -1787,6 +1808,15 @@ if (!hasSingleInstanceLock) {
     .end();
   void whenEventsReady(INTERNAL_APP_API_STOP_TIMEOUT_MS).then(() => app.quit());
 } else {
+  // Only this process holds the lock, so a plugin renderer a previous
+  // session recorded and left running is an orphan: it ends now.
+  pluginRendererSweep = sweepOrphanedRenderers({
+    filePath: path.join(app.getPath("userData"), PROCESS_RECORD_FILE),
+    platform: process.platform,
+    execPath: process.execPath,
+    events,
+  });
+
   // The local log file's retention sweep, now and every hour, only in the
   // process that holds the lock and writes the file.
   localLogs.startSweeps();

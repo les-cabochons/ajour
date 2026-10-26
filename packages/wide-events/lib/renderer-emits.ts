@@ -35,6 +35,8 @@ export const APP_API_CLIENT = {
   fetchPluginsOverview: "plugin.list",
   getPluginsOverview: "plugin.list",
   setPluginEnabled: "plugin.activate",
+  setPluginRuntimeSettings: "plugin.runtime_update",
+  resumePlugin: "plugin.resume",
   setPluginSystemEnabled: "plugin_system.toggle",
   setUnsignedPluginsEnabled: "unsigned_plugins.toggle",
   getBacklogSourceStatuses: "source_state.list",

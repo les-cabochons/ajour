@@ -69,6 +69,11 @@ describe("desktop plugin lifecycle", () => {
     expect(mainSource).toContain("event.sender !== mainWindow.webContents");
     expect(mainSource).toContain("selectPluginArchive(");
     expect(mainSource).toContain("installPluginForServer(");
+    // A first install from a file stays inactive, as a download does: turning
+    // it on is the consent to its access.
+    expect(mainSource).toMatch(
+      /installPluginArchive\(unit, selectedArchive, \{\s*enableAfterInstall: false,?\s*\}\)/,
+    );
     expect(preloadSource).toContain(
       'ipcRenderer.invoke("ajour:uninstall-plugin"',
     );

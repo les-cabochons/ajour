@@ -4,7 +4,7 @@ The Calendar address (ICS) plugin shows the meetings in your Google Calendar, Ou
 
 ## Set up
 
-1. In **Settings › Plugins**, open the **Calendars** tab and press **Download** on **Calendar address (ICS)**.
+1. In **Settings › Plugins**, open the **Calendars** tab and press **Download** on **Calendar address (ICS)**. The plugin starts turned off.
 2. Turn on its switch.
 3. Get your calendar's address. See below.
 4. Open the plugin, press **Add a connection**, fill in the fields below, and press **Add connection**.

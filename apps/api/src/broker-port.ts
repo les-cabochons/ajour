@@ -136,7 +136,8 @@ export interface BrokerConnectionSource {
     method: string,
   ): Promise<
     | {
-        reason: "system_off" | "plugin_off" | "capability_off";
+        reason:
+          "system_off" | "plugin_off" | "needs_consent" | "capability_off";
         message: string;
       }
     | undefined

@@ -35,7 +35,7 @@ The official plugins come from [les-cabochons/ajour-plugins](https://github.com/
 3. Press **Download**. Ajour downloads the plugin's files from its source, checks each one, and installs it turned off.
 4. Turn on the plugin's switch to activate it.
 
-To install a plugin from a file, turn on **Allow installing unsigned plugins**, press **Install from file** and choose its `.ajour-connector` file. A plugin installed from a file starts turned on.
+To install a plugin from a file, turn on **Allow installing unsigned plugins**, press **Install from file** and choose its `.ajour-connector` file. A plugin installed from a file starts turned off too, so turn on its switch before you add a connection.
 
 When a source lists a plugin this version of Ajour can't read, or one another source already lists, the page names it.
 
@@ -60,9 +60,10 @@ The official source is there by default. If you remove it, **Add the official so
 A connection is one account or site the plugin talks to, with its own credentials. You can add several, for example one per client.
 
 1. Click the plugin in the catalog to open its page.
-2. Under **Configuration**, press **Add a connection**.
-3. Fill in the fields. Each plugin page lists them: [Azure DevOps](/plugins/azure-devops#connection-fields), [Jira](/plugins/jira#connection-fields), [GitHub](/plugins/github#connection-fields), [Calendar address (ICS)](/plugins/ics#connection-fields).
-4. Press **Add connection**. The plugin checks the credentials before Ajour saves them.
+2. Turn on the plugin's switch if it is off. **Add a connection** stays disabled, and a form can't save, until the plugin is on. If an update reaches more than you allowed, press **Allow and activate** instead.
+3. Under **Configuration**, press **Add a connection**.
+4. Fill in the fields. Each plugin page lists them: [Azure DevOps](/plugins/azure-devops#connection-fields), [Jira](/plugins/jira#connection-fields), [GitHub](/plugins/github#connection-fields), [Calendar address (ICS)](/plugins/ics#connection-fields).
+5. Press **Add connection**. The plugin checks the credentials before Ajour saves them.
 
 <Shot name="settings-plugin-connections" alt="The Configuration section of a plugin, with one connection" />
 

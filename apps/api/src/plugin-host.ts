@@ -5,7 +5,20 @@ import {
   type PluginCancelReason,
 } from "./plugin-worker-lifetime.ts";
 import { pluginMethodArguments, type PluginMethod } from "./plugin-methods.ts";
-import type { PluginRuntime } from "./plugin-runtime.ts";
+import type {
+  PluginLifecycle,
+  PluginRuntime,
+  ReadyPlugin,
+} from "./plugin-runtime.ts";
+import { PluginStopBudget } from "./plugin-stop-budget.ts";
+import {
+  DEFAULT_PLUGIN_RUNTIME_SETTINGS,
+  effectiveMemoryCeilingMb,
+  effectiveStartMode,
+  type PluginRuntimeSettings,
+  type PluginStopCause,
+  type PluginSuspension,
+} from "../../../packages/shared/plugin-lifecycle.ts";
 import { WorkerPluginRuntime } from "./plugin-worker-runtime.ts";
 import {
   CALENDAR_EVENTS,
@@ -94,6 +107,10 @@ import {
   type BacklogCommentOperationResult,
 } from "../../../packages/shared/backlog-comments.ts";
 import { z } from "zod";
+import type {
+  PluginAccessSummary,
+  PluginAccessView,
+} from "../../../packages/shared/plugin-access-schemas.ts";
 import {
   discoverInstalledPlugins,
   installPluginArchive,
@@ -119,13 +136,15 @@ interface PluginHostOptions {
    * Runs once the operation is registered and before its worker starts, and
    * throws to refuse it. Deactivation saves its state and then cancels the
    * registered operations, so an operation either sees the new state here or
-   * is cancelled. A saved connection's operation names it, so its access
-   * is checked the same way: a save that turns a choice off cancels the
-   * operations it gates.
+   * is cancelled. `reaches` is what the package about to run reaches. A
+   * saved connection's operation names it, so its access is checked the
+   * same way: a save that turns a choice off cancels the operations it
+   * gates.
    */
   operationGate?: (
     pluginId: string,
     method: PluginMethod,
+    reaches: PluginAccessSummary,
     connectionId?: string,
     /** The manifest of the package that runs it. */
     manifest?: PluginManifest,
@@ -139,6 +158,21 @@ interface PluginHostOptions {
    * request is refused, as outside the desktop app.
    */
   broker?: CredentialBrokerPort;
+  /**
+   * Whether an API 4 plugin is on, and its Advanced section: what its
+   * renderer's start reads, and which plugins stay "Always ready".
+   */
+  pluginState?: (
+    pluginId: string,
+    runnable: ReadonlyMap<string, PluginAccessSummary | undefined>,
+  ) => Promise<{ on: boolean; settings: PluginRuntimeSettings }>;
+  /** The crash budget's clock. Tests move it. */
+  now?: () => number;
+}
+
+/** What a suspended plugin's calls fail with, at once. */
+export function suspendedMessage(pluginId: string) {
+  return `Plugin "${pluginId}" keeps stopping, so Ajour turned it off. Turn it back on from its page in Settings.`;
 }
 
 /**
@@ -306,6 +340,10 @@ export class PluginManager {
   private readonly runsPluginApi4: boolean;
   private readonly runtime: PluginRuntime;
   private readonly broker: CredentialBrokerPort;
+  private readonly pluginState?: PluginHostOptions["pluginState"];
+  private readonly stops: PluginStopBudget;
+  /** The readiness syncs, one after another. */
+  private readinessPromise: Promise<void> = Promise.resolve();
   private activePackageReaders = 0;
   private packageReadersDrainedPromise?: Promise<void>;
   private resolvePackageReadersDrained?: () => void;
@@ -334,6 +372,8 @@ export class PluginManager {
     this.runtime = runtime;
     this.runsPluginApi4 = runtime.runsPluginApi4 === true;
     this.broker = options.broker ?? NO_BROKER;
+    this.pluginState = options.pluginState;
+    this.stops = new PluginStopBudget(options.now);
     this.workers = new PluginWorkerLifetime({
       name: "Plugin",
       events: options.events,
@@ -341,7 +381,102 @@ export class PluginManager {
       capabilityOf: capabilityOfMethod,
       requestTimeoutMs: options.requestTimeoutMs ?? 30_000,
       runtime,
+      // An API 4 plugin's renderer closes on a timeout, which counts.
+      onTimeout: (invocation) => {
+        if (invocation.apiVersion >= 4) {
+          this.recordStop(invocation.pluginId, "timeout");
+        }
+      },
     });
+  }
+
+  /**
+   * An API 4 plugin's renderer stopped: a crash, a memory kill or a
+   * timeout. The third within 10 minutes suspends the plugin, and the
+   * runtime lets go of it if it was "Always ready".
+   */
+  recordStop(pluginId: string, cause: PluginStopCause, at?: number) {
+    const suspended = this.stops.record(pluginId, cause, at);
+    if (!suspended) return;
+    this.events
+      ?.start("plugin.suspended", {
+        kind: "lifecycle",
+        trigger: "system",
+        detached: true,
+      })
+      .set({
+        plugin: { id: pluginId },
+        suspension: { cause, stops: suspended.stops },
+      })
+      .end();
+    void this.syncReadiness();
+  }
+
+  /** Why the plugin is suspended, while it is. */
+  suspension(pluginId: string): PluginSuspension | undefined {
+    return this.stops.suspension(pluginId);
+  }
+
+  /** Turn back on: a suspended plugin runs again. Returns whether it was suspended. */
+  async resume(pluginId: string): Promise<boolean> {
+    const resumed = this.stops.resume(pluginId);
+    await this.syncReadiness();
+    return resumed;
+  }
+
+  /**
+   * Tells the runtime which API 4 plugins to keep running: those on, not
+   * suspended, whose start is "Always ready". The API calls it as it
+   * starts and after anything that changes the list. Each call reads the
+   * state afresh, in turn, so the last one wins.
+   */
+  syncReadiness(): Promise<void> {
+    if (!this.runtime.keepReady) return Promise.resolve();
+    this.readinessPromise = this.readinessPromise
+      .then(async () => {
+        if (this.shuttingDown) return;
+        const { plugins } = await this.discoverPlugins();
+        const ready: ReadyPlugin[] = [];
+        const stopped: string[] = [];
+        // The plugins that can run, each with what it reaches now, as the
+        // call path counts them: a plugin held for consent isn't kept ready.
+        const available = new Map(
+          [...plugins.values()].map(
+            (plugin) => [plugin.manifest.id, plugin.access.summary] as const,
+          ),
+        );
+        for (const plugin of plugins.values()) {
+          const manifest = plugin.manifest;
+          if (!isPluginApi4Manifest(manifest) || !manifest.entrypoint) continue;
+          if (this.stops.suspension(manifest.id)) {
+            stopped.push(manifest.id);
+            continue;
+          }
+          const state = await this.pluginState?.(manifest.id, available);
+          if (!state?.on) {
+            stopped.push(manifest.id);
+            continue;
+          }
+          const lifecycle = lifecycleOf(manifest, state.settings);
+          if (!lifecycle.alwaysReady) continue;
+          ready.push({
+            pluginId: manifest.id,
+            packageDirectory: plugin.directory,
+            entrypoint: manifest.entrypoint,
+            apiVersion: manifest.apiVersion,
+            lifecycle,
+          });
+        }
+        if (this.shuttingDown) return;
+        this.runtime.keepReady?.(
+          ready.sort((left, right) =>
+            left.pluginId.localeCompare(right.pluginId),
+          ),
+          stopped.sort(),
+        );
+      })
+      .catch(() => undefined);
+    return this.readinessPromise;
   }
 
   get activeOperationCount() {
@@ -367,6 +502,8 @@ export class PluginManager {
   async inspectPlugins(): Promise<{
     plugins: PluginManifest[];
     unavailable: UnavailablePlugin[];
+    /** What each runnable plugin reaches, by plugin ID. */
+    access: Map<string, PluginAccessView>;
   }> {
     this.assertRunning();
     const { plugins, unavailable } = await this.discoverPlugins();
@@ -375,7 +512,29 @@ export class PluginManager {
         .map((plugin) => plugin.manifest)
         .sort(comparePlugins),
       unavailable: Array.from(unavailable.values()),
+      access: new Map(
+        Array.from(plugins.values()).map(
+          (plugin) => [plugin.manifest.id, plugin.access] as const,
+        ),
+      ),
     };
+  }
+
+  /**
+   * The folder of every package this host holds, runnable or not, by plugin
+   * id. The data shape host checks its own packages against it.
+   */
+  async packageDirectories(): Promise<Map<string, string>> {
+    this.assertRunning();
+    const { plugins, unavailable } = await this.discoverPlugins();
+    const directories = new Map<string, string>();
+    for (const plugin of unavailable.values()) {
+      directories.set(plugin.manifest.id, plugin.directory);
+    }
+    for (const plugin of plugins.values()) {
+      directories.set(plugin.manifest.id, plugin.directory);
+    }
+    return directories;
   }
 
   /**
@@ -713,6 +872,11 @@ export class PluginManager {
     );
   }
 
+  /** Resolves once no plugin operation runs, or after `ms`. */
+  whenIdle(ms: number): Promise<void> {
+    return this.workers.whenIdle(ms);
+  }
+
   async shutdown(): Promise<void> {
     if (!this.shutdownPromise) {
       this.shuttingDown = true;
@@ -747,6 +911,13 @@ export class PluginManager {
         pluginId,
         method,
         async (record) => {
+          // A plugin that keeps stopping runs nothing until it is turned back on.
+          if (this.stops.suspension(pluginId)) {
+            throw new PluginOperationRefused(
+              suspendedMessage(pluginId),
+              "suspended",
+            );
+          }
           const plugin = await this.getPlugin(pluginId);
           record.plugin({
             version: plugin.manifest.version,
@@ -779,6 +950,7 @@ export class PluginManager {
           await this.operationGate?.(
             pluginId,
             method,
+            plugin.access.summary,
             typeof connection?.id === "string" ? connection.id : undefined,
             plugin.manifest,
             params.request,
@@ -788,7 +960,17 @@ export class PluginManager {
           if (admitted)
             record.secrets(connectionSecretValues(admitted, configs));
           let args: unknown[];
+          let lifecycle: PluginLifecycle | undefined;
           if (isPluginApi4Manifest(plugin.manifest)) {
+            lifecycle = lifecycleOf(
+              plugin.manifest,
+              (
+                await this.pluginState?.(
+                  pluginId,
+                  new Map([[pluginId, plugin.access.summary]]),
+                )
+              )?.settings ?? DEFAULT_PLUGIN_RUNTIME_SETTINGS,
+            );
             const prepared = this.prepareApi4(
               pluginId,
               plugin.manifest,
@@ -817,6 +999,7 @@ export class PluginManager {
               method,
               args,
               ...(broker ? { broker } : {}),
+              ...(lifecycle ? { lifecycle } : {}),
             },
             parse: (result: unknown) => schema.parse(result),
           };
@@ -1132,3 +1315,18 @@ export class PluginManager {
 }
 
 export type PluginConnection = PluginInvocationConnection;
+
+/** How the plugin's renderer lives: the user's Advanced section over its manifest. */
+function lifecycleOf(
+  manifest: PluginApi4Manifest,
+  settings: PluginRuntimeSettings,
+): PluginLifecycle {
+  return {
+    alwaysReady:
+      effectiveStartMode(manifest.runtime.start, settings) === "alwaysReady",
+    memoryCeilingMb: effectiveMemoryCeilingMb(
+      manifest.runtime.memoryCeilingMb,
+      settings,
+    ),
+  };
+}

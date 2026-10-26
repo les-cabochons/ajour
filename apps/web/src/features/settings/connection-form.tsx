@@ -42,6 +42,7 @@ export function PluginConnectionForm({
   vault,
   isMutating,
   heldCount = 0,
+  saveHint,
   now,
   onCancel,
   onSave,
@@ -56,6 +57,8 @@ export function PluginConnectionForm({
   isMutating: boolean;
   /** The changes the connection holds on this computer. */
   heldCount?: number;
+  /** Set while the plugin can't save: the way out. Save stays off. */
+  saveHint?: string;
   now: number;
   onCancel: () => void;
   onSave: () => void;
@@ -165,6 +168,11 @@ export function PluginConnectionForm({
           }
         />
       </FieldGroup>
+      {saveHint ? (
+        <p className="text-sm text-muted-foreground" data-save-hint>
+          {saveHint}
+        </p>
+      ) : null}
       <div className="flex flex-wrap justify-end gap-3 pt-2">
         <Button variant="outline" disabled={isMutating} onClick={onCancel}>
           Cancel
@@ -172,6 +180,7 @@ export function PluginConnectionForm({
         <Button
           disabled={
             isMutating ||
+            Boolean(saveHint) ||
             !isPluginFormDirty(plugin, form) ||
             !areExpiryDraftsValid(form.expiry) ||
             !canSubmitPluginForm(plugin, form.values, {
