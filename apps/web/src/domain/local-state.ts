@@ -30,6 +30,8 @@ export interface LocalProject {
   icon: LocalProjectIcon;
   status: "active" | "archived";
   tasks: LocalProjectTask[];
+  /** When the user starred the project. Personal, like pinned slots. See getFavorites. */
+  favoritedAt?: number;
   /** Present on a shared project: the team it belongs to. See team-sync.ts. */
   team?: LocalProjectTeamLink;
 }
@@ -87,6 +89,8 @@ export interface LocalProjectTask {
   adjustmentMs?: number;
   /** The number key that opens or starts this pinned task. One task holds a slot at most. */
   pinnedSlot?: PinnedTaskSlot;
+  /** When the user starred the task. Personal, like the pinned slot. See getFavorites. */
+  favoritedAt?: number;
   team?: LocalTaskTeamLink;
 }
 
@@ -279,6 +283,12 @@ export interface LocalTimesheetEntry {
    * orders entries by it. Unrelated to `commit`.
    */
   committedAt: number;
+  /**
+   * When Stop or an edit last saved the entry. `committedAt` keeps the first
+   * save, which holds the entry's place in the Day view, so this is the
+   * latest use of its task. See domain/projects/recent-tasks.ts.
+   */
+  usedAt?: number;
   /** The entry as it was last committed. Undefined until its first commit. */
   commit?: LocalTimesheetEntryCommit;
 }

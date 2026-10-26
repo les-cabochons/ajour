@@ -14,7 +14,7 @@ github_issues-0.1.0.ajour-connector
     plugin.js
 ```
 
-The official plugins build it with `scripts/package-connector.mjs`. Copy it, with `scripts/connector-manifest.mjs`, from [ajc-jira](https://github.com/les-cabochons/ajc-jira/tree/main/scripts). It checks that:
+The official plugins build it with `scripts/package-connector.mjs`. Copy it, with `scripts/connector-manifest.mjs`, from [the Jira plugin](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/jira/scripts). It checks that:
 
 - `plugin.json` passes Ajour's manifest rules, with `apiVersion` 3. This copy accepts the backlog and code host capabilities only, so adapt it for others.
 - `package.json` and `plugin.json` have the same version.
@@ -22,7 +22,7 @@ The official plugins build it with `scripts/package-connector.mjs`. Copy it, wit
 
 It writes `package/<id>-<version>.ajour-connector`.
 
-A plugin that runs no code, such as one with only agent tasks, packs `plugin.json` and its prompt files instead. See the [ajp-workday-agent script](https://github.com/les-cabochons/ajp-workday-agent/blob/main/scripts/package-connector.mjs).
+A plugin that runs no code, such as one with only agent tasks, packs `plugin.json` and its prompt files instead. See the [Workday (agent) script](https://github.com/les-cabochons/ajour-plugins/blob/main/plugins/workday-agent/scripts/package-connector.mjs).
 
 ## Share a file
 
@@ -35,9 +35,9 @@ For the catalog, publish each version as a GitHub release of your plugin's repos
 - Tag the release with the version, such as `v0.1.0`.
 - Attach exactly one archive that matches your catalog entry's `assetPattern`, such as `github_issues-0.1.0.ajour-connector`.
 
-When a user presses **Download**, or **Update** on a plugin built for an older API, Ajour lists the repository's last 30 releases, skips drafts, skips pre-releases unless your entry allows them, and installs the archive of the highest version.
+When a user presses **Download**, or **Update** on a plugin built for an older API, Ajour reads the repository's releases, newest first, 100 at a time until a page holds a matching archive, skips drafts, skips pre-releases unless your entry allows them, and installs the archive of the highest version.
 
-The official plugins publish a pre-release from every push to `main`, with a version such as `1.0.0-main.12.f3e1b45`. Their workflow is [`.github/workflows/build.yml`](https://github.com/les-cabochons/ajc-jira/blob/main/.github/workflows/build.yml): it tests, stamps the version, packages, and runs `gh release create`.
+The official plugins share one repository and publish a pre-release from every push to `main` that changes the plugin, with a version such as `1.0.0-main.130.9aac30e`. The tag carries the plugin in its pre-release part, `v1.0.0-jira.main.130.9aac30e`, so it stays unique and Ajour still reads it as a version. Their workflow is [`.github/workflows/build.yml`](https://github.com/les-cabochons/ajour-plugins/blob/main/.github/workflows/build.yml): it tests, stamps the version, packages, and runs `gh release create`.
 
 ## List it in the catalog
 

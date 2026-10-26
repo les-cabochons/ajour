@@ -15,12 +15,12 @@ author:
 license:
   name: MIT License
   spdxId: MIT
-  url: https://github.com/les-cabochons/ajc-azure-devops/blob/main/LICENSE
-website: https://github.com/les-cabochons/ajc-azure-devops#readme
+  url: https://github.com/les-cabochons/ajour-plugins/blob/main/plugins/azure-devops/LICENSE
+website: https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/azure-devops#readme
 repository:
   provider: github
-  slug: les-cabochons/ajc-azure-devops
-  url: https://github.com/les-cabochons/ajc-azure-devops
+  slug: les-cabochons/ajour-plugins
+  url: https://github.com/les-cabochons/ajour-plugins
 status: available
 compatibility:
   pluginApiVersion: 3
@@ -32,7 +32,7 @@ features:
 install:
   method: github-release
   allowPrereleases: true
-  assetPattern: '^azure_devops-[0-9A-Za-z.+-]+\.ajour-connector$'
+  assetPattern: '^azure_devops-[0-9][0-9A-Za-z.+-]*\.ajour-connector$'
 tags:
   - azure-devops
   - project-management
@@ -71,7 +71,7 @@ Ajour shows each feature with a title made from its slug and a line of text. It 
 | `allowPrereleases` | Required. `true` to install pre-releases, `false` for full releases only.                                     |
 | `assetPattern`     | A regular expression for the archive's file name, anchored with `^` and `$`. It must not match an empty name. |
 
-Each release must have exactly one asset that matches `assetPattern`.
+Each release must have exactly one asset that matches `assetPattern`. When several plugins publish from one repository, as the official ones do, a pattern must match only its own plugin's archives: start the version part with a digit, so that `^jira-[0-9]…` never matches a `jira-cloud-1.0.0` archive.
 
 ### images
 

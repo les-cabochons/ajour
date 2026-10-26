@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LocalProject, LocalProjectTask } from "@/domain/local-state";
 import {
+  filterProjectTaskRows,
   findMatchingProjects,
   findMatchingProjectTasks,
   findMatchingTasksInProject,
@@ -117,5 +118,22 @@ describe("project and task search", () => {
 
     expect(results.matches).toHaveLength(10);
     expect(results.total).toBe(55);
+  });
+
+  it("filters a short list of projects and tasks by both names", () => {
+    const atlas = createProject("atlas", "Client Atlas", "ATL", [
+      createTask("dev", "Development"),
+      createTask("qa", "QA"),
+    ]);
+    const beta = createProject("beta", "Beta", "BET", []);
+    const rows = [
+      { project: atlas, task: atlas.tasks[0] },
+      { project: atlas, task: atlas.tasks[1] },
+      { project: beta },
+    ];
+
+    expect(filterProjectTaskRows(rows, "atlas dev")).toEqual([rows[0]]);
+    expect(filterProjectTaskRows(rows, "bet")).toEqual([rows[2]]);
+    expect(filterProjectTaskRows(rows, " ")).toEqual(rows);
   });
 });

@@ -238,6 +238,8 @@ import {
   normalizeProject,
   reorderProjects as applyReorderProjects,
   reorderProjectTask as applyReorderProjectTask,
+  setProjectFavorite as applySetProjectFavorite,
+  setProjectTaskFavorite as applySetProjectTaskFavorite,
   setProjectTaskPinnedSlot as applySetProjectTaskPinnedSlot,
   setProjectTaskStatus,
   updateProject as applyUpdateProject,
@@ -2060,6 +2062,43 @@ const store = {
       ),
     }));
   },
+  /**
+   * Stars a task as a favorite, or removes its star. Removing returns an undo
+   * token, since the row can leave the list it was removed from; starring
+   * returns null, as starring again is its own undo.
+   */
+  setProjectTaskFavorite(projectId: string, taskId: string, favorite: boolean) {
+    const star = (state: LocalAppState) => ({
+      ...state,
+      projects: applySetProjectTaskFavorite(
+        state.projects,
+        projectId,
+        taskId,
+        favorite ? Date.now() : undefined,
+      ),
+    });
+    if (!favorite) return updateStateWithUndo(star);
+    updateState(star);
+    return null;
+  },
+  /**
+   * Stars a project as a favorite, or removes its star. Its tasks keep
+   * theirs. Removing returns an undo token, like `setProjectTaskFavorite`.
+   */
+  setProjectFavorite(projectId: string, favorite: boolean) {
+    const star = (state: LocalAppState) => ({
+      ...state,
+      projects: applySetProjectFavorite(
+        state.projects,
+        projectId,
+        favorite ? Date.now() : undefined,
+      ),
+    });
+    if (!favorite) return updateStateWithUndo(star);
+    updateState(star);
+    return null;
+  },
+
   /** Archives a task. Returns an undo token, or null when nothing changed. */
   archiveProjectTask(projectId: string, taskId: string) {
     return updateStateWithUndo((state) => ({
@@ -3345,6 +3384,22 @@ export const STORE_COMMANDS = {
     fields: {
       ...taskIdsFirst,
       task: { ...taskIdsFirst.task, pinned_slot: ([, , slot]) => slot ?? null },
+    },
+  },
+  setProjectTaskFavorite: {
+    name: "task.favorite",
+    fields: {
+      ...taskIdsFirst,
+      task: { ...taskIdsFirst.task, favorite: ([, , favorite]) => favorite },
+    },
+  },
+  setProjectFavorite: {
+    name: "project.favorite",
+    fields: {
+      project: {
+        ...projectIdFirst.project,
+        favorite: ([, favorite]) => favorite,
+      },
     },
   },
   archiveProjectTask: { name: "task.archive", fields: taskIdsFirst },

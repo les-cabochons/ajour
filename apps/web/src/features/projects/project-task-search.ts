@@ -155,3 +155,23 @@ export function findMatchingTasksInProject(
       (terms.length === 0 || matchesAllTerms(getTaskSearchText(task), terms)),
   );
 }
+
+/**
+ * Keeps the rows of a short list, such as the favorites, whose project and
+ * task together hold every search term. A row without a task is its project.
+ */
+export function filterProjectTaskRows<
+  Row extends { project: LocalProject; task?: LocalProjectTask },
+>(rows: readonly Row[], query: string): Row[] {
+  const terms = getSearchTerms(query);
+  if (terms.length === 0) return [...rows];
+
+  return rows.filter(({ project, task }) =>
+    matchesAllTerms(
+      task
+        ? `${getProjectSearchText(project)} ${getTaskSearchText(task)}`
+        : getProjectSearchText(project),
+      terms,
+    ),
+  );
+}

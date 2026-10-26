@@ -31,6 +31,10 @@ import {
   type FocusedObjectRef,
 } from "@/lib/focused-object";
 import { useLocalState } from "@/lib/local-hooks";
+import {
+  setProjectFavorite,
+  setTaskFavorite,
+} from "@/features/projects/favorites";
 import { localStore } from "@/lib/local-store";
 import { useShortcut, useShortcutRunner } from "@/lib/shortcut-handlers";
 import { SHORTCUTS, getShortcutPlatform } from "@/lib/shortcuts";
@@ -221,6 +225,15 @@ export function CommandPalette() {
             taskId: command.taskId,
             accumulatedDurationMs: 0,
           });
+        } else if (
+          command.actionId === "favorite" ||
+          command.actionId === "unfavorite"
+        ) {
+          setTaskFavorite(
+            command.projectId,
+            command.taskId,
+            command.actionId === "favorite",
+          );
         } else if (command.actionId === "new-entry") {
           openNewEntryEditor(
             {
@@ -242,6 +255,16 @@ export function CommandPalette() {
         }
         return;
       case "project":
+        if (
+          command.actionId === "favorite" ||
+          command.actionId === "unfavorite"
+        ) {
+          setProjectFavorite(
+            command.projectId,
+            command.actionId === "favorite",
+          );
+          return;
+        }
         requestProjectsPage(
           { action: command.actionId, target: command.projectId },
           command.projectId,

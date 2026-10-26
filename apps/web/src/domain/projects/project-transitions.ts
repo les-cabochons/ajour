@@ -90,6 +90,7 @@ export function normalizeProject(
     displayName,
     icon: normalizeProjectIcon(project.icon),
     pluginProperties: normalizePluginProperties(project.pluginProperties),
+    favoritedAt: normalizeFavoritedAt(project.favoritedAt),
     team,
     status:
       project.status === "archived" || project.status === "active"
@@ -111,11 +112,18 @@ export function normalizeProject(
         pinnedSlot: isPinnedTaskSlot(task.pinnedSlot)
           ? task.pinnedSlot
           : undefined,
+        favoritedAt: normalizeFavoritedAt(task.favoritedAt),
         // Only a project the team knows can have tasks the team knows.
         team: team?.remoteId ? normalizeTaskTeamLink(task.team) : undefined,
       };
     }),
   };
+}
+
+function normalizeFavoritedAt(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 export function addProject(
@@ -371,6 +379,80 @@ export function setProjectTaskPinnedSlot(
       }),
     };
   });
+}
+
+/**
+ * Stars a project at `favoritedAt`, or removes its star when undefined. A
+ * project's star and its tasks' stars are independent.
+ */
+export function setProjectFavorite(
+  projects: LocalProject[],
+  projectId: string,
+  favoritedAt: number | undefined,
+) {
+  return projects.map((project) =>
+    project._id === projectId ? { ...project, favoritedAt } : project,
+  );
+}
+
+/** Stars a task at `favoritedAt`, or removes its star when undefined. */
+export function setProjectTaskFavorite(
+  projects: LocalProject[],
+  projectId: string,
+  taskId: string,
+  favoritedAt: number | undefined,
+) {
+  return projects.map((project) =>
+    project._id === projectId
+      ? {
+          ...project,
+          tasks: project.tasks.map((task) =>
+            task._id === taskId ? { ...task, favoritedAt } : task,
+          ),
+        }
+      : project,
+  );
+}
+
+export type Favorite =
+  | { kind: "project"; project: LocalProject; favoritedAt: number }
+  | {
+      kind: "task";
+      project: LocalProject;
+      task: LocalProjectTask;
+      favoritedAt: number;
+    };
+
+/**
+ * The starred projects and tasks, mixed, newest star first. An archived task,
+ * or anything in an archived project, keeps its star but is left out until it
+ * is restored.
+ */
+export function getFavorites(projects: readonly LocalProject[]): Favorite[] {
+  const favorites: Favorite[] = [];
+
+  for (const project of projects) {
+    if (project.status !== "active") continue;
+    if (project.favoritedAt !== undefined) {
+      favorites.push({
+        kind: "project",
+        project,
+        favoritedAt: project.favoritedAt,
+      });
+    }
+    for (const task of project.tasks) {
+      if (task.status === "active" && task.favoritedAt !== undefined) {
+        favorites.push({
+          kind: "task",
+          project,
+          task,
+          favoritedAt: task.favoritedAt,
+        });
+      }
+    }
+  }
+
+  return favorites.sort((a, b) => b.favoritedAt - a.favoritedAt);
 }
 
 export interface PinnedTask {

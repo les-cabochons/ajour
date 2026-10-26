@@ -24,6 +24,25 @@ export function useLocalProjects() {
   );
 }
 
+/**
+ * The saved entries and the running timers. Unlike `useLocalState`, it
+ * re-renders only when one of the two changes, so many mounted pickers stay
+ * cheap.
+ */
+export function useLocalTimeRecords() {
+  const timesheetEntries = useSyncExternalStore(
+    localStore.subscribe,
+    () => localStore.snapshot().timesheetEntries,
+    () => localStore.snapshot().timesheetEntries,
+  );
+  const timers = useSyncExternalStore(
+    localStore.subscribe,
+    () => localStore.snapshot().timers,
+    () => localStore.snapshot().timers,
+  );
+  return { timesheetEntries, timers };
+}
+
 export function useLocalWorkItems() {
   return useLocalState().workItems;
 }

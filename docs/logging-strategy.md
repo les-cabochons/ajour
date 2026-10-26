@@ -810,6 +810,7 @@ channel to read the event each emits.
 | `project.archive`                    | command                            | store command                                    |
 | `project.create`                     | command                            | store command                                    |
 | `project.export`                     | command, request, plugin_operation | route, plugin method, client call                |
+| `project.favorite`                   | command                            | store command                                    |
 | `project.import`                     | command, request, plugin_operation | route, plugin method, store command, client call |
 | `project.reorder`                    | command                            | store command                                    |
 | `project.restore`                    | command                            | store command                                    |
@@ -847,6 +848,7 @@ channel to read the event each emits.
 | `suggestion.dismiss`                 | command                            | store command                                    |
 | `task.archive`                       | command                            | store command                                    |
 | `task.create`                        | command                            | store command                                    |
+| `task.favorite`                      | command                            | store command                                    |
 | `task.import`                        | command                            | store command                                    |
 | `task.pin`                           | command                            | store command                                    |
 | `task.reorder`                       | command                            | store command                                    |
