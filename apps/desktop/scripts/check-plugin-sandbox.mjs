@@ -2,11 +2,11 @@
 // its lifecycle (#391): `sandbox-check/main.cjs`, once as Ajour starts and
 // once with --no-sandbox, then `sandbox-check/lifecycle.cjs`, for the start
 // modes, limits, crash budget and quit, and for the orphan sweep across a
-// forced kill of main and a relaunch. Each run has a user data folder of its
-// own in the temp folder. It reads the checks' `CHECK {json}` lines, holds
-// them to what the tickets ask, and checks that no process the app started
-// outlives its quit. It ends only the processes it started. Exits 1 when
-// anything fails.
+// forced kill of main and a relaunch, and `sandbox-check/view-collection.cjs`,
+// the repro of #449. Each run has a user data folder of its own in the temp
+// folder. It reads the checks' `CHECK {json}` lines, holds them to what the
+// tickets ask, and checks that no process the app started outlives its
+// quit. It ends only the processes it started. Exits 1 when anything fails.
 //
 //   corepack pnpm --filter @ajour/desktop check:plugin-sandbox
 import { spawn } from "node:child_process";
@@ -24,6 +24,11 @@ const desktopRoot = path.resolve(
 );
 const checkMain = path.join(desktopRoot, "sandbox-check", "main.cjs");
 const lifecycleMain = path.join(desktopRoot, "sandbox-check", "lifecycle.cjs");
+const viewCollectionMain = path.join(
+  desktopRoot,
+  "sandbox-check",
+  "view-collection.cjs",
+);
 const TOKEN = "fixture-token-7b1e5c9d2a";
 
 const failures = [];
@@ -319,6 +324,16 @@ const isWindows = process.platform === "win32";
     dataShape.rendererOpen === true,
     "the data shape ran in a renderer of its own",
     dataShape,
+  );
+
+  const many = findings.many ?? {};
+  expect(
+    many.runs === 500 &&
+      many.completed === many.runs &&
+      many.stalled === null &&
+      many.samePid === true,
+    "a plugin runs 500 operations in a row, each in a new worker of the same page, while main collects its garbage",
+    many,
   );
 
   const events = findings.quitting?.events ?? [];
@@ -635,6 +650,34 @@ const isWindows = process.platform === "win32";
   await rm(spawned.userData, { recursive: true, force: true }).catch(
     () => undefined,
   );
+}
+
+// 5. Why each plugin's view is held (#449): a view main doesn't hold is
+//    collected, and its page closes with it.
+{
+  process.stdout.write("\n== A plugin's page and its view\n");
+  const { findings, exit, stderr, left, pids } = await runCheck(
+    "view-collection",
+    [],
+    { main: viewCollectionMain },
+  );
+  if (findings.error) process.stdout.write(`${findings.error.error}\n`);
+  expect(exit.code === 0, "the check ran to the end", { exit, stderr });
+  expect(
+    findings.held?.completed === findings.held?.workers &&
+      findings.held?.pageClosed === false,
+    "a page whose view main holds runs 500 module workers in a row, each importing a module",
+    findings.held,
+  );
+  expect(
+    findings.unheld?.pageClosed === true,
+    "a page whose view main doesn't hold closes once main collects the view",
+    findings.unheld,
+  );
+  expect(left.length === 0, "a normal quit leaves no process behind", {
+    pids,
+    left,
+  });
 }
 
 process.stdout.write(

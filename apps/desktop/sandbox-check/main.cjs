@@ -82,6 +82,15 @@ const watchdog = setTimeout(() => {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** How many operations step 7 runs in a row. */
+const MANY_RUNS = 500;
+
+/** A full garbage collection of the main process, on demand. */
+function forcedGarbageCollection() {
+  require("node:v8").setFlagsFromString("--expose-gc");
+  return require("node:vm").runInNewContext("gc");
+}
+
 function listen(handler) {
   const server = http.createServer(handler);
   return new Promise((resolve) => {
@@ -589,6 +598,34 @@ async function main() {
       ),
     };
     report("lifecycle", { afterCancel, afterTimeout, afterCrash, escapePid });
+
+    // 8. Many operations in a row, each in a new worker of the same page,
+    //    while main collects its garbage (#449): a view nothing held was
+    //    collected and closed its page, and every later run hung.
+    const collectGarbage = forcedGarbageCollection();
+    const manyPid = runtime.rendererProcessIds()["fixture-tracker"];
+    const manyStartedAt = Date.now();
+    let completed = 0;
+    let stalled = null;
+    for (let index = 0; index < MANY_RUNS; index += 1) {
+      if (index % 25 === 0) collectGarbage();
+      const outcome = await Promise.race([
+        runDirect(runtime, "fixture-tracker", "whoAmI", [], "lib/plugin.mjs"),
+        sleep(10_000).then(() => "no answer"),
+      ]);
+      if (outcome?.ok !== true) {
+        stalled = { index, outcome };
+        break;
+      }
+      completed += 1;
+    }
+    report("many", {
+      runs: MANY_RUNS,
+      completed,
+      stalled,
+      ms: Date.now() - manyStartedAt,
+      samePid: runtime.rendererProcessIds()["fixture-tracker"] === manyPid,
+    });
   }
 
   const appPids = app.getAppMetrics().map((metric) => metric.pid);
