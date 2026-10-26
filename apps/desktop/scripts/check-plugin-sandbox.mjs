@@ -2,8 +2,9 @@
 // its lifecycle (#391): `sandbox-check/main.cjs`, once as Ajour starts and
 // once with --no-sandbox, then `sandbox-check/lifecycle.cjs`, for the start
 // modes, limits, crash budget and quit, and for the orphan sweep across a
-// forced kill of main and a relaunch, and `sandbox-check/view-collection.cjs`,
-// the repro of #449. Each run has a user data folder of its own in the temp
+// forced kill of main and a relaunch, `sandbox-check/view-collection.cjs`,
+// the repro of #449, and `sandbox-check/broker-pinning.cjs`, the broker's
+// pinned requests (#434). Each run has a user data folder of its own in the temp
 // folder. It reads the checks' `CHECK {json}` lines, holds them to what the
 // tickets ask, and checks that no process the app started outlives its
 // quit. It ends only the processes it started. Exits 1 when anything fails.
@@ -28,6 +29,11 @@ const viewCollectionMain = path.join(
   desktopRoot,
   "sandbox-check",
   "view-collection.cjs",
+);
+const brokerPinningMain = path.join(
+  desktopRoot,
+  "sandbox-check",
+  "broker-pinning.cjs",
 );
 const TOKEN = "fixture-token-7b1e5c9d2a";
 
@@ -698,6 +704,48 @@ const isWindows = process.platform === "win32";
     findings.unheld?.pageClosed === true,
     "a page whose view main doesn't hold closes once main collects the view",
     findings.unheld,
+  );
+  expect(left.length === 0, "a normal quit leaves no process behind", {
+    pids,
+    left,
+  });
+}
+
+// 6. The broker's pinned requests (#434): they connect only where the
+//    tunnel's pin leads, with TLS on the name, and never straight out.
+{
+  process.stdout.write("\n== The broker's pinned requests\n");
+  const { findings, exit, stderr, left, pids } = await runCheck(
+    "broker-pinning",
+    [],
+    { main: brokerPinningMain },
+  );
+  if (findings.error) process.stdout.write(`${findings.error.error}\n`);
+  expect(exit.code === 0, "the check ran to the end", { exit, stderr });
+  const named = findings.name ?? {};
+  expect(
+    named.hellos?.length > 0 &&
+      named.hellos.every(
+        (hello) => hello.serverName === "pinned.ajour-check.invalid",
+      ) &&
+      named.dials?.every((dial) => dial.startsWith("127.0.0.1:")),
+    "a pinned request to a name no DNS holds reaches the pinned address, with TLS on the name",
+    named,
+  );
+  const literal = findings.literal ?? {};
+  expect(
+    literal.dials?.length > (named.dials?.length ?? 0) &&
+      literal.hellos?.length > (named.hellos?.length ?? 0),
+    "a pinned request to a loopback address goes through the tunnel too",
+    literal,
+  );
+  const unpinned = findings.unpinned ?? {};
+  expect(
+    unpinned.newDials === 0 &&
+      unpinned.newHellos === 0 &&
+      /ERR_TUNNEL_CONNECTION_FAILED/.test(unpinned.outcome ?? ""),
+    "a request with no live pin is refused and connects nowhere",
+    unpinned,
   );
   expect(left.length === 0, "a normal quit leaves no process behind", {
     pids,

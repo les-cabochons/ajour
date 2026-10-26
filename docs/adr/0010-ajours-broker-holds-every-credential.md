@@ -4,7 +4,7 @@ Plugins never see a secret, not even their own. A broker in Ajour's main process
 
 - builds the URL from the connection's base address;
 - checks the manifest's endpoint allowlist;
-- refuses private addresses unless the user marked the connection as on-premises, checking the resolved address before the request and the answering address after it;
+- refuses private addresses unless the user marked the connection as on-premises: it resolves the host, refuses the request when any address is private, and connects only to the addresses it checked;
 - follows same-origin redirects only, and hands a cross-origin redirect back to the plugin;
 - attaches the credential;
 - removes secrets from what comes back.
@@ -25,6 +25,7 @@ Every auth scheme lives in the broker: bearer and basic credentials, header temp
 - Accounts belong to the plugin that declared their sign-in. Uninstalling that plugin removes its accounts and every grant on them.
 - An update that widens a plugin's access starts disabled until the user approves it again.
 - The local API stops accepting unauthenticated loopback callers (#232).
-- The broker uses Electron's network stack, for the system proxy, PAC files, the OS trust store and Windows integrated sign-in. That stack cannot pin the address it connects to, so a DNS-rebinding window remains between the two address checks. It cannot break G1, because credentials attach only to hosts the user configured. The answering address has two more gaps, recorded on #389: through a system proxy the proxy answers, so only an answer from an address that isn't a proxy's, as when a PAC file falls back to `DIRECT`, is judged; and when the stack names no answering address, only the first check holds, and the request's event says so.
+- The broker uses Electron's network stack, for the system proxy, PAC files, the OS trust store and Windows integrated sign-in. That stack can't be told which address to connect to, so a request the broker reaches directly goes through a CONNECT tunnel of its own on loopback, which connects only to the addresses the broker checked (#434). TLS still runs between Chromium and the service, on the name. A name that rebinds after the check can't move such a request.
+- What the broker doesn't pin is judged by the address that answered, after the request was sent: a request through a system proxy, where the proxy connects, and an address literal, which can't rebind. A DNS-rebinding window remains there: when a PAC file falls back to `DIRECT`, a name that rebinds between the check and the connection reaches its new address, and only the answer is refused. It cannot break G1, because credentials attach only to hosts the user configured. The answering address has two more gaps, recorded on #389: through a system proxy the proxy answers, so only an answer from an address that isn't a proxy's is judged; and when the stack names no answering address, only the first check holds, and the request's event says so.
 - The Vault page lists every secret Ajour holds, but never shows or copies a value. A secret meant for other people, like a team secret, is shown once when it's created or rotated.
 - G2 stays best effort: a plugin can still misuse what its grant allows.

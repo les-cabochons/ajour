@@ -96,11 +96,14 @@ export type PluginRequestHostKind =
 
 /**
  * How far the broker could judge the address that answered a request:
- * `checked` against private addresses, `proxy` when a system proxy answered
- * for it, which isn't judged, or `unknown` when the network stack named no
- * address, so only the check before the request held (ADR 0010).
+ * `pinned` when the request could connect only to the addresses checked
+ * before it, `checked` when the address that answered was checked after
+ * it, `proxy` when a system proxy answered for it, which isn't judged, or
+ * `unknown` when the network stack named no address, so only the check
+ * before the request held (ADR 0010).
  */
-export type PluginRequestAnswerAddress = "checked" | "proxy" | "unknown";
+export type PluginRequestAnswerAddress =
+  "pinned" | "checked" | "proxy" | "unknown";
 
 /**
  * What every `request` event carries, whatever its route: the method, the

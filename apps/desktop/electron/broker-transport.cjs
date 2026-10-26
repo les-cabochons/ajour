@@ -4,16 +4,27 @@
  * Electron's `net.request`, as decided in #219 and the spec #381. Main passes
  * both to `startAppApiServer`, after `ready`.
  *
- * - **A session of its own,** `ajour-broker`, in memory (no `persist:`) and
- *   without an HTTP cache, used by nothing else. Every request omits
- *   credentials, so no cookie is sent or kept and no sign-in prompt
- *   appears, and `cache: "no-store"` keeps answers out of memory too. The
- *   session follows the system proxy and PAC, and the OS trust store, as
- *   any Chromium session does.
+ * - **Sessions of its own,** in memory (no `persist:`) and without an HTTP
+ *   cache, used by nothing else. Every request omits credentials, so no
+ *   cookie is sent or kept and no sign-in prompt appears, and
+ *   `cache: "no-store"` keeps answers out of memory too. Both use the OS
+ *   trust store, as any Chromium session does.
+ * - **A pinned request** (`connectTo`, a name the broker checked and
+ *   reaches directly) goes on `ajour-broker-pinned`, whose only route is
+ *   the pinning tunnel on loopback (`broker-pinning-tunnel.cjs`), with no
+ *   bypass, not even for this computer's own addresses. The tunnel connects
+ *   only to the addresses the broker checked, so a name that rebinds after
+ *   the check can't move the request. Chromium still speaks TLS to the
+ *   service by name, so the Host header, the server name and the
+ *   certificate check are the name's.
+ * - **Any other request** (on-premises, through a system proxy, an address
+ *   literal) goes on `ajour-broker`, which follows the system proxy and
+ *   PAC.
  * - **Manual redirects.** The transport never follows one: it answers with
  *   the 3xx and its `Location`, and the broker decides.
- * - **The address that answered.** `net` doesn't expose it, but the
- *   session's `webRequest` events carry `ip` once a response started. Each
+ * - **The address that answered** an unpinned request. `net` doesn't
+ *   expose it, but the session's `webRequest` events carry `ip` once a
+ *   response started. Each
  *   request carries a one-time marker header, which `onBeforeSendHeaders`
  *   takes off before it leaves, to tie the events to it. When no event
  *   names an address, the broker has only its check before the request: the
@@ -37,7 +48,10 @@
 
 const { isIP } = require("node:net");
 
+const { createPinningTunnel } = require("./broker-pinning-tunnel.cjs");
+
 const BROKER_PARTITION = "ajour-broker";
+const PINNED_PARTITION = "ajour-broker-pinned";
 const MARKER_HEADER = "x-ajour-broker-request";
 
 /**
@@ -95,10 +109,35 @@ function aborted(signal) {
  *   net: Pick<import("electron").Net, "request">,
  *   session: Pick<typeof import("electron").session, "fromPartition">,
  *   randomUUID: () => string,
+ *   tunnel?: ReturnType<typeof createPinningTunnel>,
  * }} electron
  */
-function createBrokerNetwork({ net, session, randomUUID }) {
+function createBrokerNetwork({
+  net,
+  session,
+  randomUUID,
+  tunnel = createPinningTunnel(),
+}) {
   const ses = session.fromPartition(BROKER_PARTITION, { cache: false });
+  const pinnedSes = session.fromPartition(PINNED_PARTITION, { cache: false });
+  /** The pinned session, once the tunnel listens and is its only route. */
+  let pinnedReady;
+  const pinnedSession = () => {
+    pinnedReady ??= (async () => {
+      const port = await tunnel.listen();
+      await pinnedSes.setProxy({
+        mode: "fixed_servers",
+        proxyRules: `127.0.0.1:${port}`,
+        // Chromium skips a proxy for loopback unless told not to.
+        proxyBypassRules: "<-loopback>",
+      });
+      return pinnedSes;
+    })().catch((error) => {
+      pinnedReady = undefined;
+      throw error;
+    });
+    return pinnedReady;
+  };
   /** Each request in flight, by its marker: the address that answered it. */
   const answered = new Map();
   /** webRequest ids, to the marker of the request they belong to. */
@@ -128,105 +167,143 @@ function createBrokerNetwork({ net, session, randomUUID }) {
   });
   ses.webRequest.onErrorOccurred((details) => markers.delete(details.id));
 
+  /**
+   * @typedef {{
+   *   url: string,
+   *   connectTo?: readonly string[],
+   *   method: string,
+   *   headers: Record<string, string>,
+   *   body?: Uint8Array,
+   *   signal: AbortSignal,
+   *   maxResponseBytes: number,
+   * }} TransportRequest
+   */
+
+  /**
+   * Sends one exchange on `session`. A pinned one (`unpin`) names no
+   * answering address: `webRequest` would name the tunnel's.
+   *
+   * @param {TransportRequest} request
+   * @param {any} sendSession
+   * @param {(() => void) | undefined} unpin
+   */
+  function sendOn(request, sendSession, unpin) {
+    return new Promise((resolve, reject) => {
+      if (request.signal.aborted) {
+        unpin?.();
+        reject(aborted(request.signal));
+        return;
+      }
+      const marker = unpin ? undefined : randomUUID();
+      if (marker !== undefined) answered.set(marker, {});
+      let settled = false;
+      const clientRequest = net.request({
+        method: request.method,
+        url: request.url,
+        session: sendSession,
+        redirect: "manual",
+        credentials: "omit",
+        cache: "no-store",
+        referrerPolicy: "no-referrer",
+      });
+      const settle = (outcome) => {
+        if (settled) return;
+        settled = true;
+        request.signal.removeEventListener("abort", onAbort);
+        unpin?.();
+        const remoteAddress =
+          marker === undefined ? undefined : answered.get(marker)?.ip;
+        if (marker !== undefined) answered.delete(marker);
+        if (outcome instanceof Error) {
+          reject(outcome);
+        } else {
+          resolve(remoteAddress ? { ...outcome, remoteAddress } : outcome);
+        }
+      };
+      // Each outcome settles before it aborts, which emits `abort`.
+      const onAbort = () => {
+        settle(aborted(request.signal));
+        clientRequest.abort();
+      };
+      request.signal.addEventListener("abort", onAbort, { once: true });
+
+      clientRequest.on(
+        "redirect",
+        (statusCode, _method, redirectUrl, headers) => {
+          // Not following it cancels it: the broker decides what to follow.
+          settle({
+            status: statusCode,
+            headers: { ...flattenHeaders(headers), location: redirectUrl },
+            body: new Uint8Array(),
+          });
+          clientRequest.abort();
+        },
+      );
+      clientRequest.on("response", (response) => {
+        const chunks = [];
+        let size = 0;
+        response.on("data", (chunk) => {
+          if (settled) return;
+          size += chunk.length;
+          if (size > request.maxResponseBytes) {
+            settle(tooLarge());
+            clientRequest.abort();
+            return;
+          }
+          chunks.push(Buffer.from(chunk));
+        });
+        response.on("end", () => {
+          settle({
+            status: response.statusCode,
+            headers: flattenHeaders(response.headers),
+            body: new Uint8Array(Buffer.concat(chunks)),
+          });
+        });
+        response.on("error", (error) => settle(error));
+        response.on("aborted", () =>
+          settle(new Error("The service ended its answer early.")),
+        );
+      });
+      clientRequest.on("error", (error) => settle(error));
+      clientRequest.on("abort", () =>
+        settle(new Error("The request was cancelled.")),
+      );
+
+      for (const [name, value] of Object.entries(request.headers)) {
+        clientRequest.setHeader(name, value);
+      }
+      if (marker !== undefined) clientRequest.setHeader(MARKER_HEADER, marker);
+      if (request.body) clientRequest.write(Buffer.from(request.body));
+      clientRequest.end();
+    });
+  }
+
   const transport = {
     /**
      * One exchange, as `BrokerTransportRequest` in the API's broker types it.
      *
-     * @param {{
-     *   url: string,
-     *   method: string,
-     *   headers: Record<string, string>,
-     *   body?: Uint8Array,
-     *   signal: AbortSignal,
-     *   maxResponseBytes: number,
-     * }} request
+     * @param {TransportRequest} request
      */
     send(request) {
-      return new Promise((resolve, reject) => {
-        if (request.signal.aborted) {
-          reject(aborted(request.signal));
-          return;
+      if (request.connectTo === undefined) {
+        return sendOn(request, ses, undefined);
+      }
+      return (async () => {
+        const url = new URL(request.url);
+        if (url.protocol !== "https:") {
+          throw new Error("Only an https request is pinned.");
         }
-        const marker = randomUUID();
-        answered.set(marker, {});
-        let settled = false;
-        const clientRequest = net.request({
-          method: request.method,
-          url: request.url,
-          session: ses,
-          redirect: "manual",
-          credentials: "omit",
-          cache: "no-store",
-          referrerPolicy: "no-referrer",
-        });
-        const settle = (outcome) => {
-          if (settled) return;
-          settled = true;
-          request.signal.removeEventListener("abort", onAbort);
-          const remoteAddress = answered.get(marker)?.ip;
-          answered.delete(marker);
-          if (outcome instanceof Error) {
-            reject(outcome);
-          } else {
-            resolve(remoteAddress ? { ...outcome, remoteAddress } : outcome);
-          }
-        };
-        // Each outcome settles before it aborts, which emits `abort`.
-        const onAbort = () => {
-          settle(aborted(request.signal));
-          clientRequest.abort();
-        };
-        request.signal.addEventListener("abort", onAbort, { once: true });
-
-        clientRequest.on(
-          "redirect",
-          (statusCode, _method, redirectUrl, headers) => {
-            // Not following it cancels it: the broker decides what to follow.
-            settle({
-              status: statusCode,
-              headers: { ...flattenHeaders(headers), location: redirectUrl },
-              body: new Uint8Array(),
-            });
-            clientRequest.abort();
-          },
-        );
-        clientRequest.on("response", (response) => {
-          const chunks = [];
-          let size = 0;
-          response.on("data", (chunk) => {
-            if (settled) return;
-            size += chunk.length;
-            if (size > request.maxResponseBytes) {
-              settle(tooLarge());
-              clientRequest.abort();
-              return;
-            }
-            chunks.push(Buffer.from(chunk));
-          });
-          response.on("end", () => {
-            settle({
-              status: response.statusCode,
-              headers: flattenHeaders(response.headers),
-              body: new Uint8Array(Buffer.concat(chunks)),
-            });
-          });
-          response.on("error", (error) => settle(error));
-          response.on("aborted", () =>
-            settle(new Error("The service ended its answer early.")),
-          );
-        });
-        clientRequest.on("error", (error) => settle(error));
-        clientRequest.on("abort", () =>
-          settle(new Error("The request was cancelled.")),
-        );
-
-        for (const [name, value] of Object.entries(request.headers)) {
-          clientRequest.setHeader(name, value);
+        if (request.connectTo.length === 0) {
+          throw new Error("A pinned request needs an address.");
         }
-        clientRequest.setHeader(MARKER_HEADER, marker);
-        if (request.body) clientRequest.write(Buffer.from(request.body));
-        clientRequest.end();
-      });
+        const pinned = await pinnedSession();
+        const unpin = tunnel.pin(
+          url.hostname,
+          url.port === "" ? 443 : Number(url.port),
+          request.connectTo,
+        );
+        return await sendOn(request, pinned, unpin);
+      })();
     },
   };
 
@@ -276,7 +353,17 @@ function createBrokerNetwork({ net, session, randomUUID }) {
     },
   };
 
-  return { transport, resolver };
+  return {
+    transport,
+    resolver,
+    /** Ends the pinning tunnel, on quit. */
+    close: () => tunnel.close(),
+  };
 }
 
-module.exports = { BROKER_PARTITION, MARKER_HEADER, createBrokerNetwork };
+module.exports = {
+  BROKER_PARTITION,
+  PINNED_PARTITION,
+  MARKER_HEADER,
+  createBrokerNetwork,
+};
