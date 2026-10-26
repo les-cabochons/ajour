@@ -148,6 +148,28 @@ it("ships every package file the local API imports", () => {
   }
 }, 120_000);
 
+it("ships every runtime dependency of the shared package", () => {
+  // Runs the real packaging step. The output folder is a git-ignored build artifact.
+  const prepared = spawnSync(
+    process.execPath,
+    [path.join(desktopRoot, "scripts/prepare-internal-api.cjs")],
+    { encoding: "utf8" },
+  );
+  expect(prepared.status, prepared.stderr).toBe(0);
+
+  const sharedPackage = JSON.parse(
+    readFileSync(path.join(repoRoot, "packages/shared/package.json"), "utf8"),
+  );
+  const dependencies = Object.keys(sharedPackage.dependencies ?? {});
+  expect(dependencies).toContain("tldts");
+  for (const name of dependencies) {
+    expect(
+      existsSync(path.join(runtimeRoot, "node_modules", name, "package.json")),
+      name,
+    ).toBe(true);
+  }
+}, 120_000);
+
 it("ships the wide-events package the main process loads at launch", async () => {
   // Runs the real packaging step. The output folder is a git-ignored build artifact.
   const prepared = spawnSync(

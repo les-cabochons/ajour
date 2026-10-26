@@ -1,18 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import {
-  chmod,
-  mkdir,
-  open,
-  readdir,
-  readFile,
-  rename,
-  rm,
-} from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
-  pluginFieldValuesSchema,
   normalizeSourceStatusKey,
   pluginHasCapability,
   switchableCapabilitySchema,
@@ -35,9 +26,20 @@ import {
   type PluginOverviewItem,
   type PluginsOverview,
   type PluginSummaryValues,
+  type SecretEntrySummary,
+  type SecretFieldSummary,
   type SwitchableCapability,
 } from "../../../packages/shared/plugins.ts";
 import type { McpSettings } from "../../../packages/shared/agent-tools.ts";
+import {
+  connectionAccessChoicesOf,
+  connectionAccessOn,
+} from "../../../packages/shared/connection-access.ts";
+import { removeOrphanedTempFiles, writeFileAtomically } from "./atomic-file.ts";
+import {
+  agentTaskMcpToolNames,
+  type AgentTaskMcpTool,
+} from "../../../packages/shared/plugin-api-4.ts";
 import { withoutContent } from "./event-errors.ts";
 import type { ApiEvents } from "./events.ts";
 import {
@@ -46,19 +48,57 @@ import {
 } from "../../../packages/shared/agent-runs.ts";
 import { boundConnectionError, connectionRedaction } from "./plugin-errors.ts";
 import {
+  ConnectionPausedError,
   connectionCredentials,
+  decideSecretPause,
   editableValues as editableFieldValues,
+  holderNeedsMove,
+  holderNeedsSettling,
+  nonSecretValues,
+  readHolderSecrets,
+  redactionFields,
+  secretManifestOf,
+  secretPauseMessage,
+  secretStatusPause,
+  splitSave,
+  type HolderSecrets,
+  type SplitSave,
+  type SecretFieldDeclaration,
+  type SecretHolder,
+  type SecretManifest,
 } from "./connection-credentials.ts";
+import {
+  defaultAgentRunnerSettings,
+  normalizeAgentRunnerState,
+  normalizeSecretFields,
+  safeValues,
+  UNSAFE_KEYS,
+  type StoredAgentRunnerState,
+  type StoredSecretFields,
+} from "./agent-runner-state.ts";
+import {
+  NO_VAULT_REASON,
+  NO_VAULT_STATUS,
+  secretKeyId,
+  VaultUnavailableError,
+  type SecretEntryInfo,
+  type SecretKey,
+  type SecretVault,
+  type VaultStatus,
+} from "./secret-vault.ts";
 import {
   runStateMigrations,
   STATE_VERSION,
   storedStateVersion,
+  type StateMigrationContext,
   type StoredStateRecord,
 } from "./state-migrations.ts";
-
-/** The random part of a temp file's name, as `randomUUID` writes it. */
-const TEMP_FILE_ID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+import {
+  emptyVaultMigrationReport,
+  holderId,
+  settleHolders,
+  type VaultMigrationReport,
+} from "./vault-migration.ts";
 
 interface StoredConnection {
   id: string;
@@ -73,13 +113,157 @@ interface StoredConnection {
   agentAccess?: AgentAccess;
   /** Absent means off; see `connectionAllowsLossyConversion`. */
   allowLossyConversion?: boolean;
+  /**
+   * The user marked it on-premises, so the broker may send its requests to
+   * private addresses. Only a plugin whose manifest allows it may have it.
+   */
+  onPremises?: boolean;
+  /**
+   * The access choices the user turned on in Ajour's connection form, never
+   * from anything a plugin returns. Absent or empty leaves only the choices
+   * the plugin marks always on: reading only (`connection-access.ts`).
+   */
+  access?: string[];
+  /** What the broker recorded for Access review. */
+  brokerActivity?: BrokerActivityRecord;
+  /** The plugin's settings, without the secrets the vault holds. */
   config: PluginFieldValues;
+  /**
+   * The fields whose values the vault holds. Absent until the config was
+   * checked against its plugin's manifest, as for connections saved before
+   * the vault; see `connection-credentials.ts`.
+   */
+  secrets?: StoredSecretFields;
   configSummary: PluginSummaryValues;
   connectedAt: number;
   lastSyncAt?: number;
   lastError?: string;
   /** When the sync that set `lastError` failed. */
   lastErrorAt?: number;
+}
+
+/**
+ * What the broker records for Access review (#394): the last request, and
+ * the requests its policy refused, with the last one's time.
+ */
+export interface BrokerActivityRecord {
+  lastRequestAt?: number;
+  blockedCount?: number;
+  lastBlockedAt?: number;
+}
+
+/**
+ * How long the broker's records gather in memory before they are written:
+ * a plugin can send ten refused requests a second, and each must not
+ * rewrite the state file. A crash loses one window at most.
+ */
+const BROKER_ACTIVITY_WINDOW_MS = 30_000;
+
+/** What a window gathered for one record, before it is written. */
+interface BrokerActivityDelta {
+  pluginId: string;
+  /** Absent for the plugin's own record. */
+  connectionId?: string;
+  lastRequestAt: number;
+  blocked: number;
+  lastBlockedAt?: number;
+}
+
+function normalizeBrokerActivity(
+  raw: unknown,
+): BrokerActivityRecord | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const value = raw as Record<string, unknown>;
+  const time = (candidate: unknown) =>
+    typeof candidate === "number" && Number.isFinite(candidate) && candidate > 0
+      ? candidate
+      : undefined;
+  const record: BrokerActivityRecord = {
+    ...(time(value.lastRequestAt)
+      ? { lastRequestAt: time(value.lastRequestAt) }
+      : {}),
+    ...(typeof value.blockedCount === "number" &&
+    Number.isInteger(value.blockedCount) &&
+    value.blockedCount > 0
+      ? { blockedCount: value.blockedCount }
+      : {}),
+    ...(time(value.lastBlockedAt)
+      ? { lastBlockedAt: time(value.lastBlockedAt) }
+      : {}),
+  };
+  return Object.keys(record).length > 0 ? record : undefined;
+}
+
+/** The record with what a window gathered for it. */
+function withBrokerActivity(
+  record: BrokerActivityRecord | undefined,
+  delta: BrokerActivityDelta,
+): BrokerActivityRecord {
+  const blockedCount = (record?.blockedCount ?? 0) + delta.blocked;
+  const lastBlockedAt = Math.max(
+    record?.lastBlockedAt ?? 0,
+    delta.lastBlockedAt ?? 0,
+  );
+  const lastRequestAt = Math.max(
+    record?.lastRequestAt ?? 0,
+    delta.lastRequestAt,
+  );
+  return {
+    ...(lastRequestAt > 0 ? { lastRequestAt } : {}),
+    ...(blockedCount > 0 ? { blockedCount } : {}),
+    ...(lastBlockedAt > 0 ? { lastBlockedAt } : {}),
+  };
+}
+
+function normalizeAccess(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const ids = [
+    ...new Set(
+      raw.filter(
+        (id): id is string =>
+          typeof id === "string" && /^[a-z][A-Za-z0-9]{0,39}$/.test(id),
+      ),
+    ),
+  ].sort();
+  // An empty list is kept: it says the connection reads only.
+  return ids;
+}
+
+/**
+ * A connection whose `config` holds its secrets, read from the vault for one
+ * use. `secretsReadAt` is when that read started: a secret saved after it
+ * isn't the one the call used (`markSecretsRejected`).
+ */
+export type ConnectionWithSecrets = StoredConnection & {
+  secretsReadAt: number;
+};
+
+/** A connection field declaration list, for a save that splits secrets out. */
+export interface SecretSaveFields {
+  /** The plugin's fields, as its manifest declares them. */
+  fields: readonly SecretFieldDeclaration[];
+  /** The secret fields the save removes. */
+  removeSecrets?: readonly string[];
+  /** The secret fields the form gave a value, even one equal to the saved. */
+  replacedSecrets?: readonly string[];
+  /** The reminder dates the form shows, by field ID. `null` clears one. */
+  secretExpiry?: Readonly<Record<string, number | null>>;
+}
+
+function needsSettling(
+  holder: SecretHolder,
+  manifests: ReadonlyMap<string, SecretManifest>,
+) {
+  return holderNeedsSettling(holder, manifests.get(holder.pluginId));
+}
+
+function connectionHolder(connection: StoredConnection): SecretHolder {
+  return {
+    pluginId: connection.pluginId,
+    connectionId: connection.id,
+    values: connection.config,
+    secrets: connection.secrets,
+  };
 }
 
 /**
@@ -93,6 +277,12 @@ export interface StoredMcpClient {
   createdAt: number;
   lastUsedAt?: number;
   revokedAt?: number;
+  /**
+   * The data tools the client may list and call, besides the session tools:
+   * an agent task run's client gets those its task declares (#396). Without
+   * it, the client has every tool, as a client the user creates does.
+   */
+  tools?: AgentTaskMcpTool[];
 }
 
 interface StoredMcpState {
@@ -107,80 +297,39 @@ function normalizeMcpState(raw: unknown): StoredMcpState {
   const value = (raw ?? {}) as Partial<StoredMcpState>;
   return {
     enabled: value.enabled === true,
-    clients: (Array.isArray(value.clients) ? value.clients : []).filter(
-      (client): client is StoredMcpClient =>
-        typeof client?.id === "string" &&
-        typeof client.name === "string" &&
-        typeof client.tokenHash === "string" &&
-        typeof client.createdAt === "number",
-    ),
+    clients: (Array.isArray(value.clients) ? value.clients : [])
+      .filter(
+        (client): client is StoredMcpClient =>
+          typeof client?.id === "string" &&
+          typeof client.name === "string" &&
+          typeof client.tokenHash === "string" &&
+          typeof client.createdAt === "number",
+      )
+      .map(normalizeMcpClientTools),
   };
 }
-
-interface StoredAgentRunnerState {
-  settings: AgentRunnerSettings;
-  /** Agent task setting values by plugin ID, shared by the plugin's tasks. */
-  pluginValues: Record<string, PluginFieldValues>;
-}
-
-function defaultAgentRunnerSettings(): AgentRunnerSettings {
-  return { cli: null, browserMode: "ajour-chrome", model: "" };
-}
-
-/** Keys that would reach Object.prototype if a stored name were used as a key. */
-const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 /**
- * Copies `values` into a map without a prototype and without the unsafe
- * keys, so a stored key can never write to Object.prototype.
+ * A client limited to some tools stays limited: a list that isn't one of
+ * names leaves it none, never every tool, and a name Ajour has no tool for
+ * is dropped.
  */
-function safeValues(values: PluginFieldValues): PluginFieldValues {
-  const copy: PluginFieldValues = Object.create(null);
-  for (const [key, value] of Object.entries(values)) {
-    if (!UNSAFE_KEYS.has(key)) copy[key] = value;
-  }
-  return copy;
-}
-
-function normalizeAgentRunnerState(raw: unknown): StoredAgentRunnerState {
-  const record =
-    typeof raw === "object" && raw !== null
-      ? (raw as Record<string, unknown>)
-      : {};
-  const settings = agentRunnerSettingsSchema.safeParse(record.settings);
-  const pluginValues: StoredAgentRunnerState["pluginValues"] =
-    Object.create(null);
-  const merge = (pluginId: string, values: unknown) => {
-    if (UNSAFE_KEYS.has(pluginId)) return;
-    const parsed = pluginFieldValuesSchema.safeParse(values);
-    if (!parsed.success) return;
-    const merged = (pluginValues[pluginId] ??= Object.create(null));
-    for (const [key, value] of Object.entries(safeValues(parsed.data))) {
-      if (merged[key] === undefined || merged[key] === "") merged[key] = value;
-    }
-  };
-  if (typeof record.pluginValues === "object" && record.pluginValues !== null) {
-    for (const [pluginId, values] of Object.entries(record.pluginValues)) {
-      merge(pluginId, values);
-    }
-  }
-  // Before a plugin's tasks shared their settings, each task kept its own
-  // values. The first non-empty value of each setting wins.
-  if (typeof record.taskValues === "object" && record.taskValues !== null) {
-    for (const [pluginId, tasks] of Object.entries(record.taskValues)) {
-      if (typeof tasks !== "object" || tasks === null) continue;
-      for (const [taskId, values] of Object.entries(tasks)) {
-        if (!UNSAFE_KEYS.has(taskId)) merge(pluginId, values);
-      }
-    }
-  }
+function normalizeMcpClientTools(client: StoredMcpClient): StoredMcpClient {
+  if (!Object.hasOwn(client, "tools")) return client;
+  const { tools } = client as { tools: unknown };
   return {
-    settings: settings.success ? settings.data : defaultAgentRunnerSettings(),
-    pluginValues,
+    ...client,
+    tools:
+      Array.isArray(tools) &&
+      tools.every((tool: unknown) => typeof tool === "string")
+        ? tools.filter((tool): tool is AgentTaskMcpTool =>
+            agentTaskMcpToolNames.includes(tool),
+          )
+        : [],
   };
 }
 
-interface AppApiStateV7 {
+interface AppApiStateV8 {
   version: number;
   connections: StoredConnection[];
   stagedImports: BacklogImportCandidate[];
@@ -196,9 +345,20 @@ interface AppApiStateV7 {
   pluginOrigins: Record<string, PluginOrigin>;
   mcp: StoredMcpState;
   agentRunner: StoredAgentRunnerState;
+  /**
+   * Per plugin, what the broker recorded for Access review across its
+   * requests, those that named no saved connection of the plugin included.
+   */
+  pluginBrokerActivity: Record<string, BrokerActivityRecord>;
 }
 
-type AppApiState = AppApiStateV7;
+type AppApiState = AppApiStateV8;
+
+interface MutationResult<T> {
+  nextState: AppApiState;
+  result: T;
+  afterWrite?: () => Promise<void>;
+}
 
 /**
  * Whether the plugin may run as far as signing goes: always when it came from
@@ -285,7 +445,12 @@ function createDefaultState(): AppApiState {
     unsignedPluginsEnabled: true,
     pluginOrigins: {},
     mcp: { enabled: false, clients: [] },
-    agentRunner: { settings: defaultAgentRunnerSettings(), pluginValues: {} },
+    agentRunner: {
+      settings: defaultAgentRunnerSettings(),
+      pluginValues: {},
+      pluginSecrets: {},
+    },
+    pluginBrokerActivity: {},
   };
 }
 
@@ -407,22 +572,133 @@ function toEditableValues(
   return editableValues;
 }
 
+/** What the vault says about a connection's secrets, without reading one. */
+interface VaultView {
+  status: VaultStatus;
+  /** The entries the vault holds, by `secretKeyId`. */
+  entries: ReadonlyMap<string, SecretEntryInfo>;
+}
+
+/** What the overview says about one entry: never a value, only its state and dates. */
+function entrySummary(
+  key: SecretKey,
+  vault: VaultView,
+): Pick<SecretFieldSummary, "setAt" | "lastUsedAt" | "expiresAt"> & {
+  readable: boolean;
+} {
+  const info = vault.entries.get(secretKeyId(key));
+  return {
+    readable: info?.unreadable === false && vault.status.state === "available",
+    ...(info ? { setAt: info.setAt } : {}),
+    ...(info?.lastUsedAt !== undefined ? { lastUsedAt: info.lastUsedAt } : {}),
+    ...(info?.expiresAt !== undefined ? { expiresAt: info.expiresAt } : {}),
+  };
+}
+
+/** The saved secret fields of a holder and their states. */
+function secretFieldSummaries(
+  owner: Pick<SecretHolder, "pluginId" | "connectionId">,
+  secrets: StoredSecretFields | undefined,
+  vault: VaultView,
+): SecretFieldSummary[] {
+  const rejected = new Set(secrets?.rejected);
+  return (secrets?.fields ?? []).map((id) => {
+    const { readable, ...dates } = entrySummary(
+      { ...owner, fieldId: id },
+      vault,
+    );
+    return {
+      id,
+      // A secret that can't be read can't be said to be refused.
+      state: !readable
+        ? ("unreadable" as const)
+        : rejected.has(id)
+          ? ("rejected" as const)
+          : ("saved" as const),
+      ...dates,
+    };
+  });
+}
+
+/** A holder's settings kept whole in the vault, while their plugin is missing. */
+function sealedSummary(
+  owner: Pick<SecretHolder, "pluginId" | "connectionId">,
+  secrets: StoredSecretFields | undefined,
+  vault: VaultView,
+): SecretEntrySummary | undefined {
+  if (secrets?.sealed !== true) return undefined;
+  const { readable, ...dates } = entrySummary(
+    { ...owner, fieldId: null },
+    vault,
+  );
+  return { state: readable ? "saved" : "unreadable", ...dates };
+}
+
+/**
+ * The connection's secret fields and their states, and why its operations
+ * pause, if they do. Known without decrypting: an entry is unreadable once
+ * a read failed, or the whole vault is.
+ */
+function connectionSecretState(
+  connection: StoredConnection,
+  plugin: PluginManifest,
+  installed: boolean,
+  vault: VaultView,
+): Pick<PluginConnectionSummary, "secretFields" | "sealedConfig" | "paused"> {
+  const fields = connection.secrets?.fields ?? [];
+  const owner = { pluginId: connection.pluginId, connectionId: connection.id };
+  const secretFields = secretFieldSummaries(owner, connection.secrets, vault);
+  const sealedConfig = sealedSummary(owner, connection.secrets, vault);
+  const sealed = sealedConfig !== undefined;
+  const notMoved =
+    installed &&
+    holderNeedsMove(connectionHolder(connection), secretManifestOf(plugin));
+  const { pause, reason } = decideSecretPause({
+    needsVault: fields.length > 0 || sealed || notMoved,
+    status: vault.status,
+    unreadable:
+      secretFields.some((field) => field.state === "unreadable") ||
+      sealedConfig?.state === "unreadable",
+    notMoved,
+    ...(installed
+      ? secretStatusPause(connection.secrets, secretManifestOf(plugin))
+      : {}),
+  });
+  return {
+    ...(secretFields.length > 0 ? { secretFields } : {}),
+    ...(sealedConfig ? { sealedConfig } : {}),
+    ...(pause
+      ? {
+          paused: {
+            reason: pause,
+            message: secretPauseMessage(pause, reason),
+          },
+        }
+      : {}),
+  };
+}
+
 /** `installed` is false when the plugin is gone and `plugin` only stands in for it. */
 function buildConnectionSummary(
   state: AppApiState,
   connection: StoredConnection,
   plugin: PluginManifest,
   installed: boolean,
+  vault: VaultView,
 ): PluginConnectionSummary {
   const connectionItems = state.stagedImports.filter(
     (item) => item.connectionId === connection.id,
   );
+  const choices = connectionAccessChoicesOf(plugin);
   // The plugin wrote the last error and the summary, and either may hold a
   // secret: an error stored before every route redacted plugin errors, or a
   // summary stored before saves redacted it. A stand-in says nothing about
   // which stored values are secret, so then none of their text is shown.
   const redaction = installed
-    ? connectionCredentials(plugin, connection.config).redaction
+    ? connectionCredentials(
+        redactionFields(plugin.connectionFields, connection.secrets),
+        connection.config,
+      ).redaction
     : connectionRedaction([]);
 
   return {
@@ -437,6 +713,9 @@ function buildConnectionSummary(
       : {}),
     ...(connection.agentAccess ? { agentAccess: connection.agentAccess } : {}),
     ...(connection.allowLossyConversion ? { allowLossyConversion: true } : {}),
+    ...(choices.length > 0
+      ? { access: connectionAccessOn(choices, connection.access) }
+      : {}),
     connectedAt: connection.connectedAt,
     lastSyncAt: connection.lastSyncAt,
     lastError:
@@ -449,6 +728,7 @@ function buildConnectionSummary(
     selectedImportCount: connectionItems.filter((item) => item.selected).length,
     configSummary: installed ? redaction.summary(connection.configSummary) : {},
     editableValues: toEditableValues(connection, plugin),
+    ...connectionSecretState(connection, plugin, installed, vault),
   };
 }
 
@@ -462,7 +742,11 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
   const defaults = createDefaultState();
 
   return {
-    version: STATE_VERSION,
+    // A step that held keeps the file below the current version.
+    version:
+      typeof raw.version === "number"
+        ? Math.min(raw.version, STATE_VERSION)
+        : STATE_VERSION,
     connections: (Array.isArray(raw.connections) ? raw.connections : [])
       .filter((connection): connection is StoredConnection =>
         Boolean(
@@ -481,9 +765,23 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
           pullRequestAutoSync,
           agentAccess,
           allowLossyConversion,
+          secrets,
+          onPremises,
+          access,
+          brokerActivity,
           ...connection
         }) => ({
           ...connection,
+          ...(onPremises === true ? { onPremises } : {}),
+          ...(normalizeAccess(access)
+            ? { access: normalizeAccess(access) }
+            : {}),
+          ...(normalizeBrokerActivity(brokerActivity)
+            ? { brokerActivity: normalizeBrokerActivity(brokerActivity) }
+            : {}),
+          ...(normalizeSecretFields(secrets)
+            ? { secrets: normalizeSecretFields(secrets) }
+            : {}),
           // Ajour's own settings never live in the plugin's config.
           config: Object.fromEntries(
             Object.entries(connection.config).filter(
@@ -564,35 +862,18 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
     pluginOrigins: normalizePluginOrigins(raw.pluginOrigins),
     mcp: normalizeMcpState(raw.mcp),
     agentRunner: normalizeAgentRunnerState(raw.agentRunner),
+    pluginBrokerActivity: Object.fromEntries(
+      Object.entries(
+        typeof raw.pluginBrokerActivity === "object" &&
+          raw.pluginBrokerActivity !== null
+          ? raw.pluginBrokerActivity
+          : {},
+      ).flatMap(([pluginId, record]) => {
+        const normalized = normalizeBrokerActivity(record);
+        return normalized ? [[pluginId, normalized] as const] : [];
+      }),
+    ),
   };
-}
-
-/** Rename errors Windows gives for a moment while another process has the target open. */
-const TRANSIENT_RENAME_CODES = new Set(["EPERM", "EACCES", "EBUSY"]);
-const RENAME_ATTEMPTS = 5;
-
-/**
- * Renames `from` over `to`. On Windows a rename over a file another process
- * holds open, such as an antivirus scan, fails for a moment, so it is tried
- * again a few times before the error stands.
- */
-async function renameOver(from: string, to: string) {
-  for (let attempt = 1; ; attempt += 1) {
-    try {
-      await rename(from, to);
-      return;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException | undefined)?.code;
-      if (
-        attempt >= RENAME_ATTEMPTS ||
-        code === undefined ||
-        !TRANSIENT_RENAME_CODES.has(code)
-      ) {
-        throw error;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 20 * attempt));
-    }
-  }
 }
 
 /** The state file's path: the one given, else AJOUR_APP_API_STATE_PATH, else ~/.ajour. */
@@ -621,9 +902,11 @@ function unreadableStateError() {
  * a file that isn't state: not JSON, a root that isn't an object, or any
  * value migration can't read, however deep.
  */
-function readStateFile(
+async function readStateFile(
   text: string,
-): { state: AppApiState; versionFrom: number } | undefined {
+  context: () => Promise<StateMigrationContext>,
+): Promise<{ state: AppApiState; versionFrom: number } | undefined> {
+  let raw: StoredStateRecord;
   try {
     const parsed: unknown = JSON.parse(text);
     if (
@@ -635,10 +918,18 @@ function readStateFile(
     if (parsed === null) {
       return { state: createDefaultState(), versionFrom: 1 };
     }
-    const raw = parsed as StoredStateRecord;
-    const versionFrom = storedStateVersion(raw);
+    raw = parsed as StoredStateRecord;
+  } catch {
+    return undefined;
+  }
+  const versionFrom = storedStateVersion(raw);
+  // The context lists the plugins, so only a file a step will change pays for it.
+  const migrationContext = versionFrom < STATE_VERSION ? await context() : {};
+  try {
     return {
-      state: normalizeState(runStateMigrations(raw, versionFrom)),
+      state: normalizeState(
+        await runStateMigrations(raw, versionFrom, undefined, migrationContext),
+      ),
       versionFrom,
     };
   } catch {
@@ -657,16 +948,332 @@ export class AppApiStorage {
    * and it lives in memory, so it does not survive a restart.
    */
   private lastDismissal?: ImportDismissal;
+  private readonly vault?: SecretVault;
+  private readonly listManifests?: () => Promise<readonly SecretManifest[]>;
+  /** Holders whose move into the vault failed this launch; tried again at the next. */
+  private readonly failedMoves = new Set<string>();
+  /** The broker's records the current window gathered, not written yet. */
+  private readonly brokerActivityPending = new Map<
+    string,
+    BrokerActivityDelta
+  >();
+  private readonly brokerActivityWindowMs: number;
+  /** How many times each plugin's data was removed, for a flush in flight. */
+  private readonly brokerActivityRemovals = new Map<string, number>();
+  private brokerActivityWrittenAt = -Infinity;
+  private brokerActivityTimer?: ReturnType<typeof setTimeout>;
 
-  /** `events` receives a `storage.load` event for each load of the state file. */
-  constructor(statePath?: string, options: { events?: ApiEvents } = {}) {
+  /**
+   * `events` receives a `storage.load` event for each load of the state file.
+   * `vault` holds the secrets; without it, as in the standalone API, the
+   * storage holds none. `manifests` lists every installed plugin's manifest,
+   * runnable or not, for the move of secrets into the vault.
+   * `brokerActivityWindowMs` is how long the broker's records gather in
+   * memory between two writes, 30 s by default.
+   */
+  constructor(
+    statePath?: string,
+    options: {
+      events?: ApiEvents;
+      vault?: SecretVault;
+      manifests?: () => Promise<readonly SecretManifest[]>;
+      brokerActivityWindowMs?: number;
+    } = {},
+  ) {
     this.statePath = resolveStatePath(statePath);
     this.events = options.events;
+    this.vault = options.vault;
+    this.listManifests = options.manifests;
+    this.brokerActivityWindowMs =
+      options.brokerActivityWindowMs ?? BROKER_ACTIVITY_WINDOW_MS;
   }
 
   /** The folder that holds the state file. Agent browser data lives next to it. */
   get dataDirectory(): string {
     return path.dirname(this.statePath);
+  }
+
+  /** Loads the state file now, with its migrations, if it isn't loaded yet. */
+  async ready(): Promise<void> {
+    await this.readState();
+  }
+
+  /** Whether the vault can keep and give back secrets now. */
+  async vaultStatus(): Promise<VaultStatus> {
+    return this.vault ? (await this.vault.open()).status : NO_VAULT_STATUS;
+  }
+
+  /** What the vault says about every secret it holds, without reading one. */
+  async vaultView(): Promise<VaultView> {
+    const status = await this.vaultStatus();
+    return {
+      status,
+      entries: new Map(
+        (this.vault ? await this.vault.list() : []).map((entry) => [
+          secretKeyId(entry),
+          entry,
+        ]),
+      ),
+    };
+  }
+
+  /**
+   * Opens the vault again, for "Try again" after a failure that may have
+   * passed. Secrets that failed to move into it at this launch are tried
+   * again at the next operation.
+   */
+  async reopenVault(): Promise<VaultStatus> {
+    if (!this.vault) return NO_VAULT_STATUS;
+    const { status } = await this.vault.reopen();
+    this.failedMoves.clear();
+    return status;
+  }
+
+  /** A plugin's agent task settings that the vault holds, with their states. */
+  async agentTaskSecretFields(pluginId: string): Promise<SecretFieldSummary[]> {
+    if (UNSAFE_KEYS.has(pluginId)) return [];
+    const state = await this.readState();
+    return secretFieldSummaries(
+      { pluginId, connectionId: null },
+      state.agentRunner.pluginSecrets[pluginId],
+      await this.vaultView(),
+    );
+  }
+
+  /**
+   * Marks a connection's saved secrets as refused by the service (a 401),
+   * which pauses the connection until the user adds a new one. Without
+   * `fieldIds`, every saved secret of the connection is marked: an API 3
+   * plugin can't say which of them the service refused. Returns false when
+   * the connection holds no saved secret.
+   *
+   * `readAt` is when the failed call read its secrets. A secret saved after
+   * that is a newer one than the service refused, so it isn't marked: a 401
+   * that arrives late must not fault the token the user just replaced.
+   */
+  async markSecretsRejected(
+    pluginId: string,
+    connectionId: string,
+    options: { fieldIds?: readonly string[]; readAt?: number } = {},
+  ): Promise<boolean> {
+    const { fieldIds, readAt } = options;
+    return this.mutate(async (state) => {
+      const connection = state.connections.find(
+        (candidate) =>
+          candidate.pluginId === pluginId && candidate.id === connectionId,
+      );
+      const saved = connection?.secrets?.fields ?? [];
+      const vault = readAt === undefined ? undefined : await this.vaultView();
+      // A secret set at or before `readAt` is the one the call read, which
+      // the service refused. Equal timestamps count as the same secret, so a
+      // tie marks it: the safe side, since the user replaces a rejected
+      // token and a later one (`setAt > readAt`) is never marked.
+      const targets = (fieldIds ?? saved).filter(
+        (id) =>
+          saved.includes(id) &&
+          (readAt === undefined ||
+            (vault?.entries.get(
+              secretKeyId({ pluginId, connectionId, fieldId: id }),
+            )?.setAt ?? 0) <= readAt),
+      );
+      if (!connection?.secrets || targets.length === 0) {
+        return { nextState: state, result: false };
+      }
+      const rejected = [
+        ...new Set([...(connection.secrets.rejected ?? []), ...targets]),
+      ].sort();
+      return {
+        nextState: this.replaceConnection(state, {
+          ...connection,
+          secrets: { ...connection.secrets, rejected },
+        }),
+        result: true,
+      };
+    });
+  }
+
+  /**
+   * Deletes saved secrets of a connection and says they were removed, so a
+   * required one pauses the connection until a new one is saved. The
+   * connection's other settings and its data stay. Null when the connection
+   * doesn't exist. Throws `VaultUnavailableError` when the vault can't be
+   * changed this launch; nothing changes then.
+   */
+  async removeConnectionSecrets(
+    pluginId: string,
+    connectionId: string,
+    fieldIds: readonly string[],
+  ): Promise<StoredConnection | null> {
+    return this.mutate(async (state) => {
+      const connection = state.connections.find(
+        (candidate) =>
+          candidate.pluginId === pluginId && candidate.id === connectionId,
+      );
+      if (!connection) return { nextState: state, result: null };
+      const secrets = connection.secrets ?? { fields: [] };
+      const targets = fieldIds.filter((id) => secrets.fields.includes(id));
+      if (targets.length > 0) {
+        await this.vault?.remove({ pluginId, connectionId, fieldIds: targets });
+      }
+      const removed = [...new Set([...(secrets.removed ?? []), ...fieldIds])];
+      const rejected = (secrets.rejected ?? []).filter(
+        (id) => !fieldIds.includes(id),
+      );
+      const { rejected: _previouslyRejected, ...kept } = secrets;
+      const next: StoredConnection = {
+        ...connection,
+        secrets: {
+          ...kept,
+          fields: secrets.fields.filter((id) => !targets.includes(id)),
+          removed: removed.sort(),
+          ...(rejected.length > 0 ? { rejected } : {}),
+        },
+      };
+      return {
+        nextState: this.replaceConnection(state, next),
+        result: next,
+      };
+    });
+  }
+
+  /**
+   * Throws `VaultUnavailableError` when the vault can't be changed this
+   * launch, so a caller with other work to do first, such as removing a
+   * package, can refuse before it starts what a refused removal would leave
+   * half done.
+   */
+  async assertSecretsChangeable(): Promise<void> {
+    const opened = await this.vault?.open();
+    if (opened?.changeRefusedReason) {
+      throw new VaultUnavailableError(opened.changeRefusedReason, "change");
+    }
+  }
+
+  /**
+   * Moves into the vault what the state file still keeps of a secret: a
+   * plugin that came back after its connections were sealed, or an update
+   * that marks a field secret. `manifests` must list every installed plugin
+   * unless `only` names the plugin whose holders to settle; a plugin missing
+   * from a full list has its holders sealed. A holder whose move failed this
+   * launch waits for the next.
+   */
+  async settleSecrets(
+    manifests: readonly SecretManifest[],
+    only?: string,
+  ): Promise<void> {
+    const byId = new Map(manifests.map((manifest) => [manifest.id, manifest]));
+    const state = await this.readState();
+    const inScope = (pluginId: string) =>
+      only === undefined ? true : pluginId === only;
+    const needed =
+      state.connections.some(
+        (connection) =>
+          inScope(connection.pluginId) &&
+          !this.failedMoves.has(holderId(connection.pluginId, connection.id)) &&
+          needsSettling(connectionHolder(connection), byId),
+      ) ||
+      Object.entries(state.agentRunner.pluginValues).some(
+        ([pluginId, values]) =>
+          inScope(pluginId) &&
+          !this.failedMoves.has(holderId(pluginId, null)) &&
+          needsSettling(
+            {
+              pluginId,
+              connectionId: null,
+              values,
+              secrets: state.agentRunner.pluginSecrets[pluginId],
+            },
+            byId,
+          ),
+      );
+    if (!needed) return;
+    await this.mutate(async (current) => {
+      const report = emptyVaultMigrationReport();
+      const settled = await settleHolders(
+        current.connections,
+        current.agentRunner,
+        {
+          vault: this.vault,
+          manifests: byId,
+          skip: this.failedMoves,
+          ...(only !== undefined ? { only } : {}),
+        },
+        report,
+      );
+      for (const id of report.failed) this.failedMoves.add(id);
+      return {
+        nextState: {
+          ...current,
+          connections: settled.connections.sort(compareConnections),
+          agentRunner: {
+            ...current.agentRunner,
+            pluginValues: settled.pluginValues,
+            pluginSecrets: settled.pluginSecrets,
+          },
+        },
+        result: undefined,
+        afterWrite: () => this.removeSealedEntries(report),
+      };
+    });
+  }
+
+  /**
+   * A connection with the secrets the vault holds for it, as far as they can
+   * be read, for a save that merges them or a plugin operation. Null when
+   * the connection doesn't exist. `usedAt` records the read as a use.
+   */
+  async readConnectionSecrets(
+    pluginId: string,
+    connectionId: string,
+    manifest: SecretManifest | undefined,
+    options: { usedAt?: number } = {},
+  ): Promise<(HolderSecrets & { connection: ConnectionWithSecrets }) | null> {
+    const connection = await this.getConnection(pluginId, connectionId);
+    if (!connection) return null;
+    const secretsReadAt = options.usedAt ?? Date.now();
+    const read = await readHolderSecrets(
+      connectionHolder(connection),
+      manifest,
+      this.vault,
+      options,
+    );
+    return {
+      ...read,
+      connection: { ...connection, config: read.values, secretsReadAt },
+    };
+  }
+
+  /**
+   * The connection a plugin operation runs with: its config with its
+   * secrets, decrypted for this one operation. Null when it doesn't exist.
+   * Throws `ConnectionPausedError` when a secret it needs can't reach the
+   * plugin: the vault can't encrypt or read it, or it hasn't moved into the
+   * vault yet. A connection without secrets always runs.
+   */
+  async connectionForOperation(
+    pluginId: string,
+    connectionId: string,
+    manifest: SecretManifest,
+  ): Promise<ConnectionWithSecrets | null> {
+    await this.settleSecrets([manifest], pluginId);
+    const read = await this.readConnectionSecrets(
+      pluginId,
+      connectionId,
+      manifest,
+      { usedAt: Date.now() },
+    );
+    if (!read) return null;
+    if (read.pause) throw new ConnectionPausedError(read.pause, read.reason);
+    return read.connection;
+  }
+
+  /** Deletes the sealed entries a settled pass split, once the state no longer needs them. */
+  private async removeSealedEntries(report: VaultMigrationReport) {
+    for (const selection of report.removeAfterSave) {
+      // A sealed entry left behind is never read again and goes with its
+      // connection or plugin.
+      await this.vault?.remove(selection).catch(() => undefined);
+    }
   }
 
   /**
@@ -685,6 +1292,8 @@ export class AppApiStorage {
       const origin = state.pluginOrigins[plugin.id];
       return origin ? { ...plugin, origin } : plugin;
     };
+    const vault = await this.vaultView();
+    const status = vault.status;
     const pluginMap = new Map<string, PluginOverviewItem>(
       plugins.map((plugin) => [plugin.id, withOrigin(plugin)] as const),
     );
@@ -708,32 +1317,74 @@ export class AppApiStorage {
       }
     }
 
+    // A missing plugin may still have agent task settings in the vault.
+    for (const pluginId of Object.keys(state.agentRunner.pluginSecrets)) {
+      if (!pluginMap.has(pluginId)) {
+        missingPluginIds.add(pluginId);
+        pluginMap.set(pluginId, createMissingPluginManifest(pluginId));
+      }
+    }
+
     const allPlugins = Array.from(pluginMap.values()).sort(
       comparePluginManifests,
     );
-    const connectionGroups = allPlugins.map((plugin) => ({
-      plugin,
-      enabled:
-        state.pluginsEnabled &&
-        plugin.unavailableReason === undefined &&
-        !state.disabledPluginIds.includes(plugin.id) &&
-        signingAllowsPlugin(state, plugin.id),
-      inactiveCapabilities: (
-        state.disabledCapabilities[plugin.id] ?? []
-      ).filter((capability) => pluginHasCapability(plugin, capability)),
-      connections: state.connections
-        .filter((connection) => connection.pluginId === plugin.id)
-        .map((connection) =>
-          buildConnectionSummary(
-            state,
-            connection,
-            plugin,
-            !missingPluginIds.has(plugin.id),
+    const connectionGroups = allPlugins.map((plugin) => {
+      const agentTaskSecrets = state.agentRunner.pluginSecrets[plugin.id];
+      const agentOwner = { pluginId: plugin.id, connectionId: null };
+      const agentTaskSecretFields = secretFieldSummaries(
+        agentOwner,
+        agentTaskSecrets,
+        vault,
+      );
+      const agentTaskSealedConfig = sealedSummary(
+        agentOwner,
+        agentTaskSecrets,
+        vault,
+      );
+      const connectionAccess = connectionAccessChoicesOf(plugin);
+      return {
+        plugin,
+        ...(connectionAccess.length > 0
+          ? {
+              connectionAccess: connectionAccess.map((choice) => ({
+                id: choice.id,
+                label: choice.label,
+                ...(choice.description
+                  ? { description: choice.description }
+                  : {}),
+                ...(choice.tokenScope ? { tokenScope: choice.tokenScope } : {}),
+                always: choice.always,
+                operations: [...choice.operations],
+              })),
+            }
+          : {}),
+        enabled:
+          state.pluginsEnabled &&
+          plugin.unavailableReason === undefined &&
+          !state.disabledPluginIds.includes(plugin.id) &&
+          signingAllowsPlugin(state, plugin.id),
+        inactiveCapabilities: (
+          state.disabledCapabilities[plugin.id] ?? []
+        ).filter((capability) => pluginHasCapability(plugin, capability)),
+        ...(missingPluginIds.has(plugin.id) ? { missing: true } : {}),
+        ...(agentTaskSecretFields.length > 0 ? { agentTaskSecretFields } : {}),
+        ...(agentTaskSealedConfig ? { agentTaskSealedConfig } : {}),
+        connections: state.connections
+          .filter((connection) => connection.pluginId === plugin.id)
+          .map((connection) =>
+            buildConnectionSummary(
+              state,
+              connection,
+              plugin,
+              !missingPluginIds.has(plugin.id),
+              vault,
+            ),
           ),
-        ),
-    }));
+      };
+    });
 
     return {
+      vault: status,
       pluginsEnabled: state.pluginsEnabled,
       unsignedPluginsEnabled: state.unsignedPluginsEnabled,
       plugins: allPlugins,
@@ -947,30 +1598,160 @@ export class AppApiStorage {
     });
   }
 
-  /** The agent task settings the user filled in for a plugin, or none. */
-  async getAgentTaskValues(pluginId: string): Promise<PluginFieldValues> {
-    if (UNSAFE_KEYS.has(pluginId)) return {};
-    return (await this.readState()).agentRunner.pluginValues[pluginId] ?? {};
+  /**
+   * The agent task settings the user filled in for a plugin, or none, with
+   * the secrets the vault holds as far as they can be read. With the
+   * plugin's `manifest`, a secret still in plain text, waiting to move into
+   * the vault, is left out, as an unreadable one is.
+   */
+  async getAgentTaskValues(
+    pluginId: string,
+    manifest?: SecretManifest,
+  ): Promise<PluginFieldValues> {
+    const read = await this.readAgentTaskSecrets(pluginId, manifest);
+    // Whatever the pause says, a secret still in plain text never reaches a run.
+    return manifest && holderNeedsMove(read.holder, manifest)
+      ? nonSecretValues(read.holder, manifest, read.values)
+      : read.values;
   }
 
+  /** The plugin's agent task settings with their secrets, and what the vault holds. */
+  async readAgentTaskSecrets(
+    pluginId: string,
+    manifest?: SecretManifest,
+  ): Promise<HolderSecrets & { holder: SecretHolder }> {
+    if (UNSAFE_KEYS.has(pluginId)) {
+      const holder = { pluginId, connectionId: null, values: {} };
+      return { holder, values: {}, unreadable: [] };
+    }
+    const holder = this.agentTaskHolder(await this.readState(), pluginId);
+    return {
+      holder,
+      ...(await readHolderSecrets(holder, manifest, this.vault)),
+    };
+  }
+
+  /**
+   * Saves a plugin's agent task settings. With `save`, the values marked
+   * secret go to the vault, as a connection's do (see `upsertConnection`).
+   */
   async setAgentTaskValues(
     pluginId: string,
     values: PluginFieldValues,
+    save?: SecretSaveFields,
   ): Promise<void> {
     if (UNSAFE_KEYS.has(pluginId)) return;
-    await this.mutate((state) => {
+    await this.mutate(async (state) => {
+      const holder = this.agentTaskHolder(state, pluginId);
+      const split = save
+        ? await this.writeSecretsOfSave(holder, save, values)
+        : undefined;
       const pluginValues: StoredAgentRunnerState["pluginValues"] =
         Object.create(null);
       Object.assign(pluginValues, state.agentRunner.pluginValues);
-      pluginValues[pluginId] = safeValues(values);
+      pluginValues[pluginId] = safeValues(split?.values ?? values);
+      const pluginSecrets: StoredAgentRunnerState["pluginSecrets"] =
+        Object.create(null);
+      Object.assign(pluginSecrets, state.agentRunner.pluginSecrets);
+      if (split) pluginSecrets[pluginId] = split.secrets;
       return {
         nextState: {
           ...state,
-          agentRunner: { ...state.agentRunner, pluginValues },
+          agentRunner: { ...state.agentRunner, pluginValues, pluginSecrets },
         },
         result: undefined,
+        afterWrite: () => this.removeAfterSave(holder, split),
       };
     });
+  }
+
+  private agentTaskHolder(state: AppApiState, pluginId: string): SecretHolder {
+    return {
+      pluginId,
+      connectionId: null,
+      values: state.agentRunner.pluginValues[pluginId] ?? {},
+      secrets: state.agentRunner.pluginSecrets[pluginId],
+    };
+  }
+
+  /**
+   * Splits a save between the state and the vault, and writes the vault's
+   * part: the new or changed secrets, and the removal of those the save
+   * dropped. Throws `VaultUnavailableError` when a secret can't be
+   * encrypted, before the state changes. A sealed entry is removed only
+   * after the state is saved (`removeAfterSave`).
+   */
+  private async writeSecretsOfSave(
+    holder: SecretHolder,
+    save: SecretSaveFields,
+    values: PluginFieldValues,
+  ): Promise<SplitSave> {
+    const previous = await readHolderSecrets(holder, undefined, this.vault);
+    // The dates held now, so a date the form repeats isn't a change.
+    const held =
+      this.vault && save.secretExpiry
+        ? await this.vault.list()
+        : ([] as SecretEntryInfo[]);
+    const currentExpiry: Record<string, number | undefined> = {};
+    for (const entry of held) {
+      if (
+        entry.pluginId === holder.pluginId &&
+        entry.connectionId === holder.connectionId &&
+        entry.fieldId !== null
+      ) {
+        currentExpiry[entry.fieldId] = entry.expiresAt;
+      }
+    }
+    const split = splitSave(
+      holder,
+      save.fields,
+      values,
+      previous,
+      save.removeSecrets,
+      {
+        replaced: save.replacedSecrets,
+        expiry: save.secretExpiry,
+        currentExpiry,
+      },
+    );
+    if (split.writes.length > 0) {
+      if (!this.vault) throw new VaultUnavailableError(NO_VAULT_REASON);
+      await this.vault.write(split.writes);
+    }
+    if (split.expiryUpdates.length > 0 && this.vault) {
+      await this.vault.setExpiry(
+        split.expiryUpdates.map(({ fieldId, expiresAt }) => ({
+          pluginId: holder.pluginId,
+          connectionId: holder.connectionId,
+          fieldId,
+          expiresAt,
+        })),
+      );
+    }
+    const fieldIds = split.removals.filter(
+      (fieldId): fieldId is string => fieldId !== null,
+    );
+    if (fieldIds.length > 0 && this.vault) {
+      await this.vault.remove({
+        pluginId: holder.pluginId,
+        connectionId: holder.connectionId,
+        fieldIds,
+      });
+    }
+    return split;
+  }
+
+  private async removeAfterSave(holder: SecretHolder, split?: SplitSave) {
+    if (!split?.removals.includes(null) || !this.vault) return;
+    // The save stands either way. A sealed entry left behind is never read
+    // again, and goes with its connection or plugin.
+    await this.vault
+      .remove({
+        pluginId: holder.pluginId,
+        connectionId: holder.connectionId,
+        fieldIds: [null],
+      })
+      .catch(() => undefined);
   }
 
   async setPluginEnabled(pluginId: string, enabled: boolean): Promise<void> {
@@ -1053,8 +1834,32 @@ export class AppApiStorage {
     }));
   }
 
+  /**
+   * Deletes what a plugin's uninstall takes: its connections and their
+   * vault entries, its agent task settings, staged items and statuses.
+   * Deactivating a plugin keeps all of them. Throws
+   * `VaultUnavailableError`, and changes nothing, when the vault can't drop
+   * the plugin's entries: the state would then forget secrets the vault
+   * still holds.
+   */
   async removePluginData(pluginId: string): Promise<void> {
-    await this.mutate(async (state) => ({
+    await this.mutate(async (state) => {
+      await this.vault?.remove({ pluginId });
+      // The broker's records the window gathered for it go too, and those a
+      // flush in flight took before this ran must not bring it back.
+      this.brokerActivityRemovals.set(
+        pluginId,
+        (this.brokerActivityRemovals.get(pluginId) ?? 0) + 1,
+      );
+      for (const [key, delta] of this.brokerActivityPending) {
+        if (delta.pluginId === pluginId) this.brokerActivityPending.delete(key);
+      }
+      return this.withoutPluginData(state, pluginId);
+    });
+  }
+
+  private withoutPluginData(state: AppApiState, pluginId: string) {
+    return {
       nextState: {
         ...state,
         connections: state.connections.filter(
@@ -1082,6 +1887,11 @@ export class AppApiStorage {
             ([candidate]) => candidate !== pluginId,
           ),
         ),
+        pluginBrokerActivity: Object.fromEntries(
+          Object.entries(state.pluginBrokerActivity).filter(
+            ([candidate]) => candidate !== pluginId,
+          ),
+        ),
         agentRunner: {
           ...state.agentRunner,
           pluginValues: Object.fromEntries(
@@ -1089,10 +1899,15 @@ export class AppApiStorage {
               ([candidate]) => candidate !== pluginId,
             ),
           ),
+          pluginSecrets: Object.fromEntries(
+            Object.entries(state.agentRunner.pluginSecrets).filter(
+              ([candidate]) => candidate !== pluginId,
+            ),
+          ),
         },
-      },
+      } satisfies AppApiState,
       result: undefined,
-    }));
+    };
   }
 
   async listBacklogSourceStatuses() {
@@ -1138,9 +1953,17 @@ export class AppApiStorage {
       agentAccess?: AgentAccess;
       /** Undefined keeps the saved value. */
       allowLossyConversion?: boolean;
+      /** Undefined keeps the saved value. */
+      onPremises?: boolean;
+      /**
+       * The access choices turned on, from Ajour's own form. Undefined keeps
+       * the saved ones, and a new connection reads only.
+       */
+      access?: string[];
       config: PluginFieldValues;
       configSummary: PluginSummaryValues;
     },
+    save?: SecretSaveFields,
   ): Promise<StoredConnection> {
     return this.mutate(async (state) => {
       const connectionId = input.id ?? `${pluginId}_${randomUUID()}`;
@@ -1148,6 +1971,14 @@ export class AppApiStorage {
         (connection) =>
           connection.pluginId === pluginId && connection.id === connectionId,
       );
+      // With the plugin's fields, `config` holds the secrets too: the vault
+      // gets them, and the state file which fields it holds.
+      const holder: SecretHolder = existing
+        ? connectionHolder(existing)
+        : { pluginId, connectionId, values: {} };
+      const split = save
+        ? await this.writeSecretsOfSave(holder, save, input.config)
+        : undefined;
 
       const nextConnection: StoredConnection = {
         id: connectionId,
@@ -1169,7 +2000,19 @@ export class AppApiStorage {
         ...((input.allowLossyConversion ?? existing?.allowLossyConversion)
           ? { allowLossyConversion: true }
           : {}),
-        config: input.config,
+        ...((input.onPremises ?? existing?.onPremises)
+          ? { onPremises: true }
+          : {}),
+        ...((input.access ?? existing?.access)
+          ? { access: normalizeAccess(input.access ?? existing?.access) }
+          : {}),
+        ...(existing?.brokerActivity
+          ? { brokerActivity: existing.brokerActivity }
+          : {}),
+        config: split?.values ?? input.config,
+        ...((split?.secrets ?? existing?.secrets)
+          ? { secrets: split?.secrets ?? existing?.secrets }
+          : {}),
         configSummary: input.configSummary,
         connectedAt: existing?.connectedAt ?? Date.now(),
         lastSyncAt: existing?.lastSyncAt,
@@ -1205,14 +2048,19 @@ export class AppApiStorage {
       return {
         nextState,
         result: nextConnection,
+        afterWrite: () => this.removeAfterSave(holder, split),
       };
     });
   }
 
   /**
-   * Deletes a connection with its staged items and statuses. A pending
-   * dismissal of its items can no longer be undone, since Undo would bring
-   * back items for a connection that is gone.
+   * Deletes a connection with its staged items and statuses, and its vault
+   * entries first. When the vault can't drop them it throws
+   * `VaultUnavailableError` and keeps the connection, since the state would
+   * otherwise forget secrets the vault still holds. If the state then can't
+   * be saved, the secrets are gone and the connection stays, to be entered
+   * again. A pending dismissal of its items can no longer be undone, since Undo
+   * would bring back items for a connection that is gone.
    */
   async deleteConnection(
     pluginId: string,
@@ -1229,6 +2077,7 @@ export class AppApiStorage {
           result: false,
         };
       }
+      await this.vault?.remove({ pluginId, connectionId });
 
       const nextState: AppApiState = {
         ...state,
@@ -1379,6 +2228,174 @@ export class AppApiStorage {
         result: nextConnection,
       };
     });
+  }
+
+  /**
+   * Records one broker request of the plugin for Access review: its time,
+   * and whether the policy blocked it (`blocked_direct` is a way out the
+   * sandbox closed, which counts as blocked but is not a request), on the plugin and on its connection
+   * when the request named a saved one. The records gather in memory, and
+   * the state file is written once per window at most: the first record
+   * after a quiet window at once, the rest when the window ends, and all of
+   * them on `flushBrokerActivity`, which the API calls as it stops.
+   */
+  async recordBrokerActivity(
+    pluginId: string,
+    connectionId: string | undefined,
+    kind: "request" | "blocked" | "blocked_direct",
+    at: number,
+  ): Promise<void> {
+    const gather = (recordConnectionId: string | undefined) => {
+      const key = `${pluginId}\u0000${recordConnectionId ?? ""}`;
+      const delta = this.brokerActivityPending.get(key) ?? {
+        pluginId,
+        ...(recordConnectionId ? { connectionId: recordConnectionId } : {}),
+        lastRequestAt: 0,
+        blocked: 0,
+      };
+      // A blocked direct attempt never reached the broker, so it is not a request.
+      if (kind !== "blocked_direct") {
+        delta.lastRequestAt = Math.max(delta.lastRequestAt, at);
+      }
+      if (kind !== "request") {
+        delta.blocked += 1;
+        delta.lastBlockedAt = Math.max(delta.lastBlockedAt ?? 0, at);
+      }
+      this.brokerActivityPending.set(key, delta);
+    };
+    gather(undefined);
+    if (connectionId) gather(connectionId);
+    if (this.brokerActivityTimer) return;
+    const wait =
+      this.brokerActivityWrittenAt + this.brokerActivityWindowMs - Date.now();
+    if (wait <= 0) {
+      await this.flushBrokerActivity();
+      return;
+    }
+    this.brokerActivityTimer = setTimeout(() => {
+      this.brokerActivityTimer = undefined;
+      // Access review's records never fail anything; a failed write keeps
+      // them for the next.
+      this.flushBrokerActivity().catch(() => undefined);
+    }, wait);
+    this.brokerActivityTimer.unref?.();
+  }
+
+  /**
+   * Writes the broker's records gathered so far, if any. The API calls it as
+   * it stops, so a quit loses none.
+   */
+  async flushBrokerActivity(): Promise<void> {
+    clearTimeout(this.brokerActivityTimer);
+    this.brokerActivityTimer = undefined;
+    if (this.brokerActivityPending.size === 0) return;
+    const removals = new Map(this.brokerActivityRemovals);
+    const removedSince = (pluginId: string) =>
+      (this.brokerActivityRemovals.get(pluginId) ?? 0) !==
+      (removals.get(pluginId) ?? 0);
+    const deltas = [...this.brokerActivityPending.entries()];
+    this.brokerActivityPending.clear();
+    this.brokerActivityWrittenAt = Date.now();
+    try {
+      await this.mutate(async (current) => {
+        const pluginBrokerActivity = { ...current.pluginBrokerActivity };
+        const connections = [...current.connections];
+        for (const [, delta] of deltas) {
+          // A plugin removed since the records were taken keeps none.
+          if (removedSince(delta.pluginId)) continue;
+          if (delta.connectionId === undefined) {
+            pluginBrokerActivity[delta.pluginId] = withBrokerActivity(
+              Object.hasOwn(pluginBrokerActivity, delta.pluginId)
+                ? pluginBrokerActivity[delta.pluginId]
+                : undefined,
+              delta,
+            );
+            continue;
+          }
+          // A connection deleted since keeps no record.
+          const index = connections.findIndex(
+            (candidate) =>
+              candidate.pluginId === delta.pluginId &&
+              candidate.id === delta.connectionId,
+          );
+          if (index === -1) continue;
+          connections[index] = {
+            ...connections[index]!,
+            brokerActivity: withBrokerActivity(
+              connections[index]!.brokerActivity,
+              delta,
+            ),
+          };
+        }
+        return {
+          nextState: { ...current, connections, pluginBrokerActivity },
+          result: undefined,
+        };
+      });
+    } catch (error) {
+      // Kept for the next write, merged with what came since.
+      for (const [key, delta] of deltas) {
+        if (removedSince(delta.pluginId)) continue;
+        const since = this.brokerActivityPending.get(key);
+        this.brokerActivityPending.set(
+          key,
+          since
+            ? {
+                ...delta,
+                lastRequestAt: Math.max(
+                  delta.lastRequestAt,
+                  since.lastRequestAt,
+                ),
+                blocked: delta.blocked + since.blocked,
+                lastBlockedAt: Math.max(
+                  delta.lastBlockedAt ?? 0,
+                  since.lastBlockedAt ?? 0,
+                ),
+              }
+            : delta,
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * What the broker recorded for the plugin and each of its connections,
+   * with what the current window gathered.
+   */
+  async brokerActivity(pluginId: string): Promise<{
+    plugin?: BrokerActivityRecord;
+    connections: Record<string, BrokerActivityRecord>;
+  }> {
+    const state = await this.readState();
+    let plugin = Object.hasOwn(state.pluginBrokerActivity, pluginId)
+      ? state.pluginBrokerActivity[pluginId]
+      : undefined;
+    const connections = new Map(
+      state.connections
+        .filter((connection) => connection.pluginId === pluginId)
+        .map((connection) => [connection.id, connection.brokerActivity]),
+    );
+    for (const delta of this.brokerActivityPending.values()) {
+      if (delta.pluginId !== pluginId) continue;
+      if (delta.connectionId === undefined) {
+        plugin = withBrokerActivity(plugin, delta);
+      } else if (connections.has(delta.connectionId)) {
+        connections.set(
+          delta.connectionId,
+          withBrokerActivity(connections.get(delta.connectionId), delta),
+        );
+      }
+    }
+    return {
+      ...(plugin ? { plugin } : {}),
+      connections: Object.fromEntries(
+        [...connections].filter(
+          (entry): entry is [string, BrokerActivityRecord] =>
+            entry[1] !== undefined,
+        ),
+      ),
+    };
   }
 
   async stageImportItems(
@@ -1725,14 +2742,42 @@ export class AppApiStorage {
       detached: true,
     });
     try {
-      await this.removeOrphanedTempFiles();
+      // They hold the state, secrets in plain text before the vault, and
+      // nothing reads them.
+      const orphans = await removeOrphanedTempFiles(this.statePath);
+      if (orphans.undeletable > 0) {
+        unit?.set({
+          storage: { orphans_undeletable_count: orphans.undeletable },
+        });
+      }
+      if (this.vault) {
+        const opened = await this.vault.open();
+        unit?.set({
+          vault: {
+            state: opened.status.state,
+            entry_count: opened.entryCount,
+            ...(opened.undeletableOrphans > 0
+              ? { orphans_undeletable_count: opened.undeletableOrphans }
+              : {}),
+          },
+        });
+      } else {
+        unit?.set({ vault: { state: "none" } });
+      }
       let state: AppApiState;
+      let migration: VaultMigrationReport | undefined;
       if (existsSync(this.statePath)) {
         const text = await readFile(this.statePath, "utf8");
         unit?.set({
           storage: { found: true, bytes: Buffer.byteLength(text) },
         });
-        const read = readStateFile(text);
+        const read = await readStateFile(text, async () => ({
+          vault: this.vault,
+          manifests: await this.manifestsForMigration(),
+          reportVaultMigration: (report) => {
+            migration = report;
+          },
+        }));
         if (!read) {
           // The parser's and the migration's errors quote the file, so
           // neither the event nor the request that read it gets them.
@@ -1749,6 +2794,29 @@ export class AppApiStorage {
         state = createDefaultState();
       }
       unit?.set({ storage: { version_to: state.version } });
+      if (migration) {
+        for (const id of migration.failed) this.failedMoves.add(id);
+        unit?.set({
+          vault_migration: {
+            moved_count: migration.moved,
+            pending_count: migration.pending,
+          },
+        });
+      }
+      if (this.cache) return this.cache;
+      if (migration && migration.moved > 0) {
+        // Only once the vault holds each secret, read back, does the state
+        // file lose its plain text. When this save fails, the plain text
+        // stays on disk and the next launch moves it again.
+        try {
+          await this.writeState(state);
+          unit?.set({ vault_migration: { saved: true } });
+          await this.removeSealedEntries(migration);
+        } catch {
+          unit?.set({ vault_migration: { saved: false } });
+          this.cache = state;
+        }
+      }
       this.cache ??= state;
       return this.cache;
     } catch (error) {
@@ -1760,63 +2828,49 @@ export class AppApiStorage {
   }
 
   /**
-   * Deletes the temp files an interrupted write left beside the state file:
-   * they hold the state, secrets in plain text, and nothing reads them. Runs
-   * before the first write, and only matches this file's own temp names.
+   * Saves the state whole or not at all (`atomic-file.ts`). Only once the
+   * file holds the new state does this storage read it from memory.
    */
-  private async removeOrphanedTempFiles(): Promise<void> {
-    const directory = path.dirname(this.statePath);
-    const prefix = `${path.basename(this.statePath)}.`;
+  private async writeState(state: AppApiState) {
+    await writeFileAtomically(
+      this.statePath,
+      `${JSON.stringify(state, null, 2)}\n`,
+    );
+    this.cache = state;
+  }
+
+  /**
+   * The installed plugins' manifests for the vault step, or undefined when
+   * they can't be listed: the step then moves nothing rather than take a
+   * plugin it can't list for a missing one.
+   */
+  private async manifestsForMigration(): Promise<
+    ReadonlyMap<string, SecretManifest> | undefined
+  > {
+    if (!this.listManifests) return undefined;
     try {
-      for (const entry of await readdir(directory, { withFileTypes: true })) {
-        if (!entry.isFile() || !entry.name.startsWith(prefix)) continue;
-        const middle = entry.name.slice(prefix.length);
-        if (!middle.endsWith(".tmp")) continue;
-        if (!TEMP_FILE_ID.test(middle.slice(0, -".tmp".length))) continue;
-        await rm(path.join(directory, entry.name), { force: true }).catch(
-          () => undefined,
-        );
-      }
+      const manifests = await this.listManifests();
+      return new Map(manifests.map((manifest) => [manifest.id, manifest]));
     } catch {
-      // No folder yet, or one that can't be listed: nothing to clean.
+      return undefined;
     }
   }
 
   /**
-   * Saves the state whole or not at all: to a temp file beside the state
-   * file, flushed to disk, then renamed over it. A crash before the rename
-   * leaves the last complete file. Only once the file holds the new state
-   * does this storage read it from memory.
+   * Runs `mutator` on the current state and saves what it returns, one
+   * mutation at a time. `afterWrite` runs once the state is saved, for vault
+   * entries the old state still needed.
    */
-  private async writeState(state: AppApiState) {
-    await mkdir(path.dirname(this.statePath), { recursive: true, mode: 0o700 });
-    const tempPath = `${this.statePath}.${randomUUID()}.tmp`;
-    try {
-      const file = await open(tempPath, "w", 0o600);
-      try {
-        await file.writeFile(`${JSON.stringify(state, null, 2)}\n`, "utf8");
-        await file.sync();
-      } finally {
-        await file.close();
-      }
-      await chmod(tempPath, 0o600);
-      await renameOver(tempPath, this.statePath);
-    } catch (error) {
-      await rm(tempPath, { force: true }).catch(() => undefined);
-      throw error;
-    }
-    this.cache = state;
-  }
-
   private mutate<T>(
-    mutator:
-      | ((state: AppApiState) => Promise<{ nextState: AppApiState; result: T }>)
-      | ((state: AppApiState) => { nextState: AppApiState; result: T }),
+    mutator: (
+      state: AppApiState,
+    ) => Promise<MutationResult<T>> | MutationResult<T>,
   ): Promise<T> {
     const operation = this.mutationQueue.then(async () => {
       const current = await this.readState();
-      const { nextState, result } = await mutator(current);
+      const { nextState, result, afterWrite } = await mutator(current);
       await this.writeState(nextState);
+      await afterWrite?.();
       return result;
     });
 

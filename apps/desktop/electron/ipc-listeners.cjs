@@ -42,6 +42,27 @@ function traceCarrierOf(args) {
     : undefined;
 }
 
+/** The scheme of a plugin's own origin (plugin-renderer-policy.cjs). */
+const PLUGIN_ORIGIN_PREFIX = "ajour-plugin:";
+
+/**
+ * Whether the sender is a page of the window: not a frame at a plugin's
+ * origin, and in the window's session when one is given. A plugin's hidden
+ * page lives in a session of its own, so either test alone refuses it;
+ * a destroyed or unknown frame has no plugin origin and is judged by session.
+ */
+function isWindowSender(event, windowSession) {
+  const frame = event?.senderFrame;
+  if (
+    String(frame?.origin ?? "").startsWith(PLUGIN_ORIGIN_PREFIX) ||
+    String(frame?.url ?? "").startsWith(PLUGIN_ORIGIN_PREFIX)
+  ) {
+    return false;
+  }
+  if (windowSession === undefined) return true;
+  return event?.sender?.session === windowSession();
+}
+
 /**
  * Registers every IPC channel of the main process: `handle` for `invoke`,
  * `onMessage` for one-way messages and `answerSync` for `sendSync` requests.
@@ -50,13 +71,20 @@ function traceCarrierOf(args) {
  * accepted. The listener adds its own fields through `events.current()`.
  * Nothing registers with `ipcMain` directly.
  *
+ * Every channel but the plugin renderer's refuses a sender that is not a page
+ * of the window (`isWindowSender`); main passes the window's `windowSession`.
+ * A refused `sendSync` answers null without running the listener.
+ *
  * None can throw into the main process: a throw in a plain `ipcMain.on`
  * listener would be an uncaught exception there. A failed one-way message
  * is dropped, a failed `sendSync` answers null, because a request left
  * unanswered blocks the renderer, and a failed `invoke` rejects in the
  * renderer.
+ *
+ * @param {any} ipcMain
+ * @param {{ events: any, windowSession?: () => unknown }} options
  */
-function createIpcListeners(ipcMain, { events }) {
+function createIpcListeners(ipcMain, { events, windowSession }) {
   function channelEntry(channel, mode) {
     const entry = IPC_CHANNELS[channel];
     if (!entry) {
@@ -96,6 +124,12 @@ function createIpcListeners(ipcMain, { events }) {
         };
         let result;
         try {
+          if (
+            entry.sender !== "plugin-renderer" &&
+            !isWindowSender(event, windowSession)
+          ) {
+            throw refusedSender("Only the Ajour window can use this channel.");
+          }
           result = listener(event, ...listenerArgs);
         } catch (error) {
           refused(error);

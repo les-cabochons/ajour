@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
-import { Link } from "@tanstack/react-router";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
   RiArrowLeftLine as ArrowLeft,
   RiDeleteBinLine as Trash2,
@@ -24,6 +24,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
+import { DisabledReason } from "@/components/disabled-reason";
 import {
   Empty,
   EmptyDescription,
@@ -63,19 +64,25 @@ import {
   syncsPullRequestsAutomatically,
 } from "@ajour/shared";
 import {
-  arePluginFormValuesEqual,
-  buildPluginFormValues,
-  canSubmitPluginForm,
-  isPluginFieldShown,
-  normalizePluginFormValuesForSave,
+  createPluginFormState,
+  expiryForSave,
+  secretFieldIds,
+  type PluginFormState,
 } from "./plugin-form-state";
-import { PluginCapabilitySwitches } from "./plugin-capability-switches";
-import { PluginFieldInput } from "./plugin-settings-ui";
+import { heldEditCount, useHeldEdits } from "@/lib/held-edits";
 import {
-  HeldArrivalsLine,
-  TeamCreateField,
-  TeamPickerDialog,
-} from "./team-connection-ui";
+  ConnectionAccessBadge,
+  connectionEdits,
+  HeldEditsLine,
+} from "./connection-access-ui";
+import { type PluginReplaceTarget } from "./plugin-detail-search";
+import { PluginCapabilitySwitches } from "./plugin-capability-switches";
+import { PluginConnectionForm } from "./connection-form";
+import {
+  ConnectionStatusChip,
+  ConnectionStatusNote,
+} from "./connection-status-ui";
+import { HeldArrivalsLine, TeamPickerDialog } from "./team-connection-ui";
 import { PluginAgentTasks } from "./agent-task-settings";
 import {
   canInstallCatalogPlugin,
@@ -89,15 +96,6 @@ import {
   UnsignedBadge,
 } from "./plugin-catalog-ui";
 import { PluginSourcesSection } from "./plugin-sources-ui";
-
-type PluginFormState = {
-  /** Which opening of the form this is, so a late result finds its own. */
-  instance: number;
-  pluginId: string;
-  editingConnectionId: string | null;
-  initialValues: PluginFieldValues;
-  values: PluginFieldValues;
-};
 
 type PluginCatalogFilter = "all" | PluginCatalogCapability;
 
@@ -214,6 +212,10 @@ function UpdatePluginButton({
   );
 }
 
+/** What the page says while plugins can't run in a sandbox. */
+const SANDBOX_OFF_TITLE =
+  "Plugins are turned off: this computer can't run them in a sandbox";
+
 /**
  * One catalog entry as a plain row: identity mark, name and status, the
  * description, a line of metadata, and the trailing action. Spacing between
@@ -226,6 +228,7 @@ function PluginCatalogRow({
   canDownload,
   pluginsEnabled,
   unsignedPluginsEnabled,
+  sandboxOffReason,
   isMutating,
   onDownload,
   onEnabledChange,
@@ -234,6 +237,8 @@ function PluginCatalogRow({
   canDownload: boolean;
   pluginsEnabled: boolean;
   unsignedPluginsEnabled: boolean;
+  /** Set while plugins can't run in a sandbox: the switch can't be used. */
+  sandboxOffReason?: string;
   isMutating: boolean;
   onDownload: () => void;
   onEnabledChange: (enabled: boolean) => void;
@@ -307,18 +312,24 @@ function PluginCatalogRow({
       ) : pluginGroup ? (
         <span className="flex shrink-0 items-center gap-3">
           {update}
-          <Switch
-            className="shrink-0"
-            checked={pluginGroup.enabled}
-            disabled={
-              isMutating ||
-              !pluginsEnabled ||
-              (!unsignedPluginsEnabled && !signed) ||
-              pluginGroup.plugin.unavailableReason !== undefined
-            }
-            aria-label={`${pluginGroup.enabled ? "Deactivate" : "Activate"} ${catalog.title}`}
-            onCheckedChange={onEnabledChange}
-          />
+          <DisabledReason
+            label={`${pluginGroup.enabled ? "Deactivate" : "Activate"} ${catalog.title}`}
+            reason={sandboxOffReason}
+          >
+            <Switch
+              className="shrink-0"
+              checked={pluginGroup.enabled}
+              disabled={
+                isMutating ||
+                !pluginsEnabled ||
+                (!unsignedPluginsEnabled && !signed) ||
+                sandboxOffReason !== undefined ||
+                pluginGroup.plugin.unavailableReason !== undefined
+              }
+              aria-label={`${pluginGroup.enabled ? "Deactivate" : "Activate"} ${catalog.title}`}
+              onCheckedChange={onEnabledChange}
+            />
+          </DisabledReason>
         </span>
       ) : !installed && catalog.status === "available" ? (
         <Button
@@ -569,8 +580,17 @@ function PluginDetailHeader({
   );
 }
 
-export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
+export function SettingsPluginsPage({
+  pluginId,
+  replace,
+}: {
+  pluginId?: string;
+  /** The secret the Vault sent the user to replace. */
+  replace?: PluginReplaceTarget;
+}) {
   const state = useLocalState();
+  const navigate = useNavigate();
+  const heldEdits = useHeldEdits();
   const isDevelopmentBuild =
     window.ajourDesktop?.runtime?.developmentBuild === true;
   const canInstallPlugins =
@@ -632,14 +652,6 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
     ? (pluginGroups.find((group) => group.plugin.id === formState.pluginId)
         ?.plugin ?? pluginsById.get(formState.pluginId))
     : undefined;
-  const isFormDirty =
-    formState && activePlugin
-      ? !arePluginFormValuesEqual(
-          activePlugin,
-          formState.values,
-          formState.initialValues,
-        )
-      : false;
 
   const handlePluginActivation = (
     group: PluginOverviewGroup,
@@ -653,52 +665,101 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
       capability,
     });
 
+  const accessChoicesOf = (pluginId: string) =>
+    pluginGroups.find((group) => group.plugin.id === pluginId)
+      ?.connectionAccess ?? [];
+
   const handleCreate = (plugin: PluginManifest) => {
-    const initialValues = buildPluginFormValues(plugin);
     workflow.clearFeedback();
-    setFormState({
-      instance: (formInstances.current += 1),
-      pluginId: plugin.id,
-      editingConnectionId: null,
-      initialValues,
-      values: initialValues,
-    });
+    setFormState(
+      createPluginFormState(
+        (formInstances.current += 1),
+        plugin,
+        undefined,
+        undefined,
+        accessChoicesOf(plugin.id),
+      ),
+    );
   };
 
+  /**
+   * Opens the connection's form. `replaceFieldId` opens that secret's Replace
+   * at once; without it, a secret the service refused opens its own.
+   */
   const handleEdit = (
     plugin: PluginManifest,
     connection: PluginConnectionSummary,
+    replaceFieldId?: string,
   ) => {
-    const initialValues = buildPluginFormValues(
-      plugin,
-      connection.editableValues,
-    );
     workflow.clearFeedback();
-    setFormState({
-      instance: (formInstances.current += 1),
-      pluginId: plugin.id,
-      editingConnectionId: connection.id,
-      initialValues,
-      values: initialValues,
-    });
+    setFormState(
+      createPluginFormState(
+        (formInstances.current += 1),
+        plugin,
+        connection,
+        replaceFieldId ??
+          connection.secretFields?.find((secret) => secret.state === "rejected")
+            ?.id,
+        accessChoicesOf(plugin.id),
+      ),
+    );
   };
+
+  // The Vault's Replace opens the connection's form with Replace open, once
+  // the overview lists the connection.
+  const openedReplace = useRef<string | null>(null);
+  useEffect(() => {
+    if (!replace?.connectionId || !pluginId) return;
+    const key = `${pluginId}/${replace.connectionId}/${replace.fieldId}`;
+    if (openedReplace.current === key) return;
+    const group = pluginGroups.find(
+      (candidate) => candidate.plugin.id === pluginId,
+    );
+    const connection = group?.connections.find(
+      (candidate) => candidate.id === replace.connectionId,
+    );
+    if (!group || !connection) return;
+    openedReplace.current = key;
+    handleEdit(group.plugin, connection, replace.fieldId);
+  }, [pluginGroups, pluginId, replace]);
 
   const handleSave = async () => {
     if (!formState || !activePlugin) return;
     let saved: PluginConnectionSummary | undefined;
+    let heldForReview: string | undefined;
     const completed = await workflow.execute({
       type: "save",
       pluginId: formState.pluginId,
-      values: normalizePluginFormValuesForSave(activePlugin, formState.values, {
-        allowSavedSecrets: Boolean(formState.editingConnectionId),
-      }),
+      values: formState.values,
+      // Only the dates the user changed, and those of secrets pasted anew.
+      secretExpiry: expiryForSave(
+        formState.expiry,
+        formState.initialExpiry,
+        secretFieldIds(activePlugin).filter(
+          (id) => String(formState.values[id] ?? "").trim() !== "",
+        ),
+      ),
       connectionId: formState.editingConnectionId ?? undefined,
+      ...(accessChoicesOf(formState.pluginId).length > 0
+        ? { access: formState.access }
+        : {}),
       onSaved: (connection) => {
         saved = connection;
+      },
+      // Changes made while editing was off wait in Sync review.
+      onHeldForReview: (connectionId) => {
+        heldForReview = connectionId;
       },
     });
     if (!completed) return;
     setFormState(null);
+    if (heldForReview) {
+      void navigate({
+        to: "/settings/sync-review",
+        search: { held: heldForReview } as never,
+      });
+      return;
+    }
     if (formState.editingConnectionId || !pluginHasTeam(activePlugin)) return;
     if (!saved) return;
     const added = saved;
@@ -741,11 +802,22 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
       setFormState(null);
   };
 
+  // While plugins can't run in a sandbox, none can be turned on or off:
+  // a click would store a choice the user can't see take effect.
+  const sandboxOffReason =
+    overview?.sandbox?.state === "off" ? SANDBOX_OFF_TITLE : undefined;
+
   const renderMessages = () =>
     pluginApiMissing ? (
       <MessagePanel>{PLUGINS_NEED_DESKTOP_APP}</MessagePanel>
     ) : (
       <>
+        {overview?.sandbox?.state === "off" ? (
+          <MessagePanel tone="warning">
+            <p className="font-medium">{SANDBOX_OFF_TITLE}</p>
+            <p>{overview.sandbox.reason}</p>
+          </MessagePanel>
+        ) : null}
         {statusMessage ? <MessagePanel>{statusMessage}</MessagePanel> : null}
         {pluginError ? (
           <MessagePanel tone="warning">{pluginError}</MessagePanel>
@@ -820,19 +892,25 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                 <span className="text-sm text-muted-foreground">
                   {group.enabled ? "Active" : "Inactive"}
                 </span>
-                <Switch
-                  checked={group.enabled}
-                  disabled={
-                    isMutatingPlugin ||
-                    overview?.pluginsEnabled === false ||
-                    blockedAsUnsigned ||
-                    group.plugin.unavailableReason !== undefined
-                  }
-                  aria-label={`${group.enabled ? "Deactivate" : "Activate"} ${entry.title}`}
-                  onCheckedChange={(enabled) =>
-                    void handlePluginActivation(group, enabled)
-                  }
-                />
+                <DisabledReason
+                  label={`${group.enabled ? "Deactivate" : "Activate"} ${entry.title}`}
+                  reason={sandboxOffReason}
+                >
+                  <Switch
+                    checked={group.enabled}
+                    disabled={
+                      isMutatingPlugin ||
+                      overview?.pluginsEnabled === false ||
+                      sandboxOffReason !== undefined ||
+                      blockedAsUnsigned ||
+                      group.plugin.unavailableReason !== undefined
+                    }
+                    aria-label={`${group.enabled ? "Deactivate" : "Activate"} ${entry.title}`}
+                    onCheckedChange={(enabled) =>
+                      void handlePluginActivation(group, enabled)
+                    }
+                  />
+                </DisabledReason>
               </div>
             )
           }
@@ -912,6 +990,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
           disabled={
             isMutatingPlugin ||
             overview?.pluginsEnabled === false ||
+            sandboxOffReason !== undefined ||
             Boolean(unavailableReason)
           }
           onChange={(capability, enabled) =>
@@ -941,108 +1020,39 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
             </div>
 
             {groupFormState ? (
-              <AppPanel className="pb-4">
-                <div>
-                  <h3 className="text-sm font-medium text-foreground">
-                    {groupFormState.editingConnectionId
-                      ? `Edit ${group.plugin.displayName} connection`
-                      : `New ${group.plugin.displayName} connection`}
-                  </h3>
-                  <p className="mt-0.5 text-[13px] text-muted-foreground">
-                    {groupFormState.editingConnectionId
-                      ? "Update this connection without re-entering unchanged secrets."
-                      : "The connection is validated by the plugin and stored locally."}
-                  </p>
-                </div>
-                <FieldGroup className="desktop:grid desktop:grid-cols-2 desktop:gap-x-6 desktop:gap-y-5">
-                  {pluginConnectionFormFields(group.plugin).map((field) => {
-                    if (
-                      !isPluginFieldShown(
-                        group.plugin,
-                        field,
-                        groupFormState.values,
-                        group.inactiveCapabilities,
+              <PluginConnectionForm
+                group={group}
+                form={groupFormState}
+                setForm={setFormState}
+                connection={group.connections.find(
+                  (connection) =>
+                    connection.id === groupFormState.editingConnectionId,
+                )}
+                vault={overview?.vault}
+                isMutating={isMutatingPlugin}
+                heldCount={
+                  groupFormState.editingConnectionId
+                    ? heldEditCount(
+                        heldEdits,
+                        group.plugin.id,
+                        groupFormState.editingConnectionId,
                       )
-                    ) {
-                      return null;
-                    }
-
-                    return (
-                      <PluginFieldInput
-                        key={field.id}
-                        field={field}
-                        value={groupFormState.values[field.id]}
-                        onChange={(nextValue) =>
-                          setFormState((current) =>
-                            current
-                              ? {
-                                  ...current,
-                                  values: {
-                                    ...current.values,
-                                    [field.id]: nextValue,
-                                  },
-                                }
-                              : current,
-                          )
-                        }
-                      />
-                    );
-                  })}
-                  {pluginHasTeam(group.plugin) &&
-                  !groupFormState.editingConnectionId ? (
-                    <TeamCreateField
-                      pluginId={group.plugin.id}
-                      values={groupFormState.values}
-                      disabled={
-                        isMutatingPlugin || !isCapabilityActive(group, "team")
-                      }
-                      onCreated={(created) =>
-                        // Only into the form that asked: one closed or
-                        // opened anew meanwhile keeps its own values.
-                        setFormState((current) =>
-                          current &&
-                          current.instance === groupFormState.instance
-                            ? {
-                                ...current,
-                                values: { ...current.values, ...created },
-                              }
-                            : current,
-                        )
-                      }
-                    />
-                  ) : null}
-                </FieldGroup>
-                <div className="flex flex-wrap justify-end gap-3 pt-2">
-                  <Button
-                    variant="outline"
-                    disabled={isMutatingPlugin}
-                    onClick={() => setFormState(null)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    disabled={
-                      isMutatingPlugin ||
-                      !isFormDirty ||
-                      !canSubmitPluginForm(
-                        activePlugin,
-                        groupFormState.values,
-                        {
-                          allowSavedSecrets: Boolean(
-                            groupFormState.editingConnectionId,
-                          ),
-                          inactiveCapabilities: group.inactiveCapabilities,
-                        },
-                      )
-                    }
-                    onClick={() => void handleSave()}
-                  >
-                    {groupFormState.editingConnectionId
-                      ? "Update connection"
-                      : "Add connection"}
-                  </Button>
-                </div>
-              </AppPanel>
+                    : 0
+                }
+                now={Date.now()}
+                onCancel={() => setFormState(null)}
+                onSave={() => void handleSave()}
+                onRemoveSecret={(fieldId) =>
+                  groupFormState.editingConnectionId
+                    ? void workflow.execute({
+                        type: "removeSecrets",
+                        pluginId: group.plugin.id,
+                        connectionId: groupFormState.editingConnectionId,
+                        fieldIds: [fieldId],
+                      })
+                    : undefined
+                }
+              />
             ) : null}
 
             {group.connections.length === 0 ? (
@@ -1062,18 +1072,11 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                         <h3 className="min-w-0 text-sm font-medium break-words text-foreground">
                           {connection.label}
                         </h3>
-                        <Chip
-                          tone={connection.lastError ? "danger" : "neutral"}
-                        >
-                          {unavailableReason
-                            ? "Unavailable"
-                            : overview?.pluginsEnabled === false ||
-                                !group.enabled
-                              ? "Paused"
-                              : connection.lastError
-                                ? "Error"
-                                : "Connected"}
-                        </Chip>
+                        <ConnectionStatusChip
+                          group={group}
+                          connection={connection}
+                          pluginsEnabled={overview?.pluginsEnabled !== false}
+                        />
                         <Badge variant="outline">
                           {syncModeLabel(group, connection)}
                         </Badge>
@@ -1082,6 +1085,10 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                             {agentAccessLabel(group, connection)}
                           </Badge>
                         ) : null}
+                        <ConnectionAccessBadge
+                          group={group}
+                          connection={connection}
+                        />
                       </div>
                       <p className="text-[13px] break-words text-muted-foreground">
                         {connection.tenantLabel}
@@ -1101,11 +1108,20 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                           }
                         />
                       ) : null}
-                      {connection.lastError ? (
-                        <p className="text-sm break-words text-destructive">
-                          {connection.lastError}
-                        </p>
-                      ) : null}
+                      <HeldEditsLine
+                        count={heldEditCount(
+                          heldEdits,
+                          group.plugin.id,
+                          connection.id,
+                        )}
+                        editing={connectionEdits(group, connection)}
+                        connectionId={connection.id}
+                      />
+                      <ConnectionStatusNote
+                        group={group}
+                        connection={connection}
+                        pluginsEnabled={overview?.pluginsEnabled !== false}
+                      />
                     </div>
                     <div className="flex shrink-0 flex-wrap gap-2">
                       <Button
@@ -1124,7 +1140,8 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                           disabled={
                             isMutatingPlugin ||
                             overview?.pluginsEnabled === false ||
-                            !isCapabilityActive(group, "connector")
+                            !isCapabilityActive(group, "connector") ||
+                            Boolean(connection.paused)
                           }
                           onClick={() =>
                             void workflow.execute({
@@ -1145,7 +1162,8 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                             disabled={
                               isMutatingPlugin ||
                               overview?.pluginsEnabled === false ||
-                              !isCapabilityActive(group, "team")
+                              !isCapabilityActive(group, "team") ||
+                              Boolean(connection.paused)
                             }
                             onClick={() =>
                               void workflow.execute({
@@ -1180,7 +1198,10 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                       ) : null}
                       {group.plugin.capabilities.codeHost ||
                       group.plugin.capabilities.calendar ||
-                      group.plugin.capabilities.team ? (
+                      group.plugin.capabilities.team ||
+                      // Its held changes go with it: the user confirms that.
+                      heldEditCount(heldEdits, group.plugin.id, connection.id) >
+                        0 ? (
                         <AlertDialog>
                           <AlertDialogTrigger
                             render={
@@ -1203,6 +1224,11 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                                   group.plugin,
                                   connection.id,
                                   state,
+                                  heldEditCount(
+                                    heldEdits,
+                                    group.plugin.id,
+                                    connection.id,
+                                  ),
                                 )}
                               </AlertDialogDescription>
                             </AlertDialogHeader>
@@ -1264,6 +1290,10 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
           <PluginAgentTasks
             pluginId={group.plugin.id}
             tasks={group.plugin.capabilities.agentTask.tasks}
+            replaceFieldId={
+              replace?.connectionId ? undefined : replace?.fieldId
+            }
+            vault={overview?.vault}
           />
         ) : null}
 
@@ -1517,6 +1547,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                     canDownload={canDownloadCatalogPlugins}
                     pluginsEnabled={overview?.pluginsEnabled ?? true}
                     unsignedPluginsEnabled={unsignedPluginsEnabled}
+                    {...(sandboxOffReason ? { sandboxOffReason } : {})}
                     isMutating={isMutatingPlugin}
                     onDownload={() => void handleDownloadPlugin(entry.catalog)}
                     onEnabledChange={(enabled) =>

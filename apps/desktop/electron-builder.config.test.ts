@@ -105,6 +105,23 @@ describe("desktop electron-builder config", () => {
     expect(loadBuilderConfig().extraMetadata).not.toHaveProperty("buildCommit");
   });
 
+  // Decided in #231. Run as Node stays on until Playwright MCP stops using
+  // ELECTRON_RUN_AS_NODE; see the fuse comment in the config.
+  it("flips the release fuses, with asar integrity", () => {
+    const config = loadBuilderConfig();
+
+    expect(config.asar).toBe(true);
+    expect(config.electronFuses).toEqual({
+      runAsNode: true,
+      enableNodeOptionsEnvironmentVariable: false,
+      enableNodeCliInspectArguments: false,
+      grantFileProtocolExtraPrivileges: false,
+      onlyLoadAppFromAsar: true,
+      enableEmbeddedAsarIntegrityValidation: true,
+      resetAdHocDarwinSignature: true,
+    });
+  });
+
   it("publishes prereleases on the nightly update channel", () => {
     vi.stubEnv("AJOUR_UPDATE_CHANNEL", "nightly");
 

@@ -11,7 +11,7 @@ next: false
 
 # Conditions d'utilisation
 
-Dernière mise à jour : 20 octobre 2026
+Dernière mise à jour : 24 octobre 2026
 
 <a href="/legal/terms" lang="en">English version</a>. Consulter la version anglaise ou l'utiliser ne constitue pas un choix exprès de renoncer à la version française ou à un droit linguistique.
 
@@ -43,9 +43,9 @@ N'utilisez pas notre site Web pour diffuser des logiciels malveillants, obtenir 
 
 L'auteur d'un plugin est responsable de son code, du comportement qu'il annonce et de sa licence. La liste d'une source de plugins, et sa signature, ne constitue pas une certification de sécurité. Une signature montre qui a publié un plugin et que personne ne l'a modifié depuis, pas que son code a été examiné. Installez des plugins d'auteurs auxquels vous faites confiance.
 
-Nous restons responsables d'Ajour lui-même, y compris de la manière dont il traite les identifiants. Dans la version actuelle, Ajour masque les paramètres secrets et retire les secrets de connexion connus des erreurs et des résumés des plugins. Les identifiants sont toutefois conservés localement sans chiffrement et transmis au plugin concerné. Le code des plugins ne s'exécute pas dans un bac à sable et peut lire les fichiers accessibles à votre compte utilisateur, y compris les autres identifiants enregistrés.
+Nous restons responsables d'Ajour lui-même, y compris de la manière dont il traite les identifiants. Dans la version actuelle, Ajour conserve les identifiants localement, chiffrés par le système d'exploitation, masque les paramètres secrets et retire les secrets de connexion connus des erreurs et des résumés des plugins. Les identifiants sont toutefois déchiffrés et transmis au plugin concerné. Le code des plugins ne s'exécute pas dans un bac à sable, peut lire les fichiers accessibles à votre compte utilisateur et peut demander au système d'exploitation de déchiffrer les autres identifiants enregistrés.
 
-Le courtier d'identifiants prévu protégera les identifiants du code des plugins en gardant les secrets dans Ajour, en utilisant le chiffrement du système d'exploitation et en faisant les requêtes authentifiées pour les plugins. Ce courtier et le bac à sable prévu ne sont pas encore disponibles. Ils ne protègent pas la version actuelle. Même avec ces contrôles, un plugin pourrait faire un mauvais usage de l'accès ou des données que vous l'autorisez à utiliser.
+Le courtier d'identifiants prévu protégera les identifiants du code des plugins en gardant les secrets dans Ajour et en faisant les requêtes authentifiées pour les plugins. Ce courtier et le bac à sable prévu ne sont pas encore disponibles. Ils ne protègent pas la version actuelle. Même avec ces contrôles, un plugin pourrait faire un mauvais usage de l'accès ou des données que vous l'autorisez à utiliser.
 
 La responsabilité d'un auteur de plugin n'exclut pas une responsabilité que la loi applicable nous impose. Le guide [Your data](/app/data), en anglais, décrit les limites actuelles et les précautions à prendre.
 

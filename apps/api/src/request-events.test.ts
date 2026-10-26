@@ -17,6 +17,7 @@ import {
   windowRequestHeaders,
   windowTokenHeader,
 } from "./test-support/window-token.ts";
+import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
 
 const APP_ORIGIN = "http://127.0.0.1:5173";
 const running: (() => Promise<void>)[] = [];
@@ -45,6 +46,7 @@ async function startTestApi(
     allowedOrigins: [APP_ORIGIN],
     windowToken: TEST_WINDOW_TOKEN,
     eventSink: sink,
+    vault: new MemorySecretVault(),
     ...(await setup(root)),
   });
   const { port } = server.address() as AddressInfo;
@@ -679,19 +681,19 @@ describe("route events", () => {
     expect(JSON.stringify(events)).not.toContain("Secret client");
   });
 
-  it("refuses a schema import whose rows break the definition, without their headings", async () => {
+  it("refuses a schema import past the sheet limits, without the sheet's text", async () => {
     const { port, events } = await startTestApi(writePlugin);
 
     const imported = await call(
       port,
       "/api/project-data-shapes/workday/import",
       {
-        datasets: [{ id: "projects", rows: [{ "Private heading": "Acme" }] }],
+        sheets: [{ name: "Private heading ".repeat(20), rows: [["Acme"]] }],
       },
     );
 
     expect(imported.status).toBe(400);
-    expect(imported.body.error).toContain("Private heading");
+    expect(imported.body.error).toContain("at most 255");
     expect(await lastRequest(events, "project.import")).toMatchObject({
       outcome: "refused",
       outcome_reason: "invalid_request",

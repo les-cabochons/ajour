@@ -4,6 +4,8 @@ import {
   pluginFieldSchema,
   pluginFieldValuesSchema,
   removeSecretsSchema,
+  secretExpirySchema,
+  secretFieldSummarySchema,
 } from "./plugins.ts";
 import { isoDateSchema } from "./agent-tools.ts";
 
@@ -35,6 +37,7 @@ export const agentRunnerSettingsUpdateSchema =
 export const agentTaskSettingsUpdateSchema = z.object({
   values: pluginFieldValuesSchema,
   removeSecrets: removeSecretsSchema.optional(),
+  secretExpiry: secretExpirySchema.optional(),
 });
 
 export const agentCliStatusSchema = z.object({
@@ -56,7 +59,11 @@ export const agentTaskStatusSchema = z.object({
   estimateMinutes: z.number().int(),
   settings: z.array(pluginFieldSchema),
   values: pluginFieldValuesSchema,
+  /** The plugin's secret settings the vault holds, never a value. */
+  secretFields: z.array(secretFieldSummarySchema).optional(),
   weekLink: z.string().optional(),
+  /** Why the task has no week link, when its template uses a secret setting. */
+  weekLinkRefusal: z.string().optional(),
   /** Why the task cannot run now, such as "Fill in Workday timesheet URL". Empty when ready. */
   blockers: z.array(z.string()),
 });

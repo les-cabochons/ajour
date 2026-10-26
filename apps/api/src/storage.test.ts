@@ -1,13 +1,14 @@
 import os from "node:os";
 import path from "node:path";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   pluginsOverviewSchema,
   type BacklogImportCandidateInput,
   type PluginManifest,
 } from "../../../packages/shared/plugins.ts";
 import { AppApiStorage } from "./storage.ts";
+import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
 
 function buildPlugin(
   id: string,
@@ -873,6 +874,213 @@ describe("AppApiStorage", () => {
     expect(await storage.getAgentTaskValues("ajp")).toEqual({ a: "b" });
     expect(await storage.getAgentTaskValues("constructor")).toEqual({});
   });
+
+  it("gives a run no secret still in plain text while encryption is unavailable", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
+    tempDirs.push(tempDir);
+    const statePath = path.join(tempDir, "app-api-state.json");
+    await writeFile(
+      statePath,
+      JSON.stringify({
+        version: 7,
+        connections: [],
+        agentRunner: {
+          pluginValues: {
+            workday: { url: "https://wd.example/t", apiKey: "wd-key-plain" },
+          },
+        },
+      }),
+      "utf8",
+    );
+    const manifest = {
+      id: "workday",
+      connectionFields: [],
+      agentTaskFields: [{ id: "url" }, { id: "apiKey", secret: true }],
+    };
+    const storage = new AppApiStorage(statePath, {
+      vault: new MemorySecretVault({ unavailable: "No keyring." }),
+      manifests: async () => [manifest],
+    });
+
+    expect(await storage.getAgentTaskValues("workday", manifest)).toEqual({
+      url: "https://wd.example/t",
+    });
+  });
+
+  describe("the broker's records for Access review", () => {
+    async function brokerStorage(windowMs: number) {
+      const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
+      tempDirs.push(tempDir);
+      const statePath = path.join(tempDir, "app-api-state.json");
+      const storage = new AppApiStorage(statePath, {
+        brokerActivityWindowMs: windowMs,
+      });
+      const connection = await storage.upsertConnection("jira", {
+        label: "Acme",
+        tenantLabel: "Acme",
+        autoSync: false,
+        autoSyncIntervalMinutes: 15,
+        config: {},
+        configSummary: {},
+      });
+      /** What the state file holds, read by a storage of its own. */
+      const onDisk = async () =>
+        await new AppApiStorage(statePath).brokerActivity("jira");
+      return { storage, connectionId: connection.id, statePath, onDisk };
+    }
+
+    it("keeps a burst of blocked attempts in memory, writing the file once in the window and all of them on flush", async () => {
+      const { storage, connectionId, statePath, onDisk } =
+        await brokerStorage(60_000);
+      const writes: string[] = [];
+
+      for (let at = 1; at <= 50; at += 1) {
+        await storage.recordBrokerActivity("jira", connectionId, "blocked", at);
+        writes.push(await readFile(statePath, "utf8"));
+      }
+
+      // The first attempt is written at once, the others wait for the window.
+      expect(new Set(writes.slice(1)).size).toBe(1);
+      expect((await onDisk()).plugin).toMatchObject({ blockedCount: 1 });
+      await expect(storage.brokerActivity("jira")).resolves.toEqual({
+        plugin: { lastRequestAt: 50, blockedCount: 50, lastBlockedAt: 50 },
+        connections: {
+          [connectionId]: {
+            lastRequestAt: 50,
+            blockedCount: 50,
+            lastBlockedAt: 50,
+          },
+        },
+      });
+
+      await storage.flushBrokerActivity();
+
+      await expect(onDisk()).resolves.toEqual(
+        await storage.brokerActivity("jira"),
+      );
+    });
+
+    it("writes what a window gathered once it ends", async () => {
+      const { storage, connectionId, onDisk } = await brokerStorage(30);
+
+      await storage.recordBrokerActivity("jira", connectionId, "request", 10);
+      await storage.recordBrokerActivity("jira", connectionId, "request", 20);
+      await storage.recordBrokerActivity("jira", connectionId, "blocked", 25);
+
+      await vi.waitFor(async () => {
+        expect((await onDisk()).connections[connectionId]).toEqual({
+          lastRequestAt: 25,
+          blockedCount: 1,
+          lastBlockedAt: 25,
+        });
+      });
+    });
+
+    it("counts a blocked direct attempt without taking it for a request", async () => {
+      const { storage, connectionId, onDisk } = await brokerStorage(60_000);
+
+      await storage.recordBrokerActivity(
+        "jira",
+        undefined,
+        "blocked_direct",
+        40,
+      );
+      await expect(storage.brokerActivity("jira")).resolves.toEqual({
+        plugin: { blockedCount: 1, lastBlockedAt: 40 },
+        connections: {},
+      });
+
+      await storage.recordBrokerActivity("jira", connectionId, "request", 10);
+      await storage.recordBrokerActivity(
+        "jira",
+        undefined,
+        "blocked_direct",
+        50,
+      );
+      await storage.flushBrokerActivity();
+
+      expect((await onDisk()).plugin).toEqual({
+        lastRequestAt: 10,
+        blockedCount: 2,
+        lastBlockedAt: 50,
+      });
+    });
+
+    it("forgets what it held for a plugin whose data was removed", async () => {
+      const { storage, connectionId, onDisk } = await brokerStorage(60_000);
+
+      await storage.recordBrokerActivity("jira", connectionId, "blocked", 1);
+      await storage.recordBrokerActivity("jira", undefined, "blocked", 2);
+      await storage.removePluginData("jira");
+      await storage.flushBrokerActivity();
+
+      await expect(onDisk()).resolves.toEqual({ connections: {} });
+    });
+
+    it("doesn't bring back the record of a plugin removed while a flush was in flight", async () => {
+      const { storage, connectionId, onDisk } = await brokerStorage(60_000);
+      await storage.recordBrokerActivity("jira", connectionId, "blocked", 1);
+      await storage.recordBrokerActivity("jira", undefined, "blocked", 2);
+
+      // The flush has taken the records when the removal runs, and writes after it.
+      const removal = storage.removePluginData("jira");
+      const flush = storage.flushBrokerActivity();
+      await Promise.all([removal, flush]);
+
+      await expect(onDisk()).resolves.toEqual({ connections: {} });
+      await expect(storage.brokerActivity("jira")).resolves.toEqual({
+        connections: {},
+      });
+    });
+
+    it("records a plugin installed again after its data was removed", async () => {
+      const { storage, onDisk } = await brokerStorage(60_000);
+      await storage.removePluginData("jira");
+
+      await storage.recordBrokerActivity("jira", undefined, "blocked", 7);
+      await storage.flushBrokerActivity();
+
+      expect((await onDisk()).plugin).toMatchObject({ blockedCount: 1 });
+    });
+
+    it("reads no record for a plugin id named like an Object method, and keeps its own", async () => {
+      const { storage, statePath, onDisk } = await brokerStorage(60_000);
+
+      await expect(storage.brokerActivity("constructor")).resolves.toEqual({
+        connections: {},
+      });
+      await expect(storage.brokerActivity("toString")).resolves.toEqual({
+        connections: {},
+      });
+
+      await storage.recordBrokerActivity(
+        "constructor",
+        undefined,
+        "blocked",
+        3,
+      );
+      await storage.recordBrokerActivity(
+        "constructor",
+        undefined,
+        "request",
+        4,
+      );
+      await storage.flushBrokerActivity();
+
+      const expected = {
+        plugin: { lastRequestAt: 4, blockedCount: 1, lastBlockedAt: 3 },
+        connections: {},
+      };
+      await expect(storage.brokerActivity("constructor")).resolves.toEqual(
+        expected,
+      );
+      const written = await new AppApiStorage(statePath).brokerActivity(
+        "constructor",
+      );
+      expect(written).toEqual(expected);
+      expect((await onDisk()).plugin).toBeUndefined();
+    });
+  });
 });
 
 describe("state files from earlier versions", () => {
@@ -897,7 +1105,7 @@ describe("state files from earlier versions", () => {
   }
 
   const emptyCurrentState = {
-    version: 7,
+    version: 9,
     connections: [],
     stagedImports: [],
     dismissedImportKeys: [],
@@ -912,8 +1120,15 @@ describe("state files from earlier versions", () => {
     agentRunner: {
       settings: { cli: null, browserMode: "ajour-chrome", model: "" },
       pluginValues: {},
+      pluginSecrets: {},
     },
+    pluginBrokerActivity: {},
   };
+  /**
+   * A file with a connection's token: without a vault, as here, the token
+   * can't move, so the file stays at version 7 until a launch with one.
+   */
+  const heldBeforeVault = { ...emptyCurrentState, version: 7 };
 
   it("moves version 1's one Azure DevOps connection and its inbox to the current version", async () => {
     await expect(
@@ -941,7 +1156,7 @@ describe("state files from earlier versions", () => {
         seenBacklogKeys: ["azure_devops:8"],
       }),
     ).resolves.toEqual({
-      ...emptyCurrentState,
+      ...heldBeforeVault,
       connections: [
         {
           id: "legacy_azure_devops",
@@ -1012,7 +1227,7 @@ describe("state files from earlier versions", () => {
         seenImportKeys: ["azure_devops:ado-1:8"],
       }),
     ).resolves.toEqual({
-      ...emptyCurrentState,
+      ...heldBeforeVault,
       connections: [
         {
           id: "ado-1",

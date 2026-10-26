@@ -14,6 +14,7 @@ import {
   type SessionToolOutput,
   type WriteToolName,
 } from "../../../packages/shared/agent-tools.ts";
+import type { AgentTaskMcpTool } from "../../../packages/shared/plugin-api-4.ts";
 import type {
   AjourCatalog,
   McpMethod,
@@ -27,7 +28,7 @@ import type { ApiEvents } from "./events.ts";
 import type { Settlement } from "./routes.ts";
 import { BridgeCallError, type McpBridge } from "./mcp-bridge.ts";
 import { authenticateMcpRequest } from "./mcp-clients.ts";
-import type { AppApiStorage } from "./storage.ts";
+import type { AppApiStorage, StoredMcpClient } from "./storage.ts";
 
 /**
  * Ajour's MCP endpoint, /mcp/ajour, over Streamable HTTP. Each request gets
@@ -75,6 +76,8 @@ interface ToolCall {
   readonly unit: Unit<AjourCatalog, "agent_tool.call">;
   /** Set when the handler starts, and when it returns a result that isn't an error. */
   handler: "not_reached" | "entered" | "returned_ok";
+  /** The Ajour data tool it names, when the client may not use it. */
+  undeclared?: AgentTaskMcpTool;
 }
 
 /**
@@ -85,8 +88,12 @@ class McpExchange {
   readonly calls: ToolCall[] = [];
   private readonly byId = new Map<unknown, ToolCall>();
 
-  add(unit: ToolCall["unit"], id: unknown) {
-    const call: ToolCall = { unit, handler: "not_reached" };
+  add(unit: ToolCall["unit"], id: unknown, undeclared?: AgentTaskMcpTool) {
+    const call: ToolCall = {
+      unit,
+      handler: "not_reached",
+      ...(undeclared ? { undeclared } : {}),
+    };
     this.calls.push(call);
     if (id !== undefined && id !== null) this.byId.set(id, call);
     return call;
@@ -139,6 +146,52 @@ function calledTool(message: unknown): string {
   return typeof name === "string" && Object.hasOwn(TOOL_DESCRIPTIONS, name)
     ? name
     : "other";
+}
+
+/**
+ * The data tools a client may use. A client the user created has them all;
+ * an agent task run's client has only those its task declares (#396). The
+ * session tools are every client's: they act on its own sessions only.
+ */
+function toolScope(client: StoredMcpClient) {
+  const declared =
+    client.tools === undefined ? undefined : new Set(client.tools);
+  return (tool: AgentTaskMcpTool) =>
+    declared === undefined || declared.has(tool);
+}
+
+/** The data tool a call names, when it is one of Ajour's. */
+function calledDataTool(message: unknown): AgentTaskMcpTool | undefined {
+  const name = calledTool(message);
+  return Object.hasOwn(readToolInputSchemas, name) ||
+    Object.hasOwn(writeToolInputSchemas, name)
+    ? (name as AgentTaskMcpTool)
+    : undefined;
+}
+
+/**
+ * The answer to a call of a tool the client may not use. The tool is never
+ * registered for it, so the SDK would only say it is not found: this says
+ * why, and the call is the agent's refused attempt.
+ */
+function refuseUndeclaredCall(
+  id: string | number,
+  call: ToolCall,
+  tool: AgentTaskMcpTool,
+  client: AgentClientRef,
+  context: McpRequestContext,
+) {
+  const reason = `This agent task doesn't declare the tool ${tool}, so Ajour refuses it. Use only the tools that tools/list returns.`;
+  call.unit.set({
+    agent_tool: {
+      access: Object.hasOwn(writeToolInputSchemas, tool) ? "write" : "read",
+    },
+  });
+  call.unit.refuse("tool_not_declared");
+  context.sessions.recordActivity(client, { outcome: "refused", tool, reason });
+  const sessionId = context.sessions.currentSessionId(client);
+  if (sessionId) call.unit.set({ agent: { session_id: sessionId } });
+  return { jsonrpc: "2.0" as const, id, result: errorResult(reason) };
 }
 
 /**
@@ -257,10 +310,7 @@ const AJOUR_INSTRUCTIONS = [
 ].join("\n");
 
 /** Tool descriptions, by tool name. */
-const TOOL_DESCRIPTIONS: Record<
-  ReadToolName | WriteToolName | SessionToolName,
-  string
-> = {
+const TOOL_DESCRIPTIONS: Record<AgentTaskMcpTool | SessionToolName, string> = {
   get_running_timer:
     "The running entry, with its project, task, note and counted minutes. `running` is null when nothing runs.",
   list_time_entries:
@@ -366,7 +416,7 @@ async function withToolEvent(
  * schema. A mismatch is a bug in Ajour, so the indicator shows it.
  */
 function forwardToRenderer(
-  tool: ReadToolName | WriteToolName,
+  tool: AgentTaskMcpTool,
   input: unknown,
   client: AgentClientRef,
   context: McpRequestContext,
@@ -450,10 +500,14 @@ function runSessionTool<Name extends SessionToolName>(
   });
 }
 
-/** Registers every tool for one request, bound to its client and its event. */
+/**
+ * Registers the tools the client may use for one request, bound to it and
+ * its event. A tool it may not use is absent from its tools/list.
+ */
 function registerTools(
   server: McpServer,
   client: AgentClientRef,
+  mayUse: (tool: AgentTaskMcpTool) => boolean,
   context: McpRequestContext,
   exchange: McpExchange,
 ) {
@@ -461,6 +515,7 @@ function registerTools(
   const callOf = (extra: { requestId: unknown }) =>
     exchange.call(extra.requestId);
   for (const name of Object.keys(readToolInputSchemas) as ReadToolName[]) {
+    if (!mayUse(name)) continue;
     server.registerTool(
       name,
       {
@@ -476,6 +531,7 @@ function registerTools(
     );
   }
   for (const name of Object.keys(writeToolInputSchemas) as WriteToolName[]) {
+    if (!mayUse(name)) continue;
     server.registerTool(
       name,
       {
@@ -651,9 +707,14 @@ export async function handleMcpRequest(
   // Each call is named before the SDK validates it, so a call it
   // refuses still says which tool it was.
   const exchange = new McpExchange();
+  const mayUse = toolScope(authentication.client);
+  const undeclared = (message: unknown) => {
+    const tool = calledDataTool(message);
+    return tool !== undefined && !mayUse(tool) ? tool : undefined;
+  };
   if (method === "tools/call") {
     exchange
-      .add(unit.rename("agent_tool.call"), messageId(body))
+      .add(unit.rename("agent_tool.call"), messageId(body), undeclared(body))
       .unit.set({ agent_tool: { name: calledTool(body) } });
   }
   for (const message of messages ?? []) {
@@ -664,16 +725,25 @@ export async function handleMcpRequest(
       trigger: "agent",
     });
     exchange
-      .add(call, messageId(message))
+      .add(call, messageId(message), undeclared(message))
       .unit.set({ agent_tool: { name: calledTool(message) } });
   }
-  registerTools(server, client, context, exchange);
+  registerTools(server, client, mayUse, context, exchange);
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
   });
   const send = transport.send.bind(transport);
   transport.send = async (message, options) => {
+    const call = exchange.call(messageId(message));
+    if (call?.undeclared) {
+      // Only a reply with the call's own JSON-RPC id finds it.
+      const id = messageId(message) as string | number;
+      return send(
+        refuseUndeclaredCall(id, call, call.undeclared, client, context),
+        options,
+      );
+    }
     recordReply(message, unit, exchange);
     return send(message, options);
   };

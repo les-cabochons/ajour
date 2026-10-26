@@ -9,7 +9,7 @@ next: false
 
 # Terms of service
 
-Last updated: October 20, 2026
+Last updated: October 24, 2026
 
 The [French version](/legal/conditions) is available in full. Reading or using this English page does not constitute an express choice to waive the French version or any language right.
 
@@ -41,9 +41,9 @@ Do not use our website to distribute malware, gain unauthorised access or disrup
 
 Each plugin's author is responsible for that plugin's code, declared behaviour and licence. A plugin source's listing, and its signature, is not a security certification. A signature shows who published a plugin and that nobody changed it since; it does not amount to a review of the plugin's code. Install plugins from authors you trust.
 
-We remain responsible for Ajour itself, including how it handles credentials. In the current release, Ajour masks secret settings and redacts known connection secrets from plugin errors and summaries. Credentials are nevertheless stored unencrypted locally and passed to the relevant plugin. Plugin code is not sandboxed and can read files accessible to your user, including other stored credentials.
+We remain responsible for Ajour itself, including how it handles credentials. In the current release, Ajour stores credentials locally encrypted by the operating system, masks secret settings and redacts known connection secrets from plugin errors and summaries. Credentials are nevertheless decrypted and passed to the relevant plugin. Plugin code is not sandboxed and can read files accessible to your user, and can ask the operating system to decrypt other stored credentials.
 
-The planned credential broker will protect credentials from plugin code by keeping secrets in Ajour, using operating-system encryption and making authenticated requests on a plugin's behalf. That broker and the planned plugin sandbox have not shipped. They do not provide protection in the current release. Even with those controls, a plugin could misuse access or data you allow it to use.
+The planned credential broker will protect credentials from plugin code by keeping secrets in Ajour and making authenticated requests on a plugin's behalf. That broker and the planned plugin sandbox have not shipped. They do not provide protection in the current release. Even with those controls, a plugin could misuse access or data you allow it to use.
 
 A plugin author's responsibility does not exclude any responsibility that applicable law places on us. The [Your data guide](/app/data) describes the current limits and precautions.
 

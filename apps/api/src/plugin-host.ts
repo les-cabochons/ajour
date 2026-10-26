@@ -14,8 +14,26 @@ import {
   type PluginOperationEventName,
 } from "./operation-events.ts";
 import type { ApiEvents } from "./events.ts";
-import { connectionSecretValues } from "./connection-credentials.ts";
+import {
+  connectionSecretValues,
+  editableValues,
+  type SecretConnectionFields,
+} from "./connection-credentials.ts";
+import { randomUUID } from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
+import {
+  connectionAccessOn,
+  isPluginApi4Manifest,
+  pluginApi4ConnectionSchema,
+  type PluginApi4Connection,
+  type PluginApi4Manifest,
+} from "../../../packages/shared/plugin-api-4.ts";
+import {
+  CredentialBroker,
+  type BrokerConnection,
+  type CredentialBrokerPort,
+  type OperationBroker,
+} from "./credential-broker.ts";
 import {
   pluginFieldValuesSchema,
   backlogPluginSyncResultSchema,
@@ -32,6 +50,7 @@ import {
   pluginValidationContextSchema,
   type PluginFieldValues,
   type PluginManifest,
+  type PluginSandboxStatus,
   type BacklogPluginSyncResult,
   type PluginValidationResult,
   type BacklogSettleStatesRequest,
@@ -83,6 +102,7 @@ import {
   readPlugin,
   uninstallPluginPackage,
   type InstalledPlugin,
+  type PluginAdmissionPolicy,
   type ResolvedPlugin,
   type UnavailablePlugin,
 } from "./plugin-package.ts";
@@ -99,12 +119,56 @@ interface PluginHostOptions {
    * Runs once the operation is registered and before its worker starts, and
    * throws to refuse it. Deactivation saves its state and then cancels the
    * registered operations, so an operation either sees the new state here or
-   * is cancelled.
+   * is cancelled. A saved connection's operation names it, so its access
+   * is checked the same way: a save that turns a choice off cancels the
+   * operations it gates.
    */
-  operationGate?: (pluginId: string, method: PluginMethod) => Promise<void>;
+  operationGate?: (
+    pluginId: string,
+    method: PluginMethod,
+    connectionId?: string,
+    /** The manifest of the package that runs it. */
+    manifest?: PluginManifest,
+    /** The operation's request, for a choice that depends on it. */
+    request?: unknown,
+  ) => Promise<void>;
   /** Where each worker run's `plugin_operation` event goes. Nowhere by default. */
   events?: ApiEvents;
+  /**
+   * The broker an API 4 plugin's requests go through. Without one, every
+   * request is refused, as outside the desktop app.
+   */
+  broker?: CredentialBrokerPort;
 }
+
+/**
+ * What a connection being validated before it is saved holds besides its
+ * config, for an API 4 plugin, which receives it whole.
+ */
+export interface PendingConnectionDraft {
+  label: string;
+  tenantLabel: string;
+  autoSync: boolean;
+  autoSyncIntervalMinutes: number;
+  /** The user marked it on-premises, so the broker may reach private addresses. */
+  onPremises: boolean;
+  /** The access choices it has on: those it was saved with. */
+  access: readonly string[];
+}
+
+const NEW_CONNECTION_DRAFT: PendingConnectionDraft = {
+  label: "New connection",
+  tenantLabel: "New connection",
+  autoSync: false,
+  autoSyncIntervalMinutes: 15,
+  onPremises: false,
+  access: [],
+};
+
+/** A broker with nothing to send with: it refuses every request. */
+const NO_BROKER: CredentialBrokerPort = new CredentialBroker({
+  connections: { connection: async () => undefined },
+});
 
 const pluginInvocationConnectionSchema = z.object({
   id: z.string().min(1).max(120),
@@ -117,6 +181,8 @@ const pluginInvocationConnectionSchema = z.object({
   lastSyncAt: z.number().int().positive().optional(),
   lastError: z.string().max(1000).optional(),
   config: pluginFieldValuesSchema,
+  /** The access choices it turned on. Only an API 4 plugin receives them. */
+  access: z.array(z.string().max(120)).max(50).optional(),
 });
 
 type PluginInvocationConnection = z.infer<
@@ -126,11 +192,16 @@ type PluginInvocationConnection = z.infer<
  * Runs at admission, right before the worker starts, with the manifest of the
  * package the call runs, and throws to refuse the call. The local API keeps
  * that manifest to redact the call's error and result with the secret fields
- * of the package that ran, even when an update landed while it waited.
+ * of the package that ran, even when an update landed while it waited. It
+ * may answer with the connection fields to redact the call's own event
+ * with: the manifest's, with those the vault holds still marked secret.
  */
 export type PluginAdmission = (
   manifest: PluginManifest,
-) => Promise<void> | void;
+) => Promise<PluginAdmitted | void> | PluginAdmitted | void;
+
+/** What an admission answers: the fields the call's secrets are found with. */
+export type PluginAdmitted = SecretConnectionFields;
 export type { PluginMethod };
 /** The event each plugin method's worker run emits. A new method needs one. */
 export const PLUGIN_OPERATION_EVENTS = {
@@ -228,9 +299,13 @@ export class PluginManager {
   private readonly developmentPluginDirectories: string[];
   private readonly bundledPluginArchives: string[];
   private readonly allowDevelopmentPlugins: boolean;
+  private readonly admission: PluginAdmissionPolicy;
   private readonly operationGate?: PluginHostOptions["operationGate"];
   private readonly events?: ApiEvents;
   private readonly workers: PluginWorkerLifetime<PluginMethod>;
+  private readonly runsPluginApi4: boolean;
+  private readonly runtime: PluginRuntime;
+  private readonly broker: CredentialBrokerPort;
   private activePackageReaders = 0;
   private packageReadersDrainedPromise?: Promise<void>;
   private resolvePackageReadersDrained?: () => void;
@@ -251,20 +326,37 @@ export class PluginManager {
       (archive) => path.resolve(archive),
     );
     this.allowDevelopmentPlugins = options.allowDevelopmentPlugins ?? false;
+    // Development builds admit plugin API 4 until the cut-over (#403).
+    this.admission = { admitPluginApi4: this.allowDevelopmentPlugins };
     this.operationGate = options.operationGate;
     this.events = options.events;
+    const runtime: PluginRuntime = options.runtime ?? new WorkerPluginRuntime();
+    this.runtime = runtime;
+    this.runsPluginApi4 = runtime.runsPluginApi4 === true;
+    this.broker = options.broker ?? NO_BROKER;
     this.workers = new PluginWorkerLifetime({
       name: "Plugin",
       events: options.events,
       eventNames: PLUGIN_OPERATION_EVENTS,
       capabilityOf: capabilityOfMethod,
       requestTimeoutMs: options.requestTimeoutMs ?? 30_000,
-      runtime: options.runtime ?? new WorkerPluginRuntime(),
+      runtime,
     });
   }
 
   get activeOperationCount() {
     return this.workers.activeOperationCount;
+  }
+
+  /**
+   * Whether plugins can run in their sandbox on this computer, when the
+   * runtime sandboxes them. Undefined for a runtime that doesn't, such as
+   * the worker threads alone.
+   */
+  sandboxStatus(): PluginSandboxStatus | undefined {
+    if (!this.runtime.unavailableReason) return undefined;
+    const reason = this.runtime.unavailableReason();
+    return reason === undefined ? { state: "on" } : { state: "off", reason };
   }
 
   async listPlugins(): Promise<PluginManifest[]> {
@@ -314,6 +406,7 @@ export class PluginManager {
         archiveFilename,
         installRoot: this.installedPluginDirectory,
         replaceExisting: true,
+        policy: this.admission,
       });
       if (installed.backupLeft) {
         this.events?.current()?.count("plugin_backup_failed");
@@ -356,6 +449,25 @@ export class PluginManager {
     return await this.workers.cancel(error, reason, pluginId);
   }
 
+  /**
+   * Cancels the running operations of one connection whose method `methods`
+   * keeps, as when a save turns off the access they need.
+   */
+  async cancelConnectionOperations(
+    pluginId: string,
+    connectionId: string,
+    methods: (method: PluginMethod) => boolean,
+    error: Error,
+  ): Promise<number> {
+    return await this.workers.cancel(
+      error,
+      "access_off",
+      pluginId,
+      methods,
+      connectionId,
+    );
+  }
+
   /** Cancels the running operations of one capability, such as a pull request sync. */
   async cancelCapabilityOperations(
     pluginId: string,
@@ -370,12 +482,18 @@ export class PluginManager {
     );
   }
 
-  /** `context` names the switchable capabilities that are on. */
+  /**
+   * `context` names the switchable capabilities that are on. An API 4
+   * plugin receives the connection being saved, from `draft` and the
+   * config's values that aren't secret, under an id only this call's
+   * requests can use, and the broker sends them with the config's secrets.
+   */
   async validateConnection(
     pluginId: string,
     config: PluginFieldValues,
     context?: PluginValidationContext,
     admit?: PluginAdmission,
+    draft: PendingConnectionDraft = NEW_CONNECTION_DRAFT,
   ): Promise<PluginValidationResult> {
     return await this.invokePlugin(
       pluginId,
@@ -385,6 +503,7 @@ export class PluginManager {
         ...(context
           ? { context: pluginValidationContextSchema.parse(context) }
           : {}),
+        draft,
       },
       pluginValidationResultSchema,
       admit,
@@ -622,56 +741,178 @@ export class PluginManager {
   ): Promise<T> {
     const connection = params.connection as
       { id?: unknown; config?: PluginFieldValues } | undefined;
-    return await this.workers.run(
-      pluginId,
-      method,
-      async (record) => {
-        const plugin = await this.getPlugin(pluginId);
-        record.plugin({
-          version: plugin.manifest.version,
-          source: plugin.source,
-          apiVersion: plugin.manifest.apiVersion,
-        });
-        record.secrets(
-          connectionSecretValues(plugin.manifest, [
+    let broker: OperationBroker | undefined;
+    try {
+      return await this.workers.run(
+        pluginId,
+        method,
+        async (record) => {
+          const plugin = await this.getPlugin(pluginId);
+          record.plugin({
+            version: plugin.manifest.version,
+            source: plugin.source,
+            apiVersion: plugin.manifest.apiVersion,
+          });
+          const configs = [
             connection?.config,
             params.config as PluginFieldValues | undefined,
-          ]),
-        );
-        requirement?.(plugin.manifest);
-        // Discovery awaited, so shutdown or a package change may have started meanwhile.
-        this.assertCanInvoke();
-        const entrypoint = plugin.manifest.entrypoint;
-        if (!plugin.entrypointPath || !entrypoint) {
-          throw new PluginOperationRefused(
-            `Plugin "${pluginId}" runs no code.`,
-            "runs_no_code",
-          );
-        }
-        await this.operationGate?.(pluginId, method);
-        await admit?.(plugin.manifest);
-        return {
-          invocation: {
+          ];
+          record.secrets(connectionSecretValues(plugin.manifest, configs));
+          // A worker thread would hand an API 4 plugin its secrets and the
+          // network. It runs only in a runtime that keeps it to the broker.
+          if (isPluginApi4Manifest(plugin.manifest) && !this.runsPluginApi4) {
+            throw new PluginOperationRefused(
+              `Plugin "${pluginId}" uses plugin API 4, which this version of Ajour can't run yet.`,
+              "not_supported",
+            );
+          }
+          requirement?.(plugin.manifest);
+          // Discovery awaited, so shutdown or a package change may have started meanwhile.
+          this.assertCanInvoke();
+          const entrypoint = plugin.manifest.entrypoint;
+          if (!plugin.entrypointPath || !entrypoint) {
+            throw new PluginOperationRefused(
+              `Plugin "${pluginId}" runs no code.`,
+              "runs_no_code",
+            );
+          }
+          await this.operationGate?.(
             pluginId,
-            packageDirectory: plugin.directory,
-            entrypoint,
-            apiVersion: plugin.manifest.apiVersion,
             method,
-            args: pluginMethodArguments(method, params),
-          },
-          parse: (result: unknown) => schema.parse(result),
-        };
-      },
-      {
-        // A method with a requirement waits for discovery first, as a
-        // package change ends, and checks again after it. Validation, which
-        // has none, is refused at once while a package changes.
-        ...(requirement ? {} : { check: () => this.assertCanInvoke() }),
-        ...(typeof connection?.id === "string"
-          ? { connectionId: connection.id }
+            typeof connection?.id === "string" ? connection.id : undefined,
+            plugin.manifest,
+            params.request,
+          );
+          const admitted = await admit?.(plugin.manifest);
+          // A field the vault holds stays secret after an update unmarks it.
+          if (admitted)
+            record.secrets(connectionSecretValues(admitted, configs));
+          let args: unknown[];
+          if (isPluginApi4Manifest(plugin.manifest)) {
+            const prepared = this.prepareApi4(
+              pluginId,
+              plugin.manifest,
+              method,
+              params,
+              admitted ?? plugin.manifest,
+            );
+            broker = prepared.broker;
+            args = prepared.args;
+          } else if (connection && "access" in connection) {
+            // Access choices are plugin API 4's.
+            const { access: _access, ...api3Connection } = connection;
+            args = pluginMethodArguments(method, {
+              ...params,
+              connection: api3Connection,
+            });
+          } else {
+            args = pluginMethodArguments(method, params);
+          }
+          return {
+            invocation: {
+              pluginId,
+              packageDirectory: plugin.directory,
+              entrypoint,
+              apiVersion: plugin.manifest.apiVersion,
+              method,
+              args,
+              ...(broker ? { broker } : {}),
+            },
+            parse: (result: unknown) => schema.parse(result),
+          };
+        },
+        {
+          // A method with a requirement waits for discovery first, as a
+          // package change ends, and checks again after it. Validation, which
+          // has none, is refused at once while a package changes.
+          ...(requirement ? {} : { check: () => this.assertCanInvoke() }),
+          ...(typeof connection?.id === "string"
+            ? { connectionId: connection.id }
+            : {}),
+        },
+      );
+    } finally {
+      // Its requests end with it, and a plugin that kept one can't send more.
+      broker?.close();
+    }
+  }
+
+  /**
+   * An API 4 operation's arguments and broker. The plugin receives its
+   * connection without the secrets, with the access choices that are on;
+   * the broker holds what the plugin doesn't see. A connection being
+   * validated gets an id of its own, which only this operation's broker
+   * knows, and is never stored.
+   */
+  private prepareApi4(
+    pluginId: string,
+    manifest: PluginApi4Manifest,
+    method: PluginMethod,
+    params: Record<string, unknown>,
+    secretFields: SecretConnectionFields,
+  ): { args: unknown[]; broker: OperationBroker } {
+    const visible = (config: PluginFieldValues) =>
+      editableValues(secretFields.connectionFields, config);
+    let pending: BrokerConnection | undefined;
+    let connection: PluginApi4Connection | undefined;
+    if (method === "validateConnection") {
+      const config = params.config as PluginFieldValues;
+      const draft = params.draft as PendingConnectionDraft;
+      const access = connectionAccessOn(
+        manifest.connectionAccess,
+        draft.access,
+      );
+      const id = `pending-${randomUUID()}`;
+      pending = {
+        id,
+        values: config,
+        secrets: connectionSecretValues(secretFields, [config]),
+        onPremises: draft.onPremises,
+        access,
+      };
+      connection = pluginApi4ConnectionSchema.parse({
+        id,
+        pluginId,
+        label: draft.label,
+        tenantLabel: draft.tenantLabel,
+        autoSync: draft.autoSync,
+        autoSyncIntervalMinutes: draft.autoSyncIntervalMinutes,
+        connectedAt: Date.now(),
+        config: visible(config),
+        access,
+      });
+    } else if (params.connection) {
+      const saved = params.connection as PluginInvocationConnection;
+      connection = pluginApi4ConnectionSchema.parse({
+        id: saved.id,
+        pluginId: saved.pluginId,
+        label: saved.label,
+        tenantLabel: saved.tenantLabel,
+        autoSync: saved.autoSync,
+        autoSyncIntervalMinutes: saved.autoSyncIntervalMinutes,
+        connectedAt: saved.connectedAt,
+        ...(saved.lastSyncAt !== undefined
+          ? { lastSyncAt: saved.lastSyncAt }
           : {}),
-      },
-    );
+        config: visible(saved.config),
+        access: connectionAccessOn(manifest.connectionAccess, saved.access),
+      });
+    }
+    const traceparent = this.events?.current()?.traceparent();
+    return {
+      args: pluginMethodArguments(
+        method,
+        connection ? { ...params, connection } : params,
+        manifest.apiVersion,
+      ),
+      broker: this.broker.forOperation({
+        pluginId,
+        manifest,
+        method,
+        ...(traceparent ? { traceparent } : {}),
+        ...(pending ? { pending } : {}),
+      }),
+    };
   }
 
   /** The item's description as the source holds it now. */
@@ -754,6 +995,7 @@ export class PluginManager {
       const unavailable = new Map<string, UnavailablePlugin>();
       const installed = await discoverInstalledPlugins(
         this.installedPluginDirectory,
+        this.admission,
       );
 
       for (const plugin of installed.plugins) {
@@ -769,7 +1011,11 @@ export class PluginManager {
       if (this.allowDevelopmentPlugins) {
         for (const directory of this.developmentPluginDirectories) {
           try {
-            const plugin = await readPlugin(directory, "development");
+            const plugin = await readPlugin(
+              directory,
+              "development",
+              this.admission,
+            );
             plugins.set(plugin.manifest.id, plugin);
             unavailable.delete(plugin.manifest.id);
           } catch {
@@ -802,6 +1048,7 @@ export class PluginManager {
   private async installBundledPlugins() {
     const failedBackups = await reconcilePluginInstallRoot(
       this.installedPluginDirectory,
+      this.admission,
     );
     if (failedBackups > 0) {
       this.events?.current()?.count("plugin_backup_failed", failedBackups);
@@ -814,6 +1061,7 @@ export class PluginManager {
           archiveFilename: path.basename(archivePath),
           installRoot: this.installedPluginDirectory,
           replaceExisting: false,
+          policy: this.admission,
         });
       } catch {
         this.events?.current()?.count("bundled_plugin_failed");

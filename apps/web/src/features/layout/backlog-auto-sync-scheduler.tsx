@@ -3,6 +3,7 @@ import {
   isCapabilityActive,
   syncsPullRequestsAutomatically,
 } from "@ajour/shared";
+import { connectionAccessAllows } from "@ajour/shared/connection-access";
 import { showErrorToast } from "@/components/ui/toast";
 import {
   asPoll,
@@ -68,8 +69,10 @@ export function BacklogAutoSyncScheduler() {
                 isCapabilityActive(group, "connector")
                   ? (["connector"] as const)
                   : []),
+                // Pull requests also need the connection's own choice.
                 ...(syncsPullRequestsAutomatically(connection) &&
-                isCapabilityActive(group, "codeHost")
+                isCapabilityActive(group, "codeHost") &&
+                connectionAccessAllows(group, connection, "syncPullRequests")
                   ? (["codeHost"] as const)
                   : []),
                 // A team always syncs on the interval: there is no review to skip.
@@ -81,9 +84,12 @@ export function BacklogAutoSyncScheduler() {
           group.connections
             .filter(
               (connection) =>
-                !connection.lastSyncAt ||
-                now - connection.lastSyncAt >=
-                  connection.autoSyncIntervalMinutes * 60_000,
+                // A connection paused for its secret (a rejected token, a
+                // removed one) waits for the user: syncing it only fails.
+                !connection.paused &&
+                (!connection.lastSyncAt ||
+                  now - connection.lastSyncAt >=
+                    connection.autoSyncIntervalMinutes * 60_000),
             )
             .map((connection) => ({
               pluginId: group.plugin.id,

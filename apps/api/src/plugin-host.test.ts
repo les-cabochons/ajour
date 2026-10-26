@@ -83,6 +83,31 @@ async function packagePlugin(pluginDirectory: string, archivePath: string) {
   );
 }
 
+/** What an API 4 release of the Jira plugin adds to the test manifest. */
+const API_4_MANIFEST = {
+  version: "4.0.0",
+  apiVersion: 4,
+  connectionFields: [
+    { id: "label", label: "Connection label", type: "text", required: true },
+    { id: "tenantLabel", label: "Workspace", type: "text", required: true },
+    { id: "baseUrl", label: "Site URL", type: "url", required: true },
+    { id: "email", label: "Email", type: "text", required: true },
+    {
+      id: "apiToken",
+      label: "API token",
+      type: "password",
+      required: true,
+      secret: true,
+    },
+  ],
+  network: {
+    auth: { scheme: "basic", userField: "email", secretField: "apiToken" },
+    baseAddress: { field: "baseUrl" },
+    endpoints: [{ method: "GET", path: "/rest/api/3/myself" }],
+    requestHeaders: ["Accept"],
+  },
+};
+
 const AGENT_TASK_PROMPT =
   "Enter week {{weekOf}} at {{settings.url}} in session {{sessionId}}.";
 
@@ -459,6 +484,126 @@ describe("PluginManager", () => {
     await expect(pluginManager.inspectPlugins()).resolves.toMatchObject({
       plugins: [{ id: "jira", apiVersion: 3 }],
       unavailable: [],
+    });
+  });
+
+  describe("plugin API 4, until the cut-over", () => {
+    async function api4Archive(root: string) {
+      const pluginDirectory = await createPluginDirectory(
+        path.join(root, "source"),
+        "jira",
+        "export async function validateConnection() { throw new Error('ran'); }",
+        API_4_MANIFEST,
+      );
+      const archivePath = path.join(root, "jira-4.0.0.ajour-connector");
+      await packagePlugin(pluginDirectory, archivePath);
+      return { bytes: await readFile(archivePath), archivePath };
+    }
+
+    it("is admitted by a development build, with its access declarations", async () => {
+      const root = await tempDir();
+      const { bytes, archivePath } = await api4Archive(root);
+      const pluginManager = manager({
+        installedPluginDirectory: path.join(root, "installed"),
+        allowDevelopmentPlugins: true,
+      });
+
+      await pluginManager.installPluginArchive(
+        bytes,
+        path.basename(archivePath),
+      );
+
+      await expect(pluginManager.inspectPlugins()).resolves.toMatchObject({
+        plugins: [
+          {
+            id: "jira",
+            apiVersion: 4,
+            network: { auth: { scheme: "basic" } },
+          },
+        ],
+        unavailable: [],
+      });
+    });
+
+    it("is never run in a worker thread, where it would get the secrets", async () => {
+      const root = await tempDir();
+      const { bytes, archivePath } = await api4Archive(root);
+      const pluginManager = manager({
+        installedPluginDirectory: path.join(root, "installed"),
+        allowDevelopmentPlugins: true,
+      });
+      await pluginManager.installPluginArchive(
+        bytes,
+        path.basename(archivePath),
+      );
+
+      await expect(
+        pluginManager.validateConnection("jira", { apiToken: "s3cret" }),
+      ).rejects.toThrow(
+        'Plugin "jira" uses plugin API 4, which this version of Ajour can\'t run yet.',
+      );
+    });
+
+    it("is refused by a packaged build", async () => {
+      const root = await tempDir();
+      const { bytes, archivePath } = await api4Archive(root);
+      const pluginManager = manager({
+        installedPluginDirectory: path.join(root, "installed"),
+        allowDevelopmentPlugins: false,
+      });
+
+      await expect(
+        pluginManager.installPluginArchive(bytes, path.basename(archivePath)),
+      ).rejects.toThrow(
+        "Jira 4.0.0 uses plugin API 4, but this version of Ajour supports plugin API 3. Update Ajour to use this plugin.",
+      );
+      await expect(pluginManager.listPlugins()).resolves.toEqual([]);
+    });
+
+    it("stays installed but unavailable in a packaged build", async () => {
+      const root = await tempDir();
+      const installedRoot = path.join(root, "installed");
+      await createPluginDirectory(
+        installedRoot,
+        "jira",
+        "export async function validateConnection() {}",
+        API_4_MANIFEST,
+      );
+      const pluginManager = manager({
+        installedPluginDirectory: installedRoot,
+        allowDevelopmentPlugins: false,
+      });
+
+      await expect(pluginManager.inspectPlugins()).resolves.toMatchObject({
+        plugins: [],
+        unavailable: [
+          {
+            manifest: { id: "jira", apiVersion: 4 },
+            reason:
+              "Jira 4.0.0 uses plugin API 4, but this version of Ajour supports plugin API 3. Update Ajour to use this plugin.",
+          },
+        ],
+      });
+    });
+
+    it("is refused when its manifest breaks an API 4 rule", async () => {
+      const root = await tempDir();
+      const pluginDirectory = await createPluginDirectory(
+        root,
+        "jira",
+        "export async function validateConnection() {}",
+        {
+          ...API_4_MANIFEST,
+          network: {
+            ...API_4_MANIFEST.network,
+            requestHeaders: ["Authorization"],
+          },
+        },
+      );
+
+      await expect(readPlugin(pluginDirectory, "development")).rejects.toThrow(
+        "A plugin may not set the Authorization header.",
+      );
     });
   });
 

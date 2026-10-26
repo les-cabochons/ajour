@@ -36,11 +36,13 @@ import {
   type PluginFieldValues,
   type BacklogImportCandidate,
   type PluginInstallResponse,
-  type BacklogSyncWorkItem,
+  type BacklogSyncRequestWorkItem,
+  type BacklogSyncRequestEstimateFieldState,
   type PluginsOverview,
   type BacklogSyncResult,
 } from "@ajour/shared";
 import { newDescriptionConflicts } from "@/domain/backlog/description-sync";
+import type { LocalWorkItemEstimateFieldState } from "@/domain/local-state";
 import { announceDescriptionConflicts } from "@/lib/sync-conflict-events";
 import {
   catalogPluginDownloadOutcomeSchema,
@@ -55,8 +57,8 @@ import {
   projectDataShapeImportRequestSchema,
   projectDataShapeImportResponseSchema,
   projectDataShapeListResponseSchema,
-  type ProjectDataShapeDataset,
   type ProjectDataShapeExportProject,
+  type ProjectDataShapeSheet,
 } from "@ajour/shared";
 import {
   agentsSnapshotSchema,
@@ -282,6 +284,39 @@ class AppApiUnavailableError extends Error {
 }
 
 /**
+ * A request the local API answered with an error. The message is the API's
+ * own; `status` keeps the HTTP status, so a caller can tell a paused
+ * connection (409) from a failure of the service (502).
+ */
+export class AppApiError extends Error {
+  readonly status: number;
+  /** The access choice a refusal names, when the connection's access is off. */
+  readonly accessOff?: string;
+
+  constructor(message: string, status: number, accessOff?: string) {
+    super(message);
+    // `name` stays "Error": it is the `error.type` of the events a failed
+    // call records, which a status doesn't change.
+    this.status = status;
+    if (accessOff) this.accessOff = accessOff;
+  }
+}
+
+/** The HTTP status the local API answered a failed request with, if it did. */
+export function appApiErrorStatus(error: unknown): number | undefined {
+  return error instanceof AppApiError ? error.status : undefined;
+}
+
+/**
+ * Whether the local API refused the call because the connection's access
+ * doesn't include the choice it needs, such as editing work items (#395).
+ * Such a write is held on this computer instead of dropped.
+ */
+export function isAccessOffError(error: unknown): error is AppApiError {
+  return error instanceof AppApiError && error.accessOff !== undefined;
+}
+
+/**
  * True when the app API is unreachable because Ajour runs as a plain web
  * app. In the desktop app the API is internal, so an unreachable API stays a
  * real failure that the page reports.
@@ -346,6 +381,9 @@ export const APP_API_CLIENT = {
   upsertBacklogSourceStatuses: "source_state.update",
   savePluginConnection: "connection.save",
   deletePluginConnection: "connection.delete",
+  removeConnectionSecrets: "connection.remove_secrets",
+  removeMissingPluginData: "plugin.remove_data",
+  retryVault: "vault.retry",
   listItemComments: "comment.list",
   postItemComment: "comment.post",
   editItemComment: "comment.edit",
@@ -546,19 +584,26 @@ async function requestAppApi<T>(
   observe.answered(response.status);
   if (!response.ok) {
     let detail = response.statusText || "Request failed";
+    let accessOff: string | undefined;
     try {
-      const payload = (await response.json()) as { error?: string };
+      const payload = (await response.json()) as {
+        error?: string;
+        reason?: unknown;
+        access?: unknown;
+      };
       if (
         typeof payload.error === "string" &&
         payload.error.trim().length > 0
       ) {
         detail = payload.error.trim();
       }
+      if (payload.reason === "access_off" && typeof payload.access === "string")
+        accessOff = payload.access;
     } catch {
       // Ignore non-JSON error responses.
     }
 
-    throw new Error(detail);
+    throw new AppApiError(detail, response.status, accessOff);
   }
 
   return parseJsonResponse(response, schema);
@@ -686,11 +731,12 @@ export function exportProjectsWithDataShape(
   );
 }
 
+/** Has a schema plugin map a file's sheets to projects. */
 export function importProjectsWithDataShape(
   pluginId: string,
-  datasets: ProjectDataShapeDataset[],
+  sheets: ProjectDataShapeSheet[],
 ) {
-  const payload = projectDataShapeImportRequestSchema.parse({ datasets });
+  const payload = projectDataShapeImportRequestSchema.parse({ sheets });
   return appApiRequest(
     "importProjectsWithDataShape",
     `/api/project-data-shapes/${encodeURIComponent(pluginId)}/import`,
@@ -872,8 +918,19 @@ export async function savePluginConnection(
   pluginId: string,
   values: PluginFieldValues,
   id?: string,
+  /** The reminder date of each secret field, in epoch ms. `null` clears one. */
+  secretExpiry?: Record<string, number | null>,
+  /** The access choices turned on. Undefined keeps the saved ones. */
+  access?: readonly string[],
 ): Promise<PluginConnectionSaveResponse> {
-  const payload = pluginConnectionSaveRequestSchema.parse({ id, values });
+  const payload = pluginConnectionSaveRequestSchema.parse({
+    id,
+    values,
+    ...(secretExpiry && Object.keys(secretExpiry).length > 0
+      ? { secretExpiry }
+      : {}),
+    ...(access ? { access: [...access] } : {}),
+  });
   const result = await appApiRequest(
     "savePluginConnection",
     `/api/plugins/${encodeURIComponent(pluginId)}/connections`,
@@ -936,6 +993,54 @@ export async function deletePluginConnection(
   } finally {
     command.finish();
   }
+}
+
+/**
+ * Deletes saved secrets of a connection. The connection keeps its settings
+ * and data, and pauses until a new secret is saved if its plugin requires one.
+ */
+export async function removeConnectionSecrets(
+  pluginId: string,
+  connectionId: string,
+  fieldIds: string[],
+): Promise<PluginConnectionSaveResponse> {
+  const result = await appApiRequest(
+    "removeConnectionSecrets",
+    `/api/plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/secrets/remove`,
+    { method: "POST", body: JSON.stringify({ fieldIds }) },
+    pluginConnectionSaveResponseSchema,
+  );
+  cachePluginsOverview(result.overview);
+  return result;
+}
+
+/**
+ * Deletes the connections and saved secrets of a plugin whose package is
+ * missing. Synced backlog items stay.
+ */
+export async function removeMissingPluginData(
+  pluginId: string,
+): Promise<PluginsOverview> {
+  return cachePluginsOverview(
+    await appApiRequest(
+      "removeMissingPluginData",
+      `/api/plugins/${encodeURIComponent(pluginId)}/data`,
+      { method: "DELETE" },
+      pluginsOverviewSchema,
+    ),
+  );
+}
+
+/** Opens the vault again, which re-runs the encryption round trip. */
+export async function retryVault(): Promise<PluginsOverview> {
+  return cachePluginsOverview(
+    await appApiRequest(
+      "retryVault",
+      "/api/vault/retry",
+      { method: "POST" },
+      pluginsOverviewSchema,
+    ),
+  );
 }
 
 /** A page of a synced item's comments, newest last (ADR 0008). */
@@ -1142,6 +1247,23 @@ export function syncBacklogConnection(
   );
 }
 
+/**
+ * What a sync sends of an estimate field's state: the values both sides
+ * agreed on and saw, Keep mine, and whether its change waits for review,
+ * which the API keeps from uploading.
+ */
+function syncEstimateField(
+  field: LocalWorkItemEstimateFieldState | undefined,
+): BacklogSyncRequestEstimateFieldState | undefined {
+  if (!field) return undefined;
+  return {
+    baselineValue: field.baselineValue,
+    remoteValue: field.remoteValue,
+    resolution: field.resolution,
+    ...(field.held ? { held: true } : {}),
+  };
+}
+
 async function runBacklogSync(
   job: Unit<AjourCatalog, "backlog.sync">,
   pluginId: string,
@@ -1171,47 +1293,18 @@ async function runBacklogSync(
               : undefined,
           estimateSync: workItem.estimateSync
             ? {
-                originalEstimateHours: workItem.estimateSync
-                  .originalEstimateHours
-                  ? {
-                      baselineValue:
-                        workItem.estimateSync.originalEstimateHours
-                          .baselineValue,
-                      remoteValue:
-                        workItem.estimateSync.originalEstimateHours.remoteValue,
-                      resolution:
-                        workItem.estimateSync.originalEstimateHours.resolution,
-                    }
-                  : undefined,
-                remainingEstimateHours: workItem.estimateSync
-                  .remainingEstimateHours
-                  ? {
-                      baselineValue:
-                        workItem.estimateSync.remainingEstimateHours
-                          .baselineValue,
-                      remoteValue:
-                        workItem.estimateSync.remainingEstimateHours
-                          .remoteValue,
-                      resolution:
-                        workItem.estimateSync.remainingEstimateHours.resolution,
-                    }
-                  : undefined,
-                completedEstimateHours: workItem.estimateSync
-                  .completedEstimateHours
-                  ? {
-                      baselineValue:
-                        workItem.estimateSync.completedEstimateHours
-                          .baselineValue,
-                      remoteValue:
-                        workItem.estimateSync.completedEstimateHours
-                          .remoteValue,
-                      resolution:
-                        workItem.estimateSync.completedEstimateHours.resolution,
-                    }
-                  : undefined,
+                originalEstimateHours: syncEstimateField(
+                  workItem.estimateSync.originalEstimateHours,
+                ),
+                remainingEstimateHours: syncEstimateField(
+                  workItem.estimateSync.remainingEstimateHours,
+                ),
+                completedEstimateHours: syncEstimateField(
+                  workItem.estimateSync.completedEstimateHours,
+                ),
               }
             : undefined,
-        }) satisfies BacklogSyncWorkItem,
+        }) satisfies BacklogSyncRequestWorkItem,
     );
   const payload = backlogSyncRequestSchema.parse({
     trigger,
@@ -1282,6 +1375,14 @@ async function runBacklogSync(
           })
         : { importedCount: 0, updatedCount: 0 };
     localStore.applyBacklogSyncWorkItemUpdates(result.workItemUpdates);
+    // The estimate changes the connection didn't upload stay, held for
+    // review: editing work items is off, or the user hasn't approved them.
+    // After the answer, so a field it uploaded no longer differs and loses a
+    // hold set while the sync ran.
+    localStore.markHeldEstimates(
+      { pluginId, connectionId },
+      result.heldEstimates,
+    );
     announceDescriptionConflicts(
       newDescriptionConflicts(beforeSync, localStore.snapshot().workItems),
     );
@@ -1518,11 +1619,24 @@ export async function updateAgentRunnerSettings(
 export async function saveAgentTaskSettings(
   pluginId: string,
   values: PluginFieldValues,
+  /** Secret settings to delete. A secret left empty in `values` keeps its saved value. */
+  removeSecrets?: string[],
+  /** The reminder date of each secret setting, in epoch ms. `null` clears one. */
+  secretExpiry?: Record<string, number | null>,
 ) {
   return appApiRequest(
     "saveAgentTaskSettings",
     `/api/agents/plugins/${encodeURIComponent(pluginId)}/settings`,
-    { method: "POST", body: JSON.stringify({ values }) },
+    {
+      method: "POST",
+      body: JSON.stringify({
+        values,
+        ...(removeSecrets?.length ? { removeSecrets } : {}),
+        ...(secretExpiry && Object.keys(secretExpiry).length > 0
+          ? { secretExpiry }
+          : {}),
+      }),
+    },
     agentRunnerOverviewSchema,
   );
 }

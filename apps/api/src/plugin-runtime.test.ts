@@ -6,10 +6,14 @@ import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import { createApiEvents } from "./events.ts";
 import { PluginManager } from "./plugin-host.ts";
-import type {
-  PluginInvocation,
-  PluginRun,
-  PluginRuntime,
+import {
+  settledRun,
+  SplitPluginRuntime,
+  type PluginInvocation,
+  type PluginRun,
+  type PluginRunOutcome,
+  type PluginRuntime,
+  type PluginTerminateReason,
 } from "./plugin-runtime.ts";
 import { WorkerPluginRuntime } from "./plugin-worker-runtime.ts";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
@@ -239,6 +243,8 @@ describe("plugin runtime port", () => {
           "  return { text: connection.label + ':' + request.sourceId };",
           "}",
           "export async function writeSettle() { throw 'not an Error'; }",
+          "export async function writeDescription() { throw Object.assign(new Error('Refused.'), { status: 401 }); }",
+          "export async function readComments() { throw Object.assign(new Error('Odd.'), { status: 1000 }); }",
           "export async function listSettleStates() { return 'x'.repeat(9 * 1024 * 1024); }",
         ].join("\n"),
       );
@@ -252,7 +258,7 @@ describe("plugin runtime port", () => {
       const settle = async (method: string, args: unknown[] = []) => {
         const run = runtime.start({ ...invocation, method, args });
         const outcome = await run.settled;
-        await run.terminate();
+        await run.terminate("settled");
         return outcome;
       };
 
@@ -262,6 +268,19 @@ describe("plugin runtime port", () => {
       await expect(settle("writeSettle")).resolves.toEqual({
         ok: false,
         failure: "plugin_error",
+      });
+      // A plugin error that names an HTTP status passes it on, which is how
+      // the host tells a rejected secret (401) from any other failure.
+      await expect(settle("writeDescription")).resolves.toEqual({
+        ok: false,
+        failure: "plugin_error",
+        message: "Refused.",
+        httpStatus: 401,
+      });
+      await expect(settle("readComments")).resolves.toEqual({
+        ok: false,
+        failure: "plugin_error",
+        message: "Odd.",
       });
       await expect(settle("syncConnection")).resolves.toEqual({
         ok: false,
@@ -315,8 +334,8 @@ describe("plugin runtime port", () => {
         "export async function exportProjects(projects) {",
         "  return { datasets: [{ id: 'projects', rows: projects.map((project) => ({ project: project.name })) }] };",
         "}",
-        "export async function importProjects(datasets) {",
-        "  return { projects: datasets[0].rows.map((row) => ({ name: row.project, color: '#123456', status: 'active', tasks: [] })) };",
+        "export async function importProjects(sheets) {",
+        "  return { projects: sheets[0].rows.map((row) => ({ name: row[0], color: '#123456', status: 'active', tasks: [] })) };",
         "}",
       ].join("\n"),
     );
@@ -340,7 +359,7 @@ describe("plugin runtime port", () => {
     });
     await expect(
       manager.importProjects("workday-project-data", [
-        { id: "projects", rows: [{ project: "Mercury" }] },
+        { name: "Projects", rows: [["Mercury"]] },
       ]),
     ).resolves.toEqual({ projects: [mercury] });
     expect(
@@ -361,5 +380,238 @@ describe("plugin runtime port", () => {
         method: "importProjects",
       },
     ]);
+  });
+});
+
+/**
+ * A runtime the test drives by hand: each run waits until the test settles
+ * it, and the runtime records why each was terminated.
+ */
+function scriptedRuntime(
+  options: { unavailable?: () => string | undefined } = {},
+) {
+  const runs: {
+    invocation: PluginInvocation;
+    settle: (outcome: PluginRunOutcome) => void;
+    terminated: PluginTerminateReason[];
+  }[] = [];
+  const runtime: PluginRuntime = {
+    runsPluginApi4: true,
+    ...(options.unavailable ? { unavailableReason: options.unavailable } : {}),
+    start(invocation) {
+      let settle!: (outcome: PluginRunOutcome) => void;
+      const settled = new Promise<PluginRunOutcome>((resolve) => {
+        settle = resolve;
+      });
+      const run = {
+        invocation,
+        settle,
+        terminated: [] as PluginTerminateReason[],
+      };
+      runs.push(run);
+      return {
+        settled,
+        terminate: async (reason) => {
+          run.terminated.push(reason);
+          settle({ ok: false, failure: "terminated" });
+        },
+      };
+    },
+  };
+  return { runtime, runs };
+}
+
+describe("the runtime port's endings", () => {
+  const directories: string[] = [];
+  const shutdowns: (() => Promise<void>)[] = [];
+
+  afterEach(async () => {
+    await Promise.allSettled(shutdowns.splice(0).map((stop) => stop()));
+    await Promise.all(
+      directories
+        .splice(0)
+        .map((directory) => rm(directory, { recursive: true, force: true })),
+    );
+  });
+
+  async function setup(runtime: PluginRuntime, requestTimeoutMs = 5_000) {
+    const root = await mkdtemp(path.join(os.tmpdir(), "ajour-runtime-end-"));
+    directories.push(root);
+    const directory = path.join(root, "github");
+    await mkdir(directory, { recursive: true });
+    await writeFile(
+      path.join(directory, "plugin.json"),
+      JSON.stringify({
+        id: "github",
+        version: "1.0.0",
+        apiVersion: 3,
+        displayName: "GitHub",
+        description: "Test plugin.",
+        iconSvg: ICON,
+        entrypoint: "plugin.mjs",
+        capabilities: { connector: {}, codeHost: {} },
+        connectionFields: [
+          { id: "token", label: "Token", type: "password", secret: true },
+        ],
+      }),
+    );
+    await writeFile(path.join(directory, "plugin.mjs"), "export {};");
+    const sink = createRecordingSink<AjourEvent>();
+    const manager = new PluginManager({
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [directory],
+      allowDevelopmentPlugins: true,
+      runtime,
+      requestTimeoutMs,
+      events: createApiEvents({ sink, userDataPath: root }),
+    });
+    shutdowns.push(() => manager.shutdown());
+    return { manager, sink };
+  }
+
+  const started = async (runs: unknown[], count: number) => {
+    for (let wait = 0; runs.length < count && wait < 200; wait += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  };
+
+  it("terminates a run with why it ended: settled, timed out or cancelled", async () => {
+    const { runtime, runs } = scriptedRuntime();
+    const { manager } = await setup(runtime, 100);
+
+    const settled = manager.syncConnection("github", connection);
+    await started(runs, 1);
+    runs[0]!.settle({ ok: true, result: { items: [] } });
+    await expect(settled).resolves.toMatchObject({ items: [] });
+
+    await expect(manager.syncConnection("github", connection)).rejects.toThrow(
+      "timed out",
+    );
+
+    const cancelled = manager.syncConnection("github", connection);
+    await started(runs, 3);
+    await manager.cancelPluginOperations(
+      "github",
+      new Error("Plugin turned off."),
+      "plugin_off",
+    );
+    await expect(cancelled).rejects.toThrow("Plugin turned off.");
+
+    expect(runs.map((run) => run.terminated)).toEqual([
+      ["settled"],
+      ["timeout"],
+      ["cancelled"],
+    ]);
+  });
+
+  it("fails a run whose process crashed with the cause, on the event too", async () => {
+    const { runtime, runs } = scriptedRuntime();
+    const { manager, sink } = await setup(runtime);
+
+    const pending = manager.syncConnection("github", connection);
+    await started(runs, 1);
+    runs[0]!.settle({ ok: false, failure: "crashed", cause: "oom" });
+
+    await expect(pending).rejects.toMatchObject({
+      reason: "crashed",
+      message:
+        'Plugin "github" stopped before returning a result: its process ran out of memory.',
+    });
+    expect(sink.events.at(-1)).toMatchObject({
+      name: "backlog.sync",
+      outcome: "error",
+      outcome_reason: "crashed",
+      worker: { crash_cause: "oom" },
+    });
+  });
+
+  it("refuses every run while the sandboxed runtime can't run plugins, never as the plugin's error", async () => {
+    const { runtime, runs } = scriptedRuntime({
+      unavailable: () => "Ajour was started with --no-sandbox.",
+    });
+    const split = new SplitPluginRuntime({ api3: runtime, api4: runtime });
+    const { manager, sink } = await setup(split);
+
+    await expect(
+      manager.syncConnection("github", connection),
+    ).rejects.toMatchObject({
+      reason: "runtime_unavailable",
+      message:
+        "Plugins are turned off: this computer can't run them in a sandbox. Ajour was started with --no-sandbox.",
+    });
+    expect(runs).toEqual([]);
+    expect(sink.events.at(-1)).toMatchObject({
+      name: "backlog.sync",
+      outcome: "refused",
+      outcome_reason: "runtime_unavailable",
+    });
+  });
+});
+
+describe("the split runtime", () => {
+  const invocation = {
+    pluginId: "github",
+    packageDirectory: "/plugins/github",
+    entrypoint: "plugin.mjs",
+    method: "syncConnection",
+    args: [],
+  };
+
+  it("runs API 3 packages on one runtime and API 4 packages on the sandboxed one", () => {
+    const api3 = scriptedRuntime();
+    const api4 = scriptedRuntime({ unavailable: () => undefined });
+    const split = new SplitPluginRuntime({
+      api3: { start: api3.runtime.start },
+      api4: api4.runtime,
+    });
+
+    split.start({ ...invocation, apiVersion: 3 });
+    split.start({ ...invocation, apiVersion: 4 });
+
+    expect(split.runsPluginApi4).toBe(true);
+    expect(split.unavailableReason()).toBeUndefined();
+    expect(api3.runs.map((run) => run.invocation.apiVersion)).toEqual([3]);
+    expect(api4.runs.map((run) => run.invocation.apiVersion)).toEqual([4]);
+  });
+
+  it("runs no plugin, API 3 included, while the sandboxed runtime can't", async () => {
+    let reason: string | undefined = "Plugins run only on Windows and macOS.";
+    const api3 = scriptedRuntime();
+    const api4 = scriptedRuntime({ unavailable: () => reason });
+    const split = new SplitPluginRuntime({
+      api3: api3.runtime,
+      api4: api4.runtime,
+    });
+
+    for (const apiVersion of [3, 4]) {
+      await expect(
+        split.start({ ...invocation, apiVersion }).settled,
+      ).resolves.toEqual({
+        ok: false,
+        failure: "runtime_unavailable",
+        reason: "Plugins run only on Windows and macOS.",
+      });
+    }
+    expect(api3.runs.length + api4.runs.length).toBe(0);
+
+    reason = undefined;
+    split.start({ ...invocation, apiVersion: 3 });
+    expect(api3.runs).toHaveLength(1);
+  });
+
+  it("hands the runtimes the API they report blocked attempts to", () => {
+    const attached: unknown[] = [];
+    const host = { recordBlocked: async () => undefined };
+    const split = new SplitPluginRuntime({
+      api3: { start: () => settledRun({ ok: true, result: null }) },
+      api4: {
+        start: () => settledRun({ ok: true, result: null }),
+        attach: (given) => attached.push(given),
+      },
+    });
+
+    split.attach(host);
+
+    expect(attached).toEqual([host]);
   });
 });

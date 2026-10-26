@@ -126,16 +126,22 @@ The app is not in production. The rename ships with no migration code, no redire
 
 Each nav label matches its page title. Old routes are removed, not redirected.
 
-| Nav label    | Page title                     | Route                    |
-| ------------ | ------------------------------ | ------------------------ |
-| General      | General                        | `/settings/general`      |
-| Plugins      | Plugins                        | `/settings/plugins`      |
-| Backlog      | Backlog                        | `/settings/backlog`      |
-| Workflow     | Workflow                       | `/settings/workflow`     |
-| Projects     | Projects                       | `/settings/projects`     |
-| Time entries | Import and export time entries | `/settings/time-entries` |
-| Sync review  | Sync review                    | `/settings/sync-review`  |
-| Debug        | Debug                          | `/settings/debug`        |
+The pages sit in three groups, **App**, **Work** and **Data**, in this order. Pull requests also appears under Work in the narrow view, and Calendar only while a calendar plugin is on.
+
+| Group | Nav label    | Page title                     | Route                    |
+| ----- | ------------ | ------------------------------ | ------------------------ |
+| App   | General      | General                        | `/settings/general`      |
+| App   | Plugins      | Plugins                        | `/settings/plugins`      |
+| App   | Vault        | Vault                          | `/settings/vault`        |
+| App   | MCP          | MCP                            | `/settings/mcp`          |
+| App   | Agents       | Agents                         | `/settings/agents`       |
+| App   | Debug        | Debug                          | `/settings/debug`        |
+| Work  | Backlog      | Backlog                        | `/settings/backlog`      |
+| Work  | Workflow     | Workflow                       | `/settings/workflow`     |
+| Work  | Projects     | Projects                       | `/settings/projects`     |
+| Work  | Calendar     | Calendar                       | `/settings/calendar`     |
+| Data  | Time entries | Import and export time entries | `/settings/time-entries` |
+| Data  | Sync review  | Sync review                    | `/settings/sync-review`  |
 
 The Plugins page tabs are **All · Backlog · Code hosts · Calendars · Agent tasks · Schemas**. The tabs wrap on narrow windows. Agent task plugins can be downloaded from the catalog. A plugin a source lists that this Ajour version can't read, or that an earlier source already lists, is left out, and the page names it.
 
@@ -149,7 +155,7 @@ Decided in [App shell and collapsible sidebar](https://github.com/les-cabochons/
 
 ### Desktop widths
 
-- The app sidebar is expanded (resizable, see the Backlog sidebar section for widths) or hidden. There is no icon rail. From the top: Hide sidebar and the logo, the view switcher with Search and the project filter, the timer dock, then the work list. Its fixed footer has Settings and Commit icon buttons at the left. Commit opens the selected date's week. The desktop app's update button sits at the right.
+- The app sidebar is expanded (resizable, see the Backlog sidebar section for widths) or hidden. There is no icon rail. From the top: Hide sidebar and the logo, the view switcher with Search, the project filter and New backlog item (+), the timer dock, then the work list. New backlog item opens the Backlog page with a blank backlog item editor; time entries start from the timer dock's "+". Its fixed footer has Settings and Commit icon buttons at the left. Commit opens the selected date's week. The desktop app's update button sits at the right.
 - Hide sidebar and the logo sit on the titlebar's row, as in T3 Code: right of the traffic lights on macOS, in the window's top left corner elsewhere. Hide sidebar sits where Show sidebar sits in the titlebar, so the button does not move when the sidebar toggles.
 - The view switcher works like ChatGPT's: the open view's name, such as "Time", opens a menu of Time, Backlog, Pull requests (only while a code host plugin is enabled) and Projects with their live counts, today's total next to Time, the number of listed items next to Backlog, and next to Pull requests the number that need the user, as a filled badge when any returned. A check marks the open view. A backlog item's page belongs to Backlog, unless it was opened from the sidebar while Time, Projects or Pull requests showed: that view stays selected.
 - Cmd+B (Ctrl+B on Windows), Hide sidebar next to the logo and Show sidebar at the start of the titlebar toggle it. The View menu gets "Show sidebar" or "Hide sidebar" once the menu bar exists. There is no second shortcut.
@@ -467,6 +473,9 @@ One "Submit week" button, styled the same, sits in the Day and Week headers at e
 
 - The page leads with the week's total against its target, a progress bar, and warnings such as days under target or entries without a task.
 - On the Commit page, Submit week remains available beside a plugin's submit-week task, including while agent tasks load. It locks the week in Ajour without starting an agent or submitting to the external timesheet. The plugin task stays primary when the week is ready. Both actions retain the uncommitted-change and running-entry guards; manual submission keeps its pace confirmation, Undo and Reopen week. Submit week waits while an agent task starts or runs, with the reason "An agent task is already running.", because the task may submit the week itself.
+- A plugin API 4 agent task runs like an API 3 one: no "can't run yet" reason shows for it any more. Its run sees only the Ajour MCP data tools its plugin declares for it, plus the session tools, and a call to any other is refused with a message that names the tool; the run's activity shows the refusal. API 3 tasks keep every tool until their plugin moves to API 4.
+- A secret setting never reaches an agent. Starting a task whose prompt uses one fails with "The task's prompt uses the secret setting <label>. Ajour never gives a secret to an agent." (400), and the run does not start.
+- A secret setting never fills a task's week link either, since the user opens the link with a click and its host is the plugin's. A task whose week link uses one has no "Open the week in <plugin>" link on the Commit page, and the week summary says in its place "The week link uses the secret setting <label>. Ajour never puts a secret in a link." A run of that task starts without a link. This holds for every plugin API version.
 - The total and warnings follow the current selection.
 - Submitting under the week target still asks for confirmation.
 
@@ -589,7 +598,7 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 
 - Editing a backlog item uses the editor form, in the peek slot on wide windows and the full-width dialog in the narrow view, with the entry editor's rules: explicit Save (button, Enter in the title, Cmd+Enter), Escape or × discards, outside clicks do nothing.
 - The form holds title, workflow state, priority, project and task mapping, description, the estimates with their "Reset to subitem total" buttons, and "Keep when missing from sync" for synced items. Its header has the "…" action menu.
-- "New backlog item" in the page header opens a blank form. "Add subitem" opens it with the parent set.
+- "New backlog item" in the page header, or the "+" at the top of the app sidebar, opens a blank form. "Add subitem" opens it with the parent set.
 - Start entry stays on hover, in the "…" menu and in the peek. Entries start on today.
 
 ## Application updates
@@ -675,7 +684,7 @@ Decided after the prototype on branch `prototype/backlog-sidebar`: variant B is 
 
 Like T3 Code's thread card, resting the mouse on a backlog row shows a card beside the sidebar with what the row has no room for.
 
-- It opens after the pointer rests on one row for 800ms, so moving down the list shows nothing. Once it shows, moving to another row moves it there after 150ms.
+- It opens after the pointer rests on one row for 800ms, so moving down the list shows nothing. Once it shows, moving to another row moves it there at once.
 - From top to bottom: the whole title; where the item comes from, as its source tool's logo, the organization and the source project, such as "les-cabochons / ajour", with its id at the end, such as "1234" or "PAY-12"; and on a subitem, its parent's title. A manual item has no source line.
 - Then the subitems, open ones first, with their workflow state's ring and the closed count over the total, such as "1/3". Eight show, then "n more".
 - Then the pull requests whose title names the item, open ones first: the state icon, the number and the title. Five show, then "n more". Code hosts do not report links to backlog items, so the title is the link: a key such as "PAY-12" names the item from any repository, and a number such as "#1234" only from the same GitHub repository, or the same Azure DevOps organization, where every project shares the numbers. Only the pull requests the Pull requests page lists count, so none show while no code host is enabled.
@@ -778,6 +787,8 @@ Decided in [Projects pages under the new conventions](https://github.com/les-cab
 - "New project" in the list header and Edit from the project's action set open the project form as a standard dialog: name, display name, code, icon and color. On the project page, these fields change in place instead.
 - Editing a task uses the side panel, with the same Save and Escape rules as entries. It holds name, billable, budget and adjustment, and the pinned slot. The inline task editor that saved on outside click goes away.
 - The project page has no "…" menu and no top bar actions. Like the backlog item page, it edits in place: click the title to rename the display name, and the Properties card on the right changes full name, code, color and icon. Each edit saves on Enter, blur or pick, with Undo; Escape cancels. "Import tasks…" and Archive (Restore when archived) sit at the bottom of the card. An archived project's fields are read-only.
+- "Import tasks…" reads the file with the schema picked in Settings › Projects when it is a plugin, and merges the tasks into the project by name: new names are added, known tasks take the file's status, billable and budget. A file for another project, or with several projects, changes nothing and says why. With Ajour default, it adds the task names in column C of the first worksheet.
+- In Settings › Projects, a schema without an export layout only imports. The Export projects section then says so, and names Ajour default for exports. A file whose schema names no project is refused there, and points to "Import tasks…".
 - "New task" under the task list opens a blank task panel.
 - A task row shows its pinned slot, such as "3", next to its name.
 - The old Projects command dialog is removed. Cmd+K offers "Create project" and "Create task in…".
@@ -789,10 +800,56 @@ Decided in [Settings and Sync review under the new conventions](https://github.c
 - Pages keep their content, with sentence case and the labels from the Vocabulary section.
 - Results and errors of imports, exports and syncs show inline on their page, per the Feedback section.
 - When the local app API is not running, as in the web build, Plugins shows one calm notice: "Plugins need the desktop app". Backlog and Sync review hide their plugin sections instead of showing red error banners.
+- When this computer can't run plugins in a sandbox, Plugins and each plugin page show the warning "Plugins are turned off: this computer can't run them in a sandbox", with the reason under it, such as "Ajour was started with --no-sandbox." or "Plugins run only on Windows and macOS." (decided in [#231](https://github.com/les-cabochons/ajour/issues/231), built in [#390](https://github.com/les-cabochons/ajour/issues/390)). No plugin runs, Ajour's own included, and every plugin shows as off with its activation switches disabled (a tooltip gives the same words), so automatic syncs pause; connections and synced data stay. A sync started anyway leaves the same words as its connection's last error. There is no override. Until the cut-over (#403) this happens only in development builds, which run plugin API 4 plugins in their sandbox.
+- A plugin that tries a way out its sandbox closes, such as its own `fetch` instead of `ajour.http`, is not stopped: the attempt fails inside the plugin and counts as a blocked attempt for the plugin's Access review, which says "Tried to connect directly, blocked" (#394).
 - Sync review keeps its list with selection, "Sync selected to backlog", and Dismiss. Dismiss shows the Undo toast instead of asking.
 - The Debug page only exists in development builds.
 - Settings > Backlog lists, for each connection, the source projects seen in syncs, each with its settle rule. See the Backlog sidebar section.
 - A connection whose plugin provides comments or writes descriptions has Ajour's own "Agent access" select, after the plugin's fields: None (the default), Read, or Read and write (map #234, spec #301). A plugin cannot declare or preset it. While it is not None, the connection's row shows what agents may do: "Agents read comments", "Agents read and write comments", "Agents read and write comments and descriptions", or "Agents change descriptions" for a plugin without comments. The MCP tools check it at each call: `list_work_item_comments` needs Read, and `post_work_item_comment` and `settle_work_item`'s `comment` need Read and write. `edit_work_item`'s change to a synced description needs Read and write, and goes through the user's save: the read-only rule, the length limit, then the read, merge and write with no Undo for the text, reported in `descriptionSave` as written, merged, unchanged, conflict or failed. Lossy text is refused unless the connection has Allow lossy conversion on, which then stands for Save anyway. The checks run on the item after reading the settings; a change to the description meanwhile refuses the edit, and resending the text of a description in conflict reports the conflict. The call's other fields and what the timelog sets share one Undo, taken after the write. An agent's description read and write carry `agent=1` too, and the API checks Read and write before the plugin runs. An agent's comment waits for its own Undo toast, titled "<Client>: Commented on a backlog item", and a refused post, or access taken back before it goes, keeps it as the item's comment draft. Every check reads the connection from the local API at that moment, never a cached overview, and the local API enforces it too: an agent's comment call carries `agent=1`, and the API checks the stored access before the plugin runs and, for a read, again before the text leaves.
+
+## Saved secrets and the Vault
+
+Decided in [Access review and credential management for existing plugins](https://github.com/les-cabochons/ajour/issues/222), built in [#393](https://github.com/les-cabochons/ajour/issues/393). Secrets live in the vault, encrypted by the operating system ([#233](https://github.com/les-cabochons/ajour/issues/233)).
+
+- **A saved secret is never shown.** A form never holds its value, and there is no mask. This applies to every field a plugin marks secret, whatever its type: a token, a password, or a secret calendar address, which a form used to show as text. Agent task settings marked secret get the same field.
+- **A secret address can't hold a user name or password.** Saving one refuses with "Remove the user name and password from" and the field's label, and nothing is saved. A redirect to such an address is not followed.
+- **A secret field in a connection form** shows a state chip, the last use, and Replace and Remove, in place of an input:
+  - Saved.
+  - "Expires in N days", from a week before its reminder date, and "Expires today". "Expired on 21 Oct 2026" after it.
+  - Token rejected, after a 401 from the service, and only then.
+  - "Can't be read on this computer", for a secret the vault can't decrypt.
+  - Not set, for a field with no secret, such as one the user removed. A field that is not set shows its input at once.
+  - Replace opens an empty password input with Cancel. Saving the form with the input empty keeps the saved secret. A form opened for a rejected secret starts with Replace open, and a chip stays above the input.
+  - Remove asks first, then deletes the secret now, without saving the rest of the form. The connection keeps its settings and synced data and pauses until a new secret is saved, when its plugin requires the secret. A secret the plugin doesn't require is only deleted.
+  - Replace, Remove and the input are disabled while Ajour can't protect credentials on this computer, with the reason in place of the help text.
+- **The connection row** also warns about a reminder date, with the field's name and the chip "Expires in N days" or "Expired on …", while the connection stays connected: Ajour keeps using the secret.
+- **The reminder date** is an optional date under each secret field, "<Field> expires on (optional)", with the line "A reminder only. Ajour keeps using it after this date." It counts to the end of that day. Replacing a secret starts the new one without a date unless the form gives one.
+- **A 401** from a plugin call marks the connection's saved secrets rejected. The connection row shows the chip "Token rejected" in place of Error, with "<Plugin> refused the token. Sync is paused. Edit the connection to replace it.", and sync is paused: its Sync buttons are disabled and the automatic sync leaves it alone. Saving a new secret resumes it. Another status, such as a 403, only sets the Error chip and the last error. Plugins on API 3 report errors as messages, so only an error that names its HTTP status is recognised; the broker reports every 401 once plugins use it.
+- **Settings > Vault**, between Plugins and MCP, lists every secret Ajour holds, never a value, grouped by plugin by name. A plugin whose package is missing comes last, as "<Plugin> (not installed)".
+  - A row shows the connection (or "Agent tasks" for a plugin's task settings), the kind of secret (the field's label), the last use, a state chip and Replace. Replace opens the connection's form with Replace open, or the plugin's task settings.
+  - A missing plugin's connections show as "Saved settings and secrets", because nothing says which of their settings are secret. Its group has Remove, which asks first, then deletes the plugin's connections and saved secrets, and the connections' local pull requests, calendar data and team data with them. Synced backlog items stay.
+  - Two notices come first. "Ajour can't protect credentials on this computer" gives the reason and says connections that need a token are paused; Try again opens the vault again and runs the encryption check once more. "Saved secrets can't be read on this computer" gives the reason, as after moving Ajour's data to another computer, and says to paste each token again. It has no Try again, because pasting a token is what fixes it.
+  - With no secret saved, the page says "No saved secrets".
+
+## Connection access and held edits
+
+Decided in [the connection access decisions](https://github.com/les-cabochons/ajour/issues/223#issuecomment-6322442188) and [the held-edit decisions](https://github.com/les-cabochons/ajour/issues/223#issuecomment-6322497778), built in [#395](https://github.com/les-cabochons/ajour/issues/395).
+
+- **Each connection chooses its access.** The connection form of a plugin with access choices, Azure DevOps today, ends with an **Access** group: "Ajour blocks anything not chosen here, even when the token allows more." Each choice is a checkbox whose description names the token scope it needs:
+  - Read the backlog: work items, queries, comments and descriptions. Always on. Work Items (Read).
+  - Edit work items: send estimates, settled and moved work, descriptions and comments. Work Items (Read & write).
+  - Pull requests: the pull requests you're involved in, and your teams' review requests. Code (Read), and Project and Team (Read) for teams.
+  - Search people across the organisation: @ suggestions from the whole organisation. Identity (Read).
+- **New connections, and connections from before access choices, read only.** Their settings and local values stay. Nothing writes to the source until the user turns a choice on, and the first sync after the update sends no change.
+- **Ajour enforces the choices, whatever the token allows.** The local API refuses a write, a pull request call or a people search with a query whose choice is off before the plugin runs; reads that Azure DevOps sends as POST, such as queries and batch reads, still work. Turning a choice off cancels the calls it allowed that still run. With Pull requests off, the connection's pull requests don't sync, on the interval or by hand, and don't show. A bare @ asks the plugin for the item's own people, such as its assignee and commenters, which reading the backlog covers, so it runs with people search off. With people search off, the comment editor's @ suggestions are those people, matched in Ajour against the name typed; a typed name never looks the organisation up.
+- **The connection row** shows "Reads backlog", or "Edits work items" once editing is on, after the sync-mode badge.
+- **A change refused because editing is off is held on this computer:** a settle or move, an estimate, a description, a comment, a comment edit and a comment delete. It is never rolled back or dropped: the item stays as the user left it, a deleted comment stays hidden, and a posted comment leaves the composer. A toast says "Held on this computer: editing work items is off for "<connection>". Turn it on to review and send the change.", once for a burst of holds. A sync of a connection that reads only uploads no estimate; the estimates it would have sent are held. A reaction is not held: it goes back, with the refusal as its error.
+- **The row and the Access group count them**: "N changes held. Turn on editing to review and send them." Once editing is on, the row's line links to Sync review instead.
+- **Turning editing on is not approval.** Saving the form with Edit work items newly on first holds every estimate change the connection would upload, before the save goes, so a sync during the save or a quit sends none of them. When the connection holds any change, the save then opens Sync review on its held changes.
+- **Held changes in Sync review** come first, grouped by connection. Each shows its item, what kind of change it is and the change itself, with Send and Discard. Send is the approval: the change goes through its usual path, so a source that changed meanwhile still answers with a conflict, which then shows with the other issues. Send is disabled while the change can't go, and the group says why: the connection was removed, so the changes can only be discarded; it is paused, with a link to fix it; or editing is off, with a link to turn it on. Discard asks first, naming the kind of change ("Discard this held settle?"), then drops the change and takes the source's side back: a settle's item returns to its state before, an estimate and a description take the source's value.
+- **Held changes stay** when the user leaves Sync review, restarts Ajour or turns editing off again. A held settle or move keeps its settle comment waiting with it. A held comment change stays held until the source took it, so a quit while it is sent keeps it.
+- **A new change replaces a held one.** A settle, move or description saved again while editing is on goes as usual and replaces the held one of the same item.
+- **Removing a connection discards what it holds.** Remove then always asks first, and says "Its N held changes are discarded and never sent."
 
 ## Consistency
 

@@ -26,7 +26,7 @@ On the board, each workflow state is a column. Drag a card to another column to 
 
 ## Create an item
 
-Press the **+** next to a group or column name to create an item in that group. With **None** grouping, use the **New backlog item** row at the end of the list. Give it a title, then optionally a priority, a workflow state, a project and task, a description and estimates. See [Backlog items](/backlog/items).
+Press the **+** at the top of the sidebar to create an item from any page. On the Backlog page, press the **+** next to a group or column name to create an item in that group. With **None** grouping, use the **New backlog item** row at the end of the list. Give it a title, then optionally a priority, a workflow state, a project and task, a description and estimates. See [Backlog items](/backlog/items).
 
 ## Filter the backlog
 

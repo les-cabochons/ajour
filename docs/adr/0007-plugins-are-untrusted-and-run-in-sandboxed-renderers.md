@@ -2,6 +2,8 @@
 
 Ajour treats every plugin as possibly malicious, including its own. Today a plugin runs in a worker thread inside the Electron main process, with the user's permissions, and can read any other plugin's credentials from the state file. Instead, each plugin runs in its own hidden Electron renderer under the Chromium OS sandbox, with its own `ajour-plugin://<id>` origin and partition, context isolation and no Node. Its preload exposes one function that calls the host, and the host knows which plugin is calling from the IPC sender, never from anything the plugin sends. The full model is on #229.
 
+Note (#231, built in #390): the plugin's code runs in a dedicated worker inside Ajour's host page, never in the page itself. Ajour's own page script owns the renderer, starts the worker from Ajour's bootstrap, and relays the worker's calls to the one preload function. The worker has no DOM, so DNS prefetch, frames, popups, navigation, printing, file pickers and `RTCPeerConnection` are gone at the source.
+
 Two guarantees stay separate in code, tests and docs:
 
 - **G1, hard and tested.** No plugin can obtain another plugin's credentials, storage or identity by any path: the API, the filesystem, forged IPC, the network, logs or errors. No plugin's code holds any credential, not even its own (ADR 0010).
@@ -29,4 +31,5 @@ Two guarantees stay separate in code, tests and docs:
   - Ajour itself holds access tokens while it makes a call.
   - On Windows, DPAPI protects secrets from other users, not from other apps of the same user. The sandbox is what protects them from a compromised plugin.
   - An attacker who already runs code as the user, or has admin rights, is out of scope.
+  - Release builds keep the Electron run-as-node fuse on, because the agent runner starts Playwright MCP through it. Anyone who can start Ajour's binary can run Node code as Ajour until #415 moves that to HTTP.
 - Plugin API 4 drops compatibility with API 3. Ajour ports its own plugins.

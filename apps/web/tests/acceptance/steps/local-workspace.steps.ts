@@ -1608,6 +1608,77 @@ When('I open a new entry from the timer dock "+"', async ({ page }) => {
   await page.getByRole("button", { name: "Create time entry" }).click();
 });
 
+When('I open a new entry from the idle timer dock "+"', async ({ page }) => {
+  await page
+    .getByRole("region", { name: "Timer", exact: true })
+    .getByRole("button", { name: "Create time entry" })
+    .click();
+});
+
+/** The "+" beside Search and the project filter, at the top of the sidebar. */
+async function pressNewBacklogItem(page: Page) {
+  await page
+    .getByRole("navigation", { name: "Primary navigation" })
+    .getByRole("button", { name: "New backlog item", exact: true })
+    .click();
+}
+
+When(
+  "I create the backlog item {string} from the sidebar header",
+  async ({ page }, title: string) => {
+    await pressNewBacklogItem(page);
+    const editor = page.getByRole("complementary", {
+      name: "Backlog item editor",
+    });
+    await editor
+      .getByRole("textbox", { name: "Item", exact: true })
+      .fill(title);
+    await editor.getByRole("button", { name: "Save", exact: true }).click();
+  },
+);
+
+When("I press New backlog item in the sidebar header", async ({ page }) => {
+  await pressNewBacklogItem(page);
+});
+
+When(
+  "I change the open entry to {string} hours with a note",
+  async ({ page }, hours: string) => {
+    await page.goto("/time/2026-10-05?entry=mon-dev-1");
+    await page
+      .getByRole("textbox", { name: "Note", exact: true })
+      .fill("Unsaved entry note");
+    await page.getByRole("textbox", { name: "Hours", exact: true }).fill(hours);
+  },
+);
+
+Then("the new backlog item editor is open", async ({ page }) => {
+  await expect(page).toHaveURL(/\/backlog$/);
+  await expect(
+    page
+      .getByRole("complementary", { name: "Backlog item editor" })
+      .getByPlaceholder("Item name", { exact: true }),
+  ).toBeVisible();
+});
+
+Then("the open entry draft was saved", async ({ page }) => {
+  const savedEntry = await page.evaluate(() =>
+    JSON.parse(
+      localStorage.getItem("ajour.local-state.v2") ?? "null",
+    ).timesheetEntries.find(
+      (entry: { _id: string }) => entry._id === "mon-dev-1",
+    ),
+  );
+  expect(savedEntry.note).toBe("Unsaved entry note");
+  expect(savedEntry.durationMs).toBe(2 * 60 * 60 * 1000);
+});
+
+Then("the sidebar lists {string}", async ({ page }, title: string) => {
+  await expect(
+    page.getByRole("navigation", { name: "Primary navigation" }),
+  ).toContainText(title);
+});
+
 When("I open the running entry from the timer dock", async ({ page }) => {
   await page
     .getByRole("region", { name: "Running entry" })

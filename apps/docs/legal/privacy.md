@@ -9,7 +9,7 @@ next: false
 
 # Privacy policy
 
-Last updated: October 21, 2026
+Last updated: October 24, 2026
 
 <a href="/legal/confidentialite" lang="fr">Version française</a> · [Terms of service](/legal/terms)
 
@@ -35,11 +35,11 @@ Importing or exporting projects and time entries reads or writes files on your d
 
 ### Credentials and plugin access
 
-In the current release, connection tokens and other secret connection fields are stored unencrypted in the local `app-api-state.json` file. Ajour restricts the file's permissions, masks secret fields in settings and redacts known connection secrets from plugin errors and summaries. These measures reduce accidental disclosure. They do not isolate credentials from installed plugin code or other programs running as you.
+Connection tokens and other secret fields, of connections and agent task settings, are stored in the local `app-api-vault.json` file, encrypted with a key your operating system keeps for your user. The `app-api-state.json` file records only which secret fields are set. Ajour refuses to save a secret when the computer can't encrypt it, and never falls back to plain text. It also masks secret fields in settings and redacts known connection secrets from plugin errors and summaries. These measures reduce accidental disclosure, such as through a copied data folder. They do not isolate credentials from installed plugin code or other programs running as you.
 
-Ajour currently passes a plugin the credentials for its connection. Plugin code runs with your user's permissions, can access local files and can make network requests. It is not sandboxed. Install plugins you trust, use tokens with the fewest permissions you need and protect your data folder and backups.
+Ajour currently decrypts a connection's credentials to pass them to that connection's plugin. Plugin code runs with your user's permissions, can access local files and can make network requests. It is not sandboxed. Install plugins you trust, use tokens with the fewest permissions you need and protect your data folder and backups.
 
-We are responsible for how Ajour handles credentials. The planned credential broker will keep credentials out of plugin code, store them locally with operating-system encryption and make approved authenticated requests on a plugin's behalf. Separate plugin sandboxes are also planned. These protections have not shipped and are not guarantees about the current release. Even with a broker, a plugin could misuse data or actions within the access you approve.
+We are responsible for how Ajour handles credentials. The planned credential broker will keep credentials out of plugin code and make approved authenticated requests on a plugin's behalf. Separate plugin sandboxes are also planned. These protections have not shipped and are not guarantees about the current release. Even with a broker, a plugin could misuse data or actions within the access you approve.
 
 ### Network requests and connected services
 

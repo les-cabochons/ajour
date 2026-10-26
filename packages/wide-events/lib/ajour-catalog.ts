@@ -33,6 +33,17 @@ export type ApiStartFailure =
 /** How the local API's stop ended before a quit or an update. */
 export type ApiStop = "stopped" | "failed" | "timed_out";
 
+/** Why plugins are off on this computer (apps/desktop/electron/plugin-sandbox.cjs). */
+export type PluginSandboxCause =
+  | "launch_flag"
+  | "debugger"
+  | "environment"
+  | "unsupported_os"
+  | "renderer_not_sandboxed"
+  | "renderer_integrity"
+  | "renderer_unknown"
+  | "shared_process";
+
 /** What every IPC event carries: the channel, never its arguments. */
 const ipcFields = {
   channel: operational(),
@@ -45,6 +56,18 @@ const ipcFields = {
 /** An HTTP method, from a closed set: any other is `other`. */
 export type HttpMethod =
   "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS" | "other";
+
+/** Where a broker request went: the connection's address, a derived host, a secret address, or a public host. */
+export type PluginRequestHostKind =
+  "base" | "derived" | "secret_address" | "public";
+
+/**
+ * How far the broker could judge the address that answered a request:
+ * `checked` against private addresses, `proxy` when a system proxy answered
+ * for it, which isn't judged, or `unknown` when the network stack named no
+ * address, so only the check before the request held (ADR 0010).
+ */
+export type PluginRequestAnswerAddress = "checked" | "proxy" | "unknown";
 
 /**
  * What every `request` event carries, whatever its route: the method, the
@@ -107,6 +130,8 @@ const pluginOperationFields = {
     timeout_ms: operational<number>(),
     /** The serialized size of the worker's result. */
     result_bytes: operational<number>(),
+    /** Why the plugin's process ended under the run, when it `crashed`. */
+    crash_cause: operational<"crashed" | "oom" | "killed" | "memory">(),
   },
 } as const;
 
@@ -114,10 +139,11 @@ const pluginOperationFields = {
  * Every way a plugin operation ends other than `ok`. Refused: `capacity`,
  * the inactive reasons, `host_stopping`, `package_change`, `not_installed`,
  * `runs_no_code`, `not_supported` for a capability or feature the plugin
- * doesn't declare, and `agent_access` when its route's admission check
- * refuses it. Cancelled: the inactive reasons, `uninstalled` and
- * `shutdown`. Then `timeout`, and the errors `result_too_large`,
- * `invalid_result`, `exited_early` and `plugin_error`.
+ * doesn't declare, `agent_access` when its route's admission check
+ * refuses it, and `runtime_unavailable` when this computer can't sandbox
+ * plugins. Cancelled: the inactive reasons, `uninstalled` and `shutdown`.
+ * Then `timeout`, and the errors `result_too_large`, `invalid_result`,
+ * `exited_early`, `crashed` and `plugin_error`.
  */
 const pluginOperationReasons = [
   "capacity",
@@ -129,12 +155,22 @@ const pluginOperationReasons = [
   "not_supported",
   /** The route's own admission check refused the call, such as an agent's comment. */
   "agent_access",
+  /**
+   * The connection's access doesn't include the choice the operation needs,
+   * such as editing work items (#395); or a save turned it off while the
+   * operation ran.
+   */
+  "access_off",
+  /** Plugins are off: this computer can't run them in a sandbox. */
+  "runtime_unavailable",
   "uninstalled",
   "shutdown",
   "timeout",
   "result_too_large",
   "invalid_result",
   "exited_early",
+  /** The plugin's process ended under the run: `worker.crash_cause` says how. */
+  "crashed",
   "plugin_error",
 ] as const;
 
@@ -146,6 +182,10 @@ const pluginRequestReasons = [
   ...requestReasons,
   ...pluginOperationReasons,
   "connection_not_found",
+  /** The connection's secrets can't reach the plugin now, so it is paused. */
+  "secret_unavailable",
+  /** A save with a secret the vault can't encrypt on this computer. */
+  "vault_unavailable",
 ] as const;
 
 /**
@@ -167,6 +207,8 @@ export const catalog = defineCatalog({
     bundled_plugin_failed: operational<number>(),
     /** A leftover plugin backup that couldn't be restored or removed. */
     plugin_backup_failed: operational<number>(),
+    /** A plugin's 401 that couldn't be saved as a rejected secret. */
+    secrets_rejected_mark_failed: operational<number>(),
   },
   events: {
     ...rendererEvents,
@@ -227,6 +269,25 @@ export const catalog = defineCatalog({
           bytes: operational<number>(),
           /** The file exists but is not JSON. Every read fails until it is fixed. */
           unreadable: operational<boolean>(),
+          /** Temp files an interrupted save left that couldn't be deleted. */
+          orphans_undeletable_count: operational<number>(),
+        },
+        /** The vault, opened with the state: `none` for an API without one. */
+        vault: {
+          state: operational<
+            "available" | "unavailable" | "unreadable" | "none"
+          >(),
+          entry_count: operational<number>(),
+          orphans_undeletable_count: operational<number>(),
+        },
+        /** The move of plain-text secrets into the vault, when a load ran it. */
+        vault_migration: {
+          /** Connections and agent task settings moved, or checked and clean. */
+          moved_count: operational<number>(),
+          /** Those still holding a secret in plain text, paused until the next launch. */
+          pending_count: operational<number>(),
+          /** Whether the state file without the moved secrets was saved. */
+          saved: operational<boolean>(),
         },
       },
     },
@@ -268,6 +329,8 @@ export const catalog = defineCatalog({
         "output_mismatch",
         /** In the renderer: the tool refused the call, with a sentence for the agent. */
         "tool_refused",
+        /** An agent task run's client called a tool its task doesn't declare. */
+        "tool_not_declared",
         ...requestReasons,
       ],
       fields: {
@@ -453,7 +516,7 @@ export const catalog = defineCatalog({
     },
     "agent_task.configure": {
       kinds: ["command", "request"],
-      reasons: ["no_agent_task", ...requestReasons],
+      reasons: ["no_agent_task", "vault_unavailable", ...requestReasons],
       fields: {
         ...requestFields,
         plugin: { id: operational() },
@@ -488,6 +551,73 @@ export const catalog = defineCatalog({
           enabled: operational<boolean>(),
           /** Running plugin operations the turn-off cancelled. */
           operations_cancelled: operational<number>(),
+        },
+      },
+    },
+    /**
+     * One request an API 4 plugin sent through Ajour's broker: through one
+     * of its connections, or a public fetch. The path is the manifest's
+     * endpoint pattern it matched, never the path sent, and no header, body
+     * or query value is kept.
+     */
+    "plugin.request": {
+      kinds: ["job"],
+      reasons: [
+        /** The request isn't one: no connection id, an unknown method, a bad query or body. */
+        "invalid_request",
+        /** The plugin has no connection with that id: another plugin's looks the same. */
+        "connection_not_found",
+        /** The connection's credential can't be read now, so it is paused. */
+        "secret_unavailable",
+        ...inactiveReasons,
+        /** The manifest allows no such endpoint, host or address. */
+        "not_allowed",
+        /** A header the denylist holds or the manifest doesn't list. */
+        "header_refused",
+        /** The endpoint is behind an access choice the connection hasn't turned on. */
+        "access_off",
+        /** The connection's saved address can't be used. */
+        "invalid_address",
+        /** The host resolved, or answered, from a private address. */
+        "private_address",
+        /** A secret address redirected too often, or away from https. */
+        "redirect_refused",
+        /** Outside the desktop app, which has no network stack for plugins. */
+        "no_transport",
+        "request_too_large",
+        "response_too_large",
+        /** The answer couldn't be checked for secrets within the redaction's budget, so it was dropped. */
+        "unchecked_response",
+        "rate_limited",
+        "too_many_queued",
+        /** The plugin operation that sent it ended first. */
+        "operation_ended",
+        /** The plugin aborted it. */
+        "aborted",
+        "timeout",
+        /** The service couldn't be reached. */
+        "network",
+      ],
+      fields: {
+        plugin: { id: operational() },
+        connection: { id: operational() },
+        broker: {
+          method: operational<HttpMethod>(),
+          host_kind: operational<PluginRequestHostKind>(),
+          /** The manifest's endpoint pattern the path matched, such as `/rest/api/3/issue/*`. */
+          path_template: operational(),
+          status_code: operational<number>(),
+          /** Redirects the broker followed. */
+          redirects: operational<number>(),
+          request_bytes: operational<number>(),
+          response_bytes: operational<number>(),
+          on_premises: operational<boolean>(),
+          /** Sent while a connection was validated, before it was saved. */
+          pending: operational<boolean>(),
+          /** How long it waited for one of the plugin's request slots. */
+          queued_ms: operational<number>(),
+          /** Absent on-premises, where no address is judged. Its least judged exchange's. */
+          answer_address: operational<PluginRequestAnswerAddress>(),
         },
       },
     },
@@ -539,11 +669,56 @@ export const catalog = defineCatalog({
       reasons: [
         ...rendererEvents["connection.delete"].reasons,
         "connection_not_found",
+        /** The vault can't drop the connection's secrets this launch. */
+        "vault_unavailable",
         ...requestReasons,
       ],
       fields: {
         ...requestFields,
         ...rendererEvents["connection.delete"].fields,
+      },
+    },
+    /** Saved secrets of a connection deleted, which pauses it until a new one is saved. */
+    "connection.remove_secrets": {
+      kinds: ["command", "request"],
+      reasons: [
+        "connection_not_found",
+        /** The field isn't one the plugin marks secret. */
+        "not_secret",
+        /** The vault can't drop the secrets this launch. */
+        "vault_unavailable",
+        ...requestReasons,
+      ],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+        connection: { id: operational() },
+        secret: { field_count: operational<number>() },
+      },
+    },
+    /** The connections and saved secrets of a plugin whose package is missing deleted. */
+    "plugin.remove_data": {
+      kinds: ["command", "request"],
+      reasons: [
+        /** The plugin is installed: uninstall it instead. */
+        "installed",
+        "vault_unavailable",
+        ...requestReasons,
+      ],
+      fields: {
+        ...requestFields,
+        plugin: { id: operational() },
+      },
+    },
+    /** The vault opened again, after a failure that may have passed. */
+    "vault.retry": {
+      kinds: ["command", "request"],
+      reasons: requestReasons,
+      fields: {
+        ...requestFields,
+        vault: {
+          state: operational<"available" | "unavailable" | "unreadable">(),
+        },
       },
     },
 
@@ -568,6 +743,11 @@ export const catalog = defineCatalog({
           done_count: operational<number>(),
           work_item_update_count: operational<number>(),
           comment_fact_count: operational<number>(),
+          /**
+           * The items whose estimates the sync didn't upload: the connection
+           * can't edit work items, or the change waits for review (#395).
+           */
+          held_estimate_count: operational<number>(),
           /** In the renderer: the items the answer added straight to the backlog. */
           imported_count: operational<number>(),
         },
@@ -591,7 +771,9 @@ export const catalog = defineCatalog({
           /** In the renderer: from the end of the Undo window until the send. */
           delay_ms: operational<number>(),
           /** In the renderer: `deferred` waits for the Undo window, `superseded` for a newer write. */
-          result: operational<"sent" | "failed" | "deferred" | "superseded">(),
+          result: operational<
+            "sent" | "failed" | "deferred" | "superseded" | "held"
+          >(),
         },
       },
     },
@@ -888,6 +1070,8 @@ export const catalog = defineCatalog({
     "process.gone": {
       kinds: ["crash"],
       fields: {
+        /** The plugin whose renderer it was, for a `plugin_renderer`. */
+        plugin: { id: operational() },
         process: {
           type: operational(),
           /** Electron's reason, such as `crashed`, `oom` or `killed`. */
@@ -933,6 +1117,85 @@ export const catalog = defineCatalog({
           source: operational<"will_navigate" | "window_open">(),
         },
       },
+    },
+    /**
+     * One message from a plugin's hidden page to its host (#390): never its
+     * arguments. A sender that isn't a registered plugin page's main frame on
+     * its own origin is `foreign_sender`; a run the page doesn't have,
+     * another plugin's included, is `unknown_run`.
+     */
+    "plugin_renderer.call": {
+      kinds: ["ipc"],
+      reasons: ["foreign_sender", "unknown_run"],
+      fields: {
+        ipc: ipcFields,
+        plugin: { id: operational() },
+        plugin_renderer: {
+          message: operational<
+            | "ready"
+            | "next"
+            | "settled"
+            | "http"
+            | "publicFetch"
+            | "abort"
+            | "blocked"
+            | "other"
+          >(),
+        },
+      },
+    },
+    /** A plugin's renderer opening, until its page loaded and its sandbox was checked. */
+    "plugin_renderer.open": {
+      kinds: ["lifecycle"],
+      reasons: [
+        "ready_timeout",
+        "load_failed",
+        /** Its process doesn't report the sandbox, so every plugin turned off. */
+        "not_sandboxed",
+      ],
+      fields: {
+        plugin: { id: operational() },
+        plugin_renderer: { open_ms: operational<number>() },
+        sandbox: { cause: operational<PluginSandboxCause>() },
+      },
+    },
+    /**
+     * A way out a plugin's sandbox closed: the kind of exit, never where it
+     * led. The renderer goes on.
+     */
+    "plugin_renderer.blocked": {
+      kinds: ["navigation"],
+      reasons: ["blocked"],
+      fields: {
+        plugin: { id: operational() },
+        blocked: {
+          /** `request`: its session cancelled one; `policy`: its page's policy refused one. */
+          exit: operational<
+            | "request"
+            | "policy"
+            | "permission"
+            | "device"
+            | "download"
+            | "navigation"
+            | "window_open"
+          >(),
+        },
+      },
+    },
+    /** Plugins turned off: this computer can't run them in a sandbox. */
+    "plugin_sandbox.off": {
+      kinds: ["lifecycle"],
+      reasons: [
+        "launch_flag",
+        "debugger",
+        "environment",
+        "unsupported_os",
+        "renderer_not_sandboxed",
+        "renderer_integrity",
+        "renderer_unknown",
+        "shared_process",
+      ],
+      fields: { sandbox: { cause: operational<PluginSandboxCause>() } },
     },
     /**
      * Every plugin source read again: from the network, the saved listings or

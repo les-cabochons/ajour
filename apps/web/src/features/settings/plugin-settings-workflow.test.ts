@@ -7,6 +7,7 @@ import type {
 import {
   createPluginSettingsWorkflow,
   describeConnectionRemoval,
+  describeMissingPluginRemoval,
   describeTeamSync,
   type PluginSettingsDependencies,
 } from "./plugin-settings-workflow";
@@ -82,6 +83,9 @@ function dependencies() {
     setPluginEnabled: unused,
     savePluginConnection: unused,
     deletePluginConnection: unused,
+    removeConnectionSecrets: unused,
+    removeMissingPluginData: unused,
+    retryVault: unused,
     syncBacklogConnection: unused,
     syncTeamConnection: unused,
     installPlugin: vi.fn(async () => null),
@@ -100,6 +104,9 @@ function dependencies() {
     removePluginSource: unused,
     uninstallPlugin: unused,
     isPluginApiMissing: (error) => error === missingApiError,
+    holdPendingEstimates: vi.fn(),
+    connectionHeldEditCount: () => 0,
+    discardConnectionHeldEdits: vi.fn(),
   };
   return {
     deps,
@@ -469,6 +476,270 @@ describe("saving a connection", () => {
     ).resolves.toBe(true);
     expect(onSaved).toHaveBeenCalledWith(connection);
   });
+
+  it("sends the reminder dates with the save", async () => {
+    const { deps } = dependencies();
+    deps.savePluginConnection = vi.fn(async () => {
+      throw new Error("stop");
+    });
+    const workflow = createPluginSettingsWorkflow(deps);
+
+    await workflow.execute({
+      type: "save",
+      pluginId: plugin.id,
+      values: { label: "Acme" },
+      connectionId: "c1",
+      secretExpiry: { token: 1_800_000_000_000, other: null },
+    });
+
+    expect(deps.savePluginConnection).toHaveBeenCalledWith(
+      plugin.id,
+      { label: "Acme" },
+      "c1",
+      { token: 1_800_000_000_000, other: null },
+      // The access choices stay as saved.
+      undefined,
+    );
+  });
+});
+
+describe("turning editing work items on", () => {
+  const choices = [
+    { id: "readBacklog", label: "Read", always: true, operations: [] },
+    {
+      id: "editWorkItems",
+      label: "Edit work items",
+      always: false,
+      operations: ["writeSettle", "pushEstimates"],
+    },
+  ];
+  const saved = {
+    id: "c1",
+    pluginId: plugin.id,
+    label: "Acme",
+    tenantLabel: "Acme",
+    autoSync: false,
+    autoSyncIntervalMinutes: 15,
+    connectedAt: 1,
+    pendingImportCount: 0,
+    selectedImportCount: 0,
+    configSummary: {},
+    editableValues: {},
+    access: ["readBacklog"],
+  };
+  const withAccess: PluginsOverview = {
+    ...overview,
+    connectionGroups: [
+      {
+        plugin,
+        enabled: true,
+        connectionAccess: choices,
+        connections: [saved],
+      },
+    ],
+  };
+
+  function setUp(held: number) {
+    const { deps } = dependencies();
+    const order: string[] = [];
+    deps.getCachedPluginsOverview = () => withAccess;
+    deps.holdPendingEstimates = vi.fn(() => void order.push("hold"));
+    deps.connectionHeldEditCount = vi.fn(() => held);
+    deps.savePluginConnection = vi.fn(async () => {
+      order.push("save");
+      return { overview: withAccess, connection: saved };
+    });
+    const onHeldForReview = vi.fn();
+    const save = (access: string[]) =>
+      createPluginSettingsWorkflow(deps).execute({
+        type: "save",
+        pluginId: plugin.id,
+        values: { label: "Acme" },
+        connectionId: "c1",
+        access,
+        onHeldForReview,
+      });
+    return { deps, order, onHeldForReview, save };
+  }
+
+  it("holds the estimates waiting to upload before the save that turns editing on goes, then opens their review", async () => {
+    const { deps, order, onHeldForReview, save } = setUp(2);
+
+    await expect(save(["editWorkItems"])).resolves.toBe(true);
+
+    // Held first: a quit or a sync during the save sends none of them.
+    expect(order).toEqual(["hold", "save"]);
+    expect(deps.holdPendingEstimates).toHaveBeenCalledWith({
+      pluginId: plugin.id,
+      connectionId: "c1",
+    });
+    expect(onHeldForReview).toHaveBeenCalledWith("c1");
+  });
+
+  it("stays on the page when nothing is held", async () => {
+    const { onHeldForReview, save } = setUp(0);
+
+    await save(["editWorkItems"]);
+
+    expect(onHeldForReview).not.toHaveBeenCalled();
+  });
+
+  it("holds nothing more for a save that leaves editing off", async () => {
+    const { deps, onHeldForReview, save } = setUp(2);
+
+    await save([]);
+
+    expect(deps.holdPendingEstimates).not.toHaveBeenCalled();
+    expect(onHeldForReview).not.toHaveBeenCalled();
+  });
+});
+
+describe("removing a connection that holds changes", () => {
+  it("discards its held changes once the connection is removed", async () => {
+    const { deps } = dependencies();
+    deps.deletePluginConnection = vi.fn(async () => overview);
+    deps.discardConnectionHeldEdits = vi.fn();
+
+    await createPluginSettingsWorkflow(deps).execute({
+      type: "delete",
+      pluginId: plugin.id,
+      connectionId: "c1",
+    });
+
+    expect(deps.discardConnectionHeldEdits).toHaveBeenCalledWith({
+      pluginId: plugin.id,
+      connectionId: "c1",
+    });
+  });
+
+  it("names the held changes the removal discards", () => {
+    expect(
+      describeConnectionRemoval(
+        { id: "ms", capabilities: {} },
+        "work",
+        { pullRequests: [], calendarEventRules: [], projects: [] },
+        3,
+      ),
+    ).toBe(
+      "This removes the connection from this device. Its 3 held changes are discarded and never sent.",
+    );
+  });
+});
+
+describe("saved secrets", () => {
+  it("removes a saved secret and takes the overview the API answers with", async () => {
+    const { deps } = dependencies();
+    const paused = {
+      ...overview,
+      connectionGroups: [{ ...overview.connectionGroups[0]!, connections: [] }],
+      totalPendingImportCount: 0,
+    };
+    deps.removeConnectionSecrets = vi.fn(async () => ({
+      overview: paused,
+      connection: { label: "Acme" } as never,
+    }));
+    const workflow = createPluginSettingsWorkflow(deps);
+
+    await expect(
+      workflow.execute({
+        type: "removeSecrets",
+        pluginId: plugin.id,
+        connectionId: "c1",
+        fieldIds: ["token"],
+      }),
+    ).resolves.toBe(true);
+
+    expect(deps.removeConnectionSecrets).toHaveBeenCalledWith(plugin.id, "c1", [
+      "token",
+    ]);
+    expect(workflow.getSnapshot().overview).toBe(paused);
+    expect(workflow.getSnapshot().statusMessage).toBe(
+      "Removed the saved secret from Acme.",
+    );
+  });
+
+  it("reads the overview again after a refused sync, so the row shows Token rejected", async () => {
+    const { deps } = dependencies();
+    deps.syncBacklogConnection = vi.fn(async () => {
+      throw new Error("The service answered 401.");
+    });
+    const workflow = createPluginSettingsWorkflow(deps);
+    const reads = vi.mocked(deps.getPluginsOverview).mock.calls.length;
+
+    await workflow.execute({
+      type: "sync",
+      pluginId: plugin.id,
+      connectionId: "c1",
+    });
+
+    await vi.waitFor(() =>
+      expect(vi.mocked(deps.getPluginsOverview).mock.calls.length).toBe(
+        reads + 1,
+      ),
+    );
+    // The new overview doesn't hide why the sync failed.
+    await vi.waitFor(() =>
+      expect(workflow.getSnapshot().pluginError).toBe(
+        "The service answered 401.",
+      ),
+    );
+  });
+
+  it("opens the vault again and says whether it works now", async () => {
+    const { deps } = dependencies();
+    deps.retryVault = vi.fn(async () => ({
+      ...overview,
+      vault: { state: "available" as const },
+    }));
+    const workflow = createPluginSettingsWorkflow(deps);
+
+    await workflow.execute({ type: "retryVault" });
+
+    expect(workflow.getSnapshot().statusMessage).toBe(
+      "Ajour can protect credentials on this computer.",
+    );
+    expect(workflow.getSnapshot().overview?.vault).toEqual({
+      state: "available",
+    });
+  });
+
+  it("removes a missing plugin's connections, then the rest of its data", async () => {
+    const { deps } = dependencies();
+    const missing = {
+      ...overview,
+      connectionGroups: [
+        {
+          ...overview.connectionGroups[0]!,
+          connections: [{ id: "a" }, { id: "b" }] as never,
+        },
+      ],
+    };
+    deps.getCachedPluginsOverview = () => missing;
+    deps.deletePluginConnection = vi.fn(async () => missing);
+    deps.removeMissingPluginData = vi.fn(async () => overview);
+    const workflow = createPluginSettingsWorkflow(deps);
+
+    await workflow.execute({
+      type: "removeMissingData",
+      pluginId: plugin.id,
+      pluginName: "Jira",
+    });
+
+    expect(deps.deletePluginConnection).toHaveBeenNthCalledWith(
+      1,
+      plugin.id,
+      "a",
+    );
+    expect(deps.deletePluginConnection).toHaveBeenNthCalledWith(
+      2,
+      plugin.id,
+      "b",
+    );
+    expect(deps.removeMissingPluginData).toHaveBeenCalledWith(plugin.id);
+    expect(workflow.getSnapshot().statusMessage).toBe(
+      "Jira connections and saved secrets removed.",
+    );
+  });
 });
 
 describe("describeConnectionRemoval", () => {
@@ -496,6 +767,18 @@ describe("describeConnectionRemoval", () => {
       ),
     ).toBe(
       "This removes the connection and its 1 saved pull request and 2 remembered meetings from this device.",
+    );
+  });
+});
+
+describe("describeMissingPluginRemoval", () => {
+  it("counts the held changes the removal discards, as a connection's removal does", () => {
+    expect(describeMissingPluginRemoval(0)).not.toContain("held change");
+    expect(describeMissingPluginRemoval(1)).toContain(
+      "Its 1 held change is discarded and never sent.",
+    );
+    expect(describeMissingPluginRemoval(3)).toContain(
+      "Its 3 held changes are discarded and never sent.",
     );
   });
 });

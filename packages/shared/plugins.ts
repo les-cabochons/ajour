@@ -6,6 +6,7 @@ import {
   backlogItemCommentFactsSchema,
   backlogPersonSchema,
 } from "./backlog-comments.ts";
+import { projectDataShapeDefinitionSchema } from "./project-data-shapes.ts";
 
 export const PLUGIN_API_VERSION = 3;
 
@@ -175,31 +176,39 @@ export type AgentTaskPlacement = z.infer<typeof agentTaskPlacementSchema>;
  * A task an agent runs for the plugin, from a prompt file. No plugin code
  * runs. See docs/specs/2026-10-15-ajour-agent-runner-design.md.
  */
-export const agentTaskSchema = z
-  .object({
-    id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/),
-    label: z.string().trim().min(1).max(60),
-    placement: agentTaskPlacementSchema,
-    /** A Markdown file inside the plugin folder, at most 64 KB. */
-    prompt: z.string().trim().min(1).max(240),
-    estimateMinutes: z.number().int().min(1).max(240),
-    /** URL template for the week in the external tool. Must give https. */
-    weekLink: z.string().trim().min(1).max(500).optional(),
-    settings: z.array(pluginFieldSchema).max(20).default([]),
-  })
-  .superRefine((task, context) => {
-    if (!task.weekLink) return;
-    const allowed = allowedTaskSlots(task.settings.map((field) => field.id));
-    for (const slot of listTemplateSlots(task.weekLink)) {
-      if (!allowed.has(slot)) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["weekLink"],
-          message: `The week link uses {{${slot}}}, which Ajour does not fill.`,
-        });
-      }
+export const agentTaskObjectSchema = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/),
+  label: z.string().trim().min(1).max(60),
+  placement: agentTaskPlacementSchema,
+  /** A Markdown file inside the plugin folder, at most 64 KB. */
+  prompt: z.string().trim().min(1).max(240),
+  estimateMinutes: z.number().int().min(1).max(240),
+  /** URL template for the week in the external tool. Must give https. */
+  weekLink: z.string().trim().min(1).max(500).optional(),
+  settings: z.array(pluginFieldSchema).max(20).default([]),
+});
+
+/** Every slot of a task's week link must be one Ajour fills. */
+export function checkAgentTaskWeekLink(
+  task: { weekLink?: string; settings: readonly { id: string }[] },
+  context: z.RefinementCtx,
+) {
+  if (!task.weekLink) return;
+  const allowed = allowedTaskSlots(task.settings.map((field) => field.id));
+  for (const slot of listTemplateSlots(task.weekLink)) {
+    if (!allowed.has(slot)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["weekLink"],
+        message: `The week link uses {{${slot}}}, which Ajour does not fill.`,
+      });
     }
-  });
+  }
+}
+
+export const agentTaskSchema = agentTaskObjectSchema.superRefine(
+  checkAgentTaskWeekLink,
+);
 export type AgentTask = z.infer<typeof agentTaskSchema>;
 
 /**
@@ -259,36 +268,36 @@ export type ProjectPropertiesCapability = z.infer<
  * Ajour settles its items locally, with no write. See ADR 0001, ADR 0003 and,
  * for `calendar`, ADR 0005.
  */
-export const pluginCapabilitiesSchema = z
-  .object({
-    connector: z
-      .object({
-        settle: z.boolean().optional(),
-        /** Comments on synced items. See ADR 0008. */
-        comments: backlogCommentsCapabilitySchema.optional(),
-        /** Two-way descriptions. See ADR 0009. */
-        description: backlogDescriptionCapabilitySchema.optional(),
-      })
-      .optional(),
-    codeHost: z.object({}).optional(),
-    calendar: z.object({}).optional(),
-    /** Keeps a team's shared projects in step. See ADR 0006. */
-    team: teamCapabilitySchema.optional(),
-    agentTask: z
-      .object({ tasks: z.array(agentTaskSchema).min(1).max(10) })
-      .optional(),
-    projectProperties: projectPropertiesSchema.optional(),
-  })
-  .refine(
-    (capabilities) =>
-      capabilities.connector !== undefined ||
-      capabilities.codeHost !== undefined ||
-      capabilities.calendar !== undefined ||
-      capabilities.team !== undefined ||
-      capabilities.agentTask !== undefined ||
-      capabilities.projectProperties !== undefined,
-    "A plugin must declare at least one capability: connector, codeHost, calendar, team, agentTask or projectProperties.",
-  );
+export const pluginCapabilitiesObjectSchema = z.object({
+  connector: z
+    .object({
+      settle: z.boolean().optional(),
+      /** Comments on synced items. See ADR 0008. */
+      comments: backlogCommentsCapabilitySchema.optional(),
+      /** Two-way descriptions. See ADR 0009. */
+      description: backlogDescriptionCapabilitySchema.optional(),
+    })
+    .optional(),
+  codeHost: z.object({}).optional(),
+  calendar: z.object({}).optional(),
+  /** Keeps a team's shared projects in step. See ADR 0006. */
+  team: teamCapabilitySchema.optional(),
+  agentTask: z
+    .object({ tasks: z.array(agentTaskSchema).min(1).max(10) })
+    .optional(),
+  projectProperties: projectPropertiesSchema.optional(),
+});
+
+export const pluginCapabilitiesSchema = pluginCapabilitiesObjectSchema.refine(
+  (capabilities) =>
+    capabilities.connector !== undefined ||
+    capabilities.codeHost !== undefined ||
+    capabilities.calendar !== undefined ||
+    capabilities.team !== undefined ||
+    capabilities.agentTask !== undefined ||
+    capabilities.projectProperties !== undefined,
+  "A plugin must declare at least one capability: connector, codeHost, calendar, team, agentTask or projectProperties.",
+);
 export type PluginCapabilities = z.infer<typeof pluginCapabilitiesSchema>;
 
 export function pluginHasBacklog(manifest: {
@@ -356,8 +365,11 @@ export function pluginRunsCode(manifest: { capabilities: PluginCapabilities }) {
   return pluginSwitchableCapabilities(manifest).length > 0;
 }
 
-/** The manifest fields, before the cross-field rules. The overview extends it. */
-const pluginManifestObjectSchema = z.object({
+/**
+ * The manifest fields, before the cross-field rules. The overview and the API
+ * 4 manifest (`plugin-api-4.ts`) extend it.
+ */
+export const pluginManifestObjectSchema = z.object({
   id: pluginIdSchema,
   version: z
     .string()
@@ -444,10 +456,19 @@ const allowLossyField: PluginField = {
   capability: "connector",
 };
 
+/**
+ * Whether the user marked the connection on-premises, so Ajour's broker may
+ * send its requests to private addresses: only for a plugin API 4 plugin
+ * whose manifest allows it (`network.baseAddress.allowOnPremises`). Ajour
+ * owns the setting; its form field comes with the connection access work.
+ */
+export const ON_PREMISES_FIELD_ID = "onPremises";
+
 /** The connection fields Ajour owns, which a plugin cannot declare. */
 export const AJOUR_CONNECTION_FIELD_IDS: ReadonlySet<string> = new Set([
   AGENT_ACCESS_FIELD_ID,
   ALLOW_LOSSY_FIELD_ID,
+  ON_PREMISES_FIELD_ID,
 ]);
 
 /**
@@ -480,6 +501,44 @@ export function connectionAllowsLossyConversion(
   return connection.allowLossyConversion === true;
 }
 
+/**
+ * What the overview says about one entry of the vault, never its value.
+ * `unreadable` is an entry that can't be decrypted on this computer.
+ */
+export const secretEntrySummarySchema = z.object({
+  state: z.enum(["saved", "unreadable"]),
+  setAt: z.number().int().nonnegative().optional(),
+  lastUsedAt: z.number().int().positive().optional(),
+  /** The user's reminder date, in epoch milliseconds. Ajour keeps using the secret after it. */
+  expiresAt: z.number().int().positive().optional(),
+});
+export type SecretEntrySummary = z.infer<typeof secretEntrySummarySchema>;
+
+/**
+ * A saved secret field. `rejected` is one the service refused with a 401: the
+ * connection is paused until the secret is replaced.
+ */
+export const secretFieldSummarySchema = z.object({
+  id: z.string().min(1).max(120),
+  state: z.enum(["saved", "unreadable", "rejected"]),
+  setAt: z.number().int().nonnegative().optional(),
+  lastUsedAt: z.number().int().positive().optional(),
+  expiresAt: z.number().int().positive().optional(),
+});
+export type SecretFieldSummary = z.infer<typeof secretFieldSummarySchema>;
+
+/** Why a connection's operations are refused because of its secrets. */
+export const connectionPauseReasons = [
+  "vault_unavailable",
+  "secret_unreadable",
+  "not_in_vault",
+  /** The service answered 401 to the saved secret. */
+  "secret_rejected",
+  /** The user removed a secret the connection needs. */
+  "secret_removed",
+] as const;
+export type ConnectionPauseReason = (typeof connectionPauseReasons)[number];
+
 export const pluginConnectionSummarySchema = z.object({
   id: z.string().min(1).max(120),
   pluginId: backlogSourceSchema,
@@ -493,6 +552,11 @@ export const pluginConnectionSummarySchema = z.object({
   agentAccess: agentAccessSchema.optional(),
   /** Absent means off. See `connectionAllowsLossyConversion`. */
   allowLossyConversion: z.boolean().optional(),
+  /**
+   * The access choices that are on, those always on included. Absent when
+   * the plugin has none.
+   */
+  access: z.array(z.string().min(1).max(40)).max(20).optional(),
   connectedAt: z.number().int().positive(),
   lastSyncAt: z.number().int().positive().optional(),
   lastError: z.string().max(1000).optional(),
@@ -502,10 +566,59 @@ export const pluginConnectionSummarySchema = z.object({
   selectedImportCount: z.number().int().nonnegative(),
   configSummary: pluginSummaryValuesSchema,
   editableValues: pluginFieldValuesSchema,
+  /**
+   * The secret fields the vault holds for the connection, never a value.
+   * A declared secret field that isn't listed is not set.
+   */
+  secretFields: z.array(secretFieldSummarySchema).optional(),
+  /**
+   * The connection's settings, kept whole in the vault while its plugin's
+   * package is missing, because nothing says which of them are secret.
+   */
+  sealedConfig: secretEntrySummarySchema.optional(),
+  /** Why the connection's operations are refused for now, when they are. */
+  paused: z
+    .object({
+      reason: z.enum(connectionPauseReasons),
+      message: z.string().max(1000),
+    })
+    .optional(),
 });
 export type PluginConnectionSummary = z.infer<
   typeof pluginConnectionSummarySchema
 >;
+
+/**
+ * Whether the vault can keep secrets on this computer: `unavailable` when
+ * it can't encrypt, with the reason, and `unreadable` when the key that
+ * encrypted it is gone, as after a restore on another computer.
+ */
+export const vaultStatusSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("available") }),
+  z.object({
+    state: z.literal("unavailable"),
+    reason: z.string().max(1000),
+  }),
+  z.object({
+    state: z.literal("unreadable"),
+    /** Tells a key that is gone from a file that was damaged. */
+    reason: z.string().max(1000).optional(),
+  }),
+]);
+export type VaultStatusSummary = z.infer<typeof vaultStatusSchema>;
+
+/**
+ * Whether this computer can run plugins in their sandbox. While it can't,
+ * no plugin runs, and `reason` says why, such as Ajour started with
+ * `--no-sandbox`. There is no override. Absent where plugins don't run in a
+ * sandbox yet: release builds until the cut-over (#403) and the standalone
+ * API.
+ */
+export const pluginSandboxStatusSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("on") }),
+  z.object({ state: z.literal("off"), reason: z.string().max(1000) }),
+]);
+export type PluginSandboxStatus = z.infer<typeof pluginSandboxStatusSchema>;
 
 /**
  * A plugin as the overview reports it. Saved connections can outlive their
@@ -513,7 +626,9 @@ export type PluginConnectionSummary = z.infer<
  * fills the gap with a placeholder, and `unavailableReason` tells the user
  * why. An unavailable plugin is the one with `unavailableReason`; an absent
  * entrypoint only means the plugin runs no code. Plugin packages still go
- * through the strict manifest schema.
+ * through the strict manifest schema. An API 4 package admitted in a
+ * development build may declare only a project data shape, so the overview
+ * reads its capabilities without the at-least-one rule.
  */
 /** A plugin source key's fingerprint: 16 hex characters in groups of four. */
 export const pluginKeyFingerprintSchema = z
@@ -547,6 +662,9 @@ export function isSignedPlugin(plugin: { origin?: PluginOrigin }) {
 }
 
 const pluginOverviewItemSchema = pluginManifestObjectSchema.extend({
+  capabilities: pluginCapabilitiesObjectSchema.extend({
+    projectDataShape: projectDataShapeDefinitionSchema.optional(),
+  }),
   entrypoint: z.string().trim().max(240).optional(),
   unavailableReason: z.string().max(1000).optional(),
   /** Absent for a plugin with no recorded origin, which counts as unsigned. */
@@ -554,12 +672,41 @@ const pluginOverviewItemSchema = pluginManifestObjectSchema.extend({
 });
 export type PluginOverviewItem = z.infer<typeof pluginOverviewItemSchema>;
 
+/**
+ * A choice each connection of a plugin makes about what it may do, such as
+ * Azure DevOps's "Edit work items", with the token scope it needs and the
+ * plugin operations it unlocks. See `connection-access.ts`.
+ */
+export const connectionAccessChoiceSummarySchema = z.object({
+  id: z.string().min(1).max(40),
+  label: z.string().min(1).max(80),
+  description: z.string().max(300).optional(),
+  tokenScope: z.string().max(200).optional(),
+  always: z.boolean(),
+  operations: z.array(z.string().min(1).max(63)).max(50),
+});
+export type ConnectionAccessChoiceSummary = z.infer<
+  typeof connectionAccessChoiceSummarySchema
+>;
+
 export const pluginOverviewGroupSchema = z.object({
   plugin: pluginOverviewItemSchema,
   enabled: z.boolean(),
+  /** The access choices of its connections. Absent when it has none. */
+  connectionAccess: z.array(connectionAccessChoiceSummarySchema).optional(),
   /** Declared capabilities the user turned off. `enabled` still gates all. */
   inactiveCapabilities: z.array(switchableCapabilitySchema).optional(),
   connections: z.array(pluginConnectionSummarySchema),
+  /**
+   * The plugin's package is not installed: saved connections or secrets
+   * outlived it, and `plugin` is a stand-in. Absent when it is installed,
+   * even when it can't run.
+   */
+  missing: z.boolean().optional(),
+  /** The secrets of the plugin's agent task settings the vault holds. */
+  agentTaskSecretFields: z.array(secretFieldSummarySchema).optional(),
+  /** The agent task settings kept whole in the vault while the package is missing. */
+  agentTaskSealedConfig: secretEntrySummarySchema.optional(),
 });
 export type PluginOverviewGroup = z.infer<typeof pluginOverviewGroupSchema>;
 
@@ -626,6 +773,10 @@ export const pluginsOverviewSchema = z.object({
   connectionGroups: z.array(pluginOverviewGroupSchema),
   totalPendingImportCount: z.number().int().nonnegative(),
   totalSelectedImportCount: z.number().int().nonnegative(),
+  /** Absent from an API older than the vault. */
+  vault: vaultStatusSchema.optional(),
+  /** See `pluginSandboxStatusSchema`. While it is off, every group is off too. */
+  sandbox: pluginSandboxStatusSchema.optional(),
 });
 export type PluginsOverview = z.infer<typeof pluginsOverviewSchema>;
 
@@ -741,9 +892,41 @@ export const backlogSyncWorkItemSchema = z.object({
 });
 export type BacklogSyncWorkItem = z.infer<typeof backlogSyncWorkItemSchema>;
 
+/**
+ * An estimate field as Ajour's own sync request sends it to the local API:
+ * `held` marks a change held on this computer because the connection
+ * couldn't edit work items, which doesn't upload until the user approves it
+ * in Sync review. The API strips the mark, so plugins never see it.
+ */
+export const backlogSyncRequestEstimateFieldStateSchema =
+  backlogSyncEstimateFieldStateSchema.extend({
+    held: z.boolean().optional(),
+  });
+export type BacklogSyncRequestEstimateFieldState = z.infer<
+  typeof backlogSyncRequestEstimateFieldStateSchema
+>;
+
+/** A synced item as Ajour's own sync request sends it, held marks included. */
+export const backlogSyncRequestWorkItemSchema =
+  backlogSyncWorkItemSchema.extend({
+    estimateSync: z
+      .object({
+        originalEstimateHours:
+          backlogSyncRequestEstimateFieldStateSchema.optional(),
+        remainingEstimateHours:
+          backlogSyncRequestEstimateFieldStateSchema.optional(),
+        completedEstimateHours:
+          backlogSyncRequestEstimateFieldStateSchema.optional(),
+      })
+      .optional(),
+  });
+export type BacklogSyncRequestWorkItem = z.infer<
+  typeof backlogSyncRequestWorkItemSchema
+>;
+
 export const backlogSyncRequestSchema = z.object({
   trigger: z.enum(["manual", "auto", "source_write"]).default("manual"),
-  workItems: z.array(backlogSyncWorkItemSchema).max(1000).default([]),
+  workItems: z.array(backlogSyncRequestWorkItemSchema).max(1000).default([]),
 });
 export type BacklogSyncRequest = z.infer<typeof backlogSyncRequestSchema>;
 
@@ -753,14 +936,39 @@ export type BacklogSyncRequest = z.infer<typeof backlogSyncRequestSchema>;
  */
 export const removeSecretsSchema = z.array(z.string().min(1).max(120)).max(100);
 
+/**
+ * The reminder date of secret fields, in epoch milliseconds, by field ID.
+ * `null` clears it. A field the save doesn't list keeps its date, unless
+ * the save gives it a new value, which starts without one.
+ */
+export const secretExpirySchema = z.record(
+  z.string().min(1).max(120),
+  z.number().int().positive().nullable(),
+);
+
 export const pluginConnectionSaveRequestSchema = z.object({
   id: z.string().trim().min(1).max(120).optional(),
   values: pluginFieldValuesSchema,
   removeSecrets: removeSecretsSchema.optional(),
+  secretExpiry: secretExpirySchema.optional(),
+  /**
+   * The access choices the user turned on. Absent keeps the saved ones; a
+   * new connection without it reads only. Only Ajour's settings send it:
+   * nothing a plugin returns changes a connection's access.
+   */
+  access: z.array(z.string().min(1).max(40)).max(20).optional(),
 });
 export type PluginConnectionSaveRequest = z.infer<
   typeof pluginConnectionSaveRequestSchema
 >;
+
+/**
+ * Deletes saved secrets of a connection without saving the rest of its form.
+ * The connection is paused until a new one is added.
+ */
+export const connectionSecretsRemoveRequestSchema = z.object({
+  fieldIds: removeSecretsSchema.min(1),
+});
 
 export const pluginConnectionSaveResponseSchema = z.object({
   overview: pluginsOverviewSchema,
@@ -1118,5 +1326,19 @@ export const backlogSyncResultSchema = z.object({
   doneItems: z.array(backlogDoneWorkItemSchema).default([]),
   viewer: backlogPersonSchema.optional(),
   commentFacts: z.array(backlogItemCommentFactsSchema).max(1000).default([]),
+  /**
+   * The estimate fields the sync didn't upload: the connection can't edit
+   * work items, or the user hasn't approved the change yet. Each stays as it
+   * is on this computer, held for review.
+   */
+  heldEstimates: z
+    .array(
+      z.object({
+        localWorkItemId: z.string().trim().min(1).max(200),
+        fields: z.array(backlogEstimateFieldKeySchema).min(1).max(3),
+      }),
+    )
+    .max(1000)
+    .default([]),
 });
 export type BacklogSyncResult = z.infer<typeof backlogSyncResultSchema>;

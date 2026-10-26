@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PluginsOverview } from "@ajour/shared";
 import {
+  appApiErrorStatus,
   cachePluginsOverview,
   getPluginsOverview,
   isPluginApiMissing,
@@ -110,5 +111,20 @@ describe("missing app API", () => {
     );
     expect(error).toBeInstanceOf(Error);
     expect(isPluginApiMissing(error)).toBe(false);
+  });
+
+  it("keeps the HTTP status on the error, with the API's own message", async () => {
+    for (const status of [401, 409, 502]) {
+      const error = await failedOverviewRequest(async () =>
+        Response.json({ error: "Paused." }, { status }),
+      );
+      expect(error).toMatchObject({ message: "Paused.", name: "Error" });
+      expect(appApiErrorStatus(error)).toBe(status);
+    }
+    // A request that never reached the API has no status.
+    const unreachable = await failedOverviewRequest(async () => {
+      throw new TypeError("Failed to fetch");
+    });
+    expect(appApiErrorStatus(unreachable)).toBeUndefined();
   });
 });

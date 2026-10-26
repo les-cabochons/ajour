@@ -5,13 +5,22 @@ import {
   type AgentTask,
   type PluginField,
   type PluginFieldValues,
+  type SecretFieldSummary,
+  type VaultStatusSummary,
 } from "@ajour/shared";
 import type { AgentTaskStatus } from "@ajour/shared/agent-runs";
 import { AppPanel, SettingRow } from "@/components/app-surface";
 import { Button } from "@/components/ui/button";
 import { FieldGroup } from "@/components/ui/field";
+import { vaultBlockedReason } from "@/features/settings/connection-form";
+import {
+  areExpiryDraftsValid,
+  buildExpiryDrafts,
+  expiryForSave,
+  secretFieldsKey,
+} from "@/features/settings/plugin-form-state";
 import { PluginFieldInput } from "@/features/settings/plugin-settings-ui";
-import { saveAgentTaskSettings } from "@/lib/app-api";
+import { getPluginsOverview, saveAgentTaskSettings } from "@/lib/app-api";
 import {
   refreshAgentRunner,
   setAgentRunner,
@@ -27,9 +36,14 @@ import {
 export function PluginAgentTasks({
   pluginId,
   tasks,
+  replaceFieldId,
+  vault,
 }: {
   pluginId: string;
   tasks: readonly AgentTask[];
+  /** The secret setting whose Replace opens at once, as when the Vault sent the user. */
+  replaceFieldId?: string;
+  vault?: VaultStatusSummary;
 }) {
   const state = useAgentRunner();
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +58,8 @@ export function PluginAgentTasks({
       ? state.overview.tasks.filter((task) => task.pluginId === pluginId)
       : [];
   const fields = agentTaskSettingFields(statuses);
+  // The tasks share their settings, so they share the secrets saved for them.
+  const secretFields = statuses[0]?.secretFields ?? [];
 
   return (
     <section className="settings-section">
@@ -70,13 +86,28 @@ export function PluginAgentTasks({
       </AppPanel>
       {fields.length > 0 ? (
         <TaskSettingsForm
-          key={pluginId}
+          // A saved secret replaced, or its state or reminder date changing,
+          // starts the form over. Its last use changes with each run and
+          // doesn't.
+          key={`${pluginId}/${secretFieldsKey(secretFields)}`}
           fields={fields}
           initialValues={sharedValues(statuses, fields)}
-          onSave={async (values) => {
+          secretFields={secretFields}
+          replaceFieldId={replaceFieldId}
+          vault={vault}
+          onSave={async (values, change) => {
             setError(null);
             try {
-              setAgentRunner(await saveAgentTaskSettings(pluginId, values));
+              setAgentRunner(
+                await saveAgentTaskSettings(
+                  pluginId,
+                  values,
+                  change.removeSecrets,
+                  change.secretExpiry,
+                ),
+              );
+              // The Vault page lists these secrets too.
+              void getPluginsOverview().catch(() => undefined);
             } catch (cause) {
               setError(
                 cause instanceof Error ? cause.message : "Unknown error",
@@ -123,13 +154,35 @@ function sharedValues(
 function TaskSettingsForm({
   fields,
   initialValues,
+  secretFields,
+  replaceFieldId,
+  vault,
   onSave,
 }: {
   fields: readonly PluginField[];
   initialValues: PluginFieldValues;
-  onSave: (values: PluginFieldValues) => Promise<void>;
+  secretFields: readonly SecretFieldSummary[];
+  replaceFieldId?: string;
+  vault?: VaultStatusSummary;
+  onSave: (
+    values: PluginFieldValues,
+    change: {
+      removeSecrets?: string[];
+      secretExpiry: Record<string, number | null>;
+    },
+  ) => Promise<void>;
 }) {
   const [values, setValues] = useState<PluginFieldValues>(initialValues);
+  const secretIds = fields
+    .filter((field) => field.secret)
+    .map((field) => field.id);
+  const [initialExpiry] = useState(() =>
+    buildExpiryDrafts(secretIds, secretFields),
+  );
+  const [expiry, setExpiry] = useState(initialExpiry);
+  const blockedReason = vaultBlockedReason(vault);
+  const now = Date.now();
+
   return (
     <AppPanel className="pb-4">
       <form
@@ -137,7 +190,13 @@ function TaskSettingsForm({
         aria-label="Task settings"
         onSubmit={(event) => {
           event.preventDefault();
-          void onSave(values);
+          void onSave(values, {
+            secretExpiry: expiryForSave(
+              expiry,
+              initialExpiry,
+              secretIds.filter((id) => String(values[id] ?? "").trim() !== ""),
+            ),
+          });
         }}
       >
         <FieldGroup className="desktop:grid desktop:grid-cols-2 desktop:gap-x-6 desktop:gap-y-5">
@@ -147,10 +206,43 @@ function TaskSettingsForm({
               field={field}
               value={values[field.id]}
               onChange={(next) => setValues({ ...values, [field.id]: next })}
+              secret={
+                field.secret
+                  ? {
+                      existing: true,
+                      summary: secretFields.find(
+                        (secret) => secret.id === field.id,
+                      ),
+                      expiry: expiry[field.id] ?? "",
+                      onExpiryChange: (next) =>
+                        setExpiry({ ...expiry, [field.id]: next }),
+                      // The settings that aren't secret are kept as they are.
+                      onRemove: () =>
+                        void onSave(
+                          Object.fromEntries(
+                            Object.entries(initialValues).filter(
+                              ([id]) => !secretIds.includes(id),
+                            ),
+                          ),
+                          { removeSecrets: [field.id], secretExpiry: {} },
+                        ),
+                      startReplacing: replaceFieldId === field.id,
+                      blockedReason,
+                      now,
+                      removeEffect: field.required
+                        ? "The agent tasks that need it can't run until you add a new one."
+                        : "Ajour deletes it from this computer.",
+                    }
+                  : undefined
+              }
             />
           ))}
         </FieldGroup>
-        <Button type="submit" className="self-start">
+        <Button
+          type="submit"
+          className="self-start"
+          disabled={!areExpiryDraftsValid(expiry)}
+        >
           Save
         </Button>
       </form>

@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 import type { PluginManifest } from "@ajour/shared";
 import {
   arePluginFormValuesEqual,
+  areExpiryDraftsEqual,
+  areExpiryDraftsValid,
+  buildExpiryDrafts,
   buildPluginFormValues,
   canSubmitPluginForm,
+  expiryForSave,
   isPluginFieldShown,
-  normalizePluginFormValuesForSave,
-  SAVED_SECRET_MASK,
+  secretFieldsKey,
 } from "./plugin-form-state";
 
 const plugin: PluginManifest = {
@@ -154,7 +157,10 @@ describe("plugin form state", () => {
     expect(buildPluginFormValues(plugin)).not.toHaveProperty("agentAccess");
   });
 
-  it("masks secret fields when building edit values", () => {
+  it("starts every secret field empty, with no mask, whether or not one is saved", () => {
+    expect(buildPluginFormValues(plugin)).toMatchObject({
+      personalAccessToken: "",
+    });
     expect(
       buildPluginFormValues(plugin, {
         label: "Main",
@@ -162,69 +168,128 @@ describe("plugin form state", () => {
       }),
     ).toEqual({
       label: "Main",
-      personalAccessToken: SAVED_SECRET_MASK,
-      taskIconDisplayMode: "fallback",
-    });
-  });
-
-  it("allows editing an existing connection without re-entering the secret", () => {
-    expect(
-      canSubmitPluginForm(
-        plugin,
-        {
-          label: "Main",
-          personalAccessToken: SAVED_SECRET_MASK,
-          taskIconDisplayMode: "fallback",
-        },
-        { allowSavedSecrets: true },
-      ),
-    ).toBe(true);
-  });
-
-  it("still requires the secret when creating a new connection", () => {
-    expect(
-      canSubmitPluginForm(plugin, {
-        label: "Main",
-        personalAccessToken: "",
-        taskIconDisplayMode: "fallback",
-      }),
-    ).toBe(false);
-  });
-
-  it("normalizes an unchanged saved secret mask back to an empty value on save", () => {
-    expect(
-      normalizePluginFormValuesForSave(
-        plugin,
-        {
-          label: "Main",
-          personalAccessToken: SAVED_SECRET_MASK,
-          taskIconDisplayMode: "fallback",
-        },
-        { allowSavedSecrets: true },
-      ),
-    ).toEqual({
-      label: "Main",
       personalAccessToken: "",
       taskIconDisplayMode: "fallback",
     });
   });
 
-  it("preserves a newly entered secret on save", () => {
+  it("never takes a secret field's value from the saved values", () => {
+    // The API sends none, but a form must not start with one even if it did.
     expect(
-      normalizePluginFormValuesForSave(
+      buildPluginFormValues(plugin, {
+        label: "Main",
+        personalAccessToken: "leaked-by-mistake",
+      }).personalAccessToken,
+    ).toBe("");
+  });
+
+  it("allows editing an existing connection without re-entering a saved secret", () => {
+    expect(
+      canSubmitPluginForm(
         plugin,
         {
           label: "Main",
-          personalAccessToken: "new-token",
+          personalAccessToken: "",
           taskIconDisplayMode: "fallback",
         },
-        { allowSavedSecrets: true },
+        { savedSecrets: new Set(["personalAccessToken"]) },
+      ),
+    ).toBe(true);
+  });
+
+  it("requires a secret that isn't saved, such as one that was removed", () => {
+    const values = {
+      label: "Main",
+      personalAccessToken: "",
+      taskIconDisplayMode: "fallback",
+    };
+    expect(canSubmitPluginForm(plugin, values)).toBe(false);
+    expect(
+      canSubmitPluginForm(plugin, values, { savedSecrets: new Set() }),
+    ).toBe(false);
+    expect(
+      canSubmitPluginForm(
+        plugin,
+        { ...values, personalAccessToken: "new-token" },
+        { savedSecrets: new Set() },
+      ),
+    ).toBe(true);
+  });
+
+  it("starts the reminder dates from the secrets the vault holds", () => {
+    const expiresAt = new Date(2026, 9, 28, 23, 59, 59, 999).getTime();
+    expect(buildExpiryDrafts(["personalAccessToken"])).toEqual({
+      personalAccessToken: "",
+    });
+    expect(
+      buildExpiryDrafts(
+        ["personalAccessToken"],
+        [{ id: "personalAccessToken", expiresAt }],
+      ),
+    ).toEqual({ personalAccessToken: "2026-10-28" });
+  });
+
+  it("sends a reminder date as the end of its day, and clears an empty one", () => {
+    expect(expiryForSave({ personalAccessToken: "2026-10-28" })).toEqual({
+      personalAccessToken: new Date(2026, 9, 28, 23, 59, 59, 999).getTime(),
+    });
+    expect(expiryForSave({ personalAccessToken: "" })).toEqual({
+      personalAccessToken: null,
+    });
+  });
+
+  it("sends only the reminder dates that changed, so a save that touches no date asks nothing of the vault", () => {
+    const initial = { token: "2026-10-28", note: "", feed: "" };
+
+    expect(expiryForSave(initial, initial)).toEqual({});
+    expect(
+      expiryForSave(
+        { token: "2026-11-02", note: "", feed: "2026-12-01" },
+        initial,
       ),
     ).toEqual({
-      label: "Main",
-      personalAccessToken: "new-token",
-      taskIconDisplayMode: "fallback",
+      token: new Date(2026, 10, 2, 23, 59, 59, 999).getTime(),
+      feed: new Date(2026, 11, 1, 23, 59, 59, 999).getTime(),
     });
+    // Emptying the date clears it.
+    expect(expiryForSave({ ...initial, token: "" }, initial)).toEqual({
+      token: null,
+    });
+  });
+
+  it("sends the date shown with a secret that is replaced, since the new secret starts without one", () => {
+    const initial = { token: "2026-10-28", note: "" };
+
+    expect(expiryForSave(initial, initial, ["token"])).toEqual({
+      token: new Date(2026, 9, 28, 23, 59, 59, 999).getTime(),
+    });
+    expect(expiryForSave(initial, initial, ["note"])).toEqual({ note: null });
+  });
+
+  it("keeps a task form while the overview refreshes what a secret last did, and starts it over when it is replaced, or its state or date changes", () => {
+    const saved = { id: "apiKey", state: "saved" as const, setAt: 1 };
+
+    const key = secretFieldsKey([saved]);
+
+    expect(secretFieldsKey([{ ...saved, lastUsedAt: 99 }])).toBe(key);
+    expect(secretFieldsKey([{ ...saved, setAt: 2 }])).not.toBe(key);
+    expect(
+      secretFieldsKey([{ ...saved, state: "rejected" as const }]),
+    ).not.toBe(key);
+    expect(secretFieldsKey([{ ...saved, expiresAt: 5 }])).not.toBe(key);
+    expect(secretFieldsKey([])).not.toBe(key);
+  });
+
+  it("accepts an empty date or a whole one, and tells when dates changed", () => {
+    expect(areExpiryDraftsValid({ a: "", b: "2026-10-28" })).toBe(true);
+    expect(areExpiryDraftsValid({ a: "2026-10" })).toBe(false);
+    expect(areExpiryDraftsEqual({ a: "2026-10-28" }, { a: "2026-10-28" })).toBe(
+      true,
+    );
+    expect(areExpiryDraftsEqual({ a: "2026-10-29" }, { a: "2026-10-28" })).toBe(
+      false,
+    );
+    expect(areExpiryDraftsEqual({ a: "" }, {})).toBe(true);
   });
 
   it("treats unchanged edit values as equal", () => {

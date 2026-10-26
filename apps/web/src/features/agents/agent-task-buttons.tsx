@@ -180,7 +180,7 @@ export function AgentTaskButtons({
 
 /**
  * Muted links to the week in each task's external tool, for the Commit
- * page's week summary. Tasks that share a link show it once. A task whose link does not fill to https shows none.
+ * page's week summary. Tasks that share a link show it once. A task whose link does not fill to https shows none, and one whose link uses a secret setting says why.
  */
 export function AgentTaskWeekLinks({ weekOf }: { weekOf: string }) {
   const state = useAgentRunner();
@@ -193,7 +193,15 @@ export function AgentTaskWeekLinks({ weekOf }: { weekOf: string }) {
     seen.add(url);
     return [{ key: `${task.pluginId}/${task.taskId}`, url, task }];
   });
-  if (links.length === 0) return null;
+  // A refused link says why it is missing, so the user is not left guessing.
+  const refusals = [
+    ...new Set(
+      state.overview.tasks.flatMap((task) =>
+        task.weekLinkRefusal ? [task.weekLinkRefusal] : [],
+      ),
+    ),
+  ];
+  if (links.length === 0 && refusals.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-x-4 gap-y-1">
       {links.map(({ key, url, task }) => (
@@ -207,6 +215,11 @@ export function AgentTaskWeekLinks({ weekOf }: { weekOf: string }) {
           Open the week in {task.pluginName}
           <ExternalLink aria-hidden className="size-3.5" />
         </a>
+      ))}
+      {refusals.map((refusal) => (
+        <p key={refusal} className="text-[13px] text-muted-foreground">
+          {refusal}
+        </p>
       ))}
     </div>
   );

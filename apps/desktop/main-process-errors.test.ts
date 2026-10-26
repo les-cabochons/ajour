@@ -104,7 +104,13 @@ describe("quitting and installing an update", () => {
       dispose: vi.fn(),
       installerQuitting: vi.fn(),
     };
+    const order: string[] = [];
+    const closePluginRenderers = vi.fn(async () => {
+      order.push("plugin renderers closed");
+    });
+    app.quit.mockImplementation(() => order.push("quit"));
     const context = vm.createContext({
+      closePluginRenderers,
       app,
       events,
       quitTrigger,
@@ -142,6 +148,8 @@ describe("quitting and installing an update", () => {
       recorded,
       attach,
       automaticUpdateController,
+      closePluginRenderers,
+      order,
       emit: (name: string) => handlers.get(name)?.({ preventDefault: vi.fn() }),
       quit() {
         const event = { preventDefault: vi.fn() };
@@ -170,6 +178,16 @@ describe("quitting and installing an update", () => {
     expect(event.preventDefault).toHaveBeenCalled();
     expect(runtime.app.quit).toHaveBeenCalledOnce();
     expect(runtime.app.exit).not.toHaveBeenCalled();
+  });
+
+  it("closes every plugin renderer once the local API stopped, before it quits", async () => {
+    const runtime = quitRuntime(async () => {});
+
+    runtime.quit();
+    await flush();
+
+    expect(runtime.closePluginRenderers).toHaveBeenCalledOnce();
+    expect(runtime.order).toEqual(["plugin renderers closed", "quit"]);
   });
 
   it("still quits when stopping the local API fails", async () => {
@@ -202,6 +220,14 @@ describe("quitting and installing an update", () => {
     const event = runtime.quit();
 
     expect(event.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it("closes every plugin renderer before an update installs, so none outlives the installer's quit", async () => {
+    const runtime = quitRuntime(async () => {});
+
+    await runtime.prepareToInstallUpdate();
+
+    expect(runtime.closePluginRenderers).toHaveBeenCalledOnce();
   });
 
   it("installs the update after ten seconds when stopping the local API hangs", async () => {

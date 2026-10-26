@@ -21,6 +21,17 @@ function errorMessage(error) {
   return `${message.slice(0, maxErrorCharacters - 1)}…`;
 }
 
+// A status the error names, so the host can tell a rejected secret (401).
+// This mirrors httpStatusOf in plugin-runtime.ts.
+function httpStatus(error) {
+  if (typeof error !== "object" || error === null) return undefined;
+  for (const key of ["httpStatus", "statusCode", "status"]) {
+    const value = error[key];
+    if (Number.isInteger(value) && value >= 100 && value <= 599) return value;
+  }
+  return undefined;
+}
+
 // The host learns the result's size, and tells a result that's too large
 // from the plugin's own error.
 let outcome;
@@ -38,6 +49,10 @@ try {
         : { ok: true, result, bytes };
   }
 } catch (error) {
-  outcome = { ok: false, error: errorMessage(error) };
+  outcome = {
+    ok: false,
+    error: errorMessage(error),
+    httpStatus: httpStatus(error),
+  };
 }
 parentPort.postMessage(outcome);

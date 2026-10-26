@@ -75,3 +75,15 @@ Feature: Browse plugin capabilities
     Then installing from a file waits for unsigned installs to be allowed
     When I allow installing unsigned plugins
     Then I can install a plugin from a file
+
+  Scenario Outline: Say plugins are off when this computer can't sandbox them
+    Given plugins are off because "Ajour was started with --no-sandbox."
+    When I open the <view> for Jira at <width> pixels wide
+    Then the plugins page says "Plugins are turned off: this computer can't run them in a sandbox" with "Ajour was started with --no-sandbox."
+    And Jira shows as off with its saved connection
+    And Jira cannot be switched on or off, and says why
+
+    Examples:
+      | view    | width |
+      | catalog | 390   |
+      | details | 1280  |

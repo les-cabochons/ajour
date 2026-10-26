@@ -15,8 +15,10 @@ const {
   net,
   powerMonitor,
   protocol,
+  safeStorage,
   session,
   shell,
+  WebContentsView,
 } = require("electron");
 // On its own line so the IPC check in code-standards.md can tell this import
 // from any other use of the object: only `createIpcListeners` may take it.
@@ -40,6 +42,13 @@ const {
   pluginInstallResultOf,
   selectPluginArchive,
 } = require("./plugin-install.cjs");
+const { createSafeStorageCipher } = require("./secret-cipher.cjs");
+const { createBrokerNetwork } = require("./broker-transport.cjs");
+const { PLUGIN_SCHEME } = require("./plugin-renderer-policy.cjs");
+const {
+  createPluginRendererRuntime,
+} = require("./plugin-renderer-runtime.cjs");
+const { launchSandboxRefusal } = require("./plugin-sandbox.cjs");
 const { createPluginCatalogService } = require("./plugin-catalog.cjs");
 const { isOfficialSourceUrl } = require("./plugin-sources.cjs");
 const {
@@ -82,7 +91,17 @@ const {
   isAllowedReleaseUrl,
 } = require("./update-check.cjs");
 
-const DESKTOP_USER_DATA_DIRNAME = "Ajour";
+// On macOS, safeStorage keeps its key in a keychain item named after the
+// app, so a development build takes a name of its own and never touches the
+// release build's key. A release build never changes its name: that would
+// lose the key, and every saved secret with it. The data folder is pinned
+// below, so the name doesn't move it.
+if (!app.isPackaged) app.setName("Ajour Dev");
+
+// A development build keeps its data in a folder of its own, so it never
+// opens the release build's vault with another key. AJOUR_USER_DATA_PATH
+// still points either build anywhere.
+const DESKTOP_USER_DATA_DIRNAME = app.isPackaged ? "Ajour" : "Ajour Dev";
 const stableUserDataPath =
   process.env.AJOUR_USER_DATA_PATH ??
   path.join(app.getPath("appData"), DESKTOP_USER_DATA_DIRNAME);
@@ -135,6 +154,13 @@ protocol.registerSchemesAsPrivileged([
       corsEnabled: true,
       stream: true,
     },
+  },
+  {
+    // Each plugin's origin, `ajour-plugin://<id>` (plugin-renderer-runtime.cjs).
+    // Standard and secure only: no service workers, no CSP bypass, no fetch
+    // of it from anywhere else, no code cache.
+    scheme: PLUGIN_SCHEME,
+    privileges: { standard: true, secure: true },
   },
 ]);
 
@@ -293,7 +319,10 @@ function schedulePluginCatalogRefresh() {
 // Every IPC channel registers through `ipc`, which emits each call's event,
 // named in ipc-channels.cjs. None can throw into the main process, and a
 // failed synchronous request answers null.
-const ipc = createIpcListeners(ipcMain, { events });
+const ipc = createIpcListeners(ipcMain, {
+  events,
+  windowSession: () => session.defaultSession,
+});
 
 // Read once per launch. A read that finds nothing or fails stays null until
 // the next launch, even when a crashed window reloads and asks again.
@@ -1030,6 +1059,65 @@ function registerStaticProtocol() {
   });
 }
 
+/**
+ * The vault the local API keeps secrets in: a file beside the state file,
+ * encrypted by safeStorage. Only the API, in this process, writes it.
+ */
+function internalAppApiVault(apiModule, statePath) {
+  return new apiModule.FileSecretVault({
+    filePath: path.join(path.dirname(statePath), "app-api-vault.json"),
+    cipher: createSafeStorageCipher({
+      safeStorage,
+      platform: process.platform,
+    }),
+  });
+}
+
+/**
+ * The broker's transport and resolver: `net.request` on a session of its
+ * own, made once, after `ready`, since a session can't exist before.
+ */
+let brokerNetwork = null;
+function internalAppApiBrokerNetwork() {
+  brokerNetwork ??= createBrokerNetwork({ net, session, randomUUID });
+  return brokerNetwork;
+}
+
+/**
+ * The runtime that runs plugin API 4 packages, each in a sandboxed renderer
+ * of its own, made once, after `ready`. Development builds only, until the
+ * cut-over (#403): release builds admit no API 4 package yet. Without a
+ * sandbox, as with `--no-sandbox` or on Linux, it runs no plugin and says why.
+ */
+let pluginRendererRuntime = null;
+function internalAppApiPluginApi4Runtime() {
+  if (app.isPackaged) return undefined;
+  pluginRendererRuntime ??= createPluginRendererRuntime({
+    app,
+    session,
+    WebContentsView,
+    ipcListeners: ipc,
+    events,
+    hostDirectory: path.join(__dirname, "plugin-host"),
+    preloadPath: path.join(__dirname, "plugin-host", "preload.cjs"),
+    platform: process.platform,
+    devTools: !app.isPackaged,
+    launchRefusal: launchSandboxRefusal({
+      argv: process.argv,
+      hasSwitch: (name) => app.commandLine.hasSwitch(name),
+      env: process.env,
+      platform: process.platform,
+      inspectorActive: require("node:inspector").url() !== undefined,
+    }),
+  });
+  return pluginRendererRuntime;
+}
+
+/** Closes every plugin renderer, so no plugin process outlives a quit. */
+async function closePluginRenderers() {
+  await pluginRendererRuntime?.closeAll();
+}
+
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -1133,7 +1221,8 @@ async function ensureInternalAppApiRunning() {
     internalAppApiModulePromise ??= import(
       pathToFileURL(internalAppApiEntryPath).toString()
     );
-    const { startAppApiServer } = await internalAppApiModulePromise;
+    const internalAppApiModule = await internalAppApiModulePromise;
+    const { startAppApiServer } = internalAppApiModule;
     if (typeof startAppApiServer !== "function") {
       throw Object.assign(
         new Error(
@@ -1143,12 +1232,17 @@ async function ensureInternalAppApiRunning() {
       );
     }
 
+    const statePath =
+      process.env.AJOUR_APP_API_STATE_PATH ??
+      path.join(app.getPath("userData"), "app-api-state.json");
     const apiServer = await startAppApiServer({
       host: INTERNAL_APP_API_HOST,
       port: INTERNAL_APP_API_PORT,
-      statePath:
-        process.env.AJOUR_APP_API_STATE_PATH ??
-        path.join(app.getPath("userData"), "app-api-state.json"),
+      statePath,
+      vault: internalAppApiVault(internalAppApiModule, statePath),
+      brokerTransport: internalAppApiBrokerNetwork().transport,
+      brokerResolver: internalAppApiBrokerNetwork().resolver,
+      pluginApi4Runtime: internalAppApiPluginApi4Runtime(),
       installedPluginDirectory: path.join(app.getPath("userData"), "plugins"),
       developmentPluginDirectories: app.isPackaged
         ? []
@@ -1327,6 +1421,8 @@ async function prepareToInstallUpdate() {
   const outcome = await stopInternalAppApiWithinTimeout();
   recordApiStop(quit, outcome, stopStartedAt);
   if (updateQuit?.quit === quit) updateQuit.outcome = outcome;
+  // The installer's quit skips before-quit, so the plugin pages close here.
+  await closePluginRenderers().catch(() => undefined);
   // The installer's quit skips before-quit's wait for the events.
   await whenEventsReady(
     INTERNAL_APP_API_STOP_TIMEOUT_MS - (Date.now() - stopStartedAt),
@@ -1790,6 +1886,8 @@ if (!hasSingleInstanceLock) {
     void stopInternalAppApiWithinTimeout().then(async (outcome) => {
       gracefulQuitStarted = true;
       recordApiStop(quit, outcome, stopStartedAt);
+      // The API cancelled their runs as it stopped; their pages close now.
+      await closePluginRenderers().catch(() => undefined);
       endQuit(quit, outcome);
       // Events recorded before the package loaded are lost if the process
       // exits first.

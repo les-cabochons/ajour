@@ -1,6 +1,6 @@
 import os from "node:os";
 import path from "node:path";
-import type { IncomingMessage, Server, ServerResponse } from "node:http";
+import type { Server } from "node:http";
 import {
   access,
   mkdir,
@@ -19,11 +19,9 @@ import {
   uninstallPluginForServer,
 } from "./server.ts";
 import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
-import {
-  TEST_WINDOW_ORIGIN,
-  windowServerOptions,
-  windowRequestHeaders,
-} from "./test-support/window-token.ts";
+import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
+import { dispatchJsonRequest } from "./test-support/dispatch-json-request.ts";
+import { windowServerOptions } from "./test-support/window-token.ts";
 
 const ICON = "<svg viewBox='0 0 16 16'><path d='M0 0h16v16H0z' /></svg>";
 
@@ -78,8 +76,8 @@ const projectDataShapePluginSource = [
   "export async function exportProjects(projects) {",
   "  return { datasets: [{ id: 'projects', rows: projects.map((project) => ({ project: project.name })) }] };",
   "}",
-  "export async function importProjects(datasets) {",
-  "  return { projects: datasets[0].rows.map((row) => ({ name: row.project, color: '#123456', status: 'active', tasks: [] })) };",
+  "export async function importProjects(sheets) {",
+  "  return { projects: sheets[0].rows.map((row) => ({ name: row[0], color: '#123456', status: 'active', tasks: [] })) };",
   "}",
 ].join("\n");
 
@@ -123,82 +121,6 @@ async function createProjectDataShapePlugin(
   );
   await writeFile(path.join(pluginDirectory, "plugin.mjs"), source, "utf8");
   return pluginDirectory;
-}
-
-async function dispatchJsonRequest(
-  server: Server,
-  options: {
-    method: string;
-    path: string;
-    headers?: Record<string, string>;
-    body?: Uint8Array | string;
-    /** Holds the body back: `reached` runs when the route asks for it, and the body arrives once `release` settles. */
-    bodyGate?: { reached: () => void; release: Promise<void> };
-  },
-) {
-  return await new Promise<{ status: number; body: unknown }>((resolve) => {
-    const requestBody =
-      options.body === undefined
-        ? []
-        : [
-            typeof options.body === "string"
-              ? Buffer.from(options.body)
-              : Buffer.from(options.body),
-          ];
-    const request = {
-      method: options.method,
-      url: options.path,
-      headers: Object.fromEntries(
-        Object.entries({
-          ...windowRequestHeaders,
-          origin: TEST_WINDOW_ORIGIN,
-          ...options.headers,
-        }).map(([key, value]) => [key.toLowerCase(), value]),
-      ),
-      // The body, as `request.iterator()` reads it.
-      async *iterator() {
-        options.bodyGate?.reached();
-        await options.bodyGate?.release;
-        yield* requestBody;
-      },
-    } as unknown as IncomingMessage;
-    let status = 0;
-    const response = {
-      statusCode: 200,
-      headersSent: false,
-      writableEnded: false,
-      writableFinished: false,
-      setHeader() {
-        return response;
-      },
-      getHeader() {
-        return undefined;
-      },
-      once() {
-        return response;
-      },
-      writeHead(statusCode: number) {
-        status = statusCode;
-        response.statusCode = statusCode;
-        response.headersSent = true;
-        return response;
-      },
-      end(payload?: string) {
-        response.writableEnded = true;
-        response.writableFinished = true;
-        // The request's event ends once its handler returns, just after.
-        setImmediate(() =>
-          resolve({
-            status,
-            body: payload ? JSON.parse(payload) : undefined,
-          }),
-        );
-        return response;
-      },
-    };
-
-    server.emit("request", request, response as unknown as ServerResponse);
-  });
 }
 
 describe("plugin installation boundary", () => {
@@ -248,6 +170,7 @@ describe("plugin installation boundary", () => {
     );
     const server = createAppApiServer({
       ...windowServerOptions,
+      vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       allowDevelopmentPlugins: false,
@@ -331,6 +254,7 @@ describe("plugin installation boundary", () => {
       ]);
       const server = createAppApiServer({
         ...windowServerOptions,
+        vault: new MemorySecretVault(),
         statePath,
         installedPluginDirectory: installedRoot,
         allowDevelopmentPlugins: false,
@@ -381,7 +305,17 @@ describe("plugin installation boundary", () => {
         },
       ]);
       const savedState = JSON.parse(await readFile(statePath, "utf8"));
-      expect(savedState.connections).toEqual([savedConnection]);
+      // Its config was checked against the manifest, which doesn't declare
+      // `token`: an undeclared value moves into the vault like a secret.
+      expect(savedState.connections).toEqual([
+        {
+          ...savedConnection,
+          config: { baseUrl: savedConnection.config.baseUrl },
+          secrets: { fields: ["token"] },
+          // Version 9 starts every connection reading only.
+          access: [],
+        },
+      ]);
       expect(savedState.disabledPluginIds).toEqual(enabled ? [] : ["jira"]);
     },
   );
@@ -445,6 +379,7 @@ describe("plugin installation boundary", () => {
       ]);
       const server = createAppApiServer({
         ...windowServerOptions,
+        vault: new MemorySecretVault(),
         statePath,
         installedPluginDirectory: installedRoot,
         allowDevelopmentPlugins: false,
@@ -472,6 +407,7 @@ describe("plugin installation boundary", () => {
     const root = await tempDir();
     const server = createAppApiServer({
       ...windowServerOptions,
+      vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       allowDevelopmentPlugins: false,
@@ -583,6 +519,7 @@ describe("plugin installation boundary", () => {
     const root = await tempDir();
     const server = createAppApiServer({
       ...windowServerOptions,
+      vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       projectDataShapePluginDirectories: [],
@@ -616,6 +553,7 @@ describe("plugin installation boundary", () => {
     const pluginDirectory = await createProjectDataShapePlugin(root);
     const server = createAppApiServer({
       ...windowServerOptions,
+      vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       projectDataShapePluginDirectories: [pluginDirectory],
@@ -662,7 +600,7 @@ describe("plugin installation boundary", () => {
         method: "POST",
         path: "/api/project-data-shapes/workday-project-data/import",
         body: JSON.stringify({
-          datasets: [{ id: "projects", rows: [{ project: "Mercury" }] }],
+          sheets: [{ name: "Projects", rows: [["Mercury"]] }],
         }),
       }),
     ).resolves.toEqual({
@@ -695,6 +633,7 @@ describe("plugin installation boundary", () => {
     const started: string[] = [];
     const server = createAppApiServer({
       ...windowServerOptions,
+      vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
@@ -748,6 +687,7 @@ describe("plugin installation boundary", () => {
     const root = await tempDir();
     const server = createAppApiServer({
       ...windowServerOptions,
+      vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       allowDevelopmentPlugins: false,
@@ -772,6 +712,7 @@ describe("plugin installation boundary", () => {
     const root = await tempDir();
     const server = createAppApiServer({
       ...windowServerOptions,
+      vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       allowDevelopmentPlugins: true,
@@ -806,6 +747,7 @@ describe("plugin installation boundary", () => {
     const root = await tempDir();
     const server = createAppApiServer({
       ...windowServerOptions,
+      vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       allowDevelopmentPlugins: false,
@@ -839,6 +781,7 @@ describe("plugin installation boundary", () => {
     );
     const server = createAppApiServer({
       ...windowServerOptions,
+      vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
@@ -957,6 +900,7 @@ describe("backlog settle routes", () => {
     );
     const server = createAppApiServer({
       ...windowServerOptions,
+      vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
@@ -1167,6 +1111,7 @@ describe("code host routes", () => {
     );
     const server = createAppApiServer({
       ...windowServerOptions,
+      vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
@@ -1485,6 +1430,7 @@ describe("calendar routes", () => {
     const { events } = sink;
     const server = createAppApiServer({
       ...windowServerOptions,
+      vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
@@ -1688,7 +1634,7 @@ describe("agent task settings route", () => {
   async function createServer(
     options: Pick<
       Parameters<typeof createAppApiServer>[0] & object,
-      "eventSink" | "agentCliPath"
+      "eventSink" | "agentCliPath" | "vault"
     > = {},
   ) {
     const root = await mkdtemp(path.join(os.tmpdir(), "ajour-agent-task-"));
@@ -1747,6 +1693,7 @@ describe("agent task settings route", () => {
     const statePath = path.join(root, "state.json");
     const server = createAppApiServer({
       ...windowServerOptions,
+      vault: new MemorySecretVault(),
       statePath,
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
@@ -1883,15 +1830,26 @@ describe("agent task settings route", () => {
     );
   });
 
-  it("keeps a secret setting out of its answers, keeps it when left empty, and removes it on request", async () => {
+  it("keeps a secret setting out of its answers and the state file, keeps it when left empty, and removes it on request", async () => {
     const KEY = "wd-key-5e0c7a91b3f2";
-    const { server, statePath } = await createServerWithState();
+    const vault = new MemorySecretVault();
+    const server = await createServer({ vault });
+    const statePath = statePaths.get(server)!;
     const storedValues = async () =>
       (
         JSON.parse(await readFile(statePath, "utf8")) as {
           agentRunner: { pluginValues: Record<string, object> };
         }
       ).agentRunner.pluginValues.jira;
+    const vaultKey = () =>
+      vault
+        .contents()
+        .filter((entry) => entry.pluginId === "jira")
+        .map(({ connectionId, fieldId, value }) => ({
+          connectionId,
+          fieldId,
+          value,
+        }));
 
     const saved = await save(server, "jira", {
       url: "https://wd.example/t",
@@ -1899,7 +1857,13 @@ describe("agent task settings route", () => {
     });
     expect(saved.status).toBe(200);
     expect(JSON.stringify(saved.body)).not.toContain(KEY);
-    await expect(storedValues()).resolves.toMatchObject({ apiKey: KEY });
+    await expect(storedValues()).resolves.toEqual({
+      url: "https://wd.example/t",
+    });
+    expect(await readFile(statePath, "utf8")).not.toContain(KEY);
+    expect(vaultKey()).toEqual([
+      { connectionId: null, fieldId: "apiKey", value: JSON.stringify(KEY) },
+    ]);
 
     const kept = await save(server, "jira", {
       url: "https://wd.example/u",
@@ -1908,8 +1872,10 @@ describe("agent task settings route", () => {
     expect(kept.status).toBe(200);
     await expect(storedValues()).resolves.toEqual({
       url: "https://wd.example/u",
-      apiKey: KEY,
     });
+    expect(vaultKey()).toEqual([
+      { connectionId: null, fieldId: "apiKey", value: JSON.stringify(KEY) },
+    ]);
 
     const NEW_KEY = "wd-key-9a41d6c2e7b8";
     const replaced = await save(server, "jira", {
@@ -1918,10 +1884,13 @@ describe("agent task settings route", () => {
     });
     expect(replaced.status).toBe(200);
     expect(JSON.stringify(replaced.body)).not.toContain(NEW_KEY);
-    await expect(storedValues()).resolves.toEqual({
-      url: "https://wd.example/u",
-      apiKey: NEW_KEY,
-    });
+    expect(vaultKey()).toEqual([
+      {
+        connectionId: null,
+        fieldId: "apiKey",
+        value: JSON.stringify(NEW_KEY),
+      },
+    ]);
 
     const removed = await dispatchJsonRequest(server, {
       method: "POST",
@@ -1935,6 +1904,7 @@ describe("agent task settings route", () => {
     await expect(storedValues()).resolves.toEqual({
       url: "https://wd.example/u",
     });
+    expect(vaultKey()).toEqual([]);
   });
 });
 
@@ -2009,6 +1979,7 @@ describe("team routes", () => {
     );
     const server = createAppApiServer({
       ...windowServerOptions,
+      vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
@@ -2312,6 +2283,7 @@ describe("backlog comment routes", () => {
     const events: AjourEvent[] = [];
     const server = createAppApiServer({
       ...windowServerOptions,
+      vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
@@ -2921,6 +2893,7 @@ describe("backlog description routes", () => {
     );
     const server = createAppApiServer({
       ...windowServerOptions,
+      vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
@@ -3218,6 +3191,7 @@ describe("plugin errors that echo a secret", () => {
     );
     const server = createAppApiServer({
       ...windowServerOptions,
+      vault: new MemorySecretVault(),
       statePath,
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
@@ -3867,6 +3841,7 @@ describe("plugin errors that echo a secret", () => {
     );
     const server = createAppApiServer({
       ...windowServerOptions,
+      vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       projectDataShapePluginDirectories: [pluginDirectory],
@@ -3876,7 +3851,7 @@ describe("plugin errors that echo a secret", () => {
 
     for (const [operation, body] of [
       ["export", { projects: [] }],
-      ["import", { datasets: [{ id: "projects", rows: [] }] }],
+      ["import", { sheets: [{ name: "Projects", rows: [] }] }],
     ] as const) {
       const response = await dispatchJsonRequest(server, {
         method: "POST",
@@ -3925,16 +3900,26 @@ describe("saving a connection's secrets", () => {
         ],
       },
     );
+    const vault = new MemorySecretVault();
     const server = createAppApiServer({
       ...windowServerOptions,
+      vault,
       statePath,
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: [pluginDirectory],
       allowDevelopmentPlugins: true,
     });
     servers.push(server);
-    return { server, statePath };
+    return { server, statePath, vault };
   }
+
+  /** The token the vault holds for the connection, if any. */
+  const vaultedToken = (vault: MemorySecretVault) => {
+    const entry = vault
+      .contents()
+      .find((candidate) => candidate.fieldId === "token");
+    return entry && JSON.parse(entry.value);
+  };
 
   const save = (
     server: Server,
@@ -3968,34 +3953,49 @@ describe("saving a connection's secrets", () => {
     return (saved.body as { connection: { id: string } }).connection.id;
   }
 
+  it("keeps the secret in the vault, and only which field it is in the state file", async () => {
+    const { server, statePath, vault } = await createServer();
+    await savedConnection(server);
+
+    expect(vaultedToken(vault)).toBe(TOKEN);
+    expect(await readFile(statePath, "utf8")).not.toContain(TOKEN);
+    const [connection] = (
+      JSON.parse(await readFile(statePath, "utf8")) as {
+        connections: { config: object; secrets: object }[];
+      }
+    ).connections;
+    expect(connection).toMatchObject({
+      config: { baseUrl: "https://acme.atlassian.net" },
+      secrets: { fields: ["token"] },
+    });
+  });
+
   it("keeps the saved secret when a save leaves it empty", async () => {
-    const { server, statePath } = await createServer();
+    const { server, statePath, vault } = await createServer();
     const id = await savedConnection(server);
 
     const saved = await save(server, { token: "" }, { id });
 
     expect(saved.status).toBe(200);
     expect(JSON.stringify(saved.body)).not.toContain(TOKEN);
-    await expect(storedConfig(statePath)).resolves.toMatchObject({
-      token: TOKEN,
-    });
+    expect(vaultedToken(vault)).toBe(TOKEN);
+    await expect(storedConfig(statePath)).resolves.not.toHaveProperty("token");
   });
 
   it("replaces the saved secret with a new value", async () => {
-    const { server, statePath } = await createServer();
+    const { server, statePath, vault } = await createServer();
     const id = await savedConnection(server);
 
     const saved = await save(server, { token: NEW_TOKEN }, { id });
 
     expect(saved.status).toBe(200);
     expect(JSON.stringify(saved.body)).not.toContain(NEW_TOKEN);
-    await expect(storedConfig(statePath)).resolves.toMatchObject({
-      token: NEW_TOKEN,
-    });
+    expect(vaultedToken(vault)).toBe(NEW_TOKEN);
+    expect(await readFile(statePath, "utf8")).not.toContain(NEW_TOKEN);
   });
 
   it("deletes the saved secret a save asks to remove", async () => {
-    const { server, statePath } = await createServer();
+    const { server, statePath, vault } = await createServer();
     const id = await savedConnection(server);
 
     const saved = await save(
@@ -4005,13 +4005,14 @@ describe("saving a connection's secrets", () => {
     );
 
     expect(saved.status).toBe(200);
+    expect(vaultedToken(vault)).toBeUndefined();
     const config = await storedConfig(statePath);
     expect(config).not.toHaveProperty("token");
-    expect(JSON.stringify(config)).not.toContain(TOKEN);
+    expect(await readFile(statePath, "utf8")).not.toContain(TOKEN);
   });
 
   it("refuses to remove a field that isn't secret, or a secret the save also replaces", async () => {
-    const { server, statePath } = await createServer();
+    const { server, vault } = await createServer();
     const id = await savedConnection(server);
 
     for (const [values, removeSecrets] of [
@@ -4025,8 +4026,6 @@ describe("saving a connection's secrets", () => {
       expect(refused.status).toBe(400);
       expect(JSON.stringify(refused.body)).not.toContain(NEW_TOKEN);
     }
-    await expect(storedConfig(statePath)).resolves.toMatchObject({
-      token: TOKEN,
-    });
+    expect(vaultedToken(vault)).toBe(TOKEN);
   });
 });

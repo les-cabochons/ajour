@@ -4,12 +4,17 @@
 // { "exit": code }, { "hang": true }, { "ignoreTerm": true } (keeps running
 // after SIGTERM, only SIGKILL stops it), { "escapee": true } (starts a process
 // that inherits the output pipes and outlives the CLI, so the CLI's close
-// never comes while it runs). Also appends its pid, argv, its working folder,
-// whether AJOUR_MCP_TOKEN is set, the names of any other AJOUR_ variables and
-// of any variable whose value holds FAKE_CLI_SECRET_PROBE to FAKE_CLI_REPORT
-// when set, and a { grandchildPid } line per escapee.
+// never comes while it runs), { "mcp": { "method": ..., "params": ... } }
+// (sends one JSON-RPC request to FAKE_CLI_MCP_URL with AJOUR_MCP_TOKEN, as an
+// agent calls Ajour's MCP server, or a batch for an array). Also appends its
+// pid, argv, its working folder, whether AJOUR_MCP_TOKEN is set, the names of
+// any other AJOUR_ variables, of any variable whose value holds
+// FAKE_CLI_SECRET_PROBE and of any file in its working folder that holds it
+// to FAKE_CLI_REPORT when set, a { grandchildPid } line per escapee and a
+// { mcp: { status, reply } } line per MCP request.
 import { spawn } from "node:child_process";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
 
 const HANG = "setInterval(() => {}, 1000)";
 
@@ -30,12 +35,48 @@ if (process.env.FAKE_CLI_REPORT) {
             probe && key !== "FAKE_CLI_SECRET_PROBE" && value?.includes(probe),
         )
         .map(([key]) => key),
+      secretSeenInFiles: readdirSync(process.cwd()).filter(
+        (name) =>
+          probe &&
+          readFileSync(path.join(process.cwd(), name), "utf8").includes(probe),
+      ),
       cwd: process.cwd(),
     }) + "\n",
   );
 }
 const steps = JSON.parse(process.env.FAKE_CLI_SCRIPT ?? "[]");
+let mcpRequestId = 0;
 for (const step of steps) {
+  if (step.mcp) {
+    // An array is a batch, with an id per request.
+    const message = (request) => ({
+      jsonrpc: "2.0",
+      id: (mcpRequestId += 1),
+      ...request,
+    });
+    const response = await fetch(process.env.FAKE_CLI_MCP_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.AJOUR_MCP_TOKEN}`,
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+      },
+      body: JSON.stringify(
+        Array.isArray(step.mcp) ? step.mcp.map(message) : message(step.mcp),
+      ),
+    });
+    const text = await response.text();
+    let reply = text;
+    try {
+      reply = JSON.parse(text);
+    } catch {
+      // Not JSON: the report keeps the text.
+    }
+    appendFileSync(
+      process.env.FAKE_CLI_REPORT,
+      JSON.stringify({ mcp: { status: response.status, reply } }) + "\n",
+    );
+  }
   if (step.ignoreTerm) process.on("SIGTERM", () => {});
   if (step.stdout) process.stdout.write(step.stdout + "\n");
   if (step.stderr) process.stderr.write(step.stderr + "\n");

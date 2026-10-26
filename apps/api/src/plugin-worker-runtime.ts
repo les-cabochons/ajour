@@ -16,6 +16,7 @@ interface WorkerMessage {
   error?: unknown;
   reason?: unknown;
   bytes?: unknown;
+  httpStatus?: unknown;
 }
 
 /**
@@ -135,5 +136,8 @@ function outcomeOf(message: WorkerMessage | null): PluginRunOutcome {
     ok: false,
     failure: "plugin_error",
     ...(typeof message?.error === "string" ? { message: message.error } : {}),
+    ...(typeof message?.httpStatus === "number"
+      ? { httpStatus: message.httpStatus }
+      : {}),
   };
 }

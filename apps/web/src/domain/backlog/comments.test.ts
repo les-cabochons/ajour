@@ -3,6 +3,7 @@ import type { BacklogComment, PluginsOverview } from "@ajour/shared";
 import {
   commentSourceOf,
   firstNewCommentIndex,
+  itemPeopleMatching,
   isEditedComment,
   mergeEarlierComments,
   withPostedComments,
@@ -156,5 +157,23 @@ describe("comments posted while the first page loads", () => {
     expect(merged.comments.map((entry) => entry.id)).toEqual(["c1", "c2"]);
     expect(merged.total).toBe(2);
     expect(withPostedComments(page, [])).toBe(page);
+  });
+});
+
+describe("@ suggestions while people search is off", () => {
+  const people = [
+    { id: "ana", displayName: "Ana Silva", email: "ana@contoso.com" },
+    { id: "bo", displayName: "Bo Tran" },
+    { id: "cy", displayName: "Cyril Anand" },
+  ];
+  const ids = (query: string) =>
+    itemPeopleMatching(people, query).map((person) => person.id);
+
+  it("suggests the item's own people whose name or email starts with each word typed", () => {
+    expect(ids("")).toEqual(["ana", "bo", "cy"]);
+    expect(ids("an")).toEqual(["ana", "cy"]);
+    expect(ids("Ana S")).toEqual(["ana"]);
+    expect(ids("ana@")).toEqual(["ana"]);
+    expect(ids("zed")).toEqual([]);
   });
 });

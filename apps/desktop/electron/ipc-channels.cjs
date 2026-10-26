@@ -13,6 +13,7 @@
 /**
  * @typedef {object} IpcChannel
  * @property {IpcEventName} event The wide event each call emits.
+ * @property {"plugin-renderer"} [sender] Set only by the channel of a plugin's hidden page. Every other channel refuses that page (ipc-listeners.cjs).
  * @property {"invoke" | "message" | "sync"} mode `invoke` registers with `ipc.handle`, `message` with `ipc.onMessage`, `sync` with `ipc.answerSync`.
  */
 
@@ -83,6 +84,13 @@ const IPC_CHANNELS = {
   "ajour:clear-development-plugin-directories": {
     event: "dev_plugins.configure",
     mode: "invoke",
+  },
+  // The one channel of a plugin's hidden page, not the window's
+  // (plugin-renderer-runtime.cjs).
+  "ajour:plugin-renderer": {
+    event: "plugin_renderer.call",
+    mode: "invoke",
+    sender: "plugin-renderer",
   },
 };
 
