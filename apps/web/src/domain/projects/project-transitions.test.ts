@@ -5,10 +5,13 @@ import {
   addProjectTask,
   createProject,
   findPinnedTask,
+  getFavorites,
   getPinnedTasksBySlot,
   normalizeProject,
   reorderProjects,
   reorderProjectTask,
+  setProjectFavorite,
+  setProjectTaskFavorite,
   setProjectTaskPinnedSlot,
   setProjectTaskStatus,
   updateProjectTask,
@@ -485,6 +488,83 @@ describe("pinned task slots", () => {
     expect(slotsOf([normalizeProject(stored, () => 1)])).toEqual([
       ["alpha-task-1", "7"],
       ["alpha-task-2", undefined],
+    ]);
+  });
+});
+
+describe("favorites", () => {
+  function favoriteIds(projects: LocalProject[]) {
+    return getFavorites(projects).map((favorite) =>
+      favorite.kind === "project" ? favorite.project._id : favorite.task._id,
+    );
+  }
+
+  it("lists starred tasks and projects together, newest star first", () => {
+    let projects = [
+      createFixtureProject("alpha", ["active", "active"]),
+      createFixtureProject("beta"),
+    ];
+    projects = setProjectTaskFavorite(projects, "alpha", "alpha-task-2", 10);
+    projects = setProjectFavorite(projects, "beta", 30);
+    projects = setProjectTaskFavorite(projects, "alpha", "alpha-task-1", 20);
+
+    expect(favoriteIds(projects)).toEqual([
+      "beta",
+      "alpha-task-1",
+      "alpha-task-2",
+    ]);
+  });
+
+  it("removes a star and keeps a task's star apart from its project's", () => {
+    let projects = [createFixtureProject("alpha")];
+    projects = setProjectFavorite(projects, "alpha", 10);
+    projects = setProjectTaskFavorite(projects, "alpha", "alpha-task-1", 20);
+    projects = setProjectFavorite(projects, "alpha", undefined);
+
+    expect(favoriteIds(projects)).toEqual(["alpha-task-1"]);
+    projects = setProjectTaskFavorite(
+      projects,
+      "alpha",
+      "alpha-task-1",
+      undefined,
+    );
+    expect(getFavorites(projects)).toEqual([]);
+  });
+
+  it("leaves archived tasks and projects out, and lists them again once restored", () => {
+    let projects = [
+      createFixtureProject("alpha", ["active", "archived"]),
+      { ...createFixtureProject("beta"), status: "archived" as const },
+    ];
+    projects = setProjectTaskFavorite(projects, "alpha", "alpha-task-1", 10);
+    projects = setProjectTaskFavorite(projects, "alpha", "alpha-task-2", 20);
+    projects = setProjectFavorite(projects, "beta", 30);
+    projects = setProjectTaskFavorite(projects, "beta", "beta-task-1", 40);
+
+    expect(favoriteIds(projects)).toEqual(["alpha-task-1"]);
+    expect(
+      favoriteIds(
+        setProjectTaskStatus(projects, "alpha", "alpha-task-2", "active", () => 1),
+      ),
+    ).toEqual(["alpha-task-2", "alpha-task-1"]);
+  });
+
+  it("drops a broken star when hydrating a stored project", () => {
+    const project = createFixtureProject("alpha", ["active", "active"]);
+    const stored = {
+      ...project,
+      favoritedAt: "yesterday",
+      tasks: [
+        { ...project.tasks[0]!, favoritedAt: 50 },
+        { ...project.tasks[1]!, favoritedAt: Number.NaN },
+      ],
+    } as unknown as LocalProject;
+    const hydrated = normalizeProject(stored, () => 1);
+
+    expect(hydrated.favoritedAt).toBeUndefined();
+    expect(hydrated.tasks.map((task) => task.favoritedAt)).toEqual([
+      50,
+      undefined,
     ]);
   });
 });
