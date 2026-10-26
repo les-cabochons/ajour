@@ -1501,6 +1501,12 @@ export const catalog = defineCatalog({
         },
       },
     },
+    /** Open folder: the OS file manager shows the local log file's folder. Never its path. */
+    "logs.open_folder": {
+      kinds: ["ipc"],
+      reasons: ["foreign_sender"],
+      fields: { ipc: ipcFields },
+    },
     /** A retention sweep of the local log file's folder: at launch, hourly, or once its limits change. */
     "logs.sweep": {
       kinds: ["job"],

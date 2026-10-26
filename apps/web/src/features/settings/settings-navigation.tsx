@@ -14,6 +14,7 @@ import {
   RiSettings3Line as Settings,
   RiTerminalBoxLine as Terminal,
   RiGitPullRequestLine as PullRequestIcon,
+  RiPulseLine as Diagnostics,
   RiFlowChart as Workflow,
 } from "@remixicon/react";
 import {
@@ -30,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import { Sidebar } from "@/components/ui/sidebar";
 import { useCalendarSources } from "@/lib/calendar-suggestions";
 import { useCodeHostConnections } from "@/lib/code-host-connections";
+import { hasLocalLogsBridge } from "./use-local-logs";
 
 /**
  * Wide windows show the settings pages in the app's left column, in place of
@@ -42,12 +44,14 @@ export type SettingsNavigationView = "wide" | "narrow";
  * The settings pages in display order, grouped under a heading. The narrow
  * view has no Projects sidebar, so its Projects entry opens the full
  * Projects section, where project import and export is an action. Wide
- * windows keep the separate import and export page.
+ * windows keep the separate import and export page. Diagnostics is listed
+ * only where the local log file is reachable: the desktop app's bridge.
  */
 export function getSettingsGroups(
   view: SettingsNavigationView,
   hasCodeHost = false,
   hasCalendar = false,
+  hasDiagnostics = false,
 ) {
   return [
     {
@@ -58,6 +62,15 @@ export function getSettingsGroups(
         { to: "/settings/vault", label: "Vault", icon: Vault },
         { to: "/settings/mcp", label: "MCP", icon: Agents },
         { to: "/settings/agents", label: "Agents", icon: Terminal },
+        ...(hasDiagnostics
+          ? [
+              {
+                to: "/settings/diagnostics",
+                label: "Diagnostics",
+                icon: Diagnostics,
+              } as const,
+            ]
+          : []),
         // Debug exists only in development builds.
         ...(import.meta.env.DEV
           ? [{ to: "/settings/debug", label: "Debug", icon: Bug } as const]
@@ -107,10 +120,14 @@ export function getSettingsPages(
   view: SettingsNavigationView,
   hasCodeHost = false,
   hasCalendar = false,
+  hasDiagnostics = false,
 ) {
-  return getSettingsGroups(view, hasCodeHost, hasCalendar).flatMap(
-    (group) => group.pages,
-  );
+  return getSettingsGroups(
+    view,
+    hasCodeHost,
+    hasCalendar,
+    hasDiagnostics,
+  ).flatMap((group) => group.pages);
 }
 
 /**
@@ -135,6 +152,7 @@ export function SettingsNavigation({
     view,
     codeHosts.length > 0,
     calendars.length > 0,
+    hasLocalLogsBridge(),
   );
 
   if (view === "narrow") {

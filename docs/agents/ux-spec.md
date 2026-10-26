@@ -136,6 +136,7 @@ The pages sit in three groups, **App**, **Work** and **Data**, in this order. Pu
 | App   | Vault        | Vault                          | `/settings/vault`        |
 | App   | MCP          | MCP                            | `/settings/mcp`          |
 | App   | Agents       | Agents                         | `/settings/agents`       |
+| App   | Diagnostics  | Diagnostics                    | `/settings/diagnostics`  |
 | App   | Debug        | Debug                          | `/settings/debug`        |
 | Work  | Backlog      | Backlog                        | `/settings/backlog`      |
 | Work  | Workflow     | Workflow                       | `/settings/workflow`     |
@@ -143,6 +144,14 @@ The pages sit in three groups, **App**, **Work** and **Data**, in this order. Pu
 | Work  | Calendar     | Calendar                       | `/settings/calendar`     |
 | Data  | Time entries | Import and export time entries | `/settings/time-entries` |
 | Data  | Sync review  | Sync review                    | `/settings/sync-review`  |
+
+Diagnostics is listed only in the desktop app. Its tabs are **Overview · Events · Actions · Settings**, and a tab shows once it is built: for now only **Settings**, where the page opens. Settings holds the local log file's controls (ADR 0014), and each saves when changed, with no Save button:
+
+- **Write events to a local file**: a switch, off by default. The files stay on this computer.
+- **Keep logs for**: 1, 7, 30 or 90 days. **Size limit**: 100 MB, 250 MB or 1 GB.
+- **Include sensitive fields**: a switch, off by default. It adds scrubbed error messages and time-entry durations.
+- **Storage**: the bytes used, the file count and the oldest day, with **Open folder** (main opens it; the page never gets the path) and **Delete all logs**, which asks first.
+- A refused save shows "Couldn't save the setting. The log settings stay as they were." and the controls keep the stored values. When writing stopped on a full disk, a missing permission or a failed write, a warning gives the reason and says to turn the switch off and on again, or restart Ajour, once it is fixed.
 
 The Plugins page tabs are **All · Backlog · Code hosts · Calendars · Agent tasks · Schemas**. The tabs wrap on narrow windows. Agent task plugins can be downloaded from the catalog. A plugin a source lists that this Ajour version can't read, or that an earlier source already lists, is left out, and the page names it.
 

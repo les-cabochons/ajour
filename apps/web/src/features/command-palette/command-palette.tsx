@@ -21,6 +21,7 @@ import {
 } from "@/features/command-palette/command-palette-items";
 import { ProjectFormDialog } from "@/features/projects/project-form-dialog";
 import { getSettingsPages } from "@/features/settings/settings-navigation";
+import { hasLocalLogsBridge } from "@/features/settings/use-local-logs";
 import { openNewEntryEditor } from "@/features/time/new-entry-request";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
 import { withEventAttribution } from "@/lib/wide-events";
@@ -395,6 +396,7 @@ export function CommandPalette() {
           isNarrowView ? "narrow" : "wide",
           false,
           hasCalendar,
+          hasLocalLogsBridge(),
         ).filter((page) => page.to.startsWith("/settings/")),
         platform,
         settleOpensDialog,

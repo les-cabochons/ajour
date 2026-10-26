@@ -90,6 +90,7 @@ const IPC_CHANNELS = {
   "ajour:get-logs-status": { event: "logs.status", mode: "invoke" },
   "ajour:configure-logs": { event: "logs.configure", mode: "invoke" },
   "ajour:delete-all-logs": { event: "logs.delete_all", mode: "invoke" },
+  "ajour:open-logs-folder": { event: "logs.open_folder", mode: "invoke" },
   // The renderer's wide events, in batches for the local log file (#440).
   // Each batch it takes is counted on logs.sweep instead of emitting its own
   // event, which would add a line to the file for every batch forwarded.

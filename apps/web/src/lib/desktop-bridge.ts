@@ -234,6 +234,8 @@ declare global {
       ) => Promise<DesktopLogsStatus>;
       /** Delete all logs: the folder goes. */
       deleteAllLogs?: (trace?: TraceCarrier) => Promise<DesktopLogsStatus>;
+      /** Shows the log folder in the file manager. Main opens it; the path never reaches the page. */
+      openLogsFolder?: (trace?: TraceCarrier) => Promise<void>;
       /**
        * Sends a batch of the renderer's wide events to the local log file,
        * one way: it never waits for main (#440).

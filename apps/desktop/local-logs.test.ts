@@ -91,6 +91,7 @@ async function mainProcess({
   env = {},
   lock = true,
   storedSettings,
+  openPath = async () => "",
 }: {
   record?: boolean;
   env?: Record<string, string>;
@@ -98,6 +99,8 @@ async function mainProcess({
   lock?: boolean;
   /** Settings already stored in the user data folder by an earlier launch. */
   storedSettings?: Record<string, unknown>;
+  /** Electron's `shell.openPath`: an empty string, or why it failed. */
+  openPath?: (directory: string) => Promise<string>;
 } = {}) {
   const userData = await userDataFolder();
   if (storedSettings) {
@@ -122,6 +125,7 @@ async function mainProcess({
   };
   const context = vm.createContext({
     path,
+    shell: { openPath },
     process: { env, platform: "win32" },
     app: {
       getPath: (name: string) => (name === "home" ? os.homedir() : userData),
@@ -489,10 +493,53 @@ describe("the logs channels", () => {
     ]);
   });
 
+  it("logs.open_folder: main opens the log folder, makes it first, and answers no path", async () => {
+    const opened: string[] = [];
+    const main = await mainProcess({
+      openPath: async (directory) => {
+        opened.push(directory);
+        return "";
+      },
+    });
+
+    await expect(
+      main.invoke("ajour:open-logs-folder"),
+    ).resolves.toBeUndefined();
+
+    expect(opened).toEqual([main.directory]);
+    await expect(readdir(main.directory)).resolves.toEqual([]);
+    expect(main.recorded).toMatchObject([
+      {
+        name: "logs.open_folder",
+        kind: "ipc",
+        outcome: "ok",
+        ipc: { channel: "ajour:open-logs-folder" },
+      },
+    ]);
+    expect(JSON.stringify(main.recorded)).not.toContain(main.userData);
+  });
+
+  it("logs.open_folder: a folder the file manager can't open is a failed call that names no path", async () => {
+    const main = await mainProcess({
+      openPath: async (directory) => `Failed to open ${directory}`,
+    });
+
+    const error = await main
+      .invoke("ajour:open-logs-folder")
+      .catch((thrown: Error) => thrown);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).not.toContain(main.userData);
+    expect(main.recorded).toMatchObject([
+      { name: "logs.open_folder", outcome: "error" },
+    ]);
+  });
+
   it.each([
     "ajour:get-logs-status",
     "ajour:configure-logs",
     "ajour:delete-all-logs",
+    "ajour:open-logs-folder",
   ])("%s refuses a window other than the active one", async (channel) => {
     const main = await mainProcess();
 
