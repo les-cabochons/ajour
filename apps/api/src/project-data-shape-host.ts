@@ -73,7 +73,7 @@ export class ProjectDataShapePluginManager {
     this.pluginDirectories = options.pluginDirectories ?? [];
     this.events = options.events;
     this.admission = { admitPluginApi4: options.admitPluginApi4 ?? false };
-    const runtime = options.runtime ?? new WorkerPluginRuntime();
+    const runtime: PluginRuntime = options.runtime ?? new WorkerPluginRuntime();
     this.runsPluginApi4 = runtime.runsPluginApi4 === true;
     this.workers = new PluginWorkerLifetime({
       name: "Schema plugin",

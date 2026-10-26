@@ -562,6 +562,14 @@ and persistence remain in the web domain and local store. A file whose shape
 names no project imports only through Import tasks… on a project, into that
 project.
 
+A shape is either a data shape API 1 package, which runs in a worker like a
+plugin API 3 package until the cut-over (#403), or a plugin API 4 package that
+declares the `projectDataShape` capability in its main manifest, with no
+network, no connection fields and Load when needed. The data-shape host starts
+both through the runtime port, so the split runtime sends an API 4 shape to its
+own sandboxed renderer. Development builds admit API 4 shapes; a packaged build
+does not. The dataset contract is the same for both.
+
 Provider-specific shape plugins are maintained outside Ajour. The Workday
 implementation lives in `les-cabochons/ajp-workday`, imports no Ajour source,
 and targets this versioned host protocol. Ajour does not compile or bundle it.
