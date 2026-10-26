@@ -3,7 +3,8 @@ name: Tests
 # Runs Ajour's test suites on every pull request and on every push to main.
 # The unit suites (Vitest across the workspace) run on Windows and macOS, the
 # two systems the desktop app ships on. The Playwright acceptance suite runs in
-# Chromium on one of them.
+# Chromium on one of them. The plugin sandbox check runs in Electron on both,
+# for pull requests that can change what it checks.
 on:
   push:
     branches:
@@ -157,14 +158,16 @@ jobs:
             apps/web/test-results
           retention-days: 7
 
-  # Decides whether a pull request can change what the desktop package holds.
-  # Pushes and manual runs always package.
+  # Decides whether a pull request can change what the desktop package holds,
+  # and what the plugin sandbox check runs. Pushes and manual runs always
+  # package and check.
   desktop-changes:
     name: Desktop package changes
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       package: ${{ steps.diff.outputs.package }}
+      sandbox: ${{ steps.diff.outputs.sandbox }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -180,6 +183,7 @@ jobs:
         run: |
           if [ "$EVENT" != "pull_request" ]; then
             echo "package=true" >> "$GITHUB_OUTPUT"
+            echo "sandbox=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           changed=$(git diff --name-only "origin/$BASE_REF...HEAD")
@@ -188,6 +192,14 @@ jobs:
             echo "package=true" >> "$GITHUB_OUTPUT"
           else
             echo "package=false" >> "$GITHUB_OUTPUT"
+          fi
+          # The check runs main's plugin runtime, its IPC and its broker
+          # transport (apps/desktop), the local API with the plugin host and
+          # the broker (apps/api), and the SDK and shared packages (packages).
+          if echo "$changed" | grep -qE '^(apps/desktop/|apps/api/|packages/|\.github/workflows/|pnpm-lock\.yaml$|package\.json$)'; then
+            echo "sandbox=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sandbox=false" >> "$GITHUB_OUTPUT"
           fi
 
   # Packages an unpacked app on both systems and reads its Electron fuses back,
@@ -258,10 +270,11 @@ jobs:
           fi
           ELECTRON_RUN_AS_NODE=1 "./$binary" -e "console.log('node', process.version)"
 
-  # electron:
-  #   Placeholder for the real-Electron suites (the malicious-plugin and
-  #   lifecycle suites of the Plugin API 4 migration, ticket #392). They will
-  #   run on windows-latest and macos-latest, against fixture plugins and
-  #   fixture HTTP services, and gate releases. This job is not implemented
-  #   yet: add it here, next to `unit` and `acceptance`, so one workflow shows
-  #   every suite a pull request must pass.
+  # The real-Electron suites of seam 3 (#392), the malicious-plugin and the
+  # lifecycle suite, on Windows and macOS, and on Linux as informational.
+  # `plugin-sandbox.yml` holds the job, which the release workflows run too.
+  plugin-sandbox:
+    name: Plugin sandbox
+    needs: desktop-changes
+    if: needs.desktop-changes.outputs.sandbox == 'true'
+    uses: ./.github/workflows/plugin-sandbox.yml

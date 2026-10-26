@@ -171,11 +171,21 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  # The malicious-plugin and lifecycle suites (#392) on the promoted commit.
+  # No release publishes unless they pass on Windows and macOS.
+  plugin-sandbox:
+    name: Plugin sandbox
+    needs: plan
+    uses: ./.github/workflows/plugin-sandbox.yml
+    with:
+      ref: ${{ needs.plan.outputs.target_sha }}
+
   release:
     name: Publish stable release
     needs:
       - plan
       - package
+      - plugin-sandbox
     runs-on: ubuntu-latest
     permissions:
       contents: write

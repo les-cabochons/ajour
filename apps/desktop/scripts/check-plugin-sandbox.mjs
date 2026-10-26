@@ -6,7 +6,12 @@
 // own in the temp folder. It reads the checks' `CHECK {json}` lines, holds
 // them to what the tickets ask, and checks that no process the app started
 // outlives its quit. It ends only the processes it started. Exits 1 when
-// anything fails.
+// anything fails. On a system Ajour doesn't sandbox plugins on, such as
+// Linux, it checks only that plugins stay off.
+//
+// CI runs it on Windows and macOS, and on Linux as informational, and no
+// release publishes unless it passes (`.github/workflows/plugin-sandbox.yml`,
+// #392).
 //
 //   corepack pnpm --filter @ajour/desktop check:plugin-sandbox
 import { spawn } from "node:child_process";
@@ -129,10 +134,19 @@ async function runCheck(
 }
 
 const isWindows = process.platform === "win32";
+/** The systems Ajour sandboxes plugins on, as `plugin-sandbox.cjs` says. */
+const SANDBOXED_PLATFORMS = new Set(["win32", "darwin"]);
+const NO_SANDBOX_OFF = {
+  reason: "Ajour was started with --no-sandbox.",
+  cause: "launch_flag",
+};
+const UNSUPPORTED_OS_OFF = {
+  reason: "Plugins run only on Windows and macOS.",
+  cause: "unsupported_os",
+};
 
-// 1. As Ajour starts.
-{
-  process.stdout.write("\n== Plugins in their sandbox\n");
+/** 1. As Ajour starts. */
+async function checkSandbox() {
   const { findings, exit, stderr, left, pids } = await runCheck(
     "sandboxed",
     [],
@@ -355,23 +369,22 @@ const isWindows = process.platform === "win32";
   );
 }
 
-// 2. With --no-sandbox.
-{
-  process.stdout.write("\n== Started with --no-sandbox\n");
-  const { findings, exit, stderr, left, pids } = await runCheck("no-sandbox", [
-    "--no-sandbox",
-  ]);
+/**
+ * 2. Plugins stay off: started with --no-sandbox, or on a system Ajour
+ * doesn't sandbox them on.
+ */
+async function checkPluginsOff(name, args, { reason, cause }) {
+  const { findings, exit, stderr, left, pids } = await runCheck(name, args);
   if (findings.error) process.stdout.write(`${findings.error.error}\n`);
   expect(exit.code === 0, "the check ran to the end", { exit, stderr });
-  const off = findings["no-sandbox"] ?? {};
+  const off = findings["plugins-off"] ?? {};
   expect(
-    off.unavailableReason === "Ajour was started with --no-sandbox.",
+    off.unavailableReason === reason,
     "the runtime turns plugins off, with the reason",
     off,
   );
   expect(
-    off.sandbox?.state === "off" &&
-      off.sandbox.reason === "Ajour was started with --no-sandbox.",
+    off.sandbox?.state === "off" && off.sandbox.reason === reason,
     "the plugins overview says so",
     off.sandbox,
   );
@@ -395,7 +408,7 @@ const isWindows = process.platform === "win32";
   );
   expect(
     (findings.quitting?.events ?? []).includes(
-      "plugin_sandbox.off refused launch_flag",
+      `plugin_sandbox.off refused ${cause}`,
     ),
     "an event records why plugins are off",
     findings.quitting?.events,
@@ -406,9 +419,8 @@ const isWindows = process.platform === "win32";
   });
 }
 
-// 3. The renderer host's lifecycle (#391).
-{
-  process.stdout.write("\n== The renderer host's lifecycle\n");
+/** 3. The renderer host's lifecycle (#391). */
+async function checkLifecycle() {
   const { findings, exit, stderr, left, pids } = await runCheck(
     "lifecycle",
     ["--lifecycle"],
@@ -548,9 +560,8 @@ const isWindows = process.platform === "win32";
   );
 }
 
-// 4. The orphan sweep: main is killed with a renderer open, then relaunched.
-{
-  process.stdout.write("\n== Orphans after a forced kill of main\n");
+/** 4. The orphan sweep: main is killed with a renderer open, then relaunched. */
+async function checkOrphanSweep() {
   // A process that isn't Ajour's, recorded as if it were: never ended.
   const decoy = spawn(
     process.execPath,
@@ -623,6 +634,11 @@ const isWindows = process.platform === "win32";
     "the sweep forgets the record, and an event says what it ended",
     sweep,
   );
+  expect(
+    swept.pids.length > 0 && swept.left.length === 0,
+    "the relaunch's quit leaves no process behind",
+    { pids: swept.pids, left: swept.left },
+  );
   // Only what this script started.
   decoy.kill();
   for (const pid of standInLeft) {
@@ -636,6 +652,37 @@ const isWindows = process.platform === "win32";
     () => undefined,
   );
 }
+
+// Windows and macOS run every section. Elsewhere plugins stay off (#381), so
+// the check proves only that.
+const sections = SANDBOXED_PLATFORMS.has(process.platform)
+  ? [
+      ["Plugins in their sandbox", checkSandbox],
+      [
+        "Started with --no-sandbox",
+        () => checkPluginsOff("no-sandbox", ["--no-sandbox"], NO_SANDBOX_OFF),
+      ],
+      ["The renderer host's lifecycle", checkLifecycle],
+      ["Orphans after a forced kill of main", checkOrphanSweep],
+    ]
+  : [
+      [
+        `Plugins stay off on ${process.platform}`,
+        () => checkPluginsOff("unsupported-os", [], UNSUPPORTED_OS_OFF),
+      ],
+      [
+        "Started with --no-sandbox",
+        () => checkPluginsOff("no-sandbox", ["--no-sandbox"], NO_SANDBOX_OFF),
+      ],
+    ];
+const timings = [];
+for (const [title, check] of sections) {
+  process.stdout.write(`\n== ${title}\n`);
+  const startedAt = Date.now();
+  await check();
+  timings.push(`${title}: ${((Date.now() - startedAt) / 1_000).toFixed(1)} s`);
+}
+process.stdout.write(`\n${timings.join("\n")}\n`);
 
 process.stdout.write(
   failures.length === 0

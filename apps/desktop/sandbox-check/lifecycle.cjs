@@ -500,6 +500,10 @@ async function orphanSweep() {
     sweepEvent: emitted.find((event) => event.name === "plugin_renderer.sweep")
       ?.sweep,
   });
+  // The script checks that none of these outlives the quit.
+  report("quitting", {
+    appPids: app.getAppMetrics().map((metric) => metric.pid),
+  });
   app.quit();
 }
 

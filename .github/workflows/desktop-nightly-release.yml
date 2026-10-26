@@ -151,11 +151,18 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # The malicious-plugin and lifecycle suites (#392) on the release's commit.
+  # No release publishes unless they pass on Windows and macOS.
+  plugin-sandbox:
+    name: Plugin sandbox
+    uses: ./.github/workflows/plugin-sandbox.yml
+
   release:
     name: Publish nightly release
     needs:
       - plan
       - package
+      - plugin-sandbox
     runs-on: ubuntu-latest
     permissions:
       contents: write

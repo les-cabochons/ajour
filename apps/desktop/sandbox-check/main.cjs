@@ -281,10 +281,12 @@ async function main() {
     platform: process.platform,
   });
 
-  if (mode === "no-sandbox") {
+  // Plugins stay off when started with --no-sandbox, and on a system Ajour
+  // doesn't sandbox them on, such as Linux.
+  if (runtime.unavailableReason() !== undefined) {
     const saved = await saveConnection("fixture-tracker");
     const overview = await request("GET", "/api/plugins");
-    report("no-sandbox", {
+    report("plugins-off", {
       unavailableReason: runtime.unavailableReason() ?? null,
       sandbox: overview.body.sandbox ?? null,
       groupsEnabled: overview.body.connectionGroups.map(

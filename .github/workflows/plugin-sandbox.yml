@@ -1,0 +1,115 @@
+name: Plugin sandbox
+
+# Seam 3 of the Plugin API 4 migration (#381, #392): the real-Electron check of
+# the plugin sandbox, `check:plugin-sandbox`. It runs the malicious-plugin suite
+# (every way out of a plugin's sandboxed renderer, forged IPC, the broker's
+# refusals) and the lifecycle suite (start modes, limits, the crash budget, a
+# normal quit, a forced kill of main and the orphan sweep) in Electron, with
+# fixture plugins and fixture HTTP services, and checks that no plugin process
+# outlives any case.
+#
+# Windows and macOS gate: the `Tests` workflow calls this one for pull requests
+# that can change the plugin host, the broker or the SDK, and both release
+# workflows refuse to publish unless it passes. Linux runs it as informational
+# only: plugins stay off there (#381), and the check proves they do.
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to check. Empty checks the caller's commit.
+        type: string
+        default: ""
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Plugin sandbox (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    # A Linux failure is reported, never a gate.
+    continue-on-error: ${{ matrix.informational }}
+    env:
+      # The check runs Electron, so download its binary.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: ""
+    strategy:
+      # A failure on one system must not hide the result on the others.
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            informational: false
+          - name: macOS
+            os: macos-latest
+            informational: false
+          - name: Linux, informational
+            os: ubuntu-latest
+            informational: true
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          # Electron 44 runs the app on Node 24. Fetch the newest 24.x patch
+          # rather than the older one cached on the runner.
+          node-version: 24
+          check-latest: true
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install pnpm on Windows
+        if: runner.os == 'Windows'
+        run: npm install --global pnpm@10.7.0
+
+      - name: Find the pnpm store
+        id: pnpm-store
+        shell: bash
+        run: echo "path=$(corepack pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: corepack pnpm install --frozen-lockfile
+
+      - name: Let Chromium's sandbox start on Linux
+        # Ubuntu 24.04 keeps unprivileged user namespaces from processes
+        # AppArmor doesn't know, and Chromium's sandbox needs them. Without
+        # them Electron starts only with --no-sandbox, which the check refuses.
+        if: runner.os == 'Linux'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Run the plugin sandbox check
+        # Windows and macOS runners have a desktop session, so Electron needs
+        # no virtual display there. Linux gets one from xvfb-run.
+        shell: bash
+        env:
+          LOG: ${{ runner.temp }}/plugin-sandbox.log
+        run: |
+          command=(corepack pnpm --filter @ajour/desktop check:plugin-sandbox)
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            command=(xvfb-run --auto-servernum "${command[@]}")
+          fi
+          "${command[@]}" 2>&1 | tee "$LOG"
+
+      - name: Upload the check's log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-sandbox-log-${{ runner.os }}
+          path: ${{ runner.temp }}/plugin-sandbox.log
+          retention-days: 14
