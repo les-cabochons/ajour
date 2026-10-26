@@ -969,8 +969,7 @@ export class PluginManager {
                   pluginId,
                   new Map([[pluginId, plugin.access.summary]]),
                 )
-              )
-                ?.settings ?? DEFAULT_PLUGIN_RUNTIME_SETTINGS,
+              )?.settings ?? DEFAULT_PLUGIN_RUNTIME_SETTINGS,
             );
             const prepared = this.prepareApi4(
               pluginId,

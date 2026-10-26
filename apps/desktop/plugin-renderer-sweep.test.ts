@@ -303,9 +303,10 @@ describe("asking the system about the recorded processes", () => {
     );
   });
 
-  it("reads macOS start times in the C locale, whatever language the user's is", async () => {
+  it("reads macOS start times in the C locale, whatever language the user's is, keeping the rest of the environment", async () => {
     let seenEnv: Record<string, string | undefined> | undefined;
     const found = await describeProcesses([321], "darwin", {
+      env: { TZ: "Europe/Paris", LC_ALL: "fr_FR.UTF-8" },
       run: async (file, _args, env) => {
         expect(file).toBe("/bin/ps");
         seenEnv = env;
@@ -313,7 +314,7 @@ describe("asking the system about the recorded processes", () => {
       },
     });
 
-    expect(seenEnv).toEqual({ LC_ALL: "C" });
+    expect(seenEnv).toEqual({ TZ: "Europe/Paris", LC_ALL: "C" });
     expect(found).toEqual([
       {
         pid: 321,

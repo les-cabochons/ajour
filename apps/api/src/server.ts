@@ -1080,11 +1080,7 @@ async function getOverview(
       secretManifestOf,
     ),
   );
-  const listed = await storage.getPluginsOverview(
-    plugins,
-    unavailable,
-    access,
-  );
+  const listed = await storage.getPluginsOverview(plugins, unavailable, access);
   const overview = {
     ...listed,
     connectionGroups: listed.connectionGroups.map((group) => {
@@ -1742,6 +1738,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           },
         });
       }
+      // Unsigned "Always ready" plugins close, or start again, with the switch.
+      await pluginManager.syncReadiness();
       writeJson(response, 200, await getOverview(storage, pluginManager));
     },
 

@@ -246,6 +246,7 @@ describe("ProjectDataShapePluginManager", () => {
         manifest?: Record<string, unknown>;
         admitPluginApi4?: boolean;
         runtime?: PluginRuntime;
+        requestTimeoutMs?: number;
       } = {},
     ) {
       const root = await tempDir();
@@ -262,10 +263,57 @@ describe("ProjectDataShapePluginManager", () => {
         pluginDirectories: [pluginDirectory],
         admitPluginApi4: options.admitPluginApi4 ?? true,
         runtime: options.runtime ?? new InProcessPluginRuntime(),
+        ...(options.requestTimeoutMs
+          ? { requestTimeoutMs: options.requestTimeoutMs }
+          : {}),
       });
       managers.push(created);
       return created;
     }
+
+    /** A runtime whose runs never settle until they are terminated. */
+    function hangingRuntime() {
+      const terminated: string[] = [];
+      const runtime: PluginRuntime = {
+        runsPluginApi4: true,
+        start: (): PluginRun => ({
+          settled: new Promise<never>(() => {}),
+          terminate: async (reason) => {
+            terminated.push(reason);
+          },
+        }),
+      };
+      return { runtime, terminated };
+    }
+
+    // The data shape host shares the lifecycle's runtime but not its crash
+    // budget: its runs are one-shot and asked for by the user, so the
+    // limits that apply are the worker lifetime's own.
+    it("times a run out and terminates it, as a plugin host call does", async () => {
+      const { runtime, terminated } = hangingRuntime();
+      const api4 = await manager({ runtime, requestTimeoutMs: 20 });
+
+      await expect(
+        api4.exportProjects("workday-project-data", EXPORTED_PROJECTS),
+      ).rejects.toThrow("timed out while handling exportProjects");
+      expect(terminated).toEqual(["timeout"]);
+      expect(api4.activeOperationCount).toBe(0);
+    });
+
+    it("refuses a fifth run of one plugin at once", async () => {
+      const { runtime } = hangingRuntime();
+      const api4 = await manager({ runtime, requestTimeoutMs: 60_000 });
+
+      const running = Array.from({ length: 4 }, () =>
+        api4.exportProjects("workday-project-data", EXPORTED_PROJECTS),
+      );
+      running.forEach((run) => run.catch(() => {}));
+      await expect(
+        api4.exportProjects("workday-project-data", EXPORTED_PROJECTS),
+      ).rejects.toThrow("Too many operations");
+      await api4.cancelOperations(new Error("done"));
+      await Promise.allSettled(running);
+    });
 
     it("exports and imports the same datasets as an API 1 package", async () => {
       const api1Root = await tempDir();

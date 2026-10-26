@@ -257,7 +257,7 @@ describe("the renderer host's lifecycle, through the app API", () => {
           body: { connection?: { lastError?: string } };
         }>;
     };
-    return { server, request, group, connect, fake, clock, sink };
+    return { server, request, group, connect, fake, clock, sink, root };
   }
 
   describe("calls", () => {
@@ -444,6 +444,71 @@ describe("the renderer host's lifecycle, through the app API", () => {
       await request("POST", "/api/plugins/resident/resume");
       expect(readyOf(fake)).toHaveLength(1);
       expect(fake.seen.stopped.at(-1)).toEqual([]);
+    });
+  });
+
+  describe("what gates a plugin that is kept ready", () => {
+    it('keeps an "Always ready" plugin held for consent off until the user allows it', async () => {
+      const { fake, request, root } = await setup({
+        plugins: [manifest("resident")],
+      });
+      // Turning it on records what the user allowed: a plugin that starts
+      // when needed.
+      await request("POST", "/api/plugins/resident/activation", {
+        enabled: true,
+      });
+      expect(readyOf(fake)).toEqual([]);
+
+      // An update since then makes it "Always ready", which reaches more.
+      await writeFile(
+        path.join(root, "resident", "plugin.json"),
+        JSON.stringify(manifest("resident", { start: "alwaysReady" })),
+      );
+      // Anything that syncs the ready list, here the plugin system's switch.
+      await request("POST", "/api/plugins/activation", { enabled: false });
+      await request("POST", "/api/plugins/activation", { enabled: true });
+      const held = await request("GET", "/api/plugins");
+      expect(
+        (
+          held.body as {
+            connectionGroups: {
+              plugin: { id: string };
+              pendingAccess?: unknown;
+            }[];
+          }
+        ).connectionGroups.find((group) => group.plugin.id === "resident")
+          ?.pendingAccess,
+      ).toBeDefined();
+      expect(readyOf(fake)).toEqual([]);
+      expect(fake.seen.stopped.at(-1)).toEqual(["resident"]);
+
+      await request("POST", "/api/plugins/resident/activation", {
+        enabled: true,
+      });
+      expect(readyOf(fake).map((plugin) => plugin.pluginId)).toEqual([
+        "resident",
+      ]);
+      expect(fake.seen.stopped.at(-1)).toEqual([]);
+    });
+
+    it('does not keep an unsigned "Always ready" plugin while unsigned plugins are deactivated', async () => {
+      const { fake, request } = await setup({
+        plugins: [manifest("resident", { start: "alwaysReady" })],
+      });
+      await until(() => readyOf(fake).length === 1);
+
+      await request("POST", "/api/plugins/unsigned-activation", {
+        enabled: false,
+      });
+      expect(readyOf(fake)).toEqual([]);
+      expect(fake.seen.stopped.at(-1)).toEqual(["resident"]);
+
+      await request("POST", "/api/plugins/unsigned-activation", {
+        enabled: true,
+      });
+      expect(readyOf(fake).map((plugin) => plugin.pluginId)).toEqual([
+        "resident",
+      ]);
     });
   });
 

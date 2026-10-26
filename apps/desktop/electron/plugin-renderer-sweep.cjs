@@ -178,7 +178,7 @@ async function describeProcesses(
     const output = await ask(
       "/bin/ps",
       ["-o", "pid=,lstart=,comm=", "-p", pids.join(",")],
-      { LC_ALL: "C" },
+      { ...env, LC_ALL: "C" },
     ).catch((error) => (error?.code === 1 ? "" : Promise.reject(error)));
     return output.split("\n").flatMap((line) => {
       // pid, then "Sun Oct 25 15:39:17 2026", then the executable's path.
