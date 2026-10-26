@@ -366,14 +366,54 @@ API 4 packages in development builds of the desktop app, until the cut-over
   of exit and counts as a blocked attempt in the broker's records
   (`PluginRuntimeHost.recordBlocked`), at most 20 a second per plugin. The
   renderer goes on.
-- **Lifecycle, for now** (#391 adds start modes, limits and the crash
-  budget): a renderer opens at its plugin's first call and closes 2 minutes
-  after its last, at a timeout, when its package moves, and as Ajour quits.
-  A settled or cancelled run stops its own worker only. A
-  `render-process-gone` fails the renderer's runs as `crashed` with its
-  cause. The real-Electron check `apps/desktop/scripts/check-plugin-sandbox.mjs`
+- **Lifecycle** (#391, decided in #217). Each run carries its plugin's
+  `lifecycle`, the Advanced section over the manifest's `runtime`: "Load
+  when needed" or "Always ready", and the memory ceiling (the user's, the
+  manifest's, or 256 MB; 64 MB to 2 GB). A renderer reads it as it opens,
+  so a change takes effect at the next start. A "Load when needed"
+  renderer opens at its plugin's first call and closes 2 minutes after its
+  last. The API sends the runtime the whole list of plugins to keep ready
+  (`PluginRuntime.keepReady`) as it starts and after every change to it
+  (activation, the Advanced section, an install, a suspension, Turn back
+  on): those open now and never close for being idle, and one taken off
+  closes once idle. A renderer also closes at a timeout, when its package
+  moves, and as Ajour quits; main samples each open renderer's memory
+  every 5 s (`app.getAppMetrics`, private bytes on Windows, the working
+  set elsewhere) and closes one above its ceiling, its runs failing
+  `crashed` with `memory`. A settled or cancelled run stops its own worker
+  only. Main holds each page's `WebContentsView`: one nothing holds is
+  collected, and its page closes with the runs in it.
+- **Limits and the crash budget** live in the API. The lifetime runs at
+  most 4 operations of one plugin at once and refuses a fifth as
+  `capacity`; API 3 packages also keep sharing 4 worker threads per host.
+  A crash (any `render-process-gone`) or a memory kill reaches the API
+  through `PluginRuntimeHost.recordStopped`, a timeout from the lifetime
+  itself; `PluginStopBudget` (`apps/api/src/plugin-stop-budget.ts`)
+  suspends a plugin at its third stop within 10 minutes. A cancel never
+  counts. A suspended plugin's operations are refused at once as
+  `suspended`, it leaves the "Always ready" list, and the overview reports
+  `suspended: { cause, at }` until `POST /api/plugins/:id/resume` or a
+  restart: the budget is kept in memory only. Nothing restarts a crashed
+  renderer eagerly; the next call opens it.
+- **Quit**: `stopAppApiServer` refuses new requests, then gives the
+  requests that run plugin operations and the operations themselves up to
+  5 s to finish (`pluginDrainMs`) while the agent runner stops, cancels
+  what is left, and main closes every renderer.
+- **Orphans**: main records each live plugin renderer's process id and
+  start time in `plugin-renderers.json` in user data
+  (`plugin-renderer-sweep.cjs`). Right after the single-instance lock, the
+  launch's sweep ends a recorded process that still runs once the system
+  says it is the same program, started then (`Get-Process` on Windows,
+  `ps` on macOS), so a process that took a freed id is never touched, and
+  waits on the ids it ended. No plugin renderer opens before it ends.
+  Chromium ends every child when main dies, even on a forced kill (#217),
+  so this guards what that misses.
+- The real-Electron check `apps/desktop/scripts/check-plugin-sandbox.mjs`
   (`corepack pnpm --filter @ajour/desktop check:plugin-sandbox`) proves the
-  above with fixture plugins and seeds seam 3 (#392).
+  above with fixture plugins: `sandbox-check/main.cjs` the sandbox, and
+  `sandbox-check/lifecycle.cjs` the start modes, limits, crash budget,
+  quit drain and the sweep across a forced kill of main. It seeds seam 3
+  (#392).
 
 - **The port** is `CredentialBrokerPort.forOperation(caller)`
   (`apps/api/src/broker-port.ts`), with the plugin id from the runtime,

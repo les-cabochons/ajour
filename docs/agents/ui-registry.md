@@ -167,6 +167,15 @@ hero, the capability band is a plain line of text ("External service → Plugin
 → Local backlog") above the feature badges. Never fetch remote images from the
 renderer. Dialogs and `MessagePanel` notices are the only framed surfaces.
 
+### Plugin Advanced section and the suspended notice
+
+Files: `apps/web/src/features/settings/plugin-runtime-settings.tsx`, placed by `settings-plugins-page.tsx`
+Last updated: 2026-10-26
+
+**Advanced.** `PluginAdvancedSettings` is the last `settings-section` of a plugin API 4 plugin's page (`data-plugin-advanced`), shown only while the overview group has `runtime`: the `settings-section-title` "Advanced" and its description "Changes take effect the next time the plugin starts.", then an `AppPanel` of two `SettingRow`s. Start is an `OptionSelect` (`w-72`) of "Plugin's choice (<declared>)", "Always ready" and "Load when needed", saved on pick. Memory ceiling is a numeric `Input` (`w-24`) whose placeholder is the declared ceiling, saved on blur or Enter when the value changed; `readMemoryCeiling` reads it, and an invalid value shows its error as a `role="alert"` line in the row's description, in `text-destructive`, and keeps what was typed. Both disable while a plugin command runs. Patterns used: `AppPanel`, `SettingRow`, `OptionSelect`, `Input`; nothing new.
+
+**Suspended notice.** `PluginSuspendedNotice` sits in the detail header above the status messages while the group has `suspended` (`data-plugin-suspended`): a warning `MessagePanel` with the title line "This plugin keeps stopping" in `font-medium`, the reason from `suspensionReason(cause)`, and an outline `sm` Turn back on button, which runs the workflow's `resume` command. Patterns used: `MessagePanel`, `Button`; nothing new.
+
 ### Secret field and Vault
 
 Files: `apps/web/src/features/settings/secret-field.tsx`, `connection-form.tsx`, `connection-status-ui.tsx`, `settings-vault-page.tsx`; the state model is `apps/web/src/domain/plugins/secret-state.ts`, `connection-status.ts` and `vault-model.ts`

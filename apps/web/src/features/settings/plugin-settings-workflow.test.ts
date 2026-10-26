@@ -78,6 +78,8 @@ function dependencies() {
     }),
     subscribeCatalog: () => () => {},
     setPluginEnabled: unused,
+    setPluginRuntimeSettings: unused,
+    resumePlugin: unused,
     savePluginConnection: unused,
     deletePluginConnection: unused,
     removeConnectionSecrets: unused,

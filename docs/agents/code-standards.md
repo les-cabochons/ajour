@@ -77,9 +77,10 @@
   Ajour application source. Ajour owns Excel, CSV, and JSON serialization;
   shape plugins own only their export datasets and the mappings between
   canonical data and rows or imported sheets.
-- Run plugin operations in ephemeral worker threads. Do not add persistent
-  plugin child processes or load plugin modules into the API or Electron main
-  execution context.
+- Run plugin API 3 operations in ephemeral worker threads, and plugin API 4
+  operations in their plugin's sandboxed renderer, whose lifecycle main owns
+  (see `architecture.md`). Do not add other persistent plugin processes or
+  load plugin modules into the API or Electron main execution context.
 - Keep packaged plugin installation behind the Electron preload/IPC bridge.
   Let the parent process choose and read the file; never accept paths or archive
   bytes from the renderer or expose installation through the loopback HTTP API.

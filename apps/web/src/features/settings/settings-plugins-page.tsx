@@ -84,6 +84,10 @@ import {
 import { HeldArrivalsLine, TeamPickerDialog } from "./team-connection-ui";
 import { PluginAgentTasks } from "./agent-task-settings";
 import {
+  PluginAdvancedSettings,
+  PluginSuspendedNotice,
+} from "./plugin-runtime-settings";
+import {
   canInstallCatalogPlugin,
   canUpdateFromCatalog,
   PluginCapabilityBand,
@@ -857,6 +861,13 @@ export function SettingsPluginsPage({
               </p>
             </MessagePanel>
           ) : null}
+          <PluginSuspendedNotice
+            group={group}
+            disabled={isMutatingPlugin}
+            onTurnBackOn={() =>
+              void workflow.execute({ type: "resume", plugin: group.plugin })
+            }
+          />
           {renderMessages()}
           <PluginCapabilityBand entry={entry} />
         </PluginDetailHeader>
@@ -1243,6 +1254,18 @@ export function SettingsPluginsPage({
             </div>
           </section>
         ) : null}
+
+        <PluginAdvancedSettings
+          group={group}
+          disabled={isMutatingPlugin || Boolean(unavailableReason)}
+          onSave={(settings) =>
+            void workflow.execute({
+              type: "runtime",
+              plugin: group.plugin,
+              settings,
+            })
+          }
+        />
       </>
     );
   };

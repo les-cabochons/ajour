@@ -5,7 +5,9 @@ import {
   pluginConnectionSaveResponseSchema,
   pluginConnectionSaveRequestSchema,
   pluginActivationUpdateSchema,
+  pluginRuntimeSettingsUpdateSchema,
   pluginSystemActivationUpdateSchema,
+  type PluginRuntimeSettingsUpdate,
   pluginInstallResponseSchema,
   pluginUninstallResponseSchema,
   backlogSettleStatesRequestSchema,
@@ -373,6 +375,8 @@ export const APP_API_CLIENT = {
   fetchPluginsOverview: "plugin.list",
   getPluginsOverview: "plugin.list",
   setPluginEnabled: "plugin.activate",
+  setPluginRuntimeSettings: "plugin.runtime_update",
+  resumePlugin: "plugin.resume",
   setPluginSystemEnabled: "plugin_system.toggle",
   getBacklogSourceStatuses: "source_state.list",
   upsertBacklogSourceStatuses: "source_state.update",
@@ -776,6 +780,40 @@ export async function setPluginEnabled(
         method: "POST",
         body: JSON.stringify(payload),
       },
+      pluginsOverviewSchema,
+    ),
+  );
+}
+
+/**
+ * Saves a plugin API 4 plugin's Advanced section: Start and Memory ceiling,
+ * which its renderer reads at its next start.
+ */
+export async function setPluginRuntimeSettings(
+  pluginId: string,
+  settings: PluginRuntimeSettingsUpdate,
+): Promise<PluginsOverview> {
+  const payload = pluginRuntimeSettingsUpdateSchema.parse(settings);
+  return cachePluginsOverview(
+    await appApiRequest(
+      "setPluginRuntimeSettings",
+      `/api/plugins/${encodeURIComponent(pluginId)}/runtime`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+      pluginsOverviewSchema,
+    ),
+  );
+}
+
+/** Turn back on: a plugin that kept stopping runs again. */
+export async function resumePlugin(pluginId: string): Promise<PluginsOverview> {
+  return cachePluginsOverview(
+    await appApiRequest(
+      "resumePlugin",
+      `/api/plugins/${encodeURIComponent(pluginId)}/resume`,
+      { method: "POST" },
       pluginsOverviewSchema,
     ),
   );

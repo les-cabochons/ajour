@@ -21,6 +21,7 @@ import type {
   PluginCatalogSettings,
   ProjectDataShapePluginManifest,
   SwitchableCapability,
+  PluginRuntimeSettingsUpdate,
 } from "@ajour/shared";
 
 type HeldConnection = { pluginId: string; connectionId: string };
@@ -40,6 +41,8 @@ export type PluginSettingsDependencies = Pick<
   | "getPluginCatalogSettings"
   | "getProjectDataShapePlugins"
   | "setPluginEnabled"
+  | "setPluginRuntimeSettings"
+  | "resumePlugin"
   | "savePluginConnection"
   | "deletePluginConnection"
   | "removeConnectionSecrets"
@@ -93,6 +96,14 @@ type PluginSettingsCommand =
        */
       onHeldForReview?: (connectionId: string) => void;
     }
+  /** Saves the Advanced section: Start and Memory ceiling. */
+  | {
+      type: "runtime";
+      plugin: PluginManifest;
+      settings: PluginRuntimeSettingsUpdate;
+    }
+  /** Turn back on, for a plugin that kept stopping. */
+  | { type: "resume"; plugin: PluginManifest }
   | { type: "delete"; pluginId: string; connectionId: string }
   | {
       type: "removeSecrets";
@@ -114,6 +125,8 @@ type PluginSettingsCommand =
 /** Fallback error text when a command fails with a non-Error value. */
 const commandFailureMessages: Record<PluginSettingsCommand["type"], string> = {
   activate: "Unable to update the plugin.",
+  runtime: "Unable to save the plugin's advanced settings.",
+  resume: "Unable to turn the plugin back on.",
   save: "Unable to save the plugin connection.",
   delete: "Unable to delete the plugin connection.",
   removeSecrets: "Unable to remove the saved secret.",
@@ -418,6 +431,22 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
               : `${command.plugin.displayName} ${command.enabled ? "activated" : "deactivated"}.`,
             overview,
           );
+          break;
+        }
+        case "runtime": {
+          const overview = await deps.setPluginRuntimeSettings(
+            command.plugin.id,
+            command.settings,
+          );
+          finish(
+            `${command.plugin.displayName} uses these settings from its next start.`,
+            overview,
+          );
+          break;
+        }
+        case "resume": {
+          const overview = await deps.resumePlugin(command.plugin.id);
+          finish(`${command.plugin.displayName} turned back on.`, overview);
           break;
         }
         case "save": {
