@@ -258,10 +258,17 @@ The project and task picker of the entry editor, the Week Grid's new row and cal
 - A favorite is a task or a project the user starred. It is personal, like a pinned slot: a shared project's favorites stay on this computer. A task can be a favorite and a pinned task.
 - The star at the start of a row adds the row to favorites or removes it. A starred row always shows a filled star; other rows show the outline on hover and highlight. Pressing the star does not choose the row or close the menu. Removing a star, from the menu or the action sets, shows the Undo toast, because on the Favorites page the row leaves.
 - Add to favorites and Remove from favorites are also in the task and project action sets, with F on a focused task or project.
-- The start view lists, without a search: No project, Favorites, then All projects. An empty section is hidden.
+- The start view lists, without a search: No project, Favorites, Recent tasks, then All projects. An empty section is hidden.
 - Favorites mixes tasks and projects, newest star first. The first 3 show, then "N more favorites" opens a Favorites page with all of them. The page works like a project's tasks: Back to projects at the top, Backspace on an empty search goes back, and typing filters the page.
 - A favorite task row shows its project's icon. A favorite project opens its tasks.
 - An archived task, or anything in an archived project, keeps its star but leaves Favorites until it is restored.
+
+### Recent tasks
+
+- Recent tasks lists tasks only, never projects, newest first. A task is used when time is saved to it or a running entry starts on it; nothing else is stored.
+- Each row shows the project's icon and how long ago the task was used, such as "5m", "2h", "3d" or "2w".
+- The start view shows the first 3 recent tasks that are not favorites, so it never repeats a row. "More recent tasks" opens the Recent page with the 10 tasks used last, favorites included. It works like the Favorites page.
+- Archived tasks and tasks in archived projects are left out.
 
 ## Running entries
 
