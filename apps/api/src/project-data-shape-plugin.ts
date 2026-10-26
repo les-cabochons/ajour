@@ -7,17 +7,15 @@ import {
 } from "../../../packages/shared/project-data-shapes.ts";
 import {
   PLUGIN_API_4,
-  pluginApi4ManifestSchema,
-  type PluginApi4Manifest,
+  isPluginApi4Manifest,
 } from "../../../packages/shared/plugin-api-4.ts";
+import {
+  PACKAGED_BUILD,
+  parsePluginManifest,
+  type PluginAdmissionPolicy,
+} from "./plugin-package.ts";
 
 const ALLOWED_ENTRYPOINT_EXTENSIONS = new Set([".cjs", ".js", ".mjs"]);
-
-/** Which plugin APIs the data shape host reads besides data shape API 1. */
-export interface ProjectDataShapeAdmissionPolicy {
-  /** Development builds admit plugin API 4 packages until the cut-over (#403). */
-  admitPluginApi4: boolean;
-}
 
 export interface ResolvedProjectDataShapePlugin {
   manifest: ProjectDataShapePluginManifest;
@@ -75,27 +73,27 @@ function dataShapeApi1Manifest(raw: unknown): ProjectDataShapePluginManifest {
  */
 function dataShapeOfApi4Package(
   raw: unknown,
-  policy: ProjectDataShapeAdmissionPolicy,
+  policy: PluginAdmissionPolicy,
 ): ProjectDataShapePluginManifest {
-  const manifest: PluginApi4Manifest = pluginApi4ManifestSchema.parse(raw);
-  const label = `Schema plugin "${manifest.id}"`;
-  if (!policy.admitPluginApi4) {
-    throw new Error(
-      `${label} uses plugin API 4, which this build of Ajour does not admit.`,
-    );
+  // The plugin host's own check: every API 4 rule applies, and a build that
+  // does not admit API 4 refuses the package.
+  const manifest = parsePluginManifest(raw, policy);
+  if (!isPluginApi4Manifest(manifest)) {
+    throw new Error("Schema plugin is not a plugin API 4 package.");
   }
+  const label = `Schema plugin "${manifest.id}"`;
   const projectDataShape = manifest.capabilities.projectDataShape;
   if (!projectDataShape) {
     throw new Error(`${label} declares no project data shape.`);
-  }
-  if (!manifest.entrypoint) {
-    throw new Error(`${label} needs an entrypoint.`);
   }
   if (manifest.network !== undefined) {
     throw new Error(`${label} may not declare network access.`);
   }
   if (manifest.connectionFields.length > 0) {
     throw new Error(`${label} may not declare connection fields.`);
+  }
+  if (manifest.connectionAccess.length > 0) {
+    throw new Error(`${label} may not declare connection access.`);
   }
   if (manifest.runtime.start !== "whenNeeded") {
     throw new Error(`${label} must load when needed.`);
@@ -116,7 +114,7 @@ function dataShapeOfApi4Package(
 
 export async function readProjectDataShapePlugin(
   directory: string,
-  policy: ProjectDataShapeAdmissionPolicy = { admitPluginApi4: false },
+  policy: PluginAdmissionPolicy = PACKAGED_BUILD,
 ): Promise<ResolvedProjectDataShapePlugin> {
   const pluginDirectory = path.resolve(directory);
   const canonicalPluginDirectory = await realpath(pluginDirectory);

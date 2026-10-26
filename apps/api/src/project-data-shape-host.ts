@@ -1,3 +1,5 @@
+import path from "node:path";
+import { realpath } from "node:fs/promises";
 import {
   PluginOperationRefused,
   PluginWorkerLifetime,
@@ -26,9 +28,10 @@ import {
 } from "../../../packages/shared/project-data-shapes.ts";
 import {
   readProjectDataShapePlugin,
-  type ProjectDataShapeAdmissionPolicy,
   type ResolvedProjectDataShapePlugin,
 } from "./project-data-shape-plugin.ts";
+import type { PluginAdmissionPolicy } from "./plugin-package.ts";
+import { isPluginApi4Manifest } from "../../../packages/shared/plugin-api-4.ts";
 
 interface ProjectDataShapeHostOptions {
   pluginDirectories?: string[];
@@ -40,6 +43,12 @@ interface ProjectDataShapeHostOptions {
    * admit them until the cut-over (#403); a packaged build lists none.
    */
   admitPluginApi4?: boolean;
+  /**
+   * The folder of every package the plugin host holds, by plugin id. A
+   * renderer and its storage are keyed by plugin id alone, so a data shape
+   * may not take the id of a plugin host package from another folder.
+   */
+  pluginHostPackages?: () => Promise<ReadonlyMap<string, string>>;
   /** Where each worker run's `plugin_operation` event goes. Nowhere by default. */
   events?: ApiEvents;
 }
@@ -51,6 +60,15 @@ export const SCHEMA_OPERATION_EVENTS = {
   exportProjects: "project.export",
   importProjects: "project.import",
 } as const satisfies Record<PluginMethod, PluginOperationEventName>;
+
+/** Whether two folders are one, links followed. */
+async function isSameDirectory(left: string, right: string) {
+  try {
+    return (await realpath(left)) === (await realpath(right));
+  } catch {
+    return path.resolve(left) === path.resolve(right);
+  }
+}
 
 function comparePlugins(
   left: ProjectDataShapePluginManifest,
@@ -65,13 +83,17 @@ function comparePlugins(
 export class ProjectDataShapePluginManager {
   private readonly pluginDirectories: string[];
   private readonly events?: ApiEvents;
-  private readonly admission: ProjectDataShapeAdmissionPolicy;
+  private readonly admission: PluginAdmissionPolicy;
+  private readonly pluginHostPackages?: () => Promise<
+    ReadonlyMap<string, string>
+  >;
   private readonly runsPluginApi4: boolean;
   private readonly workers: PluginWorkerLifetime<PluginMethod>;
 
   constructor(options: ProjectDataShapeHostOptions = {}) {
     this.pluginDirectories = options.pluginDirectories ?? [];
     this.events = options.events;
+    this.pluginHostPackages = options.pluginHostPackages;
     this.admission = { admitPluginApi4: options.admitPluginApi4 ?? false };
     const runtime: PluginRuntime = options.runtime ?? new WorkerPluginRuntime();
     this.runsPluginApi4 = runtime.runsPluginApi4 === true;
@@ -90,7 +112,7 @@ export class ProjectDataShapePluginManager {
 
   async listPlugins(): Promise<ProjectDataShapePluginManifest[]> {
     this.workers.assertRunning();
-    return Array.from((await this.discoverPlugins()).values())
+    return Array.from((await this.discoverPlugins()).plugins.values())
       .map((plugin) => plugin.manifest)
       .sort(comparePlugins);
   }
@@ -183,26 +205,45 @@ export class ProjectDataShapePluginManager {
 
   private async discoverPlugins() {
     const plugins = new Map<string, ResolvedProjectDataShapePlugin>();
+    const refused = new Map<string, string>();
+    const hostPackages = await this.pluginHostPackages?.();
     for (const directory of this.pluginDirectories) {
       try {
         const plugin = await readProjectDataShapePlugin(
           directory,
           this.admission,
         );
-        plugins.set(plugin.manifest.id, plugin);
+        const id = plugin.manifest.id;
+        const owner = hostPackages?.get(id);
+        if (
+          owner !== undefined &&
+          !(await isSameDirectory(owner, plugin.directory))
+        ) {
+          refused.set(
+            id,
+            `Schema plugin "${id}" shares its id with a plugin from another folder. Plugins keep their window and storage by id, so rename one of them.`,
+          );
+          plugins.delete(id);
+          this.events?.current()?.count("invalid_plugin");
+          continue;
+        }
+        plugins.set(id, plugin);
+        refused.delete(id);
       } catch {
         // Skipped, as an invalid plugin package is: the event counts it.
         this.events?.current()?.count("invalid_plugin");
       }
     }
-    return plugins;
+    return { plugins, refused };
   }
 
   private async getPlugin(pluginId: string, record: OperationRecord) {
-    const plugin = (await this.discoverPlugins()).get(pluginId);
+    const { plugins, refused } = await this.discoverPlugins();
+    const plugin = plugins.get(pluginId);
     if (!plugin) {
       throw new PluginOperationRefused(
-        `Schema plugin "${pluginId}" is not available.`,
+        refused.get(pluginId) ??
+          `Schema plugin "${pluginId}" is not available.`,
         "not_installed",
       );
     }
@@ -213,7 +254,7 @@ export class ProjectDataShapePluginManager {
     });
     // A worker thread would give an API 4 plugin the network. It runs only
     // in a runtime that keeps it to the broker.
-    if (plugin.manifest.apiVersion >= 4 && !this.runsPluginApi4) {
+    if (isPluginApi4Manifest(plugin.manifest) && !this.runsPluginApi4) {
       throw new PluginOperationRefused(
         `Schema plugin "${pluginId}" uses plugin API 4, which this version of Ajour can't run yet.`,
         "not_supported",

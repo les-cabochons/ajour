@@ -404,12 +404,63 @@ describe("ProjectDataShapePluginManager", () => {
           ],
         },
       ],
+      [
+        "connection access",
+        { connectionAccess: [{ id: "write", label: "Write back" }] },
+      ],
       ["an always ready runtime", { runtime: { start: "alwaysReady" } }],
       ["an unknown manifest field", { signIn: { kind: "oauth" } }],
     ])("skips a package that declares %s", async (_name, manifest) => {
       const api4 = await manager({ manifest });
 
       await expect(api4.listPlugins()).resolves.toEqual([]);
+    });
+
+    describe("a plugin id the plugin host already holds", () => {
+      async function managerBesidePluginHost(
+        hostFolder: (own: string) => string,
+      ) {
+        const root = await tempDir();
+        const pluginDirectory = await createPlugin(
+          root,
+          SHAPE_SOURCE,
+          undefined,
+          API_4_MANIFEST,
+        );
+        const created = new ProjectDataShapePluginManager({
+          pluginDirectories: [pluginDirectory],
+          admitPluginApi4: true,
+          runtime: new InProcessPluginRuntime(),
+          pluginHostPackages: async () =>
+            new Map([["workday-project-data", hostFolder(pluginDirectory)]]),
+        });
+        managers.push(created);
+        return created;
+      }
+
+      it("refuses a data shape from another folder, and says why", async () => {
+        const other = await tempDir();
+        const shape = await managerBesidePluginHost(() => other);
+
+        await expect(shape.listPlugins()).resolves.toEqual([]);
+        await expect(
+          shape.exportProjects("workday-project-data", EXPORTED_PROJECTS),
+        ).rejects.toThrow(
+          'Schema plugin "workday-project-data" shares its id with a plugin from another folder',
+        );
+        expect(shape.activeOperationCount).toBe(0);
+      });
+
+      it("keeps a package that is the plugin host's own folder", async () => {
+        const shape = await managerBesidePluginHost((own) => own);
+
+        await expect(shape.listPlugins()).resolves.toEqual([
+          expect.objectContaining({ id: "workday-project-data" }),
+        ]);
+        await expect(
+          shape.exportProjects("workday-project-data", EXPORTED_PROJECTS),
+        ).resolves.toMatchObject({ datasets: [{ id: "projects" }] });
+      });
     });
 
     it("skips an API 4 package without the project data shape capability", async () => {

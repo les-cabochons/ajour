@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PLUGIN_API_4 } from "./plugin-api-4-version.ts";
 
 export const PROJECT_DATA_SHAPE_PLUGIN_API_VERSION = 1;
 export const PROJECT_DATA_SHAPE_CAPABILITY_API_VERSION = 1;
@@ -113,7 +114,7 @@ export const projectDataShapePluginManifestSchema = z.object({
     .regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/),
   apiVersion: z.union([
     z.literal(PROJECT_DATA_SHAPE_PLUGIN_API_VERSION),
-    z.literal(4),
+    z.literal(PLUGIN_API_4),
   ]),
   displayName: z.string().trim().min(1).max(120),
   description: z.string().trim().max(500).optional(),

@@ -379,6 +379,23 @@ export class PluginManager {
   }
 
   /**
+   * The folder of every package this host holds, runnable or not, by plugin
+   * id. The data shape host checks its own packages against it.
+   */
+  async packageDirectories(): Promise<Map<string, string>> {
+    this.assertRunning();
+    const { plugins, unavailable } = await this.discoverPlugins();
+    const directories = new Map<string, string>();
+    for (const plugin of unavailable.values()) {
+      directories.set(plugin.manifest.id, plugin.directory);
+    }
+    for (const plugin of plugins.values()) {
+      directories.set(plugin.manifest.id, plugin.directory);
+    }
+    return directories;
+  }
+
+  /**
    * `afterInstall` runs before the package change ends, while operations are
    * still refused, so activation state it saves applies before anything can
    * run the new package.
