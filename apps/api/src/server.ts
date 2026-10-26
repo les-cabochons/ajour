@@ -1699,8 +1699,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       );
       unit.set({
         project_data: {
-          row_count: importRequest.datasets.reduce(
-            (count, dataset) => count + dataset.rows.length,
+          row_count: importRequest.sheets.reduce(
+            (count, sheet) => count + sheet.rows.length,
             0,
           ),
         },
@@ -1709,7 +1709,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         const result = projectDataShapeImportResponseSchema.parse(
           await projectDataShapePluginManager.importProjects(
             pluginId,
-            importRequest.datasets,
+            importRequest.sheets,
           ),
         );
         unit.set({

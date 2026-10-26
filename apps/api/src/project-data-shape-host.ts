@@ -22,7 +22,7 @@ import {
   type ProjectDataShapeExportResponse,
   type ProjectDataShapeImportProject,
   type ProjectDataShapePluginManifest,
-  type ProjectDataShapeDataset,
+  type ProjectDataShapeSheet,
 } from "../../../packages/shared/project-data-shapes.ts";
 import {
   readProjectDataShapePlugin,
@@ -93,6 +93,12 @@ export class ProjectDataShapePluginManager {
       "exportProjects",
       async (record) => {
         const plugin = await this.getPlugin(pluginId, record);
+        if (!plugin.manifest.capabilities.projectDataShape.datasets) {
+          throw new PluginOperationRefused(
+            `Schema plugin "${pluginId}" only imports.`,
+            "not_supported",
+          );
+        }
         const params = projectDataShapeExportRequestSchema.parse({ projects });
         return {
           invocation: this.invocation(plugin, "exportProjects", params),
@@ -107,34 +113,22 @@ export class ProjectDataShapePluginManager {
     );
   }
 
+  /**
+   * Maps a file's sheets to projects. The plugin reads the sheets and checks
+   * their layout itself: files from other tools hold anything.
+   */
   async importProjects(
     pluginId: string,
-    datasets: ProjectDataShapeDataset[],
+    sheets: ProjectDataShapeSheet[],
   ): Promise<{ projects: ProjectDataShapeImportProject[] }> {
     return await this.workers.run(
       pluginId,
       "importProjects",
       async (record) => {
         const plugin = await this.getPlugin(pluginId, record);
-        let validatedDatasets: ProjectDataShapeDataset[];
-        try {
-          validatedDatasets = validateProjectDataShapeDatasets(
-            plugin.manifest.capabilities.projectDataShape,
-            projectDataShapeImportRequestSchema.parse({ datasets }).datasets,
-            { validateRequiredValues: false, validateValueTypes: false },
-          );
-        } catch (error) {
-          // The file's rows break the plugin's definition. The message names
-          // their headings, for the user; the event holds the reason only.
-          throw new PluginOperationRefused(
-            error instanceof Error ? error.message : String(error),
-            "invalid_request",
-          );
-        }
+        const params = projectDataShapeImportRequestSchema.parse({ sheets });
         return {
-          invocation: this.invocation(plugin, "importProjects", {
-            datasets: validatedDatasets,
-          }),
+          invocation: this.invocation(plugin, "importProjects", params),
           parse: (result: unknown) =>
             projectDataShapeImportResponseSchema.parse(result),
         };
