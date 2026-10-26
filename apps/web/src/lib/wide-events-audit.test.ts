@@ -47,7 +47,7 @@ const { createIpcListeners } =
   require("../../../desktop/electron/ipc-listeners.cjs") as {
     createIpcListeners: (
       ipcMain: unknown,
-      options: { events: unknown },
+      options: { events: unknown; windowSession: () => unknown },
     ) => Record<
       "handle" | "onMessage" | "answerSync",
       (channel: string, listener: () => unknown) => void
@@ -470,7 +470,11 @@ describe("each table's entries emit their events", () => {
       on: (channel: string, listener: (...args: unknown[]) => unknown) =>
         listeners.set(channel, listener),
     };
-    const ipc = createIpcListeners(ipcMain, { events });
+    // The fake senders carry no session: the window's is none.
+    const ipc = createIpcListeners(ipcMain, {
+      events,
+      windowSession: () => undefined,
+    });
     const register = {
       invoke: ipc.handle,
       message: ipc.onMessage,
