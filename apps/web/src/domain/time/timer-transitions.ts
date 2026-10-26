@@ -203,6 +203,7 @@ export function saveTimer(
   );
   if (existingEntry) {
     entry.committedAt = existingEntry.committedAt;
+    entry.usedAt = factories.now();
   }
   const revertedWorkItems = existingEntry
     ? applyLoggedTimeToWorkItems(state.workItems, {

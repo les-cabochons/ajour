@@ -283,6 +283,12 @@ export interface LocalTimesheetEntry {
    * orders entries by it. Unrelated to `commit`.
    */
   committedAt: number;
+  /**
+   * When Stop or an edit last saved the entry. `committedAt` keeps the first
+   * save, which holds the entry's place in the Day view, so this is the
+   * latest use of its task. See domain/projects/recent-tasks.ts.
+   */
+  usedAt?: number;
   /** The entry as it was last committed. Undefined until its first commit. */
   commit?: LocalTimesheetEntryCommit;
 }
