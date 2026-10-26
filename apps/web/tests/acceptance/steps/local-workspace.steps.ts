@@ -1416,6 +1416,57 @@ Then("the picker shows {string}", async ({ page }, selection: string) => {
   ).toContainText(selection);
 });
 
+const taskMenuCard = (page: Page) =>
+  page.locator('[data-slot="hover-card-content"]');
+
+Then("no task menu card shows", async ({ page }) => {
+  // Longer than the card's first wait: opening the menu highlights a row,
+  // and that alone never shows the card.
+  await page.waitForTimeout(1_200);
+  await expect(taskMenuCard(page)).toHaveCount(0);
+});
+
+When("I press the down arrow in the task menu", async ({ page }) => {
+  await page.keyboard.press("ArrowDown");
+});
+
+When(
+  "I rest the pointer on {string} in the task menu",
+  async ({ page }, name: string) => {
+    await taskMenuRows(page)
+      .filter({ hasText: startsWith(name) })
+      .last()
+      .hover();
+  },
+);
+
+Then(
+  "the task menu card shows {string} of {string}, {string}, used {string}",
+  async (
+    { page },
+    task: string,
+    project: string,
+    billing: string,
+    ago: string,
+  ) => {
+    const card = taskMenuCard(page);
+    await expect(card.getByRole("paragraph")).toHaveText(task);
+    await expect(card).toContainText(project);
+    await expect(card).toContainText(`Billing${billing}`);
+    await expect(card).toContainText(`Last used${ago}`);
+  },
+);
+
+Then(
+  "the task menu card switches to {string} at once",
+  async ({ page }, name: string) => {
+    // Well under the first wait of 800ms.
+    await expect(taskMenuCard(page).getByRole("paragraph")).toHaveText(name, {
+      timeout: 300,
+    });
+  },
+);
+
 Then("the task menu lists {string}", async ({ page }, names: string) => {
   await expect(
     taskMenuRows(page).filter({ hasNotText: "Back to projects" }),

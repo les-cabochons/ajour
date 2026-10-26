@@ -270,6 +270,16 @@ The project and task picker of the entry editor, the Week Grid's new row and cal
 - The start view shows the first 3 recent tasks that are not favorites, so it never repeats a row. "More recent tasks" opens the Recent page with the 10 tasks used last, favorites included. It works like the Favorites page.
 - Archived tasks and tasks in archived projects are left out.
 
+### Task card
+
+Like the backlog [Hover card](#hover-card), a card beside the menu shows what a row has no room for.
+
+- On a task: its project's icon and name, the whole task name, Billing (Billable, or Non-billable in amber), Last used, such as "2h ago", and the pinned key. Last used and the pinned key show only when they apply.
+- On a project: the whole project name and its active task count.
+- It opens after the pointer rests on a row for 800ms, and moves at once to the next row while it shows, like the backlog card.
+- It also follows the highlight of the arrow keys, with the same timing. Opening the menu and typing never show it; only an arrow key does. Typing closes it.
+- Scrolling the list with the wheel, pressing, and leaving the row or the window close it. The keyboard's scrolling does not. Nothing in it takes a press, and it takes no focus.
+
 ## Running entries
 
 Decided in [Running timer editing and empty duration meaning](https://github.com/les-cabochons/ajour/issues/15).
@@ -715,7 +725,7 @@ Like T3 Code's thread card, resting the mouse on a backlog row shows a card besi
 - Then the subitems, open ones first, with their workflow state's ring and the closed count over the total, such as "1/3". Eight show, then "n more".
 - Then the pull requests whose title names the item, open ones first: the state icon, the number and the title. Five show, then "n more". Code hosts do not report links to backlog items, so the title is the link: a key such as "PAY-12" names the item from any repository, and a number such as "#1234" only from the same GitHub repository, or the same Azure DevOps organization, where every project shares the numbers. Only the pull requests the Pull requests page lists count, so none show while no code host is enabled.
 - The card stays while the pointer crosses over to it. A subitem or a pull request in it opens on click, and Ctrl or Cmd-click opens it in its source. Leaving the row and the card, pressing anywhere in the list, scrolling it, Escape and leaving the window close the card. A press closes it until the pointer leaves the row.
-- Only a mouse opens it. It takes no focus, and keyboard focus on a row does not open it: the item page shows the same things.
+- Only a mouse opens it. It takes no focus, and keyboard focus on a row does not open it: the item page shows the same things. The task menu's card is the exception: it follows the arrow keys (see [Task card](#task-card)).
 - Compact rows have no browser tooltip: the card shows the title and the parent.
 
 ### Snoozed and Settled sections

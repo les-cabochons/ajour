@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useState, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type RefObject,
+} from "react";
 
 /**
  * When a list's shared hover card opens, moves and closes, in milliseconds:
@@ -106,16 +112,27 @@ export interface RowHoverTarget {
   element: HTMLElement;
 }
 
+export interface RowHoverCardOptions {
+  /**
+   * `wheel` closes the card only when the user scrolls the list, so a list
+   * the keyboard scrolls, through `highlightRow`, keeps it. Defaults to any
+   * scroll.
+   */
+  closeOnScroll?: "scroll" | "wheel";
+}
+
 /**
  * One hover card for every row of a list, from listeners on the list itself:
  * the rows mount nothing for it. A row is an element in `container` that
- * matches `rowSelector`, and `readId` names it. Only a mouse opens the card,
- * and pressing, scrolling or leaving the window closes it.
+ * matches `rowSelector`, and `readId` names it. A mouse opens the card, and
+ * so does `highlightRow` for a list that follows the keyboard. Pressing,
+ * scrolling or leaving the window closes it.
  */
 export function useRowHoverCard(
   container: RefObject<HTMLElement | null>,
   rowSelector: string,
   readId: (row: HTMLElement) => string | undefined,
+  { closeOnScroll = "scroll" }: RowHoverCardOptions = {},
 ) {
   const [shown, setShown] = useState<RowHoverTarget | null>(null);
   const intent = useMemo(
@@ -145,21 +162,35 @@ export function useRowHoverCard(
     list.addEventListener("pointerleave", leave);
     list.addEventListener("pointerdown", dismiss, true);
     list.addEventListener("contextmenu", dismiss, true);
-    list.addEventListener("scroll", dismiss, { passive: true });
+    list.addEventListener(closeOnScroll, dismiss, { passive: true });
     window.addEventListener("blur", dismiss);
     return () => {
       list.removeEventListener("pointerover", onPointerOver);
       list.removeEventListener("pointerleave", leave);
       list.removeEventListener("pointerdown", dismiss, true);
       list.removeEventListener("contextmenu", dismiss, true);
-      list.removeEventListener("scroll", dismiss);
+      list.removeEventListener(closeOnScroll, dismiss);
       window.removeEventListener("blur", dismiss);
       intent.dispose();
     };
-  }, [container, intent, readId, rowSelector]);
+  }, [closeOnScroll, container, intent, readId, rowSelector]);
+
+  /**
+   * Follows the keyboard: `row` is the highlighted row, with the same timing
+   * as the pointer, or null when the highlight left the rows with a card.
+   */
+  const highlightRow = useCallback(
+    (row: HTMLElement | null) => {
+      const id = row ? readId(row) : undefined;
+      if (row && id) intent.enterRow(id, { id, element: row });
+      else intent.leaveRows();
+    },
+    [intent, readId],
+  );
 
   return {
     shown,
+    highlightRow,
     dismiss: intent.dismiss,
     rowGone: intent.rowGone,
     /** Spread on the card, so the pointer can cross over to it. */

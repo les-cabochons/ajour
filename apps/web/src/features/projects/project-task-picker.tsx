@@ -28,8 +28,13 @@ import {
 import {
   formatLastUsed,
   getRecentTasks,
+  getTaskLastUsedTimes,
   type RecentTask,
 } from "@/domain/projects/recent-tasks";
+import {
+  TaskMenuHoverCard,
+  useTaskMenuHoverCard,
+} from "@/features/projects/project-task-picker-card";
 import {
   getProjectLabel,
   PickerMoreRow,
@@ -149,6 +154,18 @@ export function ProjectTaskPicker({
     () => (isOpen ? getRecentTasks(projects, timesheetEntries, timers) : []),
     [isOpen, projects, timesheetEntries, timers],
   );
+  const lastUsed = useMemo(
+    () =>
+      isOpen
+        ? getTaskLastUsedTimes(timesheetEntries, timers)
+        : new Map<string, number>(),
+    [isOpen, timesheetEntries, timers],
+  );
+  // The list mounts each time the menu opens, so the card's listeners follow
+  // the element rather than a ref that never changes.
+  const [listElement, setListElement] = useState<HTMLDivElement | null>(null);
+  const listRef = useMemo(() => ({ current: listElement }), [listElement]);
+  const hoverCard = useTaskMenuHoverCard(listRef);
   // The start view never repeats a row: favorite tasks stay in Favorites.
   const startRecentTasks = useMemo(
     () =>
@@ -238,6 +255,20 @@ export function ProjectTaskPicker({
   }
 
   function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+      // cmdk moves the highlight after this handler, from its root. The card
+      // follows it from the next frame. Opening the menu or typing never
+      // shows the card: only an arrow key does.
+      requestAnimationFrame(() =>
+        hoverCard.highlightRow(
+          listElement?.querySelector<HTMLElement>(
+            '[cmdk-item][data-selected="true"]',
+          ) ?? null,
+        ),
+      );
+    } else if (event.key.length === 1 || event.key === "Backspace") {
+      hoverCard.dismiss();
+    }
     if (
       event.key === "Backspace" &&
       view.kind !== "projects" &&
@@ -305,7 +336,10 @@ export function ProjectTaskPicker({
             onValueChange={setQuery}
             onKeyDown={handleSearchKeyDown}
           />
-          <CommandList className="max-h-[min(22rem,55vh)] pb-1">
+          <CommandList
+            ref={setListElement}
+            className="max-h-[min(22rem,55vh)] pb-1"
+          >
             {view.kind === "projects" ? (
               <>
                 {!hasQuery && allowNoProject ? (
@@ -517,6 +551,13 @@ export function ProjectTaskPicker({
             )}
           </CommandList>
         </Command>
+        <TaskMenuHoverCard
+          shown={hoverCard.shown}
+          projects={projects}
+          lastUsed={lastUsed}
+          dismiss={hoverCard.dismiss}
+          rowGone={hoverCard.rowGone}
+        />
       </PopoverContent>
     </Popover>
   );
