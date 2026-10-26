@@ -808,6 +808,7 @@ Decided in [Settings and Sync review under the new conventions](https://github.c
 Decided in [Access review and credential management for existing plugins](https://github.com/les-cabochons/ajour/issues/222), built in [#393](https://github.com/les-cabochons/ajour/issues/393). Secrets live in the vault, encrypted by the operating system ([#233](https://github.com/les-cabochons/ajour/issues/233)).
 
 - **A saved secret is never shown.** A form never holds its value, and there is no mask. This applies to every field a plugin marks secret, whatever its type: a token, a password, or a secret calendar address, which a form used to show as text. Agent task settings marked secret get the same field.
+- **A secret address can't hold a user name or password.** Saving one refuses with "Remove the user name and password from" and the field's label, and nothing is saved. A redirect to such an address is not followed.
 - **A secret field in a connection form** shows a state chip, the last use, and Replace and Remove, in place of an input:
   - Saved.
   - "Expires in N days", from a week before its reminder date, and "Expires today". "Expired on 21 Oct 2026" after it.
