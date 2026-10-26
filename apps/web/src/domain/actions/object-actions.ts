@@ -371,15 +371,36 @@ export function getTimeEntryActionState(entry: {
 
 type ArchiveStatus = "active" | "archived";
 
-export type ProjectActionId = "edit" | "new-task" | "archive" | "restore";
+export type ProjectActionId =
+  "edit" | "new-task" | "favorite" | "unfavorite" | "archive" | "restore";
 
 const RESTORE_PROJECT_FIRST = "Restore the project first";
 const RESTORE_TASK_FIRST = "Restore the task first";
 const RESTORE_ITEM_FIRST = "Restore the item first";
 
-/** Lists a project's actions: Edit · New task · Archive/Restore. Projects have no Delete. */
+/** Add to favorites, or Remove from favorites once starred, in one slot. */
+function favoriteAction(
+  favoritedAt: number | undefined,
+  group: string,
+  disabledReason: string | undefined,
+): ObjectAction<"favorite" | "unfavorite"> {
+  return favoritedAt === undefined
+    ? { id: "favorite", label: "Add to favorites", group, disabledReason }
+    : {
+        id: "unfavorite",
+        label: "Remove from favorites",
+        group,
+        disabledReason,
+      };
+}
+
+/**
+ * Lists a project's actions: Edit · New task · Add to favorites/Remove from
+ * favorites · Archive/Restore. Projects have no Delete.
+ */
 export function getProjectActions(project: {
   status: ArchiveStatus;
+  favoritedAt?: number;
 }): ObjectAction<ProjectActionId>[] {
   const isArchived = project.status === "archived";
   const reason = isArchived ? RESTORE_PROJECT_FIRST : undefined;
@@ -392,6 +413,7 @@ export function getProjectActions(project: {
       group: "edit",
       disabledReason: reason,
     },
+    favoriteAction(project.favoritedAt, "edit", reason),
     isArchived
       ? { id: "restore", label: "Restore", group: "archive" }
       : { id: "archive", label: "Archive", destructive: true },
@@ -403,17 +425,19 @@ export type TaskActionId =
   | "new-entry"
   | "edit"
   | "assign-shortcut"
+  | "favorite"
+  | "unfavorite"
   | "archive"
   | "restore";
 
 /**
- * Lists a task's actions:
- * Start entry · New entry… | Edit · Assign shortcut… | Archive/Restore.
+ * Lists a task's actions: Start entry · New entry… | Edit · Assign shortcut… ·
+ * Add to favorites/Remove from favorites | Archive/Restore.
  * An archived project blocks every action, including Restore of the task.
  */
 export function getTaskActions(
   project: { status: ArchiveStatus },
-  task: { status: ArchiveStatus },
+  task: { status: ArchiveStatus; favoritedAt?: number },
 ): ObjectAction<TaskActionId>[] {
   const projectReason =
     project.status === "archived" ? RESTORE_PROJECT_FIRST : undefined;
@@ -441,6 +465,7 @@ export function getTaskActions(
       group: "edit",
       disabledReason: workReason,
     },
+    favoriteAction(task.favoritedAt, "edit", workReason),
     isTaskArchived
       ? {
           id: "restore",

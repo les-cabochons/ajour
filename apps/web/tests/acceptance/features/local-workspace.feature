@@ -495,6 +495,54 @@ Feature: Open the local time workspace
     When I save one hour to the selected project and task
     Then the time entry uses project "aaa xyz" and task "222 000"
 
+  Scenario: Star tasks and projects from the task menu
+    Given I have projects with searchable tasks
+    When I open today's time workspace
+    And I open the new time-entry project and task picker
+    And I browse the tasks in project "aaa xyz"
+    And I star "111 000" in the task menu
+    And I star "222 000" in the task menu
+    Then the task menu is still open
+    When I return to the project list
+    And I star "[BBB] bbb zyx" in the task menu
+    And I open "[BBB] bbb zyx" in the task menu
+    And I star "333 000" in the task menu
+    And I return to the project list
+    Then the task menu's "Favorites" section lists "333 000, [BBB] bbb zyx, 222 000, 1 more favorite"
+    When I open "1 more favorite" in the task menu
+    Then the task menu lists "333 000, [BBB] bbb zyx, 222 000, 111 000"
+    When I unstar "[BBB] bbb zyx" in the task menu
+    Then the task menu lists "333 000, 222 000, 111 000"
+    When I return to the project list
+    And I search for project and task "222"
+    Then only the non-billable "222 000" row says "Non-billable"
+
+  Scenario: Pick a task used lately from the task menu
+    Given I used four searchable tasks lately, the second of them starred
+    When I open today's time workspace
+    And I open the new time-entry project and task picker
+    Then the task menu's "Favorites" section lists "222 000"
+    And the task menu's "Recent tasks" section lists "333 000, 111 000, 222 000, More recent tasks"
+    When I open "More recent tasks" in the task menu
+    Then the task menu lists "333 000, 222 000, 111 000, 222 000"
+    When I open "111 000" in the task menu
+    Then the picker shows "[AAA] aaa xyz · 111 000"
+
+  Scenario: See a task's whole name and details in the task menu card
+    Given I used four searchable tasks lately, the second of them starred
+    When I open today's time workspace
+    And I open the new time-entry project and task picker
+    Then no task menu card shows
+    When I press the down arrow in the task menu
+    Then the task menu card shows "222 000" of "[BBB] bbb zyx", "Non-billable", used "2m ago"
+    When I press the down arrow in the task menu
+    Then the task menu card switches to "333 000" at once
+    When I rest the pointer on "[AAA] aaa xyz" in the task menu
+    Then the task menu card switches to "[AAA] aaa xyz" at once
+    When I choose the highlighted row in the task menu
+    Then the task menu lists "Use project without a task, 111 000, 222 000"
+    And the task menu card has closed
+
   Scenario: Install a packaged plugin from local files
     Given I have no saved Ajour workspace
     When I install a packaged plugin from settings

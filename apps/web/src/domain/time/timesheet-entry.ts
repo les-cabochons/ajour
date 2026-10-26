@@ -168,6 +168,7 @@ export function updateTimesheetEntry(
     factories,
   );
   nextEntry.committedAt = entry.committedAt;
+  nextEntry.usedAt = factories.now();
   const persistedEntry = keepTimesheetEntryCommit(
     entry,
     nextEntry.taskId

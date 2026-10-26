@@ -580,7 +580,7 @@ names no project imports only through Import tasks… on a project, into that
 project.
 
 Provider-specific shape plugins are maintained outside Ajour. The Workday
-implementation lives in `les-cabochons/ajp-workday`, imports no Ajour source,
+implementation lives in `les-cabochons/ajour-plugins`, imports no Ajour source,
 and targets this versioned host protocol. Ajour does not compile or bundle it.
 
 The desktop runtime must acquire Electron's single-instance lock before
