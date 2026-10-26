@@ -42,7 +42,12 @@ const STEP_FAILURE_KEYS = [
  * `shape`: `steps` is a list of strings, `counts` an object of numbers, and
  * `step_failures` a list of objects that hold only a step failure's keys. An
  * object or a function where a value belongs is dropped, never passed
- * through. It returns a new event and never changes the one it is given.
+ * through. The envelope's `counts` keeps only the keys the catalog declares
+ * as counters (`catalog.counters`), so a key can't carry a path or a name.
+ * A field a catalog event declares with the `numbers` shape, such as
+ * `local_state.record_counts`, keeps any key: its keys are dynamic collection
+ * names, and only its values are checked. It returns a new event and never
+ * changes the one it is given.
  */
 export function createPrivacyFilter(catalog: Catalog) {
   // One tree per catalog name, made when first needed. Any other name gets
@@ -64,6 +69,7 @@ export function createPrivacyFilter(catalog: Catalog) {
   return (event: Event, options: PrivacyOptions): Event =>
     (keep(event, treeOf(event.name), {
       includeSensitive: options.includeSensitive,
+      counters: catalog.counters,
       drops: 0,
       onDrop: options.onDrop,
     }) ?? {}) as Event;
@@ -71,6 +77,8 @@ export function createPrivacyFilter(catalog: Catalog) {
 
 interface Walk {
   includeSensitive: boolean;
+  /** The keys the envelope's `counts` may hold. */
+  counters: Catalog["counters"];
   /** How many things the walk has left out so far. */
   drops: number;
   onDrop?: () => void;
@@ -121,7 +129,11 @@ function leaf(value: unknown, field: Field<unknown>, walk: Walk): unknown {
         ? [...value]
         : undefined;
     case "numbers":
-      return numbersOnly(value, walk);
+      return numbersOnly(
+        value,
+        walk,
+        field === envelopeFields.counts ? walk.counters : undefined,
+      );
     case "step_failures":
       return stepFailures(value, walk);
     default:
@@ -132,13 +144,25 @@ function leaf(value: unknown, field: Field<unknown>, walk: Walk): unknown {
   }
 }
 
-/** An object's number entries, such as `counts`; the others are dropped. */
-function numbersOnly(value: unknown, walk: Walk): unknown {
+/**
+ * An object's number entries, such as `counts`; the others are dropped. With
+ * `allowed`, only the keys it declares stay.
+ */
+function numbersOnly(
+  value: unknown,
+  walk: Walk,
+  allowed?: Catalog["counters"],
+): unknown {
   if (!isRecord(value)) return undefined;
   const kept: Record<string, number> = {};
   for (const [key, entry] of Object.entries(value)) {
-    if (typeof entry === "number" && key !== "__proto__") kept[key] = entry;
-    else drop(walk);
+    if (
+      typeof entry === "number" &&
+      key !== "__proto__" &&
+      (!allowed || Object.hasOwn(allowed, key))
+    ) {
+      kept[key] = entry;
+    } else drop(walk);
   }
   return Object.keys(kept).length > 0 ? kept : undefined;
 }

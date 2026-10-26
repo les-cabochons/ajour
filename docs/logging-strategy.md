@@ -274,7 +274,10 @@ once the user turns it on. Settings › Diagnostics will show it (#441).
   strings, `counts` and `local_state.record_counts` hold numbers only, and
   a `step_failures` entry keeps only a step failure's own keys, with
   scalar values. An object or a function where a value belongs is dropped,
-  never passed through. The renderer's sink runs the same walk.
+  never passed through. The envelope's `counts` keeps only the keys the
+  catalog declares as counters; any other key is dropped. `record_counts` is
+  the exception: its keys are dynamic collection names, so the filter checks
+  its values only, not its keys. The renderer's sink runs the same walk.
 - **Files.** One file per UTC day, `userData/logs/events/YYYY-MM-DD.ndjson`,
   for the day the event was emitted. Each line is one event: a JSON object
   with the envelope and its fields, as [Envelope](#envelope) describes,
@@ -286,11 +289,16 @@ once the user turns it on. Settings › Diagnostics will show it (#441).
   and holds at most 10,000 lines, not a number of bytes: past that, events
   are dropped until it is written, and counted in `dropped_event_count`
   (in `logs.status` and `logs.sweep`, since launch). Quitting waits for it,
-  within the quit's 10 seconds. The events that end after that wait, the
-  quit's own at `before-quit` and an update install's at `will-quit`, are
-  written by `will-quit` synchronously (`drainSync`): at most 2 MiB, the
-  newest first, only while the file is on and has no warning, and it never
-  throws. Lines over the 2 MiB are dropped and counted too.
+  within the quit's 10 seconds. On a normal quit `endQuit` runs before that
+  wait, so the quit's own event is already in the last flush. Only the events
+  that end after it need the last write: the update-install path ends its
+  event at `will-quit`, and the timed-out stop calls `app.exit`, which skips
+  `will-quit`. Both write synchronously (`drainSync`), the timed-out path
+  just before `app.exit`. It writes the batch still being appended first, then
+  the queue, so the file keeps the emit order and the async write doesn't
+  repeat them. It writes at most 2 MiB, keeping the newest lines, only while
+  the file is on and has no warning, and it never throws. Lines over the
+  2 MiB are lost, and not counted: nothing reports after the exit.
 - **Failure.** A write that fails stops writing: the queue is dropped and the
   file keeps a `warning` with a closed reason, `disk_full` (ENOSPC, EDQUOT),
   `no_permission` (EACCES, EPERM, EROFS) or `write_failed`. The work never

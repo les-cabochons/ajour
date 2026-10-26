@@ -1278,7 +1278,7 @@ export const catalog = defineCatalog({
           warning: operational<LocalLogWarning>(),
           file_count: operational<number>(),
           storage_bytes: operational<number>(),
-          /** Events dropped since launch: too many waited to be written, or were left at quit. */
+          /** Events dropped since launch because too many waited to be written. */
           dropped_event_count: operational<number>(),
         },
       },

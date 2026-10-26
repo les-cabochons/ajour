@@ -1724,6 +1724,8 @@ if (!hasSingleInstanceLock) {
         // threads, so they end with it. Nothing holds close, beforeunload or
         // will-quit, so app.quit would end it too, as it does when an update
         // installs after a timed-out stop.
+        // app.exit skips will-quit: write what the log file still holds.
+        localLogs.drainSync();
         app.exit(0);
         return;
       }
@@ -1734,8 +1736,10 @@ if (!hasSingleInstanceLock) {
   // An update install's event waits for the app to quit for the installer.
   app.on("will-quit", () => {
     automaticUpdateController.installerQuitting();
-    // The events that ended at before-quit and just now come after the last
-    // flush, and the process exits before the batch timer: write them now.
+    // On a normal quit, endQuit runs before whenEventsReady, so the last
+    // flush already holds the quit's event. An update install is the path that
+    // ends events after it: the installer's quit ends the update's event here,
+    // and the process exits before the batch timer. Write them now.
     localLogs.drainSync();
   });
 

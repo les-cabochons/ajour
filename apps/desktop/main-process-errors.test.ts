@@ -245,6 +245,19 @@ describe("quitting and installing an update", () => {
     expect(runtime.app.quit).not.toHaveBeenCalled();
   });
 
+  // app.exit skips will-quit, which is where the log file is drained.
+  it("writes the log file's waiting events before it exits on a timed-out stop", async () => {
+    const runtime = quitRuntime(hangs);
+
+    runtime.quit();
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(runtime.localLogs.drainSync).toHaveBeenCalledOnce();
+    expect(
+      runtime.localLogs.drainSync.mock.invocationCallOrder[0]!,
+    ).toBeLessThan(runtime.app.exit.mock.invocationCallOrder[0]!);
+  });
+
   it("installs the update when stopping the local API fails, as quitting does", async () => {
     const runtime = quitRuntime(fails);
 
@@ -427,7 +440,7 @@ describe("quitting and installing an update", () => {
     ).toHaveBeenCalledOnce();
   });
 
-  // Whatever ended at before-quit and will-quit is after the last flush.
+  // An update install's events end after the last flush: the installer's quit ends one at will-quit.
   it("writes the log file's waiting events at will-quit, after the installer's quit ended its event", () => {
     const runtime = quitRuntime(async () => {});
 

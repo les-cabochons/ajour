@@ -31,7 +31,10 @@ function fullEvent(name: string, fields: Leaf[]) {
       shape === "strings"
         ? [`value of ${path.join(".")}`]
         : shape === "numbers"
-          ? { a: 1 }
+          ? // The envelope's counts keeps only the catalog's counters.
+            path.join(".") === "counts"
+            ? { store_write_count: 1 }
+            : { a: 1 }
           : shape === "step_failures"
             ? [{ name: "step", outcome: "error", error_type: "Error" }]
             : `value of ${path.join(".")}`;
@@ -238,6 +241,41 @@ describe("what the privacy filter lets a declared field hold", () => {
       counts: { store_write_count: 2 },
       steps: ["a", "b"],
       error: { type: "Error", code: "E1", message: "failed", retriable: false },
+    });
+  });
+
+  it("keeps only the counters the catalog declares as the keys of counts", () => {
+    const kept = run({
+      counts: {
+        store_write_count: 2,
+        invalid_plugin: 1,
+        "C:/Users/x/secret.docx": 3,
+        toString: 4,
+      },
+    });
+    expect(kept).toEqual({
+      name: "time_entry.update",
+      counts: { store_write_count: 2, invalid_plugin: 1 },
+    });
+    expect(JSON.stringify(kept)).not.toContain("secret.docx");
+    // Nothing declared is left: the field goes.
+    expect(run({ counts: { "C:/Users/x/secret.docx": 3 } })).toEqual({
+      name: "time_entry.update",
+    });
+  });
+
+  it("leaves the keys of record_counts, the collection names, unchecked", () => {
+    expect(
+      filter(
+        {
+          name: "local_state.recover",
+          local_state: { record_counts: { time_entries: 4, clients: 2 } },
+        } as never,
+        withSensitive,
+      ),
+    ).toEqual({
+      name: "local_state.recover",
+      local_state: { record_counts: { time_entries: 4, clients: 2 } },
     });
   });
 

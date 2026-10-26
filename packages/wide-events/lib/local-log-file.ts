@@ -36,7 +36,7 @@ export interface LocalLogStatus {
   oldest_day?: string;
   /**
    * Events dropped since launch because too many were waiting to be written
-   * (see `MAX_PENDING_LINES`) or too many were left at quit.
+   * (see `MAX_PENDING_LINES`).
    */
   dropped_event_count: number;
 }
@@ -121,8 +121,10 @@ export interface LocalLogFile {
   flush(): Promise<void>;
   /**
    * Writes what is waiting, synchronously, for a process about to exit: the
-   * async writes don't run once it has. Bounded to `MAX_DRAIN_BYTES`, keeping
-   * the newest events. It writes only while the file is on and has no
+   * async writes don't run once it has. It writes the batch being appended
+   * first, then what is waiting, so the file keeps the emit order, and the
+   * async write doesn't repeat them. Bounded to `MAX_DRAIN_BYTES`, keeping
+   * the newest events; the older ones are lost, and not counted. It writes only while the file is on and has no
    * warning, and never throws: a failure stops writing, as an async one does.
    */
   drainSync(): void;
@@ -138,6 +140,14 @@ const MAX_PENDING_LINES = 10_000;
 const MAX_DRAIN_BYTES = 2 * MIB;
 const DAY_FILE = /^(\d{4}-\d{2}-\d{2})\.ndjson$/;
 
+/** The lines from `start` to `end`, as the text appended to their day's file. */
+function dataOf(lines: { line: string }[], start: number, end: number) {
+  return lines
+    .slice(start, end)
+    .map(({ line }) => `${line}\n`)
+    .join("");
+}
+
 /** The UTC day of an epoch time, `YYYY-MM-DD`. */
 function dayOf(time: number) {
   return new Date(time).toISOString().slice(0, 10);
@@ -149,6 +159,12 @@ function dayOfFile(name: string) {
   if (!day) return undefined;
   const start = Date.parse(`${day}T00:00:00.000Z`);
   return Number.isFinite(start) && dayOf(start) === day ? day : undefined;
+}
+
+interface Batch {
+  lines: { day: string; line: string }[];
+  written: number;
+  drained: boolean;
 }
 
 function warningOf(error: unknown): LocalLogWarning {
@@ -178,6 +194,13 @@ export function createLocalLogFile(options: LocalLogFileOptions): LocalLogFile {
   let settings = { ...options.settings };
   let warning: LocalLogWarning | undefined;
   let pending: { day: string; line: string }[] = [];
+  /**
+   * The batch `writePending` is appending, until its appends resolve: what
+   * `drainSync` writes first, since the async write may never land. `written`
+   * counts the lines whose append resolved; `drained` says `drainSync` wrote
+   * the rest, so the async write must neither repeat it nor judge it.
+   */
+  let inflight: Batch | undefined;
   let dropped = 0;
   let flushTimer: ReturnType<typeof setTimeout> | undefined;
   let queue: Promise<unknown> = Promise.resolve();
@@ -197,28 +220,33 @@ export function createLocalLogFile(options: LocalLogFileOptions): LocalLogFile {
   }
 
   async function writePending() {
-    const lines = pending;
+    const batch: Batch = { lines: pending, written: 0, drained: false };
     pending = [];
-    if (lines.length === 0 || !writing()) return;
+    if (batch.lines.length === 0 || !writing()) return;
+    inflight = batch;
+    const { lines } = batch;
     try {
       await fs.mkdir(directory, { recursive: true, mode: 0o700 });
-      let start = 0;
-      while (start < lines.length) {
+      while (batch.written < lines.length) {
+        // A quit's drain wrote the rest while this waited.
+        if (batch.drained) return;
+        const start = batch.written;
         const { day } = lines[start]!;
         let end = start;
         while (end < lines.length && lines[end]!.day === day) end += 1;
-        const data = lines
-          .slice(start, end)
-          .map(({ line }) => `${line}\n`)
-          .join("");
-        await fs.appendFile(path.join(directory, `${day}.ndjson`), data, {
-          encoding: "utf8",
-          mode: 0o600,
-        });
-        start = end;
+        await fs.appendFile(
+          path.join(directory, `${day}.ndjson`),
+          dataOf(lines, start, end),
+          { encoding: "utf8", mode: 0o600 },
+        );
+        if (batch.drained) return;
+        batch.written = end;
       }
     } catch (error) {
-      stop(warningOf(error));
+      // A drained batch is already written: its late failure says nothing.
+      if (!batch.drained) stop(warningOf(error));
+    } finally {
+      if (inflight === batch) inflight = undefined;
     }
   }
 
@@ -375,10 +403,18 @@ export function createLocalLogFile(options: LocalLogFileOptions): LocalLogFile {
           clearTimeout(flushTimer);
           flushTimer = undefined;
         }
-        const lines = pending;
+        // What the async write has not landed comes first, then what is
+        // waiting: the order the events were emitted in.
+        const batch = inflight && !inflight.drained ? inflight : undefined;
+        const lines = [
+          ...(batch ? batch.lines.slice(batch.written) : []),
+          ...pending,
+        ];
+        if (batch) batch.drained = true;
         pending = [];
         if (lines.length === 0 || !writing()) return;
-        // The newest lines that fit, in the order they were emitted.
+        // The newest lines that fit, in the order they were emitted. The
+        // older ones are lost: nothing reports after the exit.
         let bytes = 0;
         let first = lines.length;
         while (first > 0) {
@@ -386,7 +422,6 @@ export function createLocalLogFile(options: LocalLogFileOptions): LocalLogFile {
           if (bytes > MAX_DRAIN_BYTES) break;
           first -= 1;
         }
-        dropped += first;
         makeFolderSync(directory, { recursive: true, mode: 0o700 });
         for (let start = first; start < lines.length;) {
           const { day } = lines[start]!;
@@ -394,13 +429,7 @@ export function createLocalLogFile(options: LocalLogFileOptions): LocalLogFile {
           while (end < lines.length && lines[end]!.day === day) end += 1;
           appendSync(
             path.join(directory, `${day}.ndjson`),
-            lines
-              .slice(start, end)
-              .map(
-                ({ line }) => `${line}
-`,
-              )
-              .join(""),
+            dataOf(lines, start, end),
             { encoding: "utf8", mode: 0o600 },
           );
           start = end;

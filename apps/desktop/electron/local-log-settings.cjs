@@ -51,10 +51,11 @@ function invalidSettings(message) {
 const INVALID_LOCAL_LOG_SETTINGS = "invalid_local_log_settings";
 
 /**
- * `current` with the settings `changes` asks for; those it leaves out stay,
- * and so does a key it does not know. A value outside its
- * closed set is not replaced by the default: the whole change is refused, and
- * throws, so a bad call from the renderer changes nothing.
+ * `current` with the settings `changes` asks for; those it leaves out stay.
+ * A key it does not know is ignored: it is not stored and does not refuse the
+ * call. A value outside its closed set is not replaced by the default: the
+ * whole change is refused, and throws, so a bad call from the renderer
+ * changes nothing.
  */
 function applyLocalLogSettings(current, changes) {
   if (!changes || typeof changes !== "object" || Array.isArray(changes)) {

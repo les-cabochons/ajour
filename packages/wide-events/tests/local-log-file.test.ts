@@ -598,7 +598,7 @@ describe("the local log file", () => {
       });
     });
 
-    it("keeps the newest events within its byte budget and counts the rest as dropped", async () => {
+    it("keeps the newest events within its byte budget", async () => {
       const log = await logFile();
       const big = "x".repeat(100_000);
 
@@ -618,9 +618,71 @@ describe("the local log file", () => {
       expect(lines.length).toBeLessThan(30);
       const last = (lines.at(-1)!.plugin as { id: string }).id;
       expect(last.startsWith("29-")).toBe(true);
-      expect(await log.file.status()).toMatchObject({
-        dropped_event_count: 30 - lines.length,
-      });
+    });
+
+    describe("while an async write is still waiting", () => {
+      /** A file system whose appendFile waits for `release`, then resolves or rejects. */
+      function gatedFileSystem() {
+        let release!: (error?: Error) => void;
+        const gate = new Promise<void>((resolve, reject) => {
+          release = (error) => (error ? reject(error) : resolve());
+        });
+        const appends: string[] = [];
+        const fileSystem: LocalLogFileSystem = {
+          mkdir: fs.mkdir,
+          readdir: fs.readdir,
+          stat: fs.stat,
+          unlink: fs.unlink,
+          rmdir: fs.rmdir,
+          async appendFile(file, data) {
+            appends.push(data);
+            // The process is exiting: the write never lands once released.
+            await gate;
+          },
+        };
+        return { fileSystem, release, appends };
+      }
+
+      function emitNamed(
+        events: Awaited<ReturnType<typeof logFile>>["events"],
+        id: string,
+      ) {
+        events.run("backlog.sync", { kind: "job", trigger: "user" }, (unit) => {
+          unit.set({ plugin: { id } });
+        });
+      }
+
+      const ids = async (log: Awaited<ReturnType<typeof logFile>>) =>
+        (await log.lines("2026-10-26")).map(
+          (line) => (line.plugin as { id: string }).id,
+        );
+
+      it.each([
+        { outcome: "resolves", error: undefined },
+        { outcome: "rejects", error: new Error("late") },
+      ])(
+        "writes the batch it is appending first, once, and the async write $outcome without repeating it or warning",
+        async ({ error }) => {
+          const gated = gatedFileSystem();
+          const log = await logFile({ fileSystem: gated.fileSystem });
+
+          emitNamed(log.events, "first");
+          const flushed = log.file.flush();
+          // Lets the write reach the gated append.
+          await vi.waitFor(() => expect(gated.appends).toHaveLength(1));
+          emitNamed(log.events, "second");
+          log.file.drainSync();
+
+          expect(await ids(log)).toEqual(["first", "second"]);
+
+          gated.release(error);
+          await flushed;
+
+          expect(await ids(log)).toEqual(["first", "second"]);
+          expect(gated.appends).toHaveLength(1);
+          expect(await log.file.status()).toMatchObject({ state: "on" });
+        },
+      );
     });
   });
 });
