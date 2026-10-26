@@ -4,36 +4,25 @@ import {
   type PluginOverviewGroup,
   type PluginRuntimeSettingsUpdate,
   type PluginStartChoice,
-  type PluginStopCause,
 } from "@ajour/shared";
 import { AppPanel, MessagePanel, SettingRow } from "@/components/app-surface";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
+import {
+  readMemoryCeiling,
+  suspensionReason,
+} from "@/domain/plugins/runtime-settings";
 
 /*
  * How a plugin API 4 plugin's renderer lives, on its page (#391, decided in
  * #217): the notice of a plugin that keeps stopping, with Turn back on, and
- * the Advanced section's Start and Memory ceiling, which the renderer reads
- * at its next start.
+ * the Advanced section's Start, which applies at once, and Memory ceiling,
+ * which the renderer reads at its next start.
  */
 
 /** The notice's title while a plugin is suspended. */
 export const PLUGIN_KEEPS_STOPPING = "This plugin keeps stopping";
-
-/** What the last of its stops was, in the notice's words. */
-const LAST_STOP: Record<PluginStopCause, string> = {
-  crashed: "its process crashed",
-  oom: "it ran out of memory",
-  killed: "the system ended it",
-  memory: "it used more memory than its ceiling allows",
-  timeout: "a call took longer than 30 seconds",
-};
-
-/** Why the plugin is off, for the notice under its title. */
-export function suspensionReason(cause: PluginStopCause) {
-  return `It stopped 3 times in 10 minutes. The last time, ${LAST_STOP[cause]}. Ajour keeps it off until you turn it back on or restart Ajour.`;
-}
 
 export function PluginSuspendedNotice({
   group,
@@ -67,26 +56,6 @@ const START_LABELS: Record<"whenNeeded" | "alwaysReady", string> = {
   whenNeeded: "Load when needed",
   alwaysReady: "Always ready",
 };
-
-/** Reads the ceiling field: a whole number in range, empty for the plugin's, or an error. */
-export function readMemoryCeiling(
-  text: string,
-): { ok: true; value: number | null } | { ok: false; error: string } {
-  const trimmed = text.trim();
-  if (trimmed === "") return { ok: true, value: null };
-  const value = Number(trimmed);
-  if (
-    !Number.isInteger(value) ||
-    value < PLUGIN_MEMORY_CEILING_MB.min ||
-    value > PLUGIN_MEMORY_CEILING_MB.max
-  ) {
-    return {
-      ok: false,
-      error: `Enter a whole number of MB from ${PLUGIN_MEMORY_CEILING_MB.min} to ${PLUGIN_MEMORY_CEILING_MB.max}.`,
-    };
-  }
-  return { ok: true, value };
-}
 
 export function PluginAdvancedSettings({
   group,
@@ -127,7 +96,8 @@ export function PluginAdvancedSettings({
       <div>
         <h2 className="settings-section-title">Advanced</h2>
         <p className="settings-section-desc mt-1">
-          Changes take effect the next time the plugin starts.
+          Start applies at once. A new Memory ceiling applies the next time the
+          plugin starts.
         </p>
       </div>
       <AppPanel>

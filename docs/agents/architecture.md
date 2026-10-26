@@ -369,14 +369,17 @@ API 4 packages in development builds of the desktop app, until the cut-over
 - **Lifecycle** (#391, decided in #217). Each run carries its plugin's
   `lifecycle`, the Advanced section over the manifest's `runtime`: "Load
   when needed" or "Always ready", and the memory ceiling (the user's, the
-  manifest's, or 256 MB; 64 MB to 2 GB). A renderer reads it as it opens,
-  so a change takes effect at the next start. A "Load when needed"
+  manifest's, or 256 MB; 64 MB to 2 GB). A renderer reads its ceiling as it opens,
+  so a new ceiling takes effect at the next start; Start applies at once,
+  through the ready list. A "Load when needed"
   renderer opens at its plugin's first call and closes 2 minutes after its
   last. The API sends the runtime the whole list of plugins to keep ready
   (`PluginRuntime.keepReady`) as it starts and after every change to it
   (activation, the Advanced section, an install, a suspension, Turn back
   on): those open now and never close for being idle, and one taken off
-  closes once idle. A renderer also closes at a timeout, when its package
+  closes once idle. The API also names the plugins that can't run now,
+  turned off or suspended (`keepReady`'s `stopped`), and their renderers
+  close at once. A renderer also closes at a timeout, when its package
   moves, and as Ajour quits; main samples each open renderer's memory
   every 5 s (`app.getAppMetrics`, private bytes on Windows, the working
   set elsewhere) and closes one above its ceiling, its runs failing

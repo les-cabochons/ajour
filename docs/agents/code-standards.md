@@ -78,8 +78,9 @@
   shape plugins own only their export datasets and the mappings between
   canonical data and rows or imported sheets.
 - Run plugin API 3 operations in ephemeral worker threads, and plugin API 4
-  operations in their plugin's sandboxed renderer, whose lifecycle main owns
-  (see `architecture.md`). Do not add other persistent plugin processes or
+  operations in their plugin's sandboxed renderer. Main opens, closes and
+  measures the renderers; the API owns the limits, the crash budget and the
+  ready list (see `architecture.md`). Do not add other persistent plugin processes or
   load plugin modules into the API or Electron main execution context.
 - Keep packaged plugin installation behind the Electron preload/IPC bridge.
   Let the parent process choose and read the file; never accept paths or archive

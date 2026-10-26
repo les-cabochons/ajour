@@ -142,6 +142,13 @@ Then(
     await expect(
       section.getByRole("combobox", { name: "Start", exact: true }),
     ).toHaveText(start);
+    // Start applies now; only a new ceiling waits for the next start.
+    await expect(
+      section.getByText(
+        "Start applies at once. A new Memory ceiling applies the next time the plugin starts.",
+        { exact: true },
+      ),
+    ).toBeVisible();
     const memory = section.getByLabel("Memory ceiling", { exact: true });
     await expect(memory).toHaveValue("");
     await expect(memory).toHaveAttribute("placeholder", String(ceiling));

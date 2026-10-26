@@ -439,7 +439,7 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
             command.settings,
           );
           finish(
-            `${command.plugin.displayName} uses these settings from its next start.`,
+            `${command.plugin.displayName}'s Advanced settings saved.`,
             overview,
           );
           break;
