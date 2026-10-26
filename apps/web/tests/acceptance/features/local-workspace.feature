@@ -539,6 +539,9 @@ Feature: Open the local time workspace
     Then the task menu card switches to "333 000" at once
     When I rest the pointer on "[AAA] aaa xyz" in the task menu
     Then the task menu card switches to "[AAA] aaa xyz" at once
+    When I choose the highlighted row in the task menu
+    Then the task menu lists "Use project without a task, 111 000, 222 000"
+    And the task menu card has closed
 
   Scenario: Install a packaged plugin from local files
     Given I have no saved Ajour workspace

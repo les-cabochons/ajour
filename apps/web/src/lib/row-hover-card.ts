@@ -29,6 +29,10 @@ export interface RowHoverIntent<T> {
    * its card coming.
    */
   rowGone(id: string): void;
+  /**
+   * The list is gone, such as a menu that closed. Closes the card and forgets
+   * the rows, so the same row opens it again once the list is back.
+   */
   dispose(): void;
 }
 
@@ -103,6 +107,9 @@ export function createRowHoverIntent<T>(
     },
     dispose() {
       clearTimeout(timer);
+      hoveredId = undefined;
+      overCard = false;
+      hide();
     },
   };
 }
