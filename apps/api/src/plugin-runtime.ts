@@ -43,6 +43,28 @@ export interface PluginInvocation {
    * only way to the network. The host closes it once the operation settles.
    */
   broker?: OperationBroker;
+  /**
+   * For an API 4 plugin, how its renderer lives, read when it starts: a
+   * renderer already open keeps what it started with.
+   */
+  lifecycle?: PluginLifecycle;
+}
+
+/** How an API 4 plugin's renderer lives (#217), from its manifest and its user. */
+export interface PluginLifecycle {
+  /** "Always ready": it starts with Ajour and never closes for being idle. */
+  alwaysReady: boolean;
+  /** Above this, the renderer closes and its runs fail with `memory`. */
+  memoryCeilingMb: number;
+}
+
+/** A plugin to keep running: one whose start mode is "Always ready". */
+export interface ReadyPlugin {
+  pluginId: string;
+  packageDirectory: string;
+  entrypoint: string;
+  apiVersion: number;
+  lifecycle: PluginLifecycle;
 }
 
 /**
@@ -129,6 +151,13 @@ export interface PluginRuntimeHost {
    * It counts as a blocked attempt for Access review; the plugin goes on.
    */
   recordBlocked(pluginId: string, at: number): Promise<void>;
+  /**
+   * The plugin's process ended without the API asking: it crashed, ran out
+   * of memory, was killed, or went over its memory ceiling. With the API's
+   * own timeouts, it counts against the plugin's crash budget. A runtime
+   * reports it whether or not a run was going.
+   */
+  recordStopped?(pluginId: string, cause: PluginCrashCause, at: number): void;
 }
 
 /** Runs plugin operations. One instance may serve several hosts. */
@@ -148,6 +177,13 @@ export interface PluginRuntime {
   attach?(host: PluginRuntimeHost): void;
   /** Starts one operation. It never throws: a failure to start settles the run. */
   start(invocation: PluginInvocation): PluginRun;
+  /**
+   * The API 4 plugins to keep running, all of them each time: a runtime that
+   * keeps a process per plugin starts those not running, and lets any other
+   * close once idle. The API calls it as it starts and whenever the list
+   * changes, such as when a plugin is turned off or suspended.
+   */
+  keepReady?(plugins: readonly ReadyPlugin[]): void;
 }
 
 /** A run that ended before it started, such as a refused one. */
@@ -189,6 +225,10 @@ export class SplitPluginRuntime implements PluginRuntime {
     return (invocation.apiVersion >= 4 ? this.api4 : this.api3).start(
       invocation,
     );
+  }
+
+  keepReady(plugins: readonly ReadyPlugin[]) {
+    this.api4.keepReady?.(plugins.filter((plugin) => plugin.apiVersion >= 4));
   }
 }
 

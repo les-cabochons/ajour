@@ -1,9 +1,12 @@
-// Runs the real-Electron check of the sandboxed plugin runtime (#390):
-// `sandbox-check/main.cjs`, once as Ajour starts and once with --no-sandbox,
-// each with a user data folder of its own in the temp folder. It reads the
-// check's `CHECK {json}` lines, holds them to what #390 asks, and checks
-// that no process the app started outlives its quit. It ends only the
-// processes it started. Exits 1 when anything fails.
+// Runs the real-Electron check of the sandboxed plugin runtime (#390) and
+// its lifecycle (#391): `sandbox-check/main.cjs`, once as Ajour starts and
+// once with --no-sandbox, then `sandbox-check/lifecycle.cjs`, for the start
+// modes, limits, crash budget and quit, and for the orphan sweep across a
+// forced kill of main and a relaunch. Each run has a user data folder of its
+// own in the temp folder. It reads the checks' `CHECK {json}` lines, holds
+// them to what the tickets ask, and checks that no process the app started
+// outlives its quit. It ends only the processes it started. Exits 1 when
+// anything fails.
 //
 //   corepack pnpm --filter @ajour/desktop check:plugin-sandbox
 import { spawn } from "node:child_process";
@@ -20,6 +23,7 @@ const desktopRoot = path.resolve(
   "..",
 );
 const checkMain = path.join(desktopRoot, "sandbox-check", "main.cjs");
+const lifecycleMain = path.join(desktopRoot, "sandbox-check", "lifecycle.cjs");
 const TOKEN = "fixture-token-7b1e5c9d2a";
 
 const failures = [];
@@ -55,14 +59,21 @@ async function waitGone(pids, ms) {
   return alive;
 }
 
-async function runCheck(name, args) {
-  const userData = await mkdtemp(
-    path.join(os.tmpdir(), `ajour-sandbox-${name}-`),
-  );
-  const env = { ...process.env, AJOUR_USER_DATA_PATH: userData };
+/**
+ * Runs one check in Electron and gathers its findings. `onFinding` sees
+ * each as it arrives, with the child, as the orphan check kills it.
+ */
+async function runCheck(
+  name,
+  args,
+  { main = checkMain, userData: given, env: extra = {}, onFinding, keep } = {},
+) {
+  const userData =
+    given ?? (await mkdtemp(path.join(os.tmpdir(), `ajour-sandbox-${name}-`)));
+  const env = { ...process.env, ...extra, AJOUR_USER_DATA_PATH: userData };
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.ELECTRON_DISABLE_SANDBOX;
-  const child = spawn(electron, [checkMain, ...args], {
+  const child = spawn(electron, [main, ...args], {
     env,
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -76,6 +87,7 @@ async function runCheck(name, args) {
       if (!line.startsWith("CHECK ")) continue;
       const finding = JSON.parse(line.slice("CHECK ".length));
       findings[finding.event] = finding;
+      onFinding?.(finding, child);
     }
   });
   let stderr = "";
@@ -102,8 +114,18 @@ async function runCheck(name, args) {
     ]),
   ].filter((pid) => pid !== child.pid);
   const left = await waitGone(pids, 5_000);
-  await rm(userData, { recursive: true, force: true }).catch(() => undefined);
-  return { findings, exit, stderr, left, pids, goneMs: Date.now() - exitedAt };
+  if (!keep) {
+    await rm(userData, { recursive: true, force: true }).catch(() => undefined);
+  }
+  return {
+    findings,
+    exit,
+    stderr,
+    left,
+    pids,
+    goneMs: Date.now() - exitedAt,
+    userData,
+  };
 }
 
 const isWindows = process.platform === "win32";
@@ -345,6 +367,236 @@ const isWindows = process.platform === "win32";
     pids,
     left,
   });
+}
+
+// 3. The renderer host's lifecycle (#391).
+{
+  process.stdout.write("\n== The renderer host's lifecycle\n");
+  const { findings, exit, stderr, left, pids } = await runCheck(
+    "lifecycle",
+    ["--lifecycle"],
+    { main: lifecycleMain },
+  );
+  if (findings.error) process.stdout.write(`${findings.error.error}\n`);
+  expect(exit.code === 0, "the check ran to the end", { exit, stderr });
+
+  const modes = findings["start-modes"] ?? {};
+  expect(
+    modes.residentOpened === true,
+    'an "Always ready" plugin starts with the API, without a call',
+    modes,
+  );
+  expect(
+    modes.residentStillOpen === true,
+    'an "Always ready" plugin stays open while idle',
+    modes,
+  );
+  expect(
+    modes.advancedStatus === 200 &&
+      modes.advancedRuntime?.settings?.memoryCeilingMb === 160,
+    "the Advanced section saves the memory ceiling",
+    modes.advancedRuntime,
+  );
+  const concurrent = modes.concurrent ?? [];
+  expect(
+    concurrent.filter((call) => call.status === 200 && call.error === null)
+      .length === 4 &&
+      concurrent.some(
+        (call) =>
+          call.error ===
+            'Too many operations of plugin "fixture-lifecycle" are already running.' &&
+          call.ms < 500,
+      ),
+    "4 calls of a plugin run at once, and a fifth is refused at once",
+    concurrent,
+  );
+  expect(
+    modes.idleClosed === true,
+    'a "Load when needed" renderer closes once idle, and its process ends',
+    modes,
+  );
+
+  const budget = findings["crash-budget"] ?? {};
+  expect(
+    budget.timedOut?.error ===
+      'Plugin "fixture-lifecycle" timed out while handling syncConnection.' &&
+      budget.afterTimeoutOpen === false,
+    "a call past its time fails, and its renderer closes",
+    budget.timedOut,
+  );
+  expect(
+    String(budget.ballooned?.error).endsWith(
+      "its process went over its memory ceiling.",
+    ) &&
+      budget.afterMemoryOpen === false &&
+      budget.memoryClose?.ceiling === 160 &&
+      budget.memoryClose.memory > 160,
+    "a renderer above the user's memory ceiling closes, and its call says so",
+    { ballooned: budget.ballooned, close: budget.memoryClose },
+  );
+  expect(
+    budget.crashed?.outcome?.failure === "crashed" &&
+      ["crashed", "killed"].includes(budget.suspended?.cause),
+    "a timeout, a memory kill and a crash in 10 minutes suspend the plugin",
+    { crashed: budget.crashed, suspended: budget.suspended },
+  );
+  expect(
+    budget.refused?.error ===
+      'Plugin "fixture-lifecycle" keeps stopping, so Ajour turned it off. Turn it back on from its page in Settings.' &&
+      budget.refused.ms < 500 &&
+      budget.pagesAfter === 0,
+    "a suspended plugin's call fails at once, and opens no renderer",
+    budget,
+  );
+  expect(
+    budget.resumedStatus === 200 &&
+      budget.resumedSuspended === null &&
+      budget.afterResume?.status === 200 &&
+      budget.afterResume.error === null,
+    "Turn back on runs the plugin again",
+    budget,
+  );
+
+  const resident = findings["always-ready-suspended"] ?? {};
+  expect(
+    resident.residentSuspended !== null &&
+      resident.residentSuspended !== undefined &&
+      resident.residentOpenWhileSuspended === false,
+    'suspension wins over "Always ready": nothing reopens it',
+    resident,
+  );
+  expect(
+    resident.residentReopened === true,
+    'Turn back on starts an "Always ready" plugin again',
+    resident,
+  );
+
+  const quit = findings.quit ?? {};
+  expect(
+    quit.drained?.status === 200 &&
+      quit.drained.error === null &&
+      quit.stopMs >= 500 &&
+      quit.stopMs < 5_000,
+    "a quit lets a running call finish within its 5 s drain",
+    { drained: quit.drained, stopMs: quit.stopMs },
+  );
+  expect(
+    quit.goneAfterClose === true &&
+      quit.pluginPagesLeft === 0 &&
+      quit.recordLeft === false,
+    "then every renderer closes, its process ends, and the record is gone",
+    quit,
+  );
+  for (const [line, meaning] of [
+    ["plugin_renderer.close ok fixture-lifecycle idle", "an idle close"],
+    [
+      "plugin_renderer.close timeout fixture-lifecycle timeout",
+      "a close at a timeout",
+    ],
+    [
+      "plugin_renderer.close error fixture-lifecycle memory",
+      "a close above the memory ceiling",
+    ],
+  ]) {
+    expect(
+      (quit.events ?? []).includes(line),
+      `an event records ${meaning}: ${line}`,
+    );
+  }
+  expect(
+    pids.length > 0 && left.length === 0,
+    "a normal quit leaves no process behind",
+    { pids, left },
+  );
+}
+
+// 4. The orphan sweep: main is killed with a renderer open, then relaunched.
+{
+  process.stdout.write("\n== Orphans after a forced kill of main\n");
+  // A process that isn't Ajour's, recorded as if it were: never ended.
+  const decoy = spawn(
+    process.execPath,
+    ["-e", "setTimeout(() => {}, 120000)"],
+    { stdio: "ignore" },
+  );
+  const spawned = await runCheck("orphans", ["--orphan-spawn"], {
+    main: lifecycleMain,
+    env: { AJOUR_CHECK_DECOY_PID: String(decoy.pid) },
+    keep: true,
+    onFinding: (finding, child) => {
+      // Abruptly: TerminateProcess on Windows, SIGKILL elsewhere.
+      if (finding.event === "orphan-spawned") child.kill("SIGKILL");
+    },
+  });
+  const orphan = spawned.findings["orphan-spawned"] ?? {};
+  if (spawned.findings.error) {
+    process.stdout.write(`${spawned.findings.error.error}\n`);
+  }
+  expect(
+    Number.isInteger(orphan.rendererPid) && Number.isInteger(orphan.standInPid),
+    "a plugin renderer and a stand-in orphan ran, recorded",
+    orphan,
+  );
+  expect(
+    typeof orphan.rendererRecordedAt === "number" &&
+      typeof orphan.rendererStartedAt === "number" &&
+      Math.abs(orphan.rendererRecordedAt - orphan.rendererStartedAt) < 2_000,
+    "the recorded start time is the one the system reports",
+    orphan,
+  );
+  const rendererLeft = await waitGone([orphan.rendererPid], 5_000);
+  expect(
+    rendererLeft.length === 0,
+    "Chromium ended the plugin renderer with main",
+    rendererLeft,
+  );
+  expect(
+    isAlive(orphan.standInPid) && isAlive(decoy.pid),
+    "the stand-in orphan and the decoy outlived main",
+  );
+
+  const swept = await runCheck("orphans", ["--orphan-sweep"], {
+    main: lifecycleMain,
+    userData: spawned.userData,
+  });
+  const sweep = swept.findings["orphan-swept"] ?? {};
+  if (swept.findings.error) {
+    process.stdout.write(`${swept.findings.error.error}\n`);
+  }
+  expect(swept.exit.code === 0, "the relaunch ran to the end", {
+    exit: swept.exit,
+    stderr: swept.stderr,
+  });
+  expect(sweep.hadLock === true, "the relaunch took the single-instance lock");
+  const standInLeft = await waitGone([orphan.standInPid], 5_000);
+  expect(
+    standInLeft.length === 0 && sweep.result?.ended === 1,
+    "the sweep ended the orphan it recorded",
+    sweep,
+  );
+  expect(
+    isAlive(decoy.pid) && sweep.result?.notOurs === 1,
+    "and left alone a process that isn't Ajour's",
+    sweep.result,
+  );
+  expect(
+    sweep.recordLeft === false &&
+      (sweep.events ?? []).includes("plugin_renderer.sweep ok"),
+    "the sweep forgets the record, and an event says what it ended",
+    sweep,
+  );
+  // Only what this script started.
+  decoy.kill();
+  for (const pid of standInLeft) {
+    try {
+      process.kill(pid);
+    } catch {
+      // Gone already.
+    }
+  }
+  await rm(spawned.userData, { recursive: true, force: true }).catch(
+    () => undefined,
+  );
 }
 
 process.stdout.write(

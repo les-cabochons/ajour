@@ -142,6 +142,11 @@ export class ProjectDataShapePluginManager {
     );
   }
 
+  /** Resolves once no operation runs, or after `ms`. */
+  whenIdle(ms: number): Promise<void> {
+    return this.workers.whenIdle(ms);
+  }
+
   async shutdown() {
     await this.workers.shutdown();
   }

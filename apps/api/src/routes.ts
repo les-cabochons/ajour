@@ -142,6 +142,16 @@ export const ROUTES = {
     path: "/api/plugins/:pluginId/activation",
     name: "plugin.activate",
   },
+  pluginRuntimeUpdate: {
+    method: "POST",
+    path: "/api/plugins/:pluginId/runtime",
+    name: "plugin.runtime_update",
+  },
+  pluginResume: {
+    method: "POST",
+    path: "/api/plugins/:pluginId/resume",
+    name: "plugin.resume",
+  },
   sourceStateList: {
     method: "GET",
     path: "/api/backlog/source-statuses",

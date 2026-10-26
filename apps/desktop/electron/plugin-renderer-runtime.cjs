@@ -22,10 +22,14 @@ const { rendererSandboxRefusal } = require("./plugin-sandbox.cjs");
  * operation runs in a dedicated worker of that page, and the worker's one
  * way out is the broker of its operation, reached over IPC.
  *
- * Lifecycle, for now (#391 adds start modes, limits and the crash budget):
- * a plugin's renderer opens at its first call and closes 2 minutes after
- * its last, at a timeout, and on quit. A run that settles or is cancelled
- * stops its own worker only.
+ * Lifecycle (#391, decided in #217): a "Load when needed" plugin's renderer
+ * opens at its first call and closes 2 minutes after its last; an "Always
+ * ready" one opens when the API lists it in `keepReady` and stays open. Any
+ * renderer closes at a timeout, above its memory ceiling, sampled every few
+ * seconds, and on quit. A run that settles or is cancelled stops its own
+ * worker only. A crash or a memory kill is reported to the API, which keeps
+ * the crash budget and the 4-calls limit; nothing reopens a renderer until
+ * the next call or `keepReady`.
  */
 
 /** The largest result a run returns, as `MAX_PLUGIN_RESULT_BYTES` in plugin-runtime.ts. */
@@ -40,6 +44,10 @@ const READY_TIMEOUT_MS = 20_000;
 const CLOSE_TIMEOUT_MS = 5_000;
 /** At most this many blocked attempts a second count for one plugin. */
 const BLOCKED_PER_SECOND = 20;
+/** How often an open renderer's memory is read. */
+const MEMORY_SAMPLE_MS = 5_000;
+/** A run that doesn't say how its renderer lives gets "Load when needed" and Ajour's ceiling. */
+const DEFAULT_LIFECYCLE = { alwaysReady: false, memoryCeilingMb: 256 };
 
 /**
  * A proxy nothing can answer on: port 0 can't accept a connection. With
@@ -192,7 +200,13 @@ function entrypointUrl(pluginId, entrypoint) {
  *   launchRefusal?: import("./plugin-sandbox.cjs").SandboxRefusal,
  *   idleCloseMs?: number,
  *   readyTimeoutMs?: number,
+ *   memorySampleMs?: number,
  *   now?: () => number,
+ *   whenSwept?: Promise<unknown>,
+ *   processRecord?: {
+ *     add(entry: { pid: number, createdAt?: number, pluginId: string }): void,
+ *     remove(pid: number): void,
+ *   },
  * }} options
  */
 function createPluginRendererRuntime({
@@ -208,10 +222,22 @@ function createPluginRendererRuntime({
   launchRefusal,
   idleCloseMs = IDLE_CLOSE_MS,
   readyTimeoutMs = READY_TIMEOUT_MS,
+  memorySampleMs = MEMORY_SAMPLE_MS,
   now = Date.now,
+  processRecord,
+  whenSwept,
 }) {
-  /** @type {{ recordBlocked(pluginId: string, at: number): Promise<void> } | undefined} */
+  /**
+   * @type {{
+   *   recordBlocked(pluginId: string, at: number): Promise<void>,
+   *   recordStopped?(pluginId: string, cause: string, at: number): void,
+   * } | undefined}
+   */
   let host;
+  /** The plugins the API keeps "Always ready", by plugin id. */
+  let readyPlugins = new Map();
+  /** @type {ReturnType<typeof setInterval> | undefined} */
+  let memorySampler;
   /** @type {import("./plugin-sandbox.cjs").SandboxRefusal | undefined} */
   let rendererRefusal;
   /** Each plugin's open renderer, by plugin id. */
@@ -348,22 +374,43 @@ function createPluginRendererRuntime({
     }
   }
 
+  /** An "Always ready" renderer never closes for being idle. */
   function scheduleIdleClose(renderer) {
     clearTimeout(renderer.idleTimer);
-    if (renderer.closed || renderer.runs.size > 0) return;
+    if (renderer.closed || renderer.resident || renderer.runs.size > 0) return;
     renderer.idleTimer = setTimeout(() => {
-      if (renderer.runs.size === 0) void closeRenderer(renderer);
+      if (renderer.runs.size === 0 && !renderer.resident) {
+        void closeRenderer(renderer, undefined, "idle");
+      }
     }, idleCloseMs);
     renderer.idleTimer.unref?.();
   }
 
+  /** What a closed renderer's event ends with, by why it closed. */
+  const CLOSE_OUTCOMES = {
+    idle: "ok",
+    package_change: "ok",
+    quit: "ok",
+    timeout: "timeout",
+    memory: "error",
+    crashed: "error",
+    failed: "error",
+    sandbox_off: "refused",
+  };
+
   /**
    * Closes the renderer and settles its runs with `outcome`. Resolves once
-   * its page is gone, or after a few seconds.
+   * its page is gone, or after a few seconds. `why` names it in the
+   * renderer's `plugin_renderer.close` event.
+   *
+   * @param {any} renderer
+   * @param {any} [outcome]
+   * @param {keyof typeof CLOSE_OUTCOMES} [why]
    */
   function closeRenderer(
     renderer,
     outcome = { ok: false, failure: "terminated" },
+    why = "quit",
   ) {
     if (renderer.closed) return renderer.closing;
     renderer.closed = true;
@@ -375,18 +422,84 @@ function createPluginRendererRuntime({
     for (const run of [...renderer.runs.values()]) run.settle(outcome);
     renderer.pull?.(undefined);
     renderer.pull = null;
+    if (renderer.ready) {
+      events
+        .start("plugin_renderer.close", {
+          kind: "lifecycle",
+          trigger: "system",
+          detached: true,
+        })
+        .set({
+          plugin: { id: renderer.pluginId },
+          plugin_renderer: {
+            close_reason: why,
+            life_ms: now() - renderer.openedAt,
+            always_ready: renderer.resident,
+            memory_ceiling_mb: renderer.memoryCeilingMb,
+            ...(renderer.memoryMb !== undefined
+              ? { memory_mb: renderer.memoryMb }
+              : {}),
+          },
+        })
+        .end(CLOSE_OUTCOMES[why] ?? "ok");
+    }
     renderer.closing = (async () => {
       await renderer.opening;
       const contents = renderer.webContents;
       if (contents) byWebContents.delete(contents.id);
-      if (!contents || contents.isDestroyed()) return;
-      const destroyed = new Promise((resolve) =>
-        contents.once("destroyed", resolve),
-      );
-      contents.close();
-      await Promise.race([destroyed, delay(CLOSE_TIMEOUT_MS)]);
+      if (contents && !contents.isDestroyed()) {
+        const destroyed = new Promise((resolve) =>
+          contents.once("destroyed", resolve),
+        );
+        contents.close();
+        await Promise.race([destroyed, delay(CLOSE_TIMEOUT_MS)]);
+      }
+      if (renderer.pid !== undefined) processRecord?.remove(renderer.pid);
     })().catch(() => undefined);
     return renderer.closing;
+  }
+
+  /**
+   * The memory each ready renderer's process uses, read every few seconds
+   * while one is open: above its ceiling, it closes, and its runs fail
+   * with `memory`. Private bytes on Windows, the working set elsewhere.
+   */
+  function sampleMemory() {
+    const open = [...renderers.values()].filter(
+      (renderer) => renderer.ready && !renderer.closed,
+    );
+    if (open.length === 0) {
+      clearInterval(memorySampler);
+      memorySampler = undefined;
+      return;
+    }
+    let metrics;
+    try {
+      metrics = app.getAppMetrics();
+    } catch {
+      return;
+    }
+    for (const renderer of open) {
+      const memory = metrics.find(
+        (metric) => metric.pid === renderer.pid,
+      )?.memory;
+      const kilobytes = memory?.privateBytes ?? memory?.workingSetSize;
+      if (typeof kilobytes !== "number") continue;
+      renderer.memoryMb = Math.round(kilobytes / 1024);
+      if (kilobytes <= renderer.memoryCeilingMb * 1024) continue;
+      host?.recordStopped?.(renderer.pluginId, "memory", now());
+      void closeRenderer(
+        renderer,
+        { ok: false, failure: "crashed", cause: "memory" },
+        "memory",
+      );
+    }
+  }
+
+  function watchMemory() {
+    if (memorySampler) return;
+    memorySampler = setInterval(sampleMemory, memorySampleMs);
+    memorySampler.unref?.();
   }
 
   /** Turns every plugin off: a renderer isn't sandboxed as it must be. */
@@ -401,14 +514,25 @@ function createPluginRendererRuntime({
       reason: refusal.reason,
     };
     for (const renderer of [...renderers.values()]) {
-      void closeRenderer(renderer, outcome);
+      void closeRenderer(renderer, outcome, "sandbox_off");
     }
   }
 
-  function openRenderer(pluginId, packageDirectory) {
+  /**
+   * @param {string} pluginId
+   * @param {string} packageDirectory
+   * @param {{ alwaysReady: boolean, memoryCeilingMb: number }} lifecycle
+   */
+  function openRenderer(pluginId, packageDirectory, lifecycle) {
     const renderer = {
       pluginId,
       packageDirectory,
+      /** "Always ready": it never closes for being idle. */
+      resident: lifecycle.alwaysReady || readyPlugins.has(pluginId),
+      /** Read once, at the start: a change takes effect on the next one. */
+      memoryCeilingMb: lifecycle.memoryCeilingMb,
+      /** @type {number | undefined} */ memoryMb: undefined,
+      /** @type {any} */ view: null,
       /** @type {any} */ webContents: null,
       ready: false,
       closed: false,
@@ -434,14 +558,20 @@ function createPluginRendererRuntime({
     renderer.readyTimer = setTimeout(() => {
       if (renderer.ready || renderer.closed) return;
       renderer.unit.end("timeout", "ready_timeout");
-      void closeRenderer(renderer, {
-        ok: false,
-        failure: "plugin_error",
-        message: "Ajour couldn't start the plugin's page.",
-      });
+      void closeRenderer(
+        renderer,
+        {
+          ok: false,
+          failure: "plugin_error",
+          message: "Ajour couldn't start the plugin's page.",
+        },
+        "failed",
+      );
     }, readyTimeoutMs);
     renderer.readyTimer.unref?.();
     renderer.opening = (async () => {
+      // The last session's orphans go first (plugin-renderer-sweep.cjs).
+      await whenSwept;
       await sessionOf(pluginId);
       if (renderer.closed) return;
       const view = new WebContentsView({
@@ -464,6 +594,9 @@ function createPluginRendererRuntime({
           devTools,
         },
       });
+      // The view is held as long as its renderer: a view nothing holds is
+      // collected, and its page closes with it.
+      renderer.view = view;
       const contents = view.webContents;
       renderer.webContents = contents;
       byWebContents.set(contents.id, renderer);
@@ -480,6 +613,15 @@ function createPluginRendererRuntime({
           blocked(pluginId, "navigation");
         });
       }
+      // A page Ajour didn't close is gone: its runs can't end otherwise.
+      contents.once("destroyed", () => {
+        if (renderer.closed) return;
+        void closeRenderer(
+          renderer,
+          { ok: false, failure: "crashed", cause: "killed" },
+          "crashed",
+        );
+      });
       contents.on("will-attach-webview", (event) => event.preventDefault());
       contents.on("select-bluetooth-device", (event, _devices, callback) => {
         event.preventDefault();
@@ -504,28 +646,42 @@ function createPluginRendererRuntime({
             },
           })
           .end("error");
-        void closeRenderer(renderer, { ok: false, failure: "crashed", cause });
+        // Any process that ended counts against the plugin, run or not.
+        host?.recordStopped?.(pluginId, cause, now());
+        void closeRenderer(
+          renderer,
+          { ok: false, failure: "crashed", cause },
+          "crashed",
+        );
       });
       contents.on(
         "did-fail-load",
         (_event, _code, _description, _url, isMainFrame) => {
           if (!isMainFrame || renderer.ready || renderer.closed) return;
           renderer.unit.end("error", "load_failed");
-          void closeRenderer(renderer, {
-            ok: false,
-            failure: "plugin_error",
-            message: "Ajour couldn't load the plugin's page.",
-          });
+          void closeRenderer(
+            renderer,
+            {
+              ok: false,
+              failure: "plugin_error",
+              message: "Ajour couldn't load the plugin's page.",
+            },
+            "failed",
+          );
         },
       );
       contents.loadURL(hostPageUrl(pluginId)).catch(() => undefined);
     })().catch(() => {
       renderer.unit.end("error", "load_failed");
-      void closeRenderer(renderer, {
-        ok: false,
-        failure: "plugin_error",
-        message: "Ajour couldn't start the plugin's page.",
-      });
+      void closeRenderer(
+        renderer,
+        {
+          ok: false,
+          failure: "plugin_error",
+          message: "Ajour couldn't start the plugin's page.",
+        },
+        "failed",
+      );
     });
     return renderer;
   }
@@ -537,9 +693,10 @@ function createPluginRendererRuntime({
   function onReady(renderer) {
     if (renderer.ready) return true;
     const pid = renderer.webContents.getOSProcessId();
+    const metrics = app.getAppMetrics();
     const refusal = rendererSandboxRefusal({
       pid,
-      metrics: app.getAppMetrics(),
+      metrics,
       platform,
       otherPluginPids: [...renderers.values()]
         .filter((other) => other !== renderer && other.ready)
@@ -554,9 +711,26 @@ function createPluginRendererRuntime({
     clearTimeout(renderer.readyTimer);
     renderer.pid = pid;
     renderer.ready = true;
+    // Recorded for the next launch's sweep, should Ajour end without closing it.
+    const createdAt = metrics.find(
+      (metric) => metric.pid === pid,
+    )?.creationTime;
+    processRecord?.add({
+      pid,
+      pluginId: renderer.pluginId,
+      ...(typeof createdAt === "number" ? { createdAt } : {}),
+    });
+    watchMemory();
     renderer.unit
-      .set({ plugin_renderer: { open_ms: now() - renderer.openedAt } })
+      .set({
+        plugin_renderer: {
+          open_ms: now() - renderer.openedAt,
+          always_ready: renderer.resident,
+        },
+      })
       .end();
+    // An "Always ready" page that opened with no call waits for one.
+    scheduleIdleClose(renderer);
     return true;
   }
 
@@ -707,10 +881,14 @@ function createPluginRendererRuntime({
       let renderer = renderers.get(invocation.pluginId);
       if (renderer && renderer.packageDirectory !== packageDirectory) {
         // An update moved the package: its renderer opens again for it.
-        void closeRenderer(renderer);
+        void closeRenderer(renderer, undefined, "package_change");
         renderer = undefined;
       }
-      renderer ??= openRenderer(invocation.pluginId, packageDirectory);
+      renderer ??= openRenderer(
+        invocation.pluginId,
+        packageDirectory,
+        invocation.lifecycle ?? DEFAULT_LIFECYCLE,
+      );
       clearTimeout(renderer.idleTimer);
       const runId = String(nextRunId++);
       /** @type {(outcome: any) => void} */
@@ -752,7 +930,8 @@ function createPluginRendererRuntime({
           if (queued !== -1) current.commands.splice(queued, 1);
           if (reason === "timeout") {
             // A plugin that runs past its time may hold its page: it closes.
-            await closeRenderer(current);
+            // The API counts the timeout against the plugin.
+            await closeRenderer(current, undefined, "timeout");
           } else if (!current.closed && queued === -1 && !run.reportedSettled) {
             send(current, { type: "stop", runId });
           }
@@ -760,10 +939,40 @@ function createPluginRendererRuntime({
       };
     },
 
-    /** Closes every plugin's renderer, as Ajour quits. */
+    /**
+     * The API's "Always ready" plugins, all of them each time: those not
+     * open start now, unless plugins are off on this computer, and an open
+     * renderer no longer listed closes once idle.
+     */
+    keepReady(plugins) {
+      readyPlugins = new Map(
+        plugins.map((plugin) => [plugin.pluginId, plugin]),
+      );
+      for (const renderer of renderers.values()) {
+        renderer.resident = readyPlugins.has(renderer.pluginId);
+        if (renderer.resident) clearTimeout(renderer.idleTimer);
+        else if (renderer.ready) scheduleIdleClose(renderer);
+      }
+      if (unavailable()) return;
+      for (const plugin of readyPlugins.values()) {
+        const packageDirectory = path.resolve(plugin.packageDirectory);
+        const open = renderers.get(plugin.pluginId);
+        if (open?.packageDirectory === packageDirectory) continue;
+        if (open && open.runs.size > 0) continue;
+        if (open) void closeRenderer(open, undefined, "package_change");
+        openRenderer(plugin.pluginId, packageDirectory, plugin.lifecycle);
+      }
+    },
+
+    /** Closes every plugin's renderer, as Ajour quits or installs an update. */
     async closeAll() {
+      readyPlugins = new Map();
+      clearInterval(memorySampler);
+      memorySampler = undefined;
       await Promise.all(
-        [...renderers.values()].map((renderer) => closeRenderer(renderer)),
+        [...renderers.values()].map((renderer) =>
+          closeRenderer(renderer, undefined, "quit"),
+        ),
       );
     },
 

@@ -108,6 +108,7 @@ describe("local API lifecycle events", () => {
         api: {
           port,
           agent_runner_ms: expect.any(Number),
+          drain_ms: expect.any(Number),
           plugins_ms: expect.any(Number),
           close_ms: expect.any(Number),
           plugin_operations_running: 0,
