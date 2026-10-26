@@ -452,6 +452,27 @@ describe("serving a plugin's TypeScript source", () => {
     expect(policy.strippedFileCount()).toBe(0);
   });
 
+  it("forgets the stripped files of a package reached through a link, once the package is gone", async () => {
+    // As on macOS, where the temporary folder is a link to /private.
+    const linkParent = await mkdtemp(path.join(os.tmpdir(), "ajour-link-"));
+    const linked = path.join(linkParent, "package");
+    await symlink(packageDirectory, linked, "junction");
+    await writeFile(
+      path.join(packageDirectory, "lib", "plugin.ts"),
+      "export const a: number = 1;",
+    );
+    await policy.servePluginFile(
+      { url: "ajour-plugin://jira/lib/plugin.ts" },
+      { pluginId: "jira", packageDirectory: linked, hostDirectory: linked },
+    );
+    await rm(packageDirectory, { recursive: true, force: true });
+
+    await policy.forgetStrippedFiles(linked);
+
+    expect(policy.strippedFileCount()).toBe(0);
+    await rm(linkParent, { recursive: true, force: true });
+  });
+
   it.each([".ts", ".mts"])(
     "strips a %s file of 2 MB, and refuses one a byte over, naming it",
     async (extension) => {

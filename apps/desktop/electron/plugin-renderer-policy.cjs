@@ -215,12 +215,12 @@ const MAX_STRIP_REASON_CHARACTERS = 300;
 
 /**
  * Each TypeScript file's stripped output, or why it can't be stripped, by
- * its real path, with the hash of the source it came from. An entry holds
- * only for that exact source, so a file that changes, even to the same size
- * and time, is stripped again, and a renderer that opens again doesn't
- * strip an unchanged package again.
+ * its real path, with the hash of the source it came from and the package
+ * folder it was served from. An entry holds only for that exact source, so
+ * a file that changes, even to the same size and time, is stripped again.
+ * Entries last while the plugin's renderer is open.
  *
- * @type {Map<string, { hash: string, stripped: StrippedFile }>}
+ * @type {Map<string, { hash: string, packageDirectory: string, stripped: StrippedFile }>}
  */
 const strippedFiles = new Map();
 
@@ -255,9 +255,10 @@ const sourceTooLarge = () => ({
  *
  * @param {string} realPath
  * @param {number} size
+ * @param {string} packageDirectory the package folder, as the renderer knows it
  * @returns {Promise<StrippedFile>}
  */
-async function strippedFile(realPath, size) {
+async function strippedFile(realPath, size, packageDirectory) {
   if (size > MAX_TYPESCRIPT_SOURCE_BYTES) return sourceTooLarge();
   const bytes = await readFile(realPath);
   // The file may have grown since it was measured.
@@ -281,7 +282,7 @@ async function strippedFile(realPath, size) {
     };
   }
   strippedFiles.delete(realPath);
-  strippedFiles.set(realPath, { hash, stripped });
+  strippedFiles.set(realPath, { hash, packageDirectory, stripped });
   if (strippedFiles.size > MAX_STRIPPED_FILES) {
     const oldest = strippedFiles.keys().next().value;
     if (oldest !== undefined) strippedFiles.delete(oldest);
@@ -292,7 +293,8 @@ async function strippedFile(realPath, size) {
 /**
  * Drops the stripped files of a package, as its plugin's renderer closes
  * for good: an uninstall or an update leaves nothing behind. Matches the
- * package by its path as given and by its real path.
+ * package by the folder each file was served from, which holds even once
+ * the folder is gone and its real path can't be read, and by its real path.
  *
  * @param {string} packageDirectory
  */
@@ -303,8 +305,13 @@ async function forgetStrippedFiles(packageDirectory) {
   } catch {
     // A package that is already gone has only its path as given.
   }
-  for (const key of [...strippedFiles.keys()]) {
-    if (roots.some((root) => isInside(key, root))) strippedFiles.delete(key);
+  for (const [key, entry] of [...strippedFiles]) {
+    if (
+      entry.packageDirectory === roots[0] ||
+      roots.some((root) => isInside(key, root))
+    ) {
+      strippedFiles.delete(key);
+    }
   }
 }
 
@@ -360,7 +367,11 @@ async function servePluginFile(
           .relative(path.resolve(packageDirectory), resolved.filePath)
           .split(path.sep)
           .join("/");
-        const stripped = await strippedFile(real, stats.size);
+        const stripped = await strippedFile(
+          real,
+          stats.size,
+          path.resolve(packageDirectory),
+        );
         if (stripped.refused !== undefined) {
           onSourceRefused?.({ file, reason: `${file} ${stripped.refused}` });
           return new Response("This file can't run.", {
