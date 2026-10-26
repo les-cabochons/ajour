@@ -413,10 +413,15 @@ API 4 packages in development builds of the desktop app, until the cut-over
   so this guards what that misses.
 - The real-Electron check `apps/desktop/scripts/check-plugin-sandbox.mjs`
   (`corepack pnpm --filter @ajour/desktop check:plugin-sandbox`) proves the
-  above with fixture plugins: `sandbox-check/main.cjs` the sandbox, and
-  `sandbox-check/lifecycle.cjs` the start modes, limits, crash budget,
-  quit drain and the sweep across a forced kill of main. It seeds seam 3
-  (#392).
+  above with fixture plugins: `sandbox-check/main.cjs` the sandbox, the
+  malicious plugin's ways out and its attacks on the broker, and
+  `sandbox-check/lifecycle.cjs` the start modes, limits, crash budget, an
+  infinite loop, a fork bomb, the quit drain and the sweep across a forced
+  kill of main. It is seam 3 (#392): `.github/workflows/plugin-sandbox.yml`
+  runs it on Windows and macOS, and on Linux, where it checks only that
+  plugins stay off, as informational. Pull requests that touch
+  `apps/desktop`, `apps/api` or `packages` run it, and neither release
+  workflow publishes unless it passes.
 
 - **The port** is `CredentialBrokerPort.forOperation(caller)`
   (`apps/api/src/broker-port.ts`), with the plugin id from the runtime,
