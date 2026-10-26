@@ -114,7 +114,7 @@ interface ImportProject {
 
 On export, Ajour checks your datasets against the manifest. Every declared dataset must be present once, with no unknown dataset or column. Required columns must have a value, and every value must have the declared type. An empty string or `null` counts as no value.
 
-On import, Ajour checks nothing in the sheets but their size. Find the worksheets and rows you need, convert and validate the values yourself, and throw a message the user can act on, with the worksheet and row, such as `Row 4 is invalid. A project name is required.`
+On import, Ajour checks nothing in the sheets but their size. Find the worksheets and rows you need, convert and validate the values yourself, and throw a message the user can act on, with the worksheet, row and column, such as `Row 4 is invalid. "Fermé" must be Oui or Non.` Don't quote a cell's value: Ajour records the message in its events, which hold no file content.
 
 Ajour merges the projects you return by name, and the tasks of a project by name. A task field you leave out keeps the value Ajour has.
 

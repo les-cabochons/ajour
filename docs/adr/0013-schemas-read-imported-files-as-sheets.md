@@ -12,7 +12,7 @@ So a schema's `importProjects` gets every worksheet of the file as rows of cells
 
 ## Consequences
 
-- A schema checks the layout of what it imports and words its own errors, such as `Row 4 is invalid. A project name is required.`
+- A schema checks the layout of what it imports and words its own errors, such as `Row 4 is invalid. "Fermé" must be Oui or Non.` The message never quotes a cell, since Ajour records it in its events.
 - Ajour checks only the size of an imported file: at most 100 worksheets, 100,000 rows per worksheet and 1,000 cells per row.
 - Ajour's built-in schema still reads its own `Projects` worksheet against its columns.
 - Import tasks… on a project uses the schema picked in Settings › Projects when it is a plugin. With Ajour default, it reads task names from column C of the first worksheet, as before.
