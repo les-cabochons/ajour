@@ -1,7 +1,10 @@
 import { webcrypto } from "node:crypto";
 import ExcelJS from "exceljs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { extractTaskNamesFromWorkbook } from "./project-task-import";
+import {
+  extractTaskNamesFromWorkbook,
+  formatSchemaTaskImportSummary,
+} from "./project-task-import";
 
 async function buildWorkbookBuffer(
   ...sheets: Array<{ name: string; rows: unknown[][] }>
@@ -64,6 +67,17 @@ describe("extractTaskNamesFromWorkbook", () => {
       blankCount: 1,
       headerCount: 1,
     });
+  });
+});
+
+describe("formatSchemaTaskImportSummary", () => {
+  it("starts with a capital whichever count comes first", () => {
+    expect(
+      formatSchemaTaskImportSummary({ addedTaskCount: 0, updatedTaskCount: 1 }),
+    ).toBe("Updated 1 task.");
+    expect(
+      formatSchemaTaskImportSummary({ addedTaskCount: 0, updatedTaskCount: 0 }),
+    ).toBe("No tasks changed.");
   });
 });
 

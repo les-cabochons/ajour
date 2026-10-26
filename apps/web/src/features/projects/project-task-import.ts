@@ -91,7 +91,7 @@ export function formatSchemaTaskImportSummary(result: ProjectTaskMergeResult) {
   const parts = [];
   if (result.addedTaskCount > 0) {
     parts.push(
-      `Imported ${formatCount(result.addedTaskCount, "task", "tasks")}`,
+      `imported ${formatCount(result.addedTaskCount, "task", "tasks")}`,
     );
   }
   if (result.updatedTaskCount > 0) {
@@ -99,7 +99,9 @@ export function formatSchemaTaskImportSummary(result: ProjectTaskMergeResult) {
       `updated ${formatCount(result.updatedTaskCount, "task", "tasks")}`,
     );
   }
-  return parts.length > 0 ? `${parts.join(", ")}.` : "No tasks changed.";
+  if (parts.length === 0) return "No tasks changed.";
+  const summary = parts.join(", ");
+  return `${summary[0]!.toUpperCase()}${summary.slice(1)}.`;
 }
 
 /** The schema plugin picked in Settings › Projects, when it is available. */

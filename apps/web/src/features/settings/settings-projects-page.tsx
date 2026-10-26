@@ -46,16 +46,16 @@ function formatProjectImportSummary(result: {
   const parts = [];
 
   if (result.createdProjectCount > 0) {
-    parts.push(formatCount(result.createdProjectCount, "project created"));
+    parts.push(`${formatCount(result.createdProjectCount, "project")} created`);
   }
   if (result.mergedProjectCount > 0) {
-    parts.push(formatCount(result.mergedProjectCount, "project merged"));
+    parts.push(`${formatCount(result.mergedProjectCount, "project")} merged`);
   }
   if (result.addedTaskCount > 0) {
-    parts.push(formatCount(result.addedTaskCount, "task added"));
+    parts.push(`${formatCount(result.addedTaskCount, "task")} added`);
   }
   if (result.updatedTaskCount > 0) {
-    parts.push(formatCount(result.updatedTaskCount, "task updated"));
+    parts.push(`${formatCount(result.updatedTaskCount, "task")} updated`);
   }
 
   return parts.length > 0 ? `${parts.join(" · ")}.` : "No projects changed.";
