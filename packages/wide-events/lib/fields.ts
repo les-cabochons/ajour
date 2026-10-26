@@ -95,7 +95,7 @@ export function defineCatalog<
   return catalog;
 }
 
-function isField(node: unknown): node is Field<unknown> {
+export function isField(node: unknown): node is Field<unknown> {
   const privacy = (node as Field<unknown> | null | undefined)?.privacy;
   return privacy === "operational" || privacy === "sensitive";
 }

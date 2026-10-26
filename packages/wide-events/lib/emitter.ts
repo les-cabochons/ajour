@@ -498,8 +498,9 @@ class EmitterState {
   }
 
   emit(unit: UnitState) {
-    // The default sink drops the event, so it is never built.
-    if (this.sink === nowhere) return;
+    // The default sink drops the event, so it is never built, and neither is
+    // it for a sink that is off right now, such as the local log file.
+    if (this.sink === nowhere || this.sink.accepting?.() === false) return;
     const { context } = this;
     const event: Envelope & Fields = {
       schema: 1,

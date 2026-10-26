@@ -2,9 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEmitter } from "../index.ts";
 import {
   createConsoleSink,
+  createRecordingSink,
+  fanOut,
   nowhere,
   sinkFromSwitch,
   WIDE_EVENTS_SWITCH,
+  type Sink,
 } from "../sinks.ts";
 import { apiContext, testCatalog } from "./fixtures.ts";
 
@@ -75,5 +78,79 @@ describe("sinks", () => {
       () => {},
     );
     expect(lines).toHaveLength(1);
+  });
+
+  it("builds no event while the sink is off, and builds them again once it is on", () => {
+    let on = false;
+    const emit = vi.fn();
+    const events = createEmitter({
+      catalog: testCatalog,
+      context: apiContext,
+      sink: { emit, accepting: () => on },
+    });
+    const failing = () => {
+      throw new Error("failed");
+    };
+
+    expect(() =>
+      events.run("backlog.sync", { kind: "job", trigger: "user" }, failing),
+    ).toThrow("failed");
+    expect(emit).not.toHaveBeenCalled();
+
+    on = true;
+    events.run("backlog.sync", { kind: "job", trigger: "user" }, () => {});
+    expect(emit).toHaveBeenCalledOnce();
+  });
+});
+
+describe("fanOut", () => {
+  it("hands each event to every sink, past one that throws", () => {
+    const first = createRecordingSink();
+    const second = createRecordingSink();
+    const throwing: Sink = {
+      emit() {
+        throw new Error("disk full");
+      },
+    };
+    const events = createEmitter({
+      catalog: testCatalog,
+      context: apiContext,
+      sink: fanOut(first, throwing, second),
+    });
+
+    expect(
+      events.run("api.request", { kind: "request", trigger: "user" }, () => 1),
+    ).toBe(1);
+
+    expect(first.events).toMatchObject([{ name: "api.request" }]);
+    expect(second.events).toMatchObject([{ name: "api.request" }]);
+  });
+
+  it("skips a sink that is off, and is off only when every sink is", () => {
+    let fileOn = false;
+    const file = { ...createRecordingSink(), accepting: () => fileOn };
+    const terminal = createRecordingSink();
+
+    const both = fanOut(terminal, file);
+    const fileOnly = fanOut(nowhere, file);
+    const events = createEmitter({
+      catalog: testCatalog,
+      context: apiContext,
+      sink: both,
+    });
+    events.run("api.request", { kind: "request", trigger: "user" }, () => {});
+
+    expect(terminal.events).toHaveLength(1);
+    expect(file.events).toHaveLength(0);
+    expect(both.accepting?.()).toBe(true);
+    expect(fileOnly).toBe(file);
+    fileOn = true;
+    events.run("api.request", { kind: "request", trigger: "user" }, () => {});
+    expect(file.events).toHaveLength(1);
+  });
+
+  it("is nowhere when it has no sink but nowhere", () => {
+    expect(fanOut()).toBe(nowhere);
+    expect(fanOut(nowhere, nowhere)).toBe(nowhere);
   });
 });
