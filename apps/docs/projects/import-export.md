@@ -22,7 +22,7 @@ A schema decides which columns the file has and how each project and task become
 | `budget_hours`     | The task's budget            |
 | `adjustment_hours` | The task's adjustment        |
 
-A schema plugin, such as [Workday](/plugins/workday), can map the same data to another tool's layout. Pick it under **Schema** once it is installed.
+A schema plugin, such as [Workday](/plugins/workday), reads another tool's files. Pick it under **Schema** once it is installed. A schema that only imports, like Workday, has no export: the **Export projects** section says so.
 
 ## Export
 
@@ -30,4 +30,6 @@ Select the projects to export, or press **Select all**, then press **Export to E
 
 ## Import
 
-Under **Import projects**, choose a `.xlsx` file with a `Projects` sheet and press **Import workbook**. Ajour merges projects by name, so a project that already exists is updated instead of copied, and its missing tasks are added.
+Under **Import projects**, choose a `.xlsx` file and press **Import workbook**. With **Ajour default**, the file needs a `Projects` sheet. Ajour merges projects by name, so a project that already exists is updated instead of copied, and its missing tasks are added.
+
+Some files don't say which project they are for, such as Workday's project plan. Ajour refuses them here: open the project and use [Import tasks…](/projects/tasks#import-tasks-from-excel) instead.

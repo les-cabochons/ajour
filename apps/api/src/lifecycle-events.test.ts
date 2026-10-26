@@ -141,7 +141,7 @@ describe("local API lifecycle events", () => {
           found: true,
           bytes: expect.any(Number),
           version_from: 2,
-          version_to: 8,
+          version_to: 9,
         },
       }),
     ]);
@@ -214,7 +214,7 @@ describe("local API lifecycle events", () => {
     expect(named(events, "storage.load")).toEqual([
       expect.objectContaining({
         outcome: "ok",
-        storage: expect.objectContaining({ found: true, version_to: 8 }),
+        storage: expect.objectContaining({ found: true, version_to: 9 }),
       }),
     ]);
   });

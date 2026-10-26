@@ -8,17 +8,26 @@ import { leaveOpenDraft } from "@/lib/open-draft";
 import { subscribeDescriptionConflicts } from "@/lib/sync-conflict-events";
 import { cn } from "@/lib/utils";
 
-/** The search params of Sync review: the item whose issues it opens on. */
+/**
+ * The search params of Sync review: the item whose issues it opens on, or
+ * the connection whose held changes it opens on.
+ */
 export interface SyncReviewSearch {
   item?: string;
+  held?: string;
 }
 
 export function parseSyncReviewSearch(
   search: Record<string, unknown>,
 ): SyncReviewSearch {
-  return typeof search.item === "string" && search.item
-    ? { item: search.item }
-    : {};
+  return {
+    ...(typeof search.item === "string" && search.item
+      ? { item: search.item }
+      : {}),
+    ...(typeof search.held === "string" && search.held
+      ? { held: search.held }
+      : {}),
+  };
 }
 
 /**

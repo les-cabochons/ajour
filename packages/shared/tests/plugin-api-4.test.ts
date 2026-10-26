@@ -695,7 +695,7 @@ describe("the plugins overview", () => {
         connectionGroups: [],
         totalPendingImportCount: 0,
         totalSelectedImportCount: 0,
-      }).plugins[0]?.capabilities.projectDataShape?.datasets[0]?.id,
+      }).plugins[0]?.capabilities.projectDataShape?.datasets?.[0]?.id,
     ).toBe("projects");
   });
 });

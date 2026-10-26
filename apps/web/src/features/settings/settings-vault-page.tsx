@@ -27,6 +27,8 @@ import {
   type VaultGroup,
   type VaultRow,
 } from "@/domain/plugins/vault-model";
+import { heldEditCount, useHeldEdits } from "@/lib/held-edits";
+import { describeMissingPluginRemoval } from "./plugin-settings-workflow";
 import { usePluginSettingsWorkflow } from "./use-plugin-settings-workflow";
 
 const PLUGINS_NEED_DESKTOP_APP = "Plugins need the desktop app.";
@@ -84,10 +86,13 @@ function VaultRowView({ row }: { row: VaultRow }) {
 /** Removes everything a plugin that is not installed left behind. */
 function RemoveMissingPlugin({
   group,
+  heldCount,
   disabled,
   onRemove,
 }: {
   group: VaultGroup;
+  /** The changes the plugin's connections hold, which the removal discards. */
+  heldCount: number;
   disabled: boolean;
   onRemove: () => void;
 }) {
@@ -110,10 +115,7 @@ function RemoveMissingPlugin({
         <AlertDialogHeader>
           <AlertDialogTitle>Remove {group.title}?</AlertDialogTitle>
           <AlertDialogDescription>
-            This deletes its saved connections and secrets from this computer,
-            and the connections' local pull requests, calendar data and team
-            data with them. Backlog items already synced stay. To use the plugin
-            again, download it and add its connections again.
+            {describeMissingPluginRemoval(heldCount)}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -143,6 +145,7 @@ export function SettingsVaultPage() {
     isMutatingPlugin,
     workflow,
   } = usePluginSettingsWorkflow();
+  const heldEdits = useHeldEdits();
   // A missing plugin has no manifest to name it, but the catalog may.
   const groups = useMemo(
     () =>
@@ -215,6 +218,7 @@ export function SettingsVaultPage() {
             {group.installed ? null : (
               <RemoveMissingPlugin
                 group={group}
+                heldCount={heldEditCount(heldEdits, group.pluginId)}
                 disabled={isMutatingPlugin}
                 onRemove={() => {
                   void workflow

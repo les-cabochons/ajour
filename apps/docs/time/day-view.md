@@ -25,7 +25,7 @@ On today, a **Today** chip shows next to the date. On another day, a **Return to
 
 ## Add an entry
 
-Press <kbd>N</kbd>, or **New entry** under the rows, for a new entry on the day you are looking at. The **+** button in the sidebar starts on today. Pick the task, type the hours, and save. See [Time entries](/time/entries).
+Press <kbd>N</kbd>, or **New entry** under the rows, for a new entry on the day you are looking at. The **+** next to **Start** or **Stop** in the sidebar starts on today. Pick the task, type the hours, and save. See [Time entries](/time/entries).
 
 To log time while you work instead, start a [running entry](/time/running-entries).
 

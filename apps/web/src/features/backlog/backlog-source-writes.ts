@@ -7,9 +7,13 @@ import { sourcePriorityFromLevel } from "@/domain/backlog/priority";
 import { announcePostedComment } from "@/features/backlog/comment-threads";
 import {
   getCachedPluginsOverview,
+  isAccessOffError,
   postItemComment,
   writeBacklogSettle,
 } from "@/lib/app-api";
+import { isSourceWriteHeld } from "@/domain/backlog/held-edits";
+import { announceHeldEdit } from "@/lib/held-edit-notice";
+import { holdRefusedComment } from "@/lib/held-edits";
 import {
   agentAccessAllows,
   readAgentCommentAccess,
@@ -72,9 +76,11 @@ export const settleOpensDialog = canWriteToSource;
  */
 export async function sendPendingSourceWrites(workItemIds?: readonly string[]) {
   const snapshot = localStore.snapshot();
+  // A held write waits for the user's approval in Sync review (#395).
   const pending = snapshot.workItems.filter(
     (workItem) =>
       workItem.pendingSourceWrite &&
+      !isSourceWriteHeld(workItem) &&
       !sending.has(workItem._id) &&
       (!workItemIds || workItemIds.includes(workItem._id)),
   );
@@ -155,6 +161,14 @@ function sendSourceWrite(
         if (!stillCurrent()) {
           job.set({ source_write: { result: "superseded" } });
           job.cancel("superseded");
+          return;
+        }
+        // Editing work items is off on the connection: the write is held,
+        // with the item as the user left it, until they approve it.
+        if (isAccessOffError(error)) {
+          job.set({ source_write: { result: "held" } }).refuse("access_off");
+          job.enter(() => localStore.holdSourceWrite(workItem._id));
+          announceHeldEdit(workItem);
           return;
         }
         job.set({ source_write: { result: "failed" } }).fail(error);
@@ -311,6 +325,21 @@ async function sendSettleComment(
     job.set({ comment: { result: "posted" } });
     announcePostedComment(entry, comment);
   } catch (error) {
+    // Editing work items is off: the comment is held for review.
+    if (
+      holdRefusedComment(error, {
+        kind: "comment",
+        itemId: workItemId,
+        pluginId: entry.pluginId,
+        connectionId: entry.connectionId,
+        sourceId: entry.sourceId,
+        body: entry.body,
+        ...(entry.agentClient ? { agentClient: entry.agentClient } : {}),
+      })
+    ) {
+      job.set({ comment: { result: "held" } }).refuse("access_off");
+      return;
+    }
     keptAsDraft("post_failed").fail(error);
     keepCommentAsDraft(workItemId, entry.body);
     showErrorToast({
@@ -384,11 +413,13 @@ export function releaseSettleComment(commentId: string, workItemId: string) {
   return sendSettleComments(workItemId);
 }
 
-/** The source writes waiting now, which the launch flush sends. */
+/** The source writes waiting now, which the launch flush sends. Held ones wait for review. */
 export function pendingSourceWriteCount() {
   return localStore
     .snapshot()
-    .workItems.filter((workItem) => workItem.pendingSourceWrite).length;
+    .workItems.filter(
+      (workItem) => workItem.pendingSourceWrite && !isSourceWriteHeld(workItem),
+    ).length;
 }
 
 /** At launch, sends the settle comments left from a session that quit during Undo. */

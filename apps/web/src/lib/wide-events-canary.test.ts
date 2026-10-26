@@ -474,12 +474,12 @@ async function loadRenderer() {
     .offerUndo as Mock;
   const appApi = await import("@/lib/app-api");
   const { localStore } = await import("@/lib/local-store");
-  const { syncTeamConnection } = await import("@/lib/team-sync");
+  const { appPluginSettingsDependencies } =
+    await import("@/features/settings/use-plugin-settings-workflow");
   const { createPluginSettingsWorkflow } =
     await import("@/features/settings/plugin-settings-workflow");
   const workflow = createPluginSettingsWorkflow({
-    ...appApi,
-    syncTeamConnection,
+    ...appPluginSettingsDependencies(),
     subscribeCatalog: () => () => undefined,
   });
   return {

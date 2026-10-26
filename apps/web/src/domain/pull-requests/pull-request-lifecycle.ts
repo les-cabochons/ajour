@@ -2,6 +2,7 @@ import {
   codeHostPullRequestFactsSchema,
   isCapabilityActive,
 } from "@ajour/shared";
+import { connectionAccessAllows } from "@ajour/shared/connection-access";
 import { z } from "zod";
 import type {
   CodeHostPullRequestFacts,
@@ -45,14 +46,27 @@ const sameLogin = (left: string, right: string) =>
 const refKey = (facts: { repository: string; number: number }) =>
   JSON.stringify([facts.repository.toLowerCase(), facts.number]);
 
+/**
+ * The plugins whose pull requests show, each with the connections whose
+ * access includes pull requests. A plugin whose every connection leaves
+ * them off shows none.
+ */
 export function enabledCodeHostGroups(overview: PluginsOverview | null) {
   return overview?.pluginsEnabled === false
     ? []
-    : (overview?.connectionGroups ?? []).filter(
-        (group) =>
-          isCapabilityActive(group, "codeHost") &&
-          group.plugin.unavailableReason === undefined,
-      );
+    : (overview?.connectionGroups ?? []).flatMap((group) => {
+        if (
+          !isCapabilityActive(group, "codeHost") ||
+          group.plugin.unavailableReason !== undefined
+        ) {
+          return [];
+        }
+        const connections = group.connections.filter((connection) =>
+          connectionAccessAllows(group, connection, "syncPullRequests"),
+        );
+        if (connections.length === group.connections.length) return [group];
+        return connections.length > 0 ? [{ ...group, connections }] : [];
+      });
 }
 
 export function isPullRequestSnoozed(item: LocalPullRequest, now: number) {

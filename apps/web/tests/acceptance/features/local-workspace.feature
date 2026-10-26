@@ -284,6 +284,25 @@ Feature: Open the local time workspace
     When I open the running entry from the timer dock
     Then only the running entry's editor is open
 
+  Scenario: Create a time entry from the idle timer dock
+    Given I have no saved Ajour workspace
+    When I open today's time workspace
+    And I open a new entry from the idle timer dock "+"
+    Then only the new entry's editor is open
+
+  Scenario: Create a backlog item from the sidebar header
+    Given I have no saved Ajour workspace
+    When I open today's time workspace
+    And I create the backlog item "Write release notes" from the sidebar header
+    Then the sidebar lists "Write release notes"
+
+  Scenario: Save a valid entry draft before creating a backlog item from the sidebar header
+    Given I have a week of saved entries
+    When I change the open entry to "02:00" hours with a note
+    And I press New backlog item in the sidebar header
+    Then the new backlog item editor is open
+    And the open entry draft was saved
+
   Scenario: Return from Settings to the same view
     Given I have no saved Ajour workspace
     When I open today's time workspace in the Week view

@@ -34,6 +34,7 @@ export type PluginRefusalReason =
   | "not_supported"
   | "invalid_request"
   | "agent_access"
+  | "access_off"
   /** The runtime runs no plugin on this computer, such as without a sandbox. */
   | "runtime_unavailable"
   /** The plugin kept stopping, so it is suspended until Turn back on. */
@@ -41,7 +42,12 @@ export type PluginRefusalReason =
 
 /** Why a registered plugin operation was cancelled. */
 export type PluginCancelReason =
-  "system_off" | "plugin_off" | "capability_off" | "uninstalled" | "shutdown";
+  | "system_off"
+  | "plugin_off"
+  | "capability_off"
+  | "uninstalled"
+  | "shutdown"
+  | "access_off";
 
 /** How a worker failed. `crashed`: the plugin's process ended under it. */
 export type WorkerFailureReason =
@@ -134,6 +140,8 @@ interface Operation {
   method: string;
   /** Set once prepared: an API 3 package shares the host's worker threads. */
   workerThread?: boolean;
+  /** The connection it runs for, if any. */
+  connectionId?: string;
   cancelled?: Error;
   cancelReason?: PluginCancelReason;
   cancelWorker?: (error: Error) => Promise<void>;
@@ -251,6 +259,9 @@ export class PluginWorkerLifetime<TMethod extends string> {
         const registered: Operation = {
           pluginId,
           method,
+          ...(options.connectionId
+            ? { connectionId: options.connectionId }
+            : {}),
           done: new Promise<void>((resolve) => {
             release = resolve;
           }),
@@ -312,17 +323,21 @@ export class PluginWorkerLifetime<TMethod extends string> {
 
   /**
    * Cancels the plugin's operations, or only those whose method `methods`
-   * keeps. Returns how many it cancelled.
+   * keeps, and only those of `connectionId` when it is given. Returns how
+   * many it cancelled.
    */
   async cancel(
     error: Error,
     reason: PluginCancelReason | undefined,
     pluginId?: string,
     methods?: (method: TMethod) => boolean,
+    connectionId?: string,
   ): Promise<number> {
     const matchingOperations = Array.from(this.operations).filter(
       (operation) =>
         (pluginId === undefined || operation.pluginId === pluginId) &&
+        (connectionId === undefined ||
+          operation.connectionId === connectionId) &&
         (methods === undefined || methods(operation.method as TMethod)),
     );
     await Promise.allSettled(

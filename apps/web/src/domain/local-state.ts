@@ -134,6 +134,11 @@ export interface LocalWorkItemEstimateFieldState {
   resolution?: "keep_local";
   conflict?: LocalWorkItemEstimateFieldConflict;
   error?: LocalWorkItemEstimateFieldError;
+  /**
+   * A change the connection couldn't upload because editing work items was
+   * off: kept here, and sent only once the user approves it in Sync review.
+   */
+  held?: { at: number };
 }
 
 export interface LocalWorkItemEstimateSyncState {
@@ -159,6 +164,11 @@ export interface LocalWorkItemDescriptionSync {
   conflict?: { detectedAt: number; localText: string; remoteText: string };
   /** Why the last save could not write the local text to the source. */
   writeError?: { at: number; message: string };
+  /**
+   * The connection refused the save because editing work items was off: the
+   * local text waits here until the user approves it in Sync review.
+   */
+  held?: { at: number };
 }
 
 export interface LocalProjectDraft {
@@ -558,6 +568,12 @@ export interface LocalPendingSourceWrite {
   readyAt?: number;
   state?: string;
   priority?: PriorityLevel;
+  /**
+   * When the connection refused the write because editing work items was
+   * off. A held write stays, with the item as the user left it, and goes
+   * only once the user approves it in Sync review.
+   */
+  heldAt?: number;
   /** The item's source values before the settle, put back if the write fails. */
   previous: {
     sourceStatusKey?: string;

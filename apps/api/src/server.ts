@@ -173,6 +173,21 @@ import {
   PluginWorkerFailure,
   type PluginFailureReason,
 } from "./plugin-worker-lifetime.ts";
+import {
+  accessOffAnswer,
+  accessOffMessage,
+  ConnectionAccessOff,
+  connectionAccessRefusal,
+} from "./connection-access-gate.ts";
+import {
+  accessToStore,
+  accessTurnedOff,
+  connectionAccessChoicesOf,
+  connectionAllowsOperation,
+  ESTIMATE_PUSH_OPERATION,
+  holdEstimatePushes,
+  withoutHeldEstimateUpdates,
+} from "../../../packages/shared/connection-access.ts";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
 import { SplitPluginRuntime, type PluginRuntime } from "./plugin-runtime.ts";
 import { WorkerPluginRuntime } from "./plugin-worker-runtime.ts";
@@ -1225,7 +1240,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     // The routes check activation before reading the request. This repeats
     // the check once the operation can be cancelled, so a capability turned
     // off meanwhile never runs.
-    operationGate: async (pluginId, method) => {
+    operationGate: async (
+      pluginId,
+      method,
+      connectionId,
+      manifest,
+      request,
+    ) => {
       const capability = capabilityOfMethod(method);
       if (!capability) return;
       const inactive = await inactiveCapability(
@@ -1238,6 +1259,18 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       if (inactive) {
         throw new PluginOperationRefused(inactive.message, inactive.reason);
       }
+      // The connection's access as saved now: a choice turned off while
+      // the operation waited stops it here (#395).
+      if (!connectionId || !manifest) return;
+      const connection = await storage.getConnection(pluginId, connectionId);
+      if (!connection) return;
+      const refusal = connectionAccessRefusal(
+        manifest,
+        connection,
+        method,
+        request,
+      );
+      if (refusal) throw refusal;
     },
   });
   const projectDataShapePluginManager = new ProjectDataShapePluginManager({
@@ -1701,8 +1734,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       );
       unit.set({
         project_data: {
-          row_count: importRequest.datasets.reduce(
-            (count, dataset) => count + dataset.rows.length,
+          row_count: importRequest.sheets.reduce(
+            (count, sheet) => count + sheet.rows.length,
             0,
           ),
         },
@@ -1711,7 +1744,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         const result = projectDataShapeImportResponseSchema.parse(
           await projectDataShapePluginManager.importProjects(
             pluginId,
-            importRequest.datasets,
+            importRequest.sheets,
           ),
         );
         unit.set({
@@ -1941,6 +1974,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       const onPremises =
         allowsOnPremises &&
         (parsedValues.onPremises ?? existingConnection?.onPremises ?? false);
+      // Only the choices the plugin declares, from Ajour's own form. A new
+      // connection without them reads only.
+      const accessChoices = connectionAccessChoicesOf(plugin);
+      const access =
+        payload.access !== undefined
+          ? accessToStore(accessChoices, payload.access)
+          : (existingConnection?.access ?? []);
       const call = admittedCall(plugin, existingConnection?.secrets);
       let validation: PluginValidationResult;
       try {
@@ -1955,7 +1995,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             autoSync: parsedValues.autoSync,
             autoSyncIntervalMinutes: parsedValues.autoSyncIntervalMinutes,
             onPremises,
-            access: existingConnection?.access ?? [],
+            access,
           },
         );
       } catch (error) {
@@ -2002,6 +2042,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           agentAccess: parsedValues.agentAccess,
           allowLossyConversion: parsedValues.allowLossyConversion,
           onPremises,
+          ...(payload.access !== undefined ? { access } : {}),
           // The plugin's answer can't set a field Ajour owns. Its secrets
           // go to the vault, and the state file keeps the rest.
           config: withoutReservedFields(normalizedConfig),
@@ -2024,6 +2065,25 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         },
       );
       unit.set({ connection: { id: storedConnection.id } });
+      // The operations still running that a choice turned off allowed stop;
+      // those waiting are refused at their gate.
+      const turnedOff = accessTurnedOff(
+        accessChoices,
+        existingConnection?.access,
+        storedConnection.access,
+      );
+      if (existingConnection && turnedOff.length > 0) {
+        const gated = new Set(turnedOff.flatMap((choice) => choice.operations));
+        await pluginManager.cancelConnectionOperations(
+          pluginId,
+          storedConnection.id,
+          (method) => gated.has(method),
+          new ConnectionAccessOff(
+            accessOffMessage(storedConnection, turnedOff[0]!),
+            turnedOff[0]!.id,
+          ),
+        );
+      }
       const { overview, summary } = await findConnectionSummary(
         storage,
         pluginManager,
@@ -2192,6 +2252,17 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           priority_sent: writeRequest.priority !== undefined,
         },
       });
+      if (
+        refuseAccessOff(
+          response,
+          unit,
+          target.plugin,
+          target.connection,
+          "writeSettle",
+        )
+      ) {
+        return;
+      }
       try {
         const result = await pluginManager.writeSettle(
           target.pluginId,
@@ -2271,6 +2342,17 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         },
       });
       if (refuseAgentDescription(context, target.connection, true)) return;
+      if (
+        refuseAccessOff(
+          response,
+          unit,
+          target.plugin,
+          target.connection,
+          "writeDescription",
+        )
+      ) {
+        return;
+      }
       // Only a connection that allows lossy conversion writes with losses,
       // whatever a client asks.
       if (
@@ -2360,13 +2442,40 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         },
       });
 
+      // A connection that can't edit work items uploads no estimate, and
+      // neither does a change the user hasn't approved yet: the plugin sees
+      // the agreed values, and the answers for those fields are dropped, so
+      // they stay as they are here, held for review (#395).
+      const pushesEstimates = connectionAllowsOperation(
+        connectionAccessChoicesOf(plugin),
+        connection.access,
+        ESTIMATE_PUSH_OPERATION,
+      );
+      const { workItems, held: heldEstimates } = holdEstimatePushes(
+        payload.workItems,
+        !pushesEstimates,
+      );
+      unit.set({
+        backlog_sync: { held_estimate_count: heldEstimates.length },
+      });
       const call = admittedCall(plugin, connection.secrets);
+      // Editing turned off while the sync waited stops one that would upload.
+      const admit = async (manifest: PluginManifest) => {
+        const admitted = call.admit(manifest);
+        if (!pushesEstimates) return admitted;
+        const current = await storage.getConnection(pluginId, connectionId);
+        const refusal =
+          current &&
+          connectionAccessRefusal(plugin, current, ESTIMATE_PUSH_OPERATION);
+        if (refusal) throw refusal;
+        return admitted;
+      };
       try {
         const fetched = await pluginManager.syncConnection(
           pluginId,
           pluginConnection(connection),
-          payload.workItems,
-          call.admit,
+          workItems,
+          admit,
         );
         const { openItems, doneItems } = splitDoneItems(fetched.items);
         unit.set({
@@ -2441,15 +2550,20 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             updatedCount: stageResult.updatedCount,
             skippedCount: stageResult.skippedCount,
             workItemUpdates: redactFieldUpdateMessages(
-              fetched.workItemUpdates,
+              withoutHeldEstimateUpdates(
+                fetched.workItemUpdates,
+                heldEstimates,
+              ),
               call.credentials(connection.config).redaction,
             ),
             doneItems,
             viewer: fetched.viewer,
             commentFacts: fetched.commentFacts,
+            heldEstimates,
           }),
         );
       } catch (error) {
+        if (answerAccessOff(response, unit, error)) return;
         const credentials = await failedCall(
           storage,
           unit,
@@ -2529,6 +2643,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         codeHostOperations[operation.data].request.parse(codeHostBody),
       );
       unit.set(codeHostRequestFields(codeHostRequest));
+      if (refuseAccessOff(response, unit, plugin, connection, operation.data)) {
+        return;
+      }
       const call = admittedCall(plugin, connection.secrets);
       try {
         const result = await pluginManager.runCodeHostOperation(
@@ -2548,6 +2665,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         }
         writeJson(response, 200, result);
       } catch (error) {
+        if (answerAccessOff(response, unit, error)) return;
         const credentials = await failedCall(
           storage,
           unit,
@@ -2680,6 +2798,18 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         refuseAgent();
         return;
       }
+      if (
+        refuseAccessOff(
+          response,
+          unit,
+          plugin,
+          connection,
+          operation.data,
+          commentRequest,
+        )
+      ) {
+        return;
+      }
       // Checked again at the plugin's admission, after the host's own
       // waits, so a revocation saved meanwhile stops a post.
       let refusedAtAdmission = false;
@@ -2717,6 +2847,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           refuseAgent();
           return;
         }
+        if (answerAccessOff(response, unit, error)) return;
         const credentials = await failedCall(
           storage,
           unit,
@@ -3125,6 +3256,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     call: ReturnType<typeof admittedCall>,
     connection: ConnectionWithSecrets,
   ) {
+    if (answerAccessOff(response, unit, error)) return;
     const credentials = await failedCall(
       storage,
       unit,
@@ -3134,6 +3266,48 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     );
     // The message reaches the user, and a description's is stored with the item.
     writeJson(response, 502, { error: credentials.errorMessage(error) });
+  }
+
+  /**
+   * Refuses an operation the connection's access doesn't allow, before the
+   * plugin runs: a 403 naming the choice it needs, so the web can hold the
+   * edit. True when it refused.
+   */
+  function refuseAccessOff(
+    response: ServerResponse,
+    unit: Parameters<typeof recordPluginFailure>[0],
+    plugin: PluginManifest,
+    connection: StoredConnection,
+    operation: string,
+    /** The call's input, when the choice depends on it. */
+    request?: unknown,
+  ) {
+    const refusal = connectionAccessRefusal(
+      plugin,
+      connection,
+      operation,
+      request,
+    );
+    if (!refusal) return false;
+    unit.refuse("access_off");
+    writeJson(response, 403, accessOffAnswer(refusal));
+    return true;
+  }
+
+  /**
+   * Answers a call the connection's access stopped at its gate or while it
+   * ran, as `refuseAccessOff` does. True when it did.
+   */
+  function answerAccessOff(
+    response: ServerResponse,
+    unit: Parameters<typeof recordPluginFailure>[0],
+    error: unknown,
+  ) {
+    const answer = accessOffAnswer(error);
+    if (!answer) return false;
+    recordPluginFailure(unit, error);
+    writeJson(response, 403, answer);
+    return true;
   }
 
   /**

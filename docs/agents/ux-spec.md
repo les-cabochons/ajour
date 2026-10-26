@@ -151,7 +151,7 @@ Decided in [App shell and collapsible sidebar](https://github.com/les-cabochons/
 
 ### Desktop widths
 
-- The app sidebar is expanded (resizable, see the Backlog sidebar section for widths) or hidden. There is no icon rail. From the top: Hide sidebar and the logo, the view switcher with Search and the project filter, the timer dock, then the work list. Its fixed footer has Settings and Commit icon buttons at the left. Commit opens the selected date's week. The desktop app's update button sits at the right.
+- The app sidebar is expanded (resizable, see the Backlog sidebar section for widths) or hidden. There is no icon rail. From the top: Hide sidebar and the logo, the view switcher with Search, the project filter and New backlog item (+), the timer dock, then the work list. New backlog item opens the Backlog page with a blank backlog item editor; time entries start from the timer dock's "+". Its fixed footer has Settings and Commit icon buttons at the left. Commit opens the selected date's week. The desktop app's update button sits at the right.
 - Hide sidebar and the logo sit on the titlebar's row, as in T3 Code: right of the traffic lights on macOS, in the window's top left corner elsewhere. Hide sidebar sits where Show sidebar sits in the titlebar, so the button does not move when the sidebar toggles.
 - The view switcher works like ChatGPT's: the open view's name, such as "Time", opens a menu of Time, Backlog, Pull requests (only while a code host plugin is enabled) and Projects with their live counts, today's total next to Time, the number of listed items next to Backlog, and next to Pull requests the number that need the user, as a filled badge when any returned. A check marks the open view. A backlog item's page belongs to Backlog, unless it was opened from the sidebar while Time, Projects or Pull requests showed: that view stays selected.
 - Cmd+B (Ctrl+B on Windows), Hide sidebar next to the logo and Show sidebar at the start of the titlebar toggle it. The View menu gets "Show sidebar" or "Hide sidebar" once the menu bar exists. There is no second shortcut.
@@ -594,7 +594,7 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 
 - Editing a backlog item uses the editor form, in the peek slot on wide windows and the full-width dialog in the narrow view, with the entry editor's rules: explicit Save (button, Enter in the title, Cmd+Enter), Escape or × discards, outside clicks do nothing.
 - The form holds title, workflow state, priority, project and task mapping, description, the estimates with their "Reset to subitem total" buttons, and "Keep when missing from sync" for synced items. Its header has the "…" action menu.
-- "New backlog item" in the page header opens a blank form. "Add subitem" opens it with the parent set.
+- "New backlog item" in the page header, or the "+" at the top of the app sidebar, opens a blank form. "Add subitem" opens it with the parent set.
 - Start entry stays on hover, in the "…" menu and in the peek. Entries start on today.
 
 ## Application updates
@@ -680,7 +680,7 @@ Decided after the prototype on branch `prototype/backlog-sidebar`: variant B is 
 
 Like T3 Code's thread card, resting the mouse on a backlog row shows a card beside the sidebar with what the row has no room for.
 
-- It opens after the pointer rests on one row for 800ms, so moving down the list shows nothing. Once it shows, moving to another row moves it there after 150ms.
+- It opens after the pointer rests on one row for 800ms, so moving down the list shows nothing. Once it shows, moving to another row moves it there at once.
 - From top to bottom: the whole title; where the item comes from, as its source tool's logo, the organization and the source project, such as "les-cabochons / ajour", with its id at the end, such as "1234" or "PAY-12"; and on a subitem, its parent's title. A manual item has no source line.
 - Then the subitems, open ones first, with their workflow state's ring and the closed count over the total, such as "1/3". Eight show, then "n more".
 - Then the pull requests whose title names the item, open ones first: the state icon, the number and the title. Five show, then "n more". Code hosts do not report links to backlog items, so the title is the link: a key such as "PAY-12" names the item from any repository, and a number such as "#1234" only from the same GitHub repository, or the same Azure DevOps organization, where every project shares the numbers. Only the pull requests the Pull requests page lists count, so none show while no code host is enabled.
@@ -783,6 +783,8 @@ Decided in [Projects pages under the new conventions](https://github.com/les-cab
 - "New project" in the list header and Edit from the project's action set open the project form as a standard dialog: name, display name, code, icon and color. On the project page, these fields change in place instead.
 - Editing a task uses the side panel, with the same Save and Escape rules as entries. It holds name, billable, budget and adjustment, and the pinned slot. The inline task editor that saved on outside click goes away.
 - The project page has no "…" menu and no top bar actions. Like the backlog item page, it edits in place: click the title to rename the display name, and the Properties card on the right changes full name, code, color and icon. Each edit saves on Enter, blur or pick, with Undo; Escape cancels. "Import tasks…" and Archive (Restore when archived) sit at the bottom of the card. An archived project's fields are read-only.
+- "Import tasks…" reads the file with the schema picked in Settings › Projects when it is a plugin, and merges the tasks into the project by name: new names are added, known tasks take the file's status, billable and budget. A file for another project, or with several projects, changes nothing and says why. With Ajour default, it adds the task names in column C of the first worksheet.
+- In Settings › Projects, a schema without an export layout only imports. The Export projects section then says so, and names Ajour default for exports. A file whose schema names no project is refused there, and points to "Import tasks…".
 - "New task" under the task list opens a blank task panel.
 - A task row shows its pinned slot, such as "3", next to its name.
 - The old Projects command dialog is removed. Cmd+K offers "Create project" and "Create task in…".
@@ -823,6 +825,26 @@ Decided in [Access review and credential management for existing plugins](https:
   - A missing plugin's connections show as "Saved settings and secrets", because nothing says which of their settings are secret. Its group has Remove, which asks first, then deletes the plugin's connections and saved secrets, and the connections' local pull requests, calendar data and team data with them. Synced backlog items stay.
   - Two notices come first. "Ajour can't protect credentials on this computer" gives the reason and says connections that need a token are paused; Try again opens the vault again and runs the encryption check once more. "Saved secrets can't be read on this computer" gives the reason, as after moving Ajour's data to another computer, and says to paste each token again. It has no Try again, because pasting a token is what fixes it.
   - With no secret saved, the page says "No saved secrets".
+
+## Connection access and held edits
+
+Decided in [the connection access decisions](https://github.com/les-cabochons/ajour/issues/223#issuecomment-6322442188) and [the held-edit decisions](https://github.com/les-cabochons/ajour/issues/223#issuecomment-6322497778), built in [#395](https://github.com/les-cabochons/ajour/issues/395).
+
+- **Each connection chooses its access.** The connection form of a plugin with access choices, Azure DevOps today, ends with an **Access** group: "Ajour blocks anything not chosen here, even when the token allows more." Each choice is a checkbox whose description names the token scope it needs:
+  - Read the backlog: work items, queries, comments and descriptions. Always on. Work Items (Read).
+  - Edit work items: send estimates, settled and moved work, descriptions and comments. Work Items (Read & write).
+  - Pull requests: the pull requests you're involved in, and your teams' review requests. Code (Read), and Project and Team (Read) for teams.
+  - Search people across the organisation: @ suggestions from the whole organisation. Identity (Read).
+- **New connections, and connections from before access choices, read only.** Their settings and local values stay. Nothing writes to the source until the user turns a choice on, and the first sync after the update sends no change.
+- **Ajour enforces the choices, whatever the token allows.** The local API refuses a write, a pull request call or a people search with a query whose choice is off before the plugin runs; reads that Azure DevOps sends as POST, such as queries and batch reads, still work. Turning a choice off cancels the calls it allowed that still run. With Pull requests off, the connection's pull requests don't sync, on the interval or by hand, and don't show. A bare @ asks the plugin for the item's own people, such as its assignee and commenters, which reading the backlog covers, so it runs with people search off. With people search off, the comment editor's @ suggestions are those people, matched in Ajour against the name typed; a typed name never looks the organisation up.
+- **The connection row** shows "Reads backlog", or "Edits work items" once editing is on, after the sync-mode badge.
+- **A change refused because editing is off is held on this computer:** a settle or move, an estimate, a description, a comment, a comment edit and a comment delete. It is never rolled back or dropped: the item stays as the user left it, a deleted comment stays hidden, and a posted comment leaves the composer. A toast says "Held on this computer: editing work items is off for "<connection>". Turn it on to review and send the change.", once for a burst of holds. A sync of a connection that reads only uploads no estimate; the estimates it would have sent are held. A reaction is not held: it goes back, with the refusal as its error.
+- **The row and the Access group count them**: "N changes held. Turn on editing to review and send them." Once editing is on, the row's line links to Sync review instead.
+- **Turning editing on is not approval.** Saving the form with Edit work items newly on first holds every estimate change the connection would upload, before the save goes, so a sync during the save or a quit sends none of them. When the connection holds any change, the save then opens Sync review on its held changes.
+- **Held changes in Sync review** come first, grouped by connection. Each shows its item, what kind of change it is and the change itself, with Send and Discard. Send is the approval: the change goes through its usual path, so a source that changed meanwhile still answers with a conflict, which then shows with the other issues. Send is disabled while the change can't go, and the group says why: the connection was removed, so the changes can only be discarded; it is paused, with a link to fix it; or editing is off, with a link to turn it on. Discard asks first, naming the kind of change ("Discard this held settle?"), then drops the change and takes the source's side back: a settle's item returns to its state before, an estimate and a description take the source's value.
+- **Held changes stay** when the user leaves Sync review, restarts Ajour or turns editing off again. A held settle or move keeps its settle comment waiting with it. A held comment change stays held until the source took it, so a quit while it is sent keeps it.
+- **A new change replaces a held one.** A settle, move or description saved again while editing is on goes as usual and replaces the held one of the same item.
+- **Removing a connection discards what it holds.** Remove then always asks first, and says "Its N held changes are discarded and never sent."
 
 ## Consistency
 

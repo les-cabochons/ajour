@@ -64,7 +64,7 @@ const PROJECT_DATA_SHAPE_METHOD_ARGUMENTS: Record<
   ArgumentNames
 > = {
   exportProjects: ["projects"],
-  importProjects: ["datasets"],
+  importProjects: ["sheets"],
 };
 
 function argumentsOf(

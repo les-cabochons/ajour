@@ -155,6 +155,12 @@ const pluginOperationReasons = [
   "not_supported",
   /** The route's own admission check refused the call, such as an agent's comment. */
   "agent_access",
+  /**
+   * The connection's access doesn't include the choice the operation needs,
+   * such as editing work items (#395); or a save turned it off while the
+   * operation ran.
+   */
+  "access_off",
   /** Plugins are off: this computer can't run them in a sandbox. */
   "runtime_unavailable",
   /** The plugin stopped 3 times in 10 minutes, so it runs nothing until Turn back on. */
@@ -769,6 +775,11 @@ export const catalog = defineCatalog({
           done_count: operational<number>(),
           work_item_update_count: operational<number>(),
           comment_fact_count: operational<number>(),
+          /**
+           * The items whose estimates the sync didn't upload: the connection
+           * can't edit work items, or the change waits for review (#395).
+           */
+          held_estimate_count: operational<number>(),
           /** In the renderer: the items the answer added straight to the backlog. */
           imported_count: operational<number>(),
         },
@@ -792,7 +803,9 @@ export const catalog = defineCatalog({
           /** In the renderer: from the end of the Undo window until the send. */
           delay_ms: operational<number>(),
           /** In the renderer: `deferred` waits for the Undo window, `superseded` for a newer write. */
-          result: operational<"sent" | "failed" | "deferred" | "superseded">(),
+          result: operational<
+            "sent" | "failed" | "deferred" | "superseded" | "held"
+          >(),
         },
       },
     },

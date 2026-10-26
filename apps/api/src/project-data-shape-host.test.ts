@@ -6,7 +6,33 @@ import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
 
 const ICON = "<svg viewBox='0 0 16 16'><path d='M0 0h16v16H0z' /></svg>";
 
-async function createPlugin(parent: string, source: string) {
+const PROJECTS_DATASETS = [
+  {
+    id: "projects",
+    displayName: "Projects",
+    columns: [
+      {
+        key: "project",
+        header: "project",
+        type: "string",
+        required: true,
+      },
+      {
+        key: "hours",
+        header: "hours",
+        type: "number",
+        required: false,
+      },
+    ],
+  },
+];
+
+/** A schema plugin. With `datasets` null, it declares no export layout and only imports. */
+async function createPlugin(
+  parent: string,
+  source: string,
+  datasets: unknown[] | null = PROJECTS_DATASETS,
+) {
   const pluginDirectory = path.join(parent, "workday-project-data");
   await mkdir(pluginDirectory, { recursive: true });
   await writeFile(
@@ -20,29 +46,7 @@ async function createPlugin(parent: string, source: string) {
       iconSvg: ICON,
       entrypoint: "plugin.mjs",
       capabilities: {
-        projectDataShape: {
-          apiVersion: 1,
-          datasets: [
-            {
-              id: "projects",
-              displayName: "Projects",
-              columns: [
-                {
-                  key: "project",
-                  header: "project",
-                  type: "string",
-                  required: true,
-                },
-                {
-                  key: "hours",
-                  header: "hours",
-                  type: "number",
-                  required: false,
-                },
-              ],
-            },
-          ],
-        },
+        projectDataShape: { apiVersion: 1, ...(datasets ? { datasets } : {}) },
       },
     }),
     "utf8",
@@ -82,8 +86,8 @@ describe("ProjectDataShapePluginManager", () => {
         "export async function exportProjects(projects) {",
         "  return { datasets: [{ id: 'projects', rows: projects.map((project) => ({ project: project.name, hours: 2 })) }] };",
         "}",
-        "export async function importProjects(datasets) {",
-        "  return { projects: datasets[0].rows.map((row) => ({ name: row.project, color: '#123456', status: 'active', tasks: [] })) };",
+        "export async function importProjects(sheets) {",
+        "  return { projects: sheets[0].rows.slice(1).map((row) => ({ name: row[0], color: '#123456', status: 'active', tasks: [] })) };",
         "}",
       ].join("\n"),
     );
@@ -118,8 +122,11 @@ describe("ProjectDataShapePluginManager", () => {
     await expect(
       manager.importProjects("workday-project-data", [
         {
-          id: "projects",
-          rows: [{ project: "Mercury", hours: "2,5" }],
+          name: "Projects",
+          rows: [
+            ["project", "hours"],
+            ["Mercury", "2,5"],
+          ],
         },
       ]),
     ).resolves.toEqual({
@@ -152,6 +159,35 @@ describe("ProjectDataShapePluginManager", () => {
     await expect(
       manager.exportProjects("workday-project-data", []),
     ).rejects.toThrow('contains unknown field "unexpected"');
+    expect(manager.activeOperationCount).toBe(0);
+  });
+
+  it("imports with a schema that has no export layout, and refuses its export", async () => {
+    const root = await tempDir();
+    const pluginDirectory = await createPlugin(
+      root,
+      [
+        "export async function importProjects(sheets) {",
+        "  return { projects: [{ status: 'active', tasks: sheets.map((sheet) => ({ name: sheet.name })) }] };",
+        "}",
+      ].join("\n"),
+      null,
+    );
+    const manager = new ProjectDataShapePluginManager({
+      pluginDirectories: [pluginDirectory],
+    });
+    managers.push(manager);
+
+    await expect(
+      manager.importProjects("workday-project-data", [
+        { name: "Plan", rows: [] },
+      ]),
+    ).resolves.toEqual({
+      projects: [{ status: "active", tasks: [{ name: "Plan" }] }],
+    });
+    await expect(
+      manager.exportProjects("workday-project-data", []),
+    ).rejects.toThrow('Schema plugin "workday-project-data" only imports.');
     expect(manager.activeOperationCount).toBe(0);
   });
 });
