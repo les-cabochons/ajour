@@ -75,6 +75,7 @@ export type ShortcutActionId =
   | "item.snooze"
   | "item.duplicate"
   | "item.move-to"
+  | "item.favorite"
   | "item.delete"
   | "item.delete-row"
   | "item.move-up"
@@ -253,6 +254,12 @@ export const SHORTCUTS: readonly ShortcutDefinition[] = [
     label: "Move to…",
     scope: "item",
     keys: [{ key: "m" }],
+  },
+  {
+    id: "item.favorite",
+    label: "Add to or remove from favorites",
+    scope: "item",
+    keys: [{ key: "f" }],
   },
   {
     id: "item.delete",

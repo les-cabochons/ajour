@@ -78,7 +78,11 @@ import { ProjectTaskEditorForm } from "@/features/projects/project-task-editor-f
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { useActionRequest } from "@/lib/action-request";
 import { FOCUS_ATTRIBUTES } from "@/lib/focused-object";
-import { handleItemKeyDown, TASK_ACTION_KEYS } from "@/lib/item-keys";
+import {
+  handleItemKeyDown,
+  PROJECT_ACTION_KEYS,
+  TASK_ACTION_KEYS,
+} from "@/lib/item-keys";
 import { useCurrentTeam } from "@/lib/session";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
@@ -435,6 +439,7 @@ function ProjectsList({
                 <ObjectContextMenu
                   key={project._id}
                   actions={actions}
+                  keys={PROJECT_ACTION_KEYS}
                   onAction={onAction}
                   render={
                     <tr
@@ -486,12 +491,12 @@ function ProjectsList({
                       params={{ projectId: project._id }}
                       className="project-task-name project-list-name"
                       draggable={false}
-                      // Alt+Up and Alt+Down reorder, like a drag. No other
-                      // item key acts on projects.
+                      // Alt+Up and Alt+Down reorder, like a drag, and F
+                      // stars the project. No other item key acts on projects.
                       onKeyDown={(event) =>
                         handleItemKeyDown(event, {
                           actions,
-                          keys: {},
+                          keys: PROJECT_ACTION_KEYS,
                           onAction,
                           onReorder:
                             !archived && canReorder
@@ -536,6 +541,7 @@ function ProjectsList({
                     <span className="project-task-actions">
                       <ObjectActionsButton
                         actions={actions}
+                        keys={PROJECT_ACTION_KEYS}
                         onAction={onAction}
                         label={`Actions for ${name}`}
                       />
@@ -799,6 +805,14 @@ function ProjectDetail({
           return;
         case "assign-shortcut":
           onAssignShortcut(task);
+          return;
+        case "favorite":
+        case "unfavorite":
+          localStore.setProjectTaskFavorite(
+            project._id,
+            task._id,
+            actionId === "favorite",
+          );
           return;
         case "archive":
           offerUndo(localStore.archiveProjectTask(project._id, task._id), {
@@ -1077,6 +1091,7 @@ function ProjectDetail({
 
       <ObjectContextMenu
         actions={projectActions}
+        keys={PROJECT_ACTION_KEYS}
         onAction={(actionId) => onProjectAction(project, actionId)}
         render={<header className="project-detail-header" />}
       >
@@ -1742,7 +1757,8 @@ export function ProjectsPage() {
           (item) => item.id === action && !item.disabledReason,
         )
       : undefined;
-    // Start entry and New entry… run in the palette, so only these reach the page.
+    // Start entry, New entry… and the favorite actions run in the palette,
+    // so only these reach the page.
     if (!task || !requested) return;
     if (requested.id === "edit") openTaskEditor(project._id, task);
     if (requested.id === "assign-shortcut") {
@@ -1932,6 +1948,10 @@ export function ProjectsPage() {
           return;
         case "new-task":
           openTaskEditor(project._id);
+          return;
+        case "favorite":
+        case "unfavorite":
+          localStore.setProjectFavorite(project._id, actionId === "favorite");
           return;
         case "archive":
           offerUndo(localStore.archiveProject(project._id), {

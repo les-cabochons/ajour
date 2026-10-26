@@ -235,6 +235,8 @@ import {
   normalizeProject,
   reorderProjects as applyReorderProjects,
   reorderProjectTask as applyReorderProjectTask,
+  setProjectFavorite as applySetProjectFavorite,
+  setProjectTaskFavorite as applySetProjectTaskFavorite,
   setProjectTaskPinnedSlot as applySetProjectTaskPinnedSlot,
   setProjectTaskStatus,
   updateProject as applyUpdateProject,
@@ -2032,6 +2034,29 @@ const store = {
       ),
     }));
   },
+  /** Stars a task as a favorite, or removes its star. */
+  setProjectTaskFavorite(projectId: string, taskId: string, favorite: boolean) {
+    updateState((state) => ({
+      ...state,
+      projects: applySetProjectTaskFavorite(
+        state.projects,
+        projectId,
+        taskId,
+        favorite ? Date.now() : undefined,
+      ),
+    }));
+  },
+  /** Stars a project as a favorite, or removes its star. Its tasks keep theirs. */
+  setProjectFavorite(projectId: string, favorite: boolean) {
+    updateState((state) => ({
+      ...state,
+      projects: applySetProjectFavorite(
+        state.projects,
+        projectId,
+        favorite ? Date.now() : undefined,
+      ),
+    }));
+  },
   /** Archives a task. Returns an undo token, or null when nothing changed. */
   archiveProjectTask(projectId: string, taskId: string) {
     return updateStateWithUndo((state) => ({
@@ -3316,6 +3341,19 @@ export const STORE_COMMANDS = {
     fields: {
       ...taskIdsFirst,
       task: { ...taskIdsFirst.task, pinned_slot: ([, , slot]) => slot ?? null },
+    },
+  },
+  setProjectTaskFavorite: {
+    name: "task.favorite",
+    fields: {
+      ...taskIdsFirst,
+      task: { ...taskIdsFirst.task, favorite: ([, , favorite]) => favorite },
+    },
+  },
+  setProjectFavorite: {
+    name: "project.favorite",
+    fields: {
+      project: { ...projectIdFirst.project, favorite: ([, favorite]) => favorite },
     },
   },
   archiveProjectTask: { name: "task.archive", fields: taskIdsFirst },

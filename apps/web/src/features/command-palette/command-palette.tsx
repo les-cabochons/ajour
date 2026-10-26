@@ -221,6 +221,15 @@ export function CommandPalette() {
             taskId: command.taskId,
             accumulatedDurationMs: 0,
           });
+        } else if (
+          command.actionId === "favorite" ||
+          command.actionId === "unfavorite"
+        ) {
+          localStore.setProjectTaskFavorite(
+            command.projectId,
+            command.taskId,
+            command.actionId === "favorite",
+          );
         } else if (command.actionId === "new-entry") {
           openNewEntryEditor(
             {
@@ -242,6 +251,16 @@ export function CommandPalette() {
         }
         return;
       case "project":
+        if (
+          command.actionId === "favorite" ||
+          command.actionId === "unfavorite"
+        ) {
+          localStore.setProjectFavorite(
+            command.projectId,
+            command.actionId === "favorite",
+          );
+          return;
+        }
         requestProjectsPage(
           { action: command.actionId, target: command.projectId },
           command.projectId,
