@@ -343,14 +343,14 @@ export interface PluginAdmissionPolicy {
   admitPluginApi4: boolean;
 }
 
-const PACKAGED_BUILD: PluginAdmissionPolicy = { admitPluginApi4: false };
+export const PACKAGED_BUILD: PluginAdmissionPolicy = { admitPluginApi4: false };
 
 /**
  * Validates a manifest against the schema of the plugin API it declares. An
  * API 4 manifest must pass every API 4 rule even where it is refused, so a
  * broken one is invalid rather than merely unavailable.
  */
-function parsePluginManifest(
+export function parsePluginManifest(
   raw: unknown,
   policy: PluginAdmissionPolicy,
 ): PluginManifest {

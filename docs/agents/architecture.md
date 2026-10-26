@@ -567,10 +567,24 @@ The web app owns file selection, downloads, and format adapters. Excel is the
 current adapter: `lib/workbook-sheets.ts` reads a workbook into sheets for
 import, and `features/settings/settings-projects.ts` writes datasets for
 export. The API validates manifests, requests, datasets, and results, and runs
-each shape operation in an ephemeral worker. Deterministic project merge rules
+each shape operation in a worker or sandboxed renderer that lives for that
+operation only (see below). Deterministic project merge rules
 and persistence remain in the web domain and local store. A file whose shape
 names no project imports only through Import tasks… on a project, into that
 project.
+
+A shape is either a data shape API 1 package, which runs in a worker like a
+plugin API 3 package until the cut-over (#403), or a plugin API 4 package that
+declares the `projectDataShape` capability in its main manifest, with no
+network, no connection fields and Load when needed. The data-shape host starts
+both through the runtime port, so the split runtime sends an API 4 shape to its
+own sandboxed renderer. Development builds admit API 4 shapes; a packaged build
+does not. The dataset contract is the same for both. The data-shape host reads
+the same development plugin directories as the plugin host (Settings > Debug,
+`AJOUR_DEV_PLUGIN_DIRS`). A renderer and its storage are keyed by plugin id, so
+a shape that takes the id of a plugin host package from another folder is
+refused, with the reason in its error. A shape may also declare no connection
+access.
 
 Provider-specific shape plugins are maintained outside Ajour. The Workday
 implementation lives in `les-cabochons/ajour-plugins`, imports no Ajour source,

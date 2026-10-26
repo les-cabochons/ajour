@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PLUGIN_API_4 } from "./plugin-api-4-version.ts";
 
 export const PROJECT_DATA_SHAPE_PLUGIN_API_VERSION = 1;
 export const PROJECT_DATA_SHAPE_CAPABILITY_API_VERSION = 1;
@@ -100,13 +101,21 @@ export type ProjectDataShapeDefinition = z.infer<
   typeof projectDataShapeDefinitionSchema
 >;
 
+/**
+ * A data shape plugin as the host lists it. A data shape API 1 package says 1
+ * in its own manifest. A plugin API 4 package is read by the main plugin
+ * manifest schema and listed with its own API version, 4.
+ */
 export const projectDataShapePluginManifestSchema = z.object({
   id: projectDataShapePluginIdSchema,
   version: z
     .string()
     .trim()
     .regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/),
-  apiVersion: z.literal(PROJECT_DATA_SHAPE_PLUGIN_API_VERSION),
+  apiVersion: z.union([
+    z.literal(PROJECT_DATA_SHAPE_PLUGIN_API_VERSION),
+    z.literal(PLUGIN_API_4),
+  ]),
   displayName: z.string().trim().min(1).max(120),
   description: z.string().trim().max(500).optional(),
   iconSvg: z.string().min(1).max(20_000),

@@ -262,6 +262,43 @@ const isWindows = process.platform === "win32";
     lifecycle.afterCrash,
   );
 
+  const dataShape = findings.dataShape ?? {};
+  expect(
+    dataShape.listed?.some(
+      (plugin) => plugin.id === "fixture-shape" && plugin.apiVersion === 4,
+    ),
+    "the data shape host lists the API 4 data shape",
+    dataShape.listed,
+  );
+  expect(
+    dataShape.exportStatus === 200 &&
+      JSON.stringify(dataShape.datasets) ===
+        JSON.stringify([
+          {
+            id: "projects",
+            rows: [
+              { project: "Mercury", hours: 0 },
+              { project: "Venus", hours: 1 },
+            ],
+          },
+        ]),
+    "a data shape export runs in a renderer and returns its datasets",
+    dataShape,
+  );
+  expect(
+    dataShape.importStatus === 200 &&
+      JSON.stringify(
+        (dataShape.projects ?? []).map((project) => project.name),
+      ) === JSON.stringify(["Mercury", "Venus"]),
+    "a data shape import runs in a renderer and returns its projects",
+    dataShape,
+  );
+  expect(
+    dataShape.rendererOpen === true,
+    "the data shape ran in a renderer of its own",
+    dataShape,
+  );
+
   const events = findings.quitting?.events ?? [];
   expect(
     events.some((line) => line.startsWith("process.gone error fixture-escape")),
