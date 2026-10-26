@@ -618,6 +618,82 @@ describe("plugin installation boundary", () => {
     });
   });
 
+  it("reads data shapes from the development plugin directories, as the plugin host does", async () => {
+    const root = await tempDir();
+    const shapeDirectory = await createProjectDataShapePlugin(root);
+    const options = {
+      ...windowServerOptions,
+      vault: new MemorySecretVault(),
+      statePath: path.join(root, "state.json"),
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [shapeDirectory],
+    };
+    const development = createAppApiServer({
+      ...options,
+      allowDevelopmentPlugins: true,
+    });
+    servers.push(development);
+    const packaged = createAppApiServer({
+      ...options,
+      allowDevelopmentPlugins: false,
+    });
+    servers.push(packaged);
+
+    await expect(
+      dispatchJsonRequest(development, {
+        method: "GET",
+        path: "/api/project-data-shapes",
+      }),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { plugins: [{ id: "workday-project-data" }] },
+    });
+    await expect(
+      dispatchJsonRequest(packaged, {
+        method: "GET",
+        path: "/api/project-data-shapes",
+      }),
+    ).resolves.toEqual({ status: 200, body: { plugins: [] } });
+  });
+
+  it("refuses a data shape that takes the id of a plugin from another folder", async () => {
+    const root = await tempDir();
+    const pluginDirectory = await createPlugin(
+      path.join(root, "source"),
+      "export async function validateConnection(config) { return { normalizedConfig: config, connectionSummary: {} }; }",
+    );
+    const shapeDirectory = await createProjectDataShapePlugin(root);
+    const manifestPath = path.join(shapeDirectory, "plugin.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    await writeFile(manifestPath, JSON.stringify({ ...manifest, id: "jira" }));
+    const server = createAppApiServer({
+      ...windowServerOptions,
+      vault: new MemorySecretVault(),
+      statePath: path.join(root, "state.json"),
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [pluginDirectory, shapeDirectory],
+      allowDevelopmentPlugins: true,
+    });
+    servers.push(server);
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "GET",
+        path: "/api/project-data-shapes",
+      }),
+    ).resolves.toEqual({ status: 200, body: { plugins: [] } });
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: "/api/project-data-shapes/jira/export",
+        body: JSON.stringify({ projects: [] }),
+      }),
+    ).resolves.toMatchObject({
+      status: 400,
+      body: { error: expect.stringContaining("shares its id") },
+    });
+  });
+
   it("runs both hosts' plugins through the runtime it is given", async () => {
     const root = await tempDir();
     const pluginDirectory = await createPlugin(

@@ -44,6 +44,12 @@ export type PluginSandboxCause =
   | "renderer_unknown"
   | "shared_process";
 
+/** Whether the local log file writes (local-log-file.ts). */
+export type LocalLogState = "off" | "on" | "warning";
+
+/** Why the local log file stopped writing. */
+export type LocalLogWarning = "disk_full" | "no_permission" | "write_failed";
+
 /** What every IPC event carries: the channel, never its arguments. */
 const ipcFields = {
   channel: operational(),
@@ -1312,6 +1318,64 @@ export const catalog = defineCatalog({
       reasons: ["foreign_sender"],
       fields: { ipc: ipcFields },
     },
+    /** Saving the local log file's settings (ADR 0014). */
+    "logs.configure": {
+      kinds: ["command", "ipc"],
+      reasons: ["foreign_sender", "invalid_settings"],
+      fields: {
+        ipc: ipcFields,
+        logs: {
+          enabled_before: operational<boolean>(),
+          enabled_after: operational<boolean>(),
+          retention_days: operational<number>(),
+          size_limit_mb: operational<number>(),
+          include_sensitive: operational<boolean>(),
+        },
+      },
+    },
+    /** The local log file's settings, state and what its folder holds. */
+    "logs.status": {
+      kinds: ["ipc"],
+      reasons: ["foreign_sender"],
+      fields: {
+        ipc: ipcFields,
+        logs: {
+          state: operational<LocalLogState>(),
+          warning: operational<LocalLogWarning>(),
+          file_count: operational<number>(),
+          storage_bytes: operational<number>(),
+          /** Events dropped since launch because too many waited to be written. */
+          dropped_event_count: operational<number>(),
+        },
+      },
+    },
+    /** Delete all logs: the local log file's folder goes. */
+    "logs.delete_all": {
+      kinds: ["command", "ipc"],
+      reasons: ["foreign_sender"],
+      fields: {
+        ipc: ipcFields,
+        logs: {
+          deleted_file_count: operational<number>(),
+          deleted_bytes: operational<number>(),
+        },
+      },
+    },
+    /** A retention sweep of the local log file's folder: at launch, hourly, or once its limits change. */
+    "logs.sweep": {
+      kinds: ["job"],
+      fields: {
+        logs: {
+          trigger: operational<"launch" | "interval" | "settings">(),
+          deleted_file_count: operational<number>(),
+          deleted_bytes: operational<number>(),
+          file_count: operational<number>(),
+          storage_bytes: operational<number>(),
+          /** Events dropped since launch, as in `logs.status`. */
+          dropped_event_count: operational<number>(),
+        },
+      },
+    },
     /** An application update check, asked for or on its schedule. */
     "update.check": {
       kinds: ["command", "job", "ipc"],
@@ -1475,7 +1539,7 @@ export const catalog = defineCatalog({
           legacy_folder_count: operational<number>(),
           bytes_scanned: operational<number>(),
           /** Each collection's record count in the state found, never a record. */
-          record_counts: operational<Record<string, number>>(),
+          record_counts: operational<Record<string, number>>("numbers"),
           /** A reload after a crash gets this launch's first answer. */
           cached: operational<boolean>(),
         },

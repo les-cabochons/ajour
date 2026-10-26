@@ -204,6 +204,59 @@ it("ships the wide-events package the main process loads at launch", async () =>
   });
 }, 120_000);
 
+it("ships the local log file the main process loads at launch, and it writes from there", async () => {
+  // Runs the real packaging step. The output folder is a git-ignored build artifact.
+  const prepared = spawnSync(
+    process.execPath,
+    [path.join(desktopRoot, "scripts/prepare-internal-api.cjs")],
+    { encoding: "utf8" },
+  );
+  expect(prepared.status, prepared.stderr).toBe(0);
+  const {
+    loadLocalLogFile,
+    loadMainEmitter,
+    loadMainSink,
+  } = require("./electron/main-events.cjs");
+  const packageRoot = path.join(runtimeRoot, "packages/wide-events");
+  const userData = await mkdtemp(
+    path.join(os.tmpdir(), "ajour-runtime-resources-"),
+  );
+  temporaryDirectories.push(userData);
+  const directory = path.join(userData, "logs", "events");
+
+  const logFile = await loadLocalLogFile({
+    packageRoot,
+    directory,
+    settings: {
+      enabled: true,
+      retention_days: 7,
+      size_limit_mb: 250,
+      include_sensitive: false,
+    },
+  });
+  const createEmitter = await loadMainEmitter({
+    packageRoot,
+    launch: {
+      launch_id: "launch-1",
+      app: { version: "1.2.0", channel: "stable", packaged: true },
+      device: { platform: "win32" },
+    },
+    homeDirectory: os.homedir(),
+    userDataPath: userData,
+    sink: loadMainSink({ packageRoot, logFile }),
+  });
+  createEmitter(Date.now)
+    .start("app.lock_refused", { kind: "lifecycle", trigger: "system" })
+    .end();
+  await logFile.flush();
+
+  const [file] = readdirSync(directory);
+  expect(file).toMatch(/^\d{4}-\d{2}-\d{2}\.ndjson$/);
+  expect(
+    JSON.parse(readFileSync(path.join(directory, file!), "utf8")),
+  ).toMatchObject({ name: "app.lock_refused", runtime: "main" });
+}, 120_000);
+
 it("ships the pinned Playwright MCP with the internal API", () => {
   // Runs the real packaging step. The output folder is a git-ignored build artifact.
   const prepared = spawnSync(

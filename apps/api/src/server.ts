@@ -248,6 +248,10 @@ interface AppApiServerOptions {
    * can't sandbox plugins, no plugin runs, and the overview says why.
    */
   pluginApi4Runtime?: PluginRuntime;
+  /**
+   * Where the data shape host reads packages. By default, the development
+   * plugin directories, when development plugins are allowed.
+   */
   projectDataShapePluginDirectories?: string[];
   allowedOrigins?: string[];
   /**
@@ -1113,25 +1117,6 @@ function defaultDevelopmentPluginDirectories() {
     .map((entry) => path.join(pluginRoot, entry.name));
 }
 
-function defaultProjectDataShapePluginDirectories() {
-  const repoRoot = path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)),
-    "../../..",
-  );
-  const pluginRoot = path.join(repoRoot, "plugins");
-  if (!existsSync(pluginRoot)) {
-    return [];
-  }
-
-  return readdirSync(pluginRoot, { withFileTypes: true })
-    .filter(
-      (entry) =>
-        entry.isDirectory() &&
-        existsSync(path.join(pluginRoot, entry.name, "plugin.json")),
-    )
-    .map((entry) => path.join(pluginRoot, entry.name));
-}
-
 export function createAppApiServer(options: AppApiServerOptions = {}) {
   const host = options.host ?? process.env.AJOUR_APP_API_HOST ?? "127.0.0.1";
   const port = options.port ?? Number(process.env.AJOUR_APP_API_PORT ?? 8787);
@@ -1197,14 +1182,18 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         storage.recordBrokerActivity(pluginId, connectionId, "blocked", at),
     },
   });
+  // The data shape host reads the same development directories as the
+  // plugin host, so one list (Settings > Debug, AJOUR_DEV_PLUGIN_DIRS)
+  // places every plugin package under development.
+  const developmentPluginDirectories =
+    options.developmentPluginDirectories ??
+    (allowDevelopmentPlugins ? defaultDevelopmentPluginDirectories() : []);
   const pluginManager = new PluginManager({
     broker,
     installedPluginDirectory:
       options.installedPluginDirectory ??
       defaultInstalledPluginDirectory(options.statePath),
-    developmentPluginDirectories:
-      options.developmentPluginDirectories ??
-      (allowDevelopmentPlugins ? defaultDevelopmentPluginDirectories() : []),
+    developmentPluginDirectories,
     bundledPluginArchives: options.bundledPluginArchives,
     allowDevelopmentPlugins,
     requestTimeoutMs: options.pluginRequestTimeoutMs,
@@ -1249,9 +1238,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   const projectDataShapePluginManager = new ProjectDataShapePluginManager({
     pluginDirectories:
       options.projectDataShapePluginDirectories ??
-      defaultProjectDataShapePluginDirectories(),
+      (allowDevelopmentPlugins ? developmentPluginDirectories : []),
     requestTimeoutMs: options.pluginRequestTimeoutMs,
     runtime: pluginRuntime,
+    admitPluginApi4: allowDevelopmentPlugins,
+    pluginHostPackages: () => pluginManager.packageDirectories(),
     events,
   });
   const allowedOrigins = new Set(
