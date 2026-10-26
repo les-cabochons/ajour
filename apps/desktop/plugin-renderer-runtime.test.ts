@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { recordingEvents } from "./recording-events.ts";
 
 /*
@@ -19,6 +19,10 @@ const { createPluginRendererRuntime, DEAD_PROXY } =
     createPluginRendererRuntime: (options: Record<string, unknown>) => Runtime;
     DEAD_PROXY: unknown;
   };
+const policy = require("./electron/plugin-renderer-policy.cjs") as {
+  strippedFileCount: () => number;
+  forgetStrippedFiles: (packageDirectory: string) => Promise<void>;
+};
 const { createIpcListeners } = require("./electron/ipc-listeners.cjs") as {
   createIpcListeners: (
     ipcMain: unknown,
@@ -361,11 +365,13 @@ describe("the sandboxed renderer runtime", () => {
     });
   });
 
-  it("runs a TypeScript entrypoint, and fails a run whose import graph holds a file it can't strip, naming it", async () => {
-    const packageDirectory = await mkdtemp(
-      path.join(os.tmpdir(), "ajour-renderer-ts-"),
-    );
-    try {
+  describe("a package of TypeScript source", () => {
+    let packageDirectory: string;
+
+    beforeEach(async () => {
+      packageDirectory = await mkdtemp(
+        path.join(os.tmpdir(), "ajour-renderer-ts-"),
+      );
       await writeFile(
         path.join(packageDirectory, "plugin.ts"),
         'import { Status } from "./status.ts";\nexport const status = (): Status => Status.Open;',
@@ -374,57 +380,149 @@ describe("the sandboxed renderer runtime", () => {
         path.join(packageDirectory, "status.ts"),
         "export enum Status { Open, Closed }",
       );
-      const { sessions, start, ready } = setUp();
-      const failing = start("jira", {
+    });
+
+    afterEach(async () => {
+      await policy.forgetStrippedFiles(packageDirectory);
+      await rm(packageDirectory, { recursive: true, force: true });
+    });
+
+    const startTypeScript = () => {
+      const world = setUp();
+      const run = world.start("jira", {
         packageDirectory,
         entrypoint: "plugin.ts",
       });
+      return { ...world, run };
+    };
+    /** What the plugin's worker asks the origin for, as its import does. */
+    const serveFrom =
+      (sessions: Map<string, { handled: Map<string, unknown> }>) =>
+      (url: string) =>
+        (
+          sessions
+            .get("ajour-plugin:jira")!
+            .handled.get("ajour-plugin") as (request: {
+            url: string;
+          }) => Promise<Response>
+        )({ url });
+    const importFailure = (url: string) => ({
+      ok: false,
+      failure: "plugin_error",
+      stage: "import",
+      message: `Failed to fetch dynamically imported module: ${url}`,
+    });
+
+    it("serves the TypeScript entrypoint as JavaScript", async () => {
+      const { sessions, ready } = startTypeScript();
       const { driver } = await ready();
-      const serve = (url: string) =>
-        sessions.get("ajour-plugin:jira")!.handled.get("ajour-plugin")!({
-          url,
-        }) as Promise<Response>;
-      const first = (await driver.send({ type: "next" })) as {
-        runId: string;
-        url: string;
-      };
-      // What the worker's import of the entrypoint asks for, in order.
-      const entrypoint = await serve(first.url);
-      const status = await serve("ajour-plugin://jira/status.ts");
-      await driver.send({
-        type: "settled",
-        runId: first.runId,
-        outcome: {
-          ok: false,
-          failure: "plugin_error",
-          stage: "import",
-          message: `Failed to fetch dynamically imported module: ${first.url}`,
-        },
-      });
+      const first = (await driver.send({ type: "next" })) as { url: string };
+
+      const entrypoint = await serveFrom(sessions)(first.url);
 
       expect(first.url).toBe("ajour-plugin://jira/plugin.ts");
       expect(entrypoint.status).toBe(200);
       expect(entrypoint.headers.get("content-type")).toBe(
         "text/javascript; charset=utf-8",
       );
+    });
+
+    it("fails a run whose import graph holds a file it can't strip, naming the file", async () => {
+      const { sessions, run, ready } = startTypeScript();
+      const { driver } = await ready();
+      const first = (await driver.send({ type: "next" })) as {
+        runId: string;
+        url: string;
+      };
+      await serveFrom(sessions)(first.url);
+      const status = await serveFrom(sessions)("ajour-plugin://jira/status.ts");
+
+      await driver.send({
+        type: "settled",
+        runId: first.runId,
+        outcome: importFailure(first.url),
+      });
+
       expect(status.status).toBe(500);
-      await expect(failing.settled).resolves.toEqual({
+      await expect(run.settled).resolves.toEqual({
         ok: false,
         failure: "plugin_error",
         message:
           "status.ts uses TypeScript that Ajour can't strip: TypeScript enum is not supported in strip-only mode.",
       });
+    });
 
-      // A later run that failed for its own reasons keeps them.
-      for (const outcome of [
+    it("keeps the failure of a run that started after the file was refused", async () => {
+      const { sessions, run, start, ready } = startTypeScript();
+      const { driver } = await ready();
+      const first = (await driver.send({ type: "next" })) as {
+        runId: string;
+        url: string;
+      };
+      await serveFrom(sessions)("ajour-plugin://jira/status.ts");
+      const later = start("jira", {
+        packageDirectory,
+        entrypoint: "plugin.ts",
+      });
+      const second = (await driver.send({ type: "next" })) as {
+        runId: string;
+        url: string;
+      };
+
+      await driver.send({
+        type: "settled",
+        runId: second.runId,
+        outcome: importFailure(second.url),
+      });
+      await driver.send({
+        type: "settled",
+        runId: first.runId,
+        outcome: importFailure(first.url),
+      });
+
+      await expect(later.settled).resolves.toEqual({
+        ok: false,
+        failure: "plugin_error",
+        message: `Failed to fetch dynamically imported module: ${second.url}`,
+      });
+      await expect(run.settled).resolves.toMatchObject({
+        message: expect.stringContaining("status.ts uses TypeScript"),
+      });
+    });
+
+    it.each([
+      [
+        "its own error",
         { ok: false, failure: "plugin_error", message: "Boom." },
+        "Boom.",
+      ],
+      [
+        "an import that failed for another reason",
         {
           ok: false,
           failure: "plugin_error",
           stage: "import",
           message: "Failed to fetch dynamically imported module.",
         },
-      ]) {
+        "Failed to fetch dynamically imported module.",
+      ],
+    ])(
+      "keeps %s for a later run, after a file was refused",
+      async (_name, outcome, message) => {
+        const { sessions, run, start, ready } = startTypeScript();
+        const { driver } = await ready();
+        const first = (await driver.send({ type: "next" })) as {
+          runId: string;
+          url: string;
+        };
+        await serveFrom(sessions)("ajour-plugin://jira/status.ts");
+        await driver.send({
+          type: "settled",
+          runId: first.runId,
+          outcome: importFailure(first.url),
+        });
+        await run.settled;
+
         const later = start("jira", {
           packageDirectory,
           entrypoint: "plugin.ts",
@@ -437,15 +535,27 @@ describe("the sandboxed renderer runtime", () => {
           runId: command.runId,
           outcome,
         });
+
         await expect(later.settled).resolves.toEqual({
           ok: false,
           failure: "plugin_error",
-          message: outcome.message,
+          message,
         });
-      }
-    } finally {
-      await rm(packageDirectory, { recursive: true, force: true });
-    }
+      },
+    );
+
+    it("forgets the package's stripped files once its renderer closes", async () => {
+      const { runtime, sessions, ready } = startTypeScript();
+      const { driver } = await ready();
+      const first = (await driver.send({ type: "next" })) as { url: string };
+      await serveFrom(sessions)(first.url);
+      const kept = policy.strippedFileCount();
+
+      await runtime.closeAll();
+
+      expect(kept).toBe(1);
+      expect(policy.strippedFileCount()).toBe(0);
+    });
   });
 
   it("relays a run's ajour.http to that run's broker only, never another's", async () => {

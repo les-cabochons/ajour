@@ -9,6 +9,7 @@ const {
   pluginPartition,
   pluginRequestAllowed,
   pluginFileHeaders,
+  forgetStrippedFiles,
   servePluginFile,
 } = require("./plugin-renderer-policy.cjs");
 const { rendererSandboxRefusal } = require("./plugin-sandbox.cjs");
@@ -292,9 +293,12 @@ function createPluginRendererRuntime({
           pluginId,
           packageDirectory: renderer.packageDirectory,
           hostDirectory,
+          // The origin can't say which worker asked, so every run still
+          // running hears it: its import is the one that fails.
           onSourceRefused: ({ reason }) => {
-            renderer.sourceRefusals += 1;
-            renderer.lastSourceRefusal = reason;
+            for (const run of renderer.runs.values()) {
+              run.refusedSource ??= reason;
+            }
           },
         });
       });
@@ -379,6 +383,8 @@ function createPluginRendererRuntime({
     for (const run of [...renderer.runs.values()]) run.settle(outcome);
     renderer.pull?.(undefined);
     renderer.pull = null;
+    // An uninstall or an update ends in this close: nothing of the package stays.
+    const forgotten = forgetStrippedFiles(renderer.packageDirectory);
     renderer.closing = (async () => {
       await renderer.opening;
       const contents = renderer.webContents;
@@ -389,7 +395,9 @@ function createPluginRendererRuntime({
       );
       contents.close();
       await Promise.race([destroyed, delay(CLOSE_TIMEOUT_MS)]);
-    })().catch(() => undefined);
+    })()
+      .catch(() => undefined)
+      .then(() => forgotten);
     return renderer.closing;
   }
 
@@ -419,9 +427,6 @@ function createPluginRendererRuntime({
       /** @type {((command: unknown) => void) | null} */ pull: null,
       /** @type {unknown[]} */ commands: [],
       runs: new Map(),
-      /** How often a file of the package couldn't be stripped, and why last. */
-      sourceRefusals: 0,
-      /** @type {string | undefined} */ lastSourceRefusal: undefined,
       /** @type {number | undefined} */ pid: undefined,
       /** @type {ReturnType<typeof setTimeout> | undefined} */ idleTimer:
         undefined,
@@ -611,20 +616,19 @@ function createPluginRendererRuntime({
    * stripped failed for that reason, which names the file: Chromium only
    * says the import failed. No module of the graph ran.
    */
-  function importRefused(renderer, run, outcome) {
+  function refusedImportOutcome(run, outcome) {
     if (
       !isRecord(outcome) ||
       outcome.ok !== false ||
       outcome.stage !== "import" ||
-      renderer.sourceRefusals === run.sourceRefusalsAtStart ||
-      renderer.lastSourceRefusal === undefined
+      run.refusedSource === undefined
     ) {
       return undefined;
     }
     return {
       ok: false,
       failure: "plugin_error",
-      message: renderer.lastSourceRefusal,
+      message: run.refusedSource,
     };
   }
 
@@ -657,7 +661,7 @@ function createPluginRendererRuntime({
       run.reportedSettled = true;
       run.settle(
         outcomeFromPage(
-          importRefused(renderer, run, message.outcome) ?? message.outcome,
+          refusedImportOutcome(run, message.outcome) ?? message.outcome,
         ),
       );
       return undefined;
@@ -758,7 +762,7 @@ function createPluginRendererRuntime({
         aborts: new Map(),
         done: false,
         reportedSettled: false,
-        sourceRefusalsAtStart: renderer.sourceRefusals,
+        /** @type {string | undefined} */ refusedSource: undefined,
         settle(outcome) {
           if (run.done) return;
           run.done = true;

@@ -1,5 +1,6 @@
 // @ts-check
 const path = require("node:path");
+const { createHash } = require("node:crypto");
 const { readFile, realpath, stat } = require("node:fs/promises");
 const { stripTypeScriptTypes } = require("node:module");
 
@@ -47,13 +48,16 @@ const PLUGIN_CONTENT_SECURITY_POLICY = [
  */
 const TYPESCRIPT_EXTENSIONS = new Set([".ts", ".mts"]);
 
+const JAVASCRIPT = "text/javascript; charset=utf-8";
+
 /** The types a plugin's files are served as. Anything else is opaque bytes. */
 const CONTENT_TYPES = {
-  ".js": "text/javascript; charset=utf-8",
-  ".mjs": "text/javascript; charset=utf-8",
+  ".js": JAVASCRIPT,
+  ".mjs": JAVASCRIPT,
   // Served stripped of their types, as JavaScript.
-  ".ts": "text/javascript; charset=utf-8",
-  ".mts": "text/javascript; charset=utf-8",
+  ...Object.fromEntries(
+    [...TYPESCRIPT_EXTENSIONS].map((extension) => [extension, JAVASCRIPT]),
+  ),
   ".json": "application/json; charset=utf-8",
   ".txt": "text/plain; charset=utf-8",
   ".md": "text/plain; charset=utf-8",
@@ -194,6 +198,11 @@ function isInside(child, parent) {
 
 /** At most this many stripped files are kept, as a package's file limit. */
 const MAX_STRIPPED_FILES = 2_000;
+/**
+ * The largest TypeScript file main strips. Stripping is synchronous in the
+ * main process: a file of 25 MB holds it for about 20 seconds.
+ */
+const MAX_TYPESCRIPT_SOURCE_BYTES = 2 * 1024 * 1024;
 /** The longest reason Node gives that a reason quotes. */
 const MAX_STRIP_REASON_CHARACTERS = 300;
 
@@ -206,10 +215,12 @@ const MAX_STRIP_REASON_CHARACTERS = 300;
 
 /**
  * Each TypeScript file's stripped output, or why it can't be stripped, by
- * its real path. An entry holds while the file keeps its size and time, so
- * a renderer that opens again doesn't strip the package again.
+ * its real path, with the hash of the source it came from. An entry holds
+ * only for that exact source, so a file that changes, even to the same size
+ * and time, is stripped again, and a renderer that opens again doesn't
+ * strip an unchanged package again.
  *
- * @type {Map<string, { size: number, mtimeMs: number, stripped: StrippedFile }>}
+ * @type {Map<string, { hash: string, stripped: StrippedFile }>}
  */
 const strippedFiles = new Map();
 
@@ -231,29 +242,35 @@ function stripReason(error) {
   return /[.!?…]$/u.test(cut) ? cut : `${cut}.`;
 }
 
+const sourceTooLarge = () => ({
+  refused: "is over 2 MB, the most Ajour strips in a TypeScript file.",
+});
+
 /**
  * A TypeScript file's code with its types erased, or why it can't run:
- * only erasable syntax strips. Enums, namespaces and parameter properties
- * would need code generated. Erasing keeps every line and column, so a
- * stack trace points into the source as written.
+ * only erasable syntax strips, and only a file of at most 2 MB. Enums,
+ * namespaces and parameter properties would need code generated. Erasing
+ * keeps every line and column, so a stack trace points into the source as
+ * written.
  *
  * @param {string} realPath
- * @param {{ size: number, mtimeMs: number }} stats
+ * @param {number} size
  * @returns {Promise<StrippedFile>}
  */
-async function strippedFile(realPath, { size, mtimeMs }) {
+async function strippedFile(realPath, size) {
+  if (size > MAX_TYPESCRIPT_SOURCE_BYTES) return sourceTooLarge();
+  const bytes = await readFile(realPath);
+  // The file may have grown since it was measured.
+  if (bytes.length > MAX_TYPESCRIPT_SOURCE_BYTES) return sourceTooLarge();
+  const hash = createHash("sha256").update(bytes).digest("hex");
   const cached = strippedFiles.get(realPath);
-  if (cached && cached.size === size && cached.mtimeMs === mtimeMs) {
-    return cached.stripped;
-  }
-  const source = await readFile(realPath, "utf8");
+  if (cached && cached.hash === hash) return cached.stripped;
   /** @type {StrippedFile} */
   let stripped;
   try {
-    if (typeof stripTypeScriptTypes !== "function") {
-      throw new Error("This version of Ajour can't strip TypeScript.");
-    }
-    stripped = { code: stripTypeScriptTypes(source, { mode: "strip" }) };
+    stripped = {
+      code: stripTypeScriptTypes(bytes.toString("utf8"), { mode: "strip" }),
+    };
   } catch (error) {
     const code = /** @type {{ code?: unknown }} */ (error)?.code;
     stripped = {
@@ -264,12 +281,36 @@ async function strippedFile(realPath, { size, mtimeMs }) {
     };
   }
   strippedFiles.delete(realPath);
-  strippedFiles.set(realPath, { size, mtimeMs, stripped });
+  strippedFiles.set(realPath, { hash, stripped });
   if (strippedFiles.size > MAX_STRIPPED_FILES) {
     const oldest = strippedFiles.keys().next().value;
     if (oldest !== undefined) strippedFiles.delete(oldest);
   }
   return stripped;
+}
+
+/**
+ * Drops the stripped files of a package, as its plugin's renderer closes
+ * for good: an uninstall or an update leaves nothing behind. Matches the
+ * package by its path as given and by its real path.
+ *
+ * @param {string} packageDirectory
+ */
+async function forgetStrippedFiles(packageDirectory) {
+  const roots = [path.resolve(packageDirectory)];
+  try {
+    roots.push(await realpath(packageDirectory));
+  } catch {
+    // A package that is already gone has only its path as given.
+  }
+  for (const key of [...strippedFiles.keys()]) {
+    if (roots.some((root) => isInside(key, root))) strippedFiles.delete(key);
+  }
+}
+
+/** How many stripped files are kept, for tests. */
+function strippedFileCount() {
+  return strippedFiles.size;
 }
 
 /**
@@ -310,17 +351,16 @@ async function servePluginFile(
     if (resolved.kind === "package") {
       const root = await realpath(packageDirectory);
       const real = await realpath(resolved.filePath);
+      if (!isInside(real, root)) return notFound();
       const stats = await stat(real);
-      if (!isInside(real, root) || !stats.isFile()) {
-        return notFound();
-      }
+      if (!stats.isFile()) return notFound();
       if (TYPESCRIPT_EXTENSIONS.has(path.extname(real).toLowerCase())) {
         // The path as requested, which is the one the plugin's author wrote.
         const file = path
           .relative(path.resolve(packageDirectory), resolved.filePath)
           .split(path.sep)
           .join("/");
-        const stripped = await strippedFile(real, stats);
+        const stripped = await strippedFile(real, stats.size);
         if (stripped.refused !== undefined) {
           onSourceRefused?.({ file, reason: `${file} ${stripped.refused}` });
           return new Response("This file can't run.", {
@@ -390,6 +430,7 @@ module.exports = {
   PLUGIN_CONTENT_SECURITY_POLICY,
   PLUGIN_SCHEME,
   hostPageUrl,
+  forgetStrippedFiles,
   pluginFileHeaders,
   pluginOfSender,
   pluginOrigin,
@@ -397,4 +438,5 @@ module.exports = {
   pluginRequestAllowed,
   resolvePluginFile,
   servePluginFile,
+  strippedFileCount,
 };

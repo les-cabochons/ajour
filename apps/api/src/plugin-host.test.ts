@@ -586,10 +586,13 @@ describe("PluginManager", () => {
       });
     });
 
-    it("may name TypeScript source as its entrypoint, which its renderer gets stripped", async () => {
-      const root = await tempDir();
-      for (const entrypoint of ["src/index.ts", "src/index.mts"]) {
-        const id = entrypoint.endsWith(".mts") ? "api-4-mts" : "api-4-ts";
+    it.each([
+      ["src/index.ts", "api-4-ts"],
+      ["src/index.mts", "api-4-mts"],
+    ])(
+      "is read with %s as its entrypoint, as a package of API 4",
+      async (entrypoint, id) => {
+        const root = await tempDir();
         const pluginDirectory = await createPluginDirectory(root, id, "", {
           ...API_4_MANIFEST,
           entrypoint,
@@ -608,8 +611,8 @@ describe("PluginManager", () => {
           manifest: { apiVersion: 4 },
           entrypointPath: path.join(pluginDirectory, entrypoint),
         });
-      }
-    });
+      },
+    );
 
     it("is refused when its manifest breaks an API 4 rule", async () => {
       const root = await tempDir();
