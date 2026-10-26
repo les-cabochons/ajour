@@ -45,6 +45,13 @@ export const SettingsAgentsPage = lazy(
     return { default: module.SettingsAgentsPage };
   }),
 );
+export const SettingsDiagnosticsPage = lazy(
+  trackPageChunk(async () => {
+    const module =
+      await import("@/features/settings/settings-diagnostics-page");
+    return { default: module.SettingsDiagnosticsPage };
+  }),
+);
 export const SettingsBacklogPage = lazy(
   trackPageChunk(async () => {
     const module = await import("@/features/settings/settings-backlog-page");
@@ -117,6 +124,8 @@ export function settingsPageElement(location: SettingsLocation) {
       return <SettingsMcpPage />;
     case "agents":
       return <SettingsAgentsPage />;
+    case "diagnostics":
+      return <SettingsDiagnosticsPage />;
     case "backlog":
       return <SettingsBacklogPage />;
     case "calendar":

@@ -22,6 +22,7 @@ import {
   SettingsBacklogPage,
   SettingsCalendarPage,
   SettingsDebugPage,
+  SettingsDiagnosticsPage,
   SettingsGeneralPage,
   SettingsMcpPage,
   SettingsPluginsPage,
@@ -347,6 +348,16 @@ const settingsAgentsRoute = createRoute({
   ),
 });
 
+const settingsDiagnosticsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/diagnostics",
+  component: () => (
+    <RouteSuspense>
+      <SettingsDiagnosticsPage />
+    </RouteSuspense>
+  ),
+});
+
 const settingsBacklogRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/backlog",
@@ -455,6 +466,7 @@ const routeTree = rootRoute.addChildren([
       settingsVaultRoute,
       settingsMcpRoute,
       settingsAgentsRoute,
+      settingsDiagnosticsRoute,
       settingsBacklogRoute,
       settingsWorkflowRoute,
       settingsCalendarRoute,

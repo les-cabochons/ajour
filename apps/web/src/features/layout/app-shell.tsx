@@ -595,7 +595,7 @@ export function AppShell() {
   const narrowSettingsPage =
     isNarrowView && isSettingsActive
       ? [
-          ...getSettingsPages("wide", false, true),
+          ...getSettingsPages("wide", false, true, true),
           ...unlistedSettingsPages,
         ].find((page) => pathname.startsWith(page.to))
       : undefined;
