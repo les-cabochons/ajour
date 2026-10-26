@@ -61,6 +61,7 @@ const {
   selectDevelopmentPluginDirectory,
 } = require("./development-plugin-settings.cjs");
 const { createIpcListeners, refusedSender } = require("./ipc-listeners.cjs");
+const { createLocalLogs } = require("./local-logs.cjs");
 const {
   loadDesktopBootstrapLocalState,
 } = require("./local-state-bootstrap.cjs");
@@ -69,7 +70,9 @@ const {
   apiStopOf,
   createLaunchContext,
   createMainEvents,
+  loadLocalLogFile,
   loadMainEmitter,
+  loadMainSink,
   readLaunchVersion,
   triggerOf,
   writeLaunchVersion,
@@ -182,12 +185,36 @@ const internalAppApiEntryPath = app.isPackaged
   ? path.join(internalAppApiRuntimeRoot, "apps/api/src/server.ts")
   : path.resolve(__dirname, "../../api/src/server.ts");
 
+const wideEventsRoot = path.join(
+  internalAppApiRuntimeRoot,
+  "packages/wide-events",
+);
+// The local log file (ADR 0014): off until the user turns it on, and then
+// one NDJSON file per UTC day in userData/logs/events.
+const localLogs = createLocalLogs({
+  settingsPath: path.join(app.getPath("userData"), "local-log-settings.json"),
+  events,
+  open: (settings) =>
+    loadLocalLogFile({
+      packageRoot: wideEventsRoot,
+      directory: path.join(app.getPath("userData"), "logs", "events"),
+      settings,
+    }),
+});
+// The one sink of main's events and the local API's: the console with
+// AJOUR_WIDE_EVENTS=console, and the local log file. Undefined when the
+// package can't load, so the local API falls back to the switch.
+const mainEventSink = loadMainSink({
+  packageRoot: wideEventsRoot,
+  sinkSwitch: process.env.AJOUR_WIDE_EVENTS,
+  logFile: localLogs.file,
+}).catch(() => undefined);
 void loadMainEmitter({
-  packageRoot: path.join(internalAppApiRuntimeRoot, "packages/wide-events"),
+  packageRoot: wideEventsRoot,
   launch,
   homeDirectory: app.getPath("home"),
   userDataPath: app.getPath("userData"),
-  sinkSwitch: process.env.AJOUR_WIDE_EVENTS,
+  sink: mainEventSink,
 }).then(
   (createEmitter) => events.attach(createEmitter),
   () => events.abandon(),
@@ -672,6 +699,23 @@ ipc.handle("ajour:uninstall-plugin", async (event, pluginId) => {
   }
 });
 
+// The local log file's settings page (ADR 0014). Settings › Diagnostics
+// reads its state, saves its settings and deletes every log.
+ipc.handle("ajour:get-logs-status", async (event) => {
+  assertActiveDesktopWindow(event, "read the log settings");
+  return await localLogs.status();
+});
+
+ipc.handle("ajour:configure-logs", async (event, settings) => {
+  assertActiveDesktopWindow(event, "configure logging");
+  return await localLogs.configure(settings);
+});
+
+ipc.handle("ajour:delete-all-logs", async (event) => {
+  assertActiveDesktopWindow(event, "delete the logs");
+  return await localLogs.deleteAll();
+});
+
 ipc.handle("ajour:get-development-plugin-settings", async (event) => {
   assertActiveDesktopWindow(event, "read development plugin settings");
   return getDevelopmentPluginSettings();
@@ -1026,6 +1070,7 @@ async function ensureInternalAppApiRunning() {
         : ["http://127.0.0.1:5173"],
       windowToken: windowApiToken,
       launch: apiLaunchOf(launch),
+      eventSink: await mainEventSink,
     }).catch((error) => {
       if (error?.code === "EADDRINUSE") {
         throw internalAppApiPortInUseError(error);
@@ -1161,17 +1206,18 @@ function endQuit(quit, outcome) {
 
 /**
  * Resolves once the wide-events package has loaded and taken the events
- * recorded before it, or after `withinMs`, so no exit path waits longer than
- * quitting allows.
+ * recorded before it, and the local log file has written what it holds, or
+ * after `withinMs`, so no exit path waits longer than quitting allows.
  */
 function whenEventsReady(withinMs) {
   let timer;
   const deadline = new Promise((resolve) => {
     timer = setTimeout(resolve, Math.max(0, withinMs));
   });
-  return Promise.race([events.ready, deadline]).finally(() =>
-    clearTimeout(timer),
-  );
+  return Promise.race([
+    events.ready.then(() => localLogs.flush()),
+    deadline,
+  ]).finally(() => clearTimeout(timer));
 }
 
 /**
@@ -1478,6 +1524,9 @@ if (!hasSingleInstanceLock) {
     .end();
   void whenEventsReady(INTERNAL_APP_API_STOP_TIMEOUT_MS).then(() => app.quit());
 } else {
+  // The local log file's retention sweep, now and every hour, only in the
+  // process that holds the lock and writes the file.
+  localLogs.startSweeps();
   // From the process start until the window has loaded.
   const launchUnit = events.start("app.launch", {
     kind: "lifecycle",

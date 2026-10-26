@@ -4,8 +4,8 @@ Ajour reports what happened with wide events, following
 [loggingsucks.com](https://loggingsucks.com/): one context-rich event per unit
 of work per runtime, built up while the work runs and emitted once at the end.
 The event records what happened to the unit of work, not what the code did
-along the way. The spec is #304. Events never hold content (ADR 0011), and for
-now they are exported nowhere.
+along the way. The spec is #304. Events never hold content (ADR 0011). On desktop the
+user can turn on a local log file (ADR 0014); otherwise they go nowhere.
 
 ## The model
 
@@ -169,8 +169,10 @@ tokens.
   `sensitive`, and a field without one fails to compile. The envelope is
   classed the same way (`envelopeFields`).
 - Sensitive fields are the days, weeks and durations of time records, and
-  every error message. A future sink receives them only if the user allows it
-  for that sink.
+  every error message. A sink receives them only if the user allows it for
+  that sink. The privacy filter (`createPrivacyFilter`) is how a sink
+  applies the classes: it reads them from the catalog, never from a list of
+  its own (see [Sinks](#sinks)).
 - An error message enters an event only through the scrubber. `unit.fail()`
   and a thrown error both pass it, when the event is built, so a dropped event
   costs no scrubbing. It finds, on the original text, the connection's secret
@@ -188,15 +190,16 @@ tokens.
 `packages/wide-events` owns the model. It runs in the browser and in Node, and
 its entry points are:
 
-| Entry point           | What it holds                                                                                    |
-| --------------------- | ------------------------------------------------------------------------------------------------ |
-| `index.ts`            | `createEmitter`, the envelope types and the synchronous scope                                    |
-| `catalog.ts`          | Ajour's catalog of event names, `defineCatalog`, `operational`, `sensitive` and `envelopeFields` |
-| `sinks.ts`            | `nowhere`, `createRecordingSink`, `createConsoleSink` and `sinkFromSwitch`                       |
-| `trace-context.ts`    | `encodeTraceparent` and `decodeTraceparent`                                                      |
-| `scrub.ts`            | `scrubErrorMessage`                                                                              |
-| `secret-redaction.ts` | the secret redaction the scrubber and the local API's plugin errors share                        |
-| `node.ts`             | `asyncContextScope`, for Node runtimes only                                                      |
+| Entry point           | What it holds                                                                                               |
+| --------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `index.ts`            | `createEmitter`, the envelope types and the synchronous scope                                               |
+| `catalog.ts`          | Ajour's catalog of event names, `defineCatalog`, `operational`, `sensitive` and `envelopeFields`            |
+| `sinks.ts`            | `nowhere`, `createRecordingSink`, `createConsoleSink`, `sinkFromSwitch`, `fanOut` and `createPrivacyFilter` |
+| `local-log-file.ts`   | `createLocalLogFile`, the desktop main process's local log file, for Node only                              |
+| `trace-context.ts`    | `encodeTraceparent` and `decodeTraceparent`                                                                 |
+| `scrub.ts`            | `scrubErrorMessage`                                                                                         |
+| `secret-redaction.ts` | the secret redaction the scrubber and the local API's plugin errors share                                   |
+| `node.ts`             | `asyncContextScope`, for Node runtimes only                                                                 |
 
 Each runtime creates one emitter at start, with its runtime context and a
 sink:
@@ -221,8 +224,10 @@ renderer in `apps/web/src/lib/wide-events.ts`.
 
 ## Sinks
 
-A sink has one method, `emit(event)`. A sink that throws never changes what
-the work does.
+A sink has `emit(event)`, and may have `accepting()`. A sink that throws
+never changes what the work does. While `accepting()` answers false, the
+emitter doesn't build the event at all, as with `nowhere`, so a sink the
+user turned off costs nothing.
 
 - `nowhere` is the default, and drops everything. With it an event is never
   built: it costs object writes only, with no serialization, no I/O and no
@@ -235,8 +240,71 @@ the work does.
   the events in the devtools console. Run on its own (`just api-start`,
   through `apps/api/src/standalone.ts`), the API says where it listens on
   stderr, so stdout stays a clean stream of events.
+- `fanOut(...sinks)` hands each event to every sink that accepts it. One
+  that throws stops none of the others. It accepts while any of them does.
+- The **local log file** (`createLocalLogFile`, ADR 0014) is the first
+  exporter, built into the desktop main process.
 
-Logging plugins will later replace the sink without changing any event.
+### The local log file
+
+The desktop main process writes events to a file on the user's computer,
+once the user turns it on. Settings › Diagnostics will show it (#441).
+
+- **Off by default.** Nothing is written, and no file or folder is created,
+  until the user turns it on. While it is off, `accepting()` is false, so no
+  event is built for it.
+- **One stream.** Main's events and the local API's go through one sink,
+  which main makes with `loadMainSink` (`apps/desktop/electron/main-events.cjs`)
+  and passes to its emitter and to `startAppApiServer`'s `eventSink`. It is
+  `fanOut(console, file)`: the console only when `AJOUR_WIDE_EVENTS=console`,
+  and the file always, writing only while it is on. So the developer switch
+  keeps working for both runtimes whether logging is on or off, and turning
+  logging on doesn't need it. The console prints every event as the emitter
+  built it; the file writes what its privacy filter keeps. The renderer's
+  events will reach the same sink in batches over IPC (#440).
+- **Privacy filter.** Before a line is written, `createPrivacyFilter` keeps
+  each field only where the catalog declares it, for the event's name or in
+  the envelope. A `sensitive` field (the days, weeks and durations of time
+  records, and `error.message`) is kept only when the user allowed
+  sensitive fields for this sink (`include_sensitive`). A field the catalog
+  doesn't declare is dropped either way, so a batch from another runtime
+  can't carry more than its entry.
+- **Files.** One file per UTC day, `userData/logs/events/YYYY-MM-DD.ndjson`,
+  for the day the event was emitted. Each line is one event: a JSON object
+  with the envelope and its fields, as [Envelope](#envelope) describes,
+  after the filter. Lines are only appended; a file is never rewritten.
+  Nothing else belongs in the folder, and the sweep and the status ignore
+  any other name.
+- **Writes.** `emit` filters and serializes the event, queues the line and
+  returns. The queue is written every 250 ms, in one append per day file,
+  and holds at most 10,000 lines: past that, events are dropped until it is
+  written. Quitting waits for it, within the quit's 10 seconds.
+- **Failure.** A write that fails stops writing: the queue is dropped and the
+  file keeps a `warning` with a closed reason, `disk_full` (ENOSPC, EDQUOT),
+  `no_permission` (EACCES, EPERM, EROFS) or `write_failed`. The work never
+  sees it. Saving the settings, as turning logging back on does, clears it
+  and writing resumes. So does the next launch.
+- **Retention.** A sweep runs at launch, every hour and when a limit
+  changes, each its own `logs.sweep` job. It first deletes every day whose
+  last moment is more than the retention ago (1, 7, 30 or 90 days), then the
+  oldest days until the folder is under its size limit (100, 250 or 1,000
+  MiB). It never deletes today's file, nor a day still waiting to be
+  written, so today's file can pass the size limit until the day ends. A
+  missing folder, or a path that isn't a folder, has nothing to sweep.
+- **Settings.** Main stores
+  `{ enabled, retention_days, size_limit_mb, include_sensitive }` in
+  `userData/local-log-settings.json` (`local-log-settings.cjs`): off, 7,
+  250 and false by default. A value outside its closed set takes its
+  default. The IPC channels `ajour:get-logs-status` (`logs.status`),
+  `ajour:configure-logs` (`logs.configure`, whose settings left out stay)
+  and `ajour:delete-all-logs` (`logs.delete_all`) go through the IPC
+  wrapper to `local-logs.cjs`. Each answers the settings, the state (`off`,
+  `on` or `warning`) and its reason, and the folder's bytes, file count and
+  oldest day. Delete all logs removes the folder, and what was waiting to be
+  written.
+
+Remote exporters, such as Grafana and Application Insights, will be more
+sinks behind the same contract, each with its own sensitive fields setting.
 
 ## Traces
 
@@ -652,6 +720,7 @@ item's.
 | `update.check`, `update.install`                                                                          | `automatic-update.cjs`, on the IPC event that asked, or as its own job. One install is one event: an updater error lands on it, where the install was. After the handoff it stays open until the app quits for the installer (`will-quit`), or for the quit's 10 seconds, since electron-updater reports an installer that fails to start later. `update.handoff` says which: `app_quit`, `installer_failed`, or `timed_out`, which ends the event as a `timeout`. It records only the offered release's version                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `plugin.install`, `plugin.uninstall`, `catalog.configure`, `dev_plugins.configure`                        | their IPC handlers in main.cjs. An install's result comes from `pluginInstallResultOf` in `plugin-install.cjs`, from the error's code only: the local API's installer marks every archive-validation error `invalid_archive` (bad tar or gzip, a missing or unparseable manifest, a failed schema, a missing entrypoint, the size and entry limits; `INVALID_PLUGIN_ARCHIVE` in `apps/api/src/plugin-package.ts`), picking an archive here marks one too, the catalog marks `not_available`, and the plugin host marks an install it refuses while plugin operations run `busy` (`PLUGIN_HOST_BUSY` in `apps/api/src/plugin-host.ts`). A Node system error is the archive's fault only on a path inside the extraction folder (a manifest or entrypoint the archive lacks, an entry tar cannot write); opening the staged archive, reaching the extraction folder itself, and a full, locked or busy disk anywhere are `failed`, as is anything else |
 | `context_menu.show`                                                                                       | the picked id only when it is one of the renderer's object actions (`OBJECT_ACTION_IDS` in `context-menu.cjs`), else `other`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `logs.status`, `logs.configure`, `logs.delete_all`, `logs.sweep`                                          | `local-logs.cjs`: the local log file's IPC channels, with its state, the settings saved and what a deletion removed; and each retention sweep, at launch, hourly or when a limit changes, with what it deleted and what is left. Never a path                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `local_state.recover`                                                                                     | counts only the persisted collections `RECORD_COLLECTIONS` names, never a key the file chose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 Every IPC channel registers through one wrapper, `createIpcListeners`, with
@@ -779,6 +848,10 @@ channel to read the event each emits.
 | `event_rule.hide`                    | command                            | store command                                    |
 | `local_state.recover`                | ipc                                | IPC channel                                      |
 | `local_state.reload`                 | job                                | renderer                                         |
+| `logs.configure`                     | command, ipc                       | IPC channel                                      |
+| `logs.delete_all`                    | command, ipc                       | IPC channel                                      |
+| `logs.status`                        | ipc                                | IPC channel                                      |
+| `logs.sweep`                         | job                                | main process                                     |
 | `mcp.configure`                      | command, request                   | route, client call                               |
 | `mcp.request`                        | request                            | local API                                        |
 | `mcp.status`                         | command, request                   | route, client call                               |

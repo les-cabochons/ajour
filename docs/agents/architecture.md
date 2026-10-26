@@ -632,7 +632,7 @@ Follow `docs/logging-strategy.md`: one wide event per unit of work per runtime, 
 
 Every command of the local store emits one event, named in the store's typed command table (`STORE_COMMANDS` in `lib/local-store.ts`).
 
-Events go nowhere by default; `AJOUR_WIDE_EVENTS=console` prints them for a developer. Any sink that sends them elsewhere must be explicit, opt-in and filtered by each field's privacy class.
+Events go nowhere by default; `AJOUR_WIDE_EVENTS=console` prints them for a developer. Any sink that sends them elsewhere must be explicit, opt-in and filtered by each field's privacy class. The first is the desktop's local log file (ADR 0014), built into the main process and off until the user turns it on: main's events and the local API's share its sink, and its privacy filter reads each field's class from the catalog.
 
 ## Dependency Direction
 

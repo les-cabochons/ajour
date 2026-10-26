@@ -73,7 +73,9 @@ async function runtime(
     archiveFilename: "fixture.ajour-connector",
   };
   const { events, recorded } = recordingEvents();
+  const mainSink = { emit: vi.fn() };
   const context = vm.createContext({
+    mainEventSink: Promise.resolve(mainSink),
     http,
     path,
     setTimeout,
@@ -137,6 +139,7 @@ async function runtime(
   return {
     context,
     recorded,
+    mainSink,
     start,
     install,
     uninstall,
@@ -204,6 +207,19 @@ describe("desktop plugin runtime ownership", () => {
 
     expect(app.start).toHaveBeenCalledWith(
       expect.objectContaining({ windowToken: "launch-token" }),
+    );
+  });
+
+  it("gives the API the sink main's own events go to, so both reach the local log file", async () => {
+    const free = await listen();
+    const port = portOf(free);
+    await new Promise<void>((resolve) => free.close(() => resolve()));
+    const app = await runtime(port);
+
+    await app.invoke("ajour:download-catalog-plugin");
+
+    expect(app.start).toHaveBeenCalledWith(
+      expect.objectContaining({ eventSink: app.mainSink }),
     );
   });
 

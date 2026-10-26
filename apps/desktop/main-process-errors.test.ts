@@ -90,7 +90,15 @@ afterEach(() => {
 describe("quitting and installing an update", () => {
   function quitRuntime(
     stopInternalAppApi: () => Promise<void>,
-    { loaded = true, quitTrigger = "other" } = {},
+    {
+      loaded = true,
+      quitTrigger = "other",
+      flushLogs = async () => {},
+    }: {
+      loaded?: boolean;
+      quitTrigger?: string;
+      flushLogs?: () => Promise<void>;
+    } = {},
   ) {
     const handlers = new Map<string, (event: unknown) => void>();
     const app = {
@@ -109,7 +117,9 @@ describe("quitting and installing an update", () => {
       order.push("plugin renderers closed");
     });
     app.quit.mockImplementation(() => order.push("quit"));
+    const localLogs = { flush: vi.fn(flushLogs), startSweeps: vi.fn() };
     const context = vm.createContext({
+      localLogs,
       closePluginRenderers,
       app,
       events,
@@ -149,6 +159,7 @@ describe("quitting and installing an update", () => {
       attach,
       automaticUpdateController,
       closePluginRenderers,
+      localLogs,
       order,
       emit: (name: string) => handlers.get(name)?.({ preventDefault: vi.fn() }),
       quit() {
@@ -188,6 +199,25 @@ describe("quitting and installing an update", () => {
 
     expect(runtime.closePluginRenderers).toHaveBeenCalledOnce();
     expect(runtime.order).toEqual(["plugin renderers closed", "quit"]);
+  });
+
+  it("writes what the local log file holds before it quits", async () => {
+    let written = () => {};
+    const runtime = quitRuntime(async () => {}, {
+      flushLogs: () =>
+        new Promise<void>((resolve) => {
+          written = resolve;
+        }),
+    });
+
+    runtime.quit();
+    await flush();
+    expect(runtime.localLogs.flush).toHaveBeenCalledOnce();
+    expect(runtime.app.quit).not.toHaveBeenCalled();
+
+    written();
+    await flush();
+    expect(runtime.app.quit).toHaveBeenCalledOnce();
   });
 
   it("still quits when stopping the local API fails", async () => {
@@ -1026,6 +1056,7 @@ describe("startup", () => {
     const dialog = { showErrorBox: vi.fn() };
     const { events, recorded, attach } = recordingEvents({ loaded });
     const powerMonitor = new EventEmitter();
+    const localLogs = { flush: async () => {}, startSweeps: vi.fn() };
     let menuTemplate: {
       submenu?: { id?: string; click?: () => void }[];
     }[] = [];
@@ -1049,6 +1080,7 @@ describe("startup", () => {
       events,
       existsSync: () => true,
       hasSingleInstanceLock,
+      localLogs,
       INTERNAL_APP_API_HOST: "127.0.0.1",
       INTERNAL_APP_API_PORT: 8787,
       INTERNAL_APP_API_STOP_TIMEOUT_MS: 10_000,
@@ -1098,6 +1130,7 @@ describe("startup", () => {
       writeLaunchVersion,
       context,
       powerMonitor,
+      localLogs,
       /** Clicks a menu item of the app menu main.cjs built. */
       clickMenuItem(id: string) {
         menuTemplate
@@ -1108,6 +1141,15 @@ describe("startup", () => {
       emit: (name: string, ...args: unknown[]) => handlers.get(name)?.(...args),
     };
   }
+
+  it("starts the local log file's retention sweeps only in the process that holds the lock", async () => {
+    const holder = startupRuntime();
+    const second = startupRuntime({ hasSingleInstanceLock: false });
+    await flush();
+
+    expect(holder.localLogs.startSweeps).toHaveBeenCalledOnce();
+    expect(second.localLogs.startSweeps).not.toHaveBeenCalled();
+  });
 
   it("says why and quits when the window cannot be created", async () => {
     const runtime = startupRuntime({
