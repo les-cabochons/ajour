@@ -214,6 +214,31 @@ const isWindows = process.platform === "win32";
     processes.metrics,
   );
 
+  const typescript = findings.typescript ?? {};
+  expect(
+    typescript.outcome?.ok === true &&
+      typescript.outcome.result?.greeting === "Hello, Ada!" &&
+      typescript.outcome.result.origin ===
+        "ajour-plugin://fixture-typescript" &&
+      typescript.outcome.result.module ===
+        "ajour-plugin://fixture-typescript/src/plugin.ts",
+    "a .ts entrypoint that imports another .ts file runs and returns its result",
+    typescript.outcome,
+  );
+  expect(
+    typescript.enumOutcome?.ok === false &&
+      typescript.enumOutcome.failure === "plugin_error" &&
+      typescript.enumOutcome.message ===
+        "status.ts uses TypeScript that Ajour can't strip: TypeScript enum is not supported in strip-only mode.",
+    "a package with an enum fails with a reason naming the file",
+    typescript.enumOutcome,
+  );
+  expect(
+    typescript.enumCodeRan === false,
+    "no module of that package runs",
+    typescript,
+  );
+
   const forged = findings.forged ?? {};
   expect(
     forged.concurrentHold?.ok === true && forged.concurrentHold.ms < 1_000,

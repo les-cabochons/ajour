@@ -365,6 +365,34 @@ async function main() {
       }),
     });
 
+    // 4b. TypeScript source (#437): main strips each file's types as the
+    //     worker imports it. A graph with a file it can't strip runs
+    //     nothing. After step 4, which counts two renderers, and before the
+    //     lifecycle step, which can hang locally.
+    const typescript = await runDirect(
+      runtime,
+      "fixture-typescript",
+      "describe",
+      ["Ada"],
+      "src/plugin.ts",
+    );
+    const enumOutcome = await runDirect(
+      runtime,
+      "fixture-enum",
+      "status",
+      [],
+      "plugin.ts",
+    );
+    report("typescript", {
+      outcome: typescript,
+      enumOutcome,
+      enumCodeRan: emitted.some(
+        (event) =>
+          event.plugin?.id === "fixture-enum" &&
+          event.plugin_renderer?.message === "publicFetch",
+      ),
+    });
+
     // 5. Forged calls while the tracker's sync runs: from the other plugin's
     //    page, from its worker, from a page Ajour didn't register, and from a
     //    subframe.

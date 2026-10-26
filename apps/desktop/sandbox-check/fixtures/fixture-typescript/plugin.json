@@ -1,0 +1,16 @@
+{
+  "id": "fixture-typescript",
+  "version": "4.0.0",
+  "apiVersion": 4,
+  "displayName": "Fixture TypeScript",
+  "iconSvg": "<svg viewBox='0 0 16 16'><path d='M0 0h16v16H0z' /></svg>",
+  "entrypoint": "src/plugin.ts",
+  "connectionFields": [
+    { "id": "baseUrl", "label": "Address", "type": "url", "required": true }
+  ],
+  "capabilities": { "connector": {} },
+  "network": {
+    "baseAddress": { "field": "baseUrl", "allowOnPremises": true },
+    "endpoints": [{ "method": "GET", "path": "/api/me" }]
+  }
+}

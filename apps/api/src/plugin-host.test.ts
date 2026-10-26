@@ -586,6 +586,34 @@ describe("PluginManager", () => {
       });
     });
 
+    it.each([
+      ["src/index.ts", "api-4-ts"],
+      ["src/index.mts", "api-4-mts"],
+    ])(
+      "is read with %s as its entrypoint, as a package of API 4",
+      async (entrypoint, id) => {
+        const root = await tempDir();
+        const pluginDirectory = await createPluginDirectory(root, id, "", {
+          ...API_4_MANIFEST,
+          entrypoint,
+        });
+        await mkdir(path.join(pluginDirectory, "src"));
+        await writeFile(
+          path.join(pluginDirectory, entrypoint),
+          "export const validateConnection = async (): Promise<void> => {};",
+        );
+
+        await expect(
+          readPlugin(pluginDirectory, "development", {
+            admitPluginApi4: true,
+          }),
+        ).resolves.toMatchObject({
+          manifest: { apiVersion: 4 },
+          entrypointPath: path.join(pluginDirectory, entrypoint),
+        });
+      },
+    );
+
     it("is refused when its manifest breaks an API 4 rule", async () => {
       const root = await tempDir();
       const pluginDirectory = await createPluginDirectory(

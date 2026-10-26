@@ -325,6 +325,17 @@ API 4 packages in development builds of the desktop app, until the cut-over
 'self'; worker-src 'self'; connect-src 'none'; frame-src 'none'` (with no
   object, base or form), `no-store` and `nosniff`. Ajour's own files sit
   under `/.ajour/` (`electron/plugin-host/`).
+- **TypeScript source** (#437): the handler serves a package's `.ts` or
+  `.mts` file as `text/javascript`, stripped by `node:module`'s
+  `stripTypeScriptTypes` in strip mode, and caches the output per file by
+  its real path and the hash of its source, until the plugin's renderer
+  closes (uninstall and update end in a close). A file over 2 MB is
+  refused like a non-erasable one, since stripping is synchronous in main. A file with non-erasable syntax (an enum, a
+  namespace, a parameter property) answers 500, so its import graph fails
+  before any module runs, and the run fails with a reason naming the file.
+  The worker imports the entrypoint as a module, so relative `.ts` imports
+  load through the same handler. Hashes and signatures stay on the files as
+  installed.
 - **Plugin code runs in a dedicated worker**, one per operation, started by
   Ajour's page script from Ajour's bootstrap, which gives it the SDK's
   `ajour` global. `ajour.http` and `ajour.publicFetch` are messages to the
