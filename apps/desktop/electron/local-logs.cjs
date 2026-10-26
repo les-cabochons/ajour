@@ -22,11 +22,17 @@ const SWEEP_TRIGGERS = {
  * main loads its emitter; `file` resolves to it, or to null when it could
  * not load. Each method records its result on the active unit, the IPC
  * call's event.
+ *
+ * `forward` writes the renderer's batches (#440) with no event of its own:
+ * what it took and left out since launch is counted on each `logs.sweep`
+ * and `logs.status`, as `logs.forwarded`. `launchId` is this launch's: a
+ * forwarded event from another launch is left out.
  */
 function createLocalLogs({
   settingsPath,
   open,
   events,
+  launchId,
   setInterval = globalThis.setInterval,
   clearInterval = globalThis.clearInterval,
 }) {
@@ -38,6 +44,13 @@ function createLocalLogs({
     .then((logFile) => (opened = logFile ?? null))
     .catch(() => null);
   let sweepTimer = null;
+  /** What the renderer forwarded since launch (`logs.forwarded`). */
+  const forwarded = {
+    batch_count: 0,
+    event_count: 0,
+    rejected_event_count: 0,
+    unsent_event_count: 0,
+  };
 
   async function loaded() {
     const logFile = await file;
@@ -53,7 +66,7 @@ function createLocalLogs({
       async (unit) => {
         unit.set({ logs: { trigger } });
         const result = await (await loaded()).sweep();
-        unit.set({ logs: result });
+        unit.set({ logs: { ...result, forwarded: { ...forwarded } } });
         return result;
       },
     );
@@ -68,6 +81,7 @@ function createLocalLogs({
         file_count: current.file_count,
         storage_bytes: current.storage_bytes,
         dropped_event_count: current.dropped_event_count,
+        forwarded: { ...forwarded },
       },
     });
     return { settings: { ...settings }, ...current };
@@ -123,6 +137,27 @@ function createLocalLogs({
       const deleted = await (await loaded()).deleteAll();
       unit?.set({ logs: deleted });
       return status();
+    },
+    /**
+     * Writes a batch of the renderer's events: only those whose envelope is
+     * valid for this launch's renderer, through the file's privacy filter.
+     * It emits no event and never throws; a batch that arrives before the
+     * file loaded, or after it failed to, is dropped.
+     */
+    forward(batch) {
+      try {
+        if (!opened) return;
+        const result = opened.forward(batch, {
+          runtime: "renderer",
+          launch_id: launchId,
+        });
+        forwarded.batch_count += 1;
+        forwarded.event_count += result.accepted_event_count;
+        forwarded.rejected_event_count += result.rejected_event_count;
+        forwarded.unsent_event_count += result.unsent_event_count;
+      } catch {
+        // Forwarding never reaches the work.
+      }
     },
     /** Sweeps now, as at launch, and then every hour. */
     startSweeps() {

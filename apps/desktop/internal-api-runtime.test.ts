@@ -146,6 +146,8 @@ async function runtime(
         ) {
           handlers.set(name, handler);
         },
+        // The slice registers the logs channels too, which these tests don't call.
+        on() {},
       },
       { events },
     ),

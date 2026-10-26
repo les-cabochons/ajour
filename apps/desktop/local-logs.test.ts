@@ -108,16 +108,28 @@ async function mainProcess({
   }
   const listeners = new Map<string, () => void>();
   const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>();
+  const messageListeners = new Map<string, (...args: unknown[]) => void>();
   const recording = recordingEvents();
   const events = record ? recording.events : createMainEvents();
-  const activeWindow = { webContents: "active-window" };
+  /** What main pushed to the window, in order. */
+  const pushed: unknown[][] = [];
+  const activeWindow = {
+    webContents: {
+      send: (channel: string, ...args: unknown[]) =>
+        pushed.push([channel, ...args]),
+    },
+    isDestroyed: () => false,
+  };
   const context = vm.createContext({
     path,
-    process: { env },
+    process: { env, platform: "win32" },
     app: {
       getPath: (name: string) => (name === "home" ? os.homedir() : userData),
+      getVersion: () => "1.2.0",
+      isPackaged: true,
       on: (name: string, listener: () => void) => listeners.set(name, listener),
     },
+    automaticUpdatesEnabled: false,
     hasSingleInstanceLock: lock,
     // The installer's quit ends the update's event, as the real one does.
     automaticUpdateController: {
@@ -145,6 +157,9 @@ async function mainProcess({
         ) {
           handlers.set(name, handler);
         },
+        on(name: string, listener: (...args: unknown[]) => void) {
+          messageListeners.set(name, listener);
+        },
       },
       { events },
     ),
@@ -154,6 +169,10 @@ async function mainProcess({
       section(
         "function assertActiveDesktopWindow(",
         "function assertDevelopmentBuild(",
+      ) +
+      section(
+        'ipc.answerSync("ajour:get-runtime-info"',
+        'ipc.answerSync("ajour:get-app-menu"',
       ) +
       section(
         "// The local log file's settings page",
@@ -181,6 +200,20 @@ async function mainProcess({
       if (!handler) throw new Error(`Missing IPC handler: ${channel}`);
       return handler({ sender }, ...args) as Promise<Record<string, unknown>>;
     },
+    /** A one-way message, or a synchronous request: what it answered. */
+    send(
+      channel: string,
+      sender: unknown = activeWindow.webContents,
+      ...args: unknown[]
+    ) {
+      const listener = messageListeners.get(channel);
+      if (!listener) throw new Error(`Missing IPC listener: ${channel}`);
+      const event: { sender: unknown; returnValue?: unknown } = { sender };
+      listener(event, ...args);
+      return event.returnValue;
+    },
+    /** What main pushed to the window. */
+    pushed,
   };
 }
 
@@ -469,6 +502,173 @@ describe("the logs channels", () => {
     expect(main.recorded).toMatchObject([
       { outcome: "refused", outcome_reason: "foreign_sender" },
     ]);
+  });
+});
+
+/** A renderer event of this launch, as the renderer's forwarding sink sends it. */
+function rendererEvent(fields: Record<string, unknown> = {}) {
+  return {
+    schema: 1,
+    name: "route.change",
+    kind: "navigation",
+    runtime: "renderer",
+    outcome: "ok",
+    started_at: new Date().toISOString(),
+    duration_ms: 12,
+    trace_id: "0af7651916cd43dd8448eb211c80319c",
+    span_id: "b7ad6b7169203331",
+    launch_id: "launch-1",
+    window_id: "6f9c1b6e-8a51-4c2e-9d7e-2b4f0f3c1a10",
+    trigger: "user",
+    app: { version: "1.2.0", channel: "stable", packaged: true },
+    device: { platform: "win32" },
+    route: { to_id: "/settings", section: "settings" },
+    ...fields,
+  };
+}
+
+describe("the renderer's batches", () => {
+  const FORWARD = "ajour:forward-wide-events";
+
+  async function forwardingMain(options: Parameters<typeof mainProcess>[0]) {
+    const main = await mainProcess(options);
+    await main.invoke("ajour:configure-logs", undefined, { enabled: true });
+    main.recorded.length = 0;
+    return main;
+  }
+
+  async function written(main: Awaited<ReturnType<typeof mainProcess>>) {
+    await main.localLogs.flush();
+    const files = await readdir(main.directory).catch(() => []);
+    return (
+      await Promise.all(
+        files.map((file) => linesOf(path.join(main.directory, file))),
+      )
+    ).flat();
+  }
+
+  it("writes the window's events in today's file, and emits no event for the batch", async () => {
+    const main = await forwardingMain({});
+
+    main.send(FORWARD, undefined, {
+      events: [rendererEvent()],
+      unsent_event_count: 0,
+    });
+
+    expect(await written(main)).toEqual([
+      expect.objectContaining({
+        name: "route.change",
+        runtime: "renderer",
+        launch_id: "launch-1",
+        trace_id: "0af7651916cd43dd8448eb211c80319c",
+        route: { to_id: "/settings", section: "settings" },
+      }),
+    ]);
+    expect(main.recorded).toEqual([]);
+  });
+
+  it("refuses a batch from a window other than the active one: it records that, and writes nothing", async () => {
+    const main = await forwardingMain({});
+
+    main.send(FORWARD, "another-window", { events: [rendererEvent()] });
+
+    expect(await written(main)).toEqual([]);
+    expect(main.recorded).toMatchObject([
+      {
+        name: "wide_events.forward",
+        outcome: "refused",
+        outcome_reason: "foreign_sender",
+        ipc: { channel: FORWARD, sender_accepted: false },
+      },
+    ]);
+  });
+
+  it("drops an event with an invalid envelope, and a field the catalog doesn't declare", async () => {
+    const main = await forwardingMain({});
+
+    main.send(FORWARD, undefined, {
+      events: [
+        rendererEvent({ runtime: "main" }),
+        rendererEvent({ launch_id: "another-launch" }),
+        rendererEvent({ name: "anything.at_all" }),
+        rendererEvent({
+          note: "Ada's notes",
+          route: { to_id: "/settings", search: "?q=Ada" },
+        }),
+      ],
+    });
+
+    const lines = await written(main);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).not.toHaveProperty("note");
+    expect(lines[0]!.route).toEqual({ to_id: "/settings" });
+  });
+
+  it("writes nothing while logging is off", async () => {
+    const main = await mainProcess();
+
+    main.send(FORWARD, undefined, { events: [rendererEvent()] });
+
+    expect(await written(main)).toEqual([]);
+    await expect(readdir(main.userData)).resolves.toEqual([]);
+  });
+
+  it("counts what it took and left out since launch, on logs.status and logs.sweep", async () => {
+    const main = await forwardingMain({});
+
+    main.send(FORWARD, undefined, {
+      events: [rendererEvent(), rendererEvent({ runtime: "api" })],
+      unsent_event_count: 3,
+    });
+    main.send(FORWARD, undefined, { events: [rendererEvent()] });
+    await main.invoke("ajour:get-logs-status");
+    await main.invoke("ajour:configure-logs", undefined, { retention_days: 1 });
+
+    const forwarded = {
+      batch_count: 2,
+      event_count: 2,
+      rejected_event_count: 1,
+      unsent_event_count: 3,
+    };
+    expect(main.recorded).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "logs.status",
+          logs: expect.objectContaining({ forwarded }),
+        }),
+        expect.objectContaining({
+          name: "logs.sweep",
+          logs: expect.objectContaining({ forwarded }),
+        }),
+      ]),
+    );
+    expect(main.recorded.map(({ name }) => name)).not.toContain(
+      "wide_events.forward",
+    );
+  });
+
+  it("tells the window when logging turns on or off, and the runtime info says how it started", async () => {
+    const main = await mainProcess();
+    expect(main.send("ajour:get-runtime-info")).toMatchObject({
+      launch: { launch_id: "launch-1" },
+      wideEventsForwarding: false,
+    });
+
+    await main.invoke("ajour:configure-logs", undefined, { enabled: true });
+    await main.invoke("ajour:configure-logs", undefined, { enabled: false });
+    await expect(
+      main.invoke("ajour:configure-logs", undefined, { enabled: "yes" }),
+    ).rejects.toThrow("Invalid local log settings");
+
+    expect(main.pushed).toEqual([
+      ["ajour:wide-events-forwarding", true],
+      ["ajour:wide-events-forwarding", false],
+      ["ajour:wide-events-forwarding", false],
+    ]);
+    const stored = await mainProcess({ storedSettings: { enabled: true } });
+    expect(stored.send("ajour:get-runtime-info")).toMatchObject({
+      wideEventsForwarding: true,
+    });
   });
 });
 

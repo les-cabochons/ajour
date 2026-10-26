@@ -6,8 +6,10 @@ import {
   type RuntimeContext,
 } from "@ajour/wide-events";
 import type { Surface, Trigger } from "@ajour/wide-events";
+import { createForwardingSink } from "@ajour/wide-events/forwarding.ts";
 import {
   createPrivacyFilter,
+  fanOut,
   nowhere,
   sinkFromSwitch,
   type Sink,
@@ -94,9 +96,48 @@ function browserPlatform() {
   );
 }
 
-/** Events go nowhere unless a developer sets AJOUR_WIDE_EVENTS to `console`. */
+/**
+ * Where the renderer's events go: the devtools console when a developer sets
+ * AJOUR_WIDE_EVENTS to `console`, and on desktop the local log file while
+ * the user has logging on. With neither, nowhere.
+ */
 function defaultSink(): Sink {
-  return sinkFromSwitch(import.meta.env.AJOUR_WIDE_EVENTS);
+  return fanOut(
+    sinkFromSwitch(import.meta.env.AJOUR_WIDE_EVENTS),
+    localLogFileSink(),
+  );
+}
+
+/**
+ * On desktop, the local log file's sink (#440): events wait in batches and
+ * go to the main process, which checks and writes them. It accepts events
+ * only while logging is on, which main pushes as the user changes it, so the
+ * renderer switches without a reload, and with logging off no event is
+ * built for it. The page sends what waits when it hides. The web build has
+ * no file: there it is `nowhere`.
+ */
+function localLogFileSink(): Sink {
+  try {
+    const desktop = window.ajourDesktop;
+    const send = desktop?.forwardWideEvents;
+    const subscribe = desktop?.onWideEventsForwarding;
+    if (typeof send !== "function" || typeof subscribe !== "function") {
+      return nowhere;
+    }
+    let forwarding = false;
+    const sink = createForwardingSink({
+      send: (batch) => send(batch),
+      accepting: () => forwarding,
+    });
+    subscribe((next) => {
+      forwarding = next === true;
+    });
+    window.addEventListener("pagehide", () => sink.flush());
+    return sink;
+  } catch {
+    // A bridge that fails here sends nothing, and changes nothing else.
+    return nowhere;
+  }
 }
 
 /**
@@ -112,6 +153,9 @@ function defaultSink(): Sink {
 function catalogedOnly(target: Sink): Sink {
   const filter = createPrivacyFilter(catalog);
   return {
+    // A sink that can turn off, such as the local log file's, still tells
+    // the emitter, so no event is built while it is off.
+    ...(target.accepting ? { accepting: () => target.accepting!() } : {}),
     emit(event) {
       let dropped = 0;
       // The renderer's own sink has no user setting for sensitive fields:

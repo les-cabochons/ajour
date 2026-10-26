@@ -75,6 +75,11 @@ function isWindowSender(event, windowSession) {
  * of the window (`isWindowSender`); main passes the window's `windowSession`.
  * A refused `sendSync` answers null without running the listener.
  *
+ * The channel that forwards the renderer's events (`record: "failures"`)
+ * emits its event only for a refused sender or a failed call: each batch it
+ * takes emitting one would put a line in the log file for every batch
+ * forwarded. Main counts the batches on `logs.sweep` instead (#440).
+ *
  * None can throw into the main process: a throw in a plain `ipcMain.on`
  * listener would be an uncaught exception there. A failed one-way message
  * is dropped, a failed `sendSync` answers null, because a request left
@@ -100,45 +105,87 @@ function createIpcListeners(ipcMain, { events, windowSession }) {
     return entry;
   }
 
+  /** Throws the refusal when the sender may not use the channel. */
+  function checkSender(entry, event) {
+    if (
+      entry.sender !== "plugin-renderer" &&
+      !isWindowSender(event, windowSession)
+    ) {
+      throw refusedSender("Only the Ajour window can use this channel.");
+    }
+  }
+
+  /**
+   * One call of a channel that records only its failures (`record:
+   * "failures"`): it runs with no unit, and emits its channel's event only
+   * when the sender is refused or the listener fails. Throws what the
+   * listener throws.
+   */
+  function callRecordingFailures(channel, entry, listener, event, args, init) {
+    const failed = (error) => {
+      const unit = events.start(entry.event, init);
+      const refusal = error?.code === REFUSED_SENDER;
+      unit.set({
+        ipc: { channel, mode: entry.mode, sender_accepted: !refusal },
+      });
+      if (refusal) unit.refuse("foreign_sender");
+      else unit.fail(error);
+      unit.end();
+      throw error;
+    };
+    let result;
+    try {
+      checkSender(entry, event);
+      result = listener(event, ...args);
+    } catch (error) {
+      failed(error);
+    }
+    return result && typeof result.then === "function"
+      ? result.then(undefined, failed)
+      : result;
+  }
+
   /** Runs one call as its channel's unit of work. Throws what the listener throws. */
   function call(channel, entry, listener, event, args) {
     const traceparent = traceCarrierOf(args);
     const listenerArgs = traceparent === undefined ? args : args.slice(0, -1);
-    return events.run(
-      entry.event,
-      {
-        kind: "ipc",
-        trigger: entry.mode === "sync" ? "boot" : "user",
-        ...(traceparent === undefined ? {} : { parent: traceparent }),
-      },
-      (unit) => {
-        unit.set({
-          ipc: { channel, mode: entry.mode, sender_accepted: true },
-        });
-        const refused = (error) => {
-          if (error?.code === REFUSED_SENDER) {
-            unit.set({ ipc: { sender_accepted: false } });
-            unit.refuse("foreign_sender");
-          }
-          throw error;
-        };
-        let result;
-        try {
-          if (
-            entry.sender !== "plugin-renderer" &&
-            !isWindowSender(event, windowSession)
-          ) {
-            throw refusedSender("Only the Ajour window can use this channel.");
-          }
-          result = listener(event, ...listenerArgs);
-        } catch (error) {
-          refused(error);
+    const init = {
+      kind: "ipc",
+      trigger: entry.mode === "sync" ? "boot" : "user",
+      ...(traceparent === undefined ? {} : { parent: traceparent }),
+    };
+    if (entry.record === "failures") {
+      return callRecordingFailures(
+        channel,
+        entry,
+        listener,
+        event,
+        listenerArgs,
+        init,
+      );
+    }
+    return events.run(entry.event, init, (unit) => {
+      unit.set({
+        ipc: { channel, mode: entry.mode, sender_accepted: true },
+      });
+      const refused = (error) => {
+        if (error?.code === REFUSED_SENDER) {
+          unit.set({ ipc: { sender_accepted: false } });
+          unit.refuse("foreign_sender");
         }
-        return result && typeof result.then === "function"
-          ? result.then(undefined, refused)
-          : result;
-      },
-    );
+        throw error;
+      };
+      let result;
+      try {
+        checkSender(entry, event);
+        result = listener(event, ...listenerArgs);
+      } catch (error) {
+        refused(error);
+      }
+      return result && typeof result.then === "function"
+        ? result.then(undefined, refused)
+        : result;
+    });
   }
 
   return {

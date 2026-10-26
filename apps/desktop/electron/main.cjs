@@ -197,6 +197,7 @@ const wideEventsRoot = path.join(
 const localLogs = createLocalLogs({
   settingsPath: path.join(app.getPath("userData"), "local-log-settings.json"),
   events,
+  launchId: launch.launch_id,
   open: (settings) =>
     hasSingleInstanceLock
       ? loadLocalLogFile({
@@ -389,6 +390,9 @@ ipc.answerSync("ajour:get-runtime-info", () => ({
   platform: process.platform,
   version: app.getVersion(),
   launch,
+  // Whether the renderer forwards its wide events to the local log file at
+  // first; main pushes each change (#440).
+  wideEventsForwarding: localLogs.settings().enabled,
 }));
 
 ipc.answerSync("ajour:get-app-menu", () => appMenuModel);
@@ -940,13 +944,40 @@ ipc.handle("ajour:get-logs-status", async (event) => {
 
 ipc.handle("ajour:configure-logs", async (event, settings) => {
   assertActiveDesktopWindow(event, "configure logging");
-  return await localLogs.configure(settings);
+  try {
+    return await localLogs.configure(settings);
+  } finally {
+    // The renderer's sink follows the setting, whether this call saved it or not.
+    sendWideEventsForwarding();
+  }
 });
 
 ipc.handle("ajour:delete-all-logs", async (event) => {
   assertActiveDesktopWindow(event, "delete the logs");
   return await localLogs.deleteAll();
 });
+
+// The renderer's wide events, in batches while logging is on (#440). Only
+// the active window's are written. The wrapper records a refused batch, and
+// emits nothing for one it takes: `logs.sweep` counts those.
+ipc.onMessage("ajour:forward-wide-events", (event, batch) => {
+  assertActiveDesktopWindow(event, "forward wide events");
+  localLogs.forward(batch);
+});
+
+/**
+ * Tells the window whether to forward its wide events: the logging setting,
+ * so turning logging on or off switches the renderer's sink without a reload.
+ * The preload keeps the last value for the page (#440).
+ */
+function sendWideEventsForwarding() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(
+      "ajour:wide-events-forwarding",
+      localLogs.settings().enabled,
+    );
+  }
+}
 
 ipc.handle("ajour:get-development-plugin-settings", async (event) => {
   assertActiveDesktopWindow(event, "read development plugin settings");

@@ -3,6 +3,10 @@ import * as nodeFs from "node:fs/promises";
 import path from "node:path";
 import type { LocalLogState, LocalLogWarning } from "./ajour-catalog.ts";
 import type { Catalog } from "./fields.ts";
+import {
+  createForwardedBatchReader,
+  type ForwardedFrom,
+} from "./forwarding.ts";
 import { createPrivacyFilter } from "./privacy.ts";
 import type { Sink } from "./sinks.ts";
 
@@ -49,6 +53,16 @@ export interface LocalLogSweep {
   storage_bytes: number;
   /** Events dropped since launch, as in `LocalLogStatus`. */
   dropped_event_count: number;
+}
+
+/** What writing a forwarded batch did with its events. */
+export interface LocalLogForwarding {
+  /** The events whose envelope was valid, handed to the sink. */
+  accepted_event_count: number;
+  /** The events left out: an invalid envelope, or past the batch's size. */
+  rejected_event_count: number;
+  /** What the batch says its runtime couldn't send before it. */
+  unsent_event_count: number;
 }
 
 /** What deleting every log removed. */
@@ -109,6 +123,14 @@ export interface LocalLogFile {
   readonly directory: string;
   /** Applies new settings. Saving them clears a warning, so writing resumes when on. */
   configure(settings: LocalLogSettings): void;
+  /**
+   * Writes a batch another process forwarded, such as the renderer's over
+   * IPC (#440). Only the events whose envelope is valid for `from` go to the
+   * sink, which filters them as it does every event: a field the catalog
+   * doesn't declare is dropped, and the queue's limit holds. It never
+   * throws.
+   */
+  forward(batch: unknown, from: ForwardedFrom): LocalLogForwarding;
   status(): Promise<LocalLogStatus>;
   /** Deletes the days past the retention, then the oldest past the size limit. */
   sweep(): Promise<LocalLogSweep>;
@@ -191,6 +213,7 @@ export function createLocalLogFile(options: LocalLogFileOptions): LocalLogFile {
   const appendSync = fs.appendFileSync ?? appendFileSync;
   const now = options.now ?? (() => Date.now());
   const filter = createPrivacyFilter(catalog);
+  const readBatch = createForwardedBatchReader(catalog);
   let settings = { ...options.settings };
   let warning: LocalLogWarning | undefined;
   let pending: { day: string; line: string }[] = [];
@@ -309,6 +332,21 @@ export function createLocalLogFile(options: LocalLogFileOptions): LocalLogFile {
       settings = { ...next };
       warning = undefined;
       if (!settings.enabled) pending = [];
+    },
+    forward(batch, from) {
+      const read = readBatch(batch, from);
+      for (const event of read.events) {
+        try {
+          sink.emit(event);
+        } catch {
+          // An event that can't be written is dropped, never thrown.
+        }
+      }
+      return {
+        accepted_event_count: read.events.length,
+        rejected_event_count: read.rejected_event_count,
+        unsent_event_count: read.unsent_event_count,
+      };
     },
     status: () =>
       enqueue(async () => {

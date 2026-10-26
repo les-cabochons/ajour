@@ -12,6 +12,7 @@
     "index.ts",
     "catalog.ts",
     "sinks.ts",
+    "forwarding.ts",
     "trace-context.ts",
     "scrub.ts",
     "secret-redaction.ts"

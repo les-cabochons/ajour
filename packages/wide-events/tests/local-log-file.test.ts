@@ -512,6 +512,112 @@ describe("the local log file", () => {
     expect(await log.file.status()).toMatchObject({ dropped_event_count: 3 });
   });
 
+  describe("a batch another process forwarded", () => {
+    const FROM = { runtime: "renderer", launch_id: "launch-1" } as const;
+
+    /** A renderer event, as the renderer's forwarding sink sends it. */
+    const rendererEvent = (fields: Record<string, unknown> = {}) => ({
+      schema: 1,
+      name: "time_entry.update",
+      kind: "command",
+      runtime: "renderer",
+      outcome: "ok",
+      started_at: "2026-10-26T11:59:59.000Z",
+      duration_ms: 3,
+      trace_id: "0af7651916cd43dd8448eb211c80319c",
+      span_id: "b7ad6b7169203331",
+      launch_id: "launch-1",
+      window_id: "6f9c1b6e-8a51-4c2e-9d7e-2b4f0f3c1a10",
+      trigger: "user",
+      app: { version: "1.2.3", channel: "stable", packaged: true },
+      device: { platform: "win32" },
+      ...fields,
+    });
+
+    it("writes the valid events, through the privacy filter, and says what it left out", async () => {
+      const log = await logFile();
+
+      const result = log.file.forward(
+        {
+          events: [
+            rendererEvent({
+              time_entry: {
+                id: "entry-1",
+                duration_ms: 1800000,
+                note: "Ada's notes",
+              },
+              steps: ["time_entry.update", { path: "C:\Users\ada" }],
+              counts: { store_write_count: 1, "C:\Users\ada": 2 },
+              extra: { secret: "y" },
+            }),
+            rendererEvent({ runtime: "main" }),
+          ],
+          unsent_event_count: 2,
+        },
+        FROM,
+      );
+      await log.file.flush();
+
+      expect(result).toEqual({
+        accepted_event_count: 1,
+        rejected_event_count: 1,
+        unsent_event_count: 2,
+      });
+      const [line, ...rest] = await log.lines("2026-10-26");
+      expect(rest).toEqual([]);
+      expect(line).toMatchObject({
+        name: "time_entry.update",
+        runtime: "renderer",
+        trace_id: "0af7651916cd43dd8448eb211c80319c",
+        launch_id: "launch-1",
+        time_entry: { id: "entry-1" },
+        counts: { store_write_count: 1 },
+      });
+      // Undeclared fields, a sensitive one the user didn't allow, and
+      // values of the wrong shape are dropped.
+      expect(line).not.toHaveProperty("extra");
+      expect(line).not.toHaveProperty("steps");
+      expect(line!.time_entry).toEqual({ id: "entry-1" });
+      expect(JSON.stringify(line)).not.toMatch(/Ada|Users/);
+    });
+
+    it("writes nothing while logging is off, and creates nothing", async () => {
+      const log = await logFile({ settings: { enabled: false } });
+
+      log.file.forward({ events: [rendererEvent()] }, FROM);
+      await log.file.flush();
+
+      await expect(fs.readdir(log.root)).resolves.toEqual([]);
+    });
+
+    it("keeps the queue's limit, however many batches arrive", async () => {
+      const log = await logFile();
+      const batch = {
+        events: Array.from({ length: 100 }, () => rendererEvent()),
+      };
+
+      for (let count = 0; count < 101; count += 1) {
+        log.file.forward(batch, FROM);
+      }
+
+      expect(await log.file.status()).toMatchObject({
+        dropped_event_count: 100,
+      });
+      await log.file.flush();
+      expect(await log.lines("2026-10-26")).toHaveLength(10_000);
+    });
+
+    it("never throws, whatever it is given", async () => {
+      const log = await logFile();
+
+      for (const batch of [undefined, 7, { events: [Symbol("x")] }]) {
+        expect(log.file.forward(batch, FROM)).toMatchObject({
+          accepted_event_count: 0,
+        });
+      }
+    });
+  });
+
   describe("draining at quit", () => {
     it("writes what is waiting, synchronously, before the batch timer would", async () => {
       const log = await logFile();

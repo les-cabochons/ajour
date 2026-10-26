@@ -359,6 +359,100 @@ describe("which pages may use the window's channels", () => {
   });
 });
 
+describe("the channel that forwards the renderer's events", () => {
+  const windowSession = { name: "window" };
+  const fromWindow = (): WindowEvent => ({
+    sender: { session: windowSession },
+    senderFrame: { url: "app://ajour/", origin: "app://ajour" },
+  });
+
+  function setUpForwarding() {
+    const ipcMain = new FakeIpcMain();
+    const { events, recorded } = recordingEvents();
+    const ipc = createIpcListeners(ipcMain, {
+      events,
+      windowSession: () => windowSession,
+    });
+    return { ipcMain, recorded, ipc };
+  }
+
+  it("emits no event for a batch it takes, so forwarding never writes a line per batch", () => {
+    const { ipcMain, ipc, recorded } = setUpForwarding();
+    const received: unknown[] = [];
+    ipc.onMessage("ajour:forward-wide-events", (_event, batch) => {
+      received.push(batch);
+    });
+
+    ipcMain.emit("ajour:forward-wide-events", fromWindow(), { events: [] });
+
+    expect(received).toEqual([{ events: [] }]);
+    expect(recorded).toEqual([]);
+  });
+
+  it("refuses a page outside the window's session, and records that one", () => {
+    const { ipcMain, ipc, recorded } = setUpForwarding();
+    const received: unknown[] = [];
+    ipc.onMessage("ajour:forward-wide-events", (_event, batch) => {
+      received.push(batch);
+    });
+
+    expect(() =>
+      ipcMain.emit(
+        "ajour:forward-wide-events",
+        {
+          sender: { session: { name: "plugin" } },
+          senderFrame: { origin: "ajour-plugin://acme" },
+        },
+        { events: [] },
+      ),
+    ).not.toThrow();
+
+    expect(received).toEqual([]);
+    expect(recorded).toMatchObject([
+      {
+        name: "wide_events.forward",
+        kind: "ipc",
+        outcome: "refused",
+        outcome_reason: "foreign_sender",
+        ipc: {
+          channel: "ajour:forward-wide-events",
+          mode: "message",
+          sender_accepted: false,
+        },
+      },
+    ]);
+  });
+
+  it("records a refusal the listener throws, and a failure, never the batch", () => {
+    const { ipcMain, ipc, recorded } = setUpForwarding();
+    const failures = [
+      refusedSender("Only the active Ajour window can forward wide events."),
+      new TypeError("broken"),
+    ];
+    ipc.onMessage("ajour:forward-wide-events", () => {
+      throw failures.shift();
+    });
+
+    ipcMain.emit("ajour:forward-wide-events", fromWindow(), { events: [] });
+    ipcMain.emit("ajour:forward-wide-events", fromWindow(), { events: [] });
+
+    expect(recorded).toMatchObject([
+      {
+        name: "wide_events.forward",
+        outcome: "refused",
+        outcome_reason: "foreign_sender",
+        ipc: { sender_accepted: false },
+      },
+      {
+        name: "wide_events.forward",
+        outcome: "error",
+        error: { type: "TypeError" },
+        ipc: { sender_accepted: true },
+      },
+    ]);
+  });
+});
+
 describe("the IPC channel table", () => {
   it("names every channel main.cjs registers, and only through the wrapper", async () => {
     // The plugin renderer runtime registers its page's channel itself.

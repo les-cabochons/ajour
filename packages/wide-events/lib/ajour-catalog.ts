@@ -59,6 +59,21 @@ const ipcFields = {
   sender_accepted: operational<boolean>(),
 } as const;
 
+/**
+ * What the renderer forwarded to the local log file since launch (#440),
+ * counted here instead of on an event per batch.
+ */
+const forwardedFields = {
+  /** Batches received from the window. */
+  batch_count: operational<number>(),
+  /** Events whose envelope was valid, handed to the file. */
+  event_count: operational<number>(),
+  /** Events left out: an invalid envelope, or past a batch's size. */
+  rejected_event_count: operational<number>(),
+  /** Events the renderer dropped because their batch couldn't be sent. */
+  unsent_event_count: operational<number>(),
+} as const;
+
 /** An HTTP method, from a closed set: any other is `other`. */
 export type HttpMethod =
   "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS" | "other";
@@ -1346,6 +1361,7 @@ export const catalog = defineCatalog({
           storage_bytes: operational<number>(),
           /** Events dropped since launch because too many waited to be written. */
           dropped_event_count: operational<number>(),
+          forwarded: forwardedFields,
         },
       },
     },
@@ -1373,8 +1389,20 @@ export const catalog = defineCatalog({
           storage_bytes: operational<number>(),
           /** Events dropped since launch, as in `logs.status`. */
           dropped_event_count: operational<number>(),
+          forwarded: forwardedFields,
         },
       },
+    },
+    /**
+     * A batch of the renderer's events that main did not take, for the local
+     * log file (#440): from a sender other than the window, or a call that
+     * failed. A batch it takes emits nothing, so forwarding never writes a
+     * line per batch: `logs.sweep` counts them in `logs.forwarded`.
+     */
+    "wide_events.forward": {
+      kinds: ["ipc"],
+      reasons: ["foreign_sender"],
+      fields: { ipc: ipcFields },
     },
     /** An application update check, asked for or on its schedule. */
     "update.check": {

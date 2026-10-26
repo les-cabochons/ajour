@@ -32,7 +32,11 @@ const { IPC_CHANNELS } =
   require("../../../desktop/electron/ipc-channels.cjs") as {
     IPC_CHANNELS: Record<
       string,
-      { event: EventName; mode: "invoke" | "message" | "sync" }
+      {
+        event: EventName;
+        mode: "invoke" | "message" | "sync";
+        record?: "failures";
+      }
     >;
   };
 const { createIpcListeners } =
@@ -432,11 +436,21 @@ describe("each table's entries emit their events", () => {
       message: ipc.onMessage,
       sync: ipc.answerSync,
     };
+    // A channel that records only its failures is driven from a plugin's
+    // page, which every window channel refuses.
+    const refusedSender = {
+      sender: "plugin",
+      senderFrame: { origin: "ajour-plugin://audit" },
+    };
     const missing: string[] = [];
-    for (const [channel, { event, mode }] of Object.entries(IPC_CHANNELS)) {
+    for (const [channel, { event, mode, record }] of Object.entries(
+      IPC_CHANNELS,
+    )) {
       register[mode](channel, () => null);
       sink.events.length = 0;
-      await listeners.get(channel)!({ sender: "window" });
+      await listeners.get(channel)!(
+        record === "failures" ? refusedSender : { sender: "window" },
+      );
       if (
         sink.events.some(
           (recorded) =>

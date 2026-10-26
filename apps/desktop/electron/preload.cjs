@@ -26,9 +26,30 @@ const traced = (carrier) =>
     ? [{ traceparent: carrier.traceparent }]
     : [];
 
+const bootstrapLocalState = ipcRenderer.sendSync(
+  "ajour:get-bootstrap-local-state",
+);
+const runtime = ipcRenderer.sendSync("ajour:get-runtime-info");
+
+// Whether the page forwards its wide events to the local log file: the
+// logging setting, from the runtime info and then each change main pushes
+// (#440). Kept here, so a page that subscribes late still gets the last one.
+let forwardingWideEvents = runtime?.wideEventsForwarding === true;
+const forwardingListeners = new Set();
+ipcRenderer.on("ajour:wide-events-forwarding", (_event, forwarding) => {
+  forwardingWideEvents = forwarding === true;
+  for (const listener of forwardingListeners) {
+    try {
+      listener(forwardingWideEvents);
+    } catch {
+      // One listener's failure never stops the others.
+    }
+  }
+});
+
 contextBridge.exposeInMainWorld("ajourDesktop", {
-  bootstrapLocalState: ipcRenderer.sendSync("ajour:get-bootstrap-local-state"),
-  runtime: ipcRenderer.sendSync("ajour:get-runtime-info"),
+  bootstrapLocalState,
+  runtime,
   appMenu: ipcRenderer.sendSync("ajour:get-app-menu"),
   onMenuAction: (callback) => {
     const listener = (_event, action) => callback(action);
@@ -138,4 +159,13 @@ contextBridge.exposeInMainWorld("ajourDesktop", {
     ipcRenderer.invoke("ajour:configure-logs", settings, ...traced(trace)),
   deleteAllLogs: (trace) =>
     ipcRenderer.invoke("ajour:delete-all-logs", ...traced(trace)),
+  forwardWideEvents: (batch) =>
+    ipcRenderer.send("ajour:forward-wide-events", batch),
+  onWideEventsForwarding: (callback) => {
+    forwardingListeners.add(callback);
+    callback(forwardingWideEvents);
+    return () => {
+      forwardingListeners.delete(callback);
+    };
+  },
 });
