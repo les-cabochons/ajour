@@ -13,14 +13,20 @@ import {
   type PluginTerminateReason,
 } from "./plugin-runtime.ts";
 
-/** Each host owns its own lifetime instance, so plugin and data-shape quotas stay separate. */
-const MAX_CONCURRENT_OPERATIONS_PER_HOST = 4;
+/**
+ * At most this many operations of one plugin run at once (#217). Plugin API
+ * 3 packages, which run on worker threads, also share this many per host.
+ * Each host owns its own lifetime instance, so plugin and data-shape quotas
+ * stay separate.
+ */
+const MAX_CONCURRENT_OPERATIONS = 4;
 
 /** Why a plugin operation was refused before its worker started. */
 export type PluginRefusalReason =
   | "capacity"
   | "system_off"
   | "plugin_off"
+  | "needs_consent"
   | "capability_off"
   | "host_stopping"
   | "package_change"
@@ -31,7 +37,9 @@ export type PluginRefusalReason =
   | "agent_access"
   | "access_off"
   /** The runtime runs no plugin on this computer, such as without a sandbox. */
-  | "runtime_unavailable";
+  | "runtime_unavailable"
+  /** The plugin kept stopping, so it is suspended until Turn back on. */
+  | "suspended";
 
 /** Why a registered plugin operation was cancelled. */
 export type PluginCancelReason =
@@ -131,6 +139,8 @@ export interface OperationRecord {
 interface Operation {
   pluginId: string;
   method: string;
+  /** Set once the package's API version is known: an API 3 package shares the host's worker threads. */
+  workerThread?: boolean;
   /** The connection it runs for, if any. */
   connectionId?: string;
   cancelled?: Error;
@@ -150,6 +160,8 @@ interface WorkerLifetimeOptions<TMethod extends string> {
   eventNames: Record<TMethod, PluginOperationEventName>;
   /** The switchable capability a method serves, if any. */
   capabilityOf?: (method: TMethod) => string | undefined;
+  /** A run went past its time, and its runtime was asked to terminate it. */
+  onTimeout?: (invocation: PluginInvocation) => void;
 }
 
 type OperationUnit = Unit<AjourCatalog, PluginOperationEventName>;
@@ -218,14 +230,19 @@ export class PluginWorkerLifetime<TMethod extends string> {
     });
     let secrets: readonly string[] | undefined;
     const record: OperationRecord = {
-      plugin: (facts) =>
+      plugin: (facts) => {
         unit.set({
           plugin: {
             version: facts.version,
             source: facts.source,
             api_version: facts.apiVersion,
           },
-        }),
+        });
+        // The version is known: an API 3 package takes its thread now, so
+        // a full host refuses it before it resolves anything more.
+        if (facts.apiVersion < 4 && operation)
+          this.claimWorkerThread(operation);
+      },
       secrets: (values) => {
         secrets = values;
       },
@@ -235,9 +252,12 @@ export class PluginWorkerLifetime<TMethod extends string> {
       return await unit.enter(async () => {
         this.assertRunning();
         options.check?.();
-        if (this.operations.size >= MAX_CONCURRENT_OPERATIONS_PER_HOST) {
+        if (
+          this.countOperations((other) => other.pluginId === pluginId) >=
+          MAX_CONCURRENT_OPERATIONS
+        ) {
           throw new PluginOperationRefused(
-            `Too many ${this.options.name.toLowerCase()} operations are already running.`,
+            `Too many operations of ${this.options.name.toLowerCase()} "${pluginId}" are already running.`,
             "capacity",
           );
         }
@@ -258,6 +278,9 @@ export class PluginWorkerLifetime<TMethod extends string> {
           const prepared = await prepare(record);
           if (registered.cancelled) throw registered.cancelled;
           this.assertRunning();
+          if (prepared.invocation.apiVersion < 4) {
+            this.claimWorkerThread(registered);
+          }
           unit.set({ worker: { prepare_ms: Date.now() - admittedAt } });
           return await this.invoke(registered, method, prepared, unit);
         } finally {
@@ -324,6 +347,30 @@ export class PluginWorkerLifetime<TMethod extends string> {
     return matchingOperations.length;
   }
 
+  /**
+   * Resolves once no operation runs, or after `ms`, whichever comes first,
+   * as a quit lets running operations finish (#217).
+   */
+  async whenIdle(ms: number): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, ms);
+    });
+    try {
+      while (this.operations.size > 0) {
+        const settled = await Promise.race([
+          Promise.all(
+            Array.from(this.operations, (operation) => operation.done),
+          ).then(() => "settled" as const),
+          deadline.then(() => "deadline" as const),
+        ]);
+        if (settled === "deadline") return;
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   shutdown(): Promise<void> {
     if (!this.shutdownPromise) {
       this.shuttingDown = true;
@@ -340,6 +387,31 @@ export class PluginWorkerLifetime<TMethod extends string> {
       })();
     }
     return this.shutdownPromise;
+  }
+
+  /**
+   * An API 3 package runs on a worker thread, and the host shares a few:
+   * claims one for the operation, or refuses it when they are all taken.
+   * Claiming again changes nothing.
+   */
+  private claimWorkerThread(operation: Operation) {
+    if (operation.workerThread) return;
+    if (
+      this.countOperations((other) => other.workerThread === true) >=
+      MAX_CONCURRENT_OPERATIONS
+    ) {
+      throw new PluginOperationRefused(
+        `Too many ${this.options.name.toLowerCase()} operations are already running.`,
+        "capacity",
+      );
+    }
+    operation.workerThread = true;
+  }
+
+  private countOperations(matches: (operation: Operation) => boolean) {
+    let count = 0;
+    for (const operation of this.operations) if (matches(operation)) count += 1;
+    return count;
   }
 
   /**
@@ -463,6 +535,7 @@ export class PluginWorkerLifetime<TMethod extends string> {
         }
       });
       timeout = setTimeout(() => {
+        if (!finalizationPromise) this.options.onTimeout?.(prepared.invocation);
         void finalize(
           "timeout",
           new PluginWorkerFailure(

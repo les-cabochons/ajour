@@ -1,5 +1,6 @@
 import {
   isCapabilitySwitchedOn,
+  isSignedPlugin,
   pluginConnectionFormFields,
   pluginHasBacklog,
   syncsPullRequestsAutomatically,
@@ -7,6 +8,7 @@ import {
   type PluginFieldValue,
   type PluginFieldValues,
   type PluginManifest,
+  type PluginOrigin,
   type SwitchableCapability,
 } from "@ajour/shared";
 
@@ -309,4 +311,54 @@ export function arePluginFormValuesEqual(
   return pluginConnectionFormFields(plugin).every(
     (field) => left[field.id] === right[field.id],
   );
+}
+
+/** Why a save would be refused, and the way out the form names. */
+export type ConnectionSaveBlock = {
+  reason: "system_off" | "unsigned_off" | "needs_consent" | "plugin_off";
+  hint: string;
+};
+
+/**
+ * Whether a connection can be saved on the plugin: saving runs it with the
+ * credential just typed, so it waits until the plugin is on, and until the
+ * user has allowed an update's new access, and an unsigned plugin waits
+ * while unsigned plugins are deactivated. The hint names the way out;
+ * undefined when the save can go.
+ */
+export function connectionSaveBlock(
+  group: {
+    enabled: boolean;
+    pendingAccess?: unknown;
+    plugin?: { origin?: PluginOrigin };
+  },
+  pluginsEnabled: boolean,
+  unsignedPluginsEnabled = true,
+): ConnectionSaveBlock | undefined {
+  if (!pluginsEnabled) {
+    return {
+      reason: "system_off",
+      hint: "Enable the plugin system to save a connection.",
+    };
+  }
+  if (
+    !unsignedPluginsEnabled &&
+    group.plugin &&
+    !isSignedPlugin(group.plugin)
+  ) {
+    return {
+      reason: "unsigned_off",
+      hint: "Turn off Deactivate unsigned plugins to save a connection.",
+    };
+  }
+  if (group.enabled) return undefined;
+  return group.pendingAccess
+    ? {
+        reason: "needs_consent",
+        hint: "Press Allow and activate to save a connection.",
+      }
+    : {
+        reason: "plugin_off",
+        hint: "Activate this plugin to save a connection.",
+      };
 }

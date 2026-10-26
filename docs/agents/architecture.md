@@ -377,14 +377,57 @@ API 4 packages in development builds of the desktop app, until the cut-over
   of exit and counts as a blocked attempt in the broker's records
   (`PluginRuntimeHost.recordBlocked`), at most 20 a second per plugin. The
   renderer goes on.
-- **Lifecycle, for now** (#391 adds start modes, limits and the crash
-  budget): a renderer opens at its plugin's first call and closes 2 minutes
-  after its last, at a timeout, when its package moves, and as Ajour quits.
-  A settled or cancelled run stops its own worker only. A
-  `render-process-gone` fails the renderer's runs as `crashed` with its
-  cause. The real-Electron check `apps/desktop/scripts/check-plugin-sandbox.mjs`
+- **Lifecycle** (#391, decided in #217). Each run carries its plugin's
+  `lifecycle`, the Advanced section over the manifest's `runtime`: "Load
+  when needed" or "Always ready", and the memory ceiling (the user's, the
+  manifest's, or 256 MB; 64 MB to 2 GB). A renderer reads its ceiling as it opens,
+  so a new ceiling takes effect at the next start; Start applies at once,
+  through the ready list. A "Load when needed"
+  renderer opens at its plugin's first call and closes 2 minutes after its
+  last. The API sends the runtime the whole list of plugins to keep ready
+  (`PluginRuntime.keepReady`) as it starts and after every change to it
+  (activation, the Advanced section, an install, a suspension, Turn back
+  on): those open now and never close for being idle, and one taken off
+  closes once idle. The API also names the plugins that can't run now,
+  turned off or suspended (`keepReady`'s `stopped`), and their renderers
+  close at once. A renderer also closes at a timeout, when its package
+  moves, and as Ajour quits; main samples each open renderer's memory
+  every 5 s (`app.getAppMetrics`, private bytes on Windows, the working
+  set elsewhere) and closes one above its ceiling, its runs failing
+  `crashed` with `memory`. A settled or cancelled run stops its own worker
+  only. Main holds each page's `WebContentsView`: one nothing holds is
+  collected, and its page closes with the runs in it.
+- **Limits and the crash budget** live in the API. The lifetime runs at
+  most 4 operations of one plugin at once and refuses a fifth as
+  `capacity`; API 3 packages also keep sharing 4 worker threads per host.
+  A crash (any `render-process-gone`) or a memory kill reaches the API
+  through `PluginRuntimeHost.recordStopped`, a timeout from the lifetime
+  itself; `PluginStopBudget` (`apps/api/src/plugin-stop-budget.ts`)
+  suspends a plugin at its third stop within 10 minutes. A cancel never
+  counts. A suspended plugin's operations are refused at once as
+  `suspended`, it leaves the "Always ready" list, and the overview reports
+  `suspended: { cause, at }` until `POST /api/plugins/:id/resume` or a
+  restart: the budget is kept in memory only. Nothing restarts a crashed
+  renderer eagerly; the next call opens it.
+- **Quit**: `stopAppApiServer` refuses new requests, then gives the
+  requests that run plugin operations and the operations themselves up to
+  5 s to finish (`pluginDrainMs`) while the agent runner stops, cancels
+  what is left, and main closes every renderer.
+- **Orphans**: main records each live plugin renderer's process id and
+  start time in `plugin-renderers.json` in user data
+  (`plugin-renderer-sweep.cjs`). Right after the single-instance lock, the
+  launch's sweep ends a recorded process that still runs once the system
+  says it is the same program, started then (`Get-Process` on Windows,
+  `ps` on macOS), so a process that took a freed id is never touched, and
+  waits on the ids it ended. No plugin renderer opens before it ends.
+  Chromium ends every child when main dies, even on a forced kill (#217),
+  so this guards what that misses.
+- The real-Electron check `apps/desktop/scripts/check-plugin-sandbox.mjs`
   (`corepack pnpm --filter @ajour/desktop check:plugin-sandbox`) proves the
-  above with fixture plugins and seeds seam 3 (#392).
+  above with fixture plugins: `sandbox-check/main.cjs` the sandbox, and
+  `sandbox-check/lifecycle.cjs` the start modes, limits, crash budget,
+  quit drain and the sweep across a forced kill of main. It seeds seam 3
+  (#392).
 
 - **The port** is `CredentialBrokerPort.forOperation(caller)`
   (`apps/api/src/broker-port.ts`), with the plugin id from the runtime,
@@ -468,11 +511,22 @@ API 4 packages in development builds of the desktop app, until the cut-over
   requests in flight per plugin with 64 waiting, and a rate of 10 a second
   with bursts of 60 (`BROKER_LIMITS`, `apps/api/src/broker-limits.ts`).
 - **Audit:** each request emits `plugin.request`, and the state file keeps,
-  per plugin and per connection, the last request and the blocked attempts
-  with the last one's time, for Access review (#394). The records gather in
-  memory and are written once per 30 s at most, and as the API stops, so a
-  crash loses one window at most. A blocked attempt is a request the policy
-  refused; a limit, a paused connection or a plugin turned off isn't one.
+  per plugin and per connection, the last request and the requests the
+  policy refused (`blockedCount`), with the last one's time, for Access
+  review (#394). A way out the sandbox closed (#390) is recorded apart, as
+  `blocked_direct` (`directBlockedCount`), and isn't a request. The records
+  gather in memory and are written once per 30 s at most, and as the API
+  stops, so a crash loses one window at most. A limit, a paused connection
+  or a plugin turned off isn't a refusal.
+- **Consent:** the state file keeps `pluginConsent`, per plugin, the version
+  the user turned on and the access summary it had
+  (`packages/shared/plugin-access.ts`). Turning a plugin on writes it; an
+  update decides against it (`apps/api/src/plugin-consent.ts`). Enablement
+  itself compares it with what the installed package reaches now:
+  `AppApiStorage.isPluginEnabled`, the operation gate and the overview treat
+  a plugin that reaches more as off, so a package changed under Ajour, by an
+  update stopped half way or in a development directory, never runs with
+  access the user didn't allow. A record that doesn't parse is dropped.
 
 `/api` is the window's private channel. Whoever starts the local API
 generates a per-launch window token and keeps it in memory: Electron main, the

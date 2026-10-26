@@ -405,7 +405,7 @@ describe("AppApiStorage", () => {
     const statePath = path.join(tempDir, "app-api-state.json");
     const storage = new AppApiStorage(statePath);
     const jiraPlugin = buildPlugin("jira", "Jira");
-    const availablePluginIds = new Set(["jira"]);
+    const availablePluginIds = new Map([["jira", undefined]]);
 
     await storage.upsertConnection("jira", {
       label: "Main Jira",
@@ -443,7 +443,7 @@ describe("AppApiStorage", () => {
       reloadedStorage.isPluginEnabled("jira", availablePluginIds),
     ).resolves.toBe(true);
     await expect(
-      reloadedStorage.isPluginEnabled("jira", new Set()),
+      reloadedStorage.isPluginEnabled("jira", new Map()),
     ).resolves.toBe(false);
   });
 
@@ -456,7 +456,7 @@ describe("AppApiStorage", () => {
       ...buildPlugin("github", "GitHub"),
       capabilities: { connector: {}, codeHost: {} },
     };
-    const available = new Set(["github"]);
+    const available = new Map([["github", undefined]]);
 
     await storage.setPluginCapabilityEnabled("github", "codeHost", false);
 
@@ -509,7 +509,10 @@ describe("AppApiStorage", () => {
     );
 
     const reloaded = new AppApiStorage(statePath);
-    const available = new Set(["github", "jira"]);
+    const available = new Map([
+      ["github", undefined],
+      ["jira", undefined],
+    ]);
     await expect(
       reloaded.isPluginCapabilityEnabled("github", "codeHost", available),
     ).resolves.toBe(false);
@@ -524,7 +527,7 @@ describe("AppApiStorage", () => {
     const statePath = path.join(tempDir, "app-api-state.json");
     const storage = new AppApiStorage(statePath);
     const jiraPlugin = buildPlugin("jira", "Jira");
-    const availablePluginIds = new Set(["jira"]);
+    const availablePluginIds = new Map([["jira", undefined]]);
 
     await storage.setPluginSystemEnabled(false);
     await expect(
@@ -592,7 +595,11 @@ describe("AppApiStorage", () => {
     tempDirs.push(tempDir);
     const statePath = path.join(tempDir, "app-api-state.json");
     const storage = new AppApiStorage(statePath);
-    const available = new Set(["signed", "unsigned", "file"]);
+    const available = new Map([
+      ["signed", undefined],
+      ["unsigned", undefined],
+      ["file", undefined],
+    ]);
     await storage.setPluginOrigin("signed", {
       kind: "source",
       signed: true,
@@ -703,7 +710,7 @@ describe("AppApiStorage", () => {
       items: [{ source: "Legacy Source", label: "Active" }],
     });
     await expect(
-      storage.isPluginEnabled("jira", new Set(["jira"])),
+      storage.isPluginEnabled("jira", new Map([["jira", undefined]])),
     ).resolves.toBe(true);
   });
 
@@ -976,7 +983,7 @@ describe("AppApiStorage", () => {
       });
     });
 
-    it("counts a blocked direct attempt without taking it for a request", async () => {
+    it("counts a blocked direct attempt apart, without taking it for a request or a refusal", async () => {
       const { storage, connectionId, onDisk } = await brokerStorage(60_000);
 
       await storage.recordBrokerActivity(
@@ -986,7 +993,7 @@ describe("AppApiStorage", () => {
         40,
       );
       await expect(storage.brokerActivity("jira")).resolves.toEqual({
-        plugin: { blockedCount: 1, lastBlockedAt: 40 },
+        plugin: { directBlockedCount: 1, lastDirectBlockedAt: 40 },
         connections: {},
       });
 
@@ -1001,8 +1008,8 @@ describe("AppApiStorage", () => {
 
       expect((await onDisk()).plugin).toEqual({
         lastRequestAt: 10,
-        blockedCount: 2,
-        lastBlockedAt: 50,
+        directBlockedCount: 2,
+        lastDirectBlockedAt: 50,
       });
     });
 
@@ -1123,6 +1130,8 @@ describe("state files from earlier versions", () => {
       pluginSecrets: {},
     },
     pluginBrokerActivity: {},
+    pluginRuntimeSettings: {},
+    pluginConsent: {},
   };
   /**
    * A file with a connection's token: without a vault, as here, the token
@@ -1268,5 +1277,26 @@ describe("state files from earlier versions", () => {
         disabledPluginIds: ["jira"],
       }),
     ).resolves.toEqual({ ...emptyCurrentState, disabledPluginIds: ["jira"] });
+  });
+
+  it("keeps the Advanced sections it can read, and drops those left at the plugin's choices", async () => {
+    await expect(
+      migrated({
+        ...emptyCurrentState,
+        pluginRuntimeSettings: {
+          kept: { start: "alwaysReady", memoryCeilingMb: 512 },
+          ceilingOnly: { start: "plugin", memoryCeilingMb: 64 },
+          pluginChoices: { start: "plugin" },
+          unknownStart: { start: "sometimes" },
+          tooSmall: { start: "plugin", memoryCeilingMb: 8 },
+        },
+      }),
+    ).resolves.toEqual({
+      ...emptyCurrentState,
+      pluginRuntimeSettings: {
+        kept: { start: "alwaysReady", memoryCeilingMb: 512 },
+        ceilingOnly: { start: "plugin", memoryCeilingMb: 64 },
+      },
+    });
   });
 });

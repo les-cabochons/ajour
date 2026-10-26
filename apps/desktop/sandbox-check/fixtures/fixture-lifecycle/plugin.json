@@ -1,0 +1,12 @@
+{
+  "id": "fixture-lifecycle",
+  "version": "4.0.0",
+  "apiVersion": 4,
+  "displayName": "Fixture Lifecycle",
+  "iconSvg": "<svg viewBox='0 0 16 16'><path d='M0 0h16v16H0z' /></svg>",
+  "entrypoint": "plugin.mjs",
+  "connectionFields": [
+    { "id": "mode", "label": "Mode", "type": "text", "required": true }
+  ],
+  "capabilities": { "connector": {} }
+}

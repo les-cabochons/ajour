@@ -204,6 +204,15 @@ with their versions in a scrolling list. Its primary action is Add source,
 Trust this key or Accept unsigned. Errors show under the field in
 `text-destructive`.
 
+### Plugin Advanced section and the suspended notice
+
+Files: `apps/web/src/features/settings/plugin-runtime-settings.tsx`, placed by `settings-plugins-page.tsx`
+Last updated: 2026-10-26
+
+**Advanced.** `PluginAdvancedSettings` is the last `settings-section` of a plugin API 4 plugin's page (`data-plugin-advanced`), shown only while the overview group has `runtime`: the `settings-section-title` "Advanced" and its description "Start applies at once. A new Memory ceiling applies the next time the plugin starts.", then an `AppPanel` of two `SettingRow`s. Start is an `OptionSelect` (`w-72`) of "Plugin's choice (<declared>)", "Always ready" and "Load when needed", saved on pick. Memory ceiling is a numeric `Input` (`w-24`) whose placeholder is the declared ceiling, saved on blur or Enter when the value changed; `readMemoryCeiling` (in `domain/plugins/runtime-settings.ts`, against the shared ceiling schema) reads it, and an invalid value shows its error as a `role="alert"` line in the row's description, in `text-destructive`, and keeps what was typed. Both disable while a plugin command runs. Patterns used: `AppPanel`, `SettingRow`, `OptionSelect`, `Input`; nothing new.
+
+**Suspended notice.** `PluginSuspendedNotice` sits in the detail header above the status messages while the group has `suspended` (`data-plugin-suspended`): a warning `MessagePanel` with the title line "This plugin keeps stopping" in `font-medium`, the reason from `suspensionReason(cause)`, and an outline `sm` Turn back on button, which runs the workflow's `resume` command. Patterns used: `MessagePanel`, `Button`; nothing new.
+
 ### Secret field and Vault
 
 Files: `apps/web/src/features/settings/secret-field.tsx`, `connection-form.tsx`, `connection-status-ui.tsx`, `settings-vault-page.tsx`; the state model is `apps/web/src/domain/plugins/secret-state.ts`, `connection-status.ts` and `vault-model.ts`
@@ -221,6 +230,19 @@ Last updated: 2026-10-25
 **Connection row status.** `ConnectionStatusChip` and `ConnectionStatusNote` show `connectionStatus` (and, under the name, `expiryWarnings`: a field's name with an expiry chip): Connected, Paused, Unavailable, Error, Token rejected or "Can't be read on this computer", and under the name why sync is paused. A paused connection's Sync buttons are disabled.
 
 **Vault page.** `/settings/vault`, cardless like the other settings pages: an `h1`, then one `settings-section` per plugin, headed by its name, in alphabetical order, with plugins that are not installed last as "<Plugin> (not installed)" with a ghost Remove (an `AlertDialog`). A row is a `role="group"` named "<owner>, <kind>": the owner (connection label, or "Agent tasks") and under it "<kind> · <last use>" in `text-xs` tertiary, the state `Chip`, and Replace as a `Link` styled with `buttonVariants` (outline, `sm`) to the plugin page, which opens the form with Replace open (`?connection=<id>&field=<id>`, or `?field=<id>` for task settings). Rows are bordered with `border-border`, no outer frame, and wrap on narrow widths. The two failures of the vault show first as `MessagePanel` warnings; "Ajour can't protect credentials on this computer" has an outline Try again.
+
+### Access list and consent panel
+
+Files: `apps/web/src/features/settings/plugin-access-section.tsx`; the lines come from `apps/web/src/domain/plugins/plugin-access-model.ts`
+Last updated: 2026-10-25
+
+`PluginAccessSection` is a `settings-section` titled Access, placed before Features on an installed plugin's page. `CatalogAccessSection` stands in for a plugin that isn't downloaded. Patterns used: `MessagePanel`, `Chip`, `Button`; nothing new.
+
+- **The access list** is a `ul` of items: a 16px icon (globe for hosts, key for the credential, robot for agent tasks, cpu for the start mode, puzzle for a new capability), a `text-sm font-medium` title, a `text-sm` detail, and under a host a native `details` disclosure, "N endpoints", in `text-xs` tertiary. Its `summary` has the 2px focus ring, and the chevron turns without a transition. Endpoints are `font-mono`, each with its access choice after a dot. Every item carries `data-access-item` for tests.
+- **New** is the accent `Chip`, after the title of an item that is new, or "New endpoints" on an item whose host is old. A new endpoint carries its own New chip in the disclosure.
+- **Activity** is a `text-sm` line under the description, worded by `describeLastUse` as on the Vault page. Refused requests (`data-access-refused`) and blocked attempts to connect directly (`data-access-blocked`) are each a warning-colored line with an icon.
+- **The consent panel**, `PluginAccessUpdatePanel`, is a warning `MessagePanel` (`data-access-update`) in the page header's notices: the title "Version N needs more access", a line saying it stays inactive and that connections and settings are kept, the access list of new items only, and the primary Button "Allow and activate". It is disabled while another plugin change runs.
+- **The model** (`describeAccess`) takes the overview's access view and, for an update, its difference. With `onlyNew` it lists only the new items with only their new endpoints, so the panel and the section say the same thing. `describeLegacyAccess` lists what a plugin API 3 plugin can do without limits.
 
 ### Connection access and held edits
 

@@ -1093,8 +1093,12 @@ describe("startup", () => {
     const writeLaunchVersion = vi.fn();
     const defaultSession = { name: "window session" };
     const addWindowApiToken = vi.fn();
+    const sweepOrphanedRenderers = vi.fn(async () => ({ ended: 0 }));
     const context = vm.createContext({
       addWindowApiToken,
+      sweepOrphanedRenderers,
+      PROCESS_RECORD_FILE: "plugin-renderers.json",
+      pluginRendererSweep: Promise.resolve(),
       app,
       appMenuModel: getAppMenuModel({
         platform: "win32",
@@ -1150,6 +1154,7 @@ describe("startup", () => {
     );
     return {
       addWindowApiToken,
+      sweepOrphanedRenderers,
       defaultSession,
       app,
       dialog,
@@ -1295,6 +1300,26 @@ describe("startup", () => {
         error: { message: "The GPU process could not start." },
       },
     ]);
+  });
+
+  it("sweeps the last session's orphaned plugin renderers once it holds the lock, and only then", async () => {
+    const runtime = startupRuntime();
+    await flush();
+
+    expect(runtime.sweepOrphanedRenderers).toHaveBeenCalledOnce();
+    expect(runtime.sweepOrphanedRenderers).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filePath: path.join("/fixture", "plugin-renderers.json"),
+        platform: "win32",
+      }),
+    );
+    expect(
+      runtime.sweepOrphanedRenderers.mock.invocationCallOrder[0],
+    ).toBeLessThan(runtime.createMainWindow.mock.invocationCallOrder[0]!);
+
+    const second = startupRuntime({ hasSingleInstanceLock: false });
+    await flush();
+    expect(second.sweepOrphanedRenderers).not.toHaveBeenCalled();
   });
 
   it("emits the refused lock before the second process quits", async () => {

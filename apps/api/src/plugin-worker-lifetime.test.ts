@@ -243,4 +243,151 @@ describe("plugin worker lifetime", () => {
     await host.shutdown();
     await expect(workItems).rejects.toThrow("the app is shutting down");
   });
+
+  it("keeps 4 worker threads per host for API 3, and 4 calls per plugin for API 4", async () => {
+    const host = await lifetime("setInterval(()=>{},1000);", 5_000);
+    const api3 = (pluginId: string) =>
+      host.run(pluginId, "sync", async () => ({
+        invocation: { ...invocation, pluginId },
+        parse: (value: unknown) => value,
+      }));
+    const running = ["a", "b", "c", "d"].map((pluginId) =>
+      api3(pluginId).catch((error: unknown) => error),
+    );
+    await waitForWorkerStart();
+    await expect(api3("e")).rejects.toThrow(
+      "Too many plugin operations are already running.",
+    );
+
+    // API 4 plugins run in a process of their own each, so only a plugin's
+    // own calls count.
+    const api4Host = new PluginWorkerLifetime<string>({
+      name: "Plugin",
+      runtime: {
+        start: () => ({
+          settled: new Promise(() => undefined),
+          terminate: async () => undefined,
+        }),
+      },
+      requestTimeoutMs: 5_000,
+      eventNames: { sync: "backlog.sync" },
+    });
+    lifetimes.push(api4Host);
+    const api4 = (pluginId: string) =>
+      api4Host.run(pluginId, "sync", async () => ({
+        invocation: { ...invocation, pluginId, apiVersion: 4 },
+        parse: (value: unknown) => value,
+      }));
+    const api4Running = [
+      ...Array.from({ length: 4 }, () => api4("a")),
+      ...Array.from({ length: 4 }, () => api4("b")),
+    ].map((call) => call.catch((error: unknown) => error));
+    await waitForWorkerStart();
+    expect(api4Host.activeOperationCount).toBe(8);
+    await expect(api4("a")).rejects.toThrow(
+      'Too many operations of plugin "a" are already running.',
+    );
+
+    await host.shutdown();
+    await api4Host.shutdown();
+    await Promise.all([...running, ...api4Running]);
+  });
+
+  it("refuses a fifth API 3 operation across plugins before it resolves anything else", async () => {
+    const host = new PluginWorkerLifetime<string>({
+      name: "Plugin",
+      runtime: {
+        start: () => ({
+          settled: new Promise(() => undefined),
+          terminate: async () => undefined,
+        }),
+      },
+      requestTimeoutMs: 5_000,
+      eventNames: { sync: "backlog.sync" },
+    });
+    lifetimes.push(host);
+    const preparing = deferred<void>();
+    const resolved: string[] = [];
+    const api3 = (pluginId: string) =>
+      host.run(pluginId, "sync", async (record) => {
+        // A host learns the package's API version first, then the rest.
+        record.plugin({ version: "1.0.0", source: "installed", apiVersion: 3 });
+        resolved.push(pluginId);
+        await preparing.promise;
+        return {
+          invocation: { ...invocation, pluginId },
+          parse: (value: unknown) => value,
+        };
+      });
+    const running = ["a", "b", "c", "d"].map((pluginId) =>
+      api3(pluginId).catch((error: unknown) => error),
+    );
+    await waitForWorkerStart();
+    expect(resolved).toEqual(["a", "b", "c", "d"]);
+
+    await expect(api3("e")).rejects.toThrow(
+      "Too many plugin operations are already running.",
+    );
+    expect(resolved).not.toContain("e");
+    // An API 4 plugin has no thread of the host's to wait for.
+    const api4 = host.run("f", "sync", async (record) => {
+      record.plugin({ version: "1.0.0", source: "installed", apiVersion: 4 });
+      resolved.push("f");
+      await preparing.promise;
+      return {
+        invocation: { ...invocation, pluginId: "f", apiVersion: 4 },
+        parse: (value: unknown) => value,
+      };
+    });
+    await waitForWorkerStart();
+    expect(resolved).toContain("f");
+
+    const shutdown = host.shutdown();
+    preparing.resolve();
+    await shutdown;
+    await Promise.all([...running, api4.catch(() => undefined)]);
+  });
+
+  it("waits for running operations up to a limit, as a quit drains them", async () => {
+    const finishes = deferred<void>();
+    const host = new PluginWorkerLifetime<string>({
+      name: "Plugin",
+      runtime: {
+        start: (started) => ({
+          settled:
+            started.pluginId === "quick"
+              ? finishes.promise.then(() => ({ ok: true, result: 1 }))
+              : new Promise(() => undefined),
+          terminate: async () => undefined,
+        }),
+      },
+      requestTimeoutMs: 5_000,
+      eventNames: { sync: "backlog.sync" },
+    });
+    lifetimes.push(host);
+    const run = (pluginId: string) =>
+      host.run(pluginId, "sync", async () => ({
+        invocation: { ...invocation, pluginId, apiVersion: 4 },
+        parse: (value: unknown) => value,
+      }));
+    const quick = run("quick");
+    const stuck = run("stuck");
+    await waitForWorkerStart();
+
+    // The quick one finishes, and the drain still waits on the stuck one.
+    const idle = host.whenIdle(300);
+    finishes.resolve();
+    await expect(quick).resolves.toBe(1);
+    const startedAt = Date.now();
+    await idle;
+    expect(Date.now() - startedAt).toBeGreaterThan(150);
+    expect(host.activeOperationCount).toBe(1);
+
+    await host.shutdown();
+    await expect(stuck).rejects.toThrow("the app is shutting down");
+    // Nothing runs: the drain is over at once.
+    const drained = Date.now();
+    await host.whenIdle(5_000);
+    expect(Date.now() - drained).toBeLessThan(100);
+  });
 });

@@ -19,6 +19,11 @@ import {
   isDeniedHeaderName,
   isEndpointPattern,
 } from "./plugin-request-rules.ts";
+import {
+  PLUGIN_MEMORY_CEILING_MB,
+  pluginStartModeSchema,
+  type PluginStartMode,
+} from "./plugin-lifecycle.ts";
 
 export {
   connectionAccessOn,
@@ -42,12 +47,8 @@ export {
 
 export { PLUGIN_API_4 };
 
-/** The memory ceiling a user may set for a plugin's renderer, in MB (#217). */
-export const PLUGIN_MEMORY_CEILING_MB = {
-  min: 64,
-  max: 2048,
-  default: 256,
-} as const;
+export { PLUGIN_MEMORY_CEILING_MB, pluginStartModeSchema };
+export type { PluginStartMode };
 
 /**
  * A strict object, so a misspelt key fails instead of being dropped, with a
@@ -518,9 +519,6 @@ export const pluginConnectionAccessChoiceSchema = strictObject({
 export type PluginConnectionAccessChoice = z.infer<
   typeof pluginConnectionAccessChoiceSchema
 >;
-
-export const pluginStartModeSchema = z.enum(["whenNeeded", "alwaysReady"]);
-export type PluginStartMode = z.infer<typeof pluginStartModeSchema>;
 
 export const pluginRuntimeSchema = strictObject({
   /** "Load when needed" or "Always ready". The user may change it. */
