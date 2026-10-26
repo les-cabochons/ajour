@@ -137,7 +137,26 @@ async function startCatchAll() {
         ? request.url
         : `${request.url} with ${request.headers.authorization}`,
     );
-    response.writeHead(200, { "access-control-allow-origin": "*" }).end("ok");
+    // A module and an event stream answer as such, so an attempt that got
+    // here reports it did.
+    const type =
+      request.url === "/module.js"
+        ? "text/javascript"
+        : request.url === "/events"
+          ? "text/event-stream"
+          : "text/plain";
+    response
+      .writeHead(200, {
+        "access-control-allow-origin": "*",
+        "content-type": type,
+      })
+      .end(
+        type === "text/javascript"
+          ? "export default 'ok';"
+          : type === "text/event-stream"
+            ? "data: ok\n\n"
+            : "ok",
+      );
   });
   catchAll.server.on("upgrade", (request, socket) => {
     catchAll.hits.push(`upgrade ${request.url}`);

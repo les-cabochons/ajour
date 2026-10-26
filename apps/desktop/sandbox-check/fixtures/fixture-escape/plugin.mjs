@@ -10,17 +10,27 @@ const settle = (promise, ms = 3_000) =>
     ),
   ]);
 
-async function attempt(name, run) {
+/** A value as text, a module namespace's, which has no `toString`, included. */
+function describe(value) {
   try {
-    const value = await run();
-    return { name, escaped: true, value: String(value).slice(0, 200) };
+    return String(value).slice(0, 200);
+  } catch {
+    return Object.prototype.toString.call(value);
+  }
+}
+
+async function attempt(name, run) {
+  let value;
+  try {
+    value = await run();
   } catch (error) {
     return {
       name,
       escaped: false,
-      error: `${error?.name ?? "Error"}: ${String(error?.message ?? error).slice(0, 200)}`,
+      error: `${error?.name ?? "Error"}: ${describe(error?.message ?? error)}`,
     };
   }
+  return { name, escaped: true, value: describe(value) };
 }
 
 function socket(url) {
