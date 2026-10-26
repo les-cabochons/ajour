@@ -15,6 +15,7 @@
  * @property {IpcEventName} event The wide event each call emits.
  * @property {"plugin-renderer"} [sender] Set only by the channel of a plugin's hidden page. Every other channel refuses that page (ipc-listeners.cjs).
  * @property {"invoke" | "message" | "sync"} mode `invoke` registers with `ipc.handle`, `message` with `ipc.onMessage`, `sync` with `ipc.answerSync`.
+ * @property {"failures"} [record] Set only by the channel that forwards the renderer's events: a call the wrapper accepts and that succeeds emits nothing, so forwarding never writes an event per batch (ipc-listeners.cjs).
  */
 
 /**
@@ -89,6 +90,14 @@ const IPC_CHANNELS = {
   "ajour:get-logs-status": { event: "logs.status", mode: "invoke" },
   "ajour:configure-logs": { event: "logs.configure", mode: "invoke" },
   "ajour:delete-all-logs": { event: "logs.delete_all", mode: "invoke" },
+  // The renderer's wide events, in batches for the local log file (#440).
+  // Each batch it takes is counted on logs.sweep instead of emitting its own
+  // event, which would add a line to the file for every batch forwarded.
+  "ajour:forward-wide-events": {
+    event: "wide_events.forward",
+    mode: "message",
+    record: "failures",
+  },
   // The one channel of a plugin's hidden page, not the window's
   // (plugin-renderer-runtime.cjs).
   "ajour:plugin-renderer": {

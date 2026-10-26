@@ -1,6 +1,6 @@
 # The local log file is a built-in, opt-in exporter
 
-Ajour's wide events went nowhere (#304). The first exporter writes them to a file on the user's computer, for a diagnostics viewer inside Ajour (#438). It is built into the desktop main process, not a plugin: plugins are untrusted, run sandboxed and never touch files (ADR 0007, ADR 0010), and every runtime's events already meet in main, where the local API runs and where the renderer will send its batches over IPC. Main's events and the local API's go through one sink, which hands each event to the developer's console when `AJOUR_WIDE_EVENTS=console` asks for it, and to the file.
+Ajour's wide events went nowhere (#304). The first exporter writes them to a file on the user's computer, for a diagnostics viewer inside Ajour (#438). It is built into the desktop main process, not a plugin: plugins are untrusted, run sandboxed and never touch files (ADR 0007, ADR 0010), and every runtime's events already meet in main, where the local API runs and where the renderer sends its batches over IPC. Main's events and the local API's go through one sink, which hands each event to the developer's console when `AJOUR_WIDE_EVENTS=console` asks for it, and to the file. The renderer's forwarded events go to the file only, never to main's console: in the renderer, the developer's switch already prints them to the devtools console.
 
 This refines ADR 0011's "logging plugins … to a file": the first file exporter is built in, not a plugin.
 

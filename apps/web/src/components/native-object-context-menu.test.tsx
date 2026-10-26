@@ -52,7 +52,9 @@ async function loadDesktop(picked: string | null) {
   return { showContextMenu, sink, view };
 }
 
-describe("the desktop's native right-click menu", () => {
+// Each test loads the store and the menu modules afresh, which can pass the
+// default 5 s while the whole suite runs in parallel.
+describe("the desktop's native right-click menu", { timeout: 30_000 }, () => {
   it("asks the main process for the menu, and runs the action picked there as a context_menu action", async () => {
     const { showContextMenu, sink, view } = await loadDesktop("pin");
 

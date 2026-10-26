@@ -3,7 +3,12 @@ import * as nodeFs from "node:fs/promises";
 import path from "node:path";
 import type { LocalLogState, LocalLogWarning } from "./ajour-catalog.ts";
 import type { Catalog } from "./fields.ts";
+import {
+  createForwardedBatchReader,
+  type ForwardedFrom,
+} from "./forwarding.ts";
 import { createPrivacyFilter } from "./privacy.ts";
+import { rendererEmits } from "./renderer-emits.ts";
 import type { Sink } from "./sinks.ts";
 
 /** How many days a day's file is kept after it ends. */
@@ -49,6 +54,26 @@ export interface LocalLogSweep {
   storage_bytes: number;
   /** Events dropped since launch, as in `LocalLogStatus`. */
   dropped_event_count: number;
+}
+
+/** What writing a forwarded batch did with its events. */
+export interface LocalLogForwarding {
+  /** The events the file queued to write. */
+  accepted_event_count: number;
+  /**
+   * The valid events the file didn't queue: writing had stopped on a
+   * warning or was off, the queue was full, or the line couldn't be built.
+   */
+  dropped_event_count: number;
+  /**
+   * The events left out: an invalid envelope, an event the renderer doesn't
+   * emit, or a batch past the size limit, whole.
+   */
+  rejected_event_count: number;
+  /** 1 when the batch was refused whole, because it held too many events. */
+  rejected_batch_count: number;
+  /** What the batch says its runtime couldn't send before it. */
+  unsent_event_count: number;
 }
 
 /** What deleting every log removed. */
@@ -109,6 +134,23 @@ export interface LocalLogFile {
   readonly directory: string;
   /** Applies new settings. Saving them clears a warning, so writing resumes when on. */
   configure(settings: LocalLogSettings): void;
+  /** Whether events are written right now: logging is on, and no warning stopped it. */
+  writing(): boolean;
+  /**
+   * Runs `listener` each time `writing()` changes: when a failed write
+   * stops it with a warning, and when new settings turn it on or off. A
+   * throw in a listener is ignored. Returns how to stop.
+   */
+  onWritingChange(listener: (writing: boolean) => void): () => void;
+  /**
+   * Writes a batch another process forwarded, such as the renderer's over
+   * IPC (#440). Only the events whose envelope is valid for `from`, and that
+   * its runtime emits (`rendererEmits`), go to the sink, which filters them
+   * as it does every event: a field the catalog doesn't declare is dropped,
+   * and the queue's limit holds. It counts the events it queued apart from
+   * those it dropped. It never throws.
+   */
+  forward(batch: unknown, from: ForwardedFrom): LocalLogForwarding;
   status(): Promise<LocalLogStatus>;
   /** Deletes the days past the retention, then the oldest past the size limit. */
   sweep(): Promise<LocalLogSweep>;
@@ -191,6 +233,7 @@ export function createLocalLogFile(options: LocalLogFileOptions): LocalLogFile {
   const appendSync = fs.appendFileSync ?? appendFileSync;
   const now = options.now ?? (() => Date.now());
   const filter = createPrivacyFilter(catalog);
+  const readBatch = createForwardedBatchReader(catalog, rendererEmits);
   let settings = { ...options.settings };
   let warning: LocalLogWarning | undefined;
   let pending: { day: string; line: string }[] = [];
@@ -206,6 +249,21 @@ export function createLocalLogFile(options: LocalLogFileOptions): LocalLogFile {
   let queue: Promise<unknown> = Promise.resolve();
 
   const writing = () => settings.enabled && warning === undefined;
+  const writingListeners = new Set<(writing: boolean) => void>();
+  /** Runs the listeners when `change` moved `writing()`. */
+  function notifyIfChanged(change: () => void) {
+    const before = writing();
+    change();
+    const after = writing();
+    if (before === after) return;
+    for (const listener of [...writingListeners]) {
+      try {
+        listener(after);
+      } catch {
+        // One listener's failure never reaches the work or the others.
+      }
+    }
+  }
 
   /** Runs `job` after every job queued before it. */
   function enqueue<Result>(job: () => Promise<Result>): Promise<Result> {
@@ -215,8 +273,10 @@ export function createLocalLogFile(options: LocalLogFileOptions): LocalLogFile {
   }
 
   function stop(reason: LocalLogWarning) {
-    warning = reason;
-    pending = [];
+    notifyIfChanged(() => {
+      warning = reason;
+      pending = [];
+    });
   }
 
   async function writePending() {
@@ -281,24 +341,30 @@ export function createLocalLogFile(options: LocalLogFileOptions): LocalLogFile {
     return found.sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
   }
 
+  /** Queues one event's line. Whether it did: false when it was dropped. */
+  function offer(event: Parameters<Sink["emit"]>[0]) {
+    if (!writing()) return false;
+    if (pending.length >= MAX_PENDING_LINES) {
+      dropped += 1;
+      return false;
+    }
+    let line: string;
+    try {
+      line = JSON.stringify(
+        filter(event, { includeSensitive: settings.include_sensitive }),
+      );
+    } catch {
+      return false;
+    }
+    pending.push({ day: dayOf(now()), line });
+    scheduleFlush();
+    return true;
+  }
+
   const sink: Sink = {
     accepting: writing,
     emit(event) {
-      if (!writing()) return;
-      if (pending.length >= MAX_PENDING_LINES) {
-        dropped += 1;
-        return;
-      }
-      let line: string;
-      try {
-        line = JSON.stringify(
-          filter(event, { includeSensitive: settings.include_sensitive }),
-        );
-      } catch {
-        return;
-      }
-      pending.push({ day: dayOf(now()), line });
-      scheduleFlush();
+      offer(event);
     },
   };
 
@@ -306,9 +372,36 @@ export function createLocalLogFile(options: LocalLogFileOptions): LocalLogFile {
     sink,
     directory,
     configure(next) {
-      settings = { ...next };
-      warning = undefined;
-      if (!settings.enabled) pending = [];
+      notifyIfChanged(() => {
+        settings = { ...next };
+        warning = undefined;
+        if (!settings.enabled) pending = [];
+      });
+    },
+    writing,
+    onWritingChange(listener) {
+      writingListeners.add(listener);
+      return () => {
+        writingListeners.delete(listener);
+      };
+    },
+    forward(batch, from) {
+      const read = readBatch(batch, from);
+      let queued = 0;
+      for (const event of read.events) {
+        try {
+          if (offer(event)) queued += 1;
+        } catch {
+          // An event that can't be written is dropped, never thrown.
+        }
+      }
+      return {
+        accepted_event_count: queued,
+        dropped_event_count: read.events.length - queued,
+        rejected_event_count: read.rejected_event_count,
+        rejected_batch_count: read.rejected_batch_count,
+        unsent_event_count: read.unsent_event_count,
+      };
     },
     status: () =>
       enqueue(async () => {

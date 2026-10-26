@@ -6,6 +6,7 @@ export type {
   LocalLogFile,
   LocalLogFileOptions,
   LocalLogFileSystem,
+  LocalLogForwarding,
   LocalLogRetentionDays,
   LocalLogSettings,
   LocalLogSizeLimitMb,
