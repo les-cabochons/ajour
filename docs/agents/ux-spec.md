@@ -256,7 +256,7 @@ The project and task picker of the entry editor, the Week Grid's new row and cal
 ### Favorites
 
 - A favorite is a task or a project the user starred. It is personal, like a pinned slot: a shared project's favorites stay on this computer. A task can be a favorite and a pinned task.
-- The star at the start of a row adds the row to favorites or removes it. A starred row always shows a filled star; other rows show the outline on hover and highlight. Pressing the star does not choose the row or close the menu.
+- The star at the start of a row adds the row to favorites or removes it. A starred row always shows a filled star; other rows show the outline on hover and highlight. Pressing the star does not choose the row or close the menu. Removing a star, from the menu or the action sets, shows the Undo toast, because on the Favorites page the row leaves.
 - Add to favorites and Remove from favorites are also in the task and project action sets, with F on a focused task or project.
 - The start view lists, without a search: No project, Favorites, then All projects. An empty section is hidden.
 - Favorites mixes tasks and projects, newest star first. The first 3 show, then "N more favorites" opens a Favorites page with all of them. The page works like a project's tasks: Back to projects at the top, Backspace on an empty search goes back, and typing filters the page.

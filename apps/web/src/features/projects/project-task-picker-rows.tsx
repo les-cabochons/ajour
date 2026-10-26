@@ -8,9 +8,12 @@ import { Chip } from "@/components/ui/chip";
 import { CommandItem } from "@/components/ui/command";
 import type { LocalProject, LocalProjectTask } from "@/domain/local-state";
 import { getLocalProjectDisplayName } from "@/domain/local-state";
+import {
+  setProjectFavorite,
+  setTaskFavorite,
+} from "@/features/projects/favorites";
 import { PinnedSlotBadge } from "@/features/projects/pinned-slot";
 import { isProjectTaskBillable } from "@/features/projects/project-task-options";
-import { localStore } from "@/lib/local-store";
 import { ProjectIcon } from "@/lib/project-icons";
 import { cn } from "@/lib/utils";
 
@@ -109,7 +112,7 @@ export function PickerTaskRow({
         favorite={task.favoritedAt !== undefined}
         name={task.name}
         onToggle={(favorite) =>
-          localStore.setProjectTaskFavorite(project._id, task._id, favorite)
+          setTaskFavorite(project._id, task._id, favorite)
         }
       />
       {projectDisplay === "icon" ? (
@@ -153,9 +156,7 @@ export function PickerProjectRow({
       <FavoriteStar
         favorite={project.favoritedAt !== undefined}
         name={label}
-        onToggle={(favorite) =>
-          localStore.setProjectFavorite(project._id, favorite)
-        }
+        onToggle={(favorite) => setProjectFavorite(project._id, favorite)}
       />
       <ProjectIcon
         icon={project.icon}

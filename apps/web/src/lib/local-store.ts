@@ -2062,9 +2062,13 @@ const store = {
       ),
     }));
   },
-  /** Stars a task as a favorite, or removes its star. */
+  /**
+   * Stars a task as a favorite, or removes its star. Removing returns an undo
+   * token, since the row can leave the list it was removed from; starring
+   * returns null, as starring again is its own undo.
+   */
   setProjectTaskFavorite(projectId: string, taskId: string, favorite: boolean) {
-    updateState((state) => ({
+    const star = (state: LocalAppState) => ({
       ...state,
       projects: applySetProjectTaskFavorite(
         state.projects,
@@ -2072,19 +2076,29 @@ const store = {
         taskId,
         favorite ? Date.now() : undefined,
       ),
-    }));
+    });
+    if (!favorite) return updateStateWithUndo(star);
+    updateState(star);
+    return null;
   },
-  /** Stars a project as a favorite, or removes its star. Its tasks keep theirs. */
+  /**
+   * Stars a project as a favorite, or removes its star. Its tasks keep
+   * theirs. Removing returns an undo token, like `setProjectTaskFavorite`.
+   */
   setProjectFavorite(projectId: string, favorite: boolean) {
-    updateState((state) => ({
+    const star = (state: LocalAppState) => ({
       ...state,
       projects: applySetProjectFavorite(
         state.projects,
         projectId,
         favorite ? Date.now() : undefined,
       ),
-    }));
+    });
+    if (!favorite) return updateStateWithUndo(star);
+    updateState(star);
+    return null;
   },
+
   /** Archives a task. Returns an undo token, or null when nothing changed. */
   archiveProjectTask(projectId: string, taskId: string) {
     return updateStateWithUndo((state) => ({
