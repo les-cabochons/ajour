@@ -15,6 +15,17 @@ import { recordingEvents } from "./recording-events.ts";
  */
 
 const require = createRequire(import.meta.url);
+interface RecordedEntry {
+  pid: number;
+  pluginId?: string;
+  createdAt?: number;
+}
+interface ProcessRecord {
+  add(entry: RecordedEntry): void;
+  remove(entry: RecordedEntry): void;
+  hold(entries: RecordedEntry[]): void;
+  release(entries: RecordedEntry[]): void;
+}
 interface RunningProcess {
   pid: number;
   executablePath: string;
@@ -29,10 +40,7 @@ const {
   createProcessRecord: (
     filePath: string,
     options?: { fileSystem?: unknown },
-  ) => {
-    add(entry: { pid: number; pluginId: string; createdAt?: number }): void;
-    remove(entry: { pid: number; pluginId: string; createdAt?: number }): void;
-  };
+  ) => ProcessRecord;
   describeProcesses: (
     pids: number[],
     platform: string,
@@ -61,24 +69,63 @@ const {
 
 const AJOUR = "C:\\Program Files\\Ajour\\Ajour.exe";
 const STARTED = 1_792_000_000_000;
+const RECORD_FILE =
+  "C:\\Users\\ada\\AppData\\Roaming\\Ajour\\plugin-renderers.json";
+
+/** A record that writes to memory: what the file holds now, or undefined. */
+function memoryRecord(initial?: unknown) {
+  let file: string | undefined =
+    initial === undefined
+      ? undefined
+      : typeof initial === "string"
+        ? initial
+        : JSON.stringify(initial);
+  const record = createProcessRecord(RECORD_FILE, {
+    fileSystem: {
+      writeFileSync: (_path: string, text: string) => {
+        file = text;
+      },
+      renameSync: () => undefined,
+      rmSync: () => {
+        file = undefined;
+      },
+    },
+  });
+  return {
+    record,
+    /** The pids the file lists, or undefined when there is no file. */
+    pidsInFile: () =>
+      file === undefined
+        ? undefined
+        : (JSON.parse(file).processes as RecordedEntry[]).map(
+            (entry) => entry.pid,
+          ),
+    read: () => {
+      if (file === undefined) throw new Error("ENOENT");
+      return file;
+    },
+  };
+}
 
 function sweep(
   record: unknown,
-  running: RunningProcess[] | Error,
-  options: { alive?: (pid: number) => boolean } = {},
+  running: RunningProcess[] | Error | Promise<RunningProcess[]>,
+  options: {
+    alive?: (pid: number) => boolean;
+    memory?: ReturnType<typeof memoryRecord>;
+  } = {},
 ) {
   const { events, recorded } = recordingEvents();
   const killed: number[] = [];
   const removed: string[] = [];
+  const memory = options.memory ?? memoryRecord(record);
   const result = sweepOrphanedRenderers({
-    filePath: "C:\\Users\\ada\\AppData\\Roaming\\Ajour\\plugin-renderers.json",
+    filePath: RECORD_FILE,
+    record: memory.record,
     platform: "win32",
     execPath: AJOUR,
     events,
-    readFile: () => {
-      if (record === undefined) throw new Error("ENOENT");
-      return typeof record === "string" ? record : JSON.stringify(record);
-    },
+    readFile: () => memory.read(),
     removeFile: (file: string) => removed.push(file),
     describe: async () => {
       if (running instanceof Error) throw running;
@@ -87,8 +134,9 @@ function sweep(
     kill: (pid: number) => killed.push(pid),
     alive: options.alive ?? (() => false),
     waitMs: 200,
+    now: () => STARTED + 60_000,
   });
-  return { result, killed, removed, recorded };
+  return { result, killed, removed, recorded, memory };
 }
 
 describe("the sweep of orphaned plugin renderers", () => {
@@ -101,7 +149,7 @@ describe("the sweep of orphaned plugin renderers", () => {
   });
 
   it("ends a recorded renderer still running, and nothing that took a freed id", async () => {
-    const { result, killed, removed, recorded } = sweep(
+    const { result, killed, memory, recorded } = sweep(
       {
         version: 1,
         processes: [
@@ -131,9 +179,11 @@ describe("the sweep of orphaned plugin renderers", () => {
       gone: 1,
       notOurs: 2,
       stillRunning: 0,
+      expired: 0,
     });
     expect(killed).toEqual([101]);
-    expect(removed).toHaveLength(1);
+    // Every entry is dealt with, so the record is gone.
+    expect(memory.pidsInFile()).toBeUndefined();
     expect(
       recorded.find((event) => event.name === "plugin_renderer.sweep"),
     ).toMatchObject({
@@ -188,12 +238,133 @@ describe("the sweep of orphaned plugin renderers", () => {
     ]);
   });
 
+  it("keeps every entry in the record when the system doesn't answer, so the next launch tries again", async () => {
+    const entries = [
+      { pid: 101, pluginId: "jira", createdAt: STARTED },
+      { pid: 102, pluginId: "github", createdAt: STARTED },
+    ];
+    const { result, killed, memory } = sweep(
+      { version: 1, processes: entries },
+      new Error("timed out after 15000 ms"),
+    );
+    await result;
+    expect(killed).toEqual([]);
+    expect(memory.pidsInFile()).toEqual([101, 102]);
+
+    // This session's renderers write the file as they open and close, and
+    // the last session's entries ride along each time.
+    const opened = { pid: 201, pluginId: "slack", createdAt: STARTED + 9_000 };
+    memory.record.add(opened);
+    expect(memory.pidsInFile()).toEqual([101, 102, 201]);
+    memory.record.remove(opened);
+    expect(memory.pidsInFile()).toEqual([101, 102]);
+  });
+
+  it("lets go of entries it could never end: no start time, more than a week old, or past the newest 64", async () => {
+    const kept = Array.from({ length: 64 }, (_, index) => ({
+      pid: 1_000 + index,
+      createdAt: STARTED - index,
+    }));
+    const { result, memory, recorded } = sweep(
+      {
+        version: 1,
+        processes: [
+          ...kept,
+          // Past the newest 64.
+          { pid: 999, createdAt: STARTED - 1_000 },
+          // A start time is what tells Ajour's renderer from another.
+          { pid: 998 },
+          // Held for more than a week of launches whose query failed.
+          { pid: 997, createdAt: STARTED - 8 * 24 * 60 * 60 * 1_000 },
+        ],
+      },
+      new Error("timed out after 15000 ms"),
+    );
+
+    await expect(result).resolves.toMatchObject({ recorded: 64, expired: 3 });
+    expect(memory.pidsInFile()).toEqual(kept.map((entry) => entry.pid));
+    expect(
+      recorded.find((event) => event.name === "plugin_renderer.sweep"),
+    ).toMatchObject({ sweep: { recorded: 64, expired: 3 } });
+  });
+
+  it("holds the entries while the system is still being asked, whatever this session's renderers write", async () => {
+    let answer!: (found: RunningProcess[]) => void;
+    const pending = new Promise<RunningProcess[]>((resolve) => {
+      answer = resolve;
+    });
+    const memory = memoryRecord({
+      version: 1,
+      processes: [{ pid: 101, pluginId: "jira", createdAt: STARTED }],
+    });
+    const { result, killed } = sweep(undefined, pending, { memory });
+    // The renderer of this session opens and closes before the answer.
+    const opened = { pid: 201, pluginId: "slack", createdAt: STARTED + 9_000 };
+    memory.record.add(opened);
+    memory.record.remove(opened);
+    expect(memory.pidsInFile()).toEqual([101]);
+
+    answer([{ pid: 101, executablePath: AJOUR, createdAt: STARTED }]);
+    await expect(result).resolves.toMatchObject({ ended: 1 });
+    expect(killed).toEqual([101]);
+    expect(memory.pidsInFile()).toBeUndefined();
+  });
+
+  it("lets go of what it dealt with, and keeps an orphan it couldn't end", async () => {
+    const memory = memoryRecord({
+      version: 1,
+      processes: [
+        { pid: 101, pluginId: "jira", createdAt: STARTED },
+        { pid: 102, pluginId: "github", createdAt: STARTED },
+        { pid: 103, pluginId: "slack", createdAt: STARTED },
+      ],
+    });
+    const { result } = sweep(
+      undefined,
+      [
+        { pid: 101, executablePath: AJOUR, createdAt: STARTED },
+        {
+          pid: 102,
+          executablePath: "C:\\Windows\\System32\\notepad.exe",
+          createdAt: STARTED,
+        },
+      ],
+      // 101 refuses to end; 102 isn't ours; 103 is gone.
+      { memory, alive: (pid) => pid === 101 },
+    );
+    await expect(result).resolves.toMatchObject({
+      ended: 0,
+      stillRunning: 1,
+      notOurs: 1,
+      gone: 1,
+    });
+    expect(memory.pidsInFile()).toEqual([101]);
+  });
+
+  it("replaces a held entry whose id a new renderer took, and lets go of only its own", async () => {
+    const memory = memoryRecord({
+      version: 1,
+      processes: [{ pid: 101, pluginId: "jira", createdAt: STARTED }],
+    });
+    let answer!: (found: RunningProcess[]) => void;
+    const pending = new Promise<RunningProcess[]>((resolve) => {
+      answer = resolve;
+    });
+    const { result } = sweep(undefined, pending, { memory });
+    // The orphan is gone and this session's renderer took its id.
+    const taken = { pid: 101, pluginId: "slack", createdAt: STARTED + 9_000 };
+    memory.record.add(taken);
+    answer([]);
+    await result;
+    expect(JSON.parse(memory.read()).processes).toEqual([taken]);
+  });
+
   it("ends nothing on a program match alone: a start time missing on either side is not ours", async () => {
     const { result, killed } = sweep(
       {
         version: 1,
         processes: [
-          // No start time recorded.
+          // No start time recorded: let go of before the system is asked.
           { pid: 101, pluginId: "jira" },
           // The system gave no start time for the running process.
           { pid: 102, pluginId: "github", createdAt: STARTED },
@@ -206,9 +377,10 @@ describe("the sweep of orphaned plugin renderers", () => {
     );
 
     await expect(result).resolves.toMatchObject({
-      recorded: 2,
+      recorded: 1,
+      expired: 1,
       ended: 0,
-      notOurs: 2,
+      notOurs: 1,
     });
     expect(killed).toEqual([]);
 

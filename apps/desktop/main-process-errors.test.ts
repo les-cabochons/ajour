@@ -1098,11 +1098,12 @@ describe("startup", () => {
     const defaultSession = { name: "window session" };
     const addWindowApiToken = vi.fn();
     const sweepOrphanedRenderers = vi.fn(async () => ({ ended: 0 }));
+    const processRecord = { hold: vi.fn(), release: vi.fn() };
     const context = vm.createContext({
       addWindowApiToken,
       sweepOrphanedRenderers,
       PROCESS_RECORD_FILE: "plugin-renderers.json",
-      pluginRendererSweep: Promise.resolve(),
+      pluginRendererProcessRecord: () => processRecord,
       app,
       appMenuModel: getAppMenuModel({
         platform: "win32",
@@ -1314,6 +1315,8 @@ describe("startup", () => {
     expect(runtime.sweepOrphanedRenderers).toHaveBeenCalledWith(
       expect.objectContaining({
         filePath: path.join("/fixture", "plugin-renderers.json"),
+        // The record the runtime writes too, so what the sweep couldn't settle survives it.
+        record: expect.objectContaining({ hold: expect.any(Function) }),
         platform: "win32",
       }),
     );

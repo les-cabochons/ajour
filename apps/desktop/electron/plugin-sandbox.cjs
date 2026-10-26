@@ -126,6 +126,7 @@ function rendererSandboxRefusal({ pid, metrics, platform, otherPluginPids }) {
 }
 
 module.exports = {
+  SANDBOXED_PLATFORMS,
   launchSandboxRefusal,
   rendererSandboxRefusal,
 };

@@ -88,11 +88,11 @@ jobs:
         include:
           - name: macOS
             runner: macos-latest
-            artifact: ajour-macos
+            artifact: release-package-macos
             command: corepack pnpm make:desktop:mac
           - name: Windows
             runner: windows-latest
-            artifact: ajour-windows
+            artifact: release-package-windows
             command: corepack pnpm make:desktop:win
     runs-on: ${{ matrix.runner }}
     permissions:
@@ -151,11 +151,18 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # The malicious-plugin and lifecycle suites (#392) on the release's commit.
+  # No release publishes unless they pass on Windows and macOS.
+  plugin-sandbox:
+    name: Plugin sandbox
+    uses: ./.github/workflows/plugin-sandbox.yml
+
   release:
     name: Publish nightly release
     needs:
       - plan
       - package
+      - plugin-sandbox
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -163,6 +170,8 @@ jobs:
       - name: Download desktop distributables
         uses: actions/download-artifact@v4
         with:
+          pattern: release-package-*
+          merge-multiple: true
           path: release-assets
 
       - name: Create tag and prerelease with changelog

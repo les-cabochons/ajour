@@ -13,13 +13,22 @@
       "type": "password",
       "required": true,
       "secret": true
-    }
+    },
+    {
+      "id": "otherConnection",
+      "label": "Another plugin's connection",
+      "type": "text"
+    },
+    { "id": "probe", "label": "Catch-all address", "type": "text" }
   ],
   "capabilities": { "connector": {} },
   "network": {
     "auth": { "scheme": "bearer", "secretField": "token" },
     "baseAddress": { "field": "baseUrl", "allowOnPremises": true },
-    "endpoints": [{ "method": "GET", "path": "/api/me" }],
+    "endpoints": [
+      { "method": "GET", "path": "/api/me" },
+      { "method": "GET", "path": "/api/**" }
+    ],
     "requestHeaders": ["Accept"]
   }
 }

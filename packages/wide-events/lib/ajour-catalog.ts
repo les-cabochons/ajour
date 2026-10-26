@@ -1291,7 +1291,8 @@ export const catalog = defineCatalog({
      * The launch's sweep of plugin renderers a previous session left
      * running (#391), by the process ids it recorded: how many it found
      * listed, ended, found gone already, and left alone because another
-     * program now holds the id.
+     * program now holds the id, and how many it let go of without asking:
+     * no start time, more than a week old, or past the newest 64.
      */
     "plugin_renderer.sweep": {
       kinds: ["lifecycle"],
@@ -1303,6 +1304,7 @@ export const catalog = defineCatalog({
           gone: operational<number>(),
           not_ours: operational<number>(),
           still_running: operational<number>(),
+          expired: operational<number>(),
           sweep_ms: operational<number>(),
         },
       },

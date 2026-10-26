@@ -419,15 +419,30 @@ API 4 packages in development builds of the desktop app, until the cut-over
   launch's sweep ends a recorded process that still runs once the system
   says it is the same program, started then (`Get-Process` on Windows,
   `ps` on macOS), so a process that took a freed id is never touched, and
-  waits on the ids it ended. No plugin renderer opens before it ends.
+  waits on the ids it ended. No plugin renderer waits for it: it reads the
+  record before any renderer of the session opens, so a new process never
+  passes for an old one. The record keeps the last session's entries in the
+  file (`hold`) until the sweep has dealt with each one (`release`), so an
+  entry it couldn't settle, such as when a cold computer takes longer than
+  15 s to answer, is still there for the next launch to try again.
   Chromium ends every child when main dies, even on a forced kill (#217),
   so this guards what that misses.
 - The real-Electron check `apps/desktop/scripts/check-plugin-sandbox.mjs`
   (`corepack pnpm --filter @ajour/desktop check:plugin-sandbox`) proves the
-  above with fixture plugins: `sandbox-check/main.cjs` the sandbox, and
-  `sandbox-check/lifecycle.cjs` the start modes, limits, crash budget,
-  quit drain and the sweep across a forced kill of main. It seeds seam 3
-  (#392).
+  above with fixture plugins: `sandbox-check/main.cjs` the sandbox, the
+  malicious plugin's ways out and its attacks on the broker, and
+  `sandbox-check/lifecycle.cjs` the start modes, limits, crash budget, an
+  infinite loop, a fork bomb, the quit drain and the sweep across a forced
+  kill of main, and a second Ajour started beside the first. It is seam 3
+  (#392): `.github/workflows/plugin-sandbox.yml` runs it on Windows and
+  macOS, and on Linux, where it checks only that plugins stay off, as
+  informational. The `Tests` workflow runs it for pull requests that touch
+  `apps/desktop`, `apps/api`, `packages`, the workflows, the lockfile or the
+  workspace and TypeScript configuration, and the `Plugin sandbox gate` job
+  there is the one check to require: it passes when the suite passed or was
+  skipped. A push to main runs it in the nightly release workflow, and the
+  stable release workflow runs it on the promoted commit; neither publishes
+  unless it passes on Windows and macOS.
 
 - **The port** is `CredentialBrokerPort.forOperation(caller)`
   (`apps/api/src/broker-port.ts`), with the plugin id from the runtime,

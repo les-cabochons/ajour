@@ -207,7 +207,6 @@ function entrypointUrl(pluginId, entrypoint) {
  *   closeTimeoutMs?: number,
  *   processAlive?: (pid: number) => boolean,
  *   now?: () => number,
- *   whenSwept?: Promise<unknown>,
  *   processRecord?: {
  *     add(entry: { pid: number, createdAt?: number, pluginId: string }): void,
  *     remove(entry: { pid: number, createdAt?: number, pluginId: string }): void,
@@ -232,7 +231,6 @@ function createPluginRendererRuntime({
   processAlive = isAlive,
   now = Date.now,
   processRecord,
-  whenSwept,
 }) {
   /**
    * @type {{
@@ -608,8 +606,8 @@ function createPluginRendererRuntime({
     }, readyTimeoutMs);
     renderer.readyTimer.unref?.();
     renderer.opening = (async () => {
-      // The last session's orphans go first (plugin-renderer-sweep.cjs).
-      await whenSwept;
+      // The launch's sweep of the last session's orphans doesn't hold this
+      // back: see plugin-renderer-sweep.cjs.
       await sessionOf(pluginId);
       if (renderer.closed) return;
       const view = new WebContentsView({

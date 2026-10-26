@@ -3,15 +3,22 @@
 // once with --no-sandbox, then `sandbox-check/lifecycle.cjs`, for the start
 // modes, limits, crash budget and quit, and for the orphan sweep across a
 // forced kill of main and a relaunch, `sandbox-check/view-collection.cjs`,
-// the repro of #449, and `sandbox-check/broker-pinning.cjs`, the broker's
-// pinned requests (#434). Each run has a user data folder of its own in the temp
-// folder. It reads the checks' `CHECK {json}` lines, holds them to what the
-// tickets ask, and checks that no process the app started outlives its
+// the repro of #449, `sandbox-check/broker-pinning.cjs`, the broker's pinned
+// requests (#434), and a second Ajour started beside the first. Each run
+// has a user data folder of its own in the temp folder. It reads the checks'
+// `CHECK {json}` lines, holds them to what the tickets ask, and checks that
+// no process the app started outlives its
 // quit. It ends only the processes it started. Exits 1 when anything fails.
+// On a system Ajour doesn't sandbox plugins on, such as Linux, it checks
+// only that plugins stay off.
+//
+// CI runs it on Windows and macOS, and on Linux as informational, and no
+// release publishes unless it passes (`.github/workflows/plugin-sandbox.yml`,
+// #392).
 //
 //   corepack pnpm --filter @ajour/desktop check:plugin-sandbox
 import { spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -23,6 +30,10 @@ const desktopRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
+const { SANDBOXED_PLATFORMS, launchSandboxRefusal } = require(
+  path.join(desktopRoot, "electron", "plugin-sandbox.cjs"),
+);
+const appMain = path.join(desktopRoot, "electron", "main.cjs");
 const checkMain = path.join(desktopRoot, "sandbox-check", "main.cjs");
 const lifecycleMain = path.join(desktopRoot, "sandbox-check", "lifecycle.cjs");
 const viewCollectionMain = path.join(
@@ -140,10 +151,91 @@ async function runCheck(
 }
 
 const isWindows = process.platform === "win32";
+/**
+ * Why plugins are off, as `plugin-sandbox.cjs` words it: asked of the same
+ * function the app asks, so the check never keeps a copy of the wording.
+ */
+const refusalFor = ({ argv = [], platform = process.platform } = {}) =>
+  launchSandboxRefusal({
+    argv,
+    hasSwitch: () => false,
+    env: {},
+    platform,
+    inspectorActive: false,
+  });
+const NO_SANDBOX_OFF = refusalFor({ argv: ["--no-sandbox"] });
+const UNSUPPORTED_OS_OFF = refusalFor({ platform: "linux" });
 
-// 1. As Ajour starts.
-{
-  process.stdout.write("\n== Plugins in their sandbox\n");
+/**
+ * What each way out of the malicious plugin must fail with. A throw alone
+ * proves nothing: the fixture gives up on a call that gets no answer after
+ * 3 s with `no answer`, and an attempt that hangs is not a refusal.
+ */
+const FETCH_REFUSED = /^TypeError: Failed to fetch$/;
+const IMPORT_REFUSED =
+  /^TypeError: Failed to fetch dynamically imported module: /;
+const EXIT_REFUSALS = {
+  fetch: FETCH_REFUSED,
+  "fetch-public": FETCH_REFUSED,
+  "fetch-local-api": FETCH_REFUSED,
+  "fetch-private-name": FETCH_REFUSED,
+  "fetch-private-address": FETCH_REFUSED,
+  "fetch-other-plugin": FETCH_REFUSED,
+  "fetch-file": FETCH_REFUSED,
+  "fetch-file-posix": FETCH_REFUSED,
+  "fetch-user-data": FETCH_REFUSED,
+  "import-user-data": IMPORT_REFUSED,
+  "import-remote": IMPORT_REFUSED,
+  "import-other-plugin": IMPORT_REFUSED,
+  "import-traversal": IMPORT_REFUSED,
+  "import-traversal-backslash": IMPORT_REFUSED,
+  websocket: /^Error: WebSocket failed$/,
+  xhr: /^Error: XMLHttpRequest failed$/,
+  "event-source": /^Error: EventSource failed$/,
+  "send-beacon": /^TypeError: navigator\.sendBeacon is not a function$/,
+  "service-worker": /^TypeError: Cannot read properties of undefined/,
+  "shared-worker": /^ReferenceError: SharedWorker is not defined$/,
+  "window-open": /^TypeError: self\.open is not a function$/,
+  navigation:
+    /^TypeError: Cannot set property href of .* which has only a getter$/,
+  webtransport: /^WebTransportError: .*Content Security Policy/,
+  rtc: /^ReferenceError: RTCPeerConnection is not defined$/,
+  node: /^ReferenceError: require is not defined$/,
+  process: /^ReferenceError: process is not defined$/,
+};
+
+/**
+ * What the broker answers each attack of the malicious plugin with: the
+ * layer that refuses it, in the words the SDK hands the plugin. An attack
+ * that a deeper layer refuses, after the layer above it gave way, answers
+ * differently, and fails here.
+ */
+const NOT_ALLOWED =
+  "AjourRequestError: The plugin's manifest allows no GET request to that path on the connection's address.";
+const BROKER_REFUSALS = {
+  "other-plugin-connection":
+    "AjourRequestError: This plugin has no connection with that id.",
+  "absolute-url":
+    "AjourRequestError: A request path is relative to the connection's address and starts with /.",
+  "scheme-relative-url": NOT_ALLOWED,
+  // The manifest allows GET /api/**, so only the rule that a path holds
+  // literal segments stops these: the climb check behind it would answer
+  // with another message.
+  "dot-dot": NOT_ALLOWED,
+  "dot-dot-above-address": NOT_ALLOWED,
+  "dot-dot-encoded": NOT_ALLOWED,
+  "header-authorization":
+    "AjourRequestError: A plugin may not set the Authorization header.",
+  "header-cookie": "AjourRequestError: A plugin may not set the Cookie header.",
+  "header-host": "AjourRequestError: A plugin may not set the Host header.",
+  "header-proxy-authorization":
+    "AjourRequestError: A plugin may not set the Proxy-Authorization header.",
+  // The service answers with a redirect to another origin, handed back as is.
+  "cross-origin-redirect": "Error: answered 302",
+};
+
+/** 1. As Ajour starts. */
+async function checkSandbox() {
   const { findings, exit, stderr, left, pids } = await runCheck(
     "sandboxed",
     [],
@@ -187,13 +279,17 @@ const isWindows = process.platform === "win32";
   const exits = findings.exits ?? {};
   const attempts = exits.outcome?.result ?? [];
   expect(
-    attempts.length >= 15,
-    "the malicious plugin tried every way out",
-    exits.outcome,
+    JSON.stringify(attempts.map((attempt) => attempt.name).sort()) ===
+      JSON.stringify(Object.keys(EXIT_REFUSALS).sort()),
+    "the malicious plugin tried exactly the ways out the check names",
+    attempts.map((attempt) => attempt.name),
   );
   for (const attempt of attempts) {
+    const refusal = EXIT_REFUSALS[attempt.name];
     expect(
-      !attempt.escaped,
+      !attempt.escaped &&
+        refusal !== undefined &&
+        refusal.test(attempt.error ?? ""),
       `blocked: ${attempt.name} (${attempt.error ?? attempt.value})`,
     );
   }
@@ -206,6 +302,54 @@ const isWindows = process.platform === "win32";
     (exits.blocked?.directBlockedCount ?? 0) > 0,
     "the blocked attempts are recorded for Access review",
     exits.blocked,
+  );
+
+  const attacks = findings["broker-attacks"] ?? {};
+  const entries = attacks.entries ?? [];
+  const tried = entries
+    .filter((entry) => entry.kind === "attempt")
+    .map((entry) => entry.result);
+  expect(
+    attacks.syncStatus === 200 &&
+      JSON.stringify(tried.map((attempt) => attempt.name)) ===
+        JSON.stringify(["control", ...Object.keys(BROKER_REFUSALS)]),
+    "the malicious plugin turned the broker against itself in a sync: every attack the check names",
+    { syncStatus: attacks.syncStatus, tried: tried.map(({ name }) => name) },
+  );
+  expect(
+    tried.find((attempt) => attempt.name === "control")?.escaped === true,
+    "its own allowed request goes through: the broker answers it",
+    tried.find((attempt) => attempt.name === "control"),
+  );
+  for (const attempt of tried.filter(({ name }) => name !== "control")) {
+    expect(
+      !attempt.escaped && attempt.error === BROKER_REFUSALS[attempt.name],
+      `the broker refused: ${attempt.name} (${attempt.error ?? attempt.value})`,
+      { expected: BROKER_REFUSALS[attempt.name] },
+    );
+  }
+  const echo = entries.find((entry) => entry.kind === "echo")?.result ?? "";
+  expect(
+    echo.startsWith("200 ") && attacks.pluginSawToken === false,
+    "a token the service echoes back never reaches the plugin",
+    echo,
+  );
+  expect(
+    attacks.serviceReceived?.some(
+      (received) => received.url === "/svc/api/me?case=echo",
+    ) &&
+      attacks.serviceReceived.every(
+        (received) =>
+          received.url.startsWith("/svc/api/me") &&
+          received.authorization === `Bearer ${TOKEN}`,
+      ),
+    "the service got only the plugin's allowed requests, from the broker",
+    attacks.serviceReceived?.map((received) => received.url),
+  );
+  expect(
+    attacks.catchAllHits?.length === 0,
+    "nothing reached the catch-all server: no redirect was followed with the token",
+    attacks.catchAllHits,
   );
 
   const processes = findings.processes ?? {};
@@ -315,8 +459,10 @@ const isWindows = process.platform === "win32";
   expect(
     lifecycle.afterCrash?.outcome?.failure === "crashed" &&
       ["crashed", "killed"].includes(lifecycle.afterCrash.outcome.cause) &&
+      Number.isInteger(lifecycle.afterCrash.crashPid) &&
+      lifecycle.afterCrash.oldPidAlive === false &&
       lifecycle.afterCrash.next?.ok === true,
-    "a crashed renderer fails its run with the cause, and the next run opens a new one",
+    "a crashed renderer fails its run with the cause, its process ends, and the next run opens a new one",
     lifecycle.afterCrash,
   );
 
@@ -401,23 +547,22 @@ const isWindows = process.platform === "win32";
   );
 }
 
-// 2. With --no-sandbox.
-{
-  process.stdout.write("\n== Started with --no-sandbox\n");
-  const { findings, exit, stderr, left, pids } = await runCheck("no-sandbox", [
-    "--no-sandbox",
-  ]);
+/**
+ * 2. Plugins stay off: started with --no-sandbox, or on a system Ajour
+ * doesn't sandbox them on.
+ */
+async function checkPluginsOff(name, args, { reason, cause }) {
+  const { findings, exit, stderr, left, pids } = await runCheck(name, args);
   if (findings.error) process.stdout.write(`${findings.error.error}\n`);
   expect(exit.code === 0, "the check ran to the end", { exit, stderr });
-  const off = findings["no-sandbox"] ?? {};
+  const off = findings["plugins-off"] ?? {};
   expect(
-    off.unavailableReason === "Ajour was started with --no-sandbox.",
+    off.unavailableReason === reason,
     "the runtime turns plugins off, with the reason",
     off,
   );
   expect(
-    off.sandbox?.state === "off" &&
-      off.sandbox.reason === "Ajour was started with --no-sandbox.",
+    off.sandbox?.state === "off" && off.sandbox.reason === reason,
     "the plugins overview says so",
     off.sandbox,
   );
@@ -441,7 +586,7 @@ const isWindows = process.platform === "win32";
   );
   expect(
     (findings.quitting?.events ?? []).includes(
-      "plugin_sandbox.off refused launch_flag",
+      `plugin_sandbox.off refused ${cause}`,
     ),
     "an event records why plugins are off",
     findings.quitting?.events,
@@ -452,9 +597,8 @@ const isWindows = process.platform === "win32";
   });
 }
 
-// 3. The renderer host's lifecycle (#391).
-{
-  process.stdout.write("\n== The renderer host's lifecycle\n");
+/** 3. The renderer host's lifecycle (#391). */
+async function checkLifecycle() {
   const { findings, exit, stderr, left, pids } = await runCheck(
     "lifecycle",
     ["--lifecycle"],
@@ -512,16 +656,30 @@ const isWindows = process.platform === "win32";
       "its process went over its memory ceiling.",
     ) &&
       budget.afterMemoryOpen === false &&
+      Number.isInteger(budget.balloonedProcess?.pid) &&
+      budget.balloonedProcess.gone === true &&
       budget.memoryClose?.ceiling === 160 &&
       // Its last sample, rounded to the MB, at the ceiling or above.
       budget.memoryClose.memory >= 160,
-    "a renderer above the user's memory ceiling closes, and its call says so",
-    { ballooned: budget.ballooned, close: budget.memoryClose },
+    "a renderer above the user's memory ceiling closes with its process, and its call says so",
+    {
+      ballooned: budget.ballooned,
+      process: budget.balloonedProcess,
+      close: budget.memoryClose,
+    },
+  );
+  expect(
+    Number.isInteger(budget.timedOutProcess?.pid) &&
+      budget.timedOutProcess.gone === true,
+    "a call past its time ends its renderer's process",
+    budget.timedOutProcess,
   );
   expect(
     budget.crashed?.outcome?.failure === "crashed" &&
+      Number.isInteger(budget.crashed.pid) &&
+      budget.crashed.gone === true &&
       ["crashed", "killed"].includes(budget.suspended?.cause),
-    "a timeout, a memory kill and a crash in 10 minutes suspend the plugin",
+    "a timeout, a memory kill and a crash in 10 minutes suspend the plugin, and the crashed renderer's process ends",
     { crashed: budget.crashed, suspended: budget.suspended },
   );
   expect(
@@ -539,6 +697,33 @@ const isWindows = process.platform === "win32";
       budget.afterResume.error === null,
     "Turn back on runs the plugin again",
     budget,
+  );
+
+  const hostile = findings.hostile ?? {};
+  const timedOut =
+    'Plugin "fixture-hostile" timed out while handling syncConnection.';
+  const overCeiling =
+    'Plugin "fixture-hostile" stopped before returning a result: its process went over its memory ceiling.';
+  const endedWithItsProcess = (run, errors) =>
+    errors.includes(run?.outcome?.error) &&
+    Number.isInteger(run.pid) &&
+    run.rendererOpen === false &&
+    run.gone === true;
+  expect(
+    endedWithItsProcess(hostile.spun, [timedOut]),
+    "an infinite loop ends at its time, with its renderer's process",
+    hostile.spun,
+  );
+  expect(
+    endedWithItsProcess(hostile.forkBombed, [timedOut, overCeiling]),
+    "a fork bomb of workers ends at its memory ceiling or its time, with its renderer's process",
+    hostile.forkBombed,
+  );
+  expect(
+    hostile.spun?.addedProcesses <= 1 &&
+      hostile.forkBombed?.addedProcesses <= 1,
+    "and neither gets a process beyond its plugin's one renderer",
+    hostile,
   );
 
   const resident = findings["always-ready-suspended"] ?? {};
@@ -594,9 +779,8 @@ const isWindows = process.platform === "win32";
   );
 }
 
-// 4. The orphan sweep: main is killed with a renderer open, then relaunched.
-{
-  process.stdout.write("\n== Orphans after a forced kill of main\n");
+/** 4. The orphan sweep: main is killed with a renderer open, then relaunched. */
+async function checkOrphanSweep() {
   // A process that isn't Ajour's, recorded as if it were: never ended.
   const decoy = spawn(
     process.execPath,
@@ -669,6 +853,12 @@ const isWindows = process.platform === "win32";
     "the sweep forgets the record, and an event says what it ended",
     sweep,
   );
+  // It opens no renderer, so it may have no process but main's to check.
+  expect(
+    swept.left.length === 0,
+    "the relaunch's quit leaves no process behind",
+    { pids: swept.pids, left: swept.left },
+  );
   // Only what this script started.
   decoy.kill();
   for (const pid of standInLeft) {
@@ -683,10 +873,11 @@ const isWindows = process.platform === "win32";
   );
 }
 
-// 5. Why each plugin's view is held (#449): a view main doesn't hold is
-//    collected, and its page closes with it.
-{
-  process.stdout.write("\n== A plugin's page and its view\n");
+/**
+ * 5. Why each plugin's view is held (#449): a view main doesn't hold is
+ * collected, and its page closes with it.
+ */
+async function checkViewCollection() {
   const { findings, exit, stderr, left, pids } = await runCheck(
     "view-collection",
     [],
@@ -711,10 +902,132 @@ const isWindows = process.platform === "win32";
   });
 }
 
-// 6. The broker's pinned requests (#434): they connect only where the
-//    tunnel's pin leads, with TLS on the name, and never straight out.
-{
-  process.stdout.write("\n== The broker's pinned requests\n");
+/**
+ * 6. A second Ajour while the first runs: it loses the single-instance lock
+ * and quits, and its launch's sweep never runs, because the first's live
+ * renderers are in the record and would pass for orphans. The second is the
+ * real `electron/main.cjs`; the first is the lifecycle check, holding the
+ * lock with a plugin renderer open.
+ */
+async function checkSecondInstance() {
+  const userData = await mkdtemp(
+    path.join(os.tmpdir(), "ajour-sandbox-second-instance-"),
+  );
+  let second;
+  const first = await runCheck("second-instance", ["--hold-instance"], {
+    main: lifecycleMain,
+    userData,
+    keep: true,
+    onFinding: (finding, child) => {
+      if (finding.event !== "instance-running") return;
+      second = (async () => {
+        const result = await runSecondAjour(userData);
+        // The first keeps running after the second is gone.
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+        result.rendererAlive = isAlive(finding.rendererPid);
+        result.recordHeld = await recordLists(userData, finding.rendererPid);
+        // Only the process this script started.
+        child.kill("SIGKILL");
+        return result;
+      })();
+    },
+  });
+  if (first.findings.error) {
+    process.stdout.write(`${first.findings.error.error}\n`);
+  }
+  const running = first.findings["instance-running"] ?? {};
+  expect(
+    running.hadLock === true &&
+      Number.isInteger(running.rendererPid) &&
+      running.rendererOpen === true &&
+      running.recorded === true,
+    "the first Ajour holds the lock, with a plugin renderer open and recorded",
+    running,
+  );
+  const outcome = (await second) ?? {};
+  expect(
+    outcome.exit?.code === 0,
+    "the second Ajour quits by itself",
+    outcome.exit,
+  );
+  expect(
+    outcome.stdout?.includes('"app.lock_refused"') &&
+      !outcome.stdout.includes("plugin_renderer.sweep"),
+    "it says it lost the lock, and runs no sweep",
+    { stdout: outcome.stdout, stderr: outcome.stderr },
+  );
+  expect(
+    outcome.rendererAlive === true && outcome.recordHeld === true,
+    "the first Ajour's renderer still runs after that, and is still in the record",
+    outcome,
+  );
+  const heartbeat = first.findings["instance-heartbeat"] ?? {};
+  expect(
+    heartbeat.rendererOpen === true && heartbeat.recorded === true,
+    "the first Ajour still has its renderer open",
+    heartbeat,
+  );
+  const left = await waitGone([running.rendererPid], 5_000);
+  expect(
+    left.length === 0,
+    "ending the first Ajour takes its renderer with it",
+    left,
+  );
+  await rm(userData, { recursive: true, force: true }).catch(() => undefined);
+}
+
+/** Whether the record in `userData` lists the process. */
+async function recordLists(userData, pid) {
+  try {
+    const record = JSON.parse(
+      await readFile(path.join(userData, "plugin-renderers.json"), "utf8"),
+    );
+    return record.processes.some((entry) => entry.pid === pid);
+  } catch {
+    return false;
+  }
+}
+
+/** Runs `electron/main.cjs` on `userData`, and waits for it to quit. */
+async function runSecondAjour(userData) {
+  const env = {
+    ...process.env,
+    AJOUR_USER_DATA_PATH: userData,
+    AJOUR_WIDE_EVENTS: "console",
+  };
+  delete env.ELECTRON_RUN_AS_NODE;
+  delete env.ELECTRON_DISABLE_SANDBOX;
+  const child = spawn(electron, [appMain], {
+    env,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stdout = "";
+  child.stdout.on("data", (chunk) => {
+    stdout = (stdout + chunk).slice(-20_000);
+  });
+  let stderr = "";
+  child.stderr.on("data", (chunk) => {
+    stderr = (stderr + chunk).slice(-4_000);
+  });
+  const exit = await new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      // Only the process this script started.
+      child.kill("SIGKILL");
+      resolve({ code: "timeout" });
+    }, 20_000);
+    child.once("exit", (code) => {
+      clearTimeout(timer);
+      resolve({ code });
+    });
+  });
+  return { exit, stdout, stderr };
+}
+
+/**
+ * 7. The broker's pinned requests (#434): they connect only where the
+ * tunnel's pin leads, with TLS on the name, and never straight out.
+ */
+async function checkBrokerPinning() {
   const { findings, exit, stderr, left, pids } = await runCheck(
     "broker-pinning",
     [],
@@ -752,6 +1065,40 @@ const isWindows = process.platform === "win32";
     left,
   });
 }
+
+// Windows and macOS run every section. Elsewhere plugins stay off (#381), so
+// the check proves only that.
+const sections = SANDBOXED_PLATFORMS.has(process.platform)
+  ? [
+      ["Plugins in their sandbox", checkSandbox],
+      [
+        "Started with --no-sandbox",
+        () => checkPluginsOff("no-sandbox", ["--no-sandbox"], NO_SANDBOX_OFF),
+      ],
+      ["The renderer host's lifecycle", checkLifecycle],
+      ["Orphans after a forced kill of main", checkOrphanSweep],
+      ["A plugin's page and its view", checkViewCollection],
+      ["A second Ajour beside the first", checkSecondInstance],
+      ["The broker's pinned requests", checkBrokerPinning],
+    ]
+  : [
+      [
+        `Plugins stay off on ${process.platform}`,
+        () => checkPluginsOff("unsupported-os", [], UNSUPPORTED_OS_OFF),
+      ],
+      [
+        "Started with --no-sandbox",
+        () => checkPluginsOff("no-sandbox", ["--no-sandbox"], NO_SANDBOX_OFF),
+      ],
+    ];
+const timings = [];
+for (const [title, check] of sections) {
+  process.stdout.write(`\n== ${title}\n`);
+  const startedAt = Date.now();
+  await check();
+  timings.push(`${title}: ${((Date.now() - startedAt) / 1_000).toFixed(1)} s`);
+}
+process.stdout.write(`\n${timings.join("\n")}\n`);
 
 process.stdout.write(
   failures.length === 0
