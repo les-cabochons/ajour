@@ -1,3 +1,4 @@
+const { mkdirSync } = require("node:fs");
 const {
   applyLocalLogSettings,
   INVALID_LOCAL_LOG_SETTINGS,
@@ -30,6 +31,9 @@ const SWEEP_TRIGGERS = {
  * main is writing events now, and `onWritingChange` runs each time it may
  * have changed, so the renderer stops building and sending while it is not:
  * logging is off, a write failed and stopped it, or the file is unavailable.
+ * `openFolder` shows `directory` through `openPath` (Electron's
+ * `shell.openPath`, which answers an error message or an empty string); the
+ * path stays in main.
  */
 function createLocalLogs({
   settingsPath,
@@ -37,6 +41,8 @@ function createLocalLogs({
   events,
   launchId,
   onWritingChange = () => {},
+  directory,
+  openPath,
   setInterval = globalThis.setInterval,
   clearInterval = globalThis.clearInterval,
 }) {
@@ -161,6 +167,18 @@ function createLocalLogs({
       return status();
     },
     status: () => status(events.current()),
+    /**
+     * Opens the log folder in the OS file manager, making it first when
+     * logging has not yet written. The path never leaves main.
+     */
+    async openFolder() {
+      if (!directory || !openPath) {
+        throw new Error("The log folder is unavailable.");
+      }
+      mkdirSync(directory, { recursive: true });
+      const failure = await openPath(directory);
+      if (failure) throw new Error("The log folder could not be opened.");
+    },
     /**
      * Delete all logs: every day file goes, whether logging is on or off, and
      * the folder with them when nothing else is in it.

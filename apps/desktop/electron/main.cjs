@@ -199,8 +199,11 @@ const wideEventsRoot = path.join(
 // one NDJSON file per UTC day in userData/logs/events. Only the process that
 // holds the single instance lock opens it: the one that lost the lock opens
 // nothing, so its app.lock_refused event never reaches the file.
+const localLogDirectory = path.join(app.getPath("userData"), "logs", "events");
 const localLogs = createLocalLogs({
   settingsPath: path.join(app.getPath("userData"), "local-log-settings.json"),
+  directory: localLogDirectory,
+  openPath: (directory) => shell.openPath(directory),
   events,
   launchId: launch.launch_id,
   // The window's forwarding follows whether main is writing (#440).
@@ -209,7 +212,7 @@ const localLogs = createLocalLogs({
     hasSingleInstanceLock
       ? loadLocalLogFile({
           packageRoot: wideEventsRoot,
-          directory: path.join(app.getPath("userData"), "logs", "events"),
+          directory: localLogDirectory,
           settings,
         })
       : null,
@@ -962,6 +965,13 @@ ipc.handle("ajour:configure-logs", async (event, settings) => {
 ipc.handle("ajour:delete-all-logs", async (event) => {
   assertActiveDesktopWindow(event, "delete the logs");
   return await localLogs.deleteAll();
+});
+
+// Open folder: main opens the log folder itself and answers nothing, so the
+// path never reaches the renderer.
+ipc.handle("ajour:open-logs-folder", async (event) => {
+  assertActiveDesktopWindow(event, "open the log folder");
+  await localLogs.openFolder();
 });
 
 // The renderer's wide events, in batches while main is writing (#440). Only

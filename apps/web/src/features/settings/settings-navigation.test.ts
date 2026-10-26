@@ -63,3 +63,26 @@ describe("getSettingsGroups", () => {
     expect(labels.indexOf("Agents")).toBe(labels.indexOf("MCP") + 1);
   });
 });
+
+describe("Diagnostics", () => {
+  const app = (hasDiagnostics: boolean, view: "wide" | "narrow" = "wide") =>
+    getSettingsGroups(view, false, false, hasDiagnostics)[0]!.pages.map(
+      (page) => page.to,
+    );
+
+  it("is listed under App after Agents when the desktop bridge exists", () => {
+    for (const view of ["wide", "narrow"] as const) {
+      const routes = app(true, view);
+      expect(routes.indexOf("/settings/diagnostics")).toBe(
+        routes.indexOf("/settings/agents") + 1,
+      );
+    }
+  });
+
+  it("is left out of the web build", () => {
+    expect(app(false)).not.toContain("/settings/diagnostics");
+    expect(getSettingsPages("wide").map((page) => page.to)).not.toContain(
+      "/settings/diagnostics",
+    );
+  });
+});

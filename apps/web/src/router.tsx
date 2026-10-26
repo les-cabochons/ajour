@@ -98,6 +98,13 @@ const SettingsAgentsPage = lazy(
   }),
 );
 
+const SettingsDiagnosticsPage = lazy(
+  trackPageChunk(async () => {
+    const module =
+      await import("@/features/settings/settings-diagnostics-page");
+    return { default: module.SettingsDiagnosticsPage };
+  }),
+);
 const SettingsBacklogPage = lazy(
   trackPageChunk(async () => {
     const module = await import("@/features/settings/settings-backlog-page");
@@ -385,6 +392,16 @@ const settingsAgentsRoute = createRoute({
   ),
 });
 
+const settingsDiagnosticsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/diagnostics",
+  component: () => (
+    <RouteSuspense>
+      <SettingsDiagnosticsPage />
+    </RouteSuspense>
+  ),
+});
+
 const settingsBacklogRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/backlog",
@@ -480,6 +497,7 @@ const routeTree = rootRoute.addChildren([
       settingsVaultRoute,
       settingsMcpRoute,
       settingsAgentsRoute,
+      settingsDiagnosticsRoute,
       settingsBacklogRoute,
       settingsWorkflowRoute,
       settingsCalendarRoute,

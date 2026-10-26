@@ -159,6 +159,8 @@ contextBridge.exposeInMainWorld("ajourDesktop", {
     ipcRenderer.invoke("ajour:configure-logs", settings, ...traced(trace)),
   deleteAllLogs: (trace) =>
     ipcRenderer.invoke("ajour:delete-all-logs", ...traced(trace)),
+  openLogsFolder: (trace) =>
+    ipcRenderer.invoke("ajour:open-logs-folder", ...traced(trace)),
   forwardWideEvents: (batch) =>
     ipcRenderer.send("ajour:forward-wide-events", batch),
   onWideEventsForwarding: (callback) => {
