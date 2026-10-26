@@ -24,6 +24,7 @@ export const pullRequestFacts: CodeHostPullRequestFacts = {
 
 export const codeHostOverview: PluginsOverview = {
   pluginsEnabled: true,
+  unsignedPluginsEnabled: true,
   plugins: [],
   connectionGroups: [
     {

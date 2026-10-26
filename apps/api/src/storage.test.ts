@@ -554,6 +554,98 @@ describe("AppApiStorage", () => {
     ).resolves.toBe(false);
   });
 
+  it("records where each plugin came from and reports it in the overview", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
+    tempDirs.push(tempDir);
+    const statePath = path.join(tempDir, "app-api-state.json");
+    const storage = new AppApiStorage(statePath);
+    const signedOrigin = {
+      kind: "source" as const,
+      signed: true,
+      sourceUrl: "https://github.com/les-cabochons/ajour-plugins",
+      sourceName: "Ajour official plugins",
+      official: true,
+      keyFingerprint: "3f2a 9c1d 77e0 b4a2",
+      commit: "888d80ba3fa8d53889011f03a5ab7848b0e06328",
+      installedAt: "2026-10-24T12:00:00.000Z",
+    };
+
+    await storage.setPluginOrigin("jira", signedOrigin);
+
+    const reloaded = new AppApiStorage(statePath);
+    const overview = pluginsOverviewSchema.parse(
+      await reloaded.getPluginsOverview([
+        buildPlugin("jira", "Jira"),
+        buildPlugin("local", "Local"),
+      ]),
+    );
+    expect(overview.plugins).toMatchObject([
+      { id: "jira", origin: signedOrigin },
+      { id: "local" },
+    ]);
+    expect(overview.plugins[1]).not.toHaveProperty("origin");
+
+    await reloaded.removePluginData("jira");
+    const persisted = JSON.parse(await readFile(statePath, "utf8"));
+    expect(persisted.pluginOrigins).toEqual({});
+  });
+
+  it("deactivates every unsigned plugin without touching signed ones or individual choices", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
+    tempDirs.push(tempDir);
+    const statePath = path.join(tempDir, "app-api-state.json");
+    const storage = new AppApiStorage(statePath);
+    const available = new Map([
+      ["signed", undefined],
+      ["unsigned", undefined],
+      ["file", undefined],
+    ]);
+    await storage.setPluginOrigin("signed", {
+      kind: "source",
+      signed: true,
+      installedAt: "2026-10-24T12:00:00.000Z",
+    });
+    await storage.setPluginOrigin("file", {
+      kind: "file",
+      signed: false,
+      installedAt: "2026-10-24T12:00:00.000Z",
+    });
+    await expect(storage.getUnsignedPluginsEnabled()).resolves.toBe(true);
+
+    await storage.setUnsignedPluginsEnabled(false);
+
+    const reloaded = new AppApiStorage(statePath);
+    await expect(reloaded.getUnsignedPluginsEnabled()).resolves.toBe(false);
+    for (const [id, enabled] of [
+      ["signed", true],
+      ["unsigned", false],
+      ["file", false],
+    ] as const) {
+      await expect(reloaded.isPluginEnabled(id, available)).resolves.toBe(
+        enabled,
+      );
+    }
+    await expect(
+      reloaded.getPluginsOverview([
+        buildPlugin("file", "File"),
+        buildPlugin("signed", "Signed"),
+        buildPlugin("unsigned", "Unsigned"),
+      ]),
+    ).resolves.toMatchObject({
+      unsignedPluginsEnabled: false,
+      connectionGroups: [
+        { plugin: { id: "file" }, enabled: false },
+        { plugin: { id: "signed" }, enabled: true },
+        { plugin: { id: "unsigned" }, enabled: false },
+      ],
+    });
+
+    await reloaded.setUnsignedPluginsEnabled(true);
+    await expect(reloaded.isPluginEnabled("file", available)).resolves.toBe(
+      true,
+    );
+  });
+
   // Regression: a plugin that fails to load (for example an older plugin API
   // version) left its connections behind, and the whole overview failed the
   // shared schema because the placeholder had an empty entrypoint.
@@ -1028,6 +1120,9 @@ describe("state files from earlier versions", () => {
     disabledPluginIds: [],
     disabledCapabilities: {},
     pluginsEnabled: true,
+    // Added to version 7 without a new version: older files read the defaults.
+    unsignedPluginsEnabled: true,
+    pluginOrigins: {},
     mcp: { enabled: false, clients: [] },
     agentRunner: {
       settings: { cli: null, browserMode: "ajour-chrome", model: "" },

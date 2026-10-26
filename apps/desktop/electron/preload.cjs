@@ -97,12 +97,24 @@ contextBridge.exposeInMainWorld("ajourDesktop", {
     return () =>
       ipcRenderer.removeListener("ajour:plugin-catalog-updated", listener);
   },
-  downloadCatalogPlugin: (pluginId, trace) =>
+  downloadCatalogPlugin: (pluginId, sourceUrl, trace) =>
     ipcRenderer.invoke(
       "ajour:download-catalog-plugin",
       pluginId,
+      sourceUrl,
       ...traced(trace),
     ),
+  inspectPluginSource: (url, trace) =>
+    ipcRenderer.invoke("ajour:inspect-plugin-source", url, ...traced(trace)),
+  addPluginSource: (url, keyFingerprint, trace) =>
+    ipcRenderer.invoke(
+      "ajour:add-plugin-source",
+      url,
+      keyFingerprint,
+      ...traced(trace),
+    ),
+  removePluginSource: (url, trace) =>
+    ipcRenderer.invoke("ajour:remove-plugin-source", url, ...traced(trace)),
   uninstallPlugin: (pluginId, trace) =>
     ipcRenderer.invoke("ajour:uninstall-plugin", pluginId, ...traced(trace)),
   getDevelopmentPluginSettings: (trace) =>

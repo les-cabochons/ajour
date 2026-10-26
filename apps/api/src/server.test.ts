@@ -458,6 +458,79 @@ describe("plugin installation boundary", () => {
     });
   });
 
+  it("records a signed install's origin and deactivates unsigned plugins on request", async () => {
+    const root = await tempDir();
+    const source = [
+      "export async function validateConnection(config) {",
+      "  return { normalizedConfig: config, connectionSummary: {} };",
+      "}",
+    ].join("\n");
+    const server = createAppApiServer({
+      ...windowServerOptions,
+      statePath: path.join(root, "state.json"),
+      installedPluginDirectory: path.join(root, "installed"),
+      allowDevelopmentPlugins: false,
+    });
+    servers.push(server);
+    async function archiveOf(id: string) {
+      const directory = await createPlugin(
+        path.join(root, "source", id),
+        source,
+        "plugin.mjs",
+        { id },
+      );
+      const archivePath = path.join(root, `${id}-1.0.0.ajour-connector`);
+      await create({ cwd: directory, file: archivePath, gzip: true }, [
+        "plugin.json",
+        "plugin.mjs",
+      ]);
+      return readFile(archivePath);
+    }
+    const signedOrigin = {
+      kind: "source" as const,
+      signed: true,
+      sourceUrl: "https://github.com/les-cabochons/ajour-plugins",
+      sourceName: "Ajour official plugins",
+      official: true,
+      keyFingerprint: "3f2a 9c1d 77e0 b4a2",
+      commit: "888d80ba3fa8d53889011f03a5ab7848b0e06328",
+      installedAt: "2026-10-24T12:00:00.000Z",
+    };
+
+    await installPluginForServer(
+      server,
+      await archiveOf("jira"),
+      "jira-1.0.0.ajour-connector",
+      { origin: signedOrigin },
+    );
+    const fileInstall = await installPluginForServer(
+      server,
+      await archiveOf("local"),
+      "local-1.0.0.ajour-connector",
+    );
+
+    expect(fileInstall.overview.plugins).toMatchObject([
+      { id: "jira", origin: signedOrigin },
+      { id: "local", origin: { kind: "file", signed: false } },
+    ]);
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: "/api/plugins/unsigned-activation",
+        body: JSON.stringify({ enabled: false }),
+      }),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: {
+        unsignedPluginsEnabled: false,
+        connectionGroups: [
+          { plugin: { id: "jira" }, enabled: true },
+          { plugin: { id: "local" }, enabled: false },
+        ],
+      },
+    });
+  });
+
   it("deactivates the plugin system and hides data-shape plugins", async () => {
     const root = await tempDir();
     const server = createAppApiServer({

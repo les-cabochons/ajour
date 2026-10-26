@@ -20,6 +20,8 @@ import {
   pluginFieldValuesSchema,
   pluginActivationUpdateSchema,
   pluginSystemActivationUpdateSchema,
+  unsignedPluginsActivationUpdateSchema,
+  type PluginOrigin,
   pluginIdSchema,
   pluginHasCapability,
   pluginHasCodeHost,
@@ -893,6 +895,14 @@ async function inactiveCapability(
         reason: "system_off",
       };
     }
+    // Unsigned plugins are deactivated: allowing access or switching it on
+    // doesn't help until that is turned off.
+    if (await storage.pluginBlockedAsUnsigned(pluginId)) {
+      return {
+        message: `Unsigned plugins are deactivated. Turn that off before ${action}.`,
+        reason: "plugin_off",
+      };
+    }
     // The user turned it on, and an update since then reaches more.
     if (await storage.pluginNeedsConsent(pluginId, runnable)) {
       return {
@@ -1652,6 +1662,40 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               (count, result) =>
                 count + (result.status === "fulfilled" ? result.value : 0),
               schemaCancelled,
+            ),
+          },
+        });
+      }
+      writeJson(response, 200, await getOverview(storage, pluginManager));
+    },
+
+    unsignedPluginsToggle: async ({ request, response, unit }) => {
+      const payload = await readRequest(
+        request,
+        unsignedPluginsActivationUpdateSchema,
+      );
+      unit.set({ activation: { enabled: payload.enabled } });
+      await storage.setUnsignedPluginsEnabled(payload.enabled);
+      if (!payload.enabled) {
+        const unsignedPluginIds = await storage.listUnsignedPluginIds(
+          (await pluginManager.listPlugins()).map((plugin) => plugin.id),
+        );
+        const cancelled = await Promise.allSettled(
+          unsignedPluginIds.map((pluginId) =>
+            pluginManager.cancelPluginOperations(
+              pluginId,
+              new Error("Unsigned plugins were deactivated."),
+              "plugin_off",
+            ),
+          ),
+        );
+        unit.set({
+          activation: {
+            unsigned_plugin_count: unsignedPluginIds.length,
+            operations_cancelled: cancelled.reduce(
+              (count, result) =>
+                count + (result.status === "fulfilled" ? result.value : 0),
+              0,
             ),
           },
         });
@@ -3582,12 +3626,21 @@ export async function installPluginForServer(
   server: Server,
   archiveBytes: Uint8Array,
   archiveFilename: string,
-  options: { enableAfterInstall?: boolean } = {},
+  options: {
+    enableAfterInstall?: boolean;
+    /** Where the archive came from. Absent means a file the user chose. */
+    origin?: PluginOrigin;
+  } = {},
 ) {
   const runtime = appApiRuntimesByServer.get(server);
   if (!runtime) {
     throw new Error("Plugin installation requires an active app API runtime.");
   }
+  const origin: PluginOrigin = options.origin ?? {
+    kind: "file",
+    signed: false,
+    installedAt: new Date().toISOString(),
+  };
 
   // The state loads, and its secrets move into the vault, before the
   // package change: the load lists the plugins, which waits for that change.
@@ -3599,6 +3652,9 @@ export async function installPluginForServer(
     // Saved before the package change ends, so nothing runs the new package
     // with activation state meant for the old one.
     async (installed) => {
+      // First, so a signed package replaced by an unsigned one never runs as
+      // signed, even when a later step fails.
+      await runtime.storage.setPluginOrigin(installed.manifest.id, origin);
       // An update keeps the activation the user chose for the previous version.
       const pluginId = installed.manifest.id;
       if (!installed.replaced && options.enableAfterInstall === false) {

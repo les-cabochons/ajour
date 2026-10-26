@@ -96,7 +96,7 @@ const developerSidebar: DefaultTheme.SidebarItem[] = [
       { text: "Calendar API", link: "/developers/calendar-api" },
       { text: "Team API", link: "/developers/team-api" },
       { text: "Schema API", link: "/developers/schema-api" },
-      { text: "Catalog entry", link: "/developers/catalog-entry" },
+      { text: "Plugin source", link: "/developers/plugin-source" },
     ],
   },
 ];

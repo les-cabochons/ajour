@@ -353,6 +353,33 @@ describe("connectionSaveBlock", () => {
     });
   });
 
+  it("names Deactivate unsigned plugins as the way out for an unsigned plugin while they are off", () => {
+    const unsigned = { enabled: false, plugin: {} };
+    expect(connectionSaveBlock(unsigned, true, false)).toEqual({
+      reason: "unsigned_off",
+      hint: "Turn off Deactivate unsigned plugins to save a connection.",
+    });
+    expect(connectionSaveBlock(unsigned, true, true)?.reason).toBe(
+      "plugin_off",
+    );
+    expect(
+      connectionSaveBlock(
+        {
+          enabled: true,
+          plugin: {
+            origin: {
+              kind: "source",
+              signed: true,
+              installedAt: "2026-10-24T12:00:00.000Z",
+            },
+          },
+        },
+        true,
+        false,
+      ),
+    ).toBeUndefined();
+  });
+
   it("asks for the plugin system, not the plugin, while the whole system is off", () => {
     expect(connectionSaveBlock({ enabled: true }, false)).toEqual({
       reason: "system_off",

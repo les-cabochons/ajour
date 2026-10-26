@@ -1,32 +1,47 @@
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { createRequire } from "node:module";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { pluginCatalogResponseSchema } from "../../packages/shared/plugin-catalog.ts";
 import { recordingEvents } from "./recording-events.ts";
 
+interface Source {
+  url: string;
+  hostKind?: string;
+  publicKey?: string;
+}
+
 const require = createRequire(import.meta.url);
-const { CATALOG_URL, createPluginCatalogService } =
+const { createPluginCatalogService } =
   require("./electron/plugin-catalog.cjs") as {
-    CATALOG_URL: string;
     createPluginCatalogService(options: {
       cacheDirectory: string;
       fetchImpl: typeof fetch;
+      getSources: () => Source[];
+      onHostKind?: (url: string, hostKind: string) => void;
+      officialKeys?: string[];
       now?: () => Date;
     }): {
-      refresh(options?: { unit?: unknown }): Promise<{
-        entries: Array<{ id: string; images?: { thumbnailDataUrl?: string } }>;
-        source: "network" | "cache";
-        warning?: string;
-        skippedPluginIds?: string[];
-      }>;
-      downloadPluginArchive(pluginId: string): Promise<{
+      refresh(options?: { unit?: unknown }): Promise<Record<string, any>>;
+      getCurrentCatalog(): Record<string, any>;
+      inspectSource(url: string): Promise<Record<string, any>>;
+      downloadPluginArchive(
+        pluginId: string,
+        sourceUrl?: string,
+      ): Promise<{
         archiveBytes: Buffer;
         archiveFilename: string;
+        signed: boolean;
+        origin: Record<string, unknown>;
       }>;
     };
   };
 
+const OFFICIAL = "https://github.com/les-cabochons/ajour-plugins";
+const ALICE = "https://codeberg.org/alice/plugins";
+const COMMIT = "888d80ba3fa8d53889011f03a5ab7848b0e06328";
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
@@ -38,658 +53,419 @@ afterEach(async () => {
 });
 
 async function tempDirectory() {
-  const directory = await mkdtemp(
-    path.join(os.tmpdir(), "ajour-plugin-catalog-"),
-  );
+  const directory = await mkdtemp(path.join(os.tmpdir(), "ajour-catalog-"));
   temporaryDirectories.push(directory);
   return directory;
 }
 
-const catalogYaml = `schemaVersion: 2
-entries:
-  - plugins/azure_devops/plugin.yaml
-`;
-
-const pluginYaml = `schemaVersion: 2
-id: azure_devops
-title: Azure DevOps
-description: Sync Azure DevOps work items into Ajour's local backlog.
-author:
-  name: Alex Trépanier
-  url: https://github.com/alextrepa
-license:
-  name: MIT License
-  spdxId: MIT
-  url: https://github.com/les-cabochons/ajour-plugins/blob/main/plugins/azure-devops/LICENSE
-website: https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/azure-devops#readme
-repository:
-  provider: github
-  slug: les-cabochons/ajour-plugins
-  url: https://github.com/les-cabochons/ajour-plugins
-status: available
-compatibility:
-  pluginApiVersion: 2
-capabilities:
-  - connector
-features:
-  - work-item-sync
-install:
-  method: github-release
-  allowPrereleases: true
-  assetPattern: '^azure_devops-[0-9][0-9A-Za-z.+-]*\\.ajour-connector$'
-images:
-  thumbnail: thumbnail.png
-tags:
-  - project-management
-`;
-
-const definitionUrl = new URL(
-  "plugins/azure_devops/plugin.yaml",
-  CATALOG_URL,
-).toString();
-const imageUrl = new URL(
-  "plugins/azure_devops/thumbnail.png",
-  CATALOG_URL,
-).toString();
-
-function response(body: BodyInit | null, init: ResponseInit = {}) {
-  return new Response(body, init);
+function sha256(bytes: Uint8Array) {
+  return createHash("sha256").update(bytes).digest("hex");
 }
 
-describe("desktop plugin catalog", () => {
-  it("caches artwork and conditionally checks it again on refresh", async () => {
-    const cacheDirectory = await tempDirectory();
-    let refreshNumber = 0;
-    const fetchImpl = vi.fn(
-      async (input: string | URL | Request, init?: RequestInit) => {
-        const url = String(input);
-        if (refreshNumber === 1) {
-          expect(init?.headers).toMatchObject({
-            "If-None-Match": expect.any(String),
-          });
-          if (url === imageUrl) {
-            return response(Buffer.from("updated-image"), {
-              status: 200,
-              headers: { "content-type": "image/png", etag: '"image-2"' },
-            });
-          }
-          return response(null, { status: 304 });
-        }
-        if (url === CATALOG_URL) {
-          return response(catalogYaml, {
-            status: 200,
-            headers: { etag: '"catalog-1"' },
-          });
-        }
-        if (url === definitionUrl) {
-          return response(pluginYaml, {
-            status: 200,
-            headers: { etag: '"plugin-1"' },
-          });
-        }
-        if (url === imageUrl) {
-          return response(Buffer.from("first-image"), {
-            status: 200,
-            headers: { "content-type": "image/png", etag: '"image-1"' },
-          });
-        }
-        throw new Error(`Unexpected URL ${url}`);
-      },
-    );
-    const service = createPluginCatalogService({
-      cacheDirectory,
-      fetchImpl: fetchImpl as unknown as typeof fetch,
-      now: () => new Date("2026-08-07T04:00:00.000Z"),
-    });
-
-    const first = await service.refresh();
-    expect(first.entries[0]?.images?.thumbnailDataUrl).toContain(
-      Buffer.from("first-image").toString("base64"),
-    );
-
-    refreshNumber = 1;
-    const second = await service.refresh();
-    expect(second.entries[0]?.images?.thumbnailDataUrl).toContain(
-      Buffer.from("updated-image").toString("base64"),
-    );
-    expect(
-      await readFile(
-        path.join(cacheDirectory, "images", "azure_devops-thumbnail.png"),
-        "utf8",
+function signer() {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const raw = publicKey.export({ format: "der", type: "spki" }).subarray(-32);
+  return {
+    publicKey: raw.toString("base64"),
+    sign: (bytes: Uint8Array) =>
+      Buffer.from(
+        JSON.stringify({
+          schemaVersion: 1,
+          algorithm: "ed25519",
+          publicKey: raw.toString("base64"),
+          signature: sign(null, bytes, privateKey).toString("base64"),
+        }),
       ),
-    ).toBe("updated-image");
-  });
+  };
+}
 
-  it("uses cached metadata and artwork when a later launch is offline", async () => {
-    const cacheDirectory = await tempDirectory();
-    let offline = false;
-    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
-      if (offline) throw new Error("offline");
-      const url = String(input);
-      if (url === CATALOG_URL) return response(catalogYaml);
-      if (url === definitionUrl) return response(pluginYaml);
-      if (url === imageUrl) {
-        return response(Buffer.from("cached-image"), {
-          headers: { "content-type": "image/png" },
-        });
-      }
-      throw new Error(`Unexpected URL ${url}`);
-    });
-    const service = createPluginCatalogService({
-      cacheDirectory,
-      fetchImpl: fetchImpl as unknown as typeof fetch,
-    });
-
-    await service.refresh();
-    offline = true;
-    const cached = await service.refresh();
-
-    expect(cached.source).toBe("cache");
-    expect(cached.warning).toContain("Using cached");
-    expect(cached.entries[0]?.images?.thumbnailDataUrl).toContain(
-      Buffer.from("cached-image").toString("base64"),
-    );
-  });
-
-  it("uses the built-in index snapshot when the first refresh is unavailable", async () => {
-    const service = createPluginCatalogService({
-      cacheDirectory: await tempDirectory(),
-      fetchImpl: vi.fn(async () => {
-        throw new Error("private index");
-      }) as unknown as typeof fetch,
-      now: () => new Date("2026-08-07T04:00:00.000Z"),
-    });
-
-    const catalog = await service.refresh();
-
-    expect(catalog.source).toBe("cache");
-    expect(catalog.warning).toContain("could not be refreshed");
-    expect(catalog.entries.map((entry) => entry.id)).toEqual([
-      "azure_devops",
-      "github",
-      "jira",
-      "workday-agent",
-      "workday-project-data",
-    ]);
-  });
-
-  it.each(["connector", "codeHost", "calendar", "team", "agentTask"])(
-    "selects and bounds the newest matching GitHub release asset for %s",
-    async (capability) => {
-      const cacheDirectory = await tempDirectory();
-      const downloadUrl =
-        "https://github.com/les-cabochons/ajour-plugins/releases/download/v1.2.3/azure_devops-1.2.3.ajour-connector";
-      const fetchImpl = vi.fn(async (input: string | URL | Request) => {
-        const url = String(input);
-        if (url === CATALOG_URL) return response(catalogYaml);
-        if (url === definitionUrl)
-          return response(
-            pluginYaml.replace("  - connector", `  - ${capability}`),
-          );
-        if (url === imageUrl) {
-          return response(Buffer.from("image"), {
-            headers: { "content-type": "image/png" },
-          });
-        }
-        if (url.includes("api.github.com/repos/")) {
-          return response(
-            JSON.stringify([
-              {
-                tag_name: "v1.2.3",
-                draft: false,
-                prerelease: true,
-                assets: [
-                  {
-                    name: "azure_devops-1.2.3.ajour-connector",
-                    browser_download_url: downloadUrl,
-                  },
-                ],
-              },
-            ]),
-          );
-        }
-        if (url === downloadUrl) return response(Buffer.from("archive"));
-        throw new Error(`Unexpected URL ${url}`);
-      });
-      const service = createPluginCatalogService({
-        cacheDirectory,
-        fetchImpl: fetchImpl as unknown as typeof fetch,
-      });
-
-      await service.refresh();
-      await expect(
-        service.downloadPluginArchive("azure_devops"),
-      ).resolves.toMatchObject({
-        archiveFilename: "azure_devops-1.2.3.ajour-connector",
-        archiveBytes: Buffer.from("archive"),
-      });
-    },
-  );
-
-  function serviceForPluginYaml(definition: string, index = catalogYaml) {
-    return tempDirectory().then((cacheDirectory) =>
-      createPluginCatalogService({
-        cacheDirectory,
-        fetchImpl: vi.fn(async (input: string | URL | Request) => {
-          const url = String(input);
-          if (url === CATALOG_URL) return response(index);
-          if (url.endsWith("plugins/valid/plugin.yaml")) {
-            return response(
-              pluginYaml.replace("id: azure_devops", "id: valid"),
-            );
-          }
-          if (url === definitionUrl) return response(definition);
-          if (url === imageUrl || url.endsWith("plugins/valid/thumbnail.png")) {
-            return response(Buffer.from("image"), {
-              headers: { "content-type": "image/png" },
-            });
-          }
-          throw new Error(`Unexpected URL ${url}`);
-        }) as unknown as typeof fetch,
+function pluginFiles(id: string, version: string, capabilities: object) {
+  return {
+    "plugin.json": Buffer.from(
+      JSON.stringify({
+        id,
+        version,
+        apiVersion: 3,
+        displayName: id,
+        iconSvg: "<svg/>",
+        entrypoint: "src/plugin.ts",
+        capabilities,
+        connectionFields: [],
       }),
-    );
-  }
+    ),
+    "package.json": Buffer.from('{"type":"module"}'),
+    "src/plugin.ts": Buffer.from(`export const id = "${id}";\n`),
+  };
+}
 
-  it("refuses to download a plugin that is only a schema", async () => {
-    const service = await serviceForPluginYaml(
-      pluginYaml.replace(
-        "capabilities:\n  - connector",
-        "capabilities:\n  - schema",
-      ),
-    );
+const thumbnail = Buffer.from("PNG image bytes");
 
-    await service.refresh();
-    await expect(service.downloadPluginArchive("azure_devops")).rejects.toThrow(
-      "cannot install packaged schema plugins",
-    );
-  });
+/** One plugin entry of an ajour.json, with the hashes of `files`. */
+function listedPlugin(
+  id: string,
+  files: Record<string, Buffer>,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    id,
+    name: id === "jira" ? "Jira" : id,
+    description: `${id} plugin.`,
+    version: "1.0.0",
+    pluginApiVersion: 3,
+    capabilities: ["connector"],
+    features: ["work-item-sync"],
+    tags: ["test"],
+    author: { name: "Alex", url: "https://github.com/alextrepa" },
+    license: { name: "MIT License", spdxId: "MIT" },
+    status: "available",
+    commit: COMMIT,
+    path: `plugins/${id}`,
+    files: Object.entries(files).map(([filePath, bytes]) => ({
+      path: filePath,
+      sha256: sha256(bytes),
+      size: bytes.byteLength,
+    })),
+    ...overrides,
+  };
+}
 
-  // plugin.install records `not_available` from the code, not the message.
-  it("marks a plugin it cannot offer with the not_available code", async () => {
-    const service = await serviceForPluginYaml(pluginYaml);
-    await service.refresh();
-
-    await expect(
-      service.downloadPluginArchive("not_in_the_catalog"),
-    ).rejects.toMatchObject({ code: "not_available" });
-  });
-
-  it("skips a catalog entry with an unknown capability and keeps the rest", async () => {
-    const service = await serviceForPluginYaml(
-      pluginYaml.replace(
-        "capabilities:\n  - connector",
-        "capabilities:\n  - work-item-sync",
-      ),
-      `${catalogYaml}  - plugins/valid/plugin.yaml\n`,
-    );
-
-    const catalog = await service.refresh();
-
-    expect(catalog.entries.map((entry) => entry.id)).toEqual(["valid"]);
-    // A skipped entry is not a cache fallback.
-    expect(catalog.source).toBe("network");
-    expect(catalog.warning).toBeUndefined();
-    expect(catalog.skippedPluginIds).toEqual(["azure_devops"]);
-  });
-
-  function serviceWithReleases(releases: unknown[]) {
-    const downloads: string[] = [];
-    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
-      const url = String(input);
-      if (url === CATALOG_URL) return response(catalogYaml);
-      if (url === definitionUrl) return response(pluginYaml);
-      if (url === imageUrl) {
-        return response(Buffer.from("image"), {
-          headers: { "content-type": "image/png" },
-        });
-      }
-      if (url.includes("api.github.com/repos/")) {
-        return response(JSON.stringify(releases));
-      }
-      if (
-        url.startsWith(
-          "https://github.com/les-cabochons/ajour-plugins/releases/download/",
-        )
-      ) {
-        downloads.push(url);
-        return response(Buffer.from("archive"));
-      }
-      throw new Error(`Unexpected URL ${url}`);
-    });
-    return tempDirectory().then((cacheDirectory) => ({
-      downloads,
-      service: createPluginCatalogService({
-        cacheDirectory,
-        fetchImpl: fetchImpl as unknown as typeof fetch,
-      }),
-    }));
-  }
-
-  function release(
-    version: string,
-    options: { prerelease?: boolean; draft?: boolean; assets?: number } = {},
-  ) {
-    const name = `azure_devops-${version}.ajour-connector`;
-    return {
-      tag_name: `v${version}`,
-      draft: options.draft ?? false,
-      prerelease: options.prerelease ?? true,
-      assets: Array.from({ length: options.assets ?? 1 }, () => ({
-        name,
-        browser_download_url: `https://github.com/les-cabochons/ajour-plugins/releases/download/v${version}/${name}`,
-      })),
-    };
-  }
-
-  it("downloads the highest version when GitHub lists an older build first", async () => {
-    const { service } = await serviceWithReleases([
-      release("1.0.0-main.9.aaaaaaa"),
-      release("1.0.0-main.10.bbbbbbb"),
-      release("1.0.0-main.2.ccccccc"),
-    ]);
-
-    await service.refresh();
-    await expect(
-      service.downloadPluginArchive("azure_devops"),
-    ).resolves.toMatchObject({
-      archiveFilename: "azure_devops-1.0.0-main.10.bbbbbbb.ajour-connector",
-    });
-  });
-
-  it("prefers a stable release over prereleases of the same version and skips drafts", async () => {
-    const { service } = await serviceWithReleases([
-      release("1.1.0", { draft: true }),
-      release("1.0.0-main.10.bbbbbbb"),
-      release("1.0.0", { prerelease: false }),
-    ]);
-
-    await service.refresh();
-    await expect(
-      service.downloadPluginArchive("azure_devops"),
-    ).resolves.toMatchObject({
-      archiveFilename: "azure_devops-1.0.0.ajour-connector",
-    });
-  });
-
-  it("ignores an older release with ambiguous assets but refuses an ambiguous newest one", async () => {
-    const olderAmbiguous = await serviceWithReleases([
-      release("1.0.0-main.1.aaaaaaa", { assets: 2 }),
-      release("1.0.0-main.2.bbbbbbb"),
-    ]);
-    await olderAmbiguous.service.refresh();
-    await expect(
-      olderAmbiguous.service.downloadPluginArchive("azure_devops"),
-    ).resolves.toMatchObject({
-      archiveFilename: "azure_devops-1.0.0-main.2.bbbbbbb.ajour-connector",
-    });
-
-    const newestAmbiguous = await serviceWithReleases([
-      release("1.0.0-main.3.ccccccc", { assets: 2 }),
-      release("1.0.0-main.2.bbbbbbb"),
-    ]);
-    await newestAmbiguous.service.refresh();
-    await expect(
-      newestAmbiguous.service.downloadPluginArchive("azure_devops"),
-    ).rejects.toThrow("multiple matching plugin assets");
-  });
-
-  /** Serves `pages` as GitHub's pages of releases and records each request. */
-  function serviceWithReleasePages(pages: unknown[][]) {
-    const releaseRequests: URL[] = [];
-    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
-      const url = String(input);
-      if (url === CATALOG_URL) return response(catalogYaml);
-      if (url === definitionUrl) return response(pluginYaml);
-      if (url === imageUrl) {
-        return response(Buffer.from("image"), {
-          headers: { "content-type": "image/png" },
-        });
-      }
-      if (url.includes("api.github.com/repos/")) {
-        const request = new URL(url);
-        releaseRequests.push(request);
-        const page = Number(request.searchParams.get("page") ?? "1");
-        return response(JSON.stringify(pages[page - 1] ?? []));
-      }
-      if (
-        url.startsWith(
-          "https://github.com/les-cabochons/ajour-plugins/releases/download/",
-        )
-      ) {
-        return response(Buffer.from("archive"));
-      }
-      throw new Error(`Unexpected URL ${url}`);
-    });
-    return tempDirectory().then((cacheDirectory) => ({
-      releaseRequests,
-      service: createPluginCatalogService({
-        cacheDirectory,
-        fetchImpl: fetchImpl as unknown as typeof fetch,
-      }),
-    }));
-  }
-
-  /** A release of another plugin that publishes from the same repository. */
-  function otherPluginRelease(build: number) {
-    const name = `jira-1.0.0-main.${build}.aaaaaaa.ajour-connector`;
-    return {
-      tag_name: `v1.0.0-jira.main.${build}.aaaaaaa`,
-      draft: false,
-      prerelease: true,
-      assets: [
-        {
-          name,
-          browser_download_url: `https://github.com/les-cabochons/ajour-plugins/releases/download/v1.0.0-jira.main.${build}.aaaaaaa/${name}`,
-        },
+/**
+ * A fake world: the official source on GitHub, signed, and Alice's unsigned
+ * source on Codeberg. `offline` makes every request fail.
+ */
+function world() {
+  const official = signer();
+  const jiraFiles = pluginFiles("jira", "1.0.0", { connector: {} });
+  const schemaFiles = pluginFiles("shape", "1.0.0", { projectDataShape: {} });
+  const weatherFiles = pluginFiles("weather", "1.0.0", { calendar: {} });
+  const officialManifest = Buffer.from(
+    JSON.stringify({
+      schemaVersion: 1,
+      name: "Ajour official plugins",
+      plugins: [
+        listedPlugin("jira", jiraFiles, {
+          images: {
+            thumbnail: {
+              path: "thumbnail.png",
+              sha256: sha256(thumbnail),
+              size: thumbnail.byteLength,
+            },
+          },
+        }),
+        listedPlugin("shape", schemaFiles, { capabilities: ["schema"] }),
+        listedPlugin("future", jiraFiles, { capabilities: ["teleport"] }),
       ],
-    };
+    }),
+  );
+  const aliceManifest = Buffer.from(
+    JSON.stringify({
+      schemaVersion: 1,
+      name: "Alice's plugins",
+      plugins: [
+        listedPlugin("weather", weatherFiles, { capabilities: ["calendar"] }),
+        listedPlugin("jira", jiraFiles, { name: "Alice's Jira" }),
+      ],
+    }),
+  );
+  const raw = "https://raw.githubusercontent.com/les-cabochons/ajour-plugins";
+  const served: Record<string, Buffer | object> = {
+    [`${raw}/HEAD/ajour.json`]: officialManifest,
+    [`${raw}/HEAD/ajour.json.sig`]: official.sign(officialManifest),
+    [`${raw}/${COMMIT}/plugins/jira/thumbnail.png`]: thumbnail,
+    "https://codeberg.org/api/v1/repos/alice/plugins": {
+      default_branch: "main",
+    },
+    [`${ALICE}/raw/branch/main/ajour.json`]: aliceManifest,
+  };
+  for (const [filePath, bytes] of Object.entries(jiraFiles)) {
+    served[`${raw}/${COMMIT}/plugins/jira/${filePath}`] = bytes;
   }
-
-  it("reads older pages of a shared repository's releases until one matches", async () => {
-    const newestPage = Array.from({ length: 100 }, (_, index) =>
-      otherPluginRelease(300 - index),
-    );
-    const { service, releaseRequests } = await serviceWithReleasePages([
-      newestPage,
-      [otherPluginRelease(200), release("1.0.0-main.150.bbbbbbb")],
-      [release("1.0.0-main.90.ccccccc")],
-    ]);
-
-    await service.refresh();
-    await expect(
-      service.downloadPluginArchive("azure_devops"),
-    ).resolves.toMatchObject({
-      archiveFilename: "azure_devops-1.0.0-main.150.bbbbbbb.ajour-connector",
+  for (const [filePath, bytes] of Object.entries(weatherFiles)) {
+    served[`${ALICE}/raw/commit/${COMMIT}/plugins/weather/${filePath}`] = bytes;
+  }
+  const state = { offline: false };
+  const requests: string[] = [];
+  const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+    const url = String(input);
+    requests.push(url);
+    if (state.offline) throw new TypeError("fetch failed");
+    const body = served[url];
+    if (body === undefined) return new Response("", { status: 404 });
+    return new Response(Buffer.isBuffer(body) ? body : JSON.stringify(body), {
+      status: 200,
     });
-    expect(
-      releaseRequests.map((request) => [
-        request.searchParams.get("per_page"),
-        request.searchParams.get("page"),
-      ]),
-    ).toEqual([
-      ["100", "1"],
-      ["100", "2"],
+  }) as unknown as typeof fetch;
+  return {
+    official,
+    served,
+    raw,
+    state,
+    requests,
+    fetchImpl,
+    officialManifest,
+  };
+}
+
+async function serviceIn(
+  fake: ReturnType<typeof world>,
+  sources: Source[],
+  options: { officialKeys?: string[]; cacheDirectory?: string } = {},
+) {
+  return createPluginCatalogService({
+    cacheDirectory: options.cacheDirectory ?? (await tempDirectory()),
+    fetchImpl: fake.fetchImpl,
+    getSources: () => sources,
+    officialKeys: options.officialKeys ?? [fake.official.publicKey],
+  });
+}
+
+describe("plugin catalog from plugin sources", () => {
+  it("lists every source's plugins, with where they come from and whether they are signed", async () => {
+    const fake = world();
+    const service = await serviceIn(fake, [
+      { url: OFFICIAL, hostKind: "github" },
+      { url: ALICE },
+    ]);
+
+    const catalog = pluginCatalogResponseSchema.parse(await service.refresh());
+
+    expect(catalog.source).toBe("network");
+    expect(catalog.entries.map((entry) => entry.id)).toEqual([
+      "jira",
+      "shape",
+      "weather",
+    ]);
+    expect(catalog.entries[0]).toMatchObject({
+      title: "Jira",
+      version: "1.0.0",
+      repository: { slug: "les-cabochons/ajour-plugins", url: OFFICIAL },
+      source: {
+        url: OFFICIAL,
+        name: "Ajour official plugins",
+        official: true,
+        signed: true,
+        keyFingerprint: expect.stringMatching(/^[0-9a-f]{4}( [0-9a-f]{4}){3}$/),
+      },
+      install: { method: "source" },
+      images: {
+        thumbnailDataUrl: `data:image/png;base64,${thumbnail.toString("base64")}`,
+      },
+    });
+    expect(catalog.entries[2]).toMatchObject({
+      id: "weather",
+      source: { url: ALICE, official: false, signed: false },
+    });
+    // A plugin this Ajour can't read, and an id an earlier source already lists.
+    expect(catalog.skippedPluginIds).toEqual(["future", "jira"]);
+    expect(catalog.sources).toEqual([
+      expect.objectContaining({
+        url: OFFICIAL,
+        state: "signed",
+        name: "Ajour official plugins",
+        pluginCount: 2,
+      }),
+      expect.objectContaining({
+        url: ALICE,
+        state: "unsigned",
+        hostKind: "gitea",
+        pluginCount: 1,
+      }),
     ]);
   });
 
-  it("stops at the last page of releases when none matches", async () => {
-    const { service, releaseRequests } = await serviceWithReleasePages([
-      [otherPluginRelease(2), otherPluginRelease(1)],
-    ]);
+  it("asks before trusting a third-party key, and hides a source whose key changed", async () => {
+    const fake = world();
+    const alice = signer();
+    const aliceManifest = fake.served[
+      `${ALICE}/raw/branch/main/ajour.json`
+    ] as Buffer;
+    fake.served[`${ALICE}/raw/branch/main/ajour.json.sig`] =
+      alice.sign(aliceManifest);
 
+    const unapproved = await serviceIn(fake, [
+      { url: ALICE, hostKind: "gitea" },
+    ]);
+    const first = await unapproved.refresh();
+    expect(first.sources[0]).toMatchObject({ state: "untrusted_key" });
+    expect(first.entries[0].source).toMatchObject({ signed: false });
+
+    const approved = await serviceIn(fake, [
+      { url: ALICE, hostKind: "gitea", publicKey: alice.publicKey },
+    ]);
+    expect((await approved.refresh()).entries[0].source.signed).toBe(true);
+
+    const changed = await serviceIn(fake, [
+      { url: ALICE, hostKind: "gitea", publicKey: signer().publicKey },
+    ]);
+    const blocked = await changed.refresh();
+    expect(blocked.entries).toEqual([]);
+    expect(blocked.sources[0]).toMatchObject({
+      state: "key_changed",
+      pluginCount: 0,
+      approvedKeyFingerprint: expect.any(String),
+      message: expect.stringContaining("different key"),
+    });
+  });
+
+  it("uses a source's saved listing while it is unreachable, checked again", async () => {
+    const fake = world();
+    const cacheDirectory = await tempDirectory();
+    const service = await serviceIn(
+      fake,
+      [{ url: OFFICIAL, hostKind: "github" }],
+      { cacheDirectory },
+    );
     await service.refresh();
-    await expect(
-      service.downloadPluginArchive("azure_devops"),
-    ).rejects.toMatchObject({ code: "not_available" });
-    expect(releaseRequests).toHaveLength(1);
-  });
-});
+    fake.state.offline = true;
 
-describe("the catalog.refresh event", () => {
-  /** Runs one refresh as the main process does, and returns its event. */
-  async function refreshEvent(service: {
-    refresh(options?: { unit?: unknown }): Promise<unknown>;
-  }) {
+    const offline = await service.refresh();
+
+    expect(offline.source).toBe("cache");
+    expect(offline.warning).toContain("Using the saved listing");
+    expect(offline.entries.map((entry: { id: string }) => entry.id)).toEqual([
+      "jira",
+      "shape",
+    ]);
+    expect(offline.entries[0].source.signed).toBe(true);
+  });
+
+  it("keeps the built-in list, as a failed refresh, when no source was ever read", async () => {
+    const fake = world();
+    fake.state.offline = true;
+    const service = await serviceIn(fake, [
+      { url: OFFICIAL, hostKind: "github" },
+    ]);
     const { events, recorded } = recordingEvents();
+
+    const catalog = await events.run(
+      "catalog.refresh",
+      { kind: "job", trigger: "boot" },
+      (unit) => service.refresh({ unit }),
+    );
+
+    expect(catalog.entries.map((entry: { id: string }) => entry.id)).toContain(
+      "jira",
+    );
+    expect(catalog.warning).toContain("could not read the plugin sources");
+    expect(catalog.sources).toMatchObject([
+      { url: OFFICIAL, state: "unreachable" },
+    ]);
+    expect(recorded[0]).toMatchObject({
+      outcome: "error",
+      catalog: { source: "built_in", sources_total: 1, sources_unreachable: 1 },
+    });
+    expect(JSON.stringify(recorded[0])).not.toContain("github.com");
+  });
+
+  it("records what each refresh read, as counts only", async () => {
+    const fake = world();
+    const service = await serviceIn(fake, [
+      { url: OFFICIAL, hostKind: "github" },
+      { url: ALICE, hostKind: "gitea" },
+    ]);
+    const { events, recorded } = recordingEvents();
+
     await events.run(
       "catalog.refresh",
       { kind: "job", trigger: "boot" },
       (unit) => service.refresh({ unit }),
     );
-    return recorded[0]!;
-  }
 
-  function indexFetch(handle: (url: string, init?: RequestInit) => Response) {
-    return vi.fn(async (input: string | URL | Request, init?: RequestInit) =>
-      handle(String(input), init),
-    ) as unknown as typeof fetch;
-  }
-
-  const fresh = (url: string) => {
-    if (url === CATALOG_URL) {
-      return response(catalogYaml, { headers: { etag: '"catalog-1"' } });
-    }
-    if (url === definitionUrl) {
-      return response(pluginYaml, { headers: { etag: '"plugin-1"' } });
-    }
-    if (url === imageUrl) {
-      return response(Buffer.from("image"), {
-        headers: { "content-type": "image/png", etag: '"image-1"' },
-      });
-    }
-    throw new Error(`Unexpected URL ${url}`);
-  };
-
-  it("records what came from the network", async () => {
-    const service = createPluginCatalogService({
-      cacheDirectory: await tempDirectory(),
-      fetchImpl: indexFetch(fresh),
-    });
-
-    const event = await refreshEvent(service);
-
-    expect(event).toMatchObject({
-      name: "catalog.refresh",
+    expect(recorded[0]).toMatchObject({
       outcome: "ok",
       catalog: {
         source: "network",
-        status: 200,
-        revalidated: false,
-        entry_count: 1,
-        definitions_fetched: 1,
-        definitions_revalidated: 0,
-        definitions_failed: 0,
+        entry_count: 3,
+        sources_total: 2,
+        sources_read: 2,
+        sources_signed: 1,
+        sources_unsigned: 1,
+        sources_blocked: 0,
         images_fetched: 1,
-        images_revalidated: 0,
-        images_failed: 0,
-        bytes: catalogYaml.length + Buffer.byteLength(pluginYaml) + 5,
+        skipped_plugin_ids: ["future", "jira"],
       },
     });
+    expect(JSON.stringify(recorded[0])).not.toMatch(/codeberg|github\.com/);
   });
 
-  it("records what a conditional refresh revalidated", async () => {
-    const cacheDirectory = await tempDirectory();
-    let revalidate = false;
-    const service = createPluginCatalogService({
-      cacheDirectory,
-      fetchImpl: indexFetch((url) =>
-        revalidate ? response(null, { status: 304 }) : fresh(url),
-      ),
-    });
+  it("downloads a plugin at its commit and says where it came from", async () => {
+    const fake = world();
+    const service = await serviceIn(fake, [
+      { url: OFFICIAL, hostKind: "github" },
+    ]);
     await service.refresh();
-    revalidate = true;
 
-    const event = await refreshEvent(service);
+    const downloaded = await service.downloadPluginArchive("jira", OFFICIAL);
 
-    expect(event).toMatchObject({
-      outcome: "ok",
-      catalog: {
-        source: "network",
-        status: 304,
-        revalidated: true,
-        definitions_revalidated: 1,
-        images_revalidated: 1,
-        bytes: 0,
+    expect(downloaded).toMatchObject({
+      archiveFilename: "jira-1.0.0.ajour-connector",
+      signed: true,
+      origin: {
+        kind: "source",
+        signed: true,
+        sourceUrl: OFFICIAL,
+        sourceName: "Ajour official plugins",
+        official: true,
+        commit: COMMIT,
       },
     });
+    expect(downloaded.archiveBytes.byteLength).toBeGreaterThan(0);
   });
 
-  it("records a refresh that fell back to the cache", async () => {
-    const cacheDirectory = await tempDirectory();
-    let offline = false;
-    const service = createPluginCatalogService({
-      cacheDirectory,
-      fetchImpl: indexFetch((url) => {
-        if (offline) throw new Error("offline");
-        return fresh(url);
-      }),
-    });
+  it("refuses a plugin whose files or manifest changed since its listing was signed", async () => {
+    const fake = world();
+    const service = await serviceIn(fake, [
+      { url: OFFICIAL, hostKind: "github" },
+    ]);
     await service.refresh();
-    offline = true;
+    fake.served[`${fake.raw}/${COMMIT}/plugins/jira/src/plugin.ts`] =
+      Buffer.from('export const id = "evil";\n');
 
-    const event = await refreshEvent(service);
-
-    expect(event).toMatchObject({
-      outcome: "ok",
-      catalog: { source: "cache", definitions_failed: 1, images_failed: 1 },
-    });
-    expect((event.catalog as { status?: number }).status).toBeUndefined();
+    await expect(service.downloadPluginArchive("jira")).rejects.toThrow(
+      "does not match the hash",
+    );
   });
 
-  // The refresh never rejects, so its outcome comes from its result.
-  it("records a refresh that kept the built-in snapshot as a failure", async () => {
-    const service = createPluginCatalogService({
-      cacheDirectory: await tempDirectory(),
-      fetchImpl: indexFetch(() => {
-        throw new TypeError("fetch failed");
-      }),
+  it("refuses schema plugins and plugins no source lists", async () => {
+    const fake = world();
+    const service = await serviceIn(fake, [
+      { url: OFFICIAL, hostKind: "github" },
+    ]);
+    await service.refresh();
+
+    await expect(service.downloadPluginArchive("shape")).rejects.toMatchObject({
+      code: "not_available",
     });
-
-    const event = await refreshEvent(service);
-
-    expect(event).toMatchObject({
-      outcome: "error",
-      error: { type: "TypeError", message: "fetch failed" },
-      catalog: { source: "built_in", entry_count: 5 },
+    await expect(
+      service.downloadPluginArchive("missing"),
+    ).rejects.toMatchObject({
+      code: "not_available",
     });
   });
 
-  it("records skipped entries without printing them", async () => {
-    const warn = vi.spyOn(console, "warn");
-    const service = await serviceForSkippedEntry();
+  it("reads a source before it is added, and refuses a signature that does not match", async () => {
+    const fake = world();
+    const alice = signer();
+    const service = await serviceIn(fake, []);
 
-    const event = await refreshEvent(service);
-
-    expect(event).toMatchObject({
-      outcome: "ok",
-      catalog: { skipped_plugin_ids: ["azure_devops"], entry_count: 1 },
+    await expect(service.inspectSource(`${ALICE}.git`)).resolves.toMatchObject({
+      url: ALICE,
+      name: "Alice's plugins",
+      official: false,
+      hostKind: "gitea",
+      signed: false,
+      plugins: [
+        { id: "weather", name: "weather", version: "1.0.0" },
+        { id: "jira", name: "Alice's Jira", version: "1.0.0" },
+      ],
+      alreadyAdded: false,
     });
-    expect(warn).not.toHaveBeenCalled();
-    warn.mockRestore();
+
+    fake.served[`${ALICE}/raw/branch/main/ajour.json.sig`] = alice.sign(
+      Buffer.from("another listing"),
+    );
+    await expect(service.inspectSource(ALICE)).rejects.toThrow(
+      "does not match its listing",
+    );
   });
-
-  async function serviceForSkippedEntry() {
-    return createPluginCatalogService({
-      cacheDirectory: await tempDirectory(),
-      fetchImpl: indexFetch((url) => {
-        if (url === CATALOG_URL) {
-          return response(`${catalogYaml}  - plugins/valid/plugin.yaml\n`);
-        }
-        if (url.endsWith("plugins/valid/plugin.yaml")) {
-          return response(pluginYaml.replace("id: azure_devops", "id: valid"));
-        }
-        if (url === definitionUrl) {
-          return response(
-            pluginYaml.replace(
-              "capabilities:\n  - connector",
-              "capabilities:\n  - work-item-sync",
-            ),
-          );
-        }
-        return response(Buffer.from("image"), {
-          headers: { "content-type": "image/png" },
-        });
-      }),
-    });
-  }
 });

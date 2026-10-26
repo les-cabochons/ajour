@@ -43,7 +43,15 @@ const MAX_PLUGIN_FILES = 2_000;
 const MAX_PLUGIN_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_PLUGIN_EXTRACTED_BYTES = 100 * 1024 * 1024;
 const ALLOWED_ARCHIVE_ENTRY_TYPES = new Set(["File", "Directory"]);
-const ALLOWED_ENTRYPOINT_EXTENSIONS = new Set([".cjs", ".js", ".mjs"]);
+// Plugins ship TypeScript as written; Node strips the types when the worker
+// imports the entrypoint, so only erasable syntax runs.
+const ALLOWED_ENTRYPOINT_EXTENSIONS = new Set([
+  ".cjs",
+  ".js",
+  ".mjs",
+  ".mts",
+  ".ts",
+]);
 
 export interface ResolvedPlugin {
   manifest: PluginManifest;
@@ -329,7 +337,7 @@ export function resolvePluginEntrypoint(
     )
   ) {
     throw new Error(
-      `Plugin "${manifest.id}" entrypoint must be compiled JavaScript.`,
+      `Plugin "${manifest.id}" entrypoint must be a JavaScript or TypeScript file.`,
     );
   }
 

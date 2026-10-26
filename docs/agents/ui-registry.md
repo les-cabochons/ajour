@@ -107,7 +107,7 @@ The redesign direction decided on 2026-10-14: Linear's density and structure, Ve
 ### Plugin Catalog And Detail
 
 Files: `apps/web/src/features/settings/settings-plugins-page.tsx`, `plugin-catalog-ui.tsx`, `plugin-settings-ui.tsx`
-Last updated: 2026-10-13
+Last updated: 2026-10-25
 
 | Property         | Class or token                                                                                    |
 | ---------------- | ------------------------------------------------------------------------------------------------- |
@@ -125,18 +125,28 @@ Last updated: 2026-10-13
 
 **Pattern notes:**
 The catalog page carries no cards. The header holds the page title, Install
-from file, and two `SettingRow`s: the Plugin system switch and the Refresh
-catalog select. Below it the category tabs (All, Backlog, Code hosts,
+from file, and four `SettingRow`s: the Plugin system, Allow installing
+unsigned plugins and Deactivate unsigned plugins switches, and the Refresh
+catalog select. Install from file stays disabled, with a title saying why,
+while unsigned installs are off. Below it the category tabs (All, Backlog, Code hosts,
 Calendars, Agent tasks, Schemas) sit over a single-column list of plain rows: identity mark, name with
 a status badge, a two-line description, and a meta line with capabilities and
 version, such as "Backlog · Code host · v1.2.0". The trailing action is the
 activation `Switch` for an installed plugin, or Download for an available
 remote backlog, code host, calendar, team or agent task plugin. Rows are separated by spacing and only tint on
-hover. Catalog entries merge normalized Ajour-index metadata with installed
-backlog and schema capabilities; a plugin with several capabilities appears
+hover. Catalog entries merge the normalized listings of the plugin sources with
+installed backlog and schema capabilities; a plugin with several capabilities appears
 under each tab. The filter tabs wrap with compact spacing below 768px so every filter
 fits at 320px. Only an installed plugin can be activated. Manual file
 installation remains a separate action.
+
+A plugin that didn't come from a signed source carries an outline
+**Unsigned** badge after its status badge, in the row and on its detail page,
+where Information also has Source and Signature rows. When the plugin's own
+source lists a newer version, the row's meta line ends with "v1.2.0
+available" and Update sits before the activation switch. An unsigned plugin
+blocked by Deactivate unsigned plugins keeps its switch disabled, and its
+detail page says why in a warning `MessagePanel`.
 
 An unavailable installed plugin shows its reason in the catalog row and a
 notice on its detail page. Update downloads a compatible catalog package over
@@ -166,6 +176,33 @@ thumbnail, and the hero image keeps rounded corners with no border. Without a
 hero, the capability band is a plain line of text ("External service → Plugin
 → Local backlog") above the feature badges. Never fetch remote images from the
 renderer. Dialogs and `MessagePanel` notices are the only framed surfaces.
+
+### Plugin Sources
+
+Files: `apps/web/src/features/settings/plugin-sources-ui.tsx`
+Last updated: 2026-10-25
+
+**Pattern notes:**
+A `settings-section` below the catalog list, titled Plugin sources, with no
+frame. Each source is a plain row: its name, an Official `Badge
+variant="secondary"` when it is, and a state badge: secondary for Signed,
+outline for Unsigned and Key not approved, destructive for Key changed,
+Signature missing, Signature invalid and Unreachable. A meta line in
+`text-xs text-[var(--text-tertiary)]` gives the address without `https://`,
+the plugin count and the key fingerprint in monospace. A blocked or
+unreachable source adds its message in `text-[13px] text-muted-foreground`.
+Review (outline) appears for a key to approve; Remove (outline, trash icon)
+confirms in an `AlertDialog`. Rows stack their actions below the text under
+768px.
+
+Add a source is a `Field` with the address `Input` and an outline Add source
+button, and Add the official source as a ghost button when the official
+source is missing. Pressing Add source reads the source first; the review
+`Dialog` shows the address, the key fingerprint in monospace or a warning
+`MessagePanel` for an unsigned source, the third-party note, and the plugins
+with their versions in a scrolling list. Its primary action is Add source,
+Trust this key or Accept unsigned. Errors show under the field in
+`text-destructive`.
 
 ### Secret field and Vault
 

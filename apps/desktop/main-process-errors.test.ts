@@ -1629,14 +1629,21 @@ describe("plugin and update IPC: the privacy canary", () => {
       // The real picker, over a dialog that picks a file that isn't there.
       selectPluginArchive: require("./electron/plugin-install.cjs")
         .selectPluginArchive,
-      dialog: { showOpenDialog: async () => ({ filePaths: [archivePath] }) },
+      dialog: {
+        showOpenDialog: async () => ({ filePaths: [archivePath] }),
+        showMessageBox: async () => ({ response: 0 }),
+      },
+      pluginCatalogSettings: { allowUnsignedInstalls: true },
       app: { isPackaged: packaged },
       mainWindow: { webContents: "active-window" },
       shell: { openExternal: vi.fn(async () => undefined) },
       ensureInternalAppApiRunning: async () => undefined,
       internalAppApiServer: {},
       internalAppApiModulePromise: Promise.resolve(api),
-      pluginCatalogService: { downloadPluginArchive: async () => archive },
+      pluginCatalogService: {
+        getCurrentCatalog: () => ({ entries: [] }),
+        downloadPluginArchive: async () => ({ ...archive, signed: true }),
+      },
       selectDevelopmentPluginDirectory: async () =>
         `${HOME}\\${MARKER}\\plugins`,
       applyDevelopmentPluginDirectories: async () => undefined,
@@ -1658,6 +1665,8 @@ describe("plugin and update IPC: the privacy canary", () => {
       "function assertActiveDesktopWindow(",
       "function assertDevelopmentBuild(",
       "function pluginIdForEvent(",
+      "function assertSourceAddress(",
+      "async function confirmUnsignedInstall(",
       "async function installPluginArchive(",
       'ipc.handle("ajour:open-update-release"',
       'ipc.handle("ajour:install-plugin"',
@@ -1722,6 +1731,7 @@ describe("plugin and update IPC: the privacy canary", () => {
   it("keeps a catalog download's plugin ID and URL out of its events", async () => {
     const failing = pluginRuntime({
       pluginCatalogService: {
+        getCurrentCatalog: () => ({ entries: [] }),
         downloadPluginArchive: async () => {
           throw new Error(
             `Could not download https://${MARKER}.example.test/${MARKER}.ajour-connector, archive ${MARKER} is not signed`,

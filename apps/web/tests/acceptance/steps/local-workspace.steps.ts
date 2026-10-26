@@ -2076,6 +2076,10 @@ When("I install a packaged plugin from settings", async ({ page }) => {
           pluginId: string;
           overview: typeof response.overview;
         }>;
+        getPluginCatalogSettings: () => Promise<{
+          refreshMinutes: 15;
+          allowUnsignedInstalls: boolean;
+        }>;
       };
     };
     desktopWindow.ajourDesktop = {
@@ -2083,6 +2087,11 @@ When("I install a packaged plugin from settings", async ({ page }) => {
       runtime: { developmentBuild: false },
       installPlugin: () => desktopWindow.acceptanceInstallPlugin(),
       uninstallPlugin: () => desktopWindow.acceptanceUninstallPlugin(),
+      // A plugin from a file is unsigned: installing one needs the switch on.
+      getPluginCatalogSettings: async () => ({
+        refreshMinutes: 15,
+        allowUnsignedInstalls: true,
+      }),
     };
   }, installResponse);
 

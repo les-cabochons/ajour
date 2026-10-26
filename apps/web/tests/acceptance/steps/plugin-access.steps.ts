@@ -343,6 +343,11 @@ Given(
               ajourTestInstallTracker: () => Promise<never>;
             }
           ).ajourTestInstallTracker(),
+        // A file install is unsigned: it needs the switch on.
+        getPluginCatalogSettings: async () => ({
+          refreshMinutes: 15,
+          allowUnsignedInstalls: true,
+        }),
       };
     });
   },

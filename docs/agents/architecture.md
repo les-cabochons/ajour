@@ -541,17 +541,21 @@ system on restores the user's previous per-plugin configuration. Catalog
 browsing, managed downloads, manual archive installation, and Debug-directory
 configuration remain available while execution is disabled.
 
-The desktop main process owns the Ajour plugin-index boundary. It fetches and
-strictly validates catalog definitions, release metadata, and optional artwork;
-caches catalog files and images below Electron user data; and gives the renderer
-only normalized metadata and local data URLs. Conditional requests check for
-catalog and image updates at launch and on a configurable interval (15 minutes
+The desktop main process owns the plugin source boundary (ADR 0012). It reads
+each source's `ajour.json` and `ajour.json.sig` from the source's host,
+verifies the Ed25519 signature against the pinned or official key, strictly
+validates the listing, caches the last good listing and its images below
+Electron user data, and gives the renderer only normalized metadata and local
+data URLs. It refreshes at launch and on a configurable interval (15 minutes
 by default, with launch-only refresh available). A built-in snapshot of the
-index keeps the catalog usable on first launch when the remote index is
-unreachable; the validated remote catalog replaces it when available. Catalog plugin downloads
-reuse the validated managed-package installer and are inactive until the user
-explicitly activates them. The existing local-file installer retains its
-current behavior.
+official source keeps the catalog usable until that source was read once.
+A download reads the plugin's files at the commit the listing names, checks
+each against its SHA-256, packs them for the managed-package installer, and
+installs them inactive until the user activates them. Every unsigned install,
+from a source or a file, needs the user's Allow installing unsigned plugins
+setting and passes a warning dialog shown by the main process. The local API
+records each plugin's origin, and refuses to run unsigned plugins while the
+user deactivated them.
 
 ## Project Data Shape Plugins
 

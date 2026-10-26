@@ -399,10 +399,10 @@ export type BacklogSyncResult = {
       | { text: string; lost?: string[] | undefined; cut?: boolean | undefined }
       | undefined;
     state?: string | undefined;
+    sourceUrl?: string | undefined;
     originalEstimateHours?: number | undefined;
     remainingEstimateHours?: number | undefined;
     completedEstimateHours?: number | undefined;
-    sourceUrl?: string | undefined;
     note?: string | undefined;
     projectName?: string | undefined;
     stateCategory?: string | undefined;
