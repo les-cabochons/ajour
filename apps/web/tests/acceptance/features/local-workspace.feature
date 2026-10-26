@@ -528,6 +528,18 @@ Feature: Open the local time workspace
     When I open "111 000" in the task menu
     Then the picker shows "[AAA] aaa xyz · 111 000"
 
+  Scenario: See a task's whole name and details in the task menu card
+    Given I used four searchable tasks lately, the second of them starred
+    When I open today's time workspace
+    And I open the new time-entry project and task picker
+    Then no task menu card shows
+    When I press the down arrow in the task menu
+    Then the task menu card shows "222 000" of "[BBB] bbb zyx", "Non-billable", used "2m ago"
+    When I press the down arrow in the task menu
+    Then the task menu card switches to "333 000" at once
+    When I rest the pointer on "[AAA] aaa xyz" in the task menu
+    Then the task menu card switches to "[AAA] aaa xyz" at once
+
   Scenario: Install a packaged plugin from local files
     Given I have no saved Ajour workspace
     When I install a packaged plugin from settings

@@ -106,6 +106,10 @@ export function PickerTaskRow({
       value={value}
       className={ROW_CLASS}
       data-checked={checked ? "true" : undefined}
+      // The hover card reads the row from these. See project-task-picker-card.tsx.
+      data-picker-row={value}
+      data-project-id={project._id}
+      data-task-id={task._id}
       // Named for what it picks: without this the star's label starts the name.
       aria-label={[
         task.name,
@@ -167,6 +171,8 @@ export function PickerProjectRow({
     <CommandItem
       value={value}
       className={ROW_CLASS}
+      data-picker-row={value}
+      data-project-id={project._id}
       aria-label={`${label}, ${activeTaskCount} active tasks`}
       onSelect={onSelect}
     >
