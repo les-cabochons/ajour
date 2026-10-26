@@ -33,6 +33,8 @@ const QUERY_TIMEOUT_MS = 15_000;
 /**
  * The live plugin renderers' processes, written to `filePath` as each opens
  * and closes. The file is gone while none runs, as after a normal quit.
+ * `remove` takes the entry `add` was given and forgets only that one, so a
+ * renderer still closing can't delete the entry of one that took its id.
  *
  * @param {string} filePath
  * @param {{ fileSystem?: Pick<typeof fs, "writeFileSync" | "renameSync" | "rmSync"> }} [options]
@@ -62,9 +64,11 @@ function createProcessRecord(filePath, { fileSystem = fs } = {}) {
       live.set(entry.pid, entry);
       write();
     },
-    /** @param {number} pid */
-    remove(pid) {
-      if (live.delete(pid)) write();
+    /** @param {RecordedProcess} entry */
+    remove(entry) {
+      if (live.get(entry.pid) !== entry) return;
+      live.delete(entry.pid);
+      write();
     },
   };
 }
@@ -91,13 +95,23 @@ function recordedProcesses(raw) {
   );
 }
 
-/** @param {string} file @param {string[]} args */
-function run(file, args) {
+/**
+ * @param {string} file
+ * @param {string[]} args
+ * @param {Record<string, string | undefined>} [env] Absent: Ajour's own.
+ * @returns {Promise<string>}
+ */
+function run(file, args, env) {
   return new Promise((resolve, reject) => {
     execFile(
       file,
       args,
-      { timeout: QUERY_TIMEOUT_MS, windowsHide: true, maxBuffer: 1024 * 1024 },
+      {
+        timeout: QUERY_TIMEOUT_MS,
+        windowsHide: true,
+        maxBuffer: 1024 * 1024,
+        ...(env ? { env } : {}),
+      },
       (error, stdout) => (error ? reject(error) : resolve(String(stdout))),
     );
   });
@@ -105,13 +119,24 @@ function run(file, args) {
 
 /**
  * What the system says of each of `pids` still running: its executable and
- * when it started. Windows asks CIM, through PowerShell; macOS asks `ps`.
+ * when it started. Windows asks CIM, through PowerShell, run by its absolute
+ * path: a bare name would search the working folder first. macOS asks `ps`
+ * in the C locale, which prints the start time in English whatever the
+ * user's language is.
  *
  * @param {number[]} pids
  * @param {string} platform
+ * @param {{
+ *   run?: typeof run,
+ *   env?: Record<string, string | undefined>,
+ * }} [options] Where the system is asked, and which environment names `SystemRoot`. Tests set them.
  * @returns {Promise<RunningProcess[]>}
  */
-async function describeProcesses(pids, platform) {
+async function describeProcesses(
+  pids,
+  platform,
+  { run: ask = run, env = process.env } = {},
+) {
   if (pids.length === 0) return [];
   if (platform === "win32") {
     // Each id is an integer: nothing else reaches the script.
@@ -122,12 +147,17 @@ async function describeProcesses(pids, platform) {
       "{ ([DateTimeOffset]$_.StartTime).ToUnixTimeMilliseconds() } else { $null } } });",
       "ConvertTo-Json -InputObject $found -Compress",
     ].join(" ");
-    const output = await run("powershell.exe", [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      script,
-    ]);
+    const output = await ask(
+      path.win32.join(
+        env.SystemRoot || "C:\\Windows",
+        "System32",
+        "WindowsPowerShell",
+        "v1.0",
+        "powershell.exe",
+      ),
+      ["-NoProfile", "-NonInteractive", "-Command", script],
+      undefined,
+    );
     const parsed = JSON.parse(output.trim() || "[]");
     return (Array.isArray(parsed) ? parsed : [parsed]).flatMap((entry) =>
       Number.isInteger(entry?.pid) && typeof entry.path === "string"
@@ -145,12 +175,11 @@ async function describeProcesses(pids, platform) {
   }
   if (platform === "darwin") {
     // `ps` exits 1 when none of them runs.
-    const output = await run("/bin/ps", [
-      "-o",
-      "pid=,lstart=,comm=",
-      "-p",
-      pids.join(","),
-    ]).catch((error) => (error?.code === 1 ? "" : Promise.reject(error)));
+    const output = await ask(
+      "/bin/ps",
+      ["-o", "pid=,lstart=,comm=", "-p", pids.join(",")],
+      { LC_ALL: "C" },
+    ).catch((error) => (error?.code === 1 ? "" : Promise.reject(error)));
     return output.split("\n").flatMap((line) => {
       // pid, then "Sun Oct 25 15:39:17 2026", then the executable's path.
       const match =
@@ -172,7 +201,7 @@ async function describeProcesses(pids, platform) {
 /**
  * Whether `running` is the plugin renderer `recorded` names: Ajour's own
  * binary (on macOS, a helper inside Ajour's app bundle), started when the
- * record says.
+ * record says. A start time missing on either side says no.
  *
  * @param {RecordedProcess} recorded
  * @param {RunningProcess} running
@@ -188,9 +217,11 @@ function isOurRenderer(recorded, running, { execPath, platform }) {
     sameProgram = bundle !== undefined && executable.startsWith(`${bundle}/`);
   }
   if (!sameProgram) return false;
-  // Without both start times, the same program is all there is to go on.
+  // The program alone proves nothing: Ajour's binary runs many processes,
+  // and a freed id may now belong to one of them. Without both start times
+  // there is no telling, and nothing is ended on a guess.
   if (recorded.createdAt === undefined || running.createdAt === undefined) {
-    return true;
+    return false;
   }
   return (
     Math.abs(recorded.createdAt - running.createdAt) <= START_TIME_TOLERANCE_MS
@@ -333,6 +364,7 @@ module.exports = {
   PROCESS_RECORD_FILE,
   createProcessRecord,
   describeProcesses,
+  isAlive,
   isOurRenderer,
   sweepOrphanedRenderers,
 };

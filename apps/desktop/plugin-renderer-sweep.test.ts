@@ -20,25 +20,44 @@ interface RunningProcess {
   executablePath: string;
   createdAt?: number;
 }
-const { createProcessRecord, isOurRenderer, sweepOrphanedRenderers } =
-  require("./electron/plugin-renderer-sweep.cjs") as {
-    createProcessRecord: (filePath: string) => {
-      add(entry: { pid: number; pluginId: string; createdAt?: number }): void;
-      remove(pid: number): void;
-    };
-    isOurRenderer: (
-      recorded: { pid: number; createdAt?: number },
-      running: RunningProcess,
-      self: { execPath: string; platform: string },
-    ) => boolean;
-    sweepOrphanedRenderers: (options: Record<string, unknown>) => Promise<{
-      recorded: number;
-      ended: number;
-      gone: number;
-      notOurs: number;
-      stillRunning: number;
-    }>;
+const {
+  createProcessRecord,
+  describeProcesses,
+  isOurRenderer,
+  sweepOrphanedRenderers,
+} = require("./electron/plugin-renderer-sweep.cjs") as {
+  createProcessRecord: (
+    filePath: string,
+    options?: { fileSystem?: unknown },
+  ) => {
+    add(entry: { pid: number; pluginId: string; createdAt?: number }): void;
+    remove(entry: { pid: number; pluginId: string; createdAt?: number }): void;
   };
+  describeProcesses: (
+    pids: number[],
+    platform: string,
+    options?: {
+      run?: (
+        file: string,
+        args: string[],
+        env: Record<string, string | undefined> | undefined,
+      ) => Promise<string>;
+      env?: Record<string, string | undefined>;
+    },
+  ) => Promise<RunningProcess[]>;
+  isOurRenderer: (
+    recorded: { pid: number; createdAt?: number },
+    running: RunningProcess,
+    self: { execPath: string; platform: string },
+  ) => boolean;
+  sweepOrphanedRenderers: (options: Record<string, unknown>) => Promise<{
+    recorded: number;
+    ended: number;
+    gone: number;
+    notOurs: number;
+    stillRunning: number;
+  }>;
+};
 
 const AJOUR = "C:\\Program Files\\Ajour\\Ajour.exe";
 const STARTED = 1_792_000_000_000;
@@ -169,6 +188,47 @@ describe("the sweep of orphaned plugin renderers", () => {
     ]);
   });
 
+  it("ends nothing on a program match alone: a start time missing on either side is not ours", async () => {
+    const { result, killed } = sweep(
+      {
+        version: 1,
+        processes: [
+          // No start time recorded.
+          { pid: 101, pluginId: "jira" },
+          // The system gave no start time for the running process.
+          { pid: 102, pluginId: "github", createdAt: STARTED },
+        ],
+      },
+      [
+        { pid: 101, executablePath: AJOUR, createdAt: STARTED },
+        { pid: 102, executablePath: AJOUR },
+      ],
+    );
+
+    await expect(result).resolves.toMatchObject({
+      recorded: 2,
+      ended: 0,
+      notOurs: 2,
+    });
+    expect(killed).toEqual([]);
+
+    const self = { execPath: AJOUR, platform: "win32" };
+    expect(
+      isOurRenderer(
+        { pid: 7 },
+        { pid: 7, executablePath: AJOUR, createdAt: STARTED },
+        self,
+      ),
+    ).toBe(false);
+    expect(
+      isOurRenderer(
+        { pid: 7, createdAt: STARTED },
+        { pid: 7, executablePath: AJOUR },
+        self,
+      ),
+    ).toBe(false);
+  });
+
   it("knows Ajour's renderers by program: the same binary on Windows, a helper of its bundle on macOS", () => {
     const recorded = { pid: 7, createdAt: STARTED };
     expect(
@@ -213,6 +273,58 @@ describe("the sweep of orphaned plugin renderers", () => {
   });
 });
 
+describe("asking the system about the recorded processes", () => {
+  it("runs Windows PowerShell by its absolute path under SystemRoot, not by the search path", async () => {
+    const calls: string[] = [];
+    const found = await describeProcesses([11], "win32", {
+      env: { SystemRoot: "D:\\Win" },
+      run: async (file) => {
+        calls.push(file);
+        return JSON.stringify({ pid: 11, path: AJOUR, created: STARTED });
+      },
+    });
+
+    expect(calls).toEqual([
+      "D:\\Win\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    ]);
+    expect(found).toEqual([
+      { pid: 11, executablePath: AJOUR, createdAt: STARTED },
+    ]);
+
+    await describeProcesses([11], "win32", {
+      env: {},
+      run: async (file) => {
+        calls.push(file);
+        return "[]";
+      },
+    });
+    expect(calls[1]).toBe(
+      "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    );
+  });
+
+  it("reads macOS start times in the C locale, whatever language the user's is", async () => {
+    let seenEnv: Record<string, string | undefined> | undefined;
+    const found = await describeProcesses([321], "darwin", {
+      run: async (file, _args, env) => {
+        expect(file).toBe("/bin/ps");
+        seenEnv = env;
+        return "  321 Sun Oct 25 15:39:17 2026 /Applications/Ajour.app/Contents/Frameworks/Ajour Helper (Renderer).app/Contents/MacOS/Ajour Helper (Renderer)\n";
+      },
+    });
+
+    expect(seenEnv).toEqual({ LC_ALL: "C" });
+    expect(found).toEqual([
+      {
+        pid: 321,
+        executablePath:
+          "/Applications/Ajour.app/Contents/Frameworks/Ajour Helper (Renderer).app/Contents/MacOS/Ajour Helper (Renderer)",
+        createdAt: new Date(2026, 9, 25, 15, 39, 17).getTime(),
+      },
+    ]);
+  });
+});
+
 describe("the record of plugin renderer processes", () => {
   const directories: string[] = [];
   afterEach(async () => {
@@ -229,8 +341,10 @@ describe("the record of plugin renderer processes", () => {
     const filePath = path.join(directory, "plugin-renderers.json");
     const record = createProcessRecord(filePath);
 
-    record.add({ pid: 11, pluginId: "jira", createdAt: STARTED });
-    record.add({ pid: 12, pluginId: "github" });
+    const first = { pid: 11, pluginId: "jira", createdAt: STARTED };
+    const second = { pid: 12, pluginId: "github" };
+    record.add(first);
+    record.add(second);
     expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual({
       version: 1,
       processes: [
@@ -239,8 +353,29 @@ describe("the record of plugin renderer processes", () => {
       ],
     });
 
-    record.remove(11);
-    record.remove(12);
+    record.remove(first);
+    record.remove(second);
+    expect(existsSync(filePath)).toBe(false);
+  });
+
+  it("forgets only the entry a renderer added, so a closing one can't delete a reused id's new entry", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "ajour-record-"));
+    directories.push(directory);
+    const filePath = path.join(directory, "plugin-renderers.json");
+    const record = createProcessRecord(filePath);
+    const old = { pid: 11, pluginId: "jira", createdAt: STARTED };
+    const reused = { pid: 11, pluginId: "github", createdAt: STARTED + 9_000 };
+
+    record.add(old);
+    // The id came back for another renderer before the first one finished closing.
+    record.add(reused);
+    record.remove(old);
+
+    expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual({
+      version: 1,
+      processes: [reused],
+    });
+    record.remove(reused);
     expect(existsSync(filePath)).toBe(false);
   });
 });

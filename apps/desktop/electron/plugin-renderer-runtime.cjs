@@ -12,6 +12,7 @@ const {
   servePluginFile,
 } = require("./plugin-renderer-policy.cjs");
 const { rendererSandboxRefusal } = require("./plugin-sandbox.cjs");
+const { isAlive } = require("./plugin-renderer-sweep.cjs");
 
 /**
  * The sandboxed renderer runtime (#390, decided in #231 and ADR 0007): it
@@ -24,8 +25,9 @@ const { rendererSandboxRefusal } = require("./plugin-sandbox.cjs");
  *
  * Lifecycle (#391, decided in #217): a "Load when needed" plugin's renderer
  * opens at its first call and closes 2 minutes after its last; an "Always
- * ready" one opens when the API lists it in `keepReady` and stays open. Any
- * renderer closes at a timeout, above its memory ceiling, sampled every few
+ * ready" one opens when the API lists it in `keepReady` and stays open. One
+ * the API names as stopped, a plugin turned off or suspended, closes at
+ * once. Any renderer closes at a timeout, above its memory ceiling, sampled every few
  * seconds, and on quit. A run that settles or is cancelled stops its own
  * worker only. A crash or a memory kill is reported to the API, which keeps
  * the crash budget and the 4-calls limit; nothing reopens a renderer until
@@ -201,11 +203,13 @@ function entrypointUrl(pluginId, entrypoint) {
  *   idleCloseMs?: number,
  *   readyTimeoutMs?: number,
  *   memorySampleMs?: number,
+ *   closeTimeoutMs?: number,
+ *   processAlive?: (pid: number) => boolean,
  *   now?: () => number,
  *   whenSwept?: Promise<unknown>,
  *   processRecord?: {
  *     add(entry: { pid: number, createdAt?: number, pluginId: string }): void,
- *     remove(pid: number): void,
+ *     remove(entry: { pid: number, createdAt?: number, pluginId: string }): void,
  *   },
  * }} options
  */
@@ -223,6 +227,8 @@ function createPluginRendererRuntime({
   idleCloseMs = IDLE_CLOSE_MS,
   readyTimeoutMs = READY_TIMEOUT_MS,
   memorySampleMs = MEMORY_SAMPLE_MS,
+  closeTimeoutMs = CLOSE_TIMEOUT_MS,
+  processAlive = isAlive,
   now = Date.now,
   processRecord,
   whenSwept,
@@ -391,6 +397,7 @@ function createPluginRendererRuntime({
     idle: "ok",
     package_change: "ok",
     quit: "ok",
+    plugin_off: "ok",
     timeout: "timeout",
     memory: "error",
     crashed: "error",
@@ -447,14 +454,29 @@ function createPluginRendererRuntime({
       await renderer.opening;
       const contents = renderer.webContents;
       if (contents) byWebContents.delete(contents.id);
+      const forget = () => {
+        if (renderer.recorded) processRecord?.remove(renderer.recorded);
+      };
+      let gone = true;
       if (contents && !contents.isDestroyed()) {
         const destroyed = new Promise((resolve) =>
-          contents.once("destroyed", resolve),
+          contents.once("destroyed", () => resolve(true)),
         );
         contents.close();
-        await Promise.race([destroyed, delay(CLOSE_TIMEOUT_MS)]);
+        gone = Boolean(
+          await Promise.race([
+            destroyed,
+            delay(closeTimeoutMs).then(() => false),
+          ]),
+        );
+        // A page that didn't go may still be running: its entry stays in the
+        // record until it does, or until its process is gone.
+        if (!gone) void destroyed.then(forget);
       }
-      if (renderer.pid !== undefined) processRecord?.remove(renderer.pid);
+      if (!gone && renderer.pid !== undefined && !processAlive(renderer.pid)) {
+        gone = true;
+      }
+      if (gone) forget();
     })().catch(() => undefined);
     return renderer.closing;
   }
@@ -540,6 +562,9 @@ function createPluginRendererRuntime({
       /** @type {unknown[]} */ commands: [],
       runs: new Map(),
       /** @type {number | undefined} */ pid: undefined,
+      /** What it added to the process record, for removing the same entry. */
+      /** @type {{ pid: number, pluginId: string, createdAt?: number } | undefined} */
+      recorded: undefined,
       /** @type {ReturnType<typeof setTimeout> | undefined} */ idleTimer:
         undefined,
       /** @type {ReturnType<typeof setTimeout> | undefined} */ readyTimer:
@@ -715,11 +740,14 @@ function createPluginRendererRuntime({
     const createdAt = metrics.find(
       (metric) => metric.pid === pid,
     )?.creationTime;
-    processRecord?.add({
-      pid,
-      pluginId: renderer.pluginId,
-      ...(typeof createdAt === "number" ? { createdAt } : {}),
-    });
+    if (processRecord) {
+      renderer.recorded = {
+        pid,
+        pluginId: renderer.pluginId,
+        ...(typeof createdAt === "number" ? { createdAt } : {}),
+      };
+      processRecord.add(renderer.recorded);
+    }
     watchMemory();
     renderer.unit
       .set({
@@ -942,12 +970,18 @@ function createPluginRendererRuntime({
     /**
      * The API's "Always ready" plugins, all of them each time: those not
      * open start now, unless plugins are off on this computer, and an open
-     * renderer no longer listed closes once idle.
+     * renderer no longer listed closes once idle. `stopped` names the
+     * plugins that can't run now, turned off or suspended: their renderers
+     * close at once, their runs failing as terminated.
      */
-    keepReady(plugins) {
+    keepReady(plugins, stopped = []) {
       readyPlugins = new Map(
         plugins.map((plugin) => [plugin.pluginId, plugin]),
       );
+      for (const pluginId of stopped) {
+        const open = renderers.get(pluginId);
+        if (open) void closeRenderer(open, undefined, "plugin_off");
+      }
       for (const renderer of renderers.values()) {
         renderer.resident = readyPlugins.has(renderer.pluginId);
         if (renderer.resident) clearTimeout(renderer.idleTimer);

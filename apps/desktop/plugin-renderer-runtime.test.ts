@@ -838,17 +838,24 @@ describe("the renderer's lifecycle (#391)", () => {
     expect(stopped).toEqual([["jira", "killed"]]);
   });
 
-  it("records each ready renderer's process for the next launch's sweep, until it closes", async () => {
-    const record = {
-      added: [] as unknown[],
-      removed: [] as number[],
-      add(entry: unknown) {
-        this.added.push(entry);
+  /** A record that keeps what it was given, for a test to read. */
+  function recordOf() {
+    const entries: { pid: number; pluginId: string; createdAt?: number }[] = [];
+    const removed: unknown[] = [];
+    return {
+      entries,
+      removed,
+      add(entry: { pid: number; pluginId: string; createdAt?: number }) {
+        entries.push(entry);
       },
-      remove(pid: number) {
-        this.removed.push(pid);
+      remove(entry: unknown) {
+        removed.push(entry);
       },
     };
+  }
+
+  it("records each ready renderer's process for the next launch's sweep, until it closes", async () => {
+    const record = recordOf();
     const { runtime, start, ready } = setUp({
       metrics: (pid) => ({ creationTime: pid * 10 }),
       runtime: { processRecord: record },
@@ -856,10 +863,72 @@ describe("the renderer's lifecycle (#391)", () => {
     start("jira");
     const { contents } = await ready();
 
-    expect(record.added).toEqual([
+    expect(record.entries).toEqual([
       { pid: contents.pid, pluginId: "jira", createdAt: contents.pid * 10 },
     ]);
     await runtime.closeAll();
-    expect(record.removed).toEqual([contents.pid]);
+    // The entry it added, so a reused id's newer entry is never the one removed.
+    expect(record.removed).toHaveLength(1);
+    expect(record.removed[0]).toBe(record.entries[0]);
+  });
+
+  it("keeps a renderer in the record when its page doesn't go, until it does or its process is gone", async () => {
+    const record = recordOf();
+    let alive = true;
+    const { runtime, start, ready } = setUp({
+      metrics: (pid) => ({ creationTime: pid * 10 }),
+      runtime: {
+        processRecord: record,
+        closeTimeoutMs: 20,
+        processAlive: () => alive,
+      },
+    });
+    start("jira");
+    const { contents } = await ready();
+    // A page that doesn't close when asked.
+    contents.close = () => {};
+
+    await runtime.closeAll();
+    expect(record.removed).toEqual([]);
+
+    // It goes late: the entry goes with it.
+    contents.destroyed = true;
+    contents.emit("destroyed");
+    await flush();
+    expect(record.removed).toEqual([record.entries[0]]);
+
+    // Another that never reports, but whose process ends.
+    start("github");
+    const second = await ready(1);
+    second.contents.close = () => {};
+    alive = false;
+    await runtime.closeAll();
+    expect(record.removed).toEqual([record.entries[0], record.entries[1]]);
+  });
+
+  it("closes the renderer of a plugin that can't run now at once, and keeps the others waiting for idle", async () => {
+    const { runtime, views, recorded, start, ready } = setUp();
+    const stopped = start("jira");
+    const first = await ready();
+    start("github");
+    const second = await ready(1);
+
+    runtime.keepReady([], ["jira"]);
+
+    await expect(stopped.settled).resolves.toEqual({
+      ok: false,
+      failure: "terminated",
+    });
+    await until(() => first.contents.destroyed);
+    expect(second.contents.destroyed).toBe(false);
+    expect(views).toHaveLength(2);
+    expect(
+      recorded
+        .filter((event) => event.name === "plugin_renderer.close")
+        .map((event) => [
+          event.plugin?.id,
+          event.plugin_renderer?.close_reason,
+        ]),
+    ).toEqual([["jira", "plugin_off"]]);
   });
 });
