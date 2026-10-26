@@ -49,6 +49,7 @@ import {
   useDescriptionSaving,
 } from "@/features/backlog/synced-description";
 import { saveSyncedDescription } from "@/lib/description-save";
+import { HeldEditsReview } from "@/features/settings/held-edits-review";
 
 interface ImportConnectionGroup {
   connectionId: string;
@@ -170,7 +171,7 @@ export function SettingsImportReviewPage() {
   );
   // Opened from an item's conflict mark or a toast: that item's issues
   // come into view, highlighted.
-  const { item: focusedItemId } = useSearch({
+  const { item: focusedItemId, held: focusedHeldConnectionId } = useSearch({
     strict: false,
   }) as SyncReviewSearch;
   const descriptionConflicts = useMemo(
@@ -292,6 +293,8 @@ export function SettingsImportReviewPage() {
           conflicts before the next sync pass. Child items stay one level deep
           and inherit their parent context when needed.
         </p>
+
+        <HeldEditsReview focusedConnectionId={focusedHeldConnectionId} />
 
         {descriptionConflicts.length > 0 ? (
           <AppPanel>

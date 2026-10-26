@@ -47,7 +47,6 @@ import {
   type ProjectTaskConsumedTone,
 } from "@/domain/projects/task-budget";
 import { getProjectTaskBillableValueLabel } from "@/features/projects/project-task-options";
-import type { ProjectTaskImportResult } from "@/domain/projects/task-import";
 import {
   getLocalProjectDisplayName,
   type LocalProject,
@@ -241,33 +240,6 @@ function taskSummary(project: LocalProject) {
   const archived = project.tasks.length - active;
 
   return { active, archived };
-}
-
-function formatImportSummary(result: ProjectTaskImportResult) {
-  const skipped: string[] = [];
-
-  if (result.duplicateCount > 0) {
-    skipped.push(
-      `${result.duplicateCount} ${result.duplicateCount === 1 ? "duplicate" : "duplicates"}`,
-    );
-  }
-
-  if (result.blankCount > 0) {
-    skipped.push(
-      `${result.blankCount} ${result.blankCount === 1 ? "blank cell" : "blank cells"}`,
-    );
-  }
-
-  if (result.headerCount > 0) {
-    skipped.push(
-      `${result.headerCount} ${result.headerCount === 1 ? "header row" : "header rows"}`,
-    );
-  }
-
-  const importedLabel = `${result.importedCount} ${result.importedCount === 1 ? "task" : "tasks"}`;
-  return skipped.length > 0
-    ? `Imported ${importedLabel}. Skipped ${skipped.join(", ")}.`
-    : `Imported ${importedLabel}.`;
 }
 
 function isTaskDragBlockedTarget(target: EventTarget | null) {
@@ -722,26 +694,10 @@ function ProjectDetail({
 
     setIsImporting(true);
     try {
-      const { extractTaskNamesFromWorkbook } =
+      const { importTasksFromWorkbook } =
         await import("@/features/projects/project-task-import");
-      const workbook = await extractTaskNamesFromWorkbook(
-        await file.arrayBuffer(),
-      );
-      if (workbook.taskNames.length === 0) {
-        throw new Error(
-          "No usable task names were found in column C of the first worksheet.",
-        );
-      }
-      const importResult = localStore.importProjectTasks(
-        project._id,
-        workbook.taskNames,
-      );
       setImportMessage(
-        formatImportSummary({
-          ...importResult,
-          blankCount: workbook.blankCount,
-          headerCount: workbook.headerCount,
-        }),
+        await importTasksFromWorkbook(project._id, await file.arrayBuffer()),
       );
     } catch (error) {
       setImportError(

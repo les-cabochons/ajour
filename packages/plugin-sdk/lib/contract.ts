@@ -12,17 +12,19 @@ export type PluginManifest = {
     projectDataShape?:
       | {
           apiVersion: 1;
-          datasets: {
-            displayName: string;
-            id: string;
-            columns: {
-              type: "string" | "number" | "boolean";
-              key: string;
-              header: string;
-              required?: boolean | undefined;
-              width?: number | undefined;
-            }[];
-          }[];
+          datasets?:
+            | {
+                displayName: string;
+                id: string;
+                columns: {
+                  type: "string" | "number" | "boolean";
+                  key: string;
+                  header: string;
+                  required?: boolean | undefined;
+                  width?: number | undefined;
+                }[];
+              }[]
+            | undefined;
         }
       | undefined;
     connector?:
@@ -153,6 +155,16 @@ export type PluginManifest = {
         passToPlugin?: boolean | undefined;
       }[]
     | undefined;
+  connectionAccess?:
+    | {
+        id: string;
+        label: string;
+        description?: string | undefined;
+        always?: boolean | undefined;
+        tokenScope?: string | undefined;
+        operations?: string[] | undefined;
+      }[]
+    | undefined;
   network?:
     | {
         endpoints?:
@@ -201,16 +213,6 @@ export type PluginManifest = {
       }
     | undefined;
   $schema?: string | undefined;
-  connectionAccess?:
-    | {
-        id: string;
-        label: string;
-        description?: string | undefined;
-        always?: boolean | undefined;
-        tokenScope?: string | undefined;
-        operations?: string[] | undefined;
-      }[]
-    | undefined;
   runtime?:
     | {
         start?: "whenNeeded" | "alwaysReady" | undefined;
@@ -333,8 +335,8 @@ export type PluginConnection = {
   tenantLabel: string;
   autoSync: boolean;
   autoSyncIntervalMinutes: number;
-  connectedAt: number;
   access: string[];
+  connectedAt: number;
   config: Record<string, string | number | boolean>;
   lastSyncAt?: number | undefined;
 };
@@ -993,16 +995,15 @@ export type DataShapeExportResult = {
   }[];
 };
 
-/** A dataset as `importProjects` receives it. */
-export type DataShapeDataset = {
-  id: string;
-  rows: Record<string, string | number | boolean | null>[];
+/** A sheet of the imported file, as `importProjects` receives it. */
+export type DataShapeSheet = {
+  name: string;
+  rows: (string | number | boolean | null)[][];
 };
 
 export type DataShapeImportResult = {
   projects: {
     status: "active" | "archived";
-    name: string;
     tasks: {
       name: string;
       status?: "active" | "archived" | undefined;
@@ -1011,6 +1012,7 @@ export type DataShapeImportResult = {
       adjustmentMs?: number | undefined;
     }[];
     code?: string | undefined;
+    name?: string | undefined;
     color?: string | undefined;
   }[];
 };

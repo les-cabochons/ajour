@@ -74,10 +74,37 @@ describe("state migrations", () => {
   });
 
   it("ends at the current version, the last step's", () => {
-    expect(STATE_VERSION).toBe(8);
+    expect(STATE_VERSION).toBe(9);
     expect(STATE_MIGRATIONS.at(-1)?.version).toBe(STATE_VERSION);
     const versions = STATE_MIGRATIONS.map((step) => step.version);
     expect(versions).toEqual([...versions].sort((a, b) => a - b));
+  });
+
+  it("makes every connection read only at version 9, and keeps access a user already chose", async () => {
+    // Version 8 can be held while secrets move, and the user may change a
+    // connection's access meanwhile: running step 9 again keeps that choice.
+    const toVersion9 = STATE_MIGRATIONS.find((step) => step.version === 9)!;
+    const migrated = await runStateMigrations(
+      {
+        version: 8,
+        connections: [
+          { id: "old" },
+          { id: "chosen", access: ["editWorkItems"] },
+          { id: "broken", access: "editWorkItems" },
+        ],
+      },
+      8,
+      [toVersion9],
+    );
+
+    expect(migrated.connections).toEqual([
+      { id: "old", access: [] },
+      { id: "chosen", access: ["editWorkItems"] },
+      { id: "broken", access: [] },
+    ]);
+    expect(await runStateMigrations(migrated, 8, [toVersion9])).toEqual(
+      migrated,
+    );
   });
 
   it("tells a file's version by its number from version 5, and by its shape before", () => {

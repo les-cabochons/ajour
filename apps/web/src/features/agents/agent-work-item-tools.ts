@@ -296,6 +296,11 @@ async function saveAgentDescription(
         outcome: "conflict" as const,
         message: `Saved in Ajour, but a change in ${sourceName} touches the same lines, so nothing was written there. The user resolves the conflict in Sync review.`,
       };
+    case "held":
+      return {
+        outcome: "failed" as const,
+        message: `Saved in Ajour, but not in ${sourceName}: editing work items is off for its connection. The change is held for the user to review in Sync review.`,
+      };
     case "failed":
       return {
         outcome: "failed" as const,

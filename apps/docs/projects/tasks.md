@@ -47,4 +47,9 @@ Tasks are archived, never deleted. Press <kbd>Backspace</kbd> on a focused task 
 
 ## Import tasks from Excel
 
-Choose **Import tasks…** in the project's properties. Ajour reads task names from column C of the first worksheet, then tells you how many tasks it imported and skipped. To import whole projects with their tasks, see [Import and export](/projects/import-export).
+Choose **Import tasks…** in the project's properties. Ajour reads the file with the schema picked in **Settings › Projects**:
+
+- With **Ajour default**, it reads task names from column C of the first worksheet, then tells you how many tasks it imported and skipped.
+- With a schema plugin, such as [Workday](/plugins/workday), the plugin reads the file. Ajour adds the new tasks and updates the others by name, then tells you how many. A file for another project changes nothing.
+
+To import whole projects with their tasks, see [Import and export](/projects/import-export).

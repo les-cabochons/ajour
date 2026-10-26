@@ -8,7 +8,12 @@ import {
   planDescriptionSave,
   planKeepMine,
 } from "@/domain/backlog/description-sync";
-import { readBacklogDescription, writeBacklogDescription } from "@/lib/app-api";
+import {
+  isAccessOffError,
+  readBacklogDescription,
+  writeBacklogDescription,
+} from "@/lib/app-api";
+import { announceHeldEdit } from "@/lib/held-edit-notice";
 import { localStore } from "@/lib/local-store";
 import { announceDescriptionConflicts } from "@/lib/sync-conflict-events";
 import { reentry } from "@/lib/wide-events";
@@ -27,6 +32,8 @@ export type DescriptionSaveOutcome =
   | { kind: "agreed" }
   | { kind: "written"; merged: boolean }
   | { kind: "conflict" }
+  /** The connection can't edit work items: the text waits for review. */
+  | { kind: "held" }
   | { kind: "failed"; message: string };
 
 const saving = new Map<string, Promise<DescriptionSaveOutcome>>();
@@ -218,6 +225,13 @@ async function runSave(
     );
     return { kind: "written", merged: plan.merged };
   } catch (error) {
+    // Editing work items is off on the connection: the text stays here,
+    // held until the user approves sending it in Sync review (#395).
+    if (isAccessOffError(error)) {
+      enter(() => localStore.holdDescription(itemId));
+      announceHeldEdit(item);
+      return { kind: "held" };
+    }
     const message =
       error instanceof Error && error.message
         ? error.message

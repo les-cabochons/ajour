@@ -1,37 +1,36 @@
 import { describe, expect, it } from "vitest";
 import {
   projectDataShapeExportRequestSchema,
+  projectDataShapeImportRequestSchema,
   projectDataShapeImportResponseSchema,
   projectDataShapePluginManifestSchema,
   validateProjectDataShapeDatasets,
   type ProjectDataShapeDefinition,
 } from "../project-data-shapes";
 
-const definition: ProjectDataShapeDefinition = {
-  apiVersion: 1,
-  datasets: [
+const projectsDatasetDefinition = {
+  id: "projects",
+  displayName: "Projects",
+  columns: [
     {
-      id: "projects",
-      displayName: "Projects",
-      columns: [
-        {
-          key: "project",
-          header: "project",
-          type: "string",
-          required: true,
-          width: 28,
-        },
-        {
-          key: "budgetHours",
-          header: "budget_hours",
-          type: "number",
-          required: false,
-        },
-      ],
+      key: "project",
+      header: "project",
+      type: "string",
+      required: true,
+      width: 28,
+    },
+    {
+      key: "budgetHours",
+      header: "budget_hours",
+      type: "number",
+      required: false,
     },
   ],
+} satisfies NonNullable<ProjectDataShapeDefinition["datasets"]>[number];
+const definition: ProjectDataShapeDefinition = {
+  apiVersion: 1,
+  datasets: [projectsDatasetDefinition],
 };
-const projectsDatasetDefinition = definition.datasets[0]!;
 
 describe("project data shape plugin contract", () => {
   it("accepts a versioned format-neutral shape manifest", () => {
@@ -54,6 +53,40 @@ describe("project data shape plugin contract", () => {
         },
       },
     });
+  });
+
+  it("accepts a schema that only imports, with no export layout", () => {
+    expect(
+      projectDataShapePluginManifestSchema.parse({
+        id: "workday-project-data",
+        version: "2.0.0",
+        apiVersion: 1,
+        displayName: "Workday",
+        iconSvg: "<svg viewBox='0 0 16 16'></svg>",
+        entrypoint: "dist/plugin.mjs",
+        capabilities: { projectDataShape: { apiVersion: 1 } },
+      }).capabilities.projectDataShape.datasets,
+    ).toBeUndefined();
+  });
+
+  it("imports from a file's sheets, and lets a project go without its name", () => {
+    const sheets = [
+      {
+        name: "Plan",
+        rows: [
+          ["Numéro", "Phase/tâche"],
+          ["T", "Regular", null, 2, true],
+        ],
+      },
+    ];
+    expect(projectDataShapeImportRequestSchema.parse({ sheets })).toEqual({
+      sheets,
+    });
+    expect(
+      projectDataShapeImportResponseSchema.parse({
+        projects: [{ status: "active", tasks: [{ name: "Build" }] }],
+      }).projects[0]?.name,
+    ).toBeUndefined();
   });
 
   it("reserves the built-in default shape identifier", () => {

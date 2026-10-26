@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
   RiArrowLeftLine as ArrowLeft,
   RiDeleteBinLine as Trash2,
@@ -68,6 +68,12 @@ import {
   secretFieldIds,
   type PluginFormState,
 } from "./plugin-form-state";
+import { heldEditCount, useHeldEdits } from "@/lib/held-edits";
+import {
+  ConnectionAccessBadge,
+  connectionEdits,
+  HeldEditsLine,
+} from "./connection-access-ui";
 import { type PluginReplaceTarget } from "./plugin-detail-search";
 import { PluginCapabilitySwitches } from "./plugin-capability-switches";
 import { PluginConnectionForm } from "./connection-form";
@@ -515,6 +521,8 @@ export function SettingsPluginsPage({
   replace?: PluginReplaceTarget;
 }) {
   const state = useLocalState();
+  const navigate = useNavigate();
+  const heldEdits = useHeldEdits();
   const isDevelopmentBuild =
     window.ajourDesktop?.runtime?.developmentBuild === true;
   const canInstallPlugins =
@@ -589,9 +597,21 @@ export function SettingsPluginsPage({
       capability,
     });
 
+  const accessChoicesOf = (pluginId: string) =>
+    pluginGroups.find((group) => group.plugin.id === pluginId)
+      ?.connectionAccess ?? [];
+
   const handleCreate = (plugin: PluginManifest) => {
     workflow.clearFeedback();
-    setFormState(createPluginFormState((formInstances.current += 1), plugin));
+    setFormState(
+      createPluginFormState(
+        (formInstances.current += 1),
+        plugin,
+        undefined,
+        undefined,
+        accessChoicesOf(plugin.id),
+      ),
+    );
   };
 
   /**
@@ -612,6 +632,7 @@ export function SettingsPluginsPage({
         replaceFieldId ??
           connection.secretFields?.find((secret) => secret.state === "rejected")
             ?.id,
+        accessChoicesOf(plugin.id),
       ),
     );
   };
@@ -637,6 +658,7 @@ export function SettingsPluginsPage({
   const handleSave = async () => {
     if (!formState || !activePlugin) return;
     let saved: PluginConnectionSummary | undefined;
+    let heldForReview: string | undefined;
     const completed = await workflow.execute({
       type: "save",
       pluginId: formState.pluginId,
@@ -650,12 +672,26 @@ export function SettingsPluginsPage({
         ),
       ),
       connectionId: formState.editingConnectionId ?? undefined,
+      ...(accessChoicesOf(formState.pluginId).length > 0
+        ? { access: formState.access }
+        : {}),
       onSaved: (connection) => {
         saved = connection;
+      },
+      // Changes made while editing was off wait in Sync review.
+      onHeldForReview: (connectionId) => {
+        heldForReview = connectionId;
       },
     });
     if (!completed) return;
     setFormState(null);
+    if (heldForReview) {
+      void navigate({
+        to: "/settings/sync-review",
+        search: { held: heldForReview } as never,
+      });
+      return;
+    }
     if (formState.editingConnectionId || !pluginHasTeam(activePlugin)) return;
     if (!saved) return;
     const added = saved;
@@ -893,6 +929,15 @@ export function SettingsPluginsPage({
                 )}
                 vault={overview?.vault}
                 isMutating={isMutatingPlugin}
+                heldCount={
+                  groupFormState.editingConnectionId
+                    ? heldEditCount(
+                        heldEdits,
+                        group.plugin.id,
+                        groupFormState.editingConnectionId,
+                      )
+                    : 0
+                }
                 now={Date.now()}
                 onCancel={() => setFormState(null)}
                 onSave={() => void handleSave()}
@@ -939,6 +984,10 @@ export function SettingsPluginsPage({
                             {agentAccessLabel(group, connection)}
                           </Badge>
                         ) : null}
+                        <ConnectionAccessBadge
+                          group={group}
+                          connection={connection}
+                        />
                       </div>
                       <p className="text-[13px] break-words text-muted-foreground">
                         {connection.tenantLabel}
@@ -958,6 +1007,15 @@ export function SettingsPluginsPage({
                           }
                         />
                       ) : null}
+                      <HeldEditsLine
+                        count={heldEditCount(
+                          heldEdits,
+                          group.plugin.id,
+                          connection.id,
+                        )}
+                        editing={connectionEdits(group, connection)}
+                        connectionId={connection.id}
+                      />
                       <ConnectionStatusNote
                         group={group}
                         connection={connection}
@@ -1039,7 +1097,10 @@ export function SettingsPluginsPage({
                       ) : null}
                       {group.plugin.capabilities.codeHost ||
                       group.plugin.capabilities.calendar ||
-                      group.plugin.capabilities.team ? (
+                      group.plugin.capabilities.team ||
+                      // Its held changes go with it: the user confirms that.
+                      heldEditCount(heldEdits, group.plugin.id, connection.id) >
+                        0 ? (
                         <AlertDialog>
                           <AlertDialogTrigger
                             render={
@@ -1062,6 +1123,11 @@ export function SettingsPluginsPage({
                                   group.plugin,
                                   connection.id,
                                   state,
+                                  heldEditCount(
+                                    heldEdits,
+                                    group.plugin.id,
+                                    connection.id,
+                                  ),
                                 )}
                               </AlertDialogDescription>
                             </AlertDialogHeader>

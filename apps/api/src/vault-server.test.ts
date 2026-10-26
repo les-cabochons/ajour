@@ -393,7 +393,7 @@ describe("secrets in the vault", () => {
       version: number;
       agentRunner: object;
     };
-    expect(state.version).toBe(8);
+    expect(state.version).toBe(9);
     await expect(
       storedConnection(directory, "jira_main"),
     ).resolves.toMatchObject({
@@ -482,7 +482,7 @@ describe("secrets in the vault", () => {
       await next.overview();
       const moved = await stateText(directory);
       for (const secret of SECRETS) expect(moved).not.toContain(secret);
-      expect(JSON.parse(moved).version).toBe(8);
+      expect(JSON.parse(moved).version).toBe(9);
       await expect(next.sync("jira", "jira_main")).resolves.toMatchObject({
         status: 200,
       });
@@ -1095,7 +1095,7 @@ describe("secrets in the vault", () => {
     await next.overview();
     const moved = await stateText(directory);
     for (const secret of SECRETS) expect(moved).not.toContain(secret);
-    expect(JSON.parse(moved).version).toBe(8);
+    expect(JSON.parse(moved).version).toBe(9);
     await expect(next.sync("jira", "jira_second")).resolves.toMatchObject({
       status: 200,
     });

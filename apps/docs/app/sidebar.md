@@ -11,8 +11,8 @@ Press <kbd>⌘</kbd> <kbd>B</kbd> to show or hide it.
 From top to bottom, the sidebar has:
 
 - **The view switcher**, to move between Time, Backlog, Pull requests and Projects.
-- **Search**, **Filter and order**, and **+** for a new entry.
-- **The running entry**, or **Start** when nothing runs. See [Running entries](/time/running-entries).
+- **Search**, **Filter and order**, and **+** for a new backlog item.
+- **The running entry**, or **Start** when nothing runs, with **+** for a new time entry. See [Running entries](/time/running-entries).
 - **Your work list**: active backlog items, with pinned items first.
 - **Pull requests** that need you, when a code host is connected.
 - **Snoozed** and **Settled** sections, collapsed by default.

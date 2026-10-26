@@ -681,19 +681,19 @@ describe("route events", () => {
     expect(JSON.stringify(events)).not.toContain("Secret client");
   });
 
-  it("refuses a schema import whose rows break the definition, without their headings", async () => {
+  it("refuses a schema import past the sheet limits, without the sheet's text", async () => {
     const { port, events } = await startTestApi(writePlugin);
 
     const imported = await call(
       port,
       "/api/project-data-shapes/workday/import",
       {
-        datasets: [{ id: "projects", rows: [{ "Private heading": "Acme" }] }],
+        sheets: [{ name: "Private heading ".repeat(20), rows: [["Acme"]] }],
       },
     );
 
     expect(imported.status).toBe(400);
-    expect(imported.body.error).toContain("Private heading");
+    expect(imported.body.error).toContain("at most 255");
     expect(await lastRequest(events, "project.import")).toMatchObject({
       outcome: "refused",
       outcome_reason: "invalid_request",

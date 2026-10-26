@@ -50,12 +50,12 @@ async function loadSettings() {
   const sink = createRecordingSink<AjourEvent>();
   (await import("@/lib/wide-events")).replaceEventSink(sink);
   const appApi = await import("@/lib/app-api");
-  const { syncTeamConnection } = await import("@/lib/team-sync");
+  const { appPluginSettingsDependencies } =
+    await import("@/features/settings/use-plugin-settings-workflow");
   const { createPluginSettingsWorkflow } =
     await import("@/features/settings/plugin-settings-workflow");
   const workflow = createPluginSettingsWorkflow({
-    ...appApi,
-    syncTeamConnection,
+    ...appPluginSettingsDependencies(),
     subscribeCatalog: () => () => undefined,
   });
   return { appApi, workflow, recorded: sink.events };
