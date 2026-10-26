@@ -343,7 +343,8 @@ type TitlebarEditor = "new" | null;
 
 /**
  * The titlebar totals and the host of the new entry editor. In the sidebar,
- * "+" sits beside Search and the project filter, and Start in the timer dock.
+ * "+" sits in the timer dock, before Start or Stop. The "+" beside Search and
+ * the project filter creates a backlog item instead.
  * While the sidebar is off screen (`showsFloatingDock`), the running entry floats at the bottom left
  * instead, or "+" and Start while nothing runs. In the narrow view, New entry
  * (+) and Start (▶) sit in the titlebar before the totals and open the dialog.

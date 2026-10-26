@@ -6,14 +6,14 @@ A time entry is time spent on a task on one day, with an optional note. This pag
 
 ## Create an entry
 
-Press <kbd>N</kbd>, or the **+** button in the sidebar. You can also choose **New entry…** on a task or a backlog item, which fills in its project and task.
+Press <kbd>N</kbd>, or the **+** next to **Start** or **Stop** in the sidebar. You can also choose **New entry…** on a task or a backlog item, which fills in its project and task.
 
-| Field     | What to enter                                                                                                                                                                             |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Task**  | Search by project, task or code. Choose **Use project without a task** to log time on the project only.                                                                                   |
-| **Hours** | `1:30`, `1.5` or `1,5`. Ajour shows it as `01:30` once you leave the field.                                                                                                               |
-| **Date**  | The day of the entry. On the Time page, <kbd>N</kbd>, the **New entry** row and Week cells and columns start on their day. The sidebar **+**, and <kbd>N</kbd> elsewhere, start on today. |
-| **Note**  | Optional. What you did. Notes become the comments of your timesheet lines.                                                                                                                |
+| Field     | What to enter                                                                                                                                                                                     |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Task**  | Search by project, task or code. Choose **Use project without a task** to log time on the project only.                                                                                           |
+| **Hours** | `1:30`, `1.5` or `1,5`. Ajour shows it as `01:30` once you leave the field.                                                                                                                       |
+| **Date**  | The day of the entry. On the Time page, <kbd>N</kbd>, the **New entry** row and Week cells and columns start on their day. That **+** in the sidebar, and <kbd>N</kbd> elsewhere, start on today. |
+| **Note**  | Optional. What you did. Notes become the comments of your timesheet lines.                                                                                                                        |
 
 Press **Save**, <kbd>⌘</kbd> <kbd>Enter</kbd>, or <kbd>Enter</kbd> in **Hours** or **Note**. <kbd>Shift</kbd> <kbd>Enter</kbd> starts a new line in the note.
 
