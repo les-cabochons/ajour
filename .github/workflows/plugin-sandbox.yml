@@ -93,6 +93,18 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
+      - name: Start Windows PowerShell once
+        # The orphan sweep asks Windows PowerShell 5.1 about processes, within
+        # 15 s. Its first start on a fresh runner can take longer than that,
+        # which is the runner's cold start, not the sweep's.
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $took = Measure-Command {
+            & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "Get-Process -Id $PID | Out-Null"
+          }
+          "Windows PowerShell answered in $([math]::Round($took.TotalSeconds, 1)) s."
+
       - name: Run the plugin sandbox check
         # Windows and macOS runners have a desktop session, so Electron needs
         # no virtual display there. Linux gets one from xvfb-run.
