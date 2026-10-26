@@ -192,7 +192,7 @@ const isWindows = process.platform === "win32";
     exits.catchAllHits,
   );
   expect(
-    (exits.blocked?.blockedCount ?? 0) > 0,
+    (exits.blocked?.directBlockedCount ?? 0) > 0,
     "the blocked attempts are recorded for Access review",
     exits.blocked,
   );
