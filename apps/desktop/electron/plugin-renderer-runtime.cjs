@@ -292,6 +292,10 @@ function createPluginRendererRuntime({
           pluginId,
           packageDirectory: renderer.packageDirectory,
           hostDirectory,
+          onSourceRefused: ({ reason }) => {
+            renderer.sourceRefusals += 1;
+            renderer.lastSourceRefusal = reason;
+          },
         });
       });
       pluginSession.webRequest.onBeforeRequest((details, callback) => {
@@ -415,6 +419,9 @@ function createPluginRendererRuntime({
       /** @type {((command: unknown) => void) | null} */ pull: null,
       /** @type {unknown[]} */ commands: [],
       runs: new Map(),
+      /** How often a file of the package couldn't be stripped, and why last. */
+      sourceRefusals: 0,
+      /** @type {string | undefined} */ lastSourceRefusal: undefined,
       /** @type {number | undefined} */ pid: undefined,
       /** @type {ReturnType<typeof setTimeout> | undefined} */ idleTimer:
         undefined,
@@ -599,6 +606,28 @@ function createPluginRendererRuntime({
     },
   };
 
+  /**
+   * A run whose import failed after a file of its package couldn't be
+   * stripped failed for that reason, which names the file: Chromium only
+   * says the import failed. No module of the graph ran.
+   */
+  function importRefused(renderer, run, outcome) {
+    if (
+      !isRecord(outcome) ||
+      outcome.ok !== false ||
+      outcome.stage !== "import" ||
+      renderer.sourceRefusals === run.sourceRefusalsAtStart ||
+      renderer.lastSourceRefusal === undefined
+    ) {
+      return undefined;
+    }
+    return {
+      ok: false,
+      failure: "plugin_error",
+      message: renderer.lastSourceRefusal,
+    };
+  }
+
   /** One message from a registered plugin page, already identified. */
   function handleMessage(renderer, message) {
     const unit = events.current();
@@ -626,7 +655,11 @@ function createPluginRendererRuntime({
     }
     if (type === "settled") {
       run.reportedSettled = true;
-      run.settle(outcomeFromPage(message.outcome));
+      run.settle(
+        outcomeFromPage(
+          importRefused(renderer, run, message.outcome) ?? message.outcome,
+        ),
+      );
       return undefined;
     }
     if (type === "abort") {
@@ -725,6 +758,7 @@ function createPluginRendererRuntime({
         aborts: new Map(),
         done: false,
         reportedSettled: false,
+        sourceRefusalsAtStart: renderer.sourceRefusals,
         settle(outcome) {
           if (run.done) return;
           run.done = true;

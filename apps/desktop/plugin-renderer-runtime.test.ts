@@ -1,5 +1,8 @@
 import { EventEmitter } from "node:events";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { recordingEvents } from "./recording-events.ts";
 
@@ -356,6 +359,93 @@ describe("the sandboxed renderer runtime", () => {
       message: `${"x".repeat(4095)}…`,
       httpStatus: 401,
     });
+  });
+
+  it("runs a TypeScript entrypoint, and fails a run whose import graph holds a file it can't strip, naming it", async () => {
+    const packageDirectory = await mkdtemp(
+      path.join(os.tmpdir(), "ajour-renderer-ts-"),
+    );
+    try {
+      await writeFile(
+        path.join(packageDirectory, "plugin.ts"),
+        'import { Status } from "./status.ts";\nexport const status = (): Status => Status.Open;',
+      );
+      await writeFile(
+        path.join(packageDirectory, "status.ts"),
+        "export enum Status { Open, Closed }",
+      );
+      const { sessions, start, ready } = setUp();
+      const failing = start("jira", {
+        packageDirectory,
+        entrypoint: "plugin.ts",
+      });
+      const { driver } = await ready();
+      const serve = (url: string) =>
+        sessions.get("ajour-plugin:jira")!.handled.get("ajour-plugin")!({
+          url,
+        }) as Promise<Response>;
+      const first = (await driver.send({ type: "next" })) as {
+        runId: string;
+        url: string;
+      };
+      // What the worker's import of the entrypoint asks for, in order.
+      const entrypoint = await serve(first.url);
+      const status = await serve("ajour-plugin://jira/status.ts");
+      await driver.send({
+        type: "settled",
+        runId: first.runId,
+        outcome: {
+          ok: false,
+          failure: "plugin_error",
+          stage: "import",
+          message: `Failed to fetch dynamically imported module: ${first.url}`,
+        },
+      });
+
+      expect(first.url).toBe("ajour-plugin://jira/plugin.ts");
+      expect(entrypoint.status).toBe(200);
+      expect(entrypoint.headers.get("content-type")).toBe(
+        "text/javascript; charset=utf-8",
+      );
+      expect(status.status).toBe(500);
+      await expect(failing.settled).resolves.toEqual({
+        ok: false,
+        failure: "plugin_error",
+        message:
+          "status.ts uses TypeScript that Ajour can't strip: TypeScript enum is not supported in strip-only mode.",
+      });
+
+      // A later run that failed for its own reasons keeps them.
+      for (const outcome of [
+        { ok: false, failure: "plugin_error", message: "Boom." },
+        {
+          ok: false,
+          failure: "plugin_error",
+          stage: "import",
+          message: "Failed to fetch dynamically imported module.",
+        },
+      ]) {
+        const later = start("jira", {
+          packageDirectory,
+          entrypoint: "plugin.ts",
+        });
+        const command = (await driver.send({ type: "next" })) as {
+          runId: string;
+        };
+        await driver.send({
+          type: "settled",
+          runId: command.runId,
+          outcome,
+        });
+        await expect(later.settled).resolves.toEqual({
+          ok: false,
+          failure: "plugin_error",
+          message: outcome.message,
+        });
+      }
+    } finally {
+      await rm(packageDirectory, { recursive: true, force: true });
+    }
   });
 
   it("relays a run's ajour.http to that run's broker only, never another's", async () => {
