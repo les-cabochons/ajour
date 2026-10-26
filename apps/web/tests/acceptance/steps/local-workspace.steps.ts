@@ -1457,6 +1457,16 @@ Then(
   },
 );
 
+When("I choose the highlighted row in the task menu", async ({ page }) => {
+  await page.keyboard.press("Enter");
+});
+
+Then("the task menu card has closed", async ({ page }) => {
+  // Its row left the list, so the card goes with it rather than staying on
+  // a row that no longer exists.
+  await expect(taskMenuCard(page)).toHaveCount(0, { timeout: 500 });
+});
+
 Then(
   "the task menu card switches to {string} at once",
   async ({ page }, name: string) => {

@@ -159,4 +159,18 @@ describe("row hover card timing", () => {
     vi.advanceTimersByTime(delays.open);
     expect(shown).toBe("a");
   });
+
+  it("forgets the rows when the list goes, so the same row opens it again", () => {
+    intent.enterRow("a", "a");
+    vi.advanceTimersByTime(delays.open / 2);
+    intent.dispose();
+    vi.advanceTimersByTime(delays.open);
+    expect(shown).toBeNull();
+
+    intent.enterRow("a", "a");
+    vi.advanceTimersByTime(delays.open);
+    expect(shown).toBe("a");
+    intent.dispose();
+    expect(shown).toBeNull();
+  });
 });
