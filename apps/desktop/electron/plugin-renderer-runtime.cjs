@@ -9,6 +9,7 @@ const {
   pluginPartition,
   pluginRequestAllowed,
   pluginFileHeaders,
+  forgetStrippedFiles,
   servePluginFile,
 } = require("./plugin-renderer-policy.cjs");
 const { rendererSandboxRefusal } = require("./plugin-sandbox.cjs");
@@ -324,6 +325,13 @@ function createPluginRendererRuntime({
           pluginId,
           packageDirectory: renderer.packageDirectory,
           hostDirectory,
+          // The origin can't say which worker asked, so every run still
+          // running hears it: its import is the one that fails.
+          onSourceRefused: ({ reason }) => {
+            for (const run of renderer.runs.values()) {
+              run.refusedSource ??= reason;
+            }
+          },
         });
       });
       pluginSession.webRequest.onBeforeRequest((details, callback) => {
@@ -429,6 +437,9 @@ function createPluginRendererRuntime({
     for (const run of [...renderer.runs.values()]) run.settle(outcome);
     renderer.pull?.(undefined);
     renderer.pull = null;
+    // Every close forgets the package's stripped files, so an uninstall or an
+    // update, which both end in one, leaves nothing behind.
+    const forgotten = forgetStrippedFiles(renderer.packageDirectory);
     if (renderer.ready) {
       events
         .start("plugin_renderer.close", {
@@ -477,7 +488,9 @@ function createPluginRendererRuntime({
         gone = true;
       }
       if (gone) forget();
-    })().catch(() => undefined);
+    })()
+      .catch(() => undefined)
+      .then(() => forgotten);
     return renderer.closing;
   }
 
@@ -801,6 +814,27 @@ function createPluginRendererRuntime({
     },
   };
 
+  /**
+   * A run whose import failed after a file of its package couldn't be
+   * stripped failed for that reason, which names the file: Chromium only
+   * says the import failed. No module of the graph ran.
+   */
+  function refusedImportOutcome(run, outcome) {
+    if (
+      !isRecord(outcome) ||
+      outcome.ok !== false ||
+      outcome.stage !== "import" ||
+      run.refusedSource === undefined
+    ) {
+      return undefined;
+    }
+    return {
+      ok: false,
+      failure: "plugin_error",
+      message: run.refusedSource,
+    };
+  }
+
   /** One message from a registered plugin page, already identified. */
   function handleMessage(renderer, message) {
     const unit = events.current();
@@ -828,7 +862,11 @@ function createPluginRendererRuntime({
     }
     if (type === "settled") {
       run.reportedSettled = true;
-      run.settle(outcomeFromPage(message.outcome));
+      run.settle(
+        outcomeFromPage(
+          refusedImportOutcome(run, message.outcome) ?? message.outcome,
+        ),
+      );
       return undefined;
     }
     if (type === "abort") {
@@ -931,6 +969,7 @@ function createPluginRendererRuntime({
         aborts: new Map(),
         done: false,
         reportedSettled: false,
+        /** @type {string | undefined} */ refusedSource: undefined,
         settle(outcome) {
           if (run.done) return;
           run.done = true;

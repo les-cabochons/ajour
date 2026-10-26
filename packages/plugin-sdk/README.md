@@ -138,7 +138,19 @@ An update installs inactive, until the user allows it, when it adds a capability
 
 ## Plugin code
 
-Plugin code targets the browser. It may use web APIs such as `URL`, `TextDecoder`, Web Crypto, `setTimeout` and `structuredClone`. It may not use Node built-ins or `Buffer`, and it bundles its dependencies for the browser. `fetch` to the network is blocked.
+Plugin code targets the browser. It may use web APIs such as `URL`, `TextDecoder`, Web Crypto, `setTimeout` and `structuredClone`. It may not use Node built-ins or `Buffer`, and it has no `node_modules`: a dependency is a file of the plugin's own package, vendored as source or bundled to JavaScript. `fetch` to the network is blocked.
+
+The entrypoint is a module, loaded with `import()`, so the files it imports load from the plugin's own package. It may be JavaScript (`.js` or `.mjs`) or TypeScript source (`.ts` or `.mts`).
+
+### TypeScript source
+
+A plugin may ship its TypeScript as written, with no build step. Ajour strips the types of each `.ts` and `.mts` file as the plugin loads it, with Node's type stripping: types are erased, nothing is compiled. The files stay as installed, so the package's hashes and signature are the source's. Five rules follow:
+
+- **Erasable TypeScript only.** Types, interfaces, `as`, `satisfies`, `import type` and `declare` are erased. Syntax that needs code generated is refused: enums, namespaces and parameter properties (`constructor(private x: number)`). Set `"erasableSyntaxOnly": true` in `tsconfig.json` to catch it as you write. A file Ajour can't strip fails the run with a reason that names it, such as `src/status.ts uses TypeScript that Ajour can't strip: TypeScript enum is not supported in strip-only mode.`, and no module of the plugin runs. JSX isn't supported.
+- **Explicit `.ts` extensions on relative imports.** Write `import { parse } from "./parse.ts"`, not `"./parse"`: there is no resolver to try extensions. `"allowImportingTsExtensions": true` and `"noEmit": true` let `tsc` check such imports.
+- **At most 2 MB per file.** Stripping runs in Ajour's main process, so a `.ts` or `.mts` file over 2 MB (2,097,152 bytes) is refused like one that can't be stripped: the run fails with a reason that names the file, such as `src/data.ts is over 2 MB, the most Ajour strips in a TypeScript file.`, and no module of the plugin runs. Ship a large file as JavaScript, or as data in a `.json` file.
+- **No bare imports.** `import { z } from "zod"` fails, because nothing resolves a package name. Import only files of the plugin's own package, by relative path: vendor a dependency as a file of the package, or bundle it into the plugin's JavaScript. Type-only imports, such as `import type {} from "@ajour/plugin-sdk/globals"`, are erased, so they're fine.
+- **The runtime surface is the `ajour` global.** Ajour provides nothing else at runtime. Import the SDK with `import type` only: its code, such as `createFakeAjour`, is for tests.
 
 The entrypoint exports one function per operation, typed by `PluginModule`. Each receives the connection without its secrets, and `config` holds only the fields that aren't secret.
 

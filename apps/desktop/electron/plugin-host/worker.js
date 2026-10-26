@@ -1,7 +1,9 @@
 // Ajour's bootstrap for one plugin operation, in a dedicated worker of the
 // plugin's hidden page (#390). It gives the plugin's code the `ajour` global
 // of @ajour/plugin-sdk, imports the plugin's entrypoint, calls the export and
-// posts how it settled. `ajour.http` and `ajour.publicFetch` are messages to
+// posts how it settled. The entrypoint is a module, so its relative imports,
+// `.ts` files included, load from the plugin's origin, where main strips
+// their types (#437). `ajour.http` and `ajour.publicFetch` are messages to
 // the page, which relays them to Ajour's broker: the plugin's one way out.
 // The worker's own fetch, WebSocket and XMLHttpRequest are refused by the
 // policy every file here carries, and by the session if one got past it.
@@ -107,16 +109,25 @@ function failure(error) {
 
 async function run({ url, method, args }) {
   let outcome;
+  let pluginModule;
   try {
-    const pluginModule = await import(url);
-    const handler = pluginModule[method];
-    if (typeof handler !== "function") {
-      outcome = { ok: false, failure: "missing_export" };
-    } else {
-      outcome = { ok: true, result: await handler(...args) };
-    }
+    // A module graph runs only once every file of it loaded: a `.ts` file
+    // Ajour couldn't strip fails the import, and main says which one.
+    pluginModule = await import(url);
   } catch (error) {
-    outcome = failure(error);
+    outcome = { ...failure(error), stage: "import" };
+  }
+  if (pluginModule) {
+    try {
+      const handler = pluginModule[method];
+      if (typeof handler !== "function") {
+        outcome = { ok: false, failure: "missing_export" };
+      } else {
+        outcome = { ok: true, result: await handler(...args) };
+      }
+    } catch (error) {
+      outcome = failure(error);
+    }
   }
   try {
     post({ type: "settled", outcome });
