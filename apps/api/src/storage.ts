@@ -42,6 +42,7 @@ import {
   pluginAccessDifference,
   widensAccess,
 } from "../../../packages/shared/plugin-access.ts";
+import {
   connectionAccessChoicesOf,
   connectionAccessOn,
 } from "../../../packages/shared/connection-access.ts";
