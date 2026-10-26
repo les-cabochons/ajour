@@ -1130,6 +1130,7 @@ describe("state files from earlier versions", () => {
       pluginSecrets: {},
     },
     pluginBrokerActivity: {},
+    pluginRuntimeSettings: {},
     pluginConsent: {},
   };
   /**
@@ -1276,5 +1277,26 @@ describe("state files from earlier versions", () => {
         disabledPluginIds: ["jira"],
       }),
     ).resolves.toEqual({ ...emptyCurrentState, disabledPluginIds: ["jira"] });
+  });
+
+  it("keeps the Advanced sections it can read, and drops those left at the plugin's choices", async () => {
+    await expect(
+      migrated({
+        ...emptyCurrentState,
+        pluginRuntimeSettings: {
+          kept: { start: "alwaysReady", memoryCeilingMb: 512 },
+          ceilingOnly: { start: "plugin", memoryCeilingMb: 64 },
+          pluginChoices: { start: "plugin" },
+          unknownStart: { start: "sometimes" },
+          tooSmall: { start: "plugin", memoryCeilingMb: 8 },
+        },
+      }),
+    ).resolves.toEqual({
+      ...emptyCurrentState,
+      pluginRuntimeSettings: {
+        kept: { start: "alwaysReady", memoryCeilingMb: 512 },
+        ceilingOnly: { start: "plugin", memoryCeilingMb: 64 },
+      },
+    });
   });
 });

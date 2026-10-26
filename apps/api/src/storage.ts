@@ -51,8 +51,17 @@ import {
 import { removeOrphanedTempFiles, writeFileAtomically } from "./atomic-file.ts";
 import {
   agentTaskMcpToolNames,
+  isPluginApi4Manifest,
   type AgentTaskMcpTool,
 } from "../../../packages/shared/plugin-api-4.ts";
+import {
+  DEFAULT_PLUGIN_RUNTIME_SETTINGS,
+  PLUGIN_MEMORY_CEILING_MB,
+  pluginRuntimeSettingsSchema,
+  type PluginRuntimeSettings,
+  type PluginRuntimeSummary,
+  type PluginStartMode,
+} from "../../../packages/shared/plugin-lifecycle.ts";
 import { withoutContent } from "./event-errors.ts";
 import type { ApiEvents } from "./events.ts";
 import {
@@ -410,6 +419,11 @@ interface AppApiStateV8 {
    */
   pluginBrokerActivity: Record<string, BrokerActivityRecord>;
   /**
+   * Per plugin API 4 plugin, its Advanced section: Start and Memory
+   * ceiling. A plugin left at its own choices has no entry.
+   */
+  pluginRuntimeSettings: Record<string, PluginRuntimeSettings>;
+  /**
    * Per plugin, the version the user allowed and what it reached. Turning
    * the plugin on records it; an update that reaches more is compared
    * against it (#394). Absent for a plugin never turned on.
@@ -516,7 +530,38 @@ function createDefaultState(): AppApiState {
       pluginSecrets: {},
     },
     pluginBrokerActivity: {},
+    pluginRuntimeSettings: {},
     pluginConsent: {},
+  };
+}
+
+/** Saved Advanced sections, without one that is unreadable or left at the plugin's choices. */
+function normalizePluginRuntimeSettings(
+  raw: unknown,
+): Record<string, PluginRuntimeSettings> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return Object.fromEntries(
+    Object.entries(raw).flatMap(([pluginId, settings]) => {
+      const parsed = pluginRuntimeSettingsSchema.safeParse(settings);
+      return parsed.success && !isDefaultRuntimeSettings(parsed.data)
+        ? [[pluginId, parsed.data] as const]
+        : [];
+    }),
+  );
+}
+
+function isDefaultRuntimeSettings(settings: PluginRuntimeSettings) {
+  return settings.start === "plugin" && settings.memoryCeilingMb === undefined;
+}
+
+/** An API 4 plugin's start mode and ceiling, as its manifest declares them. */
+function declaredRuntime(plugin: {
+  runtime?: { start?: PluginStartMode; memoryCeilingMb?: number };
+}): PluginRuntimeSummary["declared"] {
+  return {
+    start: plugin.runtime?.start ?? "whenNeeded",
+    memoryCeilingMb:
+      plugin.runtime?.memoryCeilingMb ?? PLUGIN_MEMORY_CEILING_MB.default,
   };
 }
 
@@ -981,6 +1026,9 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
         const normalized = normalizeBrokerActivity(record);
         return normalized ? [[pluginId, normalized] as const] : [];
       }),
+    ),
+    pluginRuntimeSettings: normalizePluginRuntimeSettings(
+      raw.pluginRuntimeSettings,
     ),
     pluginConsent: Object.fromEntries(
       Object.entries(
@@ -1509,6 +1557,16 @@ export class AppApiStorage {
           state.disabledCapabilities[plugin.id] ?? []
         ).filter((capability) => pluginHasCapability(plugin, capability)),
         ...(missingPluginIds.has(plugin.id) ? { missing: true } : {}),
+        ...(isPluginApi4Manifest(plugin) && !missingPluginIds.has(plugin.id)
+          ? {
+              runtime: {
+                declared: declaredRuntime(plugin),
+                settings:
+                  state.pluginRuntimeSettings[plugin.id] ??
+                  DEFAULT_PLUGIN_RUNTIME_SETTINGS,
+              },
+            }
+          : {}),
         ...(agentTaskSecretFields.length > 0 ? { agentTaskSecretFields } : {}),
         ...(agentTaskSealedConfig ? { agentTaskSealedConfig } : {}),
         connections: state.connections
@@ -1972,6 +2030,34 @@ export class AppApiStorage {
     });
   }
 
+  /** The plugin's Advanced section: Start and Memory ceiling. */
+  async getPluginRuntimeSettings(
+    pluginId: string,
+  ): Promise<PluginRuntimeSettings> {
+    return (
+      (await this.readState()).pluginRuntimeSettings[pluginId] ??
+      DEFAULT_PLUGIN_RUNTIME_SETTINGS
+    );
+  }
+
+  async setPluginRuntimeSettings(
+    pluginId: string,
+    settings: PluginRuntimeSettings,
+  ): Promise<void> {
+    await this.mutate(async (state) => {
+      const { [pluginId]: _previous, ...others } = state.pluginRuntimeSettings;
+      return {
+        nextState: {
+          ...state,
+          pluginRuntimeSettings: isDefaultRuntimeSettings(settings)
+            ? others
+            : { ...others, [pluginId]: settings },
+        },
+        result: undefined,
+      };
+    });
+  }
+
   async setPluginCapabilityEnabled(
     pluginId: string,
     capability: SwitchableCapability,
@@ -2091,6 +2177,11 @@ export class AppApiStorage {
         ),
         pluginBrokerActivity: Object.fromEntries(
           Object.entries(state.pluginBrokerActivity).filter(
+            ([candidate]) => candidate !== pluginId,
+          ),
+        ),
+        pluginRuntimeSettings: Object.fromEntries(
+          Object.entries(state.pluginRuntimeSettings).filter(
             ([candidate]) => candidate !== pluginId,
           ),
         ),

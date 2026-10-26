@@ -88,9 +88,10 @@ import {
   backlogCommentOperationSchema,
   backlogCommentOperations,
 } from "../../../packages/shared/backlog-comments.ts";
-import type {
-  AjourCatalog,
-  FieldsOf,
+import {
+  catalog,
+  type AjourCatalog,
+  type FieldsOf,
 } from "../../../packages/wide-events/catalog.ts";
 import type { FailOptions, Unit } from "../../../packages/wide-events/index.ts";
 import { teamSyncRequestSchema } from "../../../packages/shared/team-sync.ts";
@@ -140,6 +141,7 @@ import {
   pluginNetworkFieldIds,
   type PluginApi4Manifest,
 } from "../../../packages/shared/plugin-api-4.ts";
+import { pluginRuntimeSettingsUpdateSchema } from "../../../packages/shared/plugin-lifecycle.ts";
 import type { Sink } from "../../../packages/wide-events/sinks.ts";
 import { AgentSessions } from "./agent-sessions.ts";
 import {
@@ -307,6 +309,13 @@ interface AppApiServerOptions {
   brokerTransport?: BrokerTransport;
   /** How the broker resolves a host, as its transport would. Node's `dns.lookup` by default. */
   brokerResolver?: BrokerResolver;
+  /** The clock of the plugins' crash budget. Tests move it. */
+  pluginClock?: () => number;
+  /**
+   * How long a stop gives running plugin operations to finish before it
+   * cancels them: 5 s by default (#217).
+   */
+  pluginDrainMs?: number;
   /**
    * How long the broker's records for Access review gather in memory
    * between two writes of the state file: 30 s by default.
@@ -331,6 +340,12 @@ interface AppApiRuntime {
   projectDataShapePluginManager: ProjectDataShapePluginManager;
   agentRunner: AgentRunner;
   stopping: boolean;
+  pluginDrainMs: number;
+  /**
+   * The requests being handled that run plugin operations: a stop lets
+   * them finish within the drain.
+   */
+  inFlight: Set<Promise<unknown>>;
 }
 
 const appApiRuntimesByServer = new WeakMap<Server, AppApiRuntime>();
@@ -873,6 +888,22 @@ function parseAgentTaskValues(
 }
 
 /**
+ * Whether the plugin may run now: one answer for a call and for the list of
+ * plugins the runtime keeps ready, so neither runs a plugin the other would
+ * refuse. The check is the storage's: the plugin can run, the plugin system
+ * and the plugin are on, it reaches no more than the user allowed (a plugin
+ * held for consent stays off), and unsigned plugins are not deactivated
+ * for it. Anything else that gates a plugin joins this check.
+ */
+function pluginMayRun(
+  storage: AppApiStorage,
+  pluginId: string,
+  runnable: RunnablePlugins,
+): Promise<boolean> {
+  return storage.isPluginEnabled(pluginId, runnable);
+}
+
+/**
  * Why a capability cannot run now, and the reason its events record: the
  * plugin system or the plugin is off, the plugin reaches more than the user
  * allowed, or the user turned the capability off. Without a capability, as
@@ -892,7 +923,7 @@ async function inactiveCapability(
     }
   | undefined
 > {
-  if (!(await storage.isPluginEnabled(pluginId, runnable))) {
+  if (!(await pluginMayRun(storage, pluginId, runnable))) {
     if (!(await storage.getPluginSystemEnabled())) {
       return {
         message: `Enable the plugin system before ${action}.`,
@@ -1049,11 +1080,14 @@ async function getOverview(
       secretManifestOf,
     ),
   );
-  const overview = await storage.getPluginsOverview(
-    plugins,
-    unavailable,
-    access,
-  );
+  const listed = await storage.getPluginsOverview(plugins, unavailable, access);
+  const overview = {
+    ...listed,
+    connectionGroups: listed.connectionGroups.map((group) => {
+      const suspended = pluginManager.suspension(group.plugin.id);
+      return suspended ? { ...group, suspended } : group;
+    }),
+  };
   const sandbox = pluginManager.sandboxStatus();
   return pluginsOverviewSchema.parse(
     // Without a sandbox no plugin runs, so none counts as on and their
@@ -1190,6 +1224,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   pluginRuntime.attach?.({
     recordBlocked: (pluginId, at) =>
       storage.recordBrokerActivity(pluginId, undefined, "blocked_direct", at),
+    // Called only once the plugin manager below exists.
+    recordStopped: (pluginId, cause, at) =>
+      pluginManager.recordStop(pluginId, cause, at),
   });
   const broker: CredentialBroker = new CredentialBroker({
     ...(options.brokerTransport ? { transport: options.brokerTransport } : {}),
@@ -1232,7 +1269,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   const developmentPluginDirectories =
     options.developmentPluginDirectories ??
     (allowDevelopmentPlugins ? defaultDevelopmentPluginDirectories() : []);
-  const pluginManager = new PluginManager({
+  const pluginManager: PluginManager = new PluginManager({
     broker,
     installedPluginDirectory:
       options.installedPluginDirectory ??
@@ -1243,6 +1280,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     requestTimeoutMs: options.pluginRequestTimeoutMs,
     runtime: pluginRuntime,
     events,
+    pluginState: async (pluginId, runnable) => ({
+      on: await pluginMayRun(storage, pluginId, runnable),
+      settings: await storage.getPluginRuntimeSettings(pluginId),
+    }),
+    ...(options.pluginClock ? { now: options.pluginClock } : {}),
     // The routes check activation before reading the request. This repeats
     // the check once the operation can be cancelled, so a capability turned
     // off meanwhile never runs. A package that reaches more than the user
@@ -1294,6 +1336,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     pluginHostPackages: () => pluginManager.packageDirectories(),
     events,
   });
+  // "Always ready" plugins start with Ajour.
+  void pluginManager.syncReadiness();
   const allowedOrigins = new Set(
     options.allowedOrigins ?? configuredAllowedOrigins(),
   );
@@ -1373,6 +1417,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     projectDataShapePluginManager,
     agentRunner,
     stopping: false,
+    pluginDrainMs: options.pluginDrainMs ?? 5_000,
+    inFlight: new Set(),
   };
   const stallTimer = setInterval(() => {
     agentSessions.tick();
@@ -1657,6 +1703,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           },
         });
       }
+      await pluginManager.syncReadiness();
       writeJson(response, 200, await getOverview(storage, pluginManager));
     },
 
@@ -1691,6 +1738,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           },
         });
       }
+      // Unsigned "Always ready" plugins close, or start again, with the switch.
+      await pluginManager.syncReadiness();
       writeJson(response, 200, await getOverview(storage, pluginManager));
     },
 
@@ -1885,6 +1934,55 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         );
         unit.set({ activation: { operations_cancelled: cancelled } });
       }
+      await pluginManager.syncReadiness();
+      writeJson(response, 200, await getOverview(storage, pluginManager));
+    },
+
+    pluginRuntimeUpdate: async ({ request, response, params, unit }) => {
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      unit.set({ plugin: { id: pluginId } });
+      const plugin = (await pluginManager.listPlugins()).find(
+        (candidate) => candidate.id === pluginId,
+      );
+      if (!plugin) {
+        unit.refuse("not_installed");
+        writeJson(response, 404, { error: "Plugin not found." });
+        return;
+      }
+      if (!isPluginApi4Manifest(plugin)) {
+        unit.refuse("not_supported");
+        writeJson(response, 400, {
+          error: "Only plugins built for plugin API 4 have these settings.",
+        });
+        return;
+      }
+      const payload = await readRequest(
+        request,
+        pluginRuntimeSettingsUpdateSchema,
+      );
+      unit.set({
+        plugin_runtime: {
+          start: payload.start,
+          ...(payload.memoryCeilingMb !== null
+            ? { memory_ceiling_mb: payload.memoryCeilingMb }
+            : {}),
+        },
+      });
+      await storage.setPluginRuntimeSettings(pluginId, {
+        start: payload.start,
+        ...(payload.memoryCeilingMb !== null
+          ? { memoryCeilingMb: payload.memoryCeilingMb }
+          : {}),
+      });
+      await pluginManager.syncReadiness();
+      writeJson(response, 200, await getOverview(storage, pluginManager));
+    },
+
+    pluginResume: async ({ response, params, unit }) => {
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      unit.set({ plugin: { id: pluginId } });
+      const resumed = await pluginManager.resume(pluginId);
+      unit.set({ plugin_runtime: { resumed } });
       writeJson(response, 200, await getOverview(storage, pluginManager));
     },
 
@@ -3519,17 +3617,27 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           const handle = handlers[route.id] as (
             context: RouteContext<RouteId>,
           ) => Promise<void> | void;
-          await handle({
-            request,
-            response,
-            url,
-            origin: requestOrigin,
-            params: readInput(() =>
-              decodeParams(route.rawParams),
-            ) as RouteParams<RouteId>,
-            unit: routed as RouteContext<RouteId>["unit"],
-            stream: exchange.stream,
-          });
+          const handled = Promise.resolve(
+            handle({
+              request,
+              response,
+              url,
+              origin: requestOrigin,
+              params: readInput(() =>
+                decodeParams(route.rawParams),
+              ) as RouteParams<RouteId>,
+              unit: routed as RouteContext<RouteId>["unit"],
+              stream: exchange.stream,
+            }),
+          );
+          // A stop waits on what runs plugin code, never on a stream.
+          if (runsPluginOperations(route.name)) {
+            runtime.inFlight.add(handled);
+            void handled
+              .finally(() => runtime.inFlight.delete(handled))
+              .catch(() => undefined);
+          }
+          await handled;
         } catch (error) {
           // The client hung up, and the error is its interrupted body or
           // connection: the seam ends the request `cancelled`.
@@ -3574,8 +3682,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     clearInterval(stallTimer);
     agentSessions.close();
     void agentRunner.shutdown();
-    void pluginManager.shutdown();
-    void projectDataShapePluginManager.shutdown();
+    // A stop closes the server first, and drains the plugins itself.
+    if (!runtime.stopping) {
+      void pluginManager.shutdown();
+      void projectDataShapePluginManager.shutdown();
+    }
     // What the broker gathered for Access review since its last write.
     storage.flushBrokerActivity().catch(() => undefined);
   });
@@ -3688,6 +3799,7 @@ export async function installPluginForServer(
       );
     },
   );
+  await runtime.pluginManager.syncReadiness();
   return pluginInstallResponseSchema.parse({
     plugin: installedPlugin.manifest,
     replaced: installedPlugin.replaced,
@@ -3709,6 +3821,7 @@ export async function uninstallPluginForServer(
   await runtime.storage.assertSecretsChangeable();
   const removedPlugin = await runtime.pluginManager.uninstallPlugin(pluginId);
   await runtime.storage.removePluginData(removedPlugin.id);
+  await runtime.pluginManager.syncReadiness();
   return pluginUninstallResponseSchema.parse({
     pluginId: removedPlugin.id,
     overview: await getOverview(runtime.storage, runtime.pluginManager),
@@ -3766,10 +3879,38 @@ export async function startAppApiServer(
   return server;
 }
 
+/** Whether a route's requests run plugin code, as its event's kinds say. */
+function runsPluginOperations(name: string | undefined) {
+  const spec = name
+    ? (catalog.events as Record<string, { kinds: readonly string[] }>)[name]
+    : undefined;
+  return spec?.kinds.includes("plugin_operation") ?? false;
+}
+
+/** Resolves once every promise in `running`, as it changes, settled, or after `ms`. */
+async function settledWithin(running: Set<Promise<unknown>>, ms: number) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<"deadline">((resolve) => {
+    timer = setTimeout(() => resolve("deadline"), ms);
+  });
+  try {
+    while (running.size > 0) {
+      const ended = await Promise.race([
+        Promise.allSettled([...running]).then(() => "settled" as const),
+        deadline,
+      ]);
+      if (ended === "deadline") return;
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
- * Stops the API: new requests are refused, the agent runner and the plugin
- * hosts stop, then the connections close. Its `api.stop` event times each
- * phase.
+ * Stops the API: new requests are refused, the requests and plugin
+ * operations running get up to `pluginDrainMs` to finish while the agent
+ * runner stops, then the plugin hosts stop and the connections close. Its
+ * `api.stop` event times each phase.
  */
 export async function stopAppApiServer(server: Server): Promise<void> {
   const runtime = appApiRuntimesByServer.get(server);
@@ -3801,16 +3942,28 @@ export async function stopAppApiServer(server: Server): Promise<void> {
       });
     });
     server.closeIdleConnections();
-    // The run's cleanup revokes its MCP client, so finish it before the plugins stop.
+    // New requests are refused from here. Those running, and their plugin
+    // operations, get the drain to finish (#217) while the agent runner
+    // stops beside them; then the plugin hosts cancel what is left.
     let phaseStartedAt = Date.now();
+    const pluginsStopped = (async () => {
+      if (!runtime) return;
+      // The requests save what their operations returned, so both finish.
+      await Promise.all([
+        settledWithin(runtime.inFlight, runtime.pluginDrainMs),
+        runtime.pluginManager.whenIdle(runtime.pluginDrainMs),
+        runtime.projectDataShapePluginManager.whenIdle(runtime.pluginDrainMs),
+      ]);
+      unit?.set({ api: { drain_ms: Date.now() - phaseStartedAt } });
+      await Promise.all([
+        runtime.pluginManager.shutdown(),
+        runtime.projectDataShapePluginManager.shutdown(),
+      ]);
+      unit?.set({ api: { plugins_ms: Date.now() - phaseStartedAt } });
+    })();
     await runtime?.agentRunner.shutdown();
     unit?.set({ api: { agent_runner_ms: Date.now() - phaseStartedAt } });
-    phaseStartedAt = Date.now();
-    await Promise.all([
-      runtime?.pluginManager.shutdown(),
-      runtime?.projectDataShapePluginManager.shutdown(),
-    ]);
-    unit?.set({ api: { plugins_ms: Date.now() - phaseStartedAt } });
+    await pluginsStopped;
     // No plugin sends a request now: write what the broker gathered for
     // Access review since its last write, so a quit loses none.
     await runtime?.storage.flushBrokerActivity().catch(() => undefined);

@@ -7,6 +7,7 @@ export * from "./lib/timeline/dominant-log";
 export * from "./lib/rules/engine";
 export * from "./lib/validation/schemas";
 export * from "./plugins";
+export * from "./plugin-lifecycle";
 export * from "./plugin-access";
 export * from "./plugin-access-schemas";
 export * from "./backlog-comments";

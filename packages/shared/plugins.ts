@@ -8,6 +8,10 @@ import {
 } from "./backlog-comments.ts";
 import { projectDataShapeDefinitionSchema } from "./project-data-shapes.ts";
 import {
+  pluginRuntimeSummarySchema,
+  pluginSuspensionSchema,
+} from "./plugin-lifecycle.ts";
+import {
   pluginAccessActivitySchema,
   pluginAccessViewSchema,
   pluginPendingAccessSchema,
@@ -724,6 +728,16 @@ export const pluginOverviewGroupSchema = z.object({
   agentTaskSecretFields: z.array(secretFieldSummarySchema).optional(),
   /** The agent task settings kept whole in the vault while the package is missing. */
   agentTaskSealedConfig: secretEntrySummarySchema.optional(),
+  /**
+   * How a plugin API 4 renderer starts and its memory ceiling: the
+   * manifest's and the user's. Absent for other plugins.
+   */
+  runtime: pluginRuntimeSummarySchema.optional(),
+  /**
+   * The plugin kept stopping, so its calls fail at once: "This plugin keeps
+   * stopping", until Turn back on or a restart of Ajour.
+   */
+  suspended: pluginSuspensionSchema.optional(),
 });
 export type PluginOverviewGroup = z.infer<typeof pluginOverviewGroupSchema>;
 

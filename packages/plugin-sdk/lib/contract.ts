@@ -95,7 +95,6 @@ export type PluginManifest = {
               | "archive_work_item"
               | "restore_work_item"
             )[];
-            weekLink?: string | undefined;
             settings?:
               | {
                   type:
@@ -121,6 +120,7 @@ export type PluginManifest = {
                   passToPlugin?: boolean | undefined;
                 }[]
               | undefined;
+            weekLink?: string | undefined;
           }[];
         }
       | undefined;
@@ -164,6 +164,12 @@ export type PluginManifest = {
         always?: boolean | undefined;
         operations?: string[] | undefined;
       }[]
+    | undefined;
+  runtime?:
+    | {
+        start?: "whenNeeded" | "alwaysReady" | undefined;
+        memoryCeilingMb?: number | undefined;
+      }
     | undefined;
   network?:
     | {
@@ -213,12 +219,6 @@ export type PluginManifest = {
       }
     | undefined;
   $schema?: string | undefined;
-  runtime?:
-    | {
-        start?: "whenNeeded" | "alwaysReady" | undefined;
-        memoryCeilingMb?: number | undefined;
-      }
-    | undefined;
 };
 
 /** A connection field or agent task setting. Secret fields never reach the plugin. */

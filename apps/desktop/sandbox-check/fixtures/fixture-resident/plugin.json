@@ -1,0 +1,13 @@
+{
+  "id": "fixture-resident",
+  "version": "4.0.0",
+  "apiVersion": 4,
+  "displayName": "Fixture Resident",
+  "iconSvg": "<svg viewBox='0 0 16 16'><path d='M0 0h16v16H0z' /></svg>",
+  "entrypoint": "plugin.mjs",
+  "connectionFields": [
+    { "id": "site", "label": "Site", "type": "text", "required": true }
+  ],
+  "capabilities": { "connector": {} },
+  "runtime": { "start": "alwaysReady", "memoryCeilingMb": 128 }
+}

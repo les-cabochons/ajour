@@ -91,6 +91,10 @@ import {
   PluginAccessUpdatePanel,
 } from "./plugin-access-section";
 import {
+  PluginAdvancedSettings,
+  PluginSuspendedNotice,
+} from "./plugin-runtime-settings";
+import {
   canInstallCatalogPlugin,
   catalogOffersUpdate,
   isEntrySigned,
@@ -970,6 +974,13 @@ export function SettingsPluginsPage({
             disabled={isMutatingPlugin || overview?.pluginsEnabled === false}
             onAllow={() => void handlePluginActivation(group, true)}
           />
+          <PluginSuspendedNotice
+            group={group}
+            disabled={isMutatingPlugin}
+            onTurnBackOn={() =>
+              void workflow.execute({ type: "resume", plugin: group.plugin })
+            }
+          />
           {renderMessages()}
           <PluginCapabilityBand entry={entry} />
         </PluginDetailHeader>
@@ -1372,6 +1383,18 @@ export function SettingsPluginsPage({
             </div>
           </section>
         ) : null}
+
+        <PluginAdvancedSettings
+          group={group}
+          disabled={isMutatingPlugin || Boolean(unavailableReason)}
+          onSave={(settings) =>
+            void workflow.execute({
+              type: "runtime",
+              plugin: group.plugin,
+              settings,
+            })
+          }
+        />
       </>
     );
   };
