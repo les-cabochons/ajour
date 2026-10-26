@@ -56,4 +56,4 @@ To use only pull requests, turn off **Backlog items** under **Capabilities** on 
 
 ## Source
 
-[les-cabochons/ajc-github](https://github.com/les-cabochons/ajc-github) on GitHub, MIT license.
+[plugins/github](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/github) in les-cabochons/ajour-plugins on GitHub, MIT license.

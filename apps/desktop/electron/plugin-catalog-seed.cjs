@@ -14,13 +14,14 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
     license: {
       name: "MIT License",
       spdxId: "MIT",
-      url: "https://github.com/les-cabochons/ajc-azure-devops/blob/main/LICENSE",
+      url: "https://github.com/les-cabochons/ajour-plugins/blob/main/plugins/azure-devops/LICENSE",
     },
-    website: "https://github.com/les-cabochons/ajc-azure-devops#readme",
+    website:
+      "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/azure-devops#readme",
     repository: {
       provider: "github",
-      slug: "les-cabochons/ajc-azure-devops",
-      url: "https://github.com/les-cabochons/ajc-azure-devops",
+      slug: "les-cabochons/ajour-plugins",
+      url: "https://github.com/les-cabochons/ajour-plugins",
     },
     status: "available",
     compatibility: { pluginApiVersion: 3 },
@@ -29,7 +30,7 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
     install: {
       method: "github-release",
       allowPrereleases: true,
-      assetPattern: "^azure_devops-[0-9A-Za-z.+-]+\\.ajour-connector$",
+      assetPattern: "^azure_devops-[0-9][0-9A-Za-z.+-]*\\.ajour-connector$",
     },
     tags: ["azure-devops", "project-management", "synchronization"],
   },
@@ -46,13 +47,14 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
     license: {
       name: "MIT License",
       spdxId: "MIT",
-      url: "https://github.com/les-cabochons/ajc-github/blob/main/LICENSE",
+      url: "https://github.com/les-cabochons/ajour-plugins/blob/main/plugins/github/LICENSE",
     },
-    website: "https://github.com/les-cabochons/ajc-github#readme",
+    website:
+      "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/github#readme",
     repository: {
       provider: "github",
-      slug: "les-cabochons/ajc-github",
-      url: "https://github.com/les-cabochons/ajc-github",
+      slug: "les-cabochons/ajour-plugins",
+      url: "https://github.com/les-cabochons/ajour-plugins",
     },
     status: "available",
     compatibility: { pluginApiVersion: 3 },
@@ -61,7 +63,7 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
     install: {
       method: "github-release",
       allowPrereleases: true,
-      assetPattern: "^github-[0-9A-Za-z.+-]+\\.ajour-connector$",
+      assetPattern: "^github-[0-9][0-9A-Za-z.+-]*\\.ajour-connector$",
     },
     tags: ["github", "code-review", "pull-requests"],
   },
@@ -78,13 +80,14 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
     license: {
       name: "MIT License",
       spdxId: "MIT",
-      url: "https://github.com/les-cabochons/ajc-jira/blob/main/LICENSE",
+      url: "https://github.com/les-cabochons/ajour-plugins/blob/main/plugins/jira/LICENSE",
     },
-    website: "https://github.com/les-cabochons/ajc-jira#readme",
+    website:
+      "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/jira#readme",
     repository: {
       provider: "github",
-      slug: "les-cabochons/ajc-jira",
-      url: "https://github.com/les-cabochons/ajc-jira",
+      slug: "les-cabochons/ajour-plugins",
+      url: "https://github.com/les-cabochons/ajour-plugins",
     },
     status: "available",
     compatibility: { pluginApiVersion: 3 },
@@ -93,7 +96,7 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
     install: {
       method: "github-release",
       allowPrereleases: true,
-      assetPattern: "^jira-[0-9A-Za-z.+-]+\\.ajour-connector$",
+      assetPattern: "^jira-[0-9][0-9A-Za-z.+-]*\\.ajour-connector$",
     },
     tags: ["jira", "project-management", "synchronization"],
   },
@@ -110,13 +113,13 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
     license: {
       name: "MIT License",
       spdxId: "MIT",
-      url: "https://github.com/les-cabochons/ajp-workday-agent/blob/main/LICENSE",
+      url: "https://github.com/les-cabochons/ajour-plugins/blob/main/plugins/workday-agent/LICENSE",
     },
     website: "https://docs.ajour.day/plugins/workday-agent",
     repository: {
       provider: "github",
-      slug: "les-cabochons/ajp-workday-agent",
-      url: "https://github.com/les-cabochons/ajp-workday-agent",
+      slug: "les-cabochons/ajour-plugins",
+      url: "https://github.com/les-cabochons/ajour-plugins",
     },
     status: "available",
     compatibility: { pluginApiVersion: 3 },
@@ -125,7 +128,7 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
     install: {
       method: "github-release",
       allowPrereleases: true,
-      assetPattern: "^workday-agent-[0-9A-Za-z.+-]+\\.ajour-connector$",
+      assetPattern: "^workday-agent-[0-9][0-9A-Za-z.+-]*\\.ajour-connector$",
     },
     tags: ["workday", "timesheet", "agent"],
   },
@@ -142,13 +145,14 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
     license: {
       name: "MIT License",
       spdxId: "MIT",
-      url: "https://github.com/les-cabochons/ajour/blob/main/LICENSE",
+      url: "https://github.com/les-cabochons/ajour-plugins/blob/main/plugins/workday-project-data/LICENSE",
     },
-    website: "https://github.com/les-cabochons/ajp-workday",
+    website:
+      "https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/workday-project-data#readme",
     repository: {
       provider: "github",
-      slug: "les-cabochons/ajp-workday",
-      url: "https://github.com/les-cabochons/ajp-workday",
+      slug: "les-cabochons/ajour-plugins",
+      url: "https://github.com/les-cabochons/ajour-plugins",
     },
     status: "coming-soon",
     compatibility: { pluginApiVersion: 1 },

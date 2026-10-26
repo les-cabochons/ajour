@@ -99,4 +99,4 @@ If you had the plugin before it brought pull requests, the update added them tur
 
 ## Source
 
-[les-cabochons/ajc-azure-devops](https://github.com/les-cabochons/ajc-azure-devops) on GitHub, MIT license.
+[plugins/azure-devops](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/azure-devops) in les-cabochons/ajour-plugins on GitHub, MIT license.

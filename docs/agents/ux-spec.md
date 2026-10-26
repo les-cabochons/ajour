@@ -51,19 +51,20 @@ Decided in [Action model for entries, timers, projects, tasks and work items](ht
 
 ### Project
 
-Edit · New task · Archive (Restore when archived)
+Edit · New task · Add to favorites (Remove from favorites when starred) · Archive (Restore when archived)
 
-- An archived project disables Edit and New task: "Restore the project first".
+- An archived project disables Edit, New task and Add to favorites: "Restore the project first".
 - Archive leaves the edit form and moves into the action set.
 - Projects have no Delete.
 
 ### Task
 
-Start entry · New entry… · Edit · Assign shortcut… · Archive (Restore when archived)
+Start entry · New entry… · Edit · Assign shortcut… · Add to favorites (Remove from favorites when starred) · Archive (Restore when archived)
 
 - Start entry starts a new running entry for this task.
 - Assign shortcut… makes the task a pinned task with a number slot from 1 to 0, or changes or clears its slot. See the Keyboard section.
 - New entry… opens the entry editor with this task filled in.
+- Add to favorites stars the task, so it shows in the task menu's Favorites. See [Task menu](#task-menu).
 - An archived task, or a task in an archived project, disables Start entry, New entry… and Edit: "Restore the task first" or "Restore the project first".
 
 ### Backlog item
@@ -88,7 +89,7 @@ Decided in [Native right-click menus with groups and Cut, Copy, Paste](https://g
 - A menu draws a line between groups of related actions. Each action set names its groups (`group` in `domain/actions/object-actions.ts`), and the destructive actions at the end share the last one:
   - time entry: Edit · Continue/Stop | Cut · Copy · Paste | Duplicate · Duplicate to… · Move to… · Mark as not committed | Delete/Discard
   - backlog item: Start entry/Stop · New entry… | Edit · Add subitem | Snooze… · Pin · Settle | Change source state… · Open in source | Archive · Delete
-  - task: Start entry · New entry… | Edit · Assign shortcut… | Archive/Restore
+  - task: Start entry · New entry… | Edit · Assign shortcut… · Add to favorites | Archive/Restore
   - project: Edit · New task | Archive/Restore
   - calendar suggestion: Add · Choose project… | Dismiss · Hide this meeting · Forget this meeting
   - pull request: Open in the provider | Settle · Snooze…
@@ -241,6 +242,44 @@ The form is the same in every host. Only its container changes.
 - In the side panel, clicking another entry while the draft has valid changes saves it, then loads the new entry. An invalid draft blocks the switch and shows its error.
 - After saving, the editor closes and focus returns to the row or card it came from.
 
+## Task menu
+
+The project and task picker of the entry editor, the Week Grid's new row and calendar suggestions.
+
+### Rows
+
+- Every row is one line. A long name is cut.
+- A task row shows a star, the name, its pinned key and "Non-billable" when the task is not billable. A billable task says nothing about billing.
+- A project row shows a star, the project's icon and name, its active task count and a chevron. Choosing it opens its tasks.
+- Search results add the project's name after the task's name, because task names repeat across projects.
+
+### Favorites
+
+- A favorite is a task or a project the user starred. It is personal, like a pinned slot: a shared project's favorites stay on this computer. A task can be a favorite and a pinned task.
+- The star at the start of a row adds the row to favorites or removes it. A starred row always shows a filled star; other rows show the outline on hover and highlight. Pressing the star does not choose the row or close the menu. Removing a star, from the menu or the action sets, shows the Undo toast, because on the Favorites page the row leaves.
+- Add to favorites and Remove from favorites are also in the task and project action sets, with F on a focused task or project.
+- The start view lists, without a search: No project, Favorites, Recent tasks, then All projects. An empty section is hidden.
+- Favorites mixes tasks and projects, newest star first. The first 3 show, then "N more favorites" opens a Favorites page with all of them. The page works like a project's tasks: Back to projects at the top, Backspace on an empty search goes back, and typing filters the page.
+- A favorite task row shows its project's icon. A favorite project opens its tasks.
+- An archived task, or anything in an archived project, keeps its star but leaves Favorites until it is restored.
+
+### Recent tasks
+
+- Recent tasks lists tasks only, never projects, newest first. A task is used when an entry on it is saved, by its first save, Stop or an edit, or when a running entry starts on it. A continued entry keeps its place in the Day view, so each entry stores when it was last saved apart from its first save.
+- Each row shows the project's icon and how long ago the task was used, such as "5m", "2h", "3d" or "2w".
+- The start view shows the first 3 recent tasks that are not favorites, so it never repeats a row. "More recent tasks" opens the Recent page with the 10 tasks used last, favorites included. It works like the Favorites page.
+- Archived tasks and tasks in archived projects are left out.
+
+### Task card
+
+Like the backlog [Hover card](#hover-card), a card beside the menu shows what a row has no room for.
+
+- On a task: its project's icon and name, the whole task name, Billing (Billable, or Non-billable in amber), Last used, such as "2h ago", and the pinned key. Last used and the pinned key show only when they apply.
+- On a project: the whole project name and its active task count.
+- It opens after the pointer rests on a row for 800ms, and moves at once to the next row while it shows, like the backlog card.
+- It also follows the highlight of the arrow keys, with the same timing. Opening the menu and typing never show it; only an arrow key does. Typing closes it.
+- Scrolling the list with the wheel, pressing, and leaving the row or the window close it. The keyboard's scrolling does not. Nothing in it takes a press, and it takes no focus.
+
 ## Running entries
 
 Decided in [Running timer editing and empty duration meaning](https://github.com/les-cabochons/ajour/issues/15).
@@ -389,6 +428,7 @@ Frequent in-app actions use single keys. They only work when focus is not in a t
 - ↑ and ↓ move focus between rows or cards. ← and → move between days in Days and between cells in the Grid.
 - Enter goes one level deeper. On a time entry, task or project it opens Edit. On a backlog item row it opens the backlog item page, and on that page it opens Edit. E no longer opens Edit. Delete or Backspace deletes, with the Undo toast. On a focused Grid cell, Shift+Backspace deletes the whole row.
 - On a focused backlog item, or on its page, S starts an entry on it (Stop when its entry runs), E settles and B snoozes, as in Gmail. Shift+E opens the settle dialog even when a settle rule applies a fixed change. Cmd+D duplicates. M opens Move to…. Alt+↑ and Alt+↓ reorder.
+- On a focused task or project, F adds it to favorites or removes it.
 - The context menu key, Shift+F10 or "." opens the "…" menu, or the right-click menu on a row without one. Escape closes whatever is open.
 - Every item in the "…" and right-click menus shows its key, so the menus teach the shortcuts.
 - Calendar suggestions are focusable too: Day rows under "From your calendar" and the dashed cards under a Days column. Enter adds the suggestion when it has a project, and opens the project picker when it does not. Space does the same on a card. Delete or Backspace dismisses it, with the Undo toast. Their menus list Add, Choose project…, Dismiss, Hide this meeting and Forget this meeting. Suggestions never join the entry selection.
@@ -685,7 +725,7 @@ Like T3 Code's thread card, resting the mouse on a backlog row shows a card besi
 - Then the subitems, open ones first, with their workflow state's ring and the closed count over the total, such as "1/3". Eight show, then "n more".
 - Then the pull requests whose title names the item, open ones first: the state icon, the number and the title. Five show, then "n more". Code hosts do not report links to backlog items, so the title is the link: a key such as "PAY-12" names the item from any repository, and a number such as "#1234" only from the same GitHub repository, or the same Azure DevOps organization, where every project shares the numbers. Only the pull requests the Pull requests page lists count, so none show while no code host is enabled.
 - The card stays while the pointer crosses over to it. A subitem or a pull request in it opens on click, and Ctrl or Cmd-click opens it in its source. Leaving the row and the card, pressing anywhere in the list, scrolling it, Escape and leaving the window close the card. A press closes it until the pointer leaves the row.
-- Only a mouse opens it. It takes no focus, and keyboard focus on a row does not open it: the item page shows the same things.
+- Only a mouse opens it. It takes no focus, and keyboard focus on a row does not open it: the item page shows the same things. The task menu's card is the exception: it follows the arrow keys (see [Task card](#task-card)).
 - Compact rows have no browser tooltip: the card shows the title and the parent.
 
 ### Snoozed and Settled sections

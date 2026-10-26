@@ -67,7 +67,7 @@ Throw an `Error` with a message the user can act on, such as "The calendar addre
 
 ## Connection fields
 
-A calendar usually needs one secret field. For an ICS address, as in [ajc-ics](https://github.com/les-cabochons/ajc-ics):
+A calendar usually needs one secret field. For an ICS address, as in [the ICS plugin](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/ics):
 
 ```json
 {

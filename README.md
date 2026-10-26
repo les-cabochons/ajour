@@ -148,13 +148,14 @@ Manual QA procedures live in [qa/routines](./qa/routines/).
 
 ### Plugin development
 
-Plugins live in standalone repositories and compile to self-contained JavaScript.
-They do not import Ajour application source at runtime. Official implementations include:
+Plugins live outside this repository and compile to self-contained JavaScript.
+They do not import Ajour application source at runtime. The official plugins
+live together in [les-cabochons/ajour-plugins](https://github.com/les-cabochons/ajour-plugins):
 
-- [Azure DevOps](https://github.com/les-cabochons/ajc-azure-devops)
-- [Jira](https://github.com/les-cabochons/ajc-jira)
-- [GitHub](https://github.com/les-cabochons/ajc-github)
-- [ICS calendars](https://github.com/les-cabochons/ajc-ics)
+- [Azure DevOps](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/azure-devops)
+- [Jira](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/jira)
+- [GitHub](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/github)
+- [ICS calendars](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/ics)
 
 In the plugin repository, run `just install`, then keep `just dev` running.
 In the Ajour repository, point the development app at the compiled plugin:

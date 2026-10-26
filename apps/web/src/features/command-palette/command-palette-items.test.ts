@@ -250,6 +250,7 @@ describe("buildPaletteSections", () => {
       "New entry…",
       "Edit",
       "Assign shortcut…",
+      "Add to favorites",
       "Archive",
     ]);
     expect(section!.items[0]!.command).toEqual({
@@ -526,6 +527,7 @@ describe("buildPaletteSections", () => {
     expect(labels("active")).toEqual([
       "Edit",
       "New task",
+      "Add to favorites",
       "Move up",
       "Move down",
       "Archive",

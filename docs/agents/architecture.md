@@ -577,7 +577,7 @@ own sandboxed renderer. Development builds admit API 4 shapes; a packaged build
 does not. The dataset contract is the same for both.
 
 Provider-specific shape plugins are maintained outside Ajour. The Workday
-implementation lives in `les-cabochons/ajp-workday`, imports no Ajour source,
+implementation lives in `les-cabochons/ajour-plugins`, imports no Ajour source,
 and targets this versioned host protocol. Ajour does not compile or bundle it.
 
 The desktop runtime must acquire Electron's single-instance lock before

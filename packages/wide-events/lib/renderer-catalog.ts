@@ -113,7 +113,11 @@ const backlogItem = {
 };
 const projectId = { project: { id: operational() } };
 const changedProject = {
-  project: { id: operational(), changed_fields: operational<string[]>() },
+  project: {
+    id: operational(),
+    changed_fields: operational<string[]>(),
+    favorite: operational<boolean>(),
+  },
 };
 const changedTask = {
   project: { id: operational() },
@@ -121,6 +125,7 @@ const changedTask = {
     id: operational(),
     changed_fields: operational<string[]>(),
     pinned_slot: operational<string | null>(),
+    favorite: operational<boolean>(),
   },
 };
 const connectionData = {
@@ -461,6 +466,7 @@ export const rendererEvents = {
   "project.update": command(changedProject),
   "project.archive": command(changedProject),
   "project.restore": command(changedProject),
+  "project.favorite": command(changedProject),
   "project.reorder": command({ project: { count: operational<number>() } }),
   "project.import": command(projectImport, {
     kinds: ["command", "request", "plugin_operation"],
@@ -486,6 +492,7 @@ export const rendererEvents = {
   "task.restore": command(changedTask),
   "task.reorder": command(changedTask),
   "task.pin": command(changedTask),
+  "task.favorite": command(changedTask),
   "task.import": command({
     ...projectId,
     task_import: {
