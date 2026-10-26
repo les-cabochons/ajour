@@ -364,10 +364,11 @@ reason:
   `capability_off`, `host_stopping`, `package_change`, `not_installed`,
   `runs_no_code`, `not_supported` for a capability or feature the plugin
   doesn't declare, `invalid_request` for an import whose rows break the
-  plugin's definition, and `agent_access` for a comment call the user
-  doesn't allow;
-- cancelled: `system_off`, `plugin_off`, `capability_off`, `uninstalled` or
-  `shutdown`;
+  plugin's definition, `agent_access` for a comment call the user
+  doesn't allow, and `access_off` for an operation the connection's access
+  choices don't include, such as a write on a connection that reads only;
+- cancelled: `system_off`, `plugin_off`, `capability_off`, `uninstalled`,
+  `shutdown`, or `access_off` when a save turns off the choice it needs;
 - `timeout`;
 - errors: `result_too_large`, `invalid_result` (with the error's type and
   code only), `exited_early` and `plugin_error`, scrubbed of the
@@ -738,6 +739,7 @@ channel to read the event each emits.
 | `backlog_item.create`                | command                            | store command                                    |
 | `backlog_item.delete`                | command                            | store command                                    |
 | `backlog_item.fail_source_write`     | command                            | store command                                    |
+| `backlog_item.hold_edit`             | command                            | store command                                    |
 | `backlog_item.move`                  | command                            | store command                                    |
 | `backlog_item.open`                  | command                            | store command                                    |
 | `backlog_item.pin`                   | command                            | store command                                    |
@@ -746,6 +748,7 @@ channel to read the event each emits.
 | `backlog_item.resolve_estimate`      | command                            | store command                                    |
 | `backlog_item.restore`               | command                            | store command                                    |
 | `backlog_item.return`                | command                            | store command                                    |
+| `backlog_item.review_held_edit`      | command                            | store command                                    |
 | `backlog_item.save_description`      | command                            | store command                                    |
 | `backlog_item.settle`                | command                            | store command                                    |
 | `backlog_item.snooze`                | command                            | store command                                    |

@@ -41,9 +41,7 @@ import {
 } from "@/domain/backlog/comments";
 import {
   isPluginApiMissing,
-  editItemComment,
   listItemComments,
-  postItemComment,
   setItemCommentReaction,
 } from "@/lib/app-api";
 import { usePluginsOverview } from "@/features/backlog/plugins-overview";
@@ -62,6 +60,8 @@ import {
 import {
   commentMentionSearch,
   commentThreadKey,
+  postThreadComment,
+  saveThreadCommentEdit,
   subscribePostedComments,
 } from "@/features/backlog/comment-threads";
 import { getShortcutPlatform } from "@/lib/shortcuts";
@@ -328,15 +328,18 @@ export function BacklogItemComments({
     );
   };
 
-  /** Saves at once; a failure reaches the editor, which keeps the text. */
+  /**
+   * Saves at once; a failure reaches the editor, which keeps the text. A
+   * connection that can't edit work items holds the edit for review.
+   */
   const editComment = async (comment: BacklogComment, body: string) => {
-    const { comment: edited } = await editItemComment(
-      source.pluginId,
-      source.connectionId,
-      { sourceId: source.sourceId, commentId: comment.id, body },
-      { itemId },
+    const edited = await saveThreadCommentEdit(
+      source,
+      itemId,
+      comment.id,
+      body,
     );
-    updateComment(comment.id, () => edited);
+    if (edited !== "held") updateComment(comment.id, () => edited);
   };
 
   /** Hides the comment now and deletes it once the Undo toast closes. */
@@ -361,21 +364,25 @@ export function BacklogItemComments({
       onClose: () => {
         if (undone) return;
         sendCommentDelete(ref).then(
-          () =>
-            setThread((current) =>
-              current.kind === "ready"
-                ? {
-                    ...current,
-                    comments: current.comments.filter(
-                      (candidate) => candidate.id !== comment.id,
-                    ),
-                    total:
-                      current.total === undefined
-                        ? undefined
-                        : current.total - 1,
-                  }
-                : current,
-            ),
+          (result) =>
+            // A held delete keeps the comment hidden, as its pending delete
+            // did, until Sync review sends or discards it.
+            result === "held"
+              ? undefined
+              : setThread((current) =>
+                  current.kind === "ready"
+                    ? {
+                        ...current,
+                        comments: current.comments.filter(
+                          (candidate) => candidate.id !== comment.id,
+                        ),
+                        total:
+                          current.total === undefined
+                            ? undefined
+                            : current.total - 1,
+                      }
+                    : current,
+                ),
           (error: unknown) => {
             unhide(comment.id);
             showErrorToast({
@@ -567,18 +574,15 @@ function CommentComposer({
     setSending(true);
     setError(undefined);
     try {
-      const { comment } = await postItemComment(
-        source.pluginId,
-        source.connectionId,
-        { sourceId: source.sourceId, body },
-        { itemId },
-      );
+      // A held comment, as editing work items is off, leaves the composer
+      // as a sent one does.
+      const comment = await postThreadComment(source, itemId, body);
       // Only what went out leaves the draft; text added meanwhile stays.
       const rest = draftAfterSend(getCommentDraft(itemId) ?? "", value);
       setCommentDraft(itemId, rest);
       setText(rest);
       if (!rest) setOpen(false);
-      onPosted(comment);
+      if (comment !== "held") onPosted(comment);
     } catch (failure) {
       setError(
         failure instanceof Error

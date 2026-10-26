@@ -1811,6 +1811,70 @@ describe("the credential broker", () => {
       expect(sent).toHaveLength(2);
     });
 
+    it("keeps two connections on one token apart: only the editing one writes, only in its own organisation, and reads sent as POST pass", async () => {
+      const azure = manifest({
+        id: "ajc-azure-devops",
+        network: {
+          auth: { scheme: "patBasic", secretField: "apiToken" },
+          baseAddress: { field: "baseUrl" },
+          endpoints: [
+            { method: "POST", path: "/*/_apis/wit/wiql" },
+            {
+              method: "PATCH",
+              path: "/_apis/wit/workitems/*",
+              access: "editWorkItems",
+            },
+          ],
+          requestHeaders: ["Content-Type"],
+        },
+        connectionAccess: [
+          { id: "readBacklog", label: "Read the backlog", always: true },
+          {
+            id: "editWorkItems",
+            label: "Edit work items",
+            operations: ["writeSettle"],
+          },
+        ],
+      });
+      const { operation, sent } = setup({
+        manifest: azure,
+        connections: {
+          "ajc-azure-devops": [
+            jiraConnection(
+              { id: "contoso" },
+              { baseUrl: "https://dev.azure.com/contoso" },
+            ),
+            jiraConnection(
+              { id: "fabrikam", access: ["editWorkItems"] },
+              { baseUrl: "https://dev.azure.com/fabrikam" },
+            ),
+          ],
+        },
+      });
+      const broker = operation("ajc-azure-devops");
+      const patch = (connectionId: string, path = "/_apis/wit/workitems/1") =>
+        broker.http({ connectionId, method: "PATCH", path, body: "[]" });
+
+      const readOnly = await refusal(patch("contoso"));
+      await broker.http({
+        connectionId: "contoso",
+        method: "POST",
+        path: "/Platform/_apis/wit/wiql",
+        body: "{}",
+      });
+      await patch("fabrikam");
+      const climbing = await refusal(
+        patch("fabrikam", "/../contoso/_apis/wit/workitems/1"),
+      );
+
+      expect(readOnly.reason).toBe("access_off");
+      expect(climbing.reason).not.toBe("access_off");
+      expect(sent.map((request) => [request.method, request.url])).toEqual([
+        ["POST", "https://dev.azure.com/contoso/Platform/_apis/wit/wiql"],
+        ["PATCH", "https://dev.azure.com/fabrikam/_apis/wit/workitems/1"],
+      ]);
+    });
+
     it("reads the connection's access at dispatch, so a choice turned off stops a queued request", async () => {
       const connection = jiraConnection({ access: ["editIssues"] });
       let release!: () => void;

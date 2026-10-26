@@ -15,8 +15,10 @@ import {
   canSubmitPluginForm,
   isPluginFieldShown,
   isPluginFormDirty,
+  withAccessChoice,
   type PluginFormState,
 } from "./plugin-form-state";
+import { ConnectionAccessGroup } from "./connection-access-ui";
 import { PluginFieldInput } from "./plugin-settings-ui";
 import { TeamCreateField } from "./team-connection-ui";
 
@@ -39,6 +41,7 @@ export function PluginConnectionForm({
   connection,
   vault,
   isMutating,
+  heldCount = 0,
   now,
   onCancel,
   onSave,
@@ -51,6 +54,8 @@ export function PluginConnectionForm({
   connection: PluginConnectionSummary | undefined;
   vault: VaultStatusSummary | undefined;
   isMutating: boolean;
+  /** The changes the connection holds on this computer. */
+  heldCount?: number;
   now: number;
   onCancel: () => void;
   onSave: () => void;
@@ -150,6 +155,15 @@ export function PluginConnectionForm({
             }
           />
         ) : null}
+        <ConnectionAccessGroup
+          choices={group.connectionAccess ?? []}
+          access={form.access}
+          heldCount={heldCount}
+          disabled={isMutating}
+          onChange={(choiceId, on) =>
+            update((current) => withAccessChoice(current, choiceId, on))
+          }
+        />
       </FieldGroup>
       <div className="flex flex-wrap justify-end gap-3 pt-2">
         <Button variant="outline" disabled={isMutating} onClick={onCancel}>

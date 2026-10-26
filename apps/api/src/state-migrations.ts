@@ -243,6 +243,31 @@ function toVersion7(state: StoredStateRecord): StoredStateRecord {
   return { ...state, pluginsEnabled: state.pluginsEnabled ?? true };
 }
 
+/**
+ * Version 9 gives every connection its access choices (#395): reading
+ * only, whatever its token allows. Editing work items, pull requests and
+ * people search wait until the user turns them on, so the first sync after
+ * the migration sends no change. Settings and local values stay as they are.
+ */
+function toVersion9(state: StoredStateRecord): StoredStateRecord {
+  if (!Array.isArray(state.connections)) return state;
+  return {
+    ...state,
+    connections: state.connections.map((connection: unknown) =>
+      typeof connection === "object" && connection !== null
+        ? {
+            ...connection,
+            // Version 8 may be held while the user changes a connection's
+            // access: a choice already saved stays.
+            access: Array.isArray((connection as { access?: unknown }).access)
+              ? (connection as { access: unknown[] }).access
+              : [],
+          }
+        : connection,
+    ),
+  };
+}
+
 /** Every step, in order. The last one's version is the current one. */
 export const STATE_MIGRATIONS: readonly StateMigration[] = [
   { version: 2, migrate: toVersion2 },
@@ -257,6 +282,8 @@ export const STATE_MIGRATIONS: readonly StateMigration[] = [
       return complete ? next : holdVersion(next);
     },
   },
+  // Connections read only until the user allows more (#395).
+  { version: 9, migrate: toVersion9 },
 ];
 
 /** The version this build writes. */

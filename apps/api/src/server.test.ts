@@ -324,6 +324,8 @@ describe("plugin installation boundary", () => {
           ...savedConnection,
           config: { baseUrl: savedConnection.config.baseUrl },
           secrets: { fields: ["token"] },
+          // Version 9 starts every connection reading only.
+          access: [],
         },
       ]);
       expect(savedState.disabledPluginIds).toEqual(["jira"]);

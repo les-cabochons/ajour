@@ -142,6 +142,9 @@ function normalizeDescriptionSync(
     typeof writeError.message === "string"
       ? { writeError: { at: writeError.at, message: writeError.message } }
       : {}),
+    ...(typeof (sync.held as { at?: unknown } | undefined)?.at === "number"
+      ? { held: { at: (sync.held as { at: number }).at } }
+      : {}),
   };
 }
 

@@ -10,13 +10,29 @@ const mocks = vi.hoisted(() => ({
   keepDraft: vi.fn(),
   announce: vi.fn(),
   access: vi.fn(),
+  notice: vi.fn(),
   listeners: new Set<() => void>(),
 }));
+
+/** The local API's refusal of a write on a connection that can't edit (#395). */
+function accessOff() {
+  return Object.assign(new Error("Editing is off."), {
+    accessOff: "editWorkItems",
+  });
+}
 vi.mock("@/lib/local-store", () => ({
   localStore: {
     snapshot: mocks.snapshot,
     completeSourceWrite: mocks.complete,
     failSourceWrite: mocks.fail,
+    holdSourceWrite: (id: string) => {
+      if (item._id === id && item.pendingSourceWrite) {
+        item = {
+          ...item,
+          pendingSourceWrite: { ...item.pendingSourceWrite, heldAt: 1 },
+        };
+      }
+    },
     subscribe: (listener: () => void) => {
       mocks.listeners.add(listener);
       return () => mocks.listeners.delete(listener);
@@ -26,8 +42,13 @@ vi.mock("@/lib/local-store", () => ({
 vi.mock("@/lib/app-api", () => ({
   writeBacklogSettle: mocks.write,
   postItemComment: mocks.post,
+  isAccessOffError: (error: unknown) =>
+    typeof (error as { accessOff?: unknown })?.accessOff === "string",
 }));
-vi.mock("@/components/ui/toast", () => ({ showErrorToast: mocks.error }));
+vi.mock("@/components/ui/toast", () => ({
+  showErrorToast: mocks.error,
+  showToast: mocks.notice,
+}));
 vi.mock("@/lib/comment-drafts", () => ({
   keepCommentAsDraft: mocks.keepDraft,
 }));
@@ -132,6 +153,29 @@ it("handles a failed current request even when a child acknowledgement advanced 
   await request;
   expect(mocks.fail).toHaveBeenCalledWith("a");
   expect(mocks.write).toHaveBeenCalledTimes(1);
+});
+
+describe("a write the connection refuses because editing is off", () => {
+  it("is held as the user left it, never rolled back, and isn't sent again until released", async () => {
+    const { sendPendingSourceWrites, pendingSourceWriteCount } =
+      await import("./backlog-source-writes");
+    item.pendingSourceWrite!.readyAt = 1000;
+    mocks.write.mockRejectedValueOnce(accessOff());
+
+    await sendPendingSourceWrites(["a"]);
+    // A launch flush, or the same item's next send, leaves it alone.
+    await sendPendingSourceWrites();
+
+    expect(mocks.write).toHaveBeenCalledOnce();
+    expect(mocks.fail).not.toHaveBeenCalled();
+    expect(mocks.error).not.toHaveBeenCalled();
+    expect(item.pendingSourceWrite).toMatchObject({
+      state: "Review",
+      heldAt: 1,
+    });
+    expect(pendingSourceWriteCount()).toBe(0);
+    expect(mocks.notice).toHaveBeenCalledOnce();
+  });
 });
 
 describe("the comment typed in the settle dialog", () => {
@@ -287,6 +331,29 @@ describe("the comment typed in the settle dialog", () => {
       title: `Couldn't post your comment on "A"`,
       description: "No access. It's kept as a draft on the item.",
     });
+  });
+
+  it("is held for review, not drafted, when the connection can't edit work items", async () => {
+    const { queueSettleComment, releaseSettleComment, settleCommentsOf } =
+      await load();
+    const { heldCommentEdits } = await import("@/lib/held-edits");
+    item = { ...item, pendingSourceWrite: undefined };
+    queueSettleComment(comment("s1"));
+    mocks.post.mockRejectedValueOnce(accessOff());
+
+    await releaseSettleComment("s1", "a");
+
+    expect(mocks.keepDraft).not.toHaveBeenCalled();
+    expect(mocks.error).not.toHaveBeenCalled();
+    expect(settleCommentsOf("a")).toEqual([]);
+    expect(heldCommentEdits()).toEqual([
+      expect.objectContaining({
+        kind: "comment",
+        itemId: "a",
+        connectionId: "c",
+        body: "Waiting on the client",
+      }),
+    ]);
   });
 
   it("goes at the next launch when Ajour quit during the Undo window", async () => {

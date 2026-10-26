@@ -42,6 +42,9 @@ import {
   pluginAccessDifference,
   widensAccess,
 } from "../../../packages/shared/plugin-access.ts";
+  connectionAccessChoicesOf,
+  connectionAccessOn,
+} from "../../../packages/shared/connection-access.ts";
 import { removeOrphanedTempFiles, writeFileAtomically } from "./atomic-file.ts";
 import {
   agentTaskMcpToolNames,
@@ -126,8 +129,9 @@ interface StoredConnection {
    */
   onPremises?: boolean;
   /**
-   * The access choices it turned on (#395 adds their form). Absent or empty
-   * leaves only the choices the plugin marks always on.
+   * The access choices the user turned on in Ajour's connection form, never
+   * from anything a plugin returns. Absent or empty leaves only the choices
+   * the plugin marks always on: reading only (`connection-access.ts`).
    */
   access?: string[];
   /** What the broker recorded for Access review. */
@@ -277,7 +281,8 @@ function normalizeAccess(raw: unknown): string[] | undefined {
       ),
     ),
   ].sort();
-  return ids.length > 0 ? ids : undefined;
+  // An empty list is kept: it says the connection reads only.
+  return ids;
 }
 
 /**
@@ -761,6 +766,7 @@ function buildConnectionSummary(
   const connectionItems = state.stagedImports.filter(
     (item) => item.connectionId === connection.id,
   );
+  const choices = connectionAccessChoicesOf(plugin);
   // The plugin wrote the last error and the summary, and either may hold a
   // secret: an error stored before every route redacted plugin errors, or a
   // summary stored before saves redacted it. A stand-in says nothing about
@@ -784,6 +790,9 @@ function buildConnectionSummary(
       : {}),
     ...(connection.agentAccess ? { agentAccess: connection.agentAccess } : {}),
     ...(connection.allowLossyConversion ? { allowLossyConversion: true } : {}),
+    ...(choices.length > 0
+      ? { access: connectionAccessOn(choices, connection.access) }
+      : {}),
     connectedAt: connection.connectedAt,
     lastSyncAt: connection.lastSyncAt,
     lastError:
@@ -1416,6 +1425,7 @@ export class AppApiStorage {
         agentTaskSecrets,
         vault,
       );
+      const connectionAccess = connectionAccessChoicesOf(plugin);
       const accessView = accessViews.get(plugin.id);
       const pendingAccess = accessView
         ? pendingAccessOf(state.pluginConsent, plugin, accessView)
@@ -1431,6 +1441,20 @@ export class AppApiStorage {
         ...(pendingAccess ? { pendingAccess } : {}),
         ...(accessActivity?.success && accessActivity.data
           ? { accessActivity: accessActivity.data }
+          : {}),
+        ...(connectionAccess.length > 0
+          ? {
+              connectionAccess: connectionAccess.map((choice) => ({
+                id: choice.id,
+                label: choice.label,
+                ...(choice.description
+                  ? { description: choice.description }
+                  : {}),
+                ...(choice.tokenScope ? { tokenScope: choice.tokenScope } : {}),
+                always: choice.always,
+                operations: [...choice.operations],
+              })),
+            }
           : {}),
         // As `isPluginEnabled`: a package that reaches more than the user
         // allowed is off, whatever the switch says.
@@ -2040,6 +2064,11 @@ export class AppApiStorage {
       allowLossyConversion?: boolean;
       /** Undefined keeps the saved value. */
       onPremises?: boolean;
+      /**
+       * The access choices turned on, from Ajour's own form. Undefined keeps
+       * the saved ones, and a new connection reads only.
+       */
+      access?: string[];
       config: PluginFieldValues;
       configSummary: PluginSummaryValues;
     },
@@ -2083,7 +2112,9 @@ export class AppApiStorage {
         ...((input.onPremises ?? existing?.onPremises)
           ? { onPremises: true }
           : {}),
-        ...(existing?.access ? { access: existing.access } : {}),
+        ...((input.access ?? existing?.access)
+          ? { access: normalizeAccess(input.access ?? existing?.access) }
+          : {}),
         ...(existing?.brokerActivity
           ? { brokerActivity: existing.brokerActivity }
           : {}),

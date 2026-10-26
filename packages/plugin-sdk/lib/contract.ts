@@ -153,6 +153,16 @@ export type PluginManifest = {
         passToPlugin?: boolean | undefined;
       }[]
     | undefined;
+  connectionAccess?:
+    | {
+        id: string;
+        label: string;
+        description?: string | undefined;
+        tokenScope?: string | undefined;
+        always?: boolean | undefined;
+        operations?: string[] | undefined;
+      }[]
+    | undefined;
   network?:
     | {
         baseAddress?:
@@ -201,16 +211,6 @@ export type PluginManifest = {
       }
     | undefined;
   $schema?: string | undefined;
-  connectionAccess?:
-    | {
-        id: string;
-        label: string;
-        description?: string | undefined;
-        tokenScope?: string | undefined;
-        always?: boolean | undefined;
-        operations?: string[] | undefined;
-      }[]
-    | undefined;
   runtime?:
     | {
         start?: "whenNeeded" | "alwaysReady" | undefined;
