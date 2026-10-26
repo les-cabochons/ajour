@@ -47,11 +47,11 @@ describe("row hover card timing", () => {
     expect(shown).toBe("a");
   });
 
-  it("follows the pointer to another row sooner once open", () => {
+  it("follows the pointer to another row at once while open", () => {
     intent.enterRow("a", "a");
     vi.advanceTimersByTime(delays.open);
     intent.enterRow("b", "b");
-    vi.advanceTimersByTime(delays.move);
+    vi.advanceTimersByTime(0);
     expect(shown).toBe("b");
   });
 
@@ -95,7 +95,7 @@ describe("row hover card timing", () => {
     expect(shown).toBe("a");
   });
 
-  it("keeps the card when the pointer crosses another row on its way", () => {
+  it("keeps the card when the pointer leaves the rows before the move lands", () => {
     intent.enterRow("a", "a");
     vi.advanceTimersByTime(delays.open);
     intent.enterRow("b", "b");
@@ -115,9 +115,9 @@ describe("row hover card timing", () => {
 
     // The new row under the pointer opens after the full wait.
     intent.enterRow("b", "b");
-    vi.advanceTimersByTime(delays.move);
+    vi.advanceTimersByTime(delays.open - 1);
     expect(shown).toBeNull();
-    vi.advanceTimersByTime(delays.open - delays.move);
+    vi.advanceTimersByTime(1);
     expect(shown).toBe("b");
   });
 

@@ -12,9 +12,32 @@ import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime
 
 const ICON = "<svg viewBox='0 0 16 16'><path d='M0 0h16v16H0z' /></svg>";
 
+const PROJECTS_DATASETS = [
+  {
+    id: "projects",
+    displayName: "Projects",
+    columns: [
+      {
+        key: "project",
+        header: "project",
+        type: "string",
+        required: true,
+      },
+      {
+        key: "hours",
+        header: "hours",
+        type: "number",
+        required: false,
+      },
+    ],
+  },
+];
+
+/** A schema plugin. With `datasets` null, it declares no export layout and only imports. */
 async function createPlugin(
   parent: string,
   source: string,
+  datasets: unknown[] | null = PROJECTS_DATASETS,
   /** Manifest fields that replace or add to the fixture's own. */
   manifest: Record<string, unknown> = {},
 ) {
@@ -32,29 +55,7 @@ async function createPlugin(
       entrypoint: "plugin.mjs",
       ...manifest,
       capabilities: {
-        projectDataShape: {
-          apiVersion: 1,
-          datasets: [
-            {
-              id: "projects",
-              displayName: "Projects",
-              columns: [
-                {
-                  key: "project",
-                  header: "project",
-                  type: "string",
-                  required: true,
-                },
-                {
-                  key: "hours",
-                  header: "hours",
-                  type: "number",
-                  required: false,
-                },
-              ],
-            },
-          ],
-        },
+        projectDataShape: { apiVersion: 1, ...(datasets ? { datasets } : {}) },
       },
     }),
     "utf8",
@@ -63,13 +64,13 @@ async function createPlugin(
   return pluginDirectory;
 }
 
-/** A data shape plugin that exports one row per project and imports one project per row. */
+/** A data shape plugin that exports one row per project and imports one project per row of a sheet. */
 const SHAPE_SOURCE = [
   "export async function exportProjects(projects) {",
   "  return { datasets: [{ id: 'projects', rows: projects.map((project) => ({ project: project.name, hours: 2 })) }] };",
   "}",
-  "export async function importProjects(datasets) {",
-  "  return { projects: datasets[0].rows.map((row) => ({ name: row.project, color: '#123456', status: 'active', tasks: [] })) };",
+  "export async function importProjects(sheets) {",
+  "  return { projects: sheets[0].rows.slice(1).map((row) => ({ name: row[0], color: '#123456', status: 'active', tasks: [] })) };",
   "}",
 ].join("\n");
 
@@ -77,12 +78,13 @@ const EXPORTED_PROJECTS = [
   { name: "Mercury", color: "#123456", status: "active" as const, tasks: [] },
   { name: "Venus", color: "#654321", status: "archived" as const, tasks: [] },
 ];
-const IMPORTED_DATASETS = [
+const IMPORTED_SHEETS = [
   {
-    id: "projects",
+    name: "Projects",
     rows: [
-      { project: "Mercury", hours: "2,5" },
-      { project: "Venus", hours: 4 },
+      ["project", "hours"],
+      ["Mercury", "2,5"],
+      ["Venus", 4],
     ],
   },
 ];
@@ -131,8 +133,8 @@ describe("ProjectDataShapePluginManager", () => {
         "export async function exportProjects(projects) {",
         "  return { datasets: [{ id: 'projects', rows: projects.map((project) => ({ project: project.name, hours: 2 })) }] };",
         "}",
-        "export async function importProjects(datasets) {",
-        "  return { projects: datasets[0].rows.map((row) => ({ name: row.project, color: '#123456', status: 'active', tasks: [] })) };",
+        "export async function importProjects(sheets) {",
+        "  return { projects: sheets[0].rows.slice(1).map((row) => ({ name: row[0], color: '#123456', status: 'active', tasks: [] })) };",
         "}",
       ].join("\n"),
     );
@@ -167,8 +169,11 @@ describe("ProjectDataShapePluginManager", () => {
     await expect(
       manager.importProjects("workday-project-data", [
         {
-          id: "projects",
-          rows: [{ project: "Mercury", hours: "2,5" }],
+          name: "Projects",
+          rows: [
+            ["project", "hours"],
+            ["Mercury", "2,5"],
+          ],
         },
       ]),
     ).resolves.toEqual({
@@ -204,6 +209,35 @@ describe("ProjectDataShapePluginManager", () => {
     expect(manager.activeOperationCount).toBe(0);
   });
 
+  it("imports with a schema that has no export layout, and refuses its export", async () => {
+    const root = await tempDir();
+    const pluginDirectory = await createPlugin(
+      root,
+      [
+        "export async function importProjects(sheets) {",
+        "  return { projects: [{ status: 'active', tasks: sheets.map((sheet) => ({ name: sheet.name })) }] };",
+        "}",
+      ].join("\n"),
+      null,
+    );
+    const manager = new ProjectDataShapePluginManager({
+      pluginDirectories: [pluginDirectory],
+    });
+    managers.push(manager);
+
+    await expect(
+      manager.importProjects("workday-project-data", [
+        { name: "Plan", rows: [] },
+      ]),
+    ).resolves.toEqual({
+      projects: [{ status: "active", tasks: [{ name: "Plan" }] }],
+    });
+    await expect(
+      manager.exportProjects("workday-project-data", []),
+    ).rejects.toThrow('Schema plugin "workday-project-data" only imports.');
+    expect(manager.activeOperationCount).toBe(0);
+  });
+
   describe("plugin API 4 packages", () => {
     const API_4_MANIFEST = { apiVersion: 4, runtime: { start: "whenNeeded" } };
 
@@ -215,10 +249,15 @@ describe("ProjectDataShapePluginManager", () => {
       } = {},
     ) {
       const root = await tempDir();
-      const pluginDirectory = await createPlugin(root, SHAPE_SOURCE, {
-        ...API_4_MANIFEST,
-        ...options.manifest,
-      });
+      const pluginDirectory = await createPlugin(
+        root,
+        SHAPE_SOURCE,
+        undefined,
+        {
+          ...API_4_MANIFEST,
+          ...options.manifest,
+        },
+      );
       const created = new ProjectDataShapePluginManager({
         pluginDirectories: [pluginDirectory],
         admitPluginApi4: options.admitPluginApi4 ?? true,
@@ -246,9 +285,9 @@ describe("ProjectDataShapePluginManager", () => {
         api4.exportProjects("workday-project-data", EXPORTED_PROJECTS),
       ).resolves.toEqual(exported);
       await expect(
-        api4.importProjects("workday-project-data", IMPORTED_DATASETS),
+        api4.importProjects("workday-project-data", IMPORTED_SHEETS),
       ).resolves.toEqual(
-        await api1.importProjects("workday-project-data", IMPORTED_DATASETS),
+        await api1.importProjects("workday-project-data", IMPORTED_SHEETS),
       );
     });
 
@@ -301,6 +340,7 @@ describe("ProjectDataShapePluginManager", () => {
       const pluginDirectory = await createPlugin(
         root,
         "export async function exportProjects() { return { datasets: [{ id: 'projects', rows: [{ project: 'Mercury', unexpected: true }] }] }; }",
+        undefined,
         API_4_MANIFEST,
       );
       const api4 = new ProjectDataShapePluginManager({

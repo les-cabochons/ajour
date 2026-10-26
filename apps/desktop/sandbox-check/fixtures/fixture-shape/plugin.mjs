@@ -16,10 +16,10 @@ export async function exportProjects(projects) {
   };
 }
 
-export async function importProjects(datasets) {
+export async function importProjects(sheets) {
   return {
-    projects: datasets[0].rows.map((row) => ({
-      name: row.project,
+    projects: sheets[0].rows.slice(1).map((row) => ({
+      name: row[0],
       color: "#123456",
       status: "active",
       tasks: [],

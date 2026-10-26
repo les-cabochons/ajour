@@ -562,7 +562,20 @@ async function main() {
     const imported = await request(
       "POST",
       "/api/project-data-shapes/fixture-shape/import",
-      { datasets: exported.body?.datasets ?? [] },
+      {
+        sheets: [
+          {
+            name: "Projects",
+            rows: [
+              ["project", "hours"],
+              ...(exported.body?.datasets?.[0]?.rows ?? []).map((row) => [
+                row.project,
+                row.hours,
+              ]),
+            ],
+          },
+        ],
+      },
     );
     report("dataShape", {
       listed: (listed.body?.plugins ?? []).map((plugin) => ({

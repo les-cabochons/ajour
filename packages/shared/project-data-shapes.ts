@@ -59,11 +59,21 @@ export type ProjectDataShapeDatasetDefinition = z.infer<
 export const projectDataShapeDefinitionSchema = z
   .object({
     apiVersion: z.literal(PROJECT_DATA_SHAPE_CAPABILITY_API_VERSION),
-    datasets: z.array(projectDataShapeDatasetDefinitionSchema).min(1).max(10),
+    /**
+     * The export layout: one worksheet per dataset. A schema without datasets
+     * only imports, and Ajour offers no export with it.
+     */
+    datasets: z
+      .array(projectDataShapeDatasetDefinitionSchema)
+      .min(1)
+      .max(10)
+      .optional(),
   })
   .superRefine((definition, context) => {
     const datasetIds = new Set<string>();
-    for (const [datasetIndex, dataset] of definition.datasets.entries()) {
+    for (const [datasetIndex, dataset] of (
+      definition.datasets ?? []
+    ).entries()) {
       if (datasetIds.has(dataset.id)) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
@@ -131,6 +141,30 @@ export type ProjectDataShapeDataset = z.infer<
   typeof projectDataShapeDatasetSchema
 >;
 
+/** The most an imported file may hold: sheets, rows per sheet, cells per row. */
+export const PROJECT_DATA_SHAPE_IMPORT_LIMITS = {
+  sheets: 100,
+  rows: 100_000,
+  cells: 1_000,
+} as const;
+
+/**
+ * One worksheet of an imported file, as Ajour read it: every row from the
+ * first, each cell from column A to the row's last value. Ajour sends every
+ * sheet, so the schema finds its data wherever the other tool put it.
+ */
+export const projectDataShapeSheetSchema = z.object({
+  name: z.string().max(255),
+  rows: z
+    .array(
+      z
+        .array(projectDataShapeCellSchema)
+        .max(PROJECT_DATA_SHAPE_IMPORT_LIMITS.cells),
+    )
+    .max(PROJECT_DATA_SHAPE_IMPORT_LIMITS.rows),
+});
+export type ProjectDataShapeSheet = z.infer<typeof projectDataShapeSheetSchema>;
+
 export const projectDataShapeStatusSchema = z.enum(["active", "archived"]);
 export type ProjectDataShapeStatus = z.infer<
   typeof projectDataShapeStatusSchema
@@ -171,7 +205,11 @@ export const projectDataShapeImportTaskSchema = z.object({
 });
 
 export const projectDataShapeImportProjectSchema = z.object({
-  name: canonicalNameSchema,
+  /**
+   * Absent when the file doesn't name its project, such as a project plan.
+   * Ajour then takes the file only from Import tasks… on a project's page.
+   */
+  name: canonicalNameSchema.optional(),
   code: z.string().optional(),
   color: z.string().optional(),
   status: projectDataShapeStatusSchema,
@@ -203,7 +241,10 @@ export type ProjectDataShapeExportResponse = z.infer<
 >;
 
 export const projectDataShapeImportRequestSchema = z.object({
-  datasets: z.array(projectDataShapeDatasetSchema).min(1).max(10),
+  sheets: z
+    .array(projectDataShapeSheetSchema)
+    .min(1)
+    .max(PROJECT_DATA_SHAPE_IMPORT_LIMITS.sheets),
 });
 export type ProjectDataShapeImportRequest = z.infer<
   typeof projectDataShapeImportRequestSchema
@@ -216,20 +257,18 @@ export type ProjectDataShapeImportResponse = z.infer<
   typeof projectDataShapeImportResponseSchema
 >;
 
+/** Checks the datasets a schema exported against its declared export layout. */
 export function validateProjectDataShapeDatasets(
   definition: ProjectDataShapeDefinition,
   datasets: ProjectDataShapeDataset[],
-  options: {
-    validateRequiredValues?: boolean;
-    validateValueTypes?: boolean;
-  } = {},
 ) {
   const parsedDefinition = projectDataShapeDefinitionSchema.parse(definition);
   const parsedDatasets = datasets.map((dataset) =>
     projectDataShapeDatasetSchema.parse(dataset),
   );
+  const datasetDefinitions = parsedDefinition.datasets ?? [];
   const definitionsById = new Map(
-    parsedDefinition.datasets.map((dataset) => [dataset.id, dataset] as const),
+    datasetDefinitions.map((dataset) => [dataset.id, dataset] as const),
   );
   const seenDatasetIds = new Set<string>();
 
@@ -262,7 +301,6 @@ export function validateProjectDataShapeDatasets(
       for (const column of datasetDefinition.columns) {
         const value = row[column.key];
         if (
-          options.validateRequiredValues !== false &&
           column.required &&
           (value === null || value === undefined || value === "")
         ) {
@@ -273,10 +311,7 @@ export function validateProjectDataShapeDatasets(
         if (value === null || value === undefined || value === "") {
           continue;
         }
-        if (
-          options.validateValueTypes !== false &&
-          typeof value !== column.type
-        ) {
+        if (typeof value !== column.type) {
           throw new Error(
             `Dataset "${dataset.id}" row ${rowIndex + 1} field "${column.header}" must be ${column.type}.`,
           );
@@ -285,7 +320,7 @@ export function validateProjectDataShapeDatasets(
     }
   }
 
-  for (const datasetDefinition of parsedDefinition.datasets) {
+  for (const datasetDefinition of datasetDefinitions) {
     if (!seenDatasetIds.has(datasetDefinition.id)) {
       throw new Error(
         `Schema plugin did not return required dataset "${datasetDefinition.id}".`,
