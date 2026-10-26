@@ -3,6 +3,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
+import { setFlagsFromString } from "node:v8";
+import { runInNewContext } from "node:vm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { recordingEvents } from "./recording-events.ts";
 
@@ -142,6 +144,25 @@ class FakeSession extends EventEmitter {
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+/**
+ * Electron closes the page of a WebContentsView once the view is garbage
+ * collected (#449): the stand-in does the same.
+ */
+const collectedViews = new FinalizationRegistry<FakeContents>((contents) =>
+  contents.close(),
+);
+
+setFlagsFromString("--expose-gc");
+const gc = runInNewContext("gc") as () => void;
+
+/** Collects what nothing holds, and lets the finalizers run. */
+async function collectGarbage() {
+  for (let round = 0; round < 3; round += 1) {
+    gc();
+    await flush();
+  }
+}
+
 function setUp(
   options: {
     metrics?: (pid: number) => Record<string, unknown> | undefined;
@@ -186,6 +207,7 @@ function setUp(
       webContents = new FakeContents();
       constructor(viewOptions: { webPreferences: Record<string, unknown> }) {
         views.push({ options: viewOptions, contents: this.webContents });
+        collectedViews.register(this, this.webContents);
       }
     },
     ipcListeners,
@@ -358,6 +380,28 @@ describe("the sandboxed renderer runtime", () => {
     expect(
       recorded.find((event) => event.name === "plugin_renderer.open"),
     ).toMatchObject({ outcome: "ok", plugin: { id: "jira" } });
+  });
+
+  it("holds each plugin's view while its renderer is open, so a collection doesn't close its page mid-run", async () => {
+    const { start, ready } = setUp();
+    const run = start("jira");
+    const { contents, driver } = await ready();
+
+    await collectGarbage();
+
+    expect(contents.destroyed).toBe(false);
+    const command = (await driver.send({ type: "next" })) as {
+      runId: string;
+    };
+    await driver.send({
+      type: "settled",
+      runId: command.runId,
+      outcome: { ok: true, result: "done" },
+    });
+    await expect(run.settled).resolves.toMatchObject({
+      ok: true,
+      result: "done",
+    });
   });
 
   it("cuts a plugin's error and bounds its result", async () => {
