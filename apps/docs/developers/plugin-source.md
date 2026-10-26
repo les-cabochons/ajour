@@ -101,6 +101,7 @@ Ajour shows each feature with a title made from its slug and a line of text. It 
 Ajour installs exactly the files you list, at your commit, and runs your entrypoint where it is. It needs no build:
 
 - The entrypoint can be TypeScript. Node strips the types, so write erasable TypeScript only: no `enum`, `namespace` or constructor parameter properties, and mark type-only imports with `import type`. Import your own files with their `.ts` extension. TypeScript's `erasableSyntaxOnly`, `verbatimModuleSyntax` and `allowImportingTsExtensions` options check all of it.
+- On plugin API 4, the plugin runs in a sandboxed renderer with no Node: Ajour strips the types of each `.ts` or `.mts` file as the renderer loads it, with the same rules. A file it can't strip fails the run with a reason that names the file, and none of the plugin's code runs. The only thing the plugin's code can reach at runtime is the `ajour` global. See [the SDK's TypeScript rules](https://github.com/les-cabochons/ajour/tree/main/packages/plugin-sdk#typescript-source).
 - List your `package.json`, with `"type": "module"`, so Node loads your files as ES modules.
 - There is no `node_modules`. Copy a library you need into your folder, with its licence, and import it by its path.
 
