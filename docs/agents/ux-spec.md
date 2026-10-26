@@ -51,19 +51,20 @@ Decided in [Action model for entries, timers, projects, tasks and work items](ht
 
 ### Project
 
-Edit · New task · Archive (Restore when archived)
+Edit · New task · Add to favorites (Remove from favorites when starred) · Archive (Restore when archived)
 
-- An archived project disables Edit and New task: "Restore the project first".
+- An archived project disables Edit, New task and Add to favorites: "Restore the project first".
 - Archive leaves the edit form and moves into the action set.
 - Projects have no Delete.
 
 ### Task
 
-Start entry · New entry… · Edit · Assign shortcut… · Archive (Restore when archived)
+Start entry · New entry… · Edit · Assign shortcut… · Add to favorites (Remove from favorites when starred) · Archive (Restore when archived)
 
 - Start entry starts a new running entry for this task.
 - Assign shortcut… makes the task a pinned task with a number slot from 1 to 0, or changes or clears its slot. See the Keyboard section.
 - New entry… opens the entry editor with this task filled in.
+- Add to favorites stars the task, so it shows in the task menu's Favorites. See [Task menu](#task-menu).
 - An archived task, or a task in an archived project, disables Start entry, New entry… and Edit: "Restore the task first" or "Restore the project first".
 
 ### Backlog item
@@ -88,7 +89,7 @@ Decided in [Native right-click menus with groups and Cut, Copy, Paste](https://g
 - A menu draws a line between groups of related actions. Each action set names its groups (`group` in `domain/actions/object-actions.ts`), and the destructive actions at the end share the last one:
   - time entry: Edit · Continue/Stop | Cut · Copy · Paste | Duplicate · Duplicate to… · Move to… · Mark as not committed | Delete/Discard
   - backlog item: Start entry/Stop · New entry… | Edit · Add subitem | Snooze… · Pin · Settle | Change source state… · Open in source | Archive · Delete
-  - task: Start entry · New entry… | Edit · Assign shortcut… | Archive/Restore
+  - task: Start entry · New entry… | Edit · Assign shortcut… · Add to favorites | Archive/Restore
   - project: Edit · New task | Archive/Restore
   - calendar suggestion: Add · Choose project… | Dismiss · Hide this meeting · Forget this meeting
   - pull request: Open in the provider | Settle · Snooze…
@@ -241,6 +242,27 @@ The form is the same in every host. Only its container changes.
 - In the side panel, clicking another entry while the draft has valid changes saves it, then loads the new entry. An invalid draft blocks the switch and shows its error.
 - After saving, the editor closes and focus returns to the row or card it came from.
 
+## Task menu
+
+The project and task picker of the entry editor, the Week Grid's new row and calendar suggestions.
+
+### Rows
+
+- Every row is one line. A long name is cut.
+- A task row shows a star, the name, its pinned key and "Non-billable" when the task is not billable. A billable task says nothing about billing.
+- A project row shows a star, the project's icon and name, its active task count and a chevron. Choosing it opens its tasks.
+- Search results add the project's name after the task's name, because task names repeat across projects.
+
+### Favorites
+
+- A favorite is a task or a project the user starred. It is personal, like a pinned slot: a shared project's favorites stay on this computer. A task can be a favorite and a pinned task.
+- The star at the start of a row adds the row to favorites or removes it. A starred row always shows a filled star; other rows show the outline on hover and highlight. Pressing the star does not choose the row or close the menu.
+- Add to favorites and Remove from favorites are also in the task and project action sets, with F on a focused task or project.
+- The start view lists, without a search: No project, Favorites, then All projects. An empty section is hidden.
+- Favorites mixes tasks and projects, newest star first. The first 3 show, then "N more favorites" opens a Favorites page with all of them. The page works like a project's tasks: Back to projects at the top, Backspace on an empty search goes back, and typing filters the page.
+- A favorite task row shows its project's icon. A favorite project opens its tasks.
+- An archived task, or anything in an archived project, keeps its star but leaves Favorites until it is restored.
+
 ## Running entries
 
 Decided in [Running timer editing and empty duration meaning](https://github.com/les-cabochons/ajour/issues/15).
@@ -389,6 +411,7 @@ Frequent in-app actions use single keys. They only work when focus is not in a t
 - ↑ and ↓ move focus between rows or cards. ← and → move between days in Days and between cells in the Grid.
 - Enter goes one level deeper. On a time entry, task or project it opens Edit. On a backlog item row it opens the backlog item page, and on that page it opens Edit. E no longer opens Edit. Delete or Backspace deletes, with the Undo toast. On a focused Grid cell, Shift+Backspace deletes the whole row.
 - On a focused backlog item, or on its page, S starts an entry on it (Stop when its entry runs), E settles and B snoozes, as in Gmail. Shift+E opens the settle dialog even when a settle rule applies a fixed change. Cmd+D duplicates. M opens Move to…. Alt+↑ and Alt+↓ reorder.
+- On a focused task or project, F adds it to favorites or removes it.
 - The context menu key, Shift+F10 or "." opens the "…" menu, or the right-click menu on a row without one. Escape closes whatever is open.
 - Every item in the "…" and right-click menus shows its key, so the menus teach the shortcuts.
 - Calendar suggestions are focusable too: Day rows under "From your calendar" and the dashed cards under a Days column. Enter adds the suggestion when it has a project, and opens the project picker when it does not. Space does the same on a card. Delete or Backspace dismisses it, with the Undo toast. Their menus list Add, Choose project…, Dismiss, Hide this meeting and Forget this meeting. Suggestions never join the entry selection.

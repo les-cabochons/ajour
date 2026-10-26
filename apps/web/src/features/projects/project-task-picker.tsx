@@ -2,7 +2,6 @@ import { useMemo, useState, type KeyboardEvent } from "react";
 import {
   RiArrowDownSLine as ChevronDown,
   RiArrowLeftLine as ArrowLeft,
-  RiArrowRightSLine as ChevronRight,
   RiCloseCircleLine as NoProject,
   RiSubtractLine as NoTask,
 } from "@remixicon/react";
@@ -22,12 +21,18 @@ import {
 } from "@/components/ui/popover";
 import type { LocalProject } from "@/domain/local-state";
 import { getLocalProjectDisplayName } from "@/domain/local-state";
-import { PinnedSlotBadge } from "@/features/projects/pinned-slot";
 import {
-  getProjectTaskBillableValueLabel,
-  isProjectTaskBillable,
-} from "@/features/projects/project-task-options";
+  getFavorites,
+  type Favorite,
+} from "@/domain/projects/project-transitions";
 import {
+  getProjectLabel,
+  PickerMoreRow,
+  PickerProjectRow,
+  PickerTaskRow,
+} from "@/features/projects/project-task-picker-rows";
+import {
+  filterProjectTaskRows,
   findMatchingProjects,
   findMatchingProjectTasks,
   findMatchingTasksInProject,
@@ -54,13 +59,22 @@ interface ProjectTaskPickerProps {
   onOpenChange?: (open: boolean) => void;
 }
 
-type PickerView = { kind: "projects" } | { kind: "tasks"; projectId: string };
+/**
+ * What the list shows: the start view (Favorites and All projects, or the
+ * search results), a project's tasks, or the page of every favorite.
+ */
+type PickerView =
+  | { kind: "projects" }
+  | { kind: "tasks"; projectId: string }
+  | { kind: "favorites" };
 
 const projectsView: PickerView = { kind: "projects" };
 
-function getProjectLabel(project: LocalProject) {
-  const displayName = getLocalProjectDisplayName(project);
-  return project.code ? `[${project.code}] ${displayName}` : displayName;
+/** How many favorites the start view shows before "N more favorites". */
+const START_VIEW_FAVORITES = 3;
+
+function formatMoreFavorites(count: number) {
+  return count === 1 ? "1 more favorite" : `${count} more favorites`;
 }
 
 export function ProjectTaskPicker({
@@ -113,6 +127,11 @@ export function ProjectTaskPicker({
       browsingProject ? findMatchingTasksInProject(browsingProject, query) : [],
     [browsingProject, query],
   );
+  const favorites = useMemo(() => getFavorites(projects), [projects]);
+  const matchingFavorites = useMemo(
+    () => filterProjectTaskRows(favorites, query),
+    [favorites, query],
+  );
   const hasQuery = query.trim().length > 0;
   const hasGlobalResults =
     matchingProjects.length > 0 || taskResults.matches.length > 0;
@@ -129,9 +148,39 @@ export function ProjectTaskPicker({
     }
   }
 
-  function openProject(project: LocalProject) {
-    setView({ kind: "tasks", projectId: project._id });
+  function openView(next: PickerView) {
+    setView(next);
     setQuery("");
+  }
+
+  function openProject(project: LocalProject) {
+    openView({ kind: "tasks", projectId: project._id });
+  }
+
+  function isChecked(nextProjectId: string, nextTaskId: string) {
+    return nextProjectId === projectId && nextTaskId === taskId;
+  }
+
+  function renderFavorite(favorite: Favorite) {
+    const { project } = favorite;
+    return favorite.kind === "project" ? (
+      <PickerProjectRow
+        key={project._id}
+        project={project}
+        value={`favorite-project-${project._id}`}
+        onSelect={() => openProject(project)}
+      />
+    ) : (
+      <PickerTaskRow
+        key={`${project._id}-${favorite.task._id}`}
+        project={project}
+        task={favorite.task}
+        value={`favorite-task-${project._id}-${favorite.task._id}`}
+        checked={isChecked(project._id, favorite.task._id)}
+        projectDisplay="icon"
+        onSelect={() => commitSelection(project._id, favorite.task._id)}
+      />
+    );
   }
 
   function commitSelection(nextProjectId: string, nextTaskId = "") {
@@ -143,7 +192,7 @@ export function ProjectTaskPicker({
   function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (
       event.key === "Backspace" &&
-      view.kind === "tasks" &&
+      view.kind !== "projects" &&
       query.length === 0
     ) {
       event.preventDefault();
@@ -198,7 +247,9 @@ export function ProjectTaskPicker({
             placeholder={
               browsingProject
                 ? `Search tasks in ${getLocalProjectDisplayName(browsingProject)}...`
-                : "Search projects and tasks..."
+                : view.kind === "favorites"
+                  ? "Search favorites..."
+                  : "Search projects and tasks..."
             }
             value={query}
             onValueChange={setQuery}
@@ -224,32 +275,38 @@ export function ProjectTaskPicker({
                   </>
                 ) : null}
 
+                {!hasQuery && favorites.length > 0 ? (
+                  <>
+                    <CommandGroup heading="Favorites">
+                      {favorites
+                        .slice(0, START_VIEW_FAVORITES)
+                        .map(renderFavorite)}
+                      {favorites.length > START_VIEW_FAVORITES ? (
+                        <PickerMoreRow
+                          value="more-favorites"
+                          onSelect={() => openView({ kind: "favorites" })}
+                        >
+                          {formatMoreFavorites(
+                            favorites.length - START_VIEW_FAVORITES,
+                          )}
+                        </PickerMoreRow>
+                      ) : null}
+                    </CommandGroup>
+                    <CommandSeparator />
+                  </>
+                ) : null}
+
                 {matchingProjects.length > 0 ? (
-                  <CommandGroup heading="Projects">
+                  <CommandGroup
+                    heading={hasQuery ? "Projects" : "All projects"}
+                  >
                     {matchingProjects.map((project) => (
-                      <CommandItem
+                      <PickerProjectRow
                         key={project._id}
+                        project={project}
                         value={`project-${project._id}-${getProjectLabel(project)}`}
-                        className="rounded-[var(--control-radius)]"
                         onSelect={() => openProject(project)}
-                      >
-                        <ProjectIcon
-                          icon={project.icon}
-                          color={project.color}
-                          className="size-4 shrink-0"
-                        />
-                        <span className="min-w-0 flex-1 truncate">
-                          {getProjectLabel(project)}
-                        </span>
-                        <span className="shrink-0 text-xs font-normal text-[var(--text-tertiary)]">
-                          {
-                            project.tasks.filter(
-                              (task) => task.status === "active",
-                            ).length
-                          }
-                        </span>
-                        <ChevronRight className="size-4 shrink-0 text-[var(--text-tertiary)]" />
-                      </CommandItem>
+                      />
                     ))}
                   </CommandGroup>
                 ) : null}
@@ -259,44 +316,17 @@ export function ProjectTaskPicker({
                     {matchingProjects.length > 0 ? <CommandSeparator /> : null}
                     <CommandGroup heading="Tasks">
                       {taskResults.matches.map(({ project, task }) => (
-                        <CommandItem
+                        <PickerTaskRow
                           key={`${project._id}-${task._id}`}
+                          project={project}
+                          task={task}
                           value={`task-${project._id}-${task._id}-${getProjectLabel(project)}-${task.name}`}
-                          className="rounded-[var(--control-radius)]"
-                          data-checked={
-                            project._id === projectId && task._id === taskId
-                              ? "true"
-                              : undefined
-                          }
+                          checked={isChecked(project._id, task._id)}
+                          projectDisplay="label"
                           onSelect={() =>
                             commitSelection(project._id, task._id)
                           }
-                        >
-                          <ProjectIcon
-                            icon={project.icon}
-                            color={project.color}
-                            className="size-4 shrink-0"
-                          />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate">{task.name}</span>
-                            <span className="block truncate text-xs font-normal text-[var(--text-tertiary)]">
-                              {getProjectLabel(project)}
-                            </span>
-                          </span>
-                          {task.pinnedSlot ? (
-                            <PinnedSlotBadge slot={task.pinnedSlot} />
-                          ) : null}
-                          <span
-                            className={cn(
-                              "shrink-0 text-[11px] font-normal",
-                              isProjectTaskBillable(task)
-                                ? "text-[var(--text-secondary)]"
-                                : "text-[var(--text-tertiary)]",
-                            )}
-                          >
-                            {getProjectTaskBillableValueLabel(task)}
-                          </span>
-                        </CommandItem>
+                        />
                       ))}
                     </CommandGroup>
                     {taskResults.total > taskResults.matches.length ? (
@@ -312,16 +342,36 @@ export function ProjectTaskPicker({
                   <CommandEmpty>No matching projects or tasks.</CommandEmpty>
                 ) : null}
               </>
+            ) : view.kind === "favorites" ? (
+              <>
+                <CommandGroup heading="Favorites">
+                  <CommandItem
+                    value="back-to-projects"
+                    className="rounded-[var(--control-radius)]"
+                    onSelect={() => openView(projectsView)}
+                  >
+                    <ArrowLeft className="size-4" />
+                    <span className="flex-1">Back to projects</span>
+                  </CommandItem>
+                </CommandGroup>
+                {matchingFavorites.length > 0 ? (
+                  <>
+                    <CommandSeparator />
+                    <CommandGroup>
+                      {matchingFavorites.map(renderFavorite)}
+                    </CommandGroup>
+                  </>
+                ) : (
+                  <CommandEmpty>No matching favorites.</CommandEmpty>
+                )}
+              </>
             ) : browsingProject ? (
               <>
                 <CommandGroup heading={getProjectLabel(browsingProject)}>
                   <CommandItem
                     value="back-to-projects"
                     className="rounded-[var(--control-radius)]"
-                    onSelect={() => {
-                      setView(projectsView);
-                      setQuery("");
-                    }}
+                    onSelect={() => openView(projectsView)}
                   >
                     <ArrowLeft className="size-4" />
                     <span className="flex-1">Back to projects</span>
@@ -353,37 +403,16 @@ export function ProjectTaskPicker({
                     <CommandSeparator />
                     <CommandGroup heading="Tasks">
                       {matchingProjectTasks.map((task) => (
-                        <CommandItem
+                        <PickerTaskRow
                           key={task._id}
+                          project={browsingProject}
+                          task={task}
                           value={`project-task-${task._id}-${task.name}`}
-                          className="rounded-[var(--control-radius)]"
-                          data-checked={
-                            browsingProject._id === projectId &&
-                            task._id === taskId
-                              ? "true"
-                              : undefined
-                          }
+                          checked={isChecked(browsingProject._id, task._id)}
                           onSelect={() =>
                             commitSelection(browsingProject._id, task._id)
                           }
-                        >
-                          <span className="min-w-0 flex-1 truncate">
-                            {task.name}
-                          </span>
-                          {task.pinnedSlot ? (
-                            <PinnedSlotBadge slot={task.pinnedSlot} />
-                          ) : null}
-                          <span
-                            className={cn(
-                              "shrink-0 text-[11px] font-normal",
-                              isProjectTaskBillable(task)
-                                ? "text-[var(--text-secondary)]"
-                                : "text-[var(--text-tertiary)]",
-                            )}
-                          >
-                            {getProjectTaskBillableValueLabel(task)}
-                          </span>
-                        </CommandItem>
+                        />
                       ))}
                     </CommandGroup>
                   </>

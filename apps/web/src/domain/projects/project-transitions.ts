@@ -121,7 +121,9 @@ export function normalizeProject(
 }
 
 function normalizeFavoritedAt(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 export function addProject(

@@ -372,12 +372,7 @@ export function getTimeEntryActionState(entry: {
 type ArchiveStatus = "active" | "archived";
 
 export type ProjectActionId =
-  | "edit"
-  | "new-task"
-  | "favorite"
-  | "unfavorite"
-  | "archive"
-  | "restore";
+  "edit" | "new-task" | "favorite" | "unfavorite" | "archive" | "restore";
 
 const RESTORE_PROJECT_FIRST = "Restore the project first";
 const RESTORE_TASK_FIRST = "Restore the task first";

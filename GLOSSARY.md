@@ -16,10 +16,14 @@ _Avoid_: Project task (in user-facing text), activity
 
 **Pinned task**:
 A task the user reaches with a number key from 1 to 0.
-_Avoid_: Favorite, shortcut task
+_Avoid_: Shortcut task
+
+**Favorite**:
+A task or project the user starred so it shows first in the task menu. Unlike a pinned task it takes no number key, and a task can be both.
+_Avoid_: Bookmark, starred item
 
 **Shared project**:
-A project that belongs to exactly one team. Its name, code, status, color, icon, tasks and task budgets follow the team; pinned slots, plugin properties, order and the budget adjustment stay personal.
+A project that belongs to exactly one team. Its name, code, status, color, icon, tasks and task budgets follow the team; pinned slots, favorites, plugin properties, order and the budget adjustment stay personal.
 _Avoid_: Synced project, remote project, team project (in user-facing text)
 
 **Local project**:
