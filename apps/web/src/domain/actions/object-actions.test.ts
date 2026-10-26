@@ -238,10 +238,10 @@ describe("time entry selection actions", () => {
 });
 
 describe("project actions", () => {
-  it("lists Edit, New task and a destructive Archive last on an active project", () => {
+  it("lists Edit, New task, Add to favorites and a destructive Archive last on an active project", () => {
     const actions = getProjectActions({ status: "active" });
 
-    expect(ids(actions)).toEqual(["edit", "new-task", "archive"]);
+    expect(ids(actions)).toEqual(["edit", "new-task", "favorite", "archive"]);
     expect(disabledReasons(actions)).toEqual({});
     expect(actions.at(-1)).toMatchObject({ id: "archive", destructive: true });
   });
@@ -249,12 +249,22 @@ describe("project actions", () => {
   it("swaps Archive for Restore and blocks the rest on an archived project", () => {
     const actions = getProjectActions({ status: "archived" });
 
-    expect(ids(actions)).toEqual(["edit", "new-task", "restore"]);
+    expect(ids(actions)).toEqual(["edit", "new-task", "favorite", "restore"]);
     expect(disabledReasons(actions)).toEqual({
       edit: "Restore the project first",
       "new-task": "Restore the project first",
+      favorite: "Restore the project first",
     });
     expect(actions.at(-1)?.destructive).toBeUndefined();
+  });
+
+  it("swaps Add to favorites for Remove from favorites once starred", () => {
+    const actions = getProjectActions({ status: "active", favoritedAt: 1 });
+
+    expect(actions[2]).toMatchObject({
+      id: "unfavorite",
+      label: "Remove from favorites",
+    });
   });
 });
 
@@ -270,10 +280,20 @@ describe("task actions", () => {
       "new-entry",
       "edit",
       "assign-shortcut",
+      "favorite",
       "archive",
     ]);
     expect(disabledReasons(actions)).toEqual({});
     expect(actions.at(-1)?.destructive).toBe(true);
+  });
+
+  it("swaps Add to favorites for Remove from favorites once starred", () => {
+    const actions = getTaskActions(active, { ...active, favoritedAt: 1 });
+
+    expect(actions[4]).toMatchObject({
+      id: "unfavorite",
+      label: "Remove from favorites",
+    });
   });
 
   it("keeps Restore available on an archived task and blocks the work actions", () => {
@@ -284,6 +304,7 @@ describe("task actions", () => {
       "new-entry",
       "edit",
       "assign-shortcut",
+      "favorite",
       "restore",
     ]);
     expect(disabledReasons(actions)).toEqual({
@@ -291,6 +312,7 @@ describe("task actions", () => {
       "new-entry": "Restore the task first",
       edit: "Restore the task first",
       "assign-shortcut": "Restore the task first",
+      favorite: "Restore the task first",
     });
   });
 
@@ -300,6 +322,7 @@ describe("task actions", () => {
       "new-entry": "Restore the project first",
       edit: "Restore the project first",
       "assign-shortcut": "Restore the project first",
+      favorite: "Restore the project first",
       archive: "Restore the project first",
     });
     expect(
@@ -634,14 +657,14 @@ describe("action sections", () => {
 
   it("separates Restore from the work actions of an archived project or task", () => {
     expect(sectionIds(getProjectActions({ status: "archived" }))).toEqual([
-      ["edit", "new-task"],
+      ["edit", "new-task", "favorite"],
       ["restore"],
     ]);
     expect(
       sectionIds(getTaskActions({ status: "active" }, { status: "archived" })),
     ).toEqual([
       ["start-entry", "new-entry"],
-      ["edit", "assign-shortcut"],
+      ["edit", "assign-shortcut", "favorite"],
       ["restore"],
     ]);
   });

@@ -4,6 +4,7 @@ import type {
   BacklogItemActionId,
   CalendarSuggestionActionId,
   ObjectAction,
+  ProjectActionId,
   TaskActionId,
   TimeEntryActionId,
 } from "@/domain/actions/object-actions";
@@ -86,7 +87,18 @@ export const BACKLOG_ITEM_ROW_KEYS: ActionKeys<BacklogItemActionId | "open"> = {
 /** Tasks have no Delete: the Delete key archives them, with Undo. */
 export const TASK_ACTION_KEYS: ActionKeys<TaskActionId> = {
   edit: "item.edit",
+  favorite: "item.favorite",
+  unfavorite: "item.favorite",
   archive: "item.delete",
+};
+
+/**
+ * Keys on a project row. Enter follows the row's link and Delete does not
+ * archive a whole project, so F is the only one.
+ */
+export const PROJECT_ACTION_KEYS: ActionKeys<ProjectActionId> = {
+  favorite: "item.favorite",
+  unfavorite: "item.favorite",
 };
 
 export type FocusDirection = "up" | "down" | "left" | "right";
