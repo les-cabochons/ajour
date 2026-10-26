@@ -680,7 +680,7 @@ Decided after the prototype on branch `prototype/backlog-sidebar`: variant B is 
 
 Like T3 Code's thread card, resting the mouse on a backlog row shows a card beside the sidebar with what the row has no room for.
 
-- It opens after the pointer rests on one row for 800ms, so moving down the list shows nothing. Once it shows, moving to another row moves it there after 150ms.
+- It opens after the pointer rests on one row for 800ms, so moving down the list shows nothing. Once it shows, moving to another row moves it there at once.
 - From top to bottom: the whole title; where the item comes from, as its source tool's logo, the organization and the source project, such as "les-cabochons / ajour", with its id at the end, such as "1234" or "PAY-12"; and on a subitem, its parent's title. A manual item has no source line.
 - Then the subitems, open ones first, with their workflow state's ring and the closed count over the total, such as "1/3". Eight show, then "n more".
 - Then the pull requests whose title names the item, open ones first: the state icon, the number and the title. Five show, then "n more". Code hosts do not report links to backlog items, so the title is the link: a key such as "PAY-12" names the item from any repository, and a number such as "#1234" only from the same GitHub repository, or the same Azure DevOps organization, where every project shares the numbers. Only the pull requests the Pull requests page lists count, so none show while no code host is enabled.

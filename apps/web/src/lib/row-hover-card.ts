@@ -3,9 +3,9 @@ import { useEffect, useMemo, useState, type RefObject } from "react";
 /**
  * When a list's shared hover card opens, moves and closes, in milliseconds:
  * it opens once the pointer rests on a row, follows the pointer to another row
- * sooner once it shows, and waits for the pointer to cross over to it.
+ * at once while it shows, and waits for the pointer to cross over to it.
  */
-export const ROW_HOVER_CARD_DELAYS = { open: 800, move: 150, close: 200 };
+export const ROW_HOVER_CARD_DELAYS = { open: 800, move: 0, close: 200 };
 
 export interface RowHoverIntent<T> {
   /** The pointer is over the row `id`, or a part of it. */
