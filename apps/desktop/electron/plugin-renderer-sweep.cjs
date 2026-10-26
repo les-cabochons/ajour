@@ -30,6 +30,13 @@ const PROCESS_RECORD_FILE = "plugin-renderers.json";
 const START_TIME_TOLERANCE_MS = 2_000;
 /** How long the sweep waits for what it ended to be gone. */
 const SWEEP_WAIT_MS = 3_000;
+/**
+ * A held entry older than this is let go of: a launch whose query keeps
+ * failing would otherwise carry it, and every orphan after it, for good.
+ */
+const MAX_HELD_AGE_MS = 7 * 24 * 60 * 60 * 1_000;
+/** At most this many entries, the newest, are held for the next launch. */
+const MAX_HELD_ENTRIES = 64;
 /** How long asking the system about the recorded processes may take. */
 const QUERY_TIMEOUT_MS = 15_000;
 
@@ -40,7 +47,8 @@ const QUERY_TIMEOUT_MS = 15_000;
 
 /**
  * The live plugin renderers' processes, written to `filePath` as each opens
- * and closes. The file is gone while none runs, as after a normal quit.
+ * and closes. The file is gone while none runs and the sweep holds none,
+ * as after a normal quit.
  * `remove` takes the entry `add` was given and forgets only that one, so a
  * renderer still closing can't delete the entry of one that took its id.
  * `hold` keeps the last session's entries in the file next to this
@@ -286,6 +294,7 @@ function isAlive(pid) {
  *   kill?: (pid: number) => void,
  *   alive?: (pid: number) => boolean,
  *   waitMs?: number,
+ *   now?: () => number,
  *   readFile?: (filePath: string) => string,
  *   removeFile?: (filePath: string) => void,
  * }} options
@@ -300,6 +309,7 @@ async function sweepOrphanedRenderers({
   kill = (pid) => process.kill(pid, "SIGKILL"),
   alive = isAlive,
   waitMs = SWEEP_WAIT_MS,
+  now = Date.now,
   readFile = (file) => fs.readFileSync(file, "utf8"),
   removeFile = (file) => fs.rmSync(file, { force: true }),
 }) {
@@ -308,7 +318,14 @@ async function sweepOrphanedRenderers({
     text = readFile(filePath);
   } catch {
     // No record: the last session closed every renderer.
-    return { recorded: 0, ended: 0, gone: 0, notOurs: 0, stillRunning: 0 };
+    return {
+      recorded: 0,
+      ended: 0,
+      gone: 0,
+      notOurs: 0,
+      stillRunning: 0,
+      expired: 0,
+    };
   }
   const startedAt = Date.now();
   const unit = events.start("plugin_renderer.sweep", {
@@ -322,6 +339,7 @@ async function sweepOrphanedRenderers({
     gone: 0,
     notOurs: 0,
     stillRunning: 0,
+    expired: 0,
   };
   const finish = (outcome, reason) => {
     unit
@@ -332,6 +350,7 @@ async function sweepOrphanedRenderers({
           gone: counts.gone,
           not_ours: counts.notOurs,
           still_running: counts.stillRunning,
+          expired: counts.expired,
           sweep_ms: Date.now() - startedAt,
         },
       })
@@ -353,6 +372,17 @@ async function sweepOrphanedRenderers({
     return finish("refused", "unreadable_record");
   }
   recorded = recorded.filter((entry) => entry.pid !== process.pid);
+  // An entry with no start time can never be told from another program's
+  // process, and one held past a week of failed queries never will be.
+  const all = recorded.length;
+  const oldest = now() - MAX_HELD_AGE_MS;
+  recorded = recorded
+    .filter(
+      (entry) => entry.createdAt !== undefined && entry.createdAt >= oldest,
+    )
+    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+    .slice(0, MAX_HELD_ENTRIES);
+  counts.expired = all - recorded.length;
   counts.recorded = recorded.length;
   // Held before anything awaits: this session's renderers write the file
   // too, and the entries must survive that and a quit during the query.

@@ -134,6 +134,7 @@ function sweep(
     kill: (pid: number) => killed.push(pid),
     alive: options.alive ?? (() => false),
     waitMs: 200,
+    now: () => STARTED + 60_000,
   });
   return { result, killed, removed, recorded, memory };
 }
@@ -178,6 +179,7 @@ describe("the sweep of orphaned plugin renderers", () => {
       gone: 1,
       notOurs: 2,
       stillRunning: 0,
+      expired: 0,
     });
     expect(killed).toEqual([101]);
     // Every entry is dealt with, so the record is gone.
@@ -258,6 +260,34 @@ describe("the sweep of orphaned plugin renderers", () => {
     expect(memory.pidsInFile()).toEqual([101, 102]);
   });
 
+  it("lets go of entries it could never end: no start time, more than a week old, or past the newest 64", async () => {
+    const kept = Array.from({ length: 64 }, (_, index) => ({
+      pid: 1_000 + index,
+      createdAt: STARTED - index,
+    }));
+    const { result, memory, recorded } = sweep(
+      {
+        version: 1,
+        processes: [
+          ...kept,
+          // Past the newest 64.
+          { pid: 999, createdAt: STARTED - 1_000 },
+          // A start time is what tells Ajour's renderer from another.
+          { pid: 998 },
+          // Held for more than a week of launches whose query failed.
+          { pid: 997, createdAt: STARTED - 8 * 24 * 60 * 60 * 1_000 },
+        ],
+      },
+      new Error("timed out after 15000 ms"),
+    );
+
+    await expect(result).resolves.toMatchObject({ recorded: 64, expired: 3 });
+    expect(memory.pidsInFile()).toEqual(kept.map((entry) => entry.pid));
+    expect(
+      recorded.find((event) => event.name === "plugin_renderer.sweep"),
+    ).toMatchObject({ sweep: { recorded: 64, expired: 3 } });
+  });
+
   it("holds the entries while the system is still being asked, whatever this session's renderers write", async () => {
     let answer!: (found: RunningProcess[]) => void;
     const pending = new Promise<RunningProcess[]>((resolve) => {
@@ -334,7 +364,7 @@ describe("the sweep of orphaned plugin renderers", () => {
       {
         version: 1,
         processes: [
-          // No start time recorded.
+          // No start time recorded: let go of before the system is asked.
           { pid: 101, pluginId: "jira" },
           // The system gave no start time for the running process.
           { pid: 102, pluginId: "github", createdAt: STARTED },
@@ -347,9 +377,10 @@ describe("the sweep of orphaned plugin renderers", () => {
     );
 
     await expect(result).resolves.toMatchObject({
-      recorded: 2,
+      recorded: 1,
+      expired: 1,
       ended: 0,
-      notOurs: 2,
+      notOurs: 1,
     });
     expect(killed).toEqual([]);
 
