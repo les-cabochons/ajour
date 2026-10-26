@@ -950,6 +950,27 @@ describe("the credential broker", () => {
       expect(response.status).toBe(301);
     });
 
+    it("hands back a same-origin redirect to an address that holds a user name or password", async () => {
+      const { operation, sent } = setup({
+        respond: (request) => {
+          if (!request.url.endsWith("/myself")) return { status: 200 };
+          const location = new URL("/rest/api/3/issue/ENG-5", request.url);
+          location.username = "me";
+          location.password = "pw";
+          return { status: 302, headers: { location: location.href } };
+        },
+      });
+
+      const response = await operation().http({
+        connectionId: "jira_1",
+        method: "GET",
+        path: "/rest/api/3/myself",
+      });
+
+      expect(sent).toHaveLength(1);
+      expect(response.status).toBe(302);
+    });
+
     it("hands back a same-origin redirect to a path the manifest doesn't allow", async () => {
       for (const location of [
         "/rest/api/3/serverInfo",
@@ -1238,6 +1259,60 @@ describe("the credential broker", () => {
       expect(always.sent).toHaveLength(4);
       expect(insecure.reason).toBe("redirect_refused");
       expect(`${tooMany.message} ${insecure.message}`).not.toContain("example");
+    });
+
+    it("refuses a saved address that holds a user name or password, whatever its scheme, before any request, without naming it", async () => {
+      for (const address of [
+        "https://me:pw@calendar.example.org/feeds/9d1c4b7e/basic.ics",
+        "https://me@calendar.example.org/feeds/9d1c4b7e/basic.ics",
+        "webcal://me:pw@calendar.example.org/feeds/9d1c4b7e/basic.ics",
+        "WEBCALS://me:pw@calendar.example.org/feeds/9d1c4b7e/basic.ics",
+      ]) {
+        const { operation, sent } = setup({
+          manifest: ics,
+          connections: {
+            "ajc-jira": [
+              feed({ values: { feedUrl: address }, secrets: [address] }),
+            ],
+          },
+        });
+
+        const error = await refusal(
+          operation().http({ connectionId: "jira_1", method: "GET", path: "" }),
+        );
+
+        expect(error.reason, address).toBe("invalid_address");
+        expect(error.message, address).toContain("user name or password");
+        expect(error.message, address).not.toMatch(
+          /\bme\b|pw|example|9d1c4b7e/,
+        );
+        expect(sent, address).toEqual([]);
+      }
+    });
+
+    it("refuses a redirect to an address that holds a user name or password, rather than send it", async () => {
+      // A redirect target is held to the rule of the saved address: the
+      // user name and password would ride along on the next request.
+      for (const location of [
+        "https://me:pw@cdn.example.net/feed.ics",
+        "https://me@cdn.example.net/feed.ics",
+        "//me:pw@cdn.example.net/feed.ics",
+      ]) {
+        const { operation, sent } = setup({
+          manifest: ics,
+          connections: { "ajc-jira": [feed()] },
+          respond: () => ({ status: 302, headers: { location } }),
+        });
+
+        const error = await refusal(
+          operation().http({ connectionId: "jira_1", method: "GET", path: "" }),
+        );
+
+        expect(error.reason, location).toBe("redirect_refused");
+        expect(error.message, location).toContain("user name or password");
+        expect(error.message, location).not.toMatch(/\bme\b|pw|example/);
+        expect(sent, location).toHaveLength(1);
+      }
     });
 
     it("takes only a GET with an empty path and no query", async () => {
