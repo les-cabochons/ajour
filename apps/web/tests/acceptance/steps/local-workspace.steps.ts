@@ -467,70 +467,114 @@ Given(
     await page.goto("/time/today");
   },
 );
+
+/** Two projects whose task names repeat, for the task menu's search. */
+const SEARCHABLE_PROJECTS = [
+  {
+    _id: "project-aaa",
+    name: "aaa xyz",
+    displayName: "aaa xyz",
+    code: "AAA",
+    color: "#1f7667",
+    icon: { kind: "preset", name: "dot" },
+    status: "active",
+    tasks: [
+      {
+        _id: "task-111",
+        name: "111 000",
+        status: "active",
+        createdAt: 1,
+        billable: true,
+      },
+      {
+        _id: "task-222-aaa",
+        name: "222 000",
+        status: "active",
+        createdAt: 2,
+        billable: true,
+      },
+    ],
+  },
+  {
+    _id: "project-bbb",
+    name: "bbb zyx",
+    displayName: "bbb zyx",
+    code: "BBB",
+    color: "#ec7a43",
+    icon: { kind: "preset", name: "dot" },
+    status: "active",
+    tasks: [
+      {
+        _id: "task-222-bbb",
+        name: "222 000",
+        status: "active",
+        createdAt: 3,
+        billable: false,
+      },
+      {
+        _id: "task-333",
+        name: "333 000",
+        status: "active",
+        createdAt: 4,
+        billable: true,
+      },
+    ],
+  },
+];
+
 Given("I have projects with searchable tasks", async ({ page }) => {
   await mockEmptyPluginsOverview(page);
-  await page.addInitScript(() => {
+  await page.addInitScript((projects) => {
     window.localStorage.clear();
     window.sessionStorage.clear();
     window.localStorage.setItem(
       "ajour.local-state.v2",
-      JSON.stringify({
-        projects: [
-          {
-            _id: "project-aaa",
-            name: "aaa xyz",
-            displayName: "aaa xyz",
-            code: "AAA",
-            color: "#1f7667",
-            icon: { kind: "preset", name: "dot" },
-            status: "active",
-            tasks: [
-              {
-                _id: "task-111",
-                name: "111 000",
-                status: "active",
-                createdAt: 1,
-                billable: true,
-              },
-              {
-                _id: "task-222-aaa",
-                name: "222 000",
-                status: "active",
-                createdAt: 2,
-                billable: true,
-              },
-            ],
-          },
-          {
-            _id: "project-bbb",
-            name: "bbb zyx",
-            displayName: "bbb zyx",
-            code: "BBB",
-            color: "#ec7a43",
-            icon: { kind: "preset", name: "dot" },
-            status: "active",
-            tasks: [
-              {
-                _id: "task-222-bbb",
-                name: "222 000",
-                status: "active",
-                createdAt: 3,
-                billable: false,
-              },
-              {
-                _id: "task-333",
-                name: "333 000",
-                status: "active",
-                createdAt: 4,
-                billable: true,
-              },
-            ],
-          },
-        ],
-      }),
+      JSON.stringify({ projects }),
     );
-  });
+  }, SEARCHABLE_PROJECTS);
 });
+
+Given(
+  "I used four searchable tasks lately, the second of them starred",
+  async ({ page }) => {
+    await mockEmptyPluginsOverview(page);
+    await page.addInitScript((projects) => {
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+      const now = Date.now();
+      // Newest first: 333 000, the starred 222 000 of bbb, 111 000, 222 000 of aaa.
+      const used = [
+        ["project-bbb", "task-333"],
+        ["project-bbb", "task-222-bbb"],
+        ["project-aaa", "task-111"],
+        ["project-aaa", "task-222-aaa"],
+      ];
+      window.localStorage.setItem(
+        "ajour.local-state.v2",
+        JSON.stringify({
+          projects: projects.map((project) => ({
+            ...project,
+            tasks: project.tasks.map((task) =>
+              task._id === "task-222-bbb"
+                ? { ...task, favoritedAt: now }
+                : task,
+            ),
+          })),
+          timesheetEntries: used.map(([projectId, taskId], index) => ({
+            _id: `entry-${index}`,
+            localDate: "2026-01-05",
+            projectId,
+            taskId,
+            label: "",
+            durationMs: 3_600_000,
+            sourceBlockIds: [],
+            committedAt: now - (index + 1) * 60_000,
+          })),
+        }),
+      );
+    }, SEARCHABLE_PROJECTS);
+  },
+);
 
 When("I open today's time workspace", async ({ page }) => {
   await page.goto("/time/today");
@@ -1358,14 +1402,19 @@ Then("the task menu is still open", async ({ page }) => {
 });
 
 Then(
-  "the task menu's Favorites list {string} and {string}",
-  async ({ page }, names: string, more: string) => {
-    await expect(taskMenuRows(page, "Favorites")).toHaveText([
-      ...names.split(", ").map(startsWith),
-      more,
-    ]);
+  "the task menu's {string} section lists {string}",
+  async ({ page }, section: string, rows: string) => {
+    await expect(taskMenuRows(page, section)).toHaveText(
+      rows.split(", ").map(startsWith),
+    );
   },
 );
+
+Then("the picker shows {string}", async ({ page }, selection: string) => {
+  await expect(
+    page.getByRole("button", { name: "Project or task" }),
+  ).toContainText(selection);
+});
 
 Then("the task menu lists {string}", async ({ page }, names: string) => {
   await expect(
