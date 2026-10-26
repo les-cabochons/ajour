@@ -6,7 +6,9 @@ export {
   createForwardingSink,
   FORWARD_BATCH_SIZE,
   FORWARD_FLUSH_MS,
+  MAIN_ONLY_KINDS,
   MAX_FORWARDED_EVENT_CHARS,
+  MAX_UNSENT_EVENT_COUNT,
 } from "./lib/forwarding.ts";
 export type {
   ForwardedBatch,

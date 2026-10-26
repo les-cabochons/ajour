@@ -6,8 +6,9 @@ import { catalog } from "../../packages/wide-events/catalog.ts";
 import { recordingEvents } from "./recording-events.ts";
 
 const require = createRequire(import.meta.url);
-const { createIpcListeners, refusedSender } =
+const { createIpcListeners, FORWARD_WIDE_EVENTS_CHANNEL, refusedSender } =
   require("./electron/ipc-listeners.cjs") as {
+    FORWARD_WIDE_EVENTS_CHANNEL: string;
     createIpcListeners: (
       ipcMain: FakeIpcMain,
       options: { events: unknown; windowSession?: () => unknown },
@@ -15,7 +16,10 @@ const { createIpcListeners, refusedSender } =
     refusedSender: (message: string) => Error;
   };
 const { IPC_CHANNELS } = require("./electron/ipc-channels.cjs") as {
-  IPC_CHANNELS: Record<string, { event: string; mode: string }>;
+  IPC_CHANNELS: Record<
+    string,
+    { event: string; mode: string; record?: string }
+  >;
 };
 
 type Listener = (event: IpcEvent | WindowEvent, ...args: unknown[]) => unknown;
@@ -454,6 +458,37 @@ describe("the channel that forwards the renderer's events", () => {
 });
 
 describe("the IPC channel table", () => {
+  it("lets only the channel that forwards the renderer's events record just its failures", () => {
+    const flagged = Object.entries(IPC_CHANNELS)
+      .filter(([, entry]) => entry.record !== undefined)
+      .map(([channel]) => channel);
+    expect(flagged).toEqual(["ajour:forward-wide-events"]);
+    expect(flagged).toEqual([FORWARD_WIDE_EVENTS_CHANNEL]);
+  });
+
+  it("throws when another channel is flagged to record just its failures", () => {
+    const other = Object.keys(IPC_CHANNELS).find(
+      (channel) =>
+        channel !== FORWARD_WIDE_EVENTS_CHANNEL &&
+        IPC_CHANNELS[channel]!.mode === "invoke",
+    )!;
+    const entry = IPC_CHANNELS[other]!;
+    const { ipc } = (() => {
+      const ipcMain = new FakeIpcMain();
+      const { events } = recordingEvents();
+      return { ipc: createIpcListeners(ipcMain, { events }) };
+    })();
+    entry.record = "failures";
+    try {
+      expect(() => ipc.handle(other, () => undefined)).toThrow(
+        /may not set record/,
+      );
+    } finally {
+      delete entry.record;
+    }
+    expect(() => ipc.handle(other, () => undefined)).not.toThrow();
+  });
+
   it("names every channel main.cjs registers, and only through the wrapper", async () => {
     // The plugin renderer runtime registers its page's channel itself.
     const source = (

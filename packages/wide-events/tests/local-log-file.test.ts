@@ -98,6 +98,34 @@ function sync(events: Awaited<ReturnType<typeof logFile>>["events"]) {
   return events.run("backlog.sync", { kind: "job", trigger: "user" }, () => 7);
 }
 
+/** A file system whose appends fail with `code` until it heals. */
+function failingFs(code: string) {
+  let failing = true;
+  const appendFile = vi.fn(
+    async (...args: Parameters<LocalLogFileSystem["appendFile"]>) => {
+      if (failing) {
+        throw Object.assign(new Error(`${code}: simulated`), { code });
+      }
+      await fs.appendFile(...args);
+    },
+  );
+  const fileSystem: LocalLogFileSystem = {
+    mkdir: fs.mkdir,
+    readdir: fs.readdir,
+    stat: fs.stat,
+    unlink: fs.unlink,
+    rmdir: fs.rmdir,
+    appendFile,
+  };
+  return {
+    fileSystem,
+    appendFile,
+    heal: () => {
+      failing = false;
+    },
+  };
+}
+
 describe("the local log file", () => {
   it("writes one JSON line per event, in the file of the UTC day it was emitted", async () => {
     const log = await logFile({ at: "2026-10-26T23:59:59.900Z" });
@@ -350,32 +378,6 @@ describe("the local log file", () => {
 
   describe("a write that fails", () => {
     /** The real file system, but `appendFile` fails with `code` until `heal`. */
-    function failingFs(code: string) {
-      let failing = true;
-      const appendFile = vi.fn(
-        async (...args: Parameters<LocalLogFileSystem["appendFile"]>) => {
-          if (failing) {
-            throw Object.assign(new Error(`${code}: simulated`), { code });
-          }
-          await fs.appendFile(...args);
-        },
-      );
-      const fileSystem: LocalLogFileSystem = {
-        mkdir: fs.mkdir,
-        readdir: fs.readdir,
-        stat: fs.stat,
-        unlink: fs.unlink,
-        rmdir: fs.rmdir,
-        appendFile,
-      };
-      return {
-        fileSystem,
-        appendFile,
-        heal: () => {
-          failing = false;
-        },
-      };
-    }
 
     it.each([
       ["ENOSPC", "disk_full"],
@@ -512,6 +514,41 @@ describe("the local log file", () => {
     expect(await log.file.status()).toMatchObject({ dropped_event_count: 3 });
   });
 
+  describe("whether it is writing", () => {
+    it("tells its listeners when a failed write stops it, and when saving the settings resumes or turns it off", async () => {
+      const disk = failingFs("ENOSPC");
+      const log = await logFile({ fileSystem: disk.fileSystem });
+      const changes: boolean[] = [];
+      const stop = log.file.onWritingChange((writing) => changes.push(writing));
+      expect(log.file.writing()).toBe(true);
+
+      sync(log.events);
+      await log.file.flush();
+      disk.heal();
+      log.file.configure(ON);
+      log.file.configure(ON);
+      log.file.configure({ ...ON, enabled: false });
+      stop();
+      log.file.configure(ON);
+
+      expect(changes).toEqual([false, true, false]);
+    });
+
+    it("is not stopped by a listener that throws", async () => {
+      const log = await logFile({ settings: { enabled: false } });
+      const changes: boolean[] = [];
+      log.file.onWritingChange(() => {
+        throw new Error("The window is gone.");
+      });
+      log.file.onWritingChange((writing) => changes.push(writing));
+
+      expect(() => log.file.configure(ON)).not.toThrow();
+
+      expect(changes).toEqual([true]);
+      expect(log.file.writing()).toBe(true);
+    });
+  });
+
   describe("a batch another process forwarded", () => {
     const FROM = { runtime: "renderer", launch_id: "launch-1" } as const;
 
@@ -560,7 +597,9 @@ describe("the local log file", () => {
 
       expect(result).toEqual({
         accepted_event_count: 1,
+        dropped_event_count: 0,
         rejected_event_count: 1,
+        rejected_batch_count: 0,
         unsent_event_count: 2,
       });
       const [line, ...rest] = await log.lines("2026-10-26");
@@ -605,6 +644,74 @@ describe("the local log file", () => {
       });
       await log.file.flush();
       expect(await log.lines("2026-10-26")).toHaveLength(10_000);
+    });
+
+    it("counts the events it queued apart from those it dropped for a full queue", async () => {
+      const log = await logFile();
+      const full = {
+        events: Array.from({ length: 100 }, () => rendererEvent()),
+      };
+      for (let count = 0; count < 99; count += 1) log.file.forward(full, FROM);
+
+      expect(
+        log.file.forward({ events: full.events.slice(0, 60) }, FROM),
+      ).toMatchObject({
+        accepted_event_count: 60,
+        dropped_event_count: 0,
+      });
+      // 9,900 + 60 queued: 40 more fit, the other 20 are dropped.
+      expect(
+        log.file.forward({ events: full.events.slice(0, 60) }, FROM),
+      ).toMatchObject({
+        accepted_event_count: 40,
+        dropped_event_count: 20,
+      });
+      expect(await log.file.status()).toMatchObject({
+        dropped_event_count: 20,
+      });
+    });
+
+    it("counts them as dropped, not accepted, once writing stopped on a warning", async () => {
+      const disk = failingFs("ENOSPC");
+      const log = await logFile({ fileSystem: disk.fileSystem });
+      sync(log.events);
+      await log.file.flush();
+      expect(log.file.writing()).toBe(false);
+
+      expect(
+        log.file.forward({ events: [rendererEvent()] }, FROM),
+      ).toMatchObject({
+        accepted_event_count: 0,
+        dropped_event_count: 1,
+      });
+    });
+
+    it("counts a batch refused whole, and an event the renderer doesn't emit", async () => {
+      const log = await logFile();
+
+      expect(
+        log.file.forward(
+          { events: Array.from({ length: 101 }, () => rendererEvent()) },
+          FROM,
+        ),
+      ).toMatchObject({
+        accepted_event_count: 0,
+        rejected_event_count: 101,
+        rejected_batch_count: 1,
+      });
+      expect(
+        log.file.forward(
+          {
+            events: [
+              rendererEvent({ name: "app.launch", kind: "lifecycle" }),
+              rendererEvent({ name: "logs.sweep", kind: "job" }),
+            ],
+          },
+          FROM,
+        ),
+      ).toMatchObject({ accepted_event_count: 0, rejected_event_count: 2 });
+      await log.file.flush();
+      await expect(fs.readdir(log.root)).resolves.toEqual([]);
     });
 
     it("never throws, whatever it is given", async () => {

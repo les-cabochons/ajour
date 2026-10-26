@@ -64,11 +64,23 @@ const ipcFields = {
  * counted here instead of on an event per batch.
  */
 const forwardedFields = {
-  /** Batches received from the window. */
+  /** Batches received from the window and read. */
   batch_count: operational<number>(),
-  /** Events whose envelope was valid, handed to the file. */
+  /** Batches that arrived before the file opened, or after it failed to load. */
+  dropped_batch_count: operational<number>(),
+  /** Batches refused whole because they held too many events. */
+  rejected_batch_count: operational<number>(),
+  /** Events the file queued to write. */
   event_count: operational<number>(),
-  /** Events left out: an invalid envelope, or past a batch's size. */
+  /**
+   * Valid events the file didn't queue: writing had stopped on a warning,
+   * or its queue was full.
+   */
+  dropped_event_count: operational<number>(),
+  /**
+   * Events left out: an invalid envelope, a name or kind the renderer
+   * doesn't emit, or the events of a batch refused whole.
+   */
   rejected_event_count: operational<number>(),
   /** Events the renderer dropped because their batch couldn't be sent. */
   unsent_event_count: operational<number>(),

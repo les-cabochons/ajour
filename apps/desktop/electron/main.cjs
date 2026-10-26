@@ -198,6 +198,8 @@ const localLogs = createLocalLogs({
   settingsPath: path.join(app.getPath("userData"), "local-log-settings.json"),
   events,
   launchId: launch.launch_id,
+  // The window's forwarding follows whether main is writing (#440).
+  onWritingChange: () => sendWideEventsForwarding(),
   open: (settings) =>
     hasSingleInstanceLock
       ? loadLocalLogFile({
@@ -390,9 +392,9 @@ ipc.answerSync("ajour:get-runtime-info", () => ({
   platform: process.platform,
   version: app.getVersion(),
   launch,
-  // Whether the renderer forwards its wide events to the local log file at
-  // first; main pushes each change (#440).
-  wideEventsForwarding: localLogs.settings().enabled,
+  // Whether main is writing the local log file, so the renderer forwards
+  // its wide events at first; main pushes each change (#440).
+  wideEventsForwarding: localLogs.writing(),
 }));
 
 ipc.answerSync("ajour:get-app-menu", () => appMenuModel);
@@ -944,12 +946,8 @@ ipc.handle("ajour:get-logs-status", async (event) => {
 
 ipc.handle("ajour:configure-logs", async (event, settings) => {
   assertActiveDesktopWindow(event, "configure logging");
-  try {
-    return await localLogs.configure(settings);
-  } finally {
-    // The renderer's sink follows the setting, whether this call saved it or not.
-    sendWideEventsForwarding();
-  }
+  // The log file tells the window when writing starts or stops (#440).
+  return await localLogs.configure(settings);
 });
 
 ipc.handle("ajour:delete-all-logs", async (event) => {
@@ -957,7 +955,7 @@ ipc.handle("ajour:delete-all-logs", async (event) => {
   return await localLogs.deleteAll();
 });
 
-// The renderer's wide events, in batches while logging is on (#440). Only
+// The renderer's wide events, in batches while main is writing (#440). Only
 // the active window's are written. The wrapper records a refused batch, and
 // emits nothing for one it takes: `logs.sweep` counts those.
 ipc.onMessage("ajour:forward-wide-events", (event, batch) => {
@@ -966,15 +964,17 @@ ipc.onMessage("ajour:forward-wide-events", (event, batch) => {
 });
 
 /**
- * Tells the window whether to forward its wide events: the logging setting,
- * so turning logging on or off switches the renderer's sink without a reload.
- * The preload keeps the last value for the page (#440).
+ * Tells the window whether to forward its wide events: whether main is
+ * writing. Turning logging on or off, or a write failing and stopping it
+ * with a warning, switches the renderer's sink without a reload, so it stops
+ * building and sending events main would drop. The preload keeps the last
+ * value for the page (#440).
  */
 function sendWideEventsForwarding() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(
       "ajour:wide-events-forwarding",
-      localLogs.settings().enabled,
+      localLogs.writing(),
     );
   }
 }

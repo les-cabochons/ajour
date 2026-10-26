@@ -111,10 +111,11 @@ function defaultSink(): Sink {
 /**
  * On desktop, the local log file's sink (#440): events wait in batches and
  * go to the main process, which checks and writes them. It accepts events
- * only while logging is on, which main pushes as the user changes it, so the
- * renderer switches without a reload, and with logging off no event is
- * built for it. The page sends what waits when it hides. The web build has
- * no file: there it is `nowhere`.
+ * only while main is writing, which main pushes as it changes (the user turns
+ * logging on or off, or a failed write stops it), so the renderer switches
+ * without a reload, and while main isn't writing no event is built for it. The
+ * page sends what waits when it hides. The web build has no file: there it is
+ * `nowhere`.
  */
 function localLogFileSink(): Sink {
   try {

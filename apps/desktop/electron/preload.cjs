@@ -31,9 +31,9 @@ const bootstrapLocalState = ipcRenderer.sendSync(
 );
 const runtime = ipcRenderer.sendSync("ajour:get-runtime-info");
 
-// Whether the page forwards its wide events to the local log file: the
-// logging setting, from the runtime info and then each change main pushes
-// (#440). Kept here, so a page that subscribes late still gets the last one.
+// Whether the page forwards its wide events to the local log file: whether
+// main is writing it, from the runtime info and then each change main
+// pushes (#440). Kept here, so a page that subscribes late still gets the last one.
 let forwardingWideEvents = runtime?.wideEventsForwarding === true;
 const forwardingListeners = new Set();
 ipcRenderer.on("ajour:wide-events-forwarding", (_event, forwarding) => {

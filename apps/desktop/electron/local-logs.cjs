@@ -26,31 +26,63 @@ const SWEEP_TRIGGERS = {
  * `forward` writes the renderer's batches (#440) with no event of its own:
  * what it took and left out since launch is counted on each `logs.sweep`
  * and `logs.status`, as `logs.forwarded`. `launchId` is this launch's: a
- * forwarded event from another launch is left out.
+ * forwarded event from another launch is left out. `writing()` is whether
+ * main is writing events now, and `onWritingChange` runs each time it may
+ * have changed, so the renderer stops building and sending while it is not:
+ * logging is off, a write failed and stopped it, or the file is unavailable.
  */
 function createLocalLogs({
   settingsPath,
   open,
   events,
   launchId,
+  onWritingChange = () => {},
   setInterval = globalThis.setInterval,
   clearInterval = globalThis.clearInterval,
 }) {
   let settings = loadLocalLogSettings(settingsPath);
   /** The log file once `open` resolved to it, for the quit's synchronous drain. */
   let opened = null;
+  /** The file could not be loaded, or this process opens none. */
+  let unavailable = false;
+  const notify = () => {
+    try {
+      onWritingChange();
+    } catch {
+      // Telling the window never reaches the work.
+    }
+  };
   const file = Promise.resolve()
     .then(() => open(settings))
-    .then((logFile) => (opened = logFile ?? null))
-    .catch(() => null);
+    .then((logFile) => {
+      opened = logFile ?? null;
+      unavailable = opened === null;
+      opened?.onWritingChange(notify);
+      if (unavailable) notify();
+      return opened;
+    })
+    .catch(() => {
+      unavailable = true;
+      notify();
+      return null;
+    });
   let sweepTimer = null;
   /** What the renderer forwarded since launch (`logs.forwarded`). */
   const forwarded = {
     batch_count: 0,
+    dropped_batch_count: 0,
+    rejected_batch_count: 0,
     event_count: 0,
+    dropped_event_count: 0,
     rejected_event_count: 0,
     unsent_event_count: 0,
   };
+
+  /** Whether events are written now. Until the file opens, it is the setting. */
+  function writing() {
+    if (unavailable || !settings.enabled) return false;
+    return opened ? opened.writing() : true;
+  }
 
   async function loaded() {
     const logFile = await file;
@@ -90,6 +122,7 @@ function createLocalLogs({
   return {
     file,
     settings: () => ({ ...settings }),
+    writing,
     /**
      * Stores and applies new settings; what it leaves out stays. Sweeps when
      * a limit changed. A value outside its closed set refuses the call, which
@@ -142,17 +175,22 @@ function createLocalLogs({
      * Writes a batch of the renderer's events: only those whose envelope is
      * valid for this launch's renderer, through the file's privacy filter.
      * It emits no event and never throws; a batch that arrives before the
-     * file loaded, or after it failed to, is dropped.
+     * file loaded, or after it failed to, is dropped and counted.
      */
     forward(batch) {
       try {
-        if (!opened) return;
+        if (!opened) {
+          forwarded.dropped_batch_count += 1;
+          return;
+        }
         const result = opened.forward(batch, {
           runtime: "renderer",
           launch_id: launchId,
         });
         forwarded.batch_count += 1;
+        forwarded.rejected_batch_count += result.rejected_batch_count;
         forwarded.event_count += result.accepted_event_count;
+        forwarded.dropped_event_count += result.dropped_event_count;
         forwarded.rejected_event_count += result.rejected_event_count;
         forwarded.unsent_event_count += result.unsent_event_count;
       } catch {

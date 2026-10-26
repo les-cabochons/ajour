@@ -10,6 +10,8 @@ export type {
   PluginRequestAnswerAddress,
   PluginRequestHostKind,
 } from "./lib/ajour-catalog.ts";
+export { APP_API_CLIENT, rendererEmits } from "./lib/renderer-emits.ts";
+export type { ClientEventName } from "./lib/renderer-emits.ts";
 export {
   defineCatalog,
   envelopeFields,

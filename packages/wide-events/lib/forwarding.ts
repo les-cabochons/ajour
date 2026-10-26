@@ -31,6 +31,14 @@ export const FORWARD_FLUSH_MS = 1000;
 export const FORWARD_BATCH_SIZE = 100;
 
 /**
+ * The most events a batch may say the renderer couldn't send before it. A
+ * page that never reaches main drops 100 events a batch, so a thousand
+ * batches' worth is already past counting: a larger number is capped, not
+ * believed.
+ */
+export const MAX_UNSENT_EVENT_COUNT = FORWARD_BATCH_SIZE * 1000;
+
+/**
  * The longest event, in JSON characters, that a forwarded batch may carry.
  * The renderer's largest events, with 50 steps and 50 step failures, stay
  * well under it.
@@ -90,7 +98,7 @@ export function createForwardingSink(
         options.send({ events, unsent_event_count: unsent });
         unsent = 0;
       } catch {
-        unsent += events.length;
+        unsent = Math.min(unsent + events.length, MAX_UNSENT_EVENT_COUNT);
       }
     },
   };
@@ -106,8 +114,14 @@ export interface ForwardedFrom {
 /** The events of a batch that may be written, and what was left out. */
 export interface ForwardedEvents {
   events: Event[];
-  /** Events whose envelope wasn't valid, or that went past the batch's size. */
+  /**
+   * Events whose envelope wasn't valid, that the renderer doesn't emit, or
+   * that went past the batch's size, and every event of a batch refused
+   * whole.
+   */
   rejected_event_count: number;
+  /** 1 when the batch was refused whole, because it held too many events. */
+  rejected_batch_count: number;
   /** What the batch says its runtime couldn't send before it. */
   unsent_event_count: number;
 }
@@ -150,6 +164,19 @@ const SURFACES = new Set<Surface>([
   "dialog",
   "toast",
 ]);
+/**
+ * The kinds the renderer never emits, whatever an event's entry allows: the
+ * main process's IPC calls, and the requests and plugin operations of the
+ * local API and its plugins.
+ */
+export const MAIN_ONLY_KINDS: readonly Kind[] = [
+  "ipc",
+  "request",
+  "plugin_operation",
+];
+/** The all-zero IDs W3C Trace Context declares invalid. */
+const ZERO_TRACE_ID = "0".repeat(32);
+const ZERO_SPAN_ID = "0".repeat(16);
 const STARTED_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const TRACE_ID = /^[0-9a-f]{32}$/;
 const SPAN_ID = /^[0-9a-f]{16}$/;
@@ -160,35 +187,49 @@ const WINDOW_ID = /^[0-9a-f-]{36}$/;
  * The receiving side of forwarding: it reads a batch from another process,
  * such as the renderer's over IPC, and returns only the events whose
  * envelope is valid, for `from`'s runtime and launch. It trusts nothing in
- * the batch. An event is left out, and counted, when its name isn't in the
- * catalog or doesn't allow its kind, when it claims another runtime or
- * launch, when an envelope field is missing or outside its closed set, or
- * when it is longer than `MAX_FORWARDED_EVENT_CHARS`. Past
- * `FORWARD_BATCH_SIZE` events, the rest are left out too. An
- * `outcome_reason` outside the name's closed set is left out of its event,
- * and so is an error's message: the renderer never scrubs one. What the
- * envelope check passes still goes through the sink's privacy filter, which
- * drops the fields the catalog doesn't declare.
+ * the batch. `emits` is every name the sending runtime emits, with the kinds
+ * it emits it as (`rendererEmits`): an event is left out, and counted, when
+ * its name and kind aren't in it, so a page can't write an event only the
+ * main process emits, such as a failed launch or a refused IPC call. The
+ * kinds `ipc`, `request` and `plugin_operation` are never accepted. An event
+ * is also left out when its name isn't in the catalog or doesn't allow its
+ * kind, when it claims another runtime or launch, when an envelope field is
+ * missing or outside its closed set, or when it is longer than
+ * `MAX_FORWARDED_EVENT_CHARS`. A batch of more than `FORWARD_BATCH_SIZE`
+ * events is refused whole, and counted. An `outcome_reason` outside the
+ * name's closed set is left out of its event, and so is an error's message:
+ * the renderer never scrubs one. What the envelope check passes still goes
+ * through the sink's privacy filter, which drops the fields the catalog
+ * doesn't declare.
  */
-export function createForwardedBatchReader(catalog: Catalog) {
+export function createForwardedBatchReader(
+  catalog: Catalog,
+  emits: ReadonlyMap<string, readonly Kind[]>,
+) {
   return (batch: unknown, from: ForwardedFrom): ForwardedEvents => {
     const events: Event[] = [];
     let rejected = 0;
+    let rejectedBatches = 0;
     const record = isRecord(batch) ? batch : {};
     const sent = Array.isArray(record.events) ? record.events : [];
-    for (const [index, value] of sent.entries()) {
-      const event =
-        index < FORWARD_BATCH_SIZE ? envelopeOf(value, catalog, from) : null;
-      if (event) events.push(event);
-      else rejected += 1;
+    if (sent.length > FORWARD_BATCH_SIZE) {
+      rejected = sent.length;
+      rejectedBatches = 1;
+    } else {
+      for (const value of sent) {
+        const event = envelopeOf(value, catalog, emits, from);
+        if (event) events.push(event);
+        else rejected += 1;
+      }
     }
     const unsent = record.unsent_event_count;
     return {
       events,
       rejected_event_count: rejected,
+      rejected_batch_count: rejectedBatches,
       unsent_event_count:
         typeof unsent === "number" && Number.isSafeInteger(unsent) && unsent > 0
-          ? unsent
+          ? Math.min(unsent, MAX_UNSENT_EVENT_COUNT)
           : 0,
     };
   };
@@ -198,6 +239,7 @@ export function createForwardedBatchReader(catalog: Catalog) {
 function envelopeOf(
   value: unknown,
   catalog: Catalog,
+  emits: ReadonlyMap<string, readonly Kind[]>,
   from: ForwardedFrom,
 ): Event | null {
   if (!isRecord(value) || !fitsInALine(value)) return null;
@@ -209,7 +251,9 @@ function envelopeOf(
   const valid =
     value.schema === 1 &&
     KINDS.has(kind as Kind) &&
+    !MAIN_ONLY_KINDS.includes(kind as Kind) &&
     spec.kinds.includes(kind as Kind) &&
+    emits.get(name)?.includes(kind as Kind) === true &&
     value.runtime === from.runtime &&
     value.launch_id === from.launch_id &&
     OUTCOMES.has(value.outcome as Outcome) &&
@@ -222,9 +266,12 @@ function envelopeOf(
     Number.isFinite(value.duration_ms) &&
     value.duration_ms >= 0 &&
     matches(value.trace_id, TRACE_ID) &&
+    value.trace_id !== ZERO_TRACE_ID &&
     matches(value.span_id, SPAN_ID) &&
+    value.span_id !== ZERO_SPAN_ID &&
     (value.parent_span_id === undefined ||
-      matches(value.parent_span_id, SPAN_ID)) &&
+      (matches(value.parent_span_id, SPAN_ID) &&
+        value.parent_span_id !== ZERO_SPAN_ID)) &&
     (value.window_id === undefined || matches(value.window_id, WINDOW_ID)) &&
     isRecord(value.app) &&
     isRecord(value.device);

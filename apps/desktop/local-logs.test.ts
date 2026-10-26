@@ -626,7 +626,10 @@ describe("the renderer's batches", () => {
 
     const forwarded = {
       batch_count: 2,
+      dropped_batch_count: 0,
+      rejected_batch_count: 0,
       event_count: 2,
+      dropped_event_count: 0,
       rejected_event_count: 1,
       unsent_event_count: 3,
     };
@@ -647,6 +650,130 @@ describe("the renderer's batches", () => {
     );
   });
 
+  it("drops, and counts, the events a page forges that only main emits", async () => {
+    const main = await forwardingMain({});
+
+    main.send(FORWARD, undefined, {
+      events: [
+        rendererEvent({
+          name: "app.launch",
+          kind: "lifecycle",
+          outcome: "error",
+        }),
+        rendererEvent({ name: "logs.configure", kind: "ipc" }),
+        rendererEvent({ name: "wide_events.forward", kind: "ipc" }),
+        rendererEvent(),
+      ],
+    });
+    await main.invoke("ajour:get-logs-status");
+
+    expect(await written(main)).toMatchObject([{ name: "route.change" }]);
+    expect(main.recorded).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "logs.status",
+          logs: expect.objectContaining({
+            forwarded: expect.objectContaining({
+              event_count: 1,
+              rejected_event_count: 3,
+            }),
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("refuses a batch of more than 100 events whole, and counts it", async () => {
+    const main = await forwardingMain({});
+
+    main.send(FORWARD, undefined, {
+      events: Array.from({ length: 101 }, () => rendererEvent()),
+    });
+    await main.invoke("ajour:get-logs-status");
+
+    expect(await written(main)).toEqual([]);
+    expect(main.recorded).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "logs.status",
+          logs: expect.objectContaining({
+            forwarded: expect.objectContaining({
+              batch_count: 1,
+              rejected_batch_count: 1,
+              rejected_event_count: 101,
+            }),
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("counts the batches that arrive before the file opens, and writes only those after", async () => {
+    const userData = await userDataFolder();
+    const directory = path.join(userData, "logs", "events");
+    const { events, recorded } = recordingEvents();
+    let opens!: () => void;
+    const localLogs = createLocalLogs({
+      settingsPath: path.join(userData, "local-log-settings.json"),
+      events,
+      launchId: "launch-1",
+      open: async (settings: unknown) => {
+        await new Promise<void>((resolve) => (opens = resolve));
+        return loadLocalLogFile({
+          packageRoot: wideEventsRoot,
+          directory,
+          settings: { ...(settings as object), enabled: true },
+        });
+      },
+    });
+
+    localLogs.forward({ events: [rendererEvent()] });
+    localLogs.forward({ events: [rendererEvent()] });
+    await vi.waitFor(() => expect(opens).toBeTypeOf("function"));
+    opens();
+    await localLogs.file;
+    localLogs.forward({ events: [rendererEvent()] });
+    await events.run("logs.status", { kind: "ipc", trigger: "user" }, () =>
+      localLogs.status(),
+    );
+    await localLogs.flush();
+
+    expect(recorded).toMatchObject([
+      {
+        name: "logs.status",
+        logs: {
+          forwarded: { batch_count: 1, dropped_batch_count: 2, event_count: 1 },
+        },
+      },
+    ]);
+    const [file] = await readdir(directory);
+    expect(await linesOf(path.join(directory, file!))).toHaveLength(1);
+  });
+
+  it("tells the window to stop forwarding when a failed write stops the file, and to resume when the settings are saved again", async () => {
+    const main = await mainProcess();
+    // The folder's parent is a file, so the first write fails.
+    await writeFile(path.join(main.userData, "logs"), "not a folder");
+    await main.invoke("ajour:configure-logs", undefined, { enabled: true });
+
+    main.send(FORWARD, undefined, { events: [rendererEvent()] });
+    await main.localLogs.flush();
+
+    expect(main.pushed).toEqual([
+      ["ajour:wide-events-forwarding", true],
+      ["ajour:wide-events-forwarding", false],
+    ]);
+    expect(main.localLogs.writing()).toBe(false);
+    expect(main.send("ajour:get-runtime-info")).toMatchObject({
+      wideEventsForwarding: false,
+    });
+
+    await rm(path.join(main.userData, "logs"));
+    await main.invoke("ajour:configure-logs", undefined, { enabled: true });
+
+    expect(main.pushed.at(-1)).toEqual(["ajour:wide-events-forwarding", true]);
+  });
+
   it("tells the window when logging turns on or off, and the runtime info says how it started", async () => {
     const main = await mainProcess();
     expect(main.send("ajour:get-runtime-info")).toMatchObject({
@@ -660,9 +787,9 @@ describe("the renderer's batches", () => {
       main.invoke("ajour:configure-logs", undefined, { enabled: "yes" }),
     ).rejects.toThrow("Invalid local log settings");
 
+    // A refused call changes nothing, so it pushes nothing.
     expect(main.pushed).toEqual([
       ["ajour:wide-events-forwarding", true],
-      ["ajour:wide-events-forwarding", false],
       ["ajour:wide-events-forwarding", false],
     ]);
     const stored = await mainProcess({ storedSettings: { enabled: true } });

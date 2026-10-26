@@ -13,6 +13,9 @@ const { IPC_CHANNELS } = require("./ipc-channels.cjs");
 
 const REFUSED_SENDER = "refused_sender";
 
+/** The one channel that may record only its failures (`record: "failures"`). */
+const FORWARD_WIDE_EVENTS_CHANNEL = "ajour:forward-wide-events";
+
 /**
  * The error a channel throws for a message from a window other than the
  * active one. The wrapper records it as `refused`, not as a failure.
@@ -100,6 +103,16 @@ function createIpcListeners(ipcMain, { events, windowSession }) {
     if (entry.mode !== mode) {
       throw new Error(
         `IPC channel ${channel} is a ${entry.mode} channel, not ${mode}.`,
+      );
+    }
+    // Recording only failures hides a channel's successful calls from the
+    // log: only the channel that forwards the renderer's events may.
+    if (
+      entry.record !== undefined &&
+      (entry.record !== "failures" || channel !== FORWARD_WIDE_EVENTS_CHANNEL)
+    ) {
+      throw new Error(
+        `IPC channel ${channel} may not set record: only ${FORWARD_WIDE_EVENTS_CHANNEL} records just its failures.`,
       );
     }
     return entry;
@@ -242,6 +255,7 @@ function createIpcListeners(ipcMain, { events, windowSession }) {
 }
 
 module.exports = {
+  FORWARD_WIDE_EVENTS_CHANNEL,
   createIpcListeners,
   refusedSender,
 };

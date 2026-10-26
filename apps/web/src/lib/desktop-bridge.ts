@@ -128,7 +128,7 @@ declare global {
          */
         launch?: LaunchContext;
         /**
-         * Whether logging was on when the page loaded. The preload reads it;
+         * Whether main was writing the local log file when the page loaded. The preload reads it;
          * the page subscribes with `onWideEventsForwarding`.
          */
         wideEventsForwarding?: boolean;
@@ -240,8 +240,9 @@ declare global {
        */
       forwardWideEvents?: (batch: ForwardedBatch) => void;
       /**
-       * Runs `callback` at once with whether logging is on, then each time
-       * the user turns it on or off. Returns how to stop.
+       * Runs `callback` at once with whether main is writing the local log
+       * file, then each time that changes: the user turns logging on or off,
+       * or a failed write stops it. Returns how to stop.
        */
       onWideEventsForwarding?: (
         callback: (forwarding: boolean) => void,

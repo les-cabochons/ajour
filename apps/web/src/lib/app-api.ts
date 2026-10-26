@@ -74,10 +74,10 @@ import {
   type AgentRunStartRequest,
 } from "@ajour/shared/agent-runs";
 import {
+  APP_API_CLIENT,
   catalog,
   type AjourCatalog,
-  type EventName,
-  type KindOf,
+  type ClientEventName,
 } from "@ajour/wide-events/catalog.ts";
 import type { Trigger, Unit } from "@ajour/wide-events";
 import { localStore, startStoreCommandFor } from "@/lib/local-store";
@@ -344,79 +344,7 @@ async function parseJsonResponse<T>(
   return schema.parse(payload);
 }
 
-/**
- * The names a local API client call can take: the request event of the
- * route it calls, which allows the kind `command`, for a call a user or
- * agent action makes, or `job`, for a call only a job makes.
- */
-type ClientEventName = {
-  [
-    Name in EventName<AjourCatalog>
-  ]: AjourCatalog["events"][Name]["fields"] extends {
-    http: object;
-  }
-    ? [Extract<KindOf<AjourCatalog, Name>, "command" | "job">] extends [never]
-      ? never
-      : Name
-    : never;
-}[EventName<AjourCatalog>];
-
-/**
- * Every local API client function, by the event it opens when no unit is
- * active: the request event of the route it calls. `appApiRequest` takes the
- * function's key, so a new client function fails to compile until it has a
- * name here.
- */
-export const APP_API_CLIENT = {
-  syncCodeHostConnection: "pull_request.sync",
-  getProjectDataShapePlugins: "schema.list",
-  exportProjectsWithDataShape: "project.export",
-  importProjectsWithDataShape: "project.import",
-  fetchPluginsOverview: "plugin.list",
-  getPluginsOverview: "plugin.list",
-  setPluginEnabled: "plugin.activate",
-  setPluginSystemEnabled: "plugin_system.toggle",
-  setUnsignedPluginsEnabled: "unsigned_plugins.toggle",
-  getBacklogSourceStatuses: "source_state.list",
-  upsertBacklogSourceStatuses: "source_state.update",
-  savePluginConnection: "connection.save",
-  deletePluginConnection: "connection.delete",
-  removeConnectionSecrets: "connection.remove_secrets",
-  removeMissingPluginData: "plugin.remove_data",
-  retryVault: "vault.retry",
-  listItemComments: "comment.list",
-  postItemComment: "comment.post",
-  editItemComment: "comment.edit",
-  deleteItemComment: "comment.delete",
-  searchItemPeople: "mention.search",
-  setItemCommentReaction: "comment.react",
-  listCalendarEvents: "calendar.fetch",
-  createTeam: "team.create",
-  runTeamSyncRound: "team.sync",
-  syncBacklogConnection: "backlog.sync",
-  listBacklogSettleStates: "source_state.list",
-  writeBacklogSettle: "backlog.write_source",
-  readBacklogDescription: "description.read",
-  writeBacklogDescription: "description.write",
-  listBacklogImportCandidates: "backlog_import.list",
-  updateBacklogImportSelection: "backlog_import.select",
-  dismissBacklogImportCandidates: "backlog_import.dismiss",
-  restoreDismissedBacklogImports: "backlog_import.restore",
-  commitSelectedBacklogImportsToLocalStore: "backlog_import.commit",
-  getAgentRunner: "agent_runner.status",
-  updateAgentRunnerSettings: "agent_runner.configure",
-  saveAgentTaskSettings: "agent_task.configure",
-  startAgentRun: "agent_run.start",
-  getMcpSettings: "mcp.status",
-  updateMcpSettings: "mcp.configure",
-  createMcpClient: "agent_client.create",
-  revokeMcpClient: "agent_client.revoke",
-  postMcpBridgeResult: "mcp_bridge.result",
-  answerAgentQuestion: "question.answer",
-  dismissAgentSession: "agent_session.dismiss",
-  stopAgentRun: "agent_run.stop",
-  markAgentsSeen: "agent_session.mark_seen",
-} as const satisfies Record<string, ClientEventName>;
+export { APP_API_CLIENT };
 
 export type AppApiClientFunction = keyof typeof APP_API_CLIENT;
 

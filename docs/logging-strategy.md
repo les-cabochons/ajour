@@ -272,10 +272,19 @@ once the user turns it on. Settings › Diagnostics will show it (#441).
   and its events are counted in the next batch's `unsent_event_count`.
   - **Main checks each batch.** The IPC wrapper takes it only from the
     window, and `assertActiveDesktopWindow` only from the active one.
-    `LocalLogFile.forward` (`createForwardedBatchReader`) keeps the first
-    100 events whose envelope is valid: a catalog name that allows its
-    kind, `runtime` `renderer`, this launch's `launch_id`, each envelope
-    field in its closed set or format, and at most 16 KiB of JSON. It drops
+    `LocalLogFile.forward` (`createForwardedBatchReader`) refuses a batch of
+    more than 100 events whole, and counts it. Of a smaller one it keeps the
+    events whose envelope is valid: a catalog name that allows its kind,
+    `runtime` `renderer`, this launch's `launch_id`, each envelope field in
+    its closed set or format (a trace or span ID is not all zeros, as W3C
+    requires), and at most 16 KiB of JSON. A name and kind the renderer does
+    not emit are left out, so a page can't forge `app.launch`,
+    `logs.sweep` or a refused IPC call: `rendererEmits`
+    (`renderer-emits.ts`) derives what it emits from the renderer catalog,
+    `APP_API_CLIENT`, the bridge's jobs and the renderer's `app.error`, and
+    the kinds `ipc`, `request` and `plugin_operation` are never accepted.
+    The catalog audit checks it against the units the renderer's code
+    starts. `unsent_event_count` is capped at 100,000. It drops
     an `outcome_reason` outside the name's closed set and an error's
     message, which the renderer never sends. The file's privacy filter
     then drops undeclared fields and shapes, and its queue's 10,000 lines
@@ -283,20 +292,26 @@ once the user turns it on. Settings › Diagnostics will show it (#441).
     launch, or grow the queue. The events go to the file only, not to main's
     console: the renderer prints its own.
   - **It switches at runtime.** The runtime info tells the preload whether
-    logging is on (`wideEventsForwarding`), and main pushes
-    `ajour:wide-events-forwarding` to the window after each
-    `logs.configure`. The preload keeps the last value, and
-    `onWideEventsForwarding` gives it to the page at once, then each change.
-    The renderer's sink accepts only while it is on, so with logging off no
-    event is built, as before, and turning it on or off needs no reload.
+    main is writing (`wideEventsForwarding`: logging is on and no warning
+    has stopped it), and main pushes `ajour:wide-events-forwarding` to the
+    window each time main starts or stops writing: a `logs.configure`
+    that turns logging on or off, or a failed write that stops it. The preload keeps the last value, and `onWideEventsForwarding`
+    gives it to the page at once, then each change. The renderer's sink
+    accepts only while main is writing, so with logging off, or after a
+    failed write, no event is built or sent, and turning it on or off needs
+    no reload. `accepting` is checked only when a unit ends, so a unit that
+    starts while it is off and ends while it is on is written, and one that
+    starts while on and ends while off is dropped.
     `AJOUR_WIDE_EVENTS=console` still prints every event in devtools either
     way: the renderer's sink is `fanOut(console, file)` too.
   - **No feedback loop.** A batch main takes emits no event: the channel is
     the one IPC channel with `record: "failures"`, so its
     `wide_events.forward` event is emitted only for a refused sender or a
-    failed call. What the renderer forwarded since launch, the batches,
-    the events taken, rejected and unsent, is counted in `logs.forwarded`
-    on each `logs.sweep` and `logs.status`. One event per batch would put a
+    failed call. What the renderer forwarded since launch is counted in
+    `logs.forwarded`: the batches read, those that arrived before the file
+    opened and those refused whole, the events queued, dropped (writing had
+    stopped or the queue was full) and rejected, and those the renderer
+    could not send. It is on each `logs.sweep` and `logs.status`. One event per batch would put a
     line in the file for every second the renderer works.
 - **Privacy filter.** Before a line is written, `createPrivacyFilter` keeps
   each field only where the catalog declares it, for the event's name or in
@@ -599,7 +614,7 @@ field without a privacy class never leaves the renderer, whatever set it,
 and a field holds only what the shared privacy filter allows it (see
 [The local log file](#the-local-log-file)): an object or a function where a
 value belongs is dropped, and counted in `dropped_field_count`. On desktop,
-while the user has logging on, they go to the local log file in batches
+while main is writing the local log file, they go to it in batches
 ([The renderer's events](#the-local-log-file)); otherwise nowhere, unless a
 developer sets `AJOUR_WIDE_EVENTS=console`.
 
@@ -806,7 +821,7 @@ renderer's trace. The listener adds its own fields through
 `events.current()`. One channel, `ajour:forward-wide-events`, records only
 its failures (`record: "failures"`): a call it accepts and that succeeds
 emits nothing, so forwarding the renderer's events never adds an event per
-batch (see [The local log file](#the-local-log-file)). A channel missing from
+batch (see [The local log file](#the-local-log-file)). A `record` on any other channel throws when it registers. A channel missing from
 `IPC_CHANNELS`, or registered the wrong way, fails `just typecheck`: the
 wrapper's methods take only the table's channels of their mode, and the
 desktop typecheck checks main.cjs. It also throws when it registers.
