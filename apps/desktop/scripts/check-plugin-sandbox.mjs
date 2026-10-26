@@ -430,7 +430,8 @@ const isWindows = process.platform === "win32";
     ) &&
       budget.afterMemoryOpen === false &&
       budget.memoryClose?.ceiling === 160 &&
-      budget.memoryClose.memory > 160,
+      // Its last sample, rounded to the MB, at the ceiling or above.
+      budget.memoryClose.memory >= 160,
     "a renderer above the user's memory ceiling closes, and its call says so",
     { ballooned: budget.ballooned, close: budget.memoryClose },
   );
