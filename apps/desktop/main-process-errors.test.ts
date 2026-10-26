@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import vm from "node:vm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { recordingEvents } from "./recording-events.ts";
+import { noWindowSession, recordingEvents } from "./recording-events.ts";
 
 // main.cjs runs only inside Electron, so these tests run its wiring, statement
 // by statement, in a VM context with Electron replaced. The rules themselves
@@ -531,7 +531,7 @@ describe("IPC listeners", () => {
       // The fake senders carry no session: the window's is none.
       ipc: createIpcListeners(ipcMain, {
         events,
-        windowSession: () => undefined,
+        windowSession: noWindowSession,
       }),
       nativeTheme,
       mainWindow,
@@ -1758,7 +1758,7 @@ describe("plugin and update IPC: the privacy canary", () => {
           ) => void handlers.set(name, handler),
         },
         // The fake senders carry no session: the window's is none.
-        { events, windowSession: () => undefined },
+        { events, windowSession: noWindowSession },
       ),
       ...overrides,
     });

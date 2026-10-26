@@ -180,37 +180,30 @@ function createBrokerNetwork({
    */
 
   /**
-   * Sends one exchange on `session`. A pinned one (`unpin`) names no
-   * answering address: `webRequest` would name the tunnel's.
+   * Sends one exchange on `session`. A pinned one names no answering
+   * address: `webRequest` would name the tunnel's. Whoever pinned it lets
+   * the pin go when this settles, whichever way, so nothing in here may
+   * leave the promise pending or throw out of it.
    *
    * @param {TransportRequest} request
    * @param {any} sendSession
-   * @param {(() => void) | undefined} unpin
+   * @param {boolean} pinned
    */
-  function sendOn(request, sendSession, unpin) {
+  function sendOn(request, sendSession, pinned) {
     return new Promise((resolve, reject) => {
       if (request.signal.aborted) {
-        unpin?.();
         reject(aborted(request.signal));
         return;
       }
-      const marker = unpin ? undefined : randomUUID();
+      const marker = pinned ? undefined : randomUUID();
       if (marker !== undefined) answered.set(marker, {});
       let settled = false;
-      const clientRequest = net.request({
-        method: request.method,
-        url: request.url,
-        session: sendSession,
-        redirect: "manual",
-        credentials: "omit",
-        cache: "no-store",
-        referrerPolicy: "no-referrer",
-      });
+      /** @type {any} */
+      let clientRequest;
       const settle = (outcome) => {
         if (settled) return;
         settled = true;
         request.signal.removeEventListener("abort", onAbort);
-        unpin?.();
         const remoteAddress =
           marker === undefined ? undefined : answered.get(marker)?.ip;
         if (marker !== undefined) answered.delete(marker);
@@ -223,58 +216,75 @@ function createBrokerNetwork({
       // Each outcome settles before it aborts, which emits `abort`.
       const onAbort = () => {
         settle(aborted(request.signal));
-        clientRequest.abort();
+        clientRequest?.abort();
       };
       request.signal.addEventListener("abort", onAbort, { once: true });
 
-      clientRequest.on(
-        "redirect",
-        (statusCode, _method, redirectUrl, headers) => {
-          // Not following it cancels it: the broker decides what to follow.
-          settle({
-            status: statusCode,
-            headers: { ...flattenHeaders(headers), location: redirectUrl },
-            body: new Uint8Array(),
-          });
-          clientRequest.abort();
-        },
-      );
-      clientRequest.on("response", (response) => {
-        const chunks = [];
-        let size = 0;
-        response.on("data", (chunk) => {
-          if (settled) return;
-          size += chunk.length;
-          if (size > request.maxResponseBytes) {
-            settle(tooLarge());
+      try {
+        clientRequest = net.request({
+          method: request.method,
+          url: request.url,
+          session: sendSession,
+          redirect: "manual",
+          credentials: "omit",
+          cache: "no-store",
+          referrerPolicy: "no-referrer",
+        });
+        clientRequest.on(
+          "redirect",
+          (statusCode, _method, redirectUrl, headers) => {
+            // Not following it cancels it: the broker decides what to follow.
+            settle({
+              status: statusCode,
+              headers: { ...flattenHeaders(headers), location: redirectUrl },
+              body: new Uint8Array(),
+            });
             clientRequest.abort();
-            return;
-          }
-          chunks.push(Buffer.from(chunk));
-        });
-        response.on("end", () => {
-          settle({
-            status: response.statusCode,
-            headers: flattenHeaders(response.headers),
-            body: new Uint8Array(Buffer.concat(chunks)),
-          });
-        });
-        response.on("error", (error) => settle(error));
-        response.on("aborted", () =>
-          settle(new Error("The service ended its answer early.")),
+          },
         );
-      });
-      clientRequest.on("error", (error) => settle(error));
-      clientRequest.on("abort", () =>
-        settle(new Error("The request was cancelled.")),
-      );
+        clientRequest.on("response", (response) => {
+          const chunks = [];
+          let size = 0;
+          response.on("data", (chunk) => {
+            if (settled) return;
+            size += chunk.length;
+            if (size > request.maxResponseBytes) {
+              settle(tooLarge());
+              clientRequest.abort();
+              return;
+            }
+            chunks.push(Buffer.from(chunk));
+          });
+          response.on("end", () => {
+            settle({
+              status: response.statusCode,
+              headers: flattenHeaders(response.headers),
+              body: new Uint8Array(Buffer.concat(chunks)),
+            });
+          });
+          response.on("error", (error) => settle(error));
+          response.on("aborted", () =>
+            settle(new Error("The service ended its answer early.")),
+          );
+        });
+        clientRequest.on("error", (error) => settle(error));
+        clientRequest.on("abort", () =>
+          settle(new Error("The request was cancelled.")),
+        );
 
-      for (const [name, value] of Object.entries(request.headers)) {
-        clientRequest.setHeader(name, value);
+        for (const [name, value] of Object.entries(request.headers)) {
+          clientRequest.setHeader(name, value);
+        }
+        if (marker !== undefined)
+          clientRequest.setHeader(MARKER_HEADER, marker);
+        if (request.body) clientRequest.write(Buffer.from(request.body));
+        clientRequest.end();
+      } catch (error) {
+        // `net.request` and `setHeader` throw at once, such as for a header
+        // value Electron refuses.
+        settle(error instanceof Error ? error : new Error(String(error)));
+        clientRequest?.abort();
       }
-      if (marker !== undefined) clientRequest.setHeader(MARKER_HEADER, marker);
-      if (request.body) clientRequest.write(Buffer.from(request.body));
-      clientRequest.end();
     });
   }
 
@@ -286,7 +296,7 @@ function createBrokerNetwork({
      */
     send(request) {
       if (request.connectTo === undefined) {
-        return sendOn(request, ses, undefined);
+        return sendOn(request, ses, false);
       }
       return (async () => {
         const url = new URL(request.url);
@@ -302,7 +312,11 @@ function createBrokerNetwork({
           url.port === "" ? 443 : Number(url.port),
           request.connectTo,
         );
-        return await sendOn(request, pinned, unpin);
+        try {
+          return await sendOn(request, pinned, true);
+        } finally {
+          unpin();
+        }
       })();
     },
   };

@@ -7,6 +7,8 @@ const { createPinningTunnel } =
   require("./electron/broker-pinning-tunnel.cjs") as {
     createPinningTunnel: (options?: {
       connect?: typeof net.connect;
+      maxConnections?: number;
+      connectTimeoutMs?: number;
     }) => PinningTunnel;
   };
 
@@ -36,7 +38,9 @@ async function echoService() {
   return { port: (server.address() as net.AddressInfo).port, peers };
 }
 
-async function startTunnel(options = {}) {
+async function startTunnel(
+  options: Parameters<typeof createPinningTunnel>[0] = {},
+) {
   const tunnel = createPinningTunnel(options);
   const port = await tunnel.listen();
   closers.push(() => tunnel.close());
@@ -163,6 +167,97 @@ describe("the broker's pinning tunnel", () => {
     expect(fallback.received).toMatch(/^HTTP\/1\.1 200 /);
     expect(down.received).toMatch(/^HTTP\/1\.1 502 /);
     expect(tried).toEqual(["192.0.2.10", "127.0.0.1", "192.0.2.10"]);
+  });
+
+  it("refuses to pin anything but an IP address, so the tunnel never resolves a name", async () => {
+    const tunnel = createPinningTunnel();
+
+    for (const address of [
+      "internal.example.net",
+      "127.0.0.1.nip.io",
+      "localhost",
+      "",
+      "1.2.3",
+    ]) {
+      expect(() =>
+        tunnel.pin("feeds.ajour-check.invalid", 443, [address]),
+      ).toThrow(/IP address/);
+    }
+    // Nothing of a refused pin stays live, even next to an address that is one.
+    expect(() =>
+      tunnel.pin("feeds.ajour-check.invalid", 443, ["192.0.2.10", "localhost"]),
+    ).toThrow(/IP address/);
+    expect(() =>
+      tunnel.pin("feeds.ajour-check.invalid", 443, [
+        "192.0.2.10",
+        "2001:db8::1",
+      ]),
+    ).not.toThrow();
+    await tunnel.close();
+  });
+
+  it("moves on to the next address when one doesn't answer in time", async () => {
+    const service = await echoService();
+    const tried: string[] = [];
+    const connect = ((options: net.NetConnectOpts & { host: string }) => {
+      tried.push(options.host);
+      // Never answers: neither connects nor fails.
+      if (options.host === "192.0.2.10") return new net.Socket();
+      return net.connect(options);
+    }) as typeof net.connect;
+    const { tunnel, port } = await startTunnel({
+      connect,
+      connectTimeoutMs: 50,
+    });
+    tunnel.pin("feeds.ajour-check.invalid", service.port, [
+      "192.0.2.10",
+      "127.0.0.1",
+    ]);
+    tunnel.pin("down.ajour-check.invalid", service.port, ["192.0.2.10"]);
+
+    const fallback = await talk(
+      port,
+      connectHead(`feeds.ajour-check.invalid:${service.port}`),
+    );
+    const down = await talk(
+      port,
+      connectHead(`down.ajour-check.invalid:${service.port}`),
+    );
+
+    expect(fallback.received).toMatch(/^HTTP\/1\.1 200 /);
+    expect(down.received).toMatch(/^HTTP\/1\.1 502 /);
+  });
+
+  it("holds only so many connections at once, and drops the rest", async () => {
+    const service = await echoService();
+    const { tunnel, port } = await startTunnel({ maxConnections: 2 });
+    tunnel.pin("feeds.ajour-check.invalid", service.port, ["127.0.0.1"]);
+    const target = `feeds.ajour-check.invalid:${service.port}`;
+
+    const open = () =>
+      new Promise<net.Socket>((resolve) => {
+        const socket = net.connect(port, "127.0.0.1");
+        socket.on("error", () => undefined);
+        socket.once("data", () => resolve(socket));
+        socket.write(connectHead(target));
+      });
+    const first = await open();
+    const second = await open();
+    const third = net.connect(port, "127.0.0.1");
+    third.on("error", () => undefined);
+    const dropped = new Promise<string>((resolve) => {
+      let received = "";
+      third.on("data", (chunk) => (received += chunk.toString("latin1")));
+      third.on("close", () => resolve(received));
+    });
+    third.write(connectHead(target));
+
+    expect(await dropped).toBe("");
+    first.destroy();
+    second.destroy();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const again = await open();
+    again.destroy();
   });
 
   it("answers a request that isn't a CONNECT with nothing, so no answer of its own reaches a plugin", async () => {

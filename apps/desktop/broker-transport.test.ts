@@ -50,6 +50,10 @@ class FakeClientRequest extends EventEmitter {
   }
 
   setHeader(name: string, value: string) {
+    // As Electron's: a value outside these characters throws, at once.
+    if (!/^[\t\x20-\x7e\x80-\xff]*$/.test(value)) {
+      throw new TypeError(`"${name}" is an invalid header value.`);
+    }
     this.headers[name] = value;
   }
 
@@ -113,7 +117,7 @@ function fakeTunnel() {
   return tunnel;
 }
 
-function setup() {
+function setup(options: { requestThrows?: Error } = {}) {
   const ses = fakeSession();
   const pinnedSes = fakeSession();
   const requests: FakeClientRequest[] = [];
@@ -125,8 +129,9 @@ function setup() {
   const network = createBrokerNetwork({
     tunnel,
     net: {
-      request: (options) => {
-        const request = new FakeClientRequest(options);
+      request: (requestOptions) => {
+        if (options.requestThrows) throw options.requestThrows;
+        const request = new FakeClientRequest(requestOptions);
         requests.push(request);
         return request;
       },
@@ -307,6 +312,65 @@ describe("the broker's Electron transport", () => {
     expect(tunnel.live).toEqual([]);
     expect(tunnel.listen).toHaveBeenCalledTimes(1);
     expect(pinnedSes.setProxy).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets the pin go when the request can't be built or its headers can't be set", async () => {
+    const throws = setup({ requestThrows: new Error("net::ERR_FAILED") });
+    await expect(
+      throws.network.transport.send(exchange({ connectTo: ["151.101.1.69"] })),
+    ).rejects.toThrow("ERR_FAILED");
+    expect(throws.tunnel.pin).toHaveBeenCalledTimes(1);
+    expect(throws.tunnel.live).toEqual([]);
+
+    const { network, requests, tunnel } = setup();
+    const controller = new AbortController();
+    const removed = vi.spyOn(controller.signal, "removeEventListener");
+    await expect(
+      network.transport.send(
+        exchange({
+          connectTo: ["151.101.1.69"],
+          signal: controller.signal,
+          headers: { "x-note": "price in €" },
+        }),
+      ),
+    ).rejects.toThrow(/invalid header value/);
+
+    expect(tunnel.pin).toHaveBeenCalledTimes(1);
+    expect(tunnel.live).toEqual([]);
+    expect(removed).toHaveBeenCalledWith("abort", expect.any(Function));
+    expect(requests[0]!.aborted).toBe(true);
+  });
+
+  it("lets the pin go when the signal is already aborted, and when there is no address to connect to", async () => {
+    const { network, requests, tunnel } = setup();
+    const controller = new AbortController();
+    controller.abort(new Error("The plugin gave up."));
+
+    await expect(
+      network.transport.send(
+        exchange({ connectTo: ["151.101.1.69"], signal: controller.signal }),
+      ),
+    ).rejects.toThrow("The plugin gave up.");
+    expect(tunnel.live).toEqual([]);
+
+    await expect(
+      network.transport.send(exchange({ connectTo: [] })),
+    ).rejects.toThrow(/address/);
+    expect(tunnel.live).toEqual([]);
+    expect(requests).toEqual([]);
+  });
+
+  it("lets the pin go when the tunnel refuses an address that isn't an IP", async () => {
+    const { network, requests, tunnel } = setup();
+    tunnel.pin.mockImplementationOnce(() => {
+      throw new Error("A pin holds IP addresses only.");
+    });
+
+    await expect(
+      network.transport.send(exchange({ connectTo: ["internal.example"] })),
+    ).rejects.toThrow(/IP addresses/);
+    expect(tunnel.live).toEqual([]);
+    expect(requests).toEqual([]);
   });
 
   it("refuses to pin a URL that isn't https, and sends nothing", async () => {

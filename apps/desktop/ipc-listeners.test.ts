@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 import { catalog } from "../../packages/wide-events/catalog.ts";
-import { recordingEvents } from "./recording-events.ts";
+import { noWindowSession, recordingEvents } from "./recording-events.ts";
 
 const require = createRequire(import.meta.url);
 const { createIpcListeners, FORWARD_WIDE_EVENTS_CHANNEL, refusedSender } =
@@ -66,7 +66,7 @@ function setUp() {
     // These fake senders are strings, with no session: the window's is none.
     ipc: createIpcListeners(ipcMain, {
       events,
-      windowSession: () => undefined,
+      windowSession: noWindowSession,
     }),
   };
 }
@@ -501,7 +501,7 @@ describe("the IPC channel table", () => {
       return {
         ipc: createIpcListeners(ipcMain, {
           events,
-          windowSession: () => undefined,
+          windowSession: noWindowSession,
         }),
       };
     })();

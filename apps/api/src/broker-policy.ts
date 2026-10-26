@@ -56,9 +56,13 @@ function stringValue(value: unknown) {
   return undefined;
 }
 
-/** A header value a request may carry: no line break or NUL. */
+/**
+ * A header value a request may carry: tab, space, printable ASCII and
+ * Latin-1. That leaves out line breaks and NUL, and every character
+ * Electron's `setHeader` throws on, so the transport never meets one.
+ */
 function isHeaderValue(value: unknown): value is string {
-  return typeof value === "string" && !/[\r\n\0]/.test(value);
+  return typeof value === "string" && /^[\t\x20-\x7e\x80-\xff]*$/.test(value);
 }
 
 /**

@@ -170,11 +170,19 @@ function responseHeaders(
  * Where one exchange may connect: through a system proxy, or directly, and
  * then pinned to the addresses checked for its host when it has some.
  */
-interface Route {
-  proxied: boolean;
-  proxyAddresses?: readonly string[];
-  connectTo?: readonly string[];
-}
+type Route =
+  | {
+      proxied: true;
+      /** The proxies' own addresses, when they all resolved. */
+      proxyAddresses?: readonly string[];
+      /** A proxy connects, so no address is pinned. */
+      connectTo?: never;
+    }
+  | {
+      proxied: false;
+      proxyAddresses?: never;
+      connectTo?: readonly string[];
+    };
 
 /** How the broker sends one plugin request, with what it has learned. */
 interface Exchange {

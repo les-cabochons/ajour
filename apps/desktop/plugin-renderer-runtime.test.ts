@@ -6,7 +6,7 @@ import path from "node:path";
 import { setFlagsFromString } from "node:v8";
 import { runInNewContext } from "node:vm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { recordingEvents } from "./recording-events.ts";
+import { noWindowSession, recordingEvents } from "./recording-events.ts";
 
 /*
  * The sandboxed renderer runtime (#390) against a stand-in for Electron: what
@@ -179,7 +179,7 @@ function setUp(
         handlers.set(channel, handler),
     },
     // The plugin renderer's channel checks its senders itself.
-    { events, windowSession: () => undefined },
+    { events, windowSession: noWindowSession },
   );
   const views: {
     options: { webPreferences: Record<string, unknown> };

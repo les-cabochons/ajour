@@ -1162,12 +1162,19 @@ function internalAppApiVault(apiModule, statePath) {
 }
 
 /**
- * The broker's transport and resolver: `net.request` on a session of its
- * own, made once, after `ready`, since a session can't exist before.
+ * The broker's transport and resolver: `net.request` on sessions of its
+ * own, and the pinning tunnel on loopback that holds a request to the
+ * addresses the broker checked. Made once, after `ready`, since a session
+ * can't exist before. The tunnel ends when the app quits.
  */
 let brokerNetwork = null;
 function internalAppApiBrokerNetwork() {
-  brokerNetwork ??= createBrokerNetwork({ net, session, randomUUID });
+  if (!brokerNetwork) {
+    brokerNetwork = createBrokerNetwork({ net, session, randomUUID });
+    app.once("will-quit", () => {
+      void brokerNetwork.close().catch(() => undefined);
+    });
+  }
   return brokerNetwork;
 }
 

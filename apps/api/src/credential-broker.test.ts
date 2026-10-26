@@ -822,6 +822,33 @@ describe("the credential broker", () => {
       expect(text(sent[0]!.body!)).toBe('{"jql":"project = ENG"}');
     });
 
+    it("refuses a header value the network stack would refuse, before anything is sent", async () => {
+      const { operation, sent } = setup();
+      const broker = operation();
+
+      for (const value of ["price in €", "a\u0001b", "a\u007fb", "Ā"]) {
+        const error = await refusal(
+          broker.http({
+            connectionId: "jira_1",
+            method: "GET",
+            path: "/rest/api/3/myself",
+            headers: { Accept: value },
+          }),
+        );
+        expect(error.reason, JSON.stringify(value)).toBe("invalid_request");
+      }
+      expect(sent).toEqual([]);
+
+      // Tab, space, printable ASCII and Latin-1 are the values Electron takes.
+      await broker.http({
+        connectionId: "jira_1",
+        method: "GET",
+        path: "/rest/api/3/myself",
+        headers: { Accept: "a\tb ~ éÿ" },
+      });
+      expect(sent).toHaveLength(1);
+    });
+
     it("refuses the header a header template sets", async () => {
       const base = manifest();
       const { operation } = setup({
@@ -1545,7 +1572,7 @@ describe("the credential broker", () => {
       }
     });
 
-    it("drops the answer of a host that rebound to a private address after it was checked", async () => {
+    it("refuses and drops the answer a transport reports from a private address, even on a pinned request", async () => {
       const { operation, sent, activity } = setup({
         respond: () => ({
           status: 200,

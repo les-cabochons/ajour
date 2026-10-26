@@ -490,15 +490,18 @@ API 4 packages in development builds of the desktop app, until the cut-over
   address pinned for that host and port, and never resolves a name. A host
   with no live pin gets 403 and nothing is connected, so another program on
   this computer can reach through it only a public address the broker is
-  reaching then; anything but a CONNECT is closed unanswered. TLS runs
+  reaching then; anything but a CONNECT is closed unanswered. A pin holds
+  IP addresses only (the tunnel would otherwise resolve a name), the tunnel
+  holds at most 64 connections, gives up on an address that doesn't connect
+  within 10 seconds, and ends with the app at `will-quit`. TLS runs
   inside the tunnel, so the Host header, the server name and the
   certificate check stay the name's. The real-Electron check
   (`sandbox-check/broker-pinning.cjs`) proves it. Its event says
-  `answer_address: "pinned"`. What isn't pinned is judged by the address that answered, when the
-  transport can tell (ADR 0010): an address literal, which can't rebind,
-  and a request through a system proxy, where the proxy connects. Through
-  a system proxy the address that answers is the
-  proxy's and isn't judged; the resolver names the proxies' own addresses
+  `answer_address: "pinned"`. What isn't pinned is judged by the address
+  that answered, when the transport can tell (ADR 0010): an address
+  literal, which can't rebind, and a request through a system proxy, where
+  the proxy connects. Through a system proxy the address that answers is
+  the proxy's and isn't judged; the resolver names the proxies' own addresses
   from the PAC answer, so an answer from any other address, as when a PAC
   file falls back to `DIRECT`, is judged as an unproxied one, and when a
   proxy's name doesn't resolve no proxied answer is judged. Nor is the name
@@ -507,7 +510,12 @@ API 4 packages in development builds of the desktop app, until the cut-over
   a single label such as `intranet`, or one ending in `.local`, `.internal`,
   `.lan` or `.home.arpa`, as a secret address's redirect could otherwise
   reach the internal network through the proxy (on-premises connections
-  are exempt). A PAC file's fallback to `DIRECT` connects where the proxy
+  are exempt). A public-looking name that only the proxy resolves, such as
+  `127.0.0.1.nip.io` on a network whose local DNS can't resolve it, passes
+  that check and the proxy then connects to wherever it resolves: no list
+  of such names is robust, and refusing every name this computer can't
+  resolve would break the proxies that exist to resolve them, so it is a
+  stated limit (ADR 0010). A PAC file's fallback to `DIRECT` connects where the proxy
   would have, unpinned, so a name that rebinds then is caught only by the
   check of the address that answered, after the request was sent. And
   when `webRequest` gives no `ip` for an unpinned request, only the check
