@@ -1023,14 +1023,11 @@ async function runSecondAjour(userData) {
   return { exit, stdout, stderr };
 }
 
-// Windows and macOS run every section. Elsewhere plugins stay off (#381), so
-// the check proves only that.
 /**
  * 7. The broker's pinned requests (#434): they connect only where the
  * tunnel's pin leads, with TLS on the name, and never straight out.
  */
 async function checkBrokerPinning() {
-  process.stdout.write("\n== The broker's pinned requests\n");
   const { findings, exit, stderr, left, pids } = await runCheck(
     "broker-pinning",
     [],
@@ -1069,6 +1066,8 @@ async function checkBrokerPinning() {
   });
 }
 
+// Windows and macOS run every section. Elsewhere plugins stay off (#381), so
+// the check proves only that.
 const sections = SANDBOXED_PLATFORMS.has(process.platform)
   ? [
       ["Plugins in their sandbox", checkSandbox],
