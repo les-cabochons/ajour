@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import * as fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -143,6 +144,7 @@ describe("the local log file", () => {
     expect(await log.file.status()).toEqual({
       state: "off",
       storage_bytes: 0,
+      dropped_event_count: 0,
       file_count: 0,
     });
     await expect(fs.readdir(log.root)).resolves.toEqual([]);
@@ -229,6 +231,7 @@ describe("the local log file", () => {
         deleted_bytes: 10,
         file_count: 2,
         storage_bytes: 20,
+        dropped_event_count: 0,
       });
       expect(await dayFiles(log.directory)).toEqual([
         "2026-10-25.ndjson",
@@ -258,6 +261,7 @@ describe("the local log file", () => {
         deleted_bytes: 80 * MIB,
         file_count: 2,
         storage_bytes: 80 * MIB,
+        dropped_event_count: 0,
       });
       expect(await dayFiles(log.directory)).toEqual([
         "2026-10-25.ndjson",
@@ -307,6 +311,7 @@ describe("the local log file", () => {
         deleted_bytes: 0,
         file_count: 0,
         storage_bytes: 0,
+        dropped_event_count: 0,
       });
       await expect(fs.readdir(log.root)).resolves.toEqual([]);
     });
@@ -360,7 +365,7 @@ describe("the local log file", () => {
         readdir: fs.readdir,
         stat: fs.stat,
         unlink: fs.unlink,
-        rm: fs.rm,
+        rmdir: fs.rmdir,
         appendFile,
       };
       return {
@@ -461,10 +466,11 @@ describe("the local log file", () => {
       storage_bytes: 42,
       file_count: 2,
       oldest_day: "2026-10-24",
+      dropped_event_count: 0,
     });
   });
 
-  it("deletes all logs: the folder, and what was waiting to be written", async () => {
+  it("deletes all logs: every day file and what was waiting to be written, then the empty folder", async () => {
     const log = await logFile();
     await dayFile(log.directory, "2026-10-24", 30);
     sync(log.events);
@@ -479,5 +485,142 @@ describe("the local log file", () => {
     sync(log.events);
     await log.file.flush();
     expect(await log.lines("2026-10-26")).toHaveLength(1);
+  });
+
+  it("deletes only day files when something else is in the folder, and counts exactly those", async () => {
+    const log = await logFile();
+    await dayFile(log.directory, "2026-10-24", 30);
+    await dayFile(log.directory, "2026-10-25", 12);
+    await fs.writeFile(path.join(log.directory, "notes.txt"), "keep");
+
+    expect(await log.file.deleteAll()).toEqual({
+      deleted_file_count: 2,
+      deleted_bytes: 42,
+    });
+
+    expect(await dayFiles(log.directory)).toEqual(["notes.txt"]);
+  });
+
+  it("counts the events it drops when too many wait to be written", async () => {
+    const log = await logFile();
+
+    for (let count = 0; count < 10_003; count += 1) sync(log.events);
+    expect(await log.file.status()).toMatchObject({ dropped_event_count: 3 });
+    await log.file.flush();
+
+    expect(await log.lines("2026-10-26")).toHaveLength(10_000);
+    expect(await log.file.status()).toMatchObject({ dropped_event_count: 3 });
+  });
+
+  describe("draining at quit", () => {
+    it("writes what is waiting, synchronously, before the batch timer would", async () => {
+      const log = await logFile();
+
+      sync(log.events);
+      log.file.drainSync();
+
+      // No await between the event and the file: nothing else ran.
+      expect(
+        readFileSync(path.join(log.directory, "2026-10-26.ndjson"), "utf8")
+          .split("\n")
+          .filter(Boolean),
+      ).toHaveLength(1);
+      await log.file.flush();
+      expect(await log.lines("2026-10-26")).toHaveLength(1);
+    });
+
+    it("writes the privacy filter's output, with sensitive fields only when allowed", async () => {
+      for (const includeSensitive of [false, true]) {
+        const log = await logFile({
+          settings: { include_sensitive: includeSensitive },
+        });
+
+        log.events.run(
+          "time_entry.create",
+          { kind: "command", trigger: "user" },
+          (unit) =>
+            unit.set({ time_entry: { id: "entry-1", day: "2026-10-06" } }),
+        );
+        log.file.drainSync();
+
+        const [line] = await log.lines("2026-10-26");
+        expect(line!.time_entry).toEqual(
+          includeSensitive
+            ? { id: "entry-1", day: "2026-10-06" }
+            : { id: "entry-1" },
+        );
+      }
+    });
+
+    it("writes nothing while logging is off or after a failure, and creates nothing", async () => {
+      const off = await logFile({ settings: { enabled: false } });
+      sync(off.events);
+      off.file.drainSync();
+      await expect(fs.readdir(off.root)).resolves.toEqual([]);
+
+      const disk = await logFile();
+      sync(disk.events);
+      await fs.mkdir(path.dirname(disk.directory), { recursive: true });
+      await fs.writeFile(disk.directory, "not a folder");
+      expect(() => disk.file.drainSync()).not.toThrow();
+      expect(await disk.file.status()).toMatchObject({
+        state: "warning",
+        warning: "write_failed",
+      });
+      sync(disk.events);
+      disk.file.drainSync();
+      expect(disk.file.sink.accepting?.()).toBe(false);
+    });
+
+    it("never throws, and stops with a warning when the write fails", async () => {
+      const failing = await logFile({
+        fileSystem: {
+          mkdir: fs.mkdir,
+          readdir: fs.readdir,
+          stat: fs.stat,
+          unlink: fs.unlink,
+          rmdir: fs.rmdir,
+          appendFile: fs.appendFile,
+          appendFileSync() {
+            throw Object.assign(new Error("ENOSPC: simulated"), {
+              code: "ENOSPC",
+            });
+          },
+        },
+      });
+
+      sync(failing.events);
+
+      expect(() => failing.file.drainSync()).not.toThrow();
+      expect(await failing.file.status()).toMatchObject({
+        state: "warning",
+        warning: "disk_full",
+      });
+    });
+
+    it("keeps the newest events within its byte budget and counts the rest as dropped", async () => {
+      const log = await logFile();
+      const big = "x".repeat(100_000);
+
+      for (let count = 0; count < 30; count += 1) {
+        log.events.run(
+          "backlog.sync",
+          { kind: "job", trigger: "user" },
+          (unit) => {
+            unit.set({ plugin: { id: `${count}-${big}` } });
+          },
+        );
+      }
+      log.file.drainSync();
+
+      const lines = await log.lines("2026-10-26");
+      expect(lines.length).toBeGreaterThan(0);
+      expect(lines.length).toBeLessThan(30);
+      const last = (lines.at(-1)!.plugin as { id: string }).id;
+      expect(last.startsWith("29-")).toBe(true);
+      expect(await log.file.status()).toMatchObject({
+        dropped_event_count: 30 - lines.length,
+      });
+    });
   });
 });

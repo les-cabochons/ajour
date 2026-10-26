@@ -101,6 +101,37 @@ describe("sinks", () => {
     events.run("backlog.sync", { kind: "job", trigger: "user" }, () => {});
     expect(emit).toHaveBeenCalledOnce();
   });
+
+  it("treats a sink whose accepting throws as off: the work still resolves with its result", async () => {
+    const emit = vi.fn();
+    const events = createEmitter({
+      catalog: testCatalog,
+      context: apiContext,
+      sink: {
+        emit,
+        accepting() {
+          throw new Error("accepting failed");
+        },
+      },
+    });
+
+    expect(
+      events.run("backlog.sync", { kind: "job", trigger: "user" }, () => 1),
+    ).toBe(1);
+    await expect(
+      events.run(
+        "backlog.sync",
+        { kind: "job", trigger: "user" },
+        async () => 2,
+      ),
+    ).resolves.toBe(2);
+    await expect(
+      events.run("backlog.sync", { kind: "job", trigger: "user" }, async () => {
+        throw new Error("the work's own failure");
+      }),
+    ).rejects.toThrow("the work's own failure");
+    expect(emit).not.toHaveBeenCalled();
+  });
 });
 
 describe("fanOut", () => {
@@ -124,6 +155,43 @@ describe("fanOut", () => {
 
     expect(first.events).toMatchObject([{ name: "api.request" }]);
     expect(second.events).toMatchObject([{ name: "api.request" }]);
+  });
+
+  it("hands events to the other sinks when one sink's accepting throws", async () => {
+    const first = createRecordingSink();
+    const second = createRecordingSink();
+    const throwing: Sink = {
+      emit: vi.fn(),
+      accepting() {
+        throw new Error("accepting failed");
+      },
+    };
+    const sink = fanOut(first, throwing, second);
+    const events = createEmitter({
+      catalog: testCatalog,
+      context: apiContext,
+      sink,
+    });
+
+    expect(
+      events.run("api.request", { kind: "request", trigger: "user" }, () => 1),
+    ).toBe(1);
+    await expect(
+      events.run(
+        "api.request",
+        { kind: "request", trigger: "user" },
+        async () => 2,
+      ),
+    ).resolves.toBe(2);
+
+    expect(first.events).toMatchObject([
+      { name: "api.request" },
+      { name: "api.request" },
+    ]);
+    expect(second.events).toHaveLength(2);
+    expect(throwing.emit).not.toHaveBeenCalled();
+    expect(sink.accepting?.()).toBe(true);
+    expect(fanOut(throwing, throwing).accepting?.()).toBe(false);
   });
 
   it("skips a sink that is off, and is off only when every sink is", () => {

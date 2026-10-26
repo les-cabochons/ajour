@@ -117,7 +117,11 @@ describe("quitting and installing an update", () => {
       order.push("plugin renderers closed");
     });
     app.quit.mockImplementation(() => order.push("quit"));
-    const localLogs = { flush: vi.fn(flushLogs), startSweeps: vi.fn() };
+    const localLogs = {
+      flush: vi.fn(flushLogs),
+      startSweeps: vi.fn(),
+      drainSync: vi.fn(),
+    };
     const context = vm.createContext({
       localLogs,
       closePluginRenderers,
@@ -421,6 +425,19 @@ describe("quitting and installing an update", () => {
     expect(
       runtime.automaticUpdateController.installerQuitting,
     ).toHaveBeenCalledOnce();
+  });
+
+  // Whatever ended at before-quit and will-quit is after the last flush.
+  it("writes the log file's waiting events at will-quit, after the installer's quit ended its event", () => {
+    const runtime = quitRuntime(async () => {});
+
+    runtime.emit("will-quit");
+
+    expect(runtime.localLogs.drainSync).toHaveBeenCalledOnce();
+    expect(
+      runtime.automaticUpdateController.installerQuitting.mock
+        .invocationCallOrder[0],
+    ).toBeLessThan(runtime.localLogs.drainSync.mock.invocationCallOrder[0]!);
   });
 
   // The installer's quit skips before-quit's wait, so preparation waits.

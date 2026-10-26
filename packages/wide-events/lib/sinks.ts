@@ -11,6 +11,18 @@ export interface Sink {
   accepting?(): boolean;
 }
 
+/**
+ * Whether a sink keeps events right now. A sink whose `accepting` throws is
+ * not accepting: a sink's own failure never reaches the work.
+ */
+export function isAccepting(sink: Sink): boolean {
+  try {
+    return sink.accepting?.() !== false;
+  } catch {
+    return false;
+  }
+}
+
 /** The default sink: it drops every event. */
 export const nowhere: Sink = { emit() {} };
 
@@ -67,11 +79,10 @@ export function fanOut(...sinks: readonly Sink[]): Sink {
   const targets = sinks.filter((sink) => sink !== nowhere);
   if (targets.length === 0) return nowhere;
   if (targets.length === 1) return targets[0]!;
-  const accepts = (sink: Sink) => sink.accepting?.() !== false;
   return {
     emit(event) {
       for (const sink of targets) {
-        if (!accepts(sink)) continue;
+        if (!isAccepting(sink)) continue;
         try {
           sink.emit(event);
         } catch {
@@ -79,6 +90,6 @@ export function fanOut(...sinks: readonly Sink[]): Sink {
         }
       }
     },
-    accepting: () => targets.some(accepts),
+    accepting: () => targets.some(isAccepting),
   };
 }

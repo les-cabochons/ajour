@@ -6,6 +6,7 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
@@ -36,6 +37,7 @@ const {
   SWEEP_INTERVAL_MS,
 } = require("./electron/local-logs.cjs");
 const {
+  applyLocalLogSettings,
   DEFAULT_LOCAL_LOG_SETTINGS,
   loadLocalLogSettings,
   normalizeLocalLogSettings,
@@ -87,8 +89,24 @@ const today = () => new Date().toISOString().slice(0, 10);
 async function mainProcess({
   record = true,
   env = {},
-}: { record?: boolean; env?: Record<string, string> } = {}) {
+  lock = true,
+  storedSettings,
+}: {
+  record?: boolean;
+  env?: Record<string, string>;
+  /** Whether this process holds the single instance lock. */
+  lock?: boolean;
+  /** Settings already stored in the user data folder by an earlier launch. */
+  storedSettings?: Record<string, unknown>;
+} = {}) {
   const userData = await userDataFolder();
+  if (storedSettings) {
+    await writeFile(
+      path.join(userData, "local-log-settings.json"),
+      JSON.stringify(storedSettings),
+    );
+  }
+  const listeners = new Map<string, () => void>();
   const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>();
   const recording = recordingEvents();
   const events = record ? recording.events : createMainEvents();
@@ -98,6 +116,13 @@ async function mainProcess({
     process: { env },
     app: {
       getPath: (name: string) => (name === "home" ? os.homedir() : userData),
+      on: (name: string, listener: () => void) => listeners.set(name, listener),
+    },
+    hasSingleInstanceLock: lock,
+    // The installer's quit ends the update's event, as the real one does.
+    automaticUpdateController: {
+      installerQuitting: () =>
+        events.start("update.install", { kind: "job", trigger: "user" }).end(),
     },
     internalAppApiRuntimeRoot: repoRoot,
     createLocalLogs,
@@ -133,7 +158,8 @@ async function mainProcess({
       section(
         "// The local log file's settings page",
         'ipc.handle("ajour:get-development-plugin-settings"',
-      ),
+      ) +
+      section('app.on("will-quit"', '  app.on("window-all-closed"'),
     context,
   );
   const localLogs = vm.runInContext("localLogs", context);
@@ -144,6 +170,8 @@ async function mainProcess({
     events,
     localLogs,
     mainEventSink: vm.runInContext("mainEventSink", context),
+    /** Electron's will-quit: the handler main.cjs registers. */
+    willQuit: () => listeners.get("will-quit")!(),
     invoke(
       channel: string,
       sender: unknown = activeWindow.webContents,
@@ -220,6 +248,36 @@ describe("the local log settings", () => {
     ).toEqual(DEFAULT_LOCAL_LOG_SETTINGS);
   });
 
+  it("apply a change by refusing any value outside its closed set, never by replacing it", () => {
+    expect(
+      applyLocalLogSettings(DEFAULT_LOCAL_LOG_SETTINGS, {
+        retention_days: 30,
+        include_sensitive: true,
+        unknown_key: "ignored",
+      }),
+    ).toEqual({
+      ...DEFAULT_LOCAL_LOG_SETTINGS,
+      retention_days: 30,
+      include_sensitive: true,
+    });
+    for (const change of [
+      { retention_days: "30" },
+      { retention_days: 14 },
+      { size_limit_mb: "250" },
+      { size_limit_mb: 500 },
+      { enabled: "yes" },
+      { include_sensitive: 1 },
+      undefined,
+      null,
+      [],
+      "enabled",
+    ]) {
+      expect(() =>
+        applyLocalLogSettings(DEFAULT_LOCAL_LOG_SETTINGS, change),
+      ).toThrow("Invalid local log settings");
+    }
+  });
+
   it("are stored in main, and a file that can't be read gives the defaults", async () => {
     const folder = await userDataFolder();
     const file = path.join(folder, "local-log-settings.json");
@@ -245,6 +303,7 @@ describe("the logs channels", () => {
       state: "off",
       storage_bytes: 0,
       file_count: 0,
+      dropped_event_count: 0,
     });
     expect(main.recorded).toMatchObject([
       {
@@ -322,6 +381,54 @@ describe("the logs channels", () => {
         file_count: 0,
         storage_bytes: 0,
       },
+    });
+  });
+
+  it.each([
+    { retention_days: "30" },
+    { retention_days: 14 },
+    { size_limit_mb: "250" },
+    { enabled: "yes" },
+    { retention_days: 30, include_sensitive: "no" },
+    null,
+  ])(
+    "logs.configure refuses %j: it throws, changes nothing and deletes nothing",
+    async (change) => {
+      const stored = { ...DEFAULT_LOCAL_LOG_SETTINGS, retention_days: 90 };
+      const main = await mainProcess({ storedSettings: stored });
+      await mkdir(main.directory, { recursive: true });
+      await writeFile(path.join(main.directory, "2020-01-01.ndjson"), "{}\n");
+      const settingsFile = path.join(main.userData, "local-log-settings.json");
+      const before = await readFile(settingsFile, "utf8");
+
+      await expect(
+        main.invoke("ajour:configure-logs", undefined, change),
+      ).rejects.toThrow("Invalid local log settings");
+
+      expect(main.localLogs.settings()).toEqual(stored);
+      expect(await readFile(settingsFile, "utf8")).toBe(before);
+      await expect(readdir(main.directory)).resolves.toEqual([
+        "2020-01-01.ndjson",
+      ]);
+      expect(main.recorded).toMatchObject([
+        {
+          name: "logs.configure",
+          outcome: "refused",
+          outcome_reason: "invalid_settings",
+        },
+      ]);
+      expect(main.recorded.map(({ name }) => name)).not.toContain("logs.sweep");
+    },
+  );
+
+  it("still loads a stored file with a bad value by taking the default", async () => {
+    const main = await mainProcess({
+      storedSettings: { enabled: true, retention_days: "30" },
+    });
+
+    expect(main.localLogs.settings()).toEqual({
+      ...DEFAULT_LOCAL_LOG_SETTINGS,
+      enabled: true,
     });
   });
 
@@ -428,6 +535,114 @@ describe("the shared sink", () => {
     await fetch(`${url}/api/health`);
 
     expect(lines.map((line) => JSON.parse(line).name)).toContain("api.health");
+  });
+});
+
+describe("quitting", () => {
+  it("writes the events that ended at before-quit and will-quit, which come after the last flush", async () => {
+    const main = await mainProcess({ record: false });
+    await main.invoke("ajour:configure-logs", undefined, { enabled: true });
+    await main.events.ready;
+    await main.localLogs.flush();
+
+    // before-quit ends the quit event; will-quit ends the update's, through
+    // the installer's quit. Neither is flushed: the process exits first.
+    main.events
+      .start("app.quit", {
+        kind: "lifecycle",
+        trigger: "system",
+        detached: true,
+      })
+      .end();
+    main.willQuit();
+
+    const names = readFileSync(
+      path.join(main.directory, `${today()}.ndjson`),
+      "utf8",
+    )
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line).name);
+    expect(names).toEqual(
+      expect.arrayContaining(["app.quit", "update.install"]),
+    );
+  });
+
+  it("writes nothing at will-quit while logging is off, and never throws", async () => {
+    const off = await mainProcess({ record: false });
+    await off.events.ready;
+    off.events
+      .start("app.quit", {
+        kind: "lifecycle",
+        trigger: "system",
+        detached: true,
+      })
+      .end();
+    expect(() => off.willQuit()).not.toThrow();
+    await expect(readdir(off.userData)).resolves.toEqual([]);
+
+    const broken = await mainProcess({ record: false });
+    await broken.invoke("ajour:configure-logs", undefined, { enabled: true });
+    await broken.events.ready;
+    await broken.localLogs.flush();
+    // The folder's path is a file, so the drain can't write.
+    await rm(broken.directory, { recursive: true, force: true });
+    await writeFile(broken.directory, "not a folder");
+    broken.events
+      .start("app.quit", {
+        kind: "lifecycle",
+        trigger: "system",
+        detached: true,
+      })
+      .end();
+    expect(() => broken.willQuit()).not.toThrow();
+    await expect(broken.invoke("ajour:get-logs-status")).resolves.toMatchObject(
+      { state: "warning" },
+    );
+  });
+});
+
+describe("the second instance", () => {
+  it("opens no log file, so the instance that lost the lock writes nothing to it", async () => {
+    const main = await mainProcess({
+      record: false,
+      lock: false,
+      // Logging is on for the user, and the settings are shared by both.
+      storedSettings: { ...DEFAULT_LOCAL_LOG_SETTINGS, enabled: true },
+    });
+    await main.events.ready;
+
+    main.events
+      .start("app.lock_refused", {
+        kind: "lifecycle",
+        trigger: "system",
+        detached: true,
+      })
+      .end();
+    await main.localLogs.flush();
+    main.willQuit();
+
+    await expect(main.localLogs.file).resolves.toBeNull();
+    await expect(readdir(main.userData)).resolves.not.toContain("logs");
+  });
+
+  it("the instance that holds the lock writes", async () => {
+    const main = await mainProcess({
+      record: false,
+      storedSettings: { ...DEFAULT_LOCAL_LOG_SETTINGS, enabled: true },
+    });
+    await main.events.ready;
+
+    main.events
+      .start("app.quit", {
+        kind: "lifecycle",
+        trigger: "system",
+        detached: true,
+      })
+      .end();
+    await main.localLogs.flush();
+
+    expect(await readdir(main.directory)).toHaveLength(1);
   });
 });
 

@@ -1255,7 +1255,7 @@ export const catalog = defineCatalog({
     /** Saving the local log file's settings (ADR 0014). */
     "logs.configure": {
       kinds: ["command", "ipc"],
-      reasons: ["foreign_sender"],
+      reasons: ["foreign_sender", "invalid_settings"],
       fields: {
         ipc: ipcFields,
         logs: {
@@ -1278,6 +1278,8 @@ export const catalog = defineCatalog({
           warning: operational<LocalLogWarning>(),
           file_count: operational<number>(),
           storage_bytes: operational<number>(),
+          /** Events dropped since launch: too many waited to be written, or were left at quit. */
+          dropped_event_count: operational<number>(),
         },
       },
     },
@@ -1303,6 +1305,8 @@ export const catalog = defineCatalog({
           deleted_bytes: operational<number>(),
           file_count: operational<number>(),
           storage_bytes: operational<number>(),
+          /** Events dropped since launch, as in `logs.status`. */
+          dropped_event_count: operational<number>(),
         },
       },
     },
@@ -1466,7 +1470,7 @@ export const catalog = defineCatalog({
           legacy_folder_count: operational<number>(),
           bytes_scanned: operational<number>(),
           /** Each collection's record count in the state found, never a record. */
-          record_counts: operational<Record<string, number>>(),
+          record_counts: operational<Record<string, number>>("numbers"),
           /** A reload after a crash gets this launch's first answer. */
           cached: operational<boolean>(),
         },

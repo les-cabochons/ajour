@@ -1,3 +1,4 @@
+import { appendFileSync, mkdirSync } from "node:fs";
 import * as nodeFs from "node:fs/promises";
 import path from "node:path";
 import type { LocalLogState, LocalLogWarning } from "./ajour-catalog.ts";
@@ -33,6 +34,11 @@ export interface LocalLogStatus {
   file_count: number;
   /** The oldest day file's UTC day, `YYYY-MM-DD`. */
   oldest_day?: string;
+  /**
+   * Events dropped since launch because too many were waiting to be written
+   * (see `MAX_PENDING_LINES`) or too many were left at quit.
+   */
+  dropped_event_count: number;
 }
 
 /** What a retention sweep deleted, and what the folder holds after it. */
@@ -41,6 +47,8 @@ export interface LocalLogSweep {
   deleted_bytes: number;
   file_count: number;
   storage_bytes: number;
+  /** Events dropped since launch, as in `LocalLogStatus`. */
+  dropped_event_count: number;
 }
 
 /** What deleting every log removed. */
@@ -66,7 +74,18 @@ export interface LocalLogFileSystem {
   ): Promise<{ name: string; isFile(): boolean }[]>;
   stat(file: string): Promise<{ size: number }>;
   unlink(file: string): Promise<void>;
-  rm(target: string, options: { recursive: true; force: true }): Promise<void>;
+  /** Removes a folder only when it is empty. */
+  rmdir(directory: string): Promise<void>;
+  /** For the last write at quit; a file system without them uses the real ones. */
+  mkdirSync?(
+    directory: string,
+    options: { recursive: true; mode?: number },
+  ): unknown;
+  appendFileSync?(
+    file: string,
+    data: string,
+    options: { encoding: "utf8"; mode?: number },
+  ): void;
 }
 
 export interface LocalLogFileOptions {
@@ -93,10 +112,20 @@ export interface LocalLogFile {
   status(): Promise<LocalLogStatus>;
   /** Deletes the days past the retention, then the oldest past the size limit. */
   sweep(): Promise<LocalLogSweep>;
-  /** Deletes the folder, and what was waiting to be written. */
+  /**
+   * Deletes every day file, and what was waiting to be written, then the
+   * folder when nothing else is in it. A file that isn't a day file stays.
+   */
   deleteAll(): Promise<LocalLogDeletion>;
   /** Resolves once every event emitted so far is written, or dropped. */
   flush(): Promise<void>;
+  /**
+   * Writes what is waiting, synchronously, for a process about to exit: the
+   * async writes don't run once it has. Bounded to `MAX_DRAIN_BYTES`, keeping
+   * the newest events. It writes only while the file is on and has no
+   * warning, and never throws: a failure stops writing, as an async one does.
+   */
+  drainSync(): void;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -105,6 +134,8 @@ const MIB = 1024 * 1024;
 const FLUSH_DELAY_MS = 250;
 /** The most lines waiting to be written. Past it, events are dropped. */
 const MAX_PENDING_LINES = 10_000;
+/** The most `drainSync` writes, so a full queue can't hold up a quit. */
+const MAX_DRAIN_BYTES = 2 * MIB;
 const DAY_FILE = /^(\d{4}-\d{2}-\d{2})\.ndjson$/;
 
 /** The UTC day of an epoch time, `YYYY-MM-DD`. */
@@ -140,11 +171,14 @@ function warningOf(error: unknown): LocalLogWarning {
 export function createLocalLogFile(options: LocalLogFileOptions): LocalLogFile {
   const { directory, catalog } = options;
   const fs: LocalLogFileSystem = options.fs ?? nodeFs;
+  const makeFolderSync = fs.mkdirSync ?? mkdirSync;
+  const appendSync = fs.appendFileSync ?? appendFileSync;
   const now = options.now ?? (() => Date.now());
   const filter = createPrivacyFilter(catalog);
   let settings = { ...options.settings };
   let warning: LocalLogWarning | undefined;
   let pending: { day: string; line: string }[] = [];
+  let dropped = 0;
   let flushTimer: ReturnType<typeof setTimeout> | undefined;
   let queue: Promise<unknown> = Promise.resolve();
 
@@ -222,7 +256,11 @@ export function createLocalLogFile(options: LocalLogFileOptions): LocalLogFile {
   const sink: Sink = {
     accepting: writing,
     emit(event) {
-      if (!writing() || pending.length >= MAX_PENDING_LINES) return;
+      if (!writing()) return;
+      if (pending.length >= MAX_PENDING_LINES) {
+        dropped += 1;
+        return;
+      }
       let line: string;
       try {
         line = JSON.stringify(
@@ -251,6 +289,7 @@ export function createLocalLogFile(options: LocalLogFileOptions): LocalLogFile {
           state: !settings.enabled ? "off" : warning ? "warning" : "on",
           storage_bytes: found.reduce((sum, { bytes }) => sum + bytes, 0),
           file_count: found.length,
+          dropped_event_count: dropped,
         };
         if (settings.enabled && warning) status.warning = warning;
         if (found[0]) status.oldest_day = found[0].day;
@@ -297,18 +336,79 @@ export function createLocalLogFile(options: LocalLogFileOptions): LocalLogFile {
           deleted_bytes: deletedBytes,
           file_count: remaining.length,
           storage_bytes: total,
+          dropped_event_count: dropped,
         };
       }),
     deleteAll: () =>
       enqueue(async () => {
         pending = [];
-        const found = await days();
-        await fs.rm(directory, { recursive: true, force: true });
+        let deletedFiles = 0;
+        let deletedBytes = 0;
+        let failure: unknown;
+        for (const found of await days()) {
+          try {
+            await fs.unlink(found.file);
+            deletedFiles += 1;
+            deletedBytes += found.bytes;
+          } catch (error) {
+            // Gone since the folder was read is as good as deleted.
+            if ((error as { code?: unknown } | null)?.code !== "ENOENT") {
+              failure ??= error;
+            }
+          }
+        }
+        if (failure !== undefined) throw failure;
+        try {
+          // Only an empty folder goes: what isn't a day file stays.
+          await fs.rmdir(directory);
+        } catch {
+          // Missing, or not empty.
+        }
         return {
-          deleted_file_count: found.length,
-          deleted_bytes: found.reduce((sum, { bytes }) => sum + bytes, 0),
+          deleted_file_count: deletedFiles,
+          deleted_bytes: deletedBytes,
         };
       }),
+    drainSync() {
+      try {
+        if (flushTimer !== undefined) {
+          clearTimeout(flushTimer);
+          flushTimer = undefined;
+        }
+        const lines = pending;
+        pending = [];
+        if (lines.length === 0 || !writing()) return;
+        // The newest lines that fit, in the order they were emitted.
+        let bytes = 0;
+        let first = lines.length;
+        while (first > 0) {
+          bytes += Buffer.byteLength(lines[first - 1]!.line) + 1;
+          if (bytes > MAX_DRAIN_BYTES) break;
+          first -= 1;
+        }
+        dropped += first;
+        makeFolderSync(directory, { recursive: true, mode: 0o700 });
+        for (let start = first; start < lines.length;) {
+          const { day } = lines[start]!;
+          let end = start;
+          while (end < lines.length && lines[end]!.day === day) end += 1;
+          appendSync(
+            path.join(directory, `${day}.ndjson`),
+            lines
+              .slice(start, end)
+              .map(
+                ({ line }) => `${line}
+`,
+              )
+              .join(""),
+            { encoding: "utf8", mode: 0o600 },
+          );
+          start = end;
+        }
+      } catch (error) {
+        stop(warningOf(error));
+      }
+    },
     flush() {
       if (flushTimer !== undefined) {
         clearTimeout(flushTimer);

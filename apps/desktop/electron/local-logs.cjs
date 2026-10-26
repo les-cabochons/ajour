@@ -1,4 +1,6 @@
 const {
+  applyLocalLogSettings,
+  INVALID_LOCAL_LOG_SETTINGS,
   loadLocalLogSettings,
   saveLocalLogSettings,
 } = require("./local-log-settings.cjs");
@@ -29,8 +31,11 @@ function createLocalLogs({
   clearInterval = globalThis.clearInterval,
 }) {
   let settings = loadLocalLogSettings(settingsPath);
+  /** The log file once `open` resolved to it, for the quit's synchronous drain. */
+  let opened = null;
   const file = Promise.resolve()
     .then(() => open(settings))
+    .then((logFile) => (opened = logFile ?? null))
     .catch(() => null);
   let sweepTimer = null;
 
@@ -62,6 +67,7 @@ function createLocalLogs({
         warning: current.warning,
         file_count: current.file_count,
         storage_bytes: current.storage_bytes,
+        dropped_event_count: current.dropped_event_count,
       },
     });
     return { settings: { ...settings }, ...current };
@@ -70,19 +76,25 @@ function createLocalLogs({
   return {
     file,
     settings: () => ({ ...settings }),
-    /** Stores and applies new settings; what it leaves out stays. Sweeps when a limit changed. */
+    /**
+     * Stores and applies new settings; what it leaves out stays. Sweeps when
+     * a limit changed. A value outside its closed set refuses the call, which
+     * throws and changes nothing: no setting, no file, no sweep.
+     */
     async configure(value) {
       const unit = events.current();
       const before = settings;
+      let next;
+      try {
+        next = applyLocalLogSettings(before, value);
+      } catch (error) {
+        if (error?.code === INVALID_LOCAL_LOG_SETTINGS) {
+          unit?.refuse("invalid_settings");
+        }
+        throw error;
+      }
       const logFile = await loaded();
-      const changes =
-        value && typeof value === "object" && !Array.isArray(value)
-          ? value
-          : {};
-      settings = saveLocalLogSettings(settingsPath, {
-        ...before,
-        ...changes,
-      });
+      settings = saveLocalLogSettings(settingsPath, next);
       logFile.configure(settings);
       unit?.set({
         logs: {
@@ -102,7 +114,10 @@ function createLocalLogs({
       return status();
     },
     status: () => status(events.current()),
-    /** Delete all logs: the folder goes, whether logging is on or off. */
+    /**
+     * Delete all logs: every day file goes, whether logging is on or off, and
+     * the folder with them when nothing else is in it.
+     */
     async deleteAll() {
       const unit = events.current();
       const deleted = await (await loaded()).deleteAll();
@@ -121,6 +136,17 @@ function createLocalLogs({
     stopSweeps() {
       if (sweepTimer) clearInterval(sweepTimer);
       sweepTimer = null;
+    },
+    /**
+     * Writes what is waiting, synchronously, for a process about to exit
+     * (see the log file's `drainSync`). Never throws.
+     */
+    drainSync() {
+      try {
+        opened?.drainSync();
+      } catch {
+        // Quitting goes on without the last events.
+      }
     },
     /** Resolves once what the file holds is written. Never rejects. */
     flush: () =>

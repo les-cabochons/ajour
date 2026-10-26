@@ -190,16 +190,20 @@ const wideEventsRoot = path.join(
   "packages/wide-events",
 );
 // The local log file (ADR 0014): off until the user turns it on, and then
-// one NDJSON file per UTC day in userData/logs/events.
+// one NDJSON file per UTC day in userData/logs/events. Only the process that
+// holds the single instance lock opens it: the one that lost the lock opens
+// nothing, so its app.lock_refused event never reaches the file.
 const localLogs = createLocalLogs({
   settingsPath: path.join(app.getPath("userData"), "local-log-settings.json"),
   events,
   open: (settings) =>
-    loadLocalLogFile({
-      packageRoot: wideEventsRoot,
-      directory: path.join(app.getPath("userData"), "logs", "events"),
-      settings,
-    }),
+    hasSingleInstanceLock
+      ? loadLocalLogFile({
+          packageRoot: wideEventsRoot,
+          directory: path.join(app.getPath("userData"), "logs", "events"),
+          settings,
+        })
+      : null,
 });
 // The one sink of main's events and the local API's: the console with
 // AJOUR_WIDE_EVENTS=console, and the local log file. Undefined when the
@@ -1730,6 +1734,9 @@ if (!hasSingleInstanceLock) {
   // An update install's event waits for the app to quit for the installer.
   app.on("will-quit", () => {
     automaticUpdateController.installerQuitting();
+    // The events that ended at before-quit and just now come after the last
+    // flush, and the process exits before the batch timer: write them now.
+    localLogs.drainSync();
   });
 
   app.on("window-all-closed", () => {

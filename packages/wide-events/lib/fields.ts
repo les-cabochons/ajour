@@ -8,21 +8,34 @@ import type { Envelope, EnvelopeKey, Kind, StepFailure } from "./envelope.ts";
  */
 export type PrivacyClass = "operational" | "sensitive";
 
+/**
+ * What a field's value may be, beyond the default of a string, number,
+ * boolean or null, or a list of them. The privacy filter checks it, so a
+ * field holding a list of strings, or an object of numbers, says so.
+ */
+export type FieldShape = "strings" | "numbers" | "step_failures";
+
 /** One field of a catalog entry: its privacy class, and its value's type. */
 export interface Field<Value, Class extends PrivacyClass = PrivacyClass> {
   readonly privacy: Class;
+  /** Set when the value is more than a scalar or a list of scalars. */
+  readonly shape?: FieldShape;
   /** Never set. It carries the field's value type. */
   readonly value?: Value;
 }
 
 /** A field that every sink may receive. */
-export function operational<Value = string>(): Field<Value, "operational"> {
-  return { privacy: "operational" };
+export function operational<Value = string>(
+  shape?: FieldShape,
+): Field<Value, "operational"> {
+  return shape ? { privacy: "operational", shape } : { privacy: "operational" };
 }
 
 /** A field that a sink receives only if the user allows it. */
-export function sensitive<Value = string>(): Field<Value, "sensitive"> {
-  return { privacy: "sensitive" };
+export function sensitive<Value = string>(
+  shape?: FieldShape,
+): Field<Value, "sensitive"> {
+  return shape ? { privacy: "sensitive", shape } : { privacy: "sensitive" };
 }
 
 /** An event's own fields: classed fields, nested in objects named for glossary terms. */
@@ -136,10 +149,10 @@ export const envelopeFields = {
   window_id: operational(),
   trigger: operational(),
   surface: operational(),
-  steps: operational<string[]>(),
+  steps: operational<string[]>("strings"),
   dropped_step_count: operational<number>(),
-  step_failures: operational<StepFailure[]>(),
-  counts: operational<Record<string, number>>(),
+  step_failures: operational<StepFailure[]>("step_failures"),
+  counts: operational<Record<string, number>>("numbers"),
   app: {
     version: operational(),
     channel: operational(),

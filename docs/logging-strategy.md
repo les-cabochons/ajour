@@ -268,7 +268,13 @@ once the user turns it on. Settings › Diagnostics will show it (#441).
   records, and `error.message`) is kept only when the user allowed
   sensitive fields for this sink (`include_sensitive`). A field the catalog
   doesn't declare is dropped either way, so a batch from another runtime
-  can't carry more than its entry.
+  can't carry more than its entry. It also checks what a declared field
+  holds: a string, number, boolean or null, or a list of them, unless the
+  catalog gives the field a shape (`FieldShape`). `steps` is a list of
+  strings, `counts` and `local_state.record_counts` hold numbers only, and
+  a `step_failures` entry keeps only a step failure's own keys, with
+  scalar values. An object or a function where a value belongs is dropped,
+  never passed through. The renderer's sink runs the same walk.
 - **Files.** One file per UTC day, `userData/logs/events/YYYY-MM-DD.ndjson`,
   for the day the event was emitted. Each line is one event: a JSON object
   with the envelope and its fields, as [Envelope](#envelope) describes,
@@ -277,8 +283,14 @@ once the user turns it on. Settings › Diagnostics will show it (#441).
   any other name.
 - **Writes.** `emit` filters and serializes the event, queues the line and
   returns. The queue is written every 250 ms, in one append per day file,
-  and holds at most 10,000 lines: past that, events are dropped until it is
-  written. Quitting waits for it, within the quit's 10 seconds.
+  and holds at most 10,000 lines, not a number of bytes: past that, events
+  are dropped until it is written, and counted in `dropped_event_count`
+  (in `logs.status` and `logs.sweep`, since launch). Quitting waits for it,
+  within the quit's 10 seconds. The events that end after that wait, the
+  quit's own at `before-quit` and an update install's at `will-quit`, are
+  written by `will-quit` synchronously (`drainSync`): at most 2 MiB, the
+  newest first, only while the file is on and has no warning, and it never
+  throws. Lines over the 2 MiB are dropped and counted too.
 - **Failure.** A write that fails stops writing: the queue is dropped and the
   file keeps a `warning` with a closed reason, `disk_full` (ENOSPC, EDQUOT),
   `no_permission` (EACCES, EPERM, EROFS) or `write_failed`. The work never
@@ -300,8 +312,20 @@ once the user turns it on. Settings › Diagnostics will show it (#441).
   and `ajour:delete-all-logs` (`logs.delete_all`) go through the IPC
   wrapper to `local-logs.cjs`. Each answers the settings, the state (`off`,
   `on` or `warning`) and its reason, and the folder's bytes, file count and
-  oldest day. Delete all logs removes the folder, and what was waiting to be
-  written.
+  oldest day. Delete all logs removes every day file, and what was waiting
+  to be written, then the folder when nothing else is in it; a file that
+  isn't a day file stays, and `deleted_file_count` and `deleted_bytes` count
+  exactly the day files removed.
+- **Saving settings.** Only the stored file is read leniently: a value in it
+  outside its closed set takes its default. `logs.configure` refuses a value
+  outside its closed set (`retention_days` 1, 7, 30 or 90; `size_limit_mb`
+  100, 250 or 1000; `enabled` and `include_sensitive` true or false), or
+  settings that aren't an object. The call throws, the event is `refused`
+  with `invalid_settings`, and nothing changes: no setting, no file, no
+  sweep.
+- **One writer.** Only the process that holds the single instance lock opens
+  the file. The one that lost the lock has no file sink, so its
+  `app.lock_refused` goes to the console sink alone.
 
 Remote exporters, such as Grafana and Application Insights, will be more
 sinks behind the same contract, each with its own sensitive fields setting.
@@ -528,9 +552,9 @@ The renderer knows neither the home folder nor the user data folder, so its
 events keep an error's type and code but leave its message out. Its sink
 also passes on only the fields the catalog declares for each event, so a
 field without a privacy class never leaves the renderer, whatever set it,
-and a field holds only strings, numbers, booleans, null and lists of them:
-an object or a function where a value belongs is dropped, and counted in
-`dropped_field_count`.
+and a field holds only what the shared privacy filter allows it (see
+[The local log file](#the-local-log-file)): an object or a function where a
+value belongs is dropped, and counted in `dropped_field_count`.
 
 - **Store commands.** `STORE_COMMANDS` in `apps/web/src/lib/local-store.ts`
   names every command of the local store but its reads, so a new command
