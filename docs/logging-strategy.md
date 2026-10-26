@@ -196,6 +196,7 @@ its entry points are:
 | `catalog.ts`          | Ajour's catalog of event names, `defineCatalog`, `operational`, `sensitive` and `envelopeFields`            |
 | `sinks.ts`            | `nowhere`, `createRecordingSink`, `createConsoleSink`, `sinkFromSwitch`, `fanOut` and `createPrivacyFilter` |
 | `local-log-file.ts`   | `createLocalLogFile`, the desktop main process's local log file, for Node only                              |
+| `forwarding.ts`       | `createForwardingSink` and `createForwardedBatchReader`: the renderer's batches to the local log file       |
 | `trace-context.ts`    | `encodeTraceparent` and `decodeTraceparent`                                                                 |
 | `scrub.ts`            | `scrubErrorMessage`                                                                                         |
 | `secret-redaction.ts` | the secret redaction the scrubber and the local API's plugin errors share                                   |
@@ -243,7 +244,8 @@ user turned off costs nothing.
 - `fanOut(...sinks)` hands each event to every sink that accepts it. One
   that throws stops none of the others. It accepts while any of them does.
 - The **local log file** (`createLocalLogFile`, ADR 0014) is the first
-  exporter, built into the desktop main process.
+  exporter, built into the desktop main process. The renderer's events reach
+  it in batches over IPC (`forwarding.ts`, #440).
 
 ### The local log file
 
@@ -261,7 +263,56 @@ once the user turns it on. Settings › Diagnostics will show it (#441).
   keeps working for both runtimes whether logging is on or off, and turning
   logging on doesn't need it. The console prints every event as the emitter
   built it; the file writes what its privacy filter keeps. The renderer's
-  events will reach the same sink in batches over IPC (#440).
+  events reach the file in batches over IPC, below.
+- **The renderer's events** (#440). While logging is on, the renderer's
+  sink (`createForwardingSink`) keeps its events and sends them in one batch
+  over `ajour:forward-wide-events`, a second after the first one waits, as
+  soon as 100 wait, or when the page hides (`pagehide`). It sets no timer
+  while nothing waits. A batch it can't send is dropped, never sent again,
+  and its events are counted in the next batch's `unsent_event_count`.
+  - **Main checks each batch.** The IPC wrapper takes it only from the
+    window, and `assertActiveDesktopWindow` only from the active one.
+    `LocalLogFile.forward` (`createForwardedBatchReader`) refuses a batch of
+    more than 100 events whole, and counts it. Of a smaller one it keeps the
+    events whose envelope is valid: a catalog name that allows its kind,
+    `runtime` `renderer`, this launch's `launch_id`, each envelope field in
+    its closed set or format (a trace or span ID is not all zeros, as W3C
+    requires), and at most 16 KiB of JSON. A name and kind the renderer does
+    not emit are left out, so a page can't forge `app.launch`,
+    `logs.sweep` or a refused IPC call: `rendererEmits`
+    (`renderer-emits.ts`) derives what it emits from the renderer catalog,
+    `APP_API_CLIENT`, the bridge's jobs and the renderer's `app.error`, and
+    the kinds `ipc`, `request` and `plugin_operation` are never accepted.
+    The catalog audit checks it against the units the renderer's code
+    starts. `unsent_event_count` is capped at 100,000. It drops
+    an `outcome_reason` outside the name's closed set and an error's
+    message, which the renderer never sends. The file's privacy filter
+    then drops undeclared fields and shapes, and its queue's 10,000 lines
+    hold, so a batch can't write arbitrary data, forge another runtime or
+    launch, or grow the queue. The events go to the file only, not to main's
+    console: the renderer prints its own.
+  - **It switches at runtime.** The runtime info tells the preload whether
+    main is writing (`wideEventsForwarding`: logging is on and no warning
+    has stopped it), and main pushes `ajour:wide-events-forwarding` to the
+    window each time main starts or stops writing: a `logs.configure`
+    that turns logging on or off, or a failed write that stops it. The preload keeps the last value, and `onWideEventsForwarding`
+    gives it to the page at once, then each change. The renderer's sink
+    accepts only while main is writing, so with logging off, or after a
+    failed write, no event is built or sent, and turning it on or off needs
+    no reload. `accepting` is checked only when a unit ends, so a unit that
+    starts while it is off and ends while it is on is written, and one that
+    starts while on and ends while off is dropped.
+    `AJOUR_WIDE_EVENTS=console` still prints every event in devtools either
+    way: the renderer's sink is `fanOut(console, file)` too.
+  - **No feedback loop.** A batch main takes emits no event: the channel is
+    the one IPC channel with `record: "failures"`, so its
+    `wide_events.forward` event is emitted only for a refused sender or a
+    failed call. What the renderer forwarded since launch is counted in
+    `logs.forwarded`: the batches read, those that arrived before the file
+    opened and those refused whole, the events queued, dropped (writing had
+    stopped or the queue was full) and rejected, and those the renderer
+    could not send. It is on each `logs.sweep` and `logs.status`. One event per batch would put a
+    line in the file for every second the renderer works.
 - **Privacy filter.** Before a line is written, `createPrivacyFilter` keeps
   each field only where the catalog declares it, for the event's name or in
   the envelope. A `sensitive` field (the days, weeks and durations of time
@@ -564,7 +615,10 @@ also passes on only the fields the catalog declares for each event, so a
 field without a privacy class never leaves the renderer, whatever set it,
 and a field holds only what the shared privacy filter allows it (see
 [The local log file](#the-local-log-file)): an object or a function where a
-value belongs is dropped, and counted in `dropped_field_count`.
+value belongs is dropped, and counted in `dropped_field_count`. On desktop,
+while main is writing the local log file, they go to it in batches
+([The renderer's events](#the-local-log-file)); otherwise nowhere, unless a
+developer sets `AJOUR_WIDE_EVENTS=console`.
 
 - **Store commands.** `STORE_COMMANDS` in `apps/web/src/lib/local-store.ts`
   names every command of the local store but its reads, so a new command
@@ -755,7 +809,8 @@ item's.
 | `update.check`, `update.install`                                                                                                   | `automatic-update.cjs`, on the IPC event that asked, or as its own job. One install is one event: an updater error lands on it, where the install was. After the handoff it stays open until the app quits for the installer (`will-quit`), or for the quit's 10 seconds, since electron-updater reports an installer that fails to start later. `update.handoff` says which: `app_quit`, `installer_failed`, or `timed_out`, which ends the event as a `timeout`. It records only the offered release's version                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `plugin.install`, `plugin.uninstall`, `catalog.configure`, `dev_plugins.configure`                                                 | their IPC handlers in main.cjs. An install's result comes from `pluginInstallResultOf` in `plugin-install.cjs`, from the error's code only: the local API's installer marks every archive-validation error `invalid_archive` (bad tar or gzip, a missing or unparseable manifest, a failed schema, a missing entrypoint, the size and entry limits; `INVALID_PLUGIN_ARCHIVE` in `apps/api/src/plugin-package.ts`), picking an archive here marks one too, the catalog marks `not_available`, an unsigned install while unsigned installs are off is `unsigned_not_allowed` (`confirmUnsignedInstall` in main.cjs, which also records `plugin.signed`), and the plugin host marks an install it refuses while plugin operations run `busy` (`PLUGIN_HOST_BUSY` in `apps/api/src/plugin-host.ts`). A Node system error is the archive's fault only on a path inside the extraction folder (a manifest or entrypoint the archive lacks, an entry tar cannot write); opening the staged archive, reaching the extraction folder itself, and a full, locked or busy disk anywhere are `failed`, as is anything else |
 | `context_menu.show`                                                                                                                | the picked id only when it is one of the renderer's object actions (`OBJECT_ACTION_IDS` in `context-menu.cjs`), else `other`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `logs.status`, `logs.configure`, `logs.delete_all`, `logs.sweep`                                                                   | `local-logs.cjs`: the local log file's IPC channels, with its state, the settings saved and what a deletion removed; and each retention sweep, at launch, hourly or when a limit changes, with what it deleted and what is left. Never a path                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `logs.status`, `logs.configure`, `logs.delete_all`, `logs.sweep`                                                                   | `local-logs.cjs`: the local log file's IPC channels, with its state, the settings saved and what a deletion removed; and each retention sweep, at launch, hourly or when a limit changes, with what it deleted and what is left. Never a path. Both `logs.status` and `logs.sweep` count what the renderer forwarded since launch, in `logs.forwarded`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `wide_events.forward`                                                                                                              | a batch of the renderer's events main did not take: from a sender other than the active window, or a call that failed. A batch it takes emits nothing (`record: "failures"`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `local_state.recover`                                                                                                              | counts only the persisted collections `RECORD_COLLECTIONS` names, never a key the file chose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 Every IPC channel registers through one wrapper, `createIpcListeners`, with
@@ -766,10 +821,13 @@ one throws `refusedSender(…)`, and its event ends `refused` with
 `foreign_sender`, not `error`. The renderer may pass `{ traceparent }` as a
 call's last argument; the wrapper takes it off and the event joins the
 renderer's trace. The listener adds its own fields through
-`events.current()`. A channel missing from `IPC_CHANNELS`, or registered the
-wrong way, fails `just typecheck`: the wrapper's methods take only the
-table's channels of their mode, and the desktop typecheck checks main.cjs.
-It also throws when it registers.
+`events.current()`. One channel, `ajour:forward-wide-events`, records only
+its failures (`record: "failures"`): a call it accepts and that succeeds
+emits nothing, so forwarding the renderer's events never adds an event per
+batch (see [The local log file](#the-local-log-file)). A `record` on any other channel throws when it registers. A channel missing from
+`IPC_CHANNELS`, or registered the wrong way, fails `just typecheck`: the
+wrapper's methods take only the table's channels of their mode, and the
+desktop typecheck checks main.cjs. It also throws when it registers.
 
 The local API's stop, split into the agent runner and the plugins with the
 operations still running, is the local API's own `api.stop` (#306), not
@@ -1001,6 +1059,7 @@ channel to read the event each emits.
 | `week.prompt_commit`                 | command                            | store command                                    |
 | `week.reopen`                        | command                            | store command                                    |
 | `week.submit`                        | command                            | store command                                    |
+| `wide_events.forward`                | ipc                                | IPC channel                                      |
 | `window.load`                        | lifecycle                          | main process                                     |
 | `window.navigate`                    | navigation                         | main process                                     |
 | `window.set_theme`                   | ipc                                | IPC channel                                      |

@@ -3,7 +3,11 @@ import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import type { AjourEvent } from "@ajour/wide-events/catalog.ts";
-import { createRecordingSink } from "@ajour/wide-events/sinks.ts";
+import {
+  createRecordingSink,
+  fanOut,
+  type Sink,
+} from "@ajour/wide-events/sinks.ts";
 import {
   startAppApiServer,
   stopAppApiServer,
@@ -108,10 +112,21 @@ async function writePlugin(root: string, plugin: TestPlugin) {
   return directory;
 }
 
-/** Starts the local API with a development plugin: `jira`, unless `plugin` names another. */
+/**
+ * Starts the local API with a development plugin: `jira`, unless `plugin`
+ * names another. Its events are recorded, and also go to `eventSink` when
+ * given, as desktop main gives it the shared sink. `launch` is the launch it
+ * reports, as main hands it over.
+ */
 export async function startLocalApi({
   plugin = JIRA,
-}: { plugin?: TestPlugin } = {}) {
+  eventSink,
+  launch,
+}: {
+  plugin?: TestPlugin;
+  eventSink?: Sink;
+  launch?: { id: string; appVersion: string; packaged: boolean };
+} = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "ajour-web-trace-"));
   const sink = createRecordingSink<AjourEvent>();
   const server = await startAppApiServer({
@@ -123,7 +138,8 @@ export async function startLocalApi({
     projectDataShapePluginDirectories: [],
     allowedOrigins: [APP_ORIGIN],
     windowToken: WINDOW_TOKEN,
-    eventSink: sink,
+    eventSink: eventSink ? fanOut(sink, eventSink) : sink,
+    ...(launch ? { launch } : {}),
     // The desktop app's vault, in memory: the standalone API holds no secret.
     vault: new MemorySecretVault(),
   });

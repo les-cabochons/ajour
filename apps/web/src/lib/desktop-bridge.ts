@@ -7,6 +7,7 @@ import type {
   PluginSourceInspection,
 } from "@ajour/shared";
 import type { LaunchContext } from "@ajour/wide-events";
+import type { ForwardedBatch } from "@ajour/wide-events/forwarding.ts";
 import type {
   LocalLogSettings,
   LocalLogStatus,
@@ -126,6 +127,11 @@ declare global {
          * each field is checked before use (lib/wide-events.ts).
          */
         launch?: LaunchContext;
+        /**
+         * Whether main was writing the local log file when the page loaded. The preload reads it;
+         * the page subscribes with `onWideEventsForwarding`.
+         */
+        wideEventsForwarding?: boolean;
       } | null;
       /** The app menu. Windows draws it in the title bar. */
       appMenu?: DesktopAppMenu[] | null;
@@ -228,6 +234,19 @@ declare global {
       ) => Promise<DesktopLogsStatus>;
       /** Delete all logs: the folder goes. */
       deleteAllLogs?: (trace?: TraceCarrier) => Promise<DesktopLogsStatus>;
+      /**
+       * Sends a batch of the renderer's wide events to the local log file,
+       * one way: it never waits for main (#440).
+       */
+      forwardWideEvents?: (batch: ForwardedBatch) => void;
+      /**
+       * Runs `callback` at once with whether main is writing the local log
+       * file, then each time that changes: the user turns logging on or off,
+       * or a failed write stops it. Returns how to stop.
+       */
+      onWideEventsForwarding?: (
+        callback: (forwarding: boolean) => void,
+      ) => () => void;
     };
   }
 }

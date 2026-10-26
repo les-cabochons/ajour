@@ -11,6 +11,27 @@ import { BASE_URL, ensureServer } from "./server.mjs";
 
 const RUNS = Number(process.env.AJOUR_PERF_RUNS ?? 5);
 const TIMER_SAMPLE_MS = 5000;
+// `on` or `off`: the page gets the desktop bridge's logging switch, so the
+// renderer forwards its events as on desktop with logging on (#440), to a
+// bridge that only clones each batch, as IPC does. Unset, the page is the
+// plain web build, which has no bridge. With logging on, the run fails when
+// no batch ever reached the stand-in: a renderer that sends nothing would
+// measure the cost of logging as zero.
+const LOGGING = process.env.AJOUR_PERF_LOGGING;
+const loggingScript = `(() => {
+  window.ajourDesktop = {
+    forwardWideEvents: (batch) => {
+      structuredClone(batch);
+      void window.__perfBatchSent?.();
+    },
+    onWideEventsForwarding: (callback) => {
+      callback(${LOGGING === "on"});
+      return () => {};
+    },
+  };
+})()`;
+
+let batchesSent = 0;
 
 const stopServer = await ensureServer();
 const browser = await chromium.launch();
@@ -33,6 +54,12 @@ async function newContext(seed) {
       body: JSON.stringify(emptyPluginsOverview),
     }),
   );
+  if (LOGGING) {
+    await context.exposeFunction("__perfBatchSent", () => {
+      batchesSent += 1;
+    });
+    await context.addInitScript(loggingScript);
+  }
   await context.addInitScript(seedScript({ large: true, ...seed }));
   return context;
 }
@@ -132,10 +159,18 @@ const timer = await measureTimerRenderer();
 await browser.close();
 stopServer();
 
+if (LOGGING === "on" && batchesSent === 0) {
+  console.error(
+    "Logging is on, but no batch of events was sent through the stand-in bridge: the numbers below would not include the cost of logging.",
+  );
+  process.exit(1);
+}
+
 console.log(
   "Ajour performance on the large workspace (600 items, 1,800 entries), medians of",
   RUNS,
   "runs",
+  LOGGING ? `, logging ${LOGGING} (${batchesSent} batches sent)` : "",
 );
 console.log(`  cold load, Time page until rows render:   ${fmt(coldLoad)}`);
 console.log(`  Start click until painted:                ${fmt(startClick)}`);

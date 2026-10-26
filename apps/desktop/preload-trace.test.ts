@@ -33,9 +33,11 @@ class FakeIpcMain extends EventEmitter {
 /**
  * The preload, run as Electron runs it, with an `ipcRenderer` wired to the
  * main process's IPC listeners: what the renderer sees as
- * `window.ajourDesktop`, and the main process's recorded events.
+ * `window.ajourDesktop`, and the main process's recorded events. `runtime`
+ * is main's answer to the runtime info request; `push` sends the page a
+ * message from main.
  */
-async function loadPreload() {
+async function loadPreload({ runtime = null }: { runtime?: unknown } = {}) {
   const ipcMain = new FakeIpcMain();
   const { events, recorded } = recordingEvents();
   const ipc = createIpcListeners(ipcMain, { events });
@@ -49,10 +51,17 @@ async function loadPreload() {
     send: (channel: string, ...args: unknown[]) => {
       ipcMain.emit(channel, sender, ...structuredClone(args));
     },
-    sendSync: () => null,
-    on: () => undefined,
+    sendSync: (channel: string) =>
+      channel === "ajour:get-runtime-info" ? structuredClone(runtime) : null,
+    on: (channel: string, listener: (...args: unknown[]) => void) => {
+      pageListeners.set(channel, [
+        ...(pageListeners.get(channel) ?? []),
+        listener,
+      ]);
+    },
     removeListener: () => undefined,
   };
+  const pageListeners = new Map<string, ((...args: unknown[]) => void)[]>();
   let exposed: Record<string, (...args: unknown[]) => unknown> = {};
   const electron = {
     ipcRenderer,
@@ -74,7 +83,12 @@ async function loadPreload() {
     window: { addEventListener: () => undefined },
     setTimeout,
   });
-  return { api: exposed, ipc, recorded };
+  const push = (channel: string, ...args: unknown[]) => {
+    for (const listener of pageListeners.get(channel) ?? []) {
+      listener({}, ...structuredClone(args));
+    }
+  };
+  return { api: exposed, ipc, recorded, push };
 }
 
 describe("the preload's trace context", () => {
@@ -146,5 +160,48 @@ describe("the preload's trace context", () => {
       expect(event.trace_id).not.toBe(TRACE_ID);
       expect(event.parent_span_id).toBeUndefined();
     }
+  });
+});
+
+describe("the preload's wide events forwarding", () => {
+  it("sends a batch on the forward channel, one way, and main records no event for it", async () => {
+    const { api, ipc, recorded } = await loadPreload();
+    const received: unknown[] = [];
+    ipc.onMessage("ajour:forward-wide-events", (_event, batch) => {
+      received.push(batch);
+    });
+    const batch = { events: [{ name: "route.change" }], unsent_event_count: 0 };
+
+    expect(api.forwardWideEvents!(batch)).toBeUndefined();
+
+    expect(received).toEqual([batch]);
+    expect(recorded).toEqual([]);
+  });
+
+  it("tells the page at once whether logging is on, then each change main pushes", async () => {
+    const { api, push } = await loadPreload({
+      runtime: { wideEventsForwarding: true },
+    });
+    const seen: unknown[] = [];
+
+    const stop = api.onWideEventsForwarding!((forwarding: unknown) =>
+      seen.push(forwarding),
+    ) as () => void;
+    push("ajour:wide-events-forwarding", false);
+    push("ajour:wide-events-forwarding", true);
+    stop();
+    push("ajour:wide-events-forwarding", false);
+
+    expect(seen).toEqual([true, false, true]);
+  });
+
+  it("keeps the last value for a page that subscribes late, and reads anything else as off", async () => {
+    const { api, push } = await loadPreload({ runtime: null });
+    push("ajour:wide-events-forwarding", true);
+    const late: unknown[] = [];
+    api.onWideEventsForwarding!((forwarding: unknown) => late.push(forwarding));
+    push("ajour:wide-events-forwarding", "yes");
+
+    expect(late).toEqual([true, false]);
   });
 });

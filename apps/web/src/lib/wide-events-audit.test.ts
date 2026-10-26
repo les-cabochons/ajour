@@ -3,7 +3,11 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { catalog, type AjourEvent } from "@ajour/wide-events/catalog.ts";
+import {
+  catalog,
+  rendererEmits,
+  type AjourEvent,
+} from "@ajour/wide-events/catalog.ts";
 import { createEmitter, type Kind } from "@ajour/wide-events";
 import { createRecordingSink } from "@ajour/wide-events/sinks.ts";
 import { PLUGIN_OPERATION_EVENTS } from "../../../api/src/plugin-host.ts";
@@ -32,7 +36,11 @@ const { IPC_CHANNELS } =
   require("../../../desktop/electron/ipc-channels.cjs") as {
     IPC_CHANNELS: Record<
       string,
-      { event: EventName; mode: "invoke" | "message" | "sync" }
+      {
+        event: EventName;
+        mode: "invoke" | "message" | "sync";
+        record?: "failures";
+      }
     >;
   };
 const { createIpcListeners } =
@@ -312,6 +320,42 @@ describe("every unit of work in code is in the catalog", () => {
     ).toEqual([]);
   });
 
+  it("lets the renderer forward exactly the events its code emits", () => {
+    const emitted = new Map<string, Set<string>>();
+    const add = (name: string, kind: string) =>
+      emitted.set(name, (emitted.get(name) ?? new Set()).add(kind));
+    for (const { name } of storeCommandCalls()) add(name, "command");
+    for (const name of Object.values(clientTable)) {
+      const kinds = catalog.events[name as EventName].kinds as readonly Kind[];
+      if (kinds.includes("command")) add(name, "command");
+      if (kinds.includes("job")) add(name, "job");
+    }
+    for (const { name, file } of namedUnits()) {
+      if (runtimeOf(file) !== "renderer") continue;
+      for (const kind of catalog.events[name as EventName]
+        .kinds as readonly Kind[]) {
+        if (!["ipc", "request", "plugin_operation"].includes(kind)) {
+          add(name, kind);
+        }
+      }
+    }
+
+    // Every unit the renderer's tables and code start can be forwarded.
+    const refused: string[] = [];
+    for (const [name, kinds] of emitted) {
+      for (const kind of kinds) {
+        if (!rendererEmits.get(name)?.includes(kind as Kind)) {
+          refused.push(`${name} (${kind})`);
+        }
+      }
+    }
+    expect(refused).toEqual([]);
+    // And nothing else: a name the renderer no longer emits is not allowed.
+    expect(
+      [...rendererEmits.keys()].filter((name) => !emitted.has(name)),
+    ).toEqual([]);
+  });
+
   it("calls the local API only through a client function the client table names", () => {
     const source = read("apps/web/src/lib/app-api.ts");
     const called = new Set(
@@ -432,11 +476,21 @@ describe("each table's entries emit their events", () => {
       message: ipc.onMessage,
       sync: ipc.answerSync,
     };
+    // A channel that records only its failures is driven from a plugin's
+    // page, which every window channel refuses.
+    const refusedSender = {
+      sender: "plugin",
+      senderFrame: { origin: "ajour-plugin://audit" },
+    };
     const missing: string[] = [];
-    for (const [channel, { event, mode }] of Object.entries(IPC_CHANNELS)) {
+    for (const [channel, { event, mode, record }] of Object.entries(
+      IPC_CHANNELS,
+    )) {
       register[mode](channel, () => null);
       sink.events.length = 0;
-      await listeners.get(channel)!({ sender: "window" });
+      await listeners.get(channel)!(
+        record === "failures" ? refusedSender : { sender: "window" },
+      );
       if (
         sink.events.some(
           (recorded) =>

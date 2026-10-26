@@ -1,7 +1,14 @@
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  rm,
+  symlink,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
@@ -18,12 +25,15 @@ const policy = require("./electron/plugin-renderer-policy.cjs") as {
     | { kind: "host"; file: string }
     | { kind: "package"; filePath: string }
     | { kind: "refused" };
+  strippedFileCount: () => number;
+  forgetStrippedFiles: (packageDirectory: string) => Promise<void>;
   servePluginFile: (
     request: { url: string; method?: string },
     served: {
       pluginId: string;
       packageDirectory: string;
       hostDirectory: string;
+      onSourceRefused?: (refusal: { file: string; reason: string }) => void;
     },
   ) => Promise<Response>;
   pluginOfSender: (
@@ -239,6 +249,266 @@ describe("serving a plugin's files", () => {
     ]) {
       expect((await serve(url)).status, url).toBe(404);
     }
+  });
+});
+
+describe("serving a plugin's TypeScript source", () => {
+  let packageDirectory: string;
+  let refused: { file: string; reason: string }[];
+
+  beforeEach(async () => {
+    packageDirectory = await mkdtemp(
+      path.join(os.tmpdir(), "ajour-plugin-ts-"),
+    );
+    refused = [];
+    await mkdir(path.join(packageDirectory, "lib"));
+  });
+
+  afterEach(async () => {
+    await policy.forgetStrippedFiles(packageDirectory);
+    await rm(packageDirectory, { recursive: true, force: true });
+  });
+
+  const serve = (url: string) =>
+    policy.servePluginFile(
+      { url },
+      {
+        pluginId: "jira",
+        packageDirectory,
+        hostDirectory: packageDirectory,
+        onSourceRefused: (refusal) => refused.push(refusal),
+      },
+    );
+
+  it("serves a .ts or .mts file as JavaScript with its types stripped", async () => {
+    const source = [
+      'import { label } from "./label.ts";',
+      "type Item = { title: string };",
+      "export function title(item: Item): string {",
+      "  return label(item.title as string);",
+      "}",
+    ].join("\n");
+    await writeFile(path.join(packageDirectory, "lib", "plugin.ts"), source);
+    await writeFile(
+      path.join(packageDirectory, "lib", "label.mts"),
+      "export const label = (text: string): string => text;",
+    );
+
+    for (const [url, expected] of [
+      [
+        "ajour-plugin://jira/lib/plugin.ts",
+        [
+          'import { label } from "./label.ts";',
+          // Erased types keep every line and column.
+          " ".repeat("type Item = { title: string };".length),
+          "export function title(item      )         {",
+          "  return label(item.title          );",
+          "}",
+        ].join("\n"),
+      ],
+      [
+        "ajour-plugin://jira/lib/label.mts",
+        "export const label = (text        )         => text;",
+      ],
+    ] as const) {
+      const response = await serve(url);
+      expect(response.status, url).toBe(200);
+      expect(await response.text(), url).toBe(expected);
+      expect(Object.fromEntries(response.headers), url).toEqual({
+        "content-type": "text/javascript; charset=utf-8",
+        "content-security-policy": policy.PLUGIN_CONTENT_SECURITY_POLICY,
+        "cache-control": "no-store",
+        "x-content-type-options": "nosniff",
+        "cross-origin-resource-policy": "same-origin",
+      });
+    }
+    expect(refused).toEqual([]);
+  });
+
+  it("serves other files unchanged, whatever TypeScript they hold", async () => {
+    const source = "export const answer: number = 42;";
+    await writeFile(path.join(packageDirectory, "lib", "plugin.mjs"), source);
+    await writeFile(path.join(packageDirectory, "notes.txt"), source);
+
+    const module = await serve("ajour-plugin://jira/lib/plugin.mjs");
+    const notes = await serve("ajour-plugin://jira/notes.txt");
+
+    expect(await module.text()).toBe(source);
+    expect(await notes.text()).toBe(source);
+    expect(notes.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+  });
+
+  it.each([
+    [
+      "an enum",
+      "export enum Status { Open, Closed }",
+      "lib/status.ts uses TypeScript that Ajour can't strip: TypeScript enum is not supported in strip-only mode.",
+    ],
+    [
+      "a namespace",
+      "namespace Status { export const open = 1; }",
+      "lib/status.ts uses TypeScript that Ajour can't strip: TypeScript namespace declaration is not supported in strip-only mode.",
+    ],
+    [
+      "a parameter property",
+      "export class Status { constructor(private open: boolean) {} }",
+      "lib/status.ts uses TypeScript that Ajour can't strip: TypeScript parameter property is not supported in strip-only mode.",
+    ],
+    [
+      "a syntax error",
+      "export const open = ;",
+      "lib/status.ts isn't valid TypeScript: Expression expected.",
+    ],
+  ])(
+    "refuses a file with %s, naming it and why",
+    async (_name, source, reason) => {
+      await writeFile(path.join(packageDirectory, "lib", "status.ts"), source);
+
+      const response = await serve("ajour-plugin://jira/lib/status.ts");
+
+      expect(response.status).toBe(500);
+      expect(await response.text()).not.toContain(source);
+      expect(response.headers.get("content-type")).toBe(
+        "text/plain; charset=utf-8",
+      );
+      expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(refused).toEqual([{ file: "lib/status.ts", reason }]);
+    },
+  );
+
+  it("serves a file's current source, whatever its size and time say", async () => {
+    const file = path.join(packageDirectory, "lib", "plugin.ts");
+    const installedAt = new Date("2026-10-01T12:00:00Z");
+    await writeFile(file, "export const a: number = 1;");
+    await utimes(file, installedAt, installedAt);
+    const first = await (
+      await serve("ajour-plugin://jira/lib/plugin.ts")
+    ).text();
+
+    // An update that keeps the size and the time, as a reproducible packer does.
+    await writeFile(file, "export const b: number = 2;");
+    await utimes(file, installedAt, installedAt);
+    const replaced = await (
+      await serve("ajour-plugin://jira/lib/plugin.ts")
+    ).text();
+
+    expect(first).toBe("export const a         = 1;");
+    expect(replaced).toBe("export const b         = 2;");
+  });
+
+  it("serves the same output for a file that hasn't changed", async () => {
+    await writeFile(
+      path.join(packageDirectory, "lib", "plugin.ts"),
+      "export const a: number = 1;",
+    );
+
+    const first = await serve("ajour-plugin://jira/lib/plugin.ts");
+    const second = await serve("ajour-plugin://jira/lib/plugin.ts");
+
+    expect(await second.text()).toBe(await first.text());
+    expect(policy.strippedFileCount()).toBe(1);
+  });
+
+  it("forgets a package's stripped files on request, and no other's", async () => {
+    const other = await mkdtemp(path.join(os.tmpdir(), "ajour-plugin-ts-"));
+    try {
+      await writeFile(
+        path.join(packageDirectory, "lib", "plugin.ts"),
+        "export const a: number = 1;",
+      );
+      await writeFile(path.join(other, "plugin.ts"), "export const b = 2;");
+      await serve("ajour-plugin://jira/lib/plugin.ts");
+      await policy.servePluginFile(
+        { url: "ajour-plugin://github/plugin.ts" },
+        {
+          pluginId: "github",
+          packageDirectory: other,
+          hostDirectory: other,
+        },
+      );
+      const before = policy.strippedFileCount();
+
+      await policy.forgetStrippedFiles(packageDirectory);
+
+      expect(before).toBe(2);
+      expect(policy.strippedFileCount()).toBe(1);
+      await policy.forgetStrippedFiles(other);
+      expect(policy.strippedFileCount()).toBe(0);
+    } finally {
+      await rm(other, { recursive: true, force: true });
+    }
+  });
+
+  it("forgets the stripped files of a package that is already gone", async () => {
+    await writeFile(
+      path.join(packageDirectory, "lib", "plugin.ts"),
+      "export const a: number = 1;",
+    );
+    await serve("ajour-plugin://jira/lib/plugin.ts");
+    await rm(packageDirectory, { recursive: true, force: true });
+
+    await policy.forgetStrippedFiles(packageDirectory);
+
+    expect(policy.strippedFileCount()).toBe(0);
+  });
+
+  it("forgets the stripped files of a package reached through a link, once the package is gone", async () => {
+    // As on macOS, where the temporary folder is a link to /private.
+    const linkParent = await mkdtemp(path.join(os.tmpdir(), "ajour-link-"));
+    const linked = path.join(linkParent, "package");
+    await symlink(packageDirectory, linked, "junction");
+    await writeFile(
+      path.join(packageDirectory, "lib", "plugin.ts"),
+      "export const a: number = 1;",
+    );
+    await policy.servePluginFile(
+      { url: "ajour-plugin://jira/lib/plugin.ts" },
+      { pluginId: "jira", packageDirectory: linked, hostDirectory: linked },
+    );
+    await rm(packageDirectory, { recursive: true, force: true });
+
+    await policy.forgetStrippedFiles(linked);
+
+    expect(policy.strippedFileCount()).toBe(0);
+    await rm(linkParent, { recursive: true, force: true });
+  });
+
+  it.each([".ts", ".mts"])(
+    "strips a %s file of 2 MB, and refuses one a byte over, naming it",
+    async (extension) => {
+      const limit = 2 * 1024 * 1024;
+      const header = "export const a: number = 1;\n//";
+      const fits = `${header}${"x".repeat(limit - header.length)}`;
+      await writeFile(path.join(packageDirectory, `fits${extension}`), fits);
+      await writeFile(
+        path.join(packageDirectory, `big${extension}`),
+        `${fits}x`,
+      );
+
+      const served = await serve(`ajour-plugin://jira/fits${extension}`);
+      const refusedResponse = await serve(
+        `ajour-plugin://jira/big${extension}`,
+      );
+
+      expect(served.status).toBe(200);
+      expect(refusedResponse.status).toBe(500);
+      expect(refused).toEqual([
+        {
+          file: `big${extension}`,
+          reason: `big${extension} is over 2 MB, the most Ajour strips in a TypeScript file.`,
+        },
+      ]);
+    },
+  );
+
+  it("serves a large file that isn't TypeScript as it is", async () => {
+    const big = `export const a = 1;\n//${"x".repeat(3 * 1024 * 1024)}`;
+    await writeFile(path.join(packageDirectory, "big.mjs"), big);
+
+    const response = await serve("ajour-plugin://jira/big.mjs");
+
+    expect(response.status).toBe(200);
+    expect((await response.text()).length).toBe(big.length);
   });
 });
 
