@@ -21,7 +21,7 @@ import { randomHex } from "./ids.ts";
 import { synchronousScope, type ScopeStore } from "./scope.ts";
 import { scrubErrorMessage } from "./scrub.ts";
 import type { Sink } from "./sinks.ts";
-import { nowhere } from "./sinks.ts";
+import { isAccepting, nowhere } from "./sinks.ts";
 import {
   decodeTraceparent,
   encodeTraceparent,
@@ -498,8 +498,9 @@ class EmitterState {
   }
 
   emit(unit: UnitState) {
-    // The default sink drops the event, so it is never built.
-    if (this.sink === nowhere) return;
+    // The default sink drops the event, so it is never built, and neither is
+    // it for a sink that is off right now, such as the local log file.
+    if (this.sink === nowhere || !isAccepting(this.sink)) return;
     const { context } = this;
     const event: Envelope & Fields = {
       schema: 1,

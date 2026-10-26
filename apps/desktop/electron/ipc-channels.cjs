@@ -85,6 +85,10 @@ const IPC_CHANNELS = {
     event: "dev_plugins.configure",
     mode: "invoke",
   },
+  // The local log file's settings (local-logs.cjs, ADR 0014).
+  "ajour:get-logs-status": { event: "logs.status", mode: "invoke" },
+  "ajour:configure-logs": { event: "logs.configure", mode: "invoke" },
+  "ajour:delete-all-logs": { event: "logs.delete_all", mode: "invoke" },
   // The one channel of a plugin's hidden page, not the window's
   // (plugin-renderer-runtime.cjs).
   "ajour:plugin-renderer": {
