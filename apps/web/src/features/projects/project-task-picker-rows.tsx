@@ -106,6 +106,15 @@ export function PickerTaskRow({
       value={value}
       className={ROW_CLASS}
       data-checked={checked ? "true" : undefined}
+      // Named for what it picks: without this the star's label starts the name.
+      aria-label={[
+        task.name,
+        projectDisplay ? getProjectLabel(project) : undefined,
+        task.pinnedSlot ? `pinned to ${task.pinnedSlot}` : undefined,
+        isProjectTaskBillable(task) ? undefined : "Non-billable",
+      ]
+        .filter(Boolean)
+        .join(", ")}
       onSelect={onSelect}
     >
       <FavoriteStar
@@ -151,8 +160,16 @@ export function PickerProjectRow({
   onSelect: () => void;
 }) {
   const label = getProjectLabel(project);
+  const activeTaskCount = project.tasks.filter(
+    (task) => task.status === "active",
+  ).length;
   return (
-    <CommandItem value={value} className={ROW_CLASS} onSelect={onSelect}>
+    <CommandItem
+      value={value}
+      className={ROW_CLASS}
+      aria-label={`${label}, ${activeTaskCount} active tasks`}
+      onSelect={onSelect}
+    >
       <FavoriteStar
         favorite={project.favoritedAt !== undefined}
         name={label}
@@ -165,7 +182,7 @@ export function PickerProjectRow({
       />
       <span className="min-w-0 flex-1 truncate">{label}</span>
       <span className="shrink-0 text-xs text-[var(--text-tertiary)]">
-        {project.tasks.filter((task) => task.status === "active").length}
+        {activeTaskCount}
       </span>
       <ChevronRight className="size-4 shrink-0 text-[var(--text-tertiary)]" />
     </CommandItem>
