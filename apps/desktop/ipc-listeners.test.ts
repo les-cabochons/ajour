@@ -11,7 +11,7 @@ const { createIpcListeners, FORWARD_WIDE_EVENTS_CHANNEL, refusedSender } =
     FORWARD_WIDE_EVENTS_CHANNEL: string;
     createIpcListeners: (
       ipcMain: FakeIpcMain,
-      options: { events: unknown; windowSession?: () => unknown },
+      options: { events: unknown; windowSession: () => unknown },
     ) => Ipc;
     refusedSender: (message: string) => Error;
   };
@@ -63,7 +63,11 @@ function setUp() {
     ipcMain,
     recorded,
     events,
-    ipc: createIpcListeners(ipcMain, { events }),
+    // These fake senders are strings, with no session: the window's is none.
+    ipc: createIpcListeners(ipcMain, {
+      events,
+      windowSession: () => undefined,
+    }),
   };
 }
 
@@ -351,6 +355,24 @@ describe("which pages may use the window's channels", () => {
     ).resolves.toBe("reached");
   });
 
+  it("can't be made without the window's session, so a caller that forgets it lets no page through", () => {
+    const { events } = recordingEvents();
+    const forgotten = { events } as unknown as Parameters<
+      typeof createIpcListeners
+    >[1];
+    const notAFunction = {
+      events,
+      windowSession: windowSession,
+    } as unknown as Parameters<typeof createIpcListeners>[1];
+
+    expect(() => createIpcListeners(new FakeIpcMain(), forgotten)).toThrow(
+      /windowSession/,
+    );
+    expect(() => createIpcListeners(new FakeIpcMain(), notAFunction)).toThrow(
+      /windowSession/,
+    );
+  });
+
   it("is given the default session by main.cjs", async () => {
     const source = await readFile(
       new URL("./electron/main.cjs", import.meta.url),
@@ -476,7 +498,12 @@ describe("the IPC channel table", () => {
     const { ipc } = (() => {
       const ipcMain = new FakeIpcMain();
       const { events } = recordingEvents();
-      return { ipc: createIpcListeners(ipcMain, { events }) };
+      return {
+        ipc: createIpcListeners(ipcMain, {
+          events,
+          windowSession: () => undefined,
+        }),
+      };
     })();
     entry.record = "failures";
     try {

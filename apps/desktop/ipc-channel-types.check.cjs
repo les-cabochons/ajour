@@ -5,6 +5,7 @@ const { createIpcListeners } = require("./electron/ipc-listeners.cjs");
 
 const ipc = createIpcListeners(/** @type {any} */ ({}), {
   events: /** @type {any} */ ({}),
+  windowSession: () => undefined,
 });
 
 ipc.handle("ajour:get-update-state", () => null);

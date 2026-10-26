@@ -149,7 +149,8 @@ async function runtime(
         // The slice registers the logs channels too, which these tests don't call.
         on() {},
       },
-      { events },
+      // The fake senders carry no session: the window's is none.
+      { events, windowSession: () => undefined },
     ),
   });
 

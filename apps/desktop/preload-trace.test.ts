@@ -9,7 +9,7 @@ const require = createRequire(import.meta.url);
 const { createIpcListeners } = require("./electron/ipc-listeners.cjs") as {
   createIpcListeners: (
     ipcMain: FakeIpcMain,
-    options: { events: unknown },
+    options: { events: unknown; windowSession: () => unknown },
   ) => {
     handle: (channel: string, listener: Listener) => void;
     onMessage: (channel: string, listener: Listener) => void;
@@ -40,7 +40,11 @@ class FakeIpcMain extends EventEmitter {
 async function loadPreload({ runtime = null }: { runtime?: unknown } = {}) {
   const ipcMain = new FakeIpcMain();
   const { events, recorded } = recordingEvents();
-  const ipc = createIpcListeners(ipcMain, { events });
+  // The fake sender carries no session: the window's is none.
+  const ipc = createIpcListeners(ipcMain, {
+    events,
+    windowSession: () => undefined,
+  });
   const sender = { sender: "window" };
   // IPC sends a structured clone, as Electron does.
   const ipcRenderer = {

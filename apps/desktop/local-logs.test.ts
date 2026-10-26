@@ -161,7 +161,8 @@ async function mainProcess({
           messageListeners.set(name, listener);
         },
       },
-      { events },
+      // The fake senders carry no session: the window's is none.
+      { events, windowSession: () => undefined },
     ),
   });
   vm.runInContext(

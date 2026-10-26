@@ -528,7 +528,11 @@ describe("IPC listeners", () => {
       app: { getPath: () => "/fixture" },
       events,
       refusedSender,
-      ipc: createIpcListeners(ipcMain, { events }),
+      // The fake senders carry no session: the window's is none.
+      ipc: createIpcListeners(ipcMain, {
+        events,
+        windowSession: () => undefined,
+      }),
       nativeTheme,
       mainWindow,
       appMenuModel: realMenu
@@ -1753,7 +1757,8 @@ describe("plugin and update IPC: the privacy canary", () => {
             handler: (...args: unknown[]) => Promise<unknown>,
           ) => void handlers.set(name, handler),
         },
-        { events },
+        // The fake senders carry no session: the window's is none.
+        { events, windowSession: () => undefined },
       ),
       ...overrides,
     });
