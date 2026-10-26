@@ -10,6 +10,7 @@ import {
   uninstallPluginForServer,
 } from "./server.ts";
 import { dispatchJsonRequest } from "./test-support/dispatch-json-request.ts";
+import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
 import { windowServerOptions } from "./test-support/window-token.ts";
 import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
@@ -32,6 +33,13 @@ const ICON = "<svg viewBox='0 0 16 16' />";
 const ID = "fixture-tracker";
 
 type Json = Record<string, any>;
+
+/** Code that validates a connection as given, so a save succeeds. */
+const SAVING_PLUGIN = [
+  "export async function validateConnection(connection) {",
+  "  return { normalizedConfig: connection.config, connectionSummary: {} };",
+  "}",
+].join("\n");
 
 /** The request event named `name`, once it has been emitted. */
 async function requestEvent(events: AjourEvent[], name: string) {
@@ -123,6 +131,7 @@ describe("consent on plugin installs and updates", () => {
     directory: string,
     value: Json,
     prompt = "Enter the week {{weekOf}}.",
+    source = "export {};",
   ) {
     await mkdir(path.join(directory, "prompts"), { recursive: true });
     await writeFile(
@@ -130,7 +139,7 @@ describe("consent on plugin installs and updates", () => {
       JSON.stringify(value),
       "utf8",
     );
-    await writeFile(path.join(directory, "plugin.mjs"), "export {};", "utf8");
+    await writeFile(path.join(directory, "plugin.mjs"), source, "utf8");
     await writeFile(
       path.join(directory, "prompts", "enter-week.md"),
       prompt,
@@ -139,9 +148,14 @@ describe("consent on plugin installs and updates", () => {
   }
 
   /** An archive of the plugin the manifest describes. */
-  async function archive(root: string, value: Json, prompt?: string) {
+  async function archive(
+    root: string,
+    value: Json,
+    prompt?: string,
+    source?: string,
+  ) {
     const directory = path.join(root, `source-${value.version}-${Date.now()}`);
-    await writePackage(directory, value, prompt);
+    await writePackage(directory, value, prompt, source);
     const file = path.join(root, `tracker-${value.version}.ajour-connector`);
     await create({ cwd: directory, file, gzip: true }, [
       "plugin.json",
@@ -156,12 +170,18 @@ describe("consent on plugin installs and updates", () => {
     options: {
       developmentPluginDirectories?: string[];
       events?: ReturnType<typeof createRecordingSink<AjourEvent>>;
+      vault?: MemorySecretVault;
+      /** Runs the plugin's code in this process, so a save can succeed. */
+      inProcess?: boolean;
     } = {},
   ) {
     const server = createAppApiServer({
       ...(options.events ? { eventSink: options.events } : {}),
       ...windowServerOptions,
-      vault: new MemorySecretVault(),
+      vault: options.vault ?? new MemorySecretVault(),
+      ...(options.inProcess
+        ? { pluginRuntime: new InProcessPluginRuntime() }
+        : {}),
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: options.developmentPluginDirectories ?? [],
@@ -178,9 +198,18 @@ describe("consent on plugin installs and updates", () => {
     server: Server,
     root: string,
     value: Json,
-    options: { enableAfterInstall?: boolean; prompt?: string } = {},
+    options: {
+      enableAfterInstall?: boolean;
+      prompt?: string;
+      source?: string;
+    } = {},
   ) {
-    const { bytes, name } = await archive(root, value, options.prompt);
+    const { bytes, name } = await archive(
+      root,
+      value,
+      options.prompt,
+      options.source,
+    );
     return await installPluginForServer(server, bytes, name, {
       ...(options.enableAfterInstall === undefined
         ? {}
@@ -218,16 +247,20 @@ describe("consent on plugin installs and updates", () => {
   }
 
   /** Saves a connection, which validates it by running the plugin's code. */
-  async function saveConnection(server: Server) {
+  async function saveConnection(
+    server: Server,
+    edit: { id?: string; label?: string; apiToken?: string } = {},
+  ) {
     const response = await dispatchJsonRequest(server, {
       method: "POST",
       path: `/api/plugins/${ID}/connections`,
       body: JSON.stringify({
+        ...(edit.id ? { id: edit.id } : {}),
         values: {
-          label: "Contoso",
+          label: edit.label ?? "Contoso",
           tenantLabel: "Contoso",
           baseUrl: "https://tracker.example.com",
-          apiToken: "token-value",
+          apiToken: edit.apiToken ?? "token-value",
         },
       }),
     });
@@ -660,6 +693,95 @@ describe("consent on plugin installs and updates", () => {
 
     await activate(server, true);
     expect((await saveConnection(server)).status).not.toBe(409);
+  });
+
+  /**
+   * A connection saved while the plugin was on, with its token in the vault.
+   * Its token as the vault holds it, for a test to compare after a refusal.
+   */
+  async function savedConnection(server: Server, vault: MemorySecretVault) {
+    const saved = await saveConnection(server);
+    expect(saved.status).toBe(200);
+    const id = (saved.body as { connection: { id: string } }).connection.id;
+    const key = { pluginId: ID, connectionId: id, fieldId: "apiToken" };
+    const token = async () => (await vault.read([key]))[0];
+    expect(await token()).toMatchObject({ state: "set" });
+    return { id, token };
+  }
+
+  it.each([
+    [
+      "is not on",
+      "Activate this plugin before saving a connection.",
+      async (server: Server) => activate(server, false),
+    ],
+    [
+      "is held for more access",
+      "Allow the new access first.",
+      async (server: Server, root: string) => {
+        await install(
+          server,
+          root,
+          manifest("1.1.0", (value) => {
+            value.network.endpoints.push({
+              method: "GET",
+              path: "/rest/people",
+            });
+          }),
+          { source: SAVING_PLUGIN },
+        );
+      },
+    ],
+  ])(
+    "refuses to edit a connection, and to replace its secret, when its plugin %s, and changes neither",
+    async (_when, message, turnOff) => {
+      const root = await tempDir();
+      const vault = new MemorySecretVault();
+      const server = startServer(root, { vault, inProcess: true });
+      await install(server, root, manifest("1.0.0"), {
+        enableAfterInstall: false,
+        source: SAVING_PLUGIN,
+      });
+      await activate(server, true);
+      const { id, token } = await savedConnection(server, vault);
+      const before = await token();
+      const connectionBefore = (await group(server)).connections;
+      await turnOff(server, root);
+      expect((await group(server)).enabled).toBe(false);
+
+      await expect(
+        saveConnection(server, {
+          id,
+          label: "Renamed",
+          apiToken: "replacement-token",
+        }),
+      ).resolves.toEqual({ status: 409, body: { error: message } });
+
+      expect(await token()).toEqual(before);
+      expect((await group(server)).connections).toEqual(connectionBefore);
+    },
+  );
+
+  it("tells a save, while the whole plugin system is off, to enable the system and not to activate a plugin that may be on", async () => {
+    const root = await tempDir();
+    const events = createRecordingSink<AjourEvent>();
+    const server = startServer(root, { events });
+    await downloadAndActivate(server, root);
+    const toggled = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: "/api/plugins/activation",
+      body: JSON.stringify({ enabled: false }),
+    });
+    expect(toggled.status).toBe(200);
+
+    await expect(saveConnection(server)).resolves.toEqual({
+      status: 409,
+      body: { error: "Enable the plugin system before saving a connection." },
+    });
+    expect(await requestEvent(events.events, "connection.save")).toMatchObject({
+      outcome: "refused",
+      outcome_reason: "system_off",
+    });
   });
 
   it("holds off a development plugin whose manifest gains a host", async () => {

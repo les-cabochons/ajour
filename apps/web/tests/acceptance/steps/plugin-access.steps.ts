@@ -401,6 +401,75 @@ Given(
   },
 );
 
+/** A saved Tracker connection, with its token saved in the vault. */
+function savedConnection() {
+  return {
+    id: "acme",
+    pluginId: "tracker",
+    label: "Acme",
+    tenantLabel: "Acme",
+    autoSync: false,
+    autoSyncIntervalMinutes: 15,
+    connectedAt: 1,
+    pendingImportCount: 0,
+    selectedImportCount: 0,
+    configSummary: {},
+    editableValues: { baseUrl: "https://tracker.example.com" },
+    secretFields: [{ id: "apiToken", state: "saved", setAt: 1 }],
+  } as unknown as PluginOverviewGroup["connections"][number];
+}
+
+Given(
+  "an inactive Tracker plugin with a saved connection",
+  async ({ page }) => {
+    await installMock(
+      page,
+      groupOf({ enabled: false, connections: [savedConnection()] }),
+    );
+  },
+);
+
+Given(
+  "a Tracker update 1.1.0 that waits for consent, with a saved connection",
+  async ({ page }) => {
+    await installMock(
+      page,
+      groupOf(
+        {
+          enabled: false,
+          connections: [savedConnection()],
+          pendingAccess: {
+            version: "1.1.0",
+            difference: { ...NOTHING_NEW, endpoints: [PEOPLE_ENDPOINT] },
+          },
+        },
+        tracker(4, "1.1.0"),
+      ),
+    );
+  },
+);
+
+When("I change the Site URL of the Tracker connection", async ({ page }) => {
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await page.getByLabel("Site URL", { exact: true }).fill("https://other.test");
+});
+
+Then("Add a connection is disabled", async ({ page }) => {
+  await expect(
+    page.getByRole("button", { name: "Add a connection", exact: true }),
+  ).toBeDisabled();
+});
+
+Then(
+  "the form says {string} and Update connection is disabled",
+  async ({ page }, hint: string) => {
+    await expect(page.locator("[data-save-hint]")).toHaveText(hint);
+    await expect(
+      page.getByRole("button", { name: "Update connection", exact: true }),
+    ).toBeDisabled();
+  },
+);
+
 // Opening pages.
 
 When("I open the access catalog plugin page", async ({ page }) => {

@@ -96,3 +96,17 @@ Feature: Access review on the plugin page
     When I open the Tracker plugin page
     Then the plugin page does not say "needs more access"
     And the plugin is active
+
+  Scenario: An inactive plugin offers no save, and says how to turn it on
+    Given an inactive Tracker plugin with a saved connection
+    When I open the Tracker plugin page
+    Then Add a connection is disabled
+    When I change the Site URL of the Tracker connection
+    Then the form says "Activate this plugin to save a connection." and Update connection is disabled
+
+  Scenario: A plugin held for more access offers no save, and says to allow it
+    Given a Tracker update 1.1.0 that waits for consent, with a saved connection
+    When I open the Tracker plugin page
+    Then Add a connection is disabled
+    When I change the Site URL of the Tracker connection
+    Then the form says "Press Allow and activate to save a connection." and Update connection is disabled

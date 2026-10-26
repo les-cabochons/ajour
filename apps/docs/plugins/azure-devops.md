@@ -12,7 +12,7 @@ The Azure DevOps plugin syncs your work items into Ajour's backlog, with their c
    - **Read & write** to also write estimates, states and priorities, and to post, edit and delete comments and react to them.
    - To mention anyone in the organization, add **Identity › Read**. Without it, mentions suggest only the people on the item.
    - For pull requests, add **Code › Read**, and **Project and Team › Read** for team review requests.
-3. In Ajour, open the plugin and press **Add a connection**. Fill in the fields below, and press **Add connection**.
+3. In Ajour, open the plugin, turn it on if it is off, and press **Add a connection**. Fill in the fields below, and press **Add connection**.
 4. Press **Sync**. The items wait in [Sync review](/plugins/sync-review). Pick the ones you want and press **Sync selected to backlog**.
 
 ::: tip

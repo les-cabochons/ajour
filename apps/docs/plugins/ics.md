@@ -9,9 +9,10 @@ The catalog does not list this plugin. Install it from a file, as below.
 ## Set up
 
 1. Download the latest `ics-….ajour-connector` file from the [GitHub releases](https://github.com/les-cabochons/ajour-plugins/releases?q=ics) of the official plugins.
-2. In **Settings › Plugins**, press **Install from file** and choose the file. The plugin starts turned on.
-3. Get your calendar's address. See below.
-4. Open the plugin, press **Add a connection**, fill in the fields below, and press **Add connection**.
+2. In **Settings › Plugins**, press **Install from file** and choose the file. The plugin starts turned off.
+3. Open the plugin and turn it on.
+4. Get your calendar's address. See below.
+5. Press **Add a connection**, fill in the fields below, and press **Add connection**.
 
 Your meetings then show in the Time view, and **Settings › Calendar** appears.
 

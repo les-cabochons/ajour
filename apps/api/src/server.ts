@@ -889,7 +889,7 @@ async function inactiveCapability(
   if (!(await storage.isPluginEnabled(pluginId, runnable))) {
     if (!(await storage.getPluginSystemEnabled())) {
       return {
-        message: `Activate this plugin before ${action}.`,
+        message: `Enable the plugin system before ${action}.`,
         reason: "system_off",
       };
     }

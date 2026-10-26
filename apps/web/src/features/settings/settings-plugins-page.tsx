@@ -63,6 +63,7 @@ import {
   syncsPullRequestsAutomatically,
 } from "@ajour/shared";
 import {
+  connectionSaveBlock,
   createPluginFormState,
   expiryForSave,
   secretFieldIds,
@@ -782,6 +783,11 @@ export function SettingsPluginsPage({
     const groupFormState =
       formState?.pluginId === group.plugin.id ? formState : null;
     const { unavailableReason } = group.plugin;
+    // Saving runs the plugin, so it waits until the plugin is on; the form
+    // says so and names the way out.
+    const saveBlock = unavailableReason
+      ? undefined
+      : connectionSaveBlock(group, overview?.pluginsEnabled !== false);
 
     return (
       <>
@@ -918,11 +924,7 @@ export function SettingsPluginsPage({
                 <h2 className="settings-section-title">Configuration</h2>
                 <p className="settings-section-desc mt-1">
                   Manage the local connections used by this plugin.
-                  {group.enabled || unavailableReason
-                    ? ""
-                    : group.pendingAccess
-                      ? " Allow its new access to save a connection."
-                      : " Activate it to save a connection."}
+                  {saveBlock ? ` ${saveBlock.hint}` : ""}
                 </p>
               </div>
               <Button
@@ -949,6 +951,7 @@ export function SettingsPluginsPage({
                 )}
                 vault={overview?.vault}
                 isMutating={isMutatingPlugin}
+                saveHint={saveBlock?.hint}
                 heldCount={
                   groupFormState.editingConnectionId
                     ? heldEditCount(

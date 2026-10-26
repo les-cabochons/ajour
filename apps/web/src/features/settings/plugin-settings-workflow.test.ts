@@ -499,6 +499,29 @@ describe("turning editing work items on", () => {
     expect(onHeldForReview).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["inactive", { enabled: false }],
+    ["held for more access", { enabled: false, pendingAccess: {} }],
+  ])(
+    "holds nothing for a save the server refuses because the plugin is %s",
+    async (_state, change) => {
+      const { deps, onHeldForReview, save } = setUp(2);
+      const off = {
+        ...withAccess,
+        connectionGroups: [{ ...withAccess.connectionGroups[0]!, ...change }],
+      } as PluginsOverview;
+      deps.getCachedPluginsOverview = () => off;
+      deps.savePluginConnection = vi.fn(async () => {
+        throw new Error("Activate this plugin before saving a connection.");
+      });
+
+      await expect(save(["editWorkItems"])).resolves.toBe(false);
+
+      expect(deps.holdPendingEstimates).not.toHaveBeenCalled();
+      expect(onHeldForReview).not.toHaveBeenCalled();
+    },
+  );
+
   it("holds nothing more for a save that leaves editing off", async () => {
     const { deps, onHeldForReview, save } = setUp(2);
 

@@ -310,3 +310,37 @@ export function arePluginFormValuesEqual(
     (field) => left[field.id] === right[field.id],
   );
 }
+
+/** Why a save would be refused, and the way out the form names. */
+export type ConnectionSaveBlock = {
+  reason: "system_off" | "needs_consent" | "plugin_off";
+  hint: string;
+};
+
+/**
+ * Whether a connection can be saved on the plugin: saving runs it with the
+ * credential just typed, so it waits until the plugin is on, and until the
+ * user has allowed an update's new access. The hint names the way out;
+ * undefined when the save can go.
+ */
+export function connectionSaveBlock(
+  group: { enabled: boolean; pendingAccess?: unknown },
+  pluginsEnabled: boolean,
+): ConnectionSaveBlock | undefined {
+  if (!pluginsEnabled) {
+    return {
+      reason: "system_off",
+      hint: "Enable the plugin system to save a connection.",
+    };
+  }
+  if (group.enabled) return undefined;
+  return group.pendingAccess
+    ? {
+        reason: "needs_consent",
+        hint: "Press Allow and activate to save a connection.",
+      }
+    : {
+        reason: "plugin_off",
+        hint: "Activate this plugin to save a connection.",
+      };
+}

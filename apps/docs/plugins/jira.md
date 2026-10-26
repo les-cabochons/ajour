@@ -6,7 +6,7 @@ The Jira plugin syncs your Jira issues into Ajour's backlog. It writes estimate 
 
 1. [Install the plugin](/plugins/#install-a-plugin) from **Settings › Plugins**, and turn it on.
 2. Create an Atlassian API token at [id.atlassian.com › Security › API tokens](https://id.atlassian.com/manage-profile/security/api-tokens).
-3. In Ajour, open the plugin and press **Add a connection**. Fill in the fields below, and press **Add connection**.
+3. In Ajour, open the plugin, make sure it is on, and press **Add a connection**. Fill in the fields below, and press **Add connection**.
 4. Press **Sync**. The issues wait in [Sync review](/plugins/sync-review). Pick the ones you want and press **Sync selected to backlog**.
 
 ## Connection fields
