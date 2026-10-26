@@ -323,6 +323,21 @@ export function importProjectWorkbookRows(
   return { projects: nextProjects, result };
 }
 
+/**
+ * Import tasks… refused a file made for another project. The message names
+ * neither project, because it reaches the store command's event, which holds
+ * no names. `fileProjectName` lets the page say which project the file is for.
+ */
+export class ImportedProjectMismatchError extends Error {
+  readonly fileProjectName: string;
+
+  constructor(fileProjectName: string) {
+    super("This file is for another project.");
+    this.name = "ImportedProjectMismatchError";
+    this.fileProjectName = fileProjectName;
+  }
+}
+
 /** The tasks a project gained and changed from an Import tasks… file. */
 export interface ProjectTaskMergeResult {
   addedTaskCount: number;
@@ -411,8 +426,8 @@ export function importProjectDataShapeTasks(
     normalizeTaskImportName(importedProject.name) !==
       normalizeTaskImportName(project.name)
   ) {
-    throw new Error(
-      `This file is for ${formatTaskImportName(importedProject.name)}, not ${project.name}.`,
+    throw new ImportedProjectMismatchError(
+      formatTaskImportName(importedProject.name),
     );
   }
 

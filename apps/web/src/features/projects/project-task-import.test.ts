@@ -157,6 +157,64 @@ describe("importTasksFromWorkbook", () => {
       ["Billet 101", "active", false],
     ]);
   });
+
+  it("stops when the schema list can't be read, rather than reading column C", async () => {
+    vi.doMock("@/lib/app-api", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("@/lib/app-api")>()),
+      getProjectDataShapePlugins: vi.fn(async () => {
+        throw new Error("The local API is not running.");
+      }),
+    }));
+    const { localStore } = await import("../../lib/local-store");
+    const { importTasksFromWorkbook } = await import("./project-task-import");
+    localStore.createTeam("Local Team", "local-team", [
+      { name: "Project Mercury", color: "#123456" },
+    ]);
+    localStore.setUserPreferences({
+      projectDataShapeId: "workday-project-data",
+    });
+    const projectId = localStore.snapshot().projects[0]!._id;
+    const buffer = await buildWorkbookBuffer({
+      name: "Plan",
+      rows: [["Numéro", "Phase/tâche", "Billet 101"]],
+    });
+
+    await expect(
+      importTasksFromWorkbook(projectId, buffer as ArrayBuffer),
+    ).rejects.toThrow(
+      "Ajour can't reach the schema picked in Settings › Projects. The local API is not running.",
+    );
+    expect(localStore.snapshot().projects[0]!.tasks).toEqual([]);
+  });
+
+  it("names both projects when the file is for another one", async () => {
+    vi.doMock("@/lib/app-api", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("@/lib/app-api")>()),
+      getProjectDataShapePlugins: vi.fn(async () => [
+        { id: "workday-project-data" },
+      ]),
+      importProjectsWithDataShape: vi.fn(async () => ({
+        projects: [
+          { name: "Apollo", status: "active" as const, tasks: [{ name: "X" }] },
+        ],
+      })),
+    }));
+    const { localStore } = await import("../../lib/local-store");
+    const { importTasksFromWorkbook } = await import("./project-task-import");
+    localStore.createTeam("Local Team", "local-team", [
+      { name: "Project Mercury", color: "#123456" },
+    ]);
+    localStore.setUserPreferences({
+      projectDataShapeId: "workday-project-data",
+    });
+    const projectId = localStore.snapshot().projects[0]!._id;
+    const buffer = await buildWorkbookBuffer({ name: "Plan", rows: [["A"]] });
+
+    await expect(
+      importTasksFromWorkbook(projectId, buffer as ArrayBuffer),
+    ).rejects.toThrow("This file is for Apollo, not Project Mercury.");
+    expect(localStore.snapshot().projects[0]!.tasks).toEqual([]);
+  });
 });
 
 describe("localStore.importProjectTasks", () => {

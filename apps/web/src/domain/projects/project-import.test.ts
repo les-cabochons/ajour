@@ -269,7 +269,12 @@ describe("importProjectDataShapeTasks", () => {
         [{ name: "Mercury", status: "active", tasks: [] }],
         createFactories(),
       ),
-    ).toThrow("This file is for Mercury, not Peoples Group - Support.");
+    ).toThrow(
+      expect.objectContaining({
+        message: "This file is for another project.",
+        fileProjectName: "Mercury",
+      }),
+    );
   });
 
   it("refuses a file with several projects", () => {

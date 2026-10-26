@@ -1,5 +1,8 @@
 import { BUILT_IN_PROJECT_DATA_SHAPE_ID } from "@ajour/shared";
-import type { ProjectTaskMergeResult } from "@/domain/projects/project-import";
+import {
+  ImportedProjectMismatchError,
+  type ProjectTaskMergeResult,
+} from "@/domain/projects/project-import";
 import {
   formatTaskImportName,
   normalizeTaskImportName,
@@ -104,19 +107,48 @@ export function formatSchemaTaskImportSummary(result: ProjectTaskMergeResult) {
   return `${summary[0]!.toUpperCase()}${summary.slice(1)}.`;
 }
 
-/** The schema plugin picked in Settings › Projects, when it is available. */
+/**
+ * The schema plugin picked in Settings › Projects. A plugin no longer
+ * listed, uninstalled or off, gives undefined: Settings then shows Ajour
+ * default too. When the list can't be read, the import stops: column C
+ * would drop what the schema reads, such as closed tasks.
+ */
 async function pickedSchemaPlugin() {
   const schemaId = localStore.snapshot().userPreferences.projectDataShapeId;
   if (!schemaId || schemaId === BUILT_IN_PROJECT_DATA_SHAPE_ID) {
     return undefined;
   }
+  let plugins: Awaited<ReturnType<typeof getProjectDataShapePlugins>>;
   try {
-    return (await getProjectDataShapePlugins()).find(
-      (plugin) => plugin.id === schemaId,
+    plugins = await getProjectDataShapePlugins();
+  } catch (error) {
+    throw new Error(
+      `Ajour can't reach the schema picked in Settings › Projects. ${error instanceof Error ? error.message : ""}`.trim(),
     );
-  } catch {
-    // Without the local API, as in the web build, no schema plugin runs.
-    return undefined;
+  }
+  return plugins.find((plugin) => plugin.id === schemaId);
+}
+
+/** Merges the plugin's tasks, naming the file's project when it is another one. */
+function importSchemaTasks(
+  projectId: string,
+  schemaId: string,
+  projects: Parameters<typeof localStore.importProjectDataShapeTasks>[2],
+) {
+  try {
+    return localStore.importProjectDataShapeTasks(
+      projectId,
+      schemaId,
+      projects,
+    );
+  } catch (error) {
+    if (!(error instanceof ImportedProjectMismatchError)) throw error;
+    const project = localStore
+      .snapshot()
+      .projects.find((item) => item._id === projectId);
+    throw new Error(
+      `This file is for ${error.fileProjectName}, not ${project?.name ?? "this project"}.`,
+    );
   }
 }
 
@@ -137,7 +169,7 @@ export async function importTasksFromWorkbook(
       await readWorkbookSheets(bytes),
     );
     return formatSchemaTaskImportSummary(
-      localStore.importProjectDataShapeTasks(projectId, plugin.id, projects),
+      importSchemaTasks(projectId, plugin.id, projects),
     );
   }
 
