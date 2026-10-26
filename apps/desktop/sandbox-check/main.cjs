@@ -696,11 +696,18 @@ async function main() {
           !contents.isDestroyed() && contents.getOSProcessId() === crashPid,
       )
       ?.forcefullyCrashRenderer();
+    const crashOutcome = await Promise.race([
+      crashing.settled,
+      sleep(10_000).then(() => "no answer"),
+    ]);
+    // The crashed renderer's process, and the OS says it ended.
+    for (let wait = 0; alive(crashPid) && wait < 60; wait += 1) {
+      await sleep(50);
+    }
     const afterCrash = {
-      outcome: await Promise.race([
-        crashing.settled,
-        sleep(10_000).then(() => "no answer"),
-      ]),
+      outcome: crashOutcome,
+      crashPid,
+      oldPidAlive: alive(crashPid),
       next: await runDirect(
         runtime,
         "fixture-escape",

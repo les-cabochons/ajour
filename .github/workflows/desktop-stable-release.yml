@@ -107,11 +107,11 @@ jobs:
         include:
           - name: macOS
             runner: macos-latest
-            artifact: ajour-macos
+            artifact: release-package-macos
             command: corepack pnpm make:desktop:mac
           - name: Windows
             runner: windows-latest
-            artifact: ajour-windows
+            artifact: release-package-windows
             command: corepack pnpm make:desktop:win
     runs-on: ${{ matrix.runner }}
     permissions:
@@ -193,6 +193,8 @@ jobs:
       - name: Download desktop distributables
         uses: actions/download-artifact@v4
         with:
+          pattern: release-package-*
+          merge-multiple: true
           path: release-assets
 
       - name: Create tag and release with changelog

@@ -2,10 +2,10 @@
 // its lifecycle (#391): `sandbox-check/main.cjs`, once as Ajour starts and
 // once with --no-sandbox, then `sandbox-check/lifecycle.cjs`, for the start
 // modes, limits, crash budget and quit, and for the orphan sweep across a
-// forced kill of main and a relaunch, and `sandbox-check/view-collection.cjs`,
-// the repro of #449. Each run has a user data folder of its own in the temp
-// folder. It reads the checks' `CHECK {json}` lines, holds them to what the
-// tickets ask, and checks that no process the app started outlives its
+// forced kill of main and a relaunch, `sandbox-check/view-collection.cjs`,
+// the repro of #449, and a second Ajour started beside the first. Each run
+// has a user data folder of its own in the temp folder. It reads the checks'
+// `CHECK {json}` lines, holds them to what the tickets ask, and checks that no process the app started outlives its
 // quit. It ends only the processes it started. Exits 1 when anything fails.
 // On a system Ajour doesn't sandbox plugins on, such as Linux, it checks
 // only that plugins stay off.
@@ -16,7 +16,7 @@
 //
 //   corepack pnpm --filter @ajour/desktop check:plugin-sandbox
 import { spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -28,6 +28,10 @@ const desktopRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
+const { SANDBOXED_PLATFORMS, launchSandboxRefusal } = require(
+  path.join(desktopRoot, "electron", "plugin-sandbox.cjs"),
+);
+const appMain = path.join(desktopRoot, "electron", "main.cjs");
 const checkMain = path.join(desktopRoot, "sandbox-check", "main.cjs");
 const lifecycleMain = path.join(desktopRoot, "sandbox-check", "lifecycle.cjs");
 const viewCollectionMain = path.join(
@@ -140,15 +144,87 @@ async function runCheck(
 }
 
 const isWindows = process.platform === "win32";
-/** The systems Ajour sandboxes plugins on, as `plugin-sandbox.cjs` says. */
-const SANDBOXED_PLATFORMS = new Set(["win32", "darwin"]);
-const NO_SANDBOX_OFF = {
-  reason: "Ajour was started with --no-sandbox.",
-  cause: "launch_flag",
+/**
+ * Why plugins are off, as `plugin-sandbox.cjs` words it: asked of the same
+ * function the app asks, so the check never keeps a copy of the wording.
+ */
+const refusalFor = ({ argv = [], platform = process.platform } = {}) =>
+  launchSandboxRefusal({
+    argv,
+    hasSwitch: () => false,
+    env: {},
+    platform,
+    inspectorActive: false,
+  });
+const NO_SANDBOX_OFF = refusalFor({ argv: ["--no-sandbox"] });
+const UNSUPPORTED_OS_OFF = refusalFor({ platform: "linux" });
+
+/**
+ * What each way out of the malicious plugin must fail with. A throw alone
+ * proves nothing: the fixture gives up on a call that gets no answer after
+ * 3 s with `no answer`, and an attempt that hangs is not a refusal.
+ */
+const FETCH_REFUSED = /^TypeError: Failed to fetch$/;
+const IMPORT_REFUSED =
+  /^TypeError: Failed to fetch dynamically imported module: /;
+const EXIT_REFUSALS = {
+  fetch: FETCH_REFUSED,
+  "fetch-public": FETCH_REFUSED,
+  "fetch-local-api": FETCH_REFUSED,
+  "fetch-private-name": FETCH_REFUSED,
+  "fetch-private-address": FETCH_REFUSED,
+  "fetch-other-plugin": FETCH_REFUSED,
+  "fetch-file": FETCH_REFUSED,
+  "fetch-file-posix": FETCH_REFUSED,
+  "fetch-user-data": FETCH_REFUSED,
+  "import-user-data": IMPORT_REFUSED,
+  "import-remote": IMPORT_REFUSED,
+  "import-other-plugin": IMPORT_REFUSED,
+  "import-traversal": IMPORT_REFUSED,
+  "import-traversal-backslash": IMPORT_REFUSED,
+  websocket: /^Error: WebSocket failed$/,
+  xhr: /^Error: XMLHttpRequest failed$/,
+  "event-source": /^Error: EventSource failed$/,
+  "send-beacon": /^TypeError: navigator\.sendBeacon is not a function$/,
+  "service-worker": /^TypeError: Cannot read properties of undefined/,
+  "shared-worker": /^ReferenceError: SharedWorker is not defined$/,
+  "window-open": /^TypeError: self\.open is not a function$/,
+  navigation:
+    /^TypeError: Cannot set property href of .* which has only a getter$/,
+  webtransport: /^WebTransportError: .*Content Security Policy/,
+  rtc: /^ReferenceError: RTCPeerConnection is not defined$/,
+  node: /^ReferenceError: require is not defined$/,
+  process: /^ReferenceError: process is not defined$/,
 };
-const UNSUPPORTED_OS_OFF = {
-  reason: "Plugins run only on Windows and macOS.",
-  cause: "unsupported_os",
+
+/**
+ * What the broker answers each attack of the malicious plugin with: the
+ * layer that refuses it, in the words the SDK hands the plugin. An attack
+ * that a deeper layer refuses, after the layer above it gave way, answers
+ * differently, and fails here.
+ */
+const NOT_ALLOWED =
+  "AjourRequestError: The plugin's manifest allows no GET request to that path on the connection's address.";
+const BROKER_REFUSALS = {
+  "other-plugin-connection":
+    "AjourRequestError: This plugin has no connection with that id.",
+  "absolute-url":
+    "AjourRequestError: A request path is relative to the connection's address and starts with /.",
+  "scheme-relative-url": NOT_ALLOWED,
+  // The manifest allows GET /api/**, so only the rule that a path holds
+  // literal segments stops these: the climb check behind it would answer
+  // with another message.
+  "dot-dot": NOT_ALLOWED,
+  "dot-dot-above-address": NOT_ALLOWED,
+  "dot-dot-encoded": NOT_ALLOWED,
+  "header-authorization":
+    "AjourRequestError: A plugin may not set the Authorization header.",
+  "header-cookie": "AjourRequestError: A plugin may not set the Cookie header.",
+  "header-host": "AjourRequestError: A plugin may not set the Host header.",
+  "header-proxy-authorization":
+    "AjourRequestError: A plugin may not set the Proxy-Authorization header.",
+  // The service answers with a redirect to another origin, handed back as is.
+  "cross-origin-redirect": "Error: answered 302",
 };
 
 /** 1. As Ajour starts. */
@@ -196,13 +272,17 @@ async function checkSandbox() {
   const exits = findings.exits ?? {};
   const attempts = exits.outcome?.result ?? [];
   expect(
-    attempts.length >= 15,
-    "the malicious plugin tried every way out",
-    exits.outcome,
+    JSON.stringify(attempts.map((attempt) => attempt.name).sort()) ===
+      JSON.stringify(Object.keys(EXIT_REFUSALS).sort()),
+    "the malicious plugin tried exactly the ways out the check names",
+    attempts.map((attempt) => attempt.name),
   );
   for (const attempt of attempts) {
+    const refusal = EXIT_REFUSALS[attempt.name];
     expect(
-      !attempt.escaped,
+      !attempt.escaped &&
+        refusal !== undefined &&
+        refusal.test(attempt.error ?? ""),
       `blocked: ${attempt.name} (${attempt.error ?? attempt.value})`,
     );
   }
@@ -223,9 +303,11 @@ async function checkSandbox() {
     .filter((entry) => entry.kind === "attempt")
     .map((entry) => entry.result);
   expect(
-    attacks.syncStatus === 200 && tried.length === 12,
-    "the malicious plugin turned the broker against itself in a sync",
-    attacks,
+    attacks.syncStatus === 200 &&
+      JSON.stringify(tried.map((attempt) => attempt.name)) ===
+        JSON.stringify(["control", ...Object.keys(BROKER_REFUSALS)]),
+    "the malicious plugin turned the broker against itself in a sync: every attack the check names",
+    { syncStatus: attacks.syncStatus, tried: tried.map(({ name }) => name) },
   );
   expect(
     tried.find((attempt) => attempt.name === "control")?.escaped === true,
@@ -234,8 +316,9 @@ async function checkSandbox() {
   );
   for (const attempt of tried.filter(({ name }) => name !== "control")) {
     expect(
-      !attempt.escaped,
+      !attempt.escaped && attempt.error === BROKER_REFUSALS[attempt.name],
       `the broker refused: ${attempt.name} (${attempt.error ?? attempt.value})`,
+      { expected: BROKER_REFUSALS[attempt.name] },
     );
   }
   const echo = entries.find((entry) => entry.kind === "echo")?.result ?? "";
@@ -369,8 +452,10 @@ async function checkSandbox() {
   expect(
     lifecycle.afterCrash?.outcome?.failure === "crashed" &&
       ["crashed", "killed"].includes(lifecycle.afterCrash.outcome.cause) &&
+      Number.isInteger(lifecycle.afterCrash.crashPid) &&
+      lifecycle.afterCrash.oldPidAlive === false &&
       lifecycle.afterCrash.next?.ok === true,
-    "a crashed renderer fails its run with the cause, and the next run opens a new one",
+    "a crashed renderer fails its run with the cause, its process ends, and the next run opens a new one",
     lifecycle.afterCrash,
   );
 
@@ -564,16 +649,30 @@ async function checkLifecycle() {
       "its process went over its memory ceiling.",
     ) &&
       budget.afterMemoryOpen === false &&
+      Number.isInteger(budget.balloonedProcess?.pid) &&
+      budget.balloonedProcess.gone === true &&
       budget.memoryClose?.ceiling === 160 &&
       // Its last sample, rounded to the MB, at the ceiling or above.
       budget.memoryClose.memory >= 160,
-    "a renderer above the user's memory ceiling closes, and its call says so",
-    { ballooned: budget.ballooned, close: budget.memoryClose },
+    "a renderer above the user's memory ceiling closes with its process, and its call says so",
+    {
+      ballooned: budget.ballooned,
+      process: budget.balloonedProcess,
+      close: budget.memoryClose,
+    },
+  );
+  expect(
+    Number.isInteger(budget.timedOutProcess?.pid) &&
+      budget.timedOutProcess.gone === true,
+    "a call past its time ends its renderer's process",
+    budget.timedOutProcess,
   );
   expect(
     budget.crashed?.outcome?.failure === "crashed" &&
+      Number.isInteger(budget.crashed.pid) &&
+      budget.crashed.gone === true &&
       ["crashed", "killed"].includes(budget.suspended?.cause),
-    "a timeout, a memory kill and a crash in 10 minutes suspend the plugin",
+    "a timeout, a memory kill and a crash in 10 minutes suspend the plugin, and the crashed renderer's process ends",
     { crashed: budget.crashed, suspended: budget.suspended },
   );
   expect(
@@ -796,6 +895,127 @@ async function checkViewCollection() {
   });
 }
 
+/**
+ * 6. A second Ajour while the first runs: it loses the single-instance lock
+ * and quits, and its launch's sweep never runs, because the first's live
+ * renderers are in the record and would pass for orphans. The second is the
+ * real `electron/main.cjs`; the first is the lifecycle check, holding the
+ * lock with a plugin renderer open.
+ */
+async function checkSecondInstance() {
+  const userData = await mkdtemp(
+    path.join(os.tmpdir(), "ajour-sandbox-second-instance-"),
+  );
+  let second;
+  const first = await runCheck("second-instance", ["--hold-instance"], {
+    main: lifecycleMain,
+    userData,
+    keep: true,
+    onFinding: (finding, child) => {
+      if (finding.event !== "instance-running") return;
+      second = (async () => {
+        const result = await runSecondAjour(userData);
+        // The first keeps running after the second is gone.
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+        result.rendererAlive = isAlive(finding.rendererPid);
+        result.recordHeld = await recordLists(userData, finding.rendererPid);
+        // Only the process this script started.
+        child.kill("SIGKILL");
+        return result;
+      })();
+    },
+  });
+  if (first.findings.error) {
+    process.stdout.write(`${first.findings.error.error}\n`);
+  }
+  const running = first.findings["instance-running"] ?? {};
+  expect(
+    running.hadLock === true &&
+      Number.isInteger(running.rendererPid) &&
+      running.rendererOpen === true &&
+      running.recorded === true,
+    "the first Ajour holds the lock, with a plugin renderer open and recorded",
+    running,
+  );
+  const outcome = (await second) ?? {};
+  expect(
+    outcome.exit?.code === 0,
+    "the second Ajour quits by itself",
+    outcome.exit,
+  );
+  expect(
+    outcome.stdout?.includes('"app.lock_refused"') &&
+      !outcome.stdout.includes("plugin_renderer.sweep"),
+    "it says it lost the lock, and runs no sweep",
+    { stdout: outcome.stdout, stderr: outcome.stderr },
+  );
+  expect(
+    outcome.rendererAlive === true && outcome.recordHeld === true,
+    "the first Ajour's renderer still runs after that, and is still in the record",
+    outcome,
+  );
+  const heartbeat = first.findings["instance-heartbeat"] ?? {};
+  expect(
+    heartbeat.rendererOpen === true && heartbeat.recorded === true,
+    "the first Ajour still has its renderer open",
+    heartbeat,
+  );
+  const left = await waitGone([running.rendererPid], 5_000);
+  expect(
+    left.length === 0,
+    "ending the first Ajour takes its renderer with it",
+    left,
+  );
+  await rm(userData, { recursive: true, force: true }).catch(() => undefined);
+}
+
+/** Whether the record in `userData` lists the process. */
+async function recordLists(userData, pid) {
+  try {
+    const record = JSON.parse(
+      await readFile(path.join(userData, "plugin-renderers.json"), "utf8"),
+    );
+    return record.processes.some((entry) => entry.pid === pid);
+  } catch {
+    return false;
+  }
+}
+
+/** Runs `electron/main.cjs` on `userData`, and waits for it to quit. */
+async function runSecondAjour(userData) {
+  const env = {
+    ...process.env,
+    AJOUR_USER_DATA_PATH: userData,
+    AJOUR_WIDE_EVENTS: "console",
+  };
+  delete env.ELECTRON_RUN_AS_NODE;
+  delete env.ELECTRON_DISABLE_SANDBOX;
+  const child = spawn(electron, [appMain], {
+    env,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stdout = "";
+  child.stdout.on("data", (chunk) => {
+    stdout = (stdout + chunk).slice(-20_000);
+  });
+  let stderr = "";
+  child.stderr.on("data", (chunk) => {
+    stderr = (stderr + chunk).slice(-4_000);
+  });
+  const exit = await new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      // Only the process this script started.
+      child.kill("SIGKILL");
+      resolve({ code: "timeout" });
+    }, 60_000);
+    child.once("exit", (code) => {
+      clearTimeout(timer);
+      resolve({ code });
+    });
+  });
+  return { exit, stdout, stderr };
+}
+
 // Windows and macOS run every section. Elsewhere plugins stay off (#381), so
 // the check proves only that.
 const sections = SANDBOXED_PLATFORMS.has(process.platform)
@@ -808,6 +1028,7 @@ const sections = SANDBOXED_PLATFORMS.has(process.platform)
       ["The renderer host's lifecycle", checkLifecycle],
       ["Orphans after a forced kill of main", checkOrphanSweep],
       ["A plugin's page and its view", checkViewCollection],
+      ["A second Ajour beside the first", checkSecondInstance],
     ]
   : [
       [

@@ -25,7 +25,10 @@
   "network": {
     "auth": { "scheme": "bearer", "secretField": "token" },
     "baseAddress": { "field": "baseUrl", "allowOnPremises": true },
-    "endpoints": [{ "method": "GET", "path": "/api/me" }],
+    "endpoints": [
+      { "method": "GET", "path": "/api/me" },
+      { "method": "GET", "path": "/api/**" }
+    ],
     "requestHeaders": ["Accept"]
   }
 }

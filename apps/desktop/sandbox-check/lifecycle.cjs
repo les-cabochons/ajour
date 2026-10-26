@@ -7,7 +7,10 @@
 //                   quit's drain, through the real runtime and local API;
 //   --orphan-spawn  opens a plugin renderer and a stand-in orphan, records
 //                   them as Ajour does, and waits for the script to kill it;
-//   --orphan-sweep  the next launch: the sweep ends what is left.
+//   --orphan-sweep  the next launch: the sweep ends what is left;
+//   --hold-instance an Ajour that holds the single-instance lock with a
+//                   plugin renderer open, for the script to start a second
+//                   Ajour beside.
 //
 // It never listens on Ajour's port, and ends only processes it started.
 "use strict";
@@ -182,7 +185,9 @@ async function crash(runtime, pluginId) {
     .find((contents) => contents.getOSProcessId() === pid)
     ?.forcefullyCrashRenderer();
   const outcome = await Promise.race([hold.settled, sleep(10_000)]);
-  return { pid, outcome: outcome ?? "no answer" };
+  // The OS says the crashed renderer's process ended.
+  const gone = await until(() => !isAlive(pid), 5_000);
+  return { pid, outcome: outcome ?? "no answer", gone };
 }
 
 async function lifecycle() {
@@ -308,15 +313,32 @@ async function lifecycle() {
     idleClosed,
   });
 
+  // The plugin's renderer process while `sync` runs, and whether the OS says
+  // it ended once the sync is over.
+  const withProcess = async (sync) => {
+    let pid;
+    const sampler = setInterval(() => {
+      pid ??= runtime.rendererProcessIds()["fixture-lifecycle"];
+    }, 20);
+    const outcome = await sync();
+    clearInterval(sampler);
+    await sleep(100);
+    return {
+      outcome,
+      pid: pid ?? null,
+      gone: pid !== undefined && (await until(() => !isAlive(pid), 5_000)),
+    };
+  };
+
   // 5. A call past its time closes the renderer: the first stop.
-  const timedOut = await hang();
-  await sleep(100);
+  const timedOutRun = await withProcess(hang);
+  const timedOut = timedOutRun.outcome;
   const afterTimeoutOpen =
     runtime.rendererProcessIds()["fixture-lifecycle"] !== undefined;
 
   // 6. Above the user's ceiling, 160 MB, the renderer closes: the second.
-  const ballooned = await balloon();
-  await sleep(100);
+  const balloonedRun = await withProcess(balloon);
+  const ballooned = balloonedRun.outcome;
   const afterMemoryOpen =
     runtime.rendererProcessIds()["fixture-lifecycle"] !== undefined;
   const memoryClose = emitted.find(
@@ -341,8 +363,10 @@ async function lifecycle() {
   const afterResume = await ok();
   report("crash-budget", {
     timedOut,
+    timedOutProcess: { pid: timedOutRun.pid, gone: timedOutRun.gone },
     afterTimeoutOpen,
     ballooned,
+    balloonedProcess: { pid: balloonedRun.pid, gone: balloonedRun.gone },
     afterMemoryOpen,
     memoryClose: memoryClose
       ? {
@@ -508,6 +532,41 @@ async function orphanSpawn() {
   setTimeout(() => app.exit(3), 60_000);
 }
 
+/**
+ * The first of two Ajours: it holds the lock, with a plugin renderer open
+ * and recorded, and says every half second whether the renderer is still
+ * its own and alive. The script starts the real main process beside it and
+ * ends this one.
+ */
+async function holdInstance() {
+  const events = await mainEvents();
+  const hadLock = app.requestSingleInstanceLock();
+  const runtime = makeRuntime(events);
+  startHold(runtime, "fixture-lifecycle", 120_000);
+  await until(
+    () => runtime.rendererProcessIds()["fixture-lifecycle"] !== undefined,
+  );
+  const rendererPid = runtime.rendererProcessIds()["fixture-lifecycle"];
+  const recordedPids = () =>
+    existsSync(recordPath)
+      ? JSON.parse(readFileSync(recordPath, "utf8")).processes.map(
+          (entry) => entry.pid,
+        )
+      : [];
+  const state = () => ({
+    mainPid: process.pid,
+    rendererPid,
+    rendererOpen:
+      runtime.rendererProcessIds()["fixture-lifecycle"] === rendererPid &&
+      isAlive(rendererPid),
+    recorded: recordedPids().includes(rendererPid),
+  });
+  report("instance-running", { hadLock, ...state() });
+  setInterval(() => report("instance-heartbeat", state()), 500);
+  // The script ends this process now.
+  setTimeout(() => app.exit(3), 90_000);
+}
+
 /** The next launch: the sweep, as main.cjs runs it after the lock. */
 async function orphanSweep() {
   const events = await mainEvents();
@@ -518,6 +577,7 @@ async function orphanSweep() {
   const startedAt = Date.now();
   const result = await sweepOrphanedRenderers({
     filePath: recordPath,
+    record: createProcessRecord(recordPath),
     platform: process.platform,
     execPath: process.execPath,
     events,
@@ -550,6 +610,7 @@ app
   .then(() => {
     if (process.argv.includes("--orphan-spawn")) return orphanSpawn();
     if (process.argv.includes("--orphan-sweep")) return orphanSweep();
+    if (process.argv.includes("--hold-instance")) return holdInstance();
     return lifecycle();
   })
   .catch((error) => {

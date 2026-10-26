@@ -160,7 +160,10 @@ jobs:
 
   # Decides whether a pull request can change what the desktop package holds,
   # and what the plugin sandbox check runs. Pushes and manual runs always
-  # package and check.
+  # package. The sandbox check runs for pull requests and manual runs only: a
+  # push to main starts the nightly release, which runs it on that commit
+  # before it publishes, so running it here too would run all three systems
+  # twice for every merge.
   desktop-changes:
     name: Desktop package changes
     runs-on: ubuntu-latest
@@ -183,7 +186,11 @@ jobs:
         run: |
           if [ "$EVENT" != "pull_request" ]; then
             echo "package=true" >> "$GITHUB_OUTPUT"
-            echo "sandbox=true" >> "$GITHUB_OUTPUT"
+            if [ "$EVENT" = "push" ]; then
+              echo "sandbox=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "sandbox=true" >> "$GITHUB_OUTPUT"
+            fi
             exit 0
           fi
           changed=$(git diff --name-only "origin/$BASE_REF...HEAD")
@@ -195,8 +202,9 @@ jobs:
           fi
           # The check runs main's plugin runtime, its IPC and its broker
           # transport (apps/desktop), the local API with the plugin host and
-          # the broker (apps/api), and the SDK and shared packages (packages).
-          if echo "$changed" | grep -qE '^(apps/desktop/|apps/api/|packages/|\.github/workflows/|pnpm-lock\.yaml$|package\.json$)'; then
+          # the broker (apps/api), and the SDK and shared packages (packages),
+          # and every file that decides how they resolve and compile.
+          if echo "$changed" | grep -qE '^(apps/desktop/|apps/api/|packages/|\.github/workflows/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|tsconfig\.base\.json$|package\.json$)'; then
             echo "sandbox=true" >> "$GITHUB_OUTPUT"
           else
             echo "sandbox=false" >> "$GITHUB_OUTPUT"
@@ -278,3 +286,35 @@ jobs:
     needs: desktop-changes
     if: needs.desktop-changes.outputs.sandbox == 'true'
     uses: ./.github/workflows/plugin-sandbox.yml
+
+  # The one check to require on pull requests. The sandbox matrix is skipped
+  # for a change that cannot reach the plugin host, and a skipped job creates
+  # no check runs, so requiring the matrix checks themselves would stall every
+  # docs-only pull request. This job always runs: it passes when the suite was
+  # skipped or passed, and fails when the suite ran and failed or was cancelled.
+  plugin-sandbox-gate:
+    name: Plugin sandbox gate
+    needs:
+      - desktop-changes
+      - plugin-sandbox
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Pass when the suite passed or had nothing to check
+        env:
+          CHANGES: ${{ needs.desktop-changes.result }}
+          SANDBOX: ${{ needs.plugin-sandbox.result }}
+        run: |
+          echo "desktop-changes: $CHANGES, plugin-sandbox: $SANDBOX"
+          if [ "$CHANGES" != "success" ]; then
+            echo "The change filter did not finish, so the gate cannot tell." >&2
+            exit 1
+          fi
+          case "$SANDBOX" in
+            success | skipped) ;;
+            *)
+              echo "The plugin sandbox check ended as $SANDBOX." >&2
+              exit 1
+              ;;
+          esac

@@ -1172,12 +1172,18 @@ function internalAppApiBrokerNetwork() {
 }
 
 /**
- * The launch's sweep of plugin renderers a previous session left running,
- * started right after the single-instance lock. No plugin renderer opens
- * before it ends.
+ * The record of live plugin renderers' processes, one for the session: the
+ * launch's sweep and the runtime write the same file.
+ *
+ * @type {ReturnType<typeof createProcessRecord> | undefined}
  */
-/** @type {Promise<unknown>} */
-let pluginRendererSweep = Promise.resolve();
+let pluginProcessRecord;
+function pluginRendererProcessRecord() {
+  pluginProcessRecord ??= createProcessRecord(
+    path.join(app.getPath("userData"), PROCESS_RECORD_FILE),
+  );
+  return pluginProcessRecord;
+}
 
 /**
  * The runtime that runs plugin API 4 packages, each in a sandboxed renderer
@@ -1205,10 +1211,7 @@ function internalAppApiPluginApi4Runtime() {
       platform: process.platform,
       inspectorActive: require("node:inspector").url() !== undefined,
     }),
-    processRecord: createProcessRecord(
-      path.join(app.getPath("userData"), PROCESS_RECORD_FILE),
-    ),
-    whenSwept: pluginRendererSweep,
+    processRecord: pluginRendererProcessRecord(),
   });
   return pluginRendererRuntime;
 }
@@ -1809,9 +1812,12 @@ if (!hasSingleInstanceLock) {
   void whenEventsReady(INTERNAL_APP_API_STOP_TIMEOUT_MS).then(() => app.quit());
 } else {
   // Only this process holds the lock, so a plugin renderer a previous
-  // session recorded and left running is an orphan: it ends now.
-  pluginRendererSweep = sweepOrphanedRenderers({
+  // session recorded and left running is an orphan: it ends now. No plugin
+  // renderer waits for it, and its answer from a slow system can take as
+  // long as it needs: what it couldn't settle stays in the record.
+  void sweepOrphanedRenderers({
     filePath: path.join(app.getPath("userData"), PROCESS_RECORD_FILE),
+    record: pluginRendererProcessRecord(),
     platform: process.platform,
     execPath: process.execPath,
     events,
