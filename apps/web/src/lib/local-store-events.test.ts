@@ -585,6 +585,40 @@ describe("store command catalog fields", () => {
     ]);
     expect(JSON.stringify(sink.events)).not.toContain("Atlas");
   });
+
+  it("a schema's tasks import counts its changes, and a file for another project names neither", async () => {
+    const { sink, localStore } = await loadStore();
+    const project = localStore.snapshot().projects[0]!;
+
+    localStore.importProjectDataShapeTasks(
+      project._id,
+      "workday-project-data",
+      [{ status: "active", tasks: [{ name: "Billet 101" }] }],
+    );
+    expect(() =>
+      localStore.importProjectDataShapeTasks(
+        project._id,
+        "workday-project-data",
+        [{ name: "Apollo", status: "active", tasks: [] }],
+      ),
+    ).toThrow("This file is for another project.");
+
+    expect(eventNamed(sink.events, "task.import")).toMatchObject([
+      {
+        outcome: "ok",
+        project: { id: project._id },
+        task_import: {
+          schema: "workday-project-data",
+          imported_count: 1,
+          updated_count: 0,
+        },
+      },
+      { outcome: "error" },
+    ]);
+    expect(JSON.stringify(sink.events)).not.toContain("Apollo");
+    expect(JSON.stringify(sink.events)).not.toContain(project.name);
+    expect(JSON.stringify(sink.events)).not.toContain("Billet 101");
+  });
 });
 
 describe("preferences, reloads and boot", () => {

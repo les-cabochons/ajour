@@ -33,10 +33,10 @@ import type { codeHostOperations } from "../../shared/code-host.ts";
 import type { calendarOperations } from "../../shared/calendar.ts";
 import type { backlogCommentOperations } from "../../shared/backlog-comments.ts";
 import type {
-  projectDataShapeDatasetSchema,
   projectDataShapeExportProjectSchema,
   projectDataShapeExportResponseSchema,
   projectDataShapeImportResponseSchema,
+  projectDataShapeSheetSchema,
 } from "../../shared/project-data-shapes.ts";
 
 type Input<Schema extends { _input: unknown }> = Schema["_input"];
@@ -109,8 +109,8 @@ export type DataShapeExportProject = Output<
 export type DataShapeExportResult = Input<
   typeof projectDataShapeExportResponseSchema
 >;
-/** A dataset as `importProjects` receives it. */
-export type DataShapeDataset = Output<typeof projectDataShapeDatasetSchema>;
+/** A sheet of the imported file, as `importProjects` receives it. */
+export type DataShapeSheet = Output<typeof projectDataShapeSheetSchema>;
 export type DataShapeImportResult = Input<
   typeof projectDataShapeImportResponseSchema
 >;

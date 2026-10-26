@@ -4,10 +4,10 @@ import type {
   BacklogSyncWorkItem,
   CalendarOperations,
   CodeHostOperations,
-  DataShapeDataset,
   DataShapeExportProject,
   DataShapeExportResult,
   DataShapeImportResult,
+  DataShapeSheet,
   PluginConnection,
   PluginHttpMethod,
   ReadDescriptionRequest,
@@ -149,12 +149,15 @@ export type PluginModule = {
   OperationHandlers<CalendarOperations> &
   OperationHandlers<BacklogCommentOperations>;
 
-/** What a project data shape plugin's entrypoint exports. */
+/**
+ * What a project data shape plugin's entrypoint exports. `exportProjects` is
+ * needed only when the manifest declares datasets, its export layout.
+ */
 export interface DataShapeModule {
   exportProjects?: (
     projects: DataShapeExportProject[],
   ) => Awaitable<DataShapeExportResult>;
   importProjects?: (
-    datasets: DataShapeDataset[],
+    sheets: DataShapeSheet[],
   ) => Awaitable<DataShapeImportResult>;
 }
