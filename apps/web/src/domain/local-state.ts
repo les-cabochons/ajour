@@ -30,6 +30,8 @@ export interface LocalProject {
   icon: LocalProjectIcon;
   status: "active" | "archived";
   tasks: LocalProjectTask[];
+  /** When the user starred the project. Personal, like pinned slots. See getFavorites. */
+  favoritedAt?: number;
   /** Present on a shared project: the team it belongs to. See team-sync.ts. */
   team?: LocalProjectTeamLink;
 }
@@ -87,6 +89,8 @@ export interface LocalProjectTask {
   adjustmentMs?: number;
   /** The number key that opens or starts this pinned task. One task holds a slot at most. */
   pinnedSlot?: PinnedTaskSlot;
+  /** When the user starred the task. Personal, like the pinned slot. See getFavorites. */
+  favoritedAt?: number;
   team?: LocalTaskTeamLink;
 }
 

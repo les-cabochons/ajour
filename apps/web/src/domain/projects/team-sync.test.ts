@@ -198,11 +198,14 @@ describe("planning a team sync", () => {
     ).toEqual([]);
   });
 
-  it("leaves personal fields out: pinned slots, adjustments, plugin properties", () => {
-    const project = syncedProject("p1", { tasks: [localTask("t1")] });
+  it("leaves personal fields out: pinned slots, adjustments, plugin properties, favorites", () => {
+    const project = syncedProject("p1", {
+      tasks: [localTask("t1", { favoritedAt: 7 })],
+    });
     const edited = updateProjectTask(
       updateProject([project], "p1", {
         pluginProperties: { workday: { code: "CA004" } },
+        favoritedAt: 8,
       }),
       "p1",
       "t1",
@@ -387,22 +390,30 @@ describe("applying a team sync", () => {
   });
 
   it("keeps personal fields when the team changes a task", () => {
-    const task = localTask("t1", { pinnedSlot: "3", adjustmentMs: 900_000 });
+    const task = localTask("t1", {
+      pinnedSlot: "3",
+      adjustmentMs: 900_000,
+      favoritedAt: 7,
+    });
     const next = applyTeamSync(
-      stateOf([syncedProject("p1", { tasks: [task] })]),
+      stateOf([syncedProject("p1", { tasks: [task], favoritedAt: 8 })]),
       CONNECTION,
       [],
       syncResult([
-        teamProject(localProject("p1"), [{ ...teamTask(task), name: "QA" }]),
+        teamProject(localProject("p1", { name: "Renamed" }), [
+          { ...teamTask(task), name: "QA" },
+        ]),
       ]),
       createFactories(),
     );
 
+    expect(next.projects[0]).toMatchObject({ name: "Renamed", favoritedAt: 8 });
     expect(next.projects[0]?.tasks[0]).toMatchObject({
       _id: "t1",
       name: "QA",
       pinnedSlot: "3",
       adjustmentMs: 900_000,
+      favoritedAt: 7,
     });
   });
 
