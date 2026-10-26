@@ -126,7 +126,17 @@ export class ProjectDataShapePluginManager {
       "importProjects",
       async (record) => {
         const plugin = await this.getPlugin(pluginId, record);
-        const params = projectDataShapeImportRequestSchema.parse({ sheets });
+        let params: { sheets: ProjectDataShapeSheet[] };
+        try {
+          params = projectDataShapeImportRequestSchema.parse({ sheets });
+        } catch (error) {
+          // The file is past Ajour's limits: the user's input, not a fault.
+          // The message names the limit; the event holds the reason only.
+          throw new PluginOperationRefused(
+            error instanceof Error ? error.message : String(error),
+            "invalid_request",
+          );
+        }
         return {
           invocation: this.invocation(plugin, "importProjects", params),
           parse: (result: unknown) =>

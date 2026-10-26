@@ -65,6 +65,99 @@ function findProjectTaskByName(project: LocalProject, taskName: string) {
   );
 }
 
+/** A task as a file describes it. A field the file leaves out keeps Ajour's value. */
+interface ImportedTask {
+  name: string;
+  status?: ProjectTransferStatus;
+  billable?: boolean;
+  budgetMs?: number;
+  adjustmentMs?: number;
+}
+
+/**
+ * Adds `task` to `tasks`, or merges it into the task of the same name: its
+ * fields win, except those it leaves out.
+ */
+function addImportedTask(tasks: ImportedTask[], task: ImportedTask) {
+  const taskKey = normalizeTaskImportName(task.name);
+  const existingTaskIndex = tasks.findIndex(
+    (candidate) => normalizeTaskImportName(candidate.name) === taskKey,
+  );
+  if (existingTaskIndex < 0) {
+    tasks.push(task);
+    return;
+  }
+  tasks[existingTaskIndex] = {
+    ...tasks[existingTaskIndex]!,
+    ...Object.fromEntries(
+      Object.entries(task).filter(([, value]) => value !== undefined),
+    ),
+  };
+}
+
+/**
+ * Merges imported tasks into a project's tasks by name: a new name adds a
+ * task, and a known one takes the file's status, billable, budget and
+ * adjustment, keeping its own where the file has none.
+ */
+function mergeImportedTasks(
+  project: LocalProject,
+  importedTasks: ImportedTask[],
+  factories: Pick<ProjectImportFactories, "createTask" | "now">,
+) {
+  const tasks = [...project.tasks];
+  let addedTaskCount = 0;
+  let updatedTaskCount = 0;
+
+  for (const importedTask of importedTasks) {
+    const existingTask = findProjectTaskByName(project, importedTask.name);
+    if (!existingTask) {
+      tasks.push(factories.createTask(importedTask));
+      addedTaskCount += 1;
+      continue;
+    }
+
+    const status = importedTask.status ?? existingTask.status;
+    const budgetMs =
+      importedTask.budgetMs === undefined
+        ? existingTask.budgetMs
+        : normalizeProjectTaskBudgetMs(importedTask.budgetMs);
+    const adjustmentMs =
+      importedTask.adjustmentMs === undefined
+        ? existingTask.adjustmentMs
+        : normalizeProjectTaskAdjustmentMs(importedTask.adjustmentMs);
+    const billable = importedTask.billable ?? existingTask.billable ?? true;
+
+    if (
+      existingTask.status !== status ||
+      (existingTask.billable ?? true) !== billable ||
+      existingTask.budgetMs !== budgetMs ||
+      existingTask.adjustmentMs !== adjustmentMs
+    ) {
+      updatedTaskCount += 1;
+    }
+
+    const existingTaskIndex = tasks.findIndex(
+      (task) => task._id === existingTask._id,
+    );
+    if (existingTaskIndex >= 0) {
+      tasks[existingTaskIndex] = {
+        ...existingTask,
+        status,
+        archivedAt:
+          status === "archived"
+            ? (existingTask.archivedAt ?? factories.now())
+            : undefined,
+        billable,
+        budgetMs,
+        adjustmentMs,
+      };
+    }
+  }
+
+  return { tasks, addedTaskCount, updatedTaskCount };
+}
+
 function groupWorkbookRows(rows: ProjectTransferRow[]) {
   const grouped = new Map<
     string,
@@ -73,13 +166,7 @@ function groupWorkbookRows(rows: ProjectTransferRow[]) {
       code?: string;
       color?: string;
       status: ProjectTransferStatus;
-      tasks: Array<{
-        name: string;
-        status?: ProjectTransferStatus;
-        billable?: boolean;
-        budgetMs?: number;
-        adjustmentMs?: number;
-      }>;
+      tasks: ImportedTask[];
     }
   >();
 
@@ -104,11 +191,7 @@ function groupWorkbookRows(rows: ProjectTransferRow[]) {
 
     const taskName = formatTaskImportName(row.task);
     if (taskName) {
-      const taskKey = normalizeTaskImportName(taskName);
-      const existingTaskIndex = group.tasks.findIndex(
-        (task) => normalizeTaskImportName(task.name) === taskKey,
-      );
-      const task = {
+      addImportedTask(group.tasks, {
         name: taskName,
         status: row.taskStatus || undefined,
         billable: row.billable ? row.billable === "billable" : undefined,
@@ -120,19 +203,7 @@ function groupWorkbookRows(rows: ProjectTransferRow[]) {
             ? row.adjustmentHours
             : undefined,
         ),
-      } as const;
-
-      if (existingTaskIndex >= 0) {
-        const existingTask = group.tasks[existingTaskIndex]!;
-        group.tasks[existingTaskIndex] = {
-          ...existingTask,
-          ...Object.fromEntries(
-            Object.entries(task).filter(([, value]) => value !== undefined),
-          ),
-        };
-      } else {
-        group.tasks.push(task);
-      }
+      });
     }
 
     grouped.set(key, group);
@@ -225,55 +296,10 @@ export function importProjectWorkbookRows(
 
     result.mergedProjectCount += 1;
 
-    const nextTasks = [...existingProject.tasks];
-    for (const importedTask of group.tasks) {
-      const existingTask = findProjectTaskByName(
-        existingProject,
-        importedTask.name,
-      );
-      if (!existingTask) {
-        nextTasks.push(factories.createTask(importedTask));
-        result.addedTaskCount += 1;
-        continue;
-      }
-
-      const status = importedTask.status ?? existingTask.status;
-      const budgetMs =
-        importedTask.budgetMs === undefined
-          ? existingTask.budgetMs
-          : normalizeProjectTaskBudgetMs(importedTask.budgetMs);
-      const adjustmentMs =
-        importedTask.adjustmentMs === undefined
-          ? existingTask.adjustmentMs
-          : normalizeProjectTaskAdjustmentMs(importedTask.adjustmentMs);
-      const billable = importedTask.billable ?? existingTask.billable ?? true;
-
-      if (
-        existingTask.status !== status ||
-        (existingTask.billable ?? true) !== billable ||
-        existingTask.budgetMs !== budgetMs ||
-        existingTask.adjustmentMs !== adjustmentMs
-      ) {
-        result.updatedTaskCount += 1;
-      }
-
-      const existingTaskIndex = nextTasks.findIndex(
-        (task) => task._id === existingTask._id,
-      );
-      if (existingTaskIndex >= 0) {
-        nextTasks[existingTaskIndex] = {
-          ...existingTask,
-          status,
-          archivedAt:
-            status === "archived"
-              ? (existingTask.archivedAt ?? factories.now())
-              : undefined,
-          billable,
-          budgetMs,
-          adjustmentMs,
-        };
-      }
-    }
+    const merged = mergeImportedTasks(existingProject, group.tasks, factories);
+    const nextTasks = merged.tasks;
+    result.addedTaskCount += merged.addedTaskCount;
+    result.updatedTaskCount += merged.updatedTaskCount;
 
     const projectIndex = nextProjects.findIndex(
       (project) => project._id === existingProject._id,
@@ -297,12 +323,30 @@ export function importProjectWorkbookRows(
   return { projects: nextProjects, result };
 }
 
+/** The tasks a project gained and changed from an Import tasks… file. */
+export interface ProjectTaskMergeResult {
+  addedTaskCount: number;
+  updatedTaskCount: number;
+}
+
+/**
+ * Merges projects a schema read from a file, by name. A project without a
+ * name refuses the whole file: only Import tasks… on a project takes it.
+ */
 export function importProjectDataShapeProjects(
   projects: LocalProject[],
   importedProjects: ProjectDataShapeImportProject[],
   factories: ProjectImportFactories,
 ) {
-  const rows = importedProjects.flatMap<ProjectTransferRow>((project) => {
+  const namedProjects = importedProjects.map(({ name, ...project }) => {
+    if (name === undefined) {
+      throw new Error(
+        "This file doesn't name its project. Open the project in Ajour and use Import tasks… instead.",
+      );
+    }
+    return { ...project, name };
+  });
+  const rows = namedProjects.flatMap<ProjectTransferRow>((project) => {
     if (project.tasks.length === 0) {
       return [
         {
@@ -338,4 +382,56 @@ export function importProjectDataShapeProjects(
   });
 
   return importProjectWorkbookRows(projects, rows, factories);
+}
+
+/**
+ * Merges the tasks of one project a schema read from a file into the project
+ * `projectId`, by name, as a project import would. The file must hold one
+ * project. A name it gives must be this project's, so another project's file
+ * changes nothing.
+ */
+export function importProjectDataShapeTasks(
+  projects: LocalProject[],
+  projectId: string,
+  importedProjects: ProjectDataShapeImportProject[],
+  factories: Pick<ProjectImportFactories, "createTask" | "now">,
+): ProjectImportOperation<ProjectTaskMergeResult> {
+  const project = projects.find((item) => item._id === projectId);
+  if (!project) {
+    throw new Error("Project not found.");
+  }
+  const [importedProject, ...otherProjects] = importedProjects;
+  if (!importedProject || otherProjects.length > 0) {
+    throw new Error(
+      `This file holds ${importedProjects.length} projects. Import tasks… takes a file with one project.`,
+    );
+  }
+  if (
+    importedProject.name !== undefined &&
+    normalizeTaskImportName(importedProject.name) !==
+      normalizeTaskImportName(project.name)
+  ) {
+    throw new Error(
+      `This file is for ${formatTaskImportName(importedProject.name)}, not ${project.name}.`,
+    );
+  }
+
+  const importedTasks: ImportedTask[] = [];
+  for (const task of importedProject.tasks) {
+    const name = formatTaskImportName(task.name);
+    if (name) {
+      addImportedTask(importedTasks, { ...task, name });
+    }
+  }
+  const merged = mergeImportedTasks(project, importedTasks, factories);
+
+  return {
+    projects: projects.map((item) =>
+      item._id === projectId ? { ...item, tasks: merged.tasks } : item,
+    ),
+    result: {
+      addedTaskCount: merged.addedTaskCount,
+      updatedTaskCount: merged.updatedTaskCount,
+    },
+  };
 }

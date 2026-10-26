@@ -1,6 +1,6 @@
 import { webcrypto } from "node:crypto";
 import ExcelJS from "exceljs";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { extractTaskNamesFromWorkbook } from "./project-task-import";
 
 async function buildWorkbookBuffer(
@@ -64,6 +64,84 @@ describe("extractTaskNamesFromWorkbook", () => {
       blankCount: 1,
       headerCount: 1,
     });
+  });
+});
+
+describe("importTasksFromWorkbook", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubGlobal("crypto", {
+      getRandomValues: webcrypto.getRandomValues.bind(webcrypto),
+      randomUUID: vi.fn(() => `uuid-${Math.random().toString(16).slice(2)}`),
+    });
+    installMockWindow();
+  });
+
+  afterEach(() => {
+    vi.doUnmock("@/lib/app-api");
+  });
+
+  it("has the schema picked in Settings read the file, then merges its tasks", async () => {
+    const importProjectsWithDataShape = vi.fn(async () => ({
+      projects: [
+        {
+          status: "active" as const,
+          tasks: [
+            { name: "Billet 101", billable: false },
+            { name: "existing task", status: "archived" as const },
+          ],
+        },
+      ],
+    }));
+    vi.doMock("@/lib/app-api", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("@/lib/app-api")>()),
+      getProjectDataShapePlugins: vi.fn(async () => [
+        { id: "workday-project-data" },
+      ]),
+      importProjectsWithDataShape,
+    }));
+    const { localStore } = await import("../../lib/local-store");
+    const { importTasksFromWorkbook } = await import("./project-task-import");
+    localStore.createTeam("Local Team", "local-team", [
+      {
+        name: "Project Mercury",
+        color: "#123456",
+        tasks: [{ name: "Existing Task" }],
+      },
+    ]);
+    localStore.setUserPreferences({
+      projectDataShapeId: "workday-project-data",
+    });
+    const projectId = localStore.snapshot().projects[0]!._id;
+    const buffer = await buildWorkbookBuffer({
+      name: "Plan",
+      rows: [["Numéro", "Phase/tâche", "Nom personnalisé de la tâche"]],
+    });
+
+    await expect(
+      importTasksFromWorkbook(projectId, buffer as ArrayBuffer),
+    ).resolves.toBe("Imported 1 task, updated 1 task.");
+    expect(importProjectsWithDataShape).toHaveBeenCalledWith(
+      "workday-project-data",
+      [
+        {
+          name: "Plan",
+          rows: [["Numéro", "Phase/tâche", "Nom personnalisé de la tâche"]],
+        },
+      ],
+    );
+    expect(
+      localStore
+        .snapshot()
+        .projects[0]!.tasks.map(({ name, status, billable }) => [
+          name,
+          status,
+          billable,
+        ]),
+    ).toEqual([
+      ["Existing Task", "archived", true],
+      ["Billet 101", "active", false],
+    ]);
   });
 });
 

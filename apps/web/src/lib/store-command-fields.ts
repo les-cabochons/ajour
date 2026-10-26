@@ -11,7 +11,10 @@ import type {
   UserPreferences,
 } from "@/domain/local-state";
 import type { LocalStateUndo } from "@/domain/local-state-undo";
-import type { ProjectWorkbookImportResult } from "@/domain/projects/project-import";
+import type {
+  ProjectTaskMergeResult,
+  ProjectWorkbookImportResult,
+} from "@/domain/projects/project-import";
 import type { ProjectTaskImportResult } from "@/domain/projects/task-import";
 import type { TeamShareResult } from "@/domain/projects/team-sync";
 import type { CalendarAcceptResult } from "@/domain/time/calendar-suggestions";
@@ -263,10 +266,26 @@ export function describeTaskImport(
   describeStoreCommand("task.import", {
     project: { id: projectId },
     task_import: {
+      schema: "default",
       imported_count: result.importedCount,
       duplicate_count: result.duplicateCount,
       blank_count: result.blankCount,
       header_count: result.headerCount,
+    },
+  });
+}
+
+export function describeSchemaTaskImport(
+  projectId: string,
+  schema: string,
+  result: ProjectTaskMergeResult,
+) {
+  describeStoreCommand("task.import", {
+    project: { id: projectId },
+    task_import: {
+      schema,
+      imported_count: result.addedTaskCount,
+      updated_count: result.updatedTaskCount,
     },
   });
 }

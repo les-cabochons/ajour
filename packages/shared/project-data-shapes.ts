@@ -133,6 +133,13 @@ export type ProjectDataShapeDataset = z.infer<
   typeof projectDataShapeDatasetSchema
 >;
 
+/** The most an imported file may hold: sheets, rows per sheet, cells per row. */
+export const PROJECT_DATA_SHAPE_IMPORT_LIMITS = {
+  sheets: 100,
+  rows: 100_000,
+  cells: 1_000,
+} as const;
+
 /**
  * One worksheet of an imported file, as Ajour read it: every row from the
  * first, each cell from column A to the row's last value. Ajour sends every
@@ -140,7 +147,13 @@ export type ProjectDataShapeDataset = z.infer<
  */
 export const projectDataShapeSheetSchema = z.object({
   name: z.string().max(255),
-  rows: z.array(z.array(projectDataShapeCellSchema).max(1_000)).max(100_000),
+  rows: z
+    .array(
+      z
+        .array(projectDataShapeCellSchema)
+        .max(PROJECT_DATA_SHAPE_IMPORT_LIMITS.cells),
+    )
+    .max(PROJECT_DATA_SHAPE_IMPORT_LIMITS.rows),
 });
 export type ProjectDataShapeSheet = z.infer<typeof projectDataShapeSheetSchema>;
 
@@ -220,7 +233,10 @@ export type ProjectDataShapeExportResponse = z.infer<
 >;
 
 export const projectDataShapeImportRequestSchema = z.object({
-  sheets: z.array(projectDataShapeSheetSchema).min(1).max(100),
+  sheets: z
+    .array(projectDataShapeSheetSchema)
+    .min(1)
+    .max(PROJECT_DATA_SHAPE_IMPORT_LIMITS.sheets),
 });
 export type ProjectDataShapeImportRequest = z.infer<
   typeof projectDataShapeImportRequestSchema

@@ -55,8 +55,8 @@ import {
   projectDataShapeImportRequestSchema,
   projectDataShapeImportResponseSchema,
   projectDataShapeListResponseSchema,
-  type ProjectDataShapeDataset,
   type ProjectDataShapeExportProject,
+  type ProjectDataShapeSheet,
 } from "@ajour/shared";
 import {
   agentsSnapshotSchema,
@@ -688,11 +688,12 @@ export function exportProjectsWithDataShape(
   );
 }
 
+/** Has a schema plugin map a file's sheets to projects. */
 export function importProjectsWithDataShape(
   pluginId: string,
-  datasets: ProjectDataShapeDataset[],
+  sheets: ProjectDataShapeSheet[],
 ) {
-  const payload = projectDataShapeImportRequestSchema.parse({ datasets });
+  const payload = projectDataShapeImportRequestSchema.parse({ sheets });
   return appApiRequest(
     "importProjectsWithDataShape",
     `/api/project-data-shapes/${encodeURIComponent(pluginId)}/import`,
