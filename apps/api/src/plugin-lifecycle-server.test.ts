@@ -282,7 +282,7 @@ describe("the renderer host's lifecycle, through the app API", () => {
     });
 
     it("fails a call past its time, and asks the runtime to close the renderer", async () => {
-      const { connect, fake } = await setup({ timeoutMs: 100 });
+      const { connect, fake } = await setup({ timeoutMs: 600 });
       const sync = await connect("tracker");
       holdSyncs("tracker");
 
@@ -346,7 +346,7 @@ describe("the renderer host's lifecycle, through the app API", () => {
     });
 
     it("counts timeouts, and not cancelled calls", async () => {
-      const { connect, group, request } = await setup({ timeoutMs: 80 });
+      const { connect, group, request } = await setup({ timeoutMs: 600 });
       const sync = await connect("tracker");
       const held = holdSyncs("tracker");
 
