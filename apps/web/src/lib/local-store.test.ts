@@ -4025,3 +4025,45 @@ describe("localStore description timelog", () => {
     expect(localStore.snapshot().workItems).toEqual(before.workItems);
   });
 });
+
+describe("localStore favorites", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubGlobal("crypto", {
+      getRandomValues: webcrypto.getRandomValues.bind(webcrypto),
+      randomUUID: vi.fn(() => `uuid-${Math.random().toString(16).slice(2)}`),
+    });
+    installMockWindow();
+  });
+
+  it("offers Undo for a removed star, which brings back its place", async () => {
+    const { localStore } = await import("./local-store");
+    const projectId = localStore.addProject({
+      name: "Atlas",
+      color: "#123456",
+      icon: { kind: "preset", name: "dot" },
+      tasks: [{ name: "Development" }],
+    });
+    const atlas = () =>
+      localStore
+        .snapshot()
+        .projects.find((project) => project._id === projectId)!;
+    const taskId = atlas().tasks[0]!._id;
+
+    expect(
+      localStore.setProjectTaskFavorite(projectId, taskId, true),
+    ).toBeNull();
+    const starred = atlas().tasks[0]!.favoritedAt;
+    expect(starred).toEqual(expect.any(Number));
+
+    const token = localStore.setProjectTaskFavorite(projectId, taskId, false);
+    expect(atlas().tasks[0]!.favoritedAt).toBeUndefined();
+    expect(localStore.undo(token!)).toBe("restored");
+    expect(atlas().tasks[0]!.favoritedAt).toBe(starred);
+
+    expect(localStore.setProjectFavorite(projectId, true)).toBeNull();
+    const projectToken = localStore.setProjectFavorite(projectId, false);
+    expect(localStore.undo(projectToken!)).toBe("restored");
+    expect(atlas().favoritedAt).toEqual(expect.any(Number));
+  });
+});

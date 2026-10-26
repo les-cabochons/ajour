@@ -31,6 +31,10 @@ import {
   type FocusedObjectRef,
 } from "@/lib/focused-object";
 import { useLocalState } from "@/lib/local-hooks";
+import {
+  setProjectFavorite,
+  setTaskFavorite,
+} from "@/features/projects/favorites";
 import { localStore } from "@/lib/local-store";
 import { useShortcut, useShortcutRunner } from "@/lib/shortcut-handlers";
 import { SHORTCUTS, getShortcutPlatform } from "@/lib/shortcuts";
@@ -225,7 +229,7 @@ export function CommandPalette() {
           command.actionId === "favorite" ||
           command.actionId === "unfavorite"
         ) {
-          localStore.setProjectTaskFavorite(
+          setTaskFavorite(
             command.projectId,
             command.taskId,
             command.actionId === "favorite",
@@ -255,7 +259,7 @@ export function CommandPalette() {
           command.actionId === "favorite" ||
           command.actionId === "unfavorite"
         ) {
-          localStore.setProjectFavorite(
+          setProjectFavorite(
             command.projectId,
             command.actionId === "favorite",
           );

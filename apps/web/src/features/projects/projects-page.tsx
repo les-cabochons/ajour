@@ -85,6 +85,10 @@ import {
 } from "@/lib/item-keys";
 import { useCurrentTeam } from "@/lib/session";
 import { useLocalState } from "@/lib/local-hooks";
+import {
+  setProjectFavorite,
+  setTaskFavorite,
+} from "@/features/projects/favorites";
 import { localStore } from "@/lib/local-store";
 import { withEventAttribution } from "@/lib/wide-events";
 import {
@@ -808,11 +812,7 @@ function ProjectDetail({
           return;
         case "favorite":
         case "unfavorite":
-          localStore.setProjectTaskFavorite(
-            project._id,
-            task._id,
-            actionId === "favorite",
-          );
+          setTaskFavorite(project._id, task._id, actionId === "favorite");
           return;
         case "archive":
           offerUndo(localStore.archiveProjectTask(project._id, task._id), {
@@ -1951,7 +1951,7 @@ export function ProjectsPage() {
           return;
         case "favorite":
         case "unfavorite":
-          localStore.setProjectFavorite(project._id, actionId === "favorite");
+          setProjectFavorite(project._id, actionId === "favorite");
           return;
         case "archive":
           offerUndo(localStore.archiveProject(project._id), {
