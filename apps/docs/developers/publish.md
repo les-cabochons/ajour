@@ -38,7 +38,7 @@ For testing, or for people who don't add your source, build an archive:
 node scripts/ajour-source.mjs package <folder>
 ```
 
-It writes `package/<id>-<version>.ajour-connector`: a gzip tar archive of the files your plugin lists, with `plugin.json` at its root. Users install it with **Install from file**, once they allowed unsigned plugins. A plugin installed from a file starts active, and one downloaded from a source starts off. Installing a newer file with the same `id` replaces the plugin and keeps its connections and whether it was on. A capability that the update adds starts off, if the plugin has more than one that the user can turn on and off.
+It writes `package/<id>-<version>.ajour-connector`: a gzip tar archive of the files your plugin lists, with `plugin.json` at its root. Users install it with **Install from file**, once they allowed unsigned plugins. A first install starts off, whether it comes from a file or is downloaded from a source. Installing a newer file with the same `id` replaces the plugin and keeps its connections and whether it was on. A capability that the update adds starts off, if the plugin has more than one that the user can turn on and off.
 
 ## When the plugin API changes
 

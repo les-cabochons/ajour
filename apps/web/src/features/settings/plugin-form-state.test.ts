@@ -6,6 +6,7 @@ import {
   areExpiryDraftsValid,
   buildExpiryDrafts,
   buildPluginFormValues,
+  connectionSaveBlock,
   canSubmitPluginForm,
   expiryForSave,
   isPluginFieldShown,
@@ -319,5 +320,70 @@ describe("plugin form state", () => {
         initialValues,
       ),
     ).toBe(false);
+  });
+});
+
+describe("connectionSaveBlock", () => {
+  it("lets a save through on a plugin that is on", () => {
+    expect(connectionSaveBlock({ enabled: true }, true)).toBeUndefined();
+  });
+
+  it("names Activate as the way out of an inactive plugin", () => {
+    expect(connectionSaveBlock({ enabled: false }, true)).toEqual({
+      reason: "plugin_off",
+      hint: "Activate this plugin to save a connection.",
+    });
+  });
+
+  it("names Allow and activate as the way out of a plugin held for more access", () => {
+    expect(
+      connectionSaveBlock(
+        {
+          enabled: false,
+          pendingAccess: {
+            version: "1.1.0",
+            difference: {},
+          },
+        } as Parameters<typeof connectionSaveBlock>[0],
+        true,
+      ),
+    ).toEqual({
+      reason: "needs_consent",
+      hint: "Press Allow and activate to save a connection.",
+    });
+  });
+
+  it("names Deactivate unsigned plugins as the way out for an unsigned plugin while they are off", () => {
+    const unsigned = { enabled: false, plugin: {} };
+    expect(connectionSaveBlock(unsigned, true, false)).toEqual({
+      reason: "unsigned_off",
+      hint: "Turn off Deactivate unsigned plugins to save a connection.",
+    });
+    expect(connectionSaveBlock(unsigned, true, true)?.reason).toBe(
+      "plugin_off",
+    );
+    expect(
+      connectionSaveBlock(
+        {
+          enabled: true,
+          plugin: {
+            origin: {
+              kind: "source",
+              signed: true,
+              installedAt: "2026-10-24T12:00:00.000Z",
+            },
+          },
+        },
+        true,
+        false,
+      ),
+    ).toBeUndefined();
+  });
+
+  it("asks for the plugin system, not the plugin, while the whole system is off", () => {
+    expect(connectionSaveBlock({ enabled: true }, false)).toEqual({
+      reason: "system_off",
+      hint: "Enable the plugin system to save a connection.",
+    });
   });
 });

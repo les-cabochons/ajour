@@ -159,7 +159,7 @@ describe("plugins and their sandbox, through the app API", () => {
     });
   });
 
-  it("counts what the sandbox blocked as the plugin's blocked attempts", async () => {
+  it("counts what the sandbox blocked as the plugin's attempts to connect directly, apart from refusals", async () => {
     const { runtime, state } = sandboxedRuntime();
     const { statePath } = await setup(runtime);
 
@@ -168,9 +168,9 @@ describe("plugins and their sandbox, through the app API", () => {
     const saved = JSON.parse(await readFile(statePath, "utf8")) as {
       pluginBrokerActivity: Record<string, unknown>;
     };
-    expect(saved.pluginBrokerActivity.tracker).toMatchObject({
-      blockedCount: 1,
-      lastBlockedAt: 1_700_000_000_000,
+    expect(saved.pluginBrokerActivity.tracker).toEqual({
+      directBlockedCount: 1,
+      lastDirectBlockedAt: 1_700_000_000_000,
     });
   });
 

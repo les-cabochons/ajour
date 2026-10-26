@@ -107,7 +107,12 @@ const requestReasons = [
  * Why a plugin activation or capability check refuses work. They double as
  * plugin operation reasons, so a request and its operation say the same.
  */
-const inactiveReasons = ["system_off", "plugin_off", "capability_off"] as const;
+const inactiveReasons = [
+  "system_off",
+  "plugin_off",
+  "needs_consent",
+  "capability_off",
+] as const;
 
 /**
  * What every `plugin_operation` event carries: one worker run, in the plugin
@@ -548,7 +553,13 @@ export const catalog = defineCatalog({
     /** A plugin, or one of its capabilities, turned on or off. */
     "plugin.activate": {
       kinds: ["command", "request"],
-      reasons: ["not_installed", "not_supported", ...requestReasons],
+      reasons: [
+        "not_installed",
+        "not_supported",
+        /** The plugin was updated since the user reviewed its access. */
+        "version_changed",
+        ...requestReasons,
+      ],
       fields: {
         ...requestFields,
         plugin: { id: operational() },

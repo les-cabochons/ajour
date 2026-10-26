@@ -1,6 +1,7 @@
 import type { syncTeamConnection, TeamSyncOutcome } from "@/lib/team-sync";
 import type * as appApi from "@/lib/app-api";
 import type { LocalAppState } from "@/domain/local-state";
+import { connectionSaveBlock } from "./plugin-form-state";
 import {
   connectionAllowsOperation,
   ESTIMATE_PUSH_OPERATION,
@@ -22,6 +23,19 @@ import type {
   ProjectDataShapePluginManifest,
   SwitchableCapability,
 } from "@ajour/shared";
+
+/**
+ * The sentence an install or update adds when it left the plugin off, waiting
+ * for the user to allow the access it added.
+ */
+function needsMoreAccess(overview: PluginsOverview, pluginId: string) {
+  const pending = overview.connectionGroups.find(
+    (group) => group.plugin.id === pluginId,
+  )?.pendingAccess;
+  return pending
+    ? ` It needs more access and stays inactive until you allow it.`
+    : "";
+}
 
 type HeldConnection = { pluginId: string; connectionId: string };
 
@@ -339,6 +353,25 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
     }
   }
 
+  /**
+   * Whether the overview says the server will refuse a save for the plugin.
+   * A plugin the overview doesn't list counts as one that won't refuse:
+   * holding is the safe side.
+   */
+  function saveIsBlocked(pluginId: string) {
+    const group = snapshot.overview?.connectionGroups.find(
+      (candidate) => candidate.plugin.id === pluginId,
+    );
+    return (
+      group !== undefined &&
+      connectionSaveBlock(
+        group,
+        snapshot.overview?.pluginsEnabled !== false,
+        snapshot.overview?.unsignedPluginsEnabled !== false,
+      ) !== undefined
+    );
+  }
+
   /** The connection's label, for status lines. */
   function connectionLabel(command: {
     pluginId: string;
@@ -412,10 +445,15 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
     try {
       switch (command.type) {
         case "activate": {
+          // Turning the plugin on allows the access its page listed, for the
+          // version the page showed: the API refuses if another is installed.
           const overview = await deps.setPluginEnabled(
             command.plugin.id,
             command.enabled,
             command.capability,
+            command.enabled && !command.capability
+              ? command.plugin.version
+              : undefined,
           );
           finish(
             command.capability
@@ -428,9 +466,13 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
         case "save": {
           // Turning editing on is not approval to send what was held. Every
           // estimate the connection would upload is held before the save
-          // goes, so a sync during it, or a quit, sends none of them.
+          // goes, so a sync during it, or a quit, sends none of them. A save
+          // the server will refuse, as the plugin is off or held for consent,
+          // changes nothing, so it holds nothing either.
           const held =
-            command.connectionId && turnsEditingOn(command)
+            command.connectionId &&
+            turnsEditingOn(command) &&
+            !saveIsBlocked(command.pluginId)
               ? {
                   pluginId: command.pluginId,
                   connectionId: command.connectionId,
@@ -562,7 +604,7 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
           // A cancelled file picker returns null.
           if (!result) return false;
           finish(
-            `${result.plugin.displayName} ${result.plugin.version} ${result.replaced ? "replaced the installed plugin" : "installed"}.`,
+            `${result.plugin.displayName} ${result.plugin.version} ${result.replaced ? "replaced the installed plugin" : "installed"}.${needsMoreAccess(result.overview, result.plugin.id)}`,
             result.overview,
           );
           break;
@@ -627,8 +669,8 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
           // A download over an installed package is an update.
           finish(
             result.replaced
-              ? `${result.plugin.displayName} updated to ${result.plugin.version}.`
-              : `${result.plugin.displayName} ${result.plugin.version} downloaded. Activate it when you are ready to configure it.`,
+              ? `${result.plugin.displayName} updated to ${result.plugin.version}.${needsMoreAccess(result.overview, result.plugin.id)}`
+              : `${result.plugin.displayName} ${result.plugin.version} downloaded. Review its access, then activate it when you are ready.`,
             result.overview,
           );
           break;

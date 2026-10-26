@@ -7,6 +7,11 @@ import {
   backlogPersonSchema,
 } from "./backlog-comments.ts";
 import { projectDataShapeDefinitionSchema } from "./project-data-shapes.ts";
+import {
+  pluginAccessActivitySchema,
+  pluginAccessViewSchema,
+  pluginPendingAccessSchema,
+} from "./plugin-access-schemas.ts";
 
 export const PLUGIN_API_VERSION = 3;
 
@@ -698,6 +703,18 @@ export const pluginOverviewGroupSchema = z.object({
   inactiveCapabilities: z.array(switchableCapabilitySchema).optional(),
   connections: z.array(pluginConnectionSummarySchema),
   /**
+   * What the installed plugin reaches, for the Access section. Absent for a
+   * plugin that isn't installed or can't run.
+   */
+  access: pluginAccessViewSchema.optional(),
+  /**
+   * Set when an update added access the user hasn't allowed. The plugin is
+   * off until they allow it, and this lists only what is new.
+   */
+  pendingAccess: pluginPendingAccessSchema.optional(),
+  /** What the broker recorded for the plugin's requests. */
+  accessActivity: pluginAccessActivitySchema.optional(),
+  /**
    * The plugin's package is not installed: saved connections or secrets
    * outlived it, and `plugin` is a stand-in. Absent when it is installed,
    * even when it can't run.
@@ -793,6 +810,11 @@ export const unsignedPluginsActivationUpdateSchema = z.object({
 export const pluginActivationUpdateSchema = z.object({
   enabled: z.boolean(),
   capability: switchableCapabilitySchema.optional(),
+  /**
+   * The version whose access the user reviewed. Turning the plugin on is
+   * refused when another is installed now.
+   */
+  version: z.string().trim().min(1).max(200).optional(),
 });
 export type PluginActivationUpdate = z.infer<
   typeof pluginActivationUpdateSchema

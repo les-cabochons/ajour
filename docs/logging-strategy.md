@@ -406,7 +406,8 @@ The local API emits these (#305, #306):
   caller's text. Any other error a route throws ends it as an `error`.
 - **Each refusal says why.** A route refused because the plugin system, the
   plugin or the capability is off says which (`system_off`, `plugin_off`,
-  `capability_off`), as do a missing connection (`connection_not_found`), a
+  `capability_off`), and a plugin held for the user's consent says
+  `needs_consent`, as do a missing connection (`connection_not_found`), a
   feature the plugin doesn't declare (`not_supported`), and the agent
   routes' own reasons, such as `not_running`. An outcome the handler didn't
   record follows the status: a 4xx is `refused`, a 5xx an `error`.
@@ -460,8 +461,8 @@ the method requires of the plugin, such as its capability, is checked inside
 the operation, so a refusal there has its event too. It ends with its own
 reason:
 
-- refused: `capacity`, a gate's `system_off`, `plugin_off` or
-  `capability_off`, `host_stopping`, `package_change`, `not_installed`,
+- refused: `capacity`, a gate's `system_off`, `plugin_off`,
+  `needs_consent` or `capability_off`, `host_stopping`, `package_change`, `not_installed`,
   `runs_no_code`, `not_supported` for a capability or feature the plugin
   doesn't declare, `invalid_request` for an import whose rows break the
   plugin's definition, `agent_access` for a comment call the user

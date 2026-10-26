@@ -62,9 +62,9 @@ export type PluginManifest = {
       | {
           tasks: {
             id: string;
+            prompt: string;
             label: string;
             placement: "commit-week" | "submit-week";
-            prompt: string;
             estimateMinutes: number;
             tools: (
               | "get_running_timer"
@@ -126,12 +126,12 @@ export type PluginManifest = {
       | undefined;
     projectProperties?:
       | {
-          section: string;
           fields: {
             id: string;
             label: string;
             defaultFrom?: "code" | "fullName" | undefined;
           }[];
+          section: string;
         }
       | undefined;
   };
@@ -160,13 +160,35 @@ export type PluginManifest = {
         id: string;
         label: string;
         description?: string | undefined;
-        always?: boolean | undefined;
         tokenScope?: string | undefined;
+        always?: boolean | undefined;
         operations?: string[] | undefined;
       }[]
     | undefined;
   network?:
     | {
+        baseAddress?:
+          { field: string; allowOnPremises?: boolean | undefined } | undefined;
+        derivedHosts?:
+          | {
+              id: string;
+              forms: {
+                host: string;
+                whenHost?: string | undefined;
+                pathPrefix?: string | undefined;
+                keepBasePath?: boolean | undefined;
+              }[];
+              endpoints?:
+                | {
+                    path: string;
+                    method:
+                      "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE";
+                    access?: string | undefined;
+                  }[]
+                | undefined;
+              label?: string | undefined;
+            }[]
+          | undefined;
         endpoints?:
           | {
               path: string;
@@ -174,6 +196,8 @@ export type PluginManifest = {
               access?: string | undefined;
             }[]
           | undefined;
+        publicHosts?: string[] | undefined;
+        requestHeaders?: string[] | undefined;
         auth?:
           | { scheme: "bearer"; secretField: string }
           | { scheme: "basic"; secretField: string; userField: string }
@@ -186,30 +210,6 @@ export type PluginManifest = {
             }
           | { scheme: "secretAddress"; secretField: string }
           | undefined;
-        baseAddress?:
-          { field: string; allowOnPremises?: boolean | undefined } | undefined;
-        derivedHosts?:
-          | {
-              id: string;
-              forms: {
-                host: string;
-                whenHost?: string | undefined;
-                pathPrefix?: string | undefined;
-                keepBasePath?: boolean | undefined;
-              }[];
-              label?: string | undefined;
-              endpoints?:
-                | {
-                    path: string;
-                    method:
-                      "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE";
-                    access?: string | undefined;
-                  }[]
-                | undefined;
-            }[]
-          | undefined;
-        requestHeaders?: string[] | undefined;
-        publicHosts?: string[] | undefined;
       }
     | undefined;
   $schema?: string | undefined;
@@ -254,6 +254,27 @@ export type PluginAuth =
 
 /** What the plugin reaches through `ajour.http` and `ajour.publicFetch`. */
 export type PluginNetwork = {
+  baseAddress?:
+    { field: string; allowOnPremises?: boolean | undefined } | undefined;
+  derivedHosts?:
+    | {
+        id: string;
+        forms: {
+          host: string;
+          whenHost?: string | undefined;
+          pathPrefix?: string | undefined;
+          keepBasePath?: boolean | undefined;
+        }[];
+        endpoints?:
+          | {
+              path: string;
+              method: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE";
+              access?: string | undefined;
+            }[]
+          | undefined;
+        label?: string | undefined;
+      }[]
+    | undefined;
   endpoints?:
     | {
         path: string;
@@ -261,6 +282,8 @@ export type PluginNetwork = {
         access?: string | undefined;
       }[]
     | undefined;
+  publicHosts?: string[] | undefined;
+  requestHeaders?: string[] | undefined;
   auth?:
     | { scheme: "bearer"; secretField: string }
     | { scheme: "basic"; secretField: string; userField: string }
@@ -273,29 +296,6 @@ export type PluginNetwork = {
       }
     | { scheme: "secretAddress"; secretField: string }
     | undefined;
-  baseAddress?:
-    { field: string; allowOnPremises?: boolean | undefined } | undefined;
-  derivedHosts?:
-    | {
-        id: string;
-        forms: {
-          host: string;
-          whenHost?: string | undefined;
-          pathPrefix?: string | undefined;
-          keepBasePath?: boolean | undefined;
-        }[];
-        label?: string | undefined;
-        endpoints?:
-          | {
-              path: string;
-              method: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE";
-              access?: string | undefined;
-            }[]
-          | undefined;
-      }[]
-    | undefined;
-  requestHeaders?: string[] | undefined;
-  publicHosts?: string[] | undefined;
 };
 
 /** A host derived from the base address, such as `api.{host}`. */
@@ -307,7 +307,6 @@ export type PluginDerivedHost = {
     pathPrefix?: string | undefined;
     keepBasePath?: boolean | undefined;
   }[];
-  label?: string | undefined;
   endpoints?:
     | {
         path: string;
@@ -315,6 +314,7 @@ export type PluginDerivedHost = {
         access?: string | undefined;
       }[]
     | undefined;
+  label?: string | undefined;
 };
 
 /** A method and path pattern: `*` matches one segment, `**` the rest. */
@@ -330,12 +330,12 @@ export type PluginHttpMethod =
 /** The connection each operation receives, without its secret fields. */
 export type PluginConnection = {
   id: string;
+  access: string[];
   label: string;
   pluginId: string;
   tenantLabel: string;
   autoSync: boolean;
   autoSyncIntervalMinutes: number;
-  access: string[];
   connectedAt: number;
   config: Record<string, string | number | boolean>;
   lastSyncAt?: number | undefined;

@@ -20,7 +20,7 @@ A team connection syncs on its interval while Ajour is open. Press **Sync** on t
 
 ## Join a team
 
-1. Open the team plugin in **Settings › Plugins** and press **Add a connection**.
+1. Open the team plugin in **Settings › Plugins**, turn it on if it is off, and press **Add a connection**.
 2. Enter the deployment URL you were given.
 3. To start a team, type its name under **New team** and press **Create a team**. Ajour fills in the team ID and secret. To join one instead, paste the team ID and secret a teammate gave you.
 4. Press **Add connection**.

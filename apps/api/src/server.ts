@@ -168,6 +168,7 @@ import {
   type PluginAdmitted,
   type PluginMethod,
 } from "./plugin-host.ts";
+import { decideUpdateConsent } from "./plugin-consent.ts";
 import {
   PluginOperationCancelled,
   PluginOperationRefused,
@@ -224,8 +225,10 @@ import {
   AppApiStorage,
   resolveStatePath,
   type ConnectionWithSecrets,
+  type RunnablePlugins,
   type StoredConnection,
 } from "./storage.ts";
+import type { PluginAccessView } from "../../../packages/shared/plugin-access-schemas.ts";
 
 interface AppApiServerOptions {
   host?: string;
@@ -871,33 +874,54 @@ function parseAgentTaskValues(
 
 /**
  * Why a capability cannot run now, and the reason its events record: the
- * plugin system or the plugin is off, or the user turned the capability off.
- * Undefined when it can run.
+ * plugin system or the plugin is off, the plugin reaches more than the user
+ * allowed, or the user turned the capability off. Without a capability, as
+ * for validating a connection, only the plugin itself is checked. Undefined
+ * when it can run.
  */
 async function inactiveCapability(
   storage: AppApiStorage,
   pluginId: string,
-  capability: SwitchableCapability,
-  availablePluginIds: ReadonlySet<string>,
+  capability: SwitchableCapability | undefined,
+  runnable: RunnablePlugins,
   action: string,
 ): Promise<
-  | { message: string; reason: "system_off" | "plugin_off" | "capability_off" }
+  | {
+      message: string;
+      reason: "system_off" | "plugin_off" | "needs_consent" | "capability_off";
+    }
   | undefined
 > {
-  if (!(await storage.isPluginEnabled(pluginId, availablePluginIds))) {
+  if (!(await storage.isPluginEnabled(pluginId, runnable))) {
+    if (!(await storage.getPluginSystemEnabled())) {
+      return {
+        message: `Enable the plugin system before ${action}.`,
+        reason: "system_off",
+      };
+    }
+    // Unsigned plugins are deactivated: allowing access or switching it on
+    // doesn't help until that is turned off.
+    if (await storage.pluginBlockedAsUnsigned(pluginId)) {
+      return {
+        message: `Unsigned plugins are deactivated. Turn that off before ${action}.`,
+        reason: "plugin_off",
+      };
+    }
+    // The user turned it on, and an update since then reaches more.
+    if (await storage.pluginNeedsConsent(pluginId, runnable)) {
+      return {
+        message: "Allow the new access first.",
+        reason: "needs_consent",
+      };
+    }
     return {
       message: `Activate this plugin before ${action}.`,
-      reason: (await storage.getPluginSystemEnabled())
-        ? "plugin_off"
-        : "system_off",
+      reason: "plugin_off",
     };
   }
   if (
-    !(await storage.isPluginCapabilityEnabled(
-      pluginId,
-      capability,
-      availablePluginIds,
-    ))
+    capability &&
+    !(await storage.isPluginCapabilityEnabled(pluginId, capability, runnable))
   ) {
     return {
       message: `Turn on ${switchableCapabilityLabels[capability].toLowerCase()} for this plugin before ${action}.`,
@@ -1010,7 +1034,7 @@ async function getOverview(
   unit?: Unit<AjourCatalog, "plugin.list">,
 ) {
   const startedAt = Date.now();
-  const { plugins, unavailable } = await pluginManager.inspectPlugins();
+  const { plugins, unavailable, access } = await pluginManager.inspectPlugins();
   unit?.set({
     plugin_list: {
       plugin_count: plugins.length,
@@ -1025,7 +1049,11 @@ async function getOverview(
       secretManifestOf,
     ),
   );
-  const overview = await storage.getPluginsOverview(plugins, unavailable);
+  const overview = await storage.getPluginsOverview(
+    plugins,
+    unavailable,
+    access,
+  );
   const sandbox = pluginManager.sandboxStatus();
   return pluginsOverviewSchema.parse(
     // Without a sandbox no plugin runs, so none counts as on and their
@@ -1049,14 +1077,26 @@ async function getOverview(
  * another plugin API, `unavailableReason` says why.
  */
 async function findPlugin(pluginManager: PluginManager, pluginId: string) {
-  const { plugins, unavailable } = await pluginManager.inspectPlugins();
+  const { plugins, unavailable, access } = await pluginManager.inspectPlugins();
   return {
     plugin: plugins.find((candidate) => candidate.id === pluginId),
-    pluginIds: new Set(plugins.map((candidate) => candidate.id)),
+    runnable: runnablePlugins(plugins, access),
     unavailableReason: unavailable.find(
       (candidate) => candidate.manifest.id === pluginId,
     )?.reason,
   };
+}
+
+/** The plugins that can run, each with what it reaches now. */
+function runnablePlugins(
+  plugins: readonly PluginManifest[],
+  access: ReadonlyMap<string, PluginAccessView>,
+): RunnablePlugins {
+  return new Map(
+    plugins.map(
+      (plugin) => [plugin.id, access.get(plugin.id)?.summary] as const,
+    ),
+  );
 }
 
 async function findConnectionSummary(
@@ -1159,15 +1199,19 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       connection: (pluginId, connectionId, manifest) =>
         brokerConnection(storage, pluginId, connectionId, manifest),
       // As the operation gate, again at each request, so a plugin or a
-      // capability turned off stops the requests still waiting.
+      // capability turned off stops the requests still waiting. What the
+      // package reaches was checked when the operation started; it can't
+      // change while the operation runs.
       operationRefusal: async (pluginId, method) => {
         const capability = capabilityOfMethod(method as PluginMethod);
-        if (!capability) return undefined;
+        // Validating a connection serves no capability, and the plugin
+        // still has to be on.
+        if (!capability && method !== "validateConnection") return undefined;
         const inactive = await inactiveCapability(
           storage,
           pluginId,
           capability,
-          new Set([pluginId]),
+          new Map([[pluginId, undefined]]),
           "it sends requests",
         );
         return inactive
@@ -1201,21 +1245,26 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     events,
     // The routes check activation before reading the request. This repeats
     // the check once the operation can be cancelled, so a capability turned
-    // off meanwhile never runs.
+    // off meanwhile never runs. A package that reaches more than the user
+    // allowed is off too.
     operationGate: async (
       pluginId,
       method,
+      reaches,
       connectionId,
       manifest,
       request,
     ) => {
       const capability = capabilityOfMethod(method);
-      if (!capability) return;
+      // Validating a connection serves no capability, but it runs the
+      // plugin with the connection's credential: not before the user has
+      // allowed what the package reaches.
+      if (!capability && method !== "validateConnection") return;
       const inactive = await inactiveCapability(
         storage,
         pluginId,
         capability,
-        new Set([pluginId]),
+        new Map([[pluginId, reaches]]),
         "running it",
       );
       if (inactive) {
@@ -1287,13 +1336,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     sessions: agentSessions,
     plugins: {
       listPlugins: () => pluginManager.listPlugins(),
-      isPluginEnabled: async (pluginId) =>
-        storage.isPluginEnabled(
+      isPluginEnabled: async (pluginId) => {
+        const { plugins, access } = await pluginManager.inspectPlugins();
+        return storage.isPluginEnabled(
           pluginId,
-          new Set(
-            (await pluginManager.listPlugins()).map((plugin) => plugin.id),
-          ),
-        ),
+          runnablePlugins(plugins, access),
+        );
+      },
       readAgentTaskPrompt: (pluginId, taskId) =>
         pluginManager.readAgentTaskPrompt(pluginId, taskId),
     },
@@ -1761,7 +1810,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     pluginActivate: async ({ request, response, params, unit }) => {
       const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
       unit.set({ plugin: { id: pluginId } });
-      const plugin = (await pluginManager.listPlugins()).find(
+      // Read once, so the consent is for the package checked here.
+      const installed = await pluginManager.inspectPlugins();
+      const plugin = installed.plugins.find(
         (candidate) => candidate.id === pluginId,
       );
       if (!plugin) {
@@ -1802,6 +1853,28 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         }
         writeJson(response, 200, await getOverview(storage, pluginManager));
         return;
+      }
+      // Turning a plugin on is the user's consent to what it reaches: the
+      // version they reviewed, when the page sent it, must be the one here.
+      if (payload.enabled) {
+        if (
+          payload.version !== undefined &&
+          payload.version !== plugin.version
+        ) {
+          unit.refuse("version_changed");
+          writeJson(response, 409, {
+            error: `${plugin.displayName} is now version ${plugin.version}. Review its access, then turn it on again.`,
+          });
+          return;
+        }
+        const access = installed.access.get(pluginId);
+        if (access) {
+          await storage.recordPluginConsent(pluginId, {
+            version: plugin.version,
+            access: access.summary,
+            at: Date.now(),
+          });
+        }
       }
       await storage.setPluginEnabled(pluginId, payload.enabled);
       if (!payload.enabled) {
@@ -1848,7 +1921,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       const parsedValues = readInput(() =>
         parseConnectionValues(payload.values),
       );
-      const { plugin, unavailableReason } = await findPlugin(
+      const { plugin, runnable, unavailableReason } = await findPlugin(
         pluginManager,
         pluginId,
       );
@@ -1859,6 +1932,22 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(response, 400, {
           error: unavailableReason ?? `Plugin "${pluginId}" is not installed.`,
         });
+        return;
+      }
+      // Saving validates the connection, which runs the plugin's code with
+      // the credential just typed. That waits until the plugin is on, so
+      // nothing runs before the user has seen its access, and, after an
+      // update that reaches more, until they have allowed it.
+      const inactive = await inactiveCapability(
+        storage,
+        pluginId,
+        undefined,
+        runnable,
+        "saving a connection",
+      );
+      if (inactive) {
+        unit.refuse(inactive.reason);
+        writeJson(response, 409, { error: inactive.message });
         return;
       }
       const manifest = secretManifestOf(plugin);
@@ -2357,10 +2446,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
       const { connectionId } = params;
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
-      const { plugin, pluginIds: availablePluginIds } = await findPlugin(
-        pluginManager,
-        pluginId,
-      );
+      const { plugin, runnable } = await findPlugin(pluginManager, pluginId);
       if (!plugin?.capabilities.connector) {
         unit.refuse("not_supported");
         writeJson(response, 409, {
@@ -2372,7 +2458,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         storage,
         pluginId,
         "connector",
-        availablePluginIds,
+        runnable,
         "syncing",
       );
       if (inactive) {
@@ -2455,7 +2541,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           !(await storage.isPluginCapabilityEnabled(
             pluginId,
             "connector",
-            availablePluginIds,
+            runnable,
           ))
         ) {
           unit.refuse("deactivated_during_sync");
@@ -2570,7 +2656,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(response, 404, { error: "Unknown code host operation." });
         return;
       }
-      const { plugin, pluginIds } = await findPlugin(pluginManager, pluginId);
+      const { plugin, runnable } = await findPlugin(pluginManager, pluginId);
       if (!plugin || !pluginHasCodeHost(plugin)) {
         unit.refuse("not_supported");
         writeJson(response, 404, {
@@ -2582,7 +2668,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         storage,
         pluginId,
         "codeHost",
-        pluginIds,
+        runnable,
         "using its pull requests",
       );
       if (inactive) {
@@ -2658,7 +2744,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(response, 404, { error: "Unknown comment operation." });
         return;
       }
-      const { plugin, pluginIds } = await findPlugin(pluginManager, pluginId);
+      const { plugin, runnable } = await findPlugin(pluginManager, pluginId);
       if (!plugin?.capabilities.connector?.comments) {
         unit.refuse("not_supported");
         writeJson(response, 404, {
@@ -2670,7 +2756,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         storage,
         pluginId,
         "connector",
-        pluginIds,
+        runnable,
         "using its comments",
       );
       if (inactive) {
@@ -2834,7 +2920,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(response, 404, { error: "Unknown calendar operation." });
         return;
       }
-      const { plugin, pluginIds } = await findPlugin(pluginManager, pluginId);
+      const { plugin, runnable } = await findPlugin(pluginManager, pluginId);
       if (!plugin || !pluginHasCalendar(plugin)) {
         unit.refuse("not_supported");
         writeJson(response, 404, {
@@ -2846,7 +2932,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         storage,
         pluginId,
         "calendar",
-        pluginIds,
+        runnable,
         "using its calendar",
       );
       if (inactive) {
@@ -3111,12 +3197,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       });
       return undefined;
     }
-    const { plugin, pluginIds } = await findPlugin(pluginManager, pluginId);
+    const { plugin, runnable } = await findPlugin(pluginManager, pluginId);
     const inactive = await inactiveCapability(
       storage,
       pluginId,
       "connector",
-      pluginIds,
+      runnable,
       action,
     );
     if (inactive) {
@@ -3285,7 +3371,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     unit: Unit<AjourCatalog, "team.create" | "team.sync">,
     create: boolean,
   ) {
-    const { plugin, pluginIds } = await findPlugin(pluginManager, pluginId);
+    const { plugin, runnable } = await findPlugin(pluginManager, pluginId);
     if (!plugin || !pluginHasTeam(plugin)) {
       unit.refuse("not_supported");
       writeJson(response, 404, {
@@ -3297,7 +3383,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       storage,
       pluginId,
       "team",
-      pluginIds,
+      runnable,
       create ? "creating a team" : "syncing its projects",
     );
     if (inactive) {
@@ -3561,13 +3647,40 @@ export async function installPluginForServer(
       // signed, even when a later step fails.
       await runtime.storage.setPluginOrigin(installed.manifest.id, origin);
       // An update keeps the activation the user chose for the previous version.
+      const pluginId = installed.manifest.id;
       if (!installed.replaced && options.enableAfterInstall === false) {
-        await runtime.storage.setPluginEnabled(installed.manifest.id, false);
+        await runtime.storage.setPluginEnabled(pluginId, false);
       }
       const previous = [
         ...before.plugins,
         ...before.unavailable.map((plugin) => plugin.manifest),
-      ].find((plugin) => plugin.id === installed.manifest.id);
+      ].find((plugin) => plugin.id === pluginId);
+      if (installed.replaced) {
+        // An update that reaches more than the user allowed installs off, and
+        // the plugin page asks for their consent.
+        const previousAccess = before.access.get(pluginId);
+        const decision = decideUpdateConsent({
+          consent: await runtime.storage.getPluginConsent(pluginId),
+          previous: previous
+            ? {
+                version: previous.version,
+                ...(previousAccess ? { access: previousAccess.summary } : {}),
+              }
+            : undefined,
+          wasOn: await runtime.storage.isPluginSwitchedOn(pluginId),
+          next: {
+            version: installed.manifest.version,
+            access: installed.access.summary,
+          },
+          at: Date.now(),
+        });
+        if (decision.record) {
+          await runtime.storage.recordPluginConsent(pluginId, decision.record);
+        }
+        if (decision.turnOff) {
+          await runtime.storage.setPluginEnabled(pluginId, false);
+        }
+      }
       await applyCapabilityDefaults(
         runtime.storage,
         installed.manifest,

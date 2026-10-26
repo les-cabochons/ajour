@@ -94,6 +94,10 @@ import {
   type BacklogCommentOperationResult,
 } from "../../../packages/shared/backlog-comments.ts";
 import { z } from "zod";
+import type {
+  PluginAccessSummary,
+  PluginAccessView,
+} from "../../../packages/shared/plugin-access-schemas.ts";
 import {
   discoverInstalledPlugins,
   installPluginArchive,
@@ -119,13 +123,15 @@ interface PluginHostOptions {
    * Runs once the operation is registered and before its worker starts, and
    * throws to refuse it. Deactivation saves its state and then cancels the
    * registered operations, so an operation either sees the new state here or
-   * is cancelled. A saved connection's operation names it, so its access
-   * is checked the same way: a save that turns a choice off cancels the
-   * operations it gates.
+   * is cancelled. `reaches` is what the package about to run reaches. A
+   * saved connection's operation names it, so its access is checked the
+   * same way: a save that turns a choice off cancels the operations it
+   * gates.
    */
   operationGate?: (
     pluginId: string,
     method: PluginMethod,
+    reaches: PluginAccessSummary,
     connectionId?: string,
     /** The manifest of the package that runs it. */
     manifest?: PluginManifest,
@@ -367,6 +373,8 @@ export class PluginManager {
   async inspectPlugins(): Promise<{
     plugins: PluginManifest[];
     unavailable: UnavailablePlugin[];
+    /** What each runnable plugin reaches, by plugin ID. */
+    access: Map<string, PluginAccessView>;
   }> {
     this.assertRunning();
     const { plugins, unavailable } = await this.discoverPlugins();
@@ -375,6 +383,11 @@ export class PluginManager {
         .map((plugin) => plugin.manifest)
         .sort(comparePlugins),
       unavailable: Array.from(unavailable.values()),
+      access: new Map(
+        Array.from(plugins.values()).map(
+          (plugin) => [plugin.manifest.id, plugin.access] as const,
+        ),
+      ),
     };
   }
 
@@ -796,6 +809,7 @@ export class PluginManager {
           await this.operationGate?.(
             pluginId,
             method,
+            plugin.access.summary,
             typeof connection?.id === "string" ? connection.id : undefined,
             plugin.manifest,
             params.request,

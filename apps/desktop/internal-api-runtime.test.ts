@@ -381,8 +381,10 @@ describe("desktop plugin runtime ownership", () => {
       cancelId: 1,
     });
     expect(app.install).toHaveBeenCalledTimes(2);
-    // No origin: the API records a file install as unsigned.
-    expect(app.install.mock.calls[0]?.[3]).toBeUndefined();
+    // Inactive, and no origin: the API records a file install as unsigned.
+    expect(app.install.mock.calls[0]?.[3]).toEqual({
+      enableAfterInstall: false,
+    });
     expect(app.recorded[0]).toMatchObject({
       outcome: "ok",
       plugin: { source: "archive", signed: false },

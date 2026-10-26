@@ -21,6 +21,7 @@ export type PluginRefusalReason =
   | "capacity"
   | "system_off"
   | "plugin_off"
+  | "needs_consent"
   | "capability_off"
   | "host_stopping"
   | "package_change"
