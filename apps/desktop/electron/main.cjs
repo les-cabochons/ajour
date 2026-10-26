@@ -50,6 +50,7 @@ const {
 } = require("./plugin-renderer-runtime.cjs");
 const { launchSandboxRefusal } = require("./plugin-sandbox.cjs");
 const { createPluginCatalogService } = require("./plugin-catalog.cjs");
+const { isOfficialSourceUrl } = require("./plugin-sources.cjs");
 const {
   loadPluginCatalogSettings,
   savePluginCatalogSettings,
@@ -243,10 +244,36 @@ const pluginCatalogSettingsPath = path.join(
 let pluginCatalogSettings = loadPluginCatalogSettings(
   pluginCatalogSettingsPath,
 );
+/** Saves the catalog settings with `changes`, keeping the rest. */
+function updatePluginCatalogSettings(changes) {
+  pluginCatalogSettings = savePluginCatalogSettings(pluginCatalogSettingsPath, {
+    ...pluginCatalogSettings,
+    ...changes,
+  });
+  return pluginCatalogSettings;
+}
+
 const pluginCatalogService = createPluginCatalogService({
   cacheDirectory: path.join(app.getPath("userData"), "plugin-catalog"),
   fetchImpl: net.fetch,
+  getSources: () => pluginCatalogSettings.sources,
+  // The host family is found once, when a source is first read.
+  onHostKind: (url, hostKind) => {
+    updatePluginCatalogSettings({
+      sources: pluginCatalogSettings.sources.map((source) =>
+        source.url === url ? { ...source, hostKind } : source,
+      ),
+    });
+  },
 });
+
+/** The catalog settings the renderer may read and change. */
+function pluginCatalogSettingsForRenderer() {
+  return {
+    refreshMinutes: pluginCatalogSettings.refreshMinutes,
+    allowUnsignedInstalls: pluginCatalogSettings.allowUnsignedInstalls,
+  };
+}
 
 /**
  * Refreshes the plugin catalog, once at a time. It never rejects, so its
@@ -477,6 +504,42 @@ function pluginIdForEvent(pluginId) {
     : undefined;
 }
 
+/** A source address as the renderer sends it, or nothing usable. */
+function assertSourceAddress(url) {
+  if (typeof url !== "string" || url.length < 1 || url.length > 500) {
+    throw new Error("Enter the repository's address.");
+  }
+  return url;
+}
+
+/**
+ * Asks before every unsigned install, in the main process so no renderer
+ * can skip it. Throws `unsigned_not_allowed` while unsigned installs are
+ * off, and resolves false when the person cancels.
+ */
+async function confirmUnsignedInstall(unit, { message, detail }) {
+  unit?.set({ plugin: { signed: false } });
+  if (!pluginCatalogSettings.allowUnsignedInstalls) {
+    throw Object.assign(
+      new Error(
+        "Installing unsigned plugins is off. Turn on Allow unsigned plugins in Settings, Plugins to install this one.",
+      ),
+      { code: "unsigned_not_allowed" },
+    );
+  }
+  const { response } = await dialog.showMessageBox(mainWindow, {
+    type: "warning",
+    title: "Unsigned plugin",
+    message,
+    detail: `${detail}\n\nAn unsigned plugin runs with the access you give its connections. Install it only if you trust the person who made it.`,
+    buttons: ["Install", "Cancel"],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+  });
+  return response === 0;
+}
+
 /**
  * Installs a plugin archive through the local API, and adds what the install
  * did to `unit`, the call's `plugin.install` event.
@@ -560,6 +623,22 @@ ipc.handle("ajour:install-plugin", async (event) => {
     return null;
   }
 
+  // A file carries no signature: Ajour can't tell who made it.
+  let confirmed;
+  try {
+    confirmed = await confirmUnsignedInstall(unit, {
+      message: `Install ${selectedArchive.archiveFilename}?`,
+      detail:
+        "Ajour can't check who made a plugin installed from a file, or that nobody changed it.",
+    });
+  } catch (error) {
+    unit?.set({ plugin: { result: pluginInstallResultOf(error) } });
+    throw error;
+  }
+  if (!confirmed) {
+    unit?.set({ plugin: { result: "cancelled" } }).cancel();
+    return null;
+  }
   return await installPluginArchive(unit, selectedArchive);
 });
 
@@ -573,30 +652,140 @@ ipc.handle("ajour:get-plugin-catalog", async (event) => {
 
 ipc.handle("ajour:get-plugin-catalog-settings", async (event) => {
   assertActiveDesktopWindow(event, "read plugin catalog settings");
-  return pluginCatalogSettings;
+  return pluginCatalogSettingsForRenderer();
 });
 
 ipc.handle("ajour:configure-plugin-catalog", async (event, settings) => {
   assertActiveDesktopWindow(event, "configure the plugin catalog");
-  const before = pluginCatalogSettings.refreshMinutes;
-  pluginCatalogSettings = savePluginCatalogSettings(
-    pluginCatalogSettingsPath,
-    settings,
-  );
+  const before = pluginCatalogSettingsForRenderer();
+  updatePluginCatalogSettings({
+    ...(settings?.refreshMinutes !== undefined
+      ? { refreshMinutes: settings.refreshMinutes }
+      : {}),
+    ...(typeof settings?.allowUnsignedInstalls === "boolean"
+      ? { allowUnsignedInstalls: settings.allowUnsignedInstalls }
+      : {}),
+  });
   events.current()?.set({
     catalog: {
-      refresh_minutes_before: before,
+      refresh_minutes_before: before.refreshMinutes,
       refresh_minutes_after: pluginCatalogSettings.refreshMinutes,
+      allow_unsigned_installs_before: before.allowUnsignedInstalls,
+      allow_unsigned_installs_after:
+        pluginCatalogSettings.allowUnsignedInstalls,
     },
   });
   schedulePluginCatalogRefresh();
-  return pluginCatalogSettings;
+  return pluginCatalogSettingsForRenderer();
 });
 
-ipc.handle("ajour:download-catalog-plugin", async (event, pluginId) => {
+ipc.handle("ajour:inspect-plugin-source", async (event, url) => {
+  assertActiveDesktopWindow(event, "read a plugin source");
+  const unit = events.current();
+  try {
+    const { publicKey: _publicKey, ...inspection } =
+      await pluginCatalogService.inspectSource(assertSourceAddress(url));
+    unit?.set({
+      source: {
+        host_kind: inspection.hostKind,
+        official: inspection.official,
+        signed: inspection.signed,
+        plugin_count: inspection.plugins.length,
+        result: "read",
+      },
+    });
+    return inspection;
+  } catch (error) {
+    unit?.set({ source: { result: "failed" } });
+    throw error;
+  }
+});
+
+/**
+ * Adds a source, or approves the key it is signed with now. The renderer
+ * sends the fingerprint the person saw; the source is read again here and
+ * must still show it, so what is pinned is what was approved.
+ */
+ipc.handle("ajour:add-plugin-source", async (event, url, keyFingerprint) => {
+  assertActiveDesktopWindow(event, "add a plugin source");
+  const unit = events.current();
+  if (keyFingerprint !== null && typeof keyFingerprint !== "string") {
+    throw new Error("The key fingerprint is invalid.");
+  }
+  let inspection;
+  try {
+    inspection = await pluginCatalogService.inspectSource(
+      assertSourceAddress(url),
+    );
+  } catch (error) {
+    unit?.set({ source: { result: "failed" } });
+    throw error;
+  }
+  unit?.set({
+    source: {
+      host_kind: inspection.hostKind,
+      official: inspection.official,
+      signed: inspection.signed,
+    },
+  });
+  if ((inspection.keyFingerprint ?? null) !== keyFingerprint) {
+    unit?.set({ source: { result: "key_mismatch" } });
+    throw new Error(
+      "The source changed while you were reviewing it. Review it again.",
+    );
+  }
+  const saved = {
+    url: inspection.url,
+    hostKind: inspection.hostKind,
+    ...(inspection.publicKey ? { publicKey: inspection.publicKey } : {}),
+  };
+  const existing = pluginCatalogSettings.sources.some(
+    (source) => source.url === inspection.url,
+  );
+  updatePluginCatalogSettings({
+    sources: existing
+      ? pluginCatalogSettings.sources.map((source) =>
+          source.url === inspection.url ? saved : source,
+        )
+      : [...pluginCatalogSettings.sources, saved],
+  });
+  unit?.set({
+    source: {
+      result: existing ? "key_approved" : "added",
+      source_count: pluginCatalogSettings.sources.length,
+    },
+  });
+  return await refreshPluginCatalog("request");
+});
+
+ipc.handle("ajour:remove-plugin-source", async (event, url) => {
+  assertActiveDesktopWindow(event, "remove a plugin source");
+  const unit = events.current();
+  const sourceUrl = assertSourceAddress(url);
+  const remaining = pluginCatalogSettings.sources.filter(
+    (source) => source.url !== sourceUrl,
+  );
+  unit?.set({
+    source: {
+      official: isOfficialSourceUrl(sourceUrl),
+      result:
+        remaining.length < pluginCatalogSettings.sources.length
+          ? "removed"
+          : "not_found",
+    },
+  });
+  updatePluginCatalogSettings({ sources: remaining });
+  unit?.set({ source: { source_count: remaining.length } });
+  return await refreshPluginCatalog("request");
+});
+
+// `url` names the plugin's source, when more than one lists it.
+ipc.handle("ajour:download-catalog-plugin", async (event, pluginId, url) => {
   assertActiveDesktopWindow(event, "download a plugin");
   const unit = events.current();
-  unit?.set({ plugin: { source: "catalog", id: pluginIdForEvent(pluginId) } });
+  unit?.set({
+    plugin: { source: "catalog", id: pluginIdForEvent(pluginId) },
+  });
   if (!app.isPackaged) {
     unit?.refuse("development_build");
     throw new Error(
@@ -610,19 +799,58 @@ ipc.handle("ajour:download-catalog-plugin", async (event, pluginId) => {
   ) {
     throw new Error("The catalog plugin identifier is invalid.");
   }
+  if (url !== undefined && url !== null) {
+    assertSourceAddress(url);
+  }
+
+  const entry = pluginCatalogService
+    .getCurrentCatalog()
+    .entries.find(
+      (candidate) =>
+        candidate.id === pluginId && (!url || candidate.source?.url === url),
+    );
+  // Asked before the download, every time the plugin is unsigned.
+  if (entry && !entry.source?.signed) {
+    let confirmed;
+    try {
+      confirmed = await confirmUnsignedInstall(unit, {
+        message: `Install ${entry.title} ${entry.version}, an unsigned plugin?`,
+        detail: `${entry.source?.name ?? "Its source"} doesn't sign its plugins with a key you approved, so Ajour can't check who made this one.`,
+      });
+    } catch (error) {
+      unit?.set({ plugin: { result: pluginInstallResultOf(error) } });
+      throw error;
+    }
+    if (!confirmed) {
+      unit?.set({ plugin: { result: "cancelled" } }).cancel();
+      return null;
+    }
+  }
 
   const downloadStartedAt = Date.now();
   let downloaded;
   try {
-    downloaded = await pluginCatalogService.downloadPluginArchive(pluginId);
+    downloaded = await pluginCatalogService.downloadPluginArchive(
+      pluginId,
+      url || undefined,
+    );
   } catch (error) {
     unit?.set({ plugin: { result: pluginInstallResultOf(error) } });
     throw error;
   } finally {
     unit?.set({ plugin: { download_ms: Date.now() - downloadStartedAt } });
   }
+  // An unsigned plugin installs only after the warning above.
+  if (!downloaded.signed && entry?.source?.signed !== false) {
+    unit?.set({ plugin: { result: "cancelled" } }).cancel();
+    throw new Error(
+      "The plugin's source changed while it downloaded. Try again.",
+    );
+  }
+  unit?.set({ plugin: { signed: downloaded.signed } });
   const result = await installPluginArchive(unit, downloaded, {
     enableAfterInstall: false,
+    origin: downloaded.origin,
   });
   return { type: "plugin", result };
 });

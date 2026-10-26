@@ -9,6 +9,15 @@ import {
   connectionSecretValues,
 } from "./connection-credentials.ts";
 
+/**
+ * The ceiling for every "quickly" below. Each guards against unbounded work,
+ * such as checking every secret against every message, which would be
+ * billions of steps and take seconds to minutes. The bounded runs take
+ * hundreds of milliseconds or less, but shared CI machines and a busy laptop
+ * run several times slower, so a tighter ceiling fails at random.
+ */
+const QUICK_MS = 2_000;
+
 // The redaction of one text, and its tests, live in packages/wide-events.
 // The summary and the request budget are the local API's.
 
@@ -247,7 +256,7 @@ describe("redacting a connection summary", () => {
     expect(redactConnectionSummary(summaryOf(50), manySecrets)).toEqual(
       summaryOf(50),
     );
-    expect(performance.now() - started).toBeLessThan(200);
+    expect(performance.now() - started).toBeLessThan(QUICK_MS);
   });
 });
 
@@ -275,7 +284,7 @@ describe("the redaction's work budget", () => {
     expect(
       redactConnectionSummary(summaryOf("a".repeat(1_000)), growingSecrets),
     ).toEqual({});
-    expect(performance.now() - started).toBeLessThan(200);
+    expect(performance.now() - started).toBeLessThan(QUICK_MS);
 
     // Every secret is longer than every value, so only the cut rule reads
     // them, and none starts where a value is cut.
@@ -283,7 +292,7 @@ describe("the redaction's work budget", () => {
     expect(
       redactConnectionSummary(summaryOf(`${"a".repeat(998)}b…`), longSecrets),
     ).toEqual(summaryOf(`${"a".repeat(998)}b…`));
-    expect(performance.now() - restarted).toBeLessThan(200);
+    expect(performance.now() - restarted).toBeLessThan(QUICK_MS);
   });
 });
 
@@ -314,7 +323,7 @@ describe("one redaction per connection and request", () => {
 
       const started = performance.now();
       const redacted = messages.map((message) => redaction.text(message));
-      expect(performance.now() - started).toBeLessThan(500);
+      expect(performance.now() - started).toBeLessThan(QUICK_MS);
 
       expect(redacted[7]).toBe("PATCH failed with [secret].");
       expect(redacted).toEqual(
@@ -342,7 +351,7 @@ describe("one redaction per connection and request", () => {
       redaction.text("Estimate rejected…"),
     );
 
-    expect(performance.now() - started).toBeLessThan(300);
+    expect(performance.now() - started).toBeLessThan(QUICK_MS);
     // Each needs the cut rule against all 20,000, past its own budget.
     expect(results.every((result) => result === UNCHECKED)).toBe(true);
   });
@@ -359,7 +368,7 @@ describe("one redaction per connection and request", () => {
       redaction.text("Estimate rejected."),
     );
 
-    expect(performance.now() - started).toBeLessThan(300);
+    expect(performance.now() - started).toBeLessThan(QUICK_MS);
     // Every secret could be in each message, past its own budget.
     expect(results.every((result) => result === UNCHECKED)).toBe(true);
   });

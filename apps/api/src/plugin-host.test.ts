@@ -800,6 +800,63 @@ describe("PluginManager", () => {
     );
   });
 
+  // A plugin source ships TypeScript as written. Node strips the types when
+  // the worker imports it, so the installed package runs with no build.
+  it("executes TypeScript source from an installed archive", async () => {
+    const root = await tempDir();
+    const pluginDirectory = await createPluginDirectory(
+      path.join(root, "source"),
+      "jira",
+      "",
+      { entrypoint: "src/plugin.ts" },
+    );
+    await mkdir(path.join(pluginDirectory, "src"), { recursive: true });
+    await writeFile(
+      path.join(pluginDirectory, "package.json"),
+      JSON.stringify({ type: "module" }),
+      "utf8",
+    );
+    await writeFile(
+      path.join(pluginDirectory, "src", "summary.ts"),
+      [
+        "export interface Summary { runtime: string }",
+        "export function summary(): Summary { return { runtime: 'typescript' }; }",
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(
+      path.join(pluginDirectory, "src", "plugin.ts"),
+      [
+        "import { summary, type Summary } from './summary.ts';",
+        "export async function validateConnection(config: Record<string, unknown>) {",
+        "  const connectionSummary: Summary = summary();",
+        "  return { normalizedConfig: config, connectionSummary };",
+        "}",
+      ].join("\n"),
+      "utf8",
+    );
+    const archivePath = path.join(root, "jira-1.0.0.ajour-connector");
+    await create({ cwd: pluginDirectory, file: archivePath, gzip: true }, [
+      "plugin.json",
+      "package.json",
+      "src",
+    ]);
+    const pluginManager = manager({
+      installedPluginDirectory: path.join(root, "installed"),
+    });
+
+    await pluginManager.installPluginArchive(
+      await readFile(archivePath),
+      path.basename(archivePath),
+    );
+    await expect(pluginManager.validateConnection("jira", {})).resolves.toEqual(
+      {
+        normalizedConfig: {},
+        connectionSummary: { runtime: "typescript" },
+      },
+    );
+  });
+
   it("rejects packaged archives containing symbolic links", async () => {
     const root = await tempDir();
     const pluginDirectory = await createPluginDirectory(

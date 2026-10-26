@@ -13,6 +13,7 @@ import {
   ALLOW_LOSSY_FIELD_ID,
   agentAccessSchema,
   connectionAgentAccess,
+  pluginOriginSchema,
   type AgentAccess,
   type BacklogSourceStatus,
   type BacklogSourceStatusInput,
@@ -21,6 +22,7 @@ import {
   type BacklogImportCandidate,
   type BacklogImportCandidateInput,
   type PluginManifest,
+  type PluginOrigin,
   type PluginOverviewItem,
   type PluginsOverview,
   type PluginSummaryValues,
@@ -337,6 +339,10 @@ interface AppApiStateV8 {
   /** Per plugin, the switchable capabilities the user turned off. */
   disabledCapabilities: Record<string, SwitchableCapability[]>;
   pluginsEnabled: boolean;
+  /** False when the user deactivated every unsigned plugin. */
+  unsignedPluginsEnabled: boolean;
+  /** Where each installed plugin came from. A plugin without one is unsigned. */
+  pluginOrigins: Record<string, PluginOrigin>;
   mcp: StoredMcpState;
   agentRunner: StoredAgentRunnerState;
   /**
@@ -352,6 +358,29 @@ interface MutationResult<T> {
   nextState: AppApiState;
   result: T;
   afterWrite?: () => Promise<void>;
+}
+
+/**
+ * Whether the plugin may run as far as signing goes: always when it came from
+ * a signed source, otherwise only while unsigned plugins are on.
+ */
+function signingAllowsPlugin(state: AppApiState, pluginId: string) {
+  return (
+    state.unsignedPluginsEnabled ||
+    state.pluginOrigins[pluginId]?.signed === true
+  );
+}
+
+function normalizePluginOrigins(raw: unknown): Record<string, PluginOrigin> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return Object.fromEntries(
+    Object.entries(raw).flatMap(([pluginId, origin]) => {
+      const parsed = pluginOriginSchema.safeParse(origin);
+      return pluginId.trim() && parsed.success
+        ? [[pluginId.trim(), parsed.data]]
+        : [];
+    }),
+  );
 }
 
 /**
@@ -413,6 +442,8 @@ function createDefaultState(): AppApiState {
     disabledPluginIds: [],
     disabledCapabilities: {},
     pluginsEnabled: true,
+    unsignedPluginsEnabled: true,
+    pluginOrigins: {},
     mcp: { enabled: false, clients: [] },
     agentRunner: {
       settings: defaultAgentRunnerSettings(),
@@ -824,6 +855,11 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
       typeof raw.pluginsEnabled === "boolean"
         ? raw.pluginsEnabled!
         : defaults.pluginsEnabled,
+    unsignedPluginsEnabled:
+      typeof raw.unsignedPluginsEnabled === "boolean"
+        ? raw.unsignedPluginsEnabled!
+        : defaults.unsignedPluginsEnabled,
+    pluginOrigins: normalizePluginOrigins(raw.pluginOrigins),
     mcp: normalizeMcpState(raw.mcp),
     agentRunner: normalizeAgentRunnerState(raw.agentRunner),
     pluginBrokerActivity: Object.fromEntries(
@@ -1252,17 +1288,21 @@ export class AppApiStorage {
     }> = [],
   ): Promise<PluginsOverview> {
     const state = await this.readState();
+    const withOrigin = (plugin: PluginOverviewItem): PluginOverviewItem => {
+      const origin = state.pluginOrigins[plugin.id];
+      return origin ? { ...plugin, origin } : plugin;
+    };
     const vault = await this.vaultView();
     const status = vault.status;
     const pluginMap = new Map<string, PluginOverviewItem>(
-      plugins.map((plugin) => [plugin.id, plugin] as const),
+      plugins.map((plugin) => [plugin.id, withOrigin(plugin)] as const),
     );
     for (const { manifest, reason } of unavailable) {
       if (!pluginMap.has(manifest.id)) {
-        pluginMap.set(manifest.id, {
-          ...manifest,
-          unavailableReason: reason,
-        });
+        pluginMap.set(
+          manifest.id,
+          withOrigin({ ...manifest, unavailableReason: reason }),
+        );
       }
     }
 
@@ -1321,7 +1361,8 @@ export class AppApiStorage {
         enabled:
           state.pluginsEnabled &&
           plugin.unavailableReason === undefined &&
-          !state.disabledPluginIds.includes(plugin.id),
+          !state.disabledPluginIds.includes(plugin.id) &&
+          signingAllowsPlugin(state, plugin.id),
         inactiveCapabilities: (
           state.disabledCapabilities[plugin.id] ?? []
         ).filter((capability) => pluginHasCapability(plugin, capability)),
@@ -1345,6 +1386,7 @@ export class AppApiStorage {
     return {
       vault: status,
       pluginsEnabled: state.pluginsEnabled,
+      unsignedPluginsEnabled: state.unsignedPluginsEnabled,
       plugins: allPlugins,
       connectionGroups,
       totalPendingImportCount: connectionGroups.reduce(
@@ -1376,7 +1418,8 @@ export class AppApiStorage {
     return (
       availablePluginIds.has(pluginId) &&
       state.pluginsEnabled &&
-      !state.disabledPluginIds.includes(pluginId)
+      !state.disabledPluginIds.includes(pluginId) &&
+      signingAllowsPlugin(state, pluginId)
     );
   }
 
@@ -1410,6 +1453,34 @@ export class AppApiStorage {
   async setPluginSystemEnabled(enabled: boolean): Promise<void> {
     await this.mutate(async (state) => ({
       nextState: { ...state, pluginsEnabled: enabled },
+      result: undefined,
+    }));
+  }
+
+  async getUnsignedPluginsEnabled(): Promise<boolean> {
+    return (await this.readState()).unsignedPluginsEnabled;
+  }
+
+  async setUnsignedPluginsEnabled(enabled: boolean): Promise<void> {
+    await this.mutate(async (state) => ({
+      nextState: { ...state, unsignedPluginsEnabled: enabled },
+      result: undefined,
+    }));
+  }
+
+  /** The plugins Ajour can't vouch for: no origin, or an unsigned one. */
+  async listUnsignedPluginIds(pluginIds: readonly string[]): Promise<string[]> {
+    const state = await this.readState();
+    return pluginIds.filter((id) => state.pluginOrigins[id]?.signed !== true);
+  }
+
+  async setPluginOrigin(pluginId: string, origin: PluginOrigin): Promise<void> {
+    const parsed = pluginOriginSchema.parse(origin);
+    await this.mutate(async (state) => ({
+      nextState: {
+        ...state,
+        pluginOrigins: { ...state.pluginOrigins, [pluginId]: parsed },
+      },
       result: undefined,
     }));
   }
@@ -1808,6 +1879,11 @@ export class AppApiStorage {
         ),
         disabledCapabilities: Object.fromEntries(
           Object.entries(state.disabledCapabilities).filter(
+            ([candidate]) => candidate !== pluginId,
+          ),
+        ),
+        pluginOrigins: Object.fromEntries(
+          Object.entries(state.pluginOrigins).filter(
             ([candidate]) => candidate !== pluginId,
           ),
         ),

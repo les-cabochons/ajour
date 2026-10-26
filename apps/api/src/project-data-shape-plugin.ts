@@ -15,7 +15,13 @@ import {
   type PluginAdmissionPolicy,
 } from "./plugin-package.ts";
 
-const ALLOWED_ENTRYPOINT_EXTENSIONS = new Set([".cjs", ".js", ".mjs"]);
+const ALLOWED_ENTRYPOINT_EXTENSIONS = new Set([
+  ".cjs",
+  ".js",
+  ".mjs",
+  ".mts",
+  ".ts",
+]);
 
 export interface ResolvedProjectDataShapePlugin {
   manifest: ProjectDataShapePluginManifest;
@@ -149,7 +155,7 @@ export async function readProjectDataShapePlugin(
     )
   ) {
     throw new Error(
-      `Schema plugin "${manifest.id}" entrypoint must be compiled JavaScript.`,
+      `Schema plugin "${manifest.id}" entrypoint must be a JavaScript or TypeScript file.`,
     );
   }
   await assertRegularPluginFile(
