@@ -586,6 +586,31 @@ describe("PluginManager", () => {
       });
     });
 
+    it("may name TypeScript source as its entrypoint, which its renderer gets stripped", async () => {
+      const root = await tempDir();
+      for (const entrypoint of ["src/index.ts", "src/index.mts"]) {
+        const id = entrypoint.endsWith(".mts") ? "api-4-mts" : "api-4-ts";
+        const pluginDirectory = await createPluginDirectory(root, id, "", {
+          ...API_4_MANIFEST,
+          entrypoint,
+        });
+        await mkdir(path.join(pluginDirectory, "src"));
+        await writeFile(
+          path.join(pluginDirectory, entrypoint),
+          "export const validateConnection = async (): Promise<void> => {};",
+        );
+
+        await expect(
+          readPlugin(pluginDirectory, "development", {
+            admitPluginApi4: true,
+          }),
+        ).resolves.toMatchObject({
+          manifest: { apiVersion: 4 },
+          entrypointPath: path.join(pluginDirectory, entrypoint),
+        });
+      }
+    });
+
     it("is refused when its manifest breaks an API 4 rule", async () => {
       const root = await tempDir();
       const pluginDirectory = await createPluginDirectory(
