@@ -338,7 +338,7 @@ export function ProjectTaskPicker({
           />
           <CommandList
             ref={setListElement}
-            className="max-h-[min(22rem,55vh)] pb-1"
+            className="max-h-[min(30rem,calc(var(--available-height)-3rem))] pb-1"
           >
             {view.kind === "projects" ? (
               <>

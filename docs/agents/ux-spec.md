@@ -250,6 +250,8 @@ The form is the same in every host. Only its container changes.
 
 The project and task picker of the entry editor, the Week Grid's new row and calendar suggestions.
 
+The menu list grows to 30rem when space permits, and scrolls within the available window height, leaving room for its search field.
+
 ### Rows
 
 - Every row is one line. A long name is cut.
