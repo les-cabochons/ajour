@@ -1534,6 +1534,22 @@ export class AppApiStorage {
     );
   }
 
+  /**
+   * Whether the user turned the plugin on and the package now reaches more
+   * than they allowed: it stays off until they allow the new access.
+   */
+  async pluginNeedsConsent(
+    pluginId: string,
+    runnable: RunnablePlugins,
+  ): Promise<boolean> {
+    const state = await this.readState();
+    return reachesMoreThanAllowed(
+      state.pluginConsent,
+      pluginId,
+      runnable.get(pluginId),
+    );
+  }
+
   /** Whether the plugin is enabled and the capability is not turned off. */
   async isPluginCapabilityEnabled(
     pluginId: string,

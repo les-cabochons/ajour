@@ -918,12 +918,18 @@ export function SettingsPluginsPage({
                 <h2 className="settings-section-title">Configuration</h2>
                 <p className="settings-section-desc mt-1">
                   Manage the local connections used by this plugin.
+                  {group.enabled || unavailableReason
+                    ? ""
+                    : group.pendingAccess
+                      ? " Allow its new access to save a connection."
+                      : " Activate it to save a connection."}
                 </p>
               </div>
               <Button
                 disabled={
                   isMutatingPlugin ||
                   overview?.pluginsEnabled === false ||
+                  !group.enabled ||
                   Boolean(unavailableReason)
                 }
                 onClick={() => handleCreate(group.plugin)}

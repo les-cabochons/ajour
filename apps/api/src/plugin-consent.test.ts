@@ -12,6 +12,8 @@ import {
 import { dispatchJsonRequest } from "./test-support/dispatch-json-request.ts";
 import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
 import { windowServerOptions } from "./test-support/window-token.ts";
+import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
+import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import { decideUpdateConsent } from "./plugin-consent.ts";
 import {
   NO_PLUGIN_ACCESS,
@@ -30,6 +32,18 @@ const ICON = "<svg viewBox='0 0 16 16' />";
 const ID = "fixture-tracker";
 
 type Json = Record<string, any>;
+
+/** The request event named `name`, once it has been emitted. */
+async function requestEvent(events: AjourEvent[], name: string) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const found = events.find(
+      (event) => event.kind === "request" && event.name === name,
+    );
+    if (found) return found;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return undefined;
+}
 
 function manifest(version: string, change: (value: Json) => void = () => {}) {
   const value: Json = {
@@ -139,9 +153,13 @@ describe("consent on plugin installs and updates", () => {
 
   function startServer(
     root: string,
-    options: { developmentPluginDirectories?: string[] } = {},
+    options: {
+      developmentPluginDirectories?: string[];
+      events?: ReturnType<typeof createRecordingSink<AjourEvent>>;
+    } = {},
   ) {
     const server = createAppApiServer({
+      ...(options.events ? { eventSink: options.events } : {}),
       ...windowServerOptions,
       vault: new MemorySecretVault(),
       statePath: path.join(root, "state.json"),
@@ -195,6 +213,23 @@ describe("consent on plugin installs and updates", () => {
       method: "POST",
       path: `/api/plugins/${ID}/connections/saved-tracker/sync`,
       body: "{}",
+    });
+    return { status: response.status, body: response.body };
+  }
+
+  /** Saves a connection, which validates it by running the plugin's code. */
+  async function saveConnection(server: Server) {
+    const response = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: `/api/plugins/${ID}/connections`,
+      body: JSON.stringify({
+        values: {
+          label: "Contoso",
+          tenantLabel: "Contoso",
+          baseUrl: "https://tracker.example.com",
+          apiToken: "token-value",
+        },
+      }),
     });
     return { status: response.status, body: response.body };
   }
@@ -568,8 +603,63 @@ describe("consent on plugin installs and updates", () => {
     });
     await expect(sync(restarted)).resolves.toEqual({
       status: 409,
-      body: { error: "Activate this plugin before syncing." },
+      body: { error: "Allow the new access first." },
     });
+  });
+
+  it("saves no connection of a plugin held for consent, so its new code does not run with the credential", async () => {
+    const root = await tempDir();
+    const events = createRecordingSink<AjourEvent>();
+    const server = startServer(root, { events });
+    await downloadAndActivate(server, root);
+    await install(
+      server,
+      root,
+      manifest("1.1.0", (value) => {
+        value.network.endpoints.push({ method: "GET", path: "/rest/people" });
+      }),
+    );
+    expect(await group(server)).toMatchObject({ enabled: false });
+
+    await expect(saveConnection(server)).resolves.toEqual({
+      status: 409,
+      body: { error: "Allow the new access first." },
+    });
+    // Nothing ran, and nothing was saved.
+    expect((await group(server)).connections).toHaveLength(0);
+    const refused = await requestEvent(events.events, "connection.save");
+    expect(refused).toMatchObject({
+      outcome: "refused",
+      outcome_reason: "needs_consent",
+    });
+    expect(
+      events.events.some((event) => event.kind === "plugin_operation"),
+    ).toBe(false);
+
+    // Allowing the new access lets the save reach the plugin.
+    await activate(server, true);
+    expect((await saveConnection(server)).status).not.toBe(409);
+  });
+
+  it("saves no connection of a plugin that is not on, because nothing runs before the user has seen its access", async () => {
+    const root = await tempDir();
+    const events = createRecordingSink<AjourEvent>();
+    const server = startServer(root, { events });
+    await install(server, root, manifest("1.0.0"), {
+      enableAfterInstall: false,
+    });
+
+    await expect(saveConnection(server)).resolves.toEqual({
+      status: 409,
+      body: { error: "Activate this plugin before saving a connection." },
+    });
+    expect(await requestEvent(events.events, "connection.save")).toMatchObject({
+      outcome: "refused",
+      outcome_reason: "plugin_off",
+    });
+
+    await activate(server, true);
+    expect((await saveConnection(server)).status).not.toBe(409);
   });
 
   it("holds off a development plugin whose manifest gains a host", async () => {

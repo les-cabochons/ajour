@@ -101,7 +101,12 @@ const requestReasons = [
  * Why a plugin activation or capability check refuses work. They double as
  * plugin operation reasons, so a request and its operation say the same.
  */
-const inactiveReasons = ["system_off", "plugin_off", "capability_off"] as const;
+const inactiveReasons = [
+  "system_off",
+  "plugin_off",
+  "needs_consent",
+  "capability_off",
+] as const;
 
 /**
  * What every `plugin_operation` event carries: one worker run, in the plugin

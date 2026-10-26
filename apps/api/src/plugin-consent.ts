@@ -40,7 +40,7 @@ export function decideUpdateConsent(input: {
     consent ??
     (wasOn
       ? {
-          version: previous?.version ?? "",
+          version: previous?.version ?? "unknown",
           access: previous?.access ?? NO_PLUGIN_ACCESS,
           at,
         }

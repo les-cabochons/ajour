@@ -867,28 +867,45 @@ function parseAgentTaskValues(
 
 /**
  * Why a capability cannot run now, and the reason its events record: the
- * plugin system or the plugin is off, or the user turned the capability off.
- * Undefined when it can run.
+ * plugin system or the plugin is off, the plugin reaches more than the user
+ * allowed, or the user turned the capability off. Without a capability, as
+ * for validating a connection, only the plugin itself is checked. Undefined
+ * when it can run.
  */
 async function inactiveCapability(
   storage: AppApiStorage,
   pluginId: string,
-  capability: SwitchableCapability,
+  capability: SwitchableCapability | undefined,
   runnable: RunnablePlugins,
   action: string,
 ): Promise<
-  | { message: string; reason: "system_off" | "plugin_off" | "capability_off" }
+  | {
+      message: string;
+      reason: "system_off" | "plugin_off" | "needs_consent" | "capability_off";
+    }
   | undefined
 > {
   if (!(await storage.isPluginEnabled(pluginId, runnable))) {
+    if (!(await storage.getPluginSystemEnabled())) {
+      return {
+        message: `Activate this plugin before ${action}.`,
+        reason: "system_off",
+      };
+    }
+    // The user turned it on, and an update since then reaches more.
+    if (await storage.pluginNeedsConsent(pluginId, runnable)) {
+      return {
+        message: "Allow the new access first.",
+        reason: "needs_consent",
+      };
+    }
     return {
       message: `Activate this plugin before ${action}.`,
-      reason: (await storage.getPluginSystemEnabled())
-        ? "plugin_off"
-        : "system_off",
+      reason: "plugin_off",
     };
   }
   if (
+    capability &&
     !(await storage.isPluginCapabilityEnabled(pluginId, capability, runnable))
   ) {
     return {
@@ -1191,7 +1208,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       // change while the operation runs.
       operationRefusal: async (pluginId, method) => {
         const capability = capabilityOfMethod(method as PluginMethod);
-        if (!capability) return undefined;
+        // Validating a connection serves no capability, and the plugin
+        // still has to be on.
+        if (!capability && method !== "validateConnection") return undefined;
         const inactive = await inactiveCapability(
           storage,
           pluginId,
@@ -1237,7 +1256,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       request,
     ) => {
       const capability = capabilityOfMethod(method);
-      if (!capability) return;
+      // Validating a connection serves no capability, but it runs the
+      // plugin with the connection's credential: not before the user has
+      // allowed what the package reaches.
+      if (!capability && method !== "validateConnection") return;
       const inactive = await inactiveCapability(
         storage,
         pluginId,
@@ -1863,7 +1885,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       const parsedValues = readInput(() =>
         parseConnectionValues(payload.values),
       );
-      const { plugin, unavailableReason } = await findPlugin(
+      const { plugin, runnable, unavailableReason } = await findPlugin(
         pluginManager,
         pluginId,
       );
@@ -1874,6 +1896,22 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(response, 400, {
           error: unavailableReason ?? `Plugin "${pluginId}" is not installed.`,
         });
+        return;
+      }
+      // Saving validates the connection, which runs the plugin's code with
+      // the credential just typed. That waits until the plugin is on, so
+      // nothing runs before the user has seen its access, and, after an
+      // update that reaches more, until they have allowed it.
+      const inactive = await inactiveCapability(
+        storage,
+        pluginId,
+        undefined,
+        runnable,
+        "saving a connection",
+      );
+      if (inactive) {
+        unit.refuse(inactive.reason);
+        writeJson(response, 409, { error: inactive.message });
         return;
       }
       const manifest = secretManifestOf(plugin);

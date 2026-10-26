@@ -758,7 +758,6 @@ export async function getPluginsOverview(): Promise<PluginsOverview> {
   return cachePluginsOverview(overview);
 }
 
-/** Turns the plugin on or off, or only `capability` when given. */
 /**
  * Turns a plugin, or one of its capabilities, on or off. `version` is the
  * version whose access the user reviewed: the API refuses to turn on
