@@ -71,13 +71,18 @@ export function TaskMenuHoverCard({
   const task = taskId
     ? project?.tasks.find((candidate) => candidate._id === taskId)
     : undefined;
-  const isGone = !shown?.element.isConnected || !project || (taskId && !task);
-  // Search and the star change the rows under the card. React removes the old
-  // row in the commit, after this renders, so look again after it.
+  const isRecordGone = !project || Boolean(taskId && !task);
+  // Search, the star and opening a project change the rows under the card.
+  // React removes the old row in the commit, after this renders, so the row
+  // is looked at again after it.
   useLayoutEffect(() => {
-    if (shown && isGone) rowGone(shown.id);
+    if (shown && (isRecordGone || !shown.element.isConnected)) {
+      rowGone(shown.id);
+    }
   });
-  if (!shown || isGone || !project) return null;
+  if (!shown || isRecordGone || !project || !shown.element.isConnected) {
+    return null;
+  }
 
   const usedAt = task
     ? lastUsed.get(taskUseKey(project._id, task._id))
