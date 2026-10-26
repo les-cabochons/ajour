@@ -26,6 +26,11 @@ import {
   type Favorite,
 } from "@/domain/projects/project-transitions";
 import {
+  formatLastUsed,
+  getRecentTasks,
+  type RecentTask,
+} from "@/domain/projects/recent-tasks";
+import {
   getProjectLabel,
   PickerMoreRow,
   PickerProjectRow,
@@ -37,6 +42,7 @@ import {
   findMatchingProjectTasks,
   findMatchingTasksInProject,
 } from "@/features/projects/project-task-search";
+import { useLocalTimeRecords } from "@/lib/local-hooks";
 import { ProjectIcon } from "@/lib/project-icons";
 import { cn } from "@/lib/utils";
 
@@ -60,18 +66,23 @@ interface ProjectTaskPickerProps {
 }
 
 /**
- * What the list shows: the start view (Favorites and All projects, or the
- * search results), a project's tasks, or the page of every favorite.
+ * What the list shows: the start view (Favorites, Recent tasks and All
+ * projects, or the search results), a project's tasks, the page of every
+ * favorite, or the page of the tasks used last.
  */
 type PickerView =
   | { kind: "projects" }
   | { kind: "tasks"; projectId: string }
-  | { kind: "favorites" };
+  | { kind: "favorites" }
+  | { kind: "recent" };
 
 const projectsView: PickerView = { kind: "projects" };
 
 /** How many favorites the start view shows before "N more favorites". */
 const START_VIEW_FAVORITES = 3;
+
+/** How many recent tasks the start view shows before "More recent tasks". */
+const START_VIEW_RECENT = 3;
 
 function formatMoreFavorites(count: number) {
   return count === 1 ? "1 more favorite" : `${count} more favorites`;
@@ -132,6 +143,24 @@ export function ProjectTaskPicker({
     () => filterProjectTaskRows(favorites, query),
     [favorites, query],
   );
+  const { timesheetEntries, timers } = useLocalTimeRecords();
+  // Only an open menu reads the entries, so closed pickers cost nothing.
+  const recentTasks = useMemo(
+    () => (isOpen ? getRecentTasks(projects, timesheetEntries, timers) : []),
+    [isOpen, projects, timesheetEntries, timers],
+  );
+  // The start view never repeats a row: favorite tasks stay in Favorites.
+  const startRecentTasks = useMemo(
+    () =>
+      recentTasks
+        .filter(({ task }) => task.favoritedAt === undefined)
+        .slice(0, START_VIEW_RECENT),
+    [recentTasks],
+  );
+  const matchingRecentTasks = useMemo(
+    () => filterProjectTaskRows(recentTasks, query),
+    [recentTasks, query],
+  );
   const hasQuery = query.trim().length > 0;
   const hasGlobalResults =
     matchingProjects.length > 0 || taskResults.matches.length > 0;
@@ -159,6 +188,25 @@ export function ProjectTaskPicker({
 
   function isChecked(nextProjectId: string, nextTaskId: string) {
     return nextProjectId === projectId && nextTaskId === taskId;
+  }
+
+  function renderRecentTask({ project, task, usedAt }: RecentTask) {
+    return (
+      <PickerTaskRow
+        key={`${project._id}-${task._id}`}
+        project={project}
+        task={task}
+        value={`recent-task-${project._id}-${task._id}`}
+        checked={isChecked(project._id, task._id)}
+        projectDisplay="icon"
+        trailing={
+          <span className="shrink-0 text-xs text-[var(--text-tertiary)] tabular-nums">
+            {formatLastUsed(usedAt, Date.now())}
+          </span>
+        }
+        onSelect={() => commitSelection(project._id, task._id)}
+      />
+    );
   }
 
   function renderFavorite(favorite: Favorite) {
@@ -249,7 +297,9 @@ export function ProjectTaskPicker({
                 ? `Search tasks in ${getLocalProjectDisplayName(browsingProject)}...`
                 : view.kind === "favorites"
                   ? "Search favorites..."
-                  : "Search projects and tasks..."
+                  : view.kind === "recent"
+                    ? "Search recent tasks..."
+                    : "Search projects and tasks..."
             }
             value={query}
             onValueChange={setQuery}
@@ -289,6 +339,23 @@ export function ProjectTaskPicker({
                           {formatMoreFavorites(
                             favorites.length - START_VIEW_FAVORITES,
                           )}
+                        </PickerMoreRow>
+                      ) : null}
+                    </CommandGroup>
+                    <CommandSeparator />
+                  </>
+                ) : null}
+
+                {!hasQuery && startRecentTasks.length > 0 ? (
+                  <>
+                    <CommandGroup heading="Recent tasks">
+                      {startRecentTasks.map(renderRecentTask)}
+                      {recentTasks.length > startRecentTasks.length ? (
+                        <PickerMoreRow
+                          value="more-recent-tasks"
+                          onSelect={() => openView({ kind: "recent" })}
+                        >
+                          More recent tasks
                         </PickerMoreRow>
                       ) : null}
                     </CommandGroup>
@@ -341,6 +408,29 @@ export function ProjectTaskPicker({
                 {hasQuery && !hasGlobalResults ? (
                   <CommandEmpty>No matching projects or tasks.</CommandEmpty>
                 ) : null}
+              </>
+            ) : view.kind === "recent" ? (
+              <>
+                <CommandGroup heading="Recent tasks">
+                  <CommandItem
+                    value="back-to-projects"
+                    className="rounded-[var(--control-radius)]"
+                    onSelect={() => openView(projectsView)}
+                  >
+                    <ArrowLeft className="size-4" />
+                    <span className="flex-1">Back to projects</span>
+                  </CommandItem>
+                </CommandGroup>
+                {matchingRecentTasks.length > 0 ? (
+                  <>
+                    <CommandSeparator />
+                    <CommandGroup>
+                      {matchingRecentTasks.map(renderRecentTask)}
+                    </CommandGroup>
+                  </>
+                ) : (
+                  <CommandEmpty>No matching recent tasks.</CommandEmpty>
+                )}
               </>
             ) : view.kind === "favorites" ? (
               <>

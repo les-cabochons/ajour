@@ -508,7 +508,7 @@ Feature: Open the local time workspace
     And I open "[BBB] bbb zyx" in the task menu
     And I star "333 000" in the task menu
     And I return to the project list
-    Then the task menu's Favorites list "333 000, [BBB] bbb zyx, 222 000" and "1 more favorite"
+    Then the task menu's "Favorites" section lists "333 000, [BBB] bbb zyx, 222 000, 1 more favorite"
     When I open "1 more favorite" in the task menu
     Then the task menu lists "333 000, [BBB] bbb zyx, 222 000, 111 000"
     When I unstar "[BBB] bbb zyx" in the task menu
@@ -516,6 +516,17 @@ Feature: Open the local time workspace
     When I return to the project list
     And I search for project and task "222"
     Then only the non-billable "222 000" row says "Non-billable"
+
+  Scenario: Pick a task used lately from the task menu
+    Given I used four searchable tasks lately, the second of them starred
+    When I open today's time workspace
+    And I open the new time-entry project and task picker
+    Then the task menu's "Favorites" section lists "222 000"
+    And the task menu's "Recent tasks" section lists "333 000, 111 000, 222 000, More recent tasks"
+    When I open "More recent tasks" in the task menu
+    Then the task menu lists "333 000, 222 000, 111 000, 222 000"
+    When I open "111 000" in the task menu
+    Then the picker shows "[AAA] aaa xyz · 111 000"
 
   Scenario: Install a packaged plugin from local files
     Given I have no saved Ajour workspace
