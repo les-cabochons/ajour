@@ -1007,7 +1007,7 @@ async function runSecondAjour(userData) {
       // Only the process this script started.
       child.kill("SIGKILL");
       resolve({ code: "timeout" });
-    }, 60_000);
+    }, 20_000);
     child.once("exit", (code) => {
       clearTimeout(timer);
       resolve({ code });
