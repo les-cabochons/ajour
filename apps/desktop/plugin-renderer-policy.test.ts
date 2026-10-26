@@ -1,7 +1,14 @@
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  rm,
+  symlink,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
@@ -24,6 +31,7 @@ const policy = require("./electron/plugin-renderer-policy.cjs") as {
       pluginId: string;
       packageDirectory: string;
       hostDirectory: string;
+      onSourceRefused?: (refusal: { file: string; reason: string }) => void;
     },
   ) => Promise<Response>;
   pluginOfSender: (
@@ -239,6 +247,157 @@ describe("serving a plugin's files", () => {
     ]) {
       expect((await serve(url)).status, url).toBe(404);
     }
+  });
+});
+
+describe("serving a plugin's TypeScript source", () => {
+  let packageDirectory: string;
+  let refused: { file: string; reason: string }[];
+
+  beforeEach(async () => {
+    packageDirectory = await mkdtemp(
+      path.join(os.tmpdir(), "ajour-plugin-ts-"),
+    );
+    refused = [];
+    await mkdir(path.join(packageDirectory, "lib"));
+  });
+
+  afterEach(async () => {
+    await rm(packageDirectory, { recursive: true, force: true });
+  });
+
+  const serve = (url: string) =>
+    policy.servePluginFile(
+      { url },
+      {
+        pluginId: "jira",
+        packageDirectory,
+        hostDirectory: packageDirectory,
+        onSourceRefused: (refusal) => refused.push(refusal),
+      },
+    );
+
+  it("serves a .ts or .mts file as JavaScript with its types stripped", async () => {
+    const source = [
+      'import { label } from "./label.ts";',
+      "type Item = { title: string };",
+      "export function title(item: Item): string {",
+      "  return label(item.title as string);",
+      "}",
+    ].join("\n");
+    await writeFile(path.join(packageDirectory, "lib", "plugin.ts"), source);
+    await writeFile(
+      path.join(packageDirectory, "lib", "label.mts"),
+      "export const label = (text: string): string => text;",
+    );
+
+    for (const [url, expected] of [
+      [
+        "ajour-plugin://jira/lib/plugin.ts",
+        [
+          'import { label } from "./label.ts";',
+          // Erased types keep every line and column.
+          " ".repeat("type Item = { title: string };".length),
+          "export function title(item      )         {",
+          "  return label(item.title          );",
+          "}",
+        ].join("\n"),
+      ],
+      [
+        "ajour-plugin://jira/lib/label.mts",
+        "export const label = (text        )         => text;",
+      ],
+    ] as const) {
+      const response = await serve(url);
+      expect(response.status, url).toBe(200);
+      expect(await response.text(), url).toBe(expected);
+      expect(Object.fromEntries(response.headers), url).toEqual({
+        "content-type": "text/javascript; charset=utf-8",
+        "content-security-policy": policy.PLUGIN_CONTENT_SECURITY_POLICY,
+        "cache-control": "no-store",
+        "x-content-type-options": "nosniff",
+        "cross-origin-resource-policy": "same-origin",
+      });
+    }
+    expect(refused).toEqual([]);
+  });
+
+  it("serves other files unchanged, whatever TypeScript they hold", async () => {
+    const source = "export const answer: number = 42;";
+    await writeFile(path.join(packageDirectory, "lib", "plugin.mjs"), source);
+    await writeFile(path.join(packageDirectory, "notes.txt"), source);
+
+    const module = await serve("ajour-plugin://jira/lib/plugin.mjs");
+    const notes = await serve("ajour-plugin://jira/notes.txt");
+
+    expect(await module.text()).toBe(source);
+    expect(await notes.text()).toBe(source);
+    expect(notes.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+  });
+
+  it.each([
+    [
+      "an enum",
+      "export enum Status { Open, Closed }",
+      "lib/status.ts uses TypeScript that Ajour can't strip: TypeScript enum is not supported in strip-only mode.",
+    ],
+    [
+      "a namespace",
+      "namespace Status { export const open = 1; }",
+      "lib/status.ts uses TypeScript that Ajour can't strip: TypeScript namespace declaration is not supported in strip-only mode.",
+    ],
+    [
+      "a parameter property",
+      "export class Status { constructor(private open: boolean) {} }",
+      "lib/status.ts uses TypeScript that Ajour can't strip: TypeScript parameter property is not supported in strip-only mode.",
+    ],
+    [
+      "a syntax error",
+      "export const open = ;",
+      "lib/status.ts isn't valid TypeScript: Expression expected.",
+    ],
+  ])(
+    "refuses a file with %s, naming it and why",
+    async (_name, source, reason) => {
+      await writeFile(path.join(packageDirectory, "lib", "status.ts"), source);
+
+      const response = await serve("ajour-plugin://jira/lib/status.ts");
+
+      expect(response.status).toBe(500);
+      expect(await response.text()).not.toContain(source);
+      expect(response.headers.get("content-type")).toBe(
+        "text/plain; charset=utf-8",
+      );
+      expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(refused).toEqual([{ file: "lib/status.ts", reason }]);
+    },
+  );
+
+  it("strips a file again once it changes, and not before", async () => {
+    const file = path.join(packageDirectory, "lib", "plugin.ts");
+    const installedAt = new Date("2026-10-01T12:00:00Z");
+    await writeFile(file, "export const a: number = 1;");
+    await utimes(file, installedAt, installedAt);
+    const first = await (
+      await serve("ajour-plugin://jira/lib/plugin.ts")
+    ).text();
+
+    // Same size and time: the stripped output is reused.
+    await writeFile(file, "export const b: number = 2;");
+    await utimes(file, installedAt, installedAt);
+    const reused = await (
+      await serve("ajour-plugin://jira/lib/plugin.ts")
+    ).text();
+    const updatedAt = new Date("2026-10-02T12:00:00Z");
+    await writeFile(file, "export const changed: number = 3;");
+    await utimes(file, updatedAt, updatedAt);
+    const changed = await (
+      await serve("ajour-plugin://jira/lib/plugin.ts")
+    ).text();
+
+    expect(first).toBe("export const a         = 1;");
+    expect(reused).toBe(first);
+    expect(changed).toBe("export const changed         = 3;");
   });
 });
 

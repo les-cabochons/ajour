@@ -1,6 +1,7 @@
 // @ts-check
 const path = require("node:path");
 const { readFile, realpath, stat } = require("node:fs/promises");
+const { stripTypeScriptTypes } = require("node:module");
 
 /**
  * The rules a plugin renderer is held to, apart from Electron itself, so
@@ -40,10 +41,19 @@ const PLUGIN_CONTENT_SECURITY_POLICY = [
   "form-action 'none'",
 ].join("; ");
 
+/**
+ * A plugin's TypeScript source: main strips its types before serving it,
+ * since the renderer has no Node to do it (#437).
+ */
+const TYPESCRIPT_EXTENSIONS = new Set([".ts", ".mts"]);
+
 /** The types a plugin's files are served as. Anything else is opaque bytes. */
 const CONTENT_TYPES = {
   ".js": "text/javascript; charset=utf-8",
   ".mjs": "text/javascript; charset=utf-8",
+  // Served stripped of their types, as JavaScript.
+  ".ts": "text/javascript; charset=utf-8",
+  ".mts": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".txt": "text/plain; charset=utf-8",
   ".md": "text/plain; charset=utf-8",
@@ -182,18 +192,106 @@ function isInside(child, parent) {
   );
 }
 
+/** At most this many stripped files are kept, as a package's file limit. */
+const MAX_STRIPPED_FILES = 2_000;
+/** The longest reason Node gives that a reason quotes. */
+const MAX_STRIP_REASON_CHARACTERS = 300;
+
+/**
+ * A TypeScript file's code with its types erased, or why it can't be, to
+ * follow the file's name.
+ *
+ * @typedef {{ code: string, refused?: undefined } | { code?: undefined, refused: string }} StrippedFile
+ */
+
+/**
+ * Each TypeScript file's stripped output, or why it can't be stripped, by
+ * its real path. An entry holds while the file keeps its size and time, so
+ * a renderer that opens again doesn't strip the package again.
+ *
+ * @type {Map<string, { size: number, mtimeMs: number, stripped: StrippedFile }>}
+ */
+const strippedFiles = new Map();
+
+/** Node's reason, on one line, ending as a sentence. @param {unknown} error */
+function stripReason(error) {
+  const message =
+    error instanceof Error && typeof error.message === "string"
+      ? error.message
+      : "";
+  const line =
+    message
+      .split(/\r?\n/u)
+      .map((part) => part.trim())
+      .find((part) => part !== "") ?? "Unknown error";
+  const cut =
+    line.length <= MAX_STRIP_REASON_CHARACTERS
+      ? line
+      : `${line.slice(0, MAX_STRIP_REASON_CHARACTERS - 1)}…`;
+  return /[.!?…]$/u.test(cut) ? cut : `${cut}.`;
+}
+
+/**
+ * A TypeScript file's code with its types erased, or why it can't run:
+ * only erasable syntax strips. Enums, namespaces and parameter properties
+ * would need code generated. Erasing keeps every line and column, so a
+ * stack trace points into the source as written.
+ *
+ * @param {string} realPath
+ * @param {{ size: number, mtimeMs: number }} stats
+ * @returns {Promise<StrippedFile>}
+ */
+async function strippedFile(realPath, { size, mtimeMs }) {
+  const cached = strippedFiles.get(realPath);
+  if (cached && cached.size === size && cached.mtimeMs === mtimeMs) {
+    return cached.stripped;
+  }
+  const source = await readFile(realPath, "utf8");
+  /** @type {StrippedFile} */
+  let stripped;
+  try {
+    if (typeof stripTypeScriptTypes !== "function") {
+      throw new Error("This version of Ajour can't strip TypeScript.");
+    }
+    stripped = { code: stripTypeScriptTypes(source, { mode: "strip" }) };
+  } catch (error) {
+    const code = /** @type {{ code?: unknown }} */ (error)?.code;
+    stripped = {
+      refused:
+        code === "ERR_INVALID_TYPESCRIPT_SYNTAX"
+          ? `isn't valid TypeScript: ${stripReason(error)}`
+          : `uses TypeScript that Ajour can't strip: ${stripReason(error)}`,
+    };
+  }
+  strippedFiles.delete(realPath);
+  strippedFiles.set(realPath, { size, mtimeMs, stripped });
+  if (strippedFiles.size > MAX_STRIPPED_FILES) {
+    const oldest = strippedFiles.keys().next().value;
+    if (oldest !== undefined) strippedFiles.delete(oldest);
+  }
+  return stripped;
+}
+
 /**
  * Answers a request in the plugin's origin: Ajour's own files from
  * `hostDirectory`, the plugin's from its package, and 404 for anything
- * else, a file a link leads out of the package included.
+ * else, a file a link leads out of the package included. A `.ts` or `.mts`
+ * file is served as JavaScript, with its types stripped. One that can't be
+ * stripped answers 500, so no module of the graph that imports it runs,
+ * and `onSourceRefused` hears which file and why.
  *
  * @param {{ url: string, method?: string }} request
- * @param {{ pluginId: string, packageDirectory: string, hostDirectory: string }} served
+ * @param {{
+ *   pluginId: string,
+ *   packageDirectory: string,
+ *   hostDirectory: string,
+ *   onSourceRefused?: (refusal: { file: string, reason: string }) => void,
+ * }} served
  * @returns {Promise<Response>}
  */
 async function servePluginFile(
   request,
-  { pluginId, packageDirectory, hostDirectory },
+  { pluginId, packageDirectory, hostDirectory, onSourceRefused },
 ) {
   const notFound = () =>
     new Response("Not found", {
@@ -212,8 +310,27 @@ async function servePluginFile(
     if (resolved.kind === "package") {
       const root = await realpath(packageDirectory);
       const real = await realpath(resolved.filePath);
-      if (!isInside(real, root) || !(await stat(real)).isFile()) {
+      const stats = await stat(real);
+      if (!isInside(real, root) || !stats.isFile()) {
         return notFound();
+      }
+      if (TYPESCRIPT_EXTENSIONS.has(path.extname(real).toLowerCase())) {
+        // The path as requested, which is the one the plugin's author wrote.
+        const file = path
+          .relative(path.resolve(packageDirectory), resolved.filePath)
+          .split(path.sep)
+          .join("/");
+        const stripped = await strippedFile(real, stats);
+        if (stripped.refused !== undefined) {
+          onSourceRefused?.({ file, reason: `${file} ${stripped.refused}` });
+          return new Response("This file can't run.", {
+            status: 500,
+            headers: pluginFileHeaders("500.txt"),
+          });
+        }
+        return new Response(stripped.code, {
+          headers: pluginFileHeaders(path.basename(real), "package"),
+        });
       }
       const body = await readFile(real);
       return new Response(body, {
