@@ -125,6 +125,7 @@ import {
   secretManifestOf,
   type SecretFieldDeclaration,
 } from "./connection-credentials.ts";
+import { secretAddressHoldsUserinfo } from "./broker-policy.ts";
 import { VaultUnavailableError, type SecretVault } from "./secret-vault.ts";
 import {
   BrokerRequestError,
@@ -1950,6 +1951,27 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           ),
         ),
       );
+      // An address that is the secret holds no user name or password. The
+      // plugin never sees it, so the check is Ajour's. The message names the
+      // field and none of the address.
+      if (isPluginApi4Manifest(plugin)) {
+        const auth = plugin.network?.auth;
+        const given =
+          auth?.scheme === "secretAddress"
+            ? parsedValues.config[auth.secretField]
+            : undefined;
+        if (typeof given === "string" && secretAddressHoldsUserinfo(given)) {
+          const label = plugin.connectionFields.find(
+            (field) =>
+              auth?.scheme === "secretAddress" && field.id === auth.secretField,
+          )?.label;
+          readInput(() => {
+            throw new Error(
+              `Remove the user name and password from ${label ? `"${label}"` : "the address"}.`,
+            );
+          });
+        }
+      }
       const capabilities = await storage.listEnabledCapabilities(
         pluginId,
         pluginSwitchableCapabilities(plugin),

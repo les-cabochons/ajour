@@ -451,7 +451,13 @@ API 4 packages in development builds of the desktop app, until the cut-over
   the method the redirect leads to, with its access choice on. Any other
   comes back as the 3xx. A secret address follows https redirects to any
   host, up to 3, to an address of 4,096 characters at most, and never hands
-  back its final address. `ajour.publicFetch` reaches only declared public
+  back its final address. Like a base address, a secret address and every
+  address it redirects to must hold no user name or password: a saved one is
+  refused with `invalid_address` before any request (`webcal://` is read as
+  `https://` first), a redirect to one with `redirect_refused`, and a connection
+  save refuses it with a message that names the field and not the address
+  (`secretAddressHoldsUserinfo`, `broker-policy.ts`), since the plugin never
+  sees the address and can't check it. `ajour.publicFetch` reaches only declared public
   hosts, over https, without credentials.
 - **Private addresses** are refused, from every address the host resolves to
   and from the address that answered, when the transport can tell, unless

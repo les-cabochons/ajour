@@ -655,10 +655,15 @@ export class CredentialBroker implements CredentialBrokerPort {
             : method;
         // A same-origin redirect is followed only where the policy would
         // let the plugin send the request itself.
+        // Every redirect is held to the rule of the saved address too: no
+        // user name or password, which would ride along.
+        const hasUserinfo = Boolean(next?.username || next?.password);
         const follow = target.secretAddress
           ? next?.protocol === "https:" &&
+            !hasUserinfo &&
             next.href.length <= MAX_REDIRECT_ADDRESS
           : next !== undefined &&
+            !hasUserinfo &&
             next.origin === origin &&
             target.allows(nextMethod, next);
         if (follow && exchange.redirects < this.limits.redirects) {
@@ -680,7 +685,9 @@ export class CredentialBroker implements CredentialBrokerPort {
               ? "The connection's secret address redirected more than 3 times."
               : next !== undefined && next.href.length > MAX_REDIRECT_ADDRESS
                 ? "The connection's secret address redirected to an address too long to check."
-                : "The connection's secret address redirected to an address that isn't https.",
+                : hasUserinfo
+                  ? "The connection's secret address redirected to an address that holds a user name or password."
+                  : "The connection's secret address redirected to an address that isn't https.",
           );
         }
       }
