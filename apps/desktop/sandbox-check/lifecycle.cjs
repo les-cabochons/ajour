@@ -216,6 +216,7 @@ async function lifecycle() {
     developmentPluginDirectories: [
       path.join(FIXTURES, "fixture-lifecycle"),
       path.join(FIXTURES, "fixture-resident"),
+      path.join(FIXTURES, "fixture-hostile"),
     ],
     projectDataShapePluginDirectories: [],
     allowDevelopmentPlugins: true,
@@ -234,10 +235,10 @@ async function lifecycle() {
     (await request("GET", "/api/plugins")).body.connectionGroups.find(
       (candidate) => candidate.plugin.id === pluginId,
     );
-  const connect = async (mode) => {
+  const connect = async (mode, pluginId = "fixture-lifecycle") => {
     const saved = await request(
       "POST",
-      "/api/plugins/fixture-lifecycle/connections",
+      `/api/plugins/${pluginId}/connections`,
       {
         values: {
           label: mode,
@@ -253,7 +254,7 @@ async function lifecycle() {
       const startedAt = Date.now();
       const synced = await request(
         "POST",
-        `/api/plugins/fixture-lifecycle/connections/${id}/sync`,
+        `/api/plugins/${pluginId}/connections/${id}/sync`,
         { trigger: "manual", workItems: [] },
       );
       return {
@@ -363,7 +364,38 @@ async function lifecycle() {
     afterResume,
   });
 
-  // 9. Suspension wins over "Always ready", and Turn back on starts it again.
+  // 9. A hostile plugin: an infinite loop, then a fork bomb of workers. Each
+  //    ends at its time, with its renderer's process, and the bomb never
+  //    gets a process of its own: every worker runs in the plugin's one.
+  const spin = await connect("spin", "fixture-hostile");
+  const forkBomb = await connect("fork-bomb", "fixture-hostile");
+  const hostilePid = () => runtime.rendererProcessIds()["fixture-hostile"];
+  const hostileCase = async (sync) => {
+    let pid;
+    let mostProcesses = 0;
+    const baseline = app.getAppMetrics().length;
+    const sampler = setInterval(() => {
+      pid ??= hostilePid();
+      mostProcesses = Math.max(mostProcesses, app.getAppMetrics().length);
+    }, 50);
+    const outcome = await sync();
+    clearInterval(sampler);
+    await sleep(100);
+    return {
+      outcome,
+      pid: pid ?? null,
+      // The plugin's renderer is the one process the case may add.
+      addedProcesses: mostProcesses - baseline,
+      rendererOpen: hostilePid() !== undefined,
+      gone: pid !== undefined && (await until(() => !isAlive(pid), 5_000)),
+    };
+  };
+  report("hostile", {
+    spun: await hostileCase(spin),
+    forkBombed: await hostileCase(forkBomb),
+  });
+
+  // 10. Suspension wins over "Always ready", and Turn back on starts it again.
   const residentCrashes = [];
   for (let index = 0; index < 3; index += 1) {
     residentCrashes.push(await crash(runtime, "fixture-resident"));
@@ -385,7 +417,7 @@ async function lifecycle() {
     residentReopened,
   });
 
-  // 10. Quit: a running call finishes within the drain, then every renderer closes.
+  // 11. Quit: a running call finishes within the drain, then every renderer closes.
   const draining = slow();
   await sleep(200);
   const stopStartedAt = Date.now();

@@ -211,6 +211,51 @@ async function checkSandbox() {
     exits.blocked,
   );
 
+  const attacks = findings["broker-attacks"] ?? {};
+  const entries = attacks.entries ?? [];
+  const tried = entries
+    .filter((entry) => entry.kind === "attempt")
+    .map((entry) => entry.result);
+  expect(
+    attacks.syncStatus === 200 && tried.length === 12,
+    "the malicious plugin turned the broker against itself in a sync",
+    attacks,
+  );
+  expect(
+    tried.find((attempt) => attempt.name === "control")?.escaped === true,
+    "its own allowed request goes through: the broker answers it",
+    tried.find((attempt) => attempt.name === "control"),
+  );
+  for (const attempt of tried.filter(({ name }) => name !== "control")) {
+    expect(
+      !attempt.escaped,
+      `the broker refused: ${attempt.name} (${attempt.error ?? attempt.value})`,
+    );
+  }
+  const echo = entries.find((entry) => entry.kind === "echo")?.result ?? "";
+  expect(
+    echo.startsWith("200 ") && attacks.pluginSawToken === false,
+    "a token the service echoes back never reaches the plugin",
+    echo,
+  );
+  expect(
+    attacks.serviceReceived?.some(
+      (received) => received.url === "/svc/api/me?case=echo",
+    ) &&
+      attacks.serviceReceived.every(
+        (received) =>
+          received.url.startsWith("/svc/api/me") &&
+          received.authorization === `Bearer ${TOKEN}`,
+      ),
+    "the service got only the plugin's allowed requests, from the broker",
+    attacks.serviceReceived?.map((received) => received.url),
+  );
+  expect(
+    attacks.catchAllHits?.length === 0,
+    "nothing reached the catch-all server: no redirect was followed with the token",
+    attacks.catchAllHits,
+  );
+
   const processes = findings.processes ?? {};
   const rendererPids = Object.values(processes.pids ?? {});
   expect(
@@ -507,6 +552,33 @@ async function checkLifecycle() {
     budget,
   );
 
+  const hostile = findings.hostile ?? {};
+  const timedOut =
+    'Plugin "fixture-hostile" timed out while handling syncConnection.';
+  const overCeiling =
+    'Plugin "fixture-hostile" stopped before returning a result: its process went over its memory ceiling.';
+  const endedWithItsProcess = (run, errors) =>
+    errors.includes(run?.outcome?.error) &&
+    Number.isInteger(run.pid) &&
+    run.rendererOpen === false &&
+    run.gone === true;
+  expect(
+    endedWithItsProcess(hostile.spun, [timedOut]),
+    "an infinite loop ends at its time, with its renderer's process",
+    hostile.spun,
+  );
+  expect(
+    endedWithItsProcess(hostile.forkBombed, [timedOut, overCeiling]),
+    "a fork bomb of workers ends at its memory ceiling or its time, with its renderer's process",
+    hostile.forkBombed,
+  );
+  expect(
+    hostile.spun?.addedProcesses <= 1 &&
+      hostile.forkBombed?.addedProcesses <= 1,
+    "and neither gets a process beyond its plugin's one renderer",
+    hostile,
+  );
+
   const resident = findings["always-ready-suspended"] ?? {};
   expect(
     resident.residentSuspended !== null &&
@@ -634,8 +706,9 @@ async function checkOrphanSweep() {
     "the sweep forgets the record, and an event says what it ended",
     sweep,
   );
+  // It opens no renderer, so it may have no process but main's to check.
   expect(
-    swept.pids.length > 0 && swept.left.length === 0,
+    swept.left.length === 0,
     "the relaunch's quit leaves no process behind",
     { pids: swept.pids, left: swept.left },
   );

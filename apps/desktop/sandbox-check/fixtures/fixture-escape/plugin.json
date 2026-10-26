@@ -13,7 +13,13 @@
       "type": "password",
       "required": true,
       "secret": true
-    }
+    },
+    {
+      "id": "otherConnection",
+      "label": "Another plugin's connection",
+      "type": "text"
+    },
+    { "id": "probe", "label": "Catch-all address", "type": "text" }
   ],
   "capabilities": { "connector": {} },
   "network": {

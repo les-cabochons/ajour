@@ -105,7 +105,18 @@ async function startService() {
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify(body));
     };
-    if (request.url === "/svc/api/me") json({ name: "Ada" });
+    // The malicious plugin's cases: a redirect to the catch-all server, on
+    // another origin, and an answer that echoes the token back.
+    if (request.url === "/svc/api/me?case=redirect") {
+      response.writeHead(302, { location: `${service.redirectTo}/redirected` });
+      response.end();
+    } else if (request.url === "/svc/api/me?case=echo") {
+      response.writeHead(200, {
+        "content-type": "text/plain",
+        "x-echo": request.headers.authorization,
+      });
+      response.end(`You sent: ${request.headers.authorization}`);
+    } else if (request.url === "/svc/api/me") json({ name: "Ada" });
     else if (request.url === "/svc/api/items") {
       setTimeout(
         () => json({ items: [{ id: "1", key: "T-1", title: "First" }] }),
@@ -121,7 +132,11 @@ async function startService() {
 async function startCatchAll() {
   const catchAll = { hits: [] };
   catchAll.server = await listen((request, response) => {
-    catchAll.hits.push(request.url);
+    catchAll.hits.push(
+      request.headers.authorization === undefined
+        ? request.url
+        : `${request.url} with ${request.headers.authorization}`,
+    );
     response.writeHead(200, { "access-control-allow-origin": "*" }).end("ok");
   });
   catchAll.server.on("upgrade", (request, socket) => {
@@ -339,6 +354,7 @@ async function main() {
           catchAll: catchAll.url,
           localApi: `http://localhost:${catchAll.server.address().port}`,
           otherPlugin: `${PLUGIN_SCHEME}://fixture-tracker`,
+          userDataFile: pathToFileURL(statePath).href,
         },
       ],
       "plugin.mjs",
@@ -347,8 +363,55 @@ async function main() {
     const state = JSON.parse(await readFile(statePath, "utf8"));
     report("exits", {
       outcome: exits,
-      catchAllHits: catchAll.hits,
+      catchAllHits: [...catchAll.hits],
       blocked: state.pluginBrokerActivity?.["fixture-escape"] ?? null,
+    });
+
+    // 3b. The malicious plugin turns the broker against itself, from a sync
+    //     of a connection of its own, on the same service as the tracker's.
+    service.redirectTo = catchAll.url;
+    const hitsBefore = catchAll.hits.length;
+    const receivedBefore3b = service.received.length;
+    const escapeSaved = await request(
+      "POST",
+      "/api/plugins/fixture-escape/connections",
+      {
+        values: {
+          label: "Escape",
+          tenantLabel: "Acme",
+          autoSync: true,
+          autoSyncIntervalMinutes: 15,
+          baseUrl: service.baseUrl,
+          token: TOKEN,
+          onPremises: true,
+          otherConnection: connectionId,
+          probe: catchAll.url,
+        },
+      },
+    );
+    const escapeSynced = await request(
+      "POST",
+      `/api/plugins/fixture-escape/connections/${escapeSaved.body?.connection?.id}/sync`,
+      { trigger: "auto", workItems: [] },
+    );
+    report("broker-attacks", {
+      saveStatus: escapeSaved.status,
+      saveError: escapeSaved.body?.error ?? null,
+      syncStatus: escapeSynced.status,
+      syncError:
+        escapeSynced.body?.connection?.lastError ??
+        escapeSynced.body?.error ??
+        null,
+      entries: (escapeSynced.body?.items ?? []).map((item) => {
+        try {
+          return JSON.parse(item.title);
+        } catch {
+          return { unreadable: item.title };
+        }
+      }),
+      pluginSawToken: JSON.stringify(escapeSynced.body).includes(TOKEN),
+      catchAllHits: catchAll.hits.slice(hitsBefore),
+      serviceReceived: service.received.slice(receivedBefore3b),
     });
 
     // 4. Two plugins, two processes, both sandboxed.
