@@ -158,6 +158,7 @@ interface PluginHostOptions {
    */
   pluginState?: (
     pluginId: string,
+    availablePluginIds: ReadonlySet<string>,
   ) => Promise<{ on: boolean; settings: PluginRuntimeSettings }>;
   /** The crash budget's clock. Tests move it. */
   now?: () => number;
@@ -430,12 +431,21 @@ export class PluginManager {
         if (this.shuttingDown) return;
         const { plugins } = await this.discoverPlugins();
         const ready: ReadyPlugin[] = [];
+        const stopped: string[] = [];
+        // The plugins a call may reach, as the call path counts them.
+        const available = new Set(plugins.keys());
         for (const plugin of plugins.values()) {
           const manifest = plugin.manifest;
           if (!isPluginApi4Manifest(manifest) || !manifest.entrypoint) continue;
-          if (this.stops.suspension(manifest.id)) continue;
-          const state = await this.pluginState?.(manifest.id);
-          if (!state?.on) continue;
+          if (this.stops.suspension(manifest.id)) {
+            stopped.push(manifest.id);
+            continue;
+          }
+          const state = await this.pluginState?.(manifest.id, available);
+          if (!state?.on) {
+            stopped.push(manifest.id);
+            continue;
+          }
           const lifecycle = lifecycleOf(manifest, state.settings);
           if (!lifecycle.alwaysReady) continue;
           ready.push({
@@ -451,6 +461,7 @@ export class PluginManager {
           ready.sort((left, right) =>
             left.pluginId.localeCompare(right.pluginId),
           ),
+          stopped.sort(),
         );
       })
       .catch(() => undefined);
@@ -917,8 +928,8 @@ export class PluginManager {
           if (isPluginApi4Manifest(plugin.manifest)) {
             lifecycle = lifecycleOf(
               plugin.manifest,
-              (await this.pluginState?.(pluginId))?.settings ??
-                DEFAULT_PLUGIN_RUNTIME_SETTINGS,
+              (await this.pluginState?.(pluginId, new Set([pluginId])))
+                ?.settings ?? DEFAULT_PLUGIN_RUNTIME_SETTINGS,
             );
             const prepared = this.prepareApi4(
               pluginId,

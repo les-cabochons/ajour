@@ -293,6 +293,61 @@ describe("plugin worker lifetime", () => {
     await Promise.all([...running, ...api4Running]);
   });
 
+  it("refuses a fifth API 3 operation across plugins before it resolves anything else", async () => {
+    const host = new PluginWorkerLifetime<string>({
+      name: "Plugin",
+      runtime: {
+        start: () => ({
+          settled: new Promise(() => undefined),
+          terminate: async () => undefined,
+        }),
+      },
+      requestTimeoutMs: 5_000,
+      eventNames: { sync: "backlog.sync" },
+    });
+    lifetimes.push(host);
+    const preparing = deferred<void>();
+    const resolved: string[] = [];
+    const api3 = (pluginId: string) =>
+      host.run(pluginId, "sync", async (record) => {
+        // A host learns the package's API version first, then the rest.
+        record.plugin({ version: "1.0.0", source: "installed", apiVersion: 3 });
+        resolved.push(pluginId);
+        await preparing.promise;
+        return {
+          invocation: { ...invocation, pluginId },
+          parse: (value: unknown) => value,
+        };
+      });
+    const running = ["a", "b", "c", "d"].map((pluginId) =>
+      api3(pluginId).catch((error: unknown) => error),
+    );
+    await waitForWorkerStart();
+    expect(resolved).toEqual(["a", "b", "c", "d"]);
+
+    await expect(api3("e")).rejects.toThrow(
+      "Too many plugin operations are already running.",
+    );
+    expect(resolved).not.toContain("e");
+    // An API 4 plugin has no thread of the host's to wait for.
+    const api4 = host.run("f", "sync", async (record) => {
+      record.plugin({ version: "1.0.0", source: "installed", apiVersion: 4 });
+      resolved.push("f");
+      await preparing.promise;
+      return {
+        invocation: { ...invocation, pluginId: "f", apiVersion: 4 },
+        parse: (value: unknown) => value,
+      };
+    });
+    await waitForWorkerStart();
+    expect(resolved).toContain("f");
+
+    const shutdown = host.shutdown();
+    preparing.resolve();
+    await shutdown;
+    await Promise.all([...running, api4.catch(() => undefined)]);
+  });
+
   it("waits for running operations up to a limit, as a quit drains them", async () => {
     const finishes = deferred<void>();
     const host = new PluginWorkerLifetime<string>({

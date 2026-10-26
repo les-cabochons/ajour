@@ -105,7 +105,9 @@ function rendererRuntime() {
     invocations: PluginInvocation[];
     terminated: PluginTerminateReason[];
     ready: (readonly ReadyPlugin[])[];
-  } = { invocations: [], terminated: [], ready: [] };
+    /** The plugins each `keepReady` said can't run now. */
+    stopped: (readonly string[])[];
+  } = { invocations: [], terminated: [], ready: [], stopped: [] };
   const runtime: PluginRuntime = {
     runsPluginApi4: true,
     unavailableReason: () => undefined,
@@ -123,8 +125,9 @@ function rendererRuntime() {
         },
       };
     },
-    keepReady: (plugins) => {
+    keepReady: (plugins, stopped = []) => {
       seen.ready.push(plugins);
+      seen.stopped.push(stopped);
     },
   };
   return { runtime, seen };
@@ -417,24 +420,30 @@ describe("the renderer host's lifecycle, through the app API", () => {
         plugins: [manifest("resident", { start: "alwaysReady" })],
       });
       await until(() => readyOf(fake).length === 1);
+      expect(fake.seen.stopped.at(-1)).toEqual([]);
 
+      // A plugin that can't run is named, so its renderer closes at once.
       await request("POST", "/api/plugins/resident/activation", {
         enabled: false,
       });
       expect(readyOf(fake)).toEqual([]);
+      expect(fake.seen.stopped.at(-1)).toEqual(["resident"]);
 
       await request("POST", "/api/plugins/resident/activation", {
         enabled: true,
       });
       expect(readyOf(fake)).toHaveLength(1);
+      expect(fake.seen.stopped.at(-1)).toEqual([]);
 
       for (let index = 0; index < 3; index += 1) {
         fake.seen.host!.recordStopped!("resident", "crashed", clock.now);
       }
       await until(() => readyOf(fake).length === 0);
+      expect(fake.seen.stopped.at(-1)).toEqual(["resident"]);
 
       await request("POST", "/api/plugins/resident/resume");
       expect(readyOf(fake)).toHaveLength(1);
+      expect(fake.seen.stopped.at(-1)).toEqual([]);
     });
   });
 

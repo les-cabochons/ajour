@@ -138,7 +138,7 @@ export interface OperationRecord {
 interface Operation {
   pluginId: string;
   method: string;
-  /** Set once prepared: an API 3 package shares the host's worker threads. */
+  /** Set once the package's API version is known: an API 3 package shares the host's worker threads. */
   workerThread?: boolean;
   /** The connection it runs for, if any. */
   connectionId?: string;
@@ -229,14 +229,19 @@ export class PluginWorkerLifetime<TMethod extends string> {
     });
     let secrets: readonly string[] | undefined;
     const record: OperationRecord = {
-      plugin: (facts) =>
+      plugin: (facts) => {
         unit.set({
           plugin: {
             version: facts.version,
             source: facts.source,
             api_version: facts.apiVersion,
           },
-        }),
+        });
+        // The version is known: an API 3 package takes its thread now, so
+        // a full host refuses it before it resolves anything more.
+        if (facts.apiVersion < 4 && operation)
+          this.claimWorkerThread(operation);
+      },
       secrets: (values) => {
         secrets = values;
       },
@@ -273,17 +278,7 @@ export class PluginWorkerLifetime<TMethod extends string> {
           if (registered.cancelled) throw registered.cancelled;
           this.assertRunning();
           if (prepared.invocation.apiVersion < 4) {
-            // Worker threads stay shared by the host, as before API 4.
-            if (
-              this.countOperations((other) => other.workerThread === true) >=
-              MAX_CONCURRENT_OPERATIONS
-            ) {
-              throw new PluginOperationRefused(
-                `Too many ${this.options.name.toLowerCase()} operations are already running.`,
-                "capacity",
-              );
-            }
-            registered.workerThread = true;
+            this.claimWorkerThread(registered);
           }
           unit.set({ worker: { prepare_ms: Date.now() - admittedAt } });
           return await this.invoke(registered, method, prepared, unit);
@@ -391,6 +386,25 @@ export class PluginWorkerLifetime<TMethod extends string> {
       })();
     }
     return this.shutdownPromise;
+  }
+
+  /**
+   * An API 3 package runs on a worker thread, and the host shares a few:
+   * claims one for the operation, or refuses it when they are all taken.
+   * Claiming again changes nothing.
+   */
+  private claimWorkerThread(operation: Operation) {
+    if (operation.workerThread) return;
+    if (
+      this.countOperations((other) => other.workerThread === true) >=
+      MAX_CONCURRENT_OPERATIONS
+    ) {
+      throw new PluginOperationRefused(
+        `Too many ${this.options.name.toLowerCase()} operations are already running.`,
+        "capacity",
+      );
+    }
+    operation.workerThread = true;
   }
 
   private countOperations(matches: (operation: Operation) => boolean) {

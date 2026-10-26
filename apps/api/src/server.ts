@@ -879,6 +879,19 @@ function parseAgentTaskValues(
 }
 
 /**
+ * Whether the plugin may run now: one answer for a call and for the list of
+ * plugins the runtime keeps ready, so neither runs a plugin the other would
+ * refuse. Anything else that gates a plugin joins this check.
+ */
+function pluginMayRun(
+  storage: AppApiStorage,
+  pluginId: string,
+  availablePluginIds: ReadonlySet<string>,
+): Promise<boolean> {
+  return storage.isPluginEnabled(pluginId, availablePluginIds);
+}
+
+/**
  * Why a capability cannot run now, and the reason its events record: the
  * plugin system or the plugin is off, or the user turned the capability off.
  * Undefined when it can run.
@@ -893,7 +906,7 @@ async function inactiveCapability(
   | { message: string; reason: "system_off" | "plugin_off" | "capability_off" }
   | undefined
 > {
-  if (!(await storage.isPluginEnabled(pluginId, availablePluginIds))) {
+  if (!(await pluginMayRun(storage, pluginId, availablePluginIds))) {
     return {
       message: `Activate this plugin before ${action}.`,
       reason: (await storage.getPluginSystemEnabled())
@@ -1233,8 +1246,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     requestTimeoutMs: options.pluginRequestTimeoutMs,
     runtime: pluginRuntime,
     events,
-    pluginState: async (pluginId) => ({
-      on: await storage.isPluginEnabled(pluginId, new Set([pluginId])),
+    pluginState: async (pluginId, availablePluginIds) => ({
+      on: await pluginMayRun(storage, pluginId, availablePluginIds),
       settings: await storage.getPluginRuntimeSettings(pluginId),
     }),
     ...(options.pluginClock ? { now: options.pluginClock } : {}),

@@ -1198,8 +1198,8 @@ export const catalog = defineCatalog({
     /**
      * A plugin's renderer that had opened, closed (#391): idle for 2 minutes,
      * a call past its time, above its memory ceiling, its process gone, its
-     * page failed to load, its package changed, plugins off, or Ajour
-     * quitting.
+     * page failed to load, its package changed, its plugin turned off or
+     * suspended, plugins off, or Ajour quitting.
      */
     "plugin_renderer.close": {
       kinds: ["lifecycle"],
@@ -1209,6 +1209,7 @@ export const catalog = defineCatalog({
           close_reason: operational<
             | "idle"
             | "package_change"
+            | "plugin_off"
             | "quit"
             | "timeout"
             | "memory"

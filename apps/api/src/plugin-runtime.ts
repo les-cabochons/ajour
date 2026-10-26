@@ -182,8 +182,14 @@ export interface PluginRuntime {
    * keeps a process per plugin starts those not running, and lets any other
    * close once idle. The API calls it as it starts and whenever the list
    * changes, such as when a plugin is turned off or suspended.
+   *
+   * `stopped` names the API 4 plugins that can't run now, turned off or
+   * suspended: a runtime closes their processes at once, not once idle.
    */
-  keepReady?(plugins: readonly ReadyPlugin[]): void;
+  keepReady?(
+    plugins: readonly ReadyPlugin[],
+    stopped?: readonly string[],
+  ): void;
 }
 
 /** A run that ended before it started, such as a refused one. */
@@ -227,8 +233,11 @@ export class SplitPluginRuntime implements PluginRuntime {
     );
   }
 
-  keepReady(plugins: readonly ReadyPlugin[]) {
-    this.api4.keepReady?.(plugins.filter((plugin) => plugin.apiVersion >= 4));
+  keepReady(plugins: readonly ReadyPlugin[], stopped?: readonly string[]) {
+    this.api4.keepReady?.(
+      plugins.filter((plugin) => plugin.apiVersion >= 4),
+      stopped,
+    );
   }
 }
 
