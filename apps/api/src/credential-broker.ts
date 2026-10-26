@@ -11,9 +11,12 @@
  *   (the fixed denylist always wins), and the connection's access choices;
  * - builds the URL from the address the user saved, never above its path;
  * - attaches the credential from the vault;
- * - refuses private addresses unless the connection is on-premises, before
- *   the request and, where the transport can tell, for the address that
- *   answered;
+ * - refuses private addresses unless the connection is on-premises: it
+ *   resolves the host once, refuses the request when any address is
+ *   private, and pins it to the addresses it checked, so a name that
+ *   rebinds can't move it; where a system proxy connects, or for an address
+ *   literal, it judges the address that answered, where the transport can
+ *   tell;
  * - follows same-origin redirects with the credential, up to 3, and hands a
  *   cross-origin one back; a secret address follows https redirects to any
  *   host and never gives its final address away;
@@ -27,10 +30,12 @@
  * (`broker-port.ts`, re-exported here); it sends, follows, scrubs, limits
  * and records, with the policy in `broker-policy.ts`, the per-plugin limits
  * in `broker-limits.ts` and the address checks in `broker-addresses.ts`. The
- * transport and the resolver are injected: Electron's `net.request` on a
- * dedicated session in the desktop app (`apps/desktop/electron/
- * broker-transport.cjs`), fakes in tests. Without a transport, as in the
- * standalone API, every request is refused: plugins need the desktop app.
+ * transport and the resolver are injected: Electron's `net.request` on
+ * sessions of its own in the desktop app, a pinned request through a
+ * tunnel that connects only to its checked addresses (`apps/desktop/
+ * electron/broker-transport.cjs`), fakes in tests. Without a transport, as
+ * in the standalone API, every request is refused: plugins need the
+ * desktop app.
  */
 
 import {
@@ -160,6 +165,24 @@ function responseHeaders(
   }
   return kept;
 }
+
+/**
+ * Where one exchange may connect: through a system proxy, or directly, and
+ * then pinned to the addresses checked for its host when it has some.
+ */
+type Route =
+  | {
+      proxied: true;
+      /** The proxies' own addresses, when they all resolved. */
+      proxyAddresses?: readonly string[];
+      /** A proxy connects, so no address is pinned. */
+      connectTo?: never;
+    }
+  | {
+      proxied: false;
+      proxyAddresses?: never;
+      connectTo?: readonly string[];
+    };
 
 /** How the broker sends one plugin request, with what it has learned. */
 interface Exchange {
@@ -495,11 +518,15 @@ export class CredentialBroker implements CredentialBrokerPort {
     };
   }
 
-  /** Refuses an address the connection may not reach. */
-  private async checkAddress(
-    url: URL,
-    onPremises: boolean,
-  ): Promise<{ proxied: boolean; proxyAddresses?: readonly string[] }> {
+  /**
+   * Refuses an address the connection may not reach, and says where the
+   * request may connect. A name the request reaches directly is resolved
+   * once here, and the request is pinned to those addresses
+   * (`connectTo`): the check is on the addresses it connects to. Through a
+   * system proxy the proxy connects, and an address literal can't rebind,
+   * so neither is pinned.
+   */
+  private async checkAddress(url: URL, onPremises: boolean): Promise<Route> {
     if (onPremises) return { proxied: false };
     const hostname = unbracketed(url.hostname);
     if (isAddressLiteral(url.hostname)) {
@@ -535,32 +562,39 @@ export class CredentialBroker implements CredentialBrokerPort {
     ) {
       throw this.privateAddress();
     }
-    return resolved.proxied === true
-      ? {
-          proxied: true,
-          ...(resolved.proxyAddresses
-            ? { proxyAddresses: resolved.proxyAddresses }
-            : {}),
-        }
-      : { proxied: false };
+    if (resolved.proxied === true) {
+      return {
+        proxied: true,
+        ...(resolved.proxyAddresses
+          ? { proxyAddresses: resolved.proxyAddresses }
+          : {}),
+      };
+    }
+    return { proxied: false, connectTo: [...resolved.addresses] };
   }
 
   /**
    * Refuses an answer from a private address the connection may not reach,
-   * which the host's name pointed to after it was checked (ADR 0010's
-   * rebinding window), and records how far the address could be judged.
-   * Through a proxy the proxy answers, and its address isn't judged; one
-   * that answers from an address no proxy has, as when a PAC file falls
-   * back to `DIRECT`, is. With no address from the transport, the request
-   * stays allowed, and its event says so.
+   * and records how far the address could be judged. A pinned exchange
+   * went to an address checked before it; one the transport names anyway
+   * is judged too. An unpinned one is judged after it (ADR 0010's
+   * remaining window): through a proxy the proxy answers, and its address
+   * isn't judged; one that answers from an address no proxy has, as when a
+   * PAC file falls back to `DIRECT`, is. With no address from the
+   * transport, the request stays allowed, and its event says so.
    */
   private checkAnswer(
     remoteAddress: string | undefined,
-    route: { proxied: boolean; proxyAddresses?: readonly string[] },
+    route: Route,
     exchange: Exchange,
   ) {
     let judged: PluginRequestAnswerAddress;
-    if (remoteAddress === undefined) {
+    if (route.connectTo) {
+      if (remoteAddress !== undefined && isPrivateAddress(remoteAddress)) {
+        throw this.privateAddress();
+      }
+      judged = "pinned";
+    } else if (remoteAddress === undefined) {
       judged = "unknown";
     } else if (
       route.proxied &&
@@ -573,7 +607,12 @@ export class CredentialBroker implements CredentialBrokerPort {
       judged = "checked";
     }
     // A request is as judged as its least judged exchange.
-    const order: PluginRequestAnswerAddress[] = ["checked", "proxy", "unknown"];
+    const order: PluginRequestAnswerAddress[] = [
+      "pinned",
+      "checked",
+      "proxy",
+      "unknown",
+    ];
     if (
       exchange.answerAddress === undefined ||
       order.indexOf(judged) > order.indexOf(exchange.answerAddress)
@@ -619,6 +658,7 @@ export class CredentialBroker implements CredentialBrokerPort {
       if (signal.aborted) throw abortError(signal);
       const response = await transport.send({
         url: url.href,
+        ...(route.connectTo ? { connectTo: route.connectTo } : {}),
         method,
         headers: {
           ...plan.headers,

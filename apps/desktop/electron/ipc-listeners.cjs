@@ -50,9 +50,9 @@ const PLUGIN_ORIGIN_PREFIX = "ajour-plugin:";
 
 /**
  * Whether the sender is a page of the window: not a frame at a plugin's
- * origin, and in the window's session when one is given. A plugin's hidden
- * page lives in a session of its own, so either test alone refuses it;
- * a destroyed or unknown frame has no plugin origin and is judged by session.
+ * origin, and in the window's session. A plugin's hidden page lives in a
+ * session of its own, so either test alone refuses it; a destroyed or
+ * unknown frame has no plugin origin and is judged by session.
  */
 function isWindowSender(event, windowSession) {
   const frame = event?.senderFrame;
@@ -62,7 +62,6 @@ function isWindowSender(event, windowSession) {
   ) {
     return false;
   }
-  if (windowSession === undefined) return true;
   return event?.sender?.session === windowSession();
 }
 
@@ -75,8 +74,10 @@ function isWindowSender(event, windowSession) {
  * Nothing registers with `ipcMain` directly.
  *
  * Every channel but the plugin renderer's refuses a sender that is not a page
- * of the window (`isWindowSender`); main passes the window's `windowSession`.
- * A refused `sendSync` answers null without running the listener.
+ * of the window (`isWindowSender`). `windowSession` is required, and making
+ * the listeners without it throws: a caller that forgot it would otherwise
+ * let every page through (#434). A refused `sendSync` answers null without
+ * running the listener.
  *
  * The channel that forwards the renderer's events (`record: "failures"`)
  * emits its event only for a refused sender or a failed call: each batch it
@@ -90,9 +91,14 @@ function isWindowSender(event, windowSession) {
  * renderer.
  *
  * @param {any} ipcMain
- * @param {{ events: any, windowSession?: () => unknown }} options
+ * @param {{ events: any, windowSession: () => unknown }} options
  */
 function createIpcListeners(ipcMain, { events, windowSession }) {
+  if (typeof windowSession !== "function") {
+    throw new TypeError(
+      "createIpcListeners needs windowSession, the window's session, to check each sender.",
+    );
+  }
   function channelEntry(channel, mode) {
     const entry = IPC_CHANNELS[channel];
     if (!entry) {

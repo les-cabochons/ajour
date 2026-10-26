@@ -137,7 +137,10 @@ function makeRuntime(events, extra = {}) {
     app,
     session,
     WebContentsView,
-    ipcListeners: createIpcListeners(ipcMain, { events }),
+    ipcListeners: createIpcListeners(ipcMain, {
+      events,
+      windowSession: () => session.defaultSession,
+    }),
     events,
     hostDirectory: path.join(electronRoot, "plugin-host"),
     preloadPath: path.join(electronRoot, "plugin-host", "preload.cjs"),

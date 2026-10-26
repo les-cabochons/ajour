@@ -540,9 +540,11 @@ the manifest's endpoint pattern the path matched (never the path itself),
 the status, the redirects followed, the sizes, whether the connection is
 on-premises, how long the request waited for a slot, and, unless it is
 on-premises, how far the address that answered could be judged
-(`broker.answer_address`: `checked`, `proxy` when a system proxy answered,
-or `unknown` when the network stack named none, so only the check before
-the request held). It never holds a header, a body, a query or an address.
+(`broker.answer_address`: `pinned` when the request could connect only to
+the addresses checked before it, `checked` when the address that answered
+was checked after it, `proxy` when a system proxy answered, or `unknown`
+when the network stack named none, so only the check before the request
+held). It never holds a header, a body, a query or an address.
 It ends with its own reason: refused for the policy (`connection_not_found`,
 `not_allowed`, `header_refused`, `access_off`, `private_address`,
 `invalid_address`, `redirect_refused`, `invalid_request`), a paused

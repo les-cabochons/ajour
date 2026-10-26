@@ -53,3 +53,10 @@ export function recordingEvents({
   if (loaded) attach();
   return { events, recorded: sink.events, attach };
 }
+
+/**
+ * The `windowSession` option of the IPC listeners and the other main-process
+ * modules, for tests that send nothing from a window: no sender belongs to
+ * it, so every sender is refused.
+ */
+export const noWindowSession = () => undefined;

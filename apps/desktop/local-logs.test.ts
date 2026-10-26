@@ -14,7 +14,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { recordingEvents } from "./recording-events.ts";
+import { noWindowSession, recordingEvents } from "./recording-events.ts";
 
 // The local log file in the main process (ADR 0014). main.cjs runs only
 // inside Electron, so these tests run its own statements, the ones that make
@@ -161,7 +161,8 @@ async function mainProcess({
           messageListeners.set(name, listener);
         },
       },
-      { events },
+      // The fake senders carry no session: the window's is none.
+      { events, windowSession: noWindowSession },
     ),
   });
   vm.runInContext(

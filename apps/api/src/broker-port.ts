@@ -162,6 +162,16 @@ export interface BrokerActivity {
 /** One HTTP exchange, as the transport sends it. It never follows a redirect. */
 export interface BrokerTransportRequest {
   url: string;
+  /**
+   * The addresses the broker checked for the URL's host, which the
+   * transport connects to and no other, whatever the name resolves to by
+   * then: the Host header, TLS's server name and the certificate check stay
+   * on the name. Only an https URL is pinned, as only an on-premises
+   * connection, which nothing pins, may use http. Absent when nothing is
+   * pinned: on-premises, through a system proxy, or for an address literal,
+   * which can't rebind.
+   */
+  connectTo?: readonly string[];
   method: PluginHttpMethod;
   /** Lowercase names. */
   headers: Record<string, string>;
@@ -176,7 +186,10 @@ export interface BrokerTransportResponse {
   /** Lowercase names; repeated headers joined with ", ". */
   headers: Record<string, string>;
   body: Uint8Array;
-  /** The address that answered, when the transport can tell. */
+  /**
+   * The address that answered, when the transport can tell. A pinned
+   * exchange may leave it out: it went to one of `connectTo`.
+   */
   remoteAddress?: string;
 }
 
