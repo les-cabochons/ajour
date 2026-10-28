@@ -63,7 +63,7 @@ describe("desktop plugin lifecycle", () => {
     ]);
 
     expect(preloadSource).toMatch(
-      /ipcRenderer\.invoke\("ajour:install-plugin", \.\.\.traced\(trace\)\)/,
+      /\binvoke\("ajour:install-plugin", \.\.\.traced\(trace\)\)/,
     );
     expect(mainSource).toMatch(ipcHandler("ajour:install-plugin"));
     expect(mainSource).toContain("event.sender !== mainWindow.webContents");
@@ -74,9 +74,7 @@ describe("desktop plugin lifecycle", () => {
     expect(mainSource).toMatch(
       /installPluginArchive\(unit, selectedArchive, \{\s*enableAfterInstall: false,?\s*\}\)/,
     );
-    expect(preloadSource).toContain(
-      'ipcRenderer.invoke("ajour:uninstall-plugin"',
-    );
+    expect(preloadSource).toContain('invoke("ajour:uninstall-plugin"');
     expect(mainSource).toMatch(ipcHandler("ajour:uninstall-plugin"));
     expect(mainSource).toContain("uninstallPluginForServer(");
   });
@@ -88,13 +86,13 @@ describe("desktop plugin lifecycle", () => {
     ]);
 
     expect(preloadSource).toMatch(
-      /ipcRenderer\.invoke\(\s*"ajour:check-for-updates",\s*track,/,
+      /\binvoke\(\s*"ajour:check-for-updates",\s*track,/,
     );
     expect(preloadSource).toMatch(
-      /ipcRenderer\.invoke\(\s*"ajour:configure-automatic-updates",\s*track,/,
+      /\binvoke\(\s*"ajour:configure-automatic-updates",\s*track,/,
     );
     expect(preloadSource).toMatch(
-      /ipcRenderer\.invoke\(\s*"ajour:open-update-release",\s*releaseUrl,/,
+      /\binvoke\(\s*"ajour:open-update-release",\s*releaseUrl,/,
     );
     expect(mainSource).toMatch(ipcHandler("ajour:check-for-updates"));
     expect(mainSource).toMatch(ipcHandler("ajour:configure-automatic-updates"));
@@ -123,7 +121,7 @@ describe("desktop plugin lifecycle", () => {
     expect(mainSource).toMatch(ipcHandler("ajour:download-catalog-plugin"));
     expect(mainSource).toContain("enableAfterInstall: false");
     expect(preloadSource).toMatch(
-      /ipcRenderer\.invoke\(\s*"ajour:configure-plugin-catalog",\s*settings,/,
+      /\binvoke\(\s*"ajour:configure-plugin-catalog",\s*settings,/,
     );
     expect(preloadSource).toContain(
       'ipcRenderer.on("ajour:plugin-catalog-updated", listener)',
