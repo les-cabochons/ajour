@@ -37,7 +37,7 @@ The agent finds each task in Workday by its name. To track a task of your own th
 
 Workday then gets your time on `07 Run`, and each comment starts with your task's name, such as `Knowledge transfer: Walked Sam through the sync worker`. On the Commit page, the change shows "as 07 Run", and with **Names** on **Workday** the lines name `07 Run`.
 
-A task you map after it was committed keeps its Workday entries on the old task. The next run looks for them on the new one and asks you when it cannot find them.
+Entries committed before you change a mapping stay on the old Workday task until they change again. The next commit of such an entry finds it by its ID and moves it to the new task. **Check Workday and submit** also finds them and offers to move them.
 
 ## Commit a week
 
