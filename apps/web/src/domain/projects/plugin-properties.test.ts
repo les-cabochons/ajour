@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
-import type { LocalProject } from "@/domain/local-state";
+import type { LocalProject, LocalProjectTask } from "@/domain/local-state";
 import {
+  getMappedTaskName,
   normalizePluginProperties,
   resolvePluginProperties,
+  resolveTaskPluginProperties,
   setPluginProperty,
+  setPluginPropertyDraft,
   type ProjectPropertyPlugin,
+  type TaskPropertyPlugin,
 } from "@/domain/projects/plugin-properties";
 
 const workday: ProjectPropertyPlugin = {
@@ -97,6 +101,27 @@ describe("plugin project properties", () => {
     expect(next?.["workday-agent"]?.name).toHaveLength(240);
   });
 
+  it("keeps spaces in a draft value, and normalizing trims them", () => {
+    const draft = setPluginPropertyDraft(
+      project(),
+      "finance",
+      "center",
+      "Cost ",
+    );
+    expect(draft).toEqual({ finance: { center: "Cost " } });
+    expect(normalizePluginProperties(draft)).toEqual({
+      finance: { center: "Cost" },
+    });
+    expect(
+      setPluginPropertyDraft(
+        { pluginProperties: draft },
+        "finance",
+        "center",
+        " ",
+      ),
+    ).toBeUndefined();
+  });
+
   it("drops stored values that are not text", () => {
     expect(
       normalizePluginProperties({
@@ -126,5 +151,70 @@ describe("plugin project properties", () => {
         isDefault: true,
       },
     ]);
+  });
+});
+
+describe("plugin task properties", () => {
+  const workdayTask: TaskPropertyPlugin = {
+    pluginId: "workday-agent",
+    capability: {
+      section: "Workday",
+      fields: [
+        { id: "task", label: "Workday task", defaultFrom: "name" },
+        { id: "note", label: "Note" },
+      ],
+    },
+  };
+  const task: Pick<LocalProjectTask, "name" | "pluginProperties"> = {
+    name: "Knowledge transfer",
+  };
+
+  it("defaults to the task's name", () => {
+    expect(
+      resolveTaskPluginProperties(task, workdayTask).map(
+        ({ value, isDefault }) => ({ value, isDefault }),
+      ),
+    ).toEqual([
+      { value: "Knowledge transfer", isDefault: true },
+      { value: "", isDefault: true },
+    ]);
+    expect(getMappedTaskName(task, workdayTask)).toBeUndefined();
+  });
+
+  it("maps the task to another name, which a rename in Ajour keeps", () => {
+    const mapped = {
+      ...task,
+      pluginProperties: setPluginProperty(
+        task,
+        "workday-agent",
+        "task",
+        " 07 Run ",
+      ),
+    };
+    expect(getMappedTaskName(mapped, workdayTask)).toBe("07 Run");
+    expect(
+      getMappedTaskName({ ...mapped, name: "KT sessions" }, workdayTask),
+    ).toBe("07 Run");
+  });
+
+  it("does not count a mapping to the task's own name", () => {
+    const same = {
+      ...task,
+      pluginProperties: { "workday-agent": { task: "Knowledge transfer" } },
+    };
+    expect(getMappedTaskName(same, workdayTask)).toBeUndefined();
+  });
+
+  it("maps nothing for a plugin without a field that defaults to the name", () => {
+    const notes: TaskPropertyPlugin = {
+      pluginId: "notes",
+      capability: { section: "Notes", fields: [{ id: "note", label: "Note" }] },
+    };
+    expect(
+      getMappedTaskName(
+        { ...task, pluginProperties: { notes: { note: "07 Run" } } },
+        notes,
+      ),
+    ).toBeUndefined();
   });
 });

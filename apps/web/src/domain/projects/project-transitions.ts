@@ -31,7 +31,12 @@ export type ProjectPatch = Partial<Omit<LocalProject, "_id">>;
 export type ProjectTaskPatch = Partial<
   Pick<
     LocalProjectTask,
-    "name" | "billable" | "budgetMs" | "adjustmentMs" | "pinnedSlot"
+    | "name"
+    | "billable"
+    | "budgetMs"
+    | "adjustmentMs"
+    | "pinnedSlot"
+    | "pluginProperties"
   >
 >;
 
@@ -41,6 +46,7 @@ export function createProjectTask(
 ): LocalProjectTask {
   const createdAt = factories.now();
   const status = task.status ?? "active";
+  const pluginProperties = normalizePluginProperties(task.pluginProperties);
 
   return {
     _id: factories.createId("task"),
@@ -51,6 +57,7 @@ export function createProjectTask(
     billable: task.billable ?? true,
     budgetMs: normalizeProjectTaskBudgetMs(task.budgetMs),
     adjustmentMs: normalizeProjectTaskAdjustmentMs(task.adjustmentMs),
+    ...(pluginProperties ? { pluginProperties } : {}),
   };
 }
 
@@ -113,6 +120,7 @@ export function normalizeProject(
           ? task.pinnedSlot
           : undefined,
         favoritedAt: normalizeFavoritedAt(task.favoritedAt),
+        pluginProperties: normalizePluginProperties(task.pluginProperties),
         // Only a project the team knows can have tasks the team knows.
         team: team?.remoteId ? normalizeTaskTeamLink(task.team) : undefined,
       };
@@ -302,6 +310,10 @@ export function updateProjectTask(
                     "adjustmentMs" in patch
                       ? normalizeProjectTaskAdjustmentMs(patch.adjustmentMs)
                       : task.adjustmentMs,
+                  pluginProperties:
+                    "pluginProperties" in patch
+                      ? normalizePluginProperties(patch.pluginProperties)
+                      : task.pluginProperties,
                 }
               : task,
           ),

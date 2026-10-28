@@ -53,6 +53,7 @@ const CAPABILITY_LABELS: Record<string, string> = {
   team: "Team",
   agentTask: "Agent tasks",
   projectProperties: "Project properties",
+  taskProperties: "Task properties",
   projectDataShape: "Schema",
 };
 

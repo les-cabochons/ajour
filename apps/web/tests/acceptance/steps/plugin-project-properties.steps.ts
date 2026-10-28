@@ -23,28 +23,90 @@ const workdayAgent = {
   },
 };
 
+const workdayAgentWithTasks = {
+  ...workdayAgent,
+  version: "0.6.0",
+  capabilities: {
+    ...workdayAgent.capabilities,
+    taskProperties: {
+      section: "Workday",
+      fields: [{ id: "task", label: "Workday task", defaultFrom: "name" }],
+    },
+  },
+};
+
 function card(page: Page) {
   return page.getByRole("region", { name: "Properties" });
 }
 
-// Registered after the Given that mocks an empty overview on the same URL, so it wins.
+/**
+ * Answers the plugins overview with one active plugin. Registered after the
+ * Given that mocks an empty overview on the same URL, so it wins.
+ */
+async function mockOverviewWith(page: Page, plugin: typeof workdayAgent) {
+  await page.route("http://127.0.0.1:8787/api/plugins", (route) =>
+    route.fulfill({
+      json: {
+        pluginsEnabled: true,
+        plugins: [plugin],
+        connectionGroups: [{ plugin, enabled: true, connections: [] }],
+        totalPendingImportCount: 0,
+        totalSelectedImportCount: 0,
+      },
+      headers: cors,
+    }),
+  );
+}
+
 Given(
   "the Workday \\(agent) plugin adds project properties",
   async ({ page }) => {
-    await page.route("http://127.0.0.1:8787/api/plugins", (route) =>
-      route.fulfill({
-        json: {
-          pluginsEnabled: true,
-          plugins: [workdayAgent],
-          connectionGroups: [
-            { plugin: workdayAgent, enabled: true, connections: [] },
-          ],
-          totalPendingImportCount: 0,
-          totalSelectedImportCount: 0,
-        },
-        headers: cors,
-      }),
-    );
+    await mockOverviewWith(page, workdayAgent);
+  },
+);
+
+Given("the Workday \\(agent) plugin adds task properties", async ({ page }) => {
+  await mockOverviewWith(page, workdayAgentWithTasks);
+});
+
+When(
+  "I map task {string} to the Workday task {string} and save",
+  async ({ page }, task: string, workdayTask: string) => {
+    await page.getByText(task, { exact: true }).click();
+    const editor = page.getByRole("complementary", { name: "Task editor" });
+    await editor.getByRole("combobox", { name: "Workday task" }).click();
+    await page.getByRole("option", { name: workdayTask, exact: true }).click();
+    await editor.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(editor).toBeHidden();
+  },
+);
+
+Then(
+  "task {string} shows the Workday task {string}",
+  async ({ page }, task: string, workdayTask: string) => {
+    const row = page.locator("tr.project-task-row", {
+      has: page.getByText(task, { exact: true }),
+    });
+    await expect(row.getByTitle(`Workday task: ${workdayTask}`)).toBeVisible();
+  },
+);
+
+Then(
+  "task {string} is saved with the Workday task {string}",
+  async ({ page }, task: string, workdayTask: string) => {
+    const saved = await page.evaluate((name) => {
+      const state = JSON.parse(
+        localStorage.getItem("ajour.local-state.v2")!,
+      ) as {
+        projects: {
+          tasks: { name: string; pluginProperties?: unknown }[];
+        }[];
+      };
+      return state.projects
+        .flatMap((project) => project.tasks)
+        .find((candidate) => candidate.name === name)?.pluginProperties;
+    }, task);
+    expect(saved).toEqual({ "workday-agent": { task: workdayTask } });
   },
 );
 

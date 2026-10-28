@@ -6,16 +6,18 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { formatDurationHoursInput } from "@/domain/time/duration";
+import type { TaskPropertyPlugin } from "@/domain/projects/plugin-properties";
 import { PinnedSlotField } from "@/features/projects/pinned-slot";
 import type {
   ProjectTaskEditorFields,
   ProjectTaskEditorState,
 } from "@/features/projects/project-task-editor";
+import { TaskPropertyFields } from "@/features/projects/task-property-fields";
 import { cn } from "@/lib/utils";
 
 /**
- * The form for creating and editing a task: name, billable, budget, adjustment
- * and the pinned slot.
+ * The form for creating and editing a task: name, billable, budget, adjustment,
+ * the pinned slot, and a section per active plugin that adds task properties.
  * It follows the entry editor's rules. Save: the Save button, Enter in a text field,
  * or Cmd/Ctrl+Enter anywhere in the form. Escape, Cancel or × discard the draft.
  *
@@ -29,6 +31,8 @@ export function ProjectTaskEditorForm({
   projectName,
   taskId,
   trackedMs,
+  taskPropertyPlugins = [],
+  otherTaskNames = [],
   onFieldsChange,
   onSave,
   onClose,
@@ -44,6 +48,10 @@ export function ProjectTaskEditorForm({
   taskId?: string;
   /** Time logged on a saved task. Absent for a new task. */
   trackedMs?: number;
+  /** Active plugins that add task properties, each shown as a section. */
+  taskPropertyPlugins?: TaskPropertyPlugin[];
+  /** The names of the project's other active tasks, offered by a property that names a task. */
+  otherTaskNames?: string[];
   onFieldsChange: (patch: Partial<ProjectTaskEditorFields>) => void;
   onSave: () => void;
   onClose: () => void;
@@ -169,6 +177,13 @@ export function ProjectTaskEditorForm({
           taskId={taskId}
           slot={fields.pinnedSlot}
           onChange={(pinnedSlot) => onFieldsChange({ pinnedSlot })}
+        />
+        <TaskPropertyFields
+          plugins={taskPropertyPlugins}
+          taskName={fields.name}
+          otherTaskNames={otherTaskNames}
+          pluginProperties={fields.pluginProperties}
+          onChange={(pluginProperties) => onFieldsChange({ pluginProperties })}
         />
         {trackedMs !== undefined ? (
           <p className="text-xs text-muted-foreground">

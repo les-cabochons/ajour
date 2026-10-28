@@ -16,7 +16,7 @@ It is a different plugin from [Workday](/plugins/workday), the schema for import
 
 ## Set it up
 
-1. In **Settings › Plugins**, find **Workday (agent)** under **Agent tasks**, press **Download**, and turn it on. Version 0.5.0 or later has both tasks.
+1. In **Settings › Plugins**, find **Workday (agent)** under **Agent tasks**, press **Download**, and turn it on. Version 0.5.0 or later has both tasks, and 0.6.0 or later maps tasks.
 2. In **Settings › Agents**, pick the agent. Leave **Browser** on **Ajour's Chrome window** unless you want the agent to use your own Chrome profile.
 3. Open **Settings › Plugins › Workday (agent)**. Under **Tasks**, fill in, once for both tasks:
    - **Workday timesheet URL**: open Enter Time in Workday and copy the address.
@@ -27,13 +27,25 @@ It is a different plugin from [Workday](/plugins/workday), the schema for import
 
 The agent finds each project in Workday by its Workday code, then its Workday name. Both default to the project's code and full name in Ajour. When Workday uses other ones, open the project, open the **Workday** section of its properties and type them.
 
+## Map a task to a Workday task
+
+The agent finds each task in Workday by its name. To track a task of your own that Workday does not have, such as `Knowledge transfer`, map it to one Workday has, such as `07 Run`:
+
+1. Create the task in the project, or open it in the task editor.
+2. Under **Workday**, pick the Workday task in **Workday task**. It lists the project's other tasks. Pick **Same name** to undo the mapping.
+3. Press **Save**. The task list shows "→ 07 Run" after the task's name.
+
+Workday then gets your time on `07 Run`, and each comment starts with your task's name, such as `Knowledge transfer: Walked Sam through the sync worker`. On the Commit page, the change shows "as 07 Run", and with **Names** on **Workday** the lines name `07 Run`.
+
+Entries committed before you change a mapping stay on the old Workday task until they change again. The next commit of such an entry finds it by its ID and moves it to the new task. **Check Workday and submit** also finds them and offers to move them.
+
 ## Commit a week
 
 On the Commit page, press **Commit to Workday**. The agent panel opens with the run. The agent:
 
 1. Reads the week's checked changes.
 2. Opens Workday and goes to the week.
-3. Applies each change: adds an added entry, updates an updated one, deletes a deleted one. The comment is the note, then `·` and the entry's ID, such as `Code review · ajour:1a2b3c4d`, so the agent finds its own entries again. It marks each change as committed in Ajour right after Workday saves it. It never changes or deletes a Workday entry without one of these IDs, unless you tell it the entry is the same.
+3. Applies each change: adds an added entry, updates an updated one, deletes a deleted one. The comment is the note on a first line and the entry's ID on a second, such as `Code review` then `ajour:1a2b3c4d`, so the agent finds its own entries again. A [mapped task](#map-a-task-to-a-workday-task)'s name starts the first line. Entries an older version wrote as `note · ajour:1a2b3c4d` still match, and the agent writes the new form the next time it updates them. It marks each change as committed in Ajour right after Workday saves it. It never changes or deletes a Workday entry without one of these IDs, unless you tell it the entry is the same.
 
 The panel ends with a summary. Press **Stop** in the panel to end a run at any time.
 

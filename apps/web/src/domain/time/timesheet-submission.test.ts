@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { LocalProject, LocalTimesheetEntry } from "@/domain/local-state";
 import { DEFAULT_PROJECT_ICON } from "@/domain/projects/project-icon";
-import type { ProjectPropertyPlugin } from "@/domain/projects/plugin-properties";
+import {
+  NO_PROPERTY_PLUGINS,
+  type ProjectPropertyPlugin,
+  type TaskPropertyPlugin,
+} from "@/domain/projects/plugin-properties";
 import {
   describeLineNames,
   groupSubmitLines,
@@ -99,6 +103,7 @@ describe("submit lines", () => {
         projectId: "atlas",
         // The full name, as the external timesheet knows the project.
         projectName: "Atlas",
+        taskId: "dev",
         taskName: "Development",
         durationMs: 3 * HOUR,
         comments: "Login form | API",
@@ -202,7 +207,7 @@ describe("line names", () => {
   };
 
   it("lists Ajour then each plugin under its section title", () => {
-    expect(listLineNameSources([workday])).toEqual([
+    expect(listLineNameSources({ projects: [workday], tasks: [] })).toEqual([
       { id: "ajour", label: "Ajour" },
       { id: "workday-agent", label: "Workday" },
     ]);
@@ -213,7 +218,9 @@ describe("line names", () => {
     ["workday-agent", "workday-agent"],
     ["removed-plugin", "ajour"],
   ])("resolves the saved source %s to %s", (saved, expected) => {
-    expect(resolveLineNameSource(saved, [workday])).toBe(expected);
+    expect(
+      resolveLineNameSource(saved, { projects: [workday], tasks: [] }),
+    ).toBe(expected);
   });
 
   it.each([
@@ -235,14 +242,24 @@ describe("line names", () => {
   });
 
   it("shows and copies the full name and the task", () => {
-    expect(describeLineNames(line, "ajour", named, [workday])).toEqual({
+    expect(
+      describeLineNames(line, "ajour", named, {
+        projects: [workday],
+        tasks: [],
+      }),
+    ).toEqual({
       shown: "Atlas / 07 Run",
       copied: "Atlas 07 Run",
     });
   });
 
   it("uses the plugin's name field, the one that defaults to the full name", () => {
-    expect(describeLineNames(line, "workday-agent", named, [workday])).toEqual({
+    expect(
+      describeLineNames(line, "workday-agent", named, {
+        projects: [workday],
+        tasks: [],
+      }),
+    ).toEqual({
       shown: "CA004 Tech & Design / 07 Run",
       copied: "CA004 Tech & Design 07 Run",
     });
@@ -250,7 +267,10 @@ describe("line names", () => {
 
   it("uses the plugin field's default when the project has no override", () => {
     expect(
-      describeLineNames(line, "workday-agent", projects, [workday]),
+      describeLineNames(line, "workday-agent", projects, {
+        projects: [workday],
+        tasks: [],
+      }),
     ).toMatchObject({ copied: "Atlas 07 Run" });
   });
 
@@ -262,27 +282,39 @@ describe("line names", () => {
         fields: [{ id: "code", label: "Code", defaultFrom: "code" }],
       },
     };
-    expect(describeLineNames(line, "codes", named, [codeOnly])).toMatchObject({
+    expect(
+      describeLineNames(line, "codes", named, {
+        projects: [codeOnly],
+        tasks: [],
+      }),
+    ).toMatchObject({
       copied: "ATL 07 Run",
     });
   });
 
   it("falls back to Ajour names for an inactive plugin", () => {
-    expect(describeLineNames(line, "workday-agent", named, [])).toMatchObject({
+    expect(
+      describeLineNames(line, "workday-agent", named, NO_PROPERTY_PLUGINS),
+    ).toMatchObject({
       copied: "Atlas 07 Run",
     });
   });
 
   it("copies the project or the task alone when the other is missing", () => {
     expect(
-      describeLineNames({ ...line, taskName: undefined }, "ajour", named, []),
+      describeLineNames(
+        { ...line, taskName: undefined },
+        "ajour",
+        named,
+        NO_PROPERTY_PLUGINS,
+      ),
     ).toEqual({ shown: "Atlas", copied: "Atlas" });
     expect(
       describeLineNames(
         { ...line, projectId: undefined, projectName: undefined },
         "workday-agent",
         named,
-        [workday],
+        { projects: [workday], tasks: [] },
       ),
     ).toEqual({ shown: "07 Run", copied: "07 Run" });
     expect(
@@ -295,9 +327,62 @@ describe("line names", () => {
         },
         "ajour",
         named,
-        [],
+        NO_PROPERTY_PLUGINS,
       ),
     ).toBeUndefined();
+  });
+
+  it("offers a plugin that adds only task properties, once even with both", () => {
+    const tasksOnly: TaskPropertyPlugin = {
+      pluginId: "tasks-only",
+      capability: {
+        section: "Tasks only",
+        fields: [{ id: "task", label: "Task", defaultFrom: "name" }],
+      },
+    };
+    const plugins = {
+      projects: [workday],
+      tasks: [{ ...tasksOnly, pluginId: "workday-agent" }, tasksOnly],
+    };
+    expect(listLineNameSources(plugins)).toEqual([
+      { id: "ajour", label: "Ajour" },
+      { id: "workday-agent", label: "Workday" },
+      { id: "tasks-only", label: "Tasks only" },
+    ]);
+    expect(resolveLineNameSource("tasks-only", plugins)).toBe("tasks-only");
+  });
+
+  it("names a mapped task by the plugin's task property", () => {
+    const workdayTask: TaskPropertyPlugin = {
+      pluginId: "workday-agent",
+      capability: {
+        section: "Workday",
+        fields: [{ id: "task", label: "Workday task", defaultFrom: "name" }],
+      },
+    };
+    const mapped: LocalProject[] = [
+      {
+        ...named[0]!,
+        tasks: [
+          {
+            _id: "kt",
+            name: "Knowledge transfer",
+            status: "active",
+            createdAt: 1,
+            pluginProperties: { "workday-agent": { task: "07 Run" } },
+          },
+        ],
+      },
+    ];
+    const ktLine = { ...line, taskId: "kt", taskName: "Knowledge transfer" };
+    const plugins = { projects: [workday], tasks: [workdayTask] };
+
+    expect(
+      describeLineNames(ktLine, "workday-agent", mapped, plugins),
+    ).toMatchObject({ copied: "CA004 Tech & Design 07 Run" });
+    expect(describeLineNames(ktLine, "ajour", mapped, plugins)).toMatchObject({
+      copied: "Atlas Knowledge transfer",
+    });
   });
 });
 

@@ -25,6 +25,7 @@ const {
   showErrorToast,
   readBacklogDescription,
   writeBacklogDescription,
+  listPropertyPlugins,
 } = vi.hoisted(() => ({
   offerUndo: vi.fn(),
   canWriteToSource: vi.fn((_item: { title: string }) => false),
@@ -37,6 +38,7 @@ const {
   showErrorToast: vi.fn(),
   readBacklogDescription: vi.fn(),
   writeBacklogDescription: vi.fn(),
+  listPropertyPlugins: vi.fn(),
 }));
 vi.mock("@/features/feedback/undo-toast", () => ({ offerUndo }));
 vi.mock("@/features/backlog/backlog-source-writes", async (importOriginal) => ({
@@ -59,9 +61,7 @@ vi.mock("@/components/ui/toast", async (importOriginal) => ({
   showUndoToast,
   showErrorToast,
 }));
-vi.mock("@/lib/plugin-project-properties", () => ({
-  listProjectPropertyPlugins: async () => [],
-}));
+vi.mock("@/lib/plugin-project-properties", () => ({ listPropertyPlugins }));
 
 const client = { id: "c1", name: "Claude Code" };
 
@@ -163,6 +163,7 @@ beforeAll(async () => {
 beforeEach(() => {
   vi.resetModules();
   installMockWindow();
+  listPropertyPlugins.mockResolvedValue({ projects: [], tasks: [] });
   offerUndo.mockClear();
   sendPendingSourceWrites.mockClear();
   canWriteToSource.mockReturnValue(false);
@@ -600,6 +601,52 @@ describe("agent timer and entry tools", () => {
       before.timesheetEntries,
     );
     expect(localStore.snapshot().timesheetEntries[0]!.commit).toBeUndefined();
+  });
+
+  it("refuses a change whose task the user mapped to another Workday task since the agent read it", async () => {
+    listPropertyPlugins.mockResolvedValue({
+      projects: [],
+      tasks: [
+        {
+          pluginId: "workday-agent",
+          capability: {
+            section: "Workday",
+            fields: [
+              { id: "task", label: "Workday task", defaultFrom: "name" },
+            ],
+          },
+        },
+      ],
+    });
+    const { call, readChange, localStore, project } = await setup();
+    const build = project.tasks.find((task) => task.name === "Build")!;
+    localStore.saveManualTimeEntry({
+      localDate: "2026-10-13",
+      projectId: project._id,
+      taskId: build._id,
+      durationMs: 30 * 60_000,
+    });
+    const entryId = localStore.snapshot().timesheetEntries.at(-1)!._id;
+    const read = await readChange(entryId);
+    localStore.updateProjectTask(project._id, build._id, {
+      pluginProperties: { "workday-agent": { task: "07 Run" } },
+    });
+
+    expect(
+      await call("mark_entries_committed", { changes: [read] }),
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringContaining(`${entryId} changed since you read it`),
+    });
+    expect(
+      localStore.snapshot().timesheetEntries.at(-1)!.commit,
+    ).toBeUndefined();
+
+    expect(
+      await call("mark_entries_committed", {
+        changes: [await readChange(entryId)],
+      }),
+    ).toMatchObject({ ok: true });
   });
 
   it("refuses a change whose entry the user deleted since the agent read it", async () => {

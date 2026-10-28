@@ -1249,6 +1249,11 @@
     color: var(--text-tertiary);
   }
 
+  /* "as 07 Run": the task a plugin's tool gets for this one. */
+  .commit-change-mapping {
+    color: var(--text-secondary);
+  }
+
   .commit-change-note {
     grid-column: 3 / 6;
     color: var(--text-secondary);

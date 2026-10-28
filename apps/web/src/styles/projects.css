@@ -355,6 +355,17 @@
     white-space: nowrap;
   }
 
+  /* "→ 07 Run": the name a plugin's tool knows the task by. */
+  .project-task-mapping {
+    /* Shrinks before the task's name does. */
+    flex-shrink: 4;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--muted-foreground);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .project-task-trailing {
     width: 1%;
     text-align: right;

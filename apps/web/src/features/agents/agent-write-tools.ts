@@ -22,7 +22,10 @@ import {
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
 import { isBacklogItemSnoozed } from "@/domain/backlog/backlog-item-lifecycle";
 import { isSubtaskWorkItem } from "@/domain/backlog/work-item-hierarchy";
-import type { ProjectPropertyPlugin } from "@/domain/projects/plugin-properties";
+import {
+  NO_PROPERTY_PLUGINS,
+  type PropertyPlugins,
+} from "@/domain/projects/plugin-properties";
 import { getWeekDates } from "@/domain/time/local-date";
 import { getDateLockReason } from "@/domain/time/locked-weeks";
 import { findWorkItemTimer } from "@/domain/time/running-entry";
@@ -201,14 +204,17 @@ export type EntryWriteTool = (typeof ENTRY_WRITE_TOOLS)[number];
 
 /** What a write tool needs beyond the store. The runner loads it first. */
 export interface EntryWriteContext {
-  /** Active plugins that add project properties. submit_week's version reads them. */
-  projectPropertyPlugins: ProjectPropertyPlugin[];
+  /**
+   * Active plugins that add project or task properties. The versions that
+   * mark_entries_committed and submit_week check read them.
+   */
+  propertyPlugins: PropertyPlugins;
 }
 
 export function runEntryWriteTool(
   tool: EntryWriteTool,
   rawInput: unknown,
-  context: EntryWriteContext = { projectPropertyPlugins: [] },
+  context: EntryWriteContext = { propertyPlugins: NO_PROPERTY_PLUGINS },
 ): AgentWriteOutcome {
   const state = localStore.snapshot();
   const now = Date.now();
@@ -452,7 +458,11 @@ export function runEntryWriteTool(
       // Refuses before any write when a change differs from its version.
       // Every listed pair is checked, so an entry listed twice with an old
       // and a current version is refused too.
-      checkChangeVersionsOrRefuse(state, input.changes);
+      checkChangeVersionsOrRefuse(
+        state,
+        input.changes,
+        context.propertyPlugins,
+      );
       const entryIds = [
         ...new Set(input.changes.map((change) => change.entryId)),
       ];
@@ -473,7 +483,7 @@ export function runEntryWriteTool(
       checkWeekStatusVersionOrRefuse(state, {
         weekDates: getWeekDates(input.weekOf),
         version: input.version,
-        projectPropertyPlugins: context.projectPropertyPlugins,
+        propertyPlugins: context.propertyPlugins,
       });
       const { undoToken, result } = localStore.submitWeek(input.weekOf);
       if (!result.ok) throw new AgentToolRefusal(result.message);

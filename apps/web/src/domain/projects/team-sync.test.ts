@@ -209,7 +209,11 @@ describe("planning a team sync", () => {
       }),
       "p1",
       "t1",
-      { adjustmentMs: 600_000, pinnedSlot: "1" },
+      {
+        adjustmentMs: 600_000,
+        pinnedSlot: "1",
+        pluginProperties: { workday: { task: "07 Run" } },
+      },
     );
 
     expect(

@@ -272,6 +272,43 @@ export type ProjectPropertiesCapability = z.infer<
 >;
 
 /**
+ * Text properties a plugin adds to every task, shown in a section of the
+ * task editor. A field with `defaultFrom: "name"` holds the task's name in
+ * the plugin's tool, such as the Workday task a local task commits as: the
+ * editor offers the project's other tasks, and the task list shows an
+ * override after the task's name.
+ */
+export const taskPropertyFieldSchema = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/),
+  label: z.string().trim().min(1).max(60),
+  /** The Ajour task value shown while the user has picked none. */
+  defaultFrom: z.literal("name").optional(),
+  /** One or two sentences under the field. */
+  helpText: z.string().trim().min(1).max(240).optional(),
+});
+export type TaskPropertyField = z.infer<typeof taskPropertyFieldSchema>;
+
+export const taskPropertiesSchema = z
+  .object({
+    section: z.string().trim().min(1).max(60),
+    fields: z.array(taskPropertyFieldSchema).min(1).max(10),
+  })
+  .superRefine((capability, context) => {
+    const seen = new Set<string>();
+    capability.fields.forEach((field, index) => {
+      if (seen.has(field.id)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["fields", index, "id"],
+          message: `Two task properties use the id ${field.id}.`,
+        });
+      }
+      seen.add(field.id);
+    });
+  });
+export type TaskPropertiesCapability = z.infer<typeof taskPropertiesSchema>;
+
+/**
  * What a plugin provides. A plugin declares at least one capability, and its
  * connections serve all of them. A backlog plugin without `settle` keeps working:
  * Ajour settles its items locally, with no write. See ADR 0001, ADR 0003 and,
@@ -295,6 +332,7 @@ export const pluginCapabilitiesObjectSchema = z.object({
     .object({ tasks: z.array(agentTaskSchema).min(1).max(10) })
     .optional(),
   projectProperties: projectPropertiesSchema.optional(),
+  taskProperties: taskPropertiesSchema.optional(),
 });
 
 export const pluginCapabilitiesSchema = pluginCapabilitiesObjectSchema.refine(
@@ -304,8 +342,9 @@ export const pluginCapabilitiesSchema = pluginCapabilitiesObjectSchema.refine(
     capabilities.calendar !== undefined ||
     capabilities.team !== undefined ||
     capabilities.agentTask !== undefined ||
-    capabilities.projectProperties !== undefined,
-  "A plugin must declare at least one capability: connector, codeHost, calendar, team, agentTask or projectProperties.",
+    capabilities.projectProperties !== undefined ||
+    capabilities.taskProperties !== undefined,
+  "A plugin must declare at least one capability: connector, codeHost, calendar, team, agentTask, projectProperties or taskProperties.",
 );
 export type PluginCapabilities = z.infer<typeof pluginCapabilitiesSchema>;
 
@@ -341,6 +380,12 @@ export function pluginHasProjectProperties(manifest: {
   capabilities: PluginCapabilities;
 }) {
   return manifest.capabilities.projectProperties !== undefined;
+}
+
+export function pluginHasTaskProperties(manifest: {
+  capabilities: PluginCapabilities;
+}) {
+  return manifest.capabilities.taskProperties !== undefined;
 }
 
 export function pluginHasCapability(

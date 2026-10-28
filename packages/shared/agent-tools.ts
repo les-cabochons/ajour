@@ -336,6 +336,12 @@ export const agentChangeValuesSchema = z.object({
    */
   projectProperties: z.record(z.record(z.string())).optional(),
   taskName: z.string().optional(),
+  /**
+   * Properties that active plugins add to the task, keyed by plugin ID then
+   * field ID, with defaults filled in. A field that defaults to the task's
+   * name holds the name the plugin's tool knows the task by.
+   */
+  taskProperties: z.record(z.record(z.string())).optional(),
   hours: z.number(),
   note: z.string().optional(),
 });

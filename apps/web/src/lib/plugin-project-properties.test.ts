@@ -1,4 +1,7 @@
-import { listProjectPropertyPlugins } from "@/lib/plugin-project-properties";
+import {
+  listProjectPropertyPlugins,
+  listPropertyPlugins,
+} from "@/lib/plugin-project-properties";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { getPluginsOverview, isPluginApiMissing } = vi.hoisted(() => ({
@@ -16,12 +19,18 @@ const capability = {
   fields: [{ id: "name", label: "Workday name" }],
 };
 
+const taskCapability = {
+  section: "Workday",
+  fields: [{ id: "task", label: "Workday task", defaultFrom: "name" }],
+};
+
 function group(
   id: string,
   options: {
     enabled?: boolean;
     unavailableReason?: string;
     projectProperties?: typeof capability;
+    taskProperties?: typeof taskCapability;
   } = {},
 ) {
   return {
@@ -29,7 +38,10 @@ function group(
     plugin: {
       id,
       unavailableReason: options.unavailableReason,
-      capabilities: { projectProperties: options.projectProperties },
+      capabilities: {
+        projectProperties: options.projectProperties,
+        taskProperties: options.taskProperties,
+      },
     },
   };
 }
@@ -57,6 +69,29 @@ describe("listProjectPropertyPlugins", () => {
     await expect(listProjectPropertyPlugins()).resolves.toEqual([
       { pluginId: "kept", capability },
     ]);
+  });
+
+  it("lists task properties apart, from the same overview", async () => {
+    getPluginsOverview.mockResolvedValue({
+      pluginsEnabled: true,
+      connectionGroups: [
+        group("both", {
+          projectProperties: capability,
+          taskProperties: taskCapability,
+        }),
+        group("tasks-only", { taskProperties: taskCapability }),
+        group("disabled", { enabled: false, taskProperties: taskCapability }),
+      ],
+    });
+
+    await expect(listPropertyPlugins()).resolves.toEqual({
+      projects: [{ pluginId: "both", capability }],
+      tasks: [
+        { pluginId: "both", capability: taskCapability },
+        { pluginId: "tasks-only", capability: taskCapability },
+      ],
+    });
+    expect(getPluginsOverview).toHaveBeenCalledTimes(1);
   });
 
   it("returns nothing when plugins are turned off", async () => {

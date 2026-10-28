@@ -9,6 +9,7 @@ import {
   pluginHasSwitchableCapabilities,
   syncsPullRequestsAutomatically,
   pluginHasProjectProperties,
+  pluginHasTaskProperties,
   pluginHasCalendar,
   pluginHasCodeHost,
   pluginHasBacklog,
@@ -368,6 +369,57 @@ describe("plugin manifest capabilities", () => {
             ...projectProperties,
             fields: [
               { id: "name", label: "Workday name", defaultFrom: "color" },
+            ],
+          },
+        },
+      }),
+    ).toThrow();
+  });
+
+  const taskProperties = {
+    section: "Workday",
+    fields: [
+      {
+        id: "task",
+        label: "Workday task",
+        defaultFrom: "name",
+        helpText: "Leave empty when Workday has a task with this name.",
+      },
+    ],
+  };
+
+  it("accepts a plugin with only task properties", () => {
+    const manifest = pluginManifestSchema.parse({
+      ...agentTaskBase,
+      capabilities: { taskProperties },
+    });
+    expect(pluginHasTaskProperties(manifest)).toBe(true);
+    expect(manifest.capabilities.taskProperties).toEqual(taskProperties);
+  });
+
+  it("refuses two task property fields with the same id", () => {
+    expect(() =>
+      pluginManifestSchema.parse({
+        ...agentTaskBase,
+        capabilities: {
+          taskProperties: {
+            ...taskProperties,
+            fields: [taskProperties.fields[0], taskProperties.fields[0]],
+          },
+        },
+      }),
+    ).toThrow(/task/);
+  });
+
+  it("refuses a task property default from a project value", () => {
+    expect(() =>
+      pluginManifestSchema.parse({
+        ...agentTaskBase,
+        capabilities: {
+          taskProperties: {
+            ...taskProperties,
+            fields: [
+              { id: "task", label: "Workday task", defaultFrom: "code" },
             ],
           },
         },
