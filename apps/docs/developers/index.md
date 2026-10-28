@@ -4,7 +4,7 @@ A plugin connects Ajour to another tool. The official plugins, such as Azure Dev
 
 ## What a plugin is
 
-A plugin is a folder with a `plugin.json` manifest and compiled JavaScript. Ajour loads the JavaScript and calls functions it exports, such as `validateConnection` or `syncConnection`. Each function gets plain data in and returns plain data out. Ajour does the rest: the settings form, storage, scheduling, the review screen and the backlog. A plugin with only agent tasks or project properties has no JavaScript: its manifest and prompt files are the whole plugin.
+A plugin is a folder with a `plugin.json` manifest and compiled JavaScript. Ajour loads the JavaScript and calls functions it exports, such as `validateConnection` or `syncConnection`. Each function gets plain data in and returns plain data out. Ajour does the rest: the settings form, storage, scheduling, the review screen and the backlog. A plugin with only agent tasks, project properties or task properties has no JavaScript: its manifest and prompt files are the whole plugin.
 
 ```text
 my-plugin/
@@ -22,9 +22,10 @@ A plugin has one or more capabilities:
 | **Team**               | Keeps a team's shared projects in step through a backend.                                              |                                                                                         | 3, team 1   |
 | **Agent tasks**        | Prompts a coding agent runs from the Commit page. No plugin code runs.                                 | [Workday (agent)](/plugins/workday-agent)                                               | 3           |
 | **Project properties** | Text fields the plugin adds to every project. No plugin code runs.                                     | [Workday (agent)](/plugins/workday-agent)                                               | 3           |
+| **Task properties**    | Text fields the plugin adds to every task, such as the task its tool knows it by. No plugin code runs. | [Workday (agent)](/plugins/workday-agent)                                               | 3           |
 | **Schema**             | Maps projects and tasks to and from a file layout.                                                     | [Workday](/plugins/workday)                                                             | 1           |
 
-One package can combine capabilities, such as GitHub's backlog and code host, or Workday's agent tasks and project properties. A schema is a separate kind of package.
+One package can combine capabilities, such as GitHub's backlog and code host, or Workday's agent tasks and project and task properties. A schema is a separate kind of package.
 
 ## How it runs
 
@@ -88,4 +89,4 @@ Ajour checks a plugin's `apiVersion` exactly. A plugin for API `3` works with Aj
   { icon: 'upload', title: 'Publish a plugin', text: 'List your plugins in a repository with a signed ajour.json.', link: '/developers/publish' },
 ]" />
 
-The best examples are the official plugins, in [les-cabochons/ajour-plugins](https://github.com/les-cabochons/ajour-plugins). [Jira](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/jira) is the smallest backlog plugin, [Azure DevOps](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/azure-devops) shows configurable priorities and comments, [GitHub](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/github) is a backlog plugin and a code host, [ICS](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/ics) is a calendar, and [Workday (agent)](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/workday-agent) declares agent tasks and project properties.
+The best examples are the official plugins, in [les-cabochons/ajour-plugins](https://github.com/les-cabochons/ajour-plugins). [Jira](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/jira) is the smallest backlog plugin, [Azure DevOps](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/azure-devops) shows configurable priorities and comments, [GitHub](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/github) is a backlog plugin and a code host, [ICS](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/ics) is a calendar, and [Workday (agent)](https://github.com/les-cabochons/ajour-plugins/tree/main/plugins/workday-agent) declares agent tasks and project and task properties.

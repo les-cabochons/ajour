@@ -18,9 +18,11 @@ Open a project and press **New task**. The task editor opens in the side panel.
 
 Press **Save** or <kbd>⌘</kbd> <kbd>Enter</kbd>.
 
-Each row of the task list shows the task's shortcut, whether it is billable, and its time used against its budget. Drag a row, or press <kbd>Alt</kbd> <kbd>↑</kbd> and <kbd>Alt</kbd> <kbd>↓</kbd>, to reorder the active tasks.
+A plugin can add its own section to the editor. [Workday (agent)](/plugins/workday-agent#map-a-task-to-a-workday-task) adds **Workday task**, to commit a task of your own as one Workday knows.
 
-In a [shared project](/projects/shared-projects), the name, billable, budget and status follow your team. The adjustment and the shortcut stay yours.
+Each row of the task list shows the task's shortcut, whether it is billable, and its time used against its budget. A mapped task shows the task it commits as, such as "→ 07 Run". Drag a row, or press <kbd>Alt</kbd> <kbd>↑</kbd> and <kbd>Alt</kbd> <kbd>↓</kbd>, to reorder the active tasks.
+
+In a [shared project](/projects/shared-projects), the name, billable, budget and status follow your team. The adjustment, the shortcut and plugin properties stay yours.
 
 ## Pin a task
 

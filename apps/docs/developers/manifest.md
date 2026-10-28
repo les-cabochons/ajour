@@ -43,17 +43,17 @@ For schema plugins, see [Schema API](/developers/schema-api#manifest).
 
 ## Fields
 
-| Field              | Type   | Rules                                                                                                                                                                                                                                                                              |
-| ------------------ | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`               | string | Lowercase letters and digits, separated by single `.`, `_` or `-`. Up to 120 characters. Use the same ID as in your [plugin source](/developers/plugin-source), which allows no dots.                                                                                              |
-| `version`          | string | Semver: `1.2.3` or `1.2.3-beta.1`.                                                                                                                                                                                                                                                 |
-| `apiVersion`       | number | Must be `3`, the current plugin API.                                                                                                                                                                                                                                               |
-| `displayName`      | string | 1 to 120 characters.                                                                                                                                                                                                                                                               |
-| `description`      | string | Optional. Up to 500 characters.                                                                                                                                                                                                                                                    |
-| `iconSvg`          | string | Inline SVG markup, up to 20,000 characters.                                                                                                                                                                                                                                        |
-| `entrypoint`       | string | Relative path to a `.ts`, `.mts`, `.js`, `.mjs` or `.cjs` file inside the package. TypeScript runs as written: see [Plugin files](/developers/plugin-source#plugin-files). No symlinks. Leave it out for a plugin that runs no code, with only `agentTask` or `projectProperties`. |
-| `capabilities`     | object | At least one of `connector`, `codeHost`, `calendar`, `team`, `agentTask` and `projectProperties`. See below.                                                                                                                                                                       |
-| `connectionFields` | array  | 1 to 50 [connection fields](#connection-fields). Optional, and empty by default, for a plugin that runs no code.                                                                                                                                                                   |
+| Field              | Type   | Rules                                                                                                                                                                                                                                                                                                |
+| ------------------ | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`               | string | Lowercase letters and digits, separated by single `.`, `_` or `-`. Up to 120 characters. Use the same ID as in your [plugin source](/developers/plugin-source), which allows no dots.                                                                                                                |
+| `version`          | string | Semver: `1.2.3` or `1.2.3-beta.1`.                                                                                                                                                                                                                                                                   |
+| `apiVersion`       | number | Must be `3`, the current plugin API.                                                                                                                                                                                                                                                                 |
+| `displayName`      | string | 1 to 120 characters.                                                                                                                                                                                                                                                                                 |
+| `description`      | string | Optional. Up to 500 characters.                                                                                                                                                                                                                                                                      |
+| `iconSvg`          | string | Inline SVG markup, up to 20,000 characters.                                                                                                                                                                                                                                                          |
+| `entrypoint`       | string | Relative path to a `.ts`, `.mts`, `.js`, `.mjs` or `.cjs` file inside the package. TypeScript runs as written: see [Plugin files](/developers/plugin-source#plugin-files). No symlinks. Leave it out for a plugin that runs no code, with only `agentTask`, `projectProperties` or `taskProperties`. |
+| `capabilities`     | object | At least one of `connector`, `codeHost`, `calendar`, `team`, `agentTask`, `projectProperties` and `taskProperties`. See below.                                                                                                                                                                       |
+| `connectionFields` | array  | 1 to 50 [connection fields](#connection-fields). Optional, and empty by default, for a plugin that runs no code.                                                                                                                                                                                     |
 
 The `id` is permanent. It names the install folder, and it is the `source` of every item your plugin syncs. Changing it orphans the user's connections and items.
 
@@ -77,12 +77,13 @@ The `id` is permanent. It names the install folder, and it is the `source` of ev
 | `team`                  | `{ "apiVersion": 1 }`. The plugin exports `createTeam` and `syncTeamProjects`, and keeps a team's shared projects in step. See [Team API](/developers/team-api).                                                                                                                               |
 | `agentTask`             | The plugin declares tasks that a coding agent runs from a prompt. No plugin code runs. See [Agent tasks](#agent-tasks).                                                                                                                                                                        |
 | `projectProperties`     | Text properties the plugin adds to every project. No plugin code runs. See [Project properties](#project-properties).                                                                                                                                                                          |
+| `taskProperties`        | Text properties the plugin adds to every task. No plugin code runs. See [Task properties](#task-properties).                                                                                                                                                                                   |
 
 The backlog capability is declared under the `connector` key until plugin API 4.
 
 Ajour only calls the functions your capabilities declare.
 
-When a plugin declares more than one of `connector`, `codeHost`, `calendar` and `team`, the user turns each on and off separately, as **Backlog items**, **Pull requests**, **Calendar events** and **Projects**. A capability that an update adds starts off for users who had the plugin. Agent tasks and project properties follow the plugin's own switch.
+When a plugin declares more than one of `connector`, `codeHost`, `calendar` and `team`, the user turns each on and off separately, as **Backlog items**, **Pull requests**, **Calendar events** and **Projects**. A capability that an update adds starts off for users who had the plugin. Agent tasks, project properties and task properties follow the plugin's own switch.
 
 ## Agent tasks
 
@@ -174,6 +175,41 @@ A plugin can add text fields to every project. A plugin that declares only `proj
 Fields are plain text, up to 240 characters.
 
 Ajour shows the fields in a section of the project's properties card, titled `section`, collapsed until the user opens it. An empty value shows the default in grey: the project's full name for `fullName`, its code for `code`. Agents read the values in `get_week_changes`, under `projectProperties.<plugin id>.<field id>`, with defaults filled in.
+
+## Task properties
+
+A plugin can add text fields to every task, such as the task your tool knows a task by. A plugin that declares only `taskProperties` runs no code and needs no `entrypoint`.
+
+```json
+"capabilities": {
+  "taskProperties": {
+    "section": "Workday",
+    "fields": [
+      {
+        "id": "task",
+        "label": "Workday task",
+        "defaultFrom": "name",
+        "helpText": "Leave it empty when Workday has a task with this name."
+      }
+    ]
+  }
+}
+```
+
+| Key                    | Rules                                                           |
+| ---------------------- | --------------------------------------------------------------- |
+| `section`              | The section title. 1 to 60 characters.                          |
+| `fields`               | 1 to 10 fields.                                                 |
+| `fields[].id`          | Lowercase letters, digits and `-`, up to 63 characters. Unique. |
+| `fields[].label`       | The field label. 1 to 60 characters.                            |
+| `fields[].defaultFrom` | Optional. `name`: the task's name is the default.               |
+| `fields[].helpText`    | Optional. Shown under the field. 1 to 240 characters.           |
+
+Fields are plain text, up to 240 characters.
+
+Ajour shows the fields in a section of the task editor, titled `section`. A field with `defaultFrom: "name"` holds the name your tool knows the task by: the user picks one of the project's other tasks, or leaves it empty to keep the task's own name. The task list then shows "→ 07 Run" after the task's name, the Commit page shows "as 07 Run", and with your plugin's names the Commit page's lines name the task that way. Other fields are a text box.
+
+Agents read the values in `get_week_changes` and `get_week_status`, under `taskProperties.<plugin id>.<field id>`, with defaults filled in. A task that is not mapped gives its own name.
 
 ## Connection fields
 

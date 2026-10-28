@@ -833,6 +833,7 @@ Decided in [Projects pages under the new conventions](https://github.com/les-cab
 - In Settings › Projects, a schema without an export layout only imports. The Export projects section then says so, and names Ajour default for exports. A file whose schema names no project is refused there, and points to "Import tasks…".
 - "New task" under the task list opens a blank task panel.
 - A task row shows its pinned slot, such as "3", next to its name.
+- Each active plugin with `taskProperties` adds a section to the task editor, under its own fields, titled by the plugin, such as "Workday". A field that defaults to the task's name picks one of the project's other active tasks, or "Same name", which keeps the task's own name; the pick saves with the task. Other fields are text boxes. A mapped task's row shows "→ 07 Run" after its name, muted, and screen readers hear "Workday task: 07 Run". On the Commit page, its change shows "as 07 Run" after the task, since an arrow there means a changed value, and the Lines with the plugin's names name the task "07 Run". The mapping is personal, like project plugin properties: a shared project's team never gets it.
 - The old Projects command dialog is removed. Cmd+K offers "Create project" and "Create task in…".
 
 ## Settings
