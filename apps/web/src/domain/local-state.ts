@@ -91,6 +91,11 @@ export interface LocalProjectTask {
   pinnedSlot?: PinnedTaskSlot;
   /** When the user starred the task. Personal, like the pinned slot. See getFavorites. */
   favoritedAt?: number;
+  /**
+   * Overrides of plugin task properties, keyed by plugin ID then field ID.
+   * Personal, like project ones. See plugin-properties.ts.
+   */
+  pluginProperties?: Record<string, Record<string, string>>;
   team?: LocalTaskTeamLink;
 }
 
@@ -193,6 +198,7 @@ export interface LocalProjectTaskDraft {
   adjustmentMs?: number;
   /** Only `addProjectTask` reads it, so the slot stays unique. */
   pinnedSlot?: PinnedTaskSlot;
+  pluginProperties?: Record<string, Record<string, string>>;
 }
 
 export interface LocalTeam {
