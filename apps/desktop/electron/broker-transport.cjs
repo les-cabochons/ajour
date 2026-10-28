@@ -52,6 +52,8 @@ const { createPinningTunnel } = require("./broker-pinning-tunnel.cjs");
 
 const BROKER_PARTITION = "ajour-broker";
 const PINNED_PARTITION = "ajour-broker-pinned";
+/** Any https address: every one routes the same on the pinned session. */
+const PINNED_ROUTE_PROBE = "https://ajour-broker.invalid/";
 const MARKER_HEADER = "x-ajour-broker-request";
 
 /**
@@ -131,6 +133,17 @@ function createBrokerNetwork({
         // Chromium skips a proxy for loopback unless told not to.
         proxyBypassRules: "<-loopback>",
       });
+      // setProxy resolves before the network service applies the rules, so
+      // a request sent at once can leave without the tunnel (#460). Reloading
+      // waits for them, and nothing goes until the session names the tunnel
+      // as its route.
+      await pinnedSes.forceReloadProxyConfig();
+      const route = await pinnedSes.resolveProxy(PINNED_ROUTE_PROBE);
+      if (route !== `PROXY 127.0.0.1:${port}`) {
+        throw new Error(
+          `The pinned session does not route through the tunnel yet (${route}).`,
+        );
+      }
       return pinnedSes;
     })().catch((error) => {
       pinnedReady = undefined;
