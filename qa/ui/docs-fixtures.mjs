@@ -9,16 +9,58 @@ const require = createRequire(import.meta.url);
 const {
   BUILT_IN_PLUGIN_CATALOG_ENTRIES,
 } = require("../../apps/desktop/electron/plugin-catalog-seed.cjs");
-
-// Copies of the official plugins' plugin.json files.
-const manifests = JSON.parse(
-  fs.readFileSync(
-    new URL("./fixtures/plugin-manifests.json", import.meta.url),
-    "utf8",
-  ),
-);
+const {
+  OFFICIAL_PLUGIN_SOURCE_URL,
+  OFFICIAL_SOURCE_PUBLIC_KEYS,
+  keyFingerprint,
+} = require("../../apps/desktop/electron/plugin-sources.cjs");
 
 const HOUR = 3_600_000;
+
+/**
+ * The official source as Ajour knows it once it has read the signed listing:
+ * the seed says unsigned, but no user sees it that way for long.
+ */
+const officialSource = {
+  url: OFFICIAL_PLUGIN_SOURCE_URL,
+  name: "Ajour official plugins",
+  official: true,
+  signed: true,
+  keyFingerprint: keyFingerprint(
+    Buffer.from(OFFICIAL_SOURCE_PUBLIC_KEYS[0], "base64"),
+  ),
+};
+const catalogEntries = BUILT_IN_PLUGIN_CATALOG_ENTRIES.map((entry) => ({
+  ...entry,
+  source: officialSource,
+}));
+
+// Copies of the official plugins' plugin.json files, installed from the
+// official source.
+const manifests = Object.fromEntries(
+  Object.entries(
+    JSON.parse(
+      fs.readFileSync(
+        new URL("./fixtures/plugin-manifests.json", import.meta.url),
+        "utf8",
+      ),
+    ),
+  ).map(([id, manifest]) => [
+    id,
+    {
+      ...manifest,
+      origin: {
+        kind: "source",
+        signed: true,
+        sourceUrl: officialSource.url,
+        sourceName: officialSource.name,
+        official: true,
+        keyFingerprint: officialSource.keyFingerprint,
+        installedAt: new Date(2026, 8, 1).toISOString(),
+      },
+    },
+  ]),
+);
 
 /**
  * The time of every shot: a Thursday afternoon, so the seeded week is full
@@ -277,7 +319,7 @@ export const mcpSettings = (enabled = true) => ({
  */
 export function desktopBridgeScript() {
   return `(() => {
-  const entries = ${JSON.stringify(BUILT_IN_PLUGIN_CATALOG_ENTRIES)};
+  const entries = ${JSON.stringify(catalogEntries)};
   window.ajourDesktop = {
     runtime: { automaticUpdatesEnabled: false, developmentBuild: false, platform: "web", version: "1.4.0" },
     getPluginCatalog: async () => ({ entries, checkedAt: new Date().toISOString(), source: "network" }),
