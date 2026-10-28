@@ -419,6 +419,12 @@ describe("reading a source", () => {
     });
   });
 
+  it("says the listing is missing when the default branch has no ajour.json", async () => {
+    await expect(fakeHost({}).reader.readListing(github)).rejects.toThrow(
+      "Ajour found no ajour.json at the root of the repository's default branch. The address may be wrong, or the repository private.",
+    );
+  });
+
   it("asks GitLab for the default branch before reading the listing", async () => {
     const manifestBytes = bytesOf(listing());
     const source = {

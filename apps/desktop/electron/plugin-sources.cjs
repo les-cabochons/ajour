@@ -586,7 +586,10 @@ function createSourceReader({ fetchImpl }) {
   async function getBytes(url, maximumBytes) {
     const response = await get(url);
     if (!response.ok) {
-      throw new Error(`The source answered HTTP ${response.status}.`);
+      throw Object.assign(
+        new Error(`The source answered HTTP ${response.status}.`),
+        { status: response.status },
+      );
     }
     return readBoundedResponse(response, maximumBytes);
   }
@@ -641,14 +644,25 @@ function createSourceReader({ fetchImpl }) {
 
   /**
    * Reads `ajour.json` and its signature from the default branch. A missing
-   * signature (404) means unsigned; any other failure throws.
+   * signature (404) means unsigned; any other failure throws. A missing
+   * `ajour.json` throws a message the person can act on, since a host also
+   * answers 404 for a private or mistyped repository.
    */
   async function readListing(source) {
     const ref = await defaultBranchRef(source);
-    const manifestBytes = await getBytes(
-      rawFileUrl(source, ref, "ajour.json"),
-      MAX_MANIFEST_BYTES,
-    );
+    let manifestBytes;
+    try {
+      manifestBytes = await getBytes(
+        rawFileUrl(source, ref, "ajour.json"),
+        MAX_MANIFEST_BYTES,
+      );
+    } catch (error) {
+      throw error?.status === 404
+        ? new Error(
+            "Ajour found no ajour.json at the root of the repository's default branch. The address may be wrong, or the repository private.",
+          )
+        : error;
+    }
     const signatureResponse = await get(
       rawFileUrl(source, ref, "ajour.json.sig"),
     );
