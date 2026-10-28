@@ -134,6 +134,17 @@ export type PluginManifest = {
           section: string;
         }
       | undefined;
+    taskProperties?:
+      | {
+          fields: {
+            id: string;
+            label: string;
+            helpText?: string | undefined;
+            defaultFrom?: "name" | undefined;
+          }[];
+          section: string;
+        }
+      | undefined;
   };
   description?: string | undefined;
   entrypoint?: string | undefined;

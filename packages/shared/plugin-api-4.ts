@@ -581,7 +581,7 @@ export const pluginApi4CapabilitiesSchema = pluginCapabilitiesObjectSchema
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          "A plugin must declare at least one capability: connector, codeHost, calendar, agentTask, projectProperties or projectDataShape.",
+          "A plugin must declare at least one capability: connector, codeHost, calendar, agentTask, projectProperties, taskProperties or projectDataShape.",
       });
     }
   });
