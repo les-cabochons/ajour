@@ -8,10 +8,14 @@ const OFFICIAL_PLUGIN_SOURCE_URL =
   "https://github.com/les-cabochons/ajour-plugins";
 /**
  * The Ed25519 public keys, base64 of the raw 32 bytes, that may sign the
- * official source. A source signed by another key is refused. While the list
- * is empty, the official source is trusted on first use like any other.
+ * official source. A listing signed by another key, or not signed, is
+ * refused. "Signing" in the ajour-plugins README explains how a key is made;
+ * a backup key goes here too, so it can sign if the first one is lost.
  */
-const OFFICIAL_SOURCE_PUBLIC_KEYS = Object.freeze([]);
+const OFFICIAL_SOURCE_PUBLIC_KEYS = Object.freeze([
+  // Fingerprint cb24 56b2 2c2b 62e1. First signed ajour-plugins#13.
+  "MTsijMPv34j6agaaBq4zMzidHVmitts/mA4mUZ/uDas=",
+]);
 
 const MAX_MANIFEST_BYTES = 256 * 1024;
 const MAX_SIGNATURE_BYTES = 4 * 1024;
