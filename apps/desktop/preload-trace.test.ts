@@ -234,4 +234,15 @@ describe("the preload's errors", () => {
       api.removePluginSource!("https://github.com/alice/plugins"),
     ).rejects.toThrow(/^The address is not a plugin source\.$/);
   });
+
+  it("keeps a thrown string whole, even one that reads like an error type", async () => {
+    const { api, ipc } = await loadPreload();
+    ipc.handle("ajour:inspect-plugin-source", () => {
+      throw "TypeError: literal text";
+    });
+
+    await expect(
+      api.inspectPluginSource!("https://github.com/alice/plugins"),
+    ).rejects.toThrow(/^TypeError: literal text$/);
+  });
 });

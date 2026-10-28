@@ -29,7 +29,8 @@ const traced = (carrier) =>
 /**
  * `ipcRenderer.invoke`, rejecting with the main process's own message.
  * Electron rejects with "Error invoking remote method '<channel>': Error:
- * <message>", and the page shows an error's message as it is.
+ * <message>", and the page shows an error's message as it is. Main always
+ * throws an `Error` (ipc-listeners.cjs), so the type name is Electron's.
  */
 const invoke = (channel, ...args) =>
   ipcRenderer.invoke(channel, ...args).catch((error) => {

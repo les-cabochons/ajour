@@ -209,15 +209,22 @@ function createIpcListeners(ipcMain, { events, windowSession }) {
 
   return {
     /**
-     * An `invoke` request: the renderer gets the listener's promise.
+     * An `invoke` request: the renderer gets the listener's promise. A
+     * failure always reaches it as an `Error`: Electron sends the page
+     * `String(error)`, and the preload strips one leading type name from it,
+     * so a thrown string must not supply its own.
      * @param {ChannelOf<"invoke">} channel
      * @param {IpcListener} listener
      */
     handle(channel, listener) {
       const entry = channelEntry(channel, "invoke");
-      ipcMain.handle(channel, (event, ...args) =>
-        call(channel, entry, listener, event, args),
-      );
+      ipcMain.handle(channel, async (event, ...args) => {
+        try {
+          return await call(channel, entry, listener, event, args);
+        } catch (error) {
+          throw error instanceof Error ? error : new Error(String(error));
+        }
+      });
     },
 
     /**
