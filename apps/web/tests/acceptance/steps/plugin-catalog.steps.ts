@@ -144,7 +144,7 @@ Then("the GitHub catalog entry offers a download", async ({ page }) => {
 
 Then("the Workday schema is the only catalog entry", async ({ page }) => {
   await expect(page.getByRole("link", { name: /^View / })).toHaveText(
-    /Workday schema/,
+    /Workday project data shape/,
   );
 });
 
