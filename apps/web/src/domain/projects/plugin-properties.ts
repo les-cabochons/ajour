@@ -135,10 +135,30 @@ export function setPluginProperty(
   fieldId: string,
   value: string,
 ): PluginProperties | undefined {
-  const text = value.trim().slice(0, PLUGIN_PROPERTY_MAX_LENGTH);
+  return setPluginPropertyDraft(
+    owner,
+    pluginId,
+    fieldId,
+    value.trim().slice(0, PLUGIN_PROPERTY_MAX_LENGTH),
+  );
+}
+
+/**
+ * Like setPluginProperty, but keeps the text as typed, spaces included, for
+ * a draft that normalizePluginProperties trims on save. Only a blank value
+ * removes the override.
+ */
+export function setPluginPropertyDraft(
+  owner: PluginPropertyOwner,
+  pluginId: string,
+  fieldId: string,
+  text: string,
+): PluginProperties | undefined {
   const { [fieldId]: _previous, ...otherFields } =
     owner.pluginProperties?.[pluginId] ?? {};
-  const fields = text ? { ...otherFields, [fieldId]: text } : otherFields;
+  const fields = text.trim()
+    ? { ...otherFields, [fieldId]: text }
+    : otherFields;
   const { [pluginId]: _plugin, ...otherPlugins } = owner.pluginProperties ?? {};
   const next =
     Object.keys(fields).length > 0
@@ -171,7 +191,10 @@ export function samePluginProperties(
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** Keeps the non-empty text values of stored overrides, and drops the rest. */
+/**
+ * Keeps the non-empty text values of stored overrides, trimmed and cut to
+ * the longest value, and drops the rest.
+ */
 export function normalizePluginProperties(
   value: unknown,
 ): PluginProperties | undefined {
@@ -180,9 +203,10 @@ export function normalizePluginProperties(
   for (const [pluginId, fields] of Object.entries(value)) {
     if (!isRecord(fields)) continue;
     const kept = Object.fromEntries(
-      Object.entries(fields).filter(
-        (entry): entry is [string, string] =>
-          typeof entry[1] === "string" && entry[1].trim() !== "",
+      Object.entries(fields).flatMap(([fieldId, text]) =>
+        typeof text === "string" && text.trim() !== ""
+          ? [[fieldId, text.trim().slice(0, PLUGIN_PROPERTY_MAX_LENGTH)]]
+          : [],
       ),
     );
     if (Object.keys(kept).length > 0) plugins[pluginId] = kept;

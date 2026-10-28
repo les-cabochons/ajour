@@ -207,7 +207,7 @@ describe("line names", () => {
   };
 
   it("lists Ajour then each plugin under its section title", () => {
-    expect(listLineNameSources([workday])).toEqual([
+    expect(listLineNameSources({ projects: [workday], tasks: [] })).toEqual([
       { id: "ajour", label: "Ajour" },
       { id: "workday-agent", label: "Workday" },
     ]);
@@ -218,7 +218,9 @@ describe("line names", () => {
     ["workday-agent", "workday-agent"],
     ["removed-plugin", "ajour"],
   ])("resolves the saved source %s to %s", (saved, expected) => {
-    expect(resolveLineNameSource(saved, [workday])).toBe(expected);
+    expect(
+      resolveLineNameSource(saved, { projects: [workday], tasks: [] }),
+    ).toBe(expected);
   });
 
   it.each([
@@ -328,6 +330,26 @@ describe("line names", () => {
         NO_PROPERTY_PLUGINS,
       ),
     ).toBeUndefined();
+  });
+
+  it("offers a plugin that adds only task properties, once even with both", () => {
+    const tasksOnly: TaskPropertyPlugin = {
+      pluginId: "tasks-only",
+      capability: {
+        section: "Tasks only",
+        fields: [{ id: "task", label: "Task", defaultFrom: "name" }],
+      },
+    };
+    const plugins = {
+      projects: [workday],
+      tasks: [{ ...tasksOnly, pluginId: "workday-agent" }, tasksOnly],
+    };
+    expect(listLineNameSources(plugins)).toEqual([
+      { id: "ajour", label: "Ajour" },
+      { id: "workday-agent", label: "Workday" },
+      { id: "tasks-only", label: "Tasks only" },
+    ]);
+    expect(resolveLineNameSource("tasks-only", plugins)).toBe("tasks-only");
   });
 
   it("names a mapped task by the plugin's task property", () => {

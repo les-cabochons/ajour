@@ -290,13 +290,10 @@ export function CommitPage({
   // Undefined until loaded, so a saved plugin choice waits instead of
   // showing Ajour's names first.
   const [plugins, setPlugins] = useState<PropertyPlugins>();
-  const nameSources = useMemo(
-    () => listLineNameSources(plugins?.projects),
-    [plugins],
-  );
+  const nameSources = useMemo(() => listLineNameSources(plugins), [plugins]);
   const nameSource = resolveLineNameSource(
     state.userPreferences.commitLinesNameSource,
-    plugins?.projects,
+    plugins,
   );
 
   useEffect(() => {

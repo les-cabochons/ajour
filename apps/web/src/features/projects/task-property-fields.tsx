@@ -13,7 +13,7 @@ import {
   getMappedTaskName,
   PLUGIN_PROPERTY_MAX_LENGTH,
   resolveTaskPluginProperties,
-  setPluginProperty,
+  setPluginPropertyDraft,
   type PluginProperties,
   type TaskPropertyPlugin,
 } from "@/domain/projects/plugin-properties";
@@ -73,9 +73,10 @@ export function TaskPropertyFields({
           plugin,
         ).map(({ field, value, defaultValue, isDefault }) => {
           const id = `${idPrefix}-${plugin.pluginId}-${field.id}`;
+          // The draft keeps text as typed; the editor trims it on save.
           const set = (next: string) =>
             onChange(
-              setPluginProperty(
+              setPluginPropertyDraft(
                 { pluginProperties },
                 plugin.pluginId,
                 field.id,

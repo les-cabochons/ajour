@@ -7,6 +7,7 @@ import {
 import {
   getMappedTaskName,
   resolvePluginProperties,
+  NO_PROPERTY_PLUGINS,
   type ProjectPropertyPlugin,
   type PropertyPlugins,
 } from "@/domain/projects/plugin-properties";
@@ -208,16 +209,28 @@ export interface LineNameSource {
   label: string;
 }
 
-/** Ajour, then each active plugin that adds project properties, by section title. */
+/** The active plugins that add project or task properties, once each, by ID. */
+function lineNamePlugins(plugins: PropertyPlugins) {
+  const sections = new Map<string, string>();
+  for (const plugin of [...plugins.projects, ...plugins.tasks]) {
+    if (!sections.has(plugin.pluginId)) {
+      sections.set(plugin.pluginId, plugin.capability.section);
+    }
+  }
+  return sections;
+}
+
+/**
+ * Ajour, then each active plugin that adds project or task properties, by
+ * its section title. A plugin with both is listed once, by its project
+ * section.
+ */
 export function listLineNameSources(
-  plugins: ProjectPropertyPlugin[] = [],
+  plugins: PropertyPlugins = NO_PROPERTY_PLUGINS,
 ): LineNameSource[] {
   return [
     { id: AJOUR_LINE_NAME_SOURCE, label: "Ajour" },
-    ...plugins.map((plugin) => ({
-      id: plugin.pluginId,
-      label: plugin.capability.section,
-    })),
+    ...[...lineNamePlugins(plugins)].map(([id, label]) => ({ id, label })),
   ];
 }
 
@@ -228,13 +241,11 @@ export function listLineNameSources(
  */
 export function resolveLineNameSource(
   saved: string | undefined,
-  plugins: ProjectPropertyPlugin[] | undefined,
+  plugins: PropertyPlugins | undefined,
 ): string | undefined {
   if (!saved || saved === AJOUR_LINE_NAME_SOURCE) return AJOUR_LINE_NAME_SOURCE;
   if (!plugins) return undefined;
-  return plugins.some((plugin) => plugin.pluginId === saved)
-    ? saved
-    : AJOUR_LINE_NAME_SOURCE;
+  return lineNamePlugins(plugins).has(saved) ? saved : AJOUR_LINE_NAME_SOURCE;
 }
 
 /** What a line's project and task button shows and copies, or that it waits. */

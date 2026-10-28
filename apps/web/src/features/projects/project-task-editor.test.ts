@@ -125,6 +125,27 @@ describe("project task editor", () => {
     });
   });
 
+  it("trims a typed property on save, and counts trailing spaces as no change", () => {
+    const original = { name: "Build" };
+    const typing = {
+      ...createProjectTaskEditorFields(original),
+      pluginProperties: { finance: { center: "Cost center " } },
+    };
+    expect(
+      evaluateProjectTaskEditor(typing, original).values?.pluginProperties,
+    ).toEqual({ finance: { center: "Cost center" } });
+
+    const saved = {
+      name: "Build",
+      pluginProperties: { finance: { center: "X" } },
+    };
+    const spaced = {
+      ...createProjectTaskEditorFields(saved),
+      pluginProperties: { finance: { center: "X " } },
+    };
+    expect(evaluateProjectTaskEditor(spaced, saved).hasChanges).toBe(false);
+  });
+
   it("counts a property put back as it was as no change", () => {
     const original = {
       name: "Knowledge transfer",

@@ -6,6 +6,7 @@ import {
   resolvePluginProperties,
   resolveTaskPluginProperties,
   setPluginProperty,
+  setPluginPropertyDraft,
   type ProjectPropertyPlugin,
   type TaskPropertyPlugin,
 } from "@/domain/projects/plugin-properties";
@@ -98,6 +99,27 @@ describe("plugin project properties", () => {
       "a".repeat(300),
     );
     expect(next?.["workday-agent"]?.name).toHaveLength(240);
+  });
+
+  it("keeps spaces in a draft value, and normalizing trims them", () => {
+    const draft = setPluginPropertyDraft(
+      project(),
+      "finance",
+      "center",
+      "Cost ",
+    );
+    expect(draft).toEqual({ finance: { center: "Cost " } });
+    expect(normalizePluginProperties(draft)).toEqual({
+      finance: { center: "Cost" },
+    });
+    expect(
+      setPluginPropertyDraft(
+        { pluginProperties: draft },
+        "finance",
+        "center",
+        " ",
+      ),
+    ).toBeUndefined();
   });
 
   it("drops stored values that are not text", () => {
