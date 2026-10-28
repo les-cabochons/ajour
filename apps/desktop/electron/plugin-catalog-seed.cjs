@@ -113,10 +113,10 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
   },
   {
     id: "workday-project-data",
-    title: "Workday schema",
+    title: "Workday project data shape",
     description:
-      "Maps project and task records to a Workday-compatible file layout without connecting to Workday.",
-    version: "1.0.0",
+      "Imports a project and its tasks from Workday's Excel exports, in French, without connecting to Workday.",
+    version: "2.0.0",
     author: AUTHOR,
     license: MIT,
     website: folderPage("workday-project-data"),
@@ -126,7 +126,7 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
     compatibility: { pluginApiVersion: 1 },
     capabilities: ["schema"],
     features: ["project-data-shape"],
-    tags: ["workday", "import", "export", "data-shape"],
+    tags: ["workday", "import", "data-shape"],
   },
 ];
 
