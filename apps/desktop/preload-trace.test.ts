@@ -46,12 +46,19 @@ async function loadPreload({ runtime = null }: { runtime?: unknown } = {}) {
     windowSession: noWindowSession,
   });
   const sender = { sender: "window" };
-  // IPC sends a structured clone, as Electron does.
+  // IPC sends a structured clone, as Electron does. A handler's error
+  // reaches the page as Electron 44 words it, naming the channel.
   const ipcRenderer = {
     invoke: (channel: string, ...args: unknown[]) =>
-      Promise.resolve().then(() =>
-        ipcMain.handlers.get(channel)!(sender, ...structuredClone(args)),
-      ),
+      Promise.resolve()
+        .then(() =>
+          ipcMain.handlers.get(channel)!(sender, ...structuredClone(args)),
+        )
+        .catch((error: unknown) => {
+          throw new Error(
+            `Error invoking remote method '${channel}': ${String(error)}`,
+          );
+        }),
     send: (channel: string, ...args: unknown[]) => {
       ipcMain.emit(channel, sender, ...structuredClone(args));
     },
@@ -207,5 +214,24 @@ describe("the preload's wide events forwarding", () => {
     push("ajour:wide-events-forwarding", "yes");
 
     expect(late).toEqual([true, false]);
+  });
+});
+
+describe("the preload's errors", () => {
+  it("rejects with the main process's own message, without Electron's prefix", async () => {
+    const { api, ipc } = await loadPreload();
+    ipc.handle("ajour:inspect-plugin-source", () => {
+      throw new Error("Ajour found no ajour.json at the root.");
+    });
+    ipc.handle("ajour:remove-plugin-source", () => {
+      throw new TypeError("The address is not a plugin source.");
+    });
+
+    await expect(
+      api.inspectPluginSource!("https://github.com/alice/plugins"),
+    ).rejects.toThrow(/^Ajour found no ajour\.json at the root\.$/);
+    await expect(
+      api.removePluginSource!("https://github.com/alice/plugins"),
+    ).rejects.toThrow(/^The address is not a plugin source\.$/);
   });
 });

@@ -570,7 +570,7 @@ describe("the IPC channel table", () => {
     const sent = new Set(
       [
         ...preload.matchAll(
-          /ipcRenderer\.(?:invoke|send|sendSync)\(\s*"([^"]+)"/g,
+          /(?:ipcRenderer\.(?:invoke|send|sendSync)|\binvoke)\(\s*"([^"]+)"/g,
         ),
       ].map(([, channel]) => channel),
     );

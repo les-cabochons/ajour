@@ -26,6 +26,21 @@ const traced = (carrier) =>
     ? [{ traceparent: carrier.traceparent }]
     : [];
 
+/**
+ * `ipcRenderer.invoke`, rejecting with the main process's own message.
+ * Electron rejects with "Error invoking remote method '<channel>': Error:
+ * <message>", and the page shows an error's message as it is.
+ */
+const invoke = (channel, ...args) =>
+  ipcRenderer.invoke(channel, ...args).catch((error) => {
+    throw new Error(
+      String(error?.message ?? error).replace(
+        /^Error invoking remote method '[^']*': (?:\w*Error: )?/,
+        "",
+      ),
+    );
+  });
+
 const bootstrapLocalState = ipcRenderer.sendSync(
   "ajour:get-bootstrap-local-state",
 );
@@ -59,12 +74,7 @@ contextBridge.exposeInMainWorld("ajourDesktop", {
   runMenuItem: (itemId, trace) =>
     ipcRenderer.send("ajour:run-menu-item", itemId, ...traced(trace)),
   showContextMenu: (items, position, trace) =>
-    ipcRenderer.invoke(
-      "ajour:show-context-menu",
-      items,
-      position,
-      ...traced(trace),
-    ),
+    invoke("ajour:show-context-menu", items, position, ...traced(trace)),
   runEditCommand: (command, trace) =>
     ipcRenderer.send("ajour:run-edit-command", command, ...traced(trace)),
   setThemeSource: (mode, trace) =>
@@ -72,9 +82,8 @@ contextBridge.exposeInMainWorld("ajourDesktop", {
   setWindowChromeTheme: (theme, trace) =>
     ipcRenderer.send("ajour:set-window-chrome-theme", theme, ...traced(trace)),
   checkForUpdates: (track, trace) =>
-    ipcRenderer.invoke("ajour:check-for-updates", track, ...traced(trace)),
-  getUpdateState: (trace) =>
-    ipcRenderer.invoke("ajour:get-update-state", ...traced(trace)),
+    invoke("ajour:check-for-updates", track, ...traced(trace)),
+  getUpdateState: (trace) => invoke("ajour:get-update-state", ...traced(trace)),
   onUpdateStateChanged: (callback) => {
     const listener = (_event, state) => callback(state);
     ipcRenderer.on("ajour:update-state-changed", listener);
@@ -82,36 +91,18 @@ contextBridge.exposeInMainWorld("ajourDesktop", {
       ipcRenderer.removeListener("ajour:update-state-changed", listener);
   },
   updateAndRestart: (track, version, trace) =>
-    ipcRenderer.invoke(
-      "ajour:update-and-restart",
-      track,
-      version,
-      ...traced(trace),
-    ),
+    invoke("ajour:update-and-restart", track, version, ...traced(trace)),
   configureAutomaticUpdates: (track, trace) =>
-    ipcRenderer.invoke(
-      "ajour:configure-automatic-updates",
-      track,
-      ...traced(trace),
-    ),
+    invoke("ajour:configure-automatic-updates", track, ...traced(trace)),
   openUpdateRelease: (releaseUrl, trace) =>
-    ipcRenderer.invoke(
-      "ajour:open-update-release",
-      releaseUrl,
-      ...traced(trace),
-    ),
-  installPlugin: (trace) =>
-    ipcRenderer.invoke("ajour:install-plugin", ...traced(trace)),
+    invoke("ajour:open-update-release", releaseUrl, ...traced(trace)),
+  installPlugin: (trace) => invoke("ajour:install-plugin", ...traced(trace)),
   getPluginCatalog: (trace) =>
-    ipcRenderer.invoke("ajour:get-plugin-catalog", ...traced(trace)),
+    invoke("ajour:get-plugin-catalog", ...traced(trace)),
   getPluginCatalogSettings: (trace) =>
-    ipcRenderer.invoke("ajour:get-plugin-catalog-settings", ...traced(trace)),
+    invoke("ajour:get-plugin-catalog-settings", ...traced(trace)),
   configurePluginCatalog: (settings, trace) =>
-    ipcRenderer.invoke(
-      "ajour:configure-plugin-catalog",
-      settings,
-      ...traced(trace),
-    ),
+    invoke("ajour:configure-plugin-catalog", settings, ...traced(trace)),
   onPluginCatalogUpdated: (callback) => {
     const listener = (_event, catalog) => callback(catalog);
     ipcRenderer.on("ajour:plugin-catalog-updated", listener);
@@ -119,46 +110,30 @@ contextBridge.exposeInMainWorld("ajourDesktop", {
       ipcRenderer.removeListener("ajour:plugin-catalog-updated", listener);
   },
   downloadCatalogPlugin: (pluginId, sourceUrl, trace) =>
-    ipcRenderer.invoke(
+    invoke(
       "ajour:download-catalog-plugin",
       pluginId,
       sourceUrl,
       ...traced(trace),
     ),
   inspectPluginSource: (url, trace) =>
-    ipcRenderer.invoke("ajour:inspect-plugin-source", url, ...traced(trace)),
+    invoke("ajour:inspect-plugin-source", url, ...traced(trace)),
   addPluginSource: (url, keyFingerprint, trace) =>
-    ipcRenderer.invoke(
-      "ajour:add-plugin-source",
-      url,
-      keyFingerprint,
-      ...traced(trace),
-    ),
+    invoke("ajour:add-plugin-source", url, keyFingerprint, ...traced(trace)),
   removePluginSource: (url, trace) =>
-    ipcRenderer.invoke("ajour:remove-plugin-source", url, ...traced(trace)),
+    invoke("ajour:remove-plugin-source", url, ...traced(trace)),
   uninstallPlugin: (pluginId, trace) =>
-    ipcRenderer.invoke("ajour:uninstall-plugin", pluginId, ...traced(trace)),
+    invoke("ajour:uninstall-plugin", pluginId, ...traced(trace)),
   getDevelopmentPluginSettings: (trace) =>
-    ipcRenderer.invoke(
-      "ajour:get-development-plugin-settings",
-      ...traced(trace),
-    ),
+    invoke("ajour:get-development-plugin-settings", ...traced(trace)),
   selectDevelopmentPluginDirectory: (trace) =>
-    ipcRenderer.invoke(
-      "ajour:select-development-plugin-directory",
-      ...traced(trace),
-    ),
+    invoke("ajour:select-development-plugin-directory", ...traced(trace)),
   clearDevelopmentPluginDirectories: (trace) =>
-    ipcRenderer.invoke(
-      "ajour:clear-development-plugin-directories",
-      ...traced(trace),
-    ),
-  getLogsStatus: (trace) =>
-    ipcRenderer.invoke("ajour:get-logs-status", ...traced(trace)),
+    invoke("ajour:clear-development-plugin-directories", ...traced(trace)),
+  getLogsStatus: (trace) => invoke("ajour:get-logs-status", ...traced(trace)),
   configureLogs: (settings, trace) =>
-    ipcRenderer.invoke("ajour:configure-logs", settings, ...traced(trace)),
-  deleteAllLogs: (trace) =>
-    ipcRenderer.invoke("ajour:delete-all-logs", ...traced(trace)),
+    invoke("ajour:configure-logs", settings, ...traced(trace)),
+  deleteAllLogs: (trace) => invoke("ajour:delete-all-logs", ...traced(trace)),
   forwardWideEvents: (batch) =>
     ipcRenderer.send("ajour:forward-wide-events", batch),
   onWideEventsForwarding: (callback) => {
