@@ -40,12 +40,16 @@ function versionTuple(values: TimesheetCommitValues) {
 
 /**
  * The version of a change, as get_week_changes gives it: "v:" and the FNV-1a
- * hash of its kind, current values and committed values. mark_entries_committed
- * recomputes it and refuses a change whose version differs, so Ajour never
- * commits values the agent did not read. Fields a commit does not compare,
- * such as the copy's time, leave it unchanged.
+ * hash of its kind, current values and committed values, and of `external`,
+ * what the agent reads beside them, such as the Workday task a task maps to.
+ * mark_entries_committed recomputes it and refuses a change whose version
+ * differs, so Ajour never commits values the agent did not read. Fields a
+ * commit does not compare, such as the copy's time, leave it unchanged.
  */
-export function timesheetChangeVersion(change: TimesheetChange): string {
+export function timesheetChangeVersion(
+  change: TimesheetChange,
+  external?: unknown,
+): string {
   const current = change.kind === "deleted" ? null : change.current;
   const committed = change.kind === "added" ? null : change.committed;
   return `v:${fnv1aHex(
@@ -53,6 +57,7 @@ export function timesheetChangeVersion(change: TimesheetChange): string {
       change.kind,
       current && versionTuple(current),
       committed && versionTuple(committed),
+      ...(external === undefined ? [] : [external]),
     ]),
   )}`;
 }

@@ -449,7 +449,7 @@ describe("agent read model", () => {
       entries: state.timesheetEntries,
       tombstones: state.timesheetTombstones,
       weekDates: WEEK,
-    }).map(timesheetChangeVersion);
+    }).map((change) => timesheetChangeVersion(change));
 
     expect(
       getWeekChangesForAgent(state, allChecked).changes.map(

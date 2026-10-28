@@ -203,7 +203,7 @@ export async function runAgentToolCall(
     }
     if (isEntryWriteTool(tool)) {
       const propertyPlugins =
-        tool === "submit_week"
+        tool === "submit_week" || tool === "mark_entries_committed"
           ? await loadPropertyPlugins()
           : NO_PROPERTY_PLUGINS;
       return asAgent(() =>

@@ -316,6 +316,31 @@ function resolveEntryProperties(
   };
 }
 
+/**
+ * A change's version for agents: it covers the plugin properties of both
+ * sides too, so remapping a task between get_week_changes and
+ * mark_entries_committed makes Ajour refuse the mark. Without any, it is the
+ * change's own version.
+ */
+function agentChangeVersion(
+  state: LocalAppState,
+  change: TimesheetChange,
+  plugins: PropertyPlugins,
+) {
+  const sides = [
+    change.kind === "deleted"
+      ? {}
+      : resolveEntryProperties(state, change.current, plugins),
+    change.kind === "added"
+      ? {}
+      : resolveEntryProperties(state, change.committed, plugins),
+  ];
+  return timesheetChangeVersion(
+    change,
+    sides.some((side) => Object.keys(side).length > 0) ? sides : undefined,
+  );
+}
+
 function toAgentChangeValues(
   state: LocalAppState,
   values: TimesheetCommitValues,
@@ -366,7 +391,7 @@ export function getWeekChangesForAgent(
         change: change.kind,
         entryId: change.entryId,
         externalId: externalEntryId(change.entryId),
-        version: timesheetChangeVersion(change),
+        version: agentChangeVersion(state, change, propertyPlugins),
         checked: !uncheckedIds.has(change.entryId),
         ...(change.kind === "deleted"
           ? {}
@@ -403,11 +428,13 @@ function findTimesheetChange(
  * Checks the changes an agent wants to mark as committed against Ajour now,
  * before anything is written. Refuses an unknown ID, then refuses every change
  * that is gone or whose version differs from the one get_week_changes gave,
- * so Ajour never commits values the external timesheet did not receive.
+ * with the same property plugins, so Ajour never commits values the external
+ * timesheet did not receive.
  */
 export function checkChangeVersionsOrRefuse(
   state: LocalAppState,
   changes: readonly { entryId: string; version: string }[],
+  propertyPlugins: PropertyPlugins,
 ): void {
   const stale = new Set<string>();
   for (const { entryId, version } of changes) {
@@ -417,7 +444,10 @@ export function checkChangeVersionsOrRefuse(
         `No entry or deleted entry has the id ${entryId}. Call get_week_changes.`,
       );
     }
-    if (!change || timesheetChangeVersion(change) !== version) {
+    if (
+      !change ||
+      agentChangeVersion(state, change, propertyPlugins) !== version
+    ) {
       stale.add(entryId);
     }
   }

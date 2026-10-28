@@ -204,7 +204,10 @@ export type EntryWriteTool = (typeof ENTRY_WRITE_TOOLS)[number];
 
 /** What a write tool needs beyond the store. The runner loads it first. */
 export interface EntryWriteContext {
-  /** Active plugins that add project or task properties. submit_week's version reads them. */
+  /**
+   * Active plugins that add project or task properties. The versions that
+   * mark_entries_committed and submit_week check read them.
+   */
   propertyPlugins: PropertyPlugins;
 }
 
@@ -455,7 +458,11 @@ export function runEntryWriteTool(
       // Refuses before any write when a change differs from its version.
       // Every listed pair is checked, so an entry listed twice with an old
       // and a current version is refused too.
-      checkChangeVersionsOrRefuse(state, input.changes);
+      checkChangeVersionsOrRefuse(
+        state,
+        input.changes,
+        context.propertyPlugins,
+      );
       const entryIds = [
         ...new Set(input.changes.map((change) => change.entryId)),
       ];
