@@ -8,7 +8,7 @@ What Ajour checks, and where:
 - The official source's keys are built into Ajour. A third-party source is pinned to the key the person approved when they added it. A different key, a lost signature or one that doesn't match hides the source's plugins until the person approves it again.
 - A plugin is **signed** when it came from a source whose signature verified with the pinned or official key. Everything else is **unsigned**: an unsigned source, a key not approved yet, an archive installed from a file, a development folder.
 - Installing an unsigned plugin needs Allow installing unsigned plugins, off by default, and shows a warning in the main process every time, so no renderer can skip it. Deactivate unsigned plugins stops every unsigned plugin at once, in the local API, without uninstalling it.
-- The local API records each plugin's origin at install: source, commit, key and whether it was signed. Update is offered when the plugin's own source lists a newer version.
+- The local API records each plugin's origin at install: source, commit, key and whether it was signed. Update is offered when the plugin's own source lists a newer version. A file or legacy install can also be replaced in place by a signed source at the same version, keeping connections and credentials; an older version is not offered. A plugin already owned by a source stays with that source.
 
 ## Considered options
 

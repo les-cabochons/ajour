@@ -69,9 +69,9 @@ export function canUpdateFromCatalog(entry: PluginCatalogEntry) {
 
 /**
  * Whether the catalog offers an installed plugin an update: a compatible
- * package over one this Ajour cannot run, or a newer version. Only the source
- * the plugin came from updates it, so another source's plugin of the same id
- * never replaces it.
+ * package over one this Ajour cannot run, a newer version, or a signed
+ * replacement at the same version for a file or legacy install. A plugin
+ * already owned by a source is only updated from that source.
  */
 export function catalogOffersUpdate(
   entry: PluginCatalogEntry,
@@ -84,9 +84,16 @@ export function catalogOffersUpdate(
   ) {
     return false;
   }
+  const versionOrder = comparePluginVersions(entry.version, plugin.version);
+  const signedReplacement =
+    (plugin.origin === undefined || plugin.origin.kind === "file") &&
+    !isSignedPlugin(plugin) &&
+    entry.source?.signed === true &&
+    versionOrder === 0;
   return (
     plugin.unavailableReason !== undefined ||
-    comparePluginVersions(entry.version, plugin.version) > 0
+    versionOrder > 0 ||
+    signedReplacement
   );
 }
 

@@ -80,6 +80,49 @@ describe("catalogOffersUpdate", () => {
     ).toBe(false);
   });
 
+  it.each([
+    [
+      "a file install",
+      origin({ kind: "file", signed: false, sourceUrl: undefined }),
+    ],
+    ["an install from before origins were recorded", undefined],
+  ])(
+    "offers a signed replacement at the same version for %s",
+    (_name, installedOrigin) => {
+      expect(
+        catalogOffersUpdate(listed, {
+          version: "1.2.0",
+          origin: installedOrigin,
+        }),
+      ).toBe(true);
+    },
+  );
+
+  it("does not downgrade a file install or replace it with an unsigned source at the same version", () => {
+    const fileOrigin = origin({
+      kind: "file",
+      signed: false,
+      sourceUrl: undefined,
+    });
+    expect(
+      catalogOffersUpdate(listed, { version: "1.3.0", origin: fileOrigin }),
+    ).toBe(false);
+    expect(
+      catalogOffersUpdate(
+        entry(["connector"], {
+          source: { ...listed.source!, signed: false },
+        }),
+        { version: "1.2.0", origin: fileOrigin },
+      ),
+    ).toBe(false);
+    expect(
+      catalogOffersUpdate(listed, {
+        version: "1.2.0",
+        origin: origin({ signed: false }),
+      }),
+    ).toBe(false);
+  });
+
   it("replaces a plugin Ajour cannot run with a compatible package", () => {
     expect(
       catalogOffersUpdate(listed, {
@@ -89,7 +132,7 @@ describe("catalogOffersUpdate", () => {
     ).toBe(true);
   });
 
-  it("never updates a plugin from another source, or from a file install", () => {
+  it("never updates a plugin from another source", () => {
     expect(
       catalogOffersUpdate(listed, {
         version: "1.0.0",
