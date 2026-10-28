@@ -95,6 +95,7 @@ function fakeSession() {
     })),
     resolveProxy: vi.fn(async (_url: string) => "DIRECT"),
     setProxy: vi.fn(async (_config: object) => undefined),
+    forceReloadProxyConfig: vi.fn(async () => undefined),
   };
 }
 type FakeSession = ReturnType<typeof fakeSession>;
@@ -120,6 +121,8 @@ function fakeTunnel() {
 function setup(options: { requestThrows?: Error } = {}) {
   const ses = fakeSession();
   const pinnedSes = fakeSession();
+  // Once its proxy rules apply, the pinned session routes through the tunnel.
+  pinnedSes.resolveProxy.mockResolvedValue("PROXY 127.0.0.1:49152");
   const requests: FakeClientRequest[] = [];
   const fromPartition = vi.fn((partition: string) =>
     partition === "ajour-broker-pinned" ? pinnedSes : ses,
@@ -284,6 +287,34 @@ describe("the broker's Electron transport", () => {
       body: new TextEncoder().encode("ok"),
     });
     expect(tunnel.live).toEqual([]);
+  });
+
+  it("sends no pinned request until the pinned session routes through the tunnel (#460)", async () => {
+    const { network, requests, pinnedSes, tunnel } = setup();
+    // Electron resolved setProxy, but the network service still routes
+    // straight out: a request sent now would reach whatever DNS answers.
+    pinnedSes.resolveProxy.mockResolvedValue("DIRECT");
+
+    await expect(
+      network.transport.send(exchange({ connectTo: ["151.101.1.69"] })),
+    ).rejects.toThrow("does not route through the tunnel");
+    expect(requests).toEqual([]);
+    expect(tunnel.pin).not.toHaveBeenCalled();
+    // The rules were set, then reloaded, before the route was asked for.
+    const [set] = pinnedSes.setProxy.mock.invocationCallOrder;
+    const [reload] = pinnedSes.forceReloadProxyConfig.mock.invocationCallOrder;
+    const [asked] = pinnedSes.resolveProxy.mock.invocationCallOrder;
+    expect(set! < reload! && reload! < asked!).toBe(true);
+
+    // The next request sets the session up again, and goes once it routes.
+    pinnedSes.resolveProxy.mockResolvedValue("PROXY 127.0.0.1:49152");
+    const sending = network.transport.send(
+      exchange({ connectTo: ["151.101.1.69"] }),
+    );
+    await settled();
+    respond(requests[0]!, { statusCode: 204, headers: {} });
+    await expect(sending).resolves.toMatchObject({ status: 204 });
+    expect(pinnedSes.setProxy).toHaveBeenCalledTimes(2);
   });
 
   it("pins the URL's own port, starts the tunnel once, and lets the pin go when a request fails", async () => {
