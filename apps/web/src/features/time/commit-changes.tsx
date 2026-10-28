@@ -7,6 +7,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Value } from "@/components/ui/value";
 import type { LocalProject } from "@/domain/local-state";
 import {
+  getMappedTaskName,
+  type TaskPropertyPlugin,
+} from "@/domain/projects/plugin-properties";
+import {
   formatChangedClockDurations,
   formatClockDuration,
 } from "@/domain/time/duration";
@@ -48,20 +52,35 @@ interface ChangeSide {
   day: string;
   project: string;
   task: string;
+  /** The names plugins' tools know the task by, when they differ from it. */
+  mappedTasks: string[];
   hours: string;
   note: string;
 }
 
 function describeSide(
   projects: readonly LocalProject[],
+  taskPropertyPlugins: readonly TaskPropertyPlugin[],
   values: TimesheetCommitValues | undefined,
 ): ChangeSide | undefined {
   if (!values) return undefined;
   const names = describeTimesheetCommitValues(projects, values);
+  const task = projects
+    .find((project) => project._id === values.projectId)
+    ?.tasks.find((candidate) => candidate._id === values.taskId);
   return {
     day: formatShortDay(values.localDate),
     project: names.projectName ?? "No project",
     task: names.taskName ?? "No task",
+    mappedTasks: task
+      ? [
+          ...new Set(
+            taskPropertyPlugins.flatMap(
+              (plugin) => getMappedTaskName(task, plugin) ?? [],
+            ),
+          ),
+        ]
+      : [],
     hours: formatClockDuration(values.durationMs),
     note: values.note?.trim() || "No note",
   };
@@ -90,20 +109,24 @@ function ChangeValue({
 function CommitChangeRow({
   change,
   projects,
+  taskPropertyPlugins,
   checked,
   onCheckedChange,
 }: {
   change: TimesheetChange;
   projects: readonly LocalProject[];
+  taskPropertyPlugins: readonly TaskPropertyPlugin[];
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;
 }) {
   const before = describeSide(
     projects,
+    taskPropertyPlugins,
     change.kind === "added" ? undefined : change.committed,
   );
   const after = describeSide(
     projects,
+    taskPropertyPlugins,
     change.kind === "deleted" ? undefined : change.current,
   );
   // An updated duration that rounds to the same h:mm shows seconds, so the row
@@ -147,6 +170,12 @@ function CommitChangeRow({
           /
         </span>
         <ChangeValue before={before?.task} after={after?.task} />
+        {/* "as", not an arrow: an arrow in this row means a changed value. */}
+        {shown.mappedTasks.map((name) => (
+          <span key={name} className="commit-change-mapping">
+            as {name}
+          </span>
+        ))}
       </span>
       <Value className="commit-change-hours">
         <ChangeValue before={before?.hours} after={after?.hours} />
@@ -167,12 +196,15 @@ function CommitChangeRow({
 export function CommitChangeList({
   changes,
   projects,
+  taskPropertyPlugins,
   uncheckedIds,
   onCheckedChange,
 }: {
   changes: TimesheetChange[];
   /** Every project, archived ones too, so a deleted entry keeps its names. */
   projects: readonly LocalProject[];
+  /** Active plugins that add task properties, for "as 07 Run". */
+  taskPropertyPlugins: readonly TaskPropertyPlugin[];
   uncheckedIds: ReadonlySet<string>;
   onCheckedChange: (entryId: string, checked: boolean) => void;
 }) {
@@ -189,6 +221,7 @@ export function CommitChangeList({
           key={change.entryId}
           change={change}
           projects={projects}
+          taskPropertyPlugins={taskPropertyPlugins}
           checked={!uncheckedIds.has(change.entryId)}
           onCheckedChange={(checked) =>
             onCheckedChange(change.entryId, checked)

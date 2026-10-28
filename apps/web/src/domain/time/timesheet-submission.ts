@@ -5,8 +5,10 @@ import {
   type WeeklyCapacityTargets,
 } from "@/domain/local-state";
 import {
+  getMappedTaskName,
   resolvePluginProperties,
   type ProjectPropertyPlugin,
+  type PropertyPlugins,
 } from "@/domain/projects/plugin-properties";
 
 /**
@@ -42,6 +44,8 @@ export interface SubmitLine {
   projectName?: string;
   /** The project's code. Undefined when the project has no code. */
   projectCode?: string;
+  /** Undefined when the entries have no task. */
+  taskId?: string;
   /** Undefined when the entries have no task. */
   taskName?: string;
   durationMs: number;
@@ -120,6 +124,7 @@ function toLine(key: string, group: DescribedEntry[]): SubmitLine {
     projectId: first.entry.projectId,
     projectName: first.projectName,
     projectCode: first.projectCode,
+    taskId: first.entry.taskId,
     taskName: first.taskName,
     durationMs: group.reduce((sum, item) => sum + item.entry.durationMs, 0),
     comments: mergeSubmitComments(group.map((item) => item.entry.note)),
@@ -253,26 +258,42 @@ function pluginProjectName(
 
 /**
  * What a line's project and task button shows ("Project / Task") and copies
- * ("Project Task"), with the project named by `source`. A missing project or
- * task leaves only the other one; undefined when the line has neither.
- * `{ pending: true }` while `source` is undefined, that is while the saved
- * plugin choice waits for the plugins to load.
+ * ("Project Task"), with the project and task named by `source`: a plugin
+ * names the task by its task property when the task is mapped to another
+ * one, such as 07 Run. A missing project or task leaves only the other one;
+ * undefined when the line has neither. `{ pending: true }` while `source` is
+ * undefined, that is while the saved plugin choice waits for the plugins to
+ * load.
  */
 export function describeLineNames(
   line: SubmitLine,
   source: string | undefined,
   projects: LocalProject[],
-  plugins: ProjectPropertyPlugin[] | undefined,
+  plugins: PropertyPlugins | undefined,
 ): LineNames | undefined {
   if (source === undefined) return { pending: true };
-  const plugin = plugins?.find((candidate) => candidate.pluginId === source);
+  const projectPlugin = plugins?.projects.find(
+    (candidate) => candidate.pluginId === source,
+  );
+  const taskPlugin = plugins?.tasks.find(
+    (candidate) => candidate.pluginId === source,
+  );
   const project =
-    plugin && line.projectId
+    (projectPlugin || taskPlugin) && line.projectId
       ? projects.find((candidate) => candidate._id === line.projectId)
       : undefined;
+  const task =
+    taskPlugin && line.taskId
+      ? project?.tasks.find((candidate) => candidate._id === line.taskId)
+      : undefined;
   const projectName =
-    plugin && project ? pluginProjectName(project, plugin) : line.projectName;
-  const parts = [projectName, line.taskName].filter((part): part is string =>
+    projectPlugin && project
+      ? pluginProjectName(project, projectPlugin)
+      : line.projectName;
+  const taskName =
+    (taskPlugin && task && getMappedTaskName(task, taskPlugin)) ||
+    line.taskName;
+  const parts = [projectName, taskName].filter((part): part is string =>
     Boolean(part),
   );
   return parts.length > 0

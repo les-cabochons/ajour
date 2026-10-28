@@ -55,7 +55,10 @@ import {
   needsPaceConfirmation,
   type WeekPace,
 } from "@/domain/time/week-pace";
-import type { ProjectPropertyPlugin } from "@/domain/projects/plugin-properties";
+import {
+  NO_PROPERTY_PLUGINS,
+  type PropertyPlugins,
+} from "@/domain/projects/plugin-properties";
 import type { LocalProjectIcon } from "@/domain/projects/project-icon";
 import {
   AgentTaskButtons,
@@ -78,7 +81,7 @@ import {
 } from "@/lib/commit-selection";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore, runStoreCommandWith } from "@/lib/local-store";
-import { listProjectPropertyPlugins } from "@/lib/plugin-project-properties";
+import { listPropertyPlugins } from "@/lib/plugin-project-properties";
 import { ProjectIcon } from "@/lib/project-icons";
 import { cn, getIsoWeekDates, todayIsoDate } from "@/lib/utils";
 
@@ -286,21 +289,24 @@ export function CommitPage({
   const [changesOpen, setChangesOpen] = useState(true);
   // Undefined until loaded, so a saved plugin choice waits instead of
   // showing Ajour's names first.
-  const [plugins, setPlugins] = useState<ProjectPropertyPlugin[]>();
-  const nameSources = useMemo(() => listLineNameSources(plugins), [plugins]);
+  const [plugins, setPlugins] = useState<PropertyPlugins>();
+  const nameSources = useMemo(
+    () => listLineNameSources(plugins?.projects),
+    [plugins],
+  );
   const nameSource = resolveLineNameSource(
     state.userPreferences.commitLinesNameSource,
-    plugins,
+    plugins?.projects,
   );
 
   useEffect(() => {
     let active = true;
     // A failed overview leaves only Ajour's names; the page works.
-    void listProjectPropertyPlugins()
+    void listPropertyPlugins()
       .then((next) => active && setPlugins(next))
       // The overview call's own event records the failure.
       .catch(() => {
-        if (active) setPlugins([]);
+        if (active) setPlugins(NO_PROPERTY_PLUGINS);
       });
     return () => {
       active = false;
@@ -523,6 +529,7 @@ export function CommitPage({
               changes={changes}
               // Every project: a deleted entry may be on an archived one.
               projects={state.projects}
+              taskPropertyPlugins={plugins?.tasks ?? []}
               uncheckedIds={uncheckedIds}
               onCheckedChange={(entryId, checked) =>
                 setChangesChecked(weekOf, [entryId], checked)
