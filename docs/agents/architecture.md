@@ -502,7 +502,10 @@ API 4 packages in development builds of the desktop app, until the cut-over
   `net.request` can't be told where to connect, so the pinned session's
   only proxy is a CONNECT tunnel main runs on loopback, with no bypass, not
   even for loopback: for each CONNECT it opens a TCP connection to an
-  address pinned for that host and port, and never resolves a name. A host
+  address pinned for that host and port, and never resolves a name.
+  `setProxy` resolves before Chromium applies those rules (#460), so main
+  reloads the proxy config and sends nothing on the session until
+  `resolveProxy` names the tunnel as its route. A host
   with no live pin gets 403 and nothing is connected, so another program on
   this computer can reach through it only a public address the broker is
   reaching then; anything but a CONNECT is closed unanswered. A pin holds
