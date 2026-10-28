@@ -336,11 +336,6 @@ export function PluginSourcesSection({
   return (
     <section className="settings-section">
       <h2 className="settings-section-title">Plugin sources</h2>
-      <p className="settings-section-desc">
-        Ajour lists the plugins of every repository here with an ajour.json at
-        its root, on GitHub, GitLab, Codeberg or another Gitea or Forgejo host.
-        A signed source is checked against the key you approved.
-      </p>
 
       <div className="flex flex-col gap-1">
         {sources.length > 0 ? (

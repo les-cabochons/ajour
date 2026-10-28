@@ -180,7 +180,7 @@ renderer. Dialogs and `MessagePanel` notices are the only framed surfaces.
 ### Plugin Sources
 
 Files: `apps/web/src/features/settings/plugin-sources-ui.tsx`
-Last updated: 2026-10-25
+Last updated: 2026-10-28
 
 **Pattern notes:**
 A `settings-section` below the catalog list, titled Plugin sources, with no
@@ -193,7 +193,7 @@ the plugin count and the key fingerprint in monospace. A blocked or
 unreachable source adds its message in `text-[13px] text-muted-foreground`.
 Review (outline) appears for a key to approve; Remove (outline, trash icon)
 confirms in an `AlertDialog`. Rows stack their actions below the text under
-768px.
+768px. No description sits under the title, since the user docs explain sources.
 
 Add a source is a `Field` with the address `Input` and an outline Add source
 button, and Add the official source as a ghost button when the official
