@@ -286,6 +286,16 @@ describe("signatures and trust", () => {
       }),
     ).toMatchObject({ state: "signature_missing" });
   });
+
+  it("is built with the official key, so another key never passes for the official source", () => {
+    expect(
+      sources.assessSourceTrust({
+        manifestBytes,
+        signatureBytes: signer().sign(manifestBytes),
+        official: true,
+      }),
+    ).toMatchObject({ state: "key_changed", signed: false });
+  });
 });
 
 describe("source addresses", () => {

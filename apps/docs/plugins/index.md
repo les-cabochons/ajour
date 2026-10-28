@@ -53,7 +53,7 @@ To add one, paste its address under **Add a source**, such as `https://codeberg.
 - If a source is later signed with another key, or loses its signature, Ajour hides its plugins and shows **Review**. Approve the new key only if the publisher told you about it.
 - **Remove** stops listing the source's plugins. Plugins you installed from it stay installed, without updates.
 
-The official source is there by default. If you remove it, **Add the official source** brings it back.
+The official source is there by default. If you remove it, **Add the official source** brings it back. Ajour checks it against keys built into the app, so it never asks you to approve its key. If it is ever signed with another key, Ajour blocks it, and only an Ajour update can bring the new key.
 
 ## Add a connection
 
