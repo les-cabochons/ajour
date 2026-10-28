@@ -60,7 +60,7 @@ vi.mock("@/components/ui/toast", async (importOriginal) => ({
   showErrorToast,
 }));
 vi.mock("@/lib/plugin-project-properties", () => ({
-  listProjectPropertyPlugins: async () => [],
+  listPropertyPlugins: async () => ({ projects: [], tasks: [] }),
 }));
 
 const client = { id: "c1", name: "Claude Code" };

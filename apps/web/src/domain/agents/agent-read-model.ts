@@ -18,7 +18,9 @@ import {
 } from "@/domain/local-state";
 import {
   resolvePluginProperties,
-  type ProjectPropertyPlugin,
+  resolveTaskPluginProperties,
+  type PropertyPlugins,
+  type ResolvedPluginProperty,
 } from "@/domain/projects/plugin-properties";
 import {
   describeTimesheetCommitValues,
@@ -262,41 +264,65 @@ export function getWorkItemForAgent(
 const toHours = (durationMs: number) =>
   Math.round((durationMs / HOUR) * 100) / 100;
 
-/** Non-empty plugin property values of the project, or undefined when there are none. */
-function resolveProjectProperties(
-  state: LocalAppState,
-  projectId: string | undefined,
-  plugins: ProjectPropertyPlugin[],
+/**
+ * Non-empty values by plugin ID then field ID, or undefined when there are
+ * none.
+ */
+function nonEmptyProperties(
+  byPlugin: readonly [pluginId: string, ResolvedPluginProperty<{ id: string }>[]][],
 ) {
-  const project = state.projects.find((item) => item._id === projectId);
-  if (!project) return undefined;
-  const byPlugin: Record<string, Record<string, string>> = {};
-  for (const plugin of plugins) {
+  const result: Record<string, Record<string, string>> = {};
+  for (const [pluginId, properties] of byPlugin) {
     const fields = Object.fromEntries(
-      resolvePluginProperties(project, plugin)
+      properties
         .filter((property) => property.value !== "")
         .map((property) => [property.field.id, property.value]),
     );
-    if (Object.keys(fields).length > 0) byPlugin[plugin.pluginId] = fields;
+    if (Object.keys(fields).length > 0) result[pluginId] = fields;
   }
-  return Object.keys(byPlugin).length > 0 ? byPlugin : undefined;
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+/** The plugin property values of the project and of the task, defaults filled in. */
+function resolveEntryProperties(
+  state: LocalAppState,
+  values: Pick<TimesheetCommitValues, "projectId" | "taskId">,
+  plugins: PropertyPlugins,
+) {
+  const project = state.projects.find((item) => item._id === values.projectId);
+  const task = project?.tasks.find((item) => item._id === values.taskId);
+  const projectProperties = project
+    ? nonEmptyProperties(
+        plugins.projects.map((plugin) => [
+          plugin.pluginId,
+          resolvePluginProperties(project, plugin),
+        ]),
+      )
+    : undefined;
+  const taskProperties = task
+    ? nonEmptyProperties(
+        plugins.tasks.map((plugin) => [
+          plugin.pluginId,
+          resolveTaskPluginProperties(task, plugin),
+        ]),
+      )
+    : undefined;
+  return {
+    ...(projectProperties ? { projectProperties } : {}),
+    ...(taskProperties ? { taskProperties } : {}),
+  };
 }
 
 function toAgentChangeValues(
   state: LocalAppState,
   values: TimesheetCommitValues,
-  plugins: ProjectPropertyPlugin[],
+  plugins: PropertyPlugins,
 ): AgentChangeValues {
-  const projectProperties = resolveProjectProperties(
-    state,
-    values.projectId,
-    plugins,
-  );
   const note = values.note?.trim();
   return {
     date: values.localDate,
     ...describeTimesheetCommitValues(state.projects, values),
-    ...(projectProperties ? { projectProperties } : {}),
+    ...resolveEntryProperties(state, values, plugins),
     hours: toHours(values.durationMs),
     ...(note ? { note } : {}),
   };
@@ -314,18 +340,18 @@ export function getWeekChangesForAgent(
     weekDates,
     onlyChecked,
     uncheckedIds,
-    projectPropertyPlugins,
+    propertyPlugins,
   }: {
     weekDates: string[];
     onlyChecked: boolean;
     /** Unchecked on the Commit page. Passed in to keep domain free of `lib/`. */
     uncheckedIds: ReadonlySet<string>;
-    /** Active plugins that add project properties. Passed in to keep domain free of `lib/`. */
-    projectPropertyPlugins: ProjectPropertyPlugin[];
+    /** Active plugins that add project or task properties. Passed in to keep domain free of `lib/`. */
+    propertyPlugins: PropertyPlugins;
   },
 ): DataToolOutput<"get_week_changes"> {
   const describe = (values: TimesheetCommitValues) =>
-    toAgentChangeValues(state, values, projectPropertyPlugins);
+    toAgentChangeValues(state, values, propertyPlugins);
   return {
     changes: listWeekChanges({
       entries: state.timesheetEntries,
@@ -410,12 +436,12 @@ export function getWeekStatusForAgent(
   {
     weekDates,
     today,
-    projectPropertyPlugins,
+    propertyPlugins,
   }: {
     weekDates: string[];
     today: string;
-    /** Active plugins that add project properties. Passed in to keep domain free of `lib/`. */
-    projectPropertyPlugins: ProjectPropertyPlugin[];
+    /** Active plugins that add project or task properties. Passed in to keep domain free of `lib/`. */
+    propertyPlugins: PropertyPlugins;
   },
 ): DataToolOutput<"get_week_status"> {
   const week = new Set(weekDates);
@@ -444,7 +470,7 @@ export function getWeekStatusForAgent(
   const committedEntries = committed.map(({ entryId, commit }) => ({
     entryId,
     externalId: externalEntryId(entryId),
-    committed: toAgentChangeValues(state, commit, projectPropertyPlugins),
+    committed: toAgentChangeValues(state, commit, propertyPlugins),
   }));
 
   const committedMsByDay = weekDates.map((date) =>
@@ -490,18 +516,18 @@ export function checkWeekStatusVersionOrRefuse(
   {
     weekDates,
     version,
-    projectPropertyPlugins,
+    propertyPlugins,
   }: {
     weekDates: string[];
     version: string;
-    projectPropertyPlugins: ProjectPropertyPlugin[];
+    propertyPlugins: PropertyPlugins;
   },
 ): void {
   // The version leaves the pace out, so any day reads the same one.
   const current = getWeekStatusForAgent(state, {
     weekDates,
     today: weekDates[0]!,
-    projectPropertyPlugins,
+    propertyPlugins,
   }).version;
   if (current !== version) {
     throw new AgentToolRefusal(

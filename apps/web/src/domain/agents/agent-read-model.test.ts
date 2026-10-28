@@ -14,6 +14,7 @@ import {
   externalEntryId,
   timesheetChangeVersion,
 } from "@/domain/agents/external-id";
+import { NO_PROPERTY_PLUGINS } from "@/domain/projects/plugin-properties";
 import { listWeekChanges } from "@/domain/time/timesheet-commit";
 
 const HOUR = 3_600_000;
@@ -177,7 +178,7 @@ describe("agent read model", () => {
     const input = {
       weekDates: WEEK,
       today: "2026-10-14",
-      projectPropertyPlugins: [],
+      propertyPlugins: NO_PROPERTY_PLUGINS,
     };
 
     const status = getWeekStatusForAgent(state, input);
@@ -233,7 +234,7 @@ describe("agent read model", () => {
     const input = {
       weekDates: WEEK,
       today: "2026-10-14",
-      projectPropertyPlugins: [],
+      propertyPlugins: NO_PROPERTY_PLUGINS,
     };
     const state = createState();
     const { version } = getWeekStatusForAgent(state, input);
@@ -258,7 +259,7 @@ describe("agent read model", () => {
     const input = {
       weekDates: WEEK,
       today: "2026-10-14",
-      projectPropertyPlugins: [],
+      propertyPlugins: NO_PROPERTY_PLUGINS,
     };
     const base = createState();
     const committed = base.timesheetEntries.find((entry) => entry.commit)!;
@@ -395,7 +396,7 @@ describe("agent read model", () => {
     weekDates: WEEK,
     onlyChecked: true,
     uncheckedIds: new Set<string>(),
-    projectPropertyPlugins: [],
+    propertyPlugins: NO_PROPERTY_PLUGINS,
   };
 
   it("lists the week's changes with external ids, in decimal hours", () => {
@@ -502,19 +503,22 @@ describe("agent read model", () => {
     };
     const change = getWeekChangesForAgent(state, {
       ...allChecked,
-      projectPropertyPlugins: [
-        {
-          pluginId: "workday-agent",
-          capability: {
-            section: "Workday",
-            fields: [
-              { id: "name", label: "Workday name", defaultFrom: "fullName" },
-              { id: "code", label: "Workday code", defaultFrom: "code" },
-              { id: "empty", label: "Empty" },
-            ],
+      propertyPlugins: {
+        projects: [
+          {
+            pluginId: "workday-agent",
+            capability: {
+              section: "Workday",
+              fields: [
+                { id: "name", label: "Workday name", defaultFrom: "fullName" },
+                { id: "code", label: "Workday code", defaultFrom: "code" },
+                { id: "empty", label: "Empty" },
+              ],
+            },
           },
-        },
-      ],
+        ],
+        tasks: [],
+      },
     }).changes.find((item) => item.entryId === "e1")!;
 
     expect(change.current).toMatchObject({
@@ -526,10 +530,75 @@ describe("agent read model", () => {
     });
   });
 
+  it("sends the task's plugin properties, with the task's name as default", () => {
+    const workdayTask = {
+      pluginId: "workday-agent",
+      capability: {
+        section: "Workday",
+        fields: [
+          {
+            id: "task",
+            label: "Workday task",
+            defaultFrom: "name" as const,
+          },
+        ],
+      },
+    };
+    const input = {
+      ...allChecked,
+      propertyPlugins: { projects: [], tasks: [workdayTask] },
+    };
+    const unmapped = getWeekChangesForAgent(createState(), input).changes.find(
+      (item) => item.entryId === "e1",
+    )!;
+    expect(unmapped.current).toMatchObject({
+      taskName: "Build",
+      taskProperties: { "workday-agent": { task: "Build" } },
+    });
+
+    const state = createState();
+    state.projects[0]!.tasks[0]!.pluginProperties = {
+      "workday-agent": { task: "07 Run" },
+    };
+    const mapped = getWeekChangesForAgent(state, input).changes.find(
+      (item) => item.entryId === "e1",
+    )!;
+    expect(mapped.current).toMatchObject({
+      taskName: "Build",
+      taskProperties: { "workday-agent": { task: "07 Run" } },
+    });
+  });
+
+  it("changes the week status version when a task's mapping changes", () => {
+    const workdayTask = {
+      pluginId: "workday-agent",
+      capability: {
+        section: "Workday",
+        fields: [
+          { id: "task", label: "Workday task", defaultFrom: "name" as const },
+        ],
+      },
+    };
+    const status = (state: LocalAppState) =>
+      getWeekStatusForAgent(state, {
+        weekDates: WEEK,
+        today: WEEK[0]!,
+        propertyPlugins: { projects: [], tasks: [workdayTask] },
+      }).version;
+    const state = createState();
+    const before = status(state);
+    state.projects[0]!.tasks[0]!.pluginProperties = {
+      "workday-agent": { task: "07 Run" },
+    };
+
+    expect(status(state)).not.toBe(before);
+  });
+
   it("sends no plugin properties when no plugin adds any", () => {
     const change = getWeekChangesForAgent(stateWithCodedProject(), allChecked)
       .changes[0]!;
 
     expect(change.current).not.toHaveProperty("projectProperties");
+    expect(change.current).not.toHaveProperty("taskProperties");
   });
 });

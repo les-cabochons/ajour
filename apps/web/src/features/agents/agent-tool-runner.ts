@@ -33,7 +33,8 @@ import {
   runWorkItemWriteTool,
   type WorkItemWriteTool,
 } from "@/features/agents/agent-work-item-tools";
-import { listProjectPropertyPlugins } from "@/lib/plugin-project-properties";
+import { NO_PROPERTY_PLUGINS } from "@/domain/projects/plugin-properties";
+import { listPropertyPlugins } from "@/lib/plugin-project-properties";
 import {
   releaseSettleComment,
   sendPendingSourceWrites,
@@ -70,11 +71,11 @@ function formatZodError(error: ZodError) {
 }
 
 /**
- * Project properties are optional context; without them the tool still
- * answers. The overview call counts as failed on the tool call's event.
+ * Project and task properties are optional context; without them the tool
+ * still answers. The overview call counts as failed on the tool call's event.
  */
-function loadProjectPropertyPlugins() {
-  return listProjectPropertyPlugins().catch(() => []);
+function loadPropertyPlugins() {
+  return listPropertyPlugins().catch(() => NO_PROPERTY_PLUGINS);
 }
 
 /** Each read tool, typed against its output schema. */
@@ -108,13 +109,13 @@ const readTools: {
   list_work_item_comments: listCommentsForAgent,
   get_week_changes: async (rawInput) => {
     const input = readToolInputSchemas.get_week_changes.parse(rawInput);
-    const projectPropertyPlugins = await loadProjectPropertyPlugins();
+    const propertyPlugins = await loadPropertyPlugins();
     const weekDates = getIsoWeekDates(input.weekOf);
     return getWeekChangesForAgent(localStore.snapshot(), {
       weekDates,
       onlyChecked: input.onlyChecked,
       uncheckedIds: getUncheckedChangeIds(weekDates[0]!),
-      projectPropertyPlugins,
+      propertyPlugins,
     });
   },
   get_week_status: async (rawInput) => {
@@ -122,7 +123,7 @@ const readTools: {
     return getWeekStatusForAgent(localStore.snapshot(), {
       weekDates: getWeekDates(input.weekOf),
       today: todayIsoDate(),
-      projectPropertyPlugins: await loadProjectPropertyPlugins(),
+      propertyPlugins: await loadPropertyPlugins(),
     });
   },
 };
@@ -201,12 +202,14 @@ export async function runAgentToolCall(
       };
     }
     if (isEntryWriteTool(tool)) {
-      const projectPropertyPlugins =
-        tool === "submit_week" ? await loadProjectPropertyPlugins() : [];
+      const propertyPlugins =
+        tool === "submit_week"
+          ? await loadPropertyPlugins()
+          : NO_PROPERTY_PLUGINS;
       return asAgent(() =>
         finishWrite(
           call,
-          runEntryWriteTool(tool, call.input, { projectPropertyPlugins }),
+          runEntryWriteTool(tool, call.input, { propertyPlugins }),
           unit,
         ),
       );
