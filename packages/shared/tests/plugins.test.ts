@@ -418,7 +418,9 @@ describe("plugin manifest capabilities", () => {
         capabilities: {
           taskProperties: {
             ...taskProperties,
-            fields: [{ id: "task", label: "Workday task", defaultFrom: "code" }],
+            fields: [
+              { id: "task", label: "Workday task", defaultFrom: "code" },
+            ],
           },
         },
       }),

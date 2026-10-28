@@ -1,5 +1,10 @@
 import type { LocalProjectTask, PinnedTaskSlot } from "@/domain/local-state";
 import {
+  normalizePluginProperties,
+  samePluginProperties,
+  type PluginProperties,
+} from "@/domain/projects/plugin-properties";
+import {
   formatSignedDurationHoursInput,
   parseSignedHoursInput,
 } from "@/domain/projects/task-budget";
@@ -19,6 +24,8 @@ export interface ProjectTaskEditorFields {
   adjustment: string;
   /** The pinned task slot. Undefined means no number key. */
   pinnedSlot: PinnedTaskSlot | undefined;
+  /** Plugin task property overrides, of every plugin, active or not. */
+  pluginProperties: PluginProperties | undefined;
 }
 
 /**
@@ -31,11 +38,17 @@ export interface ProjectTaskValues {
   budgetMs: number | undefined;
   adjustmentMs: number | undefined;
   pinnedSlot: PinnedTaskSlot | undefined;
+  pluginProperties: PluginProperties | undefined;
 }
 
 type SavedTask = Pick<
   LocalProjectTask,
-  "name" | "billable" | "budgetMs" | "adjustmentMs" | "pinnedSlot"
+  | "name"
+  | "billable"
+  | "budgetMs"
+  | "adjustmentMs"
+  | "pinnedSlot"
+  | "pluginProperties"
 >;
 
 /** What a draft means right now: values to save, field errors, and whether Save is allowed. */
@@ -82,6 +95,7 @@ export function createProjectTaskEditorFields(
         ? formatSignedDurationHoursInput(task.adjustmentMs)
         : "",
     pinnedSlot: task?.pinnedSlot,
+    pluginProperties: task?.pluginProperties,
   };
 }
 
@@ -137,13 +151,18 @@ export function evaluateProjectTaskEditor(
           budgetMs,
           adjustmentMs,
           pinnedSlot: fields.pinnedSlot,
+          pluginProperties: normalizePluginProperties(fields.pluginProperties),
         };
   const hasChanges =
     fields.name.trim() !== seeded.name.trim() ||
     fields.billable !== seeded.billable ||
     fields.budget.trim() !== seeded.budget ||
     fields.adjustment.trim() !== seeded.adjustment ||
-    fields.pinnedSlot !== seeded.pinnedSlot;
+    fields.pinnedSlot !== seeded.pinnedSlot ||
+    !samePluginProperties(
+      normalizePluginProperties(fields.pluginProperties),
+      normalizePluginProperties(seeded.pluginProperties),
+    );
 
   return {
     isNew: !original,

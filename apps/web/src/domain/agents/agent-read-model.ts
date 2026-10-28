@@ -269,7 +269,10 @@ const toHours = (durationMs: number) =>
  * none.
  */
 function nonEmptyProperties(
-  byPlugin: readonly [pluginId: string, ResolvedPluginProperty<{ id: string }>[]][],
+  byPlugin: readonly [
+    pluginId: string,
+    ResolvedPluginProperty<{ id: string }>[],
+  ][],
 ) {
   const result: Record<string, Record<string, string>> = {};
   for (const [pluginId, properties] of byPlugin) {

@@ -81,6 +81,7 @@ describe("project task editor", () => {
       budget: "-2",
       adjustment: "soon",
       pinnedSlot: undefined,
+      pluginProperties: undefined,
     });
 
     expect(editor).toMatchObject({
@@ -101,6 +102,41 @@ describe("project task editor", () => {
       evaluateProjectTaskEditor({ ...fields, billable: true }, original)
         .canSave,
     ).toBe(true);
+  });
+
+  it("saves a plugin task property and keeps other plugins' values", () => {
+    const original = {
+      name: "Knowledge transfer",
+      pluginProperties: { jira: { key: "KT" } },
+    };
+    const fields = {
+      ...createProjectTaskEditorFields(original),
+      pluginProperties: {
+        jira: { key: "KT" },
+        "workday-agent": { task: "07 Run" },
+      },
+    };
+    const editor = evaluateProjectTaskEditor(fields, original);
+
+    expect(editor.canSave).toBe(true);
+    expect(editor.values?.pluginProperties).toEqual({
+      jira: { key: "KT" },
+      "workday-agent": { task: "07 Run" },
+    });
+  });
+
+  it("counts a property put back as it was as no change", () => {
+    const original = {
+      name: "Knowledge transfer",
+      pluginProperties: { "workday-agent": { task: "07 Run", code: "X" } },
+    };
+    const fields = {
+      ...createProjectTaskEditorFields(original),
+      // The same values, in another key order, as after clearing and retyping.
+      pluginProperties: { "workday-agent": { code: "X", task: "07 Run" } },
+    };
+
+    expect(evaluateProjectTaskEditor(fields, original).hasChanges).toBe(false);
   });
 
   describe("commit", () => {

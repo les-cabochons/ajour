@@ -139,13 +139,33 @@ export function setPluginProperty(
   const { [fieldId]: _previous, ...otherFields } =
     owner.pluginProperties?.[pluginId] ?? {};
   const fields = text ? { ...otherFields, [fieldId]: text } : otherFields;
-  const { [pluginId]: _plugin, ...otherPlugins } =
-    owner.pluginProperties ?? {};
+  const { [pluginId]: _plugin, ...otherPlugins } = owner.pluginProperties ?? {};
   const next =
     Object.keys(fields).length > 0
       ? { ...otherPlugins, [pluginId]: fields }
       : otherPlugins;
   return Object.keys(next).length > 0 ? next : undefined;
+}
+
+/** Whether two sets of overrides hold the same values, in any key order. */
+export function samePluginProperties(
+  left: PluginProperties | undefined,
+  right: PluginProperties | undefined,
+): boolean {
+  const entries = (value: PluginProperties | undefined) =>
+    Object.entries(value ?? {})
+      .flatMap(([pluginId, fields]) =>
+        Object.entries(fields).map(([fieldId, text]) =>
+          JSON.stringify([pluginId, fieldId, text]),
+        ),
+      )
+      .sort();
+  const leftEntries = entries(left);
+  const rightEntries = entries(right);
+  return (
+    leftEntries.length === rightEntries.length &&
+    leftEntries.every((entry, index) => entry === rightEntries[index])
+  );
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { LocalProject } from "@/domain/local-state";
+import type { LocalProject, LocalProjectTask } from "@/domain/local-state";
 import {
   getMappedTaskName,
   normalizePluginProperties,
@@ -143,7 +143,9 @@ describe("plugin task properties", () => {
       ],
     },
   };
-  const task = { name: "Knowledge transfer" };
+  const task: Pick<LocalProjectTask, "name" | "pluginProperties"> = {
+    name: "Knowledge transfer",
+  };
 
   it("defaults to the task's name", () => {
     expect(

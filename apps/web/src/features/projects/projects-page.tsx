@@ -74,6 +74,11 @@ import {
   type ProjectTaskValues,
 } from "@/features/projects/project-task-editor";
 import { ProjectTaskEditorForm } from "@/features/projects/project-task-editor-form";
+import {
+  TaskMappingHints,
+  useTaskPropertyPlugins,
+} from "@/features/projects/task-property-fields";
+import type { TaskPropertyPlugin } from "@/domain/projects/plugin-properties";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { useActionRequest } from "@/lib/action-request";
 import { FOCUS_ATTRIBUTES } from "@/lib/focused-object";
@@ -545,6 +550,7 @@ function ProjectDetail({
   onAssignShortcut,
   entries,
   weekMs,
+  taskPropertyPlugins,
 }: {
   project: LocalProject;
   metrics: ProjectMetrics;
@@ -564,6 +570,8 @@ function ProjectDetail({
   onLeave: (event: React.MouseEvent<HTMLAnchorElement>) => void;
   /** Opens the slot picker for a task, like the palette's Assign shortcut…. */
   onAssignShortcut: (task: LocalProjectTask) => void;
+  /** Active plugins that add task properties, for the "→ 07 Run" hints. */
+  taskPropertyPlugins: TaskPropertyPlugin[];
 }) {
   const isNarrowView = useIsNarrowView();
   const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -989,6 +997,7 @@ function ProjectDetail({
       >
         <td className="project-task-name-cell">
           <span className="project-task-name">{task.name}</span>
+          <TaskMappingHints task={task} plugins={taskPropertyPlugins} />
           {task.pinnedSlot ? <PinnedSlotBadge slot={task.pinnedSlot} /> : null}
           <Chip>{getProjectTaskBillableValueLabel(task)}</Chip>
           {task.status === "archived" ? <Chip>Archived</Chip> : null}
@@ -1327,6 +1336,7 @@ function writeProjectTask(
 export function ProjectsPage() {
   const teamState = useCurrentTeam();
   const state = useLocalState();
+  const taskPropertyPlugins = useTaskPropertyPlugins();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   // The narrow view has no sidebars, so the project list is a page of its own
@@ -1970,6 +1980,13 @@ export function ProjectsPage() {
                 ?.get(visibleTaskEditor.taskId)?.durationMs ?? 0)
             : undefined
         }
+        taskPropertyPlugins={taskPropertyPlugins}
+        otherTaskNames={taskEditorProject.tasks
+          .filter(
+            (task) =>
+              task.status === "active" && task._id !== visibleTaskEditor.taskId,
+          )
+          .map((task) => task.name)}
         onFieldsChange={updateTaskEditorFields}
         onSave={saveTaskEditor}
         onClose={() => setTaskEditor(null)}
@@ -2010,6 +2027,7 @@ export function ProjectsPage() {
             onAssignShortcut={(task) =>
               setShortcutRequest({ projectId: selectedProject._id, task })
             }
+            taskPropertyPlugins={taskPropertyPlugins}
           />
         ) : (
           <>
