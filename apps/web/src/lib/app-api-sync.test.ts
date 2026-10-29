@@ -365,3 +365,111 @@ describe("a backlog sync's event", () => {
     ]);
   });
 });
+
+describe("backlog refresh status", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    installWindow();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("publishes automatic sync progress and keeps the last success after a failed retry", async () => {
+    const { syncBacklogConnection, facts } = await setup();
+    const { getBacklogSyncSnapshot } =
+      await import("@/lib/backlog-sync-status");
+    const pending = deferred();
+    vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(pending.promise));
+    const run = syncBacklogConnection("azure_devops", "c1", {
+      trigger: "auto",
+    });
+    expect(getBacklogSyncSnapshot()[0]).toMatchObject({
+      running: 1,
+      trigger: "auto",
+    });
+    pending.resolve(
+      Response.json(
+        facts(answer({ author: "Ana", at: "2026-10-18T10:30:00Z" })),
+      ),
+    );
+    await run;
+    const lastSuccessAt = Date.now();
+    expect(getBacklogSyncSnapshot()[0]).toMatchObject({
+      running: 0,
+      lastSuccessAt,
+    });
+    vi.setSystemTime(lastSuccessAt + 60_000);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ error: "Offline" }, { status: 502 })),
+    );
+    await expect(
+      syncBacklogConnection("azure_devops", "c1", { trigger: "auto" }),
+    ).rejects.toThrow("Offline");
+    expect(getBacklogSyncSnapshot()[0]).toMatchObject({
+      running: 0,
+      lastSuccessAt,
+      failedAt: Date.now(),
+    });
+  });
+
+  it("refreshes only the requested item and never archives another item missing from the answer", async () => {
+    const { localStore, syncBacklogConnection, itemId } = await setup();
+    localStore.importSyncedWorkItems([
+      {
+        ...candidate,
+        id: "candidate-2",
+        sourceId: "s2",
+        title: "Leave this alone",
+      },
+    ]);
+    const fetch = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json(
+        answer(
+          { author: "Ana", at: "2026-10-18T10:30:00Z" },
+          {
+            mode: "backlog",
+            items: [
+              {
+                ...candidate,
+                title: "Updated from Azure",
+                pushedAt: Date.now(),
+              },
+            ],
+            commentFacts: [],
+          },
+        ),
+      ),
+    );
+    vi.stubGlobal("fetch", fetch);
+    await syncBacklogConnection("azure_devops", "c1", {
+      refresh: true,
+      sourceId: "s1",
+    });
+    const request = JSON.parse(fetch.mock.calls[0]![1]!.body as string);
+    expect(request).toMatchObject({
+      refresh: true,
+      sourceId: "s1",
+      workItems: [{ localWorkItemId: itemId }],
+    });
+    expect(request.workItems).toHaveLength(1);
+    expect(
+      localStore.snapshot().workItems.find((i) => i.sourceId === "s1")?.title,
+    ).toBe("Updated from Azure");
+    expect(
+      localStore.snapshot().workItems.find((i) => i.sourceId === "s2"),
+    ).toMatchObject({
+      title: "Leave this alone",
+      status: "active",
+      sourceSyncedAt: 1,
+    });
+    vi.resetModules();
+    const reloaded = (await import("@/lib/local-store")).localStore.snapshot();
+    expect(
+      reloaded.workItems.find((i) => i.sourceId === "s1")?.sourceSyncedAt,
+    ).toBe(Date.now());
+  });
+});

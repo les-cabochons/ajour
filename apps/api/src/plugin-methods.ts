@@ -46,7 +46,7 @@ function connectionOperations<Operation extends string>(contract: {
  */
 const PLUGIN_METHOD_ARGUMENTS: Record<PluginMethod, ArgumentNames> = {
   validateConnection: ["config", "context"],
-  syncConnection: ["connection", "workItems"],
+  syncConnection: ["connection", "workItems", "syncOptions"],
   listSettleStates: CONNECTION_AND_REQUEST,
   writeSettle: CONNECTION_AND_REQUEST,
   readDescription: CONNECTION_AND_REQUEST,

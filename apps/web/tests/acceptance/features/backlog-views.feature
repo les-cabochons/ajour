@@ -1124,3 +1124,18 @@ Feature: Backlog list and board views
     Then the Backlog parent is kept when missing from sync
     When I undo the When missing change
     Then the Backlog parent is archived when missing from sync
+
+  Scenario: Refresh backlog from its freshness control
+    Given a source is ready for a backlog refresh
+    When I refresh from the backlog freshness control
+    Then the backlog freshness control shows a small neutral spinning icon and syncing text
+    When the source finishes the backlog refresh
+    Then the refreshed source title is visible in the backlog
+
+  Scenario: Refresh only the open backlog item
+    Given a source is ready for a backlog refresh
+    When I open the Backlog parent page
+    And I refresh from the item freshness control
+    Then the item freshness control shows syncing text
+    When the source finishes the backlog refresh
+    Then the open item shows the refreshed source title

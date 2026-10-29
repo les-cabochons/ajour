@@ -613,6 +613,11 @@ export const pluginConnectionSummarySchema = z.object({
   access: z.array(z.string().min(1).max(40)).max(20).optional(),
   connectedAt: z.number().int().positive(),
   lastSyncAt: z.number().int().positive().optional(),
+  /** Backlog-only freshness. Other capabilities cannot advance it. */
+  backlogLastSyncAt: z.number().int().positive().optional(),
+  backlogLastErrorAt: z.number().int().positive().optional(),
+  backlogLastErrorTrigger: z.enum(["manual", "auto"]).optional(),
+  backlogLastError: z.string().max(1000).optional(),
   lastError: z.string().max(1000).optional(),
   /** When the sync that set `lastError` failed. */
   lastErrorAt: z.number().int().positive().optional(),
@@ -1006,6 +1011,10 @@ export type BacklogSyncRequestWorkItem = z.infer<
 >;
 
 export const backlogSyncRequestSchema = z.object({
+  /** Pull source values without uploading pending local edits. */
+  refresh: z.boolean().optional(),
+  /** Refresh only this source item. Never archives other items. */
+  sourceId: z.string().trim().min(1).max(400).optional(),
   trigger: z.enum(["manual", "auto", "source_write"]).default("manual"),
   workItems: z.array(backlogSyncRequestWorkItemSchema).max(1000).default([]),
 });

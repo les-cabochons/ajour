@@ -159,6 +159,10 @@ interface StoredConnection {
   configSummary: PluginSummaryValues;
   connectedAt: number;
   lastSyncAt?: number;
+  backlogLastSyncAt?: number;
+  backlogLastErrorAt?: number;
+  backlogLastErrorTrigger?: "manual" | "auto";
+  backlogLastError?: string;
   lastError?: string;
   /** When the sync that set `lastError` failed. */
   lastErrorAt?: number;
@@ -872,6 +876,14 @@ function buildConnectionSummary(
       : {}),
     connectedAt: connection.connectedAt,
     lastSyncAt: connection.lastSyncAt,
+    backlogLastSyncAt: connection.backlogLastSyncAt,
+    backlogLastErrorAt: connection.backlogLastErrorAt,
+    backlogLastErrorTrigger: connection.backlogLastErrorTrigger,
+    backlogLastError: connection.backlogLastError
+      ? installed
+        ? redaction.text(connection.backlogLastError)
+        : UNINSTALLED_PLUGIN_LAST_ERROR
+      : undefined,
     lastError:
       connection.lastError &&
       (installed
@@ -2314,6 +2326,10 @@ export class AppApiStorage {
         configSummary: input.configSummary,
         connectedAt: existing?.connectedAt ?? Date.now(),
         lastSyncAt: existing?.lastSyncAt,
+        backlogLastSyncAt: existing?.backlogLastSyncAt,
+        backlogLastErrorAt: existing?.backlogLastErrorAt,
+        backlogLastErrorTrigger: existing?.backlogLastErrorTrigger,
+        backlogLastError: existing?.backlogLastError,
         lastError: undefined,
         lastErrorAt: undefined,
       };
@@ -2475,6 +2491,7 @@ export class AppApiStorage {
     pluginId: string,
     connectionId: string,
     timestamp: number,
+    backlog = false,
   ): Promise<StoredConnection> {
     return this.mutate(async (state) => {
       const connection = state.connections.find(
@@ -2488,6 +2505,14 @@ export class AppApiStorage {
       const nextConnection = {
         ...connection,
         lastSyncAt: timestamp,
+        ...(backlog
+          ? {
+              backlogLastSyncAt: timestamp,
+              backlogLastErrorAt: undefined,
+              backlogLastErrorTrigger: undefined,
+              backlogLastError: undefined,
+            }
+          : {}),
         lastError: undefined,
         lastErrorAt: undefined,
       };
@@ -2504,6 +2529,7 @@ export class AppApiStorage {
     pluginId: string,
     connectionId: string,
     message: string,
+    backlog: false | "manual" | "auto" = false,
   ): Promise<StoredConnection> {
     return this.mutate(async (state) => {
       const connection = state.connections.find(
@@ -2518,6 +2544,13 @@ export class AppApiStorage {
         ...connection,
         lastError: boundConnectionError(message),
         lastErrorAt: Date.now(),
+        ...(backlog
+          ? {
+              backlogLastErrorAt: Date.now(),
+              backlogLastErrorTrigger: backlog,
+              backlogLastError: boundConnectionError(message),
+            }
+          : {}),
       };
       const nextState = this.replaceConnection(state, nextConnection);
 

@@ -1,3 +1,4 @@
+import { getBacklogSyncSnapshot } from "@/lib/backlog-sync-status";
 import { useEffect, useRef } from "react";
 import {
   isCapabilityActive,
@@ -86,15 +87,31 @@ export function BacklogAutoSyncScheduler() {
               (connection) =>
                 // A connection paused for its secret (a rejected token, a
                 // removed one) waits for the user: syncing it only fails.
-                !connection.paused &&
-                (!connection.lastSyncAt ||
-                  now - connection.lastSyncAt >=
-                    connection.autoSyncIntervalMinutes * 60_000),
+                !connection.paused,
             )
             .map((connection) => ({
               pluginId: group.plugin.id,
               connection,
-              capabilities: autoCapabilities(group, connection),
+              capabilities: autoCapabilities(group, connection).filter(
+                (capability) => {
+                  const last =
+                    capability === "connector"
+                      ? connection.backlogLastSyncAt
+                      : connection.lastSyncAt;
+                  return (
+                    (!last ||
+                      now - last >=
+                        connection.autoSyncIntervalMinutes * 60_000) &&
+                    (capability !== "connector" ||
+                      !getBacklogSyncSnapshot().some(
+                        (s) =>
+                          s.pluginId === group.plugin.id &&
+                          s.connectionId === connection.id &&
+                          s.running > 0,
+                      ))
+                  );
+                },
+              ),
             }))
             .filter((due) => due.capabilities.length > 0),
         );

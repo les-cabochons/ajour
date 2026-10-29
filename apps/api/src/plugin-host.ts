@@ -674,9 +674,11 @@ export class PluginManager {
     connection: PluginInvocationConnection,
     workItems: BacklogSyncWorkItem[] = [],
     admit?: PluginAdmission,
+    syncOptions?: { sourceIds?: string[]; readOnly?: boolean },
   ): Promise<BacklogPluginSyncResult> {
     const payload = {
       connection: pluginInvocationConnectionSchema.parse(connection),
+      syncOptions,
       workItems: workItems.map((workItem) =>
         backlogSyncWorkItemSchema.parse(workItem),
       ),

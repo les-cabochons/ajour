@@ -66,7 +66,7 @@ describe("plugin method table", () => {
   it("passes a backlog sync the connection, then the work items", () => {
     expect(
       pluginMethodArguments("syncConnection", { connection, workItems: [] }),
-    ).toEqual([connection, []]);
+    ).toEqual([connection, [], undefined]);
   });
 
   it("refuses a method it has no entry for", () => {

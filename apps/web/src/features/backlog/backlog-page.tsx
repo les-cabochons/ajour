@@ -1,3 +1,4 @@
+import { BacklogRefresh } from "./backlog-refresh";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { setOpenDraftGuard } from "@/lib/open-draft";
 import {
@@ -539,6 +540,11 @@ export function BacklogPage() {
         />
         <div className="backlog-workspace-filterbar">
           <BacklogFilters state={state} view={view} />
+          <BacklogRefresh
+            hasSyncedItems={state.workItems.some(
+              (item) => item.source !== "manual",
+            )}
+          />
           {unmapped > 0 && (
             <Link
               to="/settings/workflow"
