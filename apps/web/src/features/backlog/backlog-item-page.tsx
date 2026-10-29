@@ -1,3 +1,4 @@
+import { BacklogRefresh } from "./backlog-refresh";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
@@ -404,6 +405,18 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                 ) : (
                   <span>Manual item</span>
                 )}
+                {item.source !== "manual" &&
+                item.sourceConnectionId &&
+                item.sourceId ? (
+                  <BacklogRefresh
+                    source={{
+                      pluginId: item.source,
+                      connectionId: item.sourceConnectionId,
+                      sourceId: item.sourceId,
+                      syncedAt: item.sourceSyncedAt,
+                    }}
+                  />
+                ) : null}
                 {parent ? (
                   <Link
                     to="/backlog/$itemId"

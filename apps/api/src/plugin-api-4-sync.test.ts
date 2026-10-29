@@ -89,8 +89,8 @@ export async function validateConnection(connection, context) {
   };
 }
 
-export async function syncConnection(connection, workItems) {
-  seen.push({ sync: connection, workItems });
+export async function syncConnection(connection, workItems, syncOptions) {
+  seen.push({ sync: connection, workItems, syncOptions });
   const found = await call(connection, "POST", "/rest/api/3/search/jql", { jql: "project = ENG" });
   return {
     items: found.issues.map((issue) => ({
@@ -494,5 +494,75 @@ describe("an API 4 plugin through the real broker", () => {
     expect(stored).not.toHaveProperty("allowLossyConversion");
     expect(stored).not.toHaveProperty("access");
     expect(stored!.secrets).toEqual({ fields: ["apiToken"] });
+  });
+  it("refreshes one item without marking the whole backlog fresh", async () => {
+    const { server, service, seen } = await setup();
+    const saved = await saveConnection(server, service.baseUrl);
+    const connectionId = (saved.body as { connection: { id: string } })
+      .connection.id;
+    const refreshed = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: `/api/plugins/fixture-jira/connections/${connectionId}/sync`,
+      body: JSON.stringify({
+        refresh: true,
+        sourceId: "10001",
+        workItems: [
+          {
+            localWorkItemId: "one",
+            sourceId: "10001",
+            remainingEstimateHours: 9,
+            estimateSync: {
+              remainingEstimateHours: { baselineValue: 3, remoteValue: 3 },
+            },
+          },
+        ],
+      }),
+    });
+    expect(refreshed.status).toBe(200);
+    expect(refreshed.body).toMatchObject({
+      mode: "backlog",
+      items: [{ sourceId: "10001" }],
+    });
+    const result = refreshed.body as {
+      items: unknown[];
+      connection: { lastSyncAt?: number; backlogLastSyncAt?: number };
+    };
+    expect(result.items).toHaveLength(1);
+    expect(refreshed.body).toMatchObject({ heldEstimates: [] });
+    expect(
+      seen().find((entry) => (entry as { sync?: unknown }).sync),
+    ).toMatchObject({
+      workItems: [{ remainingEstimateHours: 3 }],
+      syncOptions: { readOnly: true, sourceIds: ["10001"] },
+    });
+    expect(result.connection.lastSyncAt).toBeUndefined();
+    expect(result.connection.backlogLastSyncAt).toBeUndefined();
+  });
+
+  it("records backlog freshness separately from other capabilities and retains it on failure", async () => {
+    const { server, service } = await setup();
+    const saved = await saveConnection(server, service.baseUrl);
+    const connectionId = (saved.body as { connection: { id: string } })
+      .connection.id;
+    const sync = () =>
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/plugins/fixture-jira/connections/${connectionId}/sync`,
+        body: JSON.stringify({ refresh: true }),
+      });
+    const success = await sync();
+    const last = (success.body as { connection: { backlogLastSyncAt: number } })
+      .connection.backlogLastSyncAt;
+    expect(last).toBeGreaterThan(0);
+    service.failSearch = true;
+    const failed = await sync();
+    expect(failed.status).toBe(502);
+    expect(failed.body).toMatchObject({
+      connection: {
+        backlogLastSyncAt: last,
+        backlogLastErrorAt: expect.any(Number),
+        backlogLastErrorTrigger: "manual",
+      },
+    });
   });
 });

@@ -1074,3 +1074,44 @@
   > .timelog-button {
   margin-inline-start: 0;
 }
+
+/* Freshness is quiet metadata. Only the small glyph moves during a sync. */
+.backlog-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-left: auto;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+.backlog-refresh > span[role="status"] {
+  text-align: right;
+}
+.backlog-refresh button {
+  color: inherit;
+  flex-shrink: 0;
+}
+.backlog-refresh button svg,
+.backlog-refresh-warning {
+  width: 12px;
+  height: 12px;
+}
+.backlog-refresh-warning {
+  color: var(--warning);
+  flex-shrink: 0;
+}
+.backlog-refresh-spin {
+  animation: backlog-refresh-spin 1s linear infinite;
+}
+@keyframes backlog-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .backlog-refresh-spin {
+    animation: none;
+  }
+}

@@ -1,3 +1,4 @@
+import { BacklogRefresh } from "./backlog-refresh";
 import {
   RiCloseLine,
   RiExpandDiagonalLine,
@@ -153,6 +154,16 @@ export function BacklogPeek({
           </div>
         </div>
       </header>
+      {item.source !== "manual" && item.sourceConnectionId && item.sourceId ? (
+        <BacklogRefresh
+          source={{
+            pluginId: item.source,
+            connectionId: item.sourceConnectionId,
+            sourceId: item.sourceId,
+            syncedAt: item.sourceSyncedAt,
+          }}
+        />
+      ) : null}
       {notice ? (
         <p className="text-xs text-muted-foreground">{notice}</p>
       ) : null}

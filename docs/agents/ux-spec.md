@@ -928,3 +928,12 @@ Decided in [Consistent dialogs, tooltips, loading and drags](https://github.com/
 - Icon-only buttons use the `Tooltip` primitive, showing the label and its shortcut, instead of `title=` attributes. The sidebar rows' hover actions and the comment header's reaction and actions buttons are the exceptions described in `ui-rules.md`.
 - Route loading shows a `Skeleton` of the page layout after 150ms instead of a blank page.
 - Escape cancels every drag and puts the item back. Dropping an item where it started changes nothing. Moves between days show the Undo toast.
+
+### Backlog refresh and freshness
+
+- The Backlog filter bar and synced item pages show the last successful backlog sync beside a small, neutral refresh icon. The peek uses the same control. Manual items have no refresh action.
+- Refresh on the Backlog fetches every available backlog connection, including items outside the current filters. Refresh on an item fetches only that item and never archives other items missing from its answer. Refresh reads source values without uploading pending local edits.
+- Both manual and automatic syncs show `Syncing…` with a spinning icon. Refresh stays disabled until the connection's active sync finishes. Reduced motion keeps the icon still.
+- The Backlog uses the oldest successful connection timestamp. A connection never checked prevents the view from claiming a recent sync. Other plugin capabilities cannot advance backlog freshness or postpone its automatic sync.
+- A failed attempt keeps the last successful age visible. Paused sync, automatic sync turned off, an overdue automatic sync and an unavailable sync service have explicit status text. A sync becomes overdue after its configured interval plus the scheduler's 30-second polling window.
+- The refresh tooltip names its scope and lists each connection's last successful time and any failure. A single-item refresh does not advance the connection's timestamp. An item's age follows the source snapshot actually applied to that item, never a connection sync that omitted it. Older records with no item timestamp show an unknown age until refreshed.

@@ -1,4 +1,8 @@
 import {
+  startBacklogSync,
+  setBacklogSyncAvailability,
+} from "@/lib/backlog-sync-status";
+import {
   backlogSourceStatusListResponseSchema,
   backlogSourceStatusUpsertRequestSchema,
   backlogSourceStatusUpsertResponseSchema,
@@ -715,12 +719,19 @@ export function fetchPluginsOverview(): Promise<PluginsOverview> {
 export async function getPluginsOverview(): Promise<PluginsOverview> {
   const requestRevision = pluginsOverviewRevision;
   const requestId = ++latestPluginsOverviewRequest;
-  const overview = await appApiRequest(
-    "getPluginsOverview",
-    "/api/plugins",
-    undefined,
-    pluginsOverviewSchema,
-  );
+  let overview: PluginsOverview;
+  try {
+    overview = await appApiRequest(
+      "getPluginsOverview",
+      "/api/plugins",
+      undefined,
+      pluginsOverviewSchema,
+    );
+    setBacklogSyncAvailability();
+  } catch (error) {
+    setBacklogSyncAvailability(error);
+    throw error;
+  }
   if (
     requestRevision !== pluginsOverviewRevision ||
     requestId !== latestPluginsOverviewRequest
@@ -1207,14 +1218,34 @@ const BACKLOG_SYNC_TRIGGERS = {
 export function syncBacklogConnection(
   pluginId: string,
   connectionId: string,
-  input?: Pick<BacklogSyncRequest, "trigger">,
+  input?: Partial<Pick<BacklogSyncRequest, "trigger" | "refresh" | "sourceId">>,
 ): Promise<SyncBacklogConnectionResult> {
   const trigger = input?.trigger ?? "manual";
-  return wideEvents.run(
-    "backlog.sync",
-    { kind: "job", trigger: BACKLOG_SYNC_TRIGGERS[trigger], detached: true },
-    (job) => runBacklogSync(job, pluginId, connectionId, trigger),
-  );
+  const finish =
+    trigger === "source_write"
+      ? () => {}
+      : startBacklogSync({
+          pluginId,
+          connectionId,
+          sourceId: input?.sourceId,
+          trigger,
+        });
+  return wideEvents
+    .run(
+      "backlog.sync",
+      { kind: "job", trigger: BACKLOG_SYNC_TRIGGERS[trigger], detached: true },
+      (job) => runBacklogSync(job, pluginId, connectionId, trigger, input),
+    )
+    .then(
+      (result) => {
+        finish();
+        return result;
+      },
+      (error) => {
+        finish(error);
+        throw error;
+      },
+    );
 }
 
 /**
@@ -1239,6 +1270,7 @@ async function runBacklogSync(
   pluginId: string,
   connectionId: string,
   trigger: BacklogSyncRequest["trigger"],
+  input?: Pick<BacklogSyncRequest, "refresh" | "sourceId">,
 ): Promise<SyncBacklogConnectionResult> {
   const syncedWorkItems = localStore
     .snapshot()
@@ -1246,7 +1278,8 @@ async function runBacklogSync(
       (workItem) =>
         workItem.source === pluginId &&
         workItem.sourceConnectionId === connectionId &&
-        typeof workItem.sourceId === "string",
+        typeof workItem.sourceId === "string" &&
+        (!input?.sourceId || workItem.sourceId === input.sourceId),
     )
     .map(
       (workItem) =>
@@ -1278,6 +1311,7 @@ async function runBacklogSync(
     );
   const payload = backlogSyncRequestSchema.parse({
     trigger,
+    ...input,
     workItems: syncedWorkItems,
   });
   job.set({
@@ -1305,6 +1339,21 @@ async function runBacklogSync(
       comment_fact_count: result.commentFacts.length,
     },
   });
+  const overview = getCachedPluginsOverview();
+  if (overview)
+    cachePluginsOverview({
+      ...overview,
+      connectionGroups: overview.connectionGroups.map((group) =>
+        group.plugin.id === pluginId
+          ? {
+              ...group,
+              connections: group.connections.map((connection) =>
+                connection.id === connectionId ? result.connection : connection,
+              ),
+            }
+          : group,
+      ),
+    });
   // The answer's store commands fold into the sync's event.
   return job.enter(() => {
     // The items still in the settle this sync asked about, before its answer
@@ -1341,7 +1390,9 @@ async function runBacklogSync(
       result.mode === "backlog"
         ? localStore.importSyncedWorkItems(result.items, {
             archiveMissingFromConnectionId:
-              payload.trigger === "auto" ? connectionId : undefined,
+              payload.trigger === "auto" && !payload.sourceId
+                ? connectionId
+                : undefined,
           })
         : { importedCount: 0, updatedCount: 0 };
     localStore.applyBacklogSyncWorkItemUpdates(result.workItemUpdates);

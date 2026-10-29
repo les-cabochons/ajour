@@ -470,6 +470,8 @@ export interface LocalWorkItem {
   sourceId?: string;
   sourceConnectionId?: string;
   sourceConnectionLabel?: string;
+  /** When the source snapshot applied to this item was fetched. */
+  sourceSyncedAt?: number;
   /** Link to the item in its source tool, when the plugin provides one. `sourceId` is an opaque identity, not a URL. */
   sourceUrl?: string;
   /**

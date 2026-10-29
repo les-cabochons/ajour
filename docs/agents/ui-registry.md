@@ -432,3 +432,5 @@ the file format. The schema, export and import are three cardless sections of
 transfer is a line of text under its action. Time entry import and export
 (`settings-export-page.tsx`) follows the same layout, with staged import drafts
 as plain rows that carry Add and Dismiss.
+
+- **Backlog freshness.** `features/backlog/backlog-refresh.tsx` owns the shared backlog, item-page and peek readout. It uses a 12px neutral refresh glyph in the existing 20px icon button, the successful sync age, and inline busy or warning text. `lib/backlog-sync-status.ts` publishes activity from every sync entry point; the validated plugin overview supplies persisted backlog-only success and failure timestamps.

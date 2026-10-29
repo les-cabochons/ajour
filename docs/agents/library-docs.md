@@ -247,3 +247,5 @@ The backlog editor module is feature-local because its vocabulary and commands b
 - For third-party API or framework questions, fetch current official docs before changing code.
 - Prefer codebase patterns over generic documentation examples when they conflict.
 - Record any important project-specific usage decisions in this file or in a dedicated doc under `docs/`.
+
+- Backlog refresh and freshness: `features/backlog/backlog-refresh.tsx` renders the controls; `lib/backlog-sync-status.ts` publishes manual and scheduled activity; `domain/backlog/sync-freshness.ts` defines the age and overdue rules. A `refresh` sync holds estimate uploads; its optional `sourceId` scopes imports without archiving other items. Plugin `syncConnection` receives optional third-argument `{ readOnly, sourceIds }` hints, which older plugins may ignore; the host still filters a scoped result and rejects an absent item.

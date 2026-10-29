@@ -2580,9 +2580,16 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       }
 
       const payload = await readRequest(request, backlogSyncRequestSchema);
+      if (payload.sourceId && !payload.refresh) {
+        unit.refuse("invalid_request");
+        writeJson(response, 400, {
+          error: "An item scope requires a refresh.",
+        });
+        return;
+      }
       const isSourceWriteOnly = payload.trigger === "source_write";
       const shouldAutoSyncToBacklog =
-        connection.autoSync && payload.trigger === "auto";
+        payload.refresh || (connection.autoSync && payload.trigger === "auto");
       unit.set({
         backlog_sync: {
           trigger: payload.trigger,
@@ -2600,10 +2607,19 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         connection.access,
         ESTIMATE_PUSH_OPERATION,
       );
-      const { workItems, held: heldEstimates } = holdEstimatePushes(
-        payload.workItems,
-        !pushesEstimates,
+      const scopedWorkItems = payload.workItems.filter(
+        (item) => !payload.sourceId || item.sourceId === payload.sourceId,
       );
+      const { workItems, held: maskedEstimates } = holdEstimatePushes(
+        scopedWorkItems,
+        Boolean(payload.refresh) || !pushesEstimates,
+      );
+      // A read-only refresh masks pending uploads for this request without
+      // changing which local edits already wait for the user's approval.
+      const heldEstimates =
+        payload.refresh && pushesEstimates
+          ? holdEstimatePushes(scopedWorkItems, false).held
+          : maskedEstimates;
       unit.set({
         backlog_sync: { held_estimate_count: heldEstimates.length },
       });
@@ -2625,7 +2641,36 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           pluginConnection(connection),
           workItems,
           admit,
+          payload.refresh
+            ? {
+                readOnly: true,
+                ...(payload.sourceId ? { sourceIds: [payload.sourceId] } : {}),
+              }
+            : undefined,
         );
+        // Older plugins can ignore the optional scope. The host still applies
+        // only the requested item and never treats an absent item as fresh.
+        if (payload.sourceId) {
+          fetched.items = fetched.items.filter(
+            (item) =>
+              item.sourceId === payload.sourceId &&
+              item.source === pluginId &&
+              item.connectionId === connectionId,
+          );
+          if (!fetched.items.length)
+            throw new Error(
+              "The source did not return this item. It may be unavailable or require a plugin update.",
+            );
+          const localIds = new Set(
+            workItems.map((item) => item.localWorkItemId),
+          );
+          fetched.workItemUpdates = fetched.workItemUpdates.filter((item) =>
+            localIds.has(item.localWorkItemId),
+          );
+          fetched.commentFacts = fetched.commentFacts.filter((item) =>
+            localIds.has(item.localWorkItemId),
+          );
+        }
         const { openItems, doneItems } = splitDoneItems(fetched.items);
         unit.set({
           backlog_sync: {
@@ -2676,11 +2721,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             skipped_count: stageResult.skippedCount,
           },
         });
-        await storage.recordConnectionSyncSuccess(
-          pluginId,
-          connectionId,
-          Date.now(),
-        );
+        if (!payload.sourceId && !isSourceWriteOnly)
+          await storage.recordConnectionSyncSuccess(
+            pluginId,
+            connectionId,
+            Date.now(),
+            true,
+          );
         const { summary } = await findConnectionSummary(
           storage,
           pluginManager,
@@ -2701,7 +2748,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             workItemUpdates: redactFieldUpdateMessages(
               withoutHeldEstimateUpdates(
                 fetched.workItemUpdates,
-                heldEstimates,
+                maskedEstimates,
               ),
               call.credentials(connection.config).redaction,
             ),
@@ -2721,7 +2768,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           connection,
         );
         const message = credentials.errorMessage(error);
-        await storage.recordConnectionError(pluginId, connectionId, message);
+        if (!payload.sourceId)
+          await storage.recordConnectionError(
+            pluginId,
+            connectionId,
+            message,
+            payload.trigger === "source_write" ? false : payload.trigger,
+          );
         const { summary } = await findConnectionSummary(
           storage,
           pluginManager,
