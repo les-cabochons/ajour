@@ -1,3 +1,4 @@
+import { useBacklogRefreshOnOpen } from "./use-backlog-refresh-on-open";
 import { BacklogRefresh } from "./backlog-refresh";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { setOpenDraftGuard } from "@/lib/open-draft";
@@ -103,6 +104,7 @@ type EditorRequest =
       preset?: Partial<BacklogTaskEditorFields>;
     };
 export function BacklogPage() {
+  useBacklogRefreshOnOpen();
   const state = useLocalState();
   const view = useBacklogView();
   const now = useNow();

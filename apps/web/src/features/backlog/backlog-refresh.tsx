@@ -1,3 +1,7 @@
+import {
+  refreshBacklog,
+  type BacklogRefreshSource,
+} from "./backlog-refresh-workflow";
 import { useSyncExternalStore } from "react";
 import { isCapabilityActive } from "@ajour/shared";
 import { RiRefreshLine, RiErrorWarningLine } from "@remixicon/react";
@@ -10,9 +14,6 @@ import {
 import {
   getCachedPluginsOverview,
   subscribePluginsOverview,
-  syncBacklogConnection,
-  getPluginsOverview,
-  asPoll,
 } from "@/lib/app-api";
 import {
   getBacklogSyncSnapshot,
@@ -20,13 +21,6 @@ import {
   getBacklogSyncAvailability,
 } from "@/lib/backlog-sync-status";
 import { useNow } from "@/lib/use-now";
-
-export interface BacklogRefreshSource {
-  pluginId: string;
-  connectionId: string;
-  sourceId: string;
-  syncedAt?: number;
-}
 
 /** One isolated readout, shared by the backlog, item page and peek. */
 export function BacklogRefresh({
@@ -135,47 +129,7 @@ export function BacklogRefresh({
   const disabled =
     running ||
     (!apiError && !rows.some((row) => row.enabled && !row.connection.paused));
-  const refresh = async () => {
-    if (disabled) return;
-    try {
-      // Reading the overview is also the retry when the local API was offline.
-      const current = await asPoll(() => getPluginsOverview());
-      const targets = current.connectionGroups.flatMap((group) =>
-        group.plugin.capabilities.connector &&
-        current.pluginsEnabled !== false &&
-        isCapabilityActive(group, "connector") &&
-        (!source || source.pluginId === group.plugin.id)
-          ? group.connections
-              .filter(
-                (c) =>
-                  !c.paused &&
-                  !getBacklogSyncSnapshot().some(
-                    (s) =>
-                      s.pluginId === group.plugin.id &&
-                      s.connectionId === c.id &&
-                      s.running > 0,
-                  ) &&
-                  (!source || c.id === source.connectionId),
-              )
-              .map((connection) => ({ pluginId: group.plugin.id, connection }))
-          : [],
-      );
-      // Match the scheduler's sequential admission so several connections
-      // cannot exhaust their plugin's operation quota.
-      for (const row of targets) {
-        try {
-          await syncBacklogConnection(row.pluginId, row.connection.id, {
-            refresh: true,
-            ...(source ? { sourceId: source.sourceId } : {}),
-          });
-        } catch {
-          // Keep refreshing the other connections. Each failure stays visible.
-        }
-      }
-    } catch {
-      /* The shared availability state keeps the failure visible. */
-    }
-  };
+
   return (
     <div className="backlog-refresh" aria-busy={running}>
       {warning && !running ? (
@@ -194,7 +148,9 @@ export function BacklogRefresh({
         render={<Button variant="ghost" size="icon-xs" disabled={disabled} />}
         tooltipClassName="whitespace-pre-line"
         aria-description={detail}
-        onClick={() => void refresh()}
+        onClick={() => {
+          if (!disabled) void refreshBacklog({ source });
+        }}
       >
         <RiRefreshLine
           className={running ? "backlog-refresh-spin" : undefined}

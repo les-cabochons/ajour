@@ -6,7 +6,7 @@ import { syncWithParentDescription } from "../../fixtures/backlog-descriptions";
 const { Given, When, Then } = createBdd();
 const pending = new WeakMap<Page, () => void>();
 const cors = { "access-control-allow-origin": "*" };
-Given("a source is ready for a backlog refresh", async ({ page }) => {
+async function readySource(page: Page, holdAutomatic = false) {
   const overview = structuredClone(commentsOverview);
   overview.connectionGroups[0]!.plugin.capabilities.connector = {};
   overview.connectionGroups[0]!.connections[0]!.backlogLastSyncAt =
@@ -34,6 +34,12 @@ Given("a source is ready for a backlog refresh", async ({ page }) => {
       const itemPage = new URL(page.url()).pathname.includes("/backlog/parent");
       expect(body.sourceId).toBe(itemPage ? "source-parent" : undefined);
       if (itemPage) expect(body.workItems).toHaveLength(1);
+      if (body.trigger === "auto" && !holdAutomatic) {
+        const initial = syncWithParentDescription({ text: "Before refresh" });
+        initial.connection.backlogLastSyncAt = Date.now();
+        await route.fulfill({ json: initial, headers: cors });
+        return;
+      }
       await new Promise<void>((resolve) => pending.set(page, resolve));
       const result = syncWithParentDescription({
         text: "Fresh description from the source",
@@ -44,6 +50,12 @@ Given("a source is ready for a backlog refresh", async ({ page }) => {
     },
   );
   await page.reload();
+}
+Given("a source is ready for a backlog refresh", async ({ page }) => {
+  await readySource(page);
+});
+Given("a source waits while Backlog opens", async ({ page }) => {
+  await readySource(page, true);
 });
 When("I refresh from the backlog freshness control", async ({ page }) => {
   await page

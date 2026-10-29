@@ -1139,3 +1139,10 @@ Feature: Backlog list and board views
     Then the item freshness control shows syncing text
     When the source finishes the backlog refresh
     Then the open item shows the refreshed source title
+
+
+  Scenario: Refresh automatically when Backlog opens
+    Given a source waits while Backlog opens
+    Then the backlog freshness control shows a small neutral spinning icon and syncing text
+    When the source finishes the backlog refresh
+    Then the refreshed source title is visible in the backlog

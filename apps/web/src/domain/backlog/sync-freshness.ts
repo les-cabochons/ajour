@@ -21,7 +21,7 @@ export function connectionSyncWarning(
   if (!enabled || connection.paused) return "Sync paused";
   if (failedAt && failedAt > (lastSuccessAt ?? 0))
     return automaticFailure ? "Auto sync failed" : "Sync failed";
-  if (!connection.autoSync) return "Auto sync off";
+  if (!connection.autoSync) return "Scheduled sync off";
   // The scheduler checks every 30 seconds. Let that polling window pass
   // before calling an automatic sync overdue.
   if (
