@@ -144,6 +144,16 @@ export function BacklogAutoSyncScheduler() {
           }));
           for (const operation of operations) {
             if (loopState.cancelled) break;
+            if (
+              operation.capability === "connector" &&
+              getBacklogSyncSnapshot().some(
+                (s) =>
+                  s.pluginId === dueConnection.pluginId &&
+                  s.connectionId === dueConnection.connection.id &&
+                  s.running > 0,
+              )
+            )
+              continue;
             const failureKey = `${dueConnection.pluginId}:${dueConnection.connection.id}:${operation.capability}`;
             try {
               await operation.run();

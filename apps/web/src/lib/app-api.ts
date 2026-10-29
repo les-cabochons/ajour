@@ -1390,7 +1390,9 @@ async function runBacklogSync(
       result.mode === "backlog"
         ? localStore.importSyncedWorkItems(result.items, {
             archiveMissingFromConnectionId:
-              payload.trigger === "auto" && !payload.sourceId
+              payload.trigger === "auto" &&
+              !payload.refresh &&
+              !payload.sourceId
                 ? connectionId
                 : undefined,
           })

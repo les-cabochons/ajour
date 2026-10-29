@@ -472,4 +472,24 @@ describe("backlog refresh status", () => {
       reloaded.workItems.find((i) => i.sourceId === "s1")?.sourceSyncedAt,
     ).toBe(Date.now());
   });
+  it("keeps local items absent from a read-only visit refresh", async () => {
+    const { localStore, syncBacklogConnection, itemId, item } = await setup();
+    localStore.unsettleWorkItem(itemId);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          answer(
+            { author: "Ana", at: "2026-10-18T10:30:00Z" },
+            { mode: "backlog", items: [], commentFacts: [] },
+          ),
+        ),
+      ),
+    );
+    await syncBacklogConnection("azure_devops", "c1", {
+      trigger: "auto",
+      refresh: true,
+    });
+    expect(item()).toMatchObject({ status: "active", sourceSyncedAt: 1 });
+  });
 });
