@@ -58,6 +58,18 @@ describe("splitDescription", () => {
     expect(split.body).toBe("Propose a safe solution.");
   });
 
+  it("keeps a reference to a quote inside a quoted value from closing it", () => {
+    expect(
+      getDescriptionTimelog(
+        "---\ntimelog:\n  project: \"Acme &quot;Web&quot;\"\n  task: 'Client&apos;s issue'\n---",
+      ),
+    ).toEqual({ project: 'Acme "Web"', task: "Client's issue" });
+    expect(
+      splitDescription("---\nOwner&#39;s team: A&amp;B\n---").frontmatter
+        ?.fields,
+    ).toEqual([{ kind: "value", key: "Owner's team", value: "A&B" }]);
+  });
+
   it("decodes named, decimal and hex references, and keeps unknown ones as written", () => {
     expect(
       splitDescription(

@@ -81,8 +81,16 @@ export function splitDescription(description: string): SplitDescription {
   const closing = lines.findIndex((line) => CLOSING.test(line));
   if (closing < 0) return unchanged;
 
-  const block = lines.slice(0, closing).map(decodeCharacterReferences);
-  if (block.some((line) => FORBIDDEN_CHARACTER.test(line))) return unchanged;
+  // Keys and values decode their references once read, so an encoded quote
+  // never ends a quoted string; a line must not spell a forbidden one either.
+  const block = lines.slice(0, closing);
+  if (
+    block.some((line) =>
+      FORBIDDEN_CHARACTER.test(decodeCharacterReferences(line)),
+    )
+  ) {
+    return unchanged;
+  }
   const yamlLines = toYamlLines(block);
   const map = yamlLines && parseMap(yamlLines, 0, 0, 1);
   if (!map) return unchanged;
@@ -109,12 +117,12 @@ const CHARACTER_REFERENCE =
   /&(?:#([0-9]{1,7})|#[xX]([0-9a-fA-F]{1,6})|([a-zA-Z][a-zA-Z0-9]{0,31}));/g;
 
 /**
- * A line with its character references decoded, as Markdown reads them. A
+ * Text with its character references decoded, as Markdown reads them. A
  * source tool can write `&amp;` or `&quot;` for a character, as Azure DevOps
  * keeps a Markdown description Teamwork wrote. An unknown name stays as written.
  */
-function decodeCharacterReferences(line: string) {
-  return line.replace(
+function decodeCharacterReferences(text: string) {
+  return text.replace(
     CHARACTER_REFERENCE,
     (reference, decimal?: string, hex?: string, name?: string) => {
       if (name) return decodeNamedCharacterReference(name) || reference;
@@ -294,7 +302,7 @@ function splitKey(text: string): { key: string; value: string } | null {
       return null;
     }
     return {
-      key: quoted.value,
+      key: decodeCharacterReferences(quoted.value),
       value: trimSpaces(text.slice(quoted.end + rest[0].length)),
     };
   }
@@ -303,7 +311,10 @@ function splitKey(text: string): { key: string; value: string } | null {
   if (isTooLongKey(text.slice(0, colon.index))) return null;
   const key = trimSpaces(text.slice(0, colon.index));
   if (!key || !isPlainKey(key)) return null;
-  return { key, value: trimSpaces(text.slice(colon.index + 1)) };
+  return {
+    key: decodeCharacterReferences(key),
+    value: trimSpaces(text.slice(colon.index + 1)),
+  };
 }
 
 /** Whether the text before a key's `:` runs past what YAML reads ahead. */
@@ -366,15 +377,23 @@ function parseFlowList(text: string): string[] | null {
 }
 
 /**
- * A value as written, `#`, `: ` and YAML's indicators included. One quoted
- * string from end to end loses its quotes and reads its escapes.
+ * A value as written, `#`, `: ` and YAML's indicators included, with its
+ * character references decoded. One quoted string from end to end loses its
+ * quotes and reads its escapes. Written quotes come first, so `'Bob&apos;s'`
+ * reads `Bob's`, then encoded ones, so `&quot;Billet&quot;` reads `Billet`.
  */
 function parseScalar(text: string): string {
-  if (text.startsWith('"') || text.startsWith("'")) {
-    const quoted = readQuoted(text);
-    if (quoted && quoted.end === text.length) return quoted.value;
-  }
-  return text;
+  const unquoted = readWholeQuoted(text);
+  if (unquoted !== null) return decodeCharacterReferences(unquoted);
+  const decoded = decodeCharacterReferences(text);
+  return readWholeQuoted(decoded) ?? decoded;
+}
+
+/** The value of a quoted string that is all of `text`, else null. */
+function readWholeQuoted(text: string) {
+  if (!text.startsWith('"') && !text.startsWith("'")) return null;
+  const quoted = readQuoted(text);
+  return quoted && quoted.end === text.length ? quoted.value : null;
 }
 
 /** Whether a key is plain text, not a YAML indicator such as `&anchor`. */
