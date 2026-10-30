@@ -21,7 +21,7 @@ Decided in [Action model for entries, timers, projects, tasks and work items](ht
 4. Delete, Discard and Archive come last and use the destructive style.
 5. Every action has a shortcut slot. The keyboard section assigns the keys.
 6. Focus and selection are the same thing, and actions apply to the focused object, except for time entries on the Day list and the Week Days cards, which select like a file explorer (see "Selecting, copying and pasting entries"). There, selection-wide actions apply to every selected entry and single-subject actions to the focused entry. Delete row in the Week Grid removes the entries of one project/task row for that week.
-7. Exception to rule 1: Move up and Move down (Alt+Up and Alt+Down) reorder sortable objects. They exist as keyboard shortcuts and palette commands only, not in the right-click or "…" menus. Sortable objects are time entries within a day, projects, tasks and top-level backlog items.
+7. Exception to rule 1: Move up and Move down (Alt+Up and Alt+Down) reorder sortable objects. They exist as keyboard shortcuts and palette commands only, not in the right-click or "…" menus. Sortable objects are time entries within a day, projects, tasks and backlog items: top-level items with Custom ordering, and items within their priority level with Priority ordering.
 
 8. Grid rows have no "…" button. Delete row appears in the right-click menu on the row name and its cells. Shift+Backspace works on focused cells only, so only the cell menu shows the shortcut.
 
@@ -613,8 +613,10 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 
 ### Moving items
 
-- Dragging a card to another column, or a row to another group, sets its state, priority or project. A drop on a done state follows the done rules above.
-- With Custom ordering, dragging within a column or group moves the item in the one custom order, so the sidebar follows. Other orderings allow moves across columns only.
+- Dragging a card to another column, or a row to another group, sets its state, priority or project. A drop on a done state follows the done rules above. With Custom ordering, the item also lands at the drop line among top-level items. With Priority ordering, it lands at the drop line among the items of the level it has after the drop.
+- With Custom ordering, dragging within a column or group moves a top-level item in the one custom order, so the sidebar follows. Subitems stay out of the custom order.
+- With Priority ordering, dragging within a column or group, or Alt+Up and Alt+Down, moves an item among the items of its priority level, subitems included. The move changes the one custom order, so the sidebar ordered by priority follows. The drop line stops at the level's first and last item, so the item keeps its priority. Only a drop on another priority group, with Grouping set to priority, changes it.
+- Created, Remaining estimate and Title orderings allow moves across columns only.
 - The state and priority icons on a row or card open pickers. Picking a state is the same as dropping on it, with the same Ask and subitem prompts.
 - Every move shows the Undo toast.
 
