@@ -11,6 +11,7 @@ import {
   isBacklogItemReturned,
   isBacklogItemSnoozed,
   markBacklogItemOpened,
+  markSourceWriteSent,
   moveBacklogItemToState,
   patchBacklogItem,
   pinBacklogItem,
@@ -26,6 +27,7 @@ import {
   unsnoozeBacklogItem,
 } from "@/domain/backlog/backlog-item-lifecycle";
 import { updateWorkflowState } from "@/domain/backlog/workflow-states";
+import { holdSourceWrite } from "@/domain/backlog/held-edits";
 import { reorderWorkItems } from "@/domain/backlog/work-item-transitions";
 
 function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
@@ -1740,6 +1742,182 @@ describe("changing a backlog item's priority", () => {
       status: "settled",
       importedPriority: 1,
       settledImportedPriority: 1,
+    });
+  });
+
+  it("keeps a held priority held when a move joins it, and lets a move replace a held write without one", () => {
+    const held = holdSourceWrite(
+      changeBacklogItemPriority(state(), "a", 3, writes),
+      "a",
+      2_000,
+    );
+    const moved = moveBacklogItemToState(held, "a", "review", factories, {
+      sourceWrites: { a: "Resolved" },
+    });
+    expect(find(moved, "a")?.pendingSourceWrite).toMatchObject({
+      heldAt: 2_000,
+      state: "Resolved",
+      priority: 3,
+    });
+
+    const heldMove = holdSourceWrite(
+      moveBacklogItemToState(state(), "a", "review", factories, {
+        sourceWrites: { a: "Resolved" },
+      }),
+      "a",
+      2_000,
+    );
+    const movedBack = moveBacklogItemToState(
+      heldMove,
+      "a",
+      "doing",
+      factories,
+      {
+        sourceWrites: { a: "Active" },
+      },
+    );
+    expect(find(movedBack, "a")?.pendingSourceWrite).toMatchObject({
+      state: "Active",
+    });
+    expect(find(movedBack, "a")?.pendingSourceWrite?.heldAt).toBeUndefined();
+  });
+
+  it("keeps a held priority held when a settle joins it", () => {
+    const held = holdSourceWrite(
+      changeBacklogItemPriority(state(), "a", 3, writes),
+      "a",
+      2_000,
+    );
+    const settled = settleBacklogItem(held, "a", factories, {
+      state: { name: "Resolved", done: false },
+    });
+
+    expect(find(settled, "a")?.pendingSourceWrite).toMatchObject({
+      heldAt: 2_000,
+      state: "Resolved",
+      priority: 3,
+    });
+  });
+
+  it("writes the source's level back while a sent request may still set another", () => {
+    const sent = markSourceWriteSent(
+      changeBacklogItemPriority(state(), "a", 3, writes),
+      "a",
+    );
+    const back = changeBacklogItemPriority(sent, "a", 2, writes);
+    expect(find(back, "a")).toMatchObject({
+      priority: 2,
+      importedPriority: 2,
+      pendingSourceWrite: { readyAt: 9_000, priority: 2 },
+    });
+
+    // The sent level landed: the follow-up still goes, and a failure of it
+    // puts back the level the source has now.
+    const landed = completeSourceWrite(back, "a", sent.workItems);
+    expect(find(landed, "a")?.pendingSourceWrite).toMatchObject({
+      priority: 2,
+      previous: { importedPriority: 3 },
+    });
+    expect(
+      find(changeBacklogItemPriority(landed, "a", 3, writes), "a")
+        ?.pendingSourceWrite,
+    ).toBeUndefined();
+
+    // A request the source refused set nothing.
+    const refused = holdSourceWrite(sent, "a", 2_000);
+    expect(
+      find(changeBacklogItemPriority(refused, "a", 2, writes), "a")
+        ?.pendingSourceWrite,
+    ).toBeUndefined();
+  });
+
+  it("refuses No priority while a sent request may set a level on a source without one", () => {
+    const unset = createState({ workItems: [synced("u")] });
+    const sent = markSourceWriteSent(
+      changeBacklogItemPriority(unset, "u", 2, writes),
+      "u",
+    );
+
+    expect(getPriorityRefusal(find(sent, "u")!, undefined)).toBeDefined();
+  });
+
+  it("puts a settled item back as it was when a move joined its priority write and the write fails", () => {
+    const withDone = {
+      ...state(),
+      workflowStates: [
+        ...state().workflowStates,
+        {
+          _id: "done",
+          name: "Done",
+          color: "#059669",
+          done: true,
+          createdAt: 1,
+        },
+      ],
+    };
+    const settled = settleBacklogItem(withDone, "a", factories);
+    const changed = changeBacklogItemPriority(settled, "a", 3, writes);
+    // The move closes the item, which clears what its settle remembered.
+    const moved = moveBacklogItemToState(changed, "a", "done", factories, {
+      sourceWrites: { a: "Closed" },
+    });
+    expect(find(moved, "a")?.status).toBe("archived");
+    const failed = failSourceWrite(moved, "a");
+
+    expect(find(failed, "a")).toMatchObject({
+      status: "settled",
+      settledAt: 1_000,
+      settleId: "settle-1",
+      settledSourceStatusKey: "active",
+      settledImportedPriority: 2,
+      priority: 2,
+      importedPriority: 2,
+      sourceStatusKey: "active",
+      workflowStateId: "doing",
+      importedWorkflowStateId: "doing",
+    });
+  });
+
+  it("removes a pending priority when a settle picks the source's level", () => {
+    const changed = changeBacklogItemPriority(state(), "a", 3, writes);
+    const settled = settleBacklogItem(changed, "a", factories, { priority: 2 });
+    expect(find(settled, "a")).toMatchObject({
+      status: "settled",
+      priority: 2,
+      importedPriority: 2,
+      settledImportedPriority: 2,
+    });
+    expect(find(settled, "a")?.pendingSourceWrite).toBeUndefined();
+
+    // With a new state, only the state goes.
+    const withState = settleBacklogItem(changed, "a", factories, {
+      state: { name: "Resolved", done: false },
+      priority: 2,
+    });
+    expect(find(withState, "a")).toMatchObject({
+      importedPriority: 2,
+      pendingSourceWrite: { state: "Resolved", priority: undefined },
+    });
+
+    // A sent level may still land, so the source's level goes after it.
+    const sent = markSourceWriteSent(changed, "a");
+    expect(
+      find(settleBacklogItem(sent, "a", factories, { priority: 2 }), "a")
+        ?.pendingSourceWrite,
+    ).toMatchObject({ priority: 2 });
+  });
+
+  it("keeps a moved item's workflow state when a settle changes only its priority", () => {
+    const moved = moveBacklogItemToState(state(), "a", "review", factories, {
+      sourceWrites: { a: "Resolved" },
+    });
+    const settled = settleBacklogItem(moved, "a", factories, { priority: 3 });
+
+    expect(find(settled, "a")).toMatchObject({
+      status: "settled",
+      workflowStateId: "review",
+      importedWorkflowStateId: "review",
+      pendingSourceWrite: { state: "Resolved", priority: 3 },
     });
   });
 });

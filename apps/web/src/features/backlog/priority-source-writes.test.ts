@@ -57,12 +57,15 @@ const candidate: BacklogImportCandidate = {
 
 /**
  * The local API, as far as a settle write goes: it records each write, or
- * fails it, or refuses it because editing work items is off.
+ * fails it, or refuses it because editing work items is off. While `gate`
+ * waits, a write it received stays on its way.
  */
 function fakeApi({ canWrite = true } = {}) {
   const api = {
     answer: "ok" as "ok" | "fail" | "editing-off",
     sent: [] as unknown[],
+    received: 0,
+    gate: undefined as Promise<void> | undefined,
   };
   const plugin = {
     id: "azure_devops",
@@ -89,6 +92,8 @@ function fakeApi({ canWrite = true } = {}) {
         });
       }
       if (route.endsWith("/settle")) {
+        api.received += 1;
+        await api.gate;
         if (api.answer === "fail") {
           return Response.json(
             { error: "The priority field is read-only." },
@@ -114,16 +119,40 @@ function fakeApi({ canWrite = true } = {}) {
   return api;
 }
 
-async function load() {
+/**
+ * Starts Ajour on the fake API. `restart` starts it again on the state the
+ * last run left, as a launch after a quit does.
+ */
+async function load({ restart = false } = {}) {
   const { localStore } = await import("@/lib/local-store");
   const { getPluginsOverview } = await import("@/lib/app-api");
   const { patchBacklogItemWithUndo } =
     await import("@/features/backlog/backlog-item-surface");
+  const { sendPendingSourceWrites } =
+    await import("@/features/backlog/backlog-source-writes");
+  const { sendHeldEdit } = await import("@/features/backlog/held-edit-review");
   const { listHeldEdits } = await import("@/lib/held-edits");
   await getPluginsOverview();
-  localStore.importSyncedWorkItems([candidate]);
+  if (!restart) localStore.importSyncedWorkItems([candidate]);
   const item = () => localStore.snapshot().workItems[0]!;
-  return { localStore, patchBacklogItemWithUndo, listHeldEdits, item };
+  return {
+    localStore,
+    patchBacklogItemWithUndo,
+    sendPendingSourceWrites,
+    sendHeldEdit,
+    listHeldEdits,
+    item,
+  };
+}
+
+/** A write the fake API receives waits until the returned call. */
+function holdWritesOnTheirWay(api: ReturnType<typeof fakeApi>) {
+  let release!: () => void;
+  api.gate = new Promise((resolve) => (release = resolve));
+  return () => {
+    api.gate = undefined;
+    release();
+  };
 }
 
 /** The Undo toast's window ends: its time passes and it closes. */
@@ -240,6 +269,138 @@ describe("a synced item's priority change", () => {
       listHeldEdits(localStore.snapshot().workItems).map((edit) => edit.kind),
     ).toEqual(["settle"]);
     expect(api.sent).toEqual([]);
+  });
+
+  it("keeps a move made after a held priority held with it, until Sync review sends both", async () => {
+    const api = fakeApi();
+    api.answer = "editing-off";
+    const {
+      localStore,
+      patchBacklogItemWithUndo,
+      sendHeldEdit,
+      listHeldEdits,
+      item,
+    } = await load();
+    const heldEdits = () => listHeldEdits(localStore.snapshot().workItems);
+
+    patchBacklogItemWithUndo(
+      item(),
+      { priority: 3 },
+      "Priority changed to Medium",
+    );
+    closeUndoToast();
+    await vi.waitFor(() => expect(heldEdits()).toHaveLength(1));
+
+    // Turning editing on isn't approval, and the move doesn't approve it.
+    api.answer = "ok";
+    localStore.moveWorkItemToState(item()._id, "workflow_state_in_review", {
+      sourceWrites: { [item()._id]: "Resolved" },
+    });
+    closeUndoToast();
+    const { sendPendingSourceWrites } =
+      await import("@/features/backlog/backlog-source-writes");
+    await sendPendingSourceWrites([item()._id]);
+    expect(api.sent).toEqual([]);
+    expect(heldEdits().map((edit) => edit.kind)).toEqual(["settle"]);
+    expect(item().pendingSourceWrite).toMatchObject({
+      state: "Resolved",
+      priority: 3,
+    });
+
+    await sendHeldEdit(heldEdits()[0]!);
+    await vi.waitFor(() =>
+      expect(api.sent).toEqual([
+        { sourceId: "42", state: "Resolved", priority: "medium" },
+      ]),
+    );
+    expect(heldEdits()).toEqual([]);
+  });
+
+  it("writes the source's level back when it is picked while the earlier level is on its way", async () => {
+    const api = fakeApi();
+    const { patchBacklogItemWithUndo, item } = await load();
+    const release = holdWritesOnTheirWay(api);
+
+    patchBacklogItemWithUndo(
+      item(),
+      { priority: 3 },
+      "Priority changed to Medium",
+    );
+    closeUndoToast();
+    await vi.waitFor(() => expect(api.received).toBe(1));
+    patchBacklogItemWithUndo(
+      item(),
+      { priority: 2 },
+      "Priority changed to High",
+    );
+    closeUndoToast();
+    release();
+
+    await vi.waitFor(() =>
+      expect(api.sent).toEqual([
+        { sourceId: "42", priority: "medium" },
+        { sourceId: "42", priority: "high" },
+      ]),
+    );
+    await vi.waitFor(() => expect(item().pendingSourceWrite).toBeUndefined());
+    expect(item()).toMatchObject({ priority: 2, importedPriority: 2 });
+  });
+
+  it("writes the source's level back after a restart that left the earlier level on its way", async () => {
+    const api = fakeApi();
+    const first = await load();
+    holdWritesOnTheirWay(api);
+    first.patchBacklogItemWithUndo(
+      first.item(),
+      { priority: 3 },
+      "Priority changed to Medium",
+    );
+    closeUndoToast();
+    await vi.waitFor(() => expect(api.received).toBe(1));
+
+    // Ajour quits before the answer, so the source may have Medium.
+    vi.resetModules();
+    api.gate = undefined;
+    const { patchBacklogItemWithUndo, item } = await load({ restart: true });
+    patchBacklogItemWithUndo(
+      item(),
+      { priority: 2 },
+      "Priority changed to High",
+    );
+    closeUndoToast();
+
+    await vi.waitFor(() =>
+      expect(api.sent).toEqual([{ sourceId: "42", priority: "high" }]),
+    );
+    await vi.waitFor(() => expect(item().pendingSourceWrite).toBeUndefined());
+    expect(item()).toMatchObject({ priority: 2, importedPriority: 2 });
+  });
+
+  it("writes nothing when a settle picks the source's level before the write goes", async () => {
+    const api = fakeApi();
+    const {
+      localStore,
+      patchBacklogItemWithUndo,
+      sendPendingSourceWrites,
+      item,
+    } = await load();
+
+    patchBacklogItemWithUndo(
+      item(),
+      { priority: 3 },
+      "Priority changed to Medium",
+    );
+    localStore.settleWorkItem(item()._id, { priority: 2 });
+    vi.setSystemTime(Date.now() + 8_000);
+    await sendPendingSourceWrites([item()._id]);
+
+    expect(api.sent).toEqual([]);
+    expect(item()).toMatchObject({
+      status: "settled",
+      priority: 2,
+      importedPriority: 2,
+    });
+    expect(item().pendingSourceWrite).toBeUndefined();
   });
 
   it("keeps the change in Ajour when the plugin can't write", async () => {

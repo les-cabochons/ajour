@@ -20,3 +20,19 @@ Feature: Priority changes on synced items write to the source
   Scenario: No priority is disabled, with the reason
     When I open the synced item's priority picker
     Then the picker's "No priority" is disabled with the reason "Ajour can't clear the priority in its source."
+
+  Scenario: The editor's Save writes the level at once, with no Undo
+    When I change the synced item's priority to "Medium" in the editor and save
+    Then the item's source received priority "medium" and no state at once
+    And no Undo toast showed
+
+  Scenario: The editor disables No priority, with the reason
+    When I open the priority field of the synced item's editor
+    Then the editor's "No priority" is disabled with the reason "Ajour can't clear the priority in its source."
+
+  Scenario: With editing off, Sync review lists the held change as its level
+    Given editing work items is off on the synced item's connection
+    When I change the synced item's priority to "Medium"
+    And the Undo toast closes on its own
+    Then the change is held on this computer
+    And Sync review lists the synced item's held change as "Priority Medium"
