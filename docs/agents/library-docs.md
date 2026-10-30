@@ -46,7 +46,7 @@ Use this file as the local index for important library choices. Check official d
 - Work-item estimate normalization, display values, reversible logged-time adjustments, overrun tracking, and imported baselines: `apps/web/src/domain/backlog/work-item-estimates.ts`
 - Manual work-item creation, hierarchy-aware edits, ordering, deletion, and estimate-conflict decisions: `apps/web/src/domain/backlog/work-item-transitions.ts`
 - Which synced items have comments, the New divider, edited comments and page merging: `apps/web/src/domain/backlog/comments.ts`. The thread is `features/backlog/backlog-item-comments.tsx`, and each item's last visit lives in `lib/comments-seen.ts`, outside the local state.
-- Backlog item status (settle, unsettle, archive, restore), snooze, the Returned mark and the sidebar's item order: `apps/web/src/domain/backlog/backlog-item-lifecycle.ts`
+- Backlog item status (settle, unsettle, archive, restore), priority changes and their source writes, snooze, the Returned mark and the sidebar's item order: `apps/web/src/domain/backlog/backlog-item-lifecycle.ts`
 - Description frontmatter, the YAML-like block Ajour reads (decoding character references with `decode-named-character-reference`), its fields and its `timelog`: `apps/web/src/domain/backlog/description-frontmatter.ts`. Applying a timelog to an item's project and task, on save and when the user asks, and how an item differs from its timelog: `apps/web/src/domain/backlog/description-timelog.ts`. Which frontmatter sections are open lives in `lib/frontmatter-sections.ts`, outside the local state.
 - Pull request fact reconciliation, local lifecycle, snooze, Returned, visibility and seven-day closure retention: `apps/web/src/domain/pull-requests/pull-request-lifecycle.ts`
 - Synced work-item identity, local-decision-preserving merge, missing-item archive provenance, done-category archives, and estimate-sync updates: `apps/web/src/domain/backlog/work-item-sync.ts`
@@ -224,7 +224,8 @@ The backlog editor module is feature-local because its vocabulary and commands b
   while either is stale. The published files import nothing outside the
   package.
 - A settle's change to the source is a `pendingSourceWrite` on the work item,
-  set by `settleBacklogItem` and cleared by `completeSourceWrite` or
+  set by `settleBacklogItem`, a move or `changeBacklogItemPriority`, and
+  cleared by `completeSourceWrite` or
   `failSourceWrite` in `domain/backlog/backlog-item-lifecycle.ts`. Undo drops
   it with the rest of the settle, and a sync leaves its values in place.
 
