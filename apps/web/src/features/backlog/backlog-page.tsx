@@ -390,7 +390,13 @@ export function BacklogPage() {
     disabled: narrow,
     onDrop: (...args) => void drop(...args),
   });
-  const dropMark = getBacklogDropMark(drag.drag, targets, canReorderItem);
+  // Subitems keep their slots on this page while the moved items trade theirs.
+  const dropMark = getBacklogDropMark(
+    drag.drag,
+    targets,
+    canReorderItem,
+    "keep-slot",
+  );
   async function add(group?: BacklogGroup, lane?: BacklogGroup) {
     if (!(await leaveDraft())) return;
     const current = localStore.snapshot();

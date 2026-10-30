@@ -255,6 +255,42 @@ describe("moving within a priority level", () => {
   });
 });
 
+describe("the drop line where rows that never move keep their slot", () => {
+  // The Backlog page under Custom ordering: a subitem keeps its row, and the
+  // moved items trade their slots, so the line marks the slot the item takes.
+  const isRoot = (itemId: string) => !itemId.endsWith("-sub");
+  const drag = (itemId: string, index: number) => ({
+    itemId,
+    originKey: "lane/list",
+    targetKey: "lane/list",
+    index,
+  });
+
+  it("marks the slot above a subitem when an item lands last", () => {
+    // "a" dropped below "b-sub" takes "b"'s slot: b, a, b-sub.
+    const targets = [{ key: "lane/list", itemIds: ["a", "b", "b-sub"] }];
+    expect(
+      getBacklogDropMark(drag("a", 2), targets, isRoot, "keep-slot"),
+    ).toEqual({ itemId: "b", edge: "after" });
+  });
+
+  it("marks the slot below a subitem when an item moves up past it", () => {
+    // "c" dropped above "b" takes "b"'s slot: a, a-sub, c, b.
+    const targets = [{ key: "lane/list", itemIds: ["a", "a-sub", "b", "c"] }];
+    expect(
+      getBacklogDropMark(drag("c", 2), targets, isRoot, "keep-slot"),
+    ).toEqual({ itemId: "b", edge: "before" });
+  });
+
+  it("marks the first slot when an item lands first", () => {
+    // "b" dropped above "a" takes "a"'s slot: b, a-sub, a.
+    const targets = [{ key: "lane/list", itemIds: ["a", "a-sub", "b"] }];
+    expect(
+      getBacklogDropMark(drag("b", 0), targets, isRoot, "keep-slot"),
+    ).toEqual({ itemId: "a", edge: "before" });
+  });
+});
+
 it("keeps a parent's subitem above the line when an item lands last", () => {
   // The sidebar shows a subitem below its parent, so the item lands after both.
   const targets = [{ key: "lane/list", itemIds: ["a", "b", "b-sub"] }];

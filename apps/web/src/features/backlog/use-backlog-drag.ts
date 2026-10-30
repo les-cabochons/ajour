@@ -66,16 +66,25 @@ export function getBacklogDropOrder(
   return order;
 }
 /**
+ * Where rows that never move, such as subitems under Custom ordering, sit
+ * after a drop. The sidebar shows them below their parent, so they follow
+ * the peer above them. The Backlog page keeps each in its own slot while the
+ * peers trade theirs.
+ */
+export type BacklogFixedRows = "follow-peer" | "keep-slot";
+
+/**
  * Where the dragged item would land, for a drop line: before the peer that
  * would follow it, or after the last peer. Undefined when the drop changes
- * nothing or the target has no peer. Rows that never move and sit right
- * below the last peer, such as its subitems in the sidebar, stay above the
- * line.
+ * nothing or the target has no peer. With `follow-peer`, rows that never
+ * move and sit right below the last peer stay above the line. With
+ * `keep-slot`, a move within its group marks the slot the item takes.
  */
 export function getBacklogDropMark(
   drag: Pick<Drag, "itemId" | "originKey" | "targetKey" | "index"> | null,
   targets: readonly BacklogDropTarget[],
   canReorder: BacklogReorderPeer,
+  fixedRows: BacklogFixedRows = "follow-peer",
 ): { itemId: string; edge: "before" | "after" } | undefined {
   const target = targets.find((candidate) => candidate.key === drag?.targetKey);
   if (!drag || !target) return undefined;
@@ -88,11 +97,22 @@ export function getBacklogDropMark(
   );
   if (!order) return undefined;
   const landed = order.indexOf(drag.itemId);
+  const rows = target.itemIds;
+  if (fixedRows === "keep-slot" && drag.originKey === drag.targetKey) {
+    // The peers' rows are the slots, in order, and the item takes the one
+    // at its new place. The line sits on that slot's far side from where
+    // the item comes.
+    const slots = rows.flatMap((id, row) => (order.includes(id) ? [row] : []));
+    const slot = slots[landed]!;
+    return {
+      itemId: rows[slot]!,
+      edge: slot > rows.indexOf(drag.itemId) ? "after" : "before",
+    };
+  }
   const next = order[landed + 1];
   if (next) return { itemId: next, edge: "before" };
   const last = order[landed - 1];
   if (!last) return undefined;
-  const rows = target.itemIds;
   const lastRow = rows.indexOf(last);
   const nextMovable = rows.findIndex(
     (id, row) => row > lastRow && canReorder(id, id),
