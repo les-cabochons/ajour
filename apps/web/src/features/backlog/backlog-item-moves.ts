@@ -219,6 +219,8 @@ export type BacklogMoveResult =
       kind: "unchanged";
       /** Set when the editor's other fields changed the item through its timelog. */
       undoToken?: string | null;
+      /** Items whose saved priority goes to the source now: a save has no Undo. */
+      sourceWriteIds?: string[];
     }
   | {
       kind: "moved";
@@ -293,6 +295,10 @@ async function planMove(
   const state = localStore.snapshot();
   workItem =
     state.workItems.find((item) => item._id === workItem._id) ?? workItem;
+  // The editor's priority goes to the source like any priority change.
+  const editsWriteToSource = Boolean(
+    patch && "priority" in patch && canWriteToSource(workItem),
+  );
   const destination = state.workflowStates.find(
     (state) => state._id === workflowStateId,
   );
@@ -301,8 +307,13 @@ async function planMove(
     return {
       kind: "unchanged",
       undoToken: patch
-        ? unit.enter(() => localStore.saveWorkItemEdits(workItem._id, patch))
+        ? unit.enter(() =>
+            localStore.saveWorkItemEdits(workItem._id, patch, {
+              writesToSource: editsWriteToSource,
+            }),
+          )
         : null,
+      sourceWriteIds: editsWriteToSource ? [workItem._id] : [],
     };
   }
   const name = destination?.name ?? "No state";
@@ -394,7 +405,7 @@ async function planMove(
       includeSubitems,
       sourceWrites,
       orderedIds,
-      ...(patch ? { edits: patch } : {}),
+      ...(patch ? { edits: patch, editsWriteToSource } : {}),
     }),
   );
   return {
@@ -405,7 +416,12 @@ async function planMove(
       : reopens
         ? `Reopened in ${name}`
         : `Moved to ${name}`,
-    sourceWriteIds: Object.keys(sourceWrites),
+    sourceWriteIds: [
+      ...new Set([
+        ...Object.keys(sourceWrites),
+        ...(editsWriteToSource ? [workItem._id] : []),
+      ]),
+    ],
   };
 }
 
@@ -440,6 +456,9 @@ export async function moveBacklogItemWithUndo(
   }
   if (result.kind === "cancelled") return false;
   if (result.kind === "unchanged") {
+    if (result.sourceWriteIds?.length) {
+      void sendPendingSourceWrites(result.sourceWriteIds);
+    }
     offerUndo(result.undoToken ?? null, {
       title: "Project and task set from the description",
       subject: "backlog item",

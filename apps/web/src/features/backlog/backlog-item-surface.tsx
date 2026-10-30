@@ -23,7 +23,10 @@ import {
   getSubitemProgress,
   type BacklogViewSettings,
 } from "@/domain/backlog/backlog-view";
-import { isBacklogItemSnoozed } from "@/domain/backlog/backlog-item-lifecycle";
+import {
+  getPriorityRefusal,
+  isBacklogItemSnoozed,
+} from "@/domain/backlog/backlog-item-lifecycle";
 import { findWorkItemTimer } from "@/domain/time/running-entry";
 import { getDirectChildWorkItems } from "@/domain/backlog/work-item-hierarchy";
 import {
@@ -224,6 +227,10 @@ export function BacklogPriorityPicker({
           (p) => (
             <DropdownMenuItem
               key={p.name}
+              // A synced item's source can't take No priority (rule 2 of
+              // the action model: greyed out, the reason for screen readers).
+              disabled={getPriorityRefusal(item, p.level) !== undefined}
+              aria-description={getPriorityRefusal(item, p.level)}
               onClick={async () => {
                 if ((await beforeChange?.()) !== false)
                   patchBacklogItemWithUndo(
