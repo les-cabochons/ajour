@@ -84,13 +84,13 @@ The backlog editor module is feature-local because its vocabulary and commands b
 
 ### Backlog views
 
-- Selection, filtering, grouping and ordering: `domain/backlog/backlog-view.ts`.
+- Selection, filtering, grouping and ordering: `domain/backlog/backlog-view.ts`. Its `isBacklogReorderPeer` says which items a drag or Alt+Up and Alt+Down moves an item among under each ordering.
 - Device-local preferences: `lib/backlog-view-settings.ts`. Ordering stays in local state.
 - Page orchestration: `features/backlog/backlog-page.tsx`.
 - Display controls and filters: `features/backlog/backlog-display.tsx`.
 - Shared row/card controls: `features/backlog/backlog-item-surface.tsx`.
 - Read-only details and immediate property pickers: `features/backlog/backlog-peek.tsx`.
-- Pointer moves: `features/backlog/use-backlog-drag.ts`, using `lib/table-drag.ts`.
+- Pointer moves: `features/backlog/use-backlog-drag.ts`, using `lib/table-drag.ts`. It clamps the drop order and the drop line to the dragged item's peers.
 - The sidebar's hover card: `features/backlog/backlog-item-hover-card.tsx`. What it shows, including where an item comes from and the pull requests whose title names it: `domain/backlog/backlog-item-summary.ts`. When it opens, moves and closes: `lib/row-hover-card.ts`.
 - The Undo module also captures custom work-item ordering. Group moves and their order change form one undoable operation.
 
