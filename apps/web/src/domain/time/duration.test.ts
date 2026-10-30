@@ -7,6 +7,16 @@ import {
 } from "@/domain/time/duration";
 
 describe("parseHoursInput", () => {
+  it("reads a decimal without a leading zero", () => {
+    expect(parseHoursInput(".5")).toBe(parseHoursInput("0.5"));
+    expect(parseHoursInput(",25")).toBe(15 * 60_000);
+  });
+
+  it("rejects a lone decimal separator", () => {
+    expect(parseHoursInput(".")).toBeNull();
+    expect(parseHoursInput(",")).toBeNull();
+  });
+
   it("rejects values that overflow milliseconds", () => {
     expect(parseHoursInput("1e308")).toBeNull();
     expect(parseHoursInput(`${"9".repeat(400)}:00`)).toBeNull();

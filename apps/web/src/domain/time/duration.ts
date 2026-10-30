@@ -88,8 +88,9 @@ export function parseHoursInput(value: string): number | null {
     return durationMs;
   }
 
+  // The leading zero is optional, so ".5" reads like "0.5".
   const normalizedDecimal = trimmed.replace(",", ".");
-  if (!/^\d+(?:\.\d+)?$/.test(normalizedDecimal)) {
+  if (!/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(normalizedDecimal)) {
     return null;
   }
   const hours = Number(normalizedDecimal);
