@@ -261,6 +261,39 @@ Feature: Backlog list and board views
     When I undo the last Backlog move
     Then the ungrouped parent's original order is restored
 
+  Scenario: Reorder within a priority level under Priority ordering
+    Given To do holds two more High items and a Medium item
+    When I order the Backlog by "Priority"
+    And I drag the Backlog row "Second High item" above "First High item"
+    Then To do lists "Backlog parent, Backlog subitem, Second High item, First High item, Medium item"
+    And a toast says "Backlog item reordered"
+    When I reload the app
+    Then To do lists "Backlog parent, Backlog subitem, Second High item, First High item, Medium item"
+    And the sidebar reads "Backlog parent", "Backlog subitem", "Second High item", "First High item", "Other backlog item", "Medium item"
+    When I drag the Backlog row "Backlog subitem" below "Medium item" without dropping
+    Then the drop line shows after "First High item"
+    When I drop the dragged row
+    Then To do lists "Backlog parent, Second High item, First High item, Backlog subitem, Medium item"
+    And the subitem's "priority" is "2"
+
+  Scenario: Drop a row in another priority group at the drop line
+    Given To do holds two more High items and a Medium item
+    When I order the Backlog by "Priority"
+    And I group the Backlog by "priority"
+    And I drag the "High" row "First High item" above "Medium item" in "Medium"
+    Then the "Medium" group lists "Other backlog item, First High item, Medium item"
+    When I undo the last Backlog move
+    Then the "High" group lists "Backlog subitem, First High item, Second High item"
+    And the "Medium" group lists "Other backlog item, Medium item"
+
+  Scenario: Move with Alt arrows only within a priority level
+    Given To do holds two more High items and a Medium item
+    When I order the Backlog by "Priority"
+    And I press "Alt+ArrowUp" on the Backlog row "Backlog subitem"
+    And I press "Alt+ArrowDown" on the Backlog row "Second High item"
+    And I press "Alt+ArrowDown" on the Backlog row "Backlog subitem"
+    Then To do lists "Backlog parent, First High item, Backlog subitem, Second High item, Medium item"
+
   Scenario: Restore a dragged card's custom order when its source write fails
     Given the Backlog root card has a source that rejects moves
     When I choose the Backlog board

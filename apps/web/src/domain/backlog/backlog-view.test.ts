@@ -3,6 +3,7 @@ import {
   ARCHIVED_STATE_FILTER,
   DEFAULT_BACKLOG_VIEW_SETTINGS as defaults,
   groupBacklogItems,
+  isBacklogReorderPeer,
   orderBacklogItems,
   selectBacklogViewItems,
   getSubitemHoursLeft,
@@ -277,6 +278,46 @@ describe("backlog ordering and grouping", () => {
     expect(
       orderBacklogItems(items, items, "priority_desc").map((i) => i._id),
     ).toEqual(["c", "z", "a", "b"]);
+  });
+  describe("which items a move reorders among", () => {
+    const high = item("high", { priority: 2 });
+    const otherHigh = item("other-high", { priority: 2 });
+    const medium = item("medium", { priority: 3 });
+    const highSubitem = item("high-subitem", {
+      priority: 2,
+      parentWorkItemId: "high",
+    });
+    const unprioritized = item("unprioritized");
+
+    it("moves top-level items among each other under Custom, whatever their level", () => {
+      expect(isBacklogReorderPeer("custom", high, medium)).toBe(true);
+      expect(isBacklogReorderPeer("custom", high, high)).toBe(true);
+      expect(isBacklogReorderPeer("custom", highSubitem, highSubitem)).toBe(
+        false,
+      );
+      expect(isBacklogReorderPeer("custom", high, highSubitem)).toBe(false);
+    });
+
+    it.each(["priority_asc", "priority_desc"] as const)(
+      "moves items within their level under %s, subitems included",
+      (ordering) => {
+        expect(isBacklogReorderPeer(ordering, high, otherHigh)).toBe(true);
+        expect(isBacklogReorderPeer(ordering, highSubitem, high)).toBe(true);
+        expect(isBacklogReorderPeer(ordering, high, medium)).toBe(false);
+        expect(isBacklogReorderPeer(ordering, high, unprioritized)).toBe(false);
+        expect(
+          isBacklogReorderPeer(ordering, unprioritized, item("none")),
+        ).toBe(true);
+      },
+    );
+
+    it.each(["created", "remaining", "title"] as const)(
+      "moves nothing under %s",
+      (ordering) => {
+        expect(isBacklogReorderPeer(ordering, high, high)).toBe(false);
+        expect(isBacklogReorderPeer(ordering, high, otherHigh)).toBe(false);
+      },
+    );
   });
   it("orders by newest creation, title, or remaining estimate with absent estimates last", () => {
     expect(

@@ -13,10 +13,18 @@ export interface BacklogDropTarget {
   itemIds: string[];
 }
 
-/** A drag needs either another destination in its lane or a reorderable peer. */
+/**
+ * Whether the dragged item moves among `itemId` in the custom order, such as
+ * an item of its priority level. The dragged item is its own peer when it can
+ * move at all. A callback that ignores `draggedId` makes every item it
+ * accepts a peer of every other.
+ */
+export type BacklogReorderPeer = (itemId: string, draggedId: string) => boolean;
+
+/** A drag needs either another destination in its lane or a peer to move among. */
 export function canDragBacklogItem(
   targets: readonly BacklogDropTarget[],
-  canReorder: (itemId: string) => boolean,
+  canReorder: BacklogReorderPeer,
   itemId: string,
   originKey: string,
 ) {
@@ -25,45 +33,58 @@ export function canDragBacklogItem(
     (target) =>
       target.key.split("/")[0] === lane &&
       (target.key !== originKey ||
-        (canReorder(itemId) &&
+        (canReorder(itemId, itemId) &&
           target.itemIds.includes(itemId) &&
           target.itemIds.some(
-            (peerId) => peerId !== itemId && canReorder(peerId),
+            (peerId) => peerId !== itemId && canReorder(peerId, itemId),
           ))),
   );
 }
 
+/**
+ * The dragged item's peers in the target, in their new order, or null when
+ * the drop changes nothing. Only the peers before `index` count, so a drop
+ * beyond the first or last peer, such as past the edge of a priority level,
+ * lands at that edge.
+ */
 export function getBacklogDropOrder(
   itemIds: string[],
   itemId: string,
   index: number,
   sameGroup: boolean,
-  canReorder: (itemId: string) => boolean,
+  canReorder: BacklogReorderPeer,
 ) {
-  if (!canReorder(itemId)) return null;
+  const isPeer = (id: string) => canReorder(id, itemId);
+  if (!isPeer(itemId)) return null;
   const others = itemIds.filter((id) => id !== itemId);
-  const targetIndex = others.slice(0, index).filter(canReorder).length;
-  const sortable = itemIds.filter(canReorder);
+  const targetIndex = others.slice(0, index).filter(isPeer).length;
+  const peers = itemIds.filter(isPeer);
   if (sameGroup)
-    return getSharedTableDropOrder(
-      sortable,
-      sortable.indexOf(itemId),
-      targetIndex,
-    );
-  const order = sortable.filter((id) => id !== itemId);
+    return getSharedTableDropOrder(peers, peers.indexOf(itemId), targetIndex);
+  const order = peers.filter((id) => id !== itemId);
   order.splice(targetIndex, 0, itemId);
   return order;
 }
 /**
- * Where the dragged item would land, for a drop line: before the item that
- * would follow it, or after the target's last item. Undefined when the drop
- * changes nothing. Items `canReorder` refuses, such as subitems, stay in
- * place, so the line follows the reorderable items only.
+ * Where rows that never move, such as subitems under Custom ordering, sit
+ * after a drop. The sidebar shows them below their parent, so they follow
+ * the peer above them. The Backlog page keeps each in its own slot while the
+ * peers trade theirs.
+ */
+export type BacklogFixedRows = "follow-peer" | "keep-slot";
+
+/**
+ * Where the dragged item would land, for a drop line: before the peer that
+ * would follow it, or after the last peer. Undefined when the drop changes
+ * nothing or the target has no peer. With `follow-peer`, rows that never
+ * move and sit right below the last peer stay above the line. With
+ * `keep-slot`, a move within its group marks the slot the item takes.
  */
 export function getBacklogDropMark(
   drag: Pick<Drag, "itemId" | "originKey" | "targetKey" | "index"> | null,
   targets: readonly BacklogDropTarget[],
-  canReorder: (itemId: string) => boolean,
+  canReorder: BacklogReorderPeer,
+  fixedRows: BacklogFixedRows = "follow-peer",
 ): { itemId: string; edge: "before" | "after" } | undefined {
   const target = targets.find((candidate) => candidate.key === drag?.targetKey);
   if (!drag || !target) return undefined;
@@ -75,10 +96,31 @@ export function getBacklogDropMark(
     canReorder,
   );
   if (!order) return undefined;
-  const next = order[order.indexOf(drag.itemId) + 1];
-  return next
-    ? { itemId: next, edge: "before" }
-    : { itemId: target.itemIds.at(-1)!, edge: "after" };
+  const landed = order.indexOf(drag.itemId);
+  const rows = target.itemIds;
+  if (fixedRows === "keep-slot" && drag.originKey === drag.targetKey) {
+    // The peers' rows are the slots, in order, and the item takes the one
+    // at its new place. The line sits on that slot's far side from where
+    // the item comes.
+    const slots = rows.flatMap((id, row) => (order.includes(id) ? [row] : []));
+    const slot = slots[landed]!;
+    return {
+      itemId: rows[slot]!,
+      edge: slot > rows.indexOf(drag.itemId) ? "after" : "before",
+    };
+  }
+  const next = order[landed + 1];
+  if (next) return { itemId: next, edge: "before" };
+  const last = order[landed - 1];
+  if (!last) return undefined;
+  const lastRow = rows.indexOf(last);
+  const nextMovable = rows.findIndex(
+    (id, row) => row > lastRow && canReorder(id, id),
+  );
+  return {
+    itemId: rows[(nextMovable === -1 ? rows.length : nextMovable) - 1]!,
+    edge: "after",
+  };
 }
 
 interface Drag {
@@ -102,7 +144,7 @@ export function useBacklogDrag({
   onDrop,
 }: {
   targets: BacklogDropTarget[];
-  canReorder: (itemId: string) => boolean;
+  canReorder: BacklogReorderPeer;
   disabled: boolean;
   onDrop: (itemId: string, targetKey: string, order: string[] | null) => void;
 }) {

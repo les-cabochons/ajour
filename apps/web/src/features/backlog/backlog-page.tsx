@@ -48,9 +48,13 @@ import {
 import { useWorkItemIconData } from "@/features/backlog/work-item-icons";
 import { moveBacklogItemWithUndo } from "@/features/backlog/backlog-item-moves";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
-import { useBacklogDrag } from "@/features/backlog/use-backlog-drag";
+import {
+  getBacklogDropMark,
+  useBacklogDrag,
+} from "@/features/backlog/use-backlog-drag";
 import {
   groupBacklogItems,
+  isBacklogReorderPeer,
   orderBacklogItems,
   selectBacklogViewItems,
   type BacklogGroup,
@@ -255,22 +259,32 @@ export function BacklogPage() {
       options,
     );
   }
+  const workItemById = useMemo(
+    () => new Map(state.workItems.map((workItem) => [workItem._id, workItem])),
+    [state.workItems],
+  );
+  // Asked about the items of one group at a time. Grouped by priority, each
+  // group is one level, and a drop in another group gives the item that
+  // group's level, so the item moves among the items of the group it is in.
   const canReorderItem = useCallback(
-    (itemId: string) => {
-      const item = state.workItems.find(
-        (candidate) => candidate._id === itemId,
-      );
-      return (
-        state.backlogSortMode === "custom" &&
-        Boolean(item && !isSubtaskWorkItem(item))
-      );
+    (itemId: string, draggedId: string) => {
+      const item = workItemById.get(itemId);
+      const dragged = workItemById.get(draggedId);
+      if (!item || !dragged) return false;
+      const landed =
+        grouping === "priority"
+          ? { ...dragged, priority: item.priority }
+          : dragged;
+      return isBacklogReorderPeer(state.backlogSortMode, landed, item);
     },
-    [state.backlogSortMode, state.workItems],
+    [grouping, state.backlogSortMode, workItemById],
   );
   function reorder(itemId: string, group: BacklogGroup, step: -1 | 1) {
-    if (!canReorderItem(itemId)) return;
+    if (!canReorderItem(itemId, itemId)) return;
     const next = getSharedTableStepOrder(
-      group.items.filter((item) => !isSubtaskWorkItem(item)).map((i) => i._id),
+      group.items
+        .filter((item) => canReorderItem(item._id, itemId))
+        .map((i) => i._id),
       itemId,
       step,
     );
@@ -301,16 +315,22 @@ export function BacklogPage() {
     closeEditor();
     const committed = current.workItems.find((i) => i._id === itemId);
     if (!committed) return;
-    const rootIds = new Set(
-      current.workItems
-        .filter((item) => !isSubtaskWorkItem(item))
-        .map((item) => item._id),
-    );
-    const orderedIds =
-      current.backlogSortMode === "custom" && !isSubtaskWorkItem(committed)
-        ? order?.filter((id) => rootIds.has(id))
-        : undefined;
     const { group, lane } = found;
+    // The drag's order was read before the drop. Keep only the peers the
+    // saved items still allow, at the level the item has after the drop.
+    const landed =
+      group.kind === "priority"
+        ? { ...committed, priority: group.priority }
+        : committed;
+    const currentById = new Map(current.workItems.map((i) => [i._id, i]));
+    const isPeer = (id: string) => {
+      const peer = id === itemId ? landed : currentById.get(id);
+      return Boolean(
+        peer && isBacklogReorderPeer(current.backlogSortMode, landed, peer),
+      );
+    };
+    const orderedIds =
+      order && isPeer(itemId) ? order.filter(isPeer) : undefined;
     // A swimlane is a display partition. Drops stay in the item's project;
     // project grouping is the explicit path for changing its project.
     if (lane.kind === "project" && lane.projectId !== committed.projectId)
@@ -370,6 +390,13 @@ export function BacklogPage() {
     disabled: narrow,
     onDrop: (...args) => void drop(...args),
   });
+  // Subitems keep their slots on this page while the moved items trade theirs.
+  const dropMark = getBacklogDropMark(
+    drag.drag,
+    targets,
+    canReorderItem,
+    "keep-slot",
+  );
   async function add(group?: BacklogGroup, lane?: BacklogGroup) {
     if (!(await leaveDraft())) return;
     const current = localStore.snapshot();
@@ -472,7 +499,7 @@ export function BacklogPage() {
         id === "open"
           ? openPage(item)
           : action(item, id, { askToSettle: shortcutId === "item.settle-ask" }),
-      onReorder: canReorderItem(item._id)
+      onReorder: canReorderItem(item._id, item._id)
         ? (step) => reorder(item._id, group, step)
         : undefined,
     });
@@ -688,7 +715,7 @@ export function BacklogPage() {
                           role="list"
                           className={board ? "backlog-column-items" : ""}
                         >
-                          {group.items.map((item, index) => (
+                          {group.items.map((item) => (
                             <div
                               key={item._id}
                               ref={(el) => {
@@ -697,11 +724,10 @@ export function BacklogPage() {
                               }}
                               className={cn(
                                 drag.drag?.itemId === item._id && "opacity-30",
-                                drag.drag?.targetKey === key &&
-                                  canReorderItem(drag.drag.itemId) &&
-                                  drag.drag.index === index &&
-                                  drag.drag.itemId !== item._id &&
-                                  "backlog-drop-before",
+                                dropMark?.itemId === item._id &&
+                                  (dropMark.edge === "before"
+                                    ? "backlog-drop-before"
+                                    : "backlog-drop-after"),
                               )}
                             >
                               <BacklogItemSurface

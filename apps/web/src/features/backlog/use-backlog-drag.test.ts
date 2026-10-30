@@ -176,3 +176,129 @@ describe("the drop line", () => {
     expect(getBacklogDropMark(null, targets, canReorder)).toBe(undefined);
   });
 });
+
+describe("moving within a priority level", () => {
+  const level: Record<string, number> = {
+    urgent: 1,
+    "high-1": 2,
+    "high-2": 2,
+    "high-elsewhere": 2,
+    medium: 3,
+  };
+  const sameLevel = (itemId: string, draggedId: string) =>
+    level[itemId] === level[draggedId];
+  const target = {
+    key: "lane/todo",
+    itemIds: ["urgent", "high-1", "high-2", "medium"],
+  };
+  const drag = (itemId: string, index: number, originKey = "lane/todo") => ({
+    itemId,
+    originKey,
+    targetKey: "lane/todo",
+    index,
+  });
+
+  it("stops at the first item of the level when dragged above it", () => {
+    // Index 0 is above the Urgent row.
+    expect(
+      getBacklogDropOrder(target.itemIds, "high-2", 0, true, sameLevel),
+    ).toEqual(["high-2", "high-1"]);
+    expect(getBacklogDropMark(drag("high-2", 0), [target], sameLevel)).toEqual({
+      itemId: "high-1",
+      edge: "before",
+    });
+  });
+
+  it("stops after the last item of the level when dragged past it", () => {
+    // Index 3 is below the Medium row.
+    expect(
+      getBacklogDropOrder(target.itemIds, "high-1", 3, true, sameLevel),
+    ).toEqual(["high-2", "high-1"]);
+    expect(getBacklogDropMark(drag("high-1", 3), [target], sameLevel)).toEqual({
+      itemId: "high-2",
+      edge: "after",
+    });
+  });
+
+  it("changes nothing for the first item dragged above its level", () => {
+    expect(
+      getBacklogDropOrder(target.itemIds, "high-1", 0, true, sameLevel),
+    ).toBe(null);
+    expect(getBacklogDropMark(drag("high-1", 0), [target], sameLevel)).toBe(
+      undefined,
+    );
+  });
+
+  it("lands an item from another group among the items of its level", () => {
+    const from = "lane/doing";
+    expect(
+      getBacklogDropOrder(
+        target.itemIds,
+        "high-elsewhere",
+        0,
+        false,
+        sameLevel,
+      ),
+    ).toEqual(["high-elsewhere", "high-1", "high-2"]);
+    expect(
+      getBacklogDropMark(drag("high-elsewhere", 4, from), [target], sameLevel),
+    ).toEqual({ itemId: "high-2", edge: "after" });
+  });
+
+  it("drags an item only with another item of its level or another group", () => {
+    expect(canDragBacklogItem([target], sameLevel, "high-1", "lane/todo")).toBe(
+      true,
+    );
+    expect(canDragBacklogItem([target], sameLevel, "medium", "lane/todo")).toBe(
+      false,
+    );
+  });
+});
+
+describe("the drop line where rows that never move keep their slot", () => {
+  // The Backlog page under Custom ordering: a subitem keeps its row, and the
+  // moved items trade their slots, so the line marks the slot the item takes.
+  const isRoot = (itemId: string) => !itemId.endsWith("-sub");
+  const drag = (itemId: string, index: number) => ({
+    itemId,
+    originKey: "lane/list",
+    targetKey: "lane/list",
+    index,
+  });
+
+  it("marks the slot above a subitem when an item lands last", () => {
+    // "a" dropped below "b-sub" takes "b"'s slot: b, a, b-sub.
+    const targets = [{ key: "lane/list", itemIds: ["a", "b", "b-sub"] }];
+    expect(
+      getBacklogDropMark(drag("a", 2), targets, isRoot, "keep-slot"),
+    ).toEqual({ itemId: "b", edge: "after" });
+  });
+
+  it("marks the slot below a subitem when an item moves up past it", () => {
+    // "c" dropped above "b" takes "b"'s slot: a, a-sub, c, b.
+    const targets = [{ key: "lane/list", itemIds: ["a", "a-sub", "b", "c"] }];
+    expect(
+      getBacklogDropMark(drag("c", 2), targets, isRoot, "keep-slot"),
+    ).toEqual({ itemId: "b", edge: "before" });
+  });
+
+  it("marks the first slot when an item lands first", () => {
+    // "b" dropped above "a" takes "a"'s slot: b, a-sub, a.
+    const targets = [{ key: "lane/list", itemIds: ["a", "a-sub", "b"] }];
+    expect(
+      getBacklogDropMark(drag("b", 0), targets, isRoot, "keep-slot"),
+    ).toEqual({ itemId: "a", edge: "before" });
+  });
+});
+
+it("keeps a parent's subitem above the line when an item lands last", () => {
+  // The sidebar shows a subitem below its parent, so the item lands after both.
+  const targets = [{ key: "lane/list", itemIds: ["a", "b", "b-sub"] }];
+  expect(
+    getBacklogDropMark(
+      { itemId: "a", originKey: "lane/list", targetKey: "lane/list", index: 2 },
+      targets,
+      (itemId) => itemId !== "b-sub",
+    ),
+  ).toEqual({ itemId: "b-sub", edge: "after" });
+});

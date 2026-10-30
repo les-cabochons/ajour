@@ -1263,6 +1263,118 @@ Then("the ungrouped parent's original order is restored", async ({ page }) => {
   );
   expect(order.slice(0, 3)).toEqual(["parent", "child", "other"]);
 });
+Given("To do holds two more High items and a Medium item", async ({ page }) => {
+  await page.evaluate(() => {
+    const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
+    const parent = state.workItems.find(
+      (item: { _id: string }) => item._id === "parent",
+    );
+    state.workItems.push(
+      { ...parent, _id: "high-1", title: "First High item", priority: 2 },
+      { ...parent, _id: "high-2", title: "Second High item", priority: 2 },
+      { ...parent, _id: "medium", title: "Medium item", priority: 3 },
+    );
+    localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+  });
+  await page.reload();
+});
+/** The row whose title is `title` in the Backlog group named `group`. */
+const groupRow = (page: Page, group: string, title: string) =>
+  page
+    .getByRole("region", { name: group, exact: true })
+    .getByRole("listitem")
+    .filter({
+      has: page.locator(".backlog-item-title", { hasText: title }),
+    });
+const toDoRow = (page: Page, title: string) => groupRow(page, "To do", title);
+/**
+ * Presses a row by its title and moves the pointer to the top or the bottom
+ * edge of another row, leaving the button down. Both rows are in To do
+ * unless their groups are given.
+ */
+async function dragToDoRow(
+  page: Page,
+  title: string,
+  edge: "above" | "below",
+  targetTitle: string,
+  groups: { from: string; to: string } = { from: "To do", to: "To do" },
+) {
+  const from = await groupRow(page, groups.from, title)
+    .locator(".backlog-item-title")
+    .boundingBox();
+  const to = await groupRow(page, groups.to, targetTitle).boundingBox();
+  await page.mouse.move(from!.x + 20, from!.y + 8);
+  await page.mouse.down();
+  await page.mouse.move(
+    to!.x + 40,
+    edge === "above" ? to!.y + 3 : to!.y + to!.height - 3,
+    { steps: 10 },
+  );
+}
+When(
+  "I drag the Backlog row {string} above {string}",
+  async ({ page }, title: string, targetTitle: string) => {
+    await dragToDoRow(page, title, "above", targetTitle);
+    await page.mouse.up();
+  },
+);
+When(
+  "I drag the Backlog row {string} below {string} without dropping",
+  async ({ page }, title: string, targetTitle: string) => {
+    await dragToDoRow(page, title, "below", targetTitle);
+  },
+);
+When("I drop the dragged row", async ({ page }) => {
+  await page.mouse.up();
+});
+When(
+  "I press {string} on the Backlog row {string}",
+  async ({ page }, key: string, title: string) => {
+    const row = toDoRow(page, title);
+    await row.focus();
+    await row.press(key);
+  },
+);
+When(
+  "I drag the {string} row {string} above {string} in {string}",
+  async (
+    { page },
+    fromGroup: string,
+    title: string,
+    targetTitle: string,
+    toGroup: string,
+  ) => {
+    await dragToDoRow(page, title, "above", targetTitle, {
+      from: fromGroup,
+      to: toGroup,
+    });
+    await page.mouse.up();
+  },
+);
+Then(
+  "the {string} group lists {string}",
+  async ({ page }, group: string, titles: string) => {
+    await expect(
+      page
+        .getByRole("region", { name: group, exact: true })
+        .locator(".backlog-item-title"),
+    ).toHaveText(titles.split(", "));
+  },
+);
+Then("To do lists {string}", async ({ page }, titles: string) => {
+  await expect(
+    page
+      .getByRole("region", { name: "To do", exact: true })
+      .locator(".backlog-item-title"),
+  ).toHaveText(titles.split(", "));
+});
+Then("the drop line shows after {string}", async ({ page }, title: string) => {
+  await expect(page.locator(".backlog-drop-after")).toHaveCount(1);
+  await expect(page.locator(".backlog-drop-before")).toHaveCount(0);
+  await expect(
+    page.locator(".backlog-drop-after").locator(".backlog-item-title"),
+  ).toHaveText(title);
+});
 When("I drag the subitem to In progress", async ({ page }) => {
   const from = await page
     .locator('[data-work-item-id="child"] .backlog-item-title')

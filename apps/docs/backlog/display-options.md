@@ -22,6 +22,10 @@ Ajour saves display options on this device. Ordering is shared with the sidebar,
 
 With **Custom** ordering, drag items to put them in the order you want, or press <kbd>Alt</kbd> <kbd>↑</kbd> and <kbd>Alt</kbd> <kbd>↓</kbd>. The sidebar uses the same order.
 
+With **Priority** ordering, the items of one priority level keep that same order. Drag an item within its group, or press <kbd>Alt</kbd> <kbd>↑</kbd> and <kbd>Alt</kbd> <kbd>↓</kbd>, to move it among the items of its level. It stops at the first and last item of the level, so its priority does not change. Subitems move the same way.
+
+With the other orderings, you can only drag an item to another group.
+
 ## Display properties
 
 Choose which details each row shows: **ID**, **Priority**, **Project**, **Estimate** and **Source state**. Source state is off by default.
