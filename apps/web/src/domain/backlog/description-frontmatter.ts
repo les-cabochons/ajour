@@ -1,12 +1,17 @@
+import { decodeNamedCharacterReference } from "decode-named-character-reference";
+
 /**
- * Frontmatter: a YAML block at the very start of a backlog item's
+ * Frontmatter: a YAML-like block at the very start of a backlog item's
  * description, between two `---` lines, through which the description sends
  * data to Ajour (#281). Its `timelog` names the item's project and task, and
  * its other keys show in the item's properties.
  *
- * Ajour reads a small subset of YAML: `key: value`, maps nested by
- * indentation, quoted strings, `#` comments and lists of plain values. A block
- * outside the subset is not frontmatter, so the description shows as written.
+ * Ajour reads `key: value` lines, maps nested by indentation, `#` comment
+ * lines and lists. Unlike YAML, a value is the rest of its line as written,
+ * so `Task: Billet #12: Site` is all text; one quoted string from end to end
+ * loses its quotes. Character references such as `&amp;` read as the
+ * character, as the description's Markdown shows them. A block of other
+ * lines is not frontmatter, so the description shows as written.
  */
 
 /**
@@ -57,13 +62,11 @@ const MAX_KEY_LENGTH = 1024;
 
 /**
  * A character YAML does not allow written raw, a bare carriage return
- * included. An escape in a double-quoted string can still spell one.
+ * included, once references are decoded. An escape in a double-quoted string
+ * can still spell one.
  */
 const FORBIDDEN_CHARACTER =
   /[^\t\x20-\x7E\x85\xA0-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]/u;
-
-/** YAML allows a byte-order mark inside a document only within quotes. */
-const BYTE_ORDER_MARK = "\uFEFF";
 
 const OPENING = /^---[ \t]*\r?\n/;
 const CLOSING = /^(?:---|\.\.\.)[ \t]*$/;
@@ -78,7 +81,7 @@ export function splitDescription(description: string): SplitDescription {
   const closing = lines.findIndex((line) => CLOSING.test(line));
   if (closing < 0) return unchanged;
 
-  const block = lines.slice(0, closing);
+  const block = lines.slice(0, closing).map(decodeCharacterReferences);
   if (block.some((line) => FORBIDDEN_CHARACTER.test(line))) return unchanged;
   const yamlLines = toYamlLines(block);
   const map = yamlLines && parseMap(yamlLines, 0, 0, 1);
@@ -100,6 +103,31 @@ export function getDescriptionTimelog(
   return description
     ? splitDescription(description).frontmatter?.timelog
     : undefined;
+}
+
+const CHARACTER_REFERENCE =
+  /&(?:#([0-9]{1,7})|#[xX]([0-9a-fA-F]{1,6})|([a-zA-Z][a-zA-Z0-9]{0,31}));/g;
+
+/**
+ * A line with its character references decoded, as Markdown reads them. A
+ * source tool can write `&amp;` or `&quot;` for a character, as Azure DevOps
+ * keeps a Markdown description Teamwork wrote. An unknown name stays as written.
+ */
+function decodeCharacterReferences(line: string) {
+  return line.replace(
+    CHARACTER_REFERENCE,
+    (reference, decimal?: string, hex?: string, name?: string) => {
+      if (name) return decodeNamedCharacterReference(name) || reference;
+      const codePoint = decimal
+        ? Number.parseInt(decimal, 10)
+        : Number.parseInt(hex!, 16);
+      const valid =
+        codePoint > 0 &&
+        codePoint <= 0x10ffff &&
+        (codePoint < 0xd800 || codePoint > 0xdfff);
+      return valid ? String.fromCodePoint(codePoint) : reference;
+    },
+  );
 }
 
 /** Whether a field value is an http or https address, which shows as a link. */
@@ -168,16 +196,13 @@ function isYamlMap(value: YamlValue): value is YamlMap {
 }
 
 /**
- * Drops blank and comment lines. Null when a tab indents a line. Only spaces
- * and tabs are YAML whitespace; a non-breaking space is text.
+ * Drops blank lines and lines that start with `#`. Null when a tab indents a
+ * line. Only spaces and tabs are whitespace; a non-breaking space is text.
  */
 function toYamlLines(lines: string[]): YamlLine[] | null {
   const yamlLines: YamlLine[] = [];
   for (const line of lines) {
-    if (/^[ \t]*(?:#.*)?$/.test(line)) {
-      if (line.includes(BYTE_ORDER_MARK)) return null;
-      continue;
-    }
+    if (/^[ \t]*(?:#.*)?$/.test(line)) continue;
     const indent = /^[ \t]*/.exec(line)![0].length;
     if (line.slice(0, indent).includes("\t")) return null;
     yamlLines.push({ indent, text: trimSpaces(line.slice(indent)) });
@@ -202,8 +227,8 @@ function parseMap(
 ): Parsed<YamlMap> | null {
   if (depth > MAX_NESTING) return null;
   const map: YamlMap = [];
-  // A repeated key is invalid YAML, and keys match ignoring case, so one
-  // that repeats in any case makes the block ambiguous.
+  // Keys match ignoring case, so one that repeats in any case makes the
+  // block ambiguous.
   const seen = new Set<string>();
   let index = start;
   while (index < lines.length) {
@@ -216,9 +241,7 @@ function parseMap(
     index += 1;
 
     if (entry.value) {
-      const value = parseInlineValue(entry.value);
-      if (value === null) return null;
-      map.push([entry.key, value]);
+      map.push([entry.key, parseInlineValue(entry.value)]);
       continue;
     }
 
@@ -250,19 +273,17 @@ function parseList(
   while (index < lines.length) {
     const line = lines[index]!;
     if (line.indent !== indent || !isListItem(line.text)) break;
-    const item = withoutComment(line.text.slice(1));
-    // A map or a list inside a list is outside the subset.
-    if (isListItem(item) || splitKey(item)) return null;
-    const value = parseScalar(item);
-    if (value === null) return null;
-    values.push(value);
+    values.push(parseScalar(trimSpaces(line.text.slice(1))));
     index += 1;
   }
   if (lines[index] && lines[index]!.indent > indent) return null;
   return { value: values, next: index };
 }
 
-/** A `key: value` line, with a plain or quoted key. Null when it is not one. */
+/**
+ * A `key: value` line, with a plain or quoted key, split at the key's first
+ * `:` followed by a space. Null when it is not one.
+ */
 function splitKey(text: string): { key: string; value: string } | null {
   if (text.startsWith('"') || text.startsWith("'")) {
     const quoted = readQuoted(text);
@@ -274,19 +295,15 @@ function splitKey(text: string): { key: string; value: string } | null {
     }
     return {
       key: quoted.value,
-      value: withoutComment(text.slice(quoted.end + rest[0].length)),
+      value: trimSpaces(text.slice(quoted.end + rest[0].length)),
     };
   }
   const colon = /:(?=[ \t]|$)/.exec(text);
   if (!colon) return null;
-  // A comment runs to the end of the line, so a colon after it is not the
-  // key's; `Owner#1` without a space before `#` is still a key.
-  const comment = /[ \t]#/.exec(text);
-  if (comment && comment.index < colon.index) return null;
   if (isTooLongKey(text.slice(0, colon.index))) return null;
   const key = trimSpaces(text.slice(0, colon.index));
-  if (!key || !isPlainScalar(key)) return null;
-  return { key, value: withoutComment(text.slice(colon.index + 1)) };
+  if (!key || !isPlainKey(key)) return null;
+  return { key, value: trimSpaces(text.slice(colon.index + 1)) };
 }
 
 /** Whether the text before a key's `:` runs past what YAML reads ahead. */
@@ -294,21 +311,13 @@ function isTooLongKey(text: string) {
   return [...text].length > MAX_KEY_LENGTH;
 }
 
-/**
- * A value that is only a comment, as in `timelog: # note`, is empty. A
- * comment holding a byte-order mark stays, so the value fails as invalid.
- */
-function withoutComment(value: string) {
-  const trimmed = trimSpaces(value);
-  return trimmed.startsWith("#") && !trimmed.includes(BYTE_ORDER_MARK)
-    ? ""
-    : trimmed;
+/** A value: an inline list such as `[a, b]`, else the text of `parseScalar`. */
+function parseInlineValue(text: string): YamlValue {
+  return (text.startsWith("[") && parseFlowList(text)) || parseScalar(text);
 }
 
-function parseInlineValue(text: string): YamlValue | null {
-  if (text.startsWith("{")) return null;
-  if (!text.startsWith("[")) return parseScalar(text);
-
+/** The items of `[a, 'b', "c"]`, or null when the text is not only that list. */
+function parseFlowList(text: string): string[] | null {
   const items: string[] = [];
   let current = "";
   let quote: string | null = null;
@@ -336,9 +345,6 @@ function parseInlineValue(text: string): YamlValue | null {
       current += char;
     } else if (char === "[" || char === "{" || char === "}") {
       return null;
-    } else if (char === "#" && /[ \t]/.test(text[index - 1] ?? "")) {
-      // A comment runs to the end of the line, so the list never closes.
-      return null;
     } else if (char === ",") {
       items.push(current);
       current = "";
@@ -349,57 +355,31 @@ function parseInlineValue(text: string): YamlValue | null {
       current += char;
     }
   }
-  if (closed < 0 || !isEmptyOrComment(text.slice(closed + 1))) return null;
+  if (closed < 0 || trimSpaces(text.slice(closed + 1))) return null;
   items.push(current);
   // `[]` has no items, and one comma may follow the last item; any other
-  // empty item is invalid YAML.
+  // empty item makes it text.
   if (items.length === 1 && !trimSpaces(items[0]!)) items.pop();
   else if (items.length > 1 && !trimSpaces(items.at(-1)!)) items.pop();
   if (items.some((item) => !trimSpaces(item))) return null;
-
-  const values: string[] = [];
-  for (const item of items) {
-    const value = parseScalar(trimSpaces(item));
-    if (value === null) return null;
-    values.push(value);
-  }
-  return values;
-}
-
-function parseScalar(text: string): string | null {
-  if (text.startsWith('"') || text.startsWith("'")) {
-    const quoted = readQuoted(text);
-    if (!quoted || !isEmptyOrComment(text.slice(quoted.end))) return null;
-    return quoted.value;
-  }
-  // Unquoted, a byte-order mark is invalid, in the value or its comment.
-  if (text.includes(BYTE_ORDER_MARK)) return null;
-  // A comment starts at a # after a space, so a link's # stays.
-  const comment = /[ \t]#/.exec(text);
-  const value = trimSpaces(comment ? text.slice(0, comment.index) : text);
-  // A YAML null is not text, so it is outside what Ajour reads.
-  if (!isPlainScalar(value) || /^(?:~|null|Null|NULL)$/.test(value)) {
-    return null;
-  }
-  return value;
+  return items.map((item) => parseScalar(trimSpaces(item)));
 }
 
 /**
- * Whether a plain value is one Ajour reads as text. YAML gives meaning to an
- * indicator up front, such as `*alias`, `&anchor`, `!tag` or `|`, and does not
- * allow `: ` inside a plain value; Ajour shows such a block as written.
+ * A value as written, `#`, `: ` and YAML's indicators included. One quoted
+ * string from end to end loses its quotes and reads its escapes.
  */
-function isPlainScalar(value: string) {
-  return (
-    !/^[[\]{},#&*!|>'"%@`]/.test(value) &&
-    !/^[-?:](?:[ \t]|$)/.test(value) &&
-    !/:(?:[ \t]|$)/.test(value) &&
-    !value.includes(BYTE_ORDER_MARK)
-  );
+function parseScalar(text: string): string {
+  if (text.startsWith('"') || text.startsWith("'")) {
+    const quoted = readQuoted(text);
+    if (quoted && quoted.end === text.length) return quoted.value;
+  }
+  return text;
 }
 
-function isEmptyOrComment(text: string) {
-  return /^(?:[ \t]*|[ \t]+#.*)$/.test(text) && !text.includes(BYTE_ORDER_MARK);
+/** Whether a key is plain text, not a YAML indicator such as `&anchor`. */
+function isPlainKey(key: string) {
+  return !/^[[\]{},#&*!|>'"%@`]/.test(key) && !/^[-?:](?:[ \t]|$)/.test(key);
 }
 
 /** YAML's one-character escapes in double-quoted strings. */

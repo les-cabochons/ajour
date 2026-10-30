@@ -23,6 +23,7 @@ Use this file as the local index for important library choices. Check official d
 - zod
 - ExcelJS
 - react-markdown with remark-gfm and remark-breaks
+- decode-named-character-reference, for character references in description frontmatter
 - CodeMirror 6 (`@codemirror/state`, `view`, `language`, `commands`, `lang-markdown` and `@lezer/highlight`) for Markdown editing
 
 ## Web UI Usage
@@ -46,7 +47,7 @@ Use this file as the local index for important library choices. Check official d
 - Manual work-item creation, hierarchy-aware edits, ordering, deletion, and estimate-conflict decisions: `apps/web/src/domain/backlog/work-item-transitions.ts`
 - Which synced items have comments, the New divider, edited comments and page merging: `apps/web/src/domain/backlog/comments.ts`. The thread is `features/backlog/backlog-item-comments.tsx`, and each item's last visit lives in `lib/comments-seen.ts`, outside the local state.
 - Backlog item status (settle, unsettle, archive, restore), snooze, the Returned mark and the sidebar's item order: `apps/web/src/domain/backlog/backlog-item-lifecycle.ts`
-- Description frontmatter, the YAML subset Ajour reads, its fields and its `timelog`: `apps/web/src/domain/backlog/description-frontmatter.ts`. Applying a timelog to an item's project and task, on save and when the user asks, and how an item differs from its timelog: `apps/web/src/domain/backlog/description-timelog.ts`. Which frontmatter sections are open lives in `lib/frontmatter-sections.ts`, outside the local state.
+- Description frontmatter, the YAML-like block Ajour reads (decoding character references with `decode-named-character-reference`), its fields and its `timelog`: `apps/web/src/domain/backlog/description-frontmatter.ts`. Applying a timelog to an item's project and task, on save and when the user asks, and how an item differs from its timelog: `apps/web/src/domain/backlog/description-timelog.ts`. Which frontmatter sections are open lives in `lib/frontmatter-sections.ts`, outside the local state.
 - Pull request fact reconciliation, local lifecycle, snooze, Returned, visibility and seven-day closure retention: `apps/web/src/domain/pull-requests/pull-request-lifecycle.ts`
 - Synced work-item identity, local-decision-preserving merge, missing-item archive provenance, done-category archives, and estimate-sync updates: `apps/web/src/domain/backlog/work-item-sync.ts`
 - Clock and decimal-hours formatting and hours-input parsing: `apps/web/src/domain/time/duration.ts`

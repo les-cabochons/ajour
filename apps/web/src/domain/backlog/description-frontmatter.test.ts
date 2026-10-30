@@ -36,6 +36,79 @@ describe("splitDescription", () => {
     });
   });
 
+  it("reads a block whose characters a Markdown description writes as references", () => {
+    // As Azure DevOps keeps a Markdown description that Teamwork wrote.
+    const split = splitDescription(
+      [
+        "---",
+        "Teamwork: https://nventive.teamwork.com/desk/tickets/11443783",
+        "Timelog:",
+        "  Project: Peoples Group - Support &amp; Maintenance [Q-08315]",
+        "  Task: &quot;Billet #11443783 New ticket request: Site Enhancement&quot;",
+        "---",
+        "",
+        "Propose a safe solution.",
+      ].join("\n"),
+    );
+
+    expect(split.frontmatter?.timelog).toEqual({
+      project: "Peoples Group - Support & Maintenance [Q-08315]",
+      task: "Billet #11443783 New ticket request: Site Enhancement",
+    });
+    expect(split.body).toBe("Propose a safe solution.");
+  });
+
+  it("decodes named, decimal and hex references, and keeps unknown ones as written", () => {
+    expect(
+      splitDescription(
+        "---\nOwner: Ren&eacute;e &#38; Jos&#xE9; &bogus; R&D\n---",
+      ).frontmatter?.fields,
+    ).toEqual([
+      { kind: "value", key: "Owner", value: "Renée & José &bogus; R&D" },
+    ]);
+  });
+
+  it("takes the rest of the line as a value, whatever YAML would make of it", () => {
+    const fields = splitDescription(
+      [
+        "---",
+        "Task: task 1 is hi",
+        "Ticket: #1234 for the client: Acme # not a comment",
+        "Anchor: &anchor Ada",
+        "Alias: *missing",
+        'Quotes: "Billet" New ticket',
+        "Empty: null",
+        "Braces: { a: b }",
+        "Bracket: [Q-08315] Support",
+        "---",
+      ].join("\n"),
+    ).frontmatter?.fields;
+
+    expect(fields).toEqual([
+      { kind: "value", key: "Task", value: "task 1 is hi" },
+      {
+        kind: "value",
+        key: "Ticket",
+        value: "#1234 for the client: Acme # not a comment",
+      },
+      { kind: "value", key: "Anchor", value: "&anchor Ada" },
+      { kind: "value", key: "Alias", value: "*missing" },
+      { kind: "value", key: "Quotes", value: '"Billet" New ticket' },
+      { kind: "value", key: "Empty", value: "null" },
+      { kind: "value", key: "Braces", value: "{ a: b }" },
+      { kind: "value", key: "Bracket", value: "[Q-08315] Support" },
+    ]);
+  });
+
+  it("reads list items as the rest of their line", () => {
+    expect(
+      splitDescription("---\nNotes:\n  - Call: Monday # early\n  - 'Ada'\n---")
+        .frontmatter?.fields,
+    ).toEqual([
+      { kind: "list", key: "Notes", values: ["Call: Monday # early", "Ada"] },
+    ]);
+  });
+
   it("leaves a description without a block as it is", () => {
     expect(splitDescription("Plain text\n\n---\nkey: value\n---")).toEqual({
       frontmatter: null,
@@ -67,14 +140,14 @@ describe("splitDescription", () => {
     expect(splitDescription("---\nOwner: Ada\n...\nText").body).toBe("Text");
   });
 
-  it("reads quoted values and drops comments, but keeps # inside a link", () => {
+  it("reads quoted values and skips comment lines", () => {
     const split = splitDescription(
       [
         "---",
         "# Where the task lives",
         'Quoted: "a: b # not a comment"',
         "Single: 'it''s'",
-        "Link: https://acme.teamwork.com/#/tasks/1 # the task",
+        "Link: https://acme.teamwork.com/#/tasks/1",
         "---",
       ].join("\n"),
     );
@@ -156,56 +229,11 @@ describe("splitDescription", () => {
     ).toBeNull();
   });
 
-  it("is not frontmatter when a list holds a map", () => {
-    expect(
-      splitDescription("---\nPeople:\n  - name: Ada\n---").frontmatter,
-    ).toBeNull();
-  });
-
   it("hides an empty block", () => {
     expect(splitDescription("---\n---\nText")).toEqual({
       frontmatter: { fields: [] },
       body: "Text",
     });
-  });
-
-  it("reads a key whose value is only a comment as opening its children", () => {
-    expect(
-      getDescriptionTimelog(
-        "---\ntimelog: # where the time goes\n  project: Acme\n---",
-      ),
-    ).toEqual({ project: "Acme" });
-    expect(
-      splitDescription("---\nLinks: # the links\n  - https://one.example\n---")
-        .frontmatter?.fields,
-    ).toEqual([
-      { kind: "list", key: "Links", values: ["https://one.example"] },
-    ]);
-    expect(
-      splitDescription("---\nLinks:\n  - # later\n  - https://two.example\n---")
-        .frontmatter?.fields,
-    ).toEqual([
-      { kind: "list", key: "Links", values: ["https://two.example"] },
-    ]);
-  });
-
-  it("is not frontmatter when a plain value is not valid YAML or uses an unsupported construct", () => {
-    for (const value of [
-      "Ada: Lovelace",
-      "*missing",
-      "&anchor Ada",
-      "!tag Ada",
-      "|",
-      ">",
-      "%x",
-      "@x",
-      "`x`",
-      "{ a: b }",
-    ]) {
-      expect(
-        splitDescription(`---\nOwner: ${value}\n---\nText`).frontmatter,
-      ).toBeNull();
-    }
   });
 
   it("is not frontmatter when a map repeats a key, ignoring case", () => {
@@ -232,39 +260,22 @@ describe("splitDescription", () => {
     ]);
   });
 
-  it("is not frontmatter when a comment cuts an inline list short", () => {
-    const description = [
-      "---",
-      "Owners: [Ada # include Grace, Grace]",
-      "timelog:",
-      "  project: Acme",
-      "---",
-      "Text",
-    ].join("\n");
-    expect(splitDescription(description)).toEqual({
-      frontmatter: null,
-      body: description,
-    });
-    expect(getDescriptionTimelog(description)).toBeUndefined();
-    expect(
-      splitDescription("---\nOwners: [Ada, Grace] # both\n---").frontmatter
-        ?.fields,
-    ).toEqual([{ kind: "list", key: "Owners", values: ["Ada", "Grace"] }]);
-  });
-
-  it("is not frontmatter when an inline list has an empty entry or a stray brace", () => {
-    for (const list of [
+  it("reads brackets that are not only an inline list as text", () => {
+    for (const value of [
+      "[Ada, Grace] # both",
       "[Ada,, Grace]",
       "[, Ada]",
-      "[,]",
-      "[Ada,,]",
       "[Ada, Grace}]",
+      "[Ada",
     ]) {
       expect(
-        getDescriptionTimelog(
-          `---\nOwners: ${list}\ntimelog:\n  project: Acme\n---`,
-        ),
-      ).toBeUndefined();
+        splitDescription(
+          `---\nOwners: ${value}\ntimelog:\n  project: Acme\n---`,
+        ).frontmatter,
+      ).toEqual({
+        fields: [{ kind: "value", key: "Owners", value }],
+        timelog: { project: "Acme" },
+      });
     }
   });
 
@@ -304,27 +315,6 @@ describe("splitDescription", () => {
     ).toEqual([{ kind: "value", key: "Owner", value: "Ada\u0007" }]);
   });
 
-  it("keeps a byte-order mark only inside quotes, as YAML allows", () => {
-    for (const block of [
-      "timelog:\n  project: Acme﻿",
-      "Owner﻿: Ada",
-      "Owner: Ada # note ﻿",
-      "# note ﻿\nOwner: Ada",
-      "Owner: # note ﻿",
-      'Owner: "Ada" # note ﻿',
-      "Owners: [Ada﻿]",
-    ]) {
-      const description = `---\n${block}\n---\nBody`;
-      expect(splitDescription(description)).toEqual({
-        frontmatter: null,
-        body: description,
-      });
-    }
-    expect(
-      splitDescription('---\nOwner: "Ada﻿"\n---').frontmatter?.fields,
-    ).toEqual([{ kind: "value", key: "Owner", value: "Ada﻿" }]);
-  });
-
   it("is not frontmatter when a key runs past YAML's 1,024 characters", () => {
     const key = (length: number) => "a".repeat(length);
     expect(
@@ -336,40 +326,6 @@ describe("splitDescription", () => {
     expect(
       splitDescription(`---\n"${key(1023)}": Ada\n---`).frontmatter,
     ).toBeNull();
-  });
-
-  it("is not frontmatter with a YAML null, which is not text", () => {
-    for (const value of ["null", "Null", "NULL", "~", "[007, null]", "[~]"]) {
-      expect(
-        splitDescription(`---\nOwner: ${value}\n---\nText`).frontmatter,
-      ).toBeNull();
-    }
-    expect(
-      splitDescription('---\nOwner: "null"\nCode: 007\n---').frontmatter
-        ?.fields,
-    ).toEqual([
-      { kind: "value", key: "Owner", value: "null" },
-      { kind: "value", key: "Code", value: "007" },
-    ]);
-  });
-
-  it("is not frontmatter when a comment hides a key's colon", () => {
-    const description = [
-      "---",
-      "Owner # note: Ada",
-      "timelog:",
-      "  project: Acme",
-      "---",
-      "Body",
-    ].join("\n");
-    expect(splitDescription(description)).toEqual({
-      frontmatter: null,
-      body: description,
-    });
-    expect(getDescriptionTimelog(description)).toBeUndefined();
-    expect(
-      splitDescription("---\nOwner#1: Ada\n---").frontmatter?.fields,
-    ).toEqual([{ kind: "value", key: "Owner#1", value: "Ada" }]);
   });
 
   it("is not frontmatter when a key starts with a YAML indicator", () => {
@@ -399,18 +355,15 @@ describe("splitDescription", () => {
     ]);
   });
 
-  it("decodes double-quoted escapes and rejects unknown ones", () => {
+  it("decodes double-quoted escapes, and keeps a value with an unknown one as written", () => {
     expect(
       getDescriptionTimelog(
         '---\ntimelog:\n  project: "\\u0041cme \\x42\\t\\"C\\" \\\\"\n---',
       ),
     ).toEqual({ project: 'Acme B\t"C" \\' });
     expect(
-      splitDescription('---\nOwner: "\\q"\n---\nText').frontmatter,
-    ).toBeNull();
-    expect(
-      splitDescription('---\nOwner: "\\u00G1"\n---\nText').frontmatter,
-    ).toBeNull();
+      splitDescription('---\nOwner: "\\q"\n---\nText').frontmatter?.fields,
+    ).toEqual([{ kind: "value", key: "Owner", value: '"\\q"' }]);
   });
 
   it("is not frontmatter when keys nest deeper than Ajour reads, without throwing", () => {
