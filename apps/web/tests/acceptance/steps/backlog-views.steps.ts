@@ -1278,28 +1278,31 @@ Given("To do holds two more High items and a Medium item", async ({ page }) => {
   });
   await page.reload();
 });
-/** The To do group's row whose title is `title`. */
-const toDoRow = (page: Page, title: string) =>
+/** The row whose title is `title` in the Backlog group named `group`. */
+const groupRow = (page: Page, group: string, title: string) =>
   page
-    .getByRole("region", { name: "To do", exact: true })
+    .getByRole("region", { name: group, exact: true })
     .getByRole("listitem")
     .filter({
       has: page.locator(".backlog-item-title", { hasText: title }),
     });
+const toDoRow = (page: Page, title: string) => groupRow(page, "To do", title);
 /**
- * Presses a To do row by its title and moves the pointer to the top or the
- * bottom edge of another row, leaving the button down.
+ * Presses a row by its title and moves the pointer to the top or the bottom
+ * edge of another row, leaving the button down. Both rows are in To do
+ * unless their groups are given.
  */
 async function dragToDoRow(
   page: Page,
   title: string,
   edge: "above" | "below",
   targetTitle: string,
+  groups: { from: string; to: string } = { from: "To do", to: "To do" },
 ) {
-  const from = await toDoRow(page, title)
+  const from = await groupRow(page, groups.from, title)
     .locator(".backlog-item-title")
     .boundingBox();
-  const to = await toDoRow(page, targetTitle).boundingBox();
+  const to = await groupRow(page, groups.to, targetTitle).boundingBox();
   await page.mouse.move(from!.x + 20, from!.y + 8);
   await page.mouse.down();
   await page.mouse.move(
@@ -1330,6 +1333,32 @@ When(
     const row = toDoRow(page, title);
     await row.focus();
     await row.press(key);
+  },
+);
+When(
+  "I drag the {string} row {string} above {string} in {string}",
+  async (
+    { page },
+    fromGroup: string,
+    title: string,
+    targetTitle: string,
+    toGroup: string,
+  ) => {
+    await dragToDoRow(page, title, "above", targetTitle, {
+      from: fromGroup,
+      to: toGroup,
+    });
+    await page.mouse.up();
+  },
+);
+Then(
+  "the {string} group lists {string}",
+  async ({ page }, group: string, titles: string) => {
+    await expect(
+      page
+        .getByRole("region", { name: group, exact: true })
+        .locator(".backlog-item-title"),
+    ).toHaveText(titles.split(", "));
   },
 );
 Then("To do lists {string}", async ({ page }, titles: string) => {
