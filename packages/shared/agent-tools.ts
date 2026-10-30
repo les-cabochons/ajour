@@ -151,7 +151,10 @@ const minutesSchema = z
   .max(24 * 60);
 const noteSchema = z.string().max(2000);
 
-/** 1 Urgent to 4 Low. Null clears it to No priority. */
+/**
+ * 1 Urgent to 4 Low. Null clears it to No priority, which Ajour refuses for
+ * a synced item whose source has a priority.
+ */
 const priorityInputSchema = z
   .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)])
   .nullable();

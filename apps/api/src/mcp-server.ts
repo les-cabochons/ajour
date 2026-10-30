@@ -345,7 +345,7 @@ const TOOL_DESCRIPTIONS: Record<AgentTaskMcpTool | SessionToolName, string> = {
   create_work_item:
     "Adds a manual backlog item, or a subitem with parentWorkItemId.",
   edit_work_item:
-    "Changes a backlog item's title, description, priority, remaining estimate, project or task. Null clears a field. A synced description is written to its source at once, merged with what changed there: it needs Read and write on the item's connection, and its result is in `descriptionSave`; a change to the same lines becomes a conflict the user resolves.",
+    "Changes a backlog item's title, description, priority, remaining estimate, project or task. Null clears a field, except a synced item's priority while its source has one. A synced item's new priority is written to its source when the Undo toast closes. A synced description is written to its source at once, merged with what changed there: it needs Read and write on the item's connection, and its result is in `descriptionSave`; a change to the same lines becomes a conflict the user resolves.",
   move_work_item:
     "Moves a backlog item to a workflow state. A done state closes it. Pass includeSubitems when it has open subitems. A synced item writes its new source state when the Undo toast closes; when the workflow state stands for several source states, Ajour refuses with the options and you call again with sourceState.",
   settle_work_item:

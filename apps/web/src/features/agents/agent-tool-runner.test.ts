@@ -181,6 +181,7 @@ beforeEach(() => {
 function importSyncedItem(
   localStore: Awaited<ReturnType<typeof setup>>["localStore"],
   description?: { text: string; lost?: string[] },
+  priority?: "urgent" | "high" | "medium" | "low",
 ) {
   localStore.importSyncedWorkItems([
     {
@@ -202,6 +203,7 @@ function importSyncedItem(
       childCount: 0,
       pushedAt: 1,
       ...(description ? { description } : {}),
+      ...(priority ? { priority } : {}),
     },
   ]);
   canWriteToSource.mockReturnValue(true);
@@ -1050,6 +1052,33 @@ describe("agent work item tools", () => {
       .snapshot()
       .workItems.find((candidate) => candidate._id === workItemId)!;
     expect(item.pendingSourceWrite).toMatchObject({ state: "In QA" });
+    expect(sendPendingSourceWrites).not.toHaveBeenCalled();
+    closeUndoWindow();
+    expect(sendPendingSourceWrites).toHaveBeenCalledWith([workItemId]);
+  });
+
+  it("writes a synced item's new priority after the Undo window, and refuses No priority", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importSyncedItem(localStore, undefined, "high");
+
+    expect(
+      await call("edit_work_item", { workItemId, priority: null }),
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringContaining(
+        "Ajour can't clear the priority in its source.",
+      ),
+    });
+    expect(
+      await call("edit_work_item", { workItemId, priority: 3 }),
+    ).toMatchObject({ ok: true, output: { priority: 3 } });
+    const item = localStore
+      .snapshot()
+      .workItems.find((candidate) => candidate._id === workItemId)!;
+    expect(item.pendingSourceWrite).toMatchObject({
+      state: undefined,
+      priority: 3,
+    });
     expect(sendPendingSourceWrites).not.toHaveBeenCalled();
     closeUndoWindow();
     expect(sendPendingSourceWrites).toHaveBeenCalledWith([workItemId]);
