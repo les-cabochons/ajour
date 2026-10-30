@@ -1258,7 +1258,7 @@ describe("backlog sync of done items", () => {
     ]);
   });
 
-  it("ignores done items Ajour never imported, from another connection, or already archived", () => {
+  it("ignores unknown done items and refreshes archived items without archiving again", () => {
     const state = importOne();
 
     expect(
@@ -1282,7 +1282,12 @@ describe("backlog sync of done items", () => {
         ...factories,
         now: () => 900,
       }),
-    ).toEqual({ state: archived, archivedCount: 0 });
+    ).toMatchObject({
+      state: {
+        workItems: [{ status: "archived", sourceSyncedAt: 900 }],
+      },
+      archivedCount: 0,
+    });
   });
 });
 
@@ -1683,7 +1688,16 @@ describe("backlog sync of workflow states", () => {
         ],
         factories,
       ),
-    ).toEqual({ state: pending, archivedCount: 0 });
+    ).toEqual({
+      state: {
+        ...pending,
+        workItems: pending.workItems.map((item) => ({
+          ...item,
+          sourceSyncedAt: 500,
+        })),
+      },
+      archivedCount: 0,
+    });
   });
 
   it.each(["changed", "unchanged", "missing"])(
@@ -1761,7 +1775,13 @@ describe("backlog sync of workflow states", () => {
             }
           : { status: "archived" },
       );
-      if (!reopened) expect(result.state).toBe(state);
+      if (!reopened)
+        expect(result.state).toEqual({
+          ...state,
+          workItems: state.workItems.map((item) =>
+            item._id === parent._id ? { ...item, sourceSyncedAt: 500 } : item,
+          ),
+        });
     },
   );
 
