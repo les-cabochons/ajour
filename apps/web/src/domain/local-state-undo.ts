@@ -362,6 +362,23 @@ export function restoreUndo(
       result: "stale";
       staleReason: LocalStateUndoStaleReason;
     } {
+  // A fetch timestamp is sync evidence, not an independent edit. Keep it on
+  // both snapshots so it neither blocks Undo nor gets rolled back by Undo.
+  const currentItems = new Map(state.workItems.map((item) => [item._id, item]));
+  const keepFreshness = (item: LocalWorkItem | undefined) => {
+    const current = item && currentItems.get(item._id);
+    return item && current
+      ? { ...item, sourceSyncedAt: current.sourceSyncedAt }
+      : item;
+  };
+  undo = {
+    ...undo,
+    workItems: undo.workItems.map((change) => ({
+      ...change,
+      before: keepFreshness(change.before),
+      after: keepFreshness(change.after),
+    })),
+  };
   const changedTimeEntries = undo.timesheetEntries.length > 0;
   const strictCollections = UNDO_COLLECTIONS.filter(
     (collection) => !(changedTimeEntries && collection === "workItems"),
