@@ -127,11 +127,11 @@ function mergeSyncedWorkItem(
     factories.createId,
     existingWorkItem._id,
   );
+  // A field follows the source until the user changes it. A field with no
+  // sync state was empty in the source, so a local value is an edit that the
+  // next sync uploads, as `estimateFieldsToPush` reads it.
   const followsImportedEstimate = (fieldKey: LocalWorkItemEstimateFieldKey) => {
     const syncState = existingWorkItem.estimateSync?.[fieldKey];
-    if (!syncState) {
-      return true;
-    }
     return (
       existingWorkItem[fieldKey] ===
       (syncState?.baselineValue ?? syncState?.remoteValue)

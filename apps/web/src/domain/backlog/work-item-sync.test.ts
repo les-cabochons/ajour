@@ -661,6 +661,42 @@ describe("synced work item imports", () => {
     expect(cleared.workItems[0]?.remainingEstimateHours).toBeUndefined();
     expect(restored.workItems[0]?.remainingEstimateHours).toBe(7);
   });
+
+  it("keeps time entered locally on fields the source left empty", () => {
+    const empty = {
+      originalEstimateHours: undefined,
+      remainingEstimateHours: undefined,
+      completedEstimateHours: undefined,
+    };
+    const imported = importSyncedWorkItems(
+      createState(),
+      [createCandidate(empty)],
+      undefined,
+      factories,
+    ).state;
+    const entered = {
+      ...imported,
+      workItems: imported.workItems.map((workItem) => ({
+        ...workItem,
+        originalEstimateHours: 8,
+        remainingEstimateHours: 6,
+        completedEstimateHours: 2,
+      })),
+    };
+
+    const refreshed = importSyncedWorkItems(
+      entered,
+      [createCandidate(empty)],
+      undefined,
+      factories,
+    ).state;
+
+    expect(refreshed.workItems[0]).toMatchObject({
+      originalEstimateHours: 8,
+      remainingEstimateHours: 6,
+      completedEstimateHours: 2,
+    });
+  });
 });
 
 describe("backlog sync of settled items", () => {
