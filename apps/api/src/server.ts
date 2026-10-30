@@ -2610,16 +2610,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       const scopedWorkItems = payload.workItems.filter(
         (item) => !payload.sourceId || item.sourceId === payload.sourceId,
       );
-      const { workItems, held: maskedEstimates } = holdEstimatePushes(
+      // A refresh uploads like any other sync: both ways.
+      const { workItems, held: heldEstimates } = holdEstimatePushes(
         scopedWorkItems,
-        Boolean(payload.refresh) || !pushesEstimates,
+        !pushesEstimates,
       );
-      // A read-only refresh masks pending uploads for this request without
-      // changing which local edits already wait for the user's approval.
-      const heldEstimates =
-        payload.refresh && pushesEstimates
-          ? holdEstimatePushes(scopedWorkItems, false).held
-          : maskedEstimates;
       unit.set({
         backlog_sync: { held_estimate_count: heldEstimates.length },
       });
@@ -2641,12 +2636,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           pluginConnection(connection),
           workItems,
           admit,
-          payload.refresh
-            ? {
-                readOnly: true,
-                ...(payload.sourceId ? { sourceIds: [payload.sourceId] } : {}),
-              }
-            : undefined,
+          payload.sourceId ? { sourceIds: [payload.sourceId] } : undefined,
         );
         // Older plugins can ignore the optional scope. The host still applies
         // only the requested item and never treats an absent item as fresh.
@@ -2748,7 +2738,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             workItemUpdates: redactFieldUpdateMessages(
               withoutHeldEstimateUpdates(
                 fetched.workItemUpdates,
-                maskedEstimates,
+                heldEstimates,
               ),
               call.credentials(connection.config).redaction,
             ),

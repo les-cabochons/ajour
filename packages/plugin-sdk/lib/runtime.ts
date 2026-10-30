@@ -128,7 +128,7 @@ export type PluginModule = {
   syncConnection?: (
     connection: PluginConnection,
     workItems: BacklogSyncWorkItem[],
-    options?: { sourceIds?: string[]; readOnly?: boolean },
+    options?: { sourceIds?: string[] },
   ) => Awaitable<BacklogSyncResult>;
   listSettleStates?: (
     connection: PluginConnection,
