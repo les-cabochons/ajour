@@ -262,9 +262,17 @@ describe("localStore workflow state sync", () => {
     localStore.importSyncedWorkItems([], {
       archiveMissingFromConnectionId: "ado-1",
     });
-    expect(localStore.snapshot().workItems[0]).toEqual(pending);
+    const syncedAt = localStore.snapshot().workItems[0]!.sourceSyncedAt;
+    expect(syncedAt).toBeGreaterThan(pending.sourceSyncedAt!);
+    expect(localStore.snapshot().workItems[0]).toEqual({
+      ...pending,
+      sourceSyncedAt: syncedAt,
+    });
     expect(localStore.undo(token!)).toBe("restored");
-    expect(localStore.snapshot().workItems[0]).toEqual(closed);
+    expect(localStore.snapshot().workItems[0]).toEqual({
+      ...closed,
+      sourceSyncedAt: syncedAt,
+    });
     expect(
       localStore.snapshot().workItems[0]?.pendingSourceWrite,
     ).toBeUndefined();
@@ -1349,12 +1357,23 @@ describe("localStore workflow state sync", () => {
     localStore.importSyncedWorkItems([], {
       archiveMissingFromConnectionId: "ado-1",
     });
-    expect(localStore.snapshot().workItems).toEqual(pending);
+    const refreshed = localStore.snapshot().workItems;
+    for (const item of refreshed) {
+      expect(item.sourceSyncedAt).toBeGreaterThan(1);
+    }
+    expect(localStore.snapshot().workItems).toEqual(
+      pending.map((item) => ({ ...item, sourceSyncedAt: expect.any(Number) })),
+    );
     expect(localStore.undo(token!)).toBe("restored");
     // The protected sync introduced Closed's Done mapping. Undo restores the
-    // archive and refreshes its imported baseline without changing other fields.
+    // archive and refreshes its imported baseline, retaining the fetched age.
     expect(localStore.snapshot().workItems).toEqual(
-      closed.map((item) => ({ ...item, importedWorkflowStateId: doneId })),
+      closed.map((item) => ({
+        ...item,
+        importedWorkflowStateId: doneId,
+        sourceSyncedAt: refreshed.find((current) => current._id === item._id)!
+          .sourceSyncedAt,
+      })),
     );
   });
 

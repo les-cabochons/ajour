@@ -363,7 +363,7 @@ These actions happen at once and show a toast with Undo for about 8 seconds. No 
 - Deleting a backlog status.
 - Dismissing import drafts.
 
-Undo restores the records as they were before the action. Only the last action can be undone, and only while its toast shows. Cmd+Z (Ctrl+Z) presses Undo while the toast shows and focus is not in a text field. Saved edits have no undo.
+Undo restores the records as they were before the action. A newer source fetch timestamp does not invalidate Undo, and Undo retains that timestamp. Other independent edits still make Undo stale. Only the last action can be undone, and only while its toast shows. Cmd+Z (Ctrl+Z) presses Undo while the toast shows and focus is not in a text field. Saved edits have no undo.
 
 ### Confirmation
 
