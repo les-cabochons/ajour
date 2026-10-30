@@ -97,6 +97,7 @@ import {
   reconcileSourceWriteMappings,
   failSourceWrite as applyFailSourceWrite,
   markBacklogItemOpened as applyMarkBacklogItemOpened,
+  markSourceWriteSent as applyMarkSourceWriteSent,
   restoreBacklogItem as applyRestoreBacklogItem,
   settleBacklogItem as applySettleBacklogItem,
   moveBacklogItemToState as applyMoveBacklogItemToState,
@@ -2779,6 +2780,13 @@ const store = {
       return next;
     });
   },
+  /**
+   * The queue sends the item's write. Its level may land from now on, even
+   * if a newer change replaces the write before the source answers.
+   */
+  markSourceWriteSent(workItemId: string) {
+    updateState((state) => applyMarkSourceWriteSent(state, workItemId));
+  },
   /** Restores failed-write values and applies deferred workflow mappings. */
   failSourceWrite(workItemId: string) {
     updateState((state) =>
@@ -3281,6 +3289,7 @@ function backlogItemCommand<
     | "backlog_item.change_source_state"
     | "backlog_item.complete_source_write"
     | "backlog_item.fail_source_write"
+    | "backlog_item.send_source_write"
     | "backlog_item.unsettle"
     | "backlog_item.snooze"
     | "backlog_item.unsnooze"
@@ -3661,6 +3670,10 @@ export const STORE_COMMANDS = {
   },
   failSourceWrite: {
     ...backlogItemCommand("backlog_item.fail_source_write"),
+    trigger: "system",
+  },
+  markSourceWriteSent: {
+    ...backlogItemCommand("backlog_item.send_source_write"),
     trigger: "system",
   },
   holdSourceWrite: {

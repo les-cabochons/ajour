@@ -597,6 +597,8 @@ export const rendererEvents = {
   "backlog_item.save_description": command(backlogItem),
   "backlog_item.complete_source_write": command(backlogItem),
   "backlog_item.fail_source_write": command(backlogItem),
+  /** The queue sends an item's priority write, which may land from now on. */
+  "backlog_item.send_source_write": command(backlogItem),
   /**
    * A change the connection refused because editing work items is off, held
    * on this computer for review (#395): a settle or move, or the estimates a

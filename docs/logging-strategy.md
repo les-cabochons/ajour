@@ -914,6 +914,7 @@ channel to read the event each emits.
 | `backlog_item.return`                | command                            | store command                                    |
 | `backlog_item.review_held_edit`      | command                            | store command                                    |
 | `backlog_item.save_description`      | command                            | store command                                    |
+| `backlog_item.send_source_write`     | command                            | store command                                    |
 | `backlog_item.settle`                | command                            | store command                                    |
 | `backlog_item.snooze`                | command                            | store command                                    |
 | `backlog_item.unpin`                 | command                            | store command                                    |

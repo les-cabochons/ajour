@@ -146,6 +146,10 @@ function sendSourceWrite(
         );
 
       sending.add(workItem._id);
+      // From here its level may land, even if a newer change replaces it.
+      if (write.priority !== undefined) {
+        job.enter(() => localStore.markSourceWriteSent(workItem._id));
+      }
       try {
         if (!workItem.sourceId || !workItem.sourceConnectionId) {
           throw new Error("The item is no longer linked to its source.");
