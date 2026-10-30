@@ -93,20 +93,24 @@ function updateItem(
   return changed ? { ...state, workItems } : state;
 }
 
-/** Holds the item's pending settle or move write. The first hold keeps its time. */
+/**
+ * Holds the item's pending settle or move write. The first hold keeps its
+ * time. The source refused the request, so none is on its way any more.
+ */
 export function holdSourceWrite(
   state: LocalAppState,
   itemId: string,
   now: number,
 ): LocalAppState {
-  return updateItem(state, itemId, (item) =>
-    item.pendingSourceWrite && item.pendingSourceWrite.heldAt === undefined
-      ? {
-          ...item,
-          pendingSourceWrite: { ...item.pendingSourceWrite, heldAt: now },
-        }
-      : item,
-  );
+  return updateItem(state, itemId, (item) => {
+    if (
+      !item.pendingSourceWrite ||
+      item.pendingSourceWrite.heldAt !== undefined
+    )
+      return item;
+    const { priorityInFlight: _refused, ...write } = item.pendingSourceWrite;
+    return { ...item, pendingSourceWrite: { ...write, heldAt: now } };
+  });
 }
 
 /** Lifts the hold of the item's write, which then goes as any pending write. */

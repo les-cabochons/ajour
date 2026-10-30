@@ -79,9 +79,35 @@ function moveLifecycleSnapshot(item: LocalWorkItem) {
 }
 
 /**
+ * What a write keeps of the pending one a new change joins, besides its
+ * values and first `previous`. A request on its way still counts. A hold
+ * stays while the write carries a held value the change didn't set, since
+ * only Sync review approves one. A change that sets them all replaces the
+ * held write, which then goes as usual.
+ */
+function keptMarks(
+  pending: LocalPendingSourceWrite | undefined,
+  sets: { state?: boolean; priority?: boolean },
+): Pick<LocalPendingSourceWrite, "heldAt" | "priorityInFlight"> {
+  if (!pending) return {};
+  const carriesHeldValue =
+    (pending.state !== undefined && !sets.state) ||
+    (pending.priority !== undefined && !sets.priority);
+  return {
+    ...(pending.heldAt !== undefined && carriesHeldValue
+      ? { heldAt: pending.heldAt }
+      : {}),
+    ...(pending.priorityInFlight !== undefined
+      ? { priorityInFlight: pending.priorityInFlight }
+      : {}),
+  };
+}
+
+/**
  * Records a source state write on a moved item: the item shows the new source
  * state and its mapping at once, and keeps what it had before, so a failed
- * write puts it back. A write still waiting keeps its first `previous`.
+ * write puts it back. A write still waiting keeps its first `previous` and
+ * its priority, and stays held when that priority is held.
  */
 function withMoveSourceWrite(
   state: LocalAppState,
@@ -115,6 +141,7 @@ function withMoveSourceWrite(
       readyAt: now === undefined ? undefined : now + UNDO_WINDOW_MS,
       state: sourceStatusLabel,
       priority: workItem.pendingSourceWrite?.priority,
+      ...keptMarks(workItem.pendingSourceWrite, { state: true }),
       previous: workItem.pendingSourceWrite?.previous ?? {
         sourceStatusKey: workItem.sourceStatusKey,
         sourceStatusLabel: workItem.sourceStatusLabel,
@@ -154,9 +181,24 @@ function getSourcePriority(workItem: LocalWorkItem) {
 }
 
 /**
+ * The level a write sends so the source ends at `level`. None when the
+ * source has it already and no request on its way may still change it:
+ * a level that may have landed needs the source's level written after it.
+ */
+function getWrittenPriority(
+  workItem: LocalWorkItem,
+  level: PriorityLevel | undefined,
+) {
+  return level === getSourcePriority(workItem) &&
+    workItem.pendingSourceWrite?.priorityInFlight === undefined
+    ? undefined
+    : level;
+}
+
+/**
  * Why the item can't take this priority, or undefined when it can. Plugin
- * levels have no "none", so a synced item whose source has a priority
- * can't go back to No priority.
+ * levels have no "none", so a synced item whose source has a priority, or
+ * may have one from a request on its way, can't go back to No priority.
  */
 export function getPriorityRefusal(
   workItem: LocalWorkItem,
@@ -164,7 +206,8 @@ export function getPriorityRefusal(
 ): string | undefined {
   return priority === undefined &&
     workItem.source !== "manual" &&
-    getSourcePriority(workItem) !== undefined
+    (getSourcePriority(workItem) ??
+      workItem.pendingSourceWrite?.priorityInFlight) !== undefined
     ? "Ajour can't clear the priority in its source."
     : undefined;
 }
@@ -177,8 +220,10 @@ export function getPriorityRefusal(
  *
  * The write keeps a pending state and its first `previous`, as a move keeps
  * a pending priority. A level equal to the source's drops the priority from
- * the write, and the whole write when nothing else waits. No priority is
- * refused while the source has a priority (`getPriorityRefusal`).
+ * the write, and the whole write when nothing else waits, unless a request
+ * on its way may still set another level: the source's level is then
+ * written after it. No priority is refused while the source has a priority
+ * (`getPriorityRefusal`).
  */
 export function changeBacklogItemPriority(
   state: LocalAppState,
@@ -232,8 +277,7 @@ function withPriorityWrite(
   { now, undoWindow = true }: ChangePriorityOptions,
 ): LocalWorkItem {
   const pending = workItem.pendingSourceWrite;
-  const sourcePriority = getSourcePriority(workItem);
-  const writtenPriority = priority === sourcePriority ? undefined : priority;
+  const writtenPriority = getWrittenPriority(workItem, priority);
   const shown: LocalWorkItem = {
     ...workItem,
     priority,
@@ -254,11 +298,11 @@ function withPriorityWrite(
   return {
     ...shown,
     pendingSourceWrite: {
-      // A held write stays held: the user approves it in Sync review.
-      ...pending,
       readyAt,
       state: pending?.state,
       priority: writtenPriority,
+      // A held state stays held: the user approves it in Sync review.
+      ...keptMarks(pending, { priority: true }),
       previous: pending?.previous ?? {
         sourceStatusKey: workItem.sourceStatusKey,
         sourceStatusLabel: workItem.sourceStatusLabel,
@@ -517,9 +561,10 @@ export function moveBacklogItemToState(
             importedWorkflowStateId: hasWorkflowRecovery
               ? workItem.pendingSourceWrite!.previous.importedWorkflowStateId
               : before.importedWorkflowStateId,
-            lifecycle:
-              workItem.pendingSourceWrite?.previous.lifecycle ??
-              moveLifecycleSnapshot(before),
+            lifecycle: joinedLifecycle(
+              workItem.pendingSourceWrite?.previous.lifecycle,
+              before,
+            ),
             carriedChildren: state.workItems.flatMap((child) => {
               const item = moved.workItems.find(
                 (item) => item._id === child._id,
@@ -603,6 +648,22 @@ export function moveBacklogItemToState(
       },
     },
   }));
+}
+
+/**
+ * The lifecycle a move's failed write puts back: what a write it joined
+ * recorded first, completed with the item before the move. A priority
+ * write records only the status and settle priority, so a move that closes
+ * a settled item still gets its settle back. When the item left that
+ * status since, its fields belong to another lifecycle and stay out.
+ */
+function joinedLifecycle(
+  recorded: LocalPendingSourceWrite["previous"]["lifecycle"],
+  before: LocalWorkItem,
+): LocalPendingSourceWrite["previous"]["lifecycle"] {
+  return recorded && recorded.status !== before.status
+    ? recorded
+    : { ...moveLifecycleSnapshot(before), ...recorded };
 }
 
 /** Restores only the drag's changed slots, preserving new items and later edits. */
@@ -725,14 +786,28 @@ export function sourceChangeSnooze(
 }
 
 /**
- * Keeps only the fields that differ from the item's source values. A write
- * still waiting, such as a priority change's, keeps what it has to send and
- * its first `previous`, so the settle never drops it.
+ * What a settle changes in the source: the state and level that differ from
+ * the item's, which the item shows at once, and the write left to send.
+ */
+interface SettleSourceChange {
+  state?: string;
+  priority?: PriorityLevel;
+  /** Undefined when the source already has every value. */
+  write?: Omit<LocalPendingSourceWrite, "readyAt">;
+}
+
+/**
+ * Keeps only the fields that differ from the item's values, or returns
+ * undefined when none do. A level is written only when it differs from the
+ * source's, so the source's own level takes a pending priority back, as any
+ * priority change does. A write still waiting, such as a priority change's,
+ * keeps what it has to send and its first `previous`, so the settle never
+ * drops it.
  */
 function getSourceWrite(
   workItem: LocalWorkItem,
   change: BacklogSettleChange | undefined,
-): LocalPendingSourceWrite | undefined {
+): SettleSourceChange | undefined {
   if (!change || workItem.source === "manual") return undefined;
 
   const state =
@@ -748,37 +823,57 @@ function getSourceWrite(
   if (state === undefined && priority === undefined) return undefined;
 
   const pending = workItem.pendingSourceWrite;
+  const writtenState = state ?? pending?.state;
+  const writtenPriority =
+    priority === undefined
+      ? pending?.priority
+      : getWrittenPriority(workItem, priority);
+  if (writtenState === undefined && writtenPriority === undefined) {
+    return { state, priority };
+  }
+
   if (pending) {
     return {
-      ...pending,
-      state: state ?? pending.state,
-      priority: priority ?? pending.priority,
-      // A failed state write puts the item back in the state it left.
-      previous:
-        state !== undefined && !("workflowStateId" in pending.previous)
-          ? {
-              ...pending.previous,
-              workflowStateId: workItem.workflowStateId,
-              importedWorkflowStateId: workItem.importedWorkflowStateId,
-            }
-          : pending.previous,
+      state,
+      priority,
+      write: {
+        state: writtenState,
+        priority: writtenPriority,
+        ...keptMarks(pending, {
+          state: state !== undefined,
+          priority: priority !== undefined,
+        }),
+        // A failed state write puts the item back in the state it left.
+        previous:
+          state !== undefined && !("workflowStateId" in pending.previous)
+            ? {
+                ...pending.previous,
+                workflowStateId: workItem.workflowStateId,
+                importedWorkflowStateId: workItem.importedWorkflowStateId,
+              }
+            : pending.previous,
+      },
     };
   }
 
   return {
     state,
     priority,
-    previous: {
-      sourceStatusKey: workItem.sourceStatusKey,
-      sourceStatusLabel: workItem.sourceStatusLabel,
-      importedPriority: workItem.importedPriority,
-      priority: workItem.priority,
-      ...(state !== undefined
-        ? {
-            workflowStateId: workItem.workflowStateId,
-            importedWorkflowStateId: workItem.importedWorkflowStateId,
-          }
-        : {}),
+    write: {
+      state,
+      priority: writtenPriority,
+      previous: {
+        sourceStatusKey: workItem.sourceStatusKey,
+        sourceStatusLabel: workItem.sourceStatusLabel,
+        importedPriority: workItem.importedPriority,
+        priority: workItem.priority,
+        ...(state !== undefined
+          ? {
+              workflowStateId: workItem.workflowStateId,
+              importedWorkflowStateId: workItem.importedWorkflowStateId,
+            }
+          : {}),
+      },
     },
   };
 }
@@ -842,9 +937,9 @@ export function settleBacklogItem(
     return state;
   }
 
-  const initialWrite = getSourceWrite(target, change);
-  const sourceWrite = initialWrite
-    ? { ...initialWrite, readyAt: factories.now() + UNDO_WINDOW_MS }
+  const sourceChange = getSourceWrite(target, change);
+  const sourceWrite = sourceChange?.write
+    ? { ...sourceChange.write, readyAt: factories.now() + UNDO_WINDOW_MS }
     : undefined;
   const selectedWorkflowStateId = getSettleWorkflowStateId(
     state,
@@ -893,11 +988,13 @@ export function settleBacklogItem(
     ...saved,
     workItems: saved.workItems.map((workItem) => {
       if (workItem._id === workItemId) {
-        const written = sourceWrite
-          ? withSourceWrite(workItem, sourceWrite)
+        const written = sourceChange
+          ? withSourceWrite(workItem, sourceChange, sourceWrite)
           : workItem;
+        // Only a state the settle writes moves the item: a pending move's
+        // state keeps the workflow state it already set.
         return settle(
-          sourceWrite?.state !== undefined
+          sourceChange?.state !== undefined
             ? {
                 ...written,
                 importedWorkflowStateId: selectedWorkflowStateId,
@@ -916,28 +1013,30 @@ export function settleBacklogItem(
   };
 }
 
-/** Shows the pending write's values on the item until the write is sent. */
+/**
+ * Shows the settle's state and level on the item at once, with the write
+ * left to send, or none when the source already has them.
+ */
 function withSourceWrite(
   workItem: LocalWorkItem,
-  sourceWrite: LocalPendingSourceWrite,
+  { state, priority }: SettleSourceChange,
+  sourceWrite: LocalPendingSourceWrite | undefined,
 ): LocalWorkItem {
   const followsImportedPriority =
     workItem.priority === workItem.importedPriority;
   return {
     ...workItem,
     pendingSourceWrite: sourceWrite,
-    ...(sourceWrite.state !== undefined
+    ...(state !== undefined
       ? {
-          sourceStatusKey: normalizeSourceStatusKey(sourceWrite.state),
-          sourceStatusLabel: sourceWrite.state,
+          sourceStatusKey: normalizeSourceStatusKey(state),
+          sourceStatusLabel: state,
         }
       : {}),
-    ...(sourceWrite.priority !== undefined
+    ...(priority !== undefined
       ? {
-          importedPriority: sourceWrite.priority,
-          priority: followsImportedPriority
-            ? sourceWrite.priority
-            : workItem.priority,
+          importedPriority: priority,
+          priority: followsImportedPriority ? priority : workItem.priority,
         }
       : {}),
   };
@@ -957,8 +1056,32 @@ export function hasSameSourceWriteRequest(
 }
 
 /**
+ * The queue sends the item's write. Until the source answers, its level may
+ * land even when a newer change replaces the write, so the write records it
+ * (`priorityInFlight`). A write with no priority changes nothing.
+ */
+export function markSourceWriteSent(
+  state: LocalAppState,
+  workItemId: string,
+): LocalAppState {
+  const write = state.workItems.find(
+    (workItem) => workItem._id === workItemId,
+  )?.pendingSourceWrite;
+  if (
+    write?.priority === undefined ||
+    write.priorityInFlight === write.priority
+  )
+    return state;
+  return updateOne(state, workItemId, (workItem) => ({
+    ...workItem,
+    pendingSourceWrite: { ...write, priorityInFlight: write.priority },
+  }));
+}
+
+/**
  * Acknowledges the sent snapshot. A newer pending write keeps its displayed
- * values and deadline, but recovers to this successful snapshot if it fails.
+ * values and deadline, but recovers to this successful snapshot if it fails,
+ * and no longer waits on the request that landed.
  */
 export function completeSourceWrite(
   state: LocalAppState,
@@ -1024,10 +1147,11 @@ export function completeSourceWrite(
         .filter((child) => child.settledWithParentId === workItemId)
         .map((child) => child._id),
     ]);
+    const { priorityInFlight: _landed, ...newerWrite } = currentWrite;
     return updateOne(state, workItemId, (item) => ({
       ...item,
       pendingSourceWrite: {
-        ...currentWrite,
+        ...newerWrite,
         previous: {
           sourceStatusKey: sent.sourceStatusKey,
           sourceStatusLabel: sent.sourceStatusLabel,
