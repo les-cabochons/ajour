@@ -472,6 +472,60 @@ describe("backlog refresh status", () => {
       reloaded.workItems.find((i) => i.sourceId === "s1")?.sourceSyncedAt,
     ).toBe(Date.now());
   });
+  it.each([
+    { trigger: "auto" as const, refresh: true },
+    { trigger: "manual" as const, refresh: true, sourceId: "s1" },
+  ])(
+    "persists freshness for a returned done item on first and later refreshes ($trigger)",
+    async (input) => {
+      const { localStore, syncBacklogConnection, item } = await setup();
+      localStore.importSyncedWorkItems([
+        { ...candidate, id: "other", sourceId: "s2" },
+      ]);
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          Response.json(
+            answer(
+              { author: "me", at: "2026-10-18T10:00:00Z" },
+              {
+                mode: "backlog",
+                commentFacts: [],
+                doneItems: [
+                  {
+                    source: "azure_devops",
+                    connectionId: "c1",
+                    sourceId: "s1",
+                    state: "Done",
+                  },
+                ],
+              },
+            ),
+          ),
+        ),
+      );
+
+      await syncBacklogConnection("azure_devops", "c1", input);
+      expect(item()).toMatchObject({
+        status: "archived",
+        sourceSyncedAt: Date.now(),
+      });
+
+      vi.setSystemTime(Date.now() + 60_000);
+      await syncBacklogConnection("azure_devops", "c1", input);
+      vi.resetModules();
+      const reloaded = (
+        await import("@/lib/local-store")
+      ).localStore.snapshot();
+      expect(reloaded.workItems.find((i) => i.sourceId === "s1")).toMatchObject(
+        { status: "archived", sourceSyncedAt: Date.now() },
+      );
+      expect(reloaded.workItems.find((i) => i.sourceId === "s2")).toMatchObject(
+        { status: "active", sourceSyncedAt: 1 },
+      );
+    },
+  );
+
   it("keeps local items absent from a read-only visit refresh", async () => {
     const { localStore, syncBacklogConnection, itemId, item } = await setup();
     localStore.unsettleWorkItem(itemId);

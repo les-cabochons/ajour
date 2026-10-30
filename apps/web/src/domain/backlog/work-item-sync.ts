@@ -647,26 +647,24 @@ export function archiveDoneSyncedWorkItems(
           key,
     );
     if (!target) continue;
-    // The description syncs whatever the item's lifecycle does with it, even
-    // for an item archived on an earlier sync or with a write pending.
+    // A returned snapshot refreshes the item's persisted age and description,
+    // even when it was archived earlier or has a source write pending.
     const doneDescription = doneItem.description;
-    if (doneDescription) {
-      nextState = {
-        ...nextState,
-        workItems: nextState.workItems.map((workItem) =>
-          workItem._id === target._id
-            ? {
-                ...workItem,
-                ...reconcileDescription(
-                  workItem,
-                  doneDescription,
-                  factories.now(),
-                ),
-              }
-            : workItem,
-        ),
-      };
-    }
+    const syncedAt = factories.now();
+    nextState = {
+      ...nextState,
+      workItems: nextState.workItems.map((workItem) =>
+        workItem._id === target._id
+          ? {
+              ...workItem,
+              sourceSyncedAt: syncedAt,
+              ...(doneDescription
+                ? reconcileDescription(workItem, doneDescription, syncedAt)
+                : {}),
+            }
+          : workItem,
+      ),
+    };
     if (pendingMoveItemIds.has(target._id)) continue;
 
     const stateLabel = doneItem.state?.trim();
