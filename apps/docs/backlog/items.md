@@ -68,6 +68,8 @@ The description text.
 - **`timelog`** sets the item's **Project** and **Task** when you save it, or when a synced item arrives with one. The project is matched by name, display name or code. A task the project lacks is created, and an archived one is restored, except in a shared project: your team would get the task too, so Ajour leaves it to you. If you pick another project or task afterwards, Ajour keeps your pick.
 - While the item's project or task differs from its timelog, an icon follows **Project**. A warning icon means the project or task doesn't exist or is archived: click it to create or restore it, and Ajour sets it on the item. A back arrow means you picked something else: click it to go back to the timelog's project and task.
 
+A field's value is the rest of its line, as written: `task: Billet #12: Site & Co` gives the task `Billet #12: Site & Co`, with no quotes needed. Quotes around the whole value are dropped. A line that starts with `#` is a comment. Characters written as `&amp;` or `&quot;` read as `&` and `"`.
+
 This works in synced descriptions too, so you can map items in the source tool before they reach Ajour.
 
 ## Estimates
