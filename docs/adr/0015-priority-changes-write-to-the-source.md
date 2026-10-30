@@ -15,4 +15,6 @@ The write uses the queue Settle and moves already use ([ADR 0001](0001-connector
 - Plugin levels have no "none". For a synced item whose source has a priority, No priority is disabled in the pickers and the editor, with the reason, and the agent tool refuses it. Manual items keep No priority.
 - A priority write keeps a pending state write, and a later move or settle keeps a pending priority, so one write carries both.
 - A failed priority write puts back only the priority. The item stays settled, snoozed or archived as it was, unless a later settle joined the write.
+- A request already sent may still land. The write records the level on its way, kept across a restart, so a level back at the source's is then written after it instead of dropped.
+- A held priority stays held when a move or settle joins it. Turning editing on is not approval, so both wait for Send in Sync review.
 - Priorities changed in Ajour before this decision are not sent. They go at the item's next level change.
