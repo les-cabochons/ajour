@@ -495,7 +495,7 @@ describe("an API 4 plugin through the real broker", () => {
     expect(stored).not.toHaveProperty("access");
     expect(stored!.secrets).toEqual({ fields: ["apiToken"] });
   });
-  it("refreshes one item without marking the whole backlog fresh", async () => {
+  it("refreshes one item both ways without marking the whole backlog fresh", async () => {
     const { server, service, seen } = await setup();
     const saved = await saveConnection(server, service.baseUrl);
     const connectionId = (saved.body as { connection: { id: string } })
@@ -529,12 +529,13 @@ describe("an API 4 plugin through the real broker", () => {
     };
     expect(result.items).toHaveLength(1);
     expect(refreshed.body).toMatchObject({ heldEstimates: [] });
-    expect(
-      seen().find((entry) => (entry as { sync?: unknown }).sync),
-    ).toMatchObject({
-      workItems: [{ remainingEstimateHours: 3 }],
-      syncOptions: { readOnly: true, sourceIds: ["10001"] },
+    // A refresh uploads the item's local edit, as every sync does.
+    const sync = seen().find((entry) => (entry as { sync?: unknown }).sync);
+    expect(sync).toMatchObject({
+      workItems: [{ remainingEstimateHours: 9 }],
+      syncOptions: { sourceIds: ["10001"] },
     });
+    expect(sync).not.toHaveProperty("syncOptions.readOnly");
     expect(result.connection.lastSyncAt).toBeUndefined();
     expect(result.connection.backlogLastSyncAt).toBeUndefined();
   });

@@ -1011,7 +1011,7 @@ export type BacklogSyncRequestWorkItem = z.infer<
 >;
 
 export const backlogSyncRequestSchema = z.object({
-  /** Pull source values without uploading pending local edits. */
+  /** Import source values into the backlog now, without a review step. Uploads pending local edits like any sync. */
   refresh: z.boolean().optional(),
   /** Refresh only this source item. Never archives other items. */
   sourceId: z.string().trim().min(1).max(400).optional(),
