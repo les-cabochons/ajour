@@ -32,6 +32,9 @@ import { saveTimer } from "@/domain/time/timer-transitions";
  * docs/agents/ux-spec.md. Terms follow GLOSSARY.md.
  */
 
+/** How long the Undo toast lets the user take back a write to the source. */
+const UNDO_WINDOW_MS = 8000;
+
 /** Whether a settle or close also takes the parent's open subitems. */
 export interface CloseSubitemsOptions {
   includeSubitems?: boolean;
@@ -104,7 +107,7 @@ function withMoveSourceWrite(
       workItem.sourceProjectName,
     ),
     pendingSourceWrite: {
-      readyAt: now === undefined ? undefined : now + 8000,
+      readyAt: now === undefined ? undefined : now + UNDO_WINDOW_MS,
       state: sourceStatusLabel,
       priority: workItem.pendingSourceWrite?.priority,
       previous: workItem.pendingSourceWrite?.previous ?? {
@@ -115,6 +118,126 @@ function withMoveSourceWrite(
         workflowStateId: workItem.workflowStateId,
         importedWorkflowStateId: workItem.importedWorkflowStateId,
         lifecycle: moveLifecycleSnapshot(workItem),
+      },
+    },
+  };
+}
+
+/** How a priority change reaches the source. */
+export interface ChangePriorityOptions {
+  /**
+   * Whether the item's plugin can write to its source. An item it refuses
+   * keeps the change in Ajour only, as a move does.
+   */
+  writesToSource: boolean;
+  now: number;
+  /**
+   * False for a save with no Undo, such as the editor's: the write may go at
+   * once. An earlier action's write still waits for its own Undo window.
+   */
+  undoWindow?: boolean;
+}
+
+/**
+ * The priority the source has now. A pending write shows its level on the
+ * item at once, but the source keeps the one before until the write lands.
+ */
+function getSourcePriority(workItem: LocalWorkItem) {
+  return workItem.pendingSourceWrite
+    ? workItem.pendingSourceWrite.previous.importedPriority
+    : workItem.importedPriority;
+}
+
+/**
+ * Why the item can't take this priority, or undefined when it can. Plugin
+ * levels have no "none", so a synced item whose source has a priority
+ * can't go back to No priority.
+ */
+export function getPriorityRefusal(
+  workItem: LocalWorkItem,
+  priority: PriorityLevel | undefined,
+): string | undefined {
+  return priority === undefined &&
+    workItem.source !== "manual" &&
+    getSourcePriority(workItem) !== undefined
+    ? "Ajour can't clear the priority in its source."
+    : undefined;
+}
+
+/**
+ * Sets a backlog item's priority level, from any surface. A synced item
+ * whose plugin can write gets a pending write of the new level, sent after
+ * the Undo window like a move (ADR 0001, ADR 0015). The item shows the level
+ * at once, as its source's, so a sync after the write keeps following it.
+ *
+ * The write keeps a pending state and its first `previous`, as a move keeps
+ * a pending priority. A level equal to the source's drops the priority from
+ * the write, and the whole write when nothing else waits. No priority is
+ * refused while the source has a priority (`getPriorityRefusal`).
+ */
+export function changeBacklogItemPriority(
+  state: LocalAppState,
+  workItemId: string,
+  priority: PriorityLevel | undefined,
+  options: ChangePriorityOptions,
+): LocalAppState {
+  return updateOne(state, workItemId, (workItem) => {
+    if (
+      workItem.priority === priority ||
+      getPriorityRefusal(workItem, priority) !== undefined
+    ) {
+      return workItem;
+    }
+    return workItem.source === "manual" || !options.writesToSource
+      ? { ...workItem, priority }
+      : withPriorityWrite(workItem, priority, options);
+  });
+}
+
+function withPriorityWrite(
+  workItem: LocalWorkItem,
+  priority: PriorityLevel | undefined,
+  { now, undoWindow = true }: ChangePriorityOptions,
+): LocalWorkItem {
+  const pending = workItem.pendingSourceWrite;
+  const sourcePriority = getSourcePriority(workItem);
+  const writtenPriority = priority === sourcePriority ? undefined : priority;
+  const shown: LocalWorkItem = {
+    ...workItem,
+    priority,
+    importedPriority: priority,
+    // A settled item remembers its source priority to notice changes made
+    // there. Its own write is not one.
+    ...(workItem.status === "settled"
+      ? { settledImportedPriority: priority }
+      : {}),
+  };
+  if (writtenPriority === undefined && pending?.state === undefined) {
+    return { ...shown, pendingSourceWrite: undefined };
+  }
+
+  const readyAt = undoWindow
+    ? now + UNDO_WINDOW_MS
+    : Math.max(now, pending?.readyAt ?? now);
+  return {
+    ...shown,
+    pendingSourceWrite: {
+      // A held write stays held: the user approves it in Sync review.
+      ...pending,
+      readyAt,
+      state: pending?.state,
+      priority: writtenPriority,
+      previous: pending?.previous ?? {
+        sourceStatusKey: workItem.sourceStatusKey,
+        sourceStatusLabel: workItem.sourceStatusLabel,
+        importedPriority: workItem.importedPriority,
+        priority: workItem.priority,
+        // Only what this write changed: a failure leaves the item settled,
+        // snoozed or archived as it is, and active when a settle came after.
+        lifecycle: {
+          status: workItem.status,
+          settledImportedPriority: workItem.settledImportedPriority,
+        },
       },
     },
   };
@@ -569,7 +692,11 @@ export function sourceChangeSnooze(
   return { snoozedUntil: undefined, returnedAt: now };
 }
 
-/** Keeps only the fields that differ from the item's source values. */
+/**
+ * Keeps only the fields that differ from the item's source values. A write
+ * still waiting, such as a priority change's, keeps what it has to send and
+ * its first `previous`, so the settle never drops it.
+ */
 function getSourceWrite(
   workItem: LocalWorkItem,
   change: BacklogSettleChange | undefined,
@@ -587,6 +714,24 @@ function getSourceWrite(
       ? change.priority
       : undefined;
   if (state === undefined && priority === undefined) return undefined;
+
+  const pending = workItem.pendingSourceWrite;
+  if (pending) {
+    return {
+      ...pending,
+      state: state ?? pending.state,
+      priority: priority ?? pending.priority,
+      // A failed state write puts the item back in the state it left.
+      previous:
+        state !== undefined && !("workflowStateId" in pending.previous)
+          ? {
+              ...pending.previous,
+              workflowStateId: workItem.workflowStateId,
+              importedWorkflowStateId: workItem.importedWorkflowStateId,
+            }
+          : pending.previous,
+    };
+  }
 
   return {
     state,
@@ -667,7 +812,7 @@ export function settleBacklogItem(
 
   const initialWrite = getSourceWrite(target, change);
   const sourceWrite = initialWrite
-    ? { ...initialWrite, readyAt: factories.now() + 8000 }
+    ? { ...initialWrite, readyAt: factories.now() + UNDO_WINDOW_MS }
     : undefined;
   const selectedWorkflowStateId = getSettleWorkflowStateId(
     state,
