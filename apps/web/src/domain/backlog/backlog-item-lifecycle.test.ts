@@ -12,6 +12,7 @@ import {
   isBacklogItemSnoozed,
   markBacklogItemOpened,
   moveBacklogItemToState,
+  patchBacklogItem,
   pinBacklogItem,
   restoreBacklogItem,
   selectSidebarBacklogItems,
@@ -1659,6 +1660,29 @@ describe("changing a backlog item's priority", () => {
       importedPriority: undefined,
       pendingSourceWrite: undefined,
     });
+  });
+
+  it("routes a patch's priority through the same write, and refuses the whole patch with No priority", () => {
+    const patched = patchBacklogItem(
+      state(),
+      "a",
+      { priority: 3, title: "Renamed" },
+      writes,
+    );
+    expect(find(patched, "a")).toMatchObject({
+      title: "Renamed",
+      priority: 3,
+      pendingSourceWrite: { priority: 3 },
+    });
+
+    expect(
+      patchBacklogItem(
+        state(),
+        "a",
+        { priority: undefined, title: "Renamed" },
+        writes,
+      ),
+    ).toEqual(state());
   });
 
   it("keeps the change in Ajour when the plugin can't write", () => {

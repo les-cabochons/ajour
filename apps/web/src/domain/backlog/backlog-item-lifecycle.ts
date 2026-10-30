@@ -15,7 +15,9 @@ import {
 } from "@/domain/backlog/work-item-hierarchy";
 import {
   reorderWorkItems,
+  updateWorkItem,
   type WorkItemFactories,
+  type WorkItemPatch,
 } from "@/domain/backlog/work-item-transitions";
 import {
   findMappedWorkflowStateId,
@@ -23,7 +25,10 @@ import {
   isDoneWorkflowState,
   syncImportedWorkflowState,
 } from "@/domain/backlog/workflow-states";
-import type { PriorityLevel } from "@/domain/backlog/priority";
+import {
+  normalizePriorityLevel,
+  type PriorityLevel,
+} from "@/domain/backlog/priority";
 import { orderBacklogItems } from "@/domain/backlog/backlog-view";
 import { saveTimer } from "@/domain/time/timer-transitions";
 
@@ -192,6 +197,33 @@ export function changeBacklogItemPriority(
       ? { ...workItem, priority }
       : withPriorityWrite(workItem, priority, options);
   });
+}
+
+/**
+ * Updates a backlog item from an edit surface. A priority in the patch goes
+ * through `changeBacklogItemPriority`, so every surface writes it to the
+ * source the same way. A refused priority refuses the whole patch.
+ */
+export function patchBacklogItem(
+  state: LocalAppState,
+  workItemId: string,
+  patch: WorkItemPatch,
+  options: ChangePriorityOptions,
+): LocalAppState {
+  if (!("priority" in patch)) return updateWorkItem(state, workItemId, patch);
+  const { priority: input, ...rest } = patch;
+  const priority = normalizePriorityLevel(input);
+  const target = state.workItems.find(
+    (workItem) => workItem._id === workItemId,
+  );
+  if (!target || getPriorityRefusal(target, priority) !== undefined) {
+    return state;
+  }
+  const updated =
+    Object.keys(rest).length > 0
+      ? updateWorkItem(state, workItemId, rest)
+      : state;
+  return changeBacklogItemPriority(updated, workItemId, priority, options);
 }
 
 function withPriorityWrite(

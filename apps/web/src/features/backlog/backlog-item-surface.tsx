@@ -41,6 +41,10 @@ import {
   getOtherSourceStates,
   moveBacklogItemWithUndo,
 } from "@/features/backlog/backlog-item-moves";
+import {
+  canWriteToSource,
+  sendPendingSourceWrites,
+} from "@/features/backlog/backlog-source-writes";
 import { PriorityIcon } from "@/features/backlog/priority-icon";
 import {
   WorkItemIcon,
@@ -56,16 +60,30 @@ import { ProjectIcon } from "@/lib/project-icons";
 import { useHoverOrFocusWithin } from "@/lib/use-hover-or-focus-within";
 import { cn } from "@/lib/utils";
 
+/**
+ * Changes a backlog item in place with Undo, from a picker, a property or a
+ * drop. A synced item's new priority level is written to its source when
+ * the Undo toast closes, when its plugin can write (#471).
+ */
 export function patchBacklogItemWithUndo(
   item: LocalWorkItem,
   patch: Parameters<typeof localStore.updateWorkItemWithUndo>[1],
   title: string,
   orderedIds?: string[],
 ) {
-  offerUndo(localStore.updateWorkItemWithUndo(item._id, patch, orderedIds), {
-    title,
-    subject: "backlog item",
-  });
+  const writesToSource = "priority" in patch && canWriteToSource(item);
+  offerUndo(
+    localStore.updateWorkItemWithUndo(item._id, patch, orderedIds, {
+      writesToSource,
+    }),
+    {
+      title,
+      subject: "backlog item",
+      onWindowClosed: writesToSource
+        ? () => void sendPendingSourceWrites([item._id])
+        : undefined,
+    },
+  );
 }
 export function BacklogStatePicker({
   item,
