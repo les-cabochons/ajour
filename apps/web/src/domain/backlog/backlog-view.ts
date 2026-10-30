@@ -267,6 +267,30 @@ export function orderBacklogItems(
   });
 }
 
+/**
+ * Whether a drag or Alt+Up and Alt+Down can move `item` past `peer` in the
+ * custom order. Custom moves top-level items, since a subitem sits below its
+ * parent. Priority moves an item among the items of its level, subitems
+ * included, so a move never changes a priority. The other orderings sort by
+ * a field, so nothing moves. Pass the item as its own peer to ask whether it
+ * moves at all.
+ */
+export function isBacklogReorderPeer(
+  ordering: BacklogSortMode,
+  item: LocalWorkItem,
+  peer: LocalWorkItem,
+): boolean {
+  switch (ordering) {
+    case "custom":
+      return !isSubtaskWorkItem(item) && !isSubtaskWorkItem(peer);
+    case "priority_asc":
+    case "priority_desc":
+      return item.priority === peer.priority;
+    default:
+      return false;
+  }
+}
+
 /** One group of rows, or one board column. */
 export type BacklogGroup =
   | {
