@@ -442,6 +442,22 @@ Given(
   },
 );
 
+Then("{string} is still pinned", async ({ page }, title: string) => {
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (title) =>
+          JSON.parse(
+            localStorage.getItem("ajour.local-state.v2")!,
+          ).workItems.find(
+            (workItem: { title: string }) => workItem.title === title,
+          ).pinnedAt !== undefined,
+        title,
+      ),
+    )
+    .toBe(true);
+});
+
 Then(
   "{string} is now {string}",
   async ({ page }, title: string, level: string) => {

@@ -17,6 +17,28 @@ Feature: Priority changes on synced items write to the source
     Then the synced item's priority is High with no write waiting
     And nothing was written to the item's source yet
 
+  Scenario: A drop in another sidebar level is written once the Undo toast closes
+    When I order the sidebar by "Priority"
+    And I drag the sidebar row "Prioritized item" onto the level "Medium"
+    Then nothing was written to the item's source yet
+    When the Undo toast closes on its own
+    Then the item's source received priority "medium" and no state
+
+  Scenario: Sidebar moves within the level and a cancelled drag write nothing
+    Given a manual item "Second item" with High priority too
+    When I order the sidebar by "Priority"
+    And I drag the sidebar row "Prioritized item" below "Second item"
+    Then the sidebar reads "Second item", "Prioritized item"
+    When I press Alt+Up on the sidebar row "Prioritized item"
+    Then the sidebar reads "Prioritized item", "Second item"
+    When I press Alt+Down on the sidebar row "Prioritized item"
+    Then the sidebar reads "Second item", "Prioritized item"
+    When I start dragging the sidebar row "Prioritized item" onto the level "Medium"
+    And I cancel the drag with Escape
+    And the Undo toast closes on its own
+    Then nothing was written to the item's source yet
+    And the synced item's priority is High with no write waiting
+
   Scenario: No priority is disabled, with the reason
     When I open the synced item's priority picker
     Then the picker's "No priority" is disabled with the reason "Ajour can't clear the priority in its source."

@@ -145,6 +145,19 @@ Feature: Sidebar ordering
     When I drag the sidebar row "Backup pipeline" above "Loose note"
     Then the sidebar reads "Loose note", "Sidebar search", "Backup pipeline"
 
+  Scenario: Reorder a pinned row within its level with Priority ordering
+    Given the item "Loose note" is "Urgent"
+    When I pin "Backup pipeline" from the sidebar
+    And I pin "Loose note" from the sidebar
+    And I order the sidebar by "Priority"
+    Then the sidebar reads "Backup pipeline", "Loose note", "Sidebar search"
+    When I start dragging the sidebar row "Loose note" above "Backup pipeline"
+    Then the sidebar shows no levels
+    When I drop the dragged row
+    Then the sidebar reads "Loose note", "Backup pipeline", "Sidebar search"
+    And "Loose note" is now "Urgent"
+    And "Loose note" is still pinned
+
   Scenario: Reorder while the sidebar search narrows the list
     When I search the sidebar for "n"
     Then the sidebar reads "Backup pipeline", "Loose note"
