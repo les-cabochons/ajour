@@ -128,7 +128,10 @@ export function SidebarSearch() {
   );
 }
 
-/** The orderings the sidebar menu offers. Custom allows dragging rows. */
+/**
+ * The orderings the sidebar menu offers. Both allow dragging rows: Custom
+ * in the one custom order, Priority within a level or into another.
+ */
 const SIDEBAR_ORDERINGS = [
   {
     value: "custom",

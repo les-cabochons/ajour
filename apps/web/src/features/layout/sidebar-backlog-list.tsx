@@ -31,13 +31,20 @@ import {
   type BacklogItemActionId,
 } from "@/domain/actions/object-actions";
 import {
+  getPriorityRefusal,
+  groupSidebarBacklogItemsByLevel,
+  patchBacklogItem,
   isBacklogItemReturned,
   isBacklogItemSnoozed,
-  canReorderSidebarItem,
   selectSidebarBacklogItems,
   selectSidebarBacklogItemsAfterReorder,
   splitSidebarBacklogItems,
 } from "@/domain/backlog/backlog-item-lifecycle";
+import { isBacklogReorderPeer } from "@/domain/backlog/backlog-view";
+import {
+  getPriorityLevelName,
+  type PriorityLevel,
+} from "@/domain/backlog/priority";
 import {
   getDirectChildWorkItems,
   getWorkItemLookupKeys,
@@ -47,6 +54,7 @@ import {
 import type { SidebarMatcher } from "@/domain/backlog/sidebar-filter";
 import {
   getLocalProjectDisplayName,
+  type BacklogSortMode,
   type LocalAppState,
   type LocalProject,
   type LocalWorkItem,
@@ -58,10 +66,12 @@ import { BacklogItemHoverCard } from "@/features/backlog/backlog-item-hover-card
 import { settleOpensDialog } from "@/features/backlog/settle-dialog";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
 import { getBacklogItemOriginFor } from "@/features/backlog/backlog-item-search";
+import { patchBacklogItemWithUndo } from "@/features/backlog/backlog-item-surface";
 import {
-  getBacklogRowShifts,
+  getBacklogDragShifts,
   useBacklogDrag,
   type BacklogDropTarget,
+  type BacklogReorderPeer,
 } from "@/features/backlog/use-backlog-drag";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { formatSnoozeTime } from "@/features/backlog/snooze-presets";
@@ -102,12 +112,30 @@ const SETTLED_PAGE_SIZE = 20;
 type IconData = ReturnType<typeof useWorkItemIconData>;
 
 /**
- * Drag lanes for the sidebar's two blocks, pinned items and the rest. The
+ * Drag lanes for the sidebar's two parts, pinned items and the rest. The
  * drag hook reads the lane from the part before "/", and allows drops within
- * a lane only, so a row never moves across blocks.
+ * a lane only, so a row never moves between them. Under Priority ordering
+ * the rest is one block per level, keyed `others/<level>`.
  */
 const PINNED_BLOCK = "pinned/items";
 const OTHERS_BLOCK = "others/items";
+
+/** A run of rows a drag moves within, and drops on as a whole. */
+interface SidebarBlock {
+  key: string;
+  workItems: LocalWorkItem[];
+  /**
+   * Under Priority ordering, the level of the block's rows. A drag shows its
+   * label, and a row dropped there takes the level.
+   */
+  level?: { priority: PriorityLevel | undefined };
+}
+
+function isPriorityOrdering(
+  sortMode: BacklogSortMode,
+): sortMode is "priority_asc" | "priority_desc" {
+  return sortMode === "priority_asc" || sortMode === "priority_desc";
+}
 
 /**
  * A row's place in a drag: "source" for the dragged row, which leaves its
@@ -124,13 +152,39 @@ function rowDragProps(dragState: RowDragState | undefined) {
     : {};
 }
 
-/** The sidebar's blocks for the listed rows: pinned items, then the rest. */
-function getSidebarBlocks(listed: readonly LocalWorkItem[]) {
+/**
+ * The sidebar's blocks for the listed rows: pinned items, then the rest, or
+ * under Priority ordering one block per level, empty levels included.
+ */
+function getSidebarBlocks(
+  listed: readonly LocalWorkItem[],
+  sortMode: BacklogSortMode,
+): SidebarBlock[] {
   const { pinned, others } = splitSidebarBacklogItems(listed);
+  const pinnedBlock = { key: PINNED_BLOCK, workItems: pinned };
+  if (!isPriorityOrdering(sortMode)) {
+    return [pinnedBlock, { key: OTHERS_BLOCK, workItems: others }];
+  }
   return [
-    { key: PINNED_BLOCK, workItems: pinned },
-    { key: OTHERS_BLOCK, workItems: others },
+    pinnedBlock,
+    ...groupSidebarBacklogItemsByLevel(others, sortMode).map(
+      ({ priority, items }) => ({
+        key: `others/${priority ?? "none"}`,
+        workItems: items,
+        level: { priority },
+      }),
+    ),
   ];
+}
+
+/**
+ * The level a row dropped on `block` takes, or undefined when the drop keeps
+ * its level: the block has no level, or holds the row already.
+ */
+function getDroppedLevel(block: SidebarBlock | undefined, itemId: string) {
+  return block?.level && !block.workItems.some(({ _id }) => _id === itemId)
+    ? block.level
+    : undefined;
 }
 
 function findBlock(targets: readonly BacklogDropTarget[], itemId: string) {
@@ -156,7 +210,7 @@ function countSubitems(
 /** The list's reorder state that rows read when a key or a press asks. */
 interface RowReorder {
   targets: readonly BacklogDropTarget[];
-  canReorder: (itemId: string) => boolean;
+  canReorder: BacklogReorderPeer;
   drag: ReturnType<typeof useBacklogDrag>;
 }
 
@@ -226,17 +280,21 @@ function useBacklogItemRow(
     }
 
     function canReorder(workItem: LocalWorkItem) {
-      return latest.current.reorder.canReorder(workItem._id);
+      return latest.current.reorder.canReorder(workItem._id, workItem._id);
     }
 
-    /** Move up (-1) or Move down (1) within the item's block, with Undo. */
+    /**
+     * Move up (-1) or Move down (1) among the item's peers in its block, with
+     * Undo. A block holds one level under Priority ordering, or pinned rows
+     * whose peers share the level, so a key never changes a priority.
+     */
     function step(workItem: LocalWorkItem, direction: -1 | 1) {
       const { targets, canReorder } = latest.current.reorder;
       const block = findBlock(targets, workItem._id);
       const next =
         block &&
         getSharedTableStepOrder(
-          block.itemIds.filter(canReorder),
+          block.itemIds.filter((id) => canReorder(id, workItem._id)),
           workItem._id,
           direction,
         );
@@ -524,7 +582,8 @@ interface ItemRowProps {
 
 /**
  * Click, modified click, keys, drag and the context menu, shared by the item
- * rows. Under Custom ordering, dragging a row or Alt+Up and Alt+Down move it.
+ * rows. Under Custom and Priority ordering, dragging a row or Alt+Up and
+ * Alt+Down move it.
  */
 function useItemRowHandlers({ workItem, subitemCount, rows }: ItemRowProps) {
   const actions = rows.actionsFor(workItem, subitemCount);
@@ -806,6 +865,37 @@ const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
   );
 });
 
+/**
+ * A priority level's label above its rows, shown while a row drags under
+ * Priority ordering, like T3 Code's sections. The level under the pointer,
+ * where the row would land, takes the accent. It moves with the rows, by
+ * `shift` pixels, when the dragged row leaves or enters the rows above it.
+ */
+function LevelLabel({
+  label,
+  active,
+  shift,
+}: {
+  label: string;
+  active: boolean;
+  shift?: number;
+}) {
+  return (
+    <div
+      data-level-label
+      data-active={active || undefined}
+      className={cn(
+        "flex h-6 shrink-0 items-center gap-2 px-2 text-xs font-medium text-muted-foreground",
+        active && "text-primary",
+      )}
+      style={shift ? { transform: `translate3d(0, ${shift}px, 0)` } : undefined}
+    >
+      {label}
+      <span className={cn("h-px flex-1 bg-border", active && "bg-primary")} />
+    </div>
+  );
+}
+
 /** A collapsible section label: "Backlog 11", "Snoozed 3", "Settled". */
 export function SidebarSectionHeader({
   label,
@@ -963,7 +1053,10 @@ export function SidebarBacklogList({
   }, [state, now, matcher]);
 
   const sortMode = state.backlogSortMode;
-  const blocks = useMemo(() => getSidebarBlocks(listed), [listed]);
+  const blocks = useMemo(
+    () => getSidebarBlocks(listed, sortMode),
+    [listed, sortMode],
+  );
   const targets = useMemo(
     () =>
       blocks.map((block) => ({
@@ -978,44 +1071,98 @@ export function SidebarBacklogList({
     () => new Map(state.workItems.map((workItem) => [workItem._id, workItem])),
     [state.workItems],
   );
+  // Custom moves top-level items. Priority moves an item among its level's
+  // items, subitems included. A row dropped among another level's rows takes
+  // that level, so it moves among them; a pinned row keeps its level.
   const canReorder = useCallback(
-    (itemId: string) => {
+    (itemId: string, draggedId: string) => {
       const workItem = workItemById.get(itemId);
-      return Boolean(workItem && canReorderSidebarItem(sortMode, workItem));
+      const dragged = workItemById.get(draggedId);
+      if (!workItem || !dragged) return false;
+      const landed =
+        isPriorityOrdering(sortMode) && dragged.pinnedAt === undefined
+          ? { ...dragged, priority: workItem.priority }
+          : dragged;
+      return isBacklogReorderPeer(sortMode, landed, workItem);
     },
     [sortMode, workItemById],
   );
   const drag = useBacklogDrag({
     targets,
     canReorder,
-    disabled: sortMode !== "custom",
-    onDrop: (_itemId, _key, order) => {
-      if (order)
-        withEventAttribution({ surface: "drag" }, () =>
-          offerReorderUndo(order),
+    disabled: sortMode !== "custom" && !isPriorityOrdering(sortMode),
+    // A synced item whose source has a priority can't take No priority.
+    accepts: (itemId, key) => {
+      const level = blocks.find((block) => block.key === key)?.level;
+      const workItem = workItemById.get(itemId);
+      return (
+        !level ||
+        !workItem ||
+        getPriorityRefusal(workItem, level.priority) === undefined
+      );
+    },
+    // The level labels push the rows down as the drag starts.
+    holdOrigin: true,
+    onDrop: (itemId, key, order) => {
+      const workItem = workItemById.get(itemId);
+      const block = blocks.find((candidate) => candidate.key === key);
+      if (!workItem || !block) return;
+      withEventAttribution({ surface: "drag" }, () => {
+        const level = getDroppedLevel(block, itemId);
+        if (!level) {
+          if (order) offerReorderUndo(order);
+          return;
+        }
+        // Another level: one Undo puts back both the level and the place.
+        const { priority } = level;
+        patchBacklogItemWithUndo(
+          workItem,
+          { priority },
+          `Priority changed to ${getPriorityLevelName(priority)}`,
+          order ?? undefined,
         );
+      });
     },
   });
   const dragging = drag.drag;
-  // The rows make room where the dragged one would land, as the list would
-  // read after the drop, so a subitem whose parent is pinned or filtered out
-  // stays at its parent's place. Computed once per drop place, not per move.
+  // The rows, and under Priority ordering the level labels, make room where
+  // the dragged row would land, as the list would read after the drop: a
+  // subitem whose parent is pinned or filtered out stays at its parent's
+  // place, and pinned rows of other levels keep theirs. Computed once per
+  // drop place, not per move.
   const dragItemId = dragging?.itemId;
   const dragOriginKey = dragging?.originKey;
   const dragTargetKey = dragging?.targetKey;
   const dragIndex = dragging?.index;
-  const rowShifts = useMemo(() => {
+  const shifts = useMemo(() => {
     if (dragItemId === undefined || dragOriginKey === undefined)
-      return new Map<string, number>();
-    const landRows = (key: string, order: string[]) =>
-      getSidebarBlocks(
-        selectSidebarBacklogItemsAfterReorder(state, now, order).filter(
-          matcher.workItem,
-        ),
-      )
-        .find((block) => block.key === key)
-        ?.workItems.map((workItem) => workItem._id) ?? [];
-    return getBacklogRowShifts(
+      return { rows: new Map<string, number>(), targets: new Map() };
+    const landRows = (key: string, order: string[]) => {
+      const level = getDroppedLevel(
+        blocks.find((block) => block.key === key),
+        dragItemId,
+      );
+      // A drop in another level gives the row that level, then its place.
+      const dropped = level
+        ? patchBacklogItem(
+            state,
+            dragItemId,
+            { priority: level.priority },
+            { now, writesToSource: false },
+          )
+        : state;
+      return (
+        getSidebarBlocks(
+          selectSidebarBacklogItemsAfterReorder(dropped, now, order).filter(
+            matcher.workItem,
+          ),
+          sortMode,
+        )
+          .find((block) => block.key === key)
+          ?.workItems.map((workItem) => workItem._id) ?? []
+      );
+    };
+    return getBacklogDragShifts(
       {
         itemId: dragItemId,
         originKey: dragOriginKey,
@@ -1031,18 +1178,22 @@ export function SidebarBacklogList({
     dragOriginKey,
     dragTargetKey,
     dragIndex,
+    blocks,
     targets,
     canReorder,
     state,
     now,
     matcher,
+    sortMode,
   ]);
   const rowDragState = (itemId: string): RowDragState | undefined => {
     if (!dragging) return undefined;
     if (itemId === dragging.itemId) return "source";
-    const shift = rowShifts.get(itemId);
+    const shift = shifts.rows.get(itemId);
     return shift ? shift * dragging.height : undefined;
   };
+  // Level labels show while a row of the levels drags, not a pinned one.
+  const showLevels = Boolean(dragging && dragging.originKey !== PINNED_BLOCK);
   const rows = useBacklogItemRow(state, now, { targets, canReorder, drag });
 
   // Apart from the list above so the clock does not rebuild them every minute.
@@ -1120,25 +1271,43 @@ export function SidebarBacklogList({
     >
       {/*
         The backlog items have no header, like T3 Code's thread list. Pinned
-        items and the rest are separate blocks, so a drag stays in its own.
+        items and the rest are separate lanes, so a drag stays in its own.
+        Under Priority ordering the rest is one block per level.
       */}
       <div className="flex shrink-0 flex-col pt-2">
-        {blocks.map((block) => (
-          <div
-            key={block.key}
-            ref={(element) => {
-              if (element) drag.groupRefs.current.set(block.key, element);
-              else drag.groupRefs.current.delete(block.key);
-            }}
-            data-reorder-block
-            className="flex flex-col"
-          >
-            {block.workItems.map((workItem) => (
-              <ItemRow
-                key={workItem._id}
-                {...rowProps(workItem)}
-                dragState={rowDragState(workItem._id)}
-              />
+        {[
+          blocks.filter((block) => block.key === PINNED_BLOCK),
+          blocks.filter((block) => block.key !== PINNED_BLOCK),
+        ].map((lane) => (
+          <div key={lane[0]!.key} data-reorder-block className="flex flex-col">
+            {lane.map((block) => (
+              <div
+                key={block.key}
+                ref={(element) => {
+                  if (element) drag.groupRefs.current.set(block.key, element);
+                  else drag.groupRefs.current.delete(block.key);
+                }}
+                data-drop-target={block.key}
+                className="flex flex-col"
+              >
+                {showLevels && block.level ? (
+                  <LevelLabel
+                    label={getPriorityLevelName(block.level.priority)}
+                    active={dragging?.targetKey === block.key}
+                    shift={
+                      (shifts.targets.get(block.key) ?? 0) *
+                      (dragging?.height ?? 0)
+                    }
+                  />
+                ) : null}
+                {block.workItems.map((workItem) => (
+                  <ItemRow
+                    key={workItem._id}
+                    {...rowProps(workItem)}
+                    dragState={rowDragState(workItem._id)}
+                  />
+                ))}
+              </div>
             ))}
           </div>
         ))}

@@ -57,7 +57,10 @@ Given("I have backlog items with priorities", async ({ page }) => {
   });
 });
 
-/** Presses a sidebar row and moves it just enough to start the drag. */
+/**
+ * Presses a sidebar row and moves it just enough to start the drag. With
+ * Priority ordering the level labels show then, and push the rows down.
+ */
 async function pickUp(page: Page, dragged: string) {
   const from = await sidebarRow(page, dragged).boundingBox();
   if (!from) throw new Error("A sidebar row is not rendered");
@@ -79,12 +82,28 @@ async function startDragging(
   target: string,
 ) {
   await pickUp(page, dragged);
+  // Measured once the drag shows its labels, if any.
   const to = await sidebarRow(page, target).boundingBox();
   if (!to) throw new Error("A sidebar row is not rendered");
   // Above the target's middle drops the row in front of it, below it after.
   const y = edge === "above" ? to.y + 4 : to.y + to.height - 4;
   await page.mouse.move(to.x + to.width / 3, y, { steps: 10 });
 }
+
+function levelLabel(page: Page, level: string) {
+  return sidebar(page).locator("[data-level-label]", {
+    hasText: new RegExp(`^${level}$`),
+  });
+}
+
+/** The levels' numbers as stored, from Urgent (1) to Low (4). */
+const LEVELS: Record<string, number | undefined> = {
+  Urgent: 1,
+  High: 2,
+  Medium: 3,
+  Low: 4,
+  "No priority": undefined,
+};
 
 /**
  * The backlog titles a user sees in the sidebar, from top to bottom: the
@@ -179,12 +198,46 @@ When(
     const from = await sidebarRow(page, dragged).boundingBox();
     if (!from) throw new Error("A sidebar row is not rendered");
     await pickUp(page, dragged);
+    // The preview shows with the level labels, if any, once they have
+    // pushed the rows down. A hand never holds still: the pointer moves a
+    // little more within the row's own place, then lets go.
     await expect(page.locator(".sidebar-drag-preview")).toBeVisible();
-    // A hand never holds still: the pointer moves a little more within the
-    // row's own place, then lets go.
     await page.mouse.move(
       from.x + from.width / 3,
       from.y + from.height / 2 + 8,
+    );
+    await page.mouse.up();
+  },
+);
+
+When(
+  "I start dragging the sidebar row {string} onto the level {string}",
+  async ({ page }, dragged: string, level: string) => {
+    await pickUp(page, dragged);
+    const label = await levelLabel(page, level).boundingBox();
+    if (!label) throw new Error(`The level ${level} shows no label`);
+    await page.mouse.move(
+      label.x + label.width / 3,
+      label.y + label.height / 2,
+      {
+        steps: 10,
+      },
+    );
+  },
+);
+
+When(
+  "I drag the sidebar row {string} onto the level {string}",
+  async ({ page }, dragged: string, level: string) => {
+    await pickUp(page, dragged);
+    const label = await levelLabel(page, level).boundingBox();
+    if (!label) throw new Error(`The level ${level} shows no label`);
+    await page.mouse.move(
+      label.x + label.width / 3,
+      label.y + label.height / 2,
+      {
+        steps: 10,
+      },
     );
     await page.mouse.up();
   },
@@ -250,11 +303,11 @@ Given(
 );
 
 When(
-  "I press Alt+Down on the sidebar row {string}",
-  async ({ page }, title: string) => {
+  /^I press Alt\+(Up|Down) on the sidebar row "([^"]+)"$/,
+  async ({ page }, key: string, title: string) => {
     const row = sidebarRow(page, title);
     await row.focus();
-    await row.press("Alt+ArrowDown");
+    await row.press(`Alt+Arrow${key}`);
   },
 );
 
@@ -306,4 +359,93 @@ When("I order the sidebar by {string}", async ({ page }, label: string) => {
   // The menu stays open, so the pick shows as pressed. Escape closes it.
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
   await page.keyboard.press("Escape");
+});
+
+Then(
+  /^the sidebar shows the levels (.+) with "([^"]+)" highlighted$/,
+  async ({ page }, list: string, highlighted: string) => {
+    const expected = [...list.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+    const labels = sidebar(page).locator("[data-level-label]");
+    await expect(labels).toHaveText(expected);
+    await expect(labels.and(page.locator("[data-active]"))).toHaveText([
+      highlighted,
+    ]);
+  },
+);
+
+Then("no level is highlighted", async ({ page }) => {
+  await expect(sidebar(page).locator("[data-level-label]")).not.toHaveCount(0);
+  await expect(
+    sidebar(page).locator("[data-level-label][data-active]"),
+  ).toHaveCount(0);
+});
+
+Then("the sidebar shows no levels", async ({ page }) => {
+  await expect(sidebar(page).locator("[data-level-label]")).toHaveCount(0);
+});
+
+Given(
+  "the item {string} is {string}",
+  async ({ page }, title: string, level: string) => {
+    await page.evaluate(
+      async ({ title, priority }) => {
+        const { localStore } = await import(
+          /* @vite-ignore */ "/src/lib/local-store.ts"
+        );
+        const item = localStore
+          .snapshot()
+          .workItems.find((workItem) => workItem.title === title)!;
+        localStore.updateWorkItem(item._id, { priority });
+      },
+      { title, priority: LEVELS[level] },
+    );
+  },
+);
+
+Given(
+  "the item {string} comes from a source that has its priority",
+  async ({ page }, title: string) => {
+    // A synced item whose source holds a priority, as a sync leaves it.
+    await page.evaluate((title) => {
+      const key = "ajour.local-state.v2";
+      const state = JSON.parse(localStorage.getItem(key)!);
+      const item = state.workItems.find(
+        (workItem: { title: string }) => workItem.title === title,
+      );
+      Object.assign(item, {
+        source: "example",
+        sourceId: `source-${item._id}`,
+        sourceConnectionId: "fixture",
+        importedPriority: item.priority,
+      });
+      localStorage.setItem(key, JSON.stringify(state));
+    }, title);
+    await page.reload();
+  },
+);
+
+Then(
+  "{string} is now {string}",
+  async ({ page }, title: string, level: string) => {
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (title) =>
+            JSON.parse(
+              localStorage.getItem("ajour.local-state.v2")!,
+            ).workItems.find(
+              (workItem: { title: string }) => workItem.title === title,
+            ).priority ?? null,
+          title,
+        ),
+      )
+      .toBe(LEVELS[level] ?? null);
+  },
+);
+
+Then(/^the Backlog page reads (.+)$/, async ({ page }, list: string) => {
+  const expected = [...list.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+  await expect(
+    page.locator("main [data-work-item-id] .backlog-item-title"),
+  ).toHaveText(expected);
 });

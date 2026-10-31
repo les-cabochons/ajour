@@ -1,7 +1,8 @@
 Feature: Sidebar ordering
-  With Custom ordering, the sidebar's backlog rows move by drag or by
-  Alt+Up and Alt+Down. The filter menu switches between Custom and Priority,
-  which is the Backlog page's ordering too.
+  The sidebar's backlog rows move by drag or by Alt+Up and Alt+Down. With
+  Priority ordering, a row moves within its level, and a drag shows the
+  levels so a drop can change one. The filter menu switches between Custom
+  and Priority, which is the Backlog page's ordering too.
 
   Background:
     Given I have backlog items with priorities
@@ -17,6 +18,7 @@ Feature: Sidebar ordering
     When I start dragging the sidebar row "Loose note" above "Sidebar search"
     Then the sidebar shows "Loose note" once
     And the sidebar shows the gap, "Sidebar search", "Backup pipeline" from top to bottom
+    And the sidebar shows no levels
     When I cancel the drag with Escape
     Then the sidebar shows "Sidebar search", "Backup pipeline", "Loose note" from top to bottom
     And the sidebar reads "Sidebar search", "Backup pipeline", "Loose note"
@@ -60,10 +62,64 @@ Feature: Sidebar ordering
   Scenario: Switch the sidebar between Custom and Priority
     When I order the sidebar by "Priority"
     Then the sidebar reads "Backup pipeline", "Sidebar search", "Loose note"
-    When I drag the sidebar row "Loose note" above "Backup pipeline"
-    Then the sidebar reads "Backup pipeline", "Sidebar search", "Loose note"
     When I order the sidebar by "Custom"
     Then the sidebar reads "Sidebar search", "Backup pipeline", "Loose note"
+
+  Scenario: Reorder a sidebar row within its priority level
+    Given the item "Loose note" is "Medium"
+    When I order the sidebar by "Priority"
+    Then the sidebar reads "Backup pipeline", "Sidebar search", "Loose note"
+    When I drag the sidebar row "Loose note" above "Sidebar search"
+    Then the sidebar reads "Backup pipeline", "Loose note", "Sidebar search"
+    And "Loose note" is now "Medium"
+    And the Backlog page reads "Backup pipeline", "Loose note", "Sidebar search"
+
+  Scenario: Show the levels while a row drags with Priority ordering
+    When I order the sidebar by "Priority"
+    And I start dragging the sidebar row "Loose note" above "Sidebar search"
+    Then the sidebar shows the levels "Urgent", "High", "Medium", "Low", "No priority" with "Medium" highlighted
+    When I cancel the drag with Escape
+    Then the sidebar shows no levels
+    And the sidebar reads "Backup pipeline", "Sidebar search", "Loose note"
+
+  Scenario: Drop a sidebar row in another level, then undo
+    When I order the sidebar by "Priority"
+    And I drag the sidebar row "Loose note" above "Sidebar search"
+    Then the sidebar reads "Backup pipeline", "Loose note", "Sidebar search"
+    And "Loose note" is now "Medium"
+    When I press Undo on the toast
+    Then the sidebar reads "Backup pipeline", "Sidebar search", "Loose note"
+    And "Loose note" is now "No priority"
+
+  Scenario: Drop a sidebar row on a level nothing has yet
+    When I order the sidebar by "Priority"
+    And I drag the sidebar row "Loose note" onto the level "High"
+    Then "Loose note" is now "High"
+    And the sidebar reads "Backup pipeline", "Loose note", "Sidebar search"
+
+  Scenario: Pick up a sidebar row and drop it in place with Priority ordering
+    When I order the sidebar by "Priority"
+    And I pick up the sidebar row "Sidebar search" and drop it in place
+    Then "Sidebar search" is now "Medium"
+    And the sidebar reads "Backup pipeline", "Sidebar search", "Loose note"
+
+  Scenario: Keep a synced item whose source has a priority out of No priority
+    Given the item "Sidebar search" comes from a source that has its priority
+    When I order the sidebar by "Priority"
+    And I start dragging the sidebar row "Sidebar search" onto the level "No priority"
+    Then no level is highlighted
+    When I drop the dragged row
+    Then "Sidebar search" is now "Medium"
+    And the sidebar reads "Backup pipeline", "Sidebar search", "Loose note"
+
+  Scenario: Move a sidebar row from the keyboard within its level
+    Given the item "Loose note" is "Medium"
+    When I order the sidebar by "Priority"
+    And I press Alt+Up on the sidebar row "Loose note"
+    Then the sidebar reads "Backup pipeline", "Loose note", "Sidebar search"
+    When I press Alt+Up on the sidebar row "Loose note"
+    Then the sidebar reads "Backup pipeline", "Loose note", "Sidebar search"
+    And "Loose note" is now "Medium"
 
   Scenario: Pick the ordering from the keyboard
     When I order the sidebar by "Priority" from the keyboard
