@@ -13,6 +13,45 @@ Feature: Sidebar ordering
     When I reload the app
     Then the sidebar reads "Loose note", "Sidebar search", "Backup pipeline"
 
+  Scenario: Make room for a dragged sidebar row
+    When I start dragging the sidebar row "Loose note" above "Sidebar search"
+    Then the sidebar shows "Loose note" once
+    And the sidebar shows the gap, "Sidebar search", "Backup pipeline" from top to bottom
+    When I cancel the drag with Escape
+    Then the sidebar shows "Sidebar search", "Backup pipeline", "Loose note" from top to bottom
+    And the sidebar reads "Sidebar search", "Backup pipeline", "Loose note"
+
+  Scenario: Drop a sidebar row in the gap, then undo
+    When I start dragging the sidebar row "Sidebar search" below "Backup pipeline"
+    Then the sidebar shows "Backup pipeline", the gap, "Loose note" from top to bottom
+    When I drop the dragged row
+    Then the sidebar reads "Backup pipeline", "Sidebar search", "Loose note"
+    When I press Undo on the toast
+    Then the sidebar reads "Sidebar search", "Backup pipeline", "Loose note"
+
+  Scenario: Drop a sidebar row back in its own place
+    When I pick up the sidebar row "Backup pipeline" and drop it in place
+    Then the sidebar reads "Sidebar search", "Backup pipeline", "Loose note"
+    And no Undo toast showed
+
+  Scenario: Open the gap where the drop puts a pinned parent's subitem
+    Given "Backup pipeline" has a subitem "Pipeline alerts" with its own priority
+    When I pin "Backup pipeline" from the sidebar
+    Then the sidebar reads "Backup pipeline", "Sidebar search", "Pipeline alerts", "Loose note"
+    When I start dragging the sidebar row "Sidebar search" below "Loose note"
+    Then the sidebar shows "Backup pipeline", "Loose note", "Pipeline alerts", the gap from top to bottom
+    When I drop the dragged row
+    Then the sidebar reads "Backup pipeline", "Loose note", "Pipeline alerts", "Sidebar search"
+
+  Scenario: Open the gap where the drop puts a subitem whose parent the search hides
+    Given "Backup pipeline" has a subitem "Pipeline alerts" with its own priority
+    When I search the sidebar for "s"
+    Then the sidebar reads "Sidebar search", "Pipeline alerts", "Loose note"
+    When I start dragging the sidebar row "Sidebar search" below "Loose note"
+    Then the sidebar shows "Loose note", "Pipeline alerts", the gap from top to bottom
+    When I drop the dragged row
+    Then the sidebar reads "Loose note", "Pipeline alerts", "Sidebar search"
+
   Scenario: Move a sidebar row from the keyboard
     When I press Alt+Down on the sidebar row "Sidebar search"
     Then the sidebar reads "Backup pipeline", "Sidebar search", "Loose note"

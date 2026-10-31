@@ -3,7 +3,10 @@ import {
   canDragBacklogItem,
   getBacklogDropMark,
   getBacklogDropOrder,
+  getBacklogRowShifts,
+  type BacklogDropRows,
   type BacklogDropTarget,
+  type BacklogReorderPeer,
 } from "./use-backlog-drag";
 
 it.each<{
@@ -301,4 +304,71 @@ it("keeps a parent's subitem above the line when an item lands last", () => {
       (itemId) => itemId !== "b-sub",
     ),
   ).toEqual({ itemId: "b-sub", edge: "after" });
+});
+
+describe("the gap a dragged sidebar row opens", () => {
+  /** The list a drop leaves when every row moves among the others. */
+  const landInOrder = (_key: string, order: string[]) => order;
+
+  /**
+   * What the list reads mid-drag: each row at its slot plus its shift, and
+   * the dragged item in the slot left empty, where the gap is.
+   */
+  function readDuringDrag(
+    rows: string[],
+    itemId: string,
+    index: number,
+    canReorder: BacklogReorderPeer = () => true,
+    landRows: BacklogDropRows = landInOrder,
+  ) {
+    const drag = {
+      itemId,
+      originKey: "lane/list",
+      targetKey: "lane/list",
+      index,
+    };
+    const shifts = getBacklogRowShifts(
+      drag,
+      [{ key: "lane/list", itemIds: rows }],
+      canReorder,
+      landRows,
+    );
+    const slots: string[] = Array(rows.length).fill(itemId);
+    rows.forEach((id, row) => {
+      if (id !== itemId) slots[row + (shifts.get(id) ?? 0)] = id;
+    });
+    return slots;
+  }
+
+  it("reads in the order the drop gives", () => {
+    expect(readDuringDrag(["a", "b", "c"], "c", 0)).toEqual(["c", "a", "b"]);
+    expect(readDuringDrag(["a", "b", "c"], "a", 2)).toEqual(["b", "c", "a"]);
+  });
+
+  it("stays at the row's own place until the pointer leaves it", () => {
+    expect(readDuringDrag(["a", "b", "c"], "b", 1)).toEqual(["a", "b", "c"]);
+  });
+
+  it("puts a row that never moves where the list lands it", () => {
+    // "p-sub" is the subitem of a parent listed elsewhere, so it keeps its
+    // parent's place rather than following "a", the row above it.
+    const isRoot = (id: string) => id !== "p-sub";
+    const asListed = (_key: string, order: string[]) => {
+      expect(order).toEqual(["c", "a"]);
+      return ["c", "p-sub", "a"];
+    };
+    expect(
+      readDuringDrag(["a", "p-sub", "c"], "a", 2, isRoot, asListed),
+    ).toEqual(["c", "p-sub", "a"]);
+  });
+
+  it("moves nothing while the pointer is outside the list", () => {
+    const shifts = getBacklogRowShifts(
+      { itemId: "c", originKey: "lane/list", targetKey: null, index: 0 },
+      [{ key: "lane/list", itemIds: ["a", "b", "c"] }],
+      () => true,
+      landInOrder,
+    );
+    expect(shifts.size).toBe(0);
+  });
 });

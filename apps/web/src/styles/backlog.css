@@ -561,6 +561,23 @@
     box-shadow: var(--shadow-drag);
   }
 
+  /* The sidebar's dragged row, drawn as the list draws it, like T3 Code's
+     thread list. The outline sits inside the row, so the row keeps its
+     size and its title truncates as in the list. */
+  .sidebar-drag-preview {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 100;
+    pointer-events: none;
+    border-radius: var(--radius-md);
+    outline: 1px solid var(--primary);
+    outline-offset: -1px;
+    background: var(--app-sidebar-bg);
+    box-shadow: var(--shadow-drag);
+    opacity: 0.85;
+  }
+
   /* -- Item page ------------------------------------------------- */
 
   .backlog-item-page {

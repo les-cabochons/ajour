@@ -123,6 +123,68 @@ export function getBacklogDropMark(
   };
 }
 
+/**
+ * The rows the target `targetKey` shows after a drop that gives the dragged
+ * item's peers there the order `order`, the dragged item at its landing place.
+ * The list answers from its own ordering, since only it knows where rows that
+ * never move, such as subitems under Custom ordering, sit after the drop.
+ */
+export type BacklogDropRows = (
+  targetKey: string,
+  order: string[],
+) => readonly string[];
+
+/**
+ * How many rows each row of the drag's lane moves, up when negative, so the
+ * list reads as it would after the drop, as `landRows` gives it: the dragged
+ * row's slot closes and a gap opens where it would land. Rows that stay, and
+ * the dragged row, are left out, so nothing moves while the drop would change
+ * nothing.
+ */
+export function getBacklogRowShifts(
+  drag: Pick<Drag, "itemId" | "originKey" | "targetKey" | "index"> | null,
+  targets: readonly BacklogDropTarget[],
+  canReorder: BacklogReorderPeer,
+  landRows: BacklogDropRows,
+): Map<string, number> {
+  const shifts = new Map<string, number>();
+  const target = targets.find((candidate) => candidate.key === drag?.targetKey);
+  const order =
+    drag &&
+    target &&
+    getBacklogDropOrder(
+      target.itemIds,
+      drag.itemId,
+      drag.index,
+      drag.originKey === drag.targetKey,
+      canReorder,
+    );
+  if (!drag || !target || !order) return shifts;
+  const dropRows = landRows(target.key, order);
+
+  const lane = drag.originKey.split("/")[0];
+  const before = new Map<string, number>();
+  const after = new Map<string, number>();
+  let rowsBefore = 0;
+  let rowsAfter = 0;
+  for (const { key, itemIds } of targets) {
+    if (key.split("/")[0] !== lane) continue;
+    const landed =
+      key === drag.targetKey
+        ? dropRows
+        : itemIds.filter((id) => id !== drag.itemId);
+    itemIds.forEach((id, row) => before.set(id, rowsBefore + row));
+    landed.forEach((id, row) => after.set(id, rowsAfter + row));
+    rowsBefore += itemIds.length;
+    rowsAfter += landed.length;
+  }
+  for (const [id, row] of before) {
+    const shift = (after.get(id) ?? row) - row;
+    if (id !== drag.itemId && shift !== 0) shifts.set(id, shift);
+  }
+  return shifts;
+}
+
 interface Drag {
   itemId: string;
   originKey: string;

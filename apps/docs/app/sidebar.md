@@ -31,7 +31,7 @@ Press the search icon and type. Every word must appear in the item's title or it
 
 Press **Filter and order** to show one project's items only. Ajour remembers the filter on this device. Search and filter apply to the sidebar only, not to the Backlog page.
 
-The same menu switches the order between **Custom order** and **Priority order**. The sidebar and the Backlog page share one order. With **Custom order**, drag items in the sidebar, or press <kbd>Alt</kbd> <kbd>↑</kbd> and <kbd>Alt</kbd> <kbd>↓</kbd>, to reorder them. Pinned items reorder among themselves, and subitems stay under their parent.
+The same menu switches the order between **Custom order** and **Priority order**. The sidebar and the Backlog page share one order. With **Custom order**, drag items in the sidebar, or press <kbd>Alt</kbd> <kbd>↑</kbd> and <kbd>Alt</kbd> <kbd>↓</kbd>, to reorder them. Pinned items reorder among themselves, and subitems stay under their parent. While you drag, the item follows the pointer and the list opens a space where it will land. Press <kbd>Escape</kbd> to put it back.
 
 ## Work with an item
 

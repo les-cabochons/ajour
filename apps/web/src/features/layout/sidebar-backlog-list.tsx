@@ -35,6 +35,7 @@ import {
   isBacklogItemSnoozed,
   canReorderSidebarItem,
   selectSidebarBacklogItems,
+  selectSidebarBacklogItemsAfterReorder,
   splitSidebarBacklogItems,
 } from "@/domain/backlog/backlog-item-lifecycle";
 import {
@@ -58,7 +59,7 @@ import { settleOpensDialog } from "@/features/backlog/settle-dialog";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
 import { getBacklogItemOriginFor } from "@/features/backlog/backlog-item-search";
 import {
-  getBacklogDropMark,
+  getBacklogRowShifts,
   useBacklogDrag,
   type BacklogDropTarget,
 } from "@/features/backlog/use-backlog-drag";
@@ -108,23 +109,28 @@ type IconData = ReturnType<typeof useWorkItemIconData>;
 const PINNED_BLOCK = "pinned/items";
 const OTHERS_BLOCK = "others/items";
 
-type RowDragState = "dragging" | "drop-before" | "drop-after";
+/**
+ * A row's place in a drag: "source" for the dragged row, which leaves its
+ * slot while the preview follows the pointer, or the pixels a row moves to
+ * make room where the dragged row would land.
+ */
+type RowDragState = "source" | number;
 
-const ROW_DRAG_CLASS: Record<RowDragState | "none", string | undefined> = {
-  none: undefined,
-  dragging: "opacity-30",
-  "drop-before": "backlog-drop-before",
-  "drop-after": "backlog-drop-after",
-};
+/** The class and style that draw a row's drag state. Rows move without transitions. */
+function rowDragProps(dragState: RowDragState | undefined) {
+  if (dragState === "source") return { className: "invisible" };
+  return dragState
+    ? { style: { transform: `translate3d(0, ${dragState}px, 0)` } }
+    : {};
+}
 
-function getRowDragState(
-  itemId: string,
-  draggedId: string | undefined,
-  dropMark: ReturnType<typeof getBacklogDropMark>,
-): RowDragState | undefined {
-  if (itemId === draggedId) return "dragging";
-  if (itemId !== dropMark?.itemId) return undefined;
-  return dropMark.edge === "before" ? "drop-before" : "drop-after";
+/** The sidebar's blocks for the listed rows: pinned items, then the rest. */
+function getSidebarBlocks(listed: readonly LocalWorkItem[]) {
+  const { pinned, others } = splitSidebarBacklogItems(listed);
+  return [
+    { key: PINNED_BLOCK, workItems: pinned },
+    { key: OTHERS_BLOCK, workItems: others },
+  ];
 }
 
 function findBlock(targets: readonly BacklogDropTarget[], itemId: string) {
@@ -510,7 +516,7 @@ interface ItemRowProps {
   iconData: IconData;
   rows: RowApi;
   /**
-   * The row's part in a drag: dimmed while dragged, or drawing the drop line.
+   * The row's part in a drag: hidden while dragged, or moved to make room.
    * Only the rows involved change, so the other rows stay memoized.
    */
   dragState?: RowDragState;
@@ -604,6 +610,7 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
   const { actions, onClick, onPointerDown, onKeyDown } =
     useItemRowHandlers(props);
   const reveal = useHoverOrFocusWithin();
+  const drag = rowDragProps(props.dragState);
 
   return (
     <ObjectContextMenu
@@ -621,8 +628,9 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
           className={cn(
             "group relative flex h-20 shrink-0 cursor-pointer items-center rounded-md px-2.5 outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
             isActive && "bg-foreground/[0.07]",
-            ROW_DRAG_CLASS[props.dragState ?? "none"],
+            drag.className,
           )}
+          style={drag.style}
           onClick={onClick}
           onPointerDown={onPointerDown}
           onKeyDown={onKeyDown}
@@ -728,6 +736,7 @@ const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
   const { actions, onClick, onPointerDown, onKeyDown } =
     useItemRowHandlers(props);
   const reveal = useHoverOrFocusWithin();
+  const drag = rowDragProps(props.dragState);
 
   return (
     <ObjectContextMenu
@@ -745,8 +754,9 @@ const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
           className={cn(
             "group flex h-[26px] shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-sm outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
             isActive && "bg-foreground/[0.07]",
-            ROW_DRAG_CLASS[props.dragState ?? "none"],
+            drag.className,
           )}
+          style={drag.style}
           onClick={onClick}
           onPointerDown={onPointerDown}
           onKeyDown={onKeyDown}
@@ -953,13 +963,7 @@ export function SidebarBacklogList({
   }, [state, now, matcher]);
 
   const sortMode = state.backlogSortMode;
-  const blocks = useMemo(() => {
-    const { pinned, others } = splitSidebarBacklogItems(listed);
-    return [
-      { key: PINNED_BLOCK, workItems: pinned },
-      { key: OTHERS_BLOCK, workItems: others },
-    ];
-  }, [listed]);
+  const blocks = useMemo(() => getSidebarBlocks(listed), [listed]);
   const targets = useMemo(
     () =>
       blocks.map((block) => ({
@@ -993,7 +997,52 @@ export function SidebarBacklogList({
     },
   });
   const dragging = drag.drag;
-  const dropMark = getBacklogDropMark(dragging, targets, canReorder);
+  // The rows make room where the dragged one would land, as the list would
+  // read after the drop, so a subitem whose parent is pinned or filtered out
+  // stays at its parent's place. Computed once per drop place, not per move.
+  const dragItemId = dragging?.itemId;
+  const dragOriginKey = dragging?.originKey;
+  const dragTargetKey = dragging?.targetKey;
+  const dragIndex = dragging?.index;
+  const rowShifts = useMemo(() => {
+    if (dragItemId === undefined || dragOriginKey === undefined)
+      return new Map<string, number>();
+    const landRows = (key: string, order: string[]) =>
+      getSidebarBlocks(
+        selectSidebarBacklogItemsAfterReorder(state, now, order).filter(
+          matcher.workItem,
+        ),
+      )
+        .find((block) => block.key === key)
+        ?.workItems.map((workItem) => workItem._id) ?? [];
+    return getBacklogRowShifts(
+      {
+        itemId: dragItemId,
+        originKey: dragOriginKey,
+        targetKey: dragTargetKey ?? null,
+        index: dragIndex ?? 0,
+      },
+      targets,
+      canReorder,
+      landRows,
+    );
+  }, [
+    dragItemId,
+    dragOriginKey,
+    dragTargetKey,
+    dragIndex,
+    targets,
+    canReorder,
+    state,
+    now,
+    matcher,
+  ]);
+  const rowDragState = (itemId: string): RowDragState | undefined => {
+    if (!dragging) return undefined;
+    if (itemId === dragging.itemId) return "source";
+    const shift = rowShifts.get(itemId);
+    return shift ? shift * dragging.height : undefined;
+  };
   const rows = useBacklogItemRow(state, now, { targets, canReorder, drag });
 
   // Apart from the list above so the clock does not rebuild them every minute.
@@ -1028,6 +1077,7 @@ export function SidebarBacklogList({
   });
   const ItemRow =
     layout.density === "comfortable" ? ComfortableItemRow : BacklogItemRow;
+  const draggedItem = dragging && workItemById.get(dragging.itemId);
 
   let settledRows: ReactNode = null;
   if (layout.settledOpen) {
@@ -1087,11 +1137,7 @@ export function SidebarBacklogList({
               <ItemRow
                 key={workItem._id}
                 {...rowProps(workItem)}
-                dragState={getRowDragState(
-                  workItem._id,
-                  dragging?.itemId,
-                  dropMark,
-                )}
+                dragState={rowDragState(workItem._id)}
               />
             ))}
           </div>
@@ -1154,10 +1200,14 @@ export function SidebarBacklogList({
         iconData={iconData}
       />
 
-      {dragging ? (
+      {/*
+        The dragged row itself follows the pointer, as the list shows it. It
+        is inert: the row in the list stays the one to focus and click.
+      */}
+      {dragging && draggedItem ? (
         <div
-          className="backlog-move-preview"
-          aria-hidden="true"
+          className="sidebar-drag-preview"
+          inert
           style={{
             width: dragging.width,
             transform: getSharedTableDragOverlayTransform({
@@ -1168,7 +1218,7 @@ export function SidebarBacklogList({
             }),
           }}
         >
-          {workItemById.get(dragging.itemId)?.title}
+          <ItemRow {...rowProps(draggedItem)} />
         </div>
       ) : null}
     </div>

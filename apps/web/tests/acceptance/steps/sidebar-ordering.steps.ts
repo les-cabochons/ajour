@@ -57,17 +57,195 @@ Given("I have backlog items with priorities", async ({ page }) => {
   });
 });
 
+/** Presses a sidebar row and moves it just enough to start the drag. */
+async function pickUp(page: Page, dragged: string) {
+  const from = await sidebarRow(page, dragged).boundingBox();
+  if (!from) throw new Error("A sidebar row is not rendered");
+  await page.mouse.move(from.x + from.width / 3, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(from.x + from.width / 3, from.y + from.height / 2 + 6, {
+    steps: 2,
+  });
+}
+
+/**
+ * Presses a sidebar row and moves it above or below another, without
+ * letting go.
+ */
+async function startDragging(
+  page: Page,
+  dragged: string,
+  edge: "above" | "below",
+  target: string,
+) {
+  await pickUp(page, dragged);
+  const to = await sidebarRow(page, target).boundingBox();
+  if (!to) throw new Error("A sidebar row is not rendered");
+  // Above the target's middle drops the row in front of it, below it after.
+  const y = edge === "above" ? to.y + 4 : to.y + to.height - 4;
+  await page.mouse.move(to.x + to.width / 3, y, { steps: 10 });
+}
+
+/**
+ * The backlog titles a user sees in the sidebar, from top to bottom: the
+ * rows where they show, mid-drag included, and the drag preview.
+ */
+function visibleTitles(page: Page) {
+  return sidebar(page)
+    .locator("[data-row-title]")
+    .evaluateAll((titles) =>
+      titles
+        .filter((title) => title.checkVisibility({ visibilityProperty: true }))
+        .map((title) => {
+          const box = title.getBoundingClientRect();
+          return { text: title.textContent, middle: box.top + box.height / 2 };
+        })
+        .sort((left, right) => left.middle - right.middle)
+        .map(({ text }) => text),
+    );
+}
+
+/**
+ * The list's titles from top to bottom as they show mid-drag, without the
+ * drag preview, and "the gap" where the list leaves room for the dragged
+ * row: a stretch of its lane that no shown row or label covers.
+ */
+function titlesAroundTheGap(page: Page) {
+  return sidebar(page)
+    .locator("[data-reorder-block]")
+    .evaluateAll((lanes) =>
+      lanes.flatMap((lane) => {
+        const tiles = [
+          ...lane.querySelectorAll<HTMLElement>(
+            "[data-backlog-item-id], [data-level-label]",
+          ),
+        ]
+          .filter((tile) => tile.checkVisibility({ visibilityProperty: true }))
+          .map((tile) => ({
+            box: tile.getBoundingClientRect(),
+            text: tile.matches("[data-backlog-item-id]")
+              ? tile.querySelector("[data-row-title]")!.textContent
+              : null,
+          }))
+          .sort((left, right) => left.box.top - right.box.top);
+        const read: { text: string | null; middle: number }[] = [];
+        const laneBox = lane.getBoundingClientRect();
+        let covered = laneBox.top;
+        for (const { box, text } of [
+          ...tiles,
+          { box: new DOMRect(0, laneBox.bottom, 0, 0), text: null },
+        ]) {
+          // Rows touch, so a stretch of more than a few pixels is the gap.
+          if (box.top - covered > 4)
+            read.push({ text: "the gap", middle: (covered + box.top) / 2 });
+          if (text) read.push({ text, middle: box.top + box.height / 2 });
+          covered = Math.max(covered, box.bottom);
+        }
+        return read
+          .sort((left, right) => left.middle - right.middle)
+          .map(({ text }) => text);
+      }),
+    );
+}
+
 When(
-  "I drag the sidebar row {string} above {string}",
-  async ({ page }, dragged: string, target: string) => {
-    const from = await sidebarRow(page, dragged).boundingBox();
-    const to = await sidebarRow(page, target).boundingBox();
-    if (!from || !to) throw new Error("A sidebar row is not rendered");
-    await page.mouse.move(from.x + from.width / 3, from.y + from.height / 2);
-    await page.mouse.down();
-    // Above the target's middle drops the row in front of it.
-    await page.mouse.move(to.x + to.width / 3, to.y + 4, { steps: 10 });
+  /^I drag the sidebar row "([^"]+)" (above|below) "([^"]+)"$/,
+  async (
+    { page },
+    dragged: string,
+    edge: "above" | "below",
+    target: string,
+  ) => {
+    await startDragging(page, dragged, edge, target);
     await page.mouse.up();
+  },
+);
+
+When(
+  /^I start dragging the sidebar row "([^"]+)" (above|below) "([^"]+)"$/,
+  async (
+    { page },
+    dragged: string,
+    edge: "above" | "below",
+    target: string,
+  ) => {
+    await startDragging(page, dragged, edge, target);
+  },
+);
+
+When(
+  "I pick up the sidebar row {string} and drop it in place",
+  async ({ page }, dragged: string) => {
+    const from = await sidebarRow(page, dragged).boundingBox();
+    if (!from) throw new Error("A sidebar row is not rendered");
+    await pickUp(page, dragged);
+    await expect(page.locator(".sidebar-drag-preview")).toBeVisible();
+    // A hand never holds still: the pointer moves a little more within the
+    // row's own place, then lets go.
+    await page.mouse.move(
+      from.x + from.width / 3,
+      from.y + from.height / 2 + 8,
+    );
+    await page.mouse.up();
+  },
+);
+
+When("I cancel the drag with Escape", async ({ page }) => {
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+});
+
+Then("the sidebar shows {string} once", async ({ page }, title: string) => {
+  await expect
+    .poll(async () =>
+      (await visibleTitles(page)).filter((text) => text === title),
+    )
+    .toEqual([title]);
+});
+
+/**
+ * Titles in quotes, and "the gap" where the list should leave room for the
+ * dragged row. A list that names the gap reads the rows without the drag
+ * preview; one that doesn't reads the preview where it floats.
+ */
+Then(
+  /^the sidebar shows (.+) from top to bottom$/,
+  async ({ page }, list: string) => {
+    const expected = [...list.matchAll(/"([^"]+)"|the gap/g)].map(
+      (match) => match[1] ?? match[0],
+    );
+    const read = expected.includes("the gap")
+      ? titlesAroundTheGap
+      : visibleTitles;
+    await expect.poll(() => read(page)).toEqual(expected);
+  },
+);
+
+Given(
+  "{string} has a subitem {string} with its own priority",
+  async ({ page }, parent: string, title: string) => {
+    await page.evaluate(
+      ({ parent, title }) => {
+        const key = "ajour.local-state.v2";
+        const state = JSON.parse(localStorage.getItem(key)!);
+        const parentItem = state.workItems.find(
+          (workItem: { title: string }) => workItem.title === parent,
+        );
+        // Stored last, so only its parent's place puts it in the list.
+        state.workItems.push({
+          _id: `${parentItem._id}-subitem`,
+          title,
+          priority: 2,
+          parentWorkItemId: parentItem._id,
+          source: "manual",
+          status: "active",
+          createdAt: Date.now(),
+        });
+        localStorage.setItem(key, JSON.stringify(state));
+      },
+      { parent, title },
+    );
+    await page.reload();
   },
 );
 

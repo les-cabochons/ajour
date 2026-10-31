@@ -1551,6 +1551,20 @@ export function selectSidebarBacklogItems(
 }
 
 /**
+ * The sidebar's list as a reorder that gives `orderedIds` their new custom
+ * order would leave it, so a drag can show where its drop puts every row. A
+ * subitem lands at its parent's new place, or keeps the place of a parent
+ * the reorder doesn't move, such as a pinned or filtered-out one.
+ */
+export function selectSidebarBacklogItemsAfterReorder(
+  state: LocalAppState,
+  now: number,
+  orderedIds: string[],
+): LocalWorkItem[] {
+  return selectSidebarBacklogItems(reorderWorkItems(state, orderedIds), now);
+}
+
+/**
  * The sidebar list's two blocks: pinned items and the rest, each keeping the
  * list's order. Pinned items show first, and a reorder stays in its block, so
  * moving a row never pins or unpins it.
