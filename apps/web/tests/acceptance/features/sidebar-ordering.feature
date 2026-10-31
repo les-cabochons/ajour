@@ -188,6 +188,20 @@ Feature: Sidebar ordering
     And I cancel the settle dialog
     Then the sidebar reads "Sidebar search", "Backup pipeline", "Loose note"
 
+  Scenario: Settle a subitem by dropping it on the Settle zone with Custom ordering
+    Given "Backup pipeline" has a subitem "Pipeline alerts" with its own priority
+    And the item "Pipeline alerts" comes from a source that has its priority
+    When I drag the sidebar row "Pipeline alerts" onto the Settle zone
+    Then the sidebar reads "Sidebar search", "Backup pipeline", "Loose note"
+    And the Settled section lists "Pipeline alerts"
+
+  Scenario: Keep a pinned item pinned when a drop on the Settle zone settles it
+    Given the item "Sidebar search" comes from a source that has its priority
+    When I pin "Sidebar search" from the sidebar
+    And I drag the sidebar row "Sidebar search" onto the Settle zone
+    Then the Settled section lists "Sidebar search"
+    And "Sidebar search" is still pinned
+
   Scenario: Drop on the Settle zone below a list that scrolls
     Given the backlog holds 50 more items
     And the item "Sidebar search" comes from a source that has its priority
