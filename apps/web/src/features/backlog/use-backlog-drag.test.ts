@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canDragBacklogItem,
+  findBacklogDropTarget,
   getBacklogDropMark,
   getBacklogDropOrder,
   getBacklogDragShifts,
@@ -442,3 +443,37 @@ describe("the gap across the sidebar's priority levels", () => {
   });
 });
 
+describe("the target under the pointer", () => {
+  // Three levels stacked in the layout: High holds a 24px label and an 80px
+  // row, Medium only its label, Low its label and a row.
+  const lane = [
+    { key: "lane/high", itemIds: ["h"] },
+    { key: "lane/medium", itemIds: [] },
+    { key: "lane/low", itemIds: ["l"] },
+  ];
+  const layout: Record<string, [number, number]> = {
+    "lane/high": [0, 104],
+    "lane/medium": [104, 128],
+    "lane/low": [128, 232],
+  };
+  const boxOf = (key: string) => {
+    const [top, bottom] = layout[key]!;
+    return { left: 0, right: 200, top, bottom };
+  };
+  const hit = (y: number, offset: Record<string, number>) =>
+    findBacklogDropTarget(lane, { x: 10, y }, boxOf, (key) => offset[key] ?? 0)
+      ?.key;
+
+  it("hits a level where its label moved, not the level it moved over", () => {
+    // "h" left High, so Medium's label shows a row higher, at 24 to 48.
+    expect(hit(36, { "lane/medium": -80, "lane/low": -80 })).toBe(
+      "lane/medium",
+    );
+  });
+
+  it("gives the gap's room to the level it opened in", () => {
+    // The gap opened in Medium, below its label: Medium runs down to Low.
+    expect(hit(100, { "lane/medium": -80 })).toBe("lane/medium");
+    expect(hit(140, { "lane/medium": -80 })).toBe("lane/low");
+  });
+});

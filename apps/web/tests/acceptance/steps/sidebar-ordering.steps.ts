@@ -211,6 +211,24 @@ When(
 );
 
 When(
+  "I start dragging the sidebar row {string} onto the level {string}, following its label",
+  async ({ page }, dragged: string, level: string) => {
+    await pickUp(page, dragged);
+    // The pointer goes to the label, then once more to where the label
+    // moved when the dragged row left the levels above it.
+    for (let round = 0; round < 2; round += 1) {
+      const label = await levelLabel(page, level).boundingBox();
+      if (!label) throw new Error(`The level ${level} shows no label`);
+      await page.mouse.move(
+        label.x + label.width / 3,
+        label.y + label.height / 2,
+        { steps: 10 },
+      );
+    }
+  },
+);
+
+When(
   "I start dragging the sidebar row {string} onto the level {string}",
   async ({ page }, dragged: string, level: string) => {
     await pickUp(page, dragged);

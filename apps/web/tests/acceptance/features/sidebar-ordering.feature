@@ -103,6 +103,15 @@ Feature: Sidebar ordering
     Then "Sidebar search" is now "Medium"
     And the sidebar reads "Backup pipeline", "Sidebar search", "Loose note"
 
+  Scenario: Drop on a level's label after it moved with the gap
+    Given the item "Sidebar search" is "High"
+    And the item "Loose note" is "Low"
+    When I order the sidebar by "Priority"
+    And I start dragging the sidebar row "Backup pipeline" onto the level "Medium", following its label
+    Then the sidebar shows the levels "Urgent", "High", "Medium", "Low", "No priority" with "Medium" highlighted
+    When I drop the dragged row
+    Then "Backup pipeline" is now "Medium"
+
   Scenario: Keep a synced item whose source has a priority out of No priority
     Given the item "Sidebar search" comes from a source that has its priority
     When I order the sidebar by "Priority"

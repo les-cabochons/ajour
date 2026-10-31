@@ -188,6 +188,43 @@ export function getBacklogDragShifts(
   return shifts;
 }
 
+/** Where a drop target shows on screen, for the pointer to hit. */
+export interface BacklogTargetBox {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+/**
+ * The target under `point` among `lane`, a lane's targets in their order,
+ * each where it shows. A target's top moves `offset` pixels with its own
+ * header, as a sidebar level's label moves with the gap, and its bottom with
+ * the next target's. So the pointer on a moved header hits that header's
+ * target, and the room a gap opens belongs to the target it opened in.
+ * Targets that don't move keep their layout box.
+ */
+export function findBacklogDropTarget(
+  lane: readonly BacklogDropTarget[],
+  point: { x: number; y: number },
+  boxOf: (targetKey: string) => BacklogTargetBox | undefined,
+  offset: (targetKey: string) => number,
+): BacklogDropTarget | undefined {
+  return lane.find((target, at) => {
+    const box = boxOf(target.key);
+    if (!box) return false;
+    const next = lane[at + 1];
+    const top = box.top + offset(target.key);
+    const bottom = box.bottom + (next ? offset(next.key) : 0);
+    return (
+      point.x >= box.left &&
+      point.x <= box.right &&
+      point.y >= top &&
+      point.y <= bottom
+    );
+  });
+}
+
 interface Drag {
   itemId: string;
   originKey: string;
@@ -208,6 +245,7 @@ export function useBacklogDrag({
   disabled,
   accepts = () => true,
   holdOrigin = false,
+  targetShift = () => 0,
   onDrop,
 }: {
   targets: BacklogDropTarget[];
@@ -226,6 +264,13 @@ export function useBacklogDrag({
    * then, and a drop without a real move must change nothing.
    */
   holdOrigin?: boolean;
+  /**
+   * How many rows of the dragged row's height a target shows away from its
+   * place in the layout, down when positive, such as a sidebar level whose
+   * label moves with the gap. The pointer hits each target where it shows,
+   * so the target it highlights is the one under the pointer.
+   */
+  targetShift?: (targetKey: string) => number;
   onDrop: (itemId: string, targetKey: string, order: string[] | null) => void;
 }) {
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -234,8 +279,8 @@ export function useBacklogDrag({
   const suppress = useRef(0);
   const rowRefs = useRef(new Map<string, HTMLElement>());
   const groupRefs = useRef(new Map<string, HTMLElement>());
-  const live = useRef({ targets, canReorder, accepts, onDrop });
-  live.current = { targets, canReorder, accepts, onDrop };
+  const live = useRef({ targets, canReorder, accepts, targetShift, onDrop });
+  live.current = { targets, canReorder, accepts, targetShift, onDrop };
   function reset() {
     session.current?.dispose();
     session.current = null;
@@ -307,12 +352,16 @@ export function useBacklogDrag({
         setDrag(held);
         return;
       }
-      const hit = live.current.targets.find((t) => {
-        if (t.key.split("/")[0] !== originKey.split("/")[0]) return false;
-        if (!live.current.accepts(itemId, t.key)) return false;
-        const r = groupRefs.current.get(t.key)?.getBoundingClientRect();
-        return r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
-      });
+      const under = findBacklogDropTarget(
+        live.current.targets.filter(
+          (t) => t.key.split("/")[0] === originKey.split("/")[0],
+        ),
+        { x, y },
+        (key) => groupRefs.current.get(key)?.getBoundingClientRect(),
+        (key) => live.current.targetShift(key) * start.height,
+      );
+      const hit =
+        under && live.current.accepts(itemId, under.key) ? under : undefined;
       const ids = hit?.itemIds ?? [];
       const next = {
         ...d,

@@ -1103,6 +1103,9 @@ export function SidebarBacklogList({
     },
     // The level labels push the rows down as the drag starts.
     holdOrigin: true,
+    // The labels move with the gap, and the levels with them. Read at a
+    // pointer move, from the shifts this render draws below.
+    targetShift: (key) => shifts.targets.get(key) ?? 0,
     onDrop: (itemId, key, order) => {
       const workItem = workItemById.get(itemId);
       const block = blocks.find((candidate) => candidate.key === key);
