@@ -135,19 +135,20 @@ export type BacklogDropRows = (
 ) => readonly string[];
 
 /**
- * How many rows each row of the drag's lane moves, up when negative, so the
+ * How far the rows of the drag's lane move, in rows, up when negative, so the
  * list reads as it would after the drop, as `landRows` gives it: the dragged
- * row's slot closes and a gap opens where it would land. Rows that stay, and
- * the dragged row, are left out, so nothing moves while the drop would change
- * nothing.
+ * row's slot closes and a gap opens where it would land. `targets` holds the
+ * move of each target's own header, such as the sidebar's level label above
+ * its rows. Rows and headers that stay, and the dragged row, are left out, so
+ * nothing moves while the drop would change nothing.
  */
-export function getBacklogRowShifts(
+export function getBacklogDragShifts(
   drag: Pick<Drag, "itemId" | "originKey" | "targetKey" | "index"> | null,
   targets: readonly BacklogDropTarget[],
   canReorder: BacklogReorderPeer,
   landRows: BacklogDropRows,
-): Map<string, number> {
-  const shifts = new Map<string, number>();
+): { rows: Map<string, number>; targets: Map<string, number> } {
+  const shifts = { rows: new Map<string, number>(), targets: new Map() };
   const target = targets.find((candidate) => candidate.key === drag?.targetKey);
   const order =
     drag &&
@@ -169,6 +170,8 @@ export function getBacklogRowShifts(
   let rowsAfter = 0;
   for (const { key, itemIds } of targets) {
     if (key.split("/")[0] !== lane) continue;
+    if (rowsAfter !== rowsBefore)
+      shifts.targets.set(key, rowsAfter - rowsBefore);
     const landed =
       key === drag.targetKey
         ? dropRows
@@ -180,7 +183,7 @@ export function getBacklogRowShifts(
   }
   for (const [id, row] of before) {
     const shift = (after.get(id) ?? row) - row;
-    if (id !== drag.itemId && shift !== 0) shifts.set(id, shift);
+    if (id !== drag.itemId && shift !== 0) shifts.rows.set(id, shift);
   }
   return shifts;
 }
@@ -203,11 +206,26 @@ export function useBacklogDrag({
   targets,
   canReorder,
   disabled,
+  accepts = () => true,
+  holdOrigin = false,
   onDrop,
 }: {
   targets: BacklogDropTarget[];
   canReorder: BacklogReorderPeer;
   disabled: boolean;
+  /**
+   * Whether the item can drop on the target, such as a level an item can't
+   * take. A refused target is no target: it shows no drop place and a drop
+   * there does nothing.
+   */
+  accepts?: (itemId: string, targetKey: string) => boolean;
+  /**
+   * Keeps the origin as the drop place until the pointer moves half a row
+   * from the press, for a list that changes its layout when a drag starts,
+   * such as the sidebar's level labels. The rows move under a still pointer
+   * then, and a drop without a real move must change nothing.
+   */
+  holdOrigin?: boolean;
   onDrop: (itemId: string, targetKey: string, order: string[] | null) => void;
 }) {
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -216,8 +234,8 @@ export function useBacklogDrag({
   const suppress = useRef(0);
   const rowRefs = useRef(new Map<string, HTMLElement>());
   const groupRefs = useRef(new Map<string, HTMLElement>());
-  const live = useRef({ targets, canReorder, onDrop });
-  live.current = { targets, canReorder, onDrop };
+  const live = useRef({ targets, canReorder, accepts, onDrop });
+  live.current = { targets, canReorder, accepts, onDrop };
   function reset() {
     session.current?.dispose();
     session.current = null;
@@ -283,8 +301,15 @@ export function useBacklogDrag({
     const move = (x: number, y: number) => {
       const d = current.current;
       if (!d) return;
+      if (holdOrigin && Math.abs(y - start.y) < start.height / 2) {
+        const held = { ...d, x, y, targetKey: originKey, index: start.index };
+        current.current = held;
+        setDrag(held);
+        return;
+      }
       const hit = live.current.targets.find((t) => {
         if (t.key.split("/")[0] !== originKey.split("/")[0]) return false;
+        if (!live.current.accepts(itemId, t.key)) return false;
         const r = groupRefs.current.get(t.key)?.getBoundingClientRect();
         return r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
       });
