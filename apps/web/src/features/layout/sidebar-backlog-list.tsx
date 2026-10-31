@@ -120,6 +120,12 @@ type IconData = ReturnType<typeof useWorkItemIconData>;
 const PINNED_BLOCK = "pinned/items";
 const OTHERS_BLOCK = "others/items";
 
+/**
+ * The Settle zone below the list while a row drags, like T3 Code's Settled
+ * zone. Both lanes drop on it, and a drop settles the row as E does.
+ */
+const SETTLE_ZONE = "settle/zone";
+
 /** A run of rows a drag moves within, and drops on as a whole. */
 interface SidebarBlock {
   key: string;
@@ -1004,6 +1010,7 @@ const OffListRow = memo(function OffListRow({
  * header, pinned items first, `children` (the Pull requests section), then
  * the collapsible Snoozed and Settled sections. Every section keeps only the
  * rows `matcher` accepts, and its count follows. Empty sections are not shown.
+ * While a row drags, the Settle zone shows below the list.
  */
 export function SidebarBacklogList({
   pathname,
@@ -1058,11 +1065,13 @@ export function SidebarBacklogList({
     [listed, sortMode],
   );
   const targets = useMemo(
-    () =>
-      blocks.map((block) => ({
+    (): BacklogDropTarget[] => [
+      ...blocks.map((block) => ({
         key: block.key,
         itemIds: block.workItems.map((workItem) => workItem._id),
       })),
+      { key: SETTLE_ZONE, itemIds: [], anyLane: true },
+    ],
     [blocks],
   );
   // Keyed on the work items, not the list, so the clock's tick that rebuilds
@@ -1108,6 +1117,14 @@ export function SidebarBacklogList({
     targetShift: (key) => shifts.targets.get(key) ?? 0,
     onDrop: (itemId, key, order) => {
       const workItem = workItemById.get(itemId);
+      if (workItem && key === SETTLE_ZONE) {
+        // The settle dialog, the subitem prompt and the Undo toast follow
+        // the item's Settle action, as with E.
+        withEventAttribution({ surface: "drag" }, () =>
+          rows.run(workItem, "settle"),
+        );
+        return;
+      }
       const block = blocks.find((candidate) => candidate.key === key);
       if (!workItem || !block) return;
       withEventAttribution({ surface: "drag" }, () => {
@@ -1266,133 +1283,162 @@ export function SidebarBacklogList({
   }
 
   return (
-    <div
-      ref={listRef}
-      className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2 scrollbar-on-hover"
-      aria-label="Backlog items"
-      data-focus-scope
-    >
-      {/*
+    <>
+      <div
+        ref={listRef}
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2 scrollbar-on-hover"
+        aria-label="Backlog items"
+        data-focus-scope
+      >
+        {/*
         The backlog items have no header, like T3 Code's thread list. Pinned
         items and the rest are separate lanes, so a drag stays in its own.
         Under Priority ordering the rest is one block per level.
       */}
-      <div className="flex shrink-0 flex-col pt-2">
-        {[
-          blocks.filter((block) => block.key === PINNED_BLOCK),
-          blocks.filter((block) => block.key !== PINNED_BLOCK),
-        ].map((lane) => (
-          <div key={lane[0]!.key} data-reorder-block className="flex flex-col">
-            {lane.map((block) => (
-              <div
-                key={block.key}
-                ref={(element) => {
-                  if (element) drag.groupRefs.current.set(block.key, element);
-                  else drag.groupRefs.current.delete(block.key);
-                }}
-                data-drop-target={block.key}
-                className="flex flex-col"
-              >
-                {showLevels && block.level ? (
-                  <LevelLabel
-                    label={getPriorityLevelName(block.level.priority)}
-                    active={dragging?.targetKey === block.key}
-                    shift={
-                      (shifts.targets.get(block.key) ?? 0) *
-                      (dragging?.height ?? 0)
-                    }
-                  />
-                ) : null}
-                {block.workItems.map((workItem) => (
-                  <ItemRow
+        <div className="flex shrink-0 flex-col pt-2">
+          {[
+            blocks.filter((block) => block.key === PINNED_BLOCK),
+            blocks.filter((block) => block.key !== PINNED_BLOCK),
+          ].map((lane) => (
+            <div
+              key={lane[0]!.key}
+              data-reorder-block
+              className="flex flex-col"
+            >
+              {lane.map((block) => (
+                <div
+                  key={block.key}
+                  ref={(element) => {
+                    if (element) drag.groupRefs.current.set(block.key, element);
+                    else drag.groupRefs.current.delete(block.key);
+                  }}
+                  data-drop-target={block.key}
+                  className="flex flex-col"
+                >
+                  {showLevels && block.level ? (
+                    <LevelLabel
+                      label={getPriorityLevelName(block.level.priority)}
+                      active={dragging?.targetKey === block.key}
+                      shift={
+                        (shifts.targets.get(block.key) ?? 0) *
+                        (dragging?.height ?? 0)
+                      }
+                    />
+                  ) : null}
+                  {block.workItems.map((workItem) => (
+                    <ItemRow
+                      key={workItem._id}
+                      {...rowProps(workItem)}
+                      dragState={rowDragState(workItem._id)}
+                    />
+                  ))}
+                </div>
+              ))}
+            </div>
+          ))}
+          {listed.length === 0 ? (
+            <p className="px-2 pt-1 pb-1 text-xs text-muted-foreground">
+              {matcher.active ? "No matching items." : "Nothing on your plate."}
+            </p>
+          ) : null}
+        </div>
+
+        {children}
+
+        {/* A section with nothing in it is not shown. */}
+        {snoozed.length > 0 ? (
+          <>
+            <SidebarSectionHeader
+              label="Snoozed"
+              count={snoozed.length}
+              open={layout.snoozedOpen}
+              onToggle={() =>
+                updateSidebarLayout({ snoozedOpen: !layout.snoozedOpen })
+              }
+            />
+            {layout.snoozedOpen
+              ? snoozed.map((workItem) => (
+                  <OffListRow
                     key={workItem._id}
-                    {...rowProps(workItem)}
-                    dragState={rowDragState(workItem._id)}
+                    workItem={workItem}
+                    detail={formatSnoozeTime(workItem.snoozedUntil!, now)}
+                    restoreLabel="Unsnooze"
+                    restoreAction="unsnooze"
+                    iconData={iconData}
+                    rows={rows}
                   />
-                ))}
-              </div>
-            ))}
-          </div>
-        ))}
-        {listed.length === 0 ? (
-          <p className="px-2 pt-1 pb-1 text-xs text-muted-foreground">
-            {matcher.active ? "No matching items." : "Nothing on your plate."}
-          </p>
+                ))
+              : null}
+          </>
         ) : null}
-      </div>
 
-      {children}
+        {settled.length > 0 ? (
+          <>
+            <SidebarSectionHeader
+              label="Settled"
+              // Unfiltered, the count would be every settled item ever.
+              count={matcher.active ? settled.length : undefined}
+              open={layout.settledOpen}
+              onToggle={() =>
+                updateSidebarLayout({ settledOpen: !layout.settledOpen })
+              }
+            />
+            {settledRows}
+          </>
+        ) : null}
 
-      {/* A section with nothing in it is not shown. */}
-      {snoozed.length > 0 ? (
-        <>
-          <SidebarSectionHeader
-            label="Snoozed"
-            count={snoozed.length}
-            open={layout.snoozedOpen}
-            onToggle={() =>
-              updateSidebarLayout({ snoozedOpen: !layout.snoozedOpen })
-            }
-          />
-          {layout.snoozedOpen
-            ? snoozed.map((workItem) => (
-                <OffListRow
-                  key={workItem._id}
-                  workItem={workItem}
-                  detail={formatSnoozeTime(workItem.snoozedUntil!, now)}
-                  restoreLabel="Unsnooze"
-                  restoreAction="unsnooze"
-                  iconData={iconData}
-                  rows={rows}
-                />
-              ))
-            : null}
-        </>
-      ) : null}
+        <BacklogItemHoverCard
+          container={listRef}
+          state={state}
+          now={now}
+          iconData={iconData}
+        />
 
-      {settled.length > 0 ? (
-        <>
-          <SidebarSectionHeader
-            label="Settled"
-            // Unfiltered, the count would be every settled item ever.
-            count={matcher.active ? settled.length : undefined}
-            open={layout.settledOpen}
-            onToggle={() =>
-              updateSidebarLayout({ settledOpen: !layout.settledOpen })
-            }
-          />
-          {settledRows}
-        </>
-      ) : null}
-
-      <BacklogItemHoverCard
-        container={listRef}
-        state={state}
-        now={now}
-        iconData={iconData}
-      />
-
-      {/*
+        {/*
         The dragged row itself follows the pointer, as the list shows it. It
         is inert: the row in the list stays the one to focus and click.
       */}
-      {dragging && draggedItem ? (
+        {dragging && draggedItem ? (
+          <div
+            className="sidebar-drag-preview"
+            inert
+            style={{
+              width: dragging.width,
+              transform: getSharedTableDragOverlayTransform({
+                originLeft: dragging.originLeft,
+                minTop: 0,
+                pointerY: dragging.y,
+                offsetY: dragging.offsetY,
+              }),
+            }}
+          >
+            <ItemRow {...rowProps(draggedItem)} />
+          </div>
+        ) : null}
+      </div>
+
+      {/*
+      Below the list, not in it, so it is in reach without scrolling, and the
+      list shrinks from the bottom instead of moving its rows.
+    */}
+      {dragging ? (
         <div
-          className="sidebar-drag-preview"
-          inert
-          style={{
-            width: dragging.width,
-            transform: getSharedTableDragOverlayTransform({
-              originLeft: dragging.originLeft,
-              minTop: 0,
-              pointerY: dragging.y,
-              offsetY: dragging.offsetY,
-            }),
+          ref={(element) => {
+            if (element) drag.groupRefs.current.set(SETTLE_ZONE, element);
+            else drag.groupRefs.current.delete(SETTLE_ZONE);
           }}
+          data-drop-target={SETTLE_ZONE}
+          data-active={dragging.targetKey === SETTLE_ZONE || undefined}
+          className={cn(
+            "mx-2 mb-2 flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-md border border-dashed border-border text-sm text-muted-foreground",
+            dragging.targetKey === SETTLE_ZONE &&
+              "border-primary bg-primary/5 text-primary",
+          )}
         >
-          <ItemRow {...rowProps(draggedItem)} />
+          <SettleIcon className="size-3.5" />
+          Settle
         </div>
       ) : null}
-    </div>
+    </>
   );
 }

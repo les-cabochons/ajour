@@ -1,8 +1,9 @@
 Feature: Sidebar ordering
   The sidebar's backlog rows move by drag or by Alt+Up and Alt+Down. With
   Priority ordering, a row moves within its level, and a drag shows the
-  levels so a drop can change one. The filter menu switches between Custom
-  and Priority, which is the Backlog page's ordering too.
+  levels so a drop can change one. In either ordering, a drag shows a
+  Settle zone that settles the row dropped on it. The filter menu switches
+  between Custom and Priority, which is the Backlog page's ordering too.
 
   Background:
     Given I have backlog items with priorities
@@ -19,8 +20,10 @@ Feature: Sidebar ordering
     Then the sidebar shows "Loose note" once
     And the sidebar shows the gap, "Sidebar search", "Backup pipeline" from top to bottom
     And the sidebar shows no levels
+    And the Settle zone shows
     When I cancel the drag with Escape
-    Then the sidebar shows "Sidebar search", "Backup pipeline", "Loose note" from top to bottom
+    Then the Settle zone is hidden
+    And the sidebar shows "Sidebar search", "Backup pipeline", "Loose note" from top to bottom
     And the sidebar reads "Sidebar search", "Backup pipeline", "Loose note"
 
   Scenario: Drop a sidebar row in the gap, then undo
@@ -78,8 +81,10 @@ Feature: Sidebar ordering
     When I order the sidebar by "Priority"
     And I start dragging the sidebar row "Loose note" above "Sidebar search"
     Then the sidebar shows the levels "Urgent", "High", "Medium", "Low", "No priority" with "Medium" highlighted
+    And the Settle zone shows
     When I cancel the drag with Escape
     Then the sidebar shows no levels
+    And the Settle zone is hidden
     And the sidebar reads "Backup pipeline", "Sidebar search", "Loose note"
 
   Scenario: Drop a sidebar row in another level, then undo
@@ -165,3 +170,28 @@ Feature: Sidebar ordering
     Then the sidebar reads "Loose note", "Backup pipeline"
     When I press Escape in the sidebar search
     Then the sidebar reads "Sidebar search", "Loose note", "Backup pipeline"
+
+  Scenario: Settle a sidebar row by dropping it on the Settle zone
+    Given the item "Sidebar search" comes from a source that has its priority
+    When I start dragging the sidebar row "Sidebar search" onto the Settle zone
+    Then the Settle zone is highlighted
+    When I drop the dragged row
+    Then the sidebar reads "Backup pipeline", "Loose note"
+    And the Settled section lists "Sidebar search"
+    When I press Undo on the toast
+    Then the sidebar reads "Sidebar search", "Backup pipeline", "Loose note"
+
+  Scenario: Cancel the settle dialog a drop on the Settle zone opens
+    Given the item "Sidebar search" comes from a source that has its priority
+    And the source's plugin can write
+    When I drag the sidebar row "Sidebar search" onto the Settle zone
+    And I cancel the settle dialog
+    Then the sidebar reads "Sidebar search", "Backup pipeline", "Loose note"
+
+  Scenario: Drop a pinned row on the Settle zone with Priority ordering
+    When I pin "Loose note" from the sidebar
+    And I order the sidebar by "Priority"
+    And I drag the sidebar row "Loose note" onto the Settle zone
+    Then the sidebar reads "Backup pipeline", "Sidebar search"
+    When I press Undo on the toast
+    Then the sidebar reads "Loose note", "Backup pipeline", "Sidebar search"
