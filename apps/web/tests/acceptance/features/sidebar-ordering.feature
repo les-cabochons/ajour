@@ -16,10 +16,23 @@ Feature: Sidebar ordering
   Scenario: Make room for a dragged sidebar row
     When I start dragging the sidebar row "Loose note" above "Sidebar search"
     Then the sidebar shows "Loose note" once
-    And the sidebar shows "Loose note", "Sidebar search", "Backup pipeline" from top to bottom
+    And the sidebar shows the gap, "Sidebar search", "Backup pipeline" from top to bottom
     When I cancel the drag with Escape
     Then the sidebar shows "Sidebar search", "Backup pipeline", "Loose note" from top to bottom
     And the sidebar reads "Sidebar search", "Backup pipeline", "Loose note"
+
+  Scenario: Drop a sidebar row in the gap, then undo
+    When I start dragging the sidebar row "Sidebar search" below "Backup pipeline"
+    Then the sidebar shows "Backup pipeline", the gap, "Loose note" from top to bottom
+    When I drop the dragged row
+    Then the sidebar reads "Backup pipeline", "Sidebar search", "Loose note"
+    When I press Undo on the toast
+    Then the sidebar reads "Sidebar search", "Backup pipeline", "Loose note"
+
+  Scenario: Drop a sidebar row back in its own place
+    When I pick up the sidebar row "Backup pipeline" and drop it in place
+    Then the sidebar reads "Sidebar search", "Backup pipeline", "Loose note"
+    And no Undo toast showed
 
   Scenario: Move a sidebar row from the keyboard
     When I press Alt+Down on the sidebar row "Sidebar search"
