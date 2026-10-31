@@ -3,7 +3,9 @@ import {
   canDragBacklogItem,
   getBacklogDropMark,
   getBacklogDropOrder,
+  getBacklogRowShifts,
   type BacklogDropTarget,
+  type BacklogReorderPeer,
 } from "./use-backlog-drag";
 
 it.each<{
@@ -301,4 +303,72 @@ it("keeps a parent's subitem above the line when an item lands last", () => {
       (itemId) => itemId !== "b-sub",
     ),
   ).toEqual({ itemId: "b-sub", edge: "after" });
+});
+
+describe("the gap a dragged sidebar row opens", () => {
+  /**
+   * What the list reads mid-drag: each row at its slot plus its shift, and
+   * the dragged item in the slot left empty, where the gap is.
+   */
+  function readDuringDrag(
+    rows: string[],
+    itemId: string,
+    index: number,
+    canReorder: BacklogReorderPeer = () => true,
+  ) {
+    const drag = {
+      itemId,
+      originKey: "lane/list",
+      targetKey: "lane/list",
+      index,
+    };
+    const shifts = getBacklogRowShifts(
+      drag,
+      [{ key: "lane/list", itemIds: rows }],
+      canReorder,
+    );
+    const slots: string[] = Array(rows.length).fill(itemId);
+    rows.forEach((id, row) => {
+      if (id !== itemId) slots[row + (shifts.get(id) ?? 0)] = id;
+    });
+    return slots;
+  }
+
+  it("reads in the order the drop gives", () => {
+    expect(readDuringDrag(["a", "b", "c"], "c", 0)).toEqual(["c", "a", "b"]);
+    expect(readDuringDrag(["a", "b", "c"], "a", 2)).toEqual(["b", "c", "a"]);
+  });
+
+  it("stays at the row's own place until the pointer leaves it", () => {
+    expect(readDuringDrag(["a", "b", "c"], "b", 1)).toEqual(["a", "b", "c"]);
+  });
+
+  it("never opens between a parent and its subitem", () => {
+    const isRoot = (id: string) => !id.endsWith("-sub");
+    // Index 1 is between "b" and its subitem: the gap opens after both.
+    expect(readDuringDrag(["a", "b", "b-sub", "c"], "a", 2, isRoot)).toEqual([
+      "b",
+      "b-sub",
+      "a",
+      "c",
+    ]);
+  });
+
+  it("takes a parent's subitem along with the parent", () => {
+    const isRoot = (id: string) => !id.endsWith("-sub");
+    expect(readDuringDrag(["a", "a-sub", "b"], "a", 2, isRoot)).toEqual([
+      "b",
+      "a",
+      "a-sub",
+    ]);
+  });
+
+  it("moves nothing while the pointer is outside the list", () => {
+    const shifts = getBacklogRowShifts(
+      { itemId: "c", originKey: "lane/list", targetKey: null, index: 0 },
+      [{ key: "lane/list", itemIds: ["a", "b", "c"] }],
+      () => true,
+    );
+    expect(shifts.size).toBe(0);
+  });
 });
