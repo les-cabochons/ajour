@@ -8,6 +8,7 @@ import {
   type BacklogDropRows,
   type BacklogDropTarget,
   type BacklogReorderPeer,
+  type BacklogTargetBox,
 } from "./use-backlog-drag";
 
 it.each<{
@@ -461,8 +462,13 @@ describe("the target under the pointer", () => {
     return { left: 0, right: 200, top, bottom };
   };
   const hit = (y: number, offset: Record<string, number>) =>
-    findBacklogDropTarget(lane, { x: 10, y }, boxOf, (key) => offset[key] ?? 0)
-      ?.key;
+    findBacklogDropTarget(
+      lane,
+      "lane/high",
+      { x: 10, y },
+      boxOf,
+      (key) => offset[key] ?? 0,
+    )?.key;
 
   it("hits a level where its label moved, not the level it moved over", () => {
     // "h" left High, so Medium's label shows a row higher, at 24 to 48.
@@ -475,5 +481,61 @@ describe("the target under the pointer", () => {
     // The gap opened in Medium, below its label: Medium runs down to Low.
     expect(hit(100, { "lane/medium": -80 })).toBe("lane/medium");
     expect(hit(140, { "lane/medium": -80 })).toBe("lane/low");
+  });
+});
+
+describe("a target every lane drops on, like the Settle zone", () => {
+  const zone = { key: "settle/zone", itemIds: [], anyLane: true };
+  const isRoot = (id: string) => !id.endsWith("-sub");
+
+  it("lets a row drag to it, even one with nothing to move among", () => {
+    const targets = [{ key: "lane/list", itemIds: ["a", "a-sub"] }, zone];
+    expect(canDragBacklogItem(targets, isRoot, "a-sub", "lane/list")).toBe(
+      true,
+    );
+    expect(
+      canDragBacklogItem([targets[0]!], isRoot, "a-sub", "lane/list"),
+    ).toBe(false);
+  });
+
+  it("moves no row while the pointer is over it", () => {
+    const { rows, targets } = getBacklogDragShifts(
+      {
+        itemId: "a",
+        originKey: "lane/list",
+        targetKey: "settle/zone",
+        index: 0,
+      },
+      [{ key: "lane/list", itemIds: ["a", "b"] }, zone],
+      () => true,
+      landInOrder,
+    );
+    expect(rows.size + targets.size).toBe(0);
+  });
+
+  it("takes the Settle zone first, and the list only inside its scroll area", () => {
+    // A long list's box runs past its scroll area, under the zone below it.
+    const targets = [
+      { key: "lane/list", itemIds: ["a"] },
+      { key: "settle/zone", itemIds: [], anyLane: true },
+    ];
+    const boxes: Record<string, BacklogTargetBox> = {
+      "lane/list": { left: 0, right: 200, top: 0, bottom: 4000 },
+      "settle/zone": { left: 0, right: 200, top: 700, bottom: 740 },
+    };
+    const viewport = { left: 0, right: 200, top: 0, bottom: 690 };
+    const hit = (y: number) =>
+      findBacklogDropTarget(
+        targets,
+        "lane/list",
+        { x: 10, y },
+        (key) => boxes[key],
+        () => 0,
+        viewport,
+      )?.key;
+
+    expect(hit(720)).toBe("settle/zone");
+    expect(hit(695)).toBe(undefined);
+    expect(hit(300)).toBe("lane/list");
   });
 });

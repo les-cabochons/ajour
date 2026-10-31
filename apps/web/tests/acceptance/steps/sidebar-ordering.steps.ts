@@ -90,6 +90,20 @@ async function startDragging(
   await page.mouse.move(to.x + to.width / 3, y, { steps: 10 });
 }
 
+function settleZone(page: Page) {
+  return sidebar(page).locator('[data-drop-target="settle/zone"]');
+}
+
+/** Picks up a sidebar row and moves it over the Settle zone. */
+async function dragOntoSettleZone(page: Page, dragged: string) {
+  await pickUp(page, dragged);
+  const zone = await settleZone(page).boundingBox();
+  if (!zone) throw new Error("The Settle zone does not show");
+  await page.mouse.move(zone.x + zone.width / 2, zone.y + zone.height / 2, {
+    steps: 10,
+  });
+}
+
 function levelLabel(page: Page, level: string) {
   return sidebar(page).locator("[data-level-label]", {
     hasText: new RegExp(`^${level}$`),
@@ -442,6 +456,62 @@ Given(
   },
 );
 
+/** The filler items of a long list, stored after the fixture's three. */
+const FILLERS = Array.from(
+  { length: 50 },
+  (_, at) => `Filler ${String(at + 1).padStart(2, "0")}`,
+);
+
+Given("the backlog holds 50 more items", async ({ page }) => {
+  await page.evaluate((titles) => {
+    const key = "ajour.local-state.v2";
+    const state = JSON.parse(localStorage.getItem(key)!);
+    for (const [at, title] of titles.entries())
+      state.workItems.push({
+        _id: `filler-${at}`,
+        title,
+        source: "manual",
+        status: "active",
+        createdAt: 1,
+      });
+    localStorage.setItem(key, JSON.stringify(state));
+  }, FILLERS);
+  await page.reload();
+});
+
+Then(
+  /^the sidebar lists (.+), then the 50 filler items$/,
+  async ({ page }, list: string) => {
+    const expected = [...list.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+    await expect(sidebarTitles(page)).toHaveText([...expected, ...FILLERS]);
+  },
+);
+
+Given(
+  "the item {string} settles by an Apply rule",
+  async ({ page }, title: string) => {
+    // The rule of the item's source project sets Low when it settles.
+    await page.evaluate((title) => {
+      const key = "ajour.local-state.v2";
+      const state = JSON.parse(localStorage.getItem(key)!);
+      const item = state.workItems.find(
+        (workItem: { title: string }) => workItem.title === title,
+      );
+      item.sourceProjectName = "Fixture project";
+      state.settleRules = [
+        {
+          source: item.source,
+          connectionId: item.sourceConnectionId,
+          sourceProjectName: "Fixture project",
+          priority: 4,
+        },
+      ];
+      localStorage.setItem(key, JSON.stringify(state));
+    }, title);
+    await page.reload();
+  },
+);
+
 Then("{string} is still pinned", async ({ page }, title: string) => {
   await expect
     .poll(() =>
@@ -482,4 +552,83 @@ Then(/^the Backlog page reads (.+)$/, async ({ page }, list: string) => {
   await expect(
     page.locator("main [data-work-item-id] .backlog-item-title"),
   ).toHaveText(expected);
+});
+
+When(
+  "I start dragging the sidebar row {string} onto the Settle zone",
+  async ({ page }, dragged: string) => {
+    await dragOntoSettleZone(page, dragged);
+  },
+);
+
+When(
+  "I drag the sidebar row {string} onto the Settle zone",
+  async ({ page }, dragged: string) => {
+    await dragOntoSettleZone(page, dragged);
+    await page.mouse.up();
+  },
+);
+
+When(
+  "I drag the sidebar row {string} onto the Settle zone and drop it with Shift held",
+  async ({ page }, dragged: string) => {
+    await dragOntoSettleZone(page, dragged);
+    await page.keyboard.down("Shift");
+    await page.mouse.up();
+    await page.keyboard.up("Shift");
+  },
+);
+
+Then("the Settle zone shows", async ({ page }) => {
+  await expect(settleZone(page)).toBeVisible();
+});
+
+Then("the Settle zone is hidden", async ({ page }) => {
+  await expect(settleZone(page)).toHaveCount(0);
+});
+
+Then("the Settle zone is highlighted", async ({ page }) => {
+  await expect(settleZone(page)).toHaveAttribute("data-active", "true");
+});
+
+Then("the Settled section lists {string}", async ({ page }, title: string) => {
+  const header = sidebar(page).getByRole("button", { name: /^Settled/ });
+  if ((await header.getAttribute("aria-expanded")) === "false")
+    await header.click();
+  await expect(sidebarRow(page, title)).toBeVisible();
+});
+
+Given("the source's plugin can write", async ({ page }) => {
+  const plugin = {
+    id: "example",
+    version: "1.0.0",
+    apiVersion: 3,
+    displayName: "Fixture source",
+    iconSvg:
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/></svg>',
+    entrypoint: "dist/plugin.js",
+    capabilities: { connector: { settle: true } },
+    connectionFields: [],
+  };
+  // Routes added later answer first, so this replaces the fixture's.
+  await page.route("http://127.0.0.1:8787/api/plugins", (route) =>
+    route.fulfill({
+      json: {
+        pluginsEnabled: true,
+        plugins: [plugin],
+        connectionGroups: [{ plugin, enabled: true, connections: [] }],
+        totalPendingImportCount: 0,
+        totalSelectedImportCount: 0,
+      },
+      headers: { "access-control-allow-origin": "*" },
+    }),
+  );
+  await page.reload();
+});
+
+When("I cancel the settle dialog", async ({ page }) => {
+  const dialog = page.getByRole("dialog", { name: "Settle", exact: true });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
 });
