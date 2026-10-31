@@ -456,6 +456,37 @@ Given(
   },
 );
 
+/** The filler items of a long list, stored after the fixture's three. */
+const FILLERS = Array.from(
+  { length: 50 },
+  (_, at) => `Filler ${String(at + 1).padStart(2, "0")}`,
+);
+
+Given("the backlog holds 50 more items", async ({ page }) => {
+  await page.evaluate((titles) => {
+    const key = "ajour.local-state.v2";
+    const state = JSON.parse(localStorage.getItem(key)!);
+    for (const [at, title] of titles.entries())
+      state.workItems.push({
+        _id: `filler-${at}`,
+        title,
+        source: "manual",
+        status: "active",
+        createdAt: 1,
+      });
+    localStorage.setItem(key, JSON.stringify(state));
+  }, FILLERS);
+  await page.reload();
+});
+
+Then(
+  /^the sidebar lists (.+), then the 50 filler items$/,
+  async ({ page }, list: string) => {
+    const expected = [...list.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+    await expect(sidebarTitles(page)).toHaveText([...expected, ...FILLERS]);
+  },
+);
+
 Then("{string} is still pinned", async ({ page }, title: string) => {
   await expect
     .poll(() =>

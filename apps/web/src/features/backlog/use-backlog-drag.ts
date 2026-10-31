@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent,
+  type RefObject,
+} from "react";
 import {
   createSharedTableDragPointerSession,
   getSharedTableDragTargetIndex,
@@ -206,31 +212,61 @@ export interface BacklogTargetBox {
   bottom: number;
 }
 
+function contains(
+  box: BacklogTargetBox | undefined,
+  point: { x: number; y: number },
+): box is BacklogTargetBox {
+  return Boolean(
+    box &&
+    point.x >= box.left &&
+    point.x <= box.right &&
+    point.y >= box.top &&
+    point.y <= box.bottom,
+  );
+}
+
 /**
- * The target under `point` among `lane`, a lane's targets in their order,
- * each where it shows. A target's top moves `offset` pixels with its own
- * header, as a sidebar level's label moves with the gap, and its bottom with
- * the next target's. So the pointer on a moved header hits that header's
- * target, and the room a gap opens belongs to the target it opened in.
- * Targets that don't move keep their layout box.
+ * The target under `point` for a drag from `originKey`'s lane, each target
+ * where it shows. A target every lane drops on, such as the sidebar's Settle
+ * zone, sits outside the lanes and takes the pointer first. The lane's
+ * targets take it only inside `viewport`, the scroll area they show in, so
+ * rows scrolled out of view never cover what lies past it.
+ *
+ * A lane target's top moves `offset` pixels with its own header, as a sidebar
+ * level's label moves with the gap, and its bottom with the next target's.
+ * So the pointer on a moved header hits that header's target, and the room a
+ * gap opens belongs to the target it opened in. Targets that don't move keep
+ * their layout box.
  */
 export function findBacklogDropTarget(
-  lane: readonly BacklogDropTarget[],
+  targets: readonly BacklogDropTarget[],
+  originKey: string,
   point: { x: number; y: number },
   boxOf: (targetKey: string) => BacklogTargetBox | undefined,
   offset: (targetKey: string) => number,
+  viewport?: BacklogTargetBox,
 ): BacklogDropTarget | undefined {
+  const zone = targets.find(
+    (target) => target.anyLane && contains(boxOf(target.key), point),
+  );
+  if (zone) return zone;
+  if (viewport && !contains(viewport, point)) return undefined;
+  const lane = targets.filter(
+    (target) =>
+      !target.anyLane && target.key.split("/")[0] === originKey.split("/")[0],
+  );
   return lane.find((target, at) => {
     const box = boxOf(target.key);
     if (!box) return false;
     const next = lane[at + 1];
-    const top = box.top + offset(target.key);
-    const bottom = box.bottom + (next ? offset(next.key) : 0);
-    return (
-      point.x >= box.left &&
-      point.x <= box.right &&
-      point.y >= top &&
-      point.y <= bottom
+    return contains(
+      {
+        left: box.left,
+        right: box.right,
+        top: box.top + offset(target.key),
+        bottom: box.bottom + (next ? offset(next.key) : 0),
+      },
+      point,
     );
   });
 }
@@ -256,6 +292,7 @@ export function useBacklogDrag({
   accepts = () => true,
   holdOrigin = false,
   targetShift = () => 0,
+  viewport,
   onDrop,
 }: {
   targets: BacklogDropTarget[];
@@ -281,6 +318,12 @@ export function useBacklogDrag({
    * so the target it highlights is the one under the pointer.
    */
   targetShift?: (targetKey: string) => number;
+  /**
+   * The scroll area the lanes show in, such as the sidebar's list. Their
+   * targets take the pointer only inside it, so a long list's rows scrolled
+   * out of view never cover the Settle zone below it.
+   */
+  viewport?: RefObject<HTMLElement | null>;
   onDrop: (itemId: string, targetKey: string, order: string[] | null) => void;
 }) {
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -363,10 +406,12 @@ export function useBacklogDrag({
         return;
       }
       const under = findBacklogDropTarget(
-        live.current.targets.filter((t) => isInLane(t, originKey)),
+        live.current.targets,
+        originKey,
         { x, y },
         (key) => groupRefs.current.get(key)?.getBoundingClientRect(),
         (key) => live.current.targetShift(key) * start.height,
+        viewport?.current?.getBoundingClientRect(),
       );
       const hit =
         under && live.current.accepts(itemId, under.key) ? under : undefined;

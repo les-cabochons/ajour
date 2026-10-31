@@ -329,7 +329,8 @@ describe("a drag", () => {
         ),
       },
     });
-    // jsdom has no layout: rows are 30px tall, in one drop target.
+    // jsdom has no layout: rows are 30px tall, in one drop target, inside a
+    // list that shows them all.
     const box = (top: number, height: number) => () =>
       ({
         top,
@@ -343,7 +344,7 @@ describe("a drag", () => {
         toJSON: () => ({}),
       }) as DOMRect;
     for (const block of document.querySelectorAll<HTMLElement>(
-      "[data-drop-target]",
+      '[data-drop-target], [aria-label="Backlog items"]',
     )) {
       block.getBoundingClientRect = box(0, 1000);
     }

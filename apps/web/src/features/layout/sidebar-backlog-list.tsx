@@ -1115,6 +1115,8 @@ export function SidebarBacklogList({
     // The labels move with the gap, and the levels with them. Read at a
     // pointer move, from the shifts this render draws below.
     targetShift: (key) => shifts.targets.get(key) ?? 0,
+    // A long list scrolls under the Settle zone below it.
+    viewport: listRef,
     onDrop: (itemId, key, order) => {
       const workItem = workItemById.get(itemId);
       if (workItem && key === SETTLE_ZONE) {

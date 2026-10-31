@@ -188,6 +188,13 @@ Feature: Sidebar ordering
     And I cancel the settle dialog
     Then the sidebar reads "Sidebar search", "Backup pipeline", "Loose note"
 
+  Scenario: Drop on the Settle zone below a list that scrolls
+    Given the backlog holds 50 more items
+    And the item "Sidebar search" comes from a source that has its priority
+    When I drag the sidebar row "Sidebar search" onto the Settle zone
+    Then the sidebar lists "Backup pipeline", "Loose note", then the 50 filler items
+    And the Settled section lists "Sidebar search"
+
   Scenario: Drop a pinned row on the Settle zone with Priority ordering
     When I pin "Loose note" from the sidebar
     And I order the sidebar by "Priority"
