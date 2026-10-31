@@ -124,53 +124,43 @@ export function getBacklogDropMark(
 }
 
 /**
- * The target's rows in the order a drop would give them, the dragged item at
- * its landing place, or undefined when the drop changes nothing. Rows that
- * never move, such as subitems under Custom ordering, follow the peer above
- * them, as the sidebar shows a subitem below its parent.
+ * The rows the target `targetKey` shows after a drop that gives the dragged
+ * item's peers there the order `order`, the dragged item at its landing place.
+ * The list answers from its own ordering, since only it knows where rows that
+ * never move, such as subitems under Custom ordering, sit after the drop.
  */
-function getBacklogDropRows(
-  drag: Pick<Drag, "itemId" | "originKey" | "targetKey" | "index">,
-  target: BacklogDropTarget,
-  canReorder: BacklogReorderPeer,
-) {
-  const order = getBacklogDropOrder(
-    target.itemIds,
-    drag.itemId,
-    drag.index,
-    drag.originKey === drag.targetKey,
-    canReorder,
-  );
-  if (!order) return undefined;
-  const peers = new Set(order);
-  const leading: string[] = [];
-  const runs = new Map<string, string[]>();
-  let run = leading;
-  for (const id of target.itemIds) {
-    if (peers.has(id)) {
-      run = [id];
-      runs.set(id, run);
-    } else run.push(id);
-  }
-  return [...leading, ...order.flatMap((id) => runs.get(id) ?? [id])];
-}
+export type BacklogDropRows = (
+  targetKey: string,
+  order: string[],
+) => readonly string[];
 
 /**
  * How many rows each row of the drag's lane moves, up when negative, so the
- * list reads as it would after the drop: the dragged row's slot closes and a
- * gap opens where it would land. Rows that stay, and the dragged row, are
- * left out, so nothing moves while the drop would change nothing.
+ * list reads as it would after the drop, as `landRows` gives it: the dragged
+ * row's slot closes and a gap opens where it would land. Rows that stay, and
+ * the dragged row, are left out, so nothing moves while the drop would change
+ * nothing.
  */
 export function getBacklogRowShifts(
   drag: Pick<Drag, "itemId" | "originKey" | "targetKey" | "index"> | null,
   targets: readonly BacklogDropTarget[],
   canReorder: BacklogReorderPeer,
+  landRows: BacklogDropRows,
 ): Map<string, number> {
   const shifts = new Map<string, number>();
   const target = targets.find((candidate) => candidate.key === drag?.targetKey);
-  const dropRows =
-    drag && target && getBacklogDropRows(drag, target, canReorder);
-  if (!drag || !dropRows) return shifts;
+  const order =
+    drag &&
+    target &&
+    getBacklogDropOrder(
+      target.itemIds,
+      drag.itemId,
+      drag.index,
+      drag.originKey === drag.targetKey,
+      canReorder,
+    );
+  if (!drag || !target || !order) return shifts;
+  const dropRows = landRows(target.key, order);
 
   const lane = drag.originKey.split("/")[0];
   const before = new Map<string, number>();

@@ -4,6 +4,7 @@ import {
   getBacklogDropMark,
   getBacklogDropOrder,
   getBacklogRowShifts,
+  type BacklogDropRows,
   type BacklogDropTarget,
   type BacklogReorderPeer,
 } from "./use-backlog-drag";
@@ -306,6 +307,9 @@ it("keeps a parent's subitem above the line when an item lands last", () => {
 });
 
 describe("the gap a dragged sidebar row opens", () => {
+  /** The list a drop leaves when every row moves among the others. */
+  const landInOrder = (_key: string, order: string[]) => order;
+
   /**
    * What the list reads mid-drag: each row at its slot plus its shift, and
    * the dragged item in the slot left empty, where the gap is.
@@ -315,6 +319,7 @@ describe("the gap a dragged sidebar row opens", () => {
     itemId: string,
     index: number,
     canReorder: BacklogReorderPeer = () => true,
+    landRows: BacklogDropRows = landInOrder,
   ) {
     const drag = {
       itemId,
@@ -326,6 +331,7 @@ describe("the gap a dragged sidebar row opens", () => {
       drag,
       [{ key: "lane/list", itemIds: rows }],
       canReorder,
+      landRows,
     );
     const slots: string[] = Array(rows.length).fill(itemId);
     rows.forEach((id, row) => {
@@ -343,24 +349,17 @@ describe("the gap a dragged sidebar row opens", () => {
     expect(readDuringDrag(["a", "b", "c"], "b", 1)).toEqual(["a", "b", "c"]);
   });
 
-  it("never opens between a parent and its subitem", () => {
-    const isRoot = (id: string) => !id.endsWith("-sub");
-    // Index 1 is between "b" and its subitem: the gap opens after both.
-    expect(readDuringDrag(["a", "b", "b-sub", "c"], "a", 2, isRoot)).toEqual([
-      "b",
-      "b-sub",
-      "a",
-      "c",
-    ]);
-  });
-
-  it("takes a parent's subitem along with the parent", () => {
-    const isRoot = (id: string) => !id.endsWith("-sub");
-    expect(readDuringDrag(["a", "a-sub", "b"], "a", 2, isRoot)).toEqual([
-      "b",
-      "a",
-      "a-sub",
-    ]);
+  it("puts a row that never moves where the list lands it", () => {
+    // "p-sub" is the subitem of a parent listed elsewhere, so it keeps its
+    // parent's place rather than following "a", the row above it.
+    const isRoot = (id: string) => id !== "p-sub";
+    const asListed = (_key: string, order: string[]) => {
+      expect(order).toEqual(["c", "a"]);
+      return ["c", "p-sub", "a"];
+    };
+    expect(
+      readDuringDrag(["a", "p-sub", "c"], "a", 2, isRoot, asListed),
+    ).toEqual(["c", "p-sub", "a"]);
   });
 
   it("moves nothing while the pointer is outside the list", () => {
@@ -368,6 +367,7 @@ describe("the gap a dragged sidebar row opens", () => {
       { itemId: "c", originKey: "lane/list", targetKey: null, index: 0 },
       [{ key: "lane/list", itemIds: ["a", "b", "c"] }],
       () => true,
+      landInOrder,
     );
     expect(shifts.size).toBe(0);
   });

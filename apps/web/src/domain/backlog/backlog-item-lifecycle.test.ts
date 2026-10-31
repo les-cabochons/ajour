@@ -17,6 +17,7 @@ import {
   pinBacklogItem,
   restoreBacklogItem,
   selectSidebarBacklogItems,
+  selectSidebarBacklogItemsAfterReorder,
   splitSidebarBacklogItems,
   canReorderSidebarItem,
   selectUpNextBacklogItem,
@@ -906,6 +907,33 @@ describe("the sidebar's backlog items", () => {
 
     expect(ids(pinned)).toEqual(["pinned-1", "pinned-2"]);
     expect(ids(others)).toEqual(["a", "b"]);
+  });
+
+  it("lists what a reorder would show, each subitem at its parent's new place", () => {
+    const state = createState({
+      backlogSortMode: "custom",
+      workItems: [
+        item("a"),
+        item("a-sub", {
+          parentWorkItemId: "a",
+          hierarchyLevel: 1,
+          priority: 2,
+        }),
+        item("pinned", { pinnedAt: 1 }),
+        item("b"),
+        item("pinned-sub", {
+          parentWorkItemId: "pinned",
+          hierarchyLevel: 1,
+          priority: 2,
+        }),
+      ],
+    });
+
+    // "a" takes its subitem along, and the pinned parent's subitem keeps
+    // its parent's place, between "b" and "a" now.
+    expect(
+      ids(selectSidebarBacklogItemsAfterReorder(state, 1_000, ["b", "a"])),
+    ).toEqual(["pinned", "b", "pinned-sub", "a", "a-sub"]);
   });
 
   it("lets only top-level items move, and only under Custom ordering", () => {

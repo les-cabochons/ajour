@@ -34,6 +34,24 @@ Feature: Sidebar ordering
     Then the sidebar reads "Sidebar search", "Backup pipeline", "Loose note"
     And no Undo toast showed
 
+  Scenario: Open the gap where the drop puts a pinned parent's subitem
+    Given "Backup pipeline" has a subitem "Pipeline alerts" with its own priority
+    When I pin "Backup pipeline" from the sidebar
+    Then the sidebar reads "Backup pipeline", "Sidebar search", "Pipeline alerts", "Loose note"
+    When I start dragging the sidebar row "Sidebar search" below "Loose note"
+    Then the sidebar shows "Backup pipeline", "Loose note", "Pipeline alerts", the gap from top to bottom
+    When I drop the dragged row
+    Then the sidebar reads "Backup pipeline", "Loose note", "Pipeline alerts", "Sidebar search"
+
+  Scenario: Open the gap where the drop puts a subitem whose parent the search hides
+    Given "Backup pipeline" has a subitem "Pipeline alerts" with its own priority
+    When I search the sidebar for "s"
+    Then the sidebar reads "Sidebar search", "Pipeline alerts", "Loose note"
+    When I start dragging the sidebar row "Sidebar search" below "Loose note"
+    Then the sidebar shows "Loose note", "Pipeline alerts", the gap from top to bottom
+    When I drop the dragged row
+    Then the sidebar reads "Loose note", "Pipeline alerts", "Sidebar search"
+
   Scenario: Move a sidebar row from the keyboard
     When I press Alt+Down on the sidebar row "Sidebar search"
     Then the sidebar reads "Backup pipeline", "Sidebar search", "Loose note"

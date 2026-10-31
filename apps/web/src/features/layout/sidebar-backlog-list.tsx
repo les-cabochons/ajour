@@ -35,6 +35,7 @@ import {
   isBacklogItemSnoozed,
   canReorderSidebarItem,
   selectSidebarBacklogItems,
+  selectSidebarBacklogItemsAfterReorder,
   splitSidebarBacklogItems,
 } from "@/domain/backlog/backlog-item-lifecycle";
 import {
@@ -121,6 +122,15 @@ function rowDragProps(dragState: RowDragState | undefined) {
   return dragState
     ? { style: { transform: `translate3d(0, ${dragState}px, 0)` } }
     : {};
+}
+
+/** The sidebar's blocks for the listed rows: pinned items, then the rest. */
+function getSidebarBlocks(listed: readonly LocalWorkItem[]) {
+  const { pinned, others } = splitSidebarBacklogItems(listed);
+  return [
+    { key: PINNED_BLOCK, workItems: pinned },
+    { key: OTHERS_BLOCK, workItems: others },
+  ];
 }
 
 function findBlock(targets: readonly BacklogDropTarget[], itemId: string) {
@@ -953,13 +963,7 @@ export function SidebarBacklogList({
   }, [state, now, matcher]);
 
   const sortMode = state.backlogSortMode;
-  const blocks = useMemo(() => {
-    const { pinned, others } = splitSidebarBacklogItems(listed);
-    return [
-      { key: PINNED_BLOCK, workItems: pinned },
-      { key: OTHERS_BLOCK, workItems: others },
-    ];
-  }, [listed]);
+  const blocks = useMemo(() => getSidebarBlocks(listed), [listed]);
   const targets = useMemo(
     () =>
       blocks.map((block) => ({
@@ -993,8 +997,46 @@ export function SidebarBacklogList({
     },
   });
   const dragging = drag.drag;
-  // The rows make room where the dragged one would land.
-  const rowShifts = getBacklogRowShifts(dragging, targets, canReorder);
+  // The rows make room where the dragged one would land, as the list would
+  // read after the drop, so a subitem whose parent is pinned or filtered out
+  // stays at its parent's place. Computed once per drop place, not per move.
+  const dragItemId = dragging?.itemId;
+  const dragOriginKey = dragging?.originKey;
+  const dragTargetKey = dragging?.targetKey;
+  const dragIndex = dragging?.index;
+  const rowShifts = useMemo(() => {
+    if (dragItemId === undefined || dragOriginKey === undefined)
+      return new Map<string, number>();
+    const landRows = (key: string, order: string[]) =>
+      getSidebarBlocks(
+        selectSidebarBacklogItemsAfterReorder(state, now, order).filter(
+          matcher.workItem,
+        ),
+      )
+        .find((block) => block.key === key)
+        ?.workItems.map((workItem) => workItem._id) ?? [];
+    return getBacklogRowShifts(
+      {
+        itemId: dragItemId,
+        originKey: dragOriginKey,
+        targetKey: dragTargetKey ?? null,
+        index: dragIndex ?? 0,
+      },
+      targets,
+      canReorder,
+      landRows,
+    );
+  }, [
+    dragItemId,
+    dragOriginKey,
+    dragTargetKey,
+    dragIndex,
+    targets,
+    canReorder,
+    state,
+    now,
+    matcher,
+  ]);
   const rowDragState = (itemId: string): RowDragState | undefined => {
     if (!dragging) return undefined;
     if (itemId === dragging.itemId) return "source";
