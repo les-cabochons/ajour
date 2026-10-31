@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   canDragBacklogItem,
+  findBacklogDropTarget,
   getBacklogDropMark,
   getBacklogDropOrder,
-  getBacklogRowShifts,
+  getBacklogDragShifts,
   type BacklogDropRows,
   type BacklogDropTarget,
   type BacklogReorderPeer,
@@ -306,10 +307,10 @@ it("keeps a parent's subitem above the line when an item lands last", () => {
   ).toEqual({ itemId: "b-sub", edge: "after" });
 });
 
-describe("the gap a dragged sidebar row opens", () => {
-  /** The list a drop leaves when every row moves among the others. */
-  const landInOrder = (_key: string, order: string[]) => order;
+/** The list a drop leaves when every row moves among the others. */
+const landInOrder = (_key: string, order: string[]) => order;
 
+describe("the gap a dragged sidebar row opens", () => {
   /**
    * What the list reads mid-drag: each row at its slot plus its shift, and
    * the dragged item in the slot left empty, where the gap is.
@@ -327,7 +328,7 @@ describe("the gap a dragged sidebar row opens", () => {
       targetKey: "lane/list",
       index,
     };
-    const shifts = getBacklogRowShifts(
+    const { rows: shifts } = getBacklogDragShifts(
       drag,
       [{ key: "lane/list", itemIds: rows }],
       canReorder,
@@ -363,12 +364,116 @@ describe("the gap a dragged sidebar row opens", () => {
   });
 
   it("moves nothing while the pointer is outside the list", () => {
-    const shifts = getBacklogRowShifts(
+    const { rows, targets } = getBacklogDragShifts(
       { itemId: "c", originKey: "lane/list", targetKey: null, index: 0 },
       [{ key: "lane/list", itemIds: ["a", "b", "c"] }],
       () => true,
       landInOrder,
     );
-    expect(shifts.size).toBe(0);
+    expect(rows.size + targets.size).toBe(0);
+  });
+});
+
+describe("the gap across the sidebar's priority levels", () => {
+  // Under Priority ordering, each level is a target with a label above its
+  // rows. A row dragged into another level is a peer of that level's rows.
+  const levels = [
+    { key: "lane/urgent", itemIds: ["u"] },
+    { key: "lane/high", itemIds: ["h1", "h2"] },
+    { key: "lane/medium", itemIds: [] },
+    { key: "lane/low", itemIds: ["l"] },
+  ];
+
+  /** The labels and rows from top to bottom mid-drag, the gap as the item. */
+  function readDuringDrag(itemId: string, targetKey: string, index: number) {
+    const originKey = levels.find(({ itemIds }) =>
+      itemIds.includes(itemId),
+    )!.key;
+    const { rows, targets } = getBacklogDragShifts(
+      { itemId, originKey, targetKey, index },
+      levels,
+      () => true,
+      landInOrder,
+    );
+    const lines = levels.flatMap(({ key, itemIds }) => [key, ...itemIds]);
+    // A label is one line, as tall as a row here, so a shift in rows is a
+    // shift in lines.
+    const slots: string[] = Array(lines.length).fill(itemId);
+    lines.forEach((line, at) => {
+      if (line !== itemId)
+        slots[at + (rows.get(line) ?? targets.get(line) ?? 0)] = line;
+    });
+    return slots;
+  }
+
+  it("opens the gap in the level under the pointer, the labels moving along", () => {
+    expect(readDuringDrag("h1", "lane/low", 1)).toEqual([
+      "lane/urgent",
+      "u",
+      "lane/high",
+      "h2",
+      "lane/medium",
+      "lane/low",
+      "l",
+      "h1",
+    ]);
+    expect(readDuringDrag("l", "lane/high", 0)).toEqual([
+      "lane/urgent",
+      "u",
+      "lane/high",
+      "l",
+      "h1",
+      "h2",
+      "lane/medium",
+      "lane/low",
+    ]);
+  });
+
+  it("opens the gap below an empty level's label", () => {
+    expect(readDuringDrag("u", "lane/medium", 0)).toEqual([
+      "lane/urgent",
+      "lane/high",
+      "h1",
+      "h2",
+      "lane/medium",
+      "u",
+      "lane/low",
+      "l",
+    ]);
+  });
+});
+
+describe("the target under the pointer", () => {
+  // Three levels stacked in the layout: High holds a 24px label and an 80px
+  // row, Medium only its label, Low its label and a row.
+  const lane = [
+    { key: "lane/high", itemIds: ["h"] },
+    { key: "lane/medium", itemIds: [] },
+    { key: "lane/low", itemIds: ["l"] },
+  ];
+  const layout: Record<string, [number, number]> = {
+    "lane/high": [0, 104],
+    "lane/medium": [104, 128],
+    "lane/low": [128, 232],
+  };
+  const boxOf = (key: string) => {
+    const [top, bottom] = layout[key]!;
+    return { left: 0, right: 200, top, bottom };
+  };
+  const hit = (y: number, offset: Record<string, number>) =>
+    findBacklogDropTarget(lane, { x: 10, y }, boxOf, (key) => offset[key] ?? 0)
+      ?.key;
+
+  it("hits a level where its label moved, not the level it moved over", () => {
+    // "h" left High, so Medium's label shows a row higher, at 24 to 48.
+    expect(hit(36, { "lane/medium": -80, "lane/low": -80 })).toBe(
+      "lane/medium",
+    );
+  });
+
+  it("gives the gap's room to the level it opened in", () => {
+    // The gap opened in Medium, below its label: Medium runs down to Low.
+    expect(hit(100, { "lane/medium": -80 })).toBe("lane/medium");
+    expect(hit(140, { "lane/medium": -80 })).toBe("lane/low");
   });
 });

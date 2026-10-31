@@ -329,7 +329,7 @@ describe("a drag", () => {
         ),
       },
     });
-    // jsdom has no layout: rows are 30px tall, in one block.
+    // jsdom has no layout: rows are 30px tall, in one drop target.
     const box = (top: number, height: number) => () =>
       ({
         top,
@@ -343,7 +343,7 @@ describe("a drag", () => {
         toJSON: () => ({}),
       }) as DOMRect;
     for (const block of document.querySelectorAll<HTMLElement>(
-      "[data-reorder-block]",
+      "[data-drop-target]",
     )) {
       block.getBoundingClientRect = box(0, 1000);
     }

@@ -1,6 +1,5 @@
 import { normalizeSourceStatusKey } from "@ajour/shared";
 import type {
-  BacklogSortMode,
   LocalAppState,
   LocalPendingSourceWrite,
   LocalWorkItem,
@@ -27,6 +26,7 @@ import {
 } from "@/domain/backlog/workflow-states";
 import {
   normalizePriorityLevel,
+  PRIORITY_LEVELS,
   type PriorityLevel,
 } from "@/domain/backlog/priority";
 import { orderBacklogItems } from "@/domain/backlog/backlog-view";
@@ -1580,15 +1580,21 @@ export function splitSidebarBacklogItems(listed: readonly LocalWorkItem[]): {
 }
 
 /**
- * Whether the sidebar lets the user move an item by drag or Alt+Up and
- * Alt+Down: only under Custom ordering, and only a top-level item, since a
- * subitem sits below its parent.
+ * The sidebar's rows under Priority ordering, one block per level in the
+ * list's order, empty levels included, each keeping the list's order. A drag
+ * shows the levels as labeled drop targets, so an item can take a level
+ * nothing has yet.
  */
-export function canReorderSidebarItem(
-  sortMode: BacklogSortMode,
-  workItem: LocalWorkItem,
-): boolean {
-  return sortMode === "custom" && !isSubtaskWorkItem(workItem);
+export function groupSidebarBacklogItemsByLevel(
+  listed: readonly LocalWorkItem[],
+  sortMode: "priority_asc" | "priority_desc",
+): { priority: PriorityLevel | undefined; items: LocalWorkItem[] }[] {
+  const levels = [...PRIORITY_LEVELS.map(({ level }) => level), undefined];
+  if (sortMode === "priority_desc") levels.reverse();
+  return levels.map((priority) => ({
+    priority,
+    items: listed.filter((workItem) => workItem.priority === priority),
+  }));
 }
 
 /**

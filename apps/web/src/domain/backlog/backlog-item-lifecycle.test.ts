@@ -19,7 +19,7 @@ import {
   selectSidebarBacklogItems,
   selectSidebarBacklogItemsAfterReorder,
   splitSidebarBacklogItems,
-  canReorderSidebarItem,
+  groupSidebarBacklogItemsByLevel,
   selectUpNextBacklogItem,
   settleBacklogItem,
   snoozeBacklogItem,
@@ -936,17 +936,33 @@ describe("the sidebar's backlog items", () => {
     ).toEqual(["pinned", "b", "pinned-sub", "a", "a-sub"]);
   });
 
-  it("lets only top-level items move, and only under Custom ordering", () => {
-    const topLevel = item("top");
-    const subitem = item("sub", {
-      parentWorkItemId: "top",
-      hierarchyLevel: 1,
-      priority: 1,
-    });
+  it("groups the list by level for a drag under Priority ordering", () => {
+    const listed = [
+      item("urgent", { priority: 1 }),
+      item("high-1", { priority: 2 }),
+      item("high-2", { priority: 2 }),
+      item("none"),
+    ];
+    const levels = (sortMode: "priority_asc" | "priority_desc") =>
+      groupSidebarBacklogItemsByLevel(listed, sortMode).map(
+        ({ priority, items }) => [priority, ids(items)],
+      );
 
-    expect(canReorderSidebarItem("custom", topLevel)).toBe(true);
-    expect(canReorderSidebarItem("custom", subitem)).toBe(false);
-    expect(canReorderSidebarItem("priority_asc", topLevel)).toBe(false);
+    // Every level shows, empty ones included, with its items in list order.
+    expect(levels("priority_asc")).toEqual([
+      [1, ["urgent"]],
+      [2, ["high-1", "high-2"]],
+      [3, []],
+      [4, []],
+      [undefined, ["none"]],
+    ]);
+    expect(levels("priority_desc").map(([priority]) => priority)).toEqual([
+      undefined,
+      4,
+      3,
+      2,
+      1,
+    ]);
   });
 });
 

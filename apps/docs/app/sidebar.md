@@ -33,6 +33,8 @@ Press **Filter and order** to show one project's items only. Ajour remembers the
 
 The same menu switches the order between **Custom order** and **Priority order**. The sidebar and the Backlog page share one order. With **Custom order**, drag items in the sidebar, or press <kbd>Alt</kbd> <kbd>↑</kbd> and <kbd>Alt</kbd> <kbd>↓</kbd>, to reorder them. Pinned items reorder among themselves, and subitems stay under their parent. While you drag, the item follows the pointer and the list opens a space where it will land. Press <kbd>Escape</kbd> to put it back.
 
+With **Priority order**, the same moves reorder an item within its priority level. While you drag, a label shows above each level, Urgent to No priority. Drop the item among another level's items, or on an empty level's label, to give it that level. **Undo** puts back both its level and its place. For an item from Azure DevOps or another tool, the new level goes to the tool once the Undo toast closes.
+
 ## Work with an item
 
 Hover an item for **Start entry**, **Snooze…** and **Settle**. Click it to open its page. Right-click it, or focus it and press <kbd>.</kbd>, for every action. See [Backlog items](/backlog/items#actions).

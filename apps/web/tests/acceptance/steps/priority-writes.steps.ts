@@ -94,6 +94,27 @@ Given(
   },
 );
 
+Given(
+  "a manual item {string} with High priority too",
+  async ({ page }, title: string) => {
+    await page.evaluate((title) => {
+      const key = "ajour.local-state.v2";
+      const state = JSON.parse(localStorage.getItem(key)!);
+      state.workItems.push({
+        _id: "manual-high-item",
+        title,
+        source: "manual",
+        status: "active",
+        priority: 2,
+        createdAt: 2,
+      });
+      localStorage.setItem(key, JSON.stringify(state));
+    }, title);
+    await page.reload();
+    await cachePluginList(page);
+  },
+);
+
 /** The plugin list is cached before an action asks whether it can write. */
 async function cachePluginList(page: Page) {
   await page.evaluate(async () => {
