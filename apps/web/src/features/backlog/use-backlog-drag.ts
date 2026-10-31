@@ -11,6 +11,16 @@ import {
 export interface BacklogDropTarget {
   key: string;
   itemIds: string[];
+  /**
+   * A target every lane can drop on, such as the sidebar's Settle zone. It
+   * holds no rows, so the list makes no room for it.
+   */
+  anyLane?: boolean;
+}
+
+/** Whether a drag that started in `originKey`'s lane can drop on the target. */
+function isInLane(target: BacklogDropTarget, originKey: string) {
+  return target.anyLane || target.key.split("/")[0] === originKey.split("/")[0];
 }
 
 /**
@@ -28,10 +38,9 @@ export function canDragBacklogItem(
   itemId: string,
   originKey: string,
 ) {
-  const lane = originKey.split("/")[0];
   return targets.some(
     (target) =>
-      target.key.split("/")[0] === lane &&
+      isInLane(target, originKey) &&
       (target.key !== originKey ||
         (canReorder(itemId, itemId) &&
           target.itemIds.includes(itemId) &&
@@ -153,6 +162,7 @@ export function getBacklogDragShifts(
   const order =
     drag &&
     target &&
+    !target.anyLane &&
     getBacklogDropOrder(
       target.itemIds,
       drag.itemId,
@@ -353,9 +363,7 @@ export function useBacklogDrag({
         return;
       }
       const under = findBacklogDropTarget(
-        live.current.targets.filter(
-          (t) => t.key.split("/")[0] === originKey.split("/")[0],
-        ),
+        live.current.targets.filter((t) => isInLane(t, originKey)),
         { x, y },
         (key) => groupRefs.current.get(key)?.getBoundingClientRect(),
         (key) => live.current.targetShift(key) * start.height,

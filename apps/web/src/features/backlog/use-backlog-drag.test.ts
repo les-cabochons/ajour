@@ -477,3 +477,33 @@ describe("the target under the pointer", () => {
     expect(hit(140, { "lane/medium": -80 })).toBe("lane/low");
   });
 });
+
+describe("a target every lane drops on, like the Settle zone", () => {
+  const zone = { key: "settle/zone", itemIds: [], anyLane: true };
+  const isRoot = (id: string) => !id.endsWith("-sub");
+
+  it("lets a row drag to it, even one with nothing to move among", () => {
+    const targets = [{ key: "lane/list", itemIds: ["a", "a-sub"] }, zone];
+    expect(canDragBacklogItem(targets, isRoot, "a-sub", "lane/list")).toBe(
+      true,
+    );
+    expect(
+      canDragBacklogItem([targets[0]!], isRoot, "a-sub", "lane/list"),
+    ).toBe(false);
+  });
+
+  it("moves no row while the pointer is over it", () => {
+    const { rows, targets } = getBacklogDragShifts(
+      {
+        itemId: "a",
+        originKey: "lane/list",
+        targetKey: "settle/zone",
+        index: 0,
+      },
+      [{ key: "lane/list", itemIds: ["a", "b"] }, zone],
+      () => true,
+      landInOrder,
+    );
+    expect(rows.size + targets.size).toBe(0);
+  });
+});
