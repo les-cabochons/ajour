@@ -57,17 +57,69 @@ Given("I have backlog items with priorities", async ({ page }) => {
   });
 });
 
+/** Presses a sidebar row and moves it above another, without letting go. */
+async function startDragging(page: Page, dragged: string, target: string) {
+  const from = await sidebarRow(page, dragged).boundingBox();
+  const to = await sidebarRow(page, target).boundingBox();
+  if (!from || !to) throw new Error("A sidebar row is not rendered");
+  await page.mouse.move(from.x + from.width / 3, from.y + from.height / 2);
+  await page.mouse.down();
+  // Above the target's middle drops the row in front of it.
+  await page.mouse.move(to.x + to.width / 3, to.y + 4, { steps: 10 });
+}
+
+/**
+ * The backlog titles a user sees in the sidebar, from top to bottom: the
+ * rows where they show, mid-drag included, and the drag preview.
+ */
+function visibleTitles(page: Page) {
+  return sidebar(page)
+    .locator("[data-row-title]")
+    .evaluateAll((titles) =>
+      titles
+        .filter((title) => title.checkVisibility({ visibilityProperty: true }))
+        .map((title) => {
+          const box = title.getBoundingClientRect();
+          return { text: title.textContent, middle: box.top + box.height / 2 };
+        })
+        .sort((left, right) => left.middle - right.middle)
+        .map(({ text }) => text),
+    );
+}
+
 When(
   "I drag the sidebar row {string} above {string}",
   async ({ page }, dragged: string, target: string) => {
-    const from = await sidebarRow(page, dragged).boundingBox();
-    const to = await sidebarRow(page, target).boundingBox();
-    if (!from || !to) throw new Error("A sidebar row is not rendered");
-    await page.mouse.move(from.x + from.width / 3, from.y + from.height / 2);
-    await page.mouse.down();
-    // Above the target's middle drops the row in front of it.
-    await page.mouse.move(to.x + to.width / 3, to.y + 4, { steps: 10 });
+    await startDragging(page, dragged, target);
     await page.mouse.up();
+  },
+);
+
+When(
+  "I start dragging the sidebar row {string} above {string}",
+  async ({ page }, dragged: string, target: string) => {
+    await startDragging(page, dragged, target);
+  },
+);
+
+When("I cancel the drag with Escape", async ({ page }) => {
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+});
+
+Then("the sidebar shows {string} once", async ({ page }, title: string) => {
+  await expect
+    .poll(async () =>
+      (await visibleTitles(page)).filter((text) => text === title),
+    )
+    .toEqual([title]);
+});
+
+Then(
+  /^the sidebar shows (.+) from top to bottom$/,
+  async ({ page }, list: string) => {
+    const expected = [...list.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+    await expect.poll(() => visibleTitles(page)).toEqual(expected);
   },
 );
 
