@@ -1117,13 +1117,14 @@ export function SidebarBacklogList({
     targetShift: (key) => shifts.targets.get(key) ?? 0,
     // A long list scrolls under the Settle zone below it.
     viewport: listRef,
-    onDrop: (itemId, key, order) => {
+    onDrop: (itemId, key, order, { shiftKey }) => {
       const workItem = workItemById.get(itemId);
       if (workItem && key === SETTLE_ZONE) {
         // The settle dialog, the subitem prompt and the Undo toast follow
-        // the item's Settle action, as with E.
+        // the item's Settle action, as with E, and Shift asks first, as
+        // Shift+E does.
         withEventAttribution({ surface: "drag" }, () =>
-          rows.run(workItem, "settle"),
+          rows.run(workItem, "settle", { askToSettle: shiftKey }),
         );
         return;
       }

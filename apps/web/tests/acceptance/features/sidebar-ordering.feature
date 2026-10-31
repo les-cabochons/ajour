@@ -195,6 +195,14 @@ Feature: Sidebar ordering
     Then the sidebar lists "Backup pipeline", "Loose note", then the 50 filler items
     And the Settled section lists "Sidebar search"
 
+  Scenario: Shift+drop on the Settle zone opens the settle dialog despite an Apply rule
+    Given the item "Sidebar search" comes from a source that has its priority
+    And the item "Sidebar search" settles by an Apply rule
+    And the source's plugin can write
+    When I drag the sidebar row "Sidebar search" onto the Settle zone and drop it with Shift held
+    And I cancel the settle dialog
+    Then the sidebar reads "Sidebar search", "Backup pipeline", "Loose note"
+
   Scenario: Drop a pinned row on the Settle zone with Priority ordering
     When I pin "Loose note" from the sidebar
     And I order the sidebar by "Priority"

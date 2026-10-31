@@ -153,6 +153,7 @@ function dispatchPointer(
     pointerId: number;
     clientX: number;
     clientY: number;
+    shiftKey?: boolean;
   },
 ) {
   const event = new Event(type, { cancelable: true });
@@ -160,6 +161,7 @@ function dispatchPointer(
     pointerId: { value: values.pointerId },
     clientX: { value: values.clientX },
     clientY: { value: values.clientY },
+    shiftKey: { value: values.shiftKey ?? false },
   });
   target.dispatchEvent(event);
 }
@@ -244,6 +246,40 @@ describe("shared table drag geometry", () => {
 });
 
 describe("shared table drag pointer session", () => {
+  it("tells whether Shift was held at the release", () => {
+    const eventSource = new EventTarget();
+    let dragging = false;
+    const onEnd = vi.fn();
+
+    createSharedTableDragPointerSession({
+      eventSource,
+      pointerId: 7,
+      pointerType: "mouse",
+      originX: 10,
+      originY: 10,
+      isDragging: () => dragging,
+      onStart: () => {
+        dragging = true;
+      },
+      onMove: vi.fn(),
+      onEnd,
+      onPressEnd: vi.fn(),
+    });
+    dispatchPointer(eventSource, "pointermove", {
+      pointerId: 7,
+      clientX: 10,
+      clientY: 30,
+    });
+    dispatchPointer(eventSource, "pointerup", {
+      pointerId: 7,
+      clientX: 10,
+      clientY: 30,
+      shiftKey: true,
+    });
+
+    expect(onEnd).toHaveBeenCalledExactlyOnceWith(true, { shiftKey: true });
+  });
+
   it("starts after tolerance, forwards movement, and commits on pointer up", () => {
     const eventSource = new EventTarget();
     let dragging = false;
@@ -290,7 +326,7 @@ describe("shared table drag pointer session", () => {
 
     expect(onStart).toHaveBeenCalledOnce();
     expect(onMove).toHaveBeenCalledOnce();
-    expect(onEnd).toHaveBeenCalledWith(true);
+    expect(onEnd).toHaveBeenCalledWith(true, { shiftKey: false });
     expect(onPressEnd).not.toHaveBeenCalled();
 
     dispatchPointer(eventSource, "pointermove", {

@@ -89,7 +89,12 @@ export function createSharedTableDragPointerSession(options: {
   isDragging: () => boolean;
   onStart: (pointer: SharedTableDragPointer) => void;
   onMove: (pointer: SharedTableDragPointer) => void;
-  onEnd: (commit: boolean) => void;
+  /**
+   * The drag ended: `commit` on a release, not on Escape or a cancelled
+   * pointer. A release also tells whether Shift was held, for a drop that
+   * asks first then, as Shift+drop on the sidebar's Settle zone does.
+   */
+  onEnd: (commit: boolean, release?: { shiftKey: boolean }) => void;
   onPressEnd: (cancelled: boolean) => void;
   onScroll?: () => void;
 }): SharedTableDragPointerSession {
@@ -153,7 +158,11 @@ export function createSharedTableDragPointerSession(options: {
 
     if (wasDragging) {
       pointerEvent.preventDefault();
-      options.onEnd(pointerEvent.type !== "pointercancel");
+      if (pointerEvent.type === "pointercancel") {
+        options.onEnd(false);
+      } else {
+        options.onEnd(true, { shiftKey: pointerEvent.shiftKey });
+      }
       return;
     }
 

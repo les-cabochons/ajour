@@ -35,7 +35,7 @@ The same menu switches the order between **Custom order** and **Priority order**
 
 With **Priority order**, the same moves reorder an item within its priority level. While you drag, a label shows above each level, Urgent to No priority. Drop the item among another level's items, or on an empty level's label, to give it that level. **Undo** puts back both its level and its place. For an item from Azure DevOps or another tool, the new level goes to the tool once the Undo toast closes.
 
-While you drag, in either order, a dashed **Settle** zone shows at the bottom of the sidebar. Drop an item on it to settle it, as <kbd>E</kbd> does: the settle dialog opens when the item's settle rule asks, and **Undo** puts the item back.
+While you drag, in either order, a dashed **Settle** zone shows at the bottom of the sidebar. Drop an item on it to settle it, as <kbd>E</kbd> does: the settle dialog opens when the item's settle rule asks, and **Undo** puts the item back. Hold <kbd>Shift</kbd> as you drop to open the dialog anyway, as <kbd>Shift</kbd> <kbd>E</kbd> does.
 
 ## Work with an item
 

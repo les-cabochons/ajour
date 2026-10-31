@@ -388,7 +388,7 @@ export function BacklogPage() {
     targets,
     canReorder: canReorderItem,
     disabled: narrow,
-    onDrop: (...args) => void drop(...args),
+    onDrop: (itemId, key, order) => void drop(itemId, key, order),
   });
   // Subitems keep their slots on this page while the moved items trade theirs.
   const dropMark = getBacklogDropMark(

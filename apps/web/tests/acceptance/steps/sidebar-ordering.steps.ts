@@ -487,6 +487,31 @@ Then(
   },
 );
 
+Given(
+  "the item {string} settles by an Apply rule",
+  async ({ page }, title: string) => {
+    // The rule of the item's source project sets Low when it settles.
+    await page.evaluate((title) => {
+      const key = "ajour.local-state.v2";
+      const state = JSON.parse(localStorage.getItem(key)!);
+      const item = state.workItems.find(
+        (workItem: { title: string }) => workItem.title === title,
+      );
+      item.sourceProjectName = "Fixture project";
+      state.settleRules = [
+        {
+          source: item.source,
+          connectionId: item.sourceConnectionId,
+          sourceProjectName: "Fixture project",
+          priority: 4,
+        },
+      ];
+      localStorage.setItem(key, JSON.stringify(state));
+    }, title);
+    await page.reload();
+  },
+);
+
 Then("{string} is still pinned", async ({ page }, title: string) => {
   await expect
     .poll(() =>
@@ -541,6 +566,16 @@ When(
   async ({ page }, dragged: string) => {
     await dragOntoSettleZone(page, dragged);
     await page.mouse.up();
+  },
+);
+
+When(
+  "I drag the sidebar row {string} onto the Settle zone and drop it with Shift held",
+  async ({ page }, dragged: string) => {
+    await dragOntoSettleZone(page, dragged);
+    await page.keyboard.down("Shift");
+    await page.mouse.up();
+    await page.keyboard.up("Shift");
   },
 );
 

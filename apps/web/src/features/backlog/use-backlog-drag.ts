@@ -324,7 +324,13 @@ export function useBacklogDrag({
    * out of view never cover the Settle zone below it.
    */
   viewport?: RefObject<HTMLElement | null>;
-  onDrop: (itemId: string, targetKey: string, order: string[] | null) => void;
+  /** `shiftKey` tells whether Shift was held at the release. */
+  onDrop: (
+    itemId: string,
+    targetKey: string,
+    order: string[] | null,
+    release: { shiftKey: boolean },
+  ) => void;
 }) {
   const [drag, setDrag] = useState<Drag | null>(null);
   const current = useRef<Drag | null>(null);
@@ -439,7 +445,7 @@ export function useBacklogDrag({
         move(p.clientX, p.clientY);
       },
       onMove: (p) => move(p.clientX, p.clientY),
-      onEnd: (commit) => {
+      onEnd: (commit, release) => {
         const d = current.current;
         suppress.current =
           performance.now() + SHARED_TABLE_DRAG_CLICK_SUPPRESSION_MS;
@@ -455,7 +461,9 @@ export function useBacklogDrag({
           live.current.canReorder,
         );
         if (d.originKey !== d.targetKey || order)
-          live.current.onDrop(itemId, d.targetKey, order);
+          live.current.onDrop(itemId, d.targetKey, order, {
+            shiftKey: release?.shiftKey ?? false,
+          });
       },
       onPressEnd: (cancelled) => {
         if (cancelled)
