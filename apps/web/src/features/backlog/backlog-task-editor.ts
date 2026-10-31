@@ -2,6 +2,7 @@ import type { LocalWorkItem, LocalWorkItemDraft } from "@/domain/local-state";
 import { normalizeDescriptionText } from "@/domain/backlog/description-sync";
 import type { WorkItemPatch } from "@/domain/backlog/work-item-transitions";
 import { isSubtaskWorkItem } from "@/domain/backlog/work-item-hierarchy";
+import { getPriorityRefusal } from "@/domain/backlog/backlog-item-lifecycle";
 import { isPriorityLevel, type PriorityLevel } from "@/domain/backlog/priority";
 
 /**
@@ -218,6 +219,8 @@ export function validateBacklogTaskEditor(
     requireParent?: boolean;
     /** The most characters the description saves, when it has a limit. */
     descriptionLimit?: number;
+    /** Why the item can't go back to No priority, when it can't. */
+    noPriorityRefusal?: string;
   },
 ): BacklogTaskEditorValidation {
   const titleError = fields.title.trim() ? null : "Enter an item name";
@@ -225,10 +228,15 @@ export function validateBacklogTaskEditor(
     options.requireParent && !fields.parentWorkItemId
       ? "Select a parent item"
       : null;
+  const priority = options.isSubtask
+    ? undefined
+    : parsePriorityInput(fields.priority);
   const priorityError =
-    !options.isSubtask && parsePriorityInput(fields.priority) === null
+    priority === null
       ? "Choose a priority"
-      : null;
+      : !options.isSubtask && priority === undefined
+        ? (options.noPriorityRefusal ?? null)
+        : null;
   const originalEstimateError =
     parseEstimateInput(fields.originalEstimateHours) === null
       ? "Enter a non-negative number"
@@ -466,6 +474,11 @@ export function evaluateBacklogTaskEditor(
   const validation = validateBacklogTaskEditor(fields, {
     isSubtask: isSubitem,
     requireParent: !original && isSubitem,
+    // An item already at No priority keeps saving its other fields.
+    noPriorityRefusal:
+      original?.priority !== undefined
+        ? getPriorityRefusal(original, undefined)
+        : undefined,
     descriptionLimit:
       options.descriptionReadOnly || !descriptionChanged
         ? undefined

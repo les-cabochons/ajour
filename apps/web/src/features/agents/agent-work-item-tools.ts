@@ -12,7 +12,10 @@ import {
   toAgentWorkItem,
 } from "@/domain/agents/agent-read-model";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
-import type { BacklogSettleChange } from "@/domain/backlog/backlog-item-lifecycle";
+import {
+  getPriorityRefusal,
+  type BacklogSettleChange,
+} from "@/domain/backlog/backlog-item-lifecycle";
 import type { WorkItemPatch } from "@/domain/backlog/work-item-transitions";
 import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
 import {
@@ -22,6 +25,7 @@ import {
   type SourceStateRequest,
 } from "@/features/backlog/backlog-item-moves";
 import type { CloseSubitemsVerb } from "@/features/backlog/close-subitems-dialog";
+import { canWriteToSource } from "@/features/backlog/backlog-source-writes";
 import { getSettleBehavior } from "@/features/backlog/settle-dialog";
 import { findSettleState } from "@/features/backlog/settle-draft";
 import {
@@ -403,6 +407,10 @@ export async function runWorkItemWriteTool(
         patch.description = input.description;
       }
       if (input.priority !== undefined) {
+        const refusal = getPriorityRefusal(item, input.priority ?? undefined);
+        if (refusal) {
+          throw new AgentToolRefusal(`${refusal} Pass a level from 1 to 4.`);
+        }
         patch.priority = input.priority ?? undefined;
       }
       if (input.remainingEstimateHours !== undefined) {
@@ -429,11 +437,22 @@ export async function runWorkItemWriteTool(
       if (Object.keys(patch).length === 0 && !syncedDescription) {
         throw new AgentToolRefusal("Pass at least one field to change.");
       }
+      // Like the user's, a new priority level goes to the source when the
+      // Undo toast closes.
+      const writesToSource = "priority" in patch && canWriteToSource(item);
+      const sourceWriteIds = writesToSource ? [item._id] : [];
       if (!syncedDescription) {
         const undoToken = asAgent(() =>
-          localStore.updateWorkItemWithUndo(item._id, patch),
+          localStore.updateWorkItemWithUndo(item._id, patch, undefined, {
+            writesToSource,
+          }),
         );
-        return outcome(item._id, undoToken, "Edited a backlog item");
+        return outcome(
+          item._id,
+          undoToken,
+          "Edited a backlog item",
+          sourceWriteIds,
+        );
       }
       // The text has no Undo: like the user's, it is written at once. The
       // other fields, and what its timelog sets, share one Undo, taken after
@@ -455,9 +474,16 @@ export async function runWorkItemWriteTool(
         ),
       );
       const undoToken = asAgent(() =>
-        localStore.applyWorkItemEditsSince(item._id, patch, before),
+        localStore.applyWorkItemEditsSince(item._id, patch, before, {
+          writesToSource,
+        }),
       );
-      const edited = outcome(item._id, undoToken, "Edited a backlog item");
+      const edited = outcome(
+        item._id,
+        undoToken,
+        "Edited a backlog item",
+        sourceWriteIds,
+      );
       return { ...edited, output: { ...edited.output, descriptionSave } };
     }
 

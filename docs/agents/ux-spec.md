@@ -359,6 +359,7 @@ These actions happen at once and show a toast with Undo for about 8 seconds. No 
 - Duplicate to… another day. Undo removes the copy. The toast names the day, such as "Duplicated to Thu, Oct 8".
 - Archiving a project, task or backlog item.
 - Snoozing or settling a backlog item. A settle that writes to the source tool sends the write when the toast closes, so Undo cancels it.
+- Changing a synced backlog item's priority. Its write to the source goes when the toast closes, so Undo cancels it.
 - Deleting a backlog item and its subitems.
 - Deleting a backlog status.
 - Dismissing import drafts.
@@ -371,7 +372,7 @@ A confirmation dialog stays only for actions that cannot be undone or that reach
 
 - Uninstalling a plugin.
 - Submitting under the week target.
-- Any other action that writes to Azure DevOps or Jira. Settle is the exception: its dialog is the confirmation, then the Undo toast gives a few seconds to cancel before the write. A settle rule set to Apply skips the dialog, because the user chose that change in Settings.
+- Any other action that writes to Azure DevOps or Jira. Settle is the exception: its dialog is the confirmation, then the Undo toast gives a few seconds to cancel before the write. A settle rule set to Apply skips the dialog, because the user chose that change in Settings. Moving a synced item and changing its priority write after the Undo toast too, with no dialog.
 
 ### Success
 
@@ -387,7 +388,7 @@ No success toasts. The result shows where the action happened:
 - Form mistakes show next to the field, as now.
 - An operation the user started (import, export, sync, plugin install) shows its error inline on that page.
 - Background failures, such as an automatic backlog sync, show one error toast per failure that stays until dismissed, and a "Last sync failed" line on that plugin in Settings.
-- A settle write that fails after the Undo window puts the item back to active and shows an error toast, naming the item and the reason, that stays until dismissed.
+- A settle write that fails after the Undo window puts the item back to active and shows an error toast, naming the item and the reason, that stays until dismissed. A failed priority write puts the previous priority back, with the same toast.
 
 ### Toasts
 
@@ -570,7 +571,9 @@ Settings > Workflow lists, for each connection and source project, its source st
 
 - Priority has five levels with Linear's icons: Urgent, High, Medium, Low and No priority.
 - Each backlog plugin maps its source priority values to levels. A plugin can let the user set that mapping in its connection settings, such as Azure DevOps 1 Urgent, 2 High, 3 Medium and 4 Low by default. A value the plugin maps to no level is No priority.
-- Settle and moving into a done state write the level only when it changed. The plugin picks the source value, such as the lowest value of the level's range.
+- Changing a synced item's level writes it to the source, from every surface: the row and card pickers, the peek, the item page, the editor, a drop in a priority group and the agent edit tool ([#469](https://github.com/les-cabochons/ajour/issues/469), [ADR 0015](../adr/0015-priority-changes-write-to-the-source.md)). The write goes when the Undo toast closes, as a move's does. The editor's Save has no Undo, so its write goes at once. Editing turned off on the connection holds it for Sync review, which lists it as "Priority Medium". A failed write puts the previous priority back and shows the error toast. A plugin without the write capability keeps the change in Ajour.
+- A level equal to the source's writes nothing, so the source keeps its number. Settle and moving into a done state follow the same rule, and a settle at the source's level takes back a level still waiting. When the earlier level is already on its way to the source, even across a restart, the source's level is written after it, so the source ends at the level Ajour shows. The plugin picks the source value, such as the lowest value of the level's range.
+- Plugin levels have no "none". For a synced item whose source has a priority, No priority is disabled in the pickers and the editor, with the reason "Ajour can't clear the priority in its source." Manual items keep No priority.
 - Within a level, items keep the custom order.
 
 ### Layouts
@@ -766,7 +769,7 @@ Settle means the user has nothing left to do on the item for now.
 - A plugin without the settle capability settles its items locally, with no write.
 - Settling a parent with open subitems asks whether to include them, as in Closing a parent under Backlog. Undo restores them together. Settling a synced subitem writes that subitem through its own source project's mapping.
 - The dialog does not offer an assignee yet. Ajour does not import assignees. See [#71](https://github.com/les-cabochons/ajour/issues/71).
-- Settle is the only action that writes priority to the source. Priority edits in the side panel stay local.
+- Priority changes outside Settle write to the source too, as described under Priority in Backlog. A settle keeps a priority write still waiting, so one write sends both.
 
 ### Unsettle and restore
 
@@ -919,7 +922,7 @@ Decided in [the connection access decisions](https://github.com/les-cabochons/aj
 - **Turning editing on is not approval.** Saving the form with Edit work items newly on first holds every estimate change the connection would upload, before the save goes, so a sync during the save or a quit sends none of them. When the connection holds any change, the save then opens Sync review on its held changes.
 - **Held changes in Sync review** come first, grouped by connection. Each shows its item, what kind of change it is and the change itself, with Send and Discard. Send is the approval: the change goes through its usual path, so a source that changed meanwhile still answers with a conflict, which then shows with the other issues. Send is disabled while the change can't go, and the group says why: the connection was removed, so the changes can only be discarded; it is paused, with a link to fix it; or editing is off, with a link to turn it on. Discard asks first, naming the kind of change ("Discard this held settle?"), then drops the change and takes the source's side back: a settle's item returns to its state before, an estimate and a description take the source's value.
 - **Held changes stay** when the user leaves Sync review, restarts Ajour or turns editing off again. A held settle or move keeps its settle comment waiting with it. A held comment change stays held until the source took it, so a quit while it is sent keeps it.
-- **A new change replaces a held one.** A settle, move or description saved again while editing is on goes as usual and replaces the held one of the same item.
+- **A new change replaces a held one.** A settle, move or description saved again while editing is on goes as usual and replaces the held one of the same item. A change that keeps part of a held write joins it instead, and the write stays held: a move or settle on a held priority, or a priority change on a held settle or move. Both then wait for Send in Sync review, which lists them together, such as `State "Resolved" · Priority Medium`.
 - **Removing a connection discards what it holds.** Remove then always asks first, and says "Its N held changes are discarded and never sent."
 
 ## Consistency

@@ -395,5 +395,39 @@ describe("backlog task editor", () => {
         }).priorityReset,
       ).toBeNull();
     });
+
+    it("refuses No priority on a synced item whose source has a priority, and keeps it for manual items", () => {
+      const synced = createWorkItem({
+        source: "azure_devops",
+        priority: 2,
+        importedPriority: 2,
+      });
+      const cleared = editDraft(
+        { kind: "edit", workItem: synced },
+        { priority: "" },
+      );
+      expect(cleared.validation).toMatchObject({
+        priorityError: "Ajour can't clear the priority in its source.",
+        canSave: false,
+      });
+      expect(commitBacklogTaskDraft(cleared, "save").kind).toBe("invalid");
+
+      expect(
+        editDraft(
+          { kind: "edit", workItem: createWorkItem({ priority: 2 }) },
+          { priority: "" },
+        ).patch,
+      ).toEqual({ priority: undefined });
+      // An item already at No priority keeps saving its other fields.
+      expect(
+        editDraft(
+          {
+            kind: "edit",
+            workItem: { ...synced, priority: undefined },
+          },
+          { title: "Renamed" },
+        ).patch,
+      ).toEqual({ title: "Renamed" });
+    });
   });
 });

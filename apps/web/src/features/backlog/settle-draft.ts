@@ -51,11 +51,12 @@ export function isSettleStateDraftValid(
 }
 
 /**
- * Turns the settle dialog's fields into a change. A new priority level is
- * written only when it differs from the level the source reports; the
- * plugin picks the source value. The domain keeps only the fields
- * that differ from the item. Returns null for an unsupported changed state,
- * an invalid level, or a priority clear, which plugins cannot write.
+ * Turns the settle dialog's fields into a change. A level other than the
+ * one the item shows is passed on, and the domain writes it only when it
+ * differs from the source's, so the source's own level takes back a level
+ * still waiting. The plugin picks the source value. Returns null for an
+ * unsupported changed state, an invalid level, or a priority clear, which
+ * plugins cannot write.
  */
 export function buildSettleChange(
   states: BacklogSettleState[],

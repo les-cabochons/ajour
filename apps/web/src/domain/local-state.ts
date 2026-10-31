@@ -592,6 +592,14 @@ export interface LocalPendingSourceWrite {
    * only once the user approves it in Sync review.
    */
   heldAt?: number;
+  /**
+   * The level of a request the queue sent for this item and the source has
+   * not answered yet. The source may already have it, so a level back at the
+   * source's still needs a write. The writes that replace this one keep it
+   * until the source answers or the queue sends again. It is stored, so a
+   * request on its way when Ajour quit still counts at the next launch.
+   */
+  priorityInFlight?: PriorityLevel;
   /** The item's source values before the settle, put back if the write fails. */
   previous: {
     sourceStatusKey?: string;

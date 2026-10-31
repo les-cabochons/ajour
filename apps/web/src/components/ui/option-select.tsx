@@ -13,6 +13,11 @@ export interface SelectOption<T extends string = string> {
   value: T;
   label: string;
   disabled?: boolean;
+  /**
+   * Disables the option and says why to screen readers, as menus do (rule 2
+   * of the action model in docs/agents/ux-spec.md).
+   */
+  disabledReason?: string;
 }
 
 export interface SelectOptionGroup<T extends string = string> {
@@ -64,7 +69,8 @@ export function OptionSelect<T extends string>({
     <SelectItem
       key={option.value}
       value={encode(option.value)}
-      disabled={option.disabled}
+      disabled={option.disabled || option.disabledReason !== undefined}
+      aria-description={option.disabledReason}
     >
       {option.label}
     </SelectItem>

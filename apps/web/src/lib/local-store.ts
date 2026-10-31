@@ -97,6 +97,7 @@ import {
   reconcileSourceWriteMappings,
   failSourceWrite as applyFailSourceWrite,
   markBacklogItemOpened as applyMarkBacklogItemOpened,
+  markSourceWriteSent as applyMarkSourceWriteSent,
   restoreBacklogItem as applyRestoreBacklogItem,
   settleBacklogItem as applySettleBacklogItem,
   moveBacklogItemToState as applyMoveBacklogItemToState,
@@ -107,9 +108,11 @@ import {
   pinBacklogItem as applyPinBacklogItem,
   unpinBacklogItem as applyUnpinBacklogItem,
   type BacklogSettleChange,
+  type ChangePriorityOptions,
   type CloseSubitemsOptions,
   type MoveBacklogItemOptions,
   changeBacklogItemSourceState as applyChangeBacklogItemSourceState,
+  patchBacklogItem as applyPatchBacklogItem,
 } from "@/domain/backlog/backlog-item-lifecycle";
 import {
   applySettleRule,
@@ -1447,6 +1450,25 @@ function updateWorkItemState(
   );
 }
 
+/**
+ * Whether an edit's priority goes to the source. Local-store knows no
+ * plugins, so the caller says whether the item's plugin can write.
+ */
+interface PriorityWriteOptions {
+  writesToSource?: boolean;
+}
+
+function priorityWrite(
+  options: PriorityWriteOptions | undefined,
+  undoWindow: boolean,
+): ChangePriorityOptions {
+  return {
+    writesToSource: options?.writesToSource ?? false,
+    now: Date.now(),
+    undoWindow,
+  };
+}
+
 /** The item, when the patch sets its project or task itself. */
 function getMappedIds(
   workItemId: string,
@@ -2515,30 +2537,53 @@ const store = {
   },
   /**
    * Updates a backlog item. A description whose timelog changed also sets the
-   * item's project and task, in the same Undo. Returns an undo token, or null
-   * when nothing changed.
+   * item's project and task, in the same Undo. A new priority level is
+   * written to the source after the Undo window when `writesToSource`; a
+   * refused one changes nothing, the order included. Returns an undo token,
+   * or null when nothing changed.
    */
   updateWorkItemWithUndo(
     workItemId: string,
     patch: Parameters<typeof applyUpdateWorkItem>[2],
     orderedIds?: string[],
+    options?: PriorityWriteOptions,
   ) {
     return updateStateWithUndo((state) => {
-      const updated = updateWorkItemState(state, workItemId, patch);
+      const patched = applyPatchBacklogItem(
+        state,
+        workItemId,
+        patch,
+        priorityWrite(options, true),
+      );
+      if (patched === state) return state;
+      const updated = withDescriptionTimelogs(
+        state,
+        patched,
+        getMappedIds(workItemId, patch),
+      );
       return orderedIds ? applyReorderWorkItems(updated, orderedIds) : updated;
     });
   },
   /**
-   * Saves the backlog editor's changes, which have no Undo. What the
+   * Saves the backlog editor's changes, which have no Undo, so a new priority
+   * level may go to the source at once when `writesToSource`. What the
    * description's timelog then sets or creates gets its own Undo, which keeps
    * the saved text; the token is null when the timelog changed nothing.
    */
   saveWorkItemEdits(
     workItemId: string,
     patch: Parameters<typeof applyUpdateWorkItem>[2],
+    options?: PriorityWriteOptions,
   ): string | null {
     const before = readState();
-    updateState((state) => applyUpdateWorkItem(state, workItemId, patch));
+    updateState((state) =>
+      applyPatchBacklogItem(
+        state,
+        workItemId,
+        patch,
+        priorityWrite(options, false),
+      ),
+    );
     return updateStateWithUndo((state) =>
       withDescriptionTimelogs(before, state, getMappedIds(workItemId, patch)),
     );
@@ -2559,19 +2604,26 @@ const store = {
   },
   /**
    * Updates a backlog item and applies the timelogs of the descriptions saved
-   * since `before`, under one Undo. Returns an undo token, or null when
-   * nothing changed.
+   * since `before`, under one Undo. A new priority level is written to the
+   * source after the Undo window when `writesToSource`. Returns an undo
+   * token, or null when nothing changed.
    */
   applyWorkItemEditsSince(
     workItemId: string,
     patch: Parameters<typeof applyUpdateWorkItem>[2],
     before: LocalAppState,
+    options?: PriorityWriteOptions,
   ): string | null {
     return updateStateWithUndo((state) =>
       withDescriptionTimelogs(
         before,
         Object.keys(patch).length > 0
-          ? applyUpdateWorkItem(state, workItemId, patch)
+          ? applyPatchBacklogItem(
+              state,
+              workItemId,
+              patch,
+              priorityWrite(options, true),
+            )
           : state,
         getMappedIds(workItemId, patch),
       ),
@@ -2645,21 +2697,30 @@ const store = {
   /**
    * Moves a backlog item to a workflow state. A done state closes it and
    * leaving one reopens it. `edits` are the backlog editor's other changes,
-   * saved first and kept by Undo; what the description's timelog then sets
-   * or creates shares the move's Undo. Returns an undo token, or null when
-   * nothing changed.
+   * saved first and kept by Undo; their priority goes to the source when
+   * `editsWriteToSource`, with the move's state when it writes one. What the
+   * description's timelog then sets or creates shares the move's Undo.
+   * Returns an undo token, or null when nothing changed.
    */
   moveWorkItemToState(
     workItemId: string,
     workflowStateId: string | undefined,
     options?: MoveBacklogItemOptions & {
       edits?: Parameters<typeof applyUpdateWorkItem>[2];
+      editsWriteToSource?: boolean;
     },
   ) {
-    const { edits, ...moveOptions } = options ?? {};
+    const { edits, editsWriteToSource, ...moveOptions } = options ?? {};
     const before = readState();
     if (edits) {
-      updateState((state) => applyUpdateWorkItem(state, workItemId, edits));
+      updateState((state) =>
+        applyPatchBacklogItem(
+          state,
+          workItemId,
+          edits,
+          priorityWrite({ writesToSource: editsWriteToSource }, false),
+        ),
+      );
     }
     const moved = updateStateWithUndo((state) =>
       applyMoveBacklogItemToState(
@@ -2718,6 +2779,13 @@ const store = {
       }
       return next;
     });
+  },
+  /**
+   * The queue sends the item's write. Its level may land from now on, even
+   * if a newer change replaces the write before the source answers.
+   */
+  markSourceWriteSent(workItemId: string) {
+    updateState((state) => applyMarkSourceWriteSent(state, workItemId));
   },
   /** Restores failed-write values and applies deferred workflow mappings. */
   failSourceWrite(workItemId: string) {
@@ -3221,6 +3289,7 @@ function backlogItemCommand<
     | "backlog_item.change_source_state"
     | "backlog_item.complete_source_write"
     | "backlog_item.fail_source_write"
+    | "backlog_item.send_source_write"
     | "backlog_item.unsettle"
     | "backlog_item.snooze"
     | "backlog_item.unsnooze"
@@ -3601,6 +3670,10 @@ export const STORE_COMMANDS = {
   },
   failSourceWrite: {
     ...backlogItemCommand("backlog_item.fail_source_write"),
+    trigger: "system",
+  },
+  markSourceWriteSent: {
+    ...backlogItemCommand("backlog_item.send_source_write"),
     trigger: "system",
   },
   holdSourceWrite: {

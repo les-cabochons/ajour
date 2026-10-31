@@ -105,6 +105,8 @@ it("saves an editor's other fields with its move, in the store's one call", asyn
     includeSubitems: false,
     sourceWrites: { a: "In QA" },
     edits: { description: "New text" },
+    // No priority in the edits, so none to write.
+    editsWriteToSource: false,
   });
   expect(mocks.update).not.toHaveBeenCalled();
   expect(mocks.offerUndo).toHaveBeenCalledWith(

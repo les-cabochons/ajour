@@ -9,7 +9,7 @@ A backlog item is a piece of planned work. It has a title, a priority, a workflo
 - A **manual** item is one you create in Ajour. Its source shows as **Ajour**.
 - A **synced** item comes from a backlog plugin, such as Azure DevOps or Jira. It shows its ID, its source project and its source state, and **Open in Azure DevOps** or **Open in Jira** takes you to it.
 
-A sync updates what changed in the source and keeps your changes to the priority and estimates. A state you picked in Ajour stays until the source changes state, then the [workflow mapping](/backlog/workflow) applies again. When both sides changed the same estimate, Ajour asks you which to keep. See [Sync review](/plugins/sync-review).
+A sync updates what changed in the source and keeps your changes to the estimates. A priority you change on a synced item is written to its source when the Undo toast closes, or at once when you save the item editor. A synced item can't go back to **No priority** while its source has a priority. If its plugin can't write, the change stays in Ajour. A state you picked in Ajour stays until the source changes state, then the [workflow mapping](/backlog/workflow) applies again. When both sides changed the same estimate, Ajour asks you which to keep. See [Sync review](/plugins/sync-review).
 
 ## The item page
 

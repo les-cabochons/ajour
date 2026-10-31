@@ -33,7 +33,10 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { isBacklogItemSnoozed } from "@/domain/backlog/backlog-item-lifecycle";
+import {
+  getPriorityRefusal,
+  isBacklogItemSnoozed,
+} from "@/domain/backlog/backlog-item-lifecycle";
 import {
   getBacklogItemActions,
   type BacklogItemActionId,
@@ -64,6 +67,10 @@ import {
   type BacklogTaskEditorTarget,
 } from "@/features/backlog/backlog-task-editor";
 import { moveBacklogItemWithUndo } from "@/features/backlog/backlog-item-moves";
+import {
+  canWriteToSource,
+  sendPendingSourceWrites,
+} from "@/features/backlog/backlog-source-writes";
 import { parseWorkItemReference } from "@/features/backlog/work-item-timer-comment";
 import { buildProjectTaskOptions } from "@/features/projects/project-task-options";
 import {
@@ -285,6 +292,9 @@ export function BacklogItemEditorForm({
     descriptionLimit,
   });
   const { validation } = editor;
+  const noPriorityRefusal = currentItem
+    ? getPriorityRefusal(currentItem, undefined)
+    : undefined;
 
   const projectOptions = useMemo(
     () =>
@@ -429,16 +439,22 @@ export function BacklogItemEditorForm({
             return moved;
           }
           // A save has no Undo, unless the description's timelog also set
-          // the project or task.
+          // the project or task. So a new priority level goes to the source
+          // at once.
+          const writesPriority =
+            "priority" in result.patch && canWriteToSource(saved);
           withEventAttribution({ surface: editorSurface }, () =>
             offerUndo(
-              localStore.saveWorkItemEdits(workItem._id, result.patch),
+              localStore.saveWorkItemEdits(workItem._id, result.patch, {
+                writesToSource: writesPriority,
+              }),
               {
                 title: "Project and task set from the description",
                 subject: "backlog item",
               },
             ),
           );
+          if (writesPriority) void sendPendingSourceWrites([workItem._id]);
           writeDescription(result.patch, allowedLoss);
         }
         return true;
@@ -621,7 +637,11 @@ export function BacklogItemEditorForm({
                 onChange={(priority) => updateFields({ priority })}
                 invalid={Boolean(validation.priorityError)}
                 options={[
-                  { value: "", label: NO_PRIORITY_NAME },
+                  {
+                    value: "",
+                    label: NO_PRIORITY_NAME,
+                    disabledReason: noPriorityRefusal,
+                  },
                   ...PRIORITY_LEVELS.map(({ level, name }) => ({
                     value: String(level),
                     label: name,

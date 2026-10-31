@@ -23,6 +23,8 @@ If the item has [comments](/backlog/comments), the dialog also has a **Comment**
 ::: info Writes wait for the Undo toast
 Ajour does not write to Azure DevOps or Jira right away. It sends the change, then the comment, when the Undo toast closes, after 8 seconds. If you press **Undo**, nothing is written, and the comment waits as a draft on the item's page. If you quit Ajour first, it sends them at the next launch.
 
+A priority you change outside Settle waits for its Undo toast the same way.
+
 If the write fails, Ajour restores the item. If the write or the comment fails, Ajour keeps the comment as a draft on the item and shows an error that stays until you dismiss it.
 :::
 

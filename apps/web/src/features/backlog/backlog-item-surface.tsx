@@ -23,7 +23,10 @@ import {
   getSubitemProgress,
   type BacklogViewSettings,
 } from "@/domain/backlog/backlog-view";
-import { isBacklogItemSnoozed } from "@/domain/backlog/backlog-item-lifecycle";
+import {
+  getPriorityRefusal,
+  isBacklogItemSnoozed,
+} from "@/domain/backlog/backlog-item-lifecycle";
 import { findWorkItemTimer } from "@/domain/time/running-entry";
 import { getDirectChildWorkItems } from "@/domain/backlog/work-item-hierarchy";
 import {
@@ -41,6 +44,10 @@ import {
   getOtherSourceStates,
   moveBacklogItemWithUndo,
 } from "@/features/backlog/backlog-item-moves";
+import {
+  canWriteToSource,
+  sendPendingSourceWrites,
+} from "@/features/backlog/backlog-source-writes";
 import { PriorityIcon } from "@/features/backlog/priority-icon";
 import {
   WorkItemIcon,
@@ -56,16 +63,30 @@ import { ProjectIcon } from "@/lib/project-icons";
 import { useHoverOrFocusWithin } from "@/lib/use-hover-or-focus-within";
 import { cn } from "@/lib/utils";
 
+/**
+ * Changes a backlog item in place with Undo, from a picker, a property or a
+ * drop. A synced item's new priority level is written to its source when
+ * the Undo toast closes, when its plugin can write (#471).
+ */
 export function patchBacklogItemWithUndo(
   item: LocalWorkItem,
   patch: Parameters<typeof localStore.updateWorkItemWithUndo>[1],
   title: string,
   orderedIds?: string[],
 ) {
-  offerUndo(localStore.updateWorkItemWithUndo(item._id, patch, orderedIds), {
-    title,
-    subject: "backlog item",
-  });
+  const writesToSource = "priority" in patch && canWriteToSource(item);
+  offerUndo(
+    localStore.updateWorkItemWithUndo(item._id, patch, orderedIds, {
+      writesToSource,
+    }),
+    {
+      title,
+      subject: "backlog item",
+      onWindowClosed: writesToSource
+        ? () => void sendPendingSourceWrites([item._id])
+        : undefined,
+    },
+  );
 }
 export function BacklogStatePicker({
   item,
@@ -206,6 +227,10 @@ export function BacklogPriorityPicker({
           (p) => (
             <DropdownMenuItem
               key={p.name}
+              // A synced item's source can't take No priority (rule 2 of
+              // the action model: greyed out, the reason for screen readers).
+              disabled={getPriorityRefusal(item, p.level) !== undefined}
+              aria-description={getPriorityRefusal(item, p.level)}
               onClick={async () => {
                 if ((await beforeChange?.()) !== false)
                   patchBacklogItemWithUndo(

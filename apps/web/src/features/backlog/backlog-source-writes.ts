@@ -3,7 +3,10 @@ import { isCapabilityActive } from "@ajour/shared";
 import type { LocalWorkItem } from "@/domain/local-state";
 import { hasSameSourceWriteRequest } from "@/domain/backlog/backlog-item-lifecycle";
 import { isCommentSourceOf } from "@/domain/backlog/comments";
-import { sourcePriorityFromLevel } from "@/domain/backlog/priority";
+import {
+  getPriorityLevelName,
+  sourcePriorityFromLevel,
+} from "@/domain/backlog/priority";
 import { announcePostedComment } from "@/features/backlog/comment-threads";
 import {
   getCachedPluginsOverview,
@@ -37,8 +40,9 @@ const sending = new Set<string>();
 
 /**
  * Whether the item is synced and its active plugin can write to the source.
- * Settle then opens the settle dialog, and moves write the new source state.
- * Other items settle and move locally.
+ * Settle then opens the settle dialog, and moves and priority changes write
+ * the new source state and level. Other items settle, move and change
+ * priority locally.
  */
 export function canWriteToSource(workItem: LocalWorkItem) {
   if (
@@ -63,7 +67,7 @@ export function canWriteToSource(workItem: LocalWorkItem) {
 export const settleOpensDialog = canWriteToSource;
 
 /**
- * Sends the settle and move writes waiting in local state. After an Undo toast closes,
+ * Sends the settle, move and priority writes waiting in local state. After an Undo toast closes,
  * `workItemIds` limits this to the action's items. At launch, it sends every
  * write left from a session that quit during its Undo window.
  *
@@ -142,6 +146,10 @@ function sendSourceWrite(
         );
 
       sending.add(workItem._id);
+      // From here its level may land, even if a newer change replaces it.
+      if (write.priority !== undefined) {
+        job.enter(() => localStore.markSourceWriteSent(workItem._id));
+      }
       try {
         if (!workItem.sourceId || !workItem.sourceConnectionId) {
           throw new Error("The item is no longer linked to its source.");
@@ -184,9 +192,15 @@ function sendSourceWrite(
           // The settle didn't stand, whatever state the item went back to.
           keepAsDrafts(workItem._id, ofThisSettle);
         });
+        // A priority change's write puts back only the priority.
+        const recovered =
+          write.state === undefined &&
+          workItem.status === write.previous.lifecycle?.status
+            ? `Its priority went back to ${getPriorityLevelName(write.previous.priority)}.`
+            : "The item returned to its previous state.";
         showErrorToast({
           title: `Couldn't update "${workItem.title}" in its source`,
-          description: `${error instanceof Error ? error.message : "Unknown error"} The item returned to its previous state.${kept ? " Your comment is kept as a draft on it." : ""}`,
+          description: `${error instanceof Error ? error.message : "Unknown error"} ${recovered}${kept ? " Your comment is kept as a draft on it." : ""}`,
         });
       } finally {
         sending.delete(workItem._id);
