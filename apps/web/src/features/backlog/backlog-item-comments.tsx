@@ -19,6 +19,7 @@ import {
   preloadMarkdownEditor,
 } from "@/components/markdown-editor";
 import { SectionHeading } from "@/components/section-heading";
+import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import {
@@ -596,7 +597,9 @@ function CommentComposer({
   // saved outcome as it was.
   const usable = (outcome: CommentOutcome | undefined) =>
     outcome && !disabledReason(outcome) ? outcome : undefined;
-  const buttonOutcome = usable(held) ?? usable(saved) ?? "comment";
+  // What the button runs with no key held, and so what ⌘/Ctrl+Enter runs.
+  const shownOutcome = usable(saved) ?? "comment";
+  const buttonOutcome = usable(held) ?? shownOutcome;
   const labelOf = (outcome: CommentOutcome) =>
     commentOutcomeLabel(outcome, {
       settleOpensDialog: workItem ? settleOpensDialog(workItem) : false,
@@ -617,7 +620,10 @@ function CommentComposer({
     setOpen(false);
   };
 
+  // The outcome used becomes the button's next one, unless it was only the
+  // Comment the button fell back to on an item that can't take the saved one.
   const remember = (outcome: CommentOutcome) => {
+    if (outcome === shownOutcome && shownOutcome !== saved) return;
     saveCommentOutcome(outcome);
     setSaved(outcome);
   };
@@ -665,14 +671,24 @@ function CommentComposer({
       void send(value);
       return;
     }
-    const done = () => {
-      clearSent(value);
+    // A comment that couldn't go, as when the item's comments went away
+    // meanwhile, stays as the draft.
+    const done = ({ commentQueued }: { commentQueued: boolean }) => {
       remember(outcome);
+      if (commentQueued) {
+        clearSent(value);
+        return;
+      }
+      showErrorToast({
+        title: "Your comment wasn't posted",
+        description:
+          "The item's comments aren't available now. It's kept as a draft.",
+      });
     };
     if (outcome === "settle" && workItem) {
-      settleBacklogItem(workItem, { comment: { body, onSettled: done } });
+      settleBacklogItem(workItem, { comment: body, onSettled: done });
     } else if (outcome === "snooze") {
-      requestSnooze(itemId, { body, onSnoozed: done });
+      requestSnooze(itemId, { comment: body, onSnoozed: done });
     }
   };
 
@@ -684,7 +700,7 @@ function CommentComposer({
       mod
         ? commentOutcomeForKeys(
             { shift: event.shiftKey, alt: event.altKey },
-            saved,
+            shownOutcome,
           )
         : undefined,
     );
@@ -703,8 +719,8 @@ function CommentComposer({
             aria-label="New comment"
             value={text}
             onChange={change}
-            onSubmit={(value, keys) =>
-              run(commentOutcomeForKeys(keys, saved), value)
+            onSubmitWithModifiers={(value, keys) =>
+              run(commentOutcomeForKeys(keys, shownOutcome), value)
             }
             onCancel={() => setOpen(false)}
             placeholder="Leave a comment. Markdown supported. Type @ to mention someone."
@@ -741,21 +757,48 @@ function CommentComposer({
                 disabled={!canSend}
                 onClick={() => run(buttonOutcome, text)}
               >
-                {sending ? "Sending…" : labelOf(buttonOutcome)}
+                {/* Every label takes the same cell, so the button keeps the
+                    width of the longest and the footer doesn't shift. */}
+                <span className="grid">
+                  {[...COMMENT_OUTCOMES.map(labelOf), "Sending…"].map(
+                    (label) => {
+                      const shown =
+                        label ===
+                        (sending ? "Sending…" : labelOf(buttonOutcome));
+                      return (
+                        <span
+                          key={label}
+                          aria-hidden={shown ? undefined : true}
+                          className={cn(
+                            "col-start-1 row-start-1",
+                            !shown && "invisible",
+                          )}
+                        >
+                          {label}
+                        </span>
+                      );
+                    },
+                  )}
+                </span>
               </Button>
               <DropdownMenu>
-                <DropdownMenuTrigger
+                <TooltipButton
+                  label="Other ways to comment"
+                  side="top"
+                  disabled={!canSend}
                   render={
-                    <Button
-                      size="icon-sm"
-                      className="ml-px rounded-l-none"
-                      aria-label="Other ways to comment"
-                      disabled={!canSend}
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          size="icon-sm"
+                          className="ml-px rounded-l-none"
+                        />
+                      }
                     />
                   }
                 >
                   <OutcomesIcon />
-                </DropdownMenuTrigger>
+                </TooltipButton>
                 <DropdownMenuContent
                   align="end"
                   side="top"

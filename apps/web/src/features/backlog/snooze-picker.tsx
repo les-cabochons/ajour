@@ -21,17 +21,24 @@ import { localStore, runStoreCommandWith } from "@/lib/local-store";
 import { queueSettleComment } from "@/lib/settle-comments";
 
 /**
- * A comment that goes with the snooze, from the comment editor's Comment and
- * snooze. `onSnoozed` runs once the snooze is made, so the editor can clear
- * the draft; closing the picker without a time posts nothing.
+ * Runs once the item is snoozed, telling whether the comment given went with
+ * it, so the comment editor clears its draft only then. Closing the picker
+ * without a time never calls it.
  */
-export interface SnoozeComment {
-  body: string;
-  onSnoozed: () => void;
+export type OnSnoozed = (result: { commentQueued: boolean }) => void;
+
+/** A snooze that a caller asked for with a comment or a callback. */
+export interface SnoozeRequest {
+  comment?: string;
+  onSnoozed?: OnSnoozed;
 }
 
+/** What a snooze did. Nothing when the item couldn't be snoozed. */
+export type SnoozeResult =
+  { snoozed: false } | { snoozed: true; commentQueued: boolean };
+
 type SnoozeTarget =
-  | { kind: "backlog-item"; id: string; comment?: SnoozeComment }
+  | { kind: "backlog-item"; id: string; request?: SnoozeRequest }
   | { kind: "pull-request"; id: string };
 let requestListener: ((target: SnoozeTarget) => void) | null = null;
 
@@ -41,8 +48,8 @@ let requestListener: ((target: SnoozeTarget) => void) | null = null;
  * snooze all come here. Does nothing until the app shell has mounted the
  * picker.
  */
-export function requestSnooze(workItemId: string, comment?: SnoozeComment) {
-  requestListener?.({ kind: "backlog-item", id: workItemId, comment });
+export function requestSnooze(workItemId: string, request?: SnoozeRequest) {
+  requestListener?.({ kind: "backlog-item", id: workItemId, request });
 }
 
 export function requestPullRequestSnooze(id: string) {
@@ -58,7 +65,7 @@ export function snoozeBacklogItem(
   workItemId: string,
   until: number,
   comment?: string,
-) {
+): SnoozeResult {
   const workItem = localStore
     .snapshot()
     .workItems.find((candidate) => candidate._id === workItemId);
@@ -82,7 +89,7 @@ export function snoozeBacklogItem(
       });
     },
   );
-  if (!token) return false;
+  if (!token) return { snoozed: false };
   if (body && commentSource) {
     queueSettleComment({
       id: commentId,
@@ -109,7 +116,7 @@ export function snoozeBacklogItem(
       ? () => void releaseSettleComment(commentId, workItemId)
       : undefined,
   });
-  return true;
+  return { snoozed: true, commentQueued: Boolean(commentSource) };
 }
 
 /** The Snooze… dialog: the presets, then a custom date and time. Mounted once in the app shell. */
@@ -145,9 +152,12 @@ export function SnoozePickerHost() {
 
   function choose(until: number) {
     if (target?.kind === "backlog-item") {
-      if (snoozeBacklogItem(target.id, until, target.comment?.body)) {
-        target.comment?.onSnoozed();
-      }
+      const result = snoozeBacklogItem(
+        target.id,
+        until,
+        target.request?.comment,
+      );
+      if (result.snoozed) target.request?.onSnoozed?.(result);
     } else if (target)
       localStore.changePullRequest(target.id, { type: "snooze", until });
     setTarget(null);
@@ -162,7 +172,7 @@ export function SnoozePickerHost() {
         <DialogHeader className="gap-1">
           <DialogTitle>Snooze until</DialogTitle>
           <DialogDescription className="truncate">{title}</DialogDescription>
-          {target?.kind === "backlog-item" && target.comment ? (
+          {target?.kind === "backlog-item" && target.request?.comment ? (
             <DialogDescription>
               Your comment is posted with the snooze.
             </DialogDescription>

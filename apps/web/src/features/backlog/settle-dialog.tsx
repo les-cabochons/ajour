@@ -49,20 +49,28 @@ import { queueSettleComment } from "@/lib/settle-comments";
 import { useLocalState } from "@/lib/local-hooks";
 
 /**
- * A comment that starts in the dialog's Comment field, from the comment
- * editor's Comment and settle. `onSettled` runs once the dialog settled the
- * item, so the editor can clear the draft; Cancel leaves the draft alone.
+ * Runs once the item is settled, telling whether the comment given went with
+ * it, so the comment editor clears its draft only then. Cancel and a closed
+ * subitem question never call it.
  */
-export interface SettleComment {
-  body: string;
-  onSettled: () => void;
+export type OnSettled = (result: { commentQueued: boolean }) => void;
+
+/** A settle that a caller asked for with a comment or a callback. */
+export interface SettleRequest {
+  /** Starts in the dialog's Comment field, or goes with a settle that has none. */
+  comment?: string;
+  onSettled?: OnSettled;
 }
+
+/** What a settle did. Nothing when the subitem question was cancelled. */
+export type SettleResult =
+  { settled: false } | { settled: true; commentQueued: boolean };
 
 let requestListener:
   | ((
       workItemId: string,
       prefill?: BacklogSettleChange,
-      comment?: SettleComment,
+      request?: SettleRequest,
     ) => void)
   | null = null;
 
@@ -74,9 +82,9 @@ let requestListener:
 export function requestSettle(
   workItemId: string,
   prefill?: BacklogSettleChange,
-  comment?: SettleComment,
+  request?: SettleRequest,
 ) {
-  requestListener?.(workItemId, prefill, comment);
+  requestListener?.(workItemId, prefill, request);
 }
 
 /**
@@ -113,23 +121,23 @@ export function settleOpensDialog(workItem: LocalWorkItem) {
 /**
  * Runs Settle on an item: the dialog, the rule's change, or a local settle.
  * A comment from the comment editor starts in the dialog, or goes with the
- * settle; its `onSettled` runs once the item is settled.
+ * settle, and `onSettled` runs once the item is settled.
  */
 export function settleBacklogItem(
   workItem: LocalWorkItem,
-  options?: { ask?: boolean; comment?: SettleComment },
+  { ask, ...request }: { ask?: boolean } & SettleRequest = {},
 ) {
-  const behavior = getSettleBehavior(workItem, options);
+  const behavior = getSettleBehavior(workItem, { ask });
   if (behavior.kind === "ask") {
-    requestSettle(workItem._id, behavior.prefill, options?.comment);
+    requestSettle(workItem._id, behavior.prefill, request);
   } else {
     void settleBacklogItemWithUndo(
       workItem,
       behavior.kind === "apply" ? behavior.change : undefined,
-      options?.comment?.body,
+      request.comment,
       behavior.kind === "apply" ? "rule" : "local",
-    ).then((settled) => {
-      if (settled) options?.comment?.onSettled();
+    ).then((result) => {
+      if (result.settled) request.onSettled?.(result);
     });
   }
 }
@@ -147,9 +155,10 @@ export async function settleBacklogItemWithUndo(
   change?: BacklogSettleChange,
   comment?: string,
   behavior: "local" | "rule" | "ask" = change ? "rule" : "local",
-) {
+): Promise<SettleResult> {
   const includeSubitems = await resolveIncludeSubitems(workItem, "settle");
-  if (includeSubitems === null) return false;
+  if (includeSubitems === null) return { settled: false };
+  let commentQueued = false;
 
   // The settle's event takes what only this workflow knows: what chose the
   // change, and the comment's length, never its text.
@@ -159,7 +168,7 @@ export async function settleBacklogItemWithUndo(
     (unit, token) => {
       unit.set({ backlog_item: { behavior } });
       if (!token) return;
-      const { commentQueued } = afterSettle(workItem, token, comment);
+      commentQueued = afterSettle(workItem, token, comment).commentQueued;
       unit.set({
         comment: {
           queued: commentQueued,
@@ -168,7 +177,7 @@ export async function settleBacklogItemWithUndo(
       });
     },
   );
-  return token !== null;
+  return token === null ? { settled: false } : { settled: true, commentQueued };
 }
 
 /** Queues the settle's comment, and offers its Undo. */
@@ -236,14 +245,14 @@ export function SettleDialogHost() {
   const [priority, setPriority] = useState("");
   const [comment, setComment] = useState("");
   // Set when the comment editor opened the dialog with its draft.
-  const [onSettled, setOnSettled] = useState<(() => void) | undefined>();
+  const [onSettled, setOnSettled] = useState<OnSettled | undefined>();
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
     const listener = (
       id: string,
       prefill?: BacklogSettleChange,
-      editorComment?: SettleComment,
+      request?: SettleRequest,
     ) => {
       const item = localStore
         .snapshot()
@@ -256,8 +265,8 @@ export function SettleDialogHost() {
           prefill?.priority ?? item.importedPriority ?? item.priority,
         ),
       );
-      setComment(editorComment?.body ?? "");
-      setOnSettled(() => editorComment?.onSettled);
+      setComment(request?.comment ?? "");
+      setOnSettled(() => request?.onSettled);
       setLoad({ status: "loading" });
     };
     requestListener = listener;
@@ -324,15 +333,14 @@ export function SettleDialogHost() {
     if (!currentItem || !change || pending || commentTooLong) return;
     setPending(true);
     try {
-      if (
-        await settleBacklogItemWithUndo(
-          currentItem,
-          change,
-          commentSource ? comment : undefined,
-          "ask",
-        )
-      ) {
-        onSettled?.();
+      const result = await settleBacklogItemWithUndo(
+        currentItem,
+        change,
+        commentSource ? comment : undefined,
+        "ask",
+      );
+      if (result.settled) {
+        onSettled?.(result);
         setWorkItem(null);
       }
     } finally {

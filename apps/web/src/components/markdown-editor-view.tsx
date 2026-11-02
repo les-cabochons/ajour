@@ -39,11 +39,14 @@ export interface MarkdownEditorProps {
   onChange?: (value: string) => void;
   /** Called with the text, and where focus went, when the editor loses focus. */
   onBlur?: (value: string, next: Element | null) => void;
+  /** ⌘/Ctrl+Enter. Without it the keys reach the surrounding form. */
+  onSubmit?: (value: string) => void;
   /**
-   * ⌘/Ctrl+Enter, also with Shift or Alt held, which `modifiers` tells. Without
-   * it the keys reach the surrounding form.
+   * ⌘/Ctrl+Enter, also with Shift or Alt held, which `modifiers` tells. Use it
+   * instead of `onSubmit` where those keys choose what the submit does, as in
+   * the comment editor. Other editors leave Shift and Alt unbound.
    */
-  onSubmit?: (value: string, modifiers: SubmitModifiers) => void;
+  onSubmitWithModifiers?: (value: string, modifiers: SubmitModifiers) => void;
   /** Escape. Without it the key reaches the surrounding form. */
   onCancel?: () => void;
   "aria-label": string;
@@ -160,6 +163,7 @@ export default function MarkdownEditorView({
   onChange,
   onBlur,
   onSubmit,
+  onSubmitWithModifiers,
   onCancel,
   "aria-label": ariaLabel,
   id,
@@ -171,8 +175,22 @@ export default function MarkdownEditorView({
   const parentRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   // The view is built once; its handlers read the latest props through this.
-  const handlers = useRef({ onChange, onBlur, onSubmit, onCancel, mentions });
-  handlers.current = { onChange, onBlur, onSubmit, onCancel, mentions };
+  const handlers = useRef({
+    onChange,
+    onBlur,
+    onSubmit,
+    onSubmitWithModifiers,
+    onCancel,
+    mentions,
+  });
+  handlers.current = {
+    onChange,
+    onBlur,
+    onSubmit,
+    onSubmitWithModifiers,
+    onCancel,
+    mentions,
+  };
 
   useEffect(() => {
     const parent = parentRef.current;
@@ -193,9 +211,15 @@ export default function MarkdownEditorView({
               ).map(([key, modifiers]) => ({
                 key,
                 run: (target: EditorView) => {
+                  const value = target.state.doc.toString();
+                  const withModifiers = handlers.current.onSubmitWithModifiers;
+                  if (withModifiers) {
+                    withModifiers(value, modifiers);
+                    return true;
+                  }
                   const submit = handlers.current.onSubmit;
-                  if (!submit) return false;
-                  submit(target.state.doc.toString(), modifiers);
+                  if (!submit || modifiers.shift || modifiers.alt) return false;
+                  submit(value);
                   return true;
                 },
               })),
