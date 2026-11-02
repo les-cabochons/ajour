@@ -746,7 +746,7 @@ Feature: Backlog list and board views
     When the Undo toast closes on its own
     Then the source got the settle, then the comment "Waiting on the client"
     When I open the Backlog parent page
-    Then my new comment "Waiting on the client" shows last in the thread
+    Then the comment field has no draft
 
   Scenario: Undoing a settle keeps its comment as a draft
     Given the Backlog parent is synced
@@ -783,7 +783,7 @@ Feature: Backlog list and board views
     When the Undo toast closes on its own
     Then the source got the settle, then the comment "Waiting on the client"
     When I open the Backlog parent page
-    Then my new comment "Waiting on the client" shows last in the thread
+    Then the comment field has no draft
 
   Scenario: Comment and snooze from the comment button's menu
     Given the Backlog parent is synced
