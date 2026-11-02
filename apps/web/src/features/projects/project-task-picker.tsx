@@ -26,7 +26,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import type { LocalProject } from "@/domain/local-state";
+import type { LocalProject, TaskCommitAs } from "@/domain/local-state";
 import { getLocalProjectDisplayName } from "@/domain/local-state";
 import {
   findProjectTaskByImportName,
@@ -295,12 +295,19 @@ export function ProjectTaskPicker({
    * Creates the typed task in a project, then picks it. Undo picks the
    * previous project and task again while the created task is still picked.
    */
-  function createTask(nextProjectId: string, name: string) {
+  function createTask(
+    nextProjectId: string,
+    name: string,
+    fromDialog?: { commitAs?: TaskCommitAs },
+  ) {
     const previous = { projectId, taskId };
     let createdId = "";
     void createTaskFromPicker({
       projectId: nextProjectId,
       name,
+      commitAs: fromDialog?.commitAs,
+      // The dialog already said a shared project's team gets the task.
+      confirmed: Boolean(fromDialog),
       onCreated: (createdTaskId) => {
         createdId = createdTaskId;
         commitSelection(nextProjectId, createdTaskId);
@@ -671,9 +678,11 @@ export function ProjectTaskPicker({
         name={dialogName}
         projects={projects}
         onCancel={cancelCreateDialog}
-        onCreated={(nextProjectId, nextTaskId) => {
+        onSubmit={(request) => {
           setDialogName(null);
-          commitSelection(nextProjectId, nextTaskId);
+          createTask(request.projectId, request.name, {
+            commitAs: request.commitAs,
+          });
         }}
       />
     </Popover>

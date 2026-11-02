@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { LocalProject } from "@/domain/local-state";
+import {
+  isProjectTaskInUse,
+  type LocalAppState,
+  type LocalProject,
+} from "@/domain/local-state";
 import { describeCreateTaskRow } from "@/features/projects/task-creation";
 
 const tasks: LocalProject["tasks"] = [
@@ -32,5 +36,32 @@ describe("the create row of a task picker", () => {
         "07 Run",
       ),
     ).toBe('Add task "07 Run" for the team…');
+  });
+});
+
+describe("the Undo guard of a created task", () => {
+  const state = {
+    timesheetEntries: [] as LocalAppState["timesheetEntries"],
+    timers: [] as LocalAppState["timers"],
+    workItems: [
+      { _id: "item", taskId: "run" },
+    ] as unknown as LocalAppState["workItems"],
+  };
+
+  it("lets Undo take back the item it was created for, and nothing else", () => {
+    expect(isProjectTaskInUse(state, "run", "item")).toBe(false);
+    expect(isProjectTaskInUse(state, "run")).toBe(true);
+    expect(
+      isProjectTaskInUse(
+        {
+          ...state,
+          timesheetEntries: [
+            { taskId: "run" },
+          ] as unknown as LocalAppState["timesheetEntries"],
+        },
+        "run",
+        "item",
+      ),
+    ).toBe(true);
   });
 });

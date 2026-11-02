@@ -869,11 +869,15 @@ export function asksBeforeOpeningDescriptionLinks(
 export function isProjectTaskInUse(
   state: Pick<LocalAppState, "timesheetEntries" | "timers" | "workItems">,
   taskId: string,
+  /** A backlog item whose own mapping the caller takes back with the task. */
+  exceptWorkItemId?: string,
 ): boolean {
   return (
     state.timesheetEntries.some((entry) => entry.taskId === taskId) ||
     state.timers.some((timer) => timer.taskId === taskId) ||
-    state.workItems.some((item) => item.taskId === taskId)
+    state.workItems.some(
+      (item) => item.taskId === taskId && item._id !== exceptWorkItemId,
+    )
   );
 }
 

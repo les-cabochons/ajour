@@ -61,8 +61,6 @@ interface SearchableSelectProps {
     label: (text: string) => string | null;
     onCreate: (text: string) => void;
   };
-  /** Focuses the field on mount, which opens the list. */
-  autoFocus?: boolean;
 }
 
 /** The value of the create row, which no real option can have. */
@@ -111,7 +109,6 @@ export function SearchableSelect({
   inputClassName,
   popoverMinWidth,
   create,
-  autoFocus,
 }: SearchableSelectProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -437,7 +434,6 @@ export function SearchableSelect({
           value={inputValue}
           placeholder={placeholder}
           disabled={disabled}
-          autoFocus={autoFocus}
           aria-label={ariaLabel}
           aria-expanded={isOpen}
           aria-controls={listboxId}

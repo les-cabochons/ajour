@@ -64,6 +64,21 @@ export function describeCreateTaskRow(
     : `Create task "${name}"`;
 }
 
+/**
+ * Whether an active plugin commits tasks under a name, from the last read.
+ * Undefined until the first one.
+ */
+let hasCommittingPlugin: boolean | undefined;
+
+async function refreshCommittingPlugin() {
+  try {
+    const plugins = await listTaskPropertyPlugins();
+    hasCommittingPlugin = plugins.some((plugin) => getTaskNameField(plugin));
+  } catch {
+    // The overview call's own event records the failure.
+  }
+}
+
 let questionListener:
   ((question: ConfirmQuestion, resolve: (ok: boolean) => void) => void) | null =
   null;
@@ -84,9 +99,11 @@ function confirm(question: ConfirmQuestion): Promise<boolean> {
  * restored or a new task, with an Undo toast. A shared project asks first.
  *
  * With `oneUndo`, what `onCreated` writes to the store shares the toast's
- * Undo, as for a property that saves at once. Otherwise `onCreated` only
- * fills a draft: Undo removes the task and calls `onUndone`, unless an
- * entry, the running entry or a backlog item uses the task by then.
+ * Undo, as for a property that saves at once: `oneUndo.workItemId` names
+ * the backlog item whose mapping Undo takes back too. Otherwise `onCreated`
+ * only fills a draft: Undo removes the task and calls `onUndone`. Either
+ * way, Undo refuses once another entry, the running entry or another
+ * backlog item uses the task.
  *
  * The toast's Change opens Commits as for the task when a plugin commits
  * tasks and the project is not Local only.
@@ -97,7 +114,7 @@ export async function createTaskFromPicker({
   commitAs,
   onCreated,
   onUndone,
-  oneUndo = false,
+  oneUndo,
   confirmed = false,
 }: {
   projectId: string;
@@ -106,7 +123,7 @@ export async function createTaskFromPicker({
   commitAs?: TaskCommitAs;
   onCreated: (taskId: string) => void;
   onUndone?: () => void;
-  oneUndo?: boolean;
+  oneUndo?: { workItemId: string };
   /** The user already agreed that a shared project's team gets the task. */
   confirmed?: boolean;
 }): Promise<void> {
@@ -159,14 +176,17 @@ export async function createTaskFromPicker({
   if (!undoToken) return;
   const token = undoToken;
 
-  // Read after the write, so the toast never waits on the store.
-  const plugins = await listTaskPropertyPlugins().catch(() => []);
-  const canChange =
-    !project.localOnly && plugins.some((plugin) => getTaskNameField(plugin));
+  // The toast shows at once: waiting on the plugins could let a later
+  // action's toast show first and then lose its Undo to this one. Change
+  // shows unless the last read found no plugin that commits tasks.
+  void refreshCommittingPlugin();
+  const canChange = !project.localOnly && hasCommittingPlugin !== false;
   showUndoToast({
     title: found ? `Task ${taskName} restored` : `Task ${taskName} created`,
     onUndo: () => {
-      if (!oneUndo && isProjectTaskInUse(localStore.snapshot(), taskId)) {
+      if (
+        isProjectTaskInUse(localStore.snapshot(), taskId, oneUndo?.workItemId)
+      ) {
         showToast(`Can't undo. ${taskName} is in use now. Archive it instead.`);
         return;
       }

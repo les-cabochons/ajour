@@ -148,7 +148,7 @@ export function BacklogItemProperties({
                       void createTaskFromPicker({
                         projectId: project._id,
                         name: text,
-                        oneUndo: true,
+                        oneUndo: { workItemId: item._id },
                         onCreated: (taskId) =>
                           localStore.updateWorkItemWithUndo(item._id, {
                             taskId,

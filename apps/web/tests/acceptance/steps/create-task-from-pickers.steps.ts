@@ -131,8 +131,8 @@ Then(
     await expect(dialog.getByRole("textbox", { name: "Name" })).toHaveValue(
       name,
     );
-    await expect(dialog.getByRole("combobox", { name: "Project" })).toHaveValue(
-      "",
+    await expect(dialog.getByRole("combobox", { name: "Project" })).toHaveText(
+      "Pick a project",
     );
     await expect(
       dialog.getByRole("button", { name: "Create task" }),
@@ -145,8 +145,6 @@ When(
   async ({ page }, project: string) => {
     const dialog = page.getByRole("dialog", { name: "Create task" });
     await dialog.getByRole("combobox", { name: "Project" }).click();
-    await page
-      .locator(".searchable-select-option", { hasText: project })
-      .click();
+    await page.getByRole("option", { name: project, exact: true }).click();
   },
 );

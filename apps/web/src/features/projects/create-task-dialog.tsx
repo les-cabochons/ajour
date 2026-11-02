@@ -11,10 +11,10 @@ import {
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
-import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   getLocalProjectDisplayName,
   type LocalProject,
+  type TaskCommitAs,
 } from "@/domain/local-state";
 import {
   getTaskNameField,
@@ -23,30 +23,37 @@ import {
 import { findProjectTaskByImportName } from "@/domain/projects/project-transitions";
 import { getRecentTasks } from "@/domain/projects/recent-tasks";
 import { formatTaskImportName } from "@/domain/projects/task-import";
-import { createTaskFromPicker } from "@/features/projects/task-creation";
 import {
   COMMITS_AS_OPTIONS,
   useTaskPropertyPlugins,
 } from "@/features/projects/task-property-fields";
 import { useLocalTimeRecords } from "@/lib/local-hooks";
 
+/** What the Create task dialog hands back to the picker that opened it. */
+export interface CreateTaskRequest {
+  projectId: string;
+  name: string;
+  commitAs?: TaskCommitAs;
+}
+
 /**
  * Create task, from the time entry task menu's start view, where no project
- * is chosen yet (#481): the typed name, a project picker with recent
- * projects first and none preselected, so a task never lands in a project by
+ * is chosen yet (#481): the typed name, a project menu with recent projects
+ * first and none preselected, so a task never lands in a project by
  * default, and Commits as when the project commits. A name the project
- * already has uses that task, or restores it when archived.
+ * already has uses that task, or restores it when archived. The picker
+ * creates the task, so its Undo works like the picker's own create row.
  */
 export function CreateTaskDialog({
   name: initialName,
   projects,
-  onCreated,
+  onSubmit,
   onCancel,
 }: {
   /** The text typed in the menu. Null keeps the dialog closed. */
   name: string | null;
   projects: LocalProject[];
-  onCreated: (projectId: string, taskId: string) => void;
+  onSubmit: (request: CreateTaskRequest) => void;
   onCancel: () => void;
 }) {
   return (
@@ -58,7 +65,7 @@ export function CreateTaskDialog({
         <CreateTaskForm
           initialName={initialName}
           projects={projects}
-          onCreated={onCreated}
+          onSubmit={onSubmit}
           onCancel={onCancel}
         />
       ) : null}
@@ -69,12 +76,12 @@ export function CreateTaskDialog({
 function CreateTaskForm({
   initialName,
   projects,
-  onCreated,
+  onSubmit,
   onCancel,
 }: {
   initialName: string;
   projects: LocalProject[];
-  onCreated: (projectId: string, taskId: string) => void;
+  onSubmit: (request: CreateTaskRequest) => void;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(initialName);
@@ -89,7 +96,10 @@ function CreateTaskForm({
     () => projects.filter((project) => project.status === "active"),
     [projects],
   );
-  const projectOptions = useMemo(() => {
+  // A menu, not a searchable list: the list's popup portals outside the
+  // modal dialog, which hides it from screen readers. Typing a project's
+  // first letters still moves to it.
+  const projectGroups = useMemo(() => {
     const recentIds = [
       ...new Set(
         getRecentTasks(activeProjects, timesheetEntries, timers).map(
@@ -97,20 +107,22 @@ function CreateTaskForm({
         ),
       ),
     ];
-    const option = (project: LocalProject, group: string) => ({
+    const option = (project: LocalProject) => ({
       value: project._id,
       label: getLocalProjectDisplayName(project),
-      group,
-      keywords: [project.name, project.code ?? ""],
     });
+    const recent = recentIds.flatMap((id) => {
+      const project = activeProjects.find((item) => item._id === id);
+      return project ? [option(project)] : [];
+    });
+    const others = activeProjects
+      .filter((project) => !recentIds.includes(project._id))
+      .map(option);
     return [
-      ...recentIds.flatMap((id) => {
-        const project = activeProjects.find((item) => item._id === id);
-        return project ? [option(project, "Recent")] : [];
-      }),
-      ...activeProjects
-        .filter((project) => !recentIds.includes(project._id))
-        .map((project) => option(project, "All projects")),
+      ...(recent.length > 0 ? [{ label: "Recent", options: recent }] : []),
+      ...(others.length > 0
+        ? [{ label: "All projects", options: others }]
+        : []),
     ];
   }, [activeProjects, timesheetEntries, timers]);
 
@@ -132,15 +144,13 @@ function CreateTaskForm({
 
   function submit() {
     if (!project || !trimmed) return;
-    void createTaskFromPicker({
+    onSubmit({
       projectId: project._id,
       name: trimmed,
       commitAs:
         showsCommitsAs && (choice === "waiting" || choice === "local")
           ? choice
           : undefined,
-      confirmed: true,
-      onCreated: (taskId) => onCreated(project._id, taskId),
     });
   }
 
@@ -168,15 +178,14 @@ function CreateTaskForm({
             />
           </Field>
           <Field>
-            <FieldLabel>Project</FieldLabel>
-            <SearchableSelect
+            <FieldLabel htmlFor="create-task-project">Project</FieldLabel>
+            <OptionSelect
+              id="create-task-project"
+              size="default"
               value={projectId}
-              options={projectOptions}
+              options={[{ value: "", label: "Pick a project", disabled: true }]}
+              groups={projectGroups}
               onChange={setProjectId}
-              placeholder="Pick a project"
-              emptyMessage="No matching projects"
-              ariaLabel="Project"
-              autoFocus
             />
           </Field>
           {project?.team && !found ? (

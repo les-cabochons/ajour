@@ -15,6 +15,7 @@ import {
   addProject,
   createOrRestoreProjectTask,
   DEFAULT_PROJECT_COLOR,
+  findProjectTaskByImportName,
   updateProject,
   type ProjectFactories,
 } from "@/domain/projects/project-transitions";
@@ -109,11 +110,10 @@ function resolveTimelogTarget(
     const archived = findTimelogProject(projects, timelog.project, "archived");
     return { kind: "no-project", ...(archived ? { archived } : {}) };
   }
-  const named = timelog.task
-    ? project.tasks.filter((task) => sameName(task.name, timelog.task!))
-    : [];
-  const task =
-    named.find((candidate) => candidate.status === "active") ?? named[0];
+  // The pickers' and imports' name rule, so Apply finds the task it creates.
+  const task = timelog.task
+    ? findProjectTaskByImportName(project, timelog.task)
+    : undefined;
   return { kind: "project", project, ...(task ? { task } : {}) };
 }
 

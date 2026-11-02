@@ -232,6 +232,36 @@ describe("applyDescriptionTimelogs", () => {
     expect(result.workItems[0]?.taskId).toBe("old");
   });
 
+  it("matches task names the way imports do, so Apply clears the mismatch", () => {
+    const { previous, next } = write(
+      { projects: [acme], workItems: [item()] },
+      (state) => withDescription(state, timelog("Acme", " DÉSIGN ")),
+    );
+    const result = applyDescriptionTimelogs(
+      previous.workItems,
+      next,
+      createFactories(),
+    );
+    expect(result.projects[0]?.tasks).toHaveLength(2);
+    expect(result.workItems[0]?.taskId).toBe("design");
+    expect(
+      getTimelogMismatch(result.projects, result.workItems[0]!),
+    ).toBeNull();
+
+    const spaced = write({ projects: [acme], workItems: [item()] }, (state) =>
+      withDescription(state, timelog("Acme", "07  Run")),
+    );
+    const created = applyDescriptionTimelogs(
+      spaced.previous.workItems,
+      spaced.next,
+      createFactories(),
+    );
+    expect(created.projects[0]?.tasks[2]?.name).toBe("07 Run");
+    expect(
+      getTimelogMismatch(created.projects, created.workItems[0]!),
+    ).toBeNull();
+  });
+
   it("keeps the item's task when the timelog names only its project", () => {
     const { previous, next } = write(
       {
