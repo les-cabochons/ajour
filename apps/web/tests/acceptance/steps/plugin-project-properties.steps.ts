@@ -113,6 +113,37 @@ Then(
 );
 
 When(
+  "I map task {string} to a new Workday task {string} and save",
+  async ({ page }, task: string, workdayTask: string) => {
+    await page.getByText(task, { exact: true }).click();
+    const editor = page.getByRole("complementary", { name: "Task editor" });
+    await editor.getByRole("combobox", { name: "Commits as" }).click();
+    await page.getByRole("option", { name: "Another task…" }).click();
+    const picker = editor.getByRole("combobox", { name: "Workday task" });
+    await picker.click();
+    await picker.fill(workdayTask);
+    await expect(
+      page.getByRole("option", { name: `Create task "${workdayTask}"` }),
+    ).toBeVisible();
+    await page.keyboard.press("Enter");
+    await expect(picker).toHaveValue(workdayTask);
+    await editor.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(editor).toBeHidden();
+  },
+);
+
+Then(
+  "task {string} is in the project's task list",
+  async ({ page }, task: string) => {
+    await expect(
+      page.locator("tr.project-task-row", {
+        has: page.getByText(task, { exact: true }),
+      }),
+    ).toBeVisible();
+  },
+);
+
+When(
   "I set task {string} to commit as {string} and save",
   async ({ page }, task: string, choice: string) => {
     await page.getByText(task, { exact: true }).click();

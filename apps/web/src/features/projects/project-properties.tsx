@@ -39,7 +39,7 @@ import {
   type ProjectFormFields,
 } from "@/features/projects/project-form";
 import { ProjectIconField } from "@/features/projects/project-icon-field";
-import { useTaskPropertyPlugins } from "@/features/projects/task-property-fields";
+import { useTaskPropertyPlugins } from "@/features/projects/commits-as";
 import {
   ProjectTeamAction,
   ProjectTeamRow,

@@ -31,7 +31,7 @@ import { formatTaskImportName } from "@/domain/projects/task-import";
 import {
   COMMITS_AS_OPTIONS,
   useTaskPropertyPlugins,
-} from "@/features/projects/task-property-fields";
+} from "@/features/projects/commits-as";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import { listTaskPropertyPlugins } from "@/lib/plugin-project-properties";

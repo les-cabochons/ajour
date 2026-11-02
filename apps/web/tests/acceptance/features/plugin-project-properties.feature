@@ -49,3 +49,11 @@ Feature: Properties that plugins add to projects and tasks
     And I choose Another task… for task "111 000" without picking one
     Then Save is disabled and says "Pick the task it commits as."
     And task "111 000" still shows the chip "Not known yet"
+
+  Scenario: Create the Workday task from Another task…
+    Given I have projects with searchable tasks
+    And the Workday (agent) plugin adds task properties
+    When I open project "aaa xyz"
+    And I map task "111 000" to a new Workday task "07 Run" and save
+    Then task "111 000" shows the Workday task "07 Run"
+    And task "07 Run" is in the project's task list

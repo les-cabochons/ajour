@@ -26,7 +26,7 @@ import { formatTaskImportName } from "@/domain/projects/task-import";
 import {
   COMMITS_AS_OPTIONS,
   useTaskPropertyPlugins,
-} from "@/features/projects/task-property-fields";
+} from "@/features/projects/commits-as";
 import { useLocalTimeRecords } from "@/lib/local-hooks";
 
 /** What the Create task dialog hands back to the picker that opened it. */
