@@ -1,6 +1,8 @@
 import { lazy, Suspense, type CSSProperties } from "react";
 
 import type { MarkdownEditorProps } from "@/components/markdown-editor-view";
+
+export type { SubmitModifiers } from "@/components/markdown-editor-view";
 import { cn } from "@/lib/utils";
 
 const loadMarkdownEditorView = () =>

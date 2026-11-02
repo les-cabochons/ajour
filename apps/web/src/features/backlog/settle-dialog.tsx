@@ -48,8 +48,23 @@ import { localStore, runStoreCommandWith } from "@/lib/local-store";
 import { queueSettleComment } from "@/lib/settle-comments";
 import { useLocalState } from "@/lib/local-hooks";
 
+/**
+ * A comment that starts in the dialog's Comment field, from the comment
+ * editor's Comment and settle. `onSettled` runs once the dialog settled the
+ * item, so the editor can clear the draft; Cancel leaves the draft alone.
+ */
+export interface SettleComment {
+  body: string;
+  onSettled: () => void;
+}
+
 let requestListener:
-  ((workItemId: string, prefill?: BacklogSettleChange) => void) | null = null;
+  | ((
+      workItemId: string,
+      prefill?: BacklogSettleChange,
+      comment?: SettleComment,
+    ) => void)
+  | null = null;
 
 /**
  * Opens the settle dialog for a synced backlog item, starting at `prefill`
@@ -59,8 +74,9 @@ let requestListener:
 export function requestSettle(
   workItemId: string,
   prefill?: BacklogSettleChange,
+  comment?: SettleComment,
 ) {
-  requestListener?.(workItemId, prefill);
+  requestListener?.(workItemId, prefill, comment);
 }
 
 /**
@@ -94,21 +110,27 @@ export function settleOpensDialog(workItem: LocalWorkItem) {
   return getSettleBehavior(workItem).kind === "ask";
 }
 
-/** Runs Settle on an item: the dialog, the rule's change, or a local settle. */
+/**
+ * Runs Settle on an item: the dialog, the rule's change, or a local settle.
+ * A comment from the comment editor starts in the dialog, or goes with the
+ * settle; its `onSettled` runs once the item is settled.
+ */
 export function settleBacklogItem(
   workItem: LocalWorkItem,
-  options?: { ask?: boolean },
+  options?: { ask?: boolean; comment?: SettleComment },
 ) {
   const behavior = getSettleBehavior(workItem, options);
   if (behavior.kind === "ask") {
-    requestSettle(workItem._id, behavior.prefill);
+    requestSettle(workItem._id, behavior.prefill, options?.comment);
   } else {
-    settleBacklogItemWithUndo(
+    void settleBacklogItemWithUndo(
       workItem,
       behavior.kind === "apply" ? behavior.change : undefined,
-      undefined,
+      options?.comment?.body,
       behavior.kind === "apply" ? "rule" : "local",
-    );
+    ).then((settled) => {
+      if (settled) options?.comment?.onSettled();
+    });
   }
 }
 
@@ -171,11 +193,16 @@ function afterSettle(workItem: LocalWorkItem, token: string, comment?: string) {
       at: Date.now(),
     });
   }
+  const commented = Boolean(body && commentSource);
   offerUndo(token, {
     title:
       settled?.status === "archived"
-        ? "Backlog item archived"
-        : "Backlog item settled",
+        ? commented
+          ? "Commented and archived"
+          : "Backlog item archived"
+        : commented
+          ? "Commented and settled"
+          : "Backlog item settled",
     subject: "backlog item",
     onWindowClosed:
       settled?.pendingSourceWrite || commentSource
@@ -188,7 +215,7 @@ function afterSettle(workItem: LocalWorkItem, token: string, comment?: string) {
           }
         : undefined,
   });
-  return { commentQueued: Boolean(body && commentSource) };
+  return { commentQueued: commented };
 }
 
 type StatesLoad =
@@ -208,10 +235,16 @@ export function SettleDialogHost() {
   const [stateName, setStateName] = useState("");
   const [priority, setPriority] = useState("");
   const [comment, setComment] = useState("");
+  // Set when the comment editor opened the dialog with its draft.
+  const [onSettled, setOnSettled] = useState<(() => void) | undefined>();
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
-    const listener = (id: string, prefill?: BacklogSettleChange) => {
+    const listener = (
+      id: string,
+      prefill?: BacklogSettleChange,
+      editorComment?: SettleComment,
+    ) => {
       const item = localStore
         .snapshot()
         .workItems.find((candidate) => candidate._id === id);
@@ -223,7 +256,8 @@ export function SettleDialogHost() {
           prefill?.priority ?? item.importedPriority ?? item.priority,
         ),
       );
-      setComment("");
+      setComment(editorComment?.body ?? "");
+      setOnSettled(() => editorComment?.onSettled);
       setLoad({ status: "loading" });
     };
     requestListener = listener;
@@ -297,8 +331,10 @@ export function SettleDialogHost() {
           commentSource ? comment : undefined,
           "ask",
         )
-      )
+      ) {
+        onSettled?.();
         setWorkItem(null);
+      }
     } finally {
       setPending(false);
     }
