@@ -217,6 +217,100 @@ describe("importTasksFromWorkbook", () => {
   });
 });
 
+describe("importTasksFromWorkbook with Not known yet tasks", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubGlobal("crypto", {
+      getRandomValues: webcrypto.getRandomValues.bind(webcrypto),
+      randomUUID: vi.fn(() => `uuid-${Math.random().toString(16).slice(2)}`),
+    });
+    installMockWindow();
+    vi.doMock("@/lib/plugin-project-properties", async (importOriginal) => ({
+      ...(await importOriginal<
+        typeof import("@/lib/plugin-project-properties")
+      >()),
+      listTaskPropertyPlugins: vi.fn(async () => []),
+    }));
+  });
+
+  afterEach(() => {
+    vi.doUnmock("@/lib/plugin-project-properties");
+    vi.doUnmock("@/features/projects/waiting-tasks-dialog");
+  });
+
+  /** A project with a Not known yet task, and a column C file that adds two tasks. */
+  async function setUp(
+    answer: Awaited<
+      ReturnType<
+        typeof import("./waiting-tasks-dialog").requestWaitingTaskAnswers
+      >
+    >,
+  ) {
+    const requestWaitingTaskAnswers = vi.fn(async () => answer);
+    vi.doMock("@/features/projects/waiting-tasks-dialog", () => ({
+      requestWaitingTaskAnswers,
+    }));
+    const { localStore } = await import("../../lib/local-store");
+    const { importTasksFromWorkbook } = await import("./project-task-import");
+    localStore.createTeam("Local Team", "local-team", [
+      { name: "Acme", color: "#123456", tasks: [{ name: "Temp migration" }] },
+    ]);
+    const project = localStore.snapshot().projects[0]!;
+    localStore.updateProjectTask(project._id, project.tasks[0]!._id, {
+      commitAs: "waiting",
+    });
+    const buffer = await buildWorkbookBuffer({
+      name: "Plan",
+      rows: [
+        ["", "", "07 Run"],
+        ["", "", "08 Migration"],
+      ],
+    });
+    return {
+      localStore,
+      requestWaitingTaskAnswers,
+      taskId: project.tasks[0]!._id,
+      run: () => importTasksFromWorkbook(project._id, buffer as ArrayBuffer),
+    };
+  }
+
+  it("asks first, then renames the picked task instead of adding a twin", async () => {
+    const { localStore, requestWaitingTaskAnswers, taskId, run } = await setUp(
+      {},
+    );
+    requestWaitingTaskAnswers.mockImplementation(async () => ({
+      [taskId]: { kind: "rename" as const, name: "08 Migration" },
+    }));
+
+    await expect(run()).resolves.toBe(
+      "Imported 1 task. Skipped 1 duplicate. Matched 1 waiting task.",
+    );
+    expect(requestWaitingTaskAnswers).toHaveBeenCalledWith(
+      [
+        {
+          taskId,
+          name: "Temp migration",
+          newNames: ["08 Migration", "07 Run"],
+        },
+      ],
+      "timesheet",
+    );
+    const tasks = localStore.snapshot().projects[0]!.tasks;
+    expect(tasks.map((task) => task.name)).toEqual(["08 Migration", "07 Run"]);
+    expect(tasks[0]).toMatchObject({ _id: taskId });
+    expect(tasks[0]!.commitAs).toBeUndefined();
+  });
+
+  it("imports nothing when the user cancels", async () => {
+    const { localStore, run } = await setUp(null);
+
+    await expect(run()).resolves.toBe("Import cancelled. Nothing changed.");
+    expect(
+      localStore.snapshot().projects[0]!.tasks.map((task) => task.name),
+    ).toEqual(["Temp migration"]);
+  });
+});
+
 describe("localStore.importProjectTasks", () => {
   beforeEach(() => {
     vi.resetModules();

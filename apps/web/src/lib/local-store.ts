@@ -226,12 +226,14 @@ import {
 } from "@/domain/time/timeline-transitions";
 import {
   importProjectDataShapeProjects as applyProjectDataShapeImport,
+  applyWaitingTaskAnswers,
   importProjectDataShapeTasks as applyProjectDataShapeTaskImport,
   importProjectTasks as applyProjectTaskImport,
   importProjectWorkbookRows as applyProjectWorkbookImport,
   type ProjectTaskMergeResult,
   type ProjectTransferRow,
   type ProjectWorkbookImportResult,
+  type WaitingTaskAnswer,
 } from "@/domain/projects/project-import";
 import {
   addProject as applyAddProject,
@@ -1965,10 +1967,12 @@ const store = {
   importProjectTasks(
     projectId: string,
     taskNames: string[],
+    /** What to do with Not known yet tasks the file doesn't name, by task ID. */
+    waitingAnswers: Readonly<Record<string, WaitingTaskAnswer>> = {},
   ): ProjectTaskImportResult {
     const imported = updateStateWithResult((state) => {
       const operation = applyProjectTaskImport(
-        state.projects,
+        applyWaitingTaskAnswers(state.projects, projectId, waitingAnswers),
         projectId,
         taskNames,
         {
@@ -2055,10 +2059,12 @@ const store = {
     projectId: string,
     schema: string,
     projects: ProjectDataShapeImportProject[],
+    /** What to do with Not known yet tasks the file doesn't name, by task ID. */
+    waitingAnswers: Readonly<Record<string, WaitingTaskAnswer>> = {},
   ) {
     const imported = updateStateWithResult<ProjectTaskMergeResult>((state) => {
       const operation = applyProjectDataShapeTaskImport(
-        state.projects,
+        applyWaitingTaskAnswers(state.projects, projectId, waitingAnswers),
         projectId,
         projects,
         {
