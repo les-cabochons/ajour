@@ -1969,10 +1969,15 @@ const store = {
     taskNames: string[],
     /** What to do with Not known yet tasks the file doesn't name, by task ID. */
     waitingAnswers: Readonly<Record<string, WaitingTaskAnswer>> = {},
-  ): ProjectTaskImportResult {
+  ): ProjectTaskImportResult & { matchedWaitingCount: number } {
     const imported = updateStateWithResult((state) => {
+      const answered = applyWaitingTaskAnswers(
+        state.projects,
+        projectId,
+        waitingAnswers,
+      );
       const operation = applyProjectTaskImport(
-        applyWaitingTaskAnswers(state.projects, projectId, waitingAnswers),
+        answered.projects,
         projectId,
         taskNames,
         {
@@ -1985,7 +1990,10 @@ const store = {
           ...state,
           projects: operation.projects,
         },
-        result: operation.result,
+        result: {
+          ...operation.result,
+          matchedWaitingCount: answered.matchedCount,
+        },
       };
     });
     describeTaskImport(projectId, imported);
@@ -2062,9 +2070,16 @@ const store = {
     /** What to do with Not known yet tasks the file doesn't name, by task ID. */
     waitingAnswers: Readonly<Record<string, WaitingTaskAnswer>> = {},
   ) {
-    const imported = updateStateWithResult<ProjectTaskMergeResult>((state) => {
+    const imported = updateStateWithResult<
+      ProjectTaskMergeResult & { matchedWaitingCount: number }
+    >((state) => {
+      const answered = applyWaitingTaskAnswers(
+        state.projects,
+        projectId,
+        waitingAnswers,
+      );
       const operation = applyProjectDataShapeTaskImport(
-        applyWaitingTaskAnswers(state.projects, projectId, waitingAnswers),
+        answered.projects,
         projectId,
         projects,
         {
@@ -2075,7 +2090,10 @@ const store = {
       );
       return {
         state: { ...state, projects: operation.projects },
-        result: operation.result,
+        result: {
+          ...operation.result,
+          matchedWaitingCount: answered.matchedCount,
+        },
       };
     });
     describeSchemaTaskImport(projectId, schema, imported);

@@ -279,11 +279,15 @@ describe("importTasksFromWorkbook with Not known yet tasks", () => {
       {},
     );
     requestWaitingTaskAnswers.mockImplementation(async () => ({
-      [taskId]: { kind: "rename" as const, name: "08 Migration" },
+      [taskId]: {
+        kind: "rename" as const,
+        name: "08 Migration",
+        expectedName: "Temp migration",
+      },
     }));
 
     await expect(run()).resolves.toBe(
-      "Imported 1 task. Skipped 1 duplicate. Matched 1 waiting task.",
+      "Imported 1 task. Matched 1 waiting task.",
     );
     expect(requestWaitingTaskAnswers).toHaveBeenCalledWith(
       [
@@ -299,6 +303,31 @@ describe("importTasksFromWorkbook with Not known yet tasks", () => {
     expect(tasks.map((task) => task.name)).toEqual(["08 Migration", "07 Run"]);
     expect(tasks[0]).toMatchObject({ _id: taskId });
     expect(tasks[0]!.commitAs).toBeUndefined();
+  });
+
+  it("reports no match when the task changed while the question was open", async () => {
+    const { localStore, requestWaitingTaskAnswers, taskId, run } = await setUp(
+      {},
+    );
+    requestWaitingTaskAnswers.mockImplementation(async () => {
+      // Another window renames the task before the user answers.
+      const project = localStore.snapshot().projects[0]!;
+      localStore.updateProjectTask(project._id, taskId, {
+        name: "Client incident",
+      });
+      return {
+        [taskId]: {
+          kind: "rename" as const,
+          name: "08 Migration",
+          expectedName: "Temp migration",
+        },
+      };
+    });
+
+    await expect(run()).resolves.toBe("Imported 2 tasks.");
+    expect(
+      localStore.snapshot().projects[0]!.tasks.map((task) => task.name),
+    ).toEqual(["Client incident", "07 Run", "08 Migration"]);
   });
 
   it("imports nothing when the user cancels", async () => {
@@ -350,6 +379,8 @@ describe("localStore.importProjectTasks", () => {
     expect(result).toEqual({
       importedCount: 2,
       duplicateCount: 3,
+      confirmedWaitingCount: 0,
+      matchedWaitingCount: 0,
       blankCount: 0,
       headerCount: 0,
       importedNames: ["New Task", "Another Task"],
@@ -380,6 +411,8 @@ describe("localStore.importProjectTasks", () => {
     ).toEqual({
       importedCount: 0,
       duplicateCount: 2,
+      confirmedWaitingCount: 0,
+      matchedWaitingCount: 0,
       blankCount: 0,
       headerCount: 0,
       importedNames: [],

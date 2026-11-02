@@ -49,4 +49,4 @@ Feature: Create a task from a task picker
     Then Ajour asks which task "Temp migration" was waiting for, suggesting "08 Migration"
     When I press "Import"
     Then the project lists "08 Migration" once and "07 Run"
-    And the import says "Imported 1 task. Skipped 1 duplicate. Matched 1 waiting task."
+    And the import says "Imported 1 task. Matched 1 waiting task."

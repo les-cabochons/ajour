@@ -90,9 +90,13 @@ export function formatTaskNameImportSummary(result: ProjectTaskImportResult) {
   }
 
   const importedLabel = formatCount(result.importedCount, "task", "tasks");
+  const confirmed =
+    result.confirmedWaitingCount > 0
+      ? ` Confirmed ${formatCount(result.confirmedWaitingCount, "waiting task", "waiting tasks")}.`
+      : "";
   return skipped.length > 0
-    ? `Imported ${importedLabel}. Skipped ${skipped.join(", ")}.`
-    : `Imported ${importedLabel}.`;
+    ? `Imported ${importedLabel}. Skipped ${skipped.join(", ")}.${confirmed}`
+    : `Imported ${importedLabel}.${confirmed}`;
 }
 
 export function formatSchemaTaskImportSummary(result: ProjectTaskMergeResult) {
@@ -180,17 +184,14 @@ async function askAboutWaitingTasks(
   return requestWaitingTaskAnswers(choices, toolName);
 }
 
-/** "Matched 1 waiting task." after the summary, when a pick renamed one. */
-function withMatchedWaiting(
-  summary: string,
-  answers: Record<string, WaitingTaskAnswer>,
-) {
-  const matched = Object.values(answers).filter(
-    (answer) => answer.kind === "rename",
-  ).length;
-  return matched > 0
-    ? `${summary} Matched ${formatCount(matched, "waiting task", "waiting tasks")}.`
-    : summary;
+/**
+ * "Matched 1 waiting task." after the summary, for the renames the import
+ * applied. A merge that changed nothing else says only that.
+ */
+function withMatchedWaiting(summary: string, matched: number) {
+  if (matched === 0) return summary;
+  const sentence = `Matched ${formatCount(matched, "waiting task", "waiting tasks")}.`;
+  return summary === "No tasks changed." ? sentence : `${summary} ${sentence}`;
 }
 
 /** What Import tasks… says when the user cancels the waiting tasks question. */
@@ -231,11 +232,10 @@ export async function importTasksFromWorkbook(
           )
         : {};
     if (!answers) return TASK_IMPORT_CANCELLED;
+    const merged = importSchemaTasks(projectId, plugin.id, projects, answers);
     return withMatchedWaiting(
-      formatSchemaTaskImportSummary(
-        importSchemaTasks(projectId, plugin.id, projects, answers),
-      ),
-      answers,
+      formatSchemaTaskImportSummary(merged),
+      merged.matchedWaitingCount,
     );
   }
 
@@ -255,9 +255,14 @@ export async function importTasksFromWorkbook(
   return withMatchedWaiting(
     formatTaskNameImportSummary({
       ...result,
+      // A renamed waiting task confirmed by the file is a match, not a skip.
+      confirmedWaitingCount: Math.max(
+        0,
+        result.confirmedWaitingCount - result.matchedWaitingCount,
+      ),
       blankCount: workbook.blankCount,
       headerCount: workbook.headerCount,
     }),
-    answers,
+    result.matchedWaitingCount,
   );
 }

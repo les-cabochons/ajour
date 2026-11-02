@@ -43,7 +43,10 @@ export function requestWaitingTaskAnswers(
     if (!requestListener) {
       resolve(
         Object.fromEntries(
-          choices.map((choice) => [choice.taskId, { kind: "wait" as const }]),
+          choices.map((choice) => [
+            choice.taskId,
+            { kind: "wait" as const, expectedName: choice.name },
+          ]),
         ),
       );
       return;
@@ -100,13 +103,15 @@ export function WaitingTasksDialogHost() {
         ? Object.fromEntries(
             request.choices.map((choice): [string, WaitingTaskAnswer] => {
               const pick = picks[choice.taskId] ?? WAIT;
+              // The name seen here: a task renamed meanwhile takes no answer.
+              const expectedName = choice.name;
               return [
                 choice.taskId,
                 pick === WAIT
-                  ? { kind: "wait" }
+                  ? { kind: "wait", expectedName }
                   : pick === LOCAL
-                    ? { kind: "local" }
-                    : { kind: "rename", name: pick },
+                    ? { kind: "local", expectedName }
+                    : { kind: "rename", name: pick, expectedName },
               ];
             }),
           )

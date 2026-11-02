@@ -155,23 +155,30 @@ function rankByCommonWords(name: string, names: readonly string[]) {
   return [...names].sort((left, right) => score(right) - score(left));
 }
 
-/** What Import tasks… does with a Not known yet task the file doesn't name. */
-export type WaitingTaskAnswer =
-  { kind: "rename"; name: string } | { kind: "wait" } | { kind: "local" };
+/**
+ * What Import tasks… does with a Not known yet task the file doesn't name.
+ * `expectedName` is the task's name the user saw when answering.
+ */
+export type WaitingTaskAnswer = { expectedName: string } & (
+  { kind: "rename"; name: string } | { kind: "wait" } | { kind: "local" }
+);
 
 /**
  * Applies the answers before the merge: a picked name renames the task, so
- * the merge updates it instead of adding a twin, and the task commits as its
- * name; Local only makes it local; Still waiting leaves it. A name picked
- * for two tasks renames the first only.
+ * the merge updates it instead of adding a twin and makes it commit as its
+ * name; Local only makes it local; Still waiting leaves it. An answer about
+ * a task that changed since the question, renamed, archived, or no longer
+ * Not known yet, does nothing, and so does a name another task has or that
+ * another answer took. Returns how many tasks were renamed.
  */
 export function applyWaitingTaskAnswers(
   projects: LocalProject[],
   projectId: string,
   answers: Readonly<Record<string, WaitingTaskAnswer>>,
-): LocalProject[] {
+): { projects: LocalProject[]; matchedCount: number } {
   const taken = new Set<string>();
-  return projects.map((project) =>
+  let matchedCount = 0;
+  const next: LocalProject[] = projects.map((project) =>
     project._id !== projectId
       ? project
       : {
@@ -180,7 +187,14 @@ export function applyWaitingTaskAnswers(
             const answer = Object.hasOwn(answers, task._id)
               ? answers[task._id]
               : undefined;
-            if (!answer || task.commitAs !== "waiting") return task;
+            if (
+              !answer ||
+              task.commitAs !== "waiting" ||
+              task.status !== "active" ||
+              task.name !== answer.expectedName
+            ) {
+              return task;
+            }
             if (answer.kind === "local") return { ...task, commitAs: "local" };
             if (answer.kind === "wait") return task;
             const name = formatTaskImportName(answer.name);
@@ -192,10 +206,14 @@ export function applyWaitingTaskAnswers(
             );
             if (!key || clash || taken.has(key)) return task;
             taken.add(key);
-            return { ...task, name, commitAs: undefined };
+            matchedCount += 1;
+            // Still Not known yet: the merge, which finds the name in the
+            // file, confirms it and counts the change.
+            return { ...task, name };
           }),
         },
   );
+  return { projects: next, matchedCount };
 }
 
 /**
@@ -233,6 +251,7 @@ function mergeImportedTasks(
 
     if (
       existingTask.status !== status ||
+      existingTask.commitAs !== confirmCommitAs(existingTask) ||
       (existingTask.billable ?? true) !== billable ||
       existingTask.budgetMs !== budgetMs ||
       existingTask.adjustmentMs !== adjustmentMs
@@ -334,6 +353,7 @@ export function importProjectTasks(
   const nextTasks = [...project.tasks];
   const importedNames: string[] = [];
   let duplicateCount = 0;
+  let confirmedWaitingCount = 0;
   let blankCount = 0;
 
   for (const taskName of taskNames) {
@@ -346,7 +366,6 @@ export function importProjectTasks(
     }
 
     if (existingTaskNames.has(normalizedName)) {
-      duplicateCount += 1;
       const known = nextTasks.findIndex(
         (task) =>
           normalizeTaskImportName(task.name) === normalizedName &&
@@ -357,6 +376,9 @@ export function importProjectTasks(
           ...nextTasks[known]!,
           commitAs: confirmCommitAs(nextTasks[known]!),
         };
+        confirmedWaitingCount += 1;
+      } else {
+        duplicateCount += 1;
       }
       continue;
     }
@@ -373,6 +395,7 @@ export function importProjectTasks(
     result: {
       importedCount: importedNames.length,
       duplicateCount,
+      confirmedWaitingCount,
       blankCount,
       headerCount: 0,
       importedNames,

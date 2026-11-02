@@ -66,6 +66,7 @@ describe("importProjectTasks", () => {
     expect(operation.result).toEqual({
       importedCount: 1,
       duplicateCount: 2,
+      confirmedWaitingCount: 0,
       blankCount: 1,
       headerCount: 0,
       importedNames: ["Build"],
@@ -397,23 +398,26 @@ describe("Not known yet tasks at import", () => {
     ).toEqual([]);
   });
 
-  it("renames a matched task before the merge, so the merge updates it", () => {
+  it("renames a matched task before the merge, which updates it and counts the change", () => {
     const factories = createFactories();
     const answered = applyWaitingTaskAnswers([project()], "acme", {
-      temp: { kind: "rename", name: "08 Migration" },
+      temp: {
+        kind: "rename",
+        name: "08 Migration",
+        expectedName: "Temp migration",
+      },
     });
+    expect(answered.matchedCount).toBe(1);
     const operation = importProjectDataShapeTasks(
-      answered,
+      answered.projects,
       "acme",
-      [
-        {
-          status: "active",
-          tasks: [{ name: "08 Migration" }, { name: "07 Run" }],
-        },
-      ],
+      [{ status: "active", tasks: [{ name: "08 Migration" }] }],
       factories,
     );
-    expect(operation.result.addedTaskCount).toBe(1);
+    expect(operation.result).toEqual({
+      addedTaskCount: 0,
+      updatedTaskCount: 1,
+    });
     const temp = operation.projects[0]!.tasks.find(
       (task) => task._id === "temp",
     );
@@ -422,21 +426,49 @@ describe("Not known yet tasks at import", () => {
   });
 
   it("makes a task local, leaves one waiting, and never renames onto a taken name", () => {
+    const expectedName = "Temp migration";
     const local = applyWaitingTaskAnswers([project()], "acme", {
-      temp: { kind: "local" },
-    })[0]!.tasks[1]!;
+      temp: { kind: "local", expectedName },
+    }).projects[0]!.tasks[1]!;
     expect(local.commitAs).toBe("local");
     const waiting = applyWaitingTaskAnswers([project()], "acme", {
-      temp: { kind: "wait" },
-    })[0]!.tasks[1]!;
+      temp: { kind: "wait", expectedName },
+    }).projects[0]!.tasks[1]!;
     expect(waiting).toEqual(project().tasks[1]);
     const clash = applyWaitingTaskAnswers([project()], "acme", {
-      temp: { kind: "rename", name: "05 build" },
-      lunch: { kind: "rename", name: "07 Run" },
-    })[0]!.tasks;
-    expect(clash[1]).toEqual(project().tasks[1]);
+      temp: { kind: "rename", name: "05 build", expectedName },
+      lunch: { kind: "rename", name: "07 Run", expectedName: "Team lunch" },
+    });
+    expect(clash.matchedCount).toBe(0);
+    expect(clash.projects[0]!.tasks[1]).toEqual(project().tasks[1]);
     // Only Not known yet tasks take an answer.
-    expect(clash[2]).toEqual(project().tasks[2]);
+    expect(clash.projects[0]!.tasks[2]).toEqual(project().tasks[2]);
+  });
+
+  it("ignores an answer about a task renamed or archived since the question", () => {
+    const renamed = project();
+    renamed.tasks[1]!.name = "Client incident";
+    const afterRename = applyWaitingTaskAnswers([renamed], "acme", {
+      temp: {
+        kind: "rename",
+        name: "08 Migration",
+        expectedName: "Temp migration",
+      },
+    });
+    expect(afterRename.matchedCount).toBe(0);
+    expect(afterRename.projects[0]!.tasks[1]!.name).toBe("Client incident");
+
+    const archived = project();
+    archived.tasks[1]!.status = "archived";
+    const afterArchive = applyWaitingTaskAnswers([archived], "acme", {
+      temp: {
+        kind: "rename",
+        name: "08 Migration",
+        expectedName: "Temp migration",
+      },
+    });
+    expect(afterArchive.matchedCount).toBe(0);
+    expect(afterArchive.projects[0]!.tasks[1]!.name).toBe("Temp migration");
   });
 
   it("confirms a waiting task the column C file names", () => {
@@ -447,6 +479,9 @@ describe("Not known yet tasks at import", () => {
       createFactories(),
     );
     expect(operation.projects[0]!.tasks[1]!.commitAs).toBeUndefined();
-    expect(operation.result.duplicateCount).toBe(1);
+    expect(operation.result).toMatchObject({
+      duplicateCount: 0,
+      confirmedWaitingCount: 1,
+    });
   });
 });
