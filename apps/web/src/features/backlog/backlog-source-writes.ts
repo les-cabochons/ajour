@@ -411,35 +411,35 @@ export function watchSettleEnds() {
   let before = lifecyclesOf();
   return localStore.subscribe(() => {
     const now = lifecyclesOf();
-    const ended = [...now].flatMap(([id, current]) => {
+    const ended: {
+      id: string;
+      settle?: { id: string | undefined };
+      snoozedUntil?: number;
+    }[] = [];
+    for (const [id, current] of now) {
       const previous = before.get(id);
-      if (!previous) return [];
-      return [
-        {
+      if (!previous) continue;
+      // The settle ended: the item was settled or archived, now active.
+      const settleEnded =
+        current.status === "active" && previous.status !== "active";
+      // The snooze ended: another snooze, none, or a settle.
+      const snoozeEnded =
+        previous.snoozedUntil !== undefined &&
+        previous.status === "active" &&
+        (current.snoozedUntil !== previous.snoozedUntil ||
+          current.status !== "active");
+      if (settleEnded || snoozeEnded) {
+        ended.push({
           id,
-          // The settle ended: the item was settled or archived, now active.
-          settleId:
-            current.status === "active" && previous.status !== "active"
-              ? { ended: previous.settleId }
-              : undefined,
-          // The snooze ended: another snooze, none, or a settle.
-          snoozedUntil:
-            previous.snoozedUntil !== undefined &&
-            previous.status === "active" &&
-            (current.snoozedUntil !== previous.snoozedUntil ||
-              current.status !== "active")
-              ? previous.snoozedUntil
-              : undefined,
-        },
-      ].filter(
-        (change) =>
-          change.settleId !== undefined || change.snoozedUntil !== undefined,
-      );
-    });
+          settle: settleEnded ? { id: previous.settleId } : undefined,
+          snoozedUntil: snoozeEnded ? previous.snoozedUntil : undefined,
+        });
+      }
+    }
     before = now;
     if (ended.length === 0) return;
     const queued = new Set(settleCommentItemIds());
-    for (const { id, settleId, snoozedUntil } of ended) {
+    for (const { id, settle, snoozedUntil } of ended) {
       if (!queued.has(id)) continue;
       // Only that action's: a newer one's comments, queued meanwhile in
       // another window, keep waiting.
@@ -447,7 +447,7 @@ export function watchSettleEnds() {
         id,
         settleCommentsOf(id).filter(
           (entry) =>
-            (settleId !== undefined && isOfSettle(entry, settleId.ended)) ||
+            (settle !== undefined && isOfSettle(entry, settle.id)) ||
             isOfSnooze(entry, snoozedUntil),
         ),
       );
