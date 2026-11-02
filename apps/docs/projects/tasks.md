@@ -18,11 +18,24 @@ Open a project and press **New task**. The task editor opens in the side panel.
 
 Press **Save** or <kbd>⌘</kbd> <kbd>Enter</kbd>.
 
-A plugin can add its own section to the editor. [Workday (agent)](/plugins/workday-agent#map-a-task-to-a-workday-task) adds **Workday task**, to commit a task of your own as one Workday knows.
+A plugin can add its own section to the editor. [Workday (agent)](/plugins/workday-agent#map-a-task-to-a-workday-task) adds a **Workday** section with **Commits as**.
 
-Each row of the task list shows the task's shortcut, whether it is billable, and its time used against its budget. A mapped task shows the task it commits as, such as "→ 07 Run". Drag a row, or press <kbd>Alt</kbd> <kbd>↑</kbd> and <kbd>Alt</kbd> <kbd>↓</kbd>, to reorder the active tasks.
+### Commits as
 
-In a [shared project](/projects/shared-projects), the name, billable, budget and status follow your team. The adjustment, the shortcut and plugin properties stay yours.
+**Commits as** says what happens to the task's time when you [commit your week](/time/commit):
+
+| Choice            | What it does                                                                                                                                         |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Its own name**  | The time goes to your timesheet tool under the task's name. Imported tasks start here.                                                               |
+| **Another task…** | The time goes under another task of the project, which you pick under it, such as `07 Run`. Use it for a task of your own that Workday doesn't have. |
+| **Not known yet** | A temporary task, while its Workday task is created and you don't know its name. Its time waits on the Commit page until you pick something else.    |
+| **Local only**    | The time stays in Ajour and never goes to your timesheet tool, such as `Team lunch`.                                                                 |
+
+A project can be local only as a whole: see [The project page](/projects/#the-project-page). Its tasks then say "The project is local only, so this task is never committed." in place of **Commits as**.
+
+Each row of the task list shows the task's shortcut, whether it is billable, and its time used against its budget. A task that commits as another task shows it, such as "→ 07 Run". A Not known yet task shows an amber **Not known yet**, and a Local only task shows **Local**. Drag a row, or press <kbd>Alt</kbd> <kbd>↑</kbd> and <kbd>Alt</kbd> <kbd>↓</kbd>, to reorder the active tasks.
+
+In a [shared project](/projects/shared-projects), the name, billable, budget and status follow your team. The adjustment, the shortcut, plugin properties and **Commits as** stay yours.
 
 ## Pin a task
 
