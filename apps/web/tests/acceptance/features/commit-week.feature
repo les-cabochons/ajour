@@ -59,6 +59,18 @@ Feature: Commit the week
     When I open the Commit page for the week of 2026-10-05
     Then Monday's "Development" line shows "CA004 Tech & Design / Development"
 
+  Scenario: Leave local time and Not known yet tasks out of the commit
+    Given I have a committed week of entries
+    And Monday has new entries on a Not known yet task and a Local only task
+    When I open the Commit page for the week of 2026-10-05
+    Then the Commit page warns "1:00 on Temp migration waits for a task to commit as."
+    And the "Added" change of "Temp migration" can't be checked
+    And the Commit page says "Not sent: Team lunch"
+    And no change or line names "Team lunch"
+    And "Mark as committed" is disabled on the Commit page
+    When I follow Edit task in the warning
+    Then the task editor opens on "Temp migration"
+
   Scenario: Open the Commit page from the sidebar
     Given I have a committed week of entries
     When I open Monday's Day list

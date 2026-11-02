@@ -520,6 +520,7 @@ describe("submit and reopen", () => {
     listWeekChanges({
       entries: state.timesheetEntries,
       tombstones: state.timesheetTombstones,
+      projects: state.projects,
       weekDates: getWeekDates(LOCKED),
     });
 

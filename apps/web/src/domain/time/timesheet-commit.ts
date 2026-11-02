@@ -5,12 +5,13 @@ import {
   type LocalTimesheetEntryCommit,
   type LocalTimesheetTombstone,
 } from "@/domain/local-state";
+import { findCommitTarget } from "@/domain/projects/commit-target";
 
 /**
  * Committed copies: what changed in a week since its last commit. An entry
  * with no committed copy is added, one whose copy differs or is stale is
  * updated, and a tombstone is a deleted entry. Agents and the Commit page read the same
- * list. See docs/specs/2026-10-15-commit-week-design.md.
+ * list, which leaves local time out (applyCommitTarget). See docs/specs/2026-10-15-commit-week-design.md.
  */
 
 /** The values a commit compares. Other fields, such as the order, never make a change. */
@@ -30,7 +31,13 @@ export const TIMESHEET_COMMIT_FIELDS = [
 ] as const satisfies readonly TimesheetCommitField[];
 
 export type TimesheetChange =
-  | { kind: "added"; entryId: string; current: TimesheetCommitValues }
+  | {
+      kind: "added";
+      entryId: string;
+      current: TimesheetCommitValues;
+      /** Its task is Not known yet, so it can't be committed. See applyCommitTarget. */
+      waiting?: true;
+    }
   | {
       kind: "updated";
       entryId: string;
@@ -41,6 +48,8 @@ export type TimesheetChange =
        * only the copy is stale: the external entry may differ in any field.
        */
       changedFields: TimesheetCommitField[];
+      /** Its task is Not known yet, so it can't be committed. See applyCommitTarget. */
+      waiting?: true;
     }
   | { kind: "deleted"; entryId: string; committed: LocalTimesheetEntryCommit };
 
@@ -110,6 +119,49 @@ export function isTimesheetEntryCommitted(entry: LocalTimesheetEntry) {
   );
 }
 
+/**
+ * The change as the timesheet tool sees it, once local time is left out
+ * (#481). A change whose sides are both on local tasks is undefined: nothing
+ * goes. An entry moved from a sent task to a local one is deleted from the
+ * tool, and one moved from a local task to a sent one is added. A change
+ * whose entry is now on a Not known yet task is marked `waiting`, so nobody
+ * commits it under a temporary name.
+ */
+export function applyCommitTarget(
+  change: TimesheetChange,
+  projects: readonly LocalProject[],
+): TimesheetChange | undefined {
+  const target = (values: TimesheetCommitValues) =>
+    findCommitTarget(projects, values.projectId, values.taskId);
+  if (change.kind === "deleted") {
+    return target(change.committed) === "local" ? undefined : change;
+  }
+  const now = target(change.current);
+  if (change.kind === "added") {
+    if (now === "local") return undefined;
+    return now === "waiting" ? { ...change, waiting: true } : change;
+  }
+  const before = target(change.committed);
+  if (now === "local") {
+    return before === "local"
+      ? undefined
+      : {
+          kind: "deleted",
+          entryId: change.entryId,
+          committed: change.committed,
+        };
+  }
+  const waiting = now === "waiting" ? { waiting: true as const } : {};
+  return before === "local"
+    ? {
+        kind: "added",
+        entryId: change.entryId,
+        current: change.current,
+        ...waiting,
+      }
+    : { ...change, ...waiting };
+}
+
 const KIND_ORDER: Record<TimesheetChangeKind, number> = {
   added: 0,
   updated: 1,
@@ -126,17 +178,21 @@ const KIND_ORDER: Record<TimesheetChangeKind, number> = {
 export function listWeekChanges({
   entries,
   tombstones,
+  projects,
   weekDates,
 }: {
   entries: readonly LocalTimesheetEntry[];
   tombstones: readonly LocalTimesheetTombstone[];
+  /** Every project, archived ones too, for what each task commits as. */
+  projects: readonly LocalProject[];
   weekDates: readonly string[];
 }): TimesheetChange[] {
   const week = new Set(weekDates);
   const changes: { day: string; change: TimesheetChange }[] = [];
 
   for (const entry of entries) {
-    const change = getTimesheetEntryChange(entry);
+    const entryChange = getTimesheetEntryChange(entry);
+    const change = entryChange && applyCommitTarget(entryChange, projects);
     if (!change) continue;
     const day = week.has(entry.localDate)
       ? entry.localDate
@@ -147,14 +203,15 @@ export function listWeekChanges({
   }
   for (const tombstone of tombstones) {
     if (!week.has(tombstone.commit.localDate)) continue;
-    changes.push({
-      day: tombstone.commit.localDate,
-      change: {
+    const change = applyCommitTarget(
+      {
         kind: "deleted",
         entryId: tombstone.entryId,
         committed: tombstone.commit,
       },
-    });
+      projects,
+    );
+    if (change) changes.push({ day: tombstone.commit.localDate, change });
   }
 
   // Array.prototype.sort is stable, so equal items keep their list order.

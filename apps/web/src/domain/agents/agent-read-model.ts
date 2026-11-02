@@ -23,6 +23,7 @@ import {
   type ResolvedPluginProperty,
 } from "@/domain/projects/plugin-properties";
 import {
+  applyCommitTarget,
   describeTimesheetCommitValues,
   getTimesheetEntryChange,
   isTimesheetEntryCommitted,
@@ -384,8 +385,12 @@ export function getWeekChangesForAgent(
     changes: listWeekChanges({
       entries: state.timesheetEntries,
       tombstones: state.timesheetTombstones,
+      projects: state.projects,
       weekDates,
     })
+      // A change on a Not known yet task waits for the user, so no agent
+      // sends it under a temporary name.
+      .filter((change) => change.kind === "deleted" || !change.waiting)
       .filter((change) => !onlyChecked || !uncheckedIds.has(change.entryId))
       .map((change) => ({
         change: change.kind,
@@ -404,9 +409,10 @@ export function getWeekChangesForAgent(
 }
 
 /**
- * The change of `entryId` now: its deleted change when it has a tombstone,
- * else its entry's change. Null when the entry has nothing to commit, and
- * undefined when Ajour knows no entry or deleted entry with that ID.
+ * The change of `entryId` now, as the week's changes list it: its deleted
+ * change when it has a tombstone, else its entry's change, once local time is
+ * left out. Null when the entry has nothing to commit, or only local time,
+ * and undefined when Ajour knows no entry or deleted entry with that ID.
  */
 function findTimesheetChange(
   state: LocalAppState,
@@ -415,13 +421,14 @@ function findTimesheetChange(
   const tombstone = state.timesheetTombstones.find(
     (candidate) => candidate.entryId === entryId,
   );
-  if (tombstone) {
-    return { kind: "deleted", entryId, committed: tombstone.commit };
-  }
   const entry = state.timesheetEntries.find(
     (candidate) => candidate._id === entryId,
   );
-  return entry ? (getTimesheetEntryChange(entry) ?? null) : undefined;
+  const change: TimesheetChange | undefined = tombstone
+    ? { kind: "deleted", entryId, committed: tombstone.commit }
+    : entry && getTimesheetEntryChange(entry);
+  if (!tombstone && !entry) return undefined;
+  return (change && applyCommitTarget(change, state.projects)) ?? null;
 }
 
 /**
@@ -442,6 +449,16 @@ export function checkChangeVersionsOrRefuse(
     if (change === undefined) {
       throw new AgentToolRefusal(
         `No entry or deleted entry has the id ${entryId}. Call get_week_changes.`,
+      );
+    }
+    if (change && change.kind !== "deleted" && change.waiting) {
+      const { taskName } = describeProjectTask(
+        state,
+        change.current.projectId,
+        change.current.taskId,
+      );
+      throw new AgentToolRefusal(
+        `${entryId} is on ${taskName ? `"${taskName}", a task` : "a task"} that is Not known yet. Its time stays out of the commit until the user chooses what the task commits as.`,
       );
     }
     if (
@@ -498,6 +515,7 @@ export function getWeekStatusForAgent(
   const uncommittedChanges = listWeekChanges({
     entries: state.timesheetEntries,
     tombstones: state.timesheetTombstones,
+    projects: state.projects,
     weekDates,
   }).length;
   const committedEntries = committed.map(({ entryId, commit }) => ({

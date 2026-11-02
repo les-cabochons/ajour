@@ -4,6 +4,7 @@ import {
   RiSubtractLine as DeletedIcon,
 } from "@remixicon/react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Chip } from "@/components/ui/chip";
 import { Value } from "@/components/ui/value";
 import type { LocalProject } from "@/domain/local-state";
 import {
@@ -106,6 +107,9 @@ function ChangeValue({
   );
 }
 
+const WAITING_REASON =
+  "The task is Not known yet. Choose what it commits as to include this change.";
+
 function CommitChangeRow({
   change,
   projects,
@@ -143,6 +147,9 @@ function CommitChangeRow({
   const label = CHANGE_KIND_LABELS[change.kind];
   const title = `${shown.project} / ${shown.task}, ${shown.day}`;
   const Icon = CHANGE_KIND_ICONS[change.kind];
+  // A Not known yet task has no name to commit as yet, so its change stays
+  // out until the user picks one.
+  const waiting = change.kind !== "deleted" && change.waiting === true;
 
   return (
     <li
@@ -150,12 +157,15 @@ function CommitChangeRow({
       className={cn(
         "commit-change",
         `is-${change.kind}`,
-        !checked && "is-excluded",
+        (!checked || waiting) && "is-excluded",
       )}
     >
       <Checkbox
-        checked={checked}
+        checked={checked && !waiting}
+        disabled={waiting}
+        title={waiting ? WAITING_REASON : undefined}
         aria-label={`Include ${label.toLowerCase()} change: ${title}`}
+        aria-description={waiting ? WAITING_REASON : undefined}
         onCheckedChange={(next) => onCheckedChange(next)}
       />
       <Icon role="img" aria-label={label} className="commit-change-symbol" />
@@ -176,6 +186,7 @@ function CommitChangeRow({
             as {name}
           </span>
         ))}
+        {waiting ? <Chip tone="warning">Not known yet</Chip> : null}
       </span>
       <Value className="commit-change-hours">
         <ChangeValue before={before?.hours} after={after?.hours} />
@@ -191,7 +202,8 @@ function CommitChangeRow({
 
 /**
  * The week's changes since its last commit, one row each, with its kind's
- * symbol and color and a checkbox. Unchecked changes stay out of the commit.
+ * symbol and color and a checkbox. Unchecked changes stay out of the commit,
+ * and so do changes on a Not known yet task, whose checkbox is locked.
  */
 export function CommitChangeList({
   changes,

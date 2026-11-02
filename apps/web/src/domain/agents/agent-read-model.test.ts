@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LocalAppState, LocalTimesheetEntry } from "@/domain/local-state";
 import {
+  checkChangeVersionsOrRefuse,
   getWeekChangesForAgent,
   getWeekStatusForAgent,
   getWorkItemForAgent,
@@ -448,6 +449,7 @@ describe("agent read model", () => {
     const expected = listWeekChanges({
       entries: state.timesheetEntries,
       tombstones: state.timesheetTombstones,
+      projects: state.projects,
       weekDates: WEEK,
     }).map((change) => timesheetChangeVersion(change));
 
@@ -472,6 +474,59 @@ describe("agent read model", () => {
         onlyChecked: false,
       }).changes.find((change) => change.entryId === "e1"),
     ).toMatchObject({ checked: false });
+  });
+
+  /** changesState with Build set to commit as `commitAs`. */
+  function withBuild(commitAs: "waiting" | "local"): LocalAppState {
+    const state = changesState();
+    return {
+      ...state,
+      projects: state.projects.map((project) => ({
+        ...project,
+        tasks: project.tasks.map((task) =>
+          task._id === "task-1" ? { ...task, commitAs } : task,
+        ),
+      })),
+    };
+  }
+
+  it("leaves out changes on a Not known yet task, and refuses to mark them", () => {
+    const state = withBuild("waiting");
+    const changes = getWeekChangesForAgent(state, {
+      ...allChecked,
+      onlyChecked: false,
+    }).changes;
+    expect(changes.map((change) => change.entryId)).toEqual(["gone"]);
+
+    const version = getWeekChangesForAgent(changesState(), allChecked)
+      .changes[0]!.version;
+    expect(() =>
+      checkChangeVersionsOrRefuse(
+        state,
+        [{ entryId: "e1", version }],
+        NO_PROPERTY_PLUGINS,
+      ),
+    ).toThrow(
+      'e1 is on "Build", a task that is Not known yet. Its time stays out of the commit until the user chooses what the task commits as.',
+    );
+  });
+
+  it("leaves out local changes, and refuses to mark them as changed", () => {
+    const state = withBuild("local");
+    expect(
+      getWeekChangesForAgent(state, allChecked).changes.map(
+        (change) => change.entryId,
+      ),
+    ).toEqual(["gone"]);
+    const version = getWeekChangesForAgent(changesState(), allChecked)
+      .changes[0]!.version;
+    expect(() =>
+      checkChangeVersionsOrRefuse(
+        state,
+        [{ entryId: "e1", version }],
+        NO_PROPERTY_PLUGINS,
+      ),
+    ).toThrow("e1 changed since you read it.");
   });
 
   it("shows an entry moved to the next week in both weeks, with one external id", () => {

@@ -10,6 +10,7 @@ import {
   describeLineNames,
   groupSubmitLines,
   listLineNameSources,
+  listSentEntries,
   mergeSubmitComments,
   resolveLineNameSource,
   summarizeWeek,
@@ -398,7 +399,12 @@ describe("week summary", () => {
   ];
 
   it("sums every entry of the week and warns about days and tasks", () => {
-    const summary = summarizeWeek({ capacityTargets, weekDates, weekEntries });
+    const summary = summarizeWeek({
+      capacityTargets,
+      weekDates,
+      weekEntries,
+      projects: [],
+    });
 
     expect(summary).toMatchObject({
       totalMs: 22 * HOUR,
@@ -437,8 +443,87 @@ describe("week summary", () => {
         entry("tue", { localDate: "2026-10-06", durationMs: 8 * HOUR }),
         entry("fri", { localDate: "2026-10-09", durationMs: 10 * HOUR }),
       ],
+      projects: [],
     });
 
     expect(summary.isUnderTarget).toBe(false);
+  });
+
+  it("warns about each Not known yet task and totals local time", () => {
+    const committing: LocalProject[] = [
+      {
+        ...projects[0]!,
+        tasks: [
+          ...projects[0]!.tasks,
+          {
+            _id: "temp",
+            name: "Temp migration",
+            status: "active",
+            createdAt: 1,
+            commitAs: "waiting",
+          },
+          {
+            _id: "lunch",
+            name: "Team lunch",
+            status: "active",
+            createdAt: 1,
+            commitAs: "local",
+          },
+        ],
+      },
+      {
+        _id: "home",
+        name: "Home",
+        displayName: "Home",
+        color: "#000",
+        icon: DEFAULT_PROJECT_ICON,
+        status: "active",
+        localOnly: true,
+        tasks: [],
+      },
+    ];
+    const week = [
+      entry("temp-1", { localDate: "2026-10-05", taskId: "temp" }),
+      entry("temp-2", { localDate: "2026-10-06", taskId: "temp" }),
+      entry("lunch", { localDate: "2026-10-06", taskId: "lunch" }),
+      // No task, but local: no missing task warning.
+      entry("home", {
+        localDate: "2026-10-07",
+        projectId: "home",
+        taskId: undefined,
+      }),
+      entry("dev", { localDate: "2026-10-07" }),
+    ];
+    const summary = summarizeWeek({
+      capacityTargets: {
+        ...capacityTargets,
+        monday: 0,
+        tuesday: 0,
+        wednesday: 0,
+        thursday: 0,
+        friday: 0,
+      },
+      weekDates,
+      weekEntries: week,
+      projects: committing,
+    });
+
+    expect(summary.totalMs).toBe(5 * HOUR);
+    expect(summary.warnings).toEqual([
+      {
+        kind: "waiting-task",
+        projectId: "atlas",
+        taskId: "temp",
+        taskName: "Temp migration",
+        durationMs: 2 * HOUR,
+      },
+    ]);
+    expect(summary.local).toEqual({
+      durationMs: 2 * HOUR,
+      names: ["Team lunch", "Home"],
+    });
+    expect(listSentEntries(week, committing).map((item) => item._id)).toEqual([
+      "dev",
+    ]);
   });
 });

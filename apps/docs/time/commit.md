@@ -16,6 +16,13 @@ The top of the page shows the week total against your target, with a progress ba
 
 - Days under their capacity target, such as `Tue 6 has 6:30 of 8:00`.
 - Entries with no task.
+- Time on a task that is **Not known yet**, such as `3:00 on Temp migration waits for a task to commit as.` Press **Edit task** to choose what it [commits as](/projects/tasks#commits-as).
+
+## Local time
+
+Time on a **Local only** task, or in a **Local only** project, stays in Ajour. It is not under **Changes** or **Lines**, and agents don't get it. One line under the changes gives its total and its tasks, such as `Not sent: Team lunch 1:00`, so the week total still adds up.
+
+Moving a committed entry to a local task shows as **Deleted**, since your timesheet tool should no longer have it. Moving an entry from a local task to another one shows as **Added**.
 
 ## Changes
 
@@ -29,7 +36,7 @@ Under **Changes**, each entry that changed since your last commit has a row with
 
 An entry you edit back to its committed values has no change. A week with no changes says "Everything is committed."
 
-Each change has a checkbox, checked by default. Uncheck a change to leave it out of this commit. It stays on the page, and is checked again the next time you open the page.
+Each change has a checkbox, checked by default. Uncheck a change to leave it out of this commit. A change on a **Not known yet** task shows the same amber label, and its checkbox stays unchecked and greyed out until you choose what the task commits as. Until then the change is not committed, so **Submit week** waits. It stays on the page, and is checked again the next time you open the page.
 
 Click the **Changes** heading to hide the list, and click it again to show it. **Mark as committed** stays below the heading. The list is shown again each time you open the page.
 
@@ -59,7 +66,7 @@ Press **Reopen week** on the week's Commit page. A toast offers **Undo**. The en
 
 ## Copy the lines
 
-Under **Lines**, the whole week is grouped into lines with the project, the task, the hours and the comments. Click a value to copy it, then paste it in your timesheet tool.
+Under **Lines**, the week's time that goes to your timesheet tool is grouped into lines with the project, the task, the hours and the comments. Click a value to copy it, then paste it in your timesheet tool.
 
 - **Project and task** are one value, such as `CA004 Tech & Design / 07 Run`. It copies both with a space between them, such as `CA004 Tech & Design 07 Run`, which you can paste in your timesheet tool's search box. A line with no task copies the project alone.
 - **Hours** copy as decimals with a comma, such as `5,00` or `6,50`, which Workday expects. The page shows them as clock time.

@@ -171,6 +171,7 @@ describe("week changes", () => {
         tombstone("tue-deleted", "2026-10-06"),
         tombstone("last-week", "2026-09-28"),
       ],
+      projects: [],
       weekDates: WEEK,
     });
 
@@ -190,7 +191,12 @@ describe("week changes", () => {
 
     for (const weekDates of [WEEK, NEXT_WEEK]) {
       expect(
-        listWeekChanges({ entries: [moved], tombstones: [], weekDates }),
+        listWeekChanges({
+          entries: [moved],
+          tombstones: [],
+          projects: [],
+          weekDates,
+        }),
       ).toEqual([
         expect.objectContaining({
           kind: "updated",
@@ -206,9 +212,125 @@ describe("week changes", () => {
       listWeekChanges({
         entries: [committed(entry({ _id: "a" }))],
         tombstones: [],
+        projects: [],
         weekDates: WEEK,
       }),
     ).toEqual([]);
+  });
+});
+
+describe("week changes and what tasks commit as", () => {
+  // build commits under its name, temp is Not known yet, lunch is Local only.
+  const projects: LocalProject[] = [
+    {
+      _id: "project-1",
+      name: "Acme",
+      color: "#000",
+      icon: DEFAULT_PROJECT_ICON,
+      status: "active",
+      tasks: [
+        { _id: "task-1", name: "05 Build", status: "active", createdAt: 1 },
+        {
+          _id: "temp",
+          name: "Temp migration",
+          status: "active",
+          createdAt: 1,
+          commitAs: "waiting",
+        },
+        {
+          _id: "lunch",
+          name: "Team lunch",
+          status: "active",
+          createdAt: 1,
+          commitAs: "local",
+        },
+      ],
+    },
+    {
+      _id: "personal",
+      name: "Personal",
+      color: "#000",
+      icon: DEFAULT_PROJECT_ICON,
+      status: "active",
+      localOnly: true,
+      tasks: [
+        { _id: "reading", name: "Reading", status: "active", createdAt: 1 },
+      ],
+    },
+  ];
+  const list = (
+    entries: LocalTimesheetEntry[],
+    tombstones: LocalTimesheetTombstone[] = [],
+  ) =>
+    listWeekChanges({ entries, tombstones, projects, weekDates: WEEK }).map(
+      (change) => ({
+        kind: change.kind,
+        entryId: change.entryId,
+        waiting: change.kind === "deleted" ? undefined : change.waiting,
+      }),
+    );
+
+  it("leaves out local time, on a Local only task or project", () => {
+    expect(
+      list(
+        [
+          entry({ _id: "lunch", taskId: "lunch" }),
+          entry({ _id: "reading", projectId: "personal", taskId: "reading" }),
+          {
+            ...committed(entry({ _id: "lunch-edit", taskId: "lunch" })),
+            durationMs: 2 * HOUR,
+          },
+        ],
+        [
+          {
+            ...tombstone("lunch-gone", "2026-10-05"),
+            commit: { ...tombstone("x", "2026-10-05").commit, taskId: "lunch" },
+          },
+        ],
+      ),
+    ).toEqual([]);
+  });
+
+  it("marks time on a Not known yet task as waiting", () => {
+    expect(list([entry({ _id: "temp", taskId: "temp" })])).toEqual([
+      { kind: "added", entryId: "temp", waiting: true },
+    ]);
+  });
+
+  it("deletes an entry moved to a local task, and adds one moved off it", () => {
+    const toLocal = {
+      ...committed(entry({ _id: "to-local" })),
+      taskId: "lunch",
+    };
+    const fromLocal = {
+      ...committed(entry({ _id: "from-local", taskId: "lunch" })),
+      taskId: "temp",
+    };
+    const changes = listWeekChanges({
+      entries: [toLocal, fromLocal],
+      tombstones: [],
+      projects,
+      weekDates: WEEK,
+    });
+    expect(changes).toEqual([
+      {
+        kind: "added",
+        entryId: "from-local",
+        current: expect.objectContaining({ taskId: "temp" }),
+        waiting: true,
+      },
+      {
+        kind: "deleted",
+        entryId: "to-local",
+        committed: expect.objectContaining({ taskId: "task-1" }),
+      },
+    ]);
+  });
+
+  it("keeps changes on tasks that commit under a name as they are", () => {
+    expect(list([entry({ _id: "build" })])).toEqual([
+      { kind: "added", entryId: "build", waiting: undefined },
+    ]);
   });
 });
 

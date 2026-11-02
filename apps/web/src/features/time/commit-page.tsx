@@ -8,7 +8,7 @@ import {
   RiLockLine as Lock,
   RiLockUnlockLine as Unlock,
 } from "@remixicon/react";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { DisabledReason } from "@/components/disabled-reason";
 import { PageHeader } from "@/components/page-header";
 import { SectionHeading } from "@/components/section-heading";
@@ -41,6 +41,7 @@ import { listWeekChanges } from "@/domain/time/timesheet-commit";
 import {
   describeLineNames,
   groupSubmitLines,
+  listSentEntries,
   listLineNameSources,
   resolveLineNameSource,
   summarizeWeek,
@@ -142,9 +143,18 @@ function countLabel(count: number, singular: string, plural: string) {
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
+function warningKey(warning: SubmitWarning) {
+  if (warning.kind === "day-under-target") return warning.localDate;
+  if (warning.kind === "waiting-task") return `waiting:${warning.taskId}`;
+  return warning.kind;
+}
+
 function formatWarning(warning: SubmitWarning) {
   if (warning.kind === "missing-task") {
     return `${countLabel(warning.entryCount, "entry has", "entries have")} no task`;
+  }
+  if (warning.kind === "waiting-task") {
+    return `${formatClockDuration(warning.durationMs)} on ${warning.taskName} waits for a task to commit as.`;
   }
   return `${formatShortDay(warning.localDate)} has ${formatClockDuration(warning.loggedMs)} of ${formatClockDuration(warning.targetMs)}`;
 }
@@ -325,20 +335,29 @@ export function CommitPage({
       listWeekChanges({
         entries: state.timesheetEntries,
         tombstones: state.timesheetTombstones,
+        projects,
         weekDates,
       }),
-    [state.timesheetEntries, state.timesheetTombstones, weekDates],
+    [state.timesheetEntries, state.timesheetTombstones, projects, weekDates],
   );
+  // A change on a Not known yet task is never checked: nobody commits it
+  // under a temporary name.
   const checkedIds = useMemo(
     () =>
       changes
+        .filter((change) => change.kind === "deleted" || !change.waiting)
         .map((change) => change.entryId)
         .filter((entryId) => !uncheckedIds.has(entryId)),
     [changes, uncheckedIds],
   );
   const sections = useMemo(
     () =>
-      groupSubmitLines({ entries: weekEntries, groupBy, projects, weekDates }),
+      groupSubmitLines({
+        entries: listSentEntries(weekEntries, projects),
+        groupBy,
+        projects,
+        weekDates,
+      }),
     [groupBy, projects, weekDates, weekEntries],
   );
   const projectMap = useMemo(
@@ -351,8 +370,14 @@ export function CommitPage({
         capacityTargets: state.userPreferences.weeklyCapacityTargets,
         weekDates,
         weekEntries,
+        projects,
       }),
-    [state.userPreferences.weeklyCapacityTargets, weekDates, weekEntries],
+    [
+      state.userPreferences.weeklyCapacityTargets,
+      weekDates,
+      weekEntries,
+      projects,
+    ],
   );
   const submitTasks = useAgentTaskPresence("submit-week");
   const lockedWeek = getLockedWeek(state, weekOf);
@@ -474,15 +499,25 @@ export function CommitPage({
         {summary.warnings.length > 0 ? (
           <ul className="submit-warnings">
             {summary.warnings.map((warning) => (
-              <li
-                key={
-                  warning.kind === "missing-task"
-                    ? warning.kind
-                    : warning.localDate
-                }
-              >
+              <li key={warningKey(warning)}>
                 <Warning aria-hidden />
                 {formatWarning(warning)}
+                {warning.kind === "waiting-task" ? (
+                  <Link
+                    to="/projects/$projectId"
+                    params={{ projectId: warning.projectId }}
+                    search={
+                      {
+                        action: "edit",
+                        target: warning.taskId,
+                        parent: warning.projectId,
+                      } as never
+                    }
+                    className="submit-warning-action"
+                  >
+                    Edit task
+                  </Link>
+                ) : null}
               </li>
             ))}
           </ul>
@@ -532,6 +567,12 @@ export function CommitPage({
                 setChangesChecked(weekOf, [entryId], checked)
               }
             />
+            {summary.local.durationMs > 0 ? (
+              <p className="commit-local-time">
+                Not sent: {summary.local.names.join(", ") || "local time"}{" "}
+                <Value>{formatClockDuration(summary.local.durationMs)}</Value>
+              </p>
+            ) : null}
           </div>
         ) : null}
       </section>
