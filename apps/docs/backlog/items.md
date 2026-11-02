@@ -45,7 +45,7 @@ Web links in a description, in its text or its [frontmatter](#frontmatter), show
 
 ## Map an item to a task
 
-Set the item's **Project** and **Task** so the time you log on it lands on the right task. Synced items cannot know your tasks, so map them once after they arrive, or name them in the description's [timelog](#frontmatter). Starting an item with no task starts an entry with no task, which the Commit page then flags.
+Set the item's **Project** and **Task** so the time you log on it lands on the right task. A task the project doesn't have yet can be [created from **Task**](/projects/tasks#create-a-task). Synced items cannot know your tasks, so map them once after they arrive, or name them in the description's [timelog](#frontmatter). Starting an item with no task starts an entry with no task, which the Commit page then flags.
 
 ## Frontmatter
 

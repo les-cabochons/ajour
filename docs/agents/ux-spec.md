@@ -286,6 +286,16 @@ Like the backlog [Hover card](#hover-card), a card beside the menu shows what a 
 - It also follows the highlight of the arrow keys, with the same timing. Opening the menu and typing never show it; only an arrow key does. Typing closes it.
 - Scrolling the list with the wheel, pressing, and leaving the row or the window close it. The keyboard's scrolling does not. Nothing in it takes a press, and it takes no focus.
 
+### Create a task
+
+Decided in [#481](https://github.com/les-cabochons/ajour/issues/481).
+
+- Inside a project, a search that no active task of the project matches ends with "Create task "07 Run"". It creates the task, picks it, and shows "Task 07 Run created" with Undo and Change. With no match, it is the first row, so Enter creates.
+- In the start view, a search that no active task of any project matches ends with "Create task "07 Run"…", which closes the menu and opens the Create task dialog: Name (the search), Project (a searchable list, Recent projects first, then All projects, none preselected, focused and open) and, when the project commits and a plugin commits tasks, Commits as without Another task…. The button reads Create task, "Use 07 Run" when the project has that active task, or "Restore 07 Run" when it is archived. A shared project adds "Acme is shared, so your team gets the task too." Cancel or Escape reopens the menu with the search kept.
+- Names compare the way task imports do: trimmed, spaces collapsed, case and accents ignored. An archived task of the name reads "Restore task "08 Old"" and is restored. A shared project's row reads "Add task "07 Run" for the team…" and asks first with "Add task 07 Run to Acme?".
+- Undo removes the created task, or archives the restored one again, and picks the previous project and task while the created task is still picked. Once an entry, the running entry or a backlog item uses the task, Undo says "Can't undo. 07 Run is in use now. Archive it instead."
+- Change, shown when a plugin commits tasks and the project is not Local only, opens "What does 07 Run commit as?" with Commits as without Another task….
+
 ## Running entries
 
 Decided in [Running timer editing and empty duration meaning](https://github.com/les-cabochons/ajour/issues/15).
@@ -646,6 +656,7 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 
 - Editing a backlog item uses the editor form, in the peek slot on wide windows and the full-width dialog in the narrow view, with the entry editor's rules: explicit Save (button, Enter in the title, Cmd+Enter), Escape or × discards, outside clicks do nothing.
 - The form holds title, workflow state, priority, project and task mapping, description, the estimates with their "Reset to subitem total" buttons, and "Keep when missing from sync" for synced items. Its header has the "…" action menu.
+- Task mapping, and the Task property of the item page and the peek, end with "Create task "07 Run"" when the typed name matches no active task of the item's project, as in the [Task menu](#create-a-task). Task mapping is a draft: the created task waits for Save, and Undo puts the previous task back in the draft. The Task property saves at once, and one Undo takes back both the task and the item's change.
 - "New backlog item" in the page header, or the "+" at the top of the app sidebar, opens a blank form. "Add subitem" opens it with the parent set.
 - Start entry stays on hover, in the "…" menu and in the peek. Entries start on today.
 

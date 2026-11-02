@@ -8,6 +8,15 @@ A task is a kind of work inside one project, such as `Development`, `Code review
 
 Open a project and press **New task**. The task editor opens in the side panel.
 
+You can also create a task where you pick one, when it isn't in Ajour yet:
+
+- In a backlog item's **Task**, or in the task menu of a time entry after opening a project, type the name and choose **Create task "07 Run"**, or press <kbd>Enter</kbd> when nothing matches. Ajour creates the task in that project and picks it.
+- In the task menu's first view, choose **Create task "07 Run"…**. A dialog asks for the project, and **Commits as** when your timesheet plugin needs it.
+
+A toast offers **Undo** and, with a timesheet plugin, **Change**, which sets what the task [commits as](#commits-as). A name an archived task has restores it. In a shared project, Ajour asks first, because your team gets the task too.
+
+When you import the same task later, the import finds it by name, whatever its case, accents or spaces, and updates it. Its time and backlog items stay on it. Type the name as your timesheet tool spells it; if you don't know it yet, choose **Not known yet**.
+
 | Field          | What it is for                                                                             |
 | -------------- | ------------------------------------------------------------------------------------------ |
 | **Name**       | The task's name, as your timesheet tool knows it.                                          |
