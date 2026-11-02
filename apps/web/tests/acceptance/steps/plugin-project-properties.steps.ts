@@ -124,6 +124,36 @@ When(
   },
 );
 
+When(
+  "I choose Another task… for task {string} without picking one",
+  async ({ page }, task: string) => {
+    await page.getByText(task, { exact: true }).click();
+    const editor = page.getByRole("complementary", { name: "Task editor" });
+    await editor.getByRole("combobox", { name: "Commits as" }).click();
+    await page.getByRole("option", { name: "Another task…" }).click();
+  },
+);
+
+Then("Save is disabled and says {string}", async ({ page }, error: string) => {
+  const editor = page.getByRole("complementary", { name: "Task editor" });
+  await expect(
+    editor.getByRole("button", { name: "Save", exact: true }),
+  ).toBeDisabled();
+  await expect(editor.getByText(error)).toBeVisible();
+  await editor.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(editor).toBeHidden();
+});
+
+Then(
+  "task {string} still shows the chip {string}",
+  async ({ page }, task: string, chip: string) => {
+    const row = page.locator("tr.project-task-row", {
+      has: page.getByText(task, { exact: true }),
+    });
+    await expect(row.getByText(chip, { exact: true })).toBeVisible();
+  },
+);
+
 Then(
   "task {string} shows the chip {string}",
   async ({ page }, task: string, chip: string) => {

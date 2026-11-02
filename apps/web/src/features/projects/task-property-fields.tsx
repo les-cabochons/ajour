@@ -55,14 +55,19 @@ const COMMITS_AS_OPTIONS: SelectOption<CommitsAsChoice>[] = [
 export type TaskPropertyPatch = Pick<
   LocalProjectTask,
   "commitAs" | "pluginProperties"
->;
+> & {
+  /** Another task… waits for a task in this plugin's field. */
+  choosingAnotherTask: { pluginId: string; fieldId: string } | undefined;
+};
 
 /**
  * One section per plugin that adds task properties, below the task
- * editor's own fields. A field that defaults to the task's name becomes
- * Commits as: Its own name, Another task… (one of the project's other
- * tasks, picked under it), Not known yet or Local only. In a Local only
- * project it only says so. Other fields are plain text.
+ * editor's own fields. The plugin's first field that defaults to the task's
+ * name becomes Commits as: Its own name, Another task… (one of the
+ * project's other tasks, picked under it), Not known yet or Local only. In
+ * a Local only project it only says so. Another field that defaults to the
+ * name picks one of the project's other tasks, or "Same name". Other fields
+ * are plain text.
  */
 export function TaskPropertyFields({
   plugins,
@@ -70,6 +75,8 @@ export function TaskPropertyFields({
   otherTaskNames,
   pluginProperties,
   commitAs,
+  choosingAnotherTask,
+  commitsAsError,
   projectLocalOnly = false,
   onChange,
 }: {
@@ -80,110 +87,151 @@ export function TaskPropertyFields({
   otherTaskNames: string[];
   pluginProperties: PluginProperties | undefined;
   commitAs: TaskCommitAs | undefined;
+  /** Another task… picked, waiting for a task. Part of the draft. */
+  choosingAnotherTask?: { pluginId: string; fieldId: string };
+  /** "Pick the task it commits as." while Another task… has no task. */
+  commitsAsError?: string | null;
   /** The project is Local only, so its tasks are never committed. */
   projectLocalOnly?: boolean;
   onChange: (patch: Partial<TaskPropertyPatch>) => void;
 }) {
   const idPrefix = useId();
-  // Another task… with no task picked yet reads back as Its own name, so the
-  // section remembers the pick until a task is chosen or the choice changes.
-  const [pickingAnother, setPickingAnother] = useState<string[]>([]);
-  return plugins.map((plugin) => (
-    // A plain border on the fieldset would draw through its legend.
-    <div key={plugin.pluginId} className="border-t border-border pt-4">
-      <FieldSet className="gap-4">
-        <FieldLegend variant="label" className="text-xs text-muted-foreground">
-          {plugin.capability.section}
-        </FieldLegend>
-        {resolveTaskPluginProperties(
-          { name: taskName.trim(), pluginProperties },
-          plugin,
-        ).map(({ field, value, defaultValue, isDefault }) => {
-          const id = `${idPrefix}-${plugin.pluginId}-${field.id}`;
-          if (field.defaultFrom === "name") {
-            if (projectLocalOnly) {
+  return plugins.map((plugin) => {
+    const commitsAsField = getTaskNameField(plugin);
+    return (
+      // A plain border on the fieldset would draw through its legend.
+      <div key={plugin.pluginId} className="border-t border-border pt-4">
+        <FieldSet className="gap-4">
+          <FieldLegend
+            variant="label"
+            className="text-xs text-muted-foreground"
+          >
+            {plugin.capability.section}
+          </FieldLegend>
+          {resolveTaskPluginProperties(
+            { name: taskName.trim(), pluginProperties },
+            plugin,
+          ).map(({ field, value, defaultValue, isDefault }) => {
+            const id = `${idPrefix}-${plugin.pluginId}-${field.id}`;
+            const picked = isDefault ? "" : value;
+            // The draft keeps text as typed; the editor trims it on save.
+            const set = (next: string) =>
+              onChange({
+                pluginProperties: setPluginPropertyDraft(
+                  { pluginProperties },
+                  plugin.pluginId,
+                  field.id,
+                  next,
+                ),
+              });
+            if (field.id === commitsAsField?.id) {
+              if (projectLocalOnly) {
+                return (
+                  <Field key={field.id}>
+                    <FieldLabel>Commits as</FieldLabel>
+                    <FieldDescription>
+                      The project is local only, so this task is never
+                      committed.
+                    </FieldDescription>
+                  </Field>
+                );
+              }
+              const task = {
+                name: taskName.trim(),
+                pluginProperties,
+                commitAs,
+              };
+              const choosing =
+                choosingAnotherTask?.pluginId === plugin.pluginId;
+              const choice = choosing
+                ? "another"
+                : getCommitsAsChoice(task, plugin);
+              const choose = (next: CommitsAsChoice, mappedName = "") => {
+                // Another task… with no task yet changes nothing saved: the
+                // draft waits for a task, and Save stays blocked meanwhile.
+                if (next === "another" && !mappedName) {
+                  onChange({
+                    choosingAnotherTask: {
+                      pluginId: plugin.pluginId,
+                      fieldId: field.id,
+                    },
+                  });
+                  return;
+                }
+                onChange({
+                  ...applyCommitsAsChoice(task, plugin, next, mappedName),
+                  choosingAnotherTask: undefined,
+                });
+              };
               return (
-                <Field key={field.id}>
-                  <FieldLabel>Commits as</FieldLabel>
-                  <FieldDescription>
-                    The project is local only, so this task is never committed.
-                  </FieldDescription>
+                <Field key={field.id} data-invalid={Boolean(commitsAsError)}>
+                  <FieldLabel htmlFor={id}>Commits as</FieldLabel>
+                  <OptionSelect
+                    id={id}
+                    size="default"
+                    value={choice}
+                    options={COMMITS_AS_OPTIONS}
+                    onChange={(next) => choose(next)}
+                  />
+                  {choice === "another" ? (
+                    // The select names itself with ariaLabel, as in the backlog editor.
+                    <SearchableSelect
+                      value={choosing && !picked ? "" : picked}
+                      options={taskNameOptions(otherTaskNames, picked)}
+                      onChange={(name) =>
+                        name ? choose("another", name) : undefined
+                      }
+                      placeholder="Pick a task"
+                      emptyMessage="No matching tasks"
+                      ariaLabel={field.label}
+                    />
+                  ) : null}
+                  {choosing && commitsAsError ? (
+                    <span className="field-error">{commitsAsError}</span>
+                  ) : null}
+                  {field.helpText ? (
+                    <FieldDescription>{field.helpText}</FieldDescription>
+                  ) : null}
                 </Field>
               );
             }
-            const task = { name: taskName.trim(), pluginProperties, commitAs };
-            const saved = getCommitsAsChoice(task, plugin);
-            const choice =
-              saved === "own" && pickingAnother.includes(plugin.pluginId)
-                ? "another"
-                : saved;
-            const choose = (next: CommitsAsChoice, mappedName = "") => {
-              setPickingAnother((current) =>
-                next === "another"
-                  ? [...new Set([...current, plugin.pluginId])]
-                  : current.filter((id) => id !== plugin.pluginId),
-              );
-              onChange(applyCommitsAsChoice(task, plugin, next, mappedName));
-            };
             return (
               <Field key={field.id}>
-                <FieldLabel htmlFor={id}>Commits as</FieldLabel>
-                <OptionSelect
-                  id={id}
-                  size="default"
-                  value={choice}
-                  options={COMMITS_AS_OPTIONS}
-                  onChange={(next) => choose(next)}
-                />
-                {choice === "another" ? (
-                  // The select names itself with ariaLabel, as in the backlog editor.
+                {/* The select names itself with ariaLabel, as in the backlog editor. */}
+                <FieldLabel
+                  htmlFor={field.defaultFrom === "name" ? undefined : id}
+                >
+                  {field.label}
+                </FieldLabel>
+                {field.defaultFrom === "name" ? (
                   <SearchableSelect
-                    value={isDefault ? "" : value}
-                    options={taskNameOptions(
-                      otherTaskNames,
-                      isDefault ? "" : value,
-                    )}
-                    onChange={(name) => choose(name ? "another" : "own", name)}
-                    placeholder="Pick a task"
+                    value={picked}
+                    options={taskNameOptions(otherTaskNames, picked)}
+                    onChange={set}
+                    placeholder={defaultValue || "None"}
+                    clearLabel={`Same name${defaultValue ? `: ${defaultValue}` : ""}`}
                     emptyMessage="No matching tasks"
                     ariaLabel={field.label}
                   />
-                ) : null}
+                ) : (
+                  <Input
+                    id={id}
+                    value={picked}
+                    maxLength={PLUGIN_PROPERTY_MAX_LENGTH}
+                    placeholder={defaultValue || "None"}
+                    onChange={(event) => set(event.target.value)}
+                  />
+                )}
                 {field.helpText ? (
                   <FieldDescription>{field.helpText}</FieldDescription>
                 ) : null}
               </Field>
             );
-          }
-          // The draft keeps text as typed; the editor trims it on save.
-          const set = (next: string) =>
-            onChange({
-              pluginProperties: setPluginPropertyDraft(
-                { pluginProperties },
-                plugin.pluginId,
-                field.id,
-                next,
-              ),
-            });
-          return (
-            <Field key={field.id}>
-              <FieldLabel htmlFor={id}>{field.label}</FieldLabel>
-              <Input
-                id={id}
-                value={isDefault ? "" : value}
-                maxLength={PLUGIN_PROPERTY_MAX_LENGTH}
-                placeholder={defaultValue || "None"}
-                onChange={(event) => set(event.target.value)}
-              />
-              {field.helpText ? (
-                <FieldDescription>{field.helpText}</FieldDescription>
-              ) : null}
-            </Field>
-          );
-        })}
-      </FieldSet>
-    </div>
-  ));
+          })}
+        </FieldSet>
+      </div>
+    );
+  });
 }
 
 /**

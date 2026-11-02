@@ -40,3 +40,12 @@ Feature: Properties that plugins add to projects and tasks
     Then task "111 000" says its project is local only
     When I press Undo on the toast
     Then task "111 000" offers Commits as
+
+  Scenario: Another task… waits for a task before Save
+    Given I have projects with searchable tasks
+    And the Workday (agent) plugin adds task properties
+    When I open project "aaa xyz"
+    And I set task "111 000" to commit as "Not known yet" and save
+    And I choose Another task… for task "111 000" without picking one
+    Then Save is disabled and says "Pick the task it commits as."
+    And task "111 000" still shows the chip "Not known yet"

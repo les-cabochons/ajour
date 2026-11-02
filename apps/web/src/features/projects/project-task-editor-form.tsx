@@ -187,6 +187,8 @@ export function ProjectTaskEditorForm({
           otherTaskNames={otherTaskNames}
           pluginProperties={fields.pluginProperties}
           commitAs={fields.commitAs}
+          choosingAnotherTask={fields.choosingAnotherTask}
+          commitsAsError={editor.commitsAsError}
           projectLocalOnly={projectLocalOnly}
           onChange={onFieldsChange}
         />
