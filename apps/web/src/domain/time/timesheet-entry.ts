@@ -11,6 +11,7 @@ import {
   toCommittedCopy,
 } from "@/domain/time/timesheet-commit";
 import { applyLoggedTimeToWorkItems } from "@/domain/backlog/work-item-estimates";
+import { findCommitTarget } from "@/domain/projects/commit-target";
 
 export interface TimesheetEntryFactories {
   createId: (prefix: string) => string;
@@ -540,7 +541,10 @@ export function markTimesheetEntriesCommitted(
     }
 
     changed = true;
-    return { ...entry, commit: toCommittedCopy(entry, at) };
+    const local =
+      findCommitTarget(state.projects, entry.projectId, entry.taskId) ===
+      "local";
+    return { ...entry, commit: toCommittedCopy(entry, at, local) };
   });
   const timesheetTombstones = state.timesheetTombstones.filter(
     (tombstone) => !selectedIds.has(tombstone.entryId),

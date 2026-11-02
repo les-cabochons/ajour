@@ -270,6 +270,12 @@ describe("week changes and what tasks commit as", () => {
       }),
     );
 
+  /** The entry with a copy of local time, as a commit of a local entry saves. */
+  const committedLocal = (value: LocalTimesheetEntry): LocalTimesheetEntry => ({
+    ...value,
+    commit: toCommittedCopy(value, 50, true),
+  });
+
   it("leaves out local time, on a Local only task or project", () => {
     expect(
       list(
@@ -277,18 +283,61 @@ describe("week changes and what tasks commit as", () => {
           entry({ _id: "lunch", taskId: "lunch" }),
           entry({ _id: "reading", projectId: "personal", taskId: "reading" }),
           {
-            ...committed(entry({ _id: "lunch-edit", taskId: "lunch" })),
+            ...committedLocal(entry({ _id: "lunch-edit", taskId: "lunch" })),
             durationMs: 2 * HOUR,
           },
         ],
         [
           {
-            ...tombstone("lunch-gone", "2026-10-05"),
-            commit: { ...tombstone("x", "2026-10-05").commit, taskId: "lunch" },
+            entryId: "lunch-gone",
+            commit: {
+              ...tombstone("x", "2026-10-05").commit,
+              taskId: "lunch",
+              local: true,
+            },
           },
         ],
       ),
     ).toEqual([]);
+  });
+
+  it("keeps deleting what the tool holds after the task becomes local", () => {
+    // Committed under 05 Build, so the tool holds it; deleted since, and the
+    // task is Local only now.
+    expect(
+      list(
+        [],
+        [
+          {
+            entryId: "gone",
+            commit: { ...tombstone("x", "2026-10-05").commit, taskId: "lunch" },
+          },
+        ],
+      ),
+    ).toEqual([{ kind: "deleted", entryId: "gone", waiting: undefined }]);
+    // A committed entry left as it was keeps its external entry.
+    expect(list([committed(entry({ _id: "kept", taskId: "lunch" }))])).toEqual(
+      [],
+    );
+  });
+
+  it("deletes an entry moved to a local task in the next week from the week the tool holds it in", () => {
+    const moved = {
+      ...committed(entry({ _id: "moved", localDate: "2026-10-09" })),
+      localDate: "2026-10-13",
+      taskId: "lunch",
+    };
+    const changes = (weekDates: string[]) =>
+      listWeekChanges({
+        entries: [moved],
+        tombstones: [],
+        projects,
+        weekDates,
+      });
+    expect(changes(WEEK)).toEqual([
+      expect.objectContaining({ kind: "deleted", entryId: "moved" }),
+    ]);
+    expect(changes(NEXT_WEEK)).toEqual([]);
   });
 
   it("marks time on a Not known yet task as waiting", () => {
@@ -303,7 +352,7 @@ describe("week changes and what tasks commit as", () => {
       taskId: "lunch",
     };
     const fromLocal = {
-      ...committed(entry({ _id: "from-local", taskId: "lunch" })),
+      ...committedLocal(entry({ _id: "from-local", taskId: "lunch" })),
       taskId: "temp",
     };
     const changes = listWeekChanges({

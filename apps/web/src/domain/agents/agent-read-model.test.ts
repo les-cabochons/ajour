@@ -16,7 +16,11 @@ import {
   timesheetChangeVersion,
 } from "@/domain/agents/external-id";
 import { NO_PROPERTY_PLUGINS } from "@/domain/projects/plugin-properties";
-import { listWeekChanges } from "@/domain/time/timesheet-commit";
+import {
+  isTimesheetEntryCommitted,
+  listWeekChanges,
+} from "@/domain/time/timesheet-commit";
+import { markTimesheetEntriesCommitted } from "@/domain/time/timesheet-entry";
 
 const HOUR = 3_600_000;
 const NOW = Date.UTC(2026, 9, 14, 15);
@@ -511,13 +515,19 @@ describe("agent read model", () => {
     );
   });
 
-  it("leaves out local changes, and refuses to mark them as changed", () => {
+  it("leaves out local changes, deletes a committed entry moved to local time, and refuses to mark the rest", () => {
     const state = withBuild("local");
+    // e1 was never committed: local, so left out. e2 was committed under
+    // Build before it became local and changed since: the tool drops it.
     expect(
-      getWeekChangesForAgent(state, allChecked).changes.map(
-        (change) => change.entryId,
-      ),
-    ).toEqual(["gone"]);
+      getWeekChangesForAgent(state, allChecked).changes.map((change) => [
+        change.change,
+        change.entryId,
+      ]),
+    ).toEqual([
+      ["deleted", "e2"],
+      ["deleted", "gone"],
+    ]);
     const version = getWeekChangesForAgent(changesState(), allChecked)
       .changes[0]!.version;
     expect(() =>
@@ -527,6 +537,41 @@ describe("agent read model", () => {
         NO_PROPERTY_PLUGINS,
       ),
     ).toThrow("e1 changed since you read it.");
+  });
+
+  it("drops a deleted-then-committed local entry from the week status", () => {
+    const state = withBuild("local");
+    const e2 = getWeekChangesForAgent(state, allChecked).changes.find(
+      (change) => change.entryId === "e2",
+    )!;
+    checkChangeVersionsOrRefuse(
+      state,
+      [{ entryId: "e2", version: e2.version }],
+      NO_PROPERTY_PLUGINS,
+    );
+    const marked = markTimesheetEntriesCommitted(state, ["e2"], () => 99);
+    expect(
+      marked.timesheetEntries.find((item) => item._id === "e2")!.commit,
+    ).toMatchObject({ local: true });
+
+    expect(
+      getWeekChangesForAgent(marked, allChecked).changes.map(
+        (change) => change.entryId,
+      ),
+    ).toEqual(["gone"]);
+    const status = getWeekStatusForAgent(marked, {
+      weekDates: WEEK,
+      today: "2026-10-16",
+      propertyPlugins: NO_PROPERTY_PLUGINS,
+    });
+    expect(status.committedEntries.map((item) => item.entryId)).not.toContain(
+      "e2",
+    );
+    expect(
+      isTimesheetEntryCommitted(
+        marked.timesheetEntries.find((item) => item._id === "e2")!,
+      ),
+    ).toBe(false);
   });
 
   it("shows an entry moved to the next week in both weeks, with one external id", () => {

@@ -3,6 +3,7 @@ import {
   RiPencilLine as UpdatedIcon,
   RiSubtractLine as DeletedIcon,
 } from "@remixicon/react";
+import { DisabledReason } from "@/components/disabled-reason";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Chip } from "@/components/ui/chip";
 import { Value } from "@/components/ui/value";
@@ -160,14 +161,19 @@ function CommitChangeRow({
         (!checked || waiting) && "is-excluded",
       )}
     >
-      <Checkbox
-        checked={checked && !waiting}
-        disabled={waiting}
-        title={waiting ? WAITING_REASON : undefined}
-        aria-label={`Include ${label.toLowerCase()} change: ${title}`}
-        aria-description={waiting ? WAITING_REASON : undefined}
-        onCheckedChange={(next) => onCheckedChange(next)}
-      />
+      {/* A disabled checkbox takes no focus, so the wrapper says why. */}
+      <DisabledReason
+        label={`Include ${label.toLowerCase()} change: ${title}`}
+        reason={waiting ? WAITING_REASON : undefined}
+        className="inline-flex"
+      >
+        <Checkbox
+          checked={checked && !waiting}
+          disabled={waiting}
+          aria-label={`Include ${label.toLowerCase()} change: ${title}`}
+          onCheckedChange={(next) => onCheckedChange(next)}
+        />
+      </DisabledReason>
       <Icon role="img" aria-label={label} className="commit-change-symbol" />
       <ChangeValue
         className="commit-change-day"

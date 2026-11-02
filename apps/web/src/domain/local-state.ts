@@ -269,6 +269,11 @@ export interface LocalTimesheetEntryCommit {
    * entry shows as updated until the next commit saves a fresh copy.
    */
   stale?: true;
+  /**
+   * The commit acknowledged local time (#481): the entry was on a Local only
+   * task or project, so the external timesheet holds nothing for this copy.
+   */
+  local?: true;
 }
 
 /**

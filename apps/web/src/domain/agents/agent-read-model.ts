@@ -495,14 +495,15 @@ export function getWeekStatusForAgent(
   },
 ): DataToolOutput<"get_week_status"> {
   const week = new Set(weekDates);
-  // The committed copies of the week: saved entries, then deleted ones.
+  // The committed copies of the week: saved entries, then deleted ones. A
+  // copy of local time holds nothing in the external timesheet.
   const committed = [
     ...state.timesheetEntries.flatMap((entry) =>
       entry.commit ? [{ entryId: entry._id, commit: entry.commit }] : [],
     ),
     ...state.timesheetTombstones,
   ]
-    .filter(({ commit }) => week.has(commit.localDate))
+    .filter(({ commit }) => week.has(commit.localDate) && !commit.local)
     .sort((left, right) =>
       left.commit.localDate.localeCompare(right.commit.localDate),
     );

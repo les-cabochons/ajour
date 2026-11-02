@@ -68,12 +68,16 @@ export function toCommitValues(
   };
 }
 
-/** The copy a commit saves: the entry's values as they are now. */
+/**
+ * The copy a commit saves: the entry's values as they are now. `local`
+ * marks a copy of local time, which the external timesheet doesn't hold.
+ */
 export function toCommittedCopy(
   entry: LocalTimesheetEntry,
   at: number,
+  local = false,
 ): LocalTimesheetEntryCommit {
-  return { at, ...toCommitValues(entry) };
+  return { at, ...toCommitValues(entry), ...(local ? { local: true } : {}) };
 }
 
 /** The fields where two sets of values differ. Notes compare trimmed. */
@@ -112,36 +116,46 @@ export function getTimesheetEntryChange(
       };
 }
 
-/** True when the external timesheet holds the entry as it is now. */
+/**
+ * True when the external timesheet holds the entry as it is now. A copy of
+ * local time holds nothing there, so its entry is never committed.
+ */
 export function isTimesheetEntryCommitted(entry: LocalTimesheetEntry) {
   return (
-    entry.commit !== undefined && getTimesheetEntryChange(entry) === undefined
+    entry.commit !== undefined &&
+    !entry.commit.local &&
+    getTimesheetEntryChange(entry) === undefined
   );
 }
 
 /**
  * The change as the timesheet tool sees it, once local time is left out
- * (#481). A change whose sides are both on local tasks is undefined: nothing
+ * (#481). The current side's locality comes from what the task commits as
+ * now; the committed side's from its copy, since the tool holds what was
+ * committed then. A change whose sides are both local is undefined: nothing
  * goes. An entry moved from a sent task to a local one is deleted from the
  * tool, and one moved from a local task to a sent one is added. A change
  * whose entry is now on a Not known yet task is marked `waiting`, so nobody
- * commits it under a temporary name.
+ * commits it under a temporary name. A committed entry left unchanged keeps
+ * its external entry when its task becomes local, as with a remapped task.
  */
 export function applyCommitTarget(
   change: TimesheetChange,
   projects: readonly LocalProject[],
 ): TimesheetChange | undefined {
-  const target = (values: TimesheetCommitValues) =>
-    findCommitTarget(projects, values.projectId, values.taskId);
   if (change.kind === "deleted") {
-    return target(change.committed) === "local" ? undefined : change;
+    return change.committed.local ? undefined : change;
   }
-  const now = target(change.current);
+  const now = findCommitTarget(
+    projects,
+    change.current.projectId,
+    change.current.taskId,
+  );
   if (change.kind === "added") {
     if (now === "local") return undefined;
     return now === "waiting" ? { ...change, waiting: true } : change;
   }
-  const before = target(change.committed);
+  const before = change.committed.local ? "local" : "sent";
   if (now === "local") {
     return before === "local"
       ? undefined
@@ -194,11 +208,18 @@ export function listWeekChanges({
     const entryChange = getTimesheetEntryChange(entry);
     const change = entryChange && applyCommitTarget(entryChange, projects);
     if (!change) continue;
-    const day = week.has(entry.localDate)
-      ? entry.localDate
-      : change.kind === "updated" && week.has(change.committed.localDate)
-        ? change.committed.localDate
-        : undefined;
+    // A deletion from the tool, such as an entry moved to a local task,
+    // belongs to the week the tool holds it in.
+    const day =
+      change.kind === "deleted"
+        ? week.has(change.committed.localDate)
+          ? change.committed.localDate
+          : undefined
+        : week.has(entry.localDate)
+          ? entry.localDate
+          : change.kind === "updated" && week.has(change.committed.localDate)
+            ? change.committed.localDate
+            : undefined;
     if (day) changes.push({ day, change });
   }
   for (const tombstone of tombstones) {
@@ -286,6 +307,7 @@ export function normalizeTimesheetEntryCommit(
     note: optionalString(record.note),
     durationMs: record.durationMs,
     ...(record.stale === true ? { stale: true as const } : {}),
+    ...(record.local === true ? { local: true as const } : {}),
   };
 }
 

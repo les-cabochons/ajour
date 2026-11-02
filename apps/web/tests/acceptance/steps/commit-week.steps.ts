@@ -524,6 +524,12 @@ Then(
     await expect(row.getByRole("checkbox")).toBeDisabled();
     await expect(row.getByRole("checkbox")).not.toBeChecked();
     await expect(row.getByText("Not known yet")).toBeVisible();
+    // The reason is reachable from the keyboard, on the focusable wrapper.
+    await expect(
+      row.getByLabel(
+        /: The task is Not known yet\. Choose what it commits as to include this change\.$/,
+      ),
+    ).toHaveAttribute("tabindex", "0");
   },
 );
 
