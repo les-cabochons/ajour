@@ -76,4 +76,10 @@ Choose **Import tasks…** in the project's properties. Ajour reads the file wit
 - With **Ajour default**, it reads task names from column C of the first worksheet, then tells you how many tasks it imported and skipped.
 - With a schema plugin, such as [Workday](/plugins/workday), the plugin reads the file. Ajour adds the new tasks and updates the others by name, then tells you how many. A file for another project changes nothing.
 
+### Tasks that were Not known yet
+
+A file that names a task you marked **Not known yet** makes it commit as its own name.
+
+When the file adds tasks and the project still has **Not known yet** tasks it doesn't name, Ajour asks first, such as **1 task is waiting for its Workday task**. For each task, pick the new task it was waiting for, **Still waiting**, or **Local only**. Ajour suggests a new task with a word in common. Press **Import**: a picked task takes the new name, so its time, backlog items and shortcut stay on it, and no twin is added. **Cancel** imports nothing.
+
 To import whole projects with their tasks, see [Import and export](/projects/import-export).
