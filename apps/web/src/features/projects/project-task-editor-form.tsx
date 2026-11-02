@@ -195,6 +195,7 @@ export function ProjectTaskEditorForm({
           commitsAsError={editor.commitsAsError}
           projectLocalOnly={projectLocalOnly}
           project={project}
+          editorSession={taskId ?? "new"}
           onChange={onFieldsChange}
         />
         {trackedMs !== undefined ? (

@@ -1,4 +1,4 @@
-import { useId, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import {
   Field,
   FieldDescription,
@@ -64,6 +64,7 @@ export function TaskPropertyFields({
   commitsAsError,
   projectLocalOnly = false,
   project,
+  editorSession,
   onChange,
 }: {
   plugins: TaskPropertyPlugin[];
@@ -81,12 +82,35 @@ export function TaskPropertyFields({
   projectLocalOnly?: boolean;
   /** The task's project, where Another task… creates a task it lacks. */
   project?: Pick<LocalProject, "_id" | "tasks" | "team">;
+  /** The task the editor edits, or "new", so an Undo never reaches another task's draft. */
+  editorSession?: string;
   onChange: (patch: Partial<TaskPropertyPatch>) => void;
 }) {
   const idPrefix = useId();
   // The draft now, for the Undo of a task created from Another task….
-  const latest = useRef({ taskName, pluginProperties, commitAs, onChange });
-  latest.current = { taskName, pluginProperties, commitAs, onChange };
+  const latest = useRef({
+    taskName,
+    pluginProperties,
+    commitAs,
+    onChange,
+    editorSession,
+  });
+  latest.current = {
+    taskName,
+    pluginProperties,
+    commitAs,
+    onChange,
+    editorSession,
+  };
+  // The Undo of a created task may come after the editor closed or moved to
+  // another task: then it must not touch the open draft.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   return plugins.map((plugin) => {
     const commitsAsField = getTaskNameField(plugin);
     return (
@@ -159,6 +183,7 @@ export function TaskPropertyFields({
                * back while the draft still maps to the created task.
                */
               const createTarget = (projectId: string, text: string) => {
+                const createdInSession = editorSession;
                 let createdName = "";
                 void createTaskFromPicker({
                   projectId,
@@ -173,6 +198,12 @@ export function TaskPropertyFields({
                   },
                   onUndone: () => {
                     const now = latest.current;
+                    if (
+                      !mounted.current ||
+                      now.editorSession !== createdInSession
+                    ) {
+                      return;
+                    }
                     const draft = {
                       name: now.taskName.trim(),
                       pluginProperties: now.pluginProperties,

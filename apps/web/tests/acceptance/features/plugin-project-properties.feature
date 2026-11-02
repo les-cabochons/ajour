@@ -57,3 +57,22 @@ Feature: Properties that plugins add to projects and tasks
     And I map task "111 000" to a new Workday task "07 Run" and save
     Then task "111 000" shows the Workday task "07 Run"
     And task "07 Run" is in the project's task list
+
+  Scenario: Undo of a created Workday task refuses once the mapping is saved
+    Given I have projects with searchable tasks
+    And the Workday (agent) plugin adds task properties
+    When I open project "aaa xyz"
+    And I map task "111 000" to a new Workday task "07 Run" and save
+    And I press Undo on the toast
+    Then a toast says "Can't undo. 07 Run is in use now. Archive it instead."
+    And task "07 Run" is in the project's task list
+
+  Scenario: Undo of a created Workday task leaves another task's draft alone
+    Given I have projects with searchable tasks
+    And the Workday (agent) plugin adds task properties
+    When I open project "aaa xyz"
+    And I map task "111 000" to a new Workday task "07 Run" and cancel
+    And I open task "222 000" in the task editor
+    And I press Undo on the toast
+    Then the open task editor has Commits as "Its own name"
+    And task "07 Run" is not in the project's task list
