@@ -22,6 +22,23 @@ Click **Leave a comment…** at the bottom of the thread. The field stays at the
 - If sending fails, the text stays, with the reason, so you can send it again.
 - Near the tool's length limit, a count shows how many characters you used.
 
+## Comment, then settle or snooze
+
+Most comments end your turn on an item. The button can post the comment and then settle or snooze the item, and its label says which. The arrow next to it lists the three choices.
+
+| Choice                  | Key                                        | What happens                                                  |
+| ----------------------- | ------------------------------------------ | ------------------------------------------------------------- |
+| **Comment and settle**  | <kbd>⇧</kbd> <kbd>⌘</kbd> <kbd>Enter</kbd> | Settles the item and posts the comment with it.               |
+| **Comment and snooze…** | <kbd>⌥</kbd> <kbd>⌘</kbd> <kbd>Enter</kbd> | Asks until when, then snoozes the item and posts the comment. |
+| **Comment**             | None of its own                            | Posts the comment and leaves the item as it is.               |
+
+- <kbd>⌘</kbd> <kbd>Enter</kbd> runs what the button says: the last choice you used, saved on this device for every item. Until you pick another one, it is **Comment**.
+- While you hold <kbd>⌘</kbd>, the button shows what <kbd>Enter</kbd> would do with the other keys you hold.
+- On Windows, use <kbd>Ctrl</kbd> for <kbd>⌘</kbd> and <kbd>Alt</kbd> for <kbd>⌥</kbd>.
+- Settle follows the item's settle rule. When the rule asks, the button reads **Comment and settle…** and opens the [settle dialog](/backlog/settle-and-snooze#settle-an-item) with your comment in it.
+- The comment waits for the Undo toast to close, then goes to the tool. **Undo** takes back the settle or snooze and keeps your text as the draft. **Cancel** in the settle dialog or <kbd>Esc</kbd> in the snooze picker posts nothing.
+- A settled item can't be snoozed, and an archived one can't be settled or snoozed, so those choices are greyed out with the reason.
+
 ## Mention someone
 
 When the tool supports mentions, type **@** to open the people picker. A bare **@** lists the people the tool suggests, such as the people on the item. Type a name to search, first and last name included. Each person shows with their name and email.
@@ -49,7 +66,7 @@ A comment's reactions show under it with their counts. Click one to add or remov
 
 ## Comments and settled items
 
-- When you settle an item, the settle dialog can post a comment along with the change. See [Settle and snooze](/backlog/settle-and-snooze#settle-an-item).
+- When you settle an item, the settle dialog can post a comment along with the change. See [Settle and snooze](/backlog/settle-and-snooze#settle-an-item). The comment field can do the same, see [Comment, then settle or snooze](#comment-then-settle-or-snooze).
 - When someone else comments on a settled item, it comes back to your plate. See [Unsettle](/backlog/settle-and-snooze#unsettle).
 
 Agents can read and write comments only where you allow it. See [Agents](/app/agents#comments).

@@ -966,6 +966,26 @@ Given(
   },
 );
 
+const settleDialog = (page: Page) =>
+  page.getByRole("dialog", { name: "Settle", exact: true });
+
+/** Picks Waiting in the open settle dialog and settles the parent alone. */
+async function settleInWaiting(page: Page) {
+  const dialog = settleDialog(page);
+  await dialog.getByRole("button", { name: "Settle", exact: true }).click();
+  // The parent has an open subitem; it stays on the list.
+  await page
+    .getByRole("dialog", { name: /^Also settle/ })
+    .getByRole("button", { name: "Only this item" })
+    .click();
+  await expect(dialog).toHaveCount(0);
+}
+
+async function pickWaiting(page: Page) {
+  await settleDialog(page).getByLabel("State", { exact: true }).click();
+  await page.getByRole("option", { name: "Waiting", exact: true }).click();
+}
+
 When(
   "I settle it in Waiting with the comment {string}",
   async ({ page }, text: string) => {
@@ -973,22 +993,140 @@ When(
       .locator(".ajour-page-header-slot")
       .getByRole("button", { name: "Settle", exact: true })
       .click();
-    const dialog = page.getByRole("dialog", { name: "Settle", exact: true });
-    await dialog.getByLabel("State", { exact: true }).click();
-    await page.getByRole("option", { name: "Waiting", exact: true }).click();
-    const editor = dialog.getByRole("textbox", { name: "Comment" });
+    await pickWaiting(page);
+    const editor = settleDialog(page).getByRole("textbox", { name: "Comment" });
     await editor.click();
     await expect(editor).toBeFocused();
     await page.keyboard.type(text);
-    await dialog.getByRole("button", { name: "Settle", exact: true }).click();
-    // The parent has an open subitem; it stays on the list.
-    await page
-      .getByRole("dialog", { name: /^Also settle/ })
-      .getByRole("button", { name: "Only this item" })
-      .click();
-    await expect(dialog).toHaveCount(0);
+    await settleInWaiting(page);
   },
 );
+
+const newComment = (page: Page) =>
+  commentsRegion(page).getByRole("textbox", { name: "New comment" });
+
+When("I write {string} in a new comment", async ({ page }, text: string) => {
+  await commentsRegion(page)
+    .getByRole("button", { name: "Leave a comment…" })
+    .click();
+  await newComment(page).fill(text);
+});
+
+const submitKeys: Record<string, string> = {
+  "Mod+Enter": "ControlOrMeta+Enter",
+  "Shift+Mod+Enter": "ControlOrMeta+Shift+Enter",
+  "Alt+Mod+Enter": "ControlOrMeta+Alt+Enter",
+};
+
+When("I press {word} in the comment", async ({ page }, keys: string) => {
+  const chord = submitKeys[keys];
+  if (!chord) throw new Error(`Unknown keys: ${keys}`);
+  await expect(newComment(page)).toBeFocused();
+  await page.keyboard.press(chord);
+});
+
+Then(
+  "holding Mod and Shift shows {string} on the comment button",
+  async ({ page }, label: string) => {
+    // The app's ⌘/Ctrl, as `getShortcutPlatform` reads it.
+    const isMac = await page.evaluate(() =>
+      /Mac|iPhone|iPad/.test(navigator.userAgent),
+    );
+    const mod = isMac ? "Meta" : "Control";
+    const button = (name: string) =>
+      commentsRegion(page).getByRole("button", { name, exact: true });
+    await expect(newComment(page)).toBeFocused();
+    await page.keyboard.down(mod);
+    await page.keyboard.down("Shift");
+    try {
+      await expect(button(label)).toBeVisible();
+    } finally {
+      await page.keyboard.up("Shift");
+      await page.keyboard.up(mod);
+    }
+    // Let go, it reads the saved outcome again.
+    await expect(button("Comment")).toBeVisible();
+  },
+);
+
+Then(
+  "the settle dialog starts with the comment {string}",
+  async ({ page }, text: string) => {
+    await expect(
+      settleDialog(page).getByRole("textbox", { name: "Comment" }),
+    ).toHaveText(text);
+  },
+);
+
+When("I settle it in Waiting from that dialog", async ({ page }) => {
+  await pickWaiting(page);
+  await settleInWaiting(page);
+});
+
+const snoozePicker = (page: Page) =>
+  page.getByRole("dialog", { name: "Snooze until" });
+
+When("I close the snooze picker", async ({ page }) => {
+  await expect(snoozePicker(page)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(snoozePicker(page)).toHaveCount(0);
+});
+
+When("I snooze it until tomorrow", async ({ page }) => {
+  await snoozePicker(page)
+    .getByRole("button", { name: /^Tomorrow/ })
+    .click();
+  await expect(snoozePicker(page)).toHaveCount(0);
+});
+
+Then(
+  "the editor still holds {string} and nothing went to the source",
+  async ({ page }, text: string) => {
+    await expect(newComment(page)).toHaveText(text);
+    expect(
+      await page.evaluate(() => sessionStorage.getItem("source-writes")),
+    ).toBeNull();
+  },
+);
+
+When(
+  "I pick {string} from the comment button's menu",
+  async ({ page }, label: string) => {
+    await commentsRegion(page)
+      .getByRole("button", { name: "Other ways to comment" })
+      .click();
+    await page.getByRole("menuitem", { name: label, exact: true }).click();
+  },
+);
+
+Then("the toast says {string}", async ({ page }, text: string) => {
+  await expect(page.getByText(text, { exact: false }).first()).toBeVisible();
+});
+
+Then(
+  "the source got only the comment {string}",
+  async ({ page }, text: string) => {
+    await expect
+      .poll(() => page.evaluate(() => sessionStorage.getItem("source-writes")))
+      .toBe(JSON.stringify([`comment:${text}`]));
+  },
+);
+
+When("I undo the snooze", async ({ page }) => {
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+});
+
+When("I open the comment field", async ({ page }) => {
+  await commentsRegion(page)
+    .getByRole("button", { name: /^Draft: / })
+    .click();
+});
+
+Then("the comment button reads {string}", async ({ page }, label: string) => {
+  await expect(
+    commentsRegion(page).getByRole("button", { name: label, exact: true }),
+  ).toBeVisible();
+});
 
 When("I undo the settle", async ({ page }) => {
   await page.getByRole("button", { name: "Undo", exact: true }).click();

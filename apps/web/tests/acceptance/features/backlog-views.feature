@@ -765,6 +765,48 @@ Feature: Backlog list and board views
     And I archive it from its properties card
     Then no comment went to the source and the comment field shows the draft "Waiting on the client"
 
+  Scenario: Comment and settle from the comment editor
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin settles items and records what it writes
+    When I open the Backlog parent page
+    And I write "Waiting on the client" in a new comment
+    Then holding Mod and Shift shows "Comment and settle…" on the comment button
+    When I press Shift+Mod+Enter in the comment
+    Then the settle dialog starts with the comment "Waiting on the client"
+    When I settle it in Waiting from that dialog
+    And the Undo toast closes on its own
+    Then the source got the settle, then the comment "Waiting on the client"
+    And my new comment "Waiting on the client" shows last in the thread
+
+  Scenario: Comment and snooze from the comment button's menu
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin settles items and records what it writes
+    When I open the Backlog parent page
+    And I write "Back tomorrow" in a new comment
+    And I press Alt+Mod+Enter in the comment
+    And I close the snooze picker
+    Then the editor still holds "Back tomorrow" and nothing went to the source
+    When I pick "Comment and snooze…" from the comment button's menu
+    And I snooze it until tomorrow
+    Then the toast says "Commented and snoozed until tomorrow"
+    When the Undo toast closes on its own
+    Then the source got only the comment "Back tomorrow"
+
+  Scenario: Undoing a comment and snooze keeps the comment, and the button remembers the snooze
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin settles items and records what it writes
+    When I open the Backlog parent page
+    And I write "Back tomorrow" in a new comment
+    And I press Alt+Mod+Enter in the comment
+    And I snooze it until tomorrow
+    And I undo the snooze
+    Then nothing went to the source and the comment field shows the draft "Back tomorrow"
+    When I open the comment field
+    Then the comment button reads "Comment and snooze…"
+
   Scenario: Mention someone in a comment
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit
