@@ -24,12 +24,17 @@ export type HostedBacklogItemActionId = Extract<
  * subitem need an editor, so `onHosted` runs them. Callers check that the
  * action is enabled first. `askToSettle`, from Shift+E or Shift-click, opens
  * the settle dialog even when a settle rule applies a fixed change.
+ * `onSettledOrSnoozed` runs once Settle or Snooze… is made, after its dialog
+ * or picker, and never when they close without it.
  */
 export function runBacklogItemAction(
   workItem: LocalWorkItem,
   actionId: BacklogItemActionId,
   onHosted: (actionId: HostedBacklogItemActionId) => void,
-  { askToSettle = false }: { askToSettle?: boolean } = {},
+  {
+    askToSettle = false,
+    onSettledOrSnoozed,
+  }: { askToSettle?: boolean; onSettledOrSnoozed?: () => void } = {},
 ) {
   return withEventAttribution({ surface: "button" }, () => {
     switch (actionId) {
@@ -61,7 +66,7 @@ export function runBacklogItemAction(
         onHosted(actionId);
         return;
       case "snooze":
-        requestSnooze(workItem._id);
+        requestSnooze(workItem._id, { onSnoozed: onSettledOrSnoozed });
         return;
       case "unsnooze":
         localStore.unsnoozeWorkItem(workItem._id);
@@ -73,7 +78,10 @@ export function runBacklogItemAction(
         localStore.unpinWorkItem(workItem._id);
         return;
       case "settle":
-        settleBacklogItem(workItem, { ask: askToSettle });
+        settleBacklogItem(workItem, {
+          ask: askToSettle,
+          onSettled: onSettledOrSnoozed,
+        });
         return;
       case "unsettle":
         localStore.unsettleWorkItem(workItem._id);

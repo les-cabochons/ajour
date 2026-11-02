@@ -742,9 +742,11 @@ Feature: Backlog list and board views
     And its plugin settles items and records what it writes
     When I open the Backlog parent page
     And I settle it in Waiting with the comment "Waiting on the client"
-    And the Undo toast closes on its own
+    Then the item page shows "Backlog subitem"
+    When the Undo toast closes on its own
     Then the source got the settle, then the comment "Waiting on the client"
-    And my new comment "Waiting on the client" shows last in the thread
+    When I open the Backlog parent page
+    Then my new comment "Waiting on the client" shows last in the thread
 
   Scenario: Undoing a settle keeps its comment as a draft
     Given the Backlog parent is synced
@@ -753,6 +755,7 @@ Feature: Backlog list and board views
     When I open the Backlog parent page
     And I settle it in Waiting with the comment "Waiting on the client"
     And I undo the settle
+    And I open the Backlog parent page
     Then nothing went to the source and the comment field shows the draft "Waiting on the client"
 
   Scenario: A settle comment stays a draft when its settle ends before it goes
@@ -761,6 +764,7 @@ Feature: Backlog list and board views
     And its plugin settles items and records what it writes
     When I open the Backlog parent page
     And I settle it in Waiting with the comment "Waiting on the client"
+    And I open the Backlog parent page
     And I unsettle it from its page header
     And I archive it from its properties card
     Then no comment went to the source and the comment field shows the draft "Waiting on the client"
@@ -775,9 +779,11 @@ Feature: Backlog list and board views
     When I press Shift+Mod+Enter in the comment
     Then the settle dialog starts with the comment "Waiting on the client"
     When I settle it in Waiting from that dialog
-    And the Undo toast closes on its own
+    Then the item page shows "Backlog subitem"
+    When the Undo toast closes on its own
     Then the source got the settle, then the comment "Waiting on the client"
-    And my new comment "Waiting on the client" shows last in the thread
+    When I open the Backlog parent page
+    Then my new comment "Waiting on the client" shows last in the thread
 
   Scenario: Comment and snooze from the comment button's menu
     Given the Backlog parent is synced
@@ -791,6 +797,7 @@ Feature: Backlog list and board views
     When I pick "Comment and snooze…" from the comment button's menu
     And I snooze it until tomorrow
     Then the toast says "Commented and snoozed until tomorrow"
+    And the item page shows "Backlog subitem"
     When the Undo toast closes on its own
     Then the source got only the comment "Back tomorrow"
 
@@ -803,9 +810,37 @@ Feature: Backlog list and board views
     And I press Alt+Mod+Enter in the comment
     And I snooze it until tomorrow
     And I undo the snooze
+    And I open the Backlog parent page
     Then nothing went to the source and the comment field shows the draft "Back tomorrow"
     When I open the comment field
     Then the comment button reads "Comment and snooze…"
+
+  Scenario: Settling the open item opens the next row, and Undo stays there
+    When I open the Backlog parent page
+    And I settle the open item from its page header with its subitems
+    Then the item page shows "Other backlog item"
+    When I undo the settle
+    Then the item page shows "Other backlog item"
+    And the sidebar lists "Backlog parent" again
+
+  Scenario: Snoozing the last row with B opens the row before it
+    When I open "Other backlog item" from the sidebar
+    And I press B on the item page
+    And I snooze it until tomorrow
+    Then the item page shows "Backlog subitem"
+
+  Scenario: Cancel in the settle dialog stays on the item
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin settles items and records what it writes
+    When I open the Backlog parent page
+    And I open the settle dialog from its page header and cancel it
+    Then the item page shows "Backlog parent"
+
+  Scenario: Settling another item from the sidebar stays on the open item
+    When I open the Backlog parent page
+    And I settle the other item from its sidebar row
+    Then the item page shows "Backlog parent"
 
   Scenario: Mention someone in a comment
     Given the Backlog parent is synced

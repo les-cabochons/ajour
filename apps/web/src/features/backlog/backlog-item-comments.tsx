@@ -199,9 +199,16 @@ export function useCommentSource(
 export function BacklogItemComments({
   itemId,
   source,
+  prepareOpenNext,
 }: {
   itemId: string;
   source: CommentSource;
+  /**
+   * Called as the comment editor starts a settle or a snooze; what it returns
+   * runs once the item is settled or snoozed, as the item page opening the
+   * next item (#488).
+   */
+  prepareOpenNext?: () => () => void;
 }) {
   const key = commentThreadKey(source);
   const [thread, setThread] = useState<Thread>(() => {
@@ -536,6 +543,7 @@ export function BacklogItemComments({
           itemId={itemId}
           source={source}
           onPosted={appendComment}
+          prepareOpenNext={prepareOpenNext}
         />
       ) : null}
     </section>
@@ -556,10 +564,12 @@ function CommentComposer({
   itemId,
   source,
   onPosted,
+  prepareOpenNext,
 }: {
   itemId: string;
   source: CommentSource;
   onPosted: (comment: BacklogComment) => void;
+  prepareOpenNext?: () => () => void;
 }) {
   const [text, setText] = useState(() => getCommentDraft(itemId) ?? "");
   const [open, setOpen] = useState(false);
@@ -671,19 +681,21 @@ function CommentComposer({
       void send(value);
       return;
     }
+    const openNext = prepareOpenNext?.();
     // A comment that couldn't go, as when the item's comments went away
     // meanwhile, stays as the draft.
     const done = ({ commentQueued }: { commentQueued: boolean }) => {
       remember(outcome);
       if (commentQueued) {
         clearSent(value);
-        return;
+      } else {
+        showErrorToast({
+          title: "Your comment wasn't posted",
+          description:
+            "The item's comments aren't available now. It's kept as a draft.",
+        });
       }
-      showErrorToast({
-        title: "Your comment wasn't posted",
-        description:
-          "The item's comments aren't available now. It's kept as a draft.",
-      });
+      openNext?.();
     };
     if (outcome === "settle" && workItem) {
       settleBacklogItem(workItem, { comment: body, onSettled: done });
