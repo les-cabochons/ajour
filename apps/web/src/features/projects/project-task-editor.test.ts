@@ -82,6 +82,7 @@ describe("project task editor", () => {
       adjustment: "soon",
       pinnedSlot: undefined,
       pluginProperties: undefined,
+      commitAs: undefined,
     });
 
     expect(editor).toMatchObject({
@@ -91,6 +92,17 @@ describe("project task editor", () => {
       budgetError: "Enter a valid non-negative duration.",
       adjustmentError: "Enter a valid signed duration.",
     });
+  });
+
+  it("saves a Commits as change of a saved task", () => {
+    const original = { name: "Temp migration" };
+    const fields = {
+      ...createProjectTaskEditorFields(original),
+      commitAs: "waiting" as const,
+    };
+    const editor = evaluateProjectTaskEditor(fields, original);
+    expect(editor.hasChanges).toBe(true);
+    expect(editor.values?.commitAs).toBe("waiting");
   });
 
   it("disables Save on a saved task until something changes", () => {

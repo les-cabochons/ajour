@@ -74,6 +74,8 @@ When(
   async ({ page }, task: string, workdayTask: string) => {
     await page.getByText(task, { exact: true }).click();
     const editor = page.getByRole("complementary", { name: "Task editor" });
+    await editor.getByRole("combobox", { name: "Commits as" }).click();
+    await page.getByRole("option", { name: "Another task…" }).click();
     await editor.getByRole("combobox", { name: "Workday task" }).click();
     await page.getByRole("option", { name: workdayTask, exact: true }).click();
     await editor.getByRole("button", { name: "Save", exact: true }).click();
@@ -109,6 +111,74 @@ Then(
     expect(saved).toEqual({ "workday-agent": { task: workdayTask } });
   },
 );
+
+When(
+  "I set task {string} to commit as {string} and save",
+  async ({ page }, task: string, choice: string) => {
+    await page.getByText(task, { exact: true }).click();
+    const editor = page.getByRole("complementary", { name: "Task editor" });
+    await editor.getByRole("combobox", { name: "Commits as" }).click();
+    await page.getByRole("option", { name: choice, exact: true }).click();
+    await editor.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(editor).toBeHidden();
+  },
+);
+
+Then(
+  "task {string} shows the chip {string}",
+  async ({ page }, task: string, chip: string) => {
+    const row = page.locator("tr.project-task-row", {
+      has: page.getByText(task, { exact: true }),
+    });
+    await expect(row.getByText(chip, { exact: true })).toBeVisible();
+  },
+);
+
+Then(
+  "task {string} has no Workday task any more",
+  async ({ page }, task: string) => {
+    const row = page.locator("tr.project-task-row", {
+      has: page.getByText(task, { exact: true }),
+    });
+    await expect(row.locator(".project-task-mapping")).toHaveCount(0);
+  },
+);
+
+When(
+  "I set the project's {string} row to {string}",
+  async ({ page }, row: string, value: string) => {
+    await card(page)
+      .getByRole("combobox", { name: `${row}: commits or local only` })
+      .click();
+    await page.getByRole("option", { name: value, exact: true }).click();
+  },
+);
+
+Then(
+  "task {string} says its project is local only",
+  async ({ page }, task: string) => {
+    await page.getByText(task, { exact: true }).click();
+    const editor = page.getByRole("complementary", { name: "Task editor" });
+    await expect(
+      editor.getByText(
+        "The project is local only, so this task is never committed.",
+      ),
+    ).toBeVisible();
+    await expect(
+      editor.getByRole("combobox", { name: "Commits as" }),
+    ).toHaveCount(0);
+    await editor.getByRole("button", { name: "Cancel", exact: true }).click();
+  },
+);
+
+Then("task {string} offers Commits as", async ({ page }, task: string) => {
+  await page.getByText(task, { exact: true }).click();
+  const editor = page.getByRole("complementary", { name: "Task editor" });
+  await expect(
+    editor.getByRole("combobox", { name: "Commits as" }),
+  ).toBeVisible();
+  await editor.getByRole("button", { name: "Cancel", exact: true }).click();
+});
 
 Then("the {string} section is collapsed", async ({ page }, section: string) => {
   await expect(

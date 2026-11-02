@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { LocalProject, LocalProjectTask } from "@/domain/local-state";
 import {
+  applyCommitsAsChoice,
+  getCommitsAsChoice,
   getMappedTaskName,
   normalizePluginProperties,
   resolvePluginProperties,
@@ -203,6 +205,59 @@ describe("plugin task properties", () => {
       pluginProperties: { "workday-agent": { task: "Knowledge transfer" } },
     };
     expect(getMappedTaskName(same, workdayTask)).toBeUndefined();
+  });
+
+  it("maps nothing for a task that is Not known yet or Local only", () => {
+    const mapped = {
+      ...task,
+      pluginProperties: { "workday-agent": { task: "07 Run" } },
+    };
+    expect(
+      getMappedTaskName({ ...mapped, commitAs: "waiting" }, workdayTask),
+    ).toBeUndefined();
+    expect(
+      getMappedTaskName({ ...mapped, commitAs: "local" }, workdayTask),
+    ).toBeUndefined();
+  });
+
+  it("reads and writes the Commits as choice through the name field", () => {
+    const withNote = {
+      ...task,
+      pluginProperties: { "workday-agent": { note: "Keep" } },
+    };
+    expect(getCommitsAsChoice(withNote, workdayTask)).toBe("own");
+
+    const another = applyCommitsAsChoice(
+      withNote,
+      workdayTask,
+      "another",
+      "07 Run",
+    );
+    expect(another).toEqual({
+      commitAs: undefined,
+      pluginProperties: { "workday-agent": { note: "Keep", task: "07 Run" } },
+    });
+    expect(getCommitsAsChoice({ ...task, ...another }, workdayTask)).toBe(
+      "another",
+    );
+
+    // Not known yet and Local only clear the mapping, so one value decides.
+    const waiting = applyCommitsAsChoice(another, workdayTask, "waiting");
+    expect(waiting).toEqual({
+      commitAs: "waiting",
+      pluginProperties: { "workday-agent": { note: "Keep" } },
+    });
+    expect(getCommitsAsChoice({ ...task, ...waiting }, workdayTask)).toBe(
+      "waiting",
+    );
+    expect(applyCommitsAsChoice(another, workdayTask, "local")).toEqual({
+      commitAs: "local",
+      pluginProperties: { "workday-agent": { note: "Keep" } },
+    });
+    expect(applyCommitsAsChoice(another, workdayTask, "own")).toEqual({
+      commitAs: undefined,
+      pluginProperties: { "workday-agent": { note: "Keep" } },
+    });
   });
 
   it("maps nothing for a plugin without a field that defaults to the name", () => {

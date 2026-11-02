@@ -20,3 +20,23 @@ Feature: Properties that plugins add to projects and tasks
     And I map task "111 000" to the Workday task "222 000" and save
     Then task "111 000" shows the Workday task "222 000"
     And task "111 000" is saved with the Workday task "222 000"
+
+  Scenario: Mark a task Not known yet, then Local only
+    Given I have projects with searchable tasks
+    And the Workday (agent) plugin adds task properties
+    When I open project "aaa xyz"
+    And I map task "111 000" to the Workday task "222 000" and save
+    And I set task "111 000" to commit as "Not known yet" and save
+    Then task "111 000" shows the chip "Not known yet"
+    And task "111 000" has no Workday task any more
+    When I set task "111 000" to commit as "Local only" and save
+    Then task "111 000" shows the chip "Local"
+
+  Scenario: Make a project local only and undo it
+    Given I have projects with searchable tasks
+    And the Workday (agent) plugin adds task properties
+    When I open project "aaa xyz"
+    And I set the project's "Workday" row to "Local only"
+    Then task "111 000" says its project is local only
+    When I press Undo on the toast
+    Then task "111 000" offers Commits as

@@ -1,4 +1,8 @@
-import type { LocalProjectTask, PinnedTaskSlot } from "@/domain/local-state";
+import type {
+  LocalProjectTask,
+  PinnedTaskSlot,
+  TaskCommitAs,
+} from "@/domain/local-state";
 import {
   normalizePluginProperties,
   samePluginProperties,
@@ -26,6 +30,8 @@ export interface ProjectTaskEditorFields {
   pinnedSlot: PinnedTaskSlot | undefined;
   /** Plugin task property overrides, of every plugin, active or not. */
   pluginProperties: PluginProperties | undefined;
+  /** Not known yet or Local only. Undefined commits under a name. */
+  commitAs: TaskCommitAs | undefined;
 }
 
 /**
@@ -39,6 +45,7 @@ export interface ProjectTaskValues {
   adjustmentMs: number | undefined;
   pinnedSlot: PinnedTaskSlot | undefined;
   pluginProperties: PluginProperties | undefined;
+  commitAs: TaskCommitAs | undefined;
 }
 
 type SavedTask = Pick<
@@ -49,6 +56,7 @@ type SavedTask = Pick<
   | "adjustmentMs"
   | "pinnedSlot"
   | "pluginProperties"
+  | "commitAs"
 >;
 
 /** What a draft means right now: values to save, field errors, and whether Save is allowed. */
@@ -96,6 +104,7 @@ export function createProjectTaskEditorFields(
         : "",
     pinnedSlot: task?.pinnedSlot,
     pluginProperties: task?.pluginProperties,
+    commitAs: task?.commitAs,
   };
 }
 
@@ -152,6 +161,7 @@ export function evaluateProjectTaskEditor(
           adjustmentMs,
           pinnedSlot: fields.pinnedSlot,
           pluginProperties: normalizePluginProperties(fields.pluginProperties),
+          commitAs: fields.commitAs,
         };
   const hasChanges =
     fields.name.trim() !== seeded.name.trim() ||
@@ -159,6 +169,7 @@ export function evaluateProjectTaskEditor(
     fields.budget.trim() !== seeded.budget ||
     fields.adjustment.trim() !== seeded.adjustment ||
     fields.pinnedSlot !== seeded.pinnedSlot ||
+    fields.commitAs !== seeded.commitAs ||
     !samePluginProperties(
       normalizePluginProperties(fields.pluginProperties),
       normalizePluginProperties(seeded.pluginProperties),
