@@ -1,5 +1,12 @@
-import { useMemo, useState, type KeyboardEvent } from "react";
 import {
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
+import {
+  RiAddLine as Plus,
   RiArrowDownSLine as ChevronDown,
   RiArrowLeftLine as ArrowLeft,
   RiCloseCircleLine as NoProject,
@@ -22,9 +29,12 @@ import {
 import type { LocalProject } from "@/domain/local-state";
 import { getLocalProjectDisplayName } from "@/domain/local-state";
 import {
+  findProjectTaskByImportName,
   getFavorites,
   type Favorite,
 } from "@/domain/projects/project-transitions";
+import { formatTaskImportName } from "@/domain/projects/task-import";
+import { CreateTaskDialog } from "@/features/projects/create-task-dialog";
 import {
   formatLastUsed,
   getRecentTasks,
@@ -35,6 +45,10 @@ import {
   TaskMenuHoverCard,
   useTaskMenuHoverCard,
 } from "@/features/projects/project-task-picker-card";
+import {
+  createTaskFromPicker,
+  describeCreateTaskRow,
+} from "@/features/projects/task-creation";
 import {
   getProjectLabel,
   PickerMoreRow,
@@ -82,6 +96,13 @@ type PickerView =
   | { kind: "recent" };
 
 const projectsView: PickerView = { kind: "projects" };
+
+/**
+ * An empty result as plain text. cmdk's Empty shows only when no item
+ * renders, and the create and back rows are items.
+ */
+const EMPTY_MESSAGE_CLASS =
+  "px-4 py-4 text-center text-sm text-[var(--text-tertiary)]";
 
 /** How many favorites the start view shows before "N more favorites". */
 const START_VIEW_FAVORITES = 3;
@@ -181,6 +202,28 @@ export function ProjectTaskPicker({
   const hasQuery = query.trim().length > 0;
   const hasGlobalResults =
     matchingProjects.length > 0 || taskResults.matches.length > 0;
+  // Create task "07 Run" (#481): in a project's list, it creates there; in
+  // the start view, when no project has a task of that name, it asks for the
+  // project first.
+  const createInProjectLabel =
+    browsingProject && hasQuery
+      ? describeCreateTaskRow(browsingProject, query)
+      : null;
+  const createAnywhereText =
+    view.kind === "projects" &&
+    hasQuery &&
+    activeProjects.every(
+      (project) =>
+        findProjectTaskByImportName(project, query)?.status !== "active",
+    )
+      ? formatTaskImportName(query)
+      : "";
+  // The name typed before Create task "…"… opened the dialog. Null while
+  // the dialog is closed.
+  const [dialogName, setDialogName] = useState<string | null>(null);
+  // The selection when a task was created, for its Undo.
+  const latest = useRef({ projectId, taskId, onChange });
+  latest.current = { projectId, taskId, onChange };
 
   function resetNavigation() {
     setView(projectsView);
@@ -246,6 +289,39 @@ export function ProjectTaskPicker({
         onSelect={() => commitSelection(project._id, favorite.task._id)}
       />
     );
+  }
+
+  /**
+   * Creates the typed task in a project, then picks it. Undo picks the
+   * previous project and task again while the created task is still picked.
+   */
+  function createTask(nextProjectId: string, name: string) {
+    const previous = { projectId, taskId };
+    let createdId = "";
+    void createTaskFromPicker({
+      projectId: nextProjectId,
+      name,
+      onCreated: (createdTaskId) => {
+        createdId = createdTaskId;
+        commitSelection(nextProjectId, createdTaskId);
+      },
+      onUndone: () => {
+        if (latest.current.taskId === createdId) {
+          latest.current.onChange(previous);
+        }
+      },
+    });
+  }
+
+  function openCreateDialog() {
+    setDialogName(createAnywhereText);
+    // The menu closes behind the dialog and keeps its search for Cancel.
+    setIsOpen(false);
+  }
+
+  function cancelCreateDialog() {
+    setDialogName(null);
+    setIsOpen(true);
   }
 
   function commitSelection(nextProjectId: string, nextTaskId = "") {
@@ -440,7 +516,17 @@ export function ProjectTaskPicker({
                 ) : null}
 
                 {hasQuery && !hasGlobalResults ? (
-                  <CommandEmpty>No matching projects or tasks.</CommandEmpty>
+                  <p className={EMPTY_MESSAGE_CLASS}>
+                    No matching projects or tasks.
+                  </p>
+                ) : null}
+                {createAnywhereText ? (
+                  <CreateTaskRow
+                    value={`create-task-anywhere-${createAnywhereText}`}
+                    onSelect={openCreateDialog}
+                  >
+                    Create task "{createAnywhereText}"…
+                  </CreateTaskRow>
                 ) : null}
               </>
             ) : view.kind === "recent" ? (
@@ -491,6 +577,20 @@ export function ProjectTaskPicker({
               </>
             ) : browsingProject ? (
               <>
+                {/* With no match, the row comes first, so Enter creates. */}
+                {createInProjectLabel && matchingProjectTasks.length === 0 ? (
+                  <>
+                    <p className={EMPTY_MESSAGE_CLASS}>
+                      No matching tasks in this project.
+                    </p>
+                    <CreateTaskRow
+                      value={`create-task-${browsingProject._id}-${query}`}
+                      onSelect={() => createTask(browsingProject._id, query)}
+                    >
+                      {createInProjectLabel}
+                    </CreateTaskRow>
+                  </>
+                ) : null}
                 <CommandGroup heading={getProjectLabel(browsingProject)}>
                   <CommandItem
                     value="back-to-projects"
@@ -540,10 +640,18 @@ export function ProjectTaskPicker({
                       ))}
                     </CommandGroup>
                   </>
-                ) : hasQuery ? (
-                  <CommandEmpty>
+                ) : hasQuery && !createInProjectLabel ? (
+                  <p className={EMPTY_MESSAGE_CLASS}>
                     No matching tasks in this project.
-                  </CommandEmpty>
+                  </p>
+                ) : null}
+                {createInProjectLabel && matchingProjectTasks.length > 0 ? (
+                  <CreateTaskRow
+                    value={`create-task-${browsingProject._id}-${query}`}
+                    onSelect={() => createTask(browsingProject._id, query)}
+                  >
+                    {createInProjectLabel}
+                  </CreateTaskRow>
                 ) : null}
               </>
             ) : (
@@ -559,6 +667,42 @@ export function ProjectTaskPicker({
           rowGone={hoverCard.rowGone}
         />
       </PopoverContent>
+      <CreateTaskDialog
+        name={dialogName}
+        projects={projects}
+        onCancel={cancelCreateDialog}
+        onCreated={(nextProjectId, nextTaskId) => {
+          setDialogName(null);
+          commitSelection(nextProjectId, nextTaskId);
+        }}
+      />
     </Popover>
+  );
+}
+
+/** The last row of a task list that creates the typed task. */
+function CreateTaskRow({
+  value,
+  onSelect,
+  children,
+}: {
+  value: string;
+  onSelect: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <>
+      <CommandSeparator />
+      <CommandGroup>
+        <CommandItem
+          value={value}
+          className="rounded-[var(--control-radius)]"
+          onSelect={onSelect}
+        >
+          <Plus className="size-4 text-[var(--text-tertiary)]" />
+          <span className="flex-1 truncate">{children}</span>
+        </CommandItem>
+      </CommandGroup>
+    </>
   );
 }

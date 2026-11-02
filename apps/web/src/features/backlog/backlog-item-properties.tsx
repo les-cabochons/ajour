@@ -33,6 +33,11 @@ import {
   useFrontmatterFields,
 } from "@/features/backlog/frontmatter-properties";
 import { TimelogButton } from "@/features/backlog/timelog-button";
+import {
+  createTaskFromPicker,
+  describeCreateTaskRow,
+} from "@/features/projects/task-creation";
+import { localStore } from "@/lib/local-store";
 
 /** Project and task lists outgrow their narrow fields, so names fit. */
 const LONG_NAME_LIST_WIDTH = 320;
@@ -133,6 +138,24 @@ export function BacklogItemProperties({
                 { taskId: value || undefined },
                 "Task changed",
               )
+            }
+            create={
+              project
+                ? {
+                    label: (text) => describeCreateTaskRow(project, text),
+                    // The item saves at once, so one Undo takes back both.
+                    onCreate: (text) =>
+                      void createTaskFromPicker({
+                        projectId: project._id,
+                        name: text,
+                        oneUndo: true,
+                        onCreated: (taskId) =>
+                          localStore.updateWorkItemWithUndo(item._id, {
+                            taskId,
+                          }),
+                      }),
+                  }
+                : undefined
             }
           />
         </PropertyRow>

@@ -9,7 +9,10 @@ import {
   type KeyboardEvent,
 } from "react";
 import { createPortal } from "react-dom";
-import { RiArrowDownSLine as ChevronDown } from "@remixicon/react";
+import {
+  RiAddLine as Plus,
+  RiArrowDownSLine as ChevronDown,
+} from "@remixicon/react";
 import {
   Command,
   CommandEmpty,
@@ -48,7 +51,22 @@ interface SearchableSelectProps {
    * width.
    */
   popoverMinWidth?: number;
+  /**
+   * A last row that makes the typed text into a new option, such as
+   * `Create task "07 Run"`. `label` gets the typed text, trimmed, and returns
+   * the row's label, or null to show no row, such as when an option already
+   * has that name. Enter picks the row only when no option matches.
+   */
+  create?: {
+    label: (text: string) => string | null;
+    onCreate: (text: string) => void;
+  };
+  /** Focuses the field on mount, which opens the list. */
+  autoFocus?: boolean;
 }
+
+/** The value of the create row, which no real option can have. */
+const CREATE_VALUE = "\u0000create";
 
 type PopoverSide = "top" | "bottom";
 
@@ -92,6 +110,8 @@ export function SearchableSelect({
   className,
   inputClassName,
   popoverMinWidth,
+  create,
+  autoFocus,
 }: SearchableSelectProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -116,12 +136,20 @@ export function SearchableSelect({
     () => options.filter((option) => matchesOption(option, normalizedQuery)),
     [normalizedQuery, options],
   );
+  const createText = isTyping ? query.trim() : "";
+  const createLabel = createText ? (create?.label(createText) ?? null) : null;
   const visibleOptions = useMemo(
-    () =>
-      clearLabel && !normalizedQuery
-        ? [{ value: "", label: clearLabel }, ...filteredOptions]
-        : filteredOptions,
-    [clearLabel, filteredOptions, normalizedQuery],
+    () => [
+      ...(clearLabel && !normalizedQuery
+        ? [{ value: "", label: clearLabel }]
+        : []),
+      ...filteredOptions,
+      // Last, in a group of its own, so matches keep the first places.
+      ...(createLabel
+        ? [{ value: CREATE_VALUE, label: createLabel, group: CREATE_VALUE }]
+        : []),
+    ],
+    [clearLabel, createLabel, filteredOptions, normalizedQuery],
   );
   const groupedVisibleOptions = useMemo(() => {
     const groups: Array<{
@@ -302,7 +330,8 @@ export function SearchableSelect({
   }
 
   function commitSelection(nextValue: string) {
-    onChange(nextValue);
+    if (nextValue === CREATE_VALUE) create?.onCreate(createText);
+    else onChange(nextValue);
     setIsOpen(false);
     setIsTyping(false);
     setQuery("");
@@ -371,7 +400,12 @@ export function SearchableSelect({
         highlightedIndex >= 0 ? visibleOptions[highlightedIndex] : null;
       const singleFilteredOption =
         filteredOptions.length === 1 ? filteredOptions[0] : null;
-      const nextOption = highlightedOption ?? singleFilteredOption;
+      const createOption =
+        filteredOptions.length === 0 && createLabel
+          ? visibleOptions.at(-1)
+          : null;
+      const nextOption =
+        highlightedOption ?? singleFilteredOption ?? createOption;
 
       if (!nextOption) {
         return;
@@ -403,6 +437,7 @@ export function SearchableSelect({
           value={inputValue}
           placeholder={placeholder}
           disabled={disabled}
+          autoFocus={autoFocus}
           aria-label={ariaLabel}
           aria-expanded={isOpen}
           aria-controls={listboxId}
@@ -458,8 +493,18 @@ export function SearchableSelect({
             >
               {visibleOptions.length > 0 ? (
                 <CommandList>
+                  {filteredOptions.length === 0 ? (
+                    <div className="searchable-select-empty">
+                      {emptyMessage}
+                    </div>
+                  ) : null}
                   {groupedVisibleOptions.map((group) => (
-                    <CommandGroup key={group.key} heading={group.label}>
+                    <CommandGroup
+                      key={group.key}
+                      heading={
+                        group.label === CREATE_VALUE ? undefined : group.label
+                      }
+                    >
                       {group.options.map(({ option, index }) => (
                         <CommandItem
                           key={`${option.value || "empty"}-${option.label}`}
@@ -478,6 +523,7 @@ export function SearchableSelect({
                             "searchable-select-option",
                             highlightedIndex === index && "is-active",
                             option.value === "" && "is-clear",
+                            option.value === CREATE_VALUE && "is-create",
                           )}
                           onMouseEnter={() => setHighlightedIndex(index)}
                           onMouseDown={(event) => {
@@ -486,6 +532,9 @@ export function SearchableSelect({
                           }}
                           onSelect={() => commitSelection(option.value)}
                         >
+                          {option.value === CREATE_VALUE ? (
+                            <Plus aria-hidden="true" />
+                          ) : null}
                           <span>{option.label}</span>
                         </CommandItem>
                       ))}

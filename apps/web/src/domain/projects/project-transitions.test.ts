@@ -3,6 +3,7 @@ import type { LocalProject } from "@/domain/local-state";
 import {
   addProject,
   addProjectTask,
+  createOrRestoreProjectTask,
   createProject,
   findPinnedTask,
   getFavorites,
@@ -572,5 +573,81 @@ describe("favorites", () => {
       50,
       undefined,
     ]);
+  });
+});
+
+describe("creating a task from a picker", () => {
+  function acme(): LocalProject {
+    const project = createFixtureProject("acme", ["active", "archived"]);
+    project.tasks[0]!.name = "05 Build";
+    project.tasks[1]!.name = "08 Old";
+    return project;
+  }
+
+  it("uses the active task of the name, ignoring case, accents and spaces", () => {
+    const projects = [acme()];
+    const given = createOrRestoreProjectTask(
+      projects,
+      "acme",
+      { name: " 05  BUÏLD " },
+      createFactories(),
+    );
+    expect(given).toEqual({
+      projects,
+      taskId: "acme-task-1",
+      outcome: "existing",
+    });
+  });
+
+  it("restores an archived task of the name instead of adding a twin", () => {
+    const given = createOrRestoreProjectTask(
+      [acme()],
+      "acme",
+      { name: "08 old" },
+      createFactories(),
+    );
+    expect(given.outcome).toBe("restored");
+    expect(given.taskId).toBe("acme-task-2");
+    expect(given.projects[0]!.tasks).toHaveLength(2);
+    expect(given.projects[0]!.tasks[1]).toMatchObject({
+      status: "active",
+      archivedAt: undefined,
+    });
+  });
+
+  it("adds a new task with the name tidied, and what it commits as", () => {
+    const given = createOrRestoreProjectTask(
+      [acme()],
+      "acme",
+      { name: "  07   Run ", commitAs: "waiting" },
+      createFactories(),
+    );
+    expect(given.outcome).toBe("created");
+    expect(given.projects[0]!.tasks[2]).toMatchObject({
+      _id: given.taskId,
+      name: "07 Run",
+      status: "active",
+      billable: true,
+      commitAs: "waiting",
+    });
+  });
+
+  it("refuses a blank name or a missing project", () => {
+    expect(() =>
+      createOrRestoreProjectTask(
+        [acme()],
+        "acme",
+        { name: "  " },
+        createFactories(),
+      ),
+    ).toThrow("Enter a task name.");
+    expect(() =>
+      createOrRestoreProjectTask(
+        [acme()],
+        "gone",
+        { name: "x" },
+        createFactories(),
+      ),
+    ).toThrow("No project has the id gone.");
   });
 });

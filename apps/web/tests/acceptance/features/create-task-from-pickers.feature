@@ -1,0 +1,43 @@
+Feature: Create a task from a task picker
+  A task picker creates a task its project doesn't have yet, named so a
+  later import of the same task updates it.
+
+  Scenario: Create a task from a backlog item's Task property and undo it
+    Given a backlog item is on a project without the task "07 Run"
+    When I open that item's page
+    And I type "07 Run" in the item's Task property
+    Then the Task list offers "Create task \"07 Run\""
+    When I press Enter
+    Then the item's Task shows "07 Run"
+    And a toast says "Task 07 Run created"
+    When I press Undo on the toast
+    Then the item's Task shows "No task"
+    And the project has no task "07 Run"
+
+  Scenario: Restore an archived task instead of adding a twin
+    Given a backlog item is on a project without the task "07 Run"
+    When I open that item's page
+    And I type "08 old" in the item's Task property
+    Then the Task list offers "Restore task \"08 Old\""
+    When I press Enter
+    Then the item's Task shows "08 Old"
+
+  Scenario: Create a task inside a project in the time entry task menu
+    Given a backlog item is on a project without the task "07 Run"
+    When I open today's time workspace
+    And I open the new time-entry project and task picker
+    And I open "[ACME] Acme website" in the task menu
+    And I type "07 Run" in the task menu
+    And I press Enter
+    Then the picker shows "[ACME] Acme website · 07 Run"
+
+  Scenario: Create a task from the task menu's start view with a project
+    Given a backlog item is on a project without the task "07 Run"
+    When I open today's time workspace
+    And I open the new time-entry project and task picker
+    And I type "Temp migration" in the task menu
+    And I press Enter
+    Then the Create task dialog asks for a project for "Temp migration"
+    When I pick the project "Acme website" in the dialog
+    And I press "Create task"
+    Then the picker shows "[ACME] Acme website · Temp migration"

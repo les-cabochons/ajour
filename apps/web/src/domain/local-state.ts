@@ -862,6 +862,21 @@ export function asksBeforeOpeningDescriptionLinks(
   return preferences.askBeforeOpeningDescriptionLinks !== false;
 }
 
+/**
+ * Whether a time entry, the running entry or a backlog item points at the
+ * task, so removing it would leave them on a task that no longer exists.
+ */
+export function isProjectTaskInUse(
+  state: Pick<LocalAppState, "timesheetEntries" | "timers" | "workItems">,
+  taskId: string,
+): boolean {
+  return (
+    state.timesheetEntries.some((entry) => entry.taskId === taskId) ||
+    state.timers.some((timer) => timer.taskId === taskId) ||
+    state.workItems.some((item) => item.taskId === taskId)
+  );
+}
+
 export function getLocalProjectDisplayName(
   project: Pick<LocalProject, "name" | "displayName">,
 ) {

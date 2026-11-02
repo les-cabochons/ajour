@@ -13,9 +13,8 @@ import {
 } from "@/domain/local-state";
 import {
   addProject,
-  createProjectTask,
+  createOrRestoreProjectTask,
   DEFAULT_PROJECT_COLOR,
-  setProjectTaskStatus,
   updateProject,
   type ProjectFactories,
 } from "@/domain/projects/project-transitions";
@@ -224,24 +223,16 @@ function applyTimelog(
       taskId = task._id;
     } else {
       if (project.team && !options.changeSharedTasks) return state;
-      if (task) {
-        taskId = task._id;
-        projects = setProjectTaskStatus(
-          projects,
-          projectId,
-          task._id,
-          "active",
-          factories.now,
-        );
-      } else {
-        const created = createProjectTask({ name: timelog.task }, factories);
-        taskId = created._id;
-        projects = projects.map((candidate) =>
-          candidate._id === projectId
-            ? { ...candidate, tasks: [...candidate.tasks, created] }
-            : candidate,
-        );
-      }
+      // The pickers' rule: restore the archived task, or add one that a
+      // later import of the same name updates.
+      const given = createOrRestoreProjectTask(
+        projects,
+        projectId,
+        { name: timelog.task },
+        factories,
+      );
+      taskId = given.taskId;
+      projects = given.projects;
     }
   }
 
