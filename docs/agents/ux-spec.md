@@ -470,7 +470,7 @@ Decided in the 2026-10-16 grilling of the selection feature: [Entry selection ac
 - Single-subject actions apply to the focused entry only: Edit, Continue, Stop and Discard. Their keys (Enter, C, S) follow focus.
 - The running entry is skipped by every selection-wide action and stays where it is. The toast counts only what moved: "Moved 2 entries".
 - On a selection of two or more, the right-click menu of a selected entry pluralizes the selection-wide actions with the count ("Cut 3 entries", "Copy 3 entries", "Delete 3 entries", "Move 3 entries to…", "Duplicate 3 entries", "Mark 3 entries as not committed") and hides the single-subject ones.
-- Move to… and Duplicate to… open their date dialog once, titled "Move 3 entries" or "Duplicate 3 entries". Every selected entry lands on the chosen day at its end in reading order. Duplicate (D) puts each copy at the end of its own entry's day, in reading order, with "Duplicated 3 entries". Mark as not committed marks every committed entry in the selection.
+- Move to… and Duplicate to… open their date dialog once, titled "Move 3 entries" or "Duplicate 3 entries". The dialog opens on the first entry's day, selected, in its month. Every selected entry lands on the chosen day at its end in reading order. Duplicate (D) puts each copy at the end of its own entry's day, in reading order, with "Duplicated 3 entries". Mark as not committed marks every committed entry in the selection.
 - Delete goes straight through with one Undo toast naming the count. No confirmation dialog.
 
 #### Dragging a selection
