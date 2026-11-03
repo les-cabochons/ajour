@@ -43,6 +43,8 @@ The bottom of the card has **Import tasks…**, **Share with team** when a team 
 
 Plugins can add their own section to the properties card, such as **Workday** with the project's Workday name and code. Click the section title to open it. An empty row shows its default in grey.
 
+When a plugin commits tasks, such as [Workday (agent)](/plugins/workday-agent), the card has a row named after it, such as **Workday**, set to **Commits**. Choose **Local only** for a project that never goes to your timesheet tool, such as a personal one. An Undo toast follows. Its time stays in Ajour, and its tasks show no **Commits as** choice. The choice stays yours in a shared project.
+
 Click the title to rename the display name.
 
 ## Archive a project

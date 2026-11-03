@@ -1,4 +1,8 @@
-import type { LocalProjectTask, PinnedTaskSlot } from "@/domain/local-state";
+import type {
+  LocalProjectTask,
+  PinnedTaskSlot,
+  TaskCommitAs,
+} from "@/domain/local-state";
 import {
   normalizePluginProperties,
   samePluginProperties,
@@ -26,6 +30,14 @@ export interface ProjectTaskEditorFields {
   pinnedSlot: PinnedTaskSlot | undefined;
   /** Plugin task property overrides, of every plugin, active or not. */
   pluginProperties: PluginProperties | undefined;
+  /** Not known yet or Local only. Undefined commits under a name. */
+  commitAs: TaskCommitAs | undefined;
+  /**
+   * Another task… is picked in Commits as, for this plugin's name field, and
+   * waits for a task. Save stays blocked until the field has one, so the
+   * draft never saves something other than what Commits as shows.
+   */
+  choosingAnotherTask?: { pluginId: string; fieldId: string };
 }
 
 /**
@@ -39,6 +51,7 @@ export interface ProjectTaskValues {
   adjustmentMs: number | undefined;
   pinnedSlot: PinnedTaskSlot | undefined;
   pluginProperties: PluginProperties | undefined;
+  commitAs: TaskCommitAs | undefined;
 }
 
 type SavedTask = Pick<
@@ -49,6 +62,7 @@ type SavedTask = Pick<
   | "adjustmentMs"
   | "pinnedSlot"
   | "pluginProperties"
+  | "commitAs"
 >;
 
 /** What a draft means right now: values to save, field errors, and whether Save is allowed. */
@@ -60,6 +74,8 @@ export interface ProjectTaskEditorState {
   nameError: string | null;
   budgetError: string | null;
   adjustmentError: string | null;
+  /** Another task… is picked in Commits as, with no task yet. */
+  commitsAsError: string | null;
   hasChanges: boolean;
   canSave: boolean;
 }
@@ -78,6 +94,7 @@ export type ProjectTaskDraftCommit =
 const NAME_ERROR = "Enter a task name.";
 const BUDGET_ERROR = "Enter a valid non-negative duration.";
 const ADJUSTMENT_ERROR = "Enter a valid signed duration.";
+const COMMITS_AS_ERROR = "Pick the task it commits as.";
 
 /** Seeds the draft from a saved task, or blank for a new one. New tasks are billable. */
 export function createProjectTaskEditorFields(
@@ -96,6 +113,7 @@ export function createProjectTaskEditorFields(
         : "",
     pinnedSlot: task?.pinnedSlot,
     pluginProperties: task?.pluginProperties,
+    commitAs: task?.commitAs,
   };
 }
 
@@ -142,8 +160,14 @@ export function evaluateProjectTaskEditor(
   const nameError = name ? null : NAME_ERROR;
   const budgetError = budgetMs === null ? BUDGET_ERROR : null;
   const adjustmentError = adjustmentMs === null ? ADJUSTMENT_ERROR : null;
+  const choosing = fields.choosingAnotherTask;
+  const commitsAsError =
+    choosing &&
+    !fields.pluginProperties?.[choosing.pluginId]?.[choosing.fieldId]?.trim()
+      ? COMMITS_AS_ERROR
+      : null;
   const values =
-    nameError || budgetMs === null || adjustmentMs === null
+    nameError || budgetMs === null || adjustmentMs === null || commitsAsError
       ? null
       : {
           name,
@@ -152,6 +176,7 @@ export function evaluateProjectTaskEditor(
           adjustmentMs,
           pinnedSlot: fields.pinnedSlot,
           pluginProperties: normalizePluginProperties(fields.pluginProperties),
+          commitAs: fields.commitAs,
         };
   const hasChanges =
     fields.name.trim() !== seeded.name.trim() ||
@@ -159,6 +184,8 @@ export function evaluateProjectTaskEditor(
     fields.budget.trim() !== seeded.budget ||
     fields.adjustment.trim() !== seeded.adjustment ||
     fields.pinnedSlot !== seeded.pinnedSlot ||
+    fields.commitAs !== seeded.commitAs ||
+    Boolean(commitsAsError) ||
     !samePluginProperties(
       normalizePluginProperties(fields.pluginProperties),
       normalizePluginProperties(seeded.pluginProperties),
@@ -170,6 +197,7 @@ export function evaluateProjectTaskEditor(
     nameError,
     budgetError,
     adjustmentError,
+    commitsAsError,
     hasChanges,
     canSave: values !== null && (hasChanges || !original),
   };
@@ -194,6 +222,7 @@ export function commitProjectTaskDraft(
       editor.nameError ??
       editor.budgetError ??
       editor.adjustmentError ??
+      editor.commitsAsError ??
       NAME_ERROR,
   };
 }

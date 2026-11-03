@@ -59,6 +59,7 @@ Use this file as the local index for important library choices. Check official d
 - Timer hydration, single-active-timer enforcement, start/edit/cancel/save/continue transitions, elapsed duration, and continued-entry replacement: `apps/web/src/domain/time/timer-transitions.ts`
 - Imported browser review preservation, timeline materialization, dismissals, commits, and rule creation: `apps/web/src/domain/time/timeline-transitions.ts`
 - Project task budgets and consumption: `apps/web/src/domain/projects/task-budget.ts`
+- What a task commits as (sent, Not known yet, Local only), the one resolver the Commit page and agent tools read: `apps/web/src/domain/projects/commit-target.ts`
 - Project task import normalization: `apps/web/src/domain/projects/task-import.ts`
 - Project task/workbook import transitions and the canonical transfer-row contract: `apps/web/src/domain/projects/project-import.ts`
 - Format-neutral project dataset workbook adapter and built-in default shape: `apps/web/src/features/settings/settings-projects.ts`

@@ -33,6 +33,7 @@ export function ProjectTaskEditorForm({
   trackedMs,
   taskPropertyPlugins = [],
   otherTaskNames = [],
+  projectLocalOnly = false,
   onFieldsChange,
   onSave,
   onClose,
@@ -52,6 +53,8 @@ export function ProjectTaskEditorForm({
   taskPropertyPlugins?: TaskPropertyPlugin[];
   /** The names of the project's other active tasks, offered by a property that names a task. */
   otherTaskNames?: string[];
+  /** The project is Local only, so the plugin sections show no Commits as choice. */
+  projectLocalOnly?: boolean;
   onFieldsChange: (patch: Partial<ProjectTaskEditorFields>) => void;
   onSave: () => void;
   onClose: () => void;
@@ -183,7 +186,11 @@ export function ProjectTaskEditorForm({
           taskName={fields.name}
           otherTaskNames={otherTaskNames}
           pluginProperties={fields.pluginProperties}
-          onChange={(pluginProperties) => onFieldsChange({ pluginProperties })}
+          commitAs={fields.commitAs}
+          choosingAnotherTask={fields.choosingAnotherTask}
+          commitsAsError={editor.commitsAsError}
+          projectLocalOnly={projectLocalOnly}
+          onChange={onFieldsChange}
         />
         {trackedMs !== undefined ? (
           <p className="text-xs text-muted-foreground">

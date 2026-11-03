@@ -26,6 +26,11 @@ export interface LocalProject {
    * ID. A missing value means the field's default. See plugin-properties.ts.
    */
   pluginProperties?: Record<string, Record<string, string>>;
+  /**
+   * The project's time never goes to the timesheet tool, whatever its tasks
+   * say. Personal, like plugin properties. See commit-target.ts.
+   */
+  localOnly?: boolean;
   color: string;
   icon: LocalProjectIcon;
   status: "active" | "archived";
@@ -96,8 +101,19 @@ export interface LocalProjectTask {
    * Personal, like project ones. See plugin-properties.ts.
    */
   pluginProperties?: Record<string, Record<string, string>>;
+  /**
+   * What the task's time commits as when it is not its own name or the name
+   * a plugin maps it to. Personal, like plugin properties. See commit-target.ts.
+   */
+  commitAs?: TaskCommitAs;
   team?: LocalTaskTeamLink;
 }
+
+/**
+ * A task whose time does not commit under a name: `waiting` is Not known yet,
+ * a temporary task waiting for its timesheet task, and `local` is Local only.
+ */
+export type TaskCommitAs = "waiting" | "local";
 
 /** The ten pinned task slots, in keyboard order: 1 to 9, then 0. */
 export const PINNED_TASK_SLOTS = [
@@ -199,6 +215,7 @@ export interface LocalProjectTaskDraft {
   /** Only `addProjectTask` reads it, so the slot stays unique. */
   pinnedSlot?: PinnedTaskSlot;
   pluginProperties?: Record<string, Record<string, string>>;
+  commitAs?: TaskCommitAs;
 }
 
 export interface LocalTeam {

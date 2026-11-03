@@ -207,7 +207,7 @@ A plugin can add text fields to every task, such as the task your tool knows a t
 
 Fields are plain text, up to 240 characters.
 
-Ajour shows the fields in a section of the task editor, titled `section`. A field with `defaultFrom: "name"` holds the name your tool knows the task by: the user picks one of the project's other tasks, or leaves it empty to keep the task's own name. The task list then shows "→ 07 Run" after the task's name, the Commit page shows "as 07 Run", and with your plugin's names the Commit page's lines name the task that way. Other fields are a text box.
+Ajour shows the fields in a section of the task editor, titled `section`. A field with `defaultFrom: "name"` holds the name your tool knows the task by. Ajour shows it as **Commits as**: Its own name, Another task… (one of the project's other tasks, picked under it), Not known yet or Local only. The last two clear the field. Ajour keeps their time out of the Commit page and the agent tools, and a project the user made Local only gives no choice. The task list then shows "→ 07 Run" after the task's name, the Commit page shows "as 07 Run", and with your plugin's names the Commit page's lines name the task that way. Other fields are a text box.
 
 Agents read the values in `get_week_changes` and `get_week_status`, under `taskProperties.<plugin id>.<field id>`, with defaults filled in. A task that is not mapped gives its own name.
 

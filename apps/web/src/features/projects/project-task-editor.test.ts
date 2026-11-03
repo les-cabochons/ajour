@@ -82,6 +82,7 @@ describe("project task editor", () => {
       adjustment: "soon",
       pinnedSlot: undefined,
       pluginProperties: undefined,
+      commitAs: undefined,
     });
 
     expect(editor).toMatchObject({
@@ -90,6 +91,51 @@ describe("project task editor", () => {
       nameError: "Enter a task name.",
       budgetError: "Enter a valid non-negative duration.",
       adjustmentError: "Enter a valid signed duration.",
+    });
+  });
+
+  it("saves a Commits as change of a saved task", () => {
+    const original = { name: "Temp migration" };
+    const fields = {
+      ...createProjectTaskEditorFields(original),
+      commitAs: "waiting" as const,
+    };
+    const editor = evaluateProjectTaskEditor(fields, original);
+    expect(editor.hasChanges).toBe(true);
+    expect(editor.values?.commitAs).toBe("waiting");
+  });
+
+  it("blocks Save and a task switch while Another task… waits for a task", () => {
+    const original = { name: "Temp migration", commitAs: "waiting" as const };
+    const choosing = {
+      ...createProjectTaskEditorFields(original),
+      choosingAnotherTask: { pluginId: "workday-agent", fieldId: "task" },
+    };
+    const editor = evaluateProjectTaskEditor(choosing, original);
+    expect(editor).toMatchObject({
+      values: null,
+      canSave: false,
+      commitsAsError: "Pick the task it commits as.",
+    });
+    expect(commitProjectTaskDraft(editor, "switch")).toEqual({
+      kind: "invalid",
+      error: "Pick the task it commits as.",
+    });
+
+    // Picking a task clears the wait; the draft saves the mapping.
+    const picked = evaluateProjectTaskEditor(
+      {
+        ...choosing,
+        commitAs: undefined,
+        pluginProperties: { "workday-agent": { task: "07 Run" } },
+        choosingAnotherTask: undefined,
+      },
+      original,
+    );
+    expect(picked.canSave).toBe(true);
+    expect(picked.values).toMatchObject({
+      commitAs: undefined,
+      pluginProperties: { "workday-agent": { task: "07 Run" } },
     });
   });
 

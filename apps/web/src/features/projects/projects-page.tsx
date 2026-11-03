@@ -997,7 +997,11 @@ function ProjectDetail({
       >
         <td className="project-task-name-cell">
           <span className="project-task-name">{task.name}</span>
-          <TaskMappingHints task={task} plugins={taskPropertyPlugins} />
+          <TaskMappingHints
+            task={task}
+            plugins={taskPropertyPlugins}
+            projectLocalOnly={project.localOnly}
+          />
           {task.pinnedSlot ? <PinnedSlotBadge slot={task.pinnedSlot} /> : null}
           <Chip>{getProjectTaskBillableValueLabel(task)}</Chip>
           {task.status === "archived" ? <Chip>Archived</Chip> : null}
@@ -1987,6 +1991,7 @@ export function ProjectsPage() {
               task.status === "active" && task._id !== visibleTaskEditor.taskId,
           )
           .map((task) => task.name)}
+        projectLocalOnly={taskEditorProject.localOnly}
         onFieldsChange={updateTaskEditorFields}
         onSave={saveTaskEditor}
         onClose={() => setTaskEditor(null)}

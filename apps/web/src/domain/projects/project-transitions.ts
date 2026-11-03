@@ -6,6 +6,10 @@ import {
   type LocalProjectTaskDraft,
   type PinnedTaskSlot,
 } from "@/domain/local-state";
+import {
+  normalizeLocalOnly,
+  normalizeTaskCommitAs,
+} from "@/domain/projects/commit-target";
 import { normalizeProjectIcon } from "@/domain/projects/project-icon";
 import { normalizePluginProperties } from "@/domain/projects/plugin-properties";
 import {
@@ -37,6 +41,7 @@ export type ProjectTaskPatch = Partial<
     | "adjustmentMs"
     | "pinnedSlot"
     | "pluginProperties"
+    | "commitAs"
   >
 >;
 
@@ -47,6 +52,7 @@ export function createProjectTask(
   const createdAt = factories.now();
   const status = task.status ?? "active";
   const pluginProperties = normalizePluginProperties(task.pluginProperties);
+  const commitAs = normalizeTaskCommitAs(task.commitAs);
 
   return {
     _id: factories.createId("task"),
@@ -58,6 +64,7 @@ export function createProjectTask(
     budgetMs: normalizeProjectTaskBudgetMs(task.budgetMs),
     adjustmentMs: normalizeProjectTaskAdjustmentMs(task.adjustmentMs),
     ...(pluginProperties ? { pluginProperties } : {}),
+    ...(commitAs ? { commitAs } : {}),
   };
 }
 
@@ -97,6 +104,7 @@ export function normalizeProject(
     displayName,
     icon: normalizeProjectIcon(project.icon),
     pluginProperties: normalizePluginProperties(project.pluginProperties),
+    localOnly: normalizeLocalOnly(project.localOnly),
     favoritedAt: normalizeFavoritedAt(project.favoritedAt),
     team,
     status:
@@ -121,6 +129,7 @@ export function normalizeProject(
           : undefined,
         favoritedAt: normalizeFavoritedAt(task.favoritedAt),
         pluginProperties: normalizePluginProperties(task.pluginProperties),
+        commitAs: normalizeTaskCommitAs(task.commitAs),
         // Only a project the team knows can have tasks the team knows.
         team: team?.remoteId ? normalizeTaskTeamLink(task.team) : undefined,
       };
@@ -314,6 +323,10 @@ export function updateProjectTask(
                     "pluginProperties" in patch
                       ? normalizePluginProperties(patch.pluginProperties)
                       : task.pluginProperties,
+                  commitAs:
+                    "commitAs" in patch
+                      ? normalizeTaskCommitAs(patch.commitAs)
+                      : task.commitAs,
                 }
               : task,
           ),

@@ -32,10 +32,12 @@ The agent finds each project in Workday by its Workday code, then its Workday na
 The agent finds each task in Workday by its name. To track a task of your own that Workday does not have, such as `Knowledge transfer`, map it to one Workday has, such as `07 Run`:
 
 1. Create the task in the project, or open it in the task editor.
-2. Under **Workday**, pick the Workday task in **Workday task**. It lists the project's other tasks. Pick **Same name** to undo the mapping.
+2. Under **Workday**, choose **Another task…** in **Commits as**, then pick the Workday task in **Workday task** under it. It lists the project's other tasks. Choose **Its own name** to undo the mapping.
 3. Press **Save**. The task list shows "→ 07 Run" after the task's name.
 
 Workday then gets your time on `07 Run`, and each comment starts with your task's name, such as `Knowledge transfer: Walked Sam through the sync worker`. On the Commit page, the change shows "as 07 Run", and with **Names** on **Workday** the lines name `07 Run`.
+
+**Commits as** also marks a temporary task **Not known yet**, and a task of your own that Workday never gets **Local only**. See [Commits as](/projects/tasks#commits-as).
 
 Entries committed before you change a mapping stay on the old Workday task until they change again. The next commit of such an entry finds it by its ID and moves it to the new task. **Check Workday and submit** also finds them and offers to move them.
 

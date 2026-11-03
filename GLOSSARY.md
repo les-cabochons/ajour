@@ -30,6 +30,18 @@ _Avoid_: Synced project, remote project, team project (in user-facing text)
 A project that belongs to no team.
 _Avoid_: Private project, unshared project
 
+**Commits as**:
+What a task's time goes to the timesheet tool as: its own name, another task of the project, Not known yet, or Local only.
+_Avoid_: Mapping (for the whole choice), export target
+
+**Not known yet**:
+A temporary task waiting for its timesheet task, whose name the user doesn't know yet. Its time is kept off the commit until the user picks what it commits as.
+_Avoid_: Pending task, placeholder
+
+**Local only**:
+A task or project whose time never goes to the timesheet tool. Not the same as a local project, which belongs to no team: a shared project can be local only, and a local project commits by default.
+_Avoid_: Not committed (that is an entry's state), private, excluded
+
 **Share**:
 To give a local project to a team, linking it to the team project of the same name or creating one. Unsharing makes it local again on this machine only.
 _Avoid_: Publish, upload, sync (for the action)

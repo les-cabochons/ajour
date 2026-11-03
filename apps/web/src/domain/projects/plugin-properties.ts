@@ -4,7 +4,11 @@ import type {
   TaskPropertiesCapability,
   TaskPropertyField,
 } from "@ajour/shared";
-import type { LocalProject, LocalProjectTask } from "@/domain/local-state";
+import type {
+  LocalProject,
+  LocalProjectTask,
+  TaskCommitAs,
+} from "@/domain/local-state";
 
 /*
  * Properties that plugins add to projects and tasks, such as the Workday
@@ -109,19 +113,68 @@ export function resolveTaskPluginProperties(
 /**
  * The name the plugin's tool knows the task by: the value of the plugin's
  * first field that defaults to the task's name. Undefined when the plugin
- * has no such field or the user picked no other name, so the task keeps its
- * own name there.
+ * has no such field, the user picked no other name, so the task keeps its
+ * own name there, or the task is Not known yet or Local only.
  */
 export function getMappedTaskName(
-  task: Pick<LocalProjectTask, "name" | "pluginProperties">,
+  task: Pick<LocalProjectTask, "name" | "pluginProperties" | "commitAs">,
   plugin: TaskPropertyPlugin,
 ): string | undefined {
+  if (task.commitAs) return undefined;
   const property = resolveTaskPluginProperties(task, plugin).find(
     (item) => item.field.defaultFrom === "name",
   );
   return property && !property.isDefault && property.value !== task.name
     ? property.value
     : undefined;
+}
+
+/**
+ * The task editor's Commits as choices: Its own name, Another task…, Not
+ * known yet and Local only.
+ */
+export type CommitsAsChoice = "own" | "another" | TaskCommitAs;
+
+/** The plugin's first field that defaults to the task's name, if any. */
+export function getTaskNameField(
+  plugin: TaskPropertyPlugin,
+): TaskPropertyField | undefined {
+  return plugin.capability.fields.find((field) => field.defaultFrom === "name");
+}
+
+/** What the task commits as, as the plugin's Commits as field shows it. */
+export function getCommitsAsChoice(
+  task: Pick<LocalProjectTask, "name" | "pluginProperties" | "commitAs">,
+  plugin: TaskPropertyPlugin,
+): CommitsAsChoice {
+  if (task.commitAs) return task.commitAs;
+  return getMappedTaskName(task, plugin) ? "another" : "own";
+}
+
+/**
+ * A task's `commitAs` and overrides after a Commits as choice. Another task…
+ * maps the plugin's name field to `mappedName`, as typed; the other choices
+ * clear it, so one value decides what the task commits as.
+ */
+export function applyCommitsAsChoice(
+  task: Pick<LocalProjectTask, "pluginProperties">,
+  plugin: TaskPropertyPlugin,
+  choice: CommitsAsChoice,
+  mappedName = "",
+): Pick<LocalProjectTask, "commitAs" | "pluginProperties"> {
+  const field = getTaskNameField(plugin);
+  const pluginProperties = field
+    ? setPluginPropertyDraft(
+        task,
+        plugin.pluginId,
+        field.id,
+        choice === "another" ? mappedName : "",
+      )
+    : task.pluginProperties;
+  return {
+    commitAs: choice === "own" || choice === "another" ? undefined : choice,
+    pluginProperties,
+  };
 }
 
 /**

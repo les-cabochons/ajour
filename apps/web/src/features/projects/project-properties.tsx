@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ColorField } from "@/components/ui/color-field";
 import { Input } from "@/components/ui/input";
+import { OptionSelect, type SelectOption } from "@/components/ui/option-select";
 import {
   Popover,
   PopoverContent,
@@ -25,6 +26,7 @@ import {
   type LocalProject,
 } from "@/domain/local-state";
 import {
+  getTaskNameField,
   PLUGIN_PROPERTY_MAX_LENGTH,
   resolvePluginProperties,
   setPluginProperty,
@@ -37,6 +39,7 @@ import {
   type ProjectFormFields,
 } from "@/features/projects/project-form";
 import { ProjectIconField } from "@/features/projects/project-icon-field";
+import { useTaskPropertyPlugins } from "@/features/projects/task-property-fields";
 import {
   ProjectTeamAction,
   ProjectTeamRow,
@@ -248,6 +251,25 @@ function patchPluginProperty(
   );
 }
 
+const LOCAL_ONLY_OPTIONS: SelectOption<"commits" | "local">[] = [
+  { value: "commits", label: "Commits" },
+  { value: "local", label: "Local only" },
+];
+
+/** Makes the project Local only, or commit again, with Undo. */
+function setLocalOnly(project: LocalProject, localOnly: boolean) {
+  if (Boolean(project.localOnly) === localOnly) return;
+  offerUndo(
+    localStore.updateProjectWithUndo(project._id, {
+      localOnly: localOnly || undefined,
+    }),
+    {
+      title: localOnly ? "Project set to local only" : "Project set to commit",
+      subject: "project",
+    },
+  );
+}
+
 /**
  * The properties one plugin adds, under its section title. Collapsed on
  * each visit; the title toggles it.
@@ -311,6 +333,11 @@ export function ProjectPropertiesCard({
 }) {
   const isArchived = project.status === "archived";
   const [plugins, setPlugins] = useState<ProjectPropertyPlugin[]>([]);
+  // The first plugin that commits tasks under a name, such as Workday, names
+  // the Local only row.
+  const committingPlugin = useTaskPropertyPlugins().find((plugin) =>
+    getTaskNameField(plugin),
+  );
   const [teams, setTeams] = useState<TeamConnectionChoice[]>([]);
   useEffect(() => {
     let active = true;
@@ -439,6 +466,25 @@ export function ProjectPropertiesCard({
         <PropertyRow label="Status">
           {isArchived ? "Archived" : "Active"}
         </PropertyRow>
+        {committingPlugin ? (
+          <PropertyRow label={committingPlugin.capability.section}>
+            {isArchived ? (
+              project.localOnly ? (
+                "Local only"
+              ) : (
+                "Commits"
+              )
+            ) : (
+              <OptionSelect
+                label={`${committingPlugin.capability.section}: commits or local only`}
+                className={PICKER_CLASS_NAME}
+                value={project.localOnly ? "local" : "commits"}
+                options={LOCAL_ONLY_OPTIONS}
+                onChange={(next) => setLocalOnly(project, next === "local")}
+              />
+            )}
+          </PropertyRow>
+        ) : null}
         <ProjectTeamRow project={project} teams={teams} />
       </PropertyList>
       {plugins.map((plugin) => (
