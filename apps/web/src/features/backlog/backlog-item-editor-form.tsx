@@ -51,6 +51,7 @@ import { settleOpensDialog } from "@/features/backlog/settle-dialog";
 import { buildWorkflowStateOptions } from "@/features/backlog/workflow-states";
 import { isDoneWorkflowState } from "@/domain/backlog/workflow-states";
 import { NO_PRIORITY_NAME, PRIORITY_LEVELS } from "@/domain/backlog/priority";
+import { PriorityIcon } from "@/features/backlog/priority-icon";
 import { findWorkItemTimer } from "@/domain/time/running-entry";
 import { OptionSelect } from "@/components/ui/option-select";
 import {
@@ -660,9 +661,12 @@ export function BacklogItemEditorForm({
           {!editor.isSubitem ? (
             <Field data-invalid={Boolean(validation.priorityError)}>
               <FieldLabel htmlFor={`${idPrefix}-priority`}>Priority</FieldLabel>
+              {/* The 5rem column fits an icon, not "No priority" or
+                  "Medium", so the select shows the level's icon. */}
               <OptionSelect
                 id={`${idPrefix}-priority`}
                 size="default"
+                iconValue
                 value={fields.priority}
                 onChange={(priority) => updateFields({ priority })}
                 invalid={Boolean(validation.priorityError)}
@@ -671,10 +675,12 @@ export function BacklogItemEditorForm({
                     value: "",
                     label: NO_PRIORITY_NAME,
                     disabledReason: noPriorityRefusal,
+                    icon: <PriorityIcon priority={undefined} decorative />,
                   },
                   ...PRIORITY_LEVELS.map(({ level, name }) => ({
                     value: String(level),
                     label: name,
+                    icon: <PriorityIcon priority={level} decorative />,
                   })),
                 ]}
               />
