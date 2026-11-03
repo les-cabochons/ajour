@@ -17,6 +17,14 @@ Feature: Backlog list and board views
     When I reload the app
     Then the Backlog has workflow columns and standalone subitems
 
+  Scenario: Pick the project and task in the narrow editor dialog
+    When I narrow the Backlog window
+    And I add a Backlog item from the first narrow group header
+    And I pick "Example project" in the editor dialog's "Project" list
+    And I pick "Example task" in the editor dialog's "Task mapping" list
+    Then the editor dialog's "Project" shows "Example project"
+    And the editor dialog's "Task mapping" shows "Example task"
+
   Scenario: Filter the page without filtering the sidebar
     When I filter the Backlog to Urgent
     Then only urgent items appear on the Backlog page

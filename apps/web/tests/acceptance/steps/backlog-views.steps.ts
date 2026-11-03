@@ -150,6 +150,39 @@ Then(
     ).toBeVisible();
   },
 );
+When(
+  "I add a Backlog item from the first narrow group header",
+  async ({ page }) => {
+    await page
+      .getByRole("button", { name: /^New item in / })
+      .first()
+      .click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+  },
+);
+When(
+  "I pick {string} in the editor dialog's {string} list",
+  async ({ page }, option: string, field: string) => {
+    await page
+      .getByRole("dialog")
+      .getByRole("combobox", { name: field, exact: true })
+      .click();
+    // A role locator skips aria-hidden content, so the pick fails if the
+    // modal dialog hides the list from assistive technology.
+    await page.getByRole("option", { name: option, exact: true }).click();
+    await expect(page.getByRole("listbox")).toHaveCount(0);
+  },
+);
+Then(
+  "the editor dialog's {string} shows {string}",
+  async ({ page }, field: string, value: string) => {
+    await expect(
+      page
+        .getByRole("dialog")
+        .getByRole("combobox", { name: field, exact: true }),
+    ).toHaveValue(value);
+  },
+);
 Given("the other Backlog item has 1.5 hours remaining", async ({ page }) => {
   await page.evaluate(() => {
     const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
