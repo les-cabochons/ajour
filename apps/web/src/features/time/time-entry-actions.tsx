@@ -354,6 +354,9 @@ export function useTimeEntryActions({
         <Calendar
           mode="single"
           selected={selectedDate}
+          // Opens on the entry's month, not today's. The calendar mounts on
+          // each open, so this follows the entry the dialog opened for.
+          defaultMonth={selectedDate}
           onSelect={(date) => date && setSelectedDate(date)}
           disabled={(date: Date) => isDateLocked(state, formatIsoDate(date))}
         />
