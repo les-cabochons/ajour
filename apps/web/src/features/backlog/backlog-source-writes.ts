@@ -212,10 +212,21 @@ function sendSourceWrite(
 
 /**
  * Whether a queued comment came with that settle. An older entry, queued
- * before settles had ids, matches only an item settled before then too.
+ * before settles had ids, matches only an item settled before then too. A
+ * snooze's comment is never a settle's.
  */
 function isOfSettle(entry: PendingSettleComment, settleId: string | undefined) {
-  return entry.settleId === settleId;
+  return entry.snoozedUntil === undefined && entry.settleId === settleId;
+}
+
+/** Whether a queued comment came with the snooze that set `snoozedUntil`. */
+function isOfSnooze(
+  entry: PendingSettleComment,
+  snoozedUntil: number | undefined,
+) {
+  return (
+    entry.snoozedUntil !== undefined && entry.snoozedUntil === snoozedUntil
+  );
 }
 
 /** Keeps these queued comments as the item's draft, each at most once. */
@@ -230,11 +241,11 @@ function keepAsDrafts(
 }
 
 /**
- * Posts the item's settle comments that are ready: their settle's Undo
- * window closed, and the item's pending write landed. An agent's comment
- * also needs the agent to be still allowed to post. A settle that was
- * undone, failed or replaced keeps its comment as the item's draft
- * instead, as does a refused post (ADR 0008). Each ready comment is one
+ * Posts the item's settle and snooze comments that are ready: their
+ * action's Undo window closed, and the item's pending write landed. An
+ * agent's comment also needs the agent to be still allowed to post. A
+ * settle or snooze that was undone, failed or replaced keeps its comment as
+ * the item's draft instead, as does a refused post (ADR 0008). Each ready comment is one
  * `settle_comment.send` job; while the item's write waits, none runs.
  */
 export async function sendSettleComments(workItemId: string) {
@@ -301,7 +312,7 @@ async function sendSettleComment(
     job.set({ comment: { result: "gone" } }).end("noop");
     return;
   }
-  if (!settleStands(item, entry)) {
+  if (!commentActionStands(item, entry)) {
     keptAsDraft("settle_ended").cancel("settle_ended");
     keepCommentAsDraft(workItemId, entry.body);
     return;
@@ -364,16 +375,16 @@ async function sendSettleComment(
 }
 
 /**
- * Whether the settle a comment was typed with still stands: the item is
- * still in that settle, settled or archived since, and comes from the
- * comment's thread.
+ * Whether the settle or snooze a comment was typed with still stands, and
+ * the item comes from the comment's thread. A settle stands while the item
+ * is still in it, settled or archived since. A snooze stands while the item
+ * is active with that snooze, even once its time has passed.
  */
-function settleStands(item: LocalWorkItem, entry: PendingSettleComment) {
-  return (
-    item.status !== "active" &&
-    isCommentSourceOf(item, entry) &&
-    isOfSettle(entry, item.settleId)
-  );
+function commentActionStands(item: LocalWorkItem, entry: PendingSettleComment) {
+  if (!isCommentSourceOf(item, entry)) return false;
+  return entry.snoozedUntil === undefined
+    ? item.status !== "active" && isOfSettle(entry, item.settleId)
+    : item.status === "active" && isOfSnooze(entry, item.snoozedUntil);
 }
 
 /**
@@ -381,46 +392,72 @@ function settleStands(item: LocalWorkItem, entry: PendingSettleComment) {
  * ends: the item is active again, whether unsettled, restored, returned by a
  * sync, undone or put back by a failed write. A settle that goes on into an
  * archive keeps them. So a later settle, of the item or of a parent carrying
- * it, never finds an earlier settle's comment. Returns the unsubscribe.
+ * it, never finds an earlier settle's comment. A snooze's comments turn into
+ * drafts the same way when its snooze ends early: undone, unsnoozed, replaced
+ * by another snooze, or ended by a settle. Returns the unsubscribe.
  */
 export function watchSettleEnds() {
   const lifecyclesOf = () =>
     new Map(
-      localStore
-        .snapshot()
-        .workItems.map((workItem) => [
-          workItem._id,
-          { status: workItem.status, settleId: workItem.settleId },
-        ]),
+      localStore.snapshot().workItems.map((workItem) => [
+        workItem._id,
+        {
+          status: workItem.status,
+          settleId: workItem.settleId,
+          snoozedUntil: workItem.snoozedUntil,
+        },
+      ]),
     );
   let before = lifecyclesOf();
   return localStore.subscribe(() => {
     const now = lifecyclesOf();
-    // The settles that ended: the item was settled or archived, now active.
-    const ended = [...now].flatMap(([id, { status }]) => {
+    const ended: {
+      id: string;
+      settle?: { id: string | undefined };
+      snoozedUntil?: number;
+    }[] = [];
+    for (const [id, current] of now) {
       const previous = before.get(id);
-      return status === "active" && previous && previous.status !== "active"
-        ? [{ id, settleId: previous.settleId }]
-        : [];
-    });
+      if (!previous) continue;
+      // The settle ended: the item was settled or archived, now active.
+      const settleEnded =
+        current.status === "active" && previous.status !== "active";
+      // The snooze ended: another snooze, none, or a settle.
+      const snoozeEnded =
+        previous.snoozedUntil !== undefined &&
+        previous.status === "active" &&
+        (current.snoozedUntil !== previous.snoozedUntil ||
+          current.status !== "active");
+      if (settleEnded || snoozeEnded) {
+        ended.push({
+          id,
+          settle: settleEnded ? { id: previous.settleId } : undefined,
+          snoozedUntil: snoozeEnded ? previous.snoozedUntil : undefined,
+        });
+      }
+    }
     before = now;
     if (ended.length === 0) return;
     const queued = new Set(settleCommentItemIds());
-    for (const { id, settleId } of ended) {
+    for (const { id, settle, snoozedUntil } of ended) {
       if (!queued.has(id)) continue;
-      // Only that settle's: a newer one's comments, queued meanwhile in
+      // Only that action's: a newer one's comments, queued meanwhile in
       // another window, keep waiting.
       keepAsDrafts(
         id,
-        settleCommentsOf(id).filter((entry) => isOfSettle(entry, settleId)),
+        settleCommentsOf(id).filter(
+          (entry) =>
+            (settle !== undefined && isOfSettle(entry, settle.id)) ||
+            isOfSnooze(entry, snoozedUntil),
+        ),
       );
     }
   });
 }
 
 /**
- * A settle's Undo window closed: its comment goes once the item's write
- * lands, or now if nothing waits.
+ * A settle's or snooze's Undo window closed: its comment goes once the
+ * item's write lands, or now if nothing waits.
  */
 export function releaseSettleComment(commentId: string, workItemId: string) {
   markSettleCommentReady(commentId);

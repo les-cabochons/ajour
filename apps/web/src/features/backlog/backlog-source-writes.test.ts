@@ -626,3 +626,121 @@ describe("the comment typed in the settle dialog", () => {
     expect(mocks.keepDraft).toHaveBeenCalledWith("a", "Waiting on the client");
   });
 });
+
+describe("the comment typed with Comment and snooze", () => {
+  const until = 90_000;
+  const comment = (id: string, body = "Back tomorrow") => ({
+    id,
+    itemId: "a",
+    pluginId: "azure_devops",
+    connectionId: "c",
+    sourceId: "1",
+    body,
+    at: 1000,
+    snoozedUntil: until,
+  });
+
+  beforeEach(() => {
+    item = { ...item, pendingSourceWrite: undefined, snoozedUntil: until };
+    mocks.post.mockResolvedValue({
+      comment: {
+        id: "9",
+        author: { id: "me", displayName: "Alex" },
+        body: "Back tomorrow",
+        createdAt: "2026-11-02T10:00:00Z",
+      },
+    });
+  });
+
+  async function load() {
+    const writes = await import("./backlog-source-writes");
+    const queue = await import("@/lib/settle-comments");
+    return { ...writes, ...queue };
+  }
+
+  it("goes out once its Undo window closed while the snooze stands", async () => {
+    const { queueSettleComment, releaseSettleComment, settleCommentsOf } =
+      await load();
+    queueSettleComment(comment("z1"));
+
+    await releaseSettleComment("z1", "a");
+
+    expect(mocks.post).toHaveBeenCalledExactlyOnceWith(
+      "azure_devops",
+      "c",
+      { sourceId: "1", body: "Back tomorrow" },
+      undefined,
+    );
+    expect(settleCommentsOf("a")).toEqual([]);
+  });
+
+  it("still goes when the snooze's time passed before the toast closed", async () => {
+    const { queueSettleComment, releaseSettleComment } = await load();
+    queueSettleComment(comment("z1"));
+    vi.setSystemTime(until + 1);
+
+    await releaseSettleComment("z1", "a");
+
+    expect(mocks.post).toHaveBeenCalledOnce();
+  });
+
+  it("turns into a draft the moment the snooze is undone", async () => {
+    const { queueSettleComment, settleCommentsOf, watchSettleEnds } =
+      await load();
+    const stop = watchSettleEnds();
+    queueSettleComment(comment("z1"));
+
+    item = { ...item, snoozedUntil: undefined };
+    for (const listener of mocks.listeners) listener();
+    stop();
+
+    expect(mocks.post).not.toHaveBeenCalled();
+    expect(mocks.keepDraft).toHaveBeenCalledExactlyOnceWith(
+      "a",
+      "Back tomorrow",
+    );
+    expect(settleCommentsOf("a")).toEqual([]);
+  });
+
+  it("turns into a draft when the item is settled before it goes", async () => {
+    const { queueSettleComment, watchSettleEnds } = await load();
+    const stop = watchSettleEnds();
+    queueSettleComment(comment("z1"));
+
+    item = { ...item, status: "settled", settleId: "settle-1" };
+    for (const listener of mocks.listeners) listener();
+    stop();
+
+    expect(mocks.keepDraft).toHaveBeenCalledExactlyOnceWith(
+      "a",
+      "Back tomorrow",
+    );
+  });
+
+  it("stays as the item's draft when snoozed again before it goes", async () => {
+    const { queueSettleComment, releaseSettleComment } = await load();
+    queueSettleComment(comment("z1"));
+    item = { ...item, snoozedUntil: until + 60_000 };
+
+    await releaseSettleComment("z1", "a");
+
+    expect(mocks.post).not.toHaveBeenCalled();
+    expect(mocks.keepDraft).toHaveBeenCalledWith("a", "Back tomorrow");
+  });
+
+  it("keeps waiting when a settle that never had an id ends", async () => {
+    const { queueSettleComment, settleCommentsOf, watchSettleEnds } =
+      await load();
+    item = { ...item, status: "settled", snoozedUntil: undefined };
+    const stop = watchSettleEnds();
+    queueSettleComment({ ...comment("z1"), snoozedUntil: 5000 });
+
+    // A settle without an id ends; the snooze comment isn't that settle's.
+    item = { ...item, status: "active" };
+    for (const listener of mocks.listeners) listener();
+    stop();
+
+    expect(mocks.keepDraft).not.toHaveBeenCalled();
+    expect(settleCommentsOf("a").map((entry) => entry.id)).toEqual(["z1"]);
+  });
+});

@@ -575,7 +575,13 @@ export const rendererEvents = {
   "backlog_item.archive": command(backlogItem),
   "backlog_item.restore": command(backlogItem),
   "backlog_item.delete": command(backlogItem),
-  "backlog_item.snooze": command(backlogItem),
+  "backlog_item.snooze": command({
+    ...backlogItem,
+    comment: {
+      queued: operational<boolean>(),
+      body_length: operational<number>(),
+    },
+  }),
   "backlog_item.unsnooze": command(backlogItem),
   "backlog_item.pin": command(backlogItem),
   "backlog_item.unpin": command(backlogItem),

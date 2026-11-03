@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  RiArrowDownSLine as OutcomesIcon,
   RiArrowUpSLine as EarlierIcon,
+  RiCheckLine as CheckIcon,
   RiEmotionLine as ReactIcon,
   RiMoreLine as MoreIcon,
 } from "@remixicon/react";
@@ -17,12 +19,14 @@ import {
   preloadMarkdownEditor,
 } from "@/components/markdown-editor";
 import { SectionHeading } from "@/components/section-heading";
+import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -40,11 +44,25 @@ import {
   type CommentSource,
 } from "@/domain/backlog/comments";
 import {
+  COMMENT_OUTCOMES,
+  commentOutcomeDisabledReason,
+  commentOutcomeForKeys,
+  commentOutcomeKeys,
+  commentOutcomeLabel,
+  type CommentOutcome,
+} from "@/domain/backlog/comment-outcomes";
+import { isBacklogItemSnoozed } from "@/domain/backlog/backlog-item-lifecycle";
+import {
   isPluginApiMissing,
   listItemComments,
   setItemCommentReaction,
 } from "@/lib/app-api";
 import { usePluginsOverview } from "@/features/backlog/plugins-overview";
+import {
+  settleBacklogItem,
+  settleOpensDialog,
+} from "@/features/backlog/settle-dialog";
+import { requestSnooze } from "@/features/backlog/snooze-picker";
 import {
   cancelCommentDelete,
   pendingCommentDeleteIds,
@@ -64,7 +82,13 @@ import {
   saveThreadCommentEdit,
   subscribePostedComments,
 } from "@/features/backlog/comment-threads";
-import { getShortcutPlatform } from "@/lib/shortcuts";
+import {
+  getSavedCommentOutcome,
+  saveCommentOutcome,
+} from "@/lib/comment-outcome";
+import { useLocalWorkItems } from "@/lib/local-hooks";
+import { formatKeyChord, getShortcutPlatform } from "@/lib/shortcuts";
+import { cn } from "@/lib/utils";
 import { wideEvents } from "@/lib/wide-events";
 import { getCommentsSeenAt, markCommentsSeen } from "@/lib/comments-seen";
 import type { LocalWorkItem } from "@/domain/local-state";
@@ -522,6 +546,11 @@ export function BacklogItemComments({
  * The editor pinned under the thread. It shows as a plain field until the
  * user opens it, so CodeMirror loads only then. The text is kept per item
  * until sent or discarded, and a failed send keeps it (ADR 0008).
+ *
+ * Its button is split (#487): it posts the comment and then settles the
+ * item, snoozes it, or does nothing more, and says which. The arrow lists
+ * the three. ⌘/Ctrl+Enter runs the button, Shift settles and Alt snoozes
+ * whatever it says, and the last outcome used is the button's next one.
  */
 function CommentComposer({
   itemId,
@@ -536,6 +565,10 @@ function CommentComposer({
   const [open, setOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>();
+  const [saved, setSaved] = useState(getSavedCommentOutcome);
+  // The outcome ⌘/Ctrl+Enter would run with the keys held now.
+  const [held, setHeld] = useState<CommentOutcome>();
+  const workItem = useLocalWorkItems().find((item) => item._id === itemId);
 
   // A settle that was undone or failed puts its comment back here.
   useEffect(
@@ -550,7 +583,28 @@ function CommentComposer({
   const length = text.trim().length;
   const overLimit = limit !== undefined && length > limit;
   const showCount = limit !== undefined && length >= limit * 0.8;
-  const sendKeys = getShortcutPlatform() === "mac" ? "⌘↵" : "Ctrl+Enter";
+  const platform = getShortcutPlatform();
+  const sendKeys = formatKeyChord({ key: "Enter", mod: true }, platform);
+  const disabledReason = (outcome: CommentOutcome) =>
+    workItem
+      ? commentOutcomeDisabledReason(workItem, outcome, {
+          isSnoozed: isBacklogItemSnoozed(workItem, Date.now()),
+        })
+      : outcome === "comment"
+        ? undefined
+        : "The item is gone";
+  // An outcome the item can't take leaves the button on Comment, and the
+  // saved outcome as it was.
+  const usable = (outcome: CommentOutcome | undefined) =>
+    outcome && !disabledReason(outcome) ? outcome : undefined;
+  // What the button runs with no key held, and so what ⌘/Ctrl+Enter runs.
+  const shownOutcome = usable(saved) ?? "comment";
+  const buttonOutcome = usable(held) ?? shownOutcome;
+  const labelOf = (outcome: CommentOutcome) =>
+    commentOutcomeLabel(outcome, {
+      settleOpensDialog: workItem ? settleOpensDialog(workItem) : false,
+    });
+  const canSend = Boolean(text.trim()) && !overLimit && !sending;
 
   // Saved on every change, so a reload or a crash keeps what was typed.
   const change = (value: string) => {
@@ -566,22 +620,31 @@ function CommentComposer({
     setOpen(false);
   };
 
+  // The outcome used becomes the button's next one, unless it was only the
+  // Comment the button fell back to on an item that can't take the saved one.
+  const remember = (outcome: CommentOutcome) => {
+    if (outcome === shownOutcome && shownOutcome !== saved) return;
+    saveCommentOutcome(outcome);
+    setSaved(outcome);
+  };
+
+  // Only what went out leaves the draft; text added meanwhile stays.
+  const clearSent = (value: string) => {
+    const rest = draftAfterSend(getCommentDraft(itemId) ?? "", value);
+    setCommentDraft(itemId, rest);
+    setText(rest);
+    if (!rest) setOpen(false);
+  };
+
   const send = async (value: string) => {
-    const body = value.trim();
-    if (!body || sending || (limit !== undefined && body.length > limit)) {
-      return;
-    }
     setSending(true);
     setError(undefined);
     try {
       // A held comment, as editing work items is off, leaves the composer
       // as a sent one does.
-      const comment = await postThreadComment(source, itemId, body);
-      // Only what went out leaves the draft; text added meanwhile stays.
-      const rest = draftAfterSend(getCommentDraft(itemId) ?? "", value);
-      setCommentDraft(itemId, rest);
-      setText(rest);
-      if (!rest) setOpen(false);
+      const comment = await postThreadComment(source, itemId, value.trim());
+      clearSent(value);
+      remember("comment");
       if (comment !== "held") onPosted(comment);
     } catch (failure) {
       setError(
@@ -594,16 +657,71 @@ function CommentComposer({
     }
   };
 
+  /**
+   * Posts the comment with `outcome`. Settle and snooze hold the comment
+   * until their Undo toast closes, and clear the draft only once the item is
+   * settled or snoozed: Cancel and Escape post nothing and keep it.
+   */
+  const run = (outcome: CommentOutcome | undefined, value: string) => {
+    const body = value.trim();
+    if (!outcome || !body || sending) return;
+    if (limit !== undefined && body.length > limit) return;
+    if (disabledReason(outcome)) return;
+    if (outcome === "comment") {
+      void send(value);
+      return;
+    }
+    // A comment that couldn't go, as when the item's comments went away
+    // meanwhile, stays as the draft.
+    const done = ({ commentQueued }: { commentQueued: boolean }) => {
+      remember(outcome);
+      if (commentQueued) {
+        clearSent(value);
+        return;
+      }
+      showErrorToast({
+        title: "Your comment wasn't posted",
+        description:
+          "The item's comments aren't available now. It's kept as a draft.",
+      });
+    };
+    if (outcome === "settle" && workItem) {
+      settleBacklogItem(workItem, { comment: body, onSettled: done });
+    } else if (outcome === "snooze") {
+      requestSnooze(itemId, { comment: body, onSnoozed: done });
+    }
+  };
+
+  // While ⌘/Ctrl is down, the button shows what Enter would run. Shift or
+  // Alt alone change nothing, so typing a capital letter never does.
+  const previewKeys = (event: React.KeyboardEvent) => {
+    const mod = platform === "mac" ? event.metaKey : event.ctrlKey;
+    setHeld(
+      mod
+        ? commentOutcomeForKeys(
+            { shift: event.shiftKey, alt: event.altKey },
+            shownOutcome,
+          )
+        : undefined,
+    );
+  };
+
   return (
     <div className="backlog-comment-composer">
       {open ? (
-        <>
+        <div
+          onKeyDown={previewKeys}
+          onKeyUp={previewKeys}
+          onBlur={() => setHeld(undefined)}
+        >
           <MarkdownEditor
             autoFocus
             aria-label="New comment"
             value={text}
             onChange={change}
-            onSubmit={(value) => void send(value)}
+            onSubmitWithModifiers={(value, keys) =>
+              run(commentOutcomeForKeys(keys, shownOutcome), value)
+            }
             onCancel={() => setOpen(false)}
             placeholder="Leave a comment. Markdown supported. Type @ to mention someone."
             minLines={3}
@@ -632,15 +750,101 @@ function CommentComposer({
               </Button>
             ) : null}
             <span className="text-2xs text-muted-foreground">{sendKeys}</span>
-            <Button
-              size="sm"
-              disabled={!text.trim() || overLimit || sending}
-              onClick={() => void send(text)}
-            >
-              {sending ? "Sending…" : "Comment"}
-            </Button>
+            <span className="flex">
+              <Button
+                size="sm"
+                className="rounded-r-none"
+                disabled={!canSend}
+                onClick={() => run(buttonOutcome, text)}
+              >
+                {/* Every label takes the same cell, so the button keeps the
+                    width of the longest and the footer doesn't shift. */}
+                <span className="grid">
+                  {[...COMMENT_OUTCOMES.map(labelOf), "Sending…"].map(
+                    (label) => {
+                      const shown =
+                        label ===
+                        (sending ? "Sending…" : labelOf(buttonOutcome));
+                      return (
+                        <span
+                          key={label}
+                          aria-hidden={shown ? undefined : true}
+                          className={cn(
+                            "col-start-1 row-start-1",
+                            !shown && "invisible",
+                          )}
+                        >
+                          {label}
+                        </span>
+                      );
+                    },
+                  )}
+                </span>
+              </Button>
+              <DropdownMenu>
+                <TooltipButton
+                  label="Other ways to comment"
+                  side="top"
+                  disabled={!canSend}
+                  render={
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          size="icon-sm"
+                          className="ml-px rounded-l-none"
+                        />
+                      }
+                    />
+                  }
+                >
+                  <OutcomesIcon />
+                </TooltipButton>
+                <DropdownMenuContent
+                  align="end"
+                  side="top"
+                  className="w-auto min-w-56"
+                >
+                  {COMMENT_OUTCOMES.map((outcome) => {
+                    const reason = disabledReason(outcome);
+                    const keys = commentOutcomeKeys(outcome);
+                    return (
+                      <DropdownMenuItem
+                        key={outcome}
+                        disabled={Boolean(reason)}
+                        aria-description={reason}
+                        onClick={() => run(outcome, text)}
+                      >
+                        <CheckIcon
+                          aria-hidden="true"
+                          className={cn(
+                            "text-foreground",
+                            outcome !== buttonOutcome && "invisible",
+                          )}
+                        />
+                        <span className="flex flex-col">
+                          <span>{labelOf(outcome)}</span>
+                          {reason ? (
+                            <span className="text-xs text-muted-foreground">
+                              {reason}
+                            </span>
+                          ) : null}
+                        </span>
+                        {keys ? (
+                          <DropdownMenuShortcut aria-hidden="true">
+                            {formatKeyChord(
+                              { key: "Enter", mod: true, ...keys },
+                              platform,
+                            )}
+                          </DropdownMenuShortcut>
+                        ) : null}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </span>
           </div>
-        </>
+        </div>
       ) : (
         <button
           type="button"

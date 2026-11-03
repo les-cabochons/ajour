@@ -692,7 +692,7 @@ describe("the privacy canary", () => {
         `Settled, see ${SITE} ${MARKER}`,
         "ask",
       ),
-    ).toBe(true);
+    ).toEqual({ settled: true, commentQueued: true });
     await closeLastUndoWindow();
     await waitForEvent(
       renderer.events,

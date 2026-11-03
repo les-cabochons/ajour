@@ -733,7 +733,8 @@ developer sets `AJOUR_WIDE_EVENTS=console`.
     with `comment.cache_hit` true and no request, once per cached page even
     under React's StrictMode, which runs the effect twice in development. A
     load, of the newest page or an earlier one, has it false.
-  - `settle_comment.send`, one per comment once its settle stands, and
+  - `settle_comment.send`, one per comment once its settle or snooze
+    stands, and
     `agent_comment.send`, one per agent comment after its Undo window: the
     comment's length, never its text, and whether it was posted or kept as
     a draft, and why.
