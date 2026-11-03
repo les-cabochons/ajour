@@ -8,6 +8,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 export interface SelectOption<T extends string = string> {
@@ -39,8 +44,8 @@ const decode = (value: string) => (value === EMPTY ? "" : value);
  * a 28px (`sm`) or 32px trigger that shows the chosen label and opens a menu
  * of items, with optional groups. Name it with `label` (an `aria-label`) or
  * through a `<label htmlFor={id}>`. With `iconValue`, the trigger shows the
- * chosen option's icon alone, named by its label, for a field too narrow for
- * the labels.
+ * chosen option's icon alone, for a field too narrow for the labels. The
+ * option's label names the icon for screen readers and shows in a tooltip.
  */
 export function OptionSelect<T extends string>({
   id,
@@ -85,6 +90,17 @@ export function OptionSelect<T extends string>({
     </SelectItem>
   );
   const chosen = all.find((option) => option.value === value);
+  const trigger = (children: ReactNode) => (
+    <SelectTrigger
+      id={id}
+      size={size}
+      aria-label={label}
+      aria-invalid={invalid || undefined}
+      className={cn("w-full", className)}
+    >
+      {children}
+    </SelectTrigger>
+  );
 
   return (
     <Select
@@ -98,23 +114,23 @@ export function OptionSelect<T extends string>({
         if (decoded !== value) onChange(decoded);
       }}
     >
-      <SelectTrigger
-        id={id}
-        size={size}
-        aria-label={label}
-        aria-invalid={invalid || undefined}
-        className={cn("w-full", className)}
-      >
-        {iconValue && chosen?.icon ? (
-          <SelectValue>
-            <span role="img" aria-label={chosen.label} className="flex">
-              {chosen.icon}
-            </span>
-          </SelectValue>
-        ) : (
-          <SelectValue />
-        )}
-      </SelectTrigger>
+      {iconValue && chosen?.icon ? (
+        // Not TooltipButton: its aria-label would replace the field's name.
+        <Tooltip>
+          <TooltipTrigger
+            render={trigger(
+              <SelectValue>
+                <span role="img" aria-label={chosen.label} className="flex">
+                  {chosen.icon}
+                </span>
+              </SelectValue>,
+            )}
+          />
+          <TooltipContent>{chosen.label}</TooltipContent>
+        </Tooltip>
+      ) : (
+        trigger(<SelectValue />)
+      )}
       <SelectContent>
         {options?.map(renderItem)}
         {groups?.map((group) => (

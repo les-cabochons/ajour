@@ -1741,13 +1741,19 @@ When("I start a new Backlog item from a group header", async ({ page }) => {
     .click();
 });
 Then(
-  "the Priority select shows each level as its icon, uncut",
+  "the Priority select shows each level as its icon, uncut, named on hover",
   async ({ page }) => {
     const select = page.getByRole("combobox", { name: "Priority" });
     for (const level of ["Urgent", "High", "Medium", "Low", "No priority"]) {
       await select.click();
       await page.getByRole("option", { name: level, exact: true }).click();
       await expect(select.getByRole("img", { name: level })).toBeVisible();
+      // The pointer leaves first, so the hover is a fresh one.
+      await page.mouse.move(0, 0);
+      await select.hover();
+      await expect(
+        page.locator('[data-slot="tooltip-content"][data-open]'),
+      ).toHaveText(level);
       const value = select.locator("[data-slot=select-value]");
       expect(
         await value.evaluate((el) => el.scrollWidth <= el.clientWidth),
