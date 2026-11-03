@@ -156,9 +156,10 @@ export function SidebarToggleButton({
 
 /**
  * Opens a dialog for a new manual backlog item over the current page. The page
- * and its open side panel draft stay as they are.
+ * and its open side panel draft stay as they are. The item starts in
+ * `projectId`, the project the sidebar is filtered to, so it shows in the list.
  */
-function NewBacklogItemButton() {
+function NewBacklogItemButton({ projectId }: { projectId?: string }) {
   return (
     <TooltipButton
       label="New backlog item"
@@ -167,7 +168,7 @@ function NewBacklogItemButton() {
           variant="ghost"
           size="icon"
           className="ajour-app-sidebar-toggle"
-          onClick={requestNewBacklogItem}
+          onClick={() => requestNewBacklogItem({ projectId })}
         />
       }
     >
@@ -284,7 +285,7 @@ export function AppNavigationSidebar({
             ordering={state.backlogSortMode}
             onOrderingChange={(mode) => localStore.setBacklogSortMode(mode)}
           />
-          <NewBacklogItemButton />
+          <NewBacklogItemButton projectId={matcher.projectId} />
         </span>
       </div>
 

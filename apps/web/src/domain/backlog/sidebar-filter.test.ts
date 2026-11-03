@@ -70,6 +70,7 @@ describe("createSidebarMatcher", () => {
     );
 
     expect(matcher.active).toBe(true);
+    expect(matcher.projectId).toBe("ajour");
     expect(matcher.workItem({ title: "A", projectId: "ajour" })).toBe(true);
     expect(matcher.workItem({ title: "B", projectId: "rideau" })).toBe(false);
     expect(matcher.workItem({ title: "C" })).toBe(false);
@@ -80,6 +81,7 @@ describe("createSidebarMatcher", () => {
     for (const projectId of ["old", "deleted"]) {
       const matcher = createSidebarMatcher({ query: "", projectId }, projects);
       expect(matcher.active).toBe(false);
+      expect(matcher.projectId).toBeUndefined();
       expect(matcher.workItem({ title: "C" })).toBe(true);
     }
   });
