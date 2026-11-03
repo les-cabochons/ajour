@@ -17,6 +17,10 @@ Feature: Backlog list and board views
     When I reload the app
     Then the Backlog has workflow columns and standalone subitems
 
+  Scenario: Every priority level fits in the editor's Priority select
+    When I start a new Backlog item from a group header
+    Then the Priority select shows each level as its icon, uncut
+
   Scenario: Filter the page without filtering the sidebar
     When I filter the Backlog to Urgent
     Then only urgent items appear on the Backlog page

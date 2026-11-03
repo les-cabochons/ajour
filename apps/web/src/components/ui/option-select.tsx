@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   Select,
   SelectContent,
@@ -18,6 +19,8 @@ export interface SelectOption<T extends string = string> {
    * of the action model in docs/agents/ux-spec.md).
    */
   disabledReason?: string;
+  /** A decorative icon shown before the label in the menu. See `iconValue`. */
+  icon?: ReactNode;
 }
 
 export interface SelectOptionGroup<T extends string = string> {
@@ -35,7 +38,9 @@ const decode = (value: string) => (value === EMPTY ? "" : value);
  * A choice among a few labeled options, in place of the browser's `<select>`:
  * a 28px (`sm`) or 32px trigger that shows the chosen label and opens a menu
  * of items, with optional groups. Name it with `label` (an `aria-label`) or
- * through a `<label htmlFor={id}>`.
+ * through a `<label htmlFor={id}>`. With `iconValue`, the trigger shows the
+ * chosen option's icon alone, named by its label, for a field too narrow for
+ * the labels.
  */
 export function OptionSelect<T extends string>({
   id,
@@ -47,6 +52,7 @@ export function OptionSelect<T extends string>({
   disabled,
   invalid,
   size = "sm",
+  iconValue = false,
   className,
 }: {
   id?: string;
@@ -58,6 +64,8 @@ export function OptionSelect<T extends string>({
   disabled?: boolean;
   invalid?: boolean;
   size?: "sm" | "default";
+  /** Shows the chosen option's icon in the trigger instead of its label. */
+  iconValue?: boolean;
   className?: string;
 }) {
   const all = [...(options ?? []), ...(groups ?? []).flatMap((g) => g.options)];
@@ -72,9 +80,11 @@ export function OptionSelect<T extends string>({
       disabled={option.disabled || option.disabledReason !== undefined}
       aria-description={option.disabledReason}
     >
+      {option.icon}
       {option.label}
     </SelectItem>
   );
+  const chosen = all.find((option) => option.value === value);
 
   return (
     <Select
@@ -95,7 +105,15 @@ export function OptionSelect<T extends string>({
         aria-invalid={invalid || undefined}
         className={cn("w-full", className)}
       >
-        <SelectValue />
+        {iconValue && chosen?.icon ? (
+          <SelectValue>
+            <span role="img" aria-label={chosen.label} className="flex">
+              {chosen.icon}
+            </span>
+          </SelectValue>
+        ) : (
+          <SelectValue />
+        )}
       </SelectTrigger>
       <SelectContent>
         {options?.map(renderItem)}

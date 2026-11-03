@@ -1733,6 +1733,28 @@ Then("the new Backlog item is in In progress", async ({ page }) => {
     page.locator('.backlog-board-column[aria-label="In progress"]'),
   ).toContainText("New grouped item");
 });
+When("I start a new Backlog item from a group header", async ({ page }) => {
+  await page
+    .locator("main")
+    .getByRole("button", { name: /^New item in / })
+    .first()
+    .click();
+});
+Then(
+  "the Priority select shows each level as its icon, uncut",
+  async ({ page }) => {
+    const select = page.getByRole("combobox", { name: "Priority" });
+    for (const level of ["Urgent", "High", "Medium", "Low", "No priority"]) {
+      await select.click();
+      await page.getByRole("option", { name: level, exact: true }).click();
+      await expect(select.getByRole("img", { name: level })).toBeVisible();
+      const value = select.locator("[data-slot=select-value]");
+      expect(
+        await value.evaluate((el) => el.scrollWidth <= el.clientWidth),
+      ).toBe(true);
+    }
+  },
+);
 When("I add a Backlog item from the end of the list", async ({ page }) => {
   await expect(page.getByRole("button", { name: /^New item in / })).toHaveCount(
     0,
