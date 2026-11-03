@@ -62,11 +62,13 @@ import {
   useWorkItemIconData,
 } from "@/features/backlog/work-item-icons";
 import { parseWorkItemReference } from "@/features/backlog/work-item-timer-comment";
+import { pickNextItemId } from "@/domain/backlog/next-item";
 import { useActionRequest } from "@/lib/action-request";
 import { BACKLOG_ITEM_ACTION_KEYS, handleItemKeyDown } from "@/lib/item-keys";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import { ProjectIcon } from "@/lib/project-icons";
+import { getSidebarBacklogItemIds } from "@/lib/sidebar-order";
 import { useNow } from "@/lib/use-now";
 import { findWorkItemTimer } from "@/domain/time/running-entry";
 import {
@@ -104,6 +106,15 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
   const now = useNow();
   const iconData = useWorkItemIconData(state.projects);
   const focusRef = useRef<HTMLDivElement>(null);
+  // The item on screen, so a settle or snooze that ends once the user left
+  // its page opens nothing.
+  const shownItemRef = useRef<string | undefined>(itemId);
+  useEffect(() => {
+    shownItemRef.current = itemId;
+    return () => {
+      shownItemRef.current = undefined;
+    };
+  }, [itemId]);
   const [editingTitle, setEditingTitle] = useState(false);
   const [addingSubitem, setAddingSubitem] = useState(false);
   const workItem = state.workItems.find((item) => item._id === itemId);
@@ -244,6 +255,34 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
       : 0;
   const notice = getVisitNotice(item, now, returnNotice);
 
+  /**
+   * Captures the sidebar's list as a settle or snooze of this item starts,
+   * and returns what opens the next row once it is made (#488): the row after
+   * it, else the one before it, else the Backlog page. Undo stays where the
+   * user is.
+   */
+  function prepareOpenNext() {
+    const currentId = item._id;
+    const before = getSidebarBacklogItemIds(localStore.snapshot(), Date.now());
+    return () => {
+      if (shownItemRef.current !== currentId) return;
+      const next = pickNextItemId(
+        before,
+        getSidebarBacklogItemIds(localStore.snapshot(), Date.now()),
+        currentId,
+      );
+      if (next) {
+        void navigate({
+          to: "/backlog/$itemId",
+          params: { itemId: next },
+          search: from ? { from } : {},
+        });
+      } else {
+        void navigate({ to: "/backlog" });
+      }
+    };
+  }
+
   function runAction(
     actionId: BacklogItemActionId,
     options?: { askToSettle?: boolean },
@@ -260,7 +299,13 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
         .workItems.find((current) => current._id === item._id) ?? item,
       actionId,
       runHosted,
-      options,
+      {
+        ...options,
+        onSettledOrSnoozed:
+          actionId === "settle" || actionId === "snooze"
+            ? prepareOpenNext()
+            : undefined,
+      },
     );
   }
 
@@ -471,7 +516,11 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
             <div key={item._id} className="flex min-w-0 flex-col">
               <DescriptionSection item={item} readOnly={readOnly} />
               {commentSource ? (
-                <BacklogItemComments itemId={item._id} source={commentSource} />
+                <BacklogItemComments
+                  itemId={item._id}
+                  source={commentSource}
+                  prepareOpenNext={prepareOpenNext}
+                />
               ) : null}
             </div>
             <div className="backlog-item-side-cards">

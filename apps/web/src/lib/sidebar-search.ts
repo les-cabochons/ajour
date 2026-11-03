@@ -16,6 +16,11 @@ const CLOSED: SidebarSearchState = { open: false, query: "" };
 let state = CLOSED;
 const listeners = new Set<() => void>();
 
+/** The search as it is now, for code outside React. */
+export function getSidebarSearch() {
+  return state;
+}
+
 export function updateSidebarSearch(patch: Partial<SidebarSearchState>) {
   state = { ...state, ...patch };
   listeners.forEach((listener) => listener());

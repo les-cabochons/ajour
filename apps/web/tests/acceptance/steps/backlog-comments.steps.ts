@@ -158,6 +158,12 @@ Then(
   },
 );
 
+Then("the comment field has no draft", async ({ page }) => {
+  await expect(
+    commentsRegion(page).getByRole("button", { name: "Leave a comment…" }),
+  ).toBeVisible();
+});
+
 Then(
   "after a reload the comment field shows the draft {string}",
   async ({ page }, text: string) => {

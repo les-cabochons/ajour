@@ -93,6 +93,11 @@ function getLayout() {
   return layout;
 }
 
+/** The layout as it is now, for code outside React. */
+export function getSidebarLayout() {
+  return getLayout();
+}
+
 /**
  * Changes the layout and saves it for this device. A drag passes
  * `save: false` on every move and calls `saveSidebarLayout` once it ends,

@@ -5,6 +5,8 @@ Your sidebar lists the items on your plate. Settle and snooze take items off it,
 - **Settle** when there is nothing left for you to do, for now or for good. For example, you sent a pull request and wait for review.
 - **Snooze** when you will come back to it later, at a time you know.
 
+When you settle or snooze the item whose page is open, Ajour opens the next item in your sidebar, so you can go on down your plate. With no item after it, the one before it opens, and with none left, the Backlog page. **Undo** puts the item back and leaves you where you are. Settling or snoozing from the sidebar or the Backlog page doesn't change the page you're on.
+
 ## Settle an item
 
 Press **Settle** on the item, or focus it and press <kbd>E</kbd>.
