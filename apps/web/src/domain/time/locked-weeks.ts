@@ -237,7 +237,11 @@ export type SubmitWeekResult =
 export function getSubmitWeekRefusal(
   state: Pick<
     LocalAppState,
-    "lockedWeeks" | "timesheetEntries" | "timesheetTombstones" | "timers"
+    | "lockedWeeks"
+    | "timesheetEntries"
+    | "timesheetTombstones"
+    | "timers"
+    | "projects"
   >,
   weekOf: string,
 ): SubmitWeekRefusal | undefined {
@@ -253,6 +257,7 @@ export function getSubmitWeekRefusal(
   const count = listWeekChanges({
     entries: state.timesheetEntries,
     tombstones: state.timesheetTombstones,
+    projects: state.projects,
     weekDates,
   }).length;
   if (count > 0) {

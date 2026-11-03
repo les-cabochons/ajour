@@ -4,6 +4,7 @@ import {
   type LocalTimesheetEntry,
   type WeeklyCapacityTargets,
 } from "@/domain/local-state";
+import { findCommitTarget } from "@/domain/projects/commit-target";
 import {
   getMappedTaskName,
   resolvePluginProperties,
@@ -312,6 +313,20 @@ export function describeLineNames(
     : undefined;
 }
 
+/**
+ * The entries whose time goes to the timesheet tool, the ones the lines
+ * show: not local, and not on a Not known yet task.
+ */
+export function listSentEntries(
+  entries: readonly LocalTimesheetEntry[],
+  projects: readonly LocalProject[],
+): LocalTimesheetEntry[] {
+  return entries.filter(
+    (entry) =>
+      findCommitTarget(projects, entry.projectId, entry.taskId) === "sent",
+  );
+}
+
 export type SubmitWarning =
   | {
       kind: "day-under-target";
@@ -319,14 +334,27 @@ export type SubmitWarning =
       loggedMs: number;
       targetMs: number;
     }
-  | { kind: "missing-task"; entryCount: number };
+  | { kind: "missing-task"; entryCount: number }
+  | {
+      /** Time on a Not known yet task, which stays out of the commit. */
+      kind: "waiting-task";
+      projectId: string;
+      taskId: string;
+      taskName: string;
+      durationMs: number;
+    };
 
 export interface SubmitSummary {
-  /** Every entry of the week. */
+  /** Every entry of the week, local time included. */
   totalMs: number;
   targetMs: number;
   isUnderTarget: boolean;
   warnings: SubmitWarning[];
+  /**
+   * The week's local time, which never goes to the timesheet tool, and the
+   * names of its tasks, or of its Local only projects, in list order.
+   */
+  local: { durationMs: number; names: string[] };
 }
 
 /** The week's total against its capacity targets, with its warnings. */
@@ -334,10 +362,13 @@ export function summarizeWeek({
   capacityTargets,
   weekDates,
   weekEntries,
+  projects,
 }: {
   capacityTargets: WeeklyCapacityTargets;
   weekDates: string[];
   weekEntries: LocalTimesheetEntry[];
+  /** Every project, for what each task commits as. */
+  projects: readonly LocalProject[];
 }): SubmitSummary {
   const days = weekDates.map((localDate, index) => {
     const key = CAPACITY_KEYS[index];
@@ -351,7 +382,14 @@ export function summarizeWeek({
   });
   const totalMs = days.reduce((sum, day) => sum + day.loggedMs, 0);
   const targetMs = days.reduce((sum, day) => sum + day.targetMs, 0);
-  const missingTaskCount = weekEntries.filter((entry) => !entry.taskId).length;
+  const targets = weekEntries.map((entry) => ({
+    entry,
+    target: findCommitTarget(projects, entry.projectId, entry.taskId),
+  }));
+  // Local time needs no task: nothing goes to the timesheet tool.
+  const missingTaskCount = targets.filter(
+    ({ entry, target }) => !entry.taskId && target !== "local",
+  ).length;
 
   const warnings: SubmitWarning[] = days
     .filter((day) => day.targetMs > 0 && day.loggedMs < day.targetMs)
@@ -360,10 +398,39 @@ export function summarizeWeek({
     warnings.push({ kind: "missing-task", entryCount: missingTaskCount });
   }
 
+  const waiting = new Map<string, SubmitWarning & { kind: "waiting-task" }>();
+  const local = { durationMs: 0, names: [] as string[] };
+  for (const { entry, target } of targets) {
+    if (target === "sent") continue;
+    const project = projects.find((item) => item._id === entry.projectId);
+    const task = project?.tasks.find((item) => item._id === entry.taskId);
+    if (target === "local") {
+      local.durationMs += entry.durationMs;
+      const name = project?.localOnly
+        ? getLocalProjectDisplayName(project)
+        : task?.name;
+      if (name && !local.names.includes(name)) local.names.push(name);
+      continue;
+    }
+    if (!project || !task) continue;
+    const key = `${project._id}::${task._id}`;
+    const warning = waiting.get(key) ?? {
+      kind: "waiting-task",
+      projectId: project._id,
+      taskId: task._id,
+      taskName: task.name,
+      durationMs: 0,
+    };
+    warning.durationMs += entry.durationMs;
+    waiting.set(key, warning);
+  }
+  warnings.push(...waiting.values());
+
   return {
     totalMs,
     targetMs,
     isUnderTarget: targetMs > 0 && totalMs < targetMs,
     warnings,
+    local,
   };
 }

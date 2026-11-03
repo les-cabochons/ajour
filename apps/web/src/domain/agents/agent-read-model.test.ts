@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LocalAppState, LocalTimesheetEntry } from "@/domain/local-state";
 import {
+  checkChangeVersionsOrRefuse,
   getWeekChangesForAgent,
   getWeekStatusForAgent,
   getWorkItemForAgent,
@@ -15,7 +16,11 @@ import {
   timesheetChangeVersion,
 } from "@/domain/agents/external-id";
 import { NO_PROPERTY_PLUGINS } from "@/domain/projects/plugin-properties";
-import { listWeekChanges } from "@/domain/time/timesheet-commit";
+import {
+  isTimesheetEntryCommitted,
+  listWeekChanges,
+} from "@/domain/time/timesheet-commit";
+import { markTimesheetEntriesCommitted } from "@/domain/time/timesheet-entry";
 
 const HOUR = 3_600_000;
 const NOW = Date.UTC(2026, 9, 14, 15);
@@ -448,6 +453,7 @@ describe("agent read model", () => {
     const expected = listWeekChanges({
       entries: state.timesheetEntries,
       tombstones: state.timesheetTombstones,
+      projects: state.projects,
       weekDates: WEEK,
     }).map((change) => timesheetChangeVersion(change));
 
@@ -472,6 +478,100 @@ describe("agent read model", () => {
         onlyChecked: false,
       }).changes.find((change) => change.entryId === "e1"),
     ).toMatchObject({ checked: false });
+  });
+
+  /** changesState with Build set to commit as `commitAs`. */
+  function withBuild(commitAs: "waiting" | "local"): LocalAppState {
+    const state = changesState();
+    return {
+      ...state,
+      projects: state.projects.map((project) => ({
+        ...project,
+        tasks: project.tasks.map((task) =>
+          task._id === "task-1" ? { ...task, commitAs } : task,
+        ),
+      })),
+    };
+  }
+
+  it("leaves out changes on a Not known yet task, and refuses to mark them", () => {
+    const state = withBuild("waiting");
+    const changes = getWeekChangesForAgent(state, {
+      ...allChecked,
+      onlyChecked: false,
+    }).changes;
+    expect(changes.map((change) => change.entryId)).toEqual(["gone"]);
+
+    const version = getWeekChangesForAgent(changesState(), allChecked)
+      .changes[0]!.version;
+    expect(() =>
+      checkChangeVersionsOrRefuse(
+        state,
+        [{ entryId: "e1", version }],
+        NO_PROPERTY_PLUGINS,
+      ),
+    ).toThrow(
+      'e1 is on "Build", a task that is Not known yet. Its time stays out of the commit until the user chooses what the task commits as.',
+    );
+  });
+
+  it("leaves out local changes, deletes a committed entry moved to local time, and refuses to mark the rest", () => {
+    const state = withBuild("local");
+    // e1 was never committed: local, so left out. e2 was committed under
+    // Build before it became local and changed since: the tool drops it.
+    expect(
+      getWeekChangesForAgent(state, allChecked).changes.map((change) => [
+        change.change,
+        change.entryId,
+      ]),
+    ).toEqual([
+      ["deleted", "e2"],
+      ["deleted", "gone"],
+    ]);
+    const version = getWeekChangesForAgent(changesState(), allChecked)
+      .changes[0]!.version;
+    expect(() =>
+      checkChangeVersionsOrRefuse(
+        state,
+        [{ entryId: "e1", version }],
+        NO_PROPERTY_PLUGINS,
+      ),
+    ).toThrow("e1 changed since you read it.");
+  });
+
+  it("drops a deleted-then-committed local entry from the week status", () => {
+    const state = withBuild("local");
+    const e2 = getWeekChangesForAgent(state, allChecked).changes.find(
+      (change) => change.entryId === "e2",
+    )!;
+    checkChangeVersionsOrRefuse(
+      state,
+      [{ entryId: "e2", version: e2.version }],
+      NO_PROPERTY_PLUGINS,
+    );
+    const marked = markTimesheetEntriesCommitted(state, ["e2"], () => 99);
+    expect(
+      marked.timesheetEntries.find((item) => item._id === "e2")!.commit,
+    ).toMatchObject({ local: true });
+
+    expect(
+      getWeekChangesForAgent(marked, allChecked).changes.map(
+        (change) => change.entryId,
+      ),
+    ).toEqual(["gone"]);
+    const status = getWeekStatusForAgent(marked, {
+      weekDates: WEEK,
+      today: "2026-10-16",
+      propertyPlugins: NO_PROPERTY_PLUGINS,
+    });
+    expect(status.committedEntries.map((item) => item.entryId)).not.toContain(
+      "e2",
+    );
+    expect(
+      isTimesheetEntryCommitted(
+        marked.timesheetEntries.find((item) => item._id === "e2")!,
+      ),
+    ).toBe(false);
   });
 
   it("shows an entry moved to the next week in both weeks, with one external id", () => {

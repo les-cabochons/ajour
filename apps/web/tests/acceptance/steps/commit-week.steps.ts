@@ -462,3 +462,103 @@ Then(
       .toBe(saved);
   },
 );
+
+Given(
+  "Monday has new entries on a Not known yet task and a Local only task",
+  async ({ page }) => {
+    // Runs after the committed week's seed, on the first load only.
+    await page.addInitScript(() => {
+      if (sessionStorage.getItem("commit-week-commits-as-ready")) return;
+      sessionStorage.setItem("commit-week-commits-as-ready", "true");
+      const key = "ajour.local-state.v2";
+      const state = JSON.parse(localStorage.getItem(key)!) as {
+        projects: { tasks: unknown[] }[];
+        timesheetEntries: unknown[];
+      };
+      state.projects[0]!.tasks.push(
+        {
+          _id: "task-temp",
+          name: "Temp migration",
+          status: "active",
+          createdAt: 1,
+          commitAs: "waiting",
+        },
+        {
+          _id: "task-lunch",
+          name: "Team lunch",
+          status: "active",
+          createdAt: 1,
+          commitAs: "local",
+        },
+      );
+      const added = (_id: string, taskId: string, note: string) => ({
+        _id,
+        localDate: "2026-10-05",
+        projectId: "project-atlas",
+        taskId,
+        label: "",
+        note,
+        durationMs: 60 * 60 * 1000,
+        sourceBlockIds: [],
+        committedAt: 10,
+      });
+      state.timesheetEntries.push(
+        added("mon-temp", "task-temp", "Migration"),
+        added("mon-lunch", "task-lunch", "Lunch"),
+      );
+      localStorage.setItem(key, JSON.stringify(state));
+    });
+  },
+);
+
+Then("the Commit page warns {string}", async ({ page }, text: string) => {
+  await expect(
+    page.locator(".submit-warnings li").filter({ hasText: text }),
+  ).toBeVisible({ timeout: 15_000 });
+});
+
+Then(
+  "the {string} change of {string} can't be checked",
+  async ({ page }, kind: string, task: string) => {
+    const row = changeRow(page, kind).filter({ hasText: task });
+    await expect(row.getByRole("checkbox")).toBeDisabled();
+    await expect(row.getByRole("checkbox")).not.toBeChecked();
+    await expect(row.getByText("Not known yet")).toBeVisible();
+    // The reason is reachable from the keyboard, on the focusable wrapper.
+    await expect(
+      row.getByLabel(
+        /: The task is Not known yet\. Choose what it commits as to include this change\.$/,
+      ),
+    ).toHaveAttribute("tabindex", "0");
+  },
+);
+
+Then("the Commit page says {string}", async ({ page }, text: string) => {
+  await expect(page.locator(".commit-local-time")).toContainText(text);
+});
+
+Then("no change or line names {string}", async ({ page }, task: string) => {
+  await expect(changeList(page).getByText(task)).toHaveCount(0);
+  await expect(mondayLine(page, task)).toHaveCount(0);
+});
+
+When("I follow Edit task in the warning", async ({ page }) => {
+  await page
+    .locator(".submit-warnings")
+    .getByRole("link", { name: "Edit task" })
+    .click();
+});
+
+Then("the task editor opens on {string}", async ({ page }, task: string) => {
+  const editor = page.getByRole("complementary", { name: "Task editor" });
+  await expect(editor.getByRole("textbox", { name: "Name" })).toHaveValue(task);
+});
+
+Then(
+  "{string} is disabled on the Commit page",
+  async ({ page }, name: string) => {
+    await expect(
+      page.getByRole("button", { name, exact: true }),
+    ).toBeDisabled();
+  },
+);

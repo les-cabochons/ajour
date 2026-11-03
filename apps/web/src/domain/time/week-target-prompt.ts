@@ -93,6 +93,8 @@ export function findWeekReachingTarget({
       weekEntries: state.timesheetEntries.filter((entry) =>
         days.has(entry.localDate),
       ),
+      // Only the totals matter here, and they count local time too.
+      projects: [],
     });
   };
 
