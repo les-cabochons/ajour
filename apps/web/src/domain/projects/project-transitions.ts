@@ -11,6 +11,10 @@ import {
   normalizeTaskCommitAs,
 } from "@/domain/projects/commit-target";
 import { normalizeProjectIcon } from "@/domain/projects/project-icon";
+import {
+  formatTaskImportName,
+  normalizeTaskImportName,
+} from "@/domain/projects/task-import";
 import { normalizePluginProperties } from "@/domain/projects/plugin-properties";
 import {
   normalizeProjectTeamLink,
@@ -239,6 +243,76 @@ export function addProjectTask(
         task.pinnedSlot,
       )
     : nextProjects;
+}
+
+/**
+ * The project's task with this name as task imports compare names: trimmed,
+ * spaces collapsed, case and accents ignored. An active task wins over an
+ * archived one of the same name.
+ */
+export function findProjectTaskByImportName(
+  project: Pick<LocalProject, "tasks">,
+  name: string,
+): LocalProjectTask | undefined {
+  const key = normalizeTaskImportName(name);
+  const matches = project.tasks.filter(
+    (task) => normalizeTaskImportName(task.name) === key,
+  );
+  return matches.find((task) => task.status === "active") ?? matches[0];
+}
+
+/** What `createOrRestoreProjectTask` did. */
+export type CreateOrRestoreTaskOutcome = "existing" | "restored" | "created";
+
+/**
+ * Gives the project a task of this name for a picker or a timelog (#481):
+ * the active task of that name, an archived one restored, or a new task with
+ * the name as typed, trimmed and with spaces collapsed. Matching the way
+ * imports do means a later import of the same task updates this one instead
+ * of adding a twin. Throws when the project is missing or the name is blank.
+ */
+export function createOrRestoreProjectTask(
+  projects: LocalProject[],
+  projectId: string,
+  draft: LocalProjectTaskDraft,
+  factories: ProjectFactories,
+): {
+  projects: LocalProject[];
+  taskId: string;
+  outcome: CreateOrRestoreTaskOutcome;
+} {
+  const project = projects.find((candidate) => candidate._id === projectId);
+  if (!project) throw new Error(`No project has the id ${projectId}.`);
+  const name = formatTaskImportName(draft.name);
+  if (!name) throw new Error("Enter a task name.");
+
+  const found = findProjectTaskByImportName(project, name);
+  if (found?.status === "active") {
+    return { projects, taskId: found._id, outcome: "existing" };
+  }
+  if (found) {
+    return {
+      projects: setProjectTaskStatus(
+        projects,
+        projectId,
+        found._id,
+        "active",
+        factories.now,
+      ),
+      taskId: found._id,
+      outcome: "restored",
+    };
+  }
+  const created = createProjectTask({ ...draft, name }, factories);
+  return {
+    projects: projects.map((candidate) =>
+      candidate._id === projectId
+        ? { ...candidate, tasks: [...candidate.tasks, created] }
+        : candidate,
+    ),
+    taskId: created._id,
+    outcome: "created",
+  };
 }
 
 function moveItem<T>(items: T[], fromIndex: number, toIndex: number) {

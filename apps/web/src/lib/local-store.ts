@@ -236,6 +236,7 @@ import {
 import {
   addProject as applyAddProject,
   addProjectTask as applyAddProjectTask,
+  createOrRestoreProjectTask,
   createProject,
   createProjectTask,
   normalizeProject,
@@ -1912,6 +1913,35 @@ const store = {
       }),
     }));
   },
+  /**
+   * Gives the project a task of this name from a task picker (#481): the
+   * active task of that name, an archived one restored, or a new one. Returns
+   * the task and what happened, with an undo token, null when the task
+   * already existed.
+   */
+  createOrRestoreProjectTaskWithUndo(
+    projectId: string,
+    draft: LocalProjectTaskDraft,
+  ) {
+    return updateStateWithUndoResult((state) => {
+      const given = createOrRestoreProjectTask(
+        state.projects,
+        projectId,
+        draft,
+        {
+          createId,
+          now: Date.now,
+        },
+      );
+      return {
+        state:
+          given.projects === state.projects
+            ? state
+            : { ...state, projects: given.projects },
+        result: { taskId: given.taskId, outcome: given.outcome },
+      };
+    });
+  },
   reorderProjectTask(projectId: string, taskId: string, toIndex: number) {
     updateState((state) => ({
       ...state,
@@ -3417,6 +3447,10 @@ export const STORE_COMMANDS = {
   archiveProject: { name: "project.archive", fields: projectIdFirst },
   unarchiveProject: { name: "project.restore", fields: projectIdFirst },
   addProjectTask: { name: "task.create", fields: projectIdFirst },
+  createOrRestoreProjectTaskWithUndo: {
+    name: "task.create",
+    fields: projectIdFirst,
+  },
   reorderProjectTask: { name: "task.reorder", fields: taskIdsFirst },
   reorderTimesheetEntries: {
     name: "time_entry.reorder",

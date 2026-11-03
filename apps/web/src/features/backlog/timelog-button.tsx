@@ -4,16 +4,7 @@ import {
   RiArrowGoBackLine as BackIcon,
 } from "@remixicon/react";
 import { TooltipButton } from "@/components/tooltip-button";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import type { TimelogMismatch } from "@/domain/backlog/description-timelog";
 import { offerUndo } from "@/features/feedback/undo-toast";
@@ -85,25 +76,15 @@ export function TimelogButton({
       >
         <WarningIcon />
       </TooltipButton>
-      <AlertDialog open={open} onOpenChange={setOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{question.title}</AlertDialogTitle>
-            <AlertDialogDescription>{question.body}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setOpen(false);
-                apply(question.done);
-              }}
-            >
-              {question.action}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        question={question}
+        open={open}
+        onOpenChange={setOpen}
+        onConfirm={() => {
+          setOpen(false);
+          apply(question.done);
+        }}
+      />
     </>
   );
 }

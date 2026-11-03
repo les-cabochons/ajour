@@ -31,10 +31,13 @@ export function showUndoToast({
   title,
   onUndo,
   onClose,
+  action,
 }: {
   title: string;
   onUndo: () => void;
   onClose?: () => void;
+  /** A second button after Undo, such as Change. It closes the toast. */
+  action?: { label: string; run: () => void };
 }) {
   if (undoToastId) toastManager.close(undoToastId);
 
@@ -57,6 +60,17 @@ export function showUndoToast({
         }
         toastManager.close(id);
       },
+      ...(action
+        ? {
+            action: {
+              label: action.label,
+              run: () => {
+                action.run();
+                toastManager.close(id);
+              },
+            },
+          }
+        : {}),
     },
     onClose: () => {
       if (undoToastId === id) undoToastId = undefined;

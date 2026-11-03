@@ -12,6 +12,7 @@ import {
   importProjectTasks,
   importProjectWorkbookRows,
 } from "@/domain/projects/project-import";
+import { createOrRestoreProjectTask } from "@/domain/projects/project-transitions";
 
 function createFactories() {
   let nextId = 1;
@@ -291,5 +292,52 @@ describe("importProjectDataShapeTasks", () => {
         createFactories(),
       ),
     ).toThrow("This file holds 2 projects.");
+  });
+});
+
+describe("a task created from a picker, then imported", () => {
+  it("is updated by a later import of the same name, in any case or accents", () => {
+    const factories = createFactories();
+    const project = factories.createProject({
+      name: "Acme",
+      color: "#123456",
+    });
+    const created = createOrRestoreProjectTask(
+      [project],
+      project._id,
+      { name: "  07   Run ", commitAs: "waiting" },
+      { createId: (prefix) => `${prefix}-created`, now: () => 1 },
+    );
+    expect(created.projects[0]!.tasks[0]).toMatchObject({
+      _id: "task-created",
+      name: "07 Run",
+    });
+
+    const operation = importProjectDataShapeTasks(
+      created.projects,
+      project._id,
+      [{ status: "active", tasks: [{ name: "07 rün", billable: false }] }],
+      factories,
+    );
+    expect(operation.result).toEqual({
+      addedTaskCount: 0,
+      updatedTaskCount: 1,
+    });
+    expect(operation.projects[0]!.tasks).toEqual([
+      expect.objectContaining({
+        _id: "task-created",
+        name: "07 Run",
+        billable: false,
+        commitAs: "waiting",
+      }),
+    ]);
+
+    const columnC = importProjectTasks(
+      created.projects,
+      project._id,
+      ["07 RUN"],
+      factories,
+    );
+    expect(columnC.result.importedCount).toBe(0);
   });
 });

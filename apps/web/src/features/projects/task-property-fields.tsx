@@ -44,7 +44,7 @@ export function useTaskPropertyPlugins(): TaskPropertyPlugin[] {
   return plugins;
 }
 
-const COMMITS_AS_OPTIONS: SelectOption<CommitsAsChoice>[] = [
+export const COMMITS_AS_OPTIONS: SelectOption<CommitsAsChoice>[] = [
   { value: "own", label: "Its own name" },
   { value: "another", label: "Another task…" },
   { value: "waiting", label: "Not known yet" },

@@ -13,9 +13,9 @@ import {
 } from "@/domain/local-state";
 import {
   addProject,
-  createProjectTask,
+  createOrRestoreProjectTask,
   DEFAULT_PROJECT_COLOR,
-  setProjectTaskStatus,
+  findProjectTaskByImportName,
   updateProject,
   type ProjectFactories,
 } from "@/domain/projects/project-transitions";
@@ -110,11 +110,10 @@ function resolveTimelogTarget(
     const archived = findTimelogProject(projects, timelog.project, "archived");
     return { kind: "no-project", ...(archived ? { archived } : {}) };
   }
-  const named = timelog.task
-    ? project.tasks.filter((task) => sameName(task.name, timelog.task!))
-    : [];
-  const task =
-    named.find((candidate) => candidate.status === "active") ?? named[0];
+  // The pickers' and imports' name rule, so Apply finds the task it creates.
+  const task = timelog.task
+    ? findProjectTaskByImportName(project, timelog.task)
+    : undefined;
   return { kind: "project", project, ...(task ? { task } : {}) };
 }
 
@@ -224,24 +223,16 @@ function applyTimelog(
       taskId = task._id;
     } else {
       if (project.team && !options.changeSharedTasks) return state;
-      if (task) {
-        taskId = task._id;
-        projects = setProjectTaskStatus(
-          projects,
-          projectId,
-          task._id,
-          "active",
-          factories.now,
-        );
-      } else {
-        const created = createProjectTask({ name: timelog.task }, factories);
-        taskId = created._id;
-        projects = projects.map((candidate) =>
-          candidate._id === projectId
-            ? { ...candidate, tasks: [...candidate.tasks, created] }
-            : candidate,
-        );
-      }
+      // The pickers' rule: restore the archived task, or add one that a
+      // later import of the same name updates.
+      const given = createOrRestoreProjectTask(
+        projects,
+        projectId,
+        { name: timelog.task },
+        factories,
+      );
+      taskId = given.taskId;
+      projects = given.projects;
     }
   }
 

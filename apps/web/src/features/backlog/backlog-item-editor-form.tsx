@@ -74,6 +74,10 @@ import {
 import { parseWorkItemReference } from "@/features/backlog/work-item-timer-comment";
 import { buildProjectTaskOptions } from "@/features/projects/project-task-options";
 import {
+  createTaskFromPicker,
+  describeCreateTaskRow,
+} from "@/features/projects/task-creation";
+import {
   useLocalProjects,
   useLocalState,
   useLocalWorkItems,
@@ -322,6 +326,9 @@ export function BacklogItemEditorForm({
     () => buildProjectTaskOptions(availableTasks),
     [availableTasks],
   );
+  const selectedProject = projects.find(
+    (project) => project._id === fields.projectId,
+  );
   const statusOptions = useMemo(
     () => buildWorkflowStateOptions(state.workflowStates),
     [state.workflowStates],
@@ -337,6 +344,29 @@ export function BacklogItemEditorForm({
 
   function updateFields(patch: Partial<BacklogTaskEditorFields>) {
     setFields((current) => ({ ...current, ...patch }));
+  }
+
+  /**
+   * Creates the typed task in the draft's project and picks it. Undo puts the
+   * previous task back while the draft still holds the created one.
+   */
+  function createTask(projectId: string, name: string) {
+    const previous = fields.taskId;
+    let createdId = "";
+    void createTaskFromPicker({
+      projectId,
+      name,
+      onCreated: (taskId) => {
+        createdId = taskId;
+        updateFields({ taskId });
+      },
+      onUndone: () =>
+        setFields((current) =>
+          current.taskId === createdId
+            ? { ...current, taskId: previous }
+            : current,
+        ),
+    });
   }
 
   /** A new project starts on its first active task, or none. */
@@ -721,7 +751,16 @@ export function BacklogItemEditorForm({
               fields.projectId ? "No matching tasks" : "Pick a project first"
             }
             ariaLabel="Task mapping"
-            disabled={!fields.projectId || availableTasks.length === 0}
+            disabled={!selectedProject}
+            create={
+              selectedProject
+                ? {
+                    label: (text) =>
+                      describeCreateTaskRow(selectedProject, text),
+                    onCreate: (text) => createTask(selectedProject._id, text),
+                  }
+                : undefined
+            }
           />
         </Field>
 

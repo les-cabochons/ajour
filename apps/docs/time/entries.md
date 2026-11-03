@@ -10,7 +10,7 @@ Press <kbd>N</kbd>, or the **+** next to **Start** or **Stop** in the sidebar. Y
 
 | Field     | What to enter                                                                                                                                                                                     |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Task**  | Search by project, task or code. Choose **Use project without a task** to log time on the project only.                                                                                           |
+| **Task**  | Search by project, task or code. Choose **Use project without a task** to log time on the project only. A task the project lacks can be [created from here](/projects/tasks#create-a-task).       |
 | **Hours** | `1:30`, `1.5` or `1,5`. Ajour shows it as `01:30` once you leave the field.                                                                                                                       |
 | **Date**  | The day of the entry. On the Time page, <kbd>N</kbd>, the **New entry** row and Week cells and columns start on their day. That **+** in the sidebar, and <kbd>N</kbd> elsewhere, start on today. |
 | **Note**  | Optional. What you did. Notes become the comments of your timesheet lines.                                                                                                                        |
