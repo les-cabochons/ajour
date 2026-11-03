@@ -307,7 +307,10 @@ When(
       if (month === october) break;
       await dialog
         .getByRole("button", {
-          name: month > october ? "Go to the Previous Month" : "Go to the Next Month",
+          name:
+            month > october
+              ? "Go to the Previous Month"
+              : "Go to the Next Month",
         })
         .click();
     }
