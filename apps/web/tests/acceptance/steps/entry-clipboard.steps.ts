@@ -298,6 +298,23 @@ When(
   async ({ page }, day: string, title: string) => {
     const dialog = page.getByRole("dialog", { name: title });
     await expect(dialog).toBeVisible();
+    // The calendar opens on today's month, and the saved week is in October
+    // 2026, so it pages there first.
+    const october = Date.parse("1 October 2026");
+    for (let step = 0; step < 36; step += 1) {
+      const shown = await dialog.getByRole("grid").getAttribute("aria-label");
+      const month = Date.parse(`1 ${shown}`);
+      if (month === october) break;
+      await dialog
+        .getByRole("button", {
+          name: month > october ? "Go to the Previous Month" : "Go to the Next Month",
+        })
+        .click();
+    }
+    await expect(dialog.getByRole("grid")).toHaveAttribute(
+      "aria-label",
+      "October 2026",
+    );
     await dialog
       .getByRole("button", {
         name: new RegExp(`October ${day}(st|nd|rd|th)?,`),
