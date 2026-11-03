@@ -305,6 +305,14 @@ Feature: Open the local time workspace
     When I cancel the New backlog item dialog
     Then the open entry still shows "02:00" hours with the note
 
+  Scenario: Create a backlog item from the sidebar header while the Backlog page creates one
+    Given I have no saved Ajour workspace
+    When I open the Backlog workspace
+    And I start a new backlog item on the Backlog page
+    And I create the backlog item "Write release notes" from the sidebar header
+    Then the sidebar lists "Write release notes"
+    And the Backlog page's new item editor is still open
+
   Scenario: Hide the sidebar while the New backlog item dialog is open
     Given I have no saved Ajour workspace
     When I open today's time workspace

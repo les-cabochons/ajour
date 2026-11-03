@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -191,6 +192,9 @@ export function BacklogItemEditorForm({
   onFieldsChange?: (fields: BacklogTaskEditorFields) => void;
 }) {
   const editorSurface = surface;
+  // Unique per mounted form: the sidebar's New backlog item dialog can open
+  // over the Backlog page's own new item form, and their labels must not mix.
+  const idPrefix = `backlog-item-editor-${useId()}`;
   const state = useLocalState();
   const projects = useLocalProjects();
   const workItems = useLocalWorkItems();
@@ -557,7 +561,6 @@ export function BacklogItemEditorForm({
     save();
   }
 
-  const idPrefix = `backlog-item-editor-${workItem?._id ?? parent?._id ?? "new"}`;
   const titleError =
     showErrors || editor.hasChanges ? validation.titleError : null;
   const sourceMetaLabel = workItem ? getSourceMetaLabel(workItem) : "";

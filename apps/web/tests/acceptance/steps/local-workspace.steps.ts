@@ -1827,6 +1827,21 @@ When(
   },
 );
 
+When("I start a new backlog item on the Backlog page", async ({ page }) => {
+  await page
+    .locator("main")
+    .getByRole("button", { name: "New backlog item", exact: true })
+    .click();
+});
+
+Then("the Backlog page's new item editor is still open", async ({ page }) => {
+  await expect(
+    page
+      .getByRole("complementary", { name: "Backlog item editor" })
+      .getByRole("textbox", { name: "Item", exact: true }),
+  ).toBeVisible();
+});
+
 Then("the time workspace is still open", async ({ page }) => {
   await expect(page).toHaveURL(/\/time\//);
 });
