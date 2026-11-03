@@ -1,5 +1,5 @@
 import { useMemo, useRef, type KeyboardEvent, type PointerEvent } from "react";
-import { useNavigate, useRouterState } from "@tanstack/react-router";
+import { useRouterState } from "@tanstack/react-router";
 import {
   RiAddLine as PlusIcon,
   RiSideBarLine as SidebarIcon,
@@ -16,6 +16,7 @@ import { selectSidebarBacklogItems } from "@/domain/backlog/backlog-item-lifecyc
 import { createSidebarMatcher } from "@/domain/backlog/sidebar-filter";
 import { isPullRequestReturned } from "@/domain/pull-requests/pull-request-lifecycle";
 import { getSectionPathname } from "@/features/backlog/backlog-item-search";
+import { requestNewBacklogItem } from "@/features/backlog/new-backlog-item-dialog";
 import { AppSidebarFooter } from "@/features/layout/sidebar-footer";
 import { SidebarBacklogList } from "@/features/layout/sidebar-backlog-list";
 import {
@@ -34,7 +35,6 @@ import { TimerDock, TodayTotal } from "@/features/layout/timer-dock";
 import type { AppSidebarState } from "@/lib/app-sidebar";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
-import { leaveOpenDraft } from "@/lib/open-draft";
 import { isDesktopShell } from "@/lib/runtime";
 import { useSidebarSearch } from "@/lib/sidebar-search";
 import {
@@ -155,16 +155,10 @@ export function SidebarToggleButton({
 }
 
 /**
- * Opens the Backlog page's editor on a new manual backlog item, through the
- * page's "create" action request. The open page's side panel draft is saved
- * first; a draft it cannot save keeps the user where they are.
+ * Opens a dialog for a new manual backlog item over the current page. The page
+ * and its open side panel draft stay as they are.
  */
 function NewBacklogItemButton() {
-  const navigate = useNavigate();
-  async function createBacklogItem() {
-    if (!(await leaveOpenDraft())) return;
-    void navigate({ to: "/backlog", search: { action: "create" } });
-  }
   return (
     <TooltipButton
       label="New backlog item"
@@ -173,7 +167,7 @@ function NewBacklogItemButton() {
           variant="ghost"
           size="icon"
           className="ajour-app-sidebar-toggle"
-          onClick={() => void createBacklogItem()}
+          onClick={requestNewBacklogItem}
         />
       }
     >

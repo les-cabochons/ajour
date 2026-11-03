@@ -295,13 +295,23 @@ Feature: Open the local time workspace
     When I open today's time workspace
     And I create the backlog item "Write release notes" from the sidebar header
     Then the sidebar lists "Write release notes"
+    And the time workspace is still open
 
-  Scenario: Save a valid entry draft before creating a backlog item from the sidebar header
+  Scenario: Keep the open entry draft while creating a backlog item from the sidebar header
     Given I have a week of saved entries
     When I change the open entry to "02:00" hours with a note
     And I press New backlog item in the sidebar header
-    Then the new backlog item editor is open
-    And the open entry draft was saved
+    Then the New backlog item dialog opens over the open entry
+    When I cancel the New backlog item dialog
+    Then the open entry still shows "02:00" hours with the note
+
+  Scenario: Hide the sidebar while the New backlog item dialog is open
+    Given I have no saved Ajour workspace
+    When I open today's time workspace
+    And I press New backlog item in the sidebar header
+    And I type "Half-written item" in the New backlog item dialog
+    And I hide the sidebar with the keyboard
+    Then the New backlog item dialog still holds "Half-written item"
 
   Scenario: Return from Settings to the same view
     Given I have no saved Ajour workspace

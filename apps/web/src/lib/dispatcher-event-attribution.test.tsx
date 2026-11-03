@@ -28,6 +28,10 @@ import type { ObjectAction } from "@/domain/actions/object-actions";
 import { createSidebarMatcher } from "@/domain/backlog/sidebar-filter";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
 import { BacklogPage } from "@/features/backlog/backlog-page";
+import {
+  NewBacklogItemDialogHost,
+  requestNewBacklogItem,
+} from "@/features/backlog/new-backlog-item-dialog";
 import { CommandPalette } from "@/features/command-palette/command-palette";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { AppMenuBar } from "@/features/layout/app-menu-bar";
@@ -445,6 +449,21 @@ describe("the backlog item editor", () => {
     expect(commands()).toEqual([
       { name: "backlog_item.create", trigger: "user", surface: "editor" },
     ]);
+  });
+
+  it("marks a save in the sidebar's New backlog item dialog as dialog", async () => {
+    render(<NewBacklogItemDialogHost />);
+    act(() => requestNewBacklogItem());
+    fireEvent.change(await screen.findByPlaceholderText("Item name"), {
+      target: { value: "Created from the sidebar" },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(commands("backlog_item.create")).toEqual([
+        { name: "backlog_item.create", trigger: "user", surface: "dialog" },
+      ]),
+    );
   });
 });
 

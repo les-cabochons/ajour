@@ -1801,6 +1801,11 @@ When('I open a new entry from the idle timer dock "+"', async ({ page }) => {
     .click();
 });
 
+/** The dialog that the sidebar's "+" opens over the current page. */
+function newBacklogItemDialog(page: Page) {
+  return page.getByRole("dialog", { name: "New backlog item", exact: true });
+}
+
 /** The "+" beside Search and the project filter, at the top of the sidebar. */
 async function pressNewBacklogItem(page: Page) {
   await page
@@ -1813,15 +1818,18 @@ When(
   "I create the backlog item {string} from the sidebar header",
   async ({ page }, title: string) => {
     await pressNewBacklogItem(page);
-    const editor = page.getByRole("complementary", {
-      name: "Backlog item editor",
-    });
-    await editor
+    const dialog = newBacklogItemDialog(page);
+    await dialog
       .getByRole("textbox", { name: "Item", exact: true })
       .fill(title);
-    await editor.getByRole("button", { name: "Save", exact: true }).click();
+    await dialog.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(dialog).toBeHidden();
   },
 );
+
+Then("the time workspace is still open", async ({ page }) => {
+  await expect(page).toHaveURL(/\/time\//);
+});
 
 When("I press New backlog item in the sidebar header", async ({ page }) => {
   await pressNewBacklogItem(page);
@@ -1838,26 +1846,61 @@ When(
   },
 );
 
-Then("the new backlog item editor is open", async ({ page }) => {
-  await expect(page).toHaveURL(/\/backlog$/);
-  await expect(
-    page
-      .getByRole("complementary", { name: "Backlog item editor" })
-      .getByPlaceholder("Item name", { exact: true }),
-  ).toBeVisible();
+Then(
+  "the New backlog item dialog opens over the open entry",
+  async ({ page }) => {
+    await expect(
+      newBacklogItemDialog(page).getByPlaceholder("Item name", { exact: true }),
+    ).toBeFocused();
+    await expect(page).toHaveURL(/\/time\/2026-10-05\?[^/]*entry=mon-dev-1/);
+  },
+);
+
+When("I cancel the New backlog item dialog", async ({ page }) => {
+  const dialog = newBacklogItemDialog(page);
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).toBeHidden();
 });
 
-Then("the open entry draft was saved", async ({ page }) => {
-  const savedEntry = await page.evaluate(() =>
-    JSON.parse(
-      localStorage.getItem("ajour.local-state.v2") ?? "null",
-    ).timesheetEntries.find(
-      (entry: { _id: string }) => entry._id === "mon-dev-1",
-    ),
-  );
-  expect(savedEntry.note).toBe("Unsaved entry note");
-  expect(savedEntry.durationMs).toBe(2 * 60 * 60 * 1000);
+Then(
+  "the open entry still shows {string} hours with the note",
+  async ({ page }, hours: string) => {
+    await expect(
+      page.getByRole("textbox", { name: "Hours", exact: true }),
+    ).toHaveValue(hours);
+    await expect(
+      page.getByRole("textbox", { name: "Note", exact: true }),
+    ).toHaveValue("Unsaved entry note");
+  },
+);
+
+When(
+  "I type {string} in the New backlog item dialog",
+  async ({ page }, title: string) => {
+    await newBacklogItemDialog(page)
+      .getByRole("textbox", { name: "Item", exact: true })
+      .fill(title);
+  },
+);
+
+When("I hide the sidebar with the keyboard", async ({ page }) => {
+  await page.keyboard.press("ControlOrMeta+b");
+  await expect(
+    page.getByRole("navigation", { name: "Primary navigation" }),
+  ).toBeHidden();
 });
+
+Then(
+  "the New backlog item dialog still holds {string}",
+  async ({ page }, title: string) => {
+    await expect(
+      newBacklogItemDialog(page).getByRole("textbox", {
+        name: "Item",
+        exact: true,
+      }),
+    ).toHaveValue(title);
+  },
+);
 
 Then("the sidebar lists {string}", async ({ page }, title: string) => {
   await expect(
