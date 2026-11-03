@@ -717,6 +717,7 @@ The sidebar works like the T3 Code and Linear sidebars: the view switcher, the t
 - The filter button, like T3 Code's, opens a menu with its own search and an ordering toggle beside it, then "All projects" and the active projects. The toggle has two icon buttons, Custom order and Priority order. Neither is pressed when the Backlog page picked another ordering. Picking one changes the Backlog page's ordering too and keeps the menu open. Without active projects, the menu holds the toggle only. Picking a project keeps only its items. Pull requests have no project, so they hide while a project is picked. The pick is saved per device. The button stays highlighted while a project is picked.
 - Every section keeps only the matching rows, and its count follows. A section left with no rows is not shown. While the list is narrowed, Settled shows its count and an empty backlog list says "No matching items."
 - The view switcher's counts and the Backlog page ignore the sidebar's search and filter.
+- While a project is picked, the sidebar's New backlog item (+) starts the item in that project, so it shows in the list after Save.
 
 ### Layout options
 
