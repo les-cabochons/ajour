@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef } from "react";
 import {
   Field,
   FieldDescription,
@@ -8,9 +8,13 @@ import {
 } from "@/components/ui/field";
 import { Chip } from "@/components/ui/chip";
 import { Input } from "@/components/ui/input";
-import { OptionSelect, type SelectOption } from "@/components/ui/option-select";
+import { OptionSelect } from "@/components/ui/option-select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import type { LocalProjectTask, TaskCommitAs } from "@/domain/local-state";
+import type {
+  LocalProject,
+  LocalProjectTask,
+  TaskCommitAs,
+} from "@/domain/local-state";
 import {
   applyCommitsAsChoice,
   getCommitsAsChoice,
@@ -23,33 +27,13 @@ import {
   type PluginProperties,
   type TaskPropertyPlugin,
 } from "@/domain/projects/plugin-properties";
-import { listTaskPropertyPlugins } from "@/lib/plugin-project-properties";
-
-/**
- * The active plugins that add task properties, loaded once. Empty while
- * they load, when the overview fails and without the local API.
- */
-export function useTaskPropertyPlugins(): TaskPropertyPlugin[] {
-  const [plugins, setPlugins] = useState<TaskPropertyPlugin[]>([]);
-  useEffect(() => {
-    let active = true;
-    void listTaskPropertyPlugins()
-      .then((next) => active && setPlugins(next))
-      // The overview call's own event records the failure.
-      .catch(() => undefined);
-    return () => {
-      active = false;
-    };
-  }, []);
-  return plugins;
-}
-
-export const COMMITS_AS_OPTIONS: SelectOption<CommitsAsChoice>[] = [
-  { value: "own", label: "Its own name" },
-  { value: "another", label: "Another task…" },
-  { value: "waiting", label: "Not known yet" },
-  { value: "local", label: "Local only" },
-];
+import { normalizeTaskImportName } from "@/domain/projects/task-import";
+import { COMMITS_AS_OPTIONS } from "@/features/projects/commits-as";
+import {
+  createTaskFromPicker,
+  describeCreateTaskRow,
+} from "@/features/projects/task-creation";
+import { localStore } from "@/lib/local-store";
 
 /** What the plugin sections change on the task draft. */
 export type TaskPropertyPatch = Pick<
@@ -64,7 +48,8 @@ export type TaskPropertyPatch = Pick<
  * One section per plugin that adds task properties, below the task
  * editor's own fields. The plugin's first field that defaults to the task's
  * name becomes Commits as: Its own name, Another task… (one of the
- * project's other tasks, picked under it), Not known yet or Local only. In
+ * project's other tasks, picked under it, where a name the project lacks
+ * can be created), Not known yet or Local only. In
  * a Local only project it only says so. Another field that defaults to the
  * name picks one of the project's other tasks, or "Same name". Other fields
  * are plain text.
@@ -78,6 +63,8 @@ export function TaskPropertyFields({
   choosingAnotherTask,
   commitsAsError,
   projectLocalOnly = false,
+  project,
+  editorSession,
   onChange,
 }: {
   plugins: TaskPropertyPlugin[];
@@ -93,9 +80,37 @@ export function TaskPropertyFields({
   commitsAsError?: string | null;
   /** The project is Local only, so its tasks are never committed. */
   projectLocalOnly?: boolean;
+  /** The task's project, where Another task… creates a task it lacks. */
+  project?: Pick<LocalProject, "_id" | "tasks" | "team">;
+  /** The task the editor edits, or "new", so an Undo never reaches another task's draft. */
+  editorSession?: string;
   onChange: (patch: Partial<TaskPropertyPatch>) => void;
 }) {
   const idPrefix = useId();
+  // The draft now, for the Undo of a task created from Another task….
+  const latest = useRef({
+    taskName,
+    pluginProperties,
+    commitAs,
+    onChange,
+    editorSession,
+  });
+  latest.current = {
+    taskName,
+    pluginProperties,
+    commitAs,
+    onChange,
+    editorSession,
+  };
+  // The Undo of a created task may come after the editor closed or moved to
+  // another task: then it must not touch the open draft.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   return plugins.map((plugin) => {
     const commitsAsField = getTaskNameField(plugin);
     return (
@@ -163,6 +178,57 @@ export function TaskPropertyFields({
                   choosingAnotherTask: undefined,
                 });
               };
+              /**
+               * Creates the typed task and maps this one to it. Undo maps it
+               * back while the draft still maps to the created task.
+               */
+              const createTarget = (projectId: string, text: string) => {
+                const createdInSession = editorSession;
+                let createdName = "";
+                void createTaskFromPicker({
+                  projectId,
+                  name: text,
+                  onCreated: (taskId) => {
+                    createdName =
+                      localStore
+                        .snapshot()
+                        .projects.find((item) => item._id === projectId)
+                        ?.tasks.find((item) => item._id === taskId)?.name ?? "";
+                    if (createdName) choose("another", createdName);
+                  },
+                  onUndone: () => {
+                    const now = latest.current;
+                    if (
+                      !mounted.current ||
+                      now.editorSession !== createdInSession
+                    ) {
+                      return;
+                    }
+                    const draft = {
+                      name: now.taskName.trim(),
+                      pluginProperties: now.pluginProperties,
+                      commitAs: now.commitAs,
+                    };
+                    if (getMappedTaskName(draft, plugin) !== createdName) {
+                      return;
+                    }
+                    // The draft as it was before the create: its mapping,
+                    // what it committed as, and whether Another task… waited.
+                    now.onChange({
+                      commitAs: task.commitAs,
+                      pluginProperties: setPluginPropertyDraft(
+                        draft,
+                        plugin.pluginId,
+                        field.id,
+                        picked,
+                      ),
+                      choosingAnotherTask: choosing
+                        ? { pluginId: plugin.pluginId, fieldId: field.id }
+                        : undefined,
+                    });
+                  },
+                });
+              };
               return (
                 <Field key={field.id} data-invalid={Boolean(commitsAsError)}>
                   <FieldLabel htmlFor={id}>Commits as</FieldLabel>
@@ -184,6 +250,20 @@ export function TaskPropertyFields({
                       placeholder="Pick a task"
                       emptyMessage="No matching tasks"
                       ariaLabel={field.label}
+                      create={
+                        project
+                          ? {
+                              // The edited task's own name is no other task.
+                              label: (text) =>
+                                normalizeTaskImportName(text) ===
+                                normalizeTaskImportName(taskName)
+                                  ? null
+                                  : describeCreateTaskRow(project, text),
+                              onCreate: (text) =>
+                                createTarget(project._id, text),
+                            }
+                          : undefined
+                      }
                     />
                   ) : null}
                   {choosing && commitsAsError ? (

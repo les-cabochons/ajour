@@ -31,7 +31,7 @@ import { formatTaskImportName } from "@/domain/projects/task-import";
 import {
   COMMITS_AS_OPTIONS,
   useTaskPropertyPlugins,
-} from "@/features/projects/task-property-fields";
+} from "@/features/projects/commits-as";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import { listTaskPropertyPlugins } from "@/lib/plugin-project-properties";
@@ -77,6 +77,29 @@ async function refreshCommittingPlugin() {
   } catch {
     // The overview call's own event records the failure.
   }
+}
+
+/**
+ * Whether another task of the project commits as this task, through a
+ * plugin's name field that holds its name, such as a saved Another task….
+ */
+function isTaskNameMapped(
+  projects: readonly LocalProject[],
+  projectId: string,
+  taskId: string,
+) {
+  const project = projects.find((item) => item._id === projectId);
+  const name = project?.tasks.find((item) => item._id === taskId)?.name;
+  return Boolean(
+    name &&
+    project?.tasks.some(
+      (task) =>
+        task._id !== taskId &&
+        Object.values(task.pluginProperties ?? {}).some((fields) =>
+          Object.values(fields).includes(name),
+        ),
+    ),
+  );
 }
 
 let questionListener:
@@ -184,8 +207,10 @@ export async function createTaskFromPicker({
   showUndoToast({
     title: found ? `Task ${taskName} restored` : `Task ${taskName} created`,
     onUndo: () => {
+      const now = localStore.snapshot();
       if (
-        isProjectTaskInUse(localStore.snapshot(), taskId, oneUndo?.workItemId)
+        isProjectTaskInUse(now, taskId, oneUndo?.workItemId) ||
+        isTaskNameMapped(now.projects, projectId, taskId)
       ) {
         showToast(`Can't undo. ${taskName} is in use now. Archive it instead.`);
         return;

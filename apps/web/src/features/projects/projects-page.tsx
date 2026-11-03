@@ -74,10 +74,8 @@ import {
   type ProjectTaskValues,
 } from "@/features/projects/project-task-editor";
 import { ProjectTaskEditorForm } from "@/features/projects/project-task-editor-form";
-import {
-  TaskMappingHints,
-  useTaskPropertyPlugins,
-} from "@/features/projects/task-property-fields";
+import { useTaskPropertyPlugins } from "@/features/projects/commits-as";
+import { TaskMappingHints } from "@/features/projects/task-property-fields";
 import type { TaskPropertyPlugin } from "@/domain/projects/plugin-properties";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { useActionRequest } from "@/lib/action-request";
@@ -1992,6 +1990,7 @@ export function ProjectsPage() {
           )
           .map((task) => task.name)}
         projectLocalOnly={taskEditorProject.localOnly}
+        project={taskEditorProject}
         onFieldsChange={updateTaskEditorFields}
         onSave={saveTaskEditor}
         onClose={() => setTaskEditor(null)}

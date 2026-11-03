@@ -112,6 +112,97 @@ Then(
   },
 );
 
+async function mapToNewWorkdayTask(
+  page: Page,
+  task: string,
+  workdayTask: string,
+  close: "Save" | "Cancel",
+) {
+  await page.getByText(task, { exact: true }).click();
+  const editor = page.getByRole("complementary", { name: "Task editor" });
+  await editor.getByRole("combobox", { name: "Commits as" }).click();
+  await page.getByRole("option", { name: "Another task…" }).click();
+  const picker = editor.getByRole("combobox", { name: "Workday task" });
+  await picker.click();
+  await picker.fill(workdayTask);
+  await page.keyboard.press("Enter");
+  await expect(picker).toHaveValue(workdayTask);
+  await editor.getByRole("button", { name: close, exact: true }).click();
+  await expect(editor).toBeHidden();
+}
+
+When(
+  "I map task {string} to a new Workday task {string} and cancel",
+  async ({ page }, task: string, workdayTask: string) => {
+    await mapToNewWorkdayTask(page, task, workdayTask, "Cancel");
+  },
+);
+
+When(
+  "I open task {string} in the task editor",
+  async ({ page }, task: string) => {
+    await page.getByText(task, { exact: true }).first().click();
+    await expect(
+      page.getByRole("complementary", { name: "Task editor" }),
+    ).toBeVisible();
+  },
+);
+
+Then(
+  "the open task editor has Commits as {string}",
+  async ({ page }, choice: string) => {
+    const editor = page.getByRole("complementary", { name: "Task editor" });
+    await expect(
+      editor.getByRole("combobox", { name: "Commits as" }),
+    ).toHaveText(choice);
+    await expect(
+      editor.getByRole("button", { name: "Save", exact: true }),
+    ).toBeDisabled();
+  },
+);
+
+Then(
+  "task {string} is not in the project's task list",
+  async ({ page }, task: string) => {
+    await expect(
+      page.locator("tr.project-task-row", {
+        has: page.getByText(task, { exact: true }),
+      }),
+    ).toHaveCount(0);
+  },
+);
+
+When(
+  "I map task {string} to a new Workday task {string} and save",
+  async ({ page }, task: string, workdayTask: string) => {
+    await page.getByText(task, { exact: true }).click();
+    const editor = page.getByRole("complementary", { name: "Task editor" });
+    await editor.getByRole("combobox", { name: "Commits as" }).click();
+    await page.getByRole("option", { name: "Another task…" }).click();
+    const picker = editor.getByRole("combobox", { name: "Workday task" });
+    await picker.click();
+    await picker.fill(workdayTask);
+    await expect(
+      page.getByRole("option", { name: `Create task "${workdayTask}"` }),
+    ).toBeVisible();
+    await page.keyboard.press("Enter");
+    await expect(picker).toHaveValue(workdayTask);
+    await editor.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(editor).toBeHidden();
+  },
+);
+
+Then(
+  "task {string} is in the project's task list",
+  async ({ page }, task: string) => {
+    await expect(
+      page.locator("tr.project-task-row", {
+        has: page.getByText(task, { exact: true }),
+      }),
+    ).toBeVisible();
+  },
+);
+
 When(
   "I set task {string} to commit as {string} and save",
   async ({ page }, task: string, choice: string) => {

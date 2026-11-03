@@ -6,6 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { formatDurationHoursInput } from "@/domain/time/duration";
+import type { LocalProject } from "@/domain/local-state";
 import type { TaskPropertyPlugin } from "@/domain/projects/plugin-properties";
 import { PinnedSlotField } from "@/features/projects/pinned-slot";
 import type {
@@ -34,6 +35,7 @@ export function ProjectTaskEditorForm({
   taskPropertyPlugins = [],
   otherTaskNames = [],
   projectLocalOnly = false,
+  project,
   onFieldsChange,
   onSave,
   onClose,
@@ -55,6 +57,8 @@ export function ProjectTaskEditorForm({
   otherTaskNames?: string[];
   /** The project is Local only, so the plugin sections show no Commits as choice. */
   projectLocalOnly?: boolean;
+  /** The task's project, where Another task… can create the task it maps to. */
+  project?: Pick<LocalProject, "_id" | "tasks" | "team">;
   onFieldsChange: (patch: Partial<ProjectTaskEditorFields>) => void;
   onSave: () => void;
   onClose: () => void;
@@ -190,6 +194,8 @@ export function ProjectTaskEditorForm({
           choosingAnotherTask={fields.choosingAnotherTask}
           commitsAsError={editor.commitsAsError}
           projectLocalOnly={projectLocalOnly}
+          project={project}
+          editorSession={taskId ?? "new"}
           onChange={onFieldsChange}
         />
         {trackedMs !== undefined ? (
