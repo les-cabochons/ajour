@@ -655,7 +655,7 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 ### Editing
 
 - Editing a backlog item uses the editor form, in the peek slot on wide windows and the full-width dialog in the narrow view, with the entry editor's rules: explicit Save (button, Enter in the title, Cmd+Enter), Escape or × discards, outside clicks do nothing.
-- The form holds title, workflow state, priority, project and task mapping, description, the estimates with their "Reset to subitem total" buttons, and "Keep when missing from sync" for synced items. Its header has the "…" action menu.
+- The form holds title, workflow state, priority, project and task mapping, description, the estimates with their "Reset to subitem total" buttons, and "Keep when missing from sync" for synced items. Its header has the "…" action menu. The Priority select is narrow, so it shows the level's icon (three dashes for No priority); its menu shows each icon with the name.
 - Task mapping, and the Task property of the item page and the peek, end with "Create task "07 Run"" when the typed name matches no active task of the item's project, as in the [Task menu](#create-a-task). Task mapping is a draft: the created task waits for Save, and Undo puts the previous task back in the draft. The Task property saves at once, and one Undo takes back both the task and the item's change.
 - "New backlog item" in the page header, or the "+" at the top of the app sidebar, opens a blank form. "Add subitem" opens it with the parent set.
 - Start entry stays on hover, in the "…" menu and in the peek. Entries start on today.
