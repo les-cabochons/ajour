@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { expect, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 
@@ -148,3 +149,98 @@ When(
     await page.getByRole("option", { name: project, exact: true }).click();
   },
 );
+
+Given(
+  "project {string} has a Not known yet task {string}",
+  async ({ page }, project: string, task: string) => {
+    await page.route("http://127.0.0.1:8787/api/plugins", (route) =>
+      route.fulfill({
+        json: {
+          pluginsEnabled: true,
+          plugins: [],
+          connectionGroups: [],
+          totalPendingImportCount: 0,
+          totalSelectedImportCount: 0,
+        },
+        headers: { "access-control-allow-origin": "*" },
+      }),
+    );
+    await page.addInitScript(
+      ({ project, task }) => {
+        if (sessionStorage.getItem("waiting-task-fixture")) return;
+        localStorage.clear();
+        sessionStorage.setItem("waiting-task-fixture", "true");
+        localStorage.setItem(
+          "ajour.local-state.v2",
+          JSON.stringify({
+            projects: [
+              {
+                _id: "project-acme",
+                name: project,
+                displayName: project,
+                color: "#1f7667",
+                icon: { kind: "preset", name: "dot" },
+                status: "active",
+                tasks: [
+                  {
+                    _id: "task-temp",
+                    name: task,
+                    status: "active",
+                    createdAt: 1,
+                    commitAs: "waiting",
+                  },
+                ],
+              },
+            ],
+          }),
+        );
+      },
+      { project, task },
+    );
+  },
+);
+
+When("I import the task file with two new tasks", async ({ page }) => {
+  // Column C holds "07 Run" and "08 Migration". Made with exceljs, which
+  // Playwright's loader can't import.
+  await page
+    .locator('input[type="file"][accept=".xlsx,.xls,.xlsm"]')
+    .setInputFiles(
+      fileURLToPath(
+        new URL("../fixtures/plan-with-two-new-tasks.xlsx", import.meta.url),
+      ),
+    );
+});
+
+Then(
+  "Ajour asks which task {string} was waiting for, suggesting {string}",
+  async ({ page }, task: string, suggestion: string) => {
+    const dialog = page.getByRole("dialog", {
+      name: "1 task is waiting for its timesheet task",
+    });
+    await expect(dialog).toBeVisible();
+    await expect(
+      dialog.getByRole("combobox", { name: `${task} was waiting for` }),
+    ).toHaveText(suggestion);
+  },
+);
+
+Then(
+  "the project lists {string} once and {string}",
+  async ({ page }, renamed: string, added: string) => {
+    const names = await page.evaluate(() => {
+      const state = JSON.parse(
+        localStorage.getItem("ajour.local-state.v2")!,
+      ) as { projects: { tasks: { _id: string; name: string }[] }[] };
+      return state.projects[0]!.tasks.map((task) => [task._id, task.name]);
+    });
+    expect(names).toEqual([
+      ["task-temp", renamed],
+      [expect.any(String), added],
+    ]);
+  },
+);
+
+Then("the import says {string}", async ({ page }, message: string) => {
+  await expect(page.getByText(message, { exact: true })).toBeVisible();
+});

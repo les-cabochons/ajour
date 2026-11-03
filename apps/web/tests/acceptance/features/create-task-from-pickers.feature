@@ -41,3 +41,12 @@ Feature: Create a task from a task picker
     When I pick the project "Acme website" in the dialog
     And I press "Create task"
     Then the picker shows "[ACME] Acme website · Temp migration"
+
+  Scenario: A task import asks which new task a Not known yet task waited for
+    Given project "Acme website" has a Not known yet task "Temp migration"
+    When I open project "Acme website"
+    And I import the task file with two new tasks
+    Then Ajour asks which task "Temp migration" was waiting for, suggesting "08 Migration"
+    When I press "Import"
+    Then the project lists "08 Migration" once and "07 Run"
+    And the import says "Imported 1 task. Matched 1 waiting task."

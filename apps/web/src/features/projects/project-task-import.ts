@@ -1,7 +1,10 @@
 import { BUILT_IN_PROJECT_DATA_SHAPE_ID } from "@ajour/shared";
+import { getTaskNameField } from "@/domain/projects/plugin-properties";
 import {
+  findWaitingTaskChoices,
   ImportedProjectMismatchError,
   type ProjectTaskMergeResult,
+  type WaitingTaskAnswer,
 } from "@/domain/projects/project-import";
 import {
   formatTaskImportName,
@@ -12,7 +15,9 @@ import {
   getProjectDataShapePlugins,
   importProjectsWithDataShape,
 } from "@/lib/app-api";
+import { requestWaitingTaskAnswers } from "@/features/projects/waiting-tasks-dialog";
 import { localStore } from "@/lib/local-store";
+import { listTaskPropertyPlugins } from "@/lib/plugin-project-properties";
 import { loadWorkbook, readWorkbookSheets } from "@/lib/workbook-sheets";
 
 export {
@@ -85,9 +90,13 @@ export function formatTaskNameImportSummary(result: ProjectTaskImportResult) {
   }
 
   const importedLabel = formatCount(result.importedCount, "task", "tasks");
+  const confirmed =
+    result.confirmedWaitingCount > 0
+      ? ` Confirmed ${formatCount(result.confirmedWaitingCount, "waiting task", "waiting tasks")}.`
+      : "";
   return skipped.length > 0
-    ? `Imported ${importedLabel}. Skipped ${skipped.join(", ")}.`
-    : `Imported ${importedLabel}.`;
+    ? `Imported ${importedLabel}. Skipped ${skipped.join(", ")}.${confirmed}`
+    : `Imported ${importedLabel}.${confirmed}`;
 }
 
 export function formatSchemaTaskImportSummary(result: ProjectTaskMergeResult) {
@@ -134,12 +143,14 @@ function importSchemaTasks(
   projectId: string,
   schemaId: string,
   projects: Parameters<typeof localStore.importProjectDataShapeTasks>[2],
+  waitingAnswers: Record<string, WaitingTaskAnswer>,
 ) {
   try {
     return localStore.importProjectDataShapeTasks(
       projectId,
       schemaId,
       projects,
+      waitingAnswers,
     );
   } catch (error) {
     if (!(error instanceof ImportedProjectMismatchError)) throw error;
@@ -153,10 +164,45 @@ function importSchemaTasks(
 }
 
 /**
+ * What to do with the project's Not known yet tasks that the file doesn't
+ * name, when it adds tasks (#481): the user picks, or null when they cancel.
+ * No question when there is nothing to ask.
+ */
+async function askAboutWaitingTasks(
+  projectId: string,
+  fileTaskNames: string[],
+): Promise<Record<string, WaitingTaskAnswer> | null> {
+  const project = localStore
+    .snapshot()
+    .projects.find((item) => item._id === projectId);
+  const choices = project ? findWaitingTaskChoices(project, fileTaskNames) : [];
+  if (choices.length === 0) return {};
+  const plugins = await listTaskPropertyPlugins().catch(() => []);
+  const toolName =
+    plugins.find((plugin) => getTaskNameField(plugin))?.capability.section ??
+    "timesheet";
+  return requestWaitingTaskAnswers(choices, toolName);
+}
+
+/**
+ * "Matched 1 waiting task." after the summary, for the renames the import
+ * applied. A merge that changed nothing else says only that.
+ */
+function withMatchedWaiting(summary: string, matched: number) {
+  if (matched === 0) return summary;
+  const sentence = `Matched ${formatCount(matched, "waiting task", "waiting tasks")}.`;
+  return summary === "No tasks changed." ? sentence : `${summary} ${sentence}`;
+}
+
+/** What Import tasks… says when the user cancels the waiting tasks question. */
+export const TASK_IMPORT_CANCELLED = "Import cancelled. Nothing changed.";
+
+/**
  * Imports a workbook's tasks into a project and says what changed. With a
  * schema plugin picked in Settings › Projects, the plugin reads the file and
  * Ajour merges its tasks by name. Otherwise Ajour adds the task names in
- * column C of the first worksheet.
+ * column C of the first worksheet. Before writing, it asks which new task
+ * each Not known yet task waited for, when there is one to ask about.
  */
 export async function importTasksFromWorkbook(
   projectId: string,
@@ -168,8 +214,28 @@ export async function importTasksFromWorkbook(
       plugin.id,
       await readWorkbookSheets(bytes),
     );
-    return formatSchemaTaskImportSummary(
-      importSchemaTasks(projectId, plugin.id, projects),
+    // The merge refuses a file with several projects or another project's
+    // name, so those ask nothing and fail there.
+    const [fileProject] = projects;
+    const projectName = localStore
+      .snapshot()
+      .projects.find((item) => item._id === projectId)?.name;
+    const answers =
+      fileProject &&
+      projects.length === 1 &&
+      (fileProject.name === undefined ||
+        normalizeTaskImportName(fileProject.name) ===
+          normalizeTaskImportName(projectName ?? ""))
+        ? await askAboutWaitingTasks(
+            projectId,
+            fileProject.tasks.map((task) => task.name),
+          )
+        : {};
+    if (!answers) return TASK_IMPORT_CANCELLED;
+    const merged = importSchemaTasks(projectId, plugin.id, projects, answers);
+    return withMatchedWaiting(
+      formatSchemaTaskImportSummary(merged),
+      merged.matchedWaitingCount,
     );
   }
 
@@ -179,10 +245,24 @@ export async function importTasksFromWorkbook(
       "No usable task names were found in column C of the first worksheet.",
     );
   }
-  const result = localStore.importProjectTasks(projectId, workbook.taskNames);
-  return formatTaskNameImportSummary({
-    ...result,
-    blankCount: workbook.blankCount,
-    headerCount: workbook.headerCount,
-  });
+  const answers = await askAboutWaitingTasks(projectId, workbook.taskNames);
+  if (!answers) return TASK_IMPORT_CANCELLED;
+  const result = localStore.importProjectTasks(
+    projectId,
+    workbook.taskNames,
+    answers,
+  );
+  return withMatchedWaiting(
+    formatTaskNameImportSummary({
+      ...result,
+      // A renamed waiting task confirmed by the file is a match, not a skip.
+      confirmedWaitingCount: Math.max(
+        0,
+        result.confirmedWaitingCount - result.matchedWaitingCount,
+      ),
+      blankCount: workbook.blankCount,
+      headerCount: workbook.headerCount,
+    }),
+    result.matchedWaitingCount,
+  );
 }

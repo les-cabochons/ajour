@@ -226,12 +226,14 @@ import {
 } from "@/domain/time/timeline-transitions";
 import {
   importProjectDataShapeProjects as applyProjectDataShapeImport,
+  applyWaitingTaskAnswers,
   importProjectDataShapeTasks as applyProjectDataShapeTaskImport,
   importProjectTasks as applyProjectTaskImport,
   importProjectWorkbookRows as applyProjectWorkbookImport,
   type ProjectTaskMergeResult,
   type ProjectTransferRow,
   type ProjectWorkbookImportResult,
+  type WaitingTaskAnswer,
 } from "@/domain/projects/project-import";
 import {
   addProject as applyAddProject,
@@ -1965,10 +1967,17 @@ const store = {
   importProjectTasks(
     projectId: string,
     taskNames: string[],
-  ): ProjectTaskImportResult {
+    /** What to do with Not known yet tasks the file doesn't name, by task ID. */
+    waitingAnswers: Readonly<Record<string, WaitingTaskAnswer>> = {},
+  ): ProjectTaskImportResult & { matchedWaitingCount: number } {
     const imported = updateStateWithResult((state) => {
-      const operation = applyProjectTaskImport(
+      const answered = applyWaitingTaskAnswers(
         state.projects,
+        projectId,
+        waitingAnswers,
+      );
+      const operation = applyProjectTaskImport(
+        answered.projects,
         projectId,
         taskNames,
         {
@@ -1981,7 +1990,10 @@ const store = {
           ...state,
           projects: operation.projects,
         },
-        result: operation.result,
+        result: {
+          ...operation.result,
+          matchedWaitingCount: answered.matchedCount,
+        },
       };
     });
     describeTaskImport(projectId, imported);
@@ -2055,10 +2067,19 @@ const store = {
     projectId: string,
     schema: string,
     projects: ProjectDataShapeImportProject[],
+    /** What to do with Not known yet tasks the file doesn't name, by task ID. */
+    waitingAnswers: Readonly<Record<string, WaitingTaskAnswer>> = {},
   ) {
-    const imported = updateStateWithResult<ProjectTaskMergeResult>((state) => {
-      const operation = applyProjectDataShapeTaskImport(
+    const imported = updateStateWithResult<
+      ProjectTaskMergeResult & { matchedWaitingCount: number }
+    >((state) => {
+      const answered = applyWaitingTaskAnswers(
         state.projects,
+        projectId,
+        waitingAnswers,
+      );
+      const operation = applyProjectDataShapeTaskImport(
+        answered.projects,
         projectId,
         projects,
         {
@@ -2069,7 +2090,10 @@ const store = {
       );
       return {
         state: { ...state, projects: operation.projects },
-        result: operation.result,
+        result: {
+          ...operation.result,
+          matchedWaitingCount: answered.matchedCount,
+        },
       };
     });
     describeSchemaTaskImport(projectId, schema, imported);

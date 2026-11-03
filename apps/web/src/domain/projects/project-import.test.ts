@@ -7,6 +7,8 @@ import type {
 } from "@/domain/local-state";
 import { DEFAULT_PROJECT_ICON } from "@/domain/projects/project-icon";
 import {
+  applyWaitingTaskAnswers,
+  findWaitingTaskChoices,
   importProjectDataShapeProjects,
   importProjectDataShapeTasks,
   importProjectTasks,
@@ -64,6 +66,7 @@ describe("importProjectTasks", () => {
     expect(operation.result).toEqual({
       importedCount: 1,
       duplicateCount: 2,
+      confirmedWaitingCount: 0,
       blankCount: 1,
       headerCount: 0,
       importedNames: ["Build"],
@@ -328,9 +331,10 @@ describe("a task created from a picker, then imported", () => {
         _id: "task-created",
         name: "07 Run",
         billable: false,
-        commitAs: "waiting",
       }),
     ]);
+    // The file has the task, so it is no longer Not known yet.
+    expect(operation.projects[0]!.tasks[0]!.commitAs).toBeUndefined();
 
     const columnC = importProjectTasks(
       created.projects,
@@ -339,5 +343,145 @@ describe("a task created from a picker, then imported", () => {
       factories,
     );
     expect(columnC.result.importedCount).toBe(0);
+  });
+});
+
+describe("Not known yet tasks at import", () => {
+  function project(): LocalProject {
+    return {
+      _id: "acme",
+      name: "Acme",
+      color: "#123456",
+      icon: DEFAULT_PROJECT_ICON,
+      status: "active",
+      tasks: [
+        { _id: "build", name: "05 Build", status: "active", createdAt: 1 },
+        {
+          _id: "temp",
+          name: "Temp migration",
+          status: "active",
+          createdAt: 1,
+          commitAs: "waiting",
+        },
+        {
+          _id: "lunch",
+          name: "Team lunch",
+          status: "active",
+          createdAt: 1,
+          commitAs: "local",
+        },
+      ],
+    };
+  }
+
+  it("asks only about waiting tasks the file doesn't name, with its new names closest first", () => {
+    expect(
+      findWaitingTaskChoices(project(), [
+        "05 Build",
+        "07 Run",
+        "08 Migration",
+        "08 migration",
+      ]),
+    ).toEqual([
+      {
+        taskId: "temp",
+        name: "Temp migration",
+        newNames: ["08 Migration", "07 Run"],
+      },
+    ]);
+  });
+
+  it("asks nothing when the file adds no task or names the waiting one", () => {
+    expect(findWaitingTaskChoices(project(), ["05 Build"])).toEqual([]);
+    expect(
+      findWaitingTaskChoices(project(), ["temp MIGRATION", "07 Run"]),
+    ).toEqual([]);
+  });
+
+  it("renames a matched task before the merge, which updates it and counts the change", () => {
+    const factories = createFactories();
+    const answered = applyWaitingTaskAnswers([project()], "acme", {
+      temp: {
+        kind: "rename",
+        name: "08 Migration",
+        expectedName: "Temp migration",
+      },
+    });
+    expect(answered.matchedCount).toBe(1);
+    const operation = importProjectDataShapeTasks(
+      answered.projects,
+      "acme",
+      [{ status: "active", tasks: [{ name: "08 Migration" }] }],
+      factories,
+    );
+    expect(operation.result).toEqual({
+      addedTaskCount: 0,
+      updatedTaskCount: 1,
+    });
+    const temp = operation.projects[0]!.tasks.find(
+      (task) => task._id === "temp",
+    );
+    expect(temp).toMatchObject({ name: "08 Migration" });
+    expect(temp!.commitAs).toBeUndefined();
+  });
+
+  it("makes a task local, leaves one waiting, and never renames onto a taken name", () => {
+    const expectedName = "Temp migration";
+    const local = applyWaitingTaskAnswers([project()], "acme", {
+      temp: { kind: "local", expectedName },
+    }).projects[0]!.tasks[1]!;
+    expect(local.commitAs).toBe("local");
+    const waiting = applyWaitingTaskAnswers([project()], "acme", {
+      temp: { kind: "wait", expectedName },
+    }).projects[0]!.tasks[1]!;
+    expect(waiting).toEqual(project().tasks[1]);
+    const clash = applyWaitingTaskAnswers([project()], "acme", {
+      temp: { kind: "rename", name: "05 build", expectedName },
+      lunch: { kind: "rename", name: "07 Run", expectedName: "Team lunch" },
+    });
+    expect(clash.matchedCount).toBe(0);
+    expect(clash.projects[0]!.tasks[1]).toEqual(project().tasks[1]);
+    // Only Not known yet tasks take an answer.
+    expect(clash.projects[0]!.tasks[2]).toEqual(project().tasks[2]);
+  });
+
+  it("ignores an answer about a task renamed or archived since the question", () => {
+    const renamed = project();
+    renamed.tasks[1]!.name = "Client incident";
+    const afterRename = applyWaitingTaskAnswers([renamed], "acme", {
+      temp: {
+        kind: "rename",
+        name: "08 Migration",
+        expectedName: "Temp migration",
+      },
+    });
+    expect(afterRename.matchedCount).toBe(0);
+    expect(afterRename.projects[0]!.tasks[1]!.name).toBe("Client incident");
+
+    const archived = project();
+    archived.tasks[1]!.status = "archived";
+    const afterArchive = applyWaitingTaskAnswers([archived], "acme", {
+      temp: {
+        kind: "rename",
+        name: "08 Migration",
+        expectedName: "Temp migration",
+      },
+    });
+    expect(afterArchive.matchedCount).toBe(0);
+    expect(afterArchive.projects[0]!.tasks[1]!.name).toBe("Temp migration");
+  });
+
+  it("confirms a waiting task the column C file names", () => {
+    const operation = importProjectTasks(
+      [project()],
+      "acme",
+      ["temp migration"],
+      createFactories(),
+    );
+    expect(operation.projects[0]!.tasks[1]!.commitAs).toBeUndefined();
+    expect(operation.result).toMatchObject({
+      duplicateCount: 0,
+      confirmedWaitingCount: 1,
+    });
   });
 });

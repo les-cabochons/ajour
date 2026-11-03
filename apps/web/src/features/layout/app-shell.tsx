@@ -85,6 +85,7 @@ import { flushPendingWrites } from "@/features/layout/pending-writes-flush";
 import { BacklogAutoSyncScheduler } from "@/features/layout/backlog-auto-sync-scheduler";
 import { CloseSubitemsDialogHost } from "@/features/backlog/close-subitems-dialog";
 import { TaskCreationDialogHost } from "@/features/projects/task-creation";
+import { WaitingTasksDialogHost } from "@/features/projects/waiting-tasks-dialog";
 import { SourceStateDialogHost } from "@/features/backlog/source-state-dialog";
 import { SettleDialogHost } from "@/features/backlog/settle-dialog";
 import { SnoozePickerHost } from "@/features/backlog/snooze-picker";
@@ -617,6 +618,7 @@ export function AppShell() {
       <SettleDialogHost />
       <CloseSubitemsDialogHost />
       <TaskCreationDialogHost />
+      <WaitingTasksDialogHost />
       <SourceStateDialogHost />
       <WeekTargetPromptHost />
       {/* useAppSidebar owns the state, persistence and Cmd/Ctrl+B, so the
