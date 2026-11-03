@@ -96,9 +96,10 @@ function CreateTaskForm({
     () => projects.filter((project) => project.status === "active"),
     [projects],
   );
-  // A menu, not a searchable list: the list's popup portals outside the
-  // modal dialog, which hides it from screen readers. Typing a project's
-  // first letters still moves to it.
+  // A menu, not a searchable list: a list focused and open as the dialog
+  // opens is outside the modal dialog when it hides the rest of the page, so
+  // screen readers would not reach it (see SearchableSelect). Typing a
+  // project's first letters still moves to it.
   const projectGroups = useMemo(() => {
     const recentIds = [
       ...new Set(

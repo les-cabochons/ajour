@@ -473,6 +473,13 @@ export function SearchableSelect({
         </InputGroupAddon>
       </InputGroup>
 
+      {/*
+       * The list portals to the body so no scroll container clips it. A Base
+       * UI modal dialog marks the body's other children aria-hidden once, as
+       * it opens, so a list opened later inside the dialog stays reachable
+       * (#496). A list already open as a modal dialog opens is hidden: don't
+       * focus this field as a dialog opens.
+       */}
       {isOpen
         ? createPortal(
             <Command
