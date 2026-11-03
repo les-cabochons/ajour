@@ -29,7 +29,7 @@ Click the view name at the top to switch between **Time**, **Backlog**, **Pull r
 
 Press the search icon and type. Every word must appear in the item's title or its project's name or code. A pull request matches on its title and repository. Case and accents do not matter. Press <kbd>Esc</kbd> to clear the search.
 
-Press **Filter and order** to show one project's items only. Ajour remembers the filter on this device. Search and filter apply to the sidebar only, not to the Backlog page.
+Press **Filter and order** to show one project's items only. Ajour remembers the filter on this device. While a project is picked, a new item from the **+** starts in that project. Search and filter apply to the sidebar only, not to the Backlog page.
 
 The same menu switches the order between **Custom order** and **Priority order**. The sidebar and the Backlog page share one order. With **Custom order**, drag items in the sidebar, or press <kbd>Alt</kbd> <kbd>↑</kbd> and <kbd>Alt</kbd> <kbd>↓</kbd>, to reorder them. Pinned items reorder among themselves, and subitems stay under their parent. While you drag, the item follows the pointer and the list opens a space where it will land. Press <kbd>Escape</kbd> to put it back.
 

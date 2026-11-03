@@ -17,6 +17,8 @@ export interface SidebarFilter {
 export interface SidebarMatcher {
   /** True while the query or the project narrows the list. */
   active: boolean;
+  /** The picked project while it narrows the list. Missing for an archived or gone one. */
+  projectId?: string;
   workItem: (workItem: Pick<LocalWorkItem, "title" | "projectId">) => boolean;
   pullRequest: (item: {
     facts: Pick<LocalPullRequest["facts"], "title" | "repository">;
@@ -63,6 +65,7 @@ export function createSidebarMatcher(
 
   return {
     active: terms.length > 0 || projectId !== undefined,
+    projectId,
     workItem: (workItem) =>
       (!projectId || workItem.projectId === projectId) &&
       matchesTerms(

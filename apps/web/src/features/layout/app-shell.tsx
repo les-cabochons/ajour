@@ -87,6 +87,7 @@ import { CloseSubitemsDialogHost } from "@/features/backlog/close-subitems-dialo
 import { TaskCreationDialogHost } from "@/features/projects/task-creation";
 import { WaitingTasksDialogHost } from "@/features/projects/waiting-tasks-dialog";
 import { SourceStateDialogHost } from "@/features/backlog/source-state-dialog";
+import { NewBacklogItemDialogHost } from "@/features/backlog/new-backlog-item-dialog";
 import { SettleDialogHost } from "@/features/backlog/settle-dialog";
 import { SnoozePickerHost } from "@/features/backlog/snooze-picker";
 import { useShortcut } from "@/lib/shortcut-handlers";
@@ -616,6 +617,7 @@ export function AppShell() {
       <CommandPalette />
       <SnoozePickerHost />
       <SettleDialogHost />
+      <NewBacklogItemDialogHost />
       <CloseSubitemsDialogHost />
       <TaskCreationDialogHost />
       <WaitingTasksDialogHost />

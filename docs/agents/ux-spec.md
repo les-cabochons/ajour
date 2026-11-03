@@ -156,7 +156,7 @@ Decided in [App shell and collapsible sidebar](https://github.com/les-cabochons/
 
 ### Desktop widths
 
-- The app sidebar is expanded (resizable, see the Backlog sidebar section for widths) or hidden. There is no icon rail. From the top: Hide sidebar and the logo, the view switcher with Search, the project filter and New backlog item (+), the timer dock, then the work list. New backlog item opens the Backlog page with a blank backlog item editor; time entries start from the timer dock's "+". Its fixed footer has Settings and Commit icon buttons at the left. Commit opens the selected date's week. The desktop app's update button sits at the right.
+- The app sidebar is expanded (resizable, see the Backlog sidebar section for widths) or hidden. There is no icon rail. From the top: Hide sidebar and the logo, the view switcher with Search, the project filter and New backlog item (+), the timer dock, then the work list. New backlog item opens a blank backlog item editor in a dialog over the current page, which keeps its open editor and draft; time entries start from the timer dock's "+". Its fixed footer has Settings and Commit icon buttons at the left. Commit opens the selected date's week. The desktop app's update button sits at the right.
 - Hide sidebar and the logo sit on the titlebar's row, as in T3 Code: right of the traffic lights on macOS, in the window's top left corner elsewhere. Hide sidebar sits where Show sidebar sits in the titlebar, so the button does not move when the sidebar toggles.
 - The view switcher works like ChatGPT's: the open view's name, such as "Time", opens a menu of Time, Backlog, Pull requests (only while a code host plugin is enabled) and Projects with their live counts, today's total next to Time, the number of listed items next to Backlog, and next to Pull requests the number that need the user, as a filled badge when any returned. A check marks the open view. A backlog item's page belongs to Backlog, unless it was opened from the sidebar while Time, Projects or Pull requests showed: that view stays selected.
 - Cmd+B (Ctrl+B on Windows), Hide sidebar next to the logo and Show sidebar at the start of the titlebar toggle it. The View menu gets "Show sidebar" or "Hide sidebar" once the menu bar exists. There is no second shortcut.
@@ -657,7 +657,7 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 - Editing a backlog item uses the editor form, in the peek slot on wide windows and the full-width dialog in the narrow view, with the entry editor's rules: explicit Save (button, Enter in the title, Cmd+Enter), Escape or × discards, outside clicks do nothing.
 - The form holds title, workflow state, priority, project and task mapping, description, the estimates with their "Reset to subitem total" buttons, and "Keep when missing from sync" for synced items. Its header has the "…" action menu. The Priority select is narrow, so it shows the level's icon (three dashes for No priority); its menu shows each icon with the name.
 - Task mapping, and the Task property of the item page and the peek, end with "Create task "07 Run"" when the typed name matches no active task of the item's project, as in the [Task menu](#create-a-task). Task mapping is a draft: the created task waits for Save, and Undo puts the previous task back in the draft. The Task property saves at once, and one Undo takes back both the task and the item's change.
-- "New backlog item" in the page header, or the "+" at the top of the app sidebar, opens a blank form. "Add subitem" opens it with the parent set.
+- "New backlog item" on the Backlog page opens a blank form. The "+" at the top of the app sidebar opens it in a dialog, on any page. "Add subitem" opens it with the parent set.
 - Start entry stays on hover, in the "…" menu and in the peek. Entries start on today.
 
 ## Application updates
@@ -717,6 +717,7 @@ The sidebar works like the T3 Code and Linear sidebars: the view switcher, the t
 - The filter button, like T3 Code's, opens a menu with its own search and an ordering toggle beside it, then "All projects" and the active projects. The toggle has two icon buttons, Custom order and Priority order. Neither is pressed when the Backlog page picked another ordering. Picking one changes the Backlog page's ordering too and keeps the menu open. Without active projects, the menu holds the toggle only. Picking a project keeps only its items. Pull requests have no project, so they hide while a project is picked. The pick is saved per device. The button stays highlighted while a project is picked.
 - Every section keeps only the matching rows, and its count follows. A section left with no rows is not shown. While the list is narrowed, Settled shows its count and an empty backlog list says "No matching items."
 - The view switcher's counts and the Backlog page ignore the sidebar's search and filter.
+- While a project is picked, the sidebar's New backlog item (+) starts the item in that project, so it shows in the list after Save.
 
 ### Layout options
 

@@ -24,6 +24,11 @@ Feature: Sidebar search and project filter
     When I filter the sidebar to all projects
     Then the sidebar lists every backlog item
 
+  Scenario: A new backlog item starts in the project the sidebar is filtered to
+    When I filter the sidebar to the "Rideau" project
+    And I create the backlog item "Rotate the backup keys" from the sidebar header
+    Then the sidebar lists "Rotate the backup keys"
+
   Scenario: Clear the sidebar search from the keyboard
     When I search the sidebar for "backup"
     And I clear the sidebar search from the keyboard
