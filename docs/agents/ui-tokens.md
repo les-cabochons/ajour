@@ -27,7 +27,7 @@ Font weights: 400 for text, 500 for labels, buttons and row titles, 600 for page
 
 ## Controls
 
-- `--control-height: 28px` for buttons, toggles, segmented controls and icon buttons.
+- `--control-height: 28px` for buttons, toggles, segmented controls and icon buttons. The narrow view's floating navigation is the exception: 44px touch targets in a `--narrow-nav-height` (54px) bar.
 - `--control-height-lg: 32px` for primary actions and every input, textarea and select.
 - `--control-font-size` is the body size.
 - Button sizes: `xs` 20px, `sm` 24px, default 28px, `lg` 32px; icon buttons `icon-xs` 20px, `icon-sm` 24px, `icon` 28px, `icon-lg` 32px.

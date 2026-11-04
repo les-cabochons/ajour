@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import {
   RiAddLine as AddIcon,
   RiArrowRightSLine as ChevronIcon,
+  RiCheckLine,
 } from "@remixicon/react";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
@@ -235,6 +236,15 @@ export function SubitemsCard({
               >
                 {subitem.title}
               </span>
+              {/* A done subitem says so with a check, the same test as the
+                  summary's count (council round 14). */}
+              {subitem.status === "archived" ? (
+                <RiCheckLine
+                  role="img"
+                  aria-label="Done"
+                  className="size-3 shrink-0 text-muted-foreground"
+                />
+              ) : null}
               {subitem.priority !== undefined ? (
                 <PriorityIcon priority={subitem.priority} />
               ) : null}

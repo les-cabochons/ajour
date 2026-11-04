@@ -2085,8 +2085,10 @@
   /* The floating navigation toggle at the bottom left. The page reserves
      space under its content for it, and the toasts sit above it. */
   :root {
+    /* 44px touch targets in a 54px bar (council round 14). */
+    --narrow-nav-height: 3.375rem;
     --narrow-nav-clearance: calc(
-      2.5rem + 1.75rem + env(safe-area-inset-bottom, 0px)
+      var(--narrow-nav-height) + 1.75rem + env(safe-area-inset-bottom, 0px)
     );
   }
 
@@ -2095,25 +2097,25 @@
     left: max(1rem, env(safe-area-inset-left, 0px));
     bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
     z-index: 40;
-    height: 2.5rem;
-    padding: 4px;
+    height: var(--narrow-nav-height);
+    padding: 5px;
     background: var(--popover);
     box-shadow: var(--shadow-popup);
   }
 
   /* The agent indicator shares the toggle's row, at the bottom right,
-     centered on the toggle's 2.5rem height. */
+     centered on the toggle's height. */
   .ajour-agent-indicator {
     right: max(1rem, env(safe-area-inset-right, 0px));
     bottom: calc(
       1rem + env(safe-area-inset-bottom, 0px) +
-        (2.5rem - var(--control-height)) / 2
+        (var(--narrow-nav-height) - var(--control-height)) / 2
     );
   }
 
   .ajour-narrow-switcher-item {
-    height: 30px;
-    min-width: 32px;
+    height: 44px;
+    min-width: 44px;
   }
 
   .app-content-scroll-area [data-slot="scroll-area-viewport"] > div {
