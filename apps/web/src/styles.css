@@ -125,7 +125,8 @@
     --surface-highest: oklch(0.935 0.003 285);
     --text: var(--foreground);
     --text-secondary: var(--muted-foreground);
-    --text-tertiary: oklch(0.68 0.01 285);
+    /* About 3.5:1 on the page in both themes: faint, still readable. */
+    --text-tertiary: oklch(0.62 0.01 285);
     --success-muted: color-mix(in srgb, var(--success) 12%, transparent);
     --success-ring: color-mix(in srgb, var(--success) 35%, transparent);
     --success-bg: color-mix(in srgb, var(--success) 10%, transparent);
@@ -258,7 +259,7 @@
     --surface-high: oklch(0.25 0.004 285);
     --surface-highest: oklch(0.29 0.004 285);
     --text-secondary: var(--muted-foreground);
-    --text-tertiary: oklch(0.5 0.008 285);
+    --text-tertiary: oklch(0.56 0.008 285);
     --hover-bg: oklch(1 0 0 / 6%);
     --highlight-bg: oklch(1 0 0 / 4%);
     --field-bg: var(--surface-lowest);

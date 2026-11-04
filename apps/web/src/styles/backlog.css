@@ -893,9 +893,10 @@
     background: var(--border);
   }
 
+  /* Every progress bar fills with the accent; green means running only. */
   .backlog-item-progress > div {
     height: 100%;
-    background: var(--success);
+    background: var(--primary);
   }
 
   .backlog-item-rows {

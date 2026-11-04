@@ -471,8 +471,9 @@
   white-space: nowrap;
 }
 
+/* Within budget reads as plain text: green means running only. */
 .project-task-consumed.is-success {
-  color: var(--success);
+  color: var(--text);
 }
 
 .project-task-consumed.is-warning {

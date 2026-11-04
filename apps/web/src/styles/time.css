@@ -257,10 +257,11 @@
     font-weight: 500;
   }
 
+  /* The note tells two entries of one task apart: secondary, not tertiary. */
   .time-entry-note {
     min-width: 0;
     overflow: hidden;
-    color: var(--text-tertiary);
+    color: var(--text-secondary);
     text-overflow: ellipsis;
   }
 
@@ -501,10 +502,12 @@
     overflow-y: hidden;
   }
 
+  /* The table primitive pads cells with a p-3 utility, which outranks this
+     layer; without !important every 40px row grows to 64px. */
   .weekly-grid-table-scroll [data-slot="table-head"],
   .weekly-grid-table-scroll [data-slot="table-cell"] {
     height: auto;
-    padding: 0;
+    padding: 0 !important;
     border-right: 1px solid var(--border);
     vertical-align: middle;
   }
@@ -533,8 +536,8 @@
     table-layout: fixed;
   }
 
-  .weekly-grid-task-column,
-  .weekly-grid-task-cell {
+  .weekly-grid-table-scroll .weekly-grid-task-column,
+  .weekly-grid-table-scroll .weekly-grid-task-cell {
     padding-left: 1rem !important;
   }
 
@@ -581,8 +584,8 @@
     color: var(--text-tertiary);
   }
 
-  .weekly-grid-total-column,
-  .weekly-grid-total-cell {
+  .weekly-grid-table-scroll .weekly-grid-total-column,
+  .weekly-grid-table-scroll .weekly-grid-total-cell {
     width: var(--weekly-grid-total-width);
     padding-right: 1rem !important;
     text-align: right !important;
@@ -710,7 +713,7 @@
     padding: 0.375rem 1rem;
   }
 
-  .weekly-grid-footer-row > td {
+  .weekly-grid-table-scroll .weekly-grid-footer-row > td {
     height: 40px;
     border-top: 1px solid var(--border);
     background: var(--surface-low);
@@ -724,7 +727,7 @@
     color: var(--text-secondary);
   }
 
-  .weekly-grid-footer-row > .weekly-grid-time-cell {
+  .weekly-grid-table-scroll .weekly-grid-footer-row > .weekly-grid-time-cell {
     padding-right: 0.5rem !important;
   }
 
@@ -988,7 +991,7 @@
 
   .weekly-entry-card-note {
     overflow: hidden;
-    color: var(--text-tertiary);
+    color: var(--text-secondary);
     font-size: var(--text-xs);
     text-overflow: ellipsis;
     white-space: nowrap;

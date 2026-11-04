@@ -335,7 +335,6 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
       <>
         {startAction ? (
           <Button
-            variant="outline"
             onClick={() => runAction("start-entry")}
             disabled={Boolean(startAction.disabledReason)}
             title={startAction.disabledReason}

@@ -62,7 +62,7 @@ export function PropertyActions({
 }
 
 /**
- * A borderless action tile: a 20px icon over a small label in the muted
+ * A borderless action tile: a 16px icon over a small label in the muted
  * color. Hover only brightens the text, Archive included.
  */
 export function PropertyAction({
@@ -75,7 +75,7 @@ export function PropertyAction({
       type={type}
       data-slot="property-action"
       className={cn(
-        "flex min-h-14 cursor-pointer flex-col items-center justify-center gap-1.5 rounded-md p-2 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:size-5 [&_svg]:shrink-0",
+        "flex min-h-10 cursor-pointer flex-col items-center justify-center gap-1 rounded-md p-1.5 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
         className,
       )}
       {...props}
