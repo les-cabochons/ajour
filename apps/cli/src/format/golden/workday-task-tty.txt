@@ -1,0 +1,10 @@
+Week 45 for Workday · Mon 2 – Sun 8 Nov 2026 · by task · hours use a comma
+──────────────────────────────────────────────────────────────────────
+  Acme Platform	05 Backend 	6,00	Rate limiter | Rate limiter retries
+  Ajour Desktop	04 Review  	4,25	PR #510 | PR #512, #514
+  Ajour Desktop	07 Export  	3,00	Fix export rounding
+  Acme Platform	03 Meetings	3,00	Sprint planning | Weekly sync, moved to 10:30
+
+Not sent     1:30 on Ajour Desktop / 09 Admin is local only.
+Waiting      3:00 on Temp migration has no Workday task yet.
+Running      1:24 on 07 Export is not listed. Stop it first.

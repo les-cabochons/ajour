@@ -275,6 +275,27 @@ function couldBeMapped(task: LocalProjectTask) {
   );
 }
 
+/** Stored task values tell us whether this week's names need plugin discovery. */
+export function weekNeedsPluginNames(
+  state: LocalAppState,
+  weekDates: string[],
+): boolean {
+  const values = [
+    ...state.timesheetEntries.flatMap((entry) => [
+      entry,
+      ...(entry.commit ? [entry.commit] : []),
+    ]),
+    ...state.timesheetTombstones.map((entry) => entry.commit),
+  ];
+  return values.some((entry) => {
+    if (!weekDates.includes(entry.localDate)) return false;
+    const task = state.projects
+      .find((project) => project._id === entry.projectId)
+      ?.tasks.find((task) => task._id === entry.taskId);
+    return task !== undefined && couldBeMapped(task);
+  });
+}
+
 /**
  * What the task's time commits as. Local only and Not known yet come from
  * commit-target.ts. The name comes from `resolveCommitTaskName` under the
@@ -786,16 +807,24 @@ export function getWeekLinesForAgent(
     groupBy,
     propertyPlugins,
     now,
+    from,
+    to,
   }: {
     weekDates: string[];
     groupBy: SubmitGroupBy;
     /** Active plugins that add project or task properties. Passed in to keep domain free of `lib/`. */
     propertyPlugins: PropertyPlugins;
     now: number;
+    from?: string;
+    to?: string;
   },
 ): DataToolOutput<"get_week_lines"> {
   const { projects } = state;
-  const week = new Set(weekDates);
+  const selectedDates = weekDates.filter(
+    (date) =>
+      (from === undefined || date >= from) && (to === undefined || date <= to),
+  );
+  const week = new Set(selectedDates);
   const weekEntries = state.timesheetEntries.filter((entry) =>
     week.has(entry.localDate),
   );
@@ -807,7 +836,7 @@ export function getWeekLinesForAgent(
     entries: weekEntries,
     groupBy,
     projects,
-    weekDates,
+    weekDates: selectedDates,
   }).map((section) => ({
     ...(section.localDate ? { localDate: section.localDate } : {}),
     lines: section.lines.map((line) => {
@@ -832,7 +861,7 @@ export function getWeekLinesForAgent(
 
   const summary = summarizeWeek({
     capacityTargets: state.userPreferences.weeklyCapacityTargets,
-    weekDates,
+    weekDates: selectedDates,
     weekEntries,
     projects,
   });

@@ -128,6 +128,9 @@ export const weekLinesGroupBySchema = z.enum(["day-task", "day", "task"]);
 const weekLinesInputSchema = z.object({
   weekOf: isoDateSchema,
   groupBy: weekLinesGroupBySchema.default("day-task"),
+  /** Optional inclusive bounds within the week, applied before grouping. */
+  from: isoDateSchema.optional(),
+  to: isoDateSchema.optional(),
 });
 
 // Reads for the terminal (#532): day targets, pinned slots, commit-as names

@@ -3106,3 +3106,119 @@ describe("agent reads for the terminal", () => {
     });
   });
 });
+
+describe("week reads require plugin task names only for mapped entries", () => {
+  for (const tool of [
+    "get_week_lines",
+    "get_week_changes",
+    "get_week_status",
+  ]) {
+    for (const discovery of ["failed", "late"]) {
+      for (const scenario of [
+        "empty",
+        "own",
+        "empty properties",
+        "same name",
+        "other week",
+        "mapped",
+      ]) {
+        it(`${tool} with ${scenario} entries when discovery is ${discovery}`, async () => {
+          const { call, localStore, project, task } = await setup();
+          if (scenario !== "empty") {
+            localStore.saveManualTimeEntry({
+              localDate:
+                scenario === "other week" ? "2026-10-26" : "2026-11-02",
+              projectId: project._id,
+              taskId: task("Build")._id,
+              durationMs: 60 * 60_000,
+            });
+          }
+          const value =
+            scenario === "empty properties"
+              ? "  "
+              : scenario === "same name"
+                ? "Build"
+                : "07 Build";
+          if (scenario !== "own")
+            localStore.updateProjectTask(project._id, task("Build")._id, {
+              pluginProperties: { "workday-agent": { task: value } },
+            });
+          if (tool === "get_week_status")
+            localStore.markTimesheetEntriesCommitted(
+              localStore.snapshot().timesheetEntries.map((entry) => entry._id),
+            );
+          vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+          try {
+            if (discovery === "failed")
+              listPropertyPlugins.mockRejectedValueOnce(new Error("offline"));
+            else listPropertyPlugins.mockReturnValueOnce(new Promise(() => {}));
+            const pending = call(tool, { weekOf: "2026-11-02" });
+            await vi.advanceTimersByTimeAsync(2_000);
+            const result = await pending;
+            if (scenario === "mapped")
+              expect(result).toMatchObject({
+                ok: false,
+                error:
+                  "Ajour couldn't read the plugins' task names. Try again.",
+              });
+            else {
+              expect(result.ok).toBe(true);
+              if (scenario !== "empty" && scenario !== "other week")
+                expect(JSON.stringify(result)).toContain("Build");
+            }
+          } finally {
+            vi.useRealTimers();
+          }
+        });
+      }
+    }
+  }
+});
+
+it("bounds task totals and exclusions to selected days before grouping", async () => {
+  const { call, localStore, project, task } = await setup();
+  for (const localDate of ["2026-11-02", "2026-11-03"])
+    localStore.saveManualTimeEntry({
+      localDate,
+      projectId: project._id,
+      taskId: task("Build")._id,
+      durationMs: 90 * 60_000,
+      note: localDate,
+    });
+  localStore.addProjectTask(project._id, { name: "Admin" });
+  localStore.addProjectTask(project._id, { name: "Discovery" });
+  const tasks = localStore
+    .snapshot()
+    .projects.find((p) => p._id === project._id)!.tasks;
+  for (const [name, commitAs] of [
+    ["Admin", "local"],
+    ["Discovery", "waiting"],
+  ] as const) {
+    const taskId = tasks.find((t) => t.name === name)!._id;
+    localStore.updateProjectTask(project._id, taskId, { commitAs });
+    for (const localDate of ["2026-11-02", "2026-11-03"])
+      localStore.saveManualTimeEntry({
+        localDate,
+        projectId: project._id,
+        taskId,
+        durationMs: 60 * 60_000,
+      });
+  }
+  expect(
+    await call("get_week_lines", {
+      weekOf: "2026-11-02",
+      from: "2026-11-03",
+      to: "2026-11-03",
+      groupBy: "task",
+    }),
+  ).toMatchObject({
+    ok: true,
+    output: {
+      weekOf: "2026-11-02",
+      sections: [{ lines: [{ hours: 1.5, comments: "2026-11-03" }] }],
+      notSent: { hours: 1, items: [{ taskName: "Admin", hours: 1 }] },
+      waiting: { hours: 1, tasks: [{ taskName: "Discovery", hours: 1 }] },
+      running: null,
+    },
+  });
+});
