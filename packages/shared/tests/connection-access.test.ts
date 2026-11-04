@@ -76,6 +76,20 @@ describe("connection access", () => {
     expect(refused(["peopleSearch"], "an")).toBeUndefined();
   });
 
+  it("lists an item's likely assignees while people search is off, and refuses a typed search", () => {
+    const choices = connectionAccessChoicesOf(azureApi3);
+    const refused = (turnedOn: string[], query: string) =>
+      accessRefusalOf(choices, turnedOn, "searchAssignees", {
+        sourceId: "1",
+        query,
+        limit: 20,
+      })?.id;
+
+    expect(refused([], "")).toBeUndefined();
+    expect(refused([], "ana")).toBe("peopleSearch");
+    expect(refused(["peopleSearch"], "ana")).toBeUndefined();
+  });
+
   it("lets reads run on a connection that only reads", () => {
     const choices = connectionAccessChoicesOf(azureApi3);
 

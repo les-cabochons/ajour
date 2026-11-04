@@ -67,6 +67,7 @@ function moveSnapshot(item: LocalWorkItem): LocalWorkItemMoveSnapshot {
     settledWithParentId: item.settledWithParentId,
     settledSourceStatusKey: item.settledSourceStatusKey,
     settledImportedPriority: item.settledImportedPriority,
+    settledAssigneeId: item.settledAssigneeId,
     returnedAt: item.returnedAt,
     snoozedUntil: item.snoozedUntil,
   };
@@ -405,6 +406,7 @@ function closeWorkItem(
     settledAt: undefined,
     settledSourceStatusKey: undefined,
     settledImportedPriority: undefined,
+    settledAssigneeId: undefined,
     snoozedUntil: undefined,
     returnedAt: undefined,
   };
@@ -980,6 +982,10 @@ export function settleBacklogItem(
           settleId: factories.createId("settle"),
           settledSourceStatusKey: workItem.sourceStatusKey,
           settledImportedPriority: workItem.importedPriority,
+          settledAssigneeId:
+            workItem.assignee === undefined
+              ? undefined
+              : (workItem.assignee?.id ?? null),
           snoozedUntil: undefined,
           returnedAt: undefined,
         };
@@ -1375,6 +1381,7 @@ function reactivate(
             settledWithParentId: undefined,
             settledSourceStatusKey: undefined,
             settledImportedPriority: undefined,
+            settledAssigneeId: undefined,
             archivedAt: undefined,
             archivedByMissingSync: false,
             archivedSourceStatusKey: undefined,

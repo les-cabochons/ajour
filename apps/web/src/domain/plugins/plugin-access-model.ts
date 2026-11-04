@@ -75,6 +75,7 @@ const OPERATION_LABELS: Record<string, string> = {
   deleteItemComment: "delete comments",
   setItemCommentReaction: "react to comments",
   searchItemPeople: "search people",
+  searchAssignees: "search the people items can be assigned to",
   syncPullRequests: "sync pull requests",
   getPullRequestContent: "read pull request changes",
   getFileContent: "read files",

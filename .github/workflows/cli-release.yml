@@ -28,6 +28,13 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same pull request replaces the run in progress. Every
+# other run, among them the release workflows' calls, gets a group of its own,
+# so a release build is never cancelled or dropped from the queue.
+concurrency:
+  group: cli-release-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   binary:
     name: CLI ${{ matrix.os }} ${{ matrix.arch }} -V

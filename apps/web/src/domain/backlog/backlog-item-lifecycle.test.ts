@@ -1965,3 +1965,24 @@ describe("changing a backlog item's priority", () => {
     });
   });
 });
+
+describe("settled assignee baseline", () => {
+  it.each([
+    { assignee: { id: "ana", displayName: "Ana" }, expected: "ana" },
+    { assignee: null, expected: null },
+    { assignee: undefined, expected: undefined },
+  ])(
+    "records the known assignee at settle and clears it at unsettle: %j",
+    ({ assignee, expected }) => {
+      const settled = settleBacklogItem(
+        createState({ workItems: [synced("a", { assignee })] }),
+        "a",
+        factories,
+      );
+      expect(find(settled, "a")?.settledAssigneeId).toBe(expected);
+      expect(
+        find(unsettleBacklogItem(settled, "a"), "a")?.settledAssigneeId,
+      ).toBeUndefined();
+    },
+  );
+});

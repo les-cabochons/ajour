@@ -12,6 +12,8 @@ import type {
   PluginHttpMethod,
   ReadDescriptionRequest,
   ReadDescriptionResult,
+  SearchAssigneesRequest,
+  SearchAssigneesResult,
   SettleStatesRequest,
   SettleStatesResult,
   SettleWriteRequest,
@@ -138,6 +140,10 @@ export type PluginModule = {
     connection: PluginConnection,
     request: SettleWriteRequest,
   ) => Awaitable<SettleWriteResult>;
+  searchAssignees?: (
+    connection: PluginConnection,
+    request: SearchAssigneesRequest,
+  ) => Awaitable<SearchAssigneesResult>;
   readDescription?: (
     connection: PluginConnection,
     request: ReadDescriptionRequest,

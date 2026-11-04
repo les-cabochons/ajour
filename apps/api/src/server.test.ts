@@ -958,7 +958,12 @@ describe("backlog settle routes", () => {
     "});",
     "export async function syncConnection(connection, workItems) {",
     "  return {",
-    "    items: [item('OPEN-1', 'In Progress', false), item('DONE-1', 'Done', true)]",
+    "    items: [",
+    "      { ...item('OPEN-1', 'In Progress', false), assignee: { id: 'ana@acme.test', displayName: 'Ana Silva' } },",
+    "      item('OPEN-2', 'To Do', false),",
+    "      { ...item('DONE-1', 'Done', true), assignee: { id: 'ana@acme.test', displayName: 'Ana Silva' } },",
+    "      item('DONE-2', 'Done', true),",
+    "    ]",
     "      .map((candidate) => ({ ...candidate, connectionId: connection.id })),",
     "    workItemUpdates: [],",
     "    viewer: { id: 'me', displayName: 'Alex' },",
@@ -977,11 +982,26 @@ describe("backlog settle routes", () => {
     "}",
     "export async function writeSettle(connection, request) {",
     "  if (request.sourceId === 'FAIL-1') throw new Error('Transition not allowed.');",
-    "  return { state: request.state, priority: request.priority };",
+    "  // The state echoes an assignee, so a test sees what the plugin received.",
+    "  const assigned = request.assignee === undefined ? undefined",
+    "    : request.assignee === null ? 'Unassigned' : 'Assigned to ' + request.assignee;",
+    "  return { state: request.state ?? assigned, priority: request.priority };",
+    "}",
+    "const people = [",
+    "  { id: 'ana@acme.test', displayName: 'Ana Silva', email: 'ana@acme.test' },",
+    "  { id: 'bo@acme.test', displayName: 'Bo Chen' },",
+    "];",
+    "export async function searchAssignees(connection, request) {",
+    "  return { people: people",
+    "    .filter((person) => person.displayName.toLowerCase().includes(request.query.toLowerCase()))",
+    "    .slice(0, request.limit) };",
     "}",
   ].join("\n");
 
-  async function createServer(capabilities?: { settle: boolean }) {
+  async function createServer(capabilities?: {
+    settle: boolean;
+    assign?: boolean;
+  }) {
     const root = await mkdtemp(path.join(os.tmpdir(), "ajour-settle-api-"));
     tempDirs.push(root);
     const pluginDirectory = await createPlugin(
@@ -1015,7 +1035,7 @@ describe("backlog settle routes", () => {
     const connectionId = (
       connectionResponse.body as { connection: { id: string } }
     ).connection.id;
-    return { server, connectionId };
+    return { server, connectionId, root };
   }
 
   it("lists settle states and writes a settle through the plugin", async () => {
@@ -1075,6 +1095,77 @@ describe("backlog settle routes", () => {
     });
   });
 
+  it("searches the people an item can be assigned to, and writes an assignee with a settle", async () => {
+    const { server, connectionId } = await createServer({
+      settle: true,
+      assign: true,
+    });
+    const assignees = (query: string) =>
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/plugins/jira/connections/${connectionId}/assignees`,
+        body: JSON.stringify({ sourceId: "OPEN-1", query, limit: 20 }),
+      });
+
+    await expect(assignees("")).resolves.toEqual({
+      status: 200,
+      body: {
+        people: [
+          {
+            id: "ana@acme.test",
+            displayName: "Ana Silva",
+            email: "ana@acme.test",
+          },
+          { id: "bo@acme.test", displayName: "Bo Chen" },
+        ],
+      },
+    });
+    await expect(assignees("bo")).resolves.toEqual({
+      status: 200,
+      body: { people: [{ id: "bo@acme.test", displayName: "Bo Chen" }] },
+    });
+
+    const settle = (body: object) =>
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/plugins/jira/connections/${connectionId}/settle`,
+        body: JSON.stringify({ sourceId: "OPEN-1", ...body }),
+      });
+    await expect(settle({ assignee: "ana@acme.test" })).resolves.toEqual({
+      status: 200,
+      body: { state: "Assigned to ana@acme.test" },
+    });
+    await expect(settle({ assignee: null })).resolves.toEqual({
+      status: 200,
+      body: { state: "Unassigned" },
+    });
+  });
+
+  it("refuses assignees through a plugin that doesn't declare them", async () => {
+    const { server, connectionId } = await createServer({ settle: true });
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/plugins/jira/connections/${connectionId}/assignees`,
+        body: JSON.stringify({ sourceId: "OPEN-1", query: "", limit: 20 }),
+      }),
+    ).resolves.toEqual({
+      status: 409,
+      body: { error: "This plugin does not support assignees." },
+    });
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/plugins/jira/connections/${connectionId}/settle`,
+        body: JSON.stringify({ sourceId: "OPEN-1", assignee: "ana@acme.test" }),
+      }),
+    ).resolves.toEqual({
+      status: 409,
+      body: { error: "This plugin does not support assignees." },
+    });
+  });
+
   it("refuses to settle through a plugin without the capability", async () => {
     const { server, connectionId } = await createServer();
 
@@ -1090,6 +1181,129 @@ describe("backlog settle routes", () => {
     });
   });
 
+  it("records an unassigned item as null from a plugin that assigns, and drops assignees from one that doesn't", async () => {
+    const assignees = async (capabilities: {
+      settle: boolean;
+      assign?: boolean;
+    }) => {
+      const { server, connectionId } = await createServer(capabilities);
+      const synced = await dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/plugins/jira/connections/${connectionId}/sync`,
+        body: JSON.stringify({ trigger: "manual", workItems: [] }),
+      });
+      const staged = await dispatchJsonRequest(server, {
+        method: "GET",
+        path: "/api/backlog/imports",
+      });
+      expect(synced.status).toBe(200);
+      // Staged items come back in no set order.
+      return (
+        staged.body as { items: { sourceId: string; assignee?: unknown }[] }
+      ).items
+        .map((item) => [item.sourceId, item.assignee] as const)
+        .sort(([left], [right]) => left.localeCompare(right));
+    };
+
+    await expect(assignees({ settle: true, assign: true })).resolves.toEqual([
+      ["OPEN-1", { id: "ana@acme.test", displayName: "Ana Silva" }],
+      ["OPEN-2", null],
+    ]);
+    await expect(assignees({ settle: true })).resolves.toEqual([
+      ["OPEN-1", undefined],
+      ["OPEN-2", undefined],
+    ]);
+  });
+
+  it("removes a staged assignee when the plugin drops assign between syncs", async () => {
+    const { server, connectionId, root } = await createServer({
+      settle: true,
+      assign: true,
+    });
+    const sync = (target: Server) =>
+      dispatchJsonRequest(target, {
+        method: "POST",
+        path: `/api/plugins/jira/connections/${connectionId}/sync`,
+        body: JSON.stringify({ trigger: "manual", workItems: [] }),
+      });
+    const imports = (target: Server) =>
+      dispatchJsonRequest(target, {
+        method: "GET",
+        path: "/api/backlog/imports",
+      });
+    expect((await sync(server)).status).toBe(200);
+    const before = await imports(server);
+    expect(before.status).toBe(200);
+    expect(before.body).toMatchObject({
+      items: expect.arrayContaining([
+        expect.objectContaining({
+          sourceId: "OPEN-1",
+          assignee: { id: "ana@acme.test", displayName: "Ana Silva" },
+        }),
+        expect.objectContaining({ sourceId: "OPEN-2", assignee: null }),
+      ]),
+    });
+    server.emit("close");
+    const pluginDirectory = await createPlugin(
+      path.join(root, "source"),
+      settlePluginSource,
+      "plugin.mjs",
+      { capabilities: { connector: { settle: true } } },
+    );
+    const withoutAssign = createAppApiServer({
+      ...windowServerOptions,
+      vault: new MemorySecretVault(),
+      statePath: path.join(root, "state.json"),
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [pluginDirectory],
+      allowDevelopmentPlugins: true,
+    });
+    servers.push(withoutAssign);
+    expect((await sync(withoutAssign)).status).toBe(200);
+    const after = await imports(withoutAssign);
+    expect(after.status).toBe(200);
+    const { items } = after.body as {
+      items: { sourceId: string; assignee?: unknown }[];
+    };
+    expect(items.map((item) => item.sourceId).sort()).toEqual([
+      "OPEN-1",
+      "OPEN-2",
+    ]);
+    for (const item of items) expect(item).not.toHaveProperty("assignee");
+  });
+
+  it.each([true, false])(
+    "done items carry normalized assignees only with assign=%s",
+    async (assign) => {
+      const { server, connectionId } = await createServer({
+        settle: true,
+        assign,
+      });
+      const synced = await dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/plugins/jira/connections/${connectionId}/sync`,
+        body: JSON.stringify({ trigger: "manual", workItems: [] }),
+      });
+      expect(synced.status).toBe(200);
+      const { doneItems } = synced.body as {
+        doneItems: { sourceId: string; assignee?: unknown }[];
+      };
+      expect(doneItems.map((item) => [item.sourceId, item.assignee])).toEqual([
+        [
+          "DONE-1",
+          assign
+            ? { id: "ana@acme.test", displayName: "Ana Silva" }
+            : undefined,
+        ],
+        ["DONE-2", assign ? null : undefined],
+      ]);
+      if (!assign)
+        expect(
+          doneItems.every((item) => !Object.hasOwn(item, "assignee")),
+        ).toBe(true);
+    },
+  );
+
   it("returns done items from a sync instead of staging them for review", async () => {
     const { server, connectionId } = await createServer({ settle: true });
 
@@ -1101,7 +1315,7 @@ describe("backlog settle routes", () => {
     expect(synced).toMatchObject({
       status: 200,
       body: {
-        stagedCount: 1,
+        stagedCount: 2,
         doneItems: [
           {
             source: "jira",
@@ -1109,6 +1323,13 @@ describe("backlog settle routes", () => {
             sourceId: "DONE-1",
             state: "Done",
             description: { text: "About DONE-1" },
+          },
+          {
+            source: "jira",
+            connectionId,
+            sourceId: "DONE-2",
+            state: "Done",
+            description: { text: "About DONE-2" },
           },
         ],
       },
@@ -1118,11 +1339,12 @@ describe("backlog settle routes", () => {
       method: "GET",
       path: "/api/backlog/imports",
     });
+    // Staged items come back in no set order.
     expect(
-      (staged.body as { items: { sourceId: string }[] }).items.map(
-        (item) => item.sourceId,
-      ),
-    ).toEqual(["OPEN-1"]);
+      (staged.body as { items: { sourceId: string }[] }).items
+        .map((item) => item.sourceId)
+        .sort(),
+    ).toEqual(["OPEN-1", "OPEN-2"]);
   });
 
   it("passes on the comment facts a sync reports for settled items", async () => {

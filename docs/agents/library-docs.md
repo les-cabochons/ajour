@@ -176,8 +176,11 @@ The backlog editor module is feature-local because its vocabulary and commands b
   `syncConnection(connection, workItems)`. A backlog plugin that declares
   `"connector": { "settle": true }` also exports
   `listSettleStates(connection, { sourceId })` and
-  `writeSettle(connection, { sourceId, state?, priority? })`. The contract is
-  in `packages/shared/plugins.ts`. See ADR 0001.
+  `writeSettle(connection, { sourceId, state?, priority?, assignee? })`. One
+  that also declares `"assign": true` sends each item's `assignee` and
+  exports `searchAssignees(connection, { sourceId, query, limit })`, whose
+  ids the write takes back. The contract is in `packages/shared/plugins.ts`.
+  See ADR 0001 and ADR 0017.
 - A code host exports one function per entry of `codeHostOperations` in
   `packages/shared/code-host.ts`, each called as
   `operation(connection, request)`. The API exposes them at

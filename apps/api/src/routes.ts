@@ -202,6 +202,11 @@ export const ROUTES = {
     path: "/api/plugins/:pluginId/connections/:connectionId/settle",
     name: "backlog.write_source",
   },
+  assigneeSearch: {
+    method: "POST",
+    path: "/api/plugins/:pluginId/connections/:connectionId/assignees",
+    name: "assignee.search",
+  },
   descriptionRead: {
     method: "POST",
     path: "/api/plugins/:pluginId/connections/:connectionId/description",

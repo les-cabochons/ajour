@@ -106,6 +106,7 @@ function createSyncedWorkItem(
       workItem.completedEstimateHours,
     ),
     estimateSync: createImportedEstimateSyncState(workItem),
+    ...(workItem.assignee !== undefined ? { assignee: workItem.assignee } : {}),
     keepWhenMissingFromSync: false,
     archivedByMissingSync: false,
     createdAt: workItem.pushedAt,
@@ -264,6 +265,10 @@ function mergeSyncedWorkItem(
       ? nextImportedState.completedEstimateHours
       : existingWorkItem.completedEstimateHours,
     estimateSync,
+    assignee: nextImportedState.assignee,
+    ...(nextImportedState.assignee === undefined
+      ? { settledAssigneeId: undefined }
+      : {}),
     keepWhenMissingFromSync: existingWorkItem.keepWhenMissingFromSync ?? false,
     status: existingWorkItem.archivedByMissingSync
       ? "active"
@@ -281,6 +286,8 @@ function mergeSyncedWorkItem(
           sourceStatusLabel: existingWorkItem.sourceStatusLabel,
           workflowStateId: existingWorkItem.workflowStateId,
           importedWorkflowStateId: existingWorkItem.importedWorkflowStateId,
+          assignee: existingWorkItem.assignee,
+          settledAssigneeId: existingWorkItem.settledAssigneeId,
         }
       : {}),
     ...(reopened
@@ -307,6 +314,7 @@ function mergeSyncedWorkItem(
           settledWithParentId: undefined,
           settledSourceStatusKey: undefined,
           settledImportedPriority: undefined,
+          settledAssigneeId: undefined,
         }
       : {}),
   };
@@ -426,19 +434,26 @@ function reopenedInSource(
 }
 
 /**
- * A settled item comes back when the source shows a state or priority other
- * than the ones it had when the user settled it.
+ * A settled item comes back when the source shows a state, priority or
+ * assignee other than the ones it had when the user settled it. A settle
+ * that didn't know the assignee, or a plugin that doesn't send one, never
+ * returns the item for it.
  */
 function changedSinceSettled(
   existingWorkItem: LocalWorkItem,
   importedState: LocalWorkItem,
 ) {
+  const reassigned =
+    existingWorkItem.settledAssigneeId !== undefined &&
+    importedState.assignee !== undefined &&
+    (importedState.assignee?.id ?? null) !== existingWorkItem.settledAssigneeId;
   return (
     existingWorkItem.status === "settled" &&
     (importedState.sourceStatusKey !==
       existingWorkItem.settledSourceStatusKey ||
       importedState.importedPriority !==
-        existingWorkItem.settledImportedPriority)
+        existingWorkItem.settledImportedPriority ||
+      reassigned)
   );
 }
 
@@ -553,6 +568,7 @@ export function importSyncedWorkItems(
             settledWithParentId: undefined,
             settledSourceStatusKey: undefined,
             settledImportedPriority: undefined,
+            settledAssigneeId: undefined,
             archivedAt: undefined,
             archivedSourceStatusKey: undefined,
             workflowStateId:
@@ -658,6 +674,14 @@ export function archiveDoneSyncedWorkItems(
           ? {
               ...workItem,
               sourceSyncedAt: syncedAt,
+              ...(!pendingMoveItemIds.has(target._id)
+                ? {
+                    assignee: doneItem.assignee,
+                    ...(doneItem.assignee === undefined
+                      ? { settledAssigneeId: undefined }
+                      : {}),
+                  }
+                : {}),
               ...(doneDescription
                 ? reconcileDescription(workItem, doneDescription, syncedAt)
                 : {}),
@@ -722,7 +746,10 @@ export function archiveDoneSyncedWorkItems(
     if (keepsOpen) {
       nextState =
         target.status === "settled" &&
-        sourceStatusKey !== target.settledSourceStatusKey
+        (sourceStatusKey !== target.settledSourceStatusKey ||
+          (target.settledAssigneeId !== undefined &&
+            doneItem.assignee !== undefined &&
+            (doneItem.assignee?.id ?? null) !== target.settledAssigneeId))
           ? unsettleBacklogItem(withSourceState, target._id)
           : withSourceState;
       if (reopens || nextState !== withSourceState) {
