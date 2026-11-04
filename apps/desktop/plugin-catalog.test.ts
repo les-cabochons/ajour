@@ -138,6 +138,7 @@ function world() {
   const jiraFiles = pluginFiles("jira", "1.0.0", { connector: {} });
   const schemaFiles = pluginFiles("shape", "1.0.0", { projectDataShape: {} });
   const weatherFiles = pluginFiles("weather", "1.0.0", { calendar: {} });
+  const planningFiles = pluginFiles("planning", "1.0.0", { projectSource: {} });
   const officialManifest = Buffer.from(
     JSON.stringify({
       schemaVersion: 1,
@@ -164,6 +165,11 @@ function world() {
       plugins: [
         listedPlugin("weather", weatherFiles, { capabilities: ["calendar"] }),
         listedPlugin("jira", jiraFiles, { name: "Alice's Jira" }),
+        listedPlugin("planning", planningFiles, {
+          pluginApiVersion: 4,
+          capabilities: ["projectSource"],
+          features: ["project-sync"],
+        }),
       ],
     }),
   );
@@ -182,6 +188,10 @@ function world() {
   }
   for (const [filePath, bytes] of Object.entries(weatherFiles)) {
     served[`${ALICE}/raw/commit/${COMMIT}/plugins/weather/${filePath}`] = bytes;
+  }
+  for (const [filePath, bytes] of Object.entries(planningFiles)) {
+    served[`${ALICE}/raw/commit/${COMMIT}/plugins/planning/${filePath}`] =
+      bytes;
   }
   const state = { offline: false };
   const requests: string[] = [];
@@ -234,6 +244,7 @@ describe("plugin catalog from plugin sources", () => {
       "jira",
       "shape",
       "weather",
+      "planning",
     ]);
     expect(catalog.entries[0]).toMatchObject({
       title: "Jira",
@@ -268,7 +279,7 @@ describe("plugin catalog from plugin sources", () => {
         url: ALICE,
         state: "unsigned",
         hostKind: "gitea",
-        pluginCount: 1,
+        pluginCount: 2,
       }),
     ]);
   });
@@ -375,7 +386,7 @@ describe("plugin catalog from plugin sources", () => {
       outcome: "ok",
       catalog: {
         source: "network",
-        entry_count: 3,
+        entry_count: 4,
         sources_total: 2,
         sources_read: 2,
         sources_signed: 1,
@@ -410,6 +421,18 @@ describe("plugin catalog from plugin sources", () => {
       },
     });
     expect(downloaded.archiveBytes.byteLength).toBeGreaterThan(0);
+  });
+
+  it("downloads a project source plugin", async () => {
+    const fake = world();
+    const service = await serviceIn(fake, [{ url: ALICE }]);
+    await service.refresh();
+
+    await expect(
+      service.downloadPluginArchive("planning", ALICE),
+    ).resolves.toMatchObject({
+      archiveFilename: "planning-1.0.0.ajour-connector",
+    });
   });
 
   it("refuses a plugin whose files or manifest changed since its listing was signed", async () => {
@@ -457,6 +480,7 @@ describe("plugin catalog from plugin sources", () => {
       plugins: [
         { id: "weather", name: "weather", version: "1.0.0" },
         { id: "jira", name: "Alice's Jira", version: "1.0.0" },
+        { id: "planning", name: "planning", version: "1.0.0" },
       ],
       alreadyAdded: false,
     });

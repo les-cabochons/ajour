@@ -39,6 +39,7 @@ const CAPABILITIES = new Set([
   "codeHost",
   "calendar",
   "team",
+  "projectSource",
   "agentTask",
   "schema",
 ]);
@@ -203,11 +204,13 @@ function parsePluginEntry(value, index) {
   if (
     !Array.isArray(raw.capabilities) ||
     raw.capabilities.length < 1 ||
-    raw.capabilities.length > 6 ||
+    raw.capabilities.length > CAPABILITIES.size ||
     raw.capabilities.some((capability) => !CAPABILITIES.has(capability)) ||
     new Set(raw.capabilities).size !== raw.capabilities.length
   ) {
-    fail(`${at} capabilities must list 1 to 6 known capabilities.`);
+    fail(
+      `${at} capabilities must list 1 to ${CAPABILITIES.size} known capabilities.`,
+    );
   }
   const author = assertExactKeys(
     raw.author,

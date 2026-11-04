@@ -29,6 +29,7 @@ const INSTALLABLE_CAPABILITIES = new Set([
   "codeHost",
   "calendar",
   "team",
+  "projectSource",
   "agentTask",
 ]);
 const IMAGE_EXTENSION = /\.(png|jpe?g|webp|avif)$/iu;
