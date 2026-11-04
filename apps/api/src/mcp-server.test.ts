@@ -854,15 +854,22 @@ describe("MCP endpoint", () => {
     const calls: BridgeToolCall[] = [];
     await openFakeRenderer(baseUrl, (call) => {
       calls.push(call);
-      return { requestId: call.requestId, ok: true, output: { committed: 1 } };
+      return {
+        requestId: call.requestId,
+        ok: true,
+        output: { committed: 1, undoToken: "undo_1" },
+      };
     });
     const agent = await connectAgent(baseUrl, token);
 
     const { tools } = await agent.listTools();
-    expect(tools).toHaveLength(32);
+    expect(tools).toHaveLength(35);
     expect(tools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining([
         "start_timer",
+        "delete_entries",
+        "discard_timer",
+        "undo",
         "get_week_changes",
         "get_week_status",
         "mark_entries_committed",
@@ -875,9 +882,13 @@ describe("MCP endpoint", () => {
     );
     expect(tools.map((tool) => tool.name)).not.toContain("get_submit_lines");
 
-    await agent.callTool({
-      name: "mark_entries_committed",
-      arguments: { changes: [{ entryId: "e1", version: "v:0a1b2c3d" }] },
+    expect(
+      await agent.callTool({
+        name: "mark_entries_committed",
+        arguments: { changes: [{ entryId: "e1", version: "v:0a1b2c3d" }] },
+      }),
+    ).toMatchObject({
+      structuredContent: { committed: 1, undoToken: "undo_1" },
     });
     expect(calls[0]).toMatchObject({
       tool: "mark_entries_committed",
@@ -1199,6 +1210,7 @@ describe("agent sessions over MCP", () => {
       ok: true,
       output: {
         running: { timerId: "t1", date: "2026-10-14", countedMinutes: 0 },
+        undoToken: "undo_1",
       },
       activity: {
         action: "Started an entry",
@@ -1523,6 +1535,22 @@ describe("an agent task's declared tools", () => {
       expect(toolNames(replies[0]!.reply)).toEqual(
         ["get_week_status", "list_projects", ...SESSION_TOOLS].sort(),
       );
+    },
+  );
+
+  it(
+    "lists delete, discard and undo only when an API 4 task declares them",
+    { timeout: 20_000 },
+    async () => {
+      const { replies } = await runTask(
+        { apiVersion: 4, tools: ["list_projects", "delete_entries"] },
+        [{ method: "tools/list" }],
+      );
+
+      const names = toolNames(replies[0]!.reply);
+      expect(names).toContain("delete_entries");
+      expect(names).not.toContain("discard_timer");
+      expect(names).not.toContain("undo");
     },
   );
 

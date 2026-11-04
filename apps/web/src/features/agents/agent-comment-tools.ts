@@ -182,6 +182,8 @@ export async function postCommentForAgent(
     output: {
       workItemId: item._id,
       queued: true,
+      // Only the toast's Undo drops a queued comment.
+      undoToken: null,
     } satisfies DataToolOutput<"post_work_item_comment">,
     activity: { action, objectId: item._id, objectTitle: item.title },
   };
