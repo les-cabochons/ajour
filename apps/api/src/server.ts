@@ -27,6 +27,7 @@ import {
   pluginHasCodeHost,
   pluginHasCalendar,
   pluginHasTeam,
+  pluginHasProjectSource,
   pluginHasSwitchableCapabilities,
   pluginSwitchableCapabilities,
   switchableCapabilityLabels,
@@ -46,6 +47,8 @@ import {
   backlogWriteDescriptionResultSchema,
   backlogSyncRequestSchema,
   backlogSyncResultSchema,
+  projectSourceSyncRouteRequestSchema,
+  projectSourceSyncRouteResponseSchema,
   type PluginField,
   type PluginFieldValues,
   type PluginManifest,
@@ -3407,6 +3410,124 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           Date.now(),
         );
         writeJson(response, 200, result);
+      } catch (error) {
+        const credentials = await failedCall(
+          storage,
+          unit,
+          error,
+          call,
+          connection,
+        );
+        const message = credentials.errorMessage(error);
+        await storage.recordConnectionError(pluginId, connectionId, message);
+        writeJson(response, 502, { error: message });
+      }
+    },
+
+    projectSourceSync: async ({ request, response, params, unit }) => {
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      const { connectionId } = params;
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+      const { plugin, runnable } = await findPlugin(pluginManager, pluginId);
+      if (!plugin || !pluginHasProjectSource(plugin)) {
+        unit.refuse("not_supported");
+        writeJson(response, 409, {
+          error: "This plugin does not provide projects from a source.",
+        });
+        return;
+      }
+      const inactive = await inactiveCapability(
+        storage,
+        pluginId,
+        "projectSource",
+        runnable,
+        "syncing its projects",
+      );
+      if (inactive) {
+        unit.refuse(inactive.reason);
+        writeJson(response, 409, { error: inactive.message });
+        return;
+      }
+      // Paused, with a 409, when a secret it needs can't reach the plugin.
+      const connection = await storage.connectionForOperation(
+        pluginId,
+        connectionId,
+        secretManifestOf(plugin),
+      );
+      if (!connection) {
+        unit.refuse("connection_not_found");
+        writeJson(response, 404, { error: "Connection not found." });
+        return;
+      }
+      const payload = await readRequest(
+        request,
+        projectSourceSyncRouteRequestSchema,
+      );
+      const cursor = connection.projectSourceCursor;
+      unit.set({
+        project_source_sync: {
+          trigger: payload.trigger,
+          has_cursor: cursor !== undefined,
+        },
+      });
+      const call = admittedCall(plugin, connection.secrets);
+      try {
+        const result = await pluginManager.syncProjects(
+          pluginId,
+          pluginConnection(connection),
+          cursor ? { cursor } : {},
+          call.admit,
+        );
+        if ("unchanged" in result) {
+          // Without a cursor there was nothing to compare with: the plugin
+          // skipped the read, and the user would wait for projects that
+          // never come.
+          if (!cursor) {
+            throw new Error(
+              "The plugin reported no change, but Ajour sent it no cursor to compare with.",
+            );
+          }
+          unit.set({ project_source_sync: { unchanged: true } });
+          await storage.recordProjectSourceSync(
+            pluginId,
+            connectionId,
+            cursor,
+            Date.now(),
+          );
+        } else {
+          unit.set({
+            project_source_sync: {
+              unchanged: false,
+              project_count: result.snapshot.projects.length,
+              task_count: result.snapshot.projects.reduce(
+                (count, project) => count + project.tasks.length,
+                0,
+              ),
+              has_next_cursor: result.cursor !== undefined,
+            },
+          });
+          await storage.recordProjectSourceSync(
+            pluginId,
+            connectionId,
+            result.cursor,
+            Date.now(),
+          );
+        }
+        const { summary } = await findConnectionSummary(
+          storage,
+          pluginManager,
+          pluginId,
+          connectionId,
+        );
+        writeJson(
+          response,
+          200,
+          projectSourceSyncRouteResponseSchema.parse(
+            "unchanged" in result
+              ? { connection: summary, unchanged: true }
+              : { connection: summary, snapshot: result.snapshot },
+          ),
+        );
       } catch (error) {
         const credentials = await failedCall(
           storage,

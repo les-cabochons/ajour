@@ -166,6 +166,13 @@ interface StoredConnection {
   lastError?: string;
   /** When the sync that set `lastError` failed. */
   lastErrorAt?: number;
+  /**
+   * The cursor a project source plugin answered with its last snapshot
+   * (#504), opaque to Ajour, sent back on the next sync. Absent until a
+   * snapshot came with one, after a snapshot without one, and after the
+   * connection is saved again, so the next sync starts over.
+   */
+  projectSourceCursor?: string;
 }
 
 /**
@@ -944,10 +951,14 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
           onPremises,
           access,
           brokerActivity,
+          projectSourceCursor,
           ...connection
         }) => ({
           ...connection,
           ...(onPremises === true ? { onPremises } : {}),
+          ...(typeof projectSourceCursor === "string" && projectSourceCursor
+            ? { projectSourceCursor }
+            : {}),
           ...(normalizeAccess(access)
             ? { access: normalizeAccess(access) }
             : {}),
@@ -2571,6 +2582,39 @@ export class AppApiStorage {
 
       return {
         nextState,
+        result: nextConnection,
+      };
+    });
+  }
+
+  /**
+   * Records a project source sync that succeeded: the connection synced
+   * now, with `cursor` to send next time, or none when the plugin gave none.
+   */
+  async recordProjectSourceSync(
+    pluginId: string,
+    connectionId: string,
+    cursor: string | undefined,
+    timestamp: number,
+  ): Promise<StoredConnection> {
+    return this.mutate(async (state) => {
+      const connection = state.connections.find(
+        (candidate) =>
+          candidate.pluginId === pluginId && candidate.id === connectionId,
+      );
+      if (!connection) {
+        throw new Error(`Plugin connection "${connectionId}" not found.`);
+      }
+      const { projectSourceCursor: _previous, ...rest } = connection;
+      const nextConnection: StoredConnection = {
+        ...rest,
+        ...(cursor ? { projectSourceCursor: cursor } : {}),
+        lastSyncAt: timestamp,
+        lastError: undefined,
+        lastErrorAt: undefined,
+      };
+      return {
+        nextState: this.replaceConnection(state, nextConnection),
         result: nextConnection,
       };
     });

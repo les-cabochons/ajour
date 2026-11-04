@@ -7,7 +7,10 @@ import {
   backlogPersonSchema,
 } from "./backlog-comments.ts";
 import { projectDataShapeDefinitionSchema } from "./project-data-shapes.ts";
-import { projectSourceCapabilitySchema } from "./project-source.ts";
+import {
+  projectSourceCapabilitySchema,
+  projectSourceSnapshotSchema,
+} from "./project-source.ts";
 import {
   pluginRuntimeSummarySchema,
   pluginSuspensionSchema,
@@ -1496,3 +1499,30 @@ export const backlogSyncResultSchema = z.object({
     .default([]),
 });
 export type BacklogSyncResult = z.infer<typeof backlogSyncResultSchema>;
+
+/** `POST /api/plugins/:pluginId/connections/:connectionId/sync-projects`. */
+export const projectSourceSyncRouteRequestSchema = z.object({
+  trigger: z.enum(["manual", "auto"]).default("manual"),
+});
+export type ProjectSourceSyncRouteRequest = z.infer<
+  typeof projectSourceSyncRouteRequestSchema
+>;
+
+/**
+ * What the route answers: the connection as the overview shows it, and the
+ * snapshot, or that nothing changed since the last one. The cursor stays
+ * in the API: the web never sees it.
+ */
+export const projectSourceSyncRouteResponseSchema = z.union([
+  z.object({
+    connection: pluginConnectionSummarySchema,
+    unchanged: z.literal(true),
+  }),
+  z.object({
+    connection: pluginConnectionSummarySchema,
+    snapshot: projectSourceSnapshotSchema,
+  }),
+]);
+export type ProjectSourceSyncRouteResponse = z.infer<
+  typeof projectSourceSyncRouteResponseSchema
+>;
