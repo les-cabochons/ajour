@@ -75,13 +75,16 @@ async function measureColdLoad(route) {
     const page = await context.newPage();
     await page.goto(BASE_URL + route, { waitUntil: "commit" });
     // The seeded "Atlas platform" rows are on screen: the page has rendered.
-    await page.waitForFunction(
+    const rendered = await page.waitForFunction(
       () =>
-        document.querySelector("main")?.textContent?.includes("Atlas platform"),
+        document
+          .querySelector("main")
+          ?.textContent?.includes("Atlas platform") && performance.now(),
       null,
       { timeout: 30_000 },
     );
-    const ms = await page.evaluate(() => performance.now());
+    // Capture readiness in the page, without a second driver round trip.
+    const ms = await rendered.jsonValue();
     const navigation = await page.evaluate(
       () => performance.getEntriesByType("navigation")[0]?.responseEnd ?? 0,
     );
@@ -104,7 +107,7 @@ async function measureAction(route, action, seed = {}) {
   return median(values);
 }
 
-async function measureTimerRenderer() {
+async function measureTimerSample() {
   const context = await newContext({});
   const page = await context.newPage();
   await page.goto(BASE_URL + "/time/today", { waitUntil: "networkidle" });
@@ -122,8 +125,10 @@ async function measureTimerRenderer() {
   await page.waitForTimeout(TIMER_SAMPLE_MS);
   const after = await read();
   await context.close();
+  // CDP timestamps measure the actual interval, including driver delays.
+  const elapsedSeconds = after.Timestamp - before.Timestamp;
   const perSecond = (name) =>
-    ((after[name] - before[name]) * 1000) / (TIMER_SAMPLE_MS / 1000);
+    ((after[name] - before[name]) * 1000) / elapsedSeconds;
   return {
     task: perSecond("TaskDuration"),
     script: perSecond("ScriptDuration"),
@@ -132,11 +137,25 @@ async function measureTimerRenderer() {
   };
 }
 
+// Timer work has the same median-of-runs contract as the action measurements.
+async function measureTimerRenderer() {
+  const samples = [];
+  for (let run = 0; run < RUNS; run += 1)
+    samples.push(await measureTimerSample());
+  return Object.fromEntries(
+    ["task", "script", "layout", "style"].map((name) => [
+      name,
+      median(samples.map((sample) => sample[name])),
+    ]),
+  );
+}
+
 const coldLoad = await measureColdLoad("/time/today");
 const startClick = await measureAction(
   "/time/today",
   `(async () => {
   const button = document.querySelector('button[aria-label="Start"]');
+  await new Promise(requestAnimationFrame);
   const started = performance.now();
   button.click();
   const done = await ${settle};
@@ -148,6 +167,7 @@ const storeWrite = await measureAction(
   "/backlog",
   `(async () => {
   const { localStore } = await import("/src/lib/local-store.ts");
+  await new Promise(requestAnimationFrame);
   const started = performance.now();
   localStore.snoozeWorkItem("big-0", Date.now() + 3600000);
   const done = await ${settle};
