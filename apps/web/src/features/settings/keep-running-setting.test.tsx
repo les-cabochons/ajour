@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -28,9 +29,12 @@ function desktop(
   configureWindowSettings: (settings: {
     keepRunning: boolean;
   }) => Promise<{ keepRunning: boolean }>,
+  getWindowSettings: () => Promise<{ keepRunning: boolean }> = async () => ({
+    keepRunning: true,
+  }),
 ) {
   window.ajourDesktop = {
-    getWindowSettings: async () => ({ keepRunning: true }),
+    getWindowSettings,
     configureWindowSettings,
   } as never;
 }
@@ -50,6 +54,7 @@ describe("the keep running setting", () => {
     mocks.error.mockClear();
   });
   afterEach(() => {
+    vi.useRealTimers();
     cleanup();
     delete window.ajourDesktop;
   });
@@ -143,5 +148,100 @@ describe("the keep running setting", () => {
       expect(toggle.hasAttribute("data-disabled")).toBe(false),
     );
     expect(toggle.getAttribute("aria-checked")).toBe("true");
+  });
+
+  // Main never answering must not leave the switch disabled on a value it
+  // never confirmed.
+  it("gives the switch back after the deadline when main never answers", async () => {
+    const getWindowSettings = vi.fn(async () => ({ keepRunning: true }));
+    desktop(
+      () => new Promise<{ keepRunning: boolean }>(() => {}),
+      getWindowSettings,
+    );
+    const toggle = await loadedSwitch();
+    vi.useFakeTimers();
+
+    fireEvent.click(toggle);
+    expect(toggle.hasAttribute("data-disabled")).toBe(true);
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    await act(() => vi.advanceTimersByTimeAsync(4_900));
+    expect(toggle.hasAttribute("data-disabled")).toBe(true);
+    expect(mocks.error).not.toHaveBeenCalled();
+
+    await act(() => vi.advanceTimersByTimeAsync(200));
+
+    expect(mocks.error).toHaveBeenCalledOnce();
+    expect(mocks.error.mock.calls[0]?.[0]).toMatchObject({
+      title: "The setting was not saved.",
+    });
+    expect(toggle.hasAttribute("data-disabled")).toBe(false);
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    expect(getWindowSettings).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads the setting from main again after the deadline", async () => {
+    const getWindowSettings = vi
+      .fn<() => Promise<{ keepRunning: boolean }>>()
+      .mockResolvedValueOnce({ keepRunning: true })
+      .mockResolvedValue({ keepRunning: false });
+    desktop(
+      () => new Promise<{ keepRunning: boolean }>(() => {}),
+      getWindowSettings,
+    );
+    const toggle = await loadedSwitch();
+    vi.useFakeTimers();
+
+    fireEvent.click(toggle);
+    await act(() => vi.advanceTimersByTimeAsync(5_000));
+
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(toggle.hasAttribute("data-disabled")).toBe(false);
+  });
+
+  it("ignores an answer that arrives after the deadline", async () => {
+    let answer!: (settings: { keepRunning: boolean }) => void;
+    desktop(
+      () =>
+        new Promise<{ keepRunning: boolean }>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const toggle = await loadedSwitch();
+    vi.useFakeTimers();
+
+    fireEvent.click(toggle);
+    await act(() => vi.advanceTimersByTimeAsync(5_000));
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+
+    await act(async () => {
+      answer({ keepRunning: false });
+    });
+
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    expect(toggle.hasAttribute("data-disabled")).toBe(false);
+    expect(mocks.error).toHaveBeenCalledOnce();
+  });
+
+  it("leaves no timer and no update when it unmounts mid-save", async () => {
+    let answer!: (settings: { keepRunning: boolean }) => void;
+    desktop(
+      () =>
+        new Promise<{ keepRunning: boolean }>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const toggle = await loadedSwitch();
+    vi.useFakeTimers();
+
+    fireEvent.click(toggle);
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    cleanup();
+
+    expect(vi.getTimerCount()).toBe(0);
+    await act(async () => {
+      answer({ keepRunning: false });
+    });
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    expect(mocks.error).not.toHaveBeenCalled();
   });
 });
