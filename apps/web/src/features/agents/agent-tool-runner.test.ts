@@ -1315,6 +1315,24 @@ describe("the running entry for the terminal", () => {
     });
   });
 
+  it("refuses to move or duplicate a new running entry by its timer, as the window does", async () => {
+    const { call, localStore, project } = await setup();
+    await call("start_timer", { projectId: project._id });
+    const timerId = localStore.snapshot().timers[0]!._id;
+
+    for (const [tool, input] of [
+      ["move_entry", { entryId: timerId, date: "2026-10-14" }],
+      ["duplicate_entry", { entryId: timerId }],
+      ["duplicate_entry", { entryId: timerId, date: "2026-10-14" }],
+    ] as const) {
+      expect(await call(tool, input), tool).toMatchObject({
+        ok: false,
+        error: "Stop the running entry first",
+      });
+    }
+    expect(localStore.snapshot().timesheetEntries).toEqual([]);
+  });
+
   it("starts an empty entry, as S does, counting on from a given time", async () => {
     const { call, localStore } = await setup();
 

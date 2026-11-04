@@ -11,6 +11,10 @@ import { start } from "./commands/start.ts";
 import { status } from "./commands/status.ts";
 import { stop } from "./commands/stop.ts";
 import { undo } from "./commands/undo.ts";
+import { add } from "./commands/add.ts";
+import { dup } from "./commands/dup.ts";
+import { move } from "./commands/move.ts";
+import { rm } from "./commands/rm.ts";
 import { createContext, type Context } from "./context.ts";
 import { CliError, EXIT, UsageError } from "./errors.ts";
 import { painter, shouldColor, type ColorMode } from "./format/style.ts";
@@ -44,7 +48,38 @@ function text(value: string | boolean | undefined): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+/** Saved-entry commands. Edit shares its registration with running entries. */
+const SAVED_ENTRY_COMMANDS: Record<string, Command> = {
+  add: {
+    options: { ...ENTRY_OPTIONS, on: { type: "string" } },
+    arguments: 1,
+    run: (ctx, values, [task]) =>
+      add(ctx, {
+        task,
+        note: text(values.note),
+        duration: text(values.duration),
+        on: text(values.on),
+      }),
+  },
+  move: {
+    options: { to: { type: "string" } },
+    arguments: 1,
+    run: (ctx, values, [entry]) => move(ctx, { entry, to: text(values.to) }),
+  },
+  dup: {
+    options: { to: { type: "string" } },
+    arguments: 1,
+    run: (ctx, values, [entry]) => dup(ctx, { entry, to: text(values.to) }),
+  },
+  rm: {
+    options: {},
+    arguments: Infinity,
+    run: (ctx, _values, entries) => rm(ctx, { entries }),
+  },
+};
+
 const COMMANDS: Record<string, Command> = {
+  ...SAVED_ENTRY_COMMANDS,
   start: {
     options: ENTRY_OPTIONS,
     arguments: 1,

@@ -3,13 +3,20 @@ ajour — record time on project tasks, from the terminal
 Usage: ajour [options] <command> [args]
 
 Running entry
-  start [TASK] [-m NOTE] [-d DURATION]          Start an entry today. Switches if one runs.
-  stop                                          Stop and save the running entry.
-  discard                                       Throw away the time counted since it started.
-  continue [ENTRY]                              Count more time on an entry (default: last).
-  edit running [TASK] [-m NOTE] [-d DURATION]   Change the running entry. It keeps running.
-  undo                                          Undo the last change made from here.
-  status [-s] [-w]                              What is running, and today's total.
+  start [TASK] [-m NOTE] [-d DURATION]        Start an entry today. Switches if one runs.
+  stop                                        Stop and save the running entry.
+  discard                                     Throw away the time counted since it started.
+  continue [ENTRY]                            Count more time on an entry (default: last).
+  edit running [TASK] [-m NOTE] [-d DURATION] Change the running entry. It keeps running.
+  undo                                        Undo the last change made from here.
+  status [-s] [-w]                            What is running, and today's total.
+
+Saved entries
+  add TASK -d DURATION [-m NOTE] [--on DAY]   Save an entry without running it.
+  edit ENTRY [TASK] [-m NOTE] [-d DURATION]   Change an entry. -m "" clears the note.
+  move ENTRY --to DAY                         Move an entry to another day.
+  dup ENTRY [--to DAY]                        Copy an entry, on its day or another.
+  rm ENTRY...                                 Delete entries, in one action.
 
 Prints
   log [RANGE] [-s] [--by task] [--format FORMAT]

@@ -233,6 +233,7 @@ function readMinutes(text: string): number | undefined {
   return undefined;
 }
 
+/** The UTC time of a YYYY-MM-DD date, or undefined when no such day exists. */
 /** What an ENTRY argument names, before Ajour is asked. */
 export type EntryRef =
   { kind: "running" } | { kind: "last" } | { kind: "prefix"; prefix: string };

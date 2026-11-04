@@ -168,6 +168,57 @@ describe("parseDuration", () => {
   });
 });
 
+describe("DAY", () => {
+  // Wednesday 4 November 2026.
+  const WEDNESDAY = "2026-11-04";
+  // Monday 2 November 2026.
+  const MONDAY = "2026-11-02";
+  // Thursday 1 January 2026.
+  const NEW_YEAR = "2026-01-01";
+
+  it.each([
+    ["today", WEDNESDAY, "2026-11-04"],
+    ["Today", WEDNESDAY, "2026-11-04"],
+    [" yesterday ", WEDNESDAY, "2026-11-03"],
+    ["mon", WEDNESDAY, "2026-11-02"],
+    ["tue", WEDNESDAY, "2026-11-03"],
+    ["wed", WEDNESDAY, "2026-11-04"],
+    ["thu", WEDNESDAY, "2026-10-29"],
+    ["fri", WEDNESDAY, "2026-10-30"],
+    ["sat", WEDNESDAY, "2026-10-31"],
+    ["SUN", WEDNESDAY, "2026-11-01"],
+    ["mon", MONDAY, "2026-11-02"],
+    ["sun", MONDAY, "2026-11-01"],
+    ["tue", MONDAY, "2026-10-27"],
+    ["yesterday", NEW_YEAR, "2025-12-31"],
+    ["mon", NEW_YEAR, "2025-12-29"],
+    ["2026-10-12", WEDNESDAY, "2026-10-12"],
+    ["2028-02-29", WEDNESDAY, "2028-02-29"],
+    ["10-12", WEDNESDAY, "2026-10-12"],
+    ["12-31", NEW_YEAR, "2026-12-31"],
+  ])("reads %j on %s as %s", (text, today, date) => {
+    expect(parseDay(text, today)).toBe(date);
+  });
+
+  it.each([
+    "",
+    "tomorrow",
+    "2026-13-01",
+    "2026-02-30",
+    "02-29",
+    "13-01",
+    "2026-1-5",
+    "1-5",
+    "2026-W45",
+  ])("refuses %j with exit 2", (text) => {
+    const error = failure(() => parseDay(text, WEDNESDAY));
+    expect(error.exitCode).toBe(EXIT.usage);
+    expect(error.message).toBe(
+      `"${text}" isn't a day. Use today, yesterday, mon to sun, 2026-11-03 or 11-03.`,
+    );
+  });
+});
+
 describe("ENTRY", () => {
   const entry = (
     shortId: string,
