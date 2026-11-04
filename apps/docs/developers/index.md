@@ -22,6 +22,7 @@ A plugin has one or more capabilities:
 | **Code host**          | Provides the user's pull requests as facts. Ajour decides which need the user.                         | [GitHub](/plugins/github), [Azure DevOps](/plugins/azure-devops)                        | 4           |
 | **Calendar**           | Provides the user's calendar events as facts, for time suggestions. Read-only.                         | [Calendar address (ICS)](/plugins/ics)                                                  | 4           |
 | **Team**               | Keeps a team's shared projects in step through a backend.                                              |                                                                                         | 3, team 1   |
+| **Project source**     | Brings the user's projects, tasks and budgets from the system that holds them. Read-only.              |                                                                                         | 4           |
 | **Agent tasks**        | Prompts a coding agent runs from the Commit page. No plugin code runs.                                 | [Workday (agent)](/plugins/workday-agent)                                               | 4           |
 | **Project properties** | Text fields the plugin adds to every project. No plugin code runs.                                     | [Workday (agent)](/plugins/workday-agent)                                               | 4           |
 | **Task properties**    | Text fields the plugin adds to every task, such as the task its tool knows it by. No plugin code runs. | [Workday (agent)](/plugins/workday-agent)                                               | 4           |
@@ -79,6 +80,7 @@ Ajour checks a plugin's `apiVersion` exactly. A plugin for API `4` works with Aj
   { icon: 'pullRequest', title: 'Code host API', text: 'Pull request facts for code hosts.', link: '/developers/code-host-api' },
   { icon: 'calendar', title: 'Calendar API', text: 'Calendar events for time suggestions.', link: '/developers/calendar-api' },
   { icon: 'projects', title: 'Team API', text: 'Keep the shared projects of a team in step.', link: '/developers/team-api' },
+  { icon: 'projects', title: 'Project source API', text: 'Bring projects, tasks and budgets from their source.', link: '/developers/project-source-api' },
   { icon: 'robot', title: 'Agent tasks', text: 'Prompts a coding agent runs from the Commit page.', link: '/developers/manifest#agent-tasks' },
   { icon: 'excel', title: 'Schema API', text: 'Map projects and tasks to a file layout.', link: '/developers/schema-api' },
   { icon: 'shield', title: 'Runtime and limits', text: 'Where plugins run and what they may use.', link: '/developers/runtime' },
