@@ -228,7 +228,7 @@
     min-width: 0;
     max-width: 100%;
     overflow: hidden;
-    color: var(--text-tertiary);
+    color: var(--text-secondary);
     font-family: var(--font-mono);
     font-size: var(--text-xs);
     text-overflow: ellipsis;
@@ -255,7 +255,7 @@
   .backlog-item-parent {
     max-width: 160px;
     overflow: hidden;
-    color: var(--text-tertiary);
+    color: var(--text-secondary);
     font-size: var(--text-xs);
     text-overflow: ellipsis;
     white-space: nowrap;

@@ -32,7 +32,10 @@ export function PropertyRow({
   return (
     <>
       <dt
-        className={cn("min-h-7 self-center text-muted-foreground", className)}
+        className={cn(
+          "flex min-h-7 items-center self-center text-muted-foreground",
+          className,
+        )}
       >
         {label}
       </dt>

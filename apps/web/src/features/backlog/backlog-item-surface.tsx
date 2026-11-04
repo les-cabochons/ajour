@@ -549,7 +549,7 @@ export function BacklogItemSurface({
                   if (!startDisabledReason) onAction(startAction);
                 }}
               >
-                <StartIcon className="size-3.5" />
+                <StartIcon className="size-4" />
               </TooltipButton>
             ) : (
               <Button
@@ -565,7 +565,7 @@ export function BacklogItemSurface({
                   if (!startDisabledReason) onAction(startAction);
                 }}
               >
-                <StartIcon className="size-3.5" />
+                <StartIcon className="size-4" />
               </Button>
             ))}
           <ObjectActionsButton

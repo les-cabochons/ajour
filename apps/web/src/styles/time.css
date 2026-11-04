@@ -1274,14 +1274,15 @@
     color: var(--text-secondary);
   }
 
+  /* Under the project and task it describes, not under the date. */
   .commit-change-note {
-    grid-column: 3 / 6;
+    grid-column: 4 / 6;
     color: var(--text-secondary);
     font-size: var(--text-xs);
   }
 
   .commit-change-old {
-    color: var(--text-tertiary);
+    color: var(--text-secondary);
     text-decoration: line-through;
   }
 }
