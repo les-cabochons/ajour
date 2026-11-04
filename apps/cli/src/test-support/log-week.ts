@@ -69,6 +69,14 @@ export function entry(
     shortId: id.padEnd(32, "0"),
     date,
     state,
+    commitsAs: {
+      kind:
+        task === "admin"
+          ? "local-only"
+          : task === "temp"
+            ? "not-known-yet"
+            : "own",
+    },
     minutes,
     note,
     ...on(task),

@@ -45,8 +45,11 @@ interface Filter {
 export async function log(ctx: Context, options: LogOptions): Promise<number> {
   const today = localDate(ctx.io.now());
   const range = parseRange(options.range ?? "", today);
-  const format = formatOf(ctx, options.format);
   const view = viewOf(options);
+  const format = formatOf(
+    ctx,
+    options.format ?? (!ctx.json && view !== "entries" ? "table" : undefined),
+  );
   if (view !== "entries" && format !== "table") {
     throw new UsageError(
       `--${view === "summary" ? "summary" : "by task"} prints a table. Leave it out for --format ${format}, which prints one line per entry.`,
@@ -59,10 +62,9 @@ export async function log(ctx: Context, options: LogOptions): Promise<number> {
   const client = await ctx.client();
   const filtersByTask =
     options.project !== undefined || options.task !== undefined;
-  const projects =
-    format === "table" || filtersByTask
-      ? (await client.call("list_projects", {})).projects
-      : undefined;
+  const projects = filtersByTask
+    ? (await client.call("list_projects", {})).projects
+    : undefined;
   const filter: Filter = {
     ...(options.committed ? { committed: true } : {}),
     ...(options.uncommitted ? { committed: false } : {}),
@@ -71,12 +73,12 @@ export async function log(ctx: Context, options: LogOptions): Promise<number> {
     filter.projectId = resolveProject(options.project, projects!).projectId;
   }
   if (options.task !== undefined) {
-    const task = resolveTask(options.task, projects!);
-    if (filter.projectId !== undefined && filter.projectId !== task.projectId) {
-      throw new UsageError(
-        `${task.label} isn't in the project --project names.`,
-      );
-    }
+    const task = resolveTask(
+      options.task,
+      filter.projectId === undefined
+        ? projects!
+        : projects!.filter((project) => project.projectId === filter.projectId),
+    );
     filter.projectId = task.projectId;
     filter.taskId = task.taskId;
   }
@@ -89,7 +91,7 @@ export async function log(ctx: Context, options: LogOptions): Promise<number> {
     ctx.io.stdout.write(`${JSON.stringify(listed, null, 2)}\n`);
     return 0;
   }
-  const printed = logView({ range, today, listed, projects });
+  const printed = logView({ range, today, listed });
   if (format === "tsv" || format === "csv") {
     ctx.io.stdout.write(formatDelimited(printed, format));
     return 0;

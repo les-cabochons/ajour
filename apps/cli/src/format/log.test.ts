@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseRange } from "../refs.ts";
-import {
-  TODAY,
-  entry,
-  listed,
-  projects,
-  running,
-} from "../test-support/log-week.ts";
+import { TODAY, entry, listed, running } from "../test-support/log-week.ts";
 import {
   formatDelimited,
   formatLogByTask,
@@ -23,7 +17,6 @@ function view(range: string): LogView {
     range: parsed,
     today: TODAY,
     listed: listed(parsed.from, parsed.to),
-    projects,
   });
 }
 
@@ -92,7 +85,6 @@ describe("ajour log, the details", () => {
         running,
         targets: [{ date: TODAY, hours: 8 }],
       },
-      projects,
     });
 
     expect(
@@ -224,19 +216,38 @@ describe("ajour log, the details", () => {
 });
 
 describe("ajour log, local time", () => {
-  it("marks every entry of a Local only project as local", () => {
+  it("keeps archived task marks and excludes local time from to commit", async () => {
+    const archived = logView({
+      range: parseRange("today", TODAY),
+      today: TODAY,
+      listed: {
+        entries: [
+          entry(TODAY, "aa11bb2", "admin", 60, "Archived local"),
+          entry(TODAY, "bb22cc3", "temp", 60, "Archived waiting"),
+        ],
+        running: null,
+      },
+    });
+    const text = formatLogTable(archived, { paint: painter(false) });
+    expect(text).toContain("local");
+    expect(text).toContain("not known yet");
+    expect(text).toContain("1 to commit");
+    await expect(text).toMatchFileSnapshot("golden/log-archived.txt");
+  });
+
+  it("prints the local classification supplied by Ajour", () => {
     const local = logView({
       range: parseRange("today", TODAY),
       today: TODAY,
       listed: {
-        entries: [entry(TODAY, "aa11bb2", "temp", 60, "Spike")],
+        entries: [
+          {
+            ...entry(TODAY, "aa11bb2", "temp", 60, "Spike"),
+            commitsAs: { kind: "local-only" },
+          },
+        ],
         running: null,
       },
-      projects: projects.map((project) =>
-        project.projectId === "p-acme"
-          ? { ...project, localOnly: true }
-          : project,
-      ),
     });
 
     expect(local.rows[0]).toMatchObject({ mark: "local", tag: "local" });

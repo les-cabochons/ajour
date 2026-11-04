@@ -23,12 +23,11 @@ import {
 
 /**
  * `ajour log`'s prints: the table, its totals-only and per-task views, and
- * TSV and CSV for tools. Pure: the entries, targets and projects come from
+ * TSV and CSV for tools. Pure: the entries and targets come from
  * Ajour's read tools, already filtered.
  */
 
 type Listed = DataToolOutput<"list_time_entries">;
-type Project = DataToolOutput<"list_projects">["projects"][number];
 
 /** Time that never goes to Workday, or has no Workday task yet. */
 export type CommitMark = "local" | "not-known-yet";
@@ -67,10 +66,8 @@ export function logView(input: {
   range: DateRange;
   today: string;
   listed: Listed;
-  projects?: readonly Project[];
 }): LogView {
   const { range, listed } = input;
-  const marks = commitMarks(input.projects ?? []);
   const running =
     listed.running &&
     listed.running.date >= range.from &&
@@ -78,8 +75,13 @@ export function logView(input: {
       ? listed.running
       : null;
   const toRow = (row: Row, from: AgentRunningTimer | AgentTimeEntry) => {
-    // A Local only project keeps all its time, whatever its tasks say.
-    const mark = marks.get(projectKeyOf(from)) ?? marks.get(taskKeyOf(from));
+    const kind = from.commitsAs?.kind;
+    const mark: CommitMark | undefined =
+      kind === "local-only"
+        ? "local"
+        : kind === "not-known-yet"
+          ? "not-known-yet"
+          : undefined;
     return {
       ...row,
       taskKey: taskKeyOf(from),
@@ -112,25 +114,6 @@ export function logView(input: {
 
 function taskKeyOf(value: { projectId?: string; taskId?: string }): string {
   return `${value.projectId ?? ""}/${value.taskId ?? ""}`;
-}
-
-function projectKeyOf(value: { projectId?: string }): string {
-  return `${value.projectId ?? ""}/*`;
-}
-
-/** Local only projects and tasks, and tasks Not known yet, by key. */
-function commitMarks(projects: readonly Project[]): Map<string, CommitMark> {
-  const marks = new Map<string, CommitMark>();
-  for (const project of projects) {
-    if (project.localOnly) marks.set(projectKeyOf(project), "local");
-    for (const task of project.tasks) {
-      const kind = task.commitsAs?.kind;
-      const key = taskKeyOf({ projectId: project.projectId, ...task });
-      if (kind === "local-only") marks.set(key, "local");
-      if (kind === "not-known-yet") marks.set(key, "not-known-yet");
-    }
-  }
-  return marks;
 }
 
 // Totals and targets

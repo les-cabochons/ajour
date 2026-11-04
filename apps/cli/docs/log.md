@@ -20,6 +20,8 @@ Each line reads: state, duration, project code, task, note, a ✓ when
 Workday holds the entry as it is, and the entry's id. Ids are what
 ajour edit and ajour continue take. A Local only task's entries end with
 "local", and a task with no Workday task yet with "not known yet".
+These marks include archived tasks and projects when Ajour supplies
+entry classifications.
 
 One day's header adds a ten-cell bar against its target. Several days
 group their entries under each day, with the day's total of its target;
@@ -57,7 +59,8 @@ Options
   --committed        Only the entries Workday holds as they are.
   --uncommitted      Only the rest, the running entry included.
 
-  --summary and --by task print a table, so they take no other format.
+  --summary and --by task default to a plain table in a pipe too.
+  They reject an explicit tsv, csv or json format.
 
 For tools
   tsv and csv print one line per entry under a header row:

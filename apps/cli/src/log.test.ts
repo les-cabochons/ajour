@@ -47,11 +47,21 @@ interface Terminal {
 }
 
 /** A connected terminal, a pipe unless `tty`, against the real local API. */
-async function ajour(options: { tty?: boolean; columns?: number } = {}) {
+async function ajour(
+  options: { tty?: boolean; columns?: number; projects?: typeof projects } = {},
+) {
   const api = await startTestApi();
   cleanups.push(() => api.stop());
   const { token } = await enableMcpWithClient(api);
-  const fake = await openFakeWindow(api, window);
+  const fake = await openFakeWindow(api, (call) =>
+    call.tool === "list_projects" && options.projects
+      ? {
+          requestId: call.requestId,
+          ok: true,
+          output: { projects: options.projects },
+        }
+      : window(call),
+  );
   cleanups.push(() => fake.close());
   const home = await mkdtemp(path.join(os.tmpdir(), "ajour-cli-log-"));
   cleanups.push(() => rm(home, { recursive: true, force: true }));
@@ -151,6 +161,40 @@ describe("ajour log for tools", () => {
       ["list_time_entries", { from: "2026-11-02", to: "2026-11-08" }],
     ]);
   });
+
+  it("resolves a task within --project before checking ambiguity", async () => {
+    const term = await ajour({
+      projects: projects.map((project) => ({
+        ...project,
+        tasks:
+          project.projectId === "p-acme"
+            ? [...project.tasks, { taskId: "other-review", name: "04 Review" }]
+            : project.tasks,
+      })),
+    });
+    expect(
+      await run(
+        ["log", "week", "--project", "ajr", "--task", "review"],
+        term.io,
+      ),
+    ).toBe(0);
+    expect(term.out()).toContain("PR #512, #514");
+    expect(term.out()).not.toContain("Rate limiter");
+  });
+
+  it.each([["--summary"], ["--by", "task"]])(
+    "prints %j as a plain table in a pipe",
+    async (...flags) => {
+      const term = await ajour();
+      expect(await run(["log", "week", ...flags], term.io)).toBe(0);
+      expect(term.out()).toContain("Week 45");
+      expect(term.out()).toContain(
+        flags[0] === "--summary" ? "6:39" : "07 Export",
+      );
+      expect(term.out()).not.toContain("\x1b");
+      expect(term.out()).not.toContain("\t");
+    },
+  );
 
   it("prints CSV with a header that a CSV reader parses", async () => {
     const term = await ajour();
@@ -276,14 +320,13 @@ describe("ajour log on a terminal", () => {
 });
 
 describe("ajour log refusals", () => {
-  it.each([
+  it.each<[readonly string[], RegExp]>([
     [["log", "nope"], /isn't a range/],
     [["log", "2026-01-01..2026-06-30"], /at most 62 days/],
     [["log", "--committed", "--uncommitted"], /not both/],
     [["log", "--summary", "--by", "task"], /not both/],
     [["log", "--by", "week"], /--by takes day or task/],
     [["log", "--format", "xml"], /--format takes/],
-    [["log", "--summary", "--format", "tsv"], /prints a table/],
   ])("refuses %j with exit 2 before asking Ajour", async (argv, message) => {
     const term = await ajour();
 
@@ -292,6 +335,20 @@ describe("ajour log refusals", () => {
     expect(term.err()).toMatch(message);
     expect(term.calls).toEqual([]);
   });
+
+  it.each(["tsv", "csv", "json"])(
+    "refuses explicit %s for both summary views",
+    async (format) => {
+      for (const flags of [["--summary"], ["--by", "task"]]) {
+        const term = await ajour();
+        expect(await run(["log", ...flags, "--format", format], term.io)).toBe(
+          2,
+        );
+        expect(term.err()).toContain("prints a table");
+        expect(term.calls).toEqual([]);
+      }
+    },
+  );
 
   it("exits 4 when --project matches nothing", async () => {
     const term = await ajour();
