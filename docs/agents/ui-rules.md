@@ -44,7 +44,7 @@ Ajour is an operational desktop/web app. Build interfaces for scanning, repeated
 - Use the seven sizes of the type scale through `text-2xs` to `text-2xl`. No arbitrary `text-[Npx]` values.
 - Page titles are 14px semibold in the top bar. Object titles on detail pages are 20px semibold. Section headings are 12px medium muted on cardless pages and 16px semibold on settings pages.
 - Reserve the 28px figure size for one number per page, such as the week total. That number opens its row of figures. A bar under figures always fills with the spent part, Completed or Budget used, whichever figure leads, so the same shape never means used on one page and left on another (council rounds 23 and 28).
-- " · " joins a project and its task, or a row's parts, in rows, headers and the dock; " / " separates breadcrumb crumbs only (council round 25).
+- " · " joins a project and its task, or a row's parts, in rows, headers and the dock; " / " separates breadcrumb crumbs only, and a fraction reads "a of b" (council rounds 25 and 26). The wide Day view is the exception: its project and task sit in aligned 12px tracks, which scan better for many rows of one project (council rounds 8 and 30).
 - Do not scale font size with viewport width.
 - Keep letter spacing at `0`. No uppercase tracked labels; a column or section label is 11px or 12px medium in the secondary color.
 

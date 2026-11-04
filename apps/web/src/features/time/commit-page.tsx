@@ -4,7 +4,6 @@ import {
   RiCheckLine as Check,
   RiErrorWarningLine as Warning,
   RiFileCopyLine as Copy,
-  RiLockLine as Lock,
   RiLockUnlockLine as Unlock,
 } from "@remixicon/react";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -634,7 +633,8 @@ export function CommitPage({
                       />
                     }
                   >
-                    <Lock data-icon="inline-start" />
+                    {/* No padlock: the button locks the week, it is not locked
+                        (council round 30). */}
                     Submit week
                   </TooltipButton>
                 </DisabledReason>

@@ -21,7 +21,6 @@ import { stateDotStyle } from "@/features/backlog/state-dot";
 import { formatClockDuration } from "@/domain/time/duration";
 import { formatHours } from "@/features/backlog/backlog-estimates";
 import { AddSubitemRow } from "@/features/backlog/backlog-item-inline-edit";
-import { PriorityIcon } from "@/features/backlog/priority-icon";
 import {
   WorkItemIcon,
   resolveWorkItemIcon,
@@ -275,11 +274,9 @@ export function SubitemsCard({
               >
                 {subitem.title}
               </span>
-              {/* A done subitem has no working priority. */}
-              {subitem.priority !== undefined &&
-              subitem.status !== "archived" ? (
-                <PriorityIcon priority={subitem.priority} />
-              ) : null}
+              {/* State, title and estimate: what picking the next subitem
+                  needs; priority stays on the item itself (council round
+                  30). */}
               <Value tone="muted" className="w-10 text-right">
                 {/* A done subitem has nothing left: "–", as an empty cell
                     reads (council round 26). */}

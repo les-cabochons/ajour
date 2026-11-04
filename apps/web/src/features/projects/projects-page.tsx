@@ -1224,35 +1224,39 @@ function ProjectDetail({
             <TabsContent value="tasks" className="project-tab-panel">
               {/* The filter sits on the tab row, at its right: the tab already
                 names the list (council round 5). */}
-              <div className="project-task-toolbar">
-                <div
-                  className="toggle-group project-task-filter-tabs"
-                  role="tablist"
-                  aria-label="Filter project tasks"
-                >
-                  {taskFilters.map((filter) => {
-                    const isActive = taskFilter === filter.value;
-                    return (
-                      <button
-                        key={filter.value}
-                        type="button"
-                        role="tab"
-                        aria-selected={isActive}
-                        className={cn(
-                          "toggle-item",
-                          isActive && "toggle-item-active",
-                        )}
-                        onClick={() => setTaskFilter(filter.value)}
-                      >
-                        <span>{filter.label}</span>
-                        <span className="project-task-filter-count">
-                          {filter.count}
-                        </span>
-                      </button>
-                    );
-                  })}
+              {/* With nothing archived there is nothing to filter: the tab
+                  line keeps one selector (council round 30). */}
+              {summary.archived > 0 || isArchivedTaskFilter ? (
+                <div className="project-task-toolbar">
+                  <div
+                    className="toggle-group project-task-filter-tabs"
+                    role="tablist"
+                    aria-label="Filter project tasks"
+                  >
+                    {taskFilters.map((filter) => {
+                      const isActive = taskFilter === filter.value;
+                      return (
+                        <button
+                          key={filter.value}
+                          type="button"
+                          role="tab"
+                          aria-selected={isActive}
+                          className={cn(
+                            "toggle-item",
+                            isActive && "toggle-item-active",
+                          )}
+                          onClick={() => setTaskFilter(filter.value)}
+                        >
+                          <span>{filter.label}</span>
+                          <span className="project-task-filter-count">
+                            {filter.count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              ) : null}
 
               {visibleTasks.length === 0 ? (
                 <Empty align="start" className="project-task-empty">
