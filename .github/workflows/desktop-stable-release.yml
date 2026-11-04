@@ -249,7 +249,6 @@ jobs:
       - plan
       - package
       - plugin-sandbox
-      - cli
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -257,7 +256,7 @@ jobs:
       - name: Download desktop distributables
         uses: actions/download-artifact@v4
         with:
-          pattern: release-package-*
+          pattern: release-package-@(macos|windows)
           merge-multiple: true
           path: release-assets
 
@@ -291,3 +290,26 @@ jobs:
             --notes "Promoted from $NIGHTLY_TAG." \
             --latest \
             "${notes_args[@]}"
+
+  upload-cli:
+    name: Attach CLI archives
+    needs: [plan, release, cli]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download CLI archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-package-cli-*
+          merge-multiple: true
+          path: cli-assets
+      - name: Attach CLI to the published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mapfile -d '' assets < <(find cli-assets -type f -print0)
+          (( ${#assets[@]} > 0 ))
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"

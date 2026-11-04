@@ -46,6 +46,8 @@ jobs:
           check-latest: true
       - run: corepack enable
       - run: corepack pnpm install --frozen-lockfile
+      - name: Build CLI and manual pages
+        run: corepack pnpm --filter @ajour/cli build
       - name: Bundle CLI and build SEA
         env:
           RELEASE_TAG: ${{ inputs.tag }}
@@ -68,7 +70,10 @@ jobs:
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         shell: pwsh
         run: |
-          if (-not $env:WIN_CSC_LINK -or -not $env:WIN_CSC_KEY_PASSWORD) { throw 'Windows CLI signing requires WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD.' }
+          if (-not $env:WIN_CSC_LINK -or -not $env:WIN_CSC_KEY_PASSWORD) {
+            Write-Output '::notice::Windows signing credentials are incomplete; shipping the unsigned CLI, as the desktop installer does.'
+            exit 0
+          }
           $certFile = Join-Path $env:RUNNER_TEMP 'ajour-cli.pfx'
           try {
             [IO.File]::WriteAllBytes($certFile, [Convert]::FromBase64String($env:WIN_CSC_LINK))

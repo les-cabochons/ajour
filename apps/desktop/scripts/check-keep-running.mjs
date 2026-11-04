@@ -28,9 +28,10 @@
 // --skip-build, the last build is used, and AJOUR_APP_API_PORT must name the
 // port it was built for. --keep keeps the user data folder, and --events
 // prints the app's last events, which a failed run always prints.
-import { spawnSync } from "node:child_process";
+import { spawnSync, execFile } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { promisify } from "node:util";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -161,6 +162,13 @@ async function main() {
   const baseUrl = `http://127.0.0.1:${port}`;
   if (!process.argv.includes("--skip-build")) buildRenderer(baseUrl);
 
+  const bundle = path.join(repoRoot, "apps/cli/dist/ajour.cjs");
+  const bundled = spawnSync(
+    process.execPath,
+    [path.join(repoRoot, "apps/cli/scripts/bundle.mjs")],
+    { cwd: repoRoot, stdio: "inherit" },
+  );
+  if (bundled.status !== 0) throw new Error("CLI bundle failed");
   const userData = await mkdtemp(path.join(os.tmpdir(), "ajour-keep-running-"));
   const env = {
     ...process.env,
@@ -369,6 +377,74 @@ async function main() {
       "the reopened window holds the saved entry, and nothing runs",
       saved,
     );
+
+    // The bundled CLI talks to the real app. Its saved Undo stays in this temp profile.
+    const cli = async (...args) => {
+      const { stdout } = await promisify(execFile)(
+        process.execPath,
+        [bundle, ...args, "--json"],
+        {
+          cwd: repoRoot,
+          timeout: STEP_TIMEOUT_MS,
+          env: {
+            ...env,
+            AJOUR_URL: baseUrl,
+            AJOUR_TOKEN: token,
+            XDG_CONFIG_HOME: path.join(userData, "cli-config"),
+            XDG_STATE_HOME: path.join(userData, "cli-state"),
+          },
+        },
+      );
+      return JSON.parse(stdout);
+    };
+    const cliStart = await cli(
+      "start",
+      "-m",
+      "Bundled CLI lifecycle",
+      "-d",
+      "5m",
+    );
+    expect(
+      typeof cliStart.running?.timerId === "string",
+      "bundled CLI starts a real entry",
+    );
+    await page
+      .getByText(/Lifecycle check/)
+      .filter({ hasText: /started/i })
+      .first()
+      .waitFor({ timeout: STEP_TIMEOUT_MS });
+    expect(
+      (await page.getByRole("button", { name: "Undo", exact: true }).count()) >
+        0,
+      "the real Undo toast names the Lifecycle check client",
+    );
+    expect(
+      (await cli("log")).running?.note === "Bundled CLI lifecycle",
+      "CLI log reads the real running entry",
+    );
+    await cli("stop");
+    const cliEntry = await waitFor(
+      () =>
+        page.evaluate(() => {
+          const state = JSON.parse(
+            localStorage.getItem("ajour.local-state.v2") ?? "{}",
+          );
+          return state.timesheetEntries?.find(
+            (entry) => entry.note === "Bundled CLI lifecycle",
+          );
+        }),
+      { what: "the CLI entry in the page" },
+    );
+    expect(
+      Boolean(cliEntry),
+      "the page holds the entry saved by the bundled CLI",
+    );
+    await cli("undo");
+    expect(
+      (await cli("log")).running?.note === "Bundled CLI lifecycle",
+      "CLI undo restores the running entry",
+    );
+    await cli("stop");
 
     await agent.close().catch(() => undefined);
     agent = undefined;

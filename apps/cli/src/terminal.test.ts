@@ -11,7 +11,7 @@ import { running } from "./test-support/log-week.ts";
 
 afterEach(closeTerminals);
 
-it("starts an entry through the real API, reads it in log and undoes the terminal change", async () => {
+it("covers start, log and undo transport through the API with a fake renderer", async () => {
   let active = false;
   const term = await ajour({
     list_projects: () => projects,

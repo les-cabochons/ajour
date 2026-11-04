@@ -1,8 +1,7 @@
 import { build } from "vite";
-import { readdir, readFile, access } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const pages = Object.fromEntries(
@@ -59,15 +58,3 @@ await build({
     },
   },
 });
-
-// #540 can supply the manual generator without changing the release workflow.
-const generator = path.join(root, "scripts/generate-man.mjs");
-let hasGenerator = true;
-try {
-  await access(generator);
-} catch (error) {
-  if (error.code !== "ENOENT") throw error;
-  hasGenerator = false;
-}
-if (hasGenerator)
-  execFileSync(process.execPath, [generator], { cwd: root, stdio: "inherit" });
