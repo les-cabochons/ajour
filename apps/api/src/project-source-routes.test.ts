@@ -2,7 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Server } from "node:http";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import { createAppApiServer } from "./server.ts";
@@ -138,19 +138,23 @@ describe("the project source sync route", () => {
       eventSink: sink,
     });
     servers.push(server);
-    const saved = await dispatchJsonRequest(server, {
-      method: "POST",
-      path: `/api/plugins/${pluginId}/connections`,
-      body: JSON.stringify({
-        values: {
-          label: "Planner",
-          tenantLabel: "Acme",
-          autoSync: true,
-          autoSyncIntervalMinutes: 15,
-          serviceUrl: "https://planner.example",
-        },
-      }),
-    });
+    /** Saves the connection, a new one without `id`, at `serviceUrl`. */
+    const save = (serviceUrl: string, id?: string) =>
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/plugins/${pluginId}/connections`,
+        body: JSON.stringify({
+          ...(id ? { id } : {}),
+          values: {
+            label: "Planner",
+            tenantLabel: "Acme",
+            autoSync: true,
+            autoSyncIntervalMinutes: 15,
+            serviceUrl,
+          },
+        }),
+      });
+    const saved = await save("https://planner.example");
     expect(saved.status).toBe(200);
     const connectionId = (saved.body as { connection: { id: string } })
       .connection.id;
@@ -174,7 +178,7 @@ describe("the project source sync route", () => {
       ).connectionGroups[0]!.connections[0]!;
     };
     const seen = () => fixture.__plannerSeen ?? [];
-    return { server, sink, connectionId, sync, connectionSummary, seen };
+    return { server, sink, connectionId, sync, save, connectionSummary, seen };
   }
 
   it("answers the snapshot, keeps the cursor and sends it next time", async () => {
@@ -331,6 +335,40 @@ describe("the project source sync route", () => {
           "The plugin reported no change, but Ajour sent it no cursor to compare with.",
       },
     });
+  });
+
+  it("drops a sync whose connection was saved while it ran, and keeps no cursor from it", async () => {
+    const { sync, save, seen, sink, connectionId } = await setup();
+    let answer!: (value: unknown) => void;
+    fixture.__plannerAnswer = new Promise((resolve) => (answer = resolve));
+
+    const running = sync();
+    await vi.waitFor(() => expect(seen()).toHaveLength(1));
+    // The person points the connection at another account mid-sync.
+    expect((await save("https://other.example", connectionId)).status).toBe(
+      200,
+    );
+    answer({ snapshot, cursor: 'W/"old-account"' });
+    const stale = await running;
+
+    expect(stale).toEqual({
+      status: 409,
+      body: { error: "The connection changed while syncing. Sync again." },
+    });
+    const event = sink.events.find(
+      (candidate) =>
+        candidate.name === "project_source.sync" &&
+        candidate.kind === "request",
+    );
+    expect(event).toMatchObject({
+      outcome: "refused",
+      outcome_reason: "connection_changed_during_sync",
+    });
+
+    // The next sync starts over: the old account's cursor was not kept.
+    fixture.__plannerAnswer = { snapshot, cursor: 'W/"v1"' };
+    expect((await sync()).status).toBe(200);
+    expect(seen().at(-1)).toEqual({});
   });
 
   it("refuses a plugin without the capability", async () => {

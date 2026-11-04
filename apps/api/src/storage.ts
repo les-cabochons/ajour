@@ -628,6 +628,11 @@ function reachesMoreThanAllowed(
   );
 }
 
+/** The key of a connection in maps that hold it by plugin and ID. */
+function connectionSaveKey(pluginId: string, connectionId: string) {
+  return `${pluginId}/${connectionId}`;
+}
+
 function compareConnections(left: StoredConnection, right: StoredConnection) {
   return (
     left.pluginId.localeCompare(right.pluginId) ||
@@ -1165,6 +1170,11 @@ export class AppApiStorage {
   private readonly brokerActivityRemovals = new Map<string, number>();
   private brokerActivityWrittenAt = -Infinity;
   private brokerActivityTimer?: ReturnType<typeof setTimeout>;
+  /**
+   * How many times each connection was saved this launch, so a project
+   * source sync can tell that its connection changed while the plugin ran.
+   */
+  private readonly connectionSaves = new Map<string, number>();
 
   /**
    * `events` receives a `storage.load` event for each load of the state file.
@@ -2420,6 +2430,11 @@ export class AppApiStorage {
           )
           .sort(compareImports),
       };
+      const saveKey = connectionSaveKey(pluginId, connectionId);
+      this.connectionSaves.set(
+        saveKey,
+        (this.connectionSaves.get(saveKey) ?? 0) + 1,
+      );
 
       return {
         nextState,
@@ -2427,6 +2442,17 @@ export class AppApiStorage {
         afterWrite: () => this.removeAfterSave(holder, split),
       };
     });
+  }
+
+  /**
+   * How many times the connection was saved this launch. A sync reads it
+   * before it runs the plugin and gives it back to
+   * `recordProjectSourceSync`, which keeps nothing if it moved.
+   */
+  connectionSaveCount(pluginId: string, connectionId: string): number {
+    return (
+      this.connectionSaves.get(connectionSaveKey(pluginId, connectionId)) ?? 0
+    );
   }
 
   /**
@@ -2590,13 +2616,17 @@ export class AppApiStorage {
   /**
    * Records a project source sync that succeeded: the connection synced
    * now, with `cursor` to send next time, or none when the plugin gave none.
+   * `savesAtStart` is `connectionSaveCount` from before the plugin ran. When
+   * the connection was saved since, the answer may come from the settings it
+   * had before, so this keeps nothing and returns `undefined`.
    */
   async recordProjectSourceSync(
     pluginId: string,
     connectionId: string,
     cursor: string | undefined,
     timestamp: number,
-  ): Promise<StoredConnection> {
+    savesAtStart: number,
+  ): Promise<StoredConnection | undefined> {
     return this.mutate(async (state) => {
       const connection = state.connections.find(
         (candidate) =>
@@ -2604,6 +2634,9 @@ export class AppApiStorage {
       );
       if (!connection) {
         throw new Error(`Plugin connection "${connectionId}" not found.`);
+      }
+      if (this.connectionSaveCount(pluginId, connectionId) !== savesAtStart) {
+        return { nextState: state, result: undefined };
       }
       const { projectSourceCursor: _previous, ...rest } = connection;
       const nextConnection: StoredConnection = {

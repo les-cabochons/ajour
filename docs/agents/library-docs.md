@@ -204,6 +204,8 @@ The backlog editor module is feature-local because its vocabulary and commands b
   `syncProjects(connection, { cursor })`; the API exposes it at
   `POST /api/plugins/:pluginId/connections/:connectionId/sync-projects`
   and keeps the cursor per connection (`StoredConnection.projectSourceCursor`).
+  Saving the connection drops the cursor, and a sync that was running then
+  answers 409 and keeps nothing, since its answer may be for the old settings.
   The SDK's sample is `packages/plugin-sdk/tests/sample-project-source/`.
   Nothing in Ajour names a product: the plugin supplies the source's label
   and URLs.

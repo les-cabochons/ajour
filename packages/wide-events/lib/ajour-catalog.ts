@@ -2078,7 +2078,7 @@ export const catalog = defineCatalog({
      */
     "project_source.sync": {
       kinds: ["request", "plugin_operation"],
-      reasons: pluginRequestReasons,
+      reasons: [...pluginRequestReasons, "connection_changed_during_sync"],
       fields: {
         ...requestFields,
         ...pluginOperationFields,

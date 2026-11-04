@@ -3471,6 +3471,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         },
       });
       const call = admittedCall(plugin, connection.secrets);
+      const savesAtStart = storage.connectionSaveCount(pluginId, connectionId);
       try {
         const result = await pluginManager.syncProjects(
           pluginId,
@@ -3488,12 +3489,6 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             );
           }
           unit.set({ project_source_sync: { unchanged: true } });
-          await storage.recordProjectSourceSync(
-            pluginId,
-            connectionId,
-            cursor,
-            Date.now(),
-          );
         } else {
           unit.set({
             project_source_sync: {
@@ -3506,12 +3501,22 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               has_next_cursor: result.cursor !== undefined,
             },
           });
-          await storage.recordProjectSourceSync(
-            pluginId,
-            connectionId,
-            result.cursor,
-            Date.now(),
-          );
+        }
+        const recorded = await storage.recordProjectSourceSync(
+          pluginId,
+          connectionId,
+          "unchanged" in result ? cursor : result.cursor,
+          Date.now(),
+          savesAtStart,
+        );
+        // Saved while the plugin ran: the answer may be for the account the
+        // connection pointed at before, and so would its cursor.
+        if (!recorded) {
+          unit.refuse("connection_changed_during_sync");
+          writeJson(response, 409, {
+            error: "The connection changed while syncing. Sync again.",
+          });
+          return;
         }
         const { summary } = await findConnectionSummary(
           storage,
