@@ -8,9 +8,7 @@
  *
  * Usage: node scripts/check-bundle-symlinks.cjs [--out <folder>]
  */
-const { existsSync, lstatSync, readdirSync, readlinkSync } = require(
-  "node:fs",
-);
+const { existsSync, lstatSync, readdirSync, readlinkSync } = require("node:fs");
 const path = require("node:path");
 
 const desktopRoot = path.resolve(__dirname, "..");
