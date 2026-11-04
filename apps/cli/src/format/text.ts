@@ -39,7 +39,7 @@ function graphemes(text: string): string[] {
 function cellWidth(grapheme: string): number {
   if (
     EMOJI_PRESENTATION.test(grapheme) ||
-    (PICTOGRAPH.test(grapheme) && grapheme.includes("️"))
+    (PICTOGRAPH.test(grapheme) && grapheme.includes("\uFE0F"))
   ) {
     return 2;
   }

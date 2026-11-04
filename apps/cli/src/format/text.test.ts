@@ -13,7 +13,7 @@ describe("displayWidth", () => {
     expect(displayWidth("Fix export")).toBe(10);
     expect(displayWidth("● 1:24")).toBe(6);
     expect(displayWidth("Réunion")).toBe(7);
-    expect(displayWidth("Réunion")).toBe(7);
+    expect(displayWidth("Re\u0301union")).toBe(7);
     expect(displayWidth("\x1b[1;34mWeek\x1b[0m")).toBe(4);
   });
 });
@@ -23,8 +23,8 @@ describe("terminal cells", () => {
     expect(displayWidth("日本語")).toBe(6);
     expect(displayWidth("회의")).toBe(4);
     expect(displayWidth("🚀 Launch")).toBe(9);
-    expect(displayWidth("❤️")).toBe(2);
-    expect(displayWidth("👩‍💻")).toBe(2);
+    expect(displayWidth("❤\uFE0F")).toBe(2);
+    expect(displayWidth("👩\u200D💻")).toBe(2);
     expect(displayWidth("● ○ · …")).toBe(7);
   });
 
@@ -49,7 +49,7 @@ describe("truncate", () => {
   });
 
   it("never splits an accented letter", () => {
-    expect(truncate("Réunion d'equipe", 4)).toBe("Réu…");
+    expect(truncate("Re\u0301union d'equipe", 4)).toBe("Re\u0301u…");
   });
 
   it("gives nothing for no room, and the ellipsis alone for one column", () => {
