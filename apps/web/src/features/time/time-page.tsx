@@ -25,7 +25,10 @@ import {
   type WeekGridCell,
 } from "@/features/time/week-grid";
 import { WeekGridCellPanel } from "@/features/time/week-grid-cell-panel";
-import { useNewEntryPageHost } from "@/features/time/new-entry-request";
+import {
+  useNewEntryPageHost,
+  useRunningEntryPageHost,
+} from "@/features/time/new-entry-request";
 import type { NewTimeEntryValues } from "@/features/time/time-entry-editor-form";
 import { WeeklyTimeView } from "@/features/time/weekly-time-view";
 import { TimerPanel } from "@/features/timer/timer-panel";
@@ -412,6 +415,11 @@ export function TimePage({ date }: { date: string }) {
         ),
       [],
     ),
+  );
+
+  // The dock's click on the running entry opens it here, as its row does.
+  useRunningEntryPageHost(
+    useCallback((timerId: string) => openEditorRef.current({ timerId }), []),
   );
 
   // These win over the app shell's handlers while the Time page is open.

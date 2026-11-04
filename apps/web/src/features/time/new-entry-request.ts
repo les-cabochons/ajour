@@ -139,3 +139,24 @@ export function useNewEntryPageHost(
 export function getNewEntryPageHost() {
   return pageListener;
 }
+
+let runningPageListener: ((timerId: string) => void) | null = null;
+
+/**
+ * The Time page, while open, edits the running entry in its side panel, as
+ * a click on its row does; the dock sends its click there (forms council
+ * round 5). Elsewhere the dock opens its popover.
+ */
+export function useRunningEntryPageHost(listener: (timerId: string) => void) {
+  useEffect(() => {
+    runningPageListener = listener;
+    return () => {
+      if (runningPageListener === listener) runningPageListener = null;
+    };
+  }, [listener]);
+}
+
+/** The Time page's running-entry host while it is open, else null. */
+export function getRunningEntryPageHost() {
+  return runningPageListener;
+}

@@ -379,7 +379,7 @@ describe("the entry editor", () => {
     fireEvent.change(await screen.findByPlaceholderText("01:30"), {
       target: { value: "01:30" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create entry" }));
   }
 
   it("marks a save in the side panel as editor", async () => {

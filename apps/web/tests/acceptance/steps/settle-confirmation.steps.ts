@@ -337,25 +337,26 @@ When("I submit the parent Settle draft", async ({ page }) => {
     .getByRole("dialog", { name: "Settle", exact: true })
     .getByRole("button", { name: /^(Archive|Settle)$/ })
     .click();
-  await expect(
-    page.getByRole("dialog", { name: /^Also settle/ }),
-  ).toBeVisible();
 });
-When("I cancel the Settle subitem choice", async ({ page }) => {
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog", { name: /^Also settle/ })).toHaveCount(
-    0,
-  );
+/** The Settle form's own question about the parent's open subitems. */
+const subitemChoice = (page: Page) =>
+  page
+    .getByRole("dialog", { name: "Settle", exact: true })
+    .getByRole("checkbox", { name: /^Also settle its/ });
+When("I leave the Settle subitems out", async ({ page }) => {
+  await subitemChoice(page).uncheck();
 });
 When("I include the Settle subitems", async ({ page }) => {
-  await page
-    .getByRole("dialog", { name: /^Also settle/ })
-    .getByRole("button", { name: /^Include subitem/ })
-    .click();
-  await expect(page.getByRole("dialog", { name: /^Also settle/ })).toHaveCount(
-    0,
-  );
+  await subitemChoice(page).check();
 });
+Then(
+  "Settle asks about {int} open subitems",
+  async ({ page }, count: number) => {
+    await expect(subitemChoice(page)).toHaveAccessibleName(
+      `Also settle its ${count} open subitems`,
+    );
+  },
+);
 When("another subitem arrives during the Settle choice", async ({ page }) => {
   await page.evaluate(async () => {
     const { localStore } = await import(

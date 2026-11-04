@@ -3,7 +3,7 @@ import { createBdd } from "playwright-bdd";
 import { viewSwitcher } from "../../fixtures/sidebar";
 
 /** A form's submit button: Save on an edit, Create … on a new record. */
-const SAVE_OR_CREATE = /^(Save|Create (item|subitem|task))$/;
+const SAVE_OR_CREATE = /^(Save|Create (item|subitem|task|entry))$/;
 
 const { Given, When, Then } = createBdd();
 

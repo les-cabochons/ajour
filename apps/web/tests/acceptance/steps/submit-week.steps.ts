@@ -2,7 +2,7 @@ import { expect, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 
 /** A form's submit button: Save on an edit, Create … on a new record. */
-const SAVE_OR_CREATE = /^(Save|Create (item|subitem|task))$/;
+const SAVE_OR_CREATE = /^(Save|Create (item|subitem|task|entry))$/;
 
 const { When, Then } = createBdd();
 

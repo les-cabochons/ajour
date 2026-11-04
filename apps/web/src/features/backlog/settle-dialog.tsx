@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { BacklogSettleState } from "@ajour/shared";
 import { MarkdownEditor } from "@/components/markdown-editor";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -19,6 +20,7 @@ import {
 } from "@/components/ui/field";
 import { OptionSelect } from "@/components/ui/option-select";
 import {
+  getOpenSubitems,
   settleArchivesWorkItem,
   type BacklogSettleChange,
 } from "@/domain/backlog/backlog-item-lifecycle";
@@ -155,8 +157,11 @@ export async function settleBacklogItemWithUndo(
   change?: BacklogSettleChange,
   comment?: string,
   behavior: "local" | "rule" | "ask" = change ? "rule" : "local",
+  /** The settle dialog's own answer, so no second dialog asks. */
+  includeSubitemsChoice?: boolean,
 ): Promise<SettleResult> {
-  const includeSubitems = await resolveIncludeSubitems(workItem, "settle");
+  const includeSubitems =
+    includeSubitemsChoice ?? (await resolveIncludeSubitems(workItem, "settle"));
   if (includeSubitems === null) return { settled: false };
   let commentQueued = false;
 
@@ -247,6 +252,8 @@ export function SettleDialogHost() {
   // Set when the comment editor opened the dialog with its draft.
   const [onSettled, setOnSettled] = useState<OnSettled | undefined>();
   const [pending, setPending] = useState(false);
+  // Whether the settle takes the open subitems along, asked in this form.
+  const [includeSubitems, setIncludeSubitems] = useState(true);
 
   useEffect(() => {
     const listener = (
@@ -266,6 +273,7 @@ export function SettleDialogHost() {
         ),
       );
       setComment(request?.comment ?? "");
+      setIncludeSubitems(true);
       setOnSettled(() => request?.onSettled);
       setLoad({ status: "loading" });
     };
@@ -329,6 +337,17 @@ export function SettleDialogHost() {
   const commentTooLong =
     commentLimit !== undefined && comment.trim().length > commentLimit;
 
+  // A parent with open subitems asks about them here, in the same form, when
+  // the user's setting leaves it to them (forms council round 5).
+  const openSubitems = currentItem
+    ? getOpenSubitems(state, currentItem._id, "settle")
+    : [];
+  const subitemPreference = state.userPreferences.closeParentSubitems;
+  const asksSubitems =
+    openSubitems.length > 0 &&
+    subitemPreference !== "include" &&
+    subitemPreference !== "leave";
+
   async function settle() {
     if (!currentItem || !change || pending || commentTooLong) return;
     setPending(true);
@@ -338,6 +357,7 @@ export function SettleDialogHost() {
         change,
         commentSource ? comment : undefined,
         "ask",
+        asksSubitems ? includeSubitems : undefined,
       );
       if (result.settled) {
         onSettled?.(result);
@@ -468,6 +488,34 @@ export function SettleDialogHost() {
                     Posted on the item when the Undo toast closes.
                   </FieldDescription>
                 )}
+              </FieldContent>
+            </Field>
+          ) : null}
+          {asksSubitems ? (
+            <Field orientation="horizontal">
+              <Checkbox
+                id="settle-subitems"
+                checked={includeSubitems}
+                disabled={pending}
+                onCheckedChange={(checked) =>
+                  setIncludeSubitems(checked === true)
+                }
+                className="mt-0.5"
+              />
+              <FieldContent>
+                <FieldLabel htmlFor="settle-subitems">
+                  Also settle its {openSubitems.length} open{" "}
+                  {openSubitems.length === 1 ? "subitem" : "subitems"}
+                </FieldLabel>
+                <FieldDescription className="truncate">
+                  {openSubitems
+                    .slice(0, 3)
+                    .map((subitem) => subitem.title)
+                    .join(", ")}
+                  {openSubitems.length > 3
+                    ? `, and ${openSubitems.length - 3} more`
+                    : ""}
+                </FieldDescription>
               </FieldContent>
             </Field>
           ) : null}

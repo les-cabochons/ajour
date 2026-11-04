@@ -136,7 +136,7 @@ export function PluginConnectionForm({
         key={`${form.instance}/${block.fields[0]!.field.id}`}
         className="flex flex-col gap-2"
       >
-        <legend className="mb-2 text-sm font-medium text-foreground">
+        <legend className="mb-2 text-[13px] font-medium text-[var(--text-secondary)]">
           {block.legend}
         </legend>
         <div className="grid grid-cols-2 gap-3 desktop:grid-cols-4">
@@ -179,7 +179,7 @@ export function PluginConnectionForm({
               aria-label={section.title}
               className="flex flex-col gap-5 border-t border-[var(--border-row)] pt-4 first:border-t-0 first:pt-0"
             >
-              <h4 className="text-xs font-medium text-[var(--text-secondary)]">
+              <h4 className="text-sm font-semibold text-foreground">
                 {section.title}
               </h4>
               {section.blocks.map(renderBlock)}

@@ -2,7 +2,7 @@ import { expect, type Page, type Route } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 
 /** A form's submit button: Save on an edit, Create … on a new record. */
-const SAVE_OR_CREATE = /^(Save|Create (item|subitem|task))$/;
+const SAVE_OR_CREATE = /^(Save|Create (item|subitem|task|entry))$/;
 
 const { Given, When, Then } = createBdd();
 const apiUrl = "http://127.0.0.1:8787";

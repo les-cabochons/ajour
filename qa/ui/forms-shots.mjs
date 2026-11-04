@@ -38,7 +38,7 @@ const BASE_URL = `http://${HOST}:${PORT}`;
 const THEMES = (process.env.AJOUR_FORMS_THEMES ?? "dark").split(",");
 
 const api = {
-  "/api/plugins": () => pluginsOverview({ calendar: true }),
+  "/api/plugins": () => withSavedSecrets(pluginsOverview({ calendar: true })),
   "/api/backlog/imports": stagedImports,
   "/api/backlog/source-statuses": sourceStatuses,
   "/api/mcp/settings": mcpSettings,
@@ -49,6 +49,27 @@ const api = {
     itemPeople,
   "/api/calendars/ics/connections/ics-work/listCalendarEvents": calendarEvents,
 };
+
+/**
+ * Gives every connection a saved secret for each secret field, as a working
+ * connection has, so the forms show the Saved state, not "Not set".
+ */
+function withSavedSecrets(overview) {
+  for (const group of overview.connectionGroups ?? []) {
+    const secretIds = (group.plugin.connectionFields ?? [])
+      .filter((field) => field.secret)
+      .map((field) => field.id);
+    for (const connection of group.connections ?? []) {
+      connection.secretFields ??= secretIds.map((id) => ({
+        id,
+        state: "saved",
+        setAt: NOW - 20 * 86_400_000,
+        lastUsedAt: NOW - 2 * 3_600_000,
+      }));
+    }
+  }
+  return overview;
+}
 
 const go = (page, route) =>
   page.goto(BASE_URL + route, { waitUntil: "networkidle" });
@@ -421,9 +442,6 @@ const shots = [
         .getByRole("button", { name: "Settle", exact: true })
         .first()
         .click({ modifiers: ["Shift"] });
-      await dialog(page)
-        .getByRole("button", { name: "Settle", exact: true })
-        .click();
     },
   },
   {

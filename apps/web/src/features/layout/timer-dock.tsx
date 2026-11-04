@@ -18,7 +18,10 @@ import {
   summarizeRunningEntry,
 } from "@/domain/time/running-entry";
 import type { TimeEntryEditorFields } from "@/features/time/time-entry-editor";
-import { openBlankEntryEditor } from "@/features/time/new-entry-request";
+import {
+  getRunningEntryPageHost,
+  openBlankEntryEditor,
+} from "@/features/time/new-entry-request";
 import { TimeEntryEditorPopover } from "@/features/time/time-entry-editor-popover";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
@@ -214,7 +217,7 @@ export function TimerDock() {
       <TimeEntryEditorPopover
         target={{ kind: "running", timer }}
         open={editorOpen}
-        onOpenChange={setRunningEntryEditorOpen}
+        onOpenChange={(open) => openRunningEditor(open, timer._id)}
         {...runningEntryDraftProps(timer._id)}
         triggerLabel="Edit the running entry"
         triggerClassName="block w-full rounded-md p-2.5 text-left outline-none hover:bg-foreground/[0.03] focus-visible:ring-1 focus-visible:ring-ring"
@@ -314,7 +317,7 @@ export function FloatingTimerDock({
       <TimeEntryEditorPopover
         target={{ kind: "running", timer }}
         open={editorOpen}
-        onOpenChange={setRunningEntryEditorOpen}
+        onOpenChange={(open) => openRunningEditor(open, timer._id)}
         {...runningEntryDraftProps(timer._id)}
         triggerLabel="Edit the running entry"
         triggerClassName="flex h-full min-w-0 flex-1 items-center gap-2 rounded-lg pl-3 text-left outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -355,4 +358,17 @@ export function RunningEntryWindowTitle() {
 /** Today's total, counting the running entry, as "5:12". */
 export function TodayTotal() {
   return formatClockDuration(useRunningEntry().todayTotalMs);
+}
+
+/**
+ * Opens the running entry's editor: in the Time page's side panel while that
+ * page is open, as a click on its row does, else in the dock's popover.
+ */
+function openRunningEditor(open: boolean, timerId: string) {
+  const pageHost = open ? getRunningEntryPageHost() : null;
+  if (pageHost) {
+    pageHost(timerId);
+    return;
+  }
+  setRunningEntryEditorOpen(open);
 }

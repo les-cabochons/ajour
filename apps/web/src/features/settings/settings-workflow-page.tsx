@@ -185,7 +185,7 @@ export function SettingsWorkflowPage() {
   }
 
   return (
-    <div className="settings-sections">
+    <div className="settings-sections settings-measure">
       <section className="settings-section">
         <h2 className="settings-section-title">Workflow states</h2>
         <p className="settings-section-desc">
@@ -317,21 +317,20 @@ export function SettingsWorkflowPage() {
                       />
                       Done
                     </label>
-                    {/* Phones show it as an icon only; the tooltip names it. */}
+                    {/* An icon, as every row action; the tooltip names it
+                        (forms council round 5). */}
                     <TooltipButton
                       label={`Remove ${status.name}`}
-                      tooltipClassName="desktop:hidden"
                       render={
                         <Button
                           variant="ghost"
-
-                          className="gap-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive narrow:w-8 narrow:px-0"
+                          size="icon"
+                          className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                         />
                       }
                       onClick={() => handleDeleteStatus(status._id)}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
-                      <span className="narrow:hidden">Remove</span>
                     </TooltipButton>
                   </div>
                 </div>

@@ -292,7 +292,7 @@ export function SettingsImportReviewPage() {
   };
 
   return (
-    <div className="settings-sections">
+    <div className="settings-sections settings-measure">
       <section className="settings-section">
         <p className="settings-section-desc">
           Review staged backlog imports and resolve description and estimate
@@ -480,38 +480,41 @@ export function SettingsImportReviewPage() {
               </span>
             </label>
             <span className="flex-1" />
-            <TooltipButton
-              label="Refresh"
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  disabled={isLoading || isMutating}
-                  onClick={() => void refresh()}
-                />
-              }
-            >
-              <RefreshCw />
-            </TooltipButton>
-            <Button
-              variant="ghost"
-              disabled={isLoading || isMutating || selectedCount === 0}
-              onClick={() =>
-                void dismissItems(
-                  items
-                    .filter((item) => item.selectable && item.selected)
-                    .map((item) => item.id),
-                )
-              }
-            >
-              Dismiss selected
-            </Button>
-            <Button
-              disabled={isLoading || isMutating || selectedCount === 0}
-              onClick={() => void handleCommitSelected()}
-            >
-              Sync selected to backlog
-            </Button>
+            {/* Status on the left, one cluster of actions on the right. */}
+            <div className="flex items-center gap-1">
+              <TooltipButton
+                label="Refresh"
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={isLoading || isMutating}
+                    onClick={() => void refresh()}
+                  />
+                }
+              >
+                <RefreshCw />
+              </TooltipButton>
+              <Button
+                variant="ghost"
+                disabled={isLoading || isMutating || selectedCount === 0}
+                onClick={() =>
+                  void dismissItems(
+                    items
+                      .filter((item) => item.selectable && item.selected)
+                      .map((item) => item.id),
+                  )
+                }
+              >
+                Dismiss selected
+              </Button>
+              <Button
+                disabled={isLoading || isMutating || selectedCount === 0}
+                onClick={() => void handleCommitSelected()}
+              >
+                Sync selected to backlog
+              </Button>
+            </div>
           </div>
         )}
 

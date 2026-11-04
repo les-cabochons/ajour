@@ -305,7 +305,7 @@ Decided in [Running timer editing and empty duration meaning](https://github.com
 
 ### Editing
 
-- The running entry opens in the same form as every entry. Edit from its menu, or a click on its row or card, opens the side panel in Day and Week. A click on the timer dock opens the form in a popover anchored to it. The narrow view uses the full-width dialog.
+- The running entry opens in the same form as every entry. Edit from its menu, or a click on its row or card, opens the side panel in Day and Week. A click on the timer dock opens the form in a popover anchored to it, except on the Time pages, where it opens the side panel as the row does (forms council round 5). The narrow view uses the full-width dialog.
 - The footer reads Cancel · Stop · Save. Save applies the changes and the entry keeps running. Nothing changes until the user saves. The old live-editing popup goes away.
 - Hours shows the time counted so far and stays editable, so the user can correct a late start before saving.
 - Discard happens at once and shows the Undo toast (see Feedback).
@@ -652,7 +652,7 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 
 ### Closing a parent
 
-- Moving a parent into a done state, or settling it, while it has open subitems asks "Also close its 3 subitems?" (or "settle"), with Include subitems, Only this item, and "Remember my choice".
+- Moving a parent into a done state, or settling it, while it has open subitems asks "Also close its 3 subitems?" (or "settle"), with Include subitems, Only this item, and "Remember my choice". The settle dialog asks in its own form instead, with a checkbox "Also settle its 3 open subitems", on by default, listing them, so no second dialog stacks on it and changing the answer keeps the draft (forms council round 5).
 - Settings > Backlog holds the choice: Ask (the default), Include them, or Leave them.
 - Included synced subitems are written through their own source project's mapping. Subitems already settled or archived are left alone.
 - Reopening the parent brings back the subitems that closed with it.

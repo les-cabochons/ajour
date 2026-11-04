@@ -27,7 +27,10 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  SearchableSelect,
+  type SearchableSelectOption,
+} from "@/components/ui/searchable-select";
 import {
   Tooltip,
   TooltipContent,
@@ -53,7 +56,11 @@ import { isDoneWorkflowState } from "@/domain/backlog/workflow-states";
 import { NO_PRIORITY_NAME, PRIORITY_LEVELS } from "@/domain/backlog/priority";
 import { PriorityIcon } from "@/features/backlog/priority-icon";
 import { findWorkItemTimer } from "@/domain/time/running-entry";
-import { OptionSelect } from "@/components/ui/option-select";
+import {
+  OptionSelect,
+  type SelectOption,
+  type SelectOptionGroup,
+} from "@/components/ui/option-select";
 import {
   BACKLOG_ESTIMATE_FIELD_KEYS,
   commitBacklogTaskDraft,
@@ -560,8 +567,10 @@ export function BacklogItemEditorForm({
     save();
   }
 
+  // The title's error waits for the title itself, or a save: a draft that
+  // opens with a group's state or project preset is not yet wrong.
   const titleError =
-    showErrors || editor.hasChanges ? validation.titleError : null;
+    showErrors || fields.title !== base.title ? validation.titleError : null;
   const sourceMetaLabel = workItem ? getSourceMetaLabel(workItem) : "";
 
   return (
@@ -727,19 +736,23 @@ export function BacklogItemEditorForm({
                 value={fields.priority}
                 onChange={(priority) => updateFields({ priority })}
                 invalid={Boolean(validation.priorityError)}
-                options={[
-                  {
-                    value: "",
-                    label: NO_PRIORITY_NAME,
-                    disabledReason: noPriorityRefusal,
-                    icon: <PriorityIcon priority={undefined} decorative />,
-                  },
-                  ...PRIORITY_LEVELS.map(({ level, name }) => ({
-                    value: String(level),
-                    label: name,
-                    icon: <PriorityIcon priority={level} decorative />,
-                  })),
-                ]}
+                {...withSyncedFirst(
+                  [
+                    {
+                      value: "",
+                      label: NO_PRIORITY_NAME,
+                      disabledReason: noPriorityRefusal,
+                      icon: <PriorityIcon priority={undefined} decorative />,
+                    },
+                    ...PRIORITY_LEVELS.map(({ level, name }) => ({
+                      value: String(level),
+                      label: name,
+                      icon: <PriorityIcon priority={level} decorative />,
+                    })),
+                  ],
+                  editor.priorityReset,
+                  "Other levels",
+                )}
               />
             </Field>
           ) : null}
@@ -747,7 +760,7 @@ export function BacklogItemEditorForm({
             <FieldLabel>Workflow state</FieldLabel>
             <SearchableSelect
               value={fields.workflowStateId}
-              options={statusOptions}
+              options={syncedStateFirst(statusOptions, editor.statusReset)}
               onChange={(workflowStateId) => updateFields({ workflowStateId })}
               placeholder="No state"
               clearLabel="No state"
@@ -758,34 +771,6 @@ export function BacklogItemEditorForm({
         </div>
         {validation.priorityError ? (
           <span className="field-error -mt-2">{validation.priorityError}</span>
-        ) : null}
-        {editor.priorityReset !== null || editor.statusReset !== null ? (
-          <div className="-mt-2 flex flex-wrap gap-2">
-            {editor.priorityReset !== null ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() =>
-                  updateFields({ priority: editor.priorityReset ?? "" })
-                }
-              >
-                Reset priority to synced
-              </Button>
-            ) : null}
-            {editor.statusReset !== null ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() =>
-                  updateFields({ workflowStateId: editor.statusReset ?? "" })
-                }
-              >
-                Reset state to synced
-              </Button>
-            ) : null}
-          </div>
         ) : null}
 
         <Field>
@@ -915,4 +900,43 @@ export function BacklogItemEditorForm({
       </footer>
     </div>
   );
+}
+
+/**
+ * A synced item's picker lists the source's value first, under "Synced", so
+ * going back to it is a pick in the menu, not a button under the field
+ * (forms council round 5). Without a synced value, the options stay as they
+ * are.
+ */
+function withSyncedFirst<T extends string>(
+  options: SelectOption<T>[],
+  synced: string | null,
+  otherLabel: string,
+): { options?: SelectOption<T>[]; groups?: SelectOptionGroup<T>[] } {
+  const match = options.find((option) => option.value === synced);
+  if (synced === null || !match) return { options };
+  return {
+    groups: [
+      { label: "Synced", options: [match] },
+      {
+        label: otherLabel,
+        options: options.filter((option) => option !== match),
+      },
+    ],
+  };
+}
+
+/** The workflow states with the synced one first, under "Synced". */
+function syncedStateFirst(
+  options: SearchableSelectOption[],
+  synced: string | null,
+): SearchableSelectOption[] {
+  const match = options.find((option) => option.value === synced);
+  if (synced === null || !match) return options;
+  return [
+    { ...match, group: "Synced" },
+    ...options
+      .filter((option) => option !== match)
+      .map((option) => ({ ...option, group: option.group ?? "Other states" })),
+  ];
 }

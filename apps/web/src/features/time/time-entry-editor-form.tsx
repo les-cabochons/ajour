@@ -556,7 +556,8 @@ export function TimeEntryEditorForm({
           title={editor.isTimerMode ? START_OR_ENTER_HOURS_HINT : undefined}
           onClick={save}
         >
-          Save
+          {/* A new record's button names what it makes, as every form's. */}
+          {target.kind === "create" ? "Create entry" : "Save"}
         </Button>
       </footer>
       {entryActions.dialogs}
