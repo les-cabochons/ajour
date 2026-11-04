@@ -106,7 +106,11 @@ jobs:
       matrix:
         include:
           - name: macOS
-            runner: macos-latest
+            # macOS 26 runners break electron-builder signing: it passes the
+            # p12 password to set-key-partition-list instead of the temporary
+            # keychain password (electron-builder PR #10101). Return to
+            # macos-latest once a stable release carries that fix.
+            runner: macos-15
             artifact: release-package-macos
             command: corepack pnpm make:desktop:mac
           - name: Windows
