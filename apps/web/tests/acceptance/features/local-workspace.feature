@@ -126,6 +126,15 @@ Feature: Open the local time workspace
     When I widen the window to a desktop width
     Then the "API" entry shows its task and note on one line
 
+  Scenario: Narrow Day rows give a long note the full width
+    Given I have a week of saved entries
+    And Monday's "API" entry has a long note and Monday's "Login form" entry has no task
+    When I open Monday's Day list in a narrow window
+    Then the long note runs on under the duration
+    And the entry without a task shows its project on the first line
+    When I start dragging the long-note entry
+    Then the drag preview's duration stays clear of the note
+
   Scenario: Long press an entry in the narrow view
     Given I have a week of saved entries
     When I long press Monday's "API" entry on a narrow touch screen
