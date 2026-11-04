@@ -10,6 +10,7 @@ import {
   parseEntryRef,
   parseRange,
   pickFoundEntry,
+  resolveProject,
   resolveTask,
   type ProjectRef,
 } from "./refs.ts";
@@ -383,5 +384,31 @@ describe("RANGE", () => {
       from: "2026-01-01",
       to: "2026-03-03",
     });
+  });
+});
+
+describe("PROJECT", () => {
+  it.each([
+    ["acme", "p-acme"],
+    ["AJR", "p-ajr"],
+    ["ajour", "p-ajr"],
+    ["reunion", "p-reunion"],
+  ])("reads %j as %s", (query, projectId) => {
+    expect(resolveProject(query, projects).projectId).toBe(projectId);
+  });
+
+  it("exits 4 with the candidates when several projects match", () => {
+    expect(() => resolveProject("a", projects)).toThrow(
+      expect.objectContaining({
+        exitCode: EXIT.reference,
+        message: expect.stringContaining("ACME"),
+      }),
+    );
+  });
+
+  it("exits 4 when no project matches", () => {
+    expect(() => resolveProject("zzz", projects)).toThrow(
+      expect.objectContaining({ exitCode: EXIT.reference }),
+    );
   });
 });

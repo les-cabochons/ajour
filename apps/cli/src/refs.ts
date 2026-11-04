@@ -157,6 +157,39 @@ export function resolveTask(
   );
 }
 
+/**
+ * Finds one project from its code or name, matched as a TASK's PROJECT
+ * part is. Throws exit 4 when nothing or more than one project matches.
+ */
+export function resolveProject(
+  query: string,
+  projects: readonly ProjectRef[],
+): ProjectRef {
+  const typed = query.trim();
+  const normalized = normalizeTaskName(typed);
+  if (!normalized) throw new UsageError(`"${typed}" isn't a project.`);
+  const matches = bestMatches(projects, normalized, (project) => [
+    project.code,
+    project.name,
+  ]);
+  if (matches.length === 1) return matches[0]!;
+  if (matches.length === 0) {
+    throw new ReferenceError(`No active project matches "${typed}".`);
+  }
+  const labels = matches
+    .map((project) =>
+      project.code?.trim()
+        ? `${project.code.trim()}  ${project.name}`
+        : project.name,
+    )
+    .sort((left, right) => left.localeCompare(right));
+  throw new ReferenceError(
+    `"${typed}" matches ${labels.length} projects:\n` +
+      labels.map((label) => `  ${label}`).join("\n") +
+      "\nSay which with more of its code or name.",
+  );
+}
+
 const MAX_MINUTES = 24 * 60;
 
 /**

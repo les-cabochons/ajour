@@ -25,6 +25,8 @@ interface Snapshot {
   today: string;
   /** Today's saved time, without the part the running entry counts again. */
   savedTodayMinutes: number;
+  /** Today's target in minutes, 0 without one. */
+  todayTargetMinutes: number;
   /** The saved entry used last, on any day, for the idle line. */
   last?: { label: string; savedAt: number };
 }
@@ -130,6 +132,10 @@ async function readSnapshot(
     today,
     savedTodayMinutes: savedMinutes(listed.entries),
     last: last ? describeLast(last) : undefined,
+    todayTargetMinutes: Math.round(
+      (listed.targets?.find((target) => target.date === today)?.hours ?? 0) *
+        60,
+    ),
   };
 }
 
@@ -208,7 +214,8 @@ function renderLong(
   const width = columns ? Math.max(columns - 1, 1) : Number.POSITIVE_INFINITY;
   const fit = (text: string, used: number) =>
     Number.isFinite(width) ? truncate(text, width - used) : text;
-  const today = `today ${formatClock(todayMinutes(snapshot))}`;
+  const target = snapshot.todayTargetMinutes;
+  const today = `today ${formatClock(todayMinutes(snapshot))}${target > 0 ? ` of ${formatClock(target)}` : ""}`;
   const { running } = snapshot;
 
   if (!running) {

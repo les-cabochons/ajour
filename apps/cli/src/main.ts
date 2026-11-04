@@ -6,6 +6,7 @@ import { connect } from "./commands/connect.ts";
 import { continueEntry } from "./commands/continue.ts";
 import { discard } from "./commands/discard.ts";
 import { edit } from "./commands/edit.ts";
+import { log } from "./commands/log.ts";
 import { start } from "./commands/start.ts";
 import { status } from "./commands/status.ts";
 import { stop } from "./commands/stop.ts";
@@ -78,6 +79,29 @@ const COMMANDS: Record<string, Command> = {
     arguments: 0,
     run: (ctx, values) =>
       connect(ctx, { tokenStdin: values["token-stdin"] === true }),
+  },
+  log: {
+    options: {
+      format: { type: "string" },
+      by: { type: "string" },
+      summary: { type: "boolean", short: "s" },
+      project: { type: "string" },
+      task: { type: "string" },
+      committed: { type: "boolean" },
+      uncommitted: { type: "boolean" },
+    },
+    arguments: 1,
+    run: (ctx, values, [range]) =>
+      log(ctx, {
+        range,
+        format: text(values.format),
+        by: text(values.by),
+        summary: values.summary === true,
+        project: text(values.project),
+        task: text(values.task),
+        committed: values.committed === true,
+        uncommitted: values.uncommitted === true,
+      }),
   },
   status: {
     options: {

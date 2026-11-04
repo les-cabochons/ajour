@@ -1,0 +1,8 @@
+Wednesday 4 November 2026 · today   6:39 of 8:00  ▮▮▮▮▮▮▮▮▯▯
+────────────────────────────────────────────────────────────
+●  1:24  AJR   07 Export    Fix export rounding      3f9a2c1
+   2:00  AJR   04 Review    PR #512, #514            b7e1d04
+   0:45  ACME  03 Meetings  Weekly sync           ✓  91c0aa3
+   2:30  ACME  05 Backend   Rate limiter retries  ✓  0d4f77e
+
+4 entries · 1 running · 2 committed · 1 to commit

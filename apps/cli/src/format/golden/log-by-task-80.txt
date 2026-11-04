@@ -1,0 +1,8 @@
+Week 45 · Mon 2 – Sun 8 Nov 2026  22:09 of 40:00  1:51 behind
+─────────────────────────────────────────────────────────────
+   6:00  ACME  05 Backend      ▮▮▮▮▮▮▮▮▮▮▮▮
+   4:24  AJR   07 Export       ▮▮▮▮▮▮▮▮▮     ● 1:24 running
+   4:15  AJR   04 Review       ▮▮▮▮▮▮▮▮▮
+   3:00  ACME  03 Meetings     ▮▮▮▮▮▮
+   3:00  ACME  Temp migration  ▮▮▮▮▮▮        not known yet
+   1:30  AJR   09 Admin        ▮▮▮           local
