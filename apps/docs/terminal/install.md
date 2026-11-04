@@ -133,7 +133,7 @@ error: Update Ajour to use this command.
 
 ## When Ajour is out of reach
 
-These messages exit 3. Nothing has changed.
+These messages exit 3. A write can still have gone through just before Ajour went out of reach: see [Exit codes](/terminal/scripting#exit-codes) before you retry one.
 
 | Message                                                                         | What to do                                                                                         |
 | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |

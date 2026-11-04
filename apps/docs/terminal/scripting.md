@@ -21,11 +21,11 @@ Discarded 0:04 on 07 Export. Undo with: ajour undo
 | ---- | ------------------------------------------------------------------ | ------------------ |
 | `0`  | Done.                                                              |                    |
 | `1`  | Ajour refused the action, with its own reason.                     | `refused:`         |
-| `2`  | A bad command, option or value. Ajour wasn't asked.                | `usage:`           |
+| `2`  | A bad command, option or value.                                    | `usage:`           |
 | `3`  | Ajour is out of reach: not running, MCP off, or the token revoked. | `error:`           |
 | `4`  | A task, project or entry matched nothing, or several.              | `error:`           |
 
-Exits 2 and 4 come before Ajour is asked, so nothing changed. Exits 1 and 3 can follow a change that went through: `ajour stop` saves the entry, then reads today's total, and that read can fail. Check with `ajour status` or `ajour log` before retrying a write. With exit 4, stderr lists the candidates.
+Exits 2 and 4 come before any write, so nothing changed, though finding a task or entry may read from Ajour first. Exits 1 and 3 can follow a change that went through: `ajour stop` saves the entry, then reads today's total, and that read can fail. Check with `ajour status` or `ajour log` before retrying a write. With exit 4, stderr lists the candidates.
 
 ```sh
 ajour start "$1"
