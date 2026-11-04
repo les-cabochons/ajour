@@ -111,6 +111,27 @@ describe("the keep running setting", () => {
     expect(shown(toggle)).toBe("false");
   });
 
+  // Round 6: an unchecked, disabled switch reads as a confirmed "off".
+  it("says it is reading the setting while the first read runs", async () => {
+    const main = desktop();
+    const toggle = mount();
+
+    expect(disabled(toggle)).toBe(true);
+    expect(screen.getByText("Reading the setting…")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    const described = toggle.getAttribute("aria-describedby");
+    expect(described).toBeTruthy();
+    expect(document.getElementById(described!)?.textContent).toBe(
+      "Reading the setting…",
+    );
+
+    await act(async () => main.reads[0]!.resolve({ keepRunning: true }));
+
+    expect(screen.queryByText("Reading the setting…")).toBeNull();
+    expect(toggle.hasAttribute("aria-describedby")).toBe(false);
+    expect(shown(toggle)).toBe("true");
+  });
+
   it("is unavailable, claiming no value, when the first read fails", async () => {
     const main = desktop();
     const toggle = mount();

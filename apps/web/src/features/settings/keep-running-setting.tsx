@@ -181,6 +181,12 @@ export function KeepRunningSetting() {
   const unanswered =
     state.phase === "unavailable" ||
     (state.phase === "loading" && state.retried);
+  // The first read says so, so the unchecked switch is not heard as "off".
+  const status = unanswered
+    ? "Ajour didn't answer."
+    : state.phase === "loading"
+      ? "Reading the setting…"
+      : null;
   const checked =
     state.phase === "saving"
       ? state.requested
@@ -201,9 +207,9 @@ export function KeepRunningSetting() {
           description={
             <>
               {`The terminal and agents keep working while the window is closed. Quit Ajour from ${where}.`}
-              {unanswered ? (
+              {status ? (
                 <span id="keep-running-status" className="block">
-                  {"Ajour didn't answer."}
+                  {status}
                 </span>
               ) : null}
             </>
@@ -224,7 +230,7 @@ export function KeepRunningSetting() {
             id="keep-running"
             checked={checked}
             disabled={state.phase !== "idle"}
-            aria-describedby={unanswered ? "keep-running-status" : undefined}
+            aria-describedby={status ? "keep-running-status" : undefined}
             // A disabled switch shows the default cursor (ui-rules.md).
             className="data-disabled:cursor-default"
             onCheckedChange={save}
