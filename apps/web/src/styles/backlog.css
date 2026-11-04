@@ -380,6 +380,12 @@
       min-width: 0;
     }
 
+    /* Placed by column on one row: the estimate comes first in the DOM but
+       sits after the actions. */
+    .backlog-list-row .backlog-item-properties > * {
+      grid-row: 1;
+    }
+
     .backlog-list-row .backlog-item-estimate {
       grid-column: -2;
       min-width: 0;
