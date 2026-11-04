@@ -82,6 +82,17 @@ contextBridge.exposeInMainWorld("ajourDesktop", {
     ipcRenderer.send("ajour:set-theme-source", mode, ...traced(trace)),
   setWindowChromeTheme: (theme, trace) =>
     ipcRenderer.send("ajour:set-window-chrome-theme", theme, ...traced(trace)),
+  getWindowSettings: (trace) =>
+    invoke("ajour:get-window-settings", ...traced(trace)),
+  configureWindowSettings: (settings, trace) =>
+    invoke("ajour:configure-window-settings", settings, ...traced(trace)),
+  setTrayState: (state, trace) =>
+    ipcRenderer.send("ajour:set-tray-state", state, ...traced(trace)),
+  onTrayAction: (callback) => {
+    const listener = (_event, action) => callback(action);
+    ipcRenderer.on("ajour:tray-action", listener);
+    return () => ipcRenderer.removeListener("ajour:tray-action", listener);
+  },
   checkForUpdates: (track, trace) =>
     invoke("ajour:check-for-updates", track, ...traced(trace)),
   getUpdateState: (trace) => invoke("ajour:get-update-state", ...traced(trace)),

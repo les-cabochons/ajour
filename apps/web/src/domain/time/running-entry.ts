@@ -91,6 +91,36 @@ export function summarizeRunningEntry(
   };
 }
 
+/**
+ * What the desktop tray icon shows for the running entry: its title, as the
+ * dock and the window title show it, and the times the main process counts
+ * from, so the window sends it only when the entry changes.
+ */
+export interface RunningEntryTrayState {
+  timerId: string;
+  title: string;
+  startedAt: number;
+  accumulatedMs: number;
+}
+
+export function getRunningEntryTrayState(
+  timer: LocalTimer | null,
+  context: {
+    projects: readonly LocalProject[];
+    workItems: readonly LocalWorkItem[];
+  },
+): RunningEntryTrayState | null {
+  if (!timer) return null;
+  return {
+    timerId: timer._id,
+    // The title does not depend on the time counted.
+    title: summarizeRunningEntry(timer, { ...context, unsavedDurationMs: 0 })
+      .title,
+    startedAt: timer.startedAt,
+    accumulatedMs: timer.accumulatedDurationMs,
+  };
+}
+
 /** "1.1h left" or "0.4h over", from `RunningEntrySummary.remainingMs`. */
 export function formatRemainingEstimate(remainingMs: number) {
   const hours = Math.abs(remainingMs) / HOUR_MS;

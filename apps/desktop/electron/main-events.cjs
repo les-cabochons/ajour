@@ -153,6 +153,7 @@ const TRIGGERS = {
   reload: "user",
   track_change: "user",
   menu: "user",
+  tray: "user",
   all_windows_closed: "user",
   recovery_dialog: "user",
   update_install: "user",

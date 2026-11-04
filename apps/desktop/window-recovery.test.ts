@@ -59,12 +59,20 @@ function fakeWindow() {
     }),
   });
   let destroyed = false;
+  let visible = true;
   return {
     webContents,
     loadURL: vi.fn(async (_url: string) => {}),
     isDestroyed: () => destroyed,
     destroy() {
       destroyed = true;
+    },
+    isVisible: () => visible,
+    show: vi.fn(() => {
+      visible = true;
+    }),
+    hide() {
+      visible = false;
     },
   };
 }
@@ -496,6 +504,51 @@ describe("window recovery", () => {
     expect(dialog.shown[0]?.signal?.aborted).toBe(true);
     expect(window.webContents.forcefullyCrashRenderer).not.toHaveBeenCalled();
     expect(window.loadURL).toHaveBeenCalledTimes(2);
+  });
+
+  // Closing the window hides it while Ajour keeps running (#534).
+  it("reloads a hidden window's crashed page and leaves it hidden", async () => {
+    const { window, dialog, recovery } = setUp();
+    await recovery.load();
+    window.hide();
+
+    crash(window);
+    await flush();
+
+    expect(window.loadURL).toHaveBeenCalledTimes(2);
+    expect(window.show).not.toHaveBeenCalled();
+    expect(window.isVisible()).toBe(false);
+    expect(dialog.shown).toEqual([]);
+  });
+
+  // A dialog attached to a hidden window may never show, as a macOS sheet.
+  it("asks about a hidden window's repeated crashes in a dialog of its own", async () => {
+    const { window, dialog, recovery, at } = setUp();
+    await recovery.load();
+    window.hide();
+
+    for (const time of [0, 10_000, 20_000]) {
+      at(time);
+      crash(window);
+    }
+    await flush();
+
+    expect(dialog.shown).toHaveLength(1);
+    expect(vi.mocked(dialog.showMessageBox).mock.calls[0]![0]).toBeNull();
+    expect(window.show).not.toHaveBeenCalled();
+  });
+
+  it("attaches a dialog to the window while it shows", async () => {
+    const { window, dialog, recovery, at } = setUp();
+    await recovery.load();
+
+    for (const time of [0, 10_000, 20_000]) {
+      at(time);
+      crash(window);
+    }
+    await flush();
+
+    expect(vi.mocked(dialog.showMessageBox).mock.calls[0]![0]).toBe(window);
   });
 
   it("ignores a crash once the window is closed", async () => {

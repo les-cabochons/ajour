@@ -688,6 +688,19 @@ Decided in [#331](https://github.com/les-cabochons/ajour/issues/331).
 - Web and mail links open in the system browser or mail app. Any other link does nothing, including links to local files or to another app.
 - Quitting waits at most ten seconds for plugins and a running agent to stop, then quits anyway. It also quits when they fail to stop.
 
+### Ajour without its window
+
+Decided in [#534](https://github.com/les-cabochons/ajour/issues/534), for the terminal and agents of [#525](https://github.com/les-cabochons/ajour/issues/525).
+
+- Closing the window hides it instead of quitting, on Windows, macOS and Linux. The close button, Cmd+W and Ctrl+W hide it. The window stays loaded, so the local API, the plugins and MCP keep answering while it is hidden.
+- Quit, in the app menu (Exit on Windows) and in the tray menu, is the only way to end Ajour. A system shutdown or logout also ends it.
+- Opening Ajour again, from the tray, the Dock or a second launch, shows the same window in the same state. A full screen window on macOS leaves full screen before it hides.
+- A tray icon on Windows and Linux, or a menu bar item on macOS, shows while Ajour keeps running. Its tooltip reads like the window title, "● 1:24 Fix export rounding", or "Ajour" when nothing runs, and moves each minute. Its menu: Open Ajour, then the running entry's title, or "Nothing running", greyed out, then Stop, greyed out when nothing runs, then Quit. On Windows, a click on the icon opens Ajour, and a right-click opens the menu.
+- Stop in the tray menu stops the entry the menu showed, as the timer dock's Stop does, and does nothing when another entry runs by then. The window shows it stopped when it opens.
+- The first close shows a system notification, once: "Ajour is still running. Quit it from the tray icon." On macOS it says "Quit it from the menu bar."
+- Settings › General › Desktop app › "Keep Ajour running when the window closes" is on by default. Off, closing the window quits Ajour on Windows and Linux, as before, and the tray icon goes. macOS keeps its usual behavior: the window closes and Ajour stays in the Dock. The browser build has no such setting.
+- A hidden window that crashes reloads, still hidden. When it keeps crashing, the "Ajour keeps crashing" dialog shows on its own, not attached to the hidden window.
+
 ## Backlog sidebar
 
 Decided in [Backlog sidebar with settle, snooze and a backlog item page](https://github.com/les-cabochons/ajour/issues/69). The backlog plugin side is [#70](https://github.com/les-cabochons/ajour/issues/70). Delayed writes are recorded in [ADR 0001](../adr/0001-connector-writes-after-undo-window.md).
