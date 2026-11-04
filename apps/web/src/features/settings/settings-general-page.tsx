@@ -262,7 +262,7 @@ export function SettingsGeneralPage() {
           <SettingRow
             label="Pace tolerance"
             labelFor="pace-tolerance"
-            description="How far, in percent, the week may run ahead of or behind its targets before Submit week or an agent asks you. Going over the week's target always asks."
+            description="Ask before submitting when the week's pace differs from its targets by more than this percentage. Exceeding the weekly target always asks."
           >
             {/* The unit sits in the field, so the value reads alone
                 (council round 12). */}

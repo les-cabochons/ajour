@@ -429,6 +429,9 @@ export function BacklogItemSurface({
           // Names the focused object for S and the command palette.
           data-backlog-item-id={item._id}
           data-focus-column={column}
+          // A subitem row in the narrow view drops the project's name for
+          // its parent's when both cannot fit (council round 18).
+          data-subitem={parent ? "" : undefined}
           className={cn(
             board ? "backlog-board-card" : "backlog-list-row",
             onPointerDown && "touch-none",

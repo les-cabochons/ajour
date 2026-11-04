@@ -1211,7 +1211,7 @@
     grid-template-rows: auto auto;
     align-content: center;
     column-gap: 0;
-    row-gap: 1px;
+    row-gap: 0;
     height: 52px;
     padding: 0 0.75rem;
   }
@@ -1279,8 +1279,13 @@
      and 17). */
   .backlog-list-row .backlog-item-parent {
     order: -1;
-    min-width: min(11rem, 100%);
     max-width: 100%;
+  }
+
+  /* On a subitem, the parent's name is the context: the project keeps only
+     its dot. */
+  .backlog-list-row[data-subitem] .backlog-item-project > .truncate {
+    display: none;
   }
 
   /* The project leads line 2, as a line of text with its dot, not a chip. */
@@ -1357,10 +1362,11 @@
     justify-self: end;
   }
 
+  /* 32px wide and half the row tall, so two of them fill the 52px row
+     without leaving it. */
   .backlog-list-row .backlog-item-actions button {
     width: 32px;
-    height: 32px;
-    margin-block: -4px;
+    height: 26px;
   }
 
   .backlog-group-header,

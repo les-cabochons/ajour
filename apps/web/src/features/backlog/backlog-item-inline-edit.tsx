@@ -336,21 +336,23 @@ export function DescriptionSection({
                 <SyncConflictButton item={item} />
               </span>
             ) : null}
-            {!editing && editable && body ? (
-              <button
-                type="button"
-                className="backlog-item-subtle-action"
-                onPointerEnter={preloadMarkdownEditor}
-                onFocus={preloadMarkdownEditor}
-                onClick={startEditing}
-              >
-                Edit
-              </button>
-            ) : null}
           </>
         }
       >
         Description
+        {/* Edit sits by the label it edits, not across the column (council
+            round 18). */}
+        {!editing && editable && body ? (
+          <button
+            type="button"
+            className="backlog-item-subtle-action ml-3"
+            onPointerEnter={preloadMarkdownEditor}
+            onFocus={preloadMarkdownEditor}
+            onClick={startEditing}
+          >
+            Edit
+          </button>
+        ) : null}
       </SectionHeading>
       {editing && editable ? (
         <div
