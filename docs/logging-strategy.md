@@ -886,6 +886,7 @@ channel to read the event each emits.
 | `app.quit`                           | lifecycle                          | main process                                     |
 | `app.runtime_info`                   | ipc                                | IPC channel                                      |
 | `app.second_launch`                  | lifecycle                          | main process                                     |
+| `assignee.search`                    | command, request, plugin_operation | route, plugin method, client call                |
 | `backlog.apply_updates`              | command                            | store command                                    |
 | `backlog.archive_done`               | command                            | store command                                    |
 | `backlog.sort`                       | command                            | store command                                    |
