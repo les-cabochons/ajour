@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
+import type {
+  AgentRunningTimer,
+  AgentTimeEntry,
+} from "../../../packages/shared/agent-tools.ts";
 import { EXIT } from "./errors.ts";
-import { parseDuration, resolveTask, type ProjectRef } from "./refs.ts";
+import {
+  lastSavedEntry,
+  parseDuration,
+  parseEntryRef,
+  pickFoundEntry,
+  resolveTask,
+  type ProjectRef,
+} from "./refs.ts";
 
 const projects: ProjectRef[] = [
   {
@@ -118,5 +129,107 @@ describe("parseDuration", () => {
   it("allows zero where the running entry counts from it", () => {
     expect(parseDuration("0", { allowZero: true })).toBe(0);
     expect(parseDuration("0:00", { allowZero: true })).toBe(0);
+  });
+});
+
+describe("ENTRY", () => {
+  const entry = (
+    shortId: string,
+    savedAt: string,
+    extra: Partial<AgentTimeEntry> = {},
+  ): AgentTimeEntry => ({
+    entryId: `timesheet_${shortId}`,
+    shortId,
+    date: "2026-11-03",
+    state: "saved",
+    minutes: 45,
+    taskName: "04 Review",
+    projectCode: "AJR",
+    savedAt,
+    ...extra,
+  });
+  const running: AgentRunningTimer = {
+    timerId: "timer_1",
+    shortId: "3f9a2c1e00",
+    date: "2026-11-04",
+    countedMinutes: 91,
+    taskName: "07 Export",
+  };
+
+  it.each([
+    ["running", { kind: "running" }],
+    ["last", { kind: "last" }],
+    ["3F9A", { kind: "prefix", prefix: "3f9a" }],
+    ["b7e1d04", { kind: "prefix", prefix: "b7e1d04" }],
+  ])("reads %s", (text, ref) => {
+    expect(parseEntryRef(text)).toEqual(ref);
+  });
+
+  it.each(["3f9", "xyz1", "", "3f9a-2c1"])("refuses %j with exit 2", (text) => {
+    expect(failure(() => parseEntryRef(text)).exitCode).toBe(EXIT.usage);
+  });
+
+  it("takes the saved entry with the newest save as last, never the running one", () => {
+    const newest = entry("b7e1d04f", "2026-11-04T09:00:00.000Z");
+    expect(
+      lastSavedEntry([
+        entry("aaaa1111", "2026-11-03T16:00:00.000Z"),
+        newest,
+        entry("cccc2222", "2026-11-04T10:00:00.000Z", { state: "running" }),
+      ]),
+    ).toBe(newest);
+    const none = failure(() => lastSavedEntry([]));
+    expect(none.exitCode).toBe(EXIT.reference);
+    expect(none.message).toBe("No entry was saved in the last 7 days.");
+  });
+
+  it("picks the one entry a prefix finds, or the running entry", () => {
+    const found = entry("b7e1d04f", "2026-11-03T16:00:00.000Z");
+    expect(
+      pickFoundEntry("b7e1", { entries: [found], running: null }, "2026-11-04"),
+    ).toEqual({ kind: "entry", entry: found });
+    // A continued entry is listed as running, and is the running entry.
+    expect(
+      pickFoundEntry(
+        "3f9a",
+        {
+          entries: [
+            entry("3f9a2c1e00", "2026-11-04T09:00:00.000Z", {
+              state: "running",
+            }),
+          ],
+          running,
+        },
+        "2026-11-04",
+      ),
+    ).toEqual({ kind: "running", running });
+  });
+
+  it("refuses a prefix that finds nothing, or several, with the candidate rows", () => {
+    const none = failure(() =>
+      pickFoundEntry("dead", { entries: [], running: null }, "2026-11-04"),
+    );
+    expect(none).toMatchObject({
+      exitCode: EXIT.reference,
+      message: 'No entry has an id starting with "dead".',
+    });
+
+    const several = failure(() =>
+      pickFoundEntry(
+        "3f9a",
+        {
+          entries: [entry("3f9a2c1aaa", "2026-11-03T16:00:00.000Z")],
+          running,
+        },
+        "2026-11-04",
+      ),
+    );
+    expect(several).toMatchObject({ exitCode: EXIT.reference });
+    expect(several.message).toBe(
+      '"3f9a" matches 2 entries:\n' +
+        "     0:45  AJR  04 Review  3f9a2c1a  Tue 3 Nov\n" +
+        "  ●  1:31  —    07 Export  3f9a2c1e\n" +
+        "Say which with more of its id.",
+    );
   });
 });

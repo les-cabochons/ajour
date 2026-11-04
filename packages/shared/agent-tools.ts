@@ -731,25 +731,29 @@ export type WriteToolResult<Name extends WriteToolName> = z.infer<
   (typeof writeToolResultSchemas)[Name]
 >;
 
-/** Adds the Undo token every write tool returns. */
-function withUndoToken<Schema extends z.AnyZodObject>(schema: Schema) {
-  return schema.extend({
-    /**
-     * Pass it to undo to take the write back while its Undo toast shows.
-     * Null when the write changed nothing Ajour can undo.
-     */
-    undoToken: z.string().nullable(),
-  });
-}
+/** The Undo token every write tool returns. */
+const undoTokenShape = {
+  /**
+   * Pass it to undo to take the write back while its Undo toast shows.
+   * Null when the write changed nothing Ajour can undo.
+   */
+  undoToken: z.string().nullable(),
+};
+
+/**
+ * Typed per tool, so a caller such as the CLI reads each write's own
+ * fields along with its token.
+ */
+type ShapeOf<Schema> = Schema extends z.ZodObject<infer Shape> ? Shape : never;
 
 const writeToolOutputSchemas = Object.fromEntries(
   Object.entries(writeToolResultSchemas).map(([name, schema]) => [
     name,
-    withUndoToken(schema),
+    schema.extend(undoTokenShape),
   ]),
 ) as {
-  [Name in WriteToolName]: ReturnType<
-    typeof withUndoToken<(typeof writeToolResultSchemas)[Name]>
+  [Name in WriteToolName]: z.ZodObject<
+    ShapeOf<(typeof writeToolResultSchemas)[Name]> & typeof undoTokenShape
   >;
 };
 

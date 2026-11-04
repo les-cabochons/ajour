@@ -3,7 +3,13 @@ import { readFile, realpath } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { parseArgs, type ParseArgsConfig } from "node:util";
 import { connect } from "./commands/connect.ts";
+import { continueEntry } from "./commands/continue.ts";
+import { discard } from "./commands/discard.ts";
+import { edit } from "./commands/edit.ts";
+import { start } from "./commands/start.ts";
 import { status } from "./commands/status.ts";
+import { stop } from "./commands/stop.ts";
+import { undo } from "./commands/undo.ts";
 import { createContext, type Context } from "./context.ts";
 import { CliError, EXIT, UsageError } from "./errors.ts";
 import { painter, shouldColor, type ColorMode } from "./format/style.ts";
@@ -27,7 +33,46 @@ const GLOBAL_OPTIONS = {
   help: { type: "boolean", short: "h" },
 } satisfies Options;
 
+/** -m NOTE and -d DURATION, for the commands that write an entry. */
+const ENTRY_OPTIONS = {
+  note: { type: "string", short: "m" },
+  duration: { type: "string", short: "d" },
+} satisfies Options;
+
+function text(value: string | boolean | undefined): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
 const COMMANDS: Record<string, Command> = {
+  start: {
+    options: ENTRY_OPTIONS,
+    arguments: 1,
+    run: (ctx, values, [task]) =>
+      start(ctx, {
+        task,
+        note: text(values.note),
+        duration: text(values.duration),
+      }),
+  },
+  stop: { options: {}, arguments: 0, run: (ctx) => stop(ctx) },
+  continue: {
+    options: {},
+    arguments: 1,
+    run: (ctx, _values, [entry]) => continueEntry(ctx, { entry }),
+  },
+  edit: {
+    options: ENTRY_OPTIONS,
+    arguments: 2,
+    run: (ctx, values, [entry, task]) =>
+      edit(ctx, {
+        entry,
+        task,
+        note: text(values.note),
+        duration: text(values.duration),
+      }),
+  },
+  discard: { options: {}, arguments: 0, run: (ctx) => discard(ctx) },
+  undo: { options: {}, arguments: 0, run: (ctx) => undo(ctx) },
   connect: {
     options: { "token-stdin": { type: "boolean" } },
     arguments: 0,
@@ -142,7 +187,8 @@ function report(error: unknown, io: CliIo): number {
     shouldColor("auto", { isTTY: io.stderr.isTTY, env: io.env }),
   );
   if (error instanceof CliError) {
-    io.stderr.write(`${paint.error(`${error.label}:`)} ${error.message}\n`);
+    const label = error.label ? `${paint.error(`${error.label}:`)} ` : "";
+    io.stderr.write(`${label}${error.message}\n`);
     return error.exitCode;
   }
   const message = error instanceof Error ? error.message : String(error);

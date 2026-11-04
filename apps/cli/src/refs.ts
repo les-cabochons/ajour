@@ -1,9 +1,15 @@
+import type {
+  AgentRunningTimer,
+  AgentTimeEntry,
+} from "../../../packages/shared/agent-tools.ts";
 import { normalizeTaskName } from "../../../packages/shared/task-names.ts";
 import { CliError, EXIT, UsageError } from "./errors.ts";
+import { entryRow, formatRows, runningRow } from "./format/rows.ts";
+import { painter } from "./format/style.ts";
 
 /**
- * Turns what the user typed into what Ajour's tools take: a task, a
- * duration. Pure: the lists come from Ajour's read tools.
+ * Turns what the user typed into what Ajour's tools take: a task, an
+ * entry, a duration. Pure: the lists come from Ajour's read tools.
  */
 
 /** A reference that matched nothing or several things. */
@@ -176,4 +182,92 @@ function readMinutes(text: string): number | undefined {
     return Number.isFinite(hours) ? Math.round(hours * 60) : undefined;
   }
   return undefined;
+}
+
+/** What an ENTRY argument names, before Ajour is asked. */
+export type EntryRef =
+  { kind: "running" } | { kind: "last" } | { kind: "prefix"; prefix: string };
+
+/**
+ * Reads an ENTRY: `running`, `last`, or the start of an entry's short id,
+ * 4 to 32 hex characters, as `ajour log` prints it.
+ */
+export function parseEntryRef(text: string): EntryRef {
+  const typed = text.trim().toLowerCase();
+  if (typed === "running") return { kind: "running" };
+  if (typed === "last") return { kind: "last" };
+  if (/^[0-9a-f]{4,32}$/.test(typed)) return { kind: "prefix", prefix: typed };
+  throw new UsageError(
+    `"${text}" isn't an entry. Use running, last, or 4 or more characters of an id from ajour log.`,
+  );
+}
+
+/** How many days back `last` looks. */
+export const LAST_ENTRY_DAYS = 7;
+
+/** The saved entry with the newest save: the one `last` names. */
+export function lastSavedEntry(
+  entries: readonly AgentTimeEntry[],
+): AgentTimeEntry {
+  let last: { entry: AgentTimeEntry; at: number } | undefined;
+  for (const entry of entries) {
+    if (entry.state === "running" || !entry.savedAt) continue;
+    const at = Date.parse(entry.savedAt);
+    if (Number.isNaN(at) || (last && last.at >= at)) continue;
+    last = { entry, at };
+  }
+  if (!last) {
+    throw new ReferenceError(
+      `No entry was saved in the last ${LAST_ENTRY_DAYS} days.`,
+    );
+  }
+  return last.entry;
+}
+
+export type FoundEntry =
+  | { kind: "running"; running: AgentRunningTimer }
+  | { kind: "entry"; entry: AgentTimeEntry };
+
+/**
+ * The one entry find_entries found for `prefix`. A saved entry the running
+ * entry continues is the running entry. Nothing, or several, is exit 4,
+ * with the candidates as rows.
+ */
+export function pickFoundEntry(
+  prefix: string,
+  found: {
+    entries: readonly AgentTimeEntry[];
+    running: AgentRunningTimer | null;
+  },
+  today: string,
+): FoundEntry {
+  const candidates: FoundEntry[] = [
+    ...found.entries
+      .filter((entry) => !(found.running && entry.state === "running"))
+      .map((entry) => ({ kind: "entry" as const, entry })),
+    ...(found.running
+      ? [{ kind: "running" as const, running: found.running }]
+      : []),
+  ];
+  if (candidates.length === 1) return candidates[0]!;
+  if (candidates.length === 0) {
+    throw new ReferenceError(`No entry has an id starting with "${prefix}".`);
+  }
+  const rows = formatRows(
+    candidates.map((candidate) =>
+      candidate.kind === "entry"
+        ? entryRow(candidate.entry)
+        : runningRow(candidate.running),
+    ),
+    { paint: painter(false), today },
+  );
+  throw new ReferenceError(
+    `"${prefix}" matches ${candidates.length} entries:\n` +
+      rows
+        .trimEnd()
+        .split("\n")
+        .map((line) => `  ${line}`)
+        .join("\n") +
+      "\nSay which with more of its id.",
+  );
 }

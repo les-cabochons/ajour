@@ -97,27 +97,65 @@ export function parseTokenInput(raw: string): string {
   return token;
 }
 
-/**
- * Saves the token readable by the user alone, like gh's hosts file. It is
- * written to a new private file first, then renamed over the old one, so an
- * existing file with wider rights never holds the new token. The rename
- * replaces a symlink at that path rather than writing through it.
- */
+/** Saves the token readable by the user alone, like gh's hosts file. */
 export async function saveToken(io: CliIo, token: string): Promise<string> {
   const file = tokenPath(io);
+  await writePrivateFile(file, `${token}\n`);
+  return file;
+}
+
+/**
+ * Writes `text` readable by the user alone. It is written to a new private
+ * file first, then renamed over the old one, so an existing file with wider
+ * rights never holds the new text. The rename replaces a symlink at that
+ * path rather than writing through it.
+ */
+export async function writePrivateFile(
+  file: string,
+  text: string,
+): Promise<void> {
   const dir = path.dirname(file);
   await mkdir(dir, { recursive: true, mode: 0o700 });
   const temporary = path.join(
     dir,
-    `.token-${process.pid}-${randomBytes(6).toString("hex")}`,
+    `.${path.basename(file)}-${process.pid}-${randomBytes(6).toString("hex")}`,
   );
   try {
-    await writeFile(temporary, `${token}\n`, { mode: 0o600, flag: "wx" });
+    await writeFile(temporary, text, { mode: 0o600, flag: "wx" });
     await chmod(temporary, 0o600);
     await rename(temporary, file);
   } catch (error) {
     await rm(temporary, { force: true });
     throw error;
   }
-  return file;
+}
+
+/** Where the last write's Undo token waits for `ajour undo`. */
+export function undoPath(io: CliIo): string {
+  return path.join(stateDir(io), "last-undo");
+}
+
+/**
+ * Keeps a write's Undo token for `ajour undo`, privately like the token. A
+ * write that offered no Undo changed nothing, so the token kept before it
+ * still names Ajour's last action and stays.
+ */
+export async function rememberUndo(
+  io: CliIo,
+  undoToken: string | null,
+): Promise<void> {
+  if (undoToken) await writePrivateFile(undoPath(io), `${undoToken}\n`);
+}
+
+/** The kept Undo token, or undefined when there is none. */
+export async function readUndo(io: CliIo): Promise<string | undefined> {
+  try {
+    return (await readFile(undoPath(io), "utf8")).trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function forgetUndo(io: CliIo): Promise<void> {
+  await rm(undoPath(io), { force: true });
 }

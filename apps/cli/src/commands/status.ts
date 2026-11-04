@@ -7,6 +7,8 @@ import { localDate, type Context } from "../context.ts";
 import { UnreachableError } from "../errors.ts";
 import { painter, type Paint } from "../format/style.ts";
 import { formatClock, formatClockSeconds, truncate } from "../format/text.ts";
+import { daysBefore } from "../lookup.ts";
+import { LAST_ENTRY_DAYS } from "../refs.ts";
 
 export interface StatusOptions {
   /** One line for a status bar. */
@@ -18,14 +20,7 @@ export interface StatusOptions {
 }
 
 /** How many days back the idle line looks for the entry saved last. */
-const RECENT_DAYS = 7;
-
-/** The same local time of day, `days` calendar days earlier. */
-function daysBefore(now: number, days: number): number {
-  const date = new Date(now);
-  date.setDate(date.getDate() - days);
-  return date.getTime();
-}
+const RECENT_DAYS = LAST_ENTRY_DAYS;
 
 /** How often `--watch` asks Ajour again. Between asks, the clock ticks here. */
 const WATCH_REFRESH_MS = 10_000;
