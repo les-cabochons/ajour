@@ -119,6 +119,13 @@ Feature: Open the local time workspace
     When I widen the window to a desktop width
     Then the Week view is visible
 
+  Scenario: Narrow Day rows show the note under the task
+    Given I have a week of saved entries
+    When I open Monday's Day list in a narrow window
+    Then the "API" entry shows its note on a second line under its task
+    When I widen the window to a desktop width
+    Then the "API" entry shows its task and note on one line
+
   Scenario: Long press an entry in the narrow view
     Given I have a week of saved entries
     When I long press Monday's "API" entry on a narrow touch screen

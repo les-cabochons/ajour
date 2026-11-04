@@ -210,6 +210,7 @@ Today's splits at 640px and 1023px go away.
 ### Actions and editing
 
 - Rows always show their "…" button, and Day rows their Continue or Stop. On touch screens, a long press opens the right-click menu.
+- Day rows have two lines, 52px tall ([#511](https://github.com/les-cabochons/ajour/issues/511)): the task, with Continue or Stop and the duration, over the project mark, the project and the note in 12px secondary text. The note tells entries of one task apart, so it gets the whole second line. Without a note, line 2 shows the project alone.
 - Page actions that floated over the content, such as the Backlog filter and "+", move into the page header.
 - Editing an entry uses the full-width entry dialog. Its behavior comes from [One entry editor for Day and Week](https://github.com/les-cabochons/ajour/issues/14).
 

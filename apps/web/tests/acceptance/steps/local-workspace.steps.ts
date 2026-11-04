@@ -3409,3 +3409,40 @@ Then(
     await expect(subitems).not.toContainText("Settle rules");
   },
 );
+
+When("I open Monday's Day list in a narrow window", async ({ page }) => {
+  await page.setViewportSize({ width: 420, height: 860 });
+  await page.goto("/time/2026-10-05");
+});
+
+/** The task and note boxes of a Day row, found by its note. */
+async function entryLineBoxes(page: Page, note: string) {
+  const row = page.getByRole("row", { name: new RegExp(note) });
+  await expect(row.locator(".time-entry-note")).toHaveText(note);
+  const task = await row.locator(".time-entry-task").boundingBox();
+  const noteBox = await row.locator(".time-entry-note").boundingBox();
+  if (!task || !noteBox) throw new Error(`The ${note} entry is not rendered`);
+  return { task, note: noteBox };
+}
+
+Then(
+  "the {string} entry shows its note on a second line under its task",
+  async ({ page }, note: string) => {
+    const boxes = await entryLineBoxes(page, note);
+    expect(boxes.note.y).toBeGreaterThanOrEqual(
+      boxes.task.y + boxes.task.height - 1,
+    );
+  },
+);
+
+Then(
+  "the {string} entry shows its task and note on one line",
+  async ({ page }, note: string) => {
+    await expect(async () => {
+      const boxes = await entryLineBoxes(page, note);
+      const middle = (box: { y: number; height: number }) =>
+        box.y + box.height / 2;
+      expect(Math.abs(middle(boxes.note) - middle(boxes.task))).toBeLessThan(4);
+    }).toPass();
+  },
+);
