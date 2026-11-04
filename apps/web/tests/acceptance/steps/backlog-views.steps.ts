@@ -2636,9 +2636,10 @@ async function openDescriptionEditor(page: Page) {
 
 /** The title and project chip boxes of a Backlog list row. */
 async function backlogRowBoxes(page: Page, title: string, project: string) {
-  const row = page
-    .locator(".backlog-list-row")
-    .filter({ has: page.getByText(title, { exact: true }) });
+  const row = page.locator(".backlog-list-row").filter({
+    // The title, not a subitem's parent link of the same name.
+    has: page.locator(".backlog-item-title").getByText(title, { exact: true }),
+  });
   const chip = row.locator(".backlog-item-project");
   await expect(chip).toHaveText(project);
   const titleBox = await row.locator(".backlog-item-title").boundingBox();
@@ -2687,9 +2688,12 @@ When("the Backlog shows the source state", async ({ page }) => {
 Then(
   "the {string} row shows {string} on its second line",
   async ({ page }, title: string, text: string) => {
-    const row = page
-      .locator(".backlog-list-row")
-      .filter({ has: page.getByText(title, { exact: true }) });
+    const row = page.locator(".backlog-list-row").filter({
+      // The title, not a subitem's parent link of the same name.
+      has: page
+        .locator(".backlog-item-title")
+        .getByText(title, { exact: true }),
+    });
     const titleBox = await row.locator(".backlog-item-title").boundingBox();
     const textBox = await row.getByText(text, { exact: true }).boundingBox();
     if (!titleBox || !textBox) throw new Error(`${text} is not shown`);
