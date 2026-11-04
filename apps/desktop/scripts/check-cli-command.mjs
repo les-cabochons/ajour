@@ -148,7 +148,7 @@ const samePath = (left, right) =>
 async function restoreBackup({ path: saved, installDir, written }) {
   const expectedWrite =
     written ??
-    pathWithFolder(saved?.value, installDir, process.env) ??
+    pathWithFolder(saved?.value, installDir, process.env, saved?.kind) ??
     saved?.value;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const current = await readUserPath();
@@ -162,6 +162,7 @@ async function restoreBackup({ path: saved, installDir, written }) {
       if (
         !(await registry.write({
           expected: current?.value ?? null,
+          expectedKind: current?.kind ?? null,
           value: target?.value ?? null,
           kind: target?.kind ?? null,
         }))
@@ -188,7 +189,8 @@ async function saveBackup(saved, installDir) {
       path: saved,
       installDir,
       written:
-        pathWithFolder(saved?.value, installDir, process.env) ?? saved?.value,
+        pathWithFolder(saved?.value, installDir, process.env, saved?.kind) ??
+        saved?.value,
     }),
     {
       encoding: "utf8",

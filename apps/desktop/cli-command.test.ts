@@ -54,6 +54,7 @@ type Registry = {
   read(): Promise<RegistryValue>;
   write(change: {
     expected: string | null;
+    expectedKind: string | null;
     value: string | null;
     kind: string | null;
   }): Promise<boolean>;
@@ -290,7 +291,9 @@ function fakeLink({
   fail = false,
   failBroadcast = false,
   gate,
+  env = {},
 }: {
+  env?: Record<string, string>;
   initial?: RegistryValue;
   fail?: boolean;
   failBroadcast?: boolean;
@@ -302,9 +305,10 @@ function fakeLink({
     async read() {
       return { ...current };
     },
-    async write({ expected, value, kind }) {
+    async write({ expected, expectedKind, value, kind }) {
       if (fail) throw new Error("PowerShell exited with 1.");
-      if (current.value !== expected) return false;
+      if (current.value !== expected || current.kind !== expectedKind)
+        return false;
       current = value === null ? { value: null, kind: null } : { value, kind };
       writes.push({ ...current });
       return true;
@@ -323,7 +327,7 @@ function fakeLink({
       }
     : registry;
   return {
-    link: createWindowsUserPath({ registry: gated, env: {} }),
+    link: createWindowsUserPath({ registry: gated, env }),
     writes,
     initial,
     current: () => current,
@@ -990,52 +994,88 @@ describe("an install cut short", () => {
     ]);
     if (ended === "finished") return false;
 
-    // The next launch, with every step allowed.
-    const next = controllerWith({ link: { link: link.nextLaunch() } });
-    await next.controller.reconcile();
-    const state = await next.controller.state();
-    const where = `cut at step ${n}${previous ? ", over an earlier install" : ""}`;
-
-    expect(
-      await readdir(path.dirname(recordFile)).catch(() => []),
-      where,
-    ).toEqual(state.status === "installed" ? ["cli-command.json"] : []);
-    if (state.status === "installed" && state.version === VERSION) {
-      expect(await filesUnder(installDir), where).toEqual([
-        "ajour.exe",
-        "share/completions/ajour.bash",
-        "share/man/man1/ajour.1",
-      ]);
-      expect(
-        await readFile(path.join(installDir, "ajour.exe"), "utf8"),
-        where,
-      ).toBe(`binary ${VERSION}`);
-      expect(link.current().value, where).toContain(installDir);
-    } else if (before) {
-      expect(state, where).toMatchObject({
-        status: "installed",
-        version: previous,
+    const saved = path.join(root, "snapshot");
+    for (const folder of ["Local", "userData"]) {
+      if (existsSync(path.join(root, folder)))
+        await fs.cp(path.join(root, folder), path.join(saved, folder), {
+          recursive: true,
+        });
+    }
+    for (let recoveryStep = 1; ; recoveryStep += 1) {
+      const recoveryCut = interruption((step) => step.index === recoveryStep);
+      const recoveryLink = fakeLink({
+        initial: link.current(),
+        gate: recoveryCut.gate,
       });
-      expect(JSON.parse(await readFile(recordFile, "utf8")), where).toEqual(
-        before,
-      );
-      expect(await readdir(installDir), where).toEqual(["ajour.exe", "share"]);
+      const recovering = controllerWith({
+        files: recoveryCut.fs,
+        link: recoveryLink,
+      }).controller;
+      const recoveryEnded = await Promise.race([
+        recovering.reconcile().then(() => "finished"),
+        recoveryCut.cutReached.then(() => "cut"),
+      ]);
+      // A further launch must finish even after recovery itself was interrupted.
+      const next = controllerWith({
+        link: { link: recoveryLink.nextLaunch() },
+      });
+      await next.controller.reconcile();
+      const state = await next.controller.state();
+      const where = `cut at step ${n}${previous ? ", over an earlier install" : ""}`;
+
       expect(
-        await readFile(path.join(installDir, "ajour.exe"), "utf8"),
+        await readdir(path.dirname(recordFile)).catch(() => []),
         where,
-      ).toBe(`binary ${previous}`);
-      expect(
-        await readFile(
-          path.join(installDir, "share", "man", "man1", "ajour.1"),
-          "utf8",
-        ),
-        where,
-      ).toBe("old manual");
-      expect(link.current(), where).toEqual(link.initial);
-    } else {
-      expect(state.status, where).toBe("not-installed");
-      expect(await filesUnder(path.join(root, "Local")), where).toEqual([]);
-      expect(link.current(), where).toEqual(link.initial);
+      ).toEqual(state.status === "installed" ? ["cli-command.json"] : []);
+      if (state.status === "installed" && state.version === VERSION) {
+        expect(await filesUnder(installDir), where).toEqual([
+          "ajour.exe",
+          "share/completions/ajour.bash",
+          "share/man/man1/ajour.1",
+        ]);
+        expect(
+          await readFile(path.join(installDir, "ajour.exe"), "utf8"),
+          where,
+        ).toBe(`binary ${VERSION}`);
+        expect(recoveryLink.current().value, where).toContain(installDir);
+      } else if (before) {
+        expect(state, where).toMatchObject({
+          status: "installed",
+          version: previous,
+        });
+        expect(JSON.parse(await readFile(recordFile, "utf8")), where).toEqual(
+          before,
+        );
+        expect(await readdir(installDir), where).toEqual([
+          "ajour.exe",
+          "share",
+        ]);
+        expect(
+          await readFile(path.join(installDir, "ajour.exe"), "utf8"),
+          where,
+        ).toBe(`binary ${previous}`);
+        expect(
+          await readFile(
+            path.join(installDir, "share", "man", "man1", "ajour.1"),
+            "utf8",
+          ),
+          where,
+        ).toBe("old manual");
+        expect(recoveryLink.current(), where).toEqual(link.initial);
+      } else {
+        expect(state.status, where).toBe("not-installed");
+        expect(await filesUnder(path.join(root, "Local")), where).toEqual([]);
+        expect(recoveryLink.current(), where).toEqual(link.initial);
+      }
+
+      if (recoveryEnded === "finished") break;
+      for (const folder of ["Local", "userData"]) {
+        await rm(path.join(root, folder), { recursive: true, force: true });
+        if (existsSync(path.join(saved, folder)))
+          await fs.cp(path.join(saved, folder), path.join(root, folder), {
+            recursive: true,
+          });
+      }
     }
     return true;
   }
@@ -1045,13 +1085,13 @@ describe("an install cut short", () => {
     while (await cutAndRecover(n)) n += 1;
     // The download, the swap, the Path and the record: many steps.
     expect(n).toBeGreaterThan(10);
-  });
+  }, 60_000);
 
   it("recovers an install over an earlier one cut between any two steps", async () => {
     let n = 1;
     while (await cutAndRecover(n, PREVIOUS)) n += 1;
     expect(n).toBeGreaterThan(10);
-  });
+  }, 60_000);
 
   it("keeps the binary an interrupted swap set aside when the next install fails", async () => {
     const before = await installedBefore(PREVIOUS);
@@ -1307,5 +1347,163 @@ describe("reconciliation across later installs", () => {
       value: "C:\\Tools;C:\\AddedLater;",
       kind: "String",
     });
+  });
+});
+
+describe("ownership without a commit", () => {
+  it.each(["ajour.exe", "share/manual"])(
+    "preserves foreign %s at launch and refuses Install",
+    async (name) => {
+      const file = path.join(installDir, name);
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(file, "personal copy");
+      const { controller, github } = controllerWith();
+      expect((await controller.reconcile()).status).toBe("not-installed");
+      expect(await readFile(file, "utf8")).toBe("personal copy");
+      expect((await controller.install()).error).toBe(
+        `There's already an ajour in ${installDir} that Ajour didn't install. Remove it, then install again.`,
+      );
+      expect(await readFile(file, "utf8")).toBe("personal copy");
+      expect(github.requests).toEqual([]);
+    },
+  );
+});
+
+describe("generated cleanup names", () => {
+  it("preserves personal backups beside a valid installation", async () => {
+    await controllerWith().controller.install();
+    const names = [
+      "ajour.exe.old-personal-backup",
+      "share.old-custom",
+      ".staging-personal",
+      ".pending-personal.json",
+      ".pending-personal.json.tmp",
+    ];
+    for (const name of names) {
+      await mkdir(path.join(installDir, name));
+      await writeFile(path.join(installDir, name, "saved"), "personal");
+    }
+    expect((await controllerWith().controller.reconcile()).status).toBe(
+      "installed",
+    );
+    for (const name of names)
+      expect(await readFile(path.join(installDir, name, "saved"), "utf8")).toBe(
+        "personal",
+      );
+  });
+});
+
+describe("installing with a literal REG_SZ Path", () => {
+  it("adds a resolving entry even when REG_SZ contains the folder as a variable", async () => {
+    const local = path.dirname(path.dirname(installDir));
+    const initial = { value: "%LOCALAPPDATA%\\Ajour\\bin", kind: "String" };
+    const link = fakeLink({ initial, env: { LOCALAPPDATA: local } });
+    expect((await controllerWith({ link }).controller.install()).status).toBe(
+      "installed",
+    );
+    expect(link.current()).toEqual({
+      value: `${initial.value};${installDir}`,
+      kind: "String",
+    });
+  });
+});
+
+describe("concurrent registry type changes", () => {
+  it("keeps a type-only edit made while Install writes PATH", async () => {
+    let changed = false;
+    const link = fakeLink({
+      initial: { value: "C:\\Tools", kind: "ExpandString" },
+      gate: async (name, _args, run) => {
+        if (name === "registry.write" && !changed) {
+          changed = true;
+          link.current().kind = "String";
+        }
+        return run();
+      },
+    });
+    expect((await controllerWith({ link }).controller.install()).status).toBe(
+      "installed",
+    );
+    expect(link.current()).toEqual({
+      value: `C:\\Tools;${installDir}`,
+      kind: "String",
+    });
+  });
+});
+
+describe("Install and reconcile interleaving", () => {
+  it.each(["install", "reconcile"])(
+    "serializes when %s starts first",
+    async (first) => {
+      let release!: () => void;
+      const hold = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let reached!: () => void;
+      const atGate = new Promise<void>((resolve) => {
+        reached = resolve;
+      });
+      let blocked = false;
+      const link = fakeLink({
+        initial: { value: `C:\\Tools;${installDir}`, kind: "String" },
+        gate: async (_name, _args, run) => {
+          if (first === "reconcile" && !blocked) {
+            blocked = true;
+            reached();
+            await hold;
+          }
+          return run();
+        },
+      });
+      const exec = fakeExec({
+        versionOutput: async () => {
+          if (first === "install") {
+            reached();
+            await hold;
+          }
+          return `ajour ${VERSION}`;
+        },
+      });
+      const { controller } = controllerWith({ link, exec });
+      const firstCall =
+        first === "install" ? controller.install() : controller.reconcile();
+      await atGate;
+      const secondCall =
+        first === "install" ? controller.reconcile() : controller.install();
+      release();
+      await Promise.all([firstCall, secondCall]);
+      expect((await controller.state()).status).toBe("installed");
+      expect((await controller.reconcile()).status).toBe("installed");
+      expect(link.current()).toEqual({
+        value: `C:\\Tools;${installDir}`,
+        kind: "String",
+      });
+      expect(await filesUnder(installDir)).toEqual([
+        "ajour.exe",
+        "share/completions/ajour.bash",
+        "share/man/man1/ajour.1",
+      ]);
+    },
+  );
+});
+
+describe("ownership evidence after an interrupted swap", () => {
+  it("preserves a share tree modified since its pending marker was written", async () => {
+    const cut = interruption(
+      (step) => step.name === "rename" && step.args[1] === recordFile,
+    );
+    void controllerWith({ files: cut.fs }).controller.install();
+    await cut.cutReached;
+    await writeFile(path.join(installDir, "share", "personal"), "keep");
+    const { controller } = controllerWith();
+    expect((await controller.reconcile()).status).toBe("not-installed");
+    expect(
+      await readFile(path.join(installDir, "share", "personal"), "utf8"),
+    ).toBe("keep");
+    expect(existsSync(path.join(installDir, "ajour.exe"))).toBe(false);
+    expect((await controller.install()).error).toContain(
+      "Ajour didn't install",
+    );
+    expect((await readdir(installDir)).sort()).toEqual(["share"]);
   });
 });

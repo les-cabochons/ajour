@@ -18,6 +18,8 @@ const MAX_REDIRECTS = 5;
 const STOP_TIMEOUT_MS = 5_000;
 const ID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 
+const PENDING_NAME = new RegExp(`^\\.pending-${ID}\\.json$`);
+
 const STAGING_NAME = new RegExp(`^\\.staging-${ID}$`);
 
 const PLATFORM_NAMES = {
@@ -534,6 +536,9 @@ function createCliCommandController({
       .catch(() => undefined);
   }
 
+  const isOldName = (candidate, name) =>
+    new RegExp(`^${name.replaceAll(".", "\\.")}\\.old-${ID}$`).test(candidate);
+
   async function reconcileDisk() {
     const names = await namesIn(paths.installDir);
     let record = await readRecordFile();
@@ -541,9 +546,7 @@ function createCliCommandController({
     for (const name of entries) {
       const target = targetOf(name);
       const old = [];
-      for (const candidate of names.filter((item) =>
-        new RegExp(`^${name.replaceAll(".", "\\.")}\\.old-${ID}$`).test(item),
-      )) {
+      for (const candidate of names.filter((item) => isOldName(item, name))) {
         const file = targetOf(candidate);
         old.push({ file, time: (await fs.stat(file)).mtimeMs });
       }
@@ -585,16 +588,38 @@ function createCliCommandController({
       record = null;
     }
     if (!record) {
-      // No commit: discard the uncommitted first install, including its share tree.
-      for (const name of entries)
-        await fs.rm(targetOf(name), { recursive: true, force: true });
+      // A missing record proves nothing about files in the user's folder.
+      // Only a fully written pending marker identifies an uncommitted swap.
+      for (const marker of names.filter((name) => PENDING_NAME.test(name))) {
+        let pending;
+        try {
+          pending = JSON.parse(await fs.readFile(targetOf(marker), "utf8"));
+        } catch (error) {
+          if (error.code === "ENOENT" || error instanceof SyntaxError) continue;
+          throw error;
+        }
+        for (const name of entries) {
+          const expected = pending?.digests?.[name];
+          if (
+            typeof expected === "string" &&
+            /^[0-9a-f]{64}$/.test(expected) &&
+            (await contentDigest(targetOf(name))) === expected
+          )
+            await fs.rm(targetOf(name), { recursive: true, force: true });
+        }
+      }
     }
     let result = { added: false };
     if (record) result = await link.add(paths.installDir);
     else await link.remove(paths.installDir);
     for (const name of await namesIn(paths.installDir)) {
-      const old = entries.some((entry) => name.startsWith(`${entry}.old-`));
-      if (STAGING_NAME.test(name) || old) {
+      const old = entries.some((entry) => isOldName(name, entry));
+      if (
+        STAGING_NAME.test(name) ||
+        old ||
+        PENDING_NAME.test(name) ||
+        (name.endsWith(".tmp") && PENDING_NAME.test(name.slice(0, -4)))
+      ) {
         try {
           await fs.rm(targetOf(name), { recursive: true, force: true });
         } catch (error) {
@@ -625,6 +650,16 @@ function createCliCommandController({
     }
   }
 
+  async function refuseForeignFiles() {
+    if (await readRecordFile()) return;
+    if ((await exists(targetOf(binary))) || (await exists(targetOf("share")))) {
+      throw refusal(
+        "foreign_command",
+        `There's already an ajour in ${paths.installDir} that Ajour didn't install. Remove it, then install again.`,
+      );
+    }
+  }
+
   async function runInstall(unit) {
     const report = { platform, arch, version: appVersion };
     const started = now();
@@ -648,6 +683,7 @@ function createCliCommandController({
         emit(state);
         return state;
       }
+      await refuseForeignFiles();
       publishInstalling("downloading", 0);
       stopIfQuitting();
       const resolved = await resolveAsset(report);
@@ -685,6 +721,11 @@ function createCliCommandController({
           previous.digests[name] = await contentDigest(targetOf(name));
         await writeRecord(previous);
       }
+      await refuseForeignFiles();
+      await writeAtomically(
+        targetOf(`.pending-${id}.json`),
+        JSON.stringify({ digests }),
+      );
       swapped = true;
       for (const name of [binary, "share"]) {
         if (await exists(targetOf(name)))

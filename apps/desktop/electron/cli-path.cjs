@@ -19,10 +19,12 @@ function expandEnvironment(text, env) {
 }
 
 /** An entry as Windows resolves it, for comparison only: never written. */
-function comparable(entry, env) {
+function comparable(entry, env, kind) {
   const unquoted = entry.trim().replace(/^"(.*)"$/, "$1");
   return path.win32
-    .normalize(expandEnvironment(unquoted, env))
+    .normalize(
+      kind === "ExpandString" ? expandEnvironment(unquoted, env) : unquoted,
+    )
     .replace(/[\\/]+$/, "")
     .toLowerCase();
 }
@@ -31,12 +33,14 @@ function comparable(entry, env) {
  * The Path with `folder` appended, or null when it already holds it. Every
  * other entry, separator and %VAR% stays as it was.
  */
-function pathWithFolder(raw, folder, env) {
+function pathWithFolder(raw, folder, env, kind) {
   const value = raw ?? "";
-  const wanted = comparable(folder, env);
+  const wanted = comparable(folder, env, "String");
   const present = value
     .split(";")
-    .some((entry) => entry.trim() !== "" && comparable(entry, env) === wanted);
+    .some(
+      (entry) => entry.trim() !== "" && comparable(entry, env, kind) === wanted,
+    );
   if (present) return null;
   if (value.trim() === "") return folder;
   return `${value.replace(/;+$/, "")};${folder}`;
@@ -54,7 +58,11 @@ function pathWithoutFolder(raw, folder) {
 
 /** The check may restore a snapshot only while its own write is still current. */
 function checkPathRestoration(current, saved, written, folder) {
-  if ((current?.value ?? null) === written) return saved;
+  if (
+    (current?.value ?? null) === written &&
+    (current?.kind ?? null) === (saved?.kind ?? "ExpandString")
+  )
+    return saved;
   const value = pathWithoutFolder(current?.value, folder);
   return value === null ? current : { value, kind: current.kind };
 }
@@ -70,7 +78,7 @@ const KINDS = new Set(["ExpandString", "String"]);
  * @param {{
  *   registry: {
  *     read(): Promise<RegistryValue>,
- *     write(change: { expected: string | null, value: string | null, kind: string | null }): Promise<boolean>,
+ *     write(change: { expected: string | null, expectedKind: string | null, value: string | null, kind: string | null }): Promise<boolean>,
  *     broadcast(): Promise<void>,
  *   },
  *   env?: Record<string, string | undefined>,
@@ -86,12 +94,13 @@ function createWindowsUserPath({
     for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt += 1) {
       const current = await registry.read();
       const next = present
-        ? pathWithFolder(current.value, folder, env)
+        ? pathWithFolder(current.value, folder, env, current.kind)
         : pathWithoutFolder(current.value, folder);
       if (next === null) return { added: false };
       if (
         await registry.write({
           expected: current.value,
+          expectedKind: current.kind,
           value: next,
           kind: current.kind ?? "ExpandString",
         })
@@ -130,7 +139,8 @@ const WRITE_SCRIPT = [
   "$key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment');",
   "$current = $key.GetValue('Path', $null, 'DoNotExpandEnvironmentNames');",
   "$expected = if ($env:AJOUR_PATH_EXPECTED -eq '-') { $null } else { & $decode $env:AJOUR_PATH_EXPECTED };",
-  "if ($current -cne $expected) { [Console]::Out.Write('changed'); exit 0 };",
+  "$currentKind = if ($null -ne $current) { $key.GetValueKind('Path').ToString() } else { '' };",
+  "if ($currentKind -cne $env:AJOUR_PATH_EXPECTED_KIND -or $current -cne $expected) { [Console]::Out.Write('changed'); exit 0 };",
   "if ($env:AJOUR_PATH_VALUE -eq '-') { $key.DeleteValue('Path', $false) }",
   "else { $key.SetValue('Path', (& $decode $env:AJOUR_PATH_VALUE), [Microsoft.Win32.RegistryValueKind]$env:AJOUR_PATH_KIND) };",
   "$key.Close();",
@@ -205,12 +215,13 @@ function createPowerShellRegistry({
         kind: typeof answer.kind === "string" ? answer.kind : null,
       };
     },
-    async write({ expected, value, kind }) {
+    async write({ expected, expectedKind, value, kind }) {
       if (value !== null && !KINDS.has(kind)) {
         throw new Error(`Ajour doesn't write a ${kind} Path.`);
       }
       const answer = await ask(WRITE_SCRIPT, {
         AJOUR_PATH_EXPECTED: expected === null ? "-" : encode(expected),
+        AJOUR_PATH_EXPECTED_KIND: expectedKind ?? "",
         AJOUR_PATH_VALUE: value === null ? "-" : encode(value),
         AJOUR_PATH_KIND: value === null ? "" : kind,
       });

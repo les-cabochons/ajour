@@ -20,6 +20,7 @@ interface Registry {
   read(): Promise<RegistryValue>;
   write(change: {
     expected: string | null;
+    expectedKind: Kind | null;
     value: string | null;
     kind: Kind | null;
   }): Promise<boolean>;
@@ -74,9 +75,10 @@ function fakeRegistry(
     async read() {
       return { ...current };
     },
-    async write({ expected, value, kind }) {
+    async write({ expected, expectedKind, value, kind }) {
       // As the PowerShell write does: refuse when the Path changed since.
-      if (current.value !== expected) return false;
+      if (current.value !== expected || current.kind !== expectedKind)
+        return false;
       current = value === null ? { value: null, kind: null } : { value, kind };
       writes.push({ ...current });
       if (writesLeftToFail > 0) {
@@ -341,6 +343,7 @@ describe("the PowerShell registry", () => {
     expect(
       await registry.write({
         expected: "C:\\Tools",
+        expectedKind: "String",
         value,
         kind: "ExpandString",
       }),
@@ -349,6 +352,10 @@ describe("the PowerShell registry", () => {
     const [call] = fake.calls;
     expect(call!.args.join(" ")).not.toContain("Remove-Item");
     expect(call!.env.AJOUR_PATH_EXPECTED).toBe(`v${b64("C:\\Tools")}`);
+    expect(call!.env.AJOUR_PATH_EXPECTED_KIND).toBe("String");
+    expect(call!.args.join(" ")).toContain(
+      "$currentKind -cne $env:AJOUR_PATH_EXPECTED_KIND",
+    );
     expect(call!.env.AJOUR_PATH_VALUE).toBe(`v${b64(value)}`);
     expect(call!.env.AJOUR_PATH_KIND).toBe("ExpandString");
     expect(call!.env.SystemRoot).toBe(SYSTEM_ROOT);
@@ -360,6 +367,7 @@ describe("the PowerShell registry", () => {
 
     await registry.write({
       expected: "",
+      expectedKind: "String",
       value: "C:\\bin",
       kind: "ExpandString",
     });
@@ -374,6 +382,7 @@ describe("the PowerShell registry", () => {
     expect(
       await registry.write({
         expected: null,
+        expectedKind: null,
         value: "C:\\bin",
         kind: "ExpandString",
       }),
@@ -385,7 +394,12 @@ describe("the PowerShell registry", () => {
     const fake = fakeRun("written");
     const registry = createPowerShellRegistry({ run: fake.run, env: {} });
 
-    await registry.write({ expected: "C:\\a", value: "C:\\b", kind: "String" });
+    await registry.write({
+      expected: "C:\\a",
+      expectedKind: "String",
+      value: "C:\\b",
+      kind: "String",
+    });
 
     expect(fake.calls[0]!.env.AJOUR_PATH_KIND).toBe("String");
   });
@@ -394,7 +408,12 @@ describe("the PowerShell registry", () => {
     const fake = fakeRun("written");
     const registry = createPowerShellRegistry({ run: fake.run, env: {} });
 
-    await registry.write({ expected: "C:\\bin", value: null, kind: null });
+    await registry.write({
+      expected: "C:\\bin",
+      expectedKind: "String",
+      value: null,
+      kind: null,
+    });
 
     expect(fake.calls[0]!.env.AJOUR_PATH_VALUE).toBe("-");
     expect(fake.calls[0]!.args.join(" ")).toContain("DeleteValue");
@@ -407,6 +426,7 @@ describe("the PowerShell registry", () => {
     await expect(
       registry.write({
         expected: null,
+        expectedKind: null,
         value: "C:\\bin",
         kind: "Binary" as never,
       }),
@@ -452,4 +472,32 @@ describe("the real-app check's leftover PATH backup", () => {
       ),
     ).toEqual({ value: "C:\\Tools;D:\\Later;", kind: "String" });
   });
+});
+
+describe("type-only changes during check cleanup", () => {
+  it("removes only the check entry and keeps the current kind", () => {
+    expect(
+      checkPathRestoration(
+        { value: `C:\\Tools;${FOLDER}`, kind: "String" },
+        { value: "C:\\Tools;", kind: "ExpandString" },
+        `C:\\Tools;${FOLDER}`,
+        FOLDER,
+      ),
+    ).toEqual({ value: "C:\\Tools", kind: "String" });
+  });
+});
+
+describe("literal Windows path comparison", () => {
+  it.each(["String", "ExpandString"] as const)(
+    "normalizes case and trailing backslashes in %s",
+    async (kind) => {
+      const fake = fakeRegistry({ value: `${FOLDER.toUpperCase()}\\`, kind });
+      expect(
+        await createWindowsUserPath({ registry: fake.registry, env: ENV }).add(
+          FOLDER,
+        ),
+      ).toEqual({ added: false });
+      expect(fake.writes).toEqual([]);
+    },
+  );
 });
