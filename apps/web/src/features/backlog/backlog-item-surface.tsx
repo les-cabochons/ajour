@@ -500,7 +500,10 @@ export function BacklogItemSurface({
         {!board && progressLabel}
         {!board && markers}
       </div>
-      <div className="backlog-item-properties">
+      <div
+        className="backlog-item-properties"
+        data-no-project={view.properties.project ? undefined : ""}
+      >
         {board && view.properties.priority && (
           <BacklogPriorityPicker
             item={item}

@@ -278,29 +278,50 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* On desktop list rows the project, estimate and actions are fixed
-     columns, so chips start at one edge whether or not an estimate follows. */
+  /* On desktop list rows the project, estimate and actions are columns, so
+     chips start at one edge whether or not an estimate follows. The project
+     track is up to 160px (the chip's own max-w-40) and gives way first when
+     the list is narrow, such as beside a wide sidebar; the estimate and
+     actions keep theirs. With projects hidden from Display it goes away. */
   @media (width >= 768px) {
     .backlog-list-row .backlog-item-properties {
       display: grid;
-      /* The chip's own max-w-40 (160px) sets the project track. */
-      grid-template-columns: 160px 36px 52px;
+      grid-template-columns: minmax(0, 160px) 36px 52px;
+      flex-shrink: 1;
       gap: 0.625rem;
     }
 
+    /* The title keeps at least 6rem; the project track gives way first. */
+    .backlog-list-row .backlog-item-content {
+      min-width: 6rem;
+    }
+
+    .backlog-list-row .backlog-item-properties[data-no-project] {
+      grid-template-columns: 36px 52px;
+    }
+
+    /* The chip's max-w-40 utility outranks this layer; its track, not
+       160px, bounds it here. */
     .backlog-list-row .backlog-item-project {
       grid-column: 1;
       justify-self: start;
+      max-width: 100% !important;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .backlog-list-row .backlog-item-project > .truncate {
+      min-width: 0;
     }
 
     .backlog-list-row .backlog-item-estimate {
-      grid-column: 2;
+      grid-column: -3;
       min-width: 0;
       text-align: right;
     }
 
     .backlog-list-row .backlog-item-actions {
-      grid-column: 3;
+      grid-column: -2;
     }
   }
 
