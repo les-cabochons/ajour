@@ -398,6 +398,18 @@ describe("tray controller", () => {
     ]);
   });
 
+  // Another entry with the same title replaced the first one.
+  it("stops the new entry when one with the same title replaces it", () => {
+    const controller = setUp();
+    controller.show();
+    controller.setState({ entry: entry({ timerId: "timer-a" }) });
+
+    controller.setState({ entry: entry({ timerId: "timer-b" }) });
+    click(trays[0]!, "Stop");
+
+    expect(actions).toEqual([["stop", entry({ timerId: "timer-b" })]]);
+  });
+
   it("opens Ajour from a click on the icon on Windows", () => {
     const controller = setUp("win32");
     controller.show();

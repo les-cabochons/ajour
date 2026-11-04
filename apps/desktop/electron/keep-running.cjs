@@ -211,8 +211,9 @@ function createTrayController({
     const time = now();
     const model = trayMenuModel({ entry, now: time, platform });
     tray.setToolTip(model.tooltip);
-    // The menu holds no time, so it changes only with the entry.
-    const key = JSON.stringify(model.items);
+    // The menu holds no time, so it changes only with the entry. Its Stop
+    // carries the timer, so another entry with the same title rebuilds it.
+    const key = JSON.stringify([entry?.timerId ?? null, model.items]);
     if (key !== menuKey) {
       menuKey = key;
       const shown = entry;
