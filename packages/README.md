@@ -14,7 +14,7 @@ packages/
     tests/          ← tests and fixtures (a subfolder, so private).
 ```
 
-Copy `packages/example/` to start a new package, or delete it.
+`packages/example/` is the example project source plugin Ajour's tests load (#504). Its layout is the one to copy for a new package.
 
 ## Rules
 

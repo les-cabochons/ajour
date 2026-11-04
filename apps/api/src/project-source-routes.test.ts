@@ -10,6 +10,11 @@ import { dispatchJsonRequest } from "./test-support/dispatch-json-request.ts";
 import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
 import { windowServerOptions } from "./test-support/window-token.ts";
+import {
+  exampleProjectSourceDirectory,
+  FIXTURE_CURSOR,
+  fixtureSnapshot,
+} from "../../../packages/example/index.ts";
 
 /*
  * The project source route (#504): `POST .../sync-projects` runs a plugin
@@ -99,18 +104,27 @@ describe("the project source sync route", () => {
     delete fixture.__plannerAnswer;
   });
 
+  /**
+   * A server with the fixture plugin declaring `capabilities`, or with the
+   * example project source of `packages/example` when `pluginDirectory`
+   * names it, and one saved connection.
+   */
   async function setup(
     capabilities: Record<string, unknown> = { projectSource: {} },
+    pluginDirectory?: string,
   ) {
     const root = await mkdtemp(path.join(os.tmpdir(), "ajour-project-source-"));
     tempDirs.push(root);
-    const pluginDirectory = path.join(root, "planner");
-    await mkdir(pluginDirectory, { recursive: true });
-    await writeFile(
-      path.join(pluginDirectory, "plugin.json"),
-      JSON.stringify(manifest(capabilities)),
-    );
-    await writeFile(path.join(pluginDirectory, "plugin.mjs"), PLUGIN_SOURCE);
+    const pluginId = pluginDirectory ? "example-project-source" : "planner";
+    if (!pluginDirectory) {
+      pluginDirectory = path.join(root, pluginId);
+      await mkdir(pluginDirectory, { recursive: true });
+      await writeFile(
+        path.join(pluginDirectory, "plugin.json"),
+        JSON.stringify(manifest(capabilities)),
+      );
+      await writeFile(path.join(pluginDirectory, "plugin.mjs"), PLUGIN_SOURCE);
+    }
     const sink = createRecordingSink<AjourEvent>();
     const server = createAppApiServer({
       ...windowServerOptions,
@@ -126,7 +140,7 @@ describe("the project source sync route", () => {
     servers.push(server);
     const saved = await dispatchJsonRequest(server, {
       method: "POST",
-      path: "/api/plugins/planner/connections",
+      path: `/api/plugins/${pluginId}/connections`,
       body: JSON.stringify({
         values: {
           label: "Planner",
@@ -143,7 +157,7 @@ describe("the project source sync route", () => {
     const sync = (trigger: "manual" | "auto" = "manual") =>
       dispatchJsonRequest(server, {
         method: "POST",
-        path: `/api/plugins/planner/connections/${connectionId}/sync-projects`,
+        path: `/api/plugins/${pluginId}/connections/${connectionId}/sync-projects`,
         body: JSON.stringify({ trigger }),
       });
     const connectionSummary = async () => {
@@ -326,5 +340,20 @@ describe("the project source sync route", () => {
       status: 409,
       body: { error: "This plugin does not provide projects from a source." },
     });
+  });
+
+  it("loads the example project source of packages/example and syncs its fixture", async () => {
+    const { sync, seen } = await setup({}, exampleProjectSourceDirectory);
+
+    const first = await sync();
+    const second = await sync();
+
+    expect(first.status).toBe(200);
+    expect(first.body).toMatchObject({ snapshot: fixtureSnapshot });
+    expect(second.status).toBe(200);
+    expect(second.body).toMatchObject({ unchanged: true });
+    // The example plugin runs from the package folder, not the fixture above.
+    expect(seen()).toEqual([]);
+    expect(FIXTURE_CURSOR).toMatch(/^W\//);
   });
 });
