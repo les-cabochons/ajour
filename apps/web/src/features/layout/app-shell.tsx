@@ -12,7 +12,7 @@ import {
   RiAddLine as Plus,
   RiArrowGoBackLine as ReturnIcon,
   RiArrowRightSLine as ChevronRight,
-  RiPlayLine as Play,
+  RiPlayFill as Play,
   RiStopFill as Stop,
 } from "@remixicon/react";
 import { PageTitle } from "@/components/page-header";

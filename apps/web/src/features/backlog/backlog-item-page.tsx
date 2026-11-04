@@ -7,7 +7,7 @@ import {
   RiArrowGoBackLine as UnsettleIcon,
   RiCheckboxCircleLine as SettleIcon,
   RiExternalLinkLine as ExternalIcon,
-  RiPlayLine as PlayIcon,
+  RiPlayFill as PlayIcon,
   RiStopLine as StopIcon,
   RiTimeLine as SnoozeIcon,
 } from "@remixicon/react";

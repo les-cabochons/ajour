@@ -1,4 +1,9 @@
-import { RiPlayLine, RiStopFill, RiTimeLine } from "@remixicon/react";
+import {
+  RiArrowDownSLine,
+  RiPlayFill,
+  RiStopFill,
+  RiTimeLine,
+} from "@remixicon/react";
 import { formatHours } from "@/features/backlog/backlog-estimates";
 import { RunningDot } from "@/components/running-dot";
 import { SyncConflictButton } from "@/features/backlog/sync-conflicts";
@@ -90,6 +95,19 @@ export function patchBacklogItemWithUndo(
     },
   );
 }
+
+/**
+ * The chevron of a property picker, as Project and Task have, so every value
+ * that opens a menu says so (council round 9).
+ */
+export function PickerChevron() {
+  return (
+    <RiArrowDownSLine
+      aria-hidden
+      className="ml-auto size-4 text-muted-foreground"
+    />
+  );
+}
 export function BacklogStatePicker({
   item,
   state,
@@ -116,7 +134,7 @@ export function BacklogStatePicker({
         variant="ghost"
 
         data-leading="state"
-        className={full ? "justify-start" : "size-6 p-0"}
+        className={full ? "property-picker justify-start" : "size-6 p-0"}
         aria-label={`Change state of ${item.title}`}
         aria-haspopup="menu"
         tabIndex={-1}
@@ -124,6 +142,7 @@ export function BacklogStatePicker({
       >
         {dot}
         {full && (workflow?.name ?? "No state")}
+        {full && <PickerChevron />}
       </Button>
     );
   }
@@ -135,7 +154,7 @@ export function BacklogStatePicker({
           <Button
             variant="ghost"
             data-leading="state"
-            className={full ? "justify-start" : "size-6 p-0"}
+            className={full ? "property-picker justify-start" : "size-6 p-0"}
             aria-label={`Change state of ${item.title}`}
           />
         }
@@ -143,6 +162,7 @@ export function BacklogStatePicker({
       >
         {dot}
         {full && (workflow?.name ?? "No state")}
+        {full && <PickerChevron />}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
         <DropdownMenuItem
@@ -190,7 +210,7 @@ export function BacklogPriorityPicker({
         variant="ghost"
 
         data-leading="priority"
-        className={full ? "justify-start" : "size-6 p-0"}
+        className={full ? "property-picker justify-start" : "size-6 p-0"}
         aria-label={`Change priority of ${item.title}`}
         aria-haspopup="menu"
         tabIndex={-1}
@@ -198,6 +218,7 @@ export function BacklogPriorityPicker({
       >
         <PriorityIcon priority={item.priority} decorative />
         {full && getPriorityLevelName(item.priority)}
+        {full && <PickerChevron />}
       </Button>
     );
   }
@@ -213,7 +234,7 @@ export function BacklogPriorityPicker({
               hidden
                 ? "backlog-hidden-picker"
                 : full
-                  ? "justify-start"
+                  ? "property-picker justify-start"
                   : "size-6 p-0"
             }
             tabIndex={hidden ? -1 : undefined}
@@ -225,6 +246,7 @@ export function BacklogPriorityPicker({
       >
         <PriorityIcon priority={item.priority} decorative />
         {full && getPriorityLevelName(item.priority)}
+        {full && <PickerChevron />}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
         {[{ level: undefined, name: "No priority" }, ...PRIORITY_LEVELS].map(
@@ -327,7 +349,8 @@ export function BacklogItemSurface({
   // The running item's button is Stop, like its action set.
   const startAction = running ? "stop-entry" : "start-entry";
   // Stop is the filled square everywhere, as in the dock and the top bar.
-  const StartIcon = running ? RiStopFill : RiPlayLine;
+  // A filled play, as present as Stop (council round 9).
+  const StartIcon = running ? RiStopFill : RiPlayFill;
   const startDisabledReason = actions.find(
     (action) => action.id === startAction,
   )?.disabledReason;

@@ -18,7 +18,7 @@ import {
   RiArrowGoBackLine as UndoIcon,
   RiCheckLine as SettleIcon,
   RiCornerLeftUpLine as ParentIcon,
-  RiPlayLine as PlayIcon,
+  RiPlayFill as PlayIcon,
   RiPushpinLine as PinIcon,
   RiStopLine as StopIcon,
   RiTimeLine as SnoozeIcon,

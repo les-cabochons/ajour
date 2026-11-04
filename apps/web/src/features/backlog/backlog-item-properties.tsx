@@ -20,6 +20,7 @@ import {
 import {
   BacklogPriorityPicker,
   BacklogStatePicker,
+  PickerChevron,
   patchBacklogItemWithUndo,
 } from "@/features/backlog/backlog-item-surface";
 import {
@@ -187,20 +188,23 @@ function MissingFromSyncPicker({ item }: { item: LocalWorkItem }) {
   const keep = item.keepWhenMissingFromSync ?? false;
   // Says what happens, so it never reads as the Archive command below it.
   const label = keep ? "Keep in backlog" : "Archive automatically";
+  // The value column is narrow: the short form shows, the menu says it all.
+  const shown = keep ? "Keep" : "Auto-archive";
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
           <Button
             variant="ghost"
-            className="justify-start"
+            className="property-picker min-w-0 justify-start"
             // An archived item is read-only until Restore.
             disabled={item.status === "archived"}
             aria-label={`Missing from sync: ${label}`}
           />
         }
       >
-        {label}
+        <span className="min-w-0 truncate">{shown}</span>
+        <PickerChevron />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
         <DropdownMenuGroup>

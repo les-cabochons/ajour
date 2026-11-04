@@ -33,7 +33,7 @@ Ajour is an operational desktop/web app. Build interfaces for scanning, repeated
 - Use `Checkbox` from `apps/web/src/components/ui/checkbox.tsx` for checkbox controls. Do not add new raw `type="checkbox"` controls in feature code.
 - No native `<select>`, date, file or color inputs in feature code: use `Select`, the `Calendar` popover, a file button, and a color swatch popover.
 - Feature pages should not directly reference `settings-panel` or `message-panel`; those classes are owned by the app-surface module.
-- Use Remix icons already present in the app for icon buttons and navigation.
+- Use Remix icons already present in the app for icon buttons and navigation. Start and Continue use the filled play, as present as the filled Stop (council round 9).
 - Use icon-only buttons for common commands when the icon is familiar and an accessible label is provided.
 - Every icon-only button shows a tooltip with its label and, when the action has a shortcut in `lib/shortcuts.ts`, its key. Use `TooltipButton` from `apps/web/src/components/tooltip-button.tsx`; its `render` prop takes a `Button`, a `Link` or a menu or popover trigger. Do not use `title=` on icon buttons. Exceptions are the sidebar rows' hover actions (Start entry or Stop, Snooze…, Settle), so hovering down the list does not cover it, and the comment header's reaction and actions buttons, which use hover, pressed and open-menu tints without a tooltip.
 - Every modal surface uses `Dialog`, `AlertDialog` or `Sheet` from `apps/web/src/components/ui`, and anchored surfaces use `Popover`. Do not build overlays by hand: no `role="dialog"` divs, fixed backdrops or `*-modal-overlay` classes.

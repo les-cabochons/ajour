@@ -8,7 +8,7 @@ import React, {
 import {
   RiAddLine as Plus,
   RiCheckLine as Check,
-  RiPlayLine as Play,
+  RiPlayFill as Play,
   RiStopFill as Stop,
 } from "@remixicon/react";
 import {

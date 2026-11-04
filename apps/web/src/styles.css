@@ -277,7 +277,8 @@
     --hover-bg: oklch(1 0 0 / 6%);
     --highlight-bg: oklch(1 0 0 / 4%);
     --field-bg: var(--surface-lowest);
-    --field-border: oklch(1 0 0 / 12%);
+    /* Fields read as editable at rest (council round 9). */
+    --field-border: oklch(1 0 0 / 18%);
     --app-sidebar-bg: var(--sidebar);
     --app-sidebar-border: var(--border);
     --app-sidebar-active-bg: oklch(1 0 0 / 9%);

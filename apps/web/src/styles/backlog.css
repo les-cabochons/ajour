@@ -1333,6 +1333,15 @@
   width: calc(100% + 0.625rem + 1px);
 }
 
+/* A picker spans the value column, so its chevron ends where Project's and
+   Task's do. */
+:is(.backlog-peek, .backlog-item-properties-card)
+  [data-slot="property-list"]
+  dd
+  > button.property-picker {
+  width: calc(100% + 0.625rem + 1px);
+}
+
 /* The description timelog's button follows the Project picker. */
 :is(.backlog-peek, .backlog-item-properties-card)
   [data-slot="property-list"]

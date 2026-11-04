@@ -4,7 +4,7 @@ import {
   RiExpandDiagonalLine,
   RiExternalLinkLine,
   RiPencilLine,
-  RiPlayLine,
+  RiPlayFill,
   RiStopLine,
 } from "@remixicon/react";
 import { useEffect, useMemo } from "react";
@@ -190,7 +190,7 @@ export function BacklogPeek({
               if (!startAction?.disabledReason) onAction("start-entry");
             }}
           >
-            <RiPlayLine data-icon="inline-start" />
+            <RiPlayFill data-icon="inline-start" />
             Start entry
           </TooltipButton>
         ) : null}
