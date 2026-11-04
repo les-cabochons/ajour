@@ -9,6 +9,9 @@ jobs:
   shells:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      matrix:
+        shell: [bash, zsh, fish]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -21,4 +24,5 @@ jobs:
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
       - run: sudo apt-get update && sudo apt-get install -y zsh fish
-      - run: python3 apps/cli/scripts/check-completion.py
+      - name: Check literal task insertion after Tab
+        run: python3 apps/cli/scripts/check-completion.py ${{ matrix.shell }}

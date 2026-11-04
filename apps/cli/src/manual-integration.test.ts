@@ -6,6 +6,23 @@ import { ajour, closeTerminals, projects } from "./test-support/terminal.ts";
 import { cachePath } from "./completion.ts";
 
 afterEach(closeTerminals);
+it("preserves newlines in live and cached completion records", async () => {
+  const term = await ajour({
+    list_projects: () => ({
+      projects: [
+        {
+          ...projects.projects[0]!,
+          tasks: [{ taskId: "newline", name: "line\nbreak" }],
+        },
+      ],
+    }),
+  });
+  await run(["__complete", "tasks"], term.io);
+  expect(term.out()).toBe("ACME/line\nbreak\0");
+  term.clear();
+  await run(["__complete", "tasks"], term.io);
+  expect(term.out()).toBe("ACME/line\nbreak\0");
+});
 it.each(["table", "tsv", "csv", "json"])(
   "lists projects through the real API as %s",
   async (format) => {
@@ -45,7 +62,7 @@ it.each(["table", "tsv", "csv", "json"])(
 it("completes live task names, uses a one-minute private cache, and stays silent on failure", async () => {
   const term = await ajour({ list_projects: () => projects });
   expect(await run(["__complete", "tasks"], term.io)).toBe(0);
-  expect(term.out()).toContain("ACME/05 Backend\n");
+  expect(term.out()).toContain("ACME/05 Backend\0");
   expect(term.err()).toBe("");
   const file = cachePath(term.io);
   expect(await readFile(file, "utf8")).toContain("ACME/05 Backend");

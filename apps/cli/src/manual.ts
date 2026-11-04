@@ -87,7 +87,10 @@ export async function helpCard(): Promise<string> {
 export function roff(name: string, source: string): string {
   const page = parsePage(name, source);
   const escape = (line: string) =>
-    line.replaceAll("\\", "\\e").replace(/^[.']/, "\\&$&");
+    line
+      .replaceAll("\\", "\\e")
+      .replaceAll("-", "\\-")
+      .replace(/^[.']/, "\\&$&");
   return (
     `.TH "${name === "ajour" ? "AJOUR" : `AJOUR-${name.toUpperCase()}`}" "1" "" "Ajour" "Ajour Manual"\n` +
     Object.entries(page.sections)

@@ -1,9 +1,105 @@
 import { readFile, readdir } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { COMMANDS, GLOBAL_OPTIONS } from "./main.ts";
-import { readPage, shortHelp, helpCard, roff } from "./manual.ts";
+import {
+  readPage,
+  shortHelp,
+  helpCard,
+  roff,
+  parsePage,
+  type Page,
+} from "./manual.ts";
+
+type Options = Record<string, { type: string; short?: string }>;
+function optionTokens(text: string): string[] {
+  return [
+    ...text.matchAll(
+      /(?<![\w-])(--[a-zA-Z][a-zA-Z-]*|-[a-zA-Z])(?=$|[\s,\]\[|=.'"])/g,
+    ),
+  ].map(([token]) => token);
+}
+function checkOptions(page: Page, options: Options) {
+  const tokens = (table: Options) =>
+    Object.entries(table).flatMap(([name, option]) => [
+      `--${name}`,
+      ...(option.short ? [`-${option.short}`] : []),
+    ]);
+  const allowed = tokens({ ...GLOBAL_OPTIONS, ...options });
+  for (const section of ["SYNOPSIS", "OPTIONS", "EXAMPLES"]) {
+    const text = (page.sections[section] ?? "")
+      .split("\n")
+      .map((line) => {
+        // Other commands in example pipelines have their own option tables.
+        if (section !== "EXAMPLES") return line;
+        const start = line.indexOf("ajour ");
+        return start < 0 ? "" : line.slice(start).split(/\|(?!-)/)[0]!;
+      })
+      .join("\n");
+    for (const token of optionTokens(text))
+      expect(allowed, page.name).toContain(token);
+  }
+  const documented = optionTokens(page.sections.OPTIONS ?? "");
+  for (const token of tokens(options))
+    expect(documented, page.name).toContain(token);
+}
 
 describe("manual contracts", () => {
+  it.each(["SYNOPSIS", "EXAMPLES"])(
+    "rejects unknown short options in %s",
+    (section) => {
+      const page = parsePage(
+        "sample",
+        `SYNOPSIS\najour sample\nOPTIONS\n--summary\n${section}\najour sample ${section === "SYNOPSIS" ? "[-x]" : "-x"}\n`,
+      );
+      expect(() =>
+        checkOptions(page, { summary: { type: "boolean" } }),
+      ).toThrow();
+    },
+  );
+  it("checks long options with equals values as whole tokens", () => {
+    const options = { format: { type: "string" } };
+    expect(() =>
+      checkOptions(
+        parsePage(
+          "sample",
+          "OPTIONS\n--format FORMAT\nEXAMPLES\najour sample --format=csv\n",
+        ),
+        options,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      checkOptions(
+        parsePage(
+          "sample",
+          "OPTIONS\n--format FORMAT\nEXAMPLES\najour sample --formatting=csv\n",
+        ),
+        options,
+      ),
+    ).toThrow();
+  });
+  it("requires a whole short alias in OPTIONS", () => {
+    const page = parsePage(
+      "sample",
+      "SYNOPSIS\najour sample [-s]\nOPTIONS\n--summary\n",
+    );
+    expect(() =>
+      checkOptions(page, { summary: { type: "boolean", short: "s" } }),
+    ).toThrow();
+  });
+
+  it("escapes option, range and date hyphens as literal roff hyphens", async () => {
+    expect(
+      roff("sample", "EXAMPLES\najour log --format=tsv last-week 2026-11-04"),
+    ).toContain("ajour log \\-\\-format=tsv last\\-week 2026\\-11\\-04");
+    for (const name of ["ajour", ...Object.keys(COMMANDS)]) {
+      const source = await readFile(
+        new URL(`../docs/${name}.md`, import.meta.url),
+        "utf8",
+      );
+      for (const [option] of source.matchAll(/--[a-z][a-z-]*/g))
+        expect(roff(name, source)).toContain(option.replaceAll("-", "\\-"));
+    }
+  });
   it("documents every public command and exactly the parser's options", async () => {
     const names = Object.keys(COMMANDS).filter(
       (name) => !name.startsWith("__"),
@@ -15,29 +111,7 @@ describe("manual contracts", () => {
       const page = await readPage(name);
       const options =
         name === "ajour" ? GLOBAL_OPTIONS : COMMANDS[name]!.options;
-      const documented = [
-        ...page.sections.OPTIONS!.matchAll(/--([a-z][a-z-]*)/g),
-      ].map((match) => match[1]);
-      const allowed = { ...GLOBAL_OPTIONS, ...options };
-      for (const option of documented)
-        expect(Object.keys(allowed), name).toContain(option);
-      for (const option of Object.keys(options))
-        expect(documented, name).toContain(option);
-      for (const match of Object.values(page.sections)
-        .join("\n")
-        .matchAll(/--([a-z][a-z-]*)/g))
-        expect(Object.keys(allowed), name).toContain(match[1]);
-      const shorts = Object.values(allowed).flatMap((option) =>
-        "short" in option && option.short ? [option.short] : [],
-      );
-      for (const match of page.sections.OPTIONS!.matchAll(
-        /(?:^|[\s,])-(\w)(?=[\s,]|$)/g,
-      ))
-        expect(shorts, name).toContain(match[1]);
-      for (const option of Object.values(options)) {
-        if (option.short)
-          expect(page.sections.OPTIONS, name).toContain(`-${option.short}`);
-      }
+      checkOptions(page, options);
       expect(page.sections.SYNOPSIS, name).toContain(
         `ajour${name === "ajour" ? " " : ` ${name}`}`,
       );

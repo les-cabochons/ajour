@@ -12,8 +12,8 @@ try {
         (task) => `${project.code?.trim() || project.name}/${task.name}`,
       ),
     )
-    .filter((task) => !/[\x00-\x1f\x7f]/.test(task));
-  io.stdout.write(tasks.join("\n") + (tasks.length ? "\n" : ""));
+    .filter((task) => !/[\x00-\x09\x0b-\x1f\x7f]/.test(task));
+  io.stdout.write(tasks.join("\0") + (tasks.length ? "\0" : ""));
 } catch {
   process.exitCode = 1;
 } finally {

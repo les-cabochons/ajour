@@ -40,11 +40,11 @@ export async function completeTasks(io: CliIo): Promise<number> {
         Array.isArray(cached.tasks) &&
         cached.tasks.every(
           (task: unknown) =>
-            typeof task === "string" && !/[\x00-\x1f\x7f]/.test(task),
+            typeof task === "string" && !/[\x00-\x09\x0b-\x1f\x7f]/.test(task),
         )
       ) {
         io.stdout.write(
-          cached.tasks.join("\n") + (cached.tasks.length ? "\n" : ""),
+          cached.tasks.join("\0") + (cached.tasks.length ? "\0" : ""),
         );
         return 0;
       }
@@ -66,8 +66,8 @@ export async function completeTasks(io: CliIo): Promise<number> {
       },
     );
     const tasks = stdout
-      .split(/\r?\n/)
-      .filter((task) => task && !/[\x00-\x1f\x7f]/.test(task));
+      .split("\0")
+      .filter((task) => task && !/[\x00-\x09\x0b-\x1f\x7f]/.test(task));
     const dir = path.dirname(file);
     const temporary = path.join(
       dir,
@@ -86,7 +86,7 @@ export async function completeTasks(io: CliIo): Promise<number> {
     } finally {
       await rm(temporary, { force: true }).catch(() => undefined);
     }
-    io.stdout.write(tasks.join("\n") + (tasks.length ? "\n" : ""));
+    io.stdout.write(tasks.join("\0") + (tasks.length ? "\0" : ""));
   } catch {
     /* A completion must never interrupt the shell with an error. */
   }
@@ -123,13 +123,16 @@ export function completion(
   if (shell === "bash")
     return `# Source this file in bash.
 _ajour_complete() {
-  local cur candidate
+  local cur candidate quoted
   cur="\${COMP_WORDS[COMP_CWORD]}"
   COMPREPLY=()
-  while IFS= read -r candidate; do
-    [[ "$candidate" == "$cur"* ]] && COMPREPLY+=("$candidate")
+  while IFS= read -r -d '' candidate; do
+    if [[ "$candidate" == "$cur"* ]]; then
+      printf -v quoted '%q' "$candidate"
+      COMPREPLY+=("$quoted")
+    fi
   done < <(
-    printf '%s\\n' ${staticWords
+    printf '%s\\0' ${staticWords
       .split(" ")
       .map((word) => `'${word}'`)
       .join(" ")}
@@ -144,7 +147,7 @@ _ajour_complete() {
   local -a candidates
   candidates=(${staticWords})
   if [[ "$words[2]" == (start|add|edit) ]]; then
-    candidates+=("\${(@f)$(ajour __complete tasks 2>/dev/null)}")
+    candidates+=("\${(@0)$(ajour __complete tasks 2>/dev/null)}")
   fi
   compadd -- "\${candidates[@]}"
 }
@@ -156,7 +159,7 @@ function __ajour_candidates
   printf '%s\\n' ${staticWords}
   set -l words (commandline -opc)
   if contains -- "$words[2]" start add edit
-    ajour __complete tasks 2>/dev/null
+    ajour __complete tasks 2>/dev/null | string split0
   end
 end
 complete -c ajour -f -a '(__ajour_candidates)'

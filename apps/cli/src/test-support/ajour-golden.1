@@ -1,7 +1,7 @@
 .TH "AJOUR" "1" "" "Ajour" "Ajour Manual"
 .SH "NAME"
 .nf
-ajour - record time on project tasks, from the terminal
+ajour \- record time on project tasks, from the terminal
 .fi
 .SH "SYNOPSIS"
 .nf
@@ -13,11 +13,11 @@ Record time on project tasks through the running Ajour app.
 .fi
 .SH "OPTIONS"
 .nf
-  --json             Machine output, the MCP tool shapes.
-  --color WHEN       auto, always or never.
-  -q, --quiet        Print nothing on success.
-  -V, --version      Print the version.
-  -h, --help         Show short help.
+  \-\-json             Machine output, the MCP tool shapes.
+  \-\-color WHEN       auto, always or never.
+  \-q, \-\-quiet        Print nothing on success.
+  \-V, \-\-version      Print the version.
+  \-h, \-\-help         Show short help.
 .fi
 .SH "REFERENCES"
 .nf
@@ -33,9 +33,9 @@ Record time on project tasks through the running Ajour app.
   DURATION   1:30, 1h30, 2h, 90m, 1.5 or 1,5. Whole minutes, up to 24
              hours.
   DAY        today, yesterday, mon to sun (the most recent, today
-             included), 2026-11-03, or 11-03 in this year.
-  RANGE      A DAY, DAY..DAY with both days included, week or last-week
-             (Monday to Sunday), or an ISO week such as 2026-W45. At most
+             included), 2026\-11\-03, or 11\-03 in this year.
+  RANGE      A DAY, DAY..DAY with both days included, week or last\-week
+             (Monday to Sunday), or an ISO week such as 2026\-W45. At most
              62 days.
 .fi
 .SH "RULES"
@@ -52,7 +52,7 @@ Record time on project tasks through the running Ajour app.
   task, note, ✓ when Workday holds it as it is, its id, and its day when
   it isn't today. Rows are cut to the terminal's width; in a pipe they
   are whole and without color. Messages go to stderr. ajour log prints
-  tab-separated values in a pipe, with ISO dates and decimal hours.
+  tab\-separated values in a pipe, with ISO dates and decimal hours.
 .fi
 .SH "EXIT STATUS"
 .nf
@@ -66,10 +66,10 @@ Record time on project tasks through the running Ajour app.
 .nf
   AJOUR_TOKEN        The client token, instead of the saved one.
   AJOUR_URL          Ajour's local address, http://127.0.0.1:8787 by default.
-  XDG_STATE_HOME     Where the last change's Undo is kept, in ajour/last-undo.
+  XDG_STATE_HOME     Where the last change's Undo is kept, in ajour/last\-undo.
   XDG_CONFIG_HOME    Where the saved token is kept.
   XDG_CACHE_HOME     Where task completion is cached for one minute.
-  PAGER              Manual reader on a terminal, less -R by default.
+  PAGER              Manual reader on a terminal, less \-R by default.
   NO_COLOR, CLICOLOR_FORCE
 
 Run 'ajour help <command>' for details.
@@ -78,8 +78,8 @@ Run 'ajour help <command>' for details.
 .nf
   $XDG_CONFIG_HOME/ajour/token, else ~/.config/ajour/token.
   Windows: %APPDATA%\eajour\etoken.
-  $XDG_STATE_HOME/ajour/last-undo, else ~/.local/state/ajour/last-undo.
-  Windows: %LOCALAPPDATA%\eajour\elast-undo.
+  $XDG_STATE_HOME/ajour/last\-undo, else ~/.local/state/ajour/last\-undo.
+  Windows: %LOCALAPPDATA%\eajour\elast\-undo.
   $XDG_CACHE_HOME/ajour/tasks.json, else ~/.cache/ajour/tasks.json.
   Windows: %LOCALAPPDATA%\eajour\ecache\etasks.json.
 .fi
