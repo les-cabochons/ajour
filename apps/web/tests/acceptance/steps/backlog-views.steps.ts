@@ -248,11 +248,13 @@ function subitemSidebarRow(page: Page) {
     .locator('[data-backlog-item-id="child"]');
 }
 Then(
-  "the subitem's sidebar row does not show its parent's title",
+  "the subitem's sidebar row names its parent on its faint line",
   async ({ page }) => {
     const row = subitemSidebarRow(page);
     await expect(row).toContainText("Backlog subitem");
-    await expect(row).not.toContainText("Backlog parent");
+    // The parent's name, not a bare arrow, says what the link opens
+    // (council round 12).
+    await expect(row).toContainText("Backlog parent");
   },
 );
 When("I open the parent from the subitem's sidebar arrow", async ({ page }) => {

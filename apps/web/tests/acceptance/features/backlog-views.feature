@@ -78,7 +78,7 @@ Feature: Backlog list and board views
       | Board  |
 
   Scenario: Open a subitem's parent from its comfortable sidebar row
-    Then the subitem's sidebar row does not show its parent's title
+    Then the subitem's sidebar row names its parent on its faint line
     When I open the parent from the subitem's sidebar arrow
     Then the Backlog parent page is open
 

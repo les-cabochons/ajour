@@ -17,7 +17,7 @@ import {
   RiArrowDownSLine as ChevronDown,
   RiArrowGoBackLine as UndoIcon,
   RiCheckLine as SettleIcon,
-  RiCornerLeftUpLine as ParentIcon,
+  RiCornerDownRightLine as ParentIcon,
   RiPlayFill as PlayIcon,
   RiPushpinLine as PinIcon,
   RiStopLine as StopIcon,
@@ -633,15 +633,18 @@ function ParentLink({
   rows: RowApi;
   revealed: boolean;
 }) {
+  // The parent's name, not a bare arrow, so the mark says what it links to
+  // (council round 12).
   const className =
-    "ml-auto flex size-4 shrink-0 items-center justify-center rounded-sm";
-  const icon = <ParentIcon className="size-3" />;
+    "flex min-w-0 items-center gap-1 rounded-sm text-[var(--text-tertiary)]";
+  const icon = (
+    <>
+      <ParentIcon aria-hidden className="size-3 shrink-0" />
+      <span className="min-w-0 truncate">{parent.title}</span>
+    </>
+  );
   if (!revealed) {
-    return (
-      <span aria-hidden className={className}>
-        {icon}
-      </span>
-    );
+    return <span className={className}>{icon}</span>;
   }
   return (
     <TooltipButton
@@ -762,7 +765,8 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
                 className="backlog-state-dot size-2.5"
                 style={{ color: workflowState.color }}
               />
-              <span className="min-w-0 truncate">{workflowState.name}</span>
+              {/* The state keeps its width; the parent's name gives way. */}
+              <span className="shrink-0">{workflowState.name}</span>
             </>
           ) : null}
           {parent ? (

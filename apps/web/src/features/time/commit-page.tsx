@@ -583,6 +583,7 @@ export function CommitPage({
                 {changes.length > 0 ? (
                   <TooltipButton
                     label="Records the checked changes as sent"
+                    aria-label="Mark as committed"
                     render={
                       <Button
                         disabled={checkedIds.length === 0}
@@ -606,6 +607,7 @@ export function CommitPage({
                 <DisabledReason label="Submit week" reason={manualSubmitReason}>
                   <TooltipButton
                     label="Locks the week once it is in your timesheet"
+                    aria-label="Submit week"
                     render={
                       <Button
                         // Keep manual submission available; the agent is
@@ -866,6 +868,11 @@ export function CommitPage({
                   </ToggleGroup>
                 </div>
               ) : null}
+              {/* Says the clipboard format before it is pasted elsewhere
+                  (council round 12). */}
+              <span className="submit-toolbar-label ml-auto">
+                Click a value to copy it. Hours copy as decimals.
+              </span>
             </div>
 
             <div>

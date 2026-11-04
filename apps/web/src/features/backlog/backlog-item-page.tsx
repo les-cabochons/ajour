@@ -531,41 +531,43 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
             <div key={item._id} className="flex min-w-0 flex-col gap-6">
               {/* The figures open the main column, so the side cards start
                   level with them (council round 7). */}
-              {/* The bar spans the figures it summarizes (council round 11). */}
-              <div className="flex w-fit max-w-full flex-col gap-2.5">
-                <FigureRow>
-                  {ESTIMATE_FIGURES.map((figure) => (
-                    <EstimateFigure
-                      key={figure.key}
-                      item={item}
-                      field={figure.key}
-                      label={figure.label}
-                      conflict={Boolean(
-                        item.estimateSync?.[figure.key]?.conflict,
-                      )}
-                      readOnly={readOnly}
-                    />
-                  ))}
-                  {/* Logged time is a clock, the estimates are not: a rule
-                      sets it apart as another kind of number. */}
-                  <Figure
-                    label="Logged in Ajour"
-                    className="border-l border-border pl-8"
+              {/* The estimates and their bar form one group; logged time, a
+                  clock and not part of the bar, sits beside it behind a
+                  hairline (council rounds 11 and 12). */}
+              <FigureRow className="items-start">
+                <div className="flex w-fit max-w-full flex-col gap-2.5">
+                  <FigureRow>
+                    {ESTIMATE_FIGURES.map((figure) => (
+                      <EstimateFigure
+                        key={figure.key}
+                        item={item}
+                        field={figure.key}
+                        label={figure.label}
+                        conflict={Boolean(
+                          item.estimateSync?.[figure.key]?.conflict,
+                        )}
+                        readOnly={readOnly}
+                      />
+                    ))}
+                  </FigureRow>
+                  <div
+                    className="backlog-item-progress"
+                    role="progressbar"
+                    aria-label="Completed over original estimate"
+                    aria-valuenow={Math.round(progress * 100)}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
                   >
-                    {formatClockDuration(loggedMs)}
-                  </Figure>
-                </FigureRow>
-                <div
-                  className="backlog-item-progress"
-                  role="progressbar"
-                  aria-label="Completed over original estimate"
-                  aria-valuenow={Math.round(progress * 100)}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                >
-                  <div style={{ width: `${progress * 100}%` }} />
+                    <div style={{ width: `${progress * 100}%` }} />
+                  </div>
                 </div>
-              </div>
+                <Figure
+                  label="Logged in Ajour"
+                  className="border-l border-border pl-8"
+                >
+                  {formatClockDuration(loggedMs)}
+                </Figure>
+              </FigureRow>
               <div className="flex min-w-0 flex-col">
                 <DescriptionSection item={item} readOnly={readOnly} />
                 {commentSource ? (

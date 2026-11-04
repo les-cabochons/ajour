@@ -8,6 +8,11 @@ import { RiRefreshLine, RiErrorWarningLine } from "@remixicon/react";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   connectionSyncWarning,
   syncAge,
 } from "@/domain/backlog/sync-freshness";
@@ -23,6 +28,12 @@ import {
 import { useNow } from "@/lib/use-now";
 
 /** One isolated readout, shared by the backlog, item page and peek. */
+/** Short, whole labels for the narrow view's one toolbar row. */
+const COMPACT_WARNINGS: Record<string, string> = {
+  "Connection unavailable": "No connection",
+  "Scheduled sync off": "Sync off",
+};
+
 // A paused sync stays a warning: a rejected token pauses it too.
 const CALM_SYNC_STATES = new Set([
   "Connection unavailable",
@@ -142,20 +153,43 @@ export function BacklogRefresh({
     running ||
     (!apiError && !rows.some((row) => row.enabled && !row.connection.paused));
 
+  const statusText = running
+    ? "Syncing…"
+    : warning
+      ? `${warning} · ${age.toLowerCase()}`
+      : age;
   return (
     <div className="backlog-refresh" aria-busy={running}>
       {alarming && !running ? (
         <RiErrorWarningLine className="backlog-refresh-warning" aria-hidden />
       ) : null}
-      <span role="status" aria-live="polite">
-        {running
-          ? "Syncing…"
-          : warning
-            ? compact
-              ? warning
-              : `${warning} · ${age.toLowerCase()}`
-            : age}
-      </span>
+      {compact ? (
+        // The narrow view: a short, whole label, and a tap shows the full
+        // explanation even while Refresh is disabled (council round 12).
+        <Popover>
+          <PopoverTrigger
+            className="backlog-refresh-compact"
+            aria-label={`Sync status: ${statusText}`}
+          >
+            <span role="status" aria-live="polite">
+              {running
+                ? "Syncing…"
+                : (warning && COMPACT_WARNINGS[warning]) || warning || age}
+            </span>
+          </PopoverTrigger>
+          <PopoverContent
+            align="end"
+            className="w-72 text-xs whitespace-pre-line"
+          >
+            {`${statusText}
+${detail}`}
+          </PopoverContent>
+        </Popover>
+      ) : (
+        <span role="status" aria-live="polite">
+          {statusText}
+        </span>
+      )}
       <TooltipButton
         label={`${label}\n${detail}`}
         aria-label={label}

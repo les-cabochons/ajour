@@ -1410,6 +1410,17 @@
   padding-left: 0.75rem;
   border-left: 1px solid var(--border);
 }
+.backlog-refresh-compact {
+  min-width: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .backlog-refresh > span[role="status"] {
   text-align: right;
 }

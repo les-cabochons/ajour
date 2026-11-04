@@ -264,26 +264,36 @@ export function SettingsGeneralPage() {
             labelFor="pace-tolerance"
             description="How far, in percent, the week may run ahead of or behind its targets before Submit week or an agent asks you. Going over the week's target always asks."
           >
-            <Input
-              id="pace-tolerance"
-              type="number"
-              min={0}
-              max={100}
-              step={5}
-              className="w-20"
-              value={getPaceTolerancePercent(preferences)}
-              onChange={(event) => {
-                const value = Number(event.target.value);
-                if (Number.isFinite(value)) {
-                  localStore.setUserPreferences({
-                    paceTolerancePercent: Math.min(
-                      100,
-                      Math.max(0, Math.round(value)),
-                    ),
-                  });
-                }
-              }}
-            />
+            {/* The unit sits in the field, so the value reads alone
+                (council round 12). */}
+            <div className="relative w-20">
+              <Input
+                id="pace-tolerance"
+                type="number"
+                min={0}
+                max={100}
+                step={5}
+                className="w-20 pr-6"
+                value={getPaceTolerancePercent(preferences)}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  if (Number.isFinite(value)) {
+                    localStore.setUserPreferences({
+                      paceTolerancePercent: Math.min(
+                        100,
+                        Math.max(0, Math.round(value)),
+                      ),
+                    });
+                  }
+                }}
+              />
+              <span
+                aria-hidden
+                className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-xs text-muted-foreground"
+              >
+                %
+              </span>
+            </div>
           </SettingRow>
         </AppPanel>
       </section>
