@@ -4,6 +4,8 @@ name: Desktop lifecycle
 # `check:keep-running`. It builds the renderer, starts the real desktop app
 # with a temp user data folder, closes its window, and runs an MCP client's
 # start_timer, get_running_timer and stop_timer against the hidden window.
+# It also runs the bundled CLI start/log/stop/undo against the real app,
+# checking the dock, saved entry and client name in the Undo toast.
 # Then it opens the window from the tray, finds the saved entry, quits from
 # the tray, and checks that no process the app started outlives the quit.
 #

@@ -821,3 +821,9 @@ just test
 just typecheck
 just build
 ```
+
+## Terminal distribution
+
+`apps/cli` ships beside the desktop installers as independent Node 24 single executable applications for Windows x64, macOS arm64 and x64, and Linux x64. It never runs through Electron or adds files to the desktop installer. `scripts/bundle.mjs` uses Vite's Node build to embed the CLI version and Markdown pages, bundle shared schemas, zod and the MCP SDK, and emit one CommonJS file. `scripts/sea.mjs` injects it into the host Node binary with postject. `scripts/archive.mjs` includes generated `dist/man` and `dist/completions` when present.
+
+`.github/workflows/cli-release.yml` builds and executes every target on its native runner for PR dry runs and both desktop release workflows. Releases sign Windows with `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD`, and sign and notarize macOS with the desktop's Developer ID and Apple API credentials. PR runs use no signing secrets. The desktop release publish job waits for these archives and downloads them with the installers through `release-package-*`.

@@ -254,3 +254,12 @@ The backlog editor module is feature-local because its vocabulary and commands b
 - Backlog refresh and freshness: `features/backlog/backlog-refresh.tsx` renders the controls; `lib/backlog-sync-status.ts` publishes manual and scheduled activity; `domain/backlog/sync-freshness.ts` defines the age and overdue rules. A `refresh` sync imports into the backlog without review and uploads estimates like any sync; its optional `sourceId` scopes imports without archiving other items. Plugin `syncConnection` receives an optional third-argument `{ sourceIds }` hint, which older plugins may ignore; the host still filters a scoped result and rejects an absent item.
 
 - Backlog visit refresh: `features/backlog/use-backlog-refresh-on-open.ts` starts one refresh per page visit. It shares `backlog-refresh-workflow.ts` with the manual controls; the workflow and scheduler recheck active connections immediately before starting each queued sync.
+
+## Terminal CLI
+
+- `apps/cli/src/main.ts` parses arguments and dispatches commands; `commands/` implements commands through `AjourClient`, never web imports.
+- `client.ts` owns MCP transport, initialize version and tool compatibility errors. `config.ts` stores the connection; `output.ts` stores the Undo token.
+- `refs.ts`, `dates.ts` and `lookup.ts` resolve user references. `format/` renders terminal tables and machine formats.
+- `resources.ts` reads the development manual and version. `scripts/bundle.mjs` replaces it with embedded resources for the standalone binary; `bundled.ts` starts that bundle.
+- `scripts/sea.mjs`, `sign-macos.mjs` and `archive.mjs` build, sign and archive independent release assets. `bundle.test.ts` executes a copied bundle without adjacent docs or package manifests.
+- `src/test-support/terminal.ts` drives the real local API with a scripted renderer bridge for CLI integration tests. Browser acceptance routes intercept only browser requests, not CLI subprocesses.

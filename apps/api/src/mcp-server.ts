@@ -37,6 +37,7 @@ import type { AppApiStorage, StoredMcpClient } from "./storage.ts";
  */
 
 export interface McpRequestContext {
+  appVersion?: string;
   storage: AppApiStorage;
   bridge: McpBridge;
   sessions: AgentSessions;
@@ -699,7 +700,7 @@ export async function handleMcpRequest(
   };
   unit.set({ agent: { client_id: client.id } });
   const server = new McpServer(
-    { name: "ajour", version: "1.0.0" },
+    { name: "ajour", version: context.appVersion ?? "unknown" },
     { instructions: AJOUR_INSTRUCTIONS },
   );
   const body =

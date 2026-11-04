@@ -1426,6 +1426,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   }, 15_000);
   stallTimer.unref();
   const mcpContext = {
+    appVersion: options.launch?.appVersion,
     storage,
     bridge: mcpBridge,
     sessions: agentSessions,

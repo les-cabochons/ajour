@@ -7,6 +7,7 @@ const guideSidebar: DefaultTheme.SidebarItem[] = [
     items: [
       { text: "Start guide", link: "/start/" },
       { text: "Install Ajour", link: "/start/install" },
+      { text: "Terminal", link: "/start/terminal" },
       { text: "Concepts", link: "/start/concepts" },
       { text: "Keyboard shortcuts", link: "/start/shortcuts" },
     ],

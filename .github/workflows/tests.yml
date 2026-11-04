@@ -216,7 +216,7 @@ jobs:
           # The lifecycle check runs the whole app: main (apps/desktop), the
           # local API and MCP (apps/api), the window that answers MCP
           # (apps/web) and what they share (packages).
-          if echo "$changed" | grep -qE '^(apps/desktop/|apps/api/|apps/web/|packages/|\.github/workflows/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|tsconfig\.base\.json$|package\.json$)'; then
+          if echo "$changed" | grep -qE '^(apps/desktop/|apps/cli/|apps/api/|apps/web/|packages/|\.github/workflows/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|tsconfig\.base\.json$|package\.json$)'; then
             echo "lifecycle=true" >> "$GITHUB_OUTPUT"
           else
             echo "lifecycle=false" >> "$GITHUB_OUTPUT"

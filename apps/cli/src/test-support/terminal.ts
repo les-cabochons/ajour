@@ -91,8 +91,11 @@ export interface Terminal {
 }
 
 /** A connected terminal against the real local API and a scripted window. */
-export async function ajour(handlers: Handlers): Promise<Terminal> {
-  const api = await startTestApi();
+export async function ajour(
+  handlers: Handlers,
+  appVersion?: string,
+): Promise<Terminal> {
+  const api = await startTestApi({ appVersion });
   cleanups.push(() => api.stop());
   const { token } = await enableMcpWithClient(api);
   const fake = await openFakeWindow(api, scripted(handlers));

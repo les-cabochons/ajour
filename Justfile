@@ -261,3 +261,11 @@ typecheck:
 lint-boundaries:
     echo >&2 "[1/1] Checking package boundaries"
     {{PNPM}} lint:boundaries
+
+[doc("Bundles the standalone terminal CLI")]
+cli-bundle:
+    node apps/cli/scripts/bundle.mjs
+
+[doc("Builds the standalone terminal executable on this host using Node 24")]
+cli-sea: cli-bundle
+    node apps/cli/scripts/sea.mjs

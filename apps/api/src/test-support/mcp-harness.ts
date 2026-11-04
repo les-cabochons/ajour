@@ -34,11 +34,12 @@ interface TestResponse {
  * was, with the same clients; the caller then owns that state file.
  */
 export async function startTestApi(
-  options: { port?: number; statePath?: string } = {},
+  options: { port?: number; statePath?: string; appVersion?: string } = {},
 ): Promise<TestApi> {
   const root = await mkdtemp(path.join(os.tmpdir(), "ajour-mcp-harness-"));
   const server = await startAppApiServer({
     port: options.port ?? 0,
+    launch: { appVersion: options.appVersion },
     statePath: options.statePath ?? path.join(root, "state.json"),
     installedPluginDirectory: path.join(root, "installed"),
     allowDevelopmentPlugins: false,
