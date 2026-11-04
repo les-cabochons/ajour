@@ -689,6 +689,12 @@ const selected = only.length
 fs.mkdirSync(OUT, { recursive: true });
 const stop = await ensureServer();
 const browser = await chromium.launch();
+// A cold dev server compiles on the first visit: let that one take its time.
+const warm = await browser.newPage();
+await warm
+  .goto(BASE_URL + "/settings/general", { timeout: 180_000 })
+  .catch(() => {});
+await warm.close();
 let failures = 0;
 for (const shot of selected) {
   for (const theme of THEMES) {
