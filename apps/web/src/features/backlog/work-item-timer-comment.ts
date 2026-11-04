@@ -30,16 +30,10 @@ function parseReference(sourceId: string) {
   }
 }
 
-export function buildWorkItemTimerComment(title: string, sourceId?: string) {
-  const reference = parseWorkItemReference(sourceId);
-  return [reference ? `#${reference}` : undefined, title.trim()]
-    .filter(Boolean)
-    .join(" ");
-}
-
 /**
- * What a new or running entry takes from a backlog item: the item, its project
- * and task mapping, and a note naming it. Start entry and New entry… use it on
+ * What a new or running entry takes from a backlog item: the item and its
+ * project and task mapping. The note starts empty: the entry already links the
+ * item, and time is mostly logged on the item itself. Start entry and New entry… use it on
  * the Backlog page and in the command palette.
  */
 export function getWorkItemEntryValues(
@@ -52,6 +46,5 @@ export function getWorkItemEntryValues(
     workItemId: workItem._id,
     projectId: workItem.projectId,
     taskId: workItem.taskId,
-    note: buildWorkItemTimerComment(workItem.title, workItem.sourceId),
   };
 }

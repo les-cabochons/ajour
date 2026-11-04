@@ -77,6 +77,7 @@ Changed in [#69](https://github.com/les-cabochons/ajour/issues/69). See the Back
 - Archive is listed only for synced items. It archives the item in Ajour and leaves the source tool as it is. On a manual item, Settle already archives. An archived item disables Archive: "The item is archived".
 - Settle shows as "Settle…" when it opens the settle dialog, and as "Settle" when a settle rule applies a fixed change.
 - New entry… replaces the inline "Log time" field as the action for logging time.
+- Start entry and New entry… fill in the item, its project and its task, and leave the note empty. The entry already links the item, and time is mostly logged on the item itself, so its number and title in the note were noise.
 - An archived item disables Start entry, New entry…, Edit, Add subitem, Snooze… and Pin: "Restore the item first".
 - A settled item disables Snooze… and Pin: "Unsettle the item first".
 - A subitem disables Add subitem: "Subitems can't have subitems".
