@@ -7,6 +7,7 @@ import {
   RiFileCopyLine as Copy,
   RiLockLine as Lock,
   RiLockUnlockLine as Unlock,
+  RiTimeLine as Ahead,
 } from "@remixicon/react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { DisabledReason } from "@/components/disabled-reason";
@@ -85,6 +86,7 @@ import { localStore, runStoreCommandWith } from "@/lib/local-store";
 import { listPropertyPlugins } from "@/lib/plugin-project-properties";
 import { ProjectIcon } from "@/lib/project-icons";
 import { cn, getIsoWeekDates, todayIsoDate } from "@/lib/utils";
+import { useTodayIsoDate } from "@/lib/use-now";
 
 const GROUP_BY_OPTIONS: { value: SubmitGroupBy; label: string }[] = [
   { value: "day-task", label: "Day and task" },
@@ -146,7 +148,13 @@ function countLabel(count: number, singular: string, plural: string) {
 function warningKey(warning: SubmitWarning) {
   if (warning.kind === "day-under-target") return warning.localDate;
   if (warning.kind === "waiting-task") return `waiting:${warning.taskId}`;
+  if (warning.kind === "days-ahead") return "days-ahead";
   return warning.kind;
+}
+
+/** A warning's duration: the mono Value, in the list's muted tone. */
+function WarningDuration({ ms }: { ms: number }) {
+  return <Value tone="muted">{formatClockDuration(ms)}</Value>;
 }
 
 function formatWarning(warning: SubmitWarning) {
@@ -154,9 +162,32 @@ function formatWarning(warning: SubmitWarning) {
     return `${countLabel(warning.entryCount, "entry has", "entries have")} no task`;
   }
   if (warning.kind === "waiting-task") {
-    return `${formatClockDuration(warning.durationMs)} on ${warning.taskName} waits for a task to commit as.`;
+    return (
+      <>
+        <WarningDuration ms={warning.durationMs} /> on {warning.taskName} waits
+        for a task to commit as.
+      </>
+    );
   }
-  return `${formatShortDay(warning.localDate)} has ${formatClockDuration(warning.loggedMs)} of ${formatClockDuration(warning.targetMs)}`;
+  if (warning.kind === "days-ahead") {
+    const days =
+      warning.fromDate === warning.toDate
+        ? `${formatShortDay(warning.fromDate)} is`
+        : `${formatShortDay(warning.fromDate)} – ${formatShortDay(warning.toDate)} are`;
+    return (
+      <>
+        {days} still ahead: <WarningDuration ms={warning.remainingMs} /> of
+        target left
+      </>
+    );
+  }
+  return (
+    <>
+      {formatShortDay(warning.localDate)} has{" "}
+      <WarningDuration ms={warning.loggedMs} /> of{" "}
+      <WarningDuration ms={warning.targetMs} />
+    </>
+  );
 }
 
 /**
@@ -364,6 +395,8 @@ export function CommitPage({
     () => new Map(projects.map((project) => [project._id, project])),
     [projects],
   );
+  // Refreshes at local midnight, so a day that arrives moves out of "still ahead".
+  const today = useTodayIsoDate();
   const summary = useMemo(
     () =>
       summarizeWeek({
@@ -371,12 +404,14 @@ export function CommitPage({
         weekDates,
         weekEntries,
         projects,
+        today,
       }),
     [
       state.userPreferences.weeklyCapacityTargets,
       weekDates,
       weekEntries,
       projects,
+      today,
     ],
   );
   const submitTasks = useAgentTaskPresence("submit-week");
@@ -499,9 +534,16 @@ export function CommitPage({
         {summary.warnings.length > 0 ? (
           <ul className="submit-warnings">
             {summary.warnings.map((warning) => (
-              <li key={warningKey(warning)}>
-                <Warning aria-hidden />
-                {formatWarning(warning)}
+              <li
+                key={warningKey(warning)}
+                className={cn(warning.kind === "days-ahead" && "is-calm")}
+              >
+                {warning.kind === "days-ahead" ? (
+                  <Ahead aria-hidden />
+                ) : (
+                  <Warning aria-hidden />
+                )}
+                <span>{formatWarning(warning)}</span>
                 {warning.kind === "waiting-task" ? (
                   <Link
                     to="/projects/$projectId"
