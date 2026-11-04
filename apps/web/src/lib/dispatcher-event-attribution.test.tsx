@@ -433,20 +433,23 @@ describe("the backlog item editor", () => {
     });
     const inDialog = screen.queryByRole("dialog") !== null;
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
-    await waitFor(() => expect(commands()).toHaveLength(1));
+    // The page also lists plugins on mount, so wait for the create command only.
+    await waitFor(() =>
+      expect(commands("backlog_item.create")).toHaveLength(1),
+    );
     return inDialog;
   }
 
   it("marks a save in a dialog as dialog", async () => {
     expect(await saveNewItem(true)).toBe(true);
-    expect(commands()).toEqual([
+    expect(commands("backlog_item.create")).toEqual([
       { name: "backlog_item.create", trigger: "user", surface: "dialog" },
     ]);
   });
 
   it("marks a save in the side panel as editor", async () => {
     expect(await saveNewItem(false)).toBe(false);
-    expect(commands()).toEqual([
+    expect(commands("backlog_item.create")).toEqual([
       { name: "backlog_item.create", trigger: "user", surface: "editor" },
     ]);
   });
