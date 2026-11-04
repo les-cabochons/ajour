@@ -21,9 +21,11 @@ const password = randomBytes(24).toString("hex");
 /** Removes every credential from text a tool printed. */
 function redact(text) {
   let safe = text;
-  for (const value of [...SECRETS.map((name) => process.env[name]), password]) {
-    if (value && value.length >= 4) safe = safe.split(value).join("***");
-  }
+  // Longest first, so a credential inside another is never half removed.
+  const values = [...SECRETS.map((name) => process.env[name]), password]
+    .filter(Boolean)
+    .sort((left, right) => right.length - left.length);
+  for (const value of values) safe = safe.split(value).join("***");
   return safe.trim();
 }
 
@@ -62,6 +64,8 @@ function searchList() {
 }
 
 let restoreSearchList;
+let keychainCreated = false;
+let failure;
 try {
   const p12 = path.join(dir, "certificate.p12");
   const source = process.env.CSC_LINK;
@@ -84,6 +88,7 @@ try {
     password,
     keychain,
   ]);
+  keychainCreated = true;
   run("unlock keychain", "security", [
     "unlock-keychain",
     "-p",
@@ -188,13 +193,35 @@ try {
   }
 } catch (error) {
   // Only our own messages are printed: anything else may carry a credential.
-  throw error instanceof StepError
-    ? error
-    : new Error(
-        "CLI signing or notarization failed. Check certificate validity and Apple credentials.",
-      );
-} finally {
-  restoreSearchList?.();
-  spawnSync("security", ["delete-keychain", keychain], { stdio: "ignore" });
-  await rm(dir, { recursive: true, force: true });
+  failure =
+    error instanceof StepError
+      ? error
+      : new Error(
+          "CLI signing or notarization failed. Check certificate validity and Apple credentials.",
+        );
 }
+
+// Every cleanup runs, whatever failed before it; a runner left with the
+// signing keychain on its search list fails the step.
+const unclean = [];
+if (restoreSearchList && restoreSearchList().status !== 0) {
+  unclean.push("restore the keychain search list");
+}
+if (
+  keychainCreated &&
+  spawnSync("security", ["delete-keychain", keychain], { stdio: "ignore" })
+    .status !== 0
+) {
+  unclean.push("delete the signing keychain");
+}
+await rm(dir, { recursive: true, force: true }).catch(() =>
+  unclean.push("remove the temporary signing files"),
+);
+const cleanup = unclean.length
+  ? `CLI signing couldn't ${unclean.join(", ")}.`
+  : "";
+if (failure) {
+  // A new error: the stack Node prints keeps the message it was made with.
+  throw cleanup ? new StepError(`${failure.message}\n${cleanup}`) : failure;
+}
+if (cleanup) throw new Error(cleanup);
