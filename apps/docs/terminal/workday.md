@@ -91,7 +91,7 @@ Acme Platform	03 Meetings	3,00	Sprint planning | Weekly sync, moved to 10:30
 
 ## Ranges
 
-Any [RANGE](/terminal/log#ranges) works. Only the days you ask for count, even when the range crosses weeks: `ajour log fri..mon --format workday` prints two weeks, each with its own header on a terminal, and only those four days.
+Any [RANGE](/terminal/log#ranges) works. Only the days you ask for count, even when the range crosses weeks: `ajour log 2026-10-30..2026-11-02 --format workday`, Friday to Monday, prints two weeks, each with its own header on a terminal, and only those four days.
 
 The format stands alone. Ajour refuses `--project`, `--task`, `--committed`, `--uncommitted`, `-s` and `--json` with it:
 

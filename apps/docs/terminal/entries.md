@@ -73,7 +73,7 @@ ajour edit last acme/meetings -m ""   # another task, and no note
 ajour edit 91c0 -m "Weekly sync, moved to 10:30"
 ```
 
-`-m ""` clears the note. An edit that changes nothing exits 2 with `Say what to change: a TASK, -m NOTE or -d DURATION.`
+`-m ""` clears the note. An edit without a TASK, `-m` or `-d` exits 2 with `Say what to change: a TASK, -m NOTE or -d DURATION.`
 
 When you change a committed entry, it loses its `✓`, and `ajour` says so on stderr. The change then shows on the [Commit page](/time/commit):
 

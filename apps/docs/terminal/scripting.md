@@ -25,7 +25,7 @@ Discarded 0:04 on 07 Export. Undo with: ajour undo
 | `3`  | Ajour is out of reach: not running, MCP off, or the token revoked. | `error:`           |
 | `4`  | A task, project or entry matched nothing, or several.              | `error:`           |
 
-A non-zero exit changes nothing. With exit 4, stderr lists the candidates.
+Exits 2 and 4 come before Ajour is asked, so nothing changed. Exits 1 and 3 can follow a change that went through: `ajour stop` saves the entry, then reads today's total, and that read can fail. Check with `ajour status` or `ajour log` before retrying a write. With exit 4, stderr lists the candidates.
 
 ```sh
 ajour start "$1"
@@ -90,10 +90,10 @@ $ ajour log week | awk -F'\t' 'NR > 1 { h += $3 } END { printf "%.2f\n", h }'
 22.15
 ```
 
-The same from JSON, where the running entry is apart:
+The same from JSON. The running entry's time is in `.running.countedMinutes`. When it continues a saved entry, that entry also sits in `entries` with `state: "running"`, and `countedMinutes` already includes its minutes, so leave it out:
 
 ```console
-$ ajour log week --json | jq '[.entries[].minutes, .running.countedMinutes // 0] | add / 60'
+$ ajour log week --json | jq '[(.entries[] | select(.state != "running") | .minutes), .running.countedMinutes // 0] | add / 60'
 22.15
 ```
 

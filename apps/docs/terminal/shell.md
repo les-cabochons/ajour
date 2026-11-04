@@ -45,6 +45,7 @@ Or source the archive's file there: `source ~/.local/share/ajour/completions/_aj
 fish loads a command's completion from `~/.config/fish/completions` on first use:
 
 ```sh
+mkdir -p ~/.config/fish/completions
 ajour completion fish > ~/.config/fish/completions/ajour.fish
 ```
 

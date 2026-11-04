@@ -191,4 +191,4 @@ $ ajour log yesterday --json | jq -c '.entries[] | {date, minutes, task: .taskNa
 {"date":"2026-11-03","minutes":135,"task":"04 Review","note":"PR #510"}
 ```
 
-The running entry is under `running`, not in `entries`, with its time in `countedMinutes`. Each day's target is in `targets`, in hours. See [Scripts and pipes](/terminal/scripting#recipes) for what to do with it.
+The running entry is under `running`, with its time in `countedMinutes`. When it continues a saved entry, that entry is also in `entries`, with `state: "running"` and its saved minutes, which `countedMinutes` already includes. Each day's target is in `targets`, in hours. See [Scripts and pipes](/terminal/scripting#recipes) for what to do with it.
