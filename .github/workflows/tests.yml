@@ -168,7 +168,8 @@ jobs:
   # package. The sandbox check runs for pull requests and manual runs only: a
   # push to main starts the nightly release, which runs it on that commit
   # before it publishes, so running it here too would run all three systems
-  # twice for every merge.
+  # twice for every merge. When pushes land while a nightly runs, only the
+  # newest gets a nightly, and its check covers the skipped commits' code.
   desktop-changes:
     name: Desktop package changes
     runs-on: ubuntu-latest
