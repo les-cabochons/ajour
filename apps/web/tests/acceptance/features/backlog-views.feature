@@ -39,7 +39,7 @@ Feature: Backlog list and board views
 
   Scenario: Every priority level fits in the editor's Priority select
     When I start a new Backlog item from a group header
-    Then the Priority select shows each level as its icon, uncut, named on hover
+    Then the Priority select names each level, uncut
 
   Scenario: Filter the page without filtering the sidebar
     When I filter the Backlog to Urgent

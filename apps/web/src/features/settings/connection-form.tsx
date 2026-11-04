@@ -153,18 +153,20 @@ export function PluginConnectionForm({
     <AppPanel className="connection-form pb-4">
       <div>
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-sm font-medium text-foreground">
+          {/* The form's title outranks its section headings. */}
+          <h3 className="text-base font-semibold text-foreground">
             {editing
               ? `Edit ${connection?.label ?? `${plugin.displayName} connection`}`
               : `New ${plugin.displayName} connection`}
           </h3>
           {status}
         </div>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {editing
-            ? "Unchanged secrets stay as they are."
-            : "The plugin checks the connection, and Ajour keeps it on this computer."}
-        </p>
+        {editing ? null : (
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            The plugin checks the connection, and Ajour keeps it on this
+            computer.
+          </p>
+        )}
       </div>
       {/* One column at a reading measure, as Linear's forms are. */}
       <FieldGroup className="max-w-lg gap-5">

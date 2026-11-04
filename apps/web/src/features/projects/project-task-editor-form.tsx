@@ -103,7 +103,7 @@ export function ProjectTaskEditorForm({
     >
       <header className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <Title className="text-sm font-semibold">
+          <Title className="text-base font-semibold">
             {editor.isNew ? "New task" : "Edit task"}
           </Title>
           <span className="truncate text-xs text-muted-foreground">

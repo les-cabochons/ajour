@@ -8,6 +8,7 @@ import {
   type ElementType,
   type KeyboardEvent,
   type Ref,
+  type CSSProperties,
 } from "react";
 import {
   RiAlarmWarningLine as AlertTriangle,
@@ -27,6 +28,7 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { PropertyList, PropertyRow } from "@/components/property-list";
 import {
   SearchableSelect,
   type SearchableSelectOption,
@@ -582,11 +584,7 @@ export function BacklogItemEditorForm({
       <header className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 flex-col gap-0.5">
           {/* In a dialog the title takes the dialog's size, as every dialog's does. */}
-          <Title
-            className={
-              surface === "dialog" ? undefined : "text-sm font-semibold"
-            }
-          >
+          <Title className="text-base font-semibold">
             {getEditorTitle(target, editor.isSubitem)}
           </Title>
           {parent ? (
@@ -670,7 +668,11 @@ export function BacklogItemEditorForm({
 
         {/* The writing comes first: the name, then its description, then
             the properties (forms council round 3). */}
-        <Field>
+        {/* A long description scrolls inside its editor, so the properties
+            and the buttons stay in reach. */}
+        <Field
+          style={{ "--markdown-editor-max-height": "14rem" } as CSSProperties}
+        >
           <FieldLabel htmlFor={`${idPrefix}-description`}>
             Description
           </FieldLabel>
@@ -718,99 +720,98 @@ export function BacklogItemEditorForm({
           )}
         </Field>
 
-        <div
-          className={cn(
-            "grid gap-3",
-            !editor.isSubitem && "grid-cols-[5rem_minmax(0,1fr)]",
-          )}
-        >
-          {!editor.isSubitem ? (
-            <Field data-invalid={Boolean(validation.priorityError)}>
-              <FieldLabel htmlFor={`${idPrefix}-priority`}>Priority</FieldLabel>
-              {/* The 5rem column fits an icon, not "No priority" or
-                  "Medium", so the select shows the level's icon. */}
-              <OptionSelect
-                id={`${idPrefix}-priority`}
-                size="default"
-                iconValue
-                value={fields.priority}
-                onChange={(priority) => updateFields({ priority })}
-                invalid={Boolean(validation.priorityError)}
-                {...withSyncedFirst(
-                  [
-                    {
-                      value: "",
-                      label: NO_PRIORITY_NAME,
-                      disabledReason: noPriorityRefusal,
-                      icon: <PriorityIcon priority={undefined} decorative />,
-                    },
-                    ...PRIORITY_LEVELS.map(({ level, name }) => ({
-                      value: String(level),
-                      label: name,
-                      icon: <PriorityIcon priority={level} decorative />,
-                    })),
-                  ],
-                  editor.priorityReset,
-                  "Other levels",
-                )}
+        {/* The properties as label-left rows, as the time entry editor
+            shows them: one anatomy for every side panel (forms council
+            round 6). The writing above stays stacked. */}
+        <section aria-label="Properties">
+          <PropertyList>
+            {!editor.isSubitem ? (
+              <PropertyRow
+                label={<label htmlFor={`${idPrefix}-priority`}>Priority</label>}
+              >
+                <OptionSelect
+                  id={`${idPrefix}-priority`}
+                  size="default"
+                  value={fields.priority}
+                  onChange={(priority) => updateFields({ priority })}
+                  invalid={Boolean(validation.priorityError)}
+                  {...withSyncedFirst(
+                    [
+                      {
+                        value: "",
+                        label: NO_PRIORITY_NAME,
+                        disabledReason: noPriorityRefusal,
+                        icon: <PriorityIcon priority={undefined} decorative />,
+                      },
+                      ...PRIORITY_LEVELS.map(({ level, name }) => ({
+                        value: String(level),
+                        label: name,
+                        icon: <PriorityIcon priority={level} decorative />,
+                      })),
+                    ],
+                    editor.priorityReset,
+                    "Other levels",
+                  )}
+                />
+              </PropertyRow>
+            ) : null}
+            <PropertyRow label="Workflow state">
+              <SearchableSelect
+                value={fields.workflowStateId}
+                options={syncedStateFirst(statusOptions, editor.statusReset)}
+                onChange={(workflowStateId) =>
+                  updateFields({ workflowStateId })
+                }
+                placeholder="No state"
+                clearLabel="No state"
+                emptyMessage="No matching workflow states"
+                ariaLabel="Workflow state"
               />
-            </Field>
+            </PropertyRow>
+            <PropertyRow label="Project">
+              <SearchableSelect
+                value={fields.projectId}
+                options={projectOptions}
+                onChange={changeProject}
+                placeholder="No project"
+                clearLabel="No project"
+                emptyMessage="No matching projects"
+                ariaLabel="Project"
+              />
+            </PropertyRow>
+            <PropertyRow label="Task mapping">
+              <SearchableSelect
+                value={fields.taskId}
+                options={taskOptions}
+                onChange={(taskId) => updateFields({ taskId })}
+                placeholder={
+                  fields.projectId ? "Select task" : "Pick a project first"
+                }
+                clearLabel={fields.projectId ? "No task" : undefined}
+                emptyMessage={
+                  fields.projectId
+                    ? "No matching tasks"
+                    : "Pick a project first"
+                }
+                ariaLabel="Task mapping"
+                disabled={!selectedProject}
+                create={
+                  selectedProject
+                    ? {
+                        label: (text) =>
+                          describeCreateTaskRow(selectedProject, text),
+                        onCreate: (text) =>
+                          createTask(selectedProject._id, text),
+                      }
+                    : undefined
+                }
+              />
+            </PropertyRow>
+          </PropertyList>
+          {validation.priorityError ? (
+            <span className="field-error">{validation.priorityError}</span>
           ) : null}
-          <Field>
-            <FieldLabel>Workflow state</FieldLabel>
-            <SearchableSelect
-              value={fields.workflowStateId}
-              options={syncedStateFirst(statusOptions, editor.statusReset)}
-              onChange={(workflowStateId) => updateFields({ workflowStateId })}
-              placeholder="No state"
-              clearLabel="No state"
-              emptyMessage="No matching workflow states"
-              ariaLabel="Workflow state"
-            />
-          </Field>
-        </div>
-        {validation.priorityError ? (
-          <span className="field-error -mt-2">{validation.priorityError}</span>
-        ) : null}
-
-        <Field>
-          <FieldLabel>Project</FieldLabel>
-          <SearchableSelect
-            value={fields.projectId}
-            options={projectOptions}
-            onChange={changeProject}
-            placeholder="No project"
-            clearLabel="No project"
-            emptyMessage="No matching projects"
-            ariaLabel="Project"
-          />
-        </Field>
-        <Field>
-          <FieldLabel>Task mapping</FieldLabel>
-          <SearchableSelect
-            value={fields.taskId}
-            options={taskOptions}
-            onChange={(taskId) => updateFields({ taskId })}
-            placeholder={
-              fields.projectId ? "Select task" : "Pick a project first"
-            }
-            clearLabel={fields.projectId ? "No task" : undefined}
-            emptyMessage={
-              fields.projectId ? "No matching tasks" : "Pick a project first"
-            }
-            ariaLabel="Task mapping"
-            disabled={!selectedProject}
-            create={
-              selectedProject
-                ? {
-                    label: (text) =>
-                      describeCreateTaskRow(selectedProject, text),
-                    onCreate: (text) => createTask(selectedProject._id, text),
-                  }
-                : undefined
-            }
-          />
-        </Field>
+        </section>
 
         <div className="grid grid-cols-3 gap-3">
           {BACKLOG_ESTIMATE_FIELD_KEYS.map((key) => {

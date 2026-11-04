@@ -398,7 +398,7 @@ export function ProjectTaskPicker({
       <PopoverContent
         align="start"
         sideOffset={6}
-        className="project-task-picker-popover w-[min(26rem,calc(100vw-1rem))] gap-0 overflow-hidden rounded-[var(--radius-md)] border border-[var(--border-hover)] bg-[var(--surface-low)] p-0 shadow-[var(--shadow-lg)]"
+        className="project-task-picker-popover w-[min(26rem,calc(100vw-1rem))] gap-0 overflow-hidden rounded-[var(--radius-md)] border border-border bg-popover p-0 shadow-[var(--shadow-popup)]"
       >
         <Command
           shouldFilter={false}

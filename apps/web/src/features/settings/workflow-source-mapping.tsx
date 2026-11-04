@@ -258,9 +258,6 @@ function SourceProjectMapping({
           </p>
         ) : (
           <div className="flex flex-col gap-3 desktop:gap-1.5">
-            <div className="text-[12px] text-muted-foreground">
-              Items in this source state show in
-            </div>
             {project.states.map((sourceState) => {
               const effective = getEffectiveMapping(
                 state.workflowStateMappings,
@@ -302,7 +299,7 @@ function SourceProjectMapping({
                             },
                           ]
                         : []),
-                      { value: "", label: "No state (not mapped)" },
+                      { value: "", label: "Not mapped" },
                       ...state.workflowStates.map((workflowState) => ({
                         value: workflowState._id,
                         label: workflowState.name,

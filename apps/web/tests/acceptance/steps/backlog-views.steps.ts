@@ -1793,27 +1793,19 @@ When("I start a new Backlog item from a group header", async ({ page }) => {
     .first()
     .click();
 });
-Then(
-  "the Priority select shows each level as its icon, uncut, named on hover",
-  async ({ page }) => {
-    const select = page.getByRole("combobox", { name: "Priority" });
-    for (const level of ["Urgent", "High", "Medium", "Low", "No priority"]) {
-      await select.click();
-      await page.getByRole("option", { name: level, exact: true }).click();
-      await expect(select.getByRole("img", { name: level })).toBeVisible();
-      // The pointer leaves first, so the hover is a fresh one.
-      await page.mouse.move(0, 0);
-      await select.hover();
-      await expect(
-        page.locator('[data-slot="tooltip-content"][data-open]'),
-      ).toHaveText(level);
-      const value = select.locator("[data-slot=select-value]");
-      expect(
-        await value.evaluate((el) => el.scrollWidth <= el.clientWidth),
-      ).toBe(true);
-    }
-  },
-);
+Then("the Priority select names each level, uncut", async ({ page }) => {
+  // A full-width property row: the select shows the level's icon and name.
+  const select = page.getByRole("combobox", { name: "Priority" });
+  for (const level of ["Urgent", "High", "Medium", "Low", "No priority"]) {
+    await select.click();
+    await page.getByRole("option", { name: level, exact: true }).click();
+    await expect(select).toContainText(level);
+    const value = select.locator("[data-slot=select-value]");
+    expect(await value.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
+      true,
+    );
+  }
+});
 When("I add a Backlog item from the end of the list", async ({ page }) => {
   await expect(page.getByRole("button", { name: /^New item in / })).toHaveCount(
     0,

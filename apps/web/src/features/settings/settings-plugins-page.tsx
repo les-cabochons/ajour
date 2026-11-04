@@ -307,9 +307,11 @@ function PluginCatalogRow({
             <span className="min-w-0 text-sm font-medium break-words text-foreground">
               {catalog.title}
             </span>
-            <Badge variant={installed ? "secondary" : "outline"}>
-              {statusLabel}
-            </Badge>
+            {/* An installed plugin's switch says it all; the others say
+                what they are, quietly (forms council round 6). */}
+            {installed && !unavailableReason ? null : (
+              <Badge variant="secondary">{statusLabel}</Badge>
+            )}
             {signed ? null : <UnsignedBadge />}
           </span>
           <span className="line-clamp-2 text-[13px] leading-5 text-muted-foreground">

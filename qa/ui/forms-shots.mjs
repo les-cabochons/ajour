@@ -71,8 +71,12 @@ function withSavedSecrets(overview) {
   return overview;
 }
 
-const go = (page, route) =>
-  page.goto(BASE_URL + route, { waitUntil: "networkidle" });
+/** Opens a route and waits for its lazily loaded page to mount. */
+async function go(page, route) {
+  await page.goto(BASE_URL + route, { waitUntil: "networkidle" });
+  await page.locator("main").first().waitFor();
+  await page.waitForTimeout(400);
+}
 const dialog = (page) => page.getByRole("dialog").last();
 
 async function editConnection(page, pluginId) {

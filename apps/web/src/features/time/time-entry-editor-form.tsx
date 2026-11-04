@@ -404,6 +404,10 @@ export function TimeEntryEditorForm({
     submit();
   }
 
+  // The hint names the button in view: Switch while another entry runs.
+  const startVerb = isAnotherEntryRunning ? "Switch" : "Start";
+  const hoursHint = START_OR_ENTER_HOURS_HINT.replace("Start", startVerb);
+
   return (
     <div
       ref={rootRef}
@@ -479,42 +483,36 @@ export function TimeEntryEditorForm({
         );
       })()}
 
-      <div className="flex flex-wrap items-center gap-2">
-        {runningTimer ? (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={editor.hasChanges && !editor.canSave}
-            onClick={stop}
-          >
-            <Stop data-icon="inline-start" />
-            Stop
-          </Button>
-        ) : entry ? (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={editor.hasChanges && !editor.canSave}
-            onClick={continueEntry}
-          >
-            <Play data-icon="inline-start" />
-            Continue
-          </Button>
-        ) : (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={editor.durationMs === null}
-            onClick={start}
-          >
-            <Play data-icon="inline-start" />
-            {isAnotherEntryRunning ? "Switch" : "Start"}
-          </Button>
-        )}
-        {startsToday ? (
-          <span className="text-xs text-muted-foreground">Starts today</span>
-        ) : null}
-      </div>
+      {/* A record's own actions sit at the top; a new entry's Start sits in
+          its footer, beside Create entry (forms council round 6). */}
+      {runningTimer || entry ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {runningTimer ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={editor.hasChanges && !editor.canSave}
+              onClick={stop}
+            >
+              <Stop data-icon="inline-start" />
+              Stop
+            </Button>
+          ) : entry ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={editor.hasChanges && !editor.canSave}
+              onClick={continueEntry}
+            >
+              <Play data-icon="inline-start" />
+              Continue
+            </Button>
+          ) : null}
+          {startsToday ? (
+            <span className="text-xs text-muted-foreground">Starts today</span>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* A disabled fieldset disables every field, picker and calendar button inside. */}
       <fieldset
@@ -528,8 +526,12 @@ export function TimeEntryEditorForm({
           taskId={fields.taskId}
           note={fields.note}
           durationHours={fields.durationHours}
-          durationError={editor.durationError ?? commitError}
-          durationHint={editor.isTimerMode ? START_OR_ENTER_HOURS_HINT : null}
+          durationError={
+            editor.durationError === START_OR_ENTER_HOURS_HINT
+              ? hoursHint
+              : (editor.durationError ?? commitError)
+          }
+          durationHint={editor.isTimerMode ? hoursHint : null}
           localDate={runningTimer ? undefined : fields.localDate}
           dateError={editor.dateError}
           onProjectTaskChange={(selection) =>
@@ -547,13 +549,29 @@ export function TimeEntryEditorForm({
       </fieldset>
 
       <footer className="flex items-center justify-end gap-2 pt-1">
+        {startsToday && !runningTimer && !entry ? (
+          <span className="mr-auto text-xs text-muted-foreground">
+            Starts today
+          </span>
+        ) : null}
         <Button type="button" variant="ghost" onClick={onClose}>
           Cancel
         </Button>
+        {runningTimer || entry ? null : (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={editor.durationMs === null}
+            onClick={start}
+          >
+            <Play data-icon="inline-start" />
+            {startVerb}
+          </Button>
+        )}
         <Button
           type="button"
           disabled={!editor.canSave}
-          title={editor.isTimerMode ? START_OR_ENTER_HOURS_HINT : undefined}
+          title={editor.isTimerMode ? hoursHint : undefined}
           onClick={save}
         >
           {/* A new record's button names what it makes, as every form's. */}
