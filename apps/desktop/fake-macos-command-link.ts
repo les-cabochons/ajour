@@ -127,17 +127,8 @@ export function macosLinkFixture({
           target = null;
         else if (shell.includes("else exit 1")) throw new Error("Link changed");
       }
-      if (
-        shell.includes(
-          "createSymbolicLinkAtPath:withDestinationPath:error:"
-            .split(":")
-            .filter(Boolean)
-            .map((part, index) =>
-              index === 0 ? part : part[0]!.toUpperCase() + part.slice(1),
-            )
-            .join(""),
-        )
-      ) {
+      // Model the requested filesystem effect; real macOS CI validates JXA.
+      if (shell.includes("AJOUR_TARGET=")) {
         const match = shell.match(
           /AJOUR_TARGET=('(?:[^']|'"'"')*') \/usr\/bin\/osascript/,
         );

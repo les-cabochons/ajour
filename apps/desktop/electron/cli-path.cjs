@@ -454,7 +454,9 @@ function macosPrivilegedCommand({
       return `${parents ? parents + "; " : ""}if [ ! -e ${quote(directory)} ] && [ ! -L ${quote(directory)} ]; then /bin/mkdir -m 755 ${quote(directory)} || exit 1; fi; ${verify(directory)}`;
     })
     .join("; ");
-  const jxa = `ObjC.import("Foundation"); const env = $.NSProcessInfo.processInfo.environment; if (!$.NSFileManager.defaultManager.createSymbolicLinkAtPathWithDestinationPathError(env.objectForKey("AJOUR_LINK"), env.objectForKey("AJOUR_TARGET"), null)) throw new Error("Link creation failed");`;
+  // Foundation normalizes Unicode paths. The POSIX call keeps the exact UTF-8
+  // target and atomically refuses every existing destination, including directories.
+  const jxa = `ObjC.import("Foundation"); ObjC.bindFunction("symlink", ["int", ["char *", "char *"]]); const env = $.NSProcessInfo.processInfo.environment; if ($.symlink(ObjC.unwrap(env.objectForKey("AJOUR_TARGET")), ObjC.unwrap(env.objectForKey("AJOUR_LINK"))) !== 0) throw new Error("Link creation failed");`;
   const creation = `[ ! -e ${quote(destination)} ] && [ ! -L ${quote(destination)} ] && AJOUR_LINK=${quote(destination)} AJOUR_TARGET=${quote(target)} /usr/bin/osascript -l JavaScript -e ${quote(jxa)} && [ -L ${quote(destination)} ] && [ "$(/usr/bin/readlink ${quote(destination)})" = ${quote(target)} ]`;
 
   const removal = guardedRemoval(destination, observed);

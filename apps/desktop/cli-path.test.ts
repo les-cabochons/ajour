@@ -765,7 +765,6 @@ describe("macOS command link", () => {
     );
     expect(f.calls).toHaveLength(1);
     expect(f.current()).toBe(`/Users/A "B"/it's\\$home/bin/ajour`);
-    expect(shell).toContain("createSymbolicLinkAtPathWithDestinationPathError");
     expect(shell).not.toContain("/bin/ln");
     expect(shell).toContain(
       `[ ! -e '/usr/local/bin/ajour' ] && [ ! -L '/usr/local/bin/ajour' ] && AJOUR_LINK='/usr/local/bin/ajour'`,
