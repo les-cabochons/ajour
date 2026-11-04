@@ -130,7 +130,8 @@ const READ_SCRIPT = [
 // The values come from the environment, as "v" and base64 of UTF-8, so
 // nothing of them is ever parsed as script, and an empty value is still set
 // (Windows drops an empty variable). "-" is no value: an expected "-" means
-// there was no Path, and a value "-" deletes it. `-cne` compares
+// there was no Path, and a value "-" deletes it. "-" is also the kind of a
+// missing Path, on both sides: an empty variable reads as $null, never ''. `-cne` compares
 // case-sensitively. The broadcast is a run of its own, so a failure in it is
 // told apart from a failed write.
 const WRITE_SCRIPT = [
@@ -139,7 +140,7 @@ const WRITE_SCRIPT = [
   "$key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment');",
   "$current = $key.GetValue('Path', $null, 'DoNotExpandEnvironmentNames');",
   "$expected = if ($env:AJOUR_PATH_EXPECTED -eq '-') { $null } else { & $decode $env:AJOUR_PATH_EXPECTED };",
-  "$currentKind = if ($null -ne $current) { $key.GetValueKind('Path').ToString() } else { '' };",
+  "$currentKind = if ($null -ne $current) { $key.GetValueKind('Path').ToString() } else { '-' };",
   "if ($currentKind -cne $env:AJOUR_PATH_EXPECTED_KIND -or $current -cne $expected) { [Console]::Out.Write('changed'); exit 0 };",
   "if ($env:AJOUR_PATH_VALUE -eq '-') { $key.DeleteValue('Path', $false) }",
   "else { $key.SetValue('Path', (& $decode $env:AJOUR_PATH_VALUE), [Microsoft.Win32.RegistryValueKind]$env:AJOUR_PATH_KIND) };",
@@ -221,7 +222,7 @@ function createPowerShellRegistry({
       }
       const answer = await ask(WRITE_SCRIPT, {
         AJOUR_PATH_EXPECTED: expected === null ? "-" : encode(expected),
-        AJOUR_PATH_EXPECTED_KIND: expectedKind ?? "",
+        AJOUR_PATH_EXPECTED_KIND: expectedKind ?? "-",
         AJOUR_PATH_VALUE: value === null ? "-" : encode(value),
         AJOUR_PATH_KIND: value === null ? "" : kind,
       });

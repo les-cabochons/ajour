@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 
@@ -418,6 +420,68 @@ describe("the PowerShell registry", () => {
     expect(fake.calls[0]!.env.AJOUR_PATH_VALUE).toBe("-");
     expect(fake.calls[0]!.args.join(" ")).toContain("DeleteValue");
   });
+
+  it('passes a missing Path\'s kind as "-", which PowerShell can compare', async () => {
+    const fake = fakeRun("written");
+    const registry = createPowerShellRegistry({ run: fake.run, env: {} });
+
+    await registry.write({
+      expected: null,
+      expectedKind: null,
+      value: "C:\\bin",
+      kind: "ExpandString",
+    });
+
+    expect(fake.calls[0]!.env.AJOUR_PATH_EXPECTED_KIND).toBe("-");
+  });
+
+  it.skipIf(process.platform !== "win32")(
+    "writes a first Path through real PowerShell, in a scratch key",
+    async () => {
+      const fake = fakeRun("written");
+      await createPowerShellRegistry({
+        run: fake.run,
+        env: { SystemRoot: process.env.SystemRoot },
+      }).write({
+        expected: null,
+        expectedKind: null,
+        value: "C:\\bin",
+        kind: "ExpandString",
+      });
+      const [call] = fake.calls;
+      // The same script and variables, aimed at a key of the test's own
+      // instead of HKCU\Environment.
+      const scratch = `Software\\AjourTest-${randomUUID()}`;
+      const script = call!.args[3]!.replace(
+        "CreateSubKey('Environment')",
+        `CreateSubKey('${scratch}')`,
+      );
+      expect(script).not.toBe(call!.args[3]);
+      const run = (args: string[], env: NodeJS.ProcessEnv) =>
+        execFileSync(call!.file, args, {
+          encoding: "utf8",
+          env,
+        });
+      try {
+        expect(
+          run([...call!.args.slice(0, 3), script], {
+            ...process.env,
+            ...call!.env,
+          }),
+        ).toBe("written");
+        expect(
+          execFileSync("reg.exe", ["query", `HKCU\\${scratch}`, "/v", "Path"], {
+            encoding: "utf8",
+          }),
+        ).toMatch(/Path\s+REG_EXPAND_SZ\s+C:\\bin$/m);
+      } finally {
+        execFileSync("reg.exe", ["delete", `HKCU\\${scratch}`, "/f"], {
+          stdio: "ignore",
+        });
+      }
+    },
+    20_000,
+  );
 
   it("refuses a kind other than REG_SZ or REG_EXPAND_SZ", async () => {
     const fake = fakeRun("written");
