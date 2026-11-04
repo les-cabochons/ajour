@@ -42,6 +42,7 @@ import { listWeekChanges } from "@/domain/time/timesheet-commit";
 import {
   buildCommitLines,
   describeLineNames,
+  formatNotSentNames,
   listLineNameSources,
   resolveLineNameSource,
   summarizeWeek,
@@ -624,9 +625,7 @@ export function CommitPage({
             />
             {summary.local.durationMs > 0 ? (
               <p className="commit-local-time">
-                Not sent:{" "}
-                {summary.local.items.map((item) => item.name).join(", ") ||
-                  "local time"}{" "}
+                Not sent: {formatNotSentNames(summary.local)}{" "}
                 <Value>{formatClockDuration(summary.local.durationMs)}</Value>
               </p>
             ) : null}

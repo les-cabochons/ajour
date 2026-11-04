@@ -9,6 +9,7 @@ import {
 import {
   buildCommitLines,
   describeLineNames,
+  formatNotSentNames,
   getLineCommitTaskName,
   groupSubmitLines,
   listLineNameSources,
@@ -475,6 +476,31 @@ describe("line names", () => {
       ).toBe("KT");
     });
 
+    it("is the task's own name when the Names choice's plugin keeps it, whatever another plugin maps", () => {
+      const ownInWorkday: LocalProject[] = [
+        {
+          ...named[0]!,
+          tasks: [
+            {
+              _id: "kt",
+              name: "Knowledge transfer",
+              status: "active",
+              createdAt: 1,
+              pluginProperties: { other: { task: "KT" } },
+            },
+          ],
+        },
+      ];
+      const plugins = { projects: [], tasks: [workdayTask, otherTask] };
+
+      expect(
+        getLineCommitTaskName(ktLine, "workday-agent", ownInWorkday, plugins),
+      ).toBe("Knowledge transfer");
+      expect(
+        describeLineNames(ktLine, "workday-agent", ownInWorkday, plugins),
+      ).toMatchObject({ copied: "Atlas Knowledge transfer" });
+    });
+
     it("is the first plugin's mapped name when the Names choice is Ajour", () => {
       expect(
         getLineCommitTaskName(ktLine, "ajour", mapped, {
@@ -704,13 +730,134 @@ describe("week summary", () => {
     ]);
     expect(summary.local).toEqual({
       durationMs: 2 * HOUR,
+      names: ["Team lunch", "Home"],
       items: [
-        { name: "Team lunch", durationMs: HOUR },
-        { name: "Home", durationMs: HOUR },
+        {
+          projectId: "atlas",
+          projectName: "Atlas",
+          taskId: "lunch",
+          taskName: "Team lunch",
+          durationMs: HOUR,
+        },
+        { projectId: "home", projectName: "Home", durationMs: HOUR },
       ],
     });
     expect(listSentEntries(week, committing).map((item) => item._id)).toEqual([
       "dev",
     ]);
+  });
+
+  it("keeps local time apart per task and per Local only project, and names it once on the page", () => {
+    const lunch = (projectId: string, name: string): LocalProject => ({
+      _id: projectId,
+      name,
+      color: "#000",
+      icon: DEFAULT_PROJECT_ICON,
+      status: "active",
+      tasks: [
+        {
+          _id: "lunch",
+          name: "Lunch",
+          status: "active",
+          createdAt: 1,
+          commitAs: "local",
+        },
+      ],
+    });
+    const lunchProjects: LocalProject[] = [
+      lunch("desktop", "Ajour Desktop"),
+      { ...lunch("web", "Ajour Web"), code: "AJW" },
+      {
+        _id: "lunch-project",
+        name: "Lunch",
+        color: "#000",
+        icon: DEFAULT_PROJECT_ICON,
+        status: "active",
+        localOnly: true,
+        tasks: [
+          { _id: "out", name: "Out", status: "active", createdAt: 1 },
+          { _id: "in", name: "In", status: "active", createdAt: 1 },
+        ],
+      },
+    ];
+    const week = [
+      entry("desktop-lunch", {
+        localDate: "2026-10-05",
+        projectId: "desktop",
+        taskId: "lunch",
+        durationMs: HOUR / 2,
+      }),
+      entry("web-lunch", {
+        localDate: "2026-10-06",
+        projectId: "web",
+        taskId: "lunch",
+      }),
+      entry("lunch-out", {
+        localDate: "2026-10-06",
+        projectId: "lunch-project",
+        taskId: "out",
+        durationMs: HOUR / 4,
+      }),
+      entry("lunch-in", {
+        localDate: "2026-10-07",
+        projectId: "lunch-project",
+        taskId: "in",
+        durationMs: HOUR / 4,
+      }),
+      entry("desktop-lunch-2", {
+        localDate: "2026-10-07",
+        projectId: "desktop",
+        taskId: "lunch",
+        durationMs: HOUR / 2,
+      }),
+    ];
+
+    const { local } = summarizeWeek({
+      capacityTargets,
+      weekDates,
+      weekEntries: week,
+      projects: lunchProjects,
+    });
+
+    expect(local).toEqual({
+      durationMs: 2.5 * HOUR,
+      names: ["Lunch"],
+      items: [
+        {
+          projectId: "desktop",
+          projectName: "Ajour Desktop",
+          taskId: "lunch",
+          taskName: "Lunch",
+          durationMs: HOUR,
+        },
+        {
+          projectId: "web",
+          projectName: "Ajour Web",
+          projectCode: "AJW",
+          taskId: "lunch",
+          taskName: "Lunch",
+          durationMs: HOUR,
+        },
+        {
+          projectId: "lunch-project",
+          projectName: "Lunch",
+          durationMs: HOUR / 2,
+        },
+      ],
+    });
+    expect(formatNotSentNames(local)).toBe("Lunch");
+  });
+
+  it("calls unnamed local time local time on the page", () => {
+    expect(formatNotSentNames({ durationMs: HOUR, names: [], items: [] })).toBe(
+      "local time",
+    );
+    expect(
+      formatNotSentNames({
+        durationMs: 2 * HOUR,
+        names: ["Team lunch", "Home"],
+        items: [],
+      }),
+    ).toBe("Team lunch, Home");
   });
 });

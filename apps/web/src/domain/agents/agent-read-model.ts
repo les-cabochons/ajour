@@ -667,8 +667,6 @@ export function getWeekLinesForAgent(
   const waitingTasks = summary.warnings.flatMap((warning) =>
     warning.kind === "waiting-task" ? [warning] : [],
   );
-  const running = readRunningTimer(state, now);
-
   return {
     weekOf: weekDates[0]!,
     groupBy,
@@ -676,9 +674,9 @@ export function getWeekLinesForAgent(
     sections,
     notSent: {
       hours: toDecimalHours(summary.local.durationMs),
-      items: summary.local.items.map((item) => ({
-        name: item.name,
-        hours: toDecimalHours(item.durationMs),
+      items: summary.local.items.map(({ durationMs, ...item }) => ({
+        ...item,
+        hours: toDecimalHours(durationMs),
       })),
     },
     waiting: {
@@ -692,6 +690,33 @@ export function getWeekLinesForAgent(
         hours: toDecimalHours(task.durationMs),
       })),
     },
-    running: running && week.has(running.date) ? running : null,
+    running: readUnsavedRunningTime(state, week, now),
+  };
+}
+
+/**
+ * The running entry in the week with the time it has not saved yet: when it
+ * continues a saved entry, that entry's time is already in the lines.
+ */
+function readUnsavedRunningTime(
+  state: LocalAppState,
+  week: ReadonlySet<string>,
+  now: number,
+): DataToolOutput<"get_week_lines">["running"] {
+  const timer = state.timers[0];
+  if (!timer || !week.has(timer.localDate)) return null;
+  const saved = timer.entryId
+    ? state.timesheetEntries.find((entry) => entry._id === timer.entryId)
+    : undefined;
+  const countedMs =
+    timer.accumulatedDurationMs + Math.max(0, now - timer.startedAt);
+  return {
+    timerId: timer._id,
+    date: timer.localDate,
+    unsavedMinutes: Math.floor(
+      Math.max(0, countedMs - (saved?.durationMs ?? 0)) / MINUTE,
+    ),
+    ...(saved ? { entryId: saved._id } : {}),
+    ...describeProjectTask(state, timer.projectId, timer.taskId),
   };
 }

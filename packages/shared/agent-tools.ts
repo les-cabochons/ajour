@@ -427,10 +427,22 @@ const weekLinesOutputSchema = z.object({
       lines: z.array(agentWeekLineSchema),
     }),
   ),
-  /** Local only time, which never goes, per task or Local only project. */
+  /**
+   * Local only time, which never goes: per task, or per Local only project
+   * without its tasks. Projects are named as the lines name theirs.
+   */
   notSent: z.object({
     hours: z.number(),
-    items: z.array(z.object({ name: z.string(), hours: z.number() })),
+    items: z.array(
+      z.object({
+        projectId: z.string(),
+        projectName: z.string(),
+        projectCode: z.string().optional(),
+        taskId: z.string().optional(),
+        taskName: z.string().optional(),
+        hours: z.number(),
+      }),
+    ),
   }),
   /** Time on Not known yet tasks, which waits for what they commit as. */
   waiting: z.object({
@@ -444,8 +456,25 @@ const weekLinesOutputSchema = z.object({
       }),
     ),
   }),
-  /** The running entry when it runs in the week. Its time is in no line. */
-  running: agentRunningTimerSchema.nullable(),
+  /**
+   * The running entry when it runs in the week, with only the time it has
+   * not saved yet, so the lines and it add up to the week's time once.
+   */
+  running: z
+    .object({
+      ...agentProjectRefShape,
+      timerId: z.string(),
+      date: z.string(),
+      /**
+       * Counted minutes not in any saved entry yet. When it continues
+       * today's saved entry, whose saved time a line holds, only the time
+       * since; never below 0.
+       */
+      unsavedMinutes: z.number(),
+      /** The saved entry it continues, if any. */
+      entryId: z.string().optional(),
+    })
+    .nullable(),
 });
 
 /** Output schemas of the read tools, by MCP tool name. */

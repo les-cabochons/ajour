@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { DataToolOutput } from "@ajour/shared/agent-tools";
 import type { LocalAppState, LocalTimesheetEntry } from "@/domain/local-state";
 import {
   checkChangeVersionsOrRefuse,
@@ -20,16 +21,12 @@ import {
   NO_PROPERTY_PLUGINS,
   type PropertyPlugins,
 } from "@/domain/projects/plugin-properties";
-import { toDecimalHours } from "@/domain/time/duration";
 import {
   isTimesheetEntryCommitted,
   listWeekChanges,
 } from "@/domain/time/timesheet-commit";
 import { markTimesheetEntriesCommitted } from "@/domain/time/timesheet-entry";
-import {
-  buildCommitLines,
-  type SubmitGroupBy,
-} from "@/domain/time/timesheet-submission";
+import type { SubmitGroupBy } from "@/domain/time/timesheet-submission";
 
 const HOUR = 3_600_000;
 const NOW = Date.UTC(2026, 9, 14, 15);
@@ -948,8 +945,8 @@ describe("the Commit page's lines for agents", () => {
       notSent: {
         hours: 1.5,
         items: [
-          { name: "Team lunch", hours: 1 },
-          { name: "Home", hours: 0.5 },
+          { ...acme, taskId: "lunch", taskName: "Team lunch", hours: 1 },
+          { projectId: "home", projectName: "Home", hours: 0.5 },
         ],
       },
       waiting: {
@@ -966,9 +963,7 @@ describe("the Commit page's lines for agents", () => {
       running: {
         timerId: "timer-1",
         date: "2026-10-14",
-        countedMinutes: 45,
-        countedSeconds: 45 * 60,
-        runningSince: new Date(NOW - 30 * 60_000).toISOString(),
+        unsavedMinutes: 45,
         projectId: "acme",
         projectName: "Acme",
         projectCode: "ACME-1",
@@ -978,38 +973,112 @@ describe("the Commit page's lines for agents", () => {
     });
   });
 
-  it.each<SubmitGroupBy>(["day-task", "day", "task"])(
-    "gives the lines the Commit page builds when grouping by %s",
-    (groupBy) => {
-      const state = weekState();
-      const page = buildCommitLines({
-        entries: state.timesheetEntries,
-        groupBy,
-        projects: state.projects,
-        weekDates: WEEK,
-      });
-
-      expect(
-        read(state, groupBy).sections.map((section) => ({
-          localDate: section.localDate,
-          lines: section.lines.map(({ entryIds, hours, comments }) => ({
-            entryIds,
-            hours,
-            comments,
-          })),
-        })),
-      ).toEqual(
-        page.map((section) => ({
-          localDate: section.localDate,
-          lines: section.lines.map((line) => ({
-            entryIds: line.entryIds,
-            hours: toDecimalHours(line.durationMs),
-            comments: line.comments,
-          })),
-        })),
-      );
+  /**
+   * The fixture's sent entries, worked out by hand: Monday a1 (07 Run, 1:00,
+   * Specs), a2 (07 Run, 0:30, Specs), a3 (Review, 0:45, PR 12); Tuesday a4
+   * (07 Run, 2:00, Deploy).
+   */
+  const run = { ...acme, taskId: "build", taskName: "07 Run" };
+  const review = { ...acme, taskId: "review", taskName: "Review" };
+  it.each<[SubmitGroupBy, DataToolOutput<"get_week_lines">["sections"]]>([
+    [
+      "day-task",
+      [
+        {
+          localDate: "2026-10-12",
+          lines: [
+            { ...run, hours: 1.5, comments: "Specs", entryIds: ["a1", "a2"] },
+            { ...review, hours: 0.75, comments: "PR 12", entryIds: ["a3"] },
+          ],
+        },
+        {
+          localDate: "2026-10-13",
+          lines: [{ ...run, hours: 2, comments: "Deploy", entryIds: ["a4"] }],
+        },
+      ],
+    ],
+    [
+      "day",
+      [
+        {
+          localDate: "2026-10-12",
+          lines: [
+            { ...run, hours: 1, comments: "Specs", entryIds: ["a1"] },
+            { ...run, hours: 0.5, comments: "Specs", entryIds: ["a2"] },
+            { ...review, hours: 0.75, comments: "PR 12", entryIds: ["a3"] },
+          ],
+        },
+        {
+          localDate: "2026-10-13",
+          lines: [{ ...run, hours: 2, comments: "Deploy", entryIds: ["a4"] }],
+        },
+      ],
+    ],
+    [
+      "task",
+      [
+        {
+          lines: [
+            {
+              ...run,
+              hours: 3.5,
+              comments: "Specs | Deploy",
+              entryIds: ["a1", "a2", "a4"],
+            },
+            { ...review, hours: 0.75, comments: "PR 12", entryIds: ["a3"] },
+          ],
+        },
+      ],
+    ],
+  ])(
+    "gives the Commit page's lines when grouping by %s",
+    (groupBy, sections) => {
+      expect(read(weekState(), groupBy).sections).toEqual(sections);
     },
   );
+
+  it("reports only the running entry's unsaved time when it continues a saved entry", () => {
+    const state = {
+      ...weekState(),
+      timers: [
+        {
+          _id: "timer-1",
+          startedAt: NOW - 15 * 60_000,
+          localDate: "2026-10-14",
+          projectId: "acme",
+          taskId: "review",
+          accumulatedDurationMs: HOUR,
+          entryId: "today",
+        },
+      ],
+    } as LocalAppState;
+    state.timesheetEntries.push(
+      entry({
+        _id: "today",
+        localDate: "2026-10-14",
+        projectId: "acme",
+        taskId: "review",
+        committedAt: 8,
+      }),
+    );
+
+    const lines = read(state, "day-task");
+    expect(lines.sections.at(-1)).toEqual({
+      localDate: "2026-10-14",
+      lines: [{ ...review, hours: 1, comments: "", entryIds: ["today"] }],
+    });
+    expect(lines.running).toEqual({
+      timerId: "timer-1",
+      date: "2026-10-14",
+      unsavedMinutes: 15,
+      entryId: "today",
+      projectId: "acme",
+      projectName: "Acme",
+      projectCode: "ACME-1",
+      taskId: "review",
+      taskName: "Review",
+    });
+  });
 
   it("groups the week by task in one section without a date", () => {
     const { sections } = read(weekState(), "task");

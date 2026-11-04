@@ -308,10 +308,11 @@ function getLineMappedTaskName(
 }
 
 /**
- * The name the line's task commits as, for agents and the terminal: the
- * name the Names choice's plugin maps it to, else the first active task
- * plugin that maps it, else its own name. Undefined when the line has no
- * task.
+ * The name the line's task commits as, for agents and the terminal. When the
+ * Names choice is a task plugin, it is what that plugin names the task, its
+ * own name included, as the page shows it. Otherwise, as with Names on
+ * Ajour, it is the first active task plugin's mapped name, else its own
+ * name. Undefined when the line has no task.
  */
 export function getLineCommitTaskName(
   line: SubmitLine,
@@ -322,7 +323,7 @@ export function getLineCommitTaskName(
   const chosen = plugins.tasks.find(
     (candidate) => candidate.pluginId === source,
   );
-  for (const plugin of chosen ? [chosen, ...plugins.tasks] : plugins.tasks) {
+  for (const plugin of chosen ? [chosen] : plugins.tasks) {
     const mapped = getLineMappedTaskName(line, projects, plugin);
     if (mapped) return mapped;
   }
@@ -417,12 +418,38 @@ export interface SubmitSummary {
   targetMs: number;
   isUnderTarget: boolean;
   warnings: SubmitWarning[];
+  /** The week's local time, which never goes to the timesheet tool. */
+  local: SubmitLocalTime;
+}
+
+export interface SubmitLocalTime {
+  durationMs: number;
   /**
-   * The week's local time, which never goes to the timesheet tool, and its
-   * tasks, or its Local only projects, by name in list order, each with its
-   * time.
+   * The names of its tasks, or of its Local only projects, in list order,
+   * each once: what the page's "Not sent:" line names.
    */
-  local: { durationMs: number; items: { name: string; durationMs: number }[] };
+  names: string[];
+  /** Its time per task, or per Local only project, in list order. */
+  items: SubmitLocalItem[];
+}
+
+/**
+ * Local time on one task, or on one Local only project, whose tasks it
+ * leaves out. The project is named by its full name and code, as the lines
+ * name theirs.
+ */
+export interface SubmitLocalItem {
+  projectId: string;
+  projectName: string;
+  projectCode?: string;
+  taskId?: string;
+  taskName?: string;
+  durationMs: number;
+}
+
+/** What the page's "Not sent:" line names. */
+export function formatNotSentNames(local: SubmitLocalTime): string {
+  return local.names.join(", ") || "local time";
 }
 
 /** The week's total against its capacity targets, with its warnings. */
@@ -488,7 +515,8 @@ export function summarizeWeek({
   }
 
   const waiting = new Map<string, SubmitWarning & { kind: "waiting-task" }>();
-  const local: SubmitSummary["local"] = { durationMs: 0, items: [] };
+  const local: SubmitLocalTime = { durationMs: 0, names: [], items: [] };
+  const localItems = new Map<string, SubmitLocalItem>();
   for (const { entry, target } of targets) {
     if (target === "sent") continue;
     const project = projects.find((item) => item._id === entry.projectId);
@@ -498,10 +526,20 @@ export function summarizeWeek({
       const name = project?.localOnly
         ? getLocalProjectDisplayName(project)
         : task?.name;
-      if (!name) continue;
-      const item = local.items.find((candidate) => candidate.name === name);
-      if (item) item.durationMs += entry.durationMs;
-      else local.items.push({ name, durationMs: entry.durationMs });
+      if (name && !local.names.includes(name)) local.names.push(name);
+      if (!project) continue;
+      // A Local only project's time adds up across its tasks.
+      const byTask = project.localOnly ? undefined : task;
+      const key = byTask ? `${project._id}::${byTask._id}` : project._id;
+      const item = localItems.get(key) ?? {
+        projectId: project._id,
+        projectName: project.name,
+        ...(project.code?.trim() ? { projectCode: project.code.trim() } : {}),
+        ...(byTask ? { taskId: byTask._id, taskName: byTask.name } : {}),
+        durationMs: 0,
+      };
+      item.durationMs += entry.durationMs;
+      localItems.set(key, item);
       continue;
     }
     if (!project || !task) continue;
@@ -517,6 +555,7 @@ export function summarizeWeek({
     waiting.set(key, warning);
   }
   warnings.push(...waiting.values());
+  local.items = [...localItems.values()];
 
   return {
     totalMs,

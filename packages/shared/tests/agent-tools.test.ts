@@ -196,7 +196,20 @@ describe("agent tool contracts", () => {
           ],
         },
       ],
-      notSent: { hours: 1, items: [{ name: "Team lunch", hours: 1 }] },
+      notSent: {
+        hours: 1.5,
+        items: [
+          {
+            projectId: "p1",
+            projectName: "Acme Corporation",
+            projectCode: "ACME-1",
+            taskId: "t3",
+            taskName: "Team lunch",
+            hours: 1,
+          },
+          { projectId: "p2", projectName: "Home", hours: 0.5 },
+        ],
+      },
       waiting: {
         hours: 3,
         tasks: [
@@ -208,13 +221,24 @@ describe("agent tool contracts", () => {
           },
         ],
       },
-      running: { timerId: "t", date: "2026-10-14", countedMinutes: 45 },
+      running: {
+        timerId: "t",
+        date: "2026-10-14",
+        unsavedMinutes: 15,
+        entryId: "e4",
+      },
     };
     expect(dataToolOutputSchemas.get_week_lines.parse(output)).toEqual(output);
     expect(
       dataToolOutputSchemas.get_week_lines.safeParse({
         ...output,
         sections: [{ lines: [{ hours: "1,50", comments: "", entryIds: [] }] }],
+      }).success,
+    ).toBe(false);
+    expect(
+      dataToolOutputSchemas.get_week_lines.safeParse({
+        ...output,
+        running: { timerId: "t", date: "2026-10-14", countedMinutes: 75 },
       }).success,
     ).toBe(false);
   });
