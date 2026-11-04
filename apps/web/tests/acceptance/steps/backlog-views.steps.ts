@@ -2254,6 +2254,49 @@ Then(
     ).toHaveCount(0);
   },
 );
+Then(
+  "the item page's top bar has Start entry, Snooze and Settle and no New entry button",
+  async ({ page }) => {
+    const bar = page.locator(".ajour-page-header-slot");
+    for (const name of ["Start entry", "Snooze", "Settle"]) {
+      await expect(
+        bar.getByRole("button", { name, exact: true }),
+      ).toBeVisible();
+    }
+    await expect(bar.getByRole("button", { name: /^New entry/ })).toHaveCount(
+      0,
+    );
+  },
+);
+When("I open the other ways to log time", async ({ page }) => {
+  await page
+    .locator(".ajour-page-header-slot")
+    .getByRole("button", { name: "Other ways to log time" })
+    .click();
+});
+Then(
+  "the menu says Start entry starts the clock and New entry… logs time without it",
+  async ({ page }) => {
+    const menu = page.getByRole("menu");
+    await expect(
+      menu.getByRole("menuitem", { name: /Start entry/ }),
+    ).toContainText("Start the clock on this item now");
+    await expect(
+      menu.getByRole("menuitem", { name: /New entry…/ }),
+    ).toContainText("Log time without the clock");
+  },
+);
+When("I choose New entry… in that menu", async ({ page }) => {
+  await page
+    .getByRole("menu")
+    .getByRole("menuitem", { name: /New entry…/ })
+    .click();
+});
+Then("a new time entry opens", async ({ page }) => {
+  await expect(
+    page.getByRole("dialog").filter({ hasText: "New time entry" }),
+  ).toBeVisible();
+});
 When(
   "I write {string} as its description and press Mod+Enter",
   async ({ page }, description: string) => {

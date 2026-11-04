@@ -334,6 +334,16 @@ export type SubmitWarning =
       loggedMs: number;
       targetMs: number;
     }
+  | {
+      /**
+       * The days after today still under their targets, as one line: nothing
+       * can be logged on them yet, so they are not problems to fix.
+       */
+      kind: "days-ahead";
+      fromDate: string;
+      toDate: string;
+      remainingMs: number;
+    }
   | { kind: "missing-task"; entryCount: number }
   | {
       /** Time on a Not known yet task, which stays out of the commit. */
@@ -363,12 +373,18 @@ export function summarizeWeek({
   weekDates,
   weekEntries,
   projects,
+  today,
 }: {
   capacityTargets: WeeklyCapacityTargets;
   weekDates: string[];
   weekEntries: LocalTimesheetEntry[];
   /** Every project, for what each task commits as. */
   projects: readonly LocalProject[];
+  /**
+   * The current local date. Days after it fold into one days-ahead line
+   * instead of a warning each. Without it every day warns, as Submit asks.
+   */
+  today?: string;
 }): SubmitSummary {
   const days = weekDates.map((localDate, index) => {
     const key = CAPACITY_KEYS[index];
@@ -391,9 +407,24 @@ export function summarizeWeek({
     ({ entry, target }) => !entry.taskId && target !== "local",
   ).length;
 
-  const warnings: SubmitWarning[] = days
-    .filter((day) => day.targetMs > 0 && day.loggedMs < day.targetMs)
+  const under = days.filter(
+    (day) => day.targetMs > 0 && day.loggedMs < day.targetMs,
+  );
+  const ahead = today ? under.filter((day) => day.localDate > today) : [];
+  const warnings: SubmitWarning[] = under
+    .filter((day) => !ahead.includes(day))
     .map((day) => ({ kind: "day-under-target", ...day }));
+  if (ahead.length > 0) {
+    warnings.push({
+      kind: "days-ahead",
+      fromDate: ahead[0]!.localDate,
+      toDate: ahead[ahead.length - 1]!.localDate,
+      remainingMs: ahead.reduce(
+        (sum, day) => sum + day.targetMs - day.loggedMs,
+        0,
+      ),
+    });
+  }
   if (missingTaskCount > 0) {
     warnings.push({ kind: "missing-task", entryCount: missingTaskCount });
   }
