@@ -14,6 +14,9 @@ Feature: Backlog list and board views
     And every Backlog row keeps its contents inside the row
     When I widen the Backlog window
     Then the "Backlog parent" row shows "Example project" beside its title
+    When I narrow the Backlog window
+    And the Backlog parent is settled and running, with a source state and a long project name
+    Then every Backlog row keeps its contents inside the row
 
   Scenario: Keep the board preference while using a narrow list
     When I choose the Backlog board

@@ -1017,12 +1017,13 @@
      (display: contents), so their own children take the row's grid tracks;
      no element is added. Line 2 has one shrinkable slot per possible item
      (project, subitem count, Running, Settled, Snoozed, a sync conflict,
-     source state). The estimate and actions keep fixed tracks, so every
-     title truncates at the same edge. */
+     source state). Markers keep their width; the project and the source
+     state give way with an ellipsis. The estimate and actions keep fixed
+     tracks, so every title truncates at the same edge. */
   .backlog-list-row {
     display: grid;
     grid-template-columns:
-      auto repeat(7, minmax(0, max-content)) minmax(0, 1fr)
+      auto repeat(7, minmax(auto, max-content)) minmax(0, 1fr)
       36px 52px;
     grid-template-rows: auto auto;
     align-content: center;
@@ -1054,15 +1055,25 @@
   .backlog-list-row .backlog-item-project,
   .backlog-list-row > .backlog-item-source-state {
     grid-row: 2;
-    min-width: 0;
     margin-right: 0.375rem;
     font-size: var(--text-xs);
+    white-space: nowrap;
+  }
+
+  .backlog-list-row .backlog-item-project,
+  .backlog-list-row .backlog-item-project > .truncate,
+  .backlog-list-row > .backlog-item-source-state {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   /* The project leads line 2, as a line of text with its dot, not a chip. */
   .backlog-list-row .backlog-item-project {
     order: -1;
     justify-self: start;
+    /* Its slot, not the chip's desktop 160px, bounds it. */
+    max-width: 100%;
     height: auto;
     padding: 0;
     background: none;
