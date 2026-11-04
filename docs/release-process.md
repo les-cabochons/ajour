@@ -38,7 +38,29 @@ To start a future major series, change `VERSION` to the intended `X.0.0` value i
 
 Nightly and stable tags are reserved before packaging so reruns can recover without silently skipping a version; their GitHub releases are published only after both platform builds succeed. Changelog and stable-bump baselines use published, non-draft releases rather than reservation tags. If a stable tag is stranded on another commit, promotion stops and requires that pending reservation to be recovered or removed instead of silently advancing. Only the tag-planning and release jobs receive `contents: write`; packaging jobs run with read-only repository permissions and do not retain Git credentials. Repository Actions settings must allow the `GITHUB_TOKEN` to have read and write permissions.
 
-The current macOS build is not production-signed or notarized, and the Windows installer is not code-signed. Users may therefore see operating-system trust warnings until signing and notarization credentials are added. macOS automatic installation requires a consistent Developer ID signature and notarization; the update artifacts are ready, but macOS updates must remain a manual download until those credentials are configured. Windows background updates work with the unsigned NSIS build, subject to the same Windows trust warnings as a manual install.
+## macOS signing and notarization
+
+Both release workflows sign macOS x64 and arm64 builds with a Developer ID
+Application certificate and notarize them with Apple. Each app must pass
+signature and stapled-ticket verification before its artifacts are uploaded.
+Missing credentials fail the release rather than publishing an unsigned app.
+
+The repository requires these Actions secrets:
+
+- `CSC_LINK`: base64-encoded `.p12` containing the certificate and private key.
+- `CSC_KEY_PASSWORD`: the `.p12` password.
+- `APPLE_API_KEY_P8`: the notarization team API key's `.p8` contents.
+- `APPLE_API_KEY_ID`: the API key ID.
+- `APPLE_API_ISSUER`: the team's issuer ID.
+
+The macOS packaging step sets `AJOUR_MAC_RELEASE=1`, requires these credentials,
+and writes the API key to a restricted temporary file removed even after failure.
+Only macOS packaging receives signing secrets. Local builds omit this flag,
+keep ad hoc signing, skip notarization and offer manual updates.
+
+Install the first signed macOS release manually. Older ad hoc builds have no
+in-place updater enabled. Later signed releases offer Update and restart.
+The Windows installer remains unsigned and may show operating-system trust warnings.
 
 ## In-app release checks
 
@@ -47,15 +69,15 @@ nightly is an explicit opt-in for preview builds. The renderer sends that one
 validated preference to the desktop main process at startup; it does not receive
 general network, updater, filesystem, or shell access.
 
-On packaged Windows builds, the main process uses `electron-updater` to check
+On packaged Windows builds and signed macOS releases, the main process uses `electron-updater` to check
 the matching GitHub channel at startup, after a track change, when the user
 selects **Check again**, and every four hours while Ajour remains open.
 An available update waits for the user to select **Update and restart** and
 confirm the dialog. Ajour then downloads it, verifies it, shuts down the
 internal app API and restarts to install it. Cancelling the dialog leaves the
 update available without downloading it. Automatic downloads and installation
-on quit are disabled. macOS continues to use the renderer-safe release check
-and manual release link until its builds are signed and notarized.
+on quit are disabled. Unsigned local macOS builds use the renderer-safe release
+check and manual release link.
 
 Downloads are owned by the selected track rather than Electron's global
 install-on-quit handler. Switching tracks cancels an active download and starts

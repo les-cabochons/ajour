@@ -12,6 +12,23 @@ if (updateChannel !== "latest" && updateChannel !== "nightly") {
   throw new Error("AJOUR_UPDATE_CHANNEL must be latest or nightly.");
 }
 
+// Only release jobs opt in. Local builds remain ad hoc signed and update manually.
+const macSignedRelease = process.env.AJOUR_MAC_RELEASE === "1";
+if (macSignedRelease) {
+  const required = [
+    "CSC_LINK",
+    "CSC_KEY_PASSWORD",
+    "APPLE_API_KEY",
+    "APPLE_API_KEY_ID",
+    "APPLE_API_ISSUER",
+  ];
+  if (required.some((name) => !process.env[name]?.trim())) {
+    throw new Error(
+      "Signed macOS releases require signing and notarization credentials.",
+    );
+  }
+}
+
 const COMMIT = /^[0-9a-f]{40}$/;
 
 /**
@@ -44,6 +61,7 @@ module.exports = {
   // folder because the installer reuses the InstallLocation registry value.
   extraMetadata: {
     name: "ajour",
+    macSignedRelease,
     // main.cjs reads it into the launch context.
     ...(buildCommit ? { buildCommit } : {}),
   },
@@ -66,8 +84,8 @@ module.exports = {
   // imports. Same-user malware is out of scope, and runAsNode being on
   // already gives such a process equal power.
   //
-  // The macOS build is unsigned, so every flipped .app (x64 and arm64) is
-  // re-signed ad hoc or it won't start.
+  // Local macOS builds need a fresh ad hoc signature after flipping fuses.
+  // Release builds receive their Developer ID signature afterwards.
   electronFuses: {
     runAsNode: true,
     enableNodeOptionsEnvironmentVariable: false,
@@ -75,7 +93,7 @@ module.exports = {
     grantFileProtocolExtraPrivileges: false,
     onlyLoadAppFromAsar: true,
     enableEmbeddedAsarIntegrityValidation: true,
-    resetAdHocDarwinSignature: true,
+    resetAdHocDarwinSignature: !macSignedRelease,
   },
   directories: {
     output: "out/make",
@@ -137,6 +155,12 @@ module.exports = {
     deleteAppDataOnUninstall: false,
   },
   mac: {
+    forceCodeSigning: macSignedRelease,
+    hardenedRuntime: macSignedRelease,
+    type: "distribution",
+    notarize: macSignedRelease,
+    entitlements: path.resolve(desktopRoot, "entitlements.mac.plist"),
+    entitlementsInherit: path.resolve(desktopRoot, "entitlements.mac.plist"),
     target: [
       {
         target: "dmg",

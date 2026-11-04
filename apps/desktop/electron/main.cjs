@@ -243,7 +243,14 @@ let mainWindow = null;
 let gracefulQuitStarted = false;
 let pluginCatalogRefreshPromise = null;
 let pluginCatalogRefreshTimer = null;
-const automaticUpdatesEnabled = app.isPackaged && process.platform === "win32";
+// Unsigned local macOS builds cannot update to a Developer ID signed release.
+const macSignedRelease = /** @type {{ macSignedRelease?: boolean }} */ (
+  require("../package.json")
+).macSignedRelease;
+const automaticUpdatesEnabled =
+  app.isPackaged &&
+  (process.platform === "win32" ||
+    (process.platform === "darwin" && macSignedRelease === true));
 const appMenuModel = getAppMenuModel({
   platform: process.platform,
   developmentBuild: !app.isPackaged,
