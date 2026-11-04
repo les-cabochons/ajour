@@ -2783,8 +2783,10 @@ Then(
     await expect(navigation.getByRole("link", { name: "Backlog" })).toHaveText(
       "Backlog",
     );
-    // The inactive section shows only its icon.
-    await expect(navigation.getByRole("link", { name: "Time" })).toHaveText("");
+    // Every section shows its name, the inactive ones too.
+    await expect(navigation.getByRole("link", { name: "Time" })).toHaveText(
+      "Time",
+    );
   },
 );
 

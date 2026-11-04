@@ -2189,7 +2189,7 @@ When(
 When(
   "I write {string} as its description on its page",
   async ({ page }, note: string) => {
-    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    await openDescriptionEditor(page);
     const textarea = page.getByRole("textbox", {
       name: "Description",
       exact: true,
@@ -2300,7 +2300,7 @@ Then("a new time entry opens", async ({ page }) => {
 When(
   "I write {string} as its description and press Mod+Enter",
   async ({ page }, description: string) => {
-    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    await openDescriptionEditor(page);
     await page
       .getByRole("textbox", { name: "Description", exact: true })
       .fill(description);
@@ -2359,7 +2359,7 @@ When(
       .fill("9");
     await page.keyboard.press("Escape");
 
-    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    await openDescriptionEditor(page);
     await page
       .getByRole("textbox", { name: "Description", exact: true })
       .fill("Cancelled description");
@@ -2556,6 +2556,17 @@ Then(
   },
 );
 
+/**
+ * Opens the item page's description editor: Edit beside the heading, or Add
+ * description in place of an empty description.
+ */
+async function openDescriptionEditor(page: Page) {
+  await page
+    .getByRole("button", { name: /^(Edit|Add description)$/ })
+    .first()
+    .click();
+}
+
 /** The title and project chip boxes of a Backlog list row. */
 async function backlogRowBoxes(page: Page, title: string, project: string) {
   const row = page
@@ -2578,7 +2589,9 @@ Then(
       expect(boxes.chip.y).toBeGreaterThanOrEqual(
         boxes.title.y + boxes.title.height - 1,
       );
-      expect(Math.abs(boxes.chip.x - boxes.title.x)).toBeLessThan(2);
+      // Line 2 starts under the title; the priority may come first.
+      expect(boxes.chip.x).toBeGreaterThanOrEqual(boxes.title.x - 1);
+      expect(boxes.chip.x).toBeLessThan(boxes.title.x + 40);
     }).toPass();
   },
 );
