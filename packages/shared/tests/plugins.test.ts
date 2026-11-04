@@ -16,7 +16,12 @@ import {
   pluginRunsCode,
   pluginConnectionFormFields,
   connectionAgentAccess,
+  backlogImportCandidateInputSchema,
+  backlogSearchAssigneesRequestSchema,
+  backlogSearchAssigneesResultSchema,
 } from "../plugins";
+import { pluginApi4ManifestSchema } from "../plugin-api-4";
+import { azureDevOpsManifest } from "./fixtures/api-4-manifests";
 
 const validManifest = {
   id: "example_connector",
@@ -244,6 +249,88 @@ describe("plugin manifest", () => {
     ).toThrow();
     expect(() =>
       backlogSettleWriteResultSchema.parse({ priority: 25 }),
+    ).toThrow();
+  });
+});
+
+describe("assignees", () => {
+  const ana = {
+    id: "ana.silva@contoso.com",
+    displayName: "Ana Silva",
+    email: "ana.silva@contoso.com",
+  };
+
+  it("lets a backlog plugin declare that it writes assignees on plugin API 3 and 4", () => {
+    expect(
+      pluginManifestSchema.parse({
+        ...validManifest,
+        capabilities: { connector: { settle: true, assign: true } },
+      }).capabilities.connector,
+    ).toEqual({ settle: true, assign: true });
+
+    const api4 = azureDevOpsManifest();
+    expect(
+      pluginApi4ManifestSchema.parse({
+        ...api4,
+        capabilities: {
+          ...api4.capabilities,
+          connector: { settle: true, assign: true },
+        },
+      }).capabilities.connector?.assign,
+    ).toBe(true);
+  });
+
+  it("carries a synced item's assignee as a person with the plugin's own id", () => {
+    expect(
+      backlogImportCandidateInputSchema.parse({
+        source: "azure_devops",
+        connectionId: "contoso",
+        connectionLabel: "Contoso",
+        tenantLabel: "Contoso Entra",
+        sourceId: "contoso:platform:4821",
+        externalId: "4821",
+        title: "Fix login redirect",
+        workItemType: "Task",
+        depth: 0,
+        assignedTo: "Ana Silva",
+        assignee: ana,
+      }).assignee,
+    ).toEqual(ana);
+  });
+
+  it("writes an assignee alone, or clears it with null", () => {
+    expect(
+      backlogSettleWriteRequestSchema.parse({
+        sourceId: "42",
+        assignee: "ana.silva@contoso.com",
+      }),
+    ).toEqual({ sourceId: "42", assignee: "ana.silva@contoso.com" });
+    expect(
+      backlogSettleWriteRequestSchema.parse({ sourceId: "42", assignee: null }),
+    ).toEqual({ sourceId: "42", assignee: null });
+    expect(() =>
+      backlogSettleWriteRequestSchema.parse({ sourceId: "42" }),
+    ).toThrow(/state, a priority or an assignee/);
+  });
+
+  it("searches assignees with an optional query and returns at most 20 people", () => {
+    expect(
+      backlogSearchAssigneesRequestSchema.parse({
+        sourceId: "42",
+        query: "  ana ",
+        limit: 20,
+      }).query,
+    ).toBe("ana");
+    expect(
+      backlogSearchAssigneesResultSchema.parse({ people: [ana] }).people,
+    ).toEqual([ana]);
+    expect(() =>
+      backlogSearchAssigneesResultSchema.parse({
+        people: Array.from({ length: 21 }, (_, index) => ({
+          id: `person-${index}`,
+          displayName: `Person ${index}`,
+        })),
+      }),
     ).toThrow();
   });
 });

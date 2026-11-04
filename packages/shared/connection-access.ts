@@ -78,10 +78,10 @@ const AZURE_DEVOPS_API_3_ACCESS: readonly ConnectionAccessChoice[] = [
     id: "peopleSearch",
     label: "Search people across the organisation",
     description:
-      "Suggest anyone in the organisation for @mentions, not only the people on your items.",
+      "Suggest anyone in the organisation for @mentions and assignees, not only the people on your items.",
     tokenScope: "Identity (Read)",
     always: false,
-    operations: ["searchItemPeople"],
+    operations: ["searchItemPeople", "searchAssignees"],
   },
 ];
 
@@ -116,14 +116,23 @@ export function accessChoiceOfOperation(
   return choices.find((choice) => choice.operations.includes(operation));
 }
 
+/** The people searches whose empty query reading the backlog covers. */
+const PEOPLE_SEARCHES: readonly string[] = [
+  "searchItemPeople",
+  "searchAssignees",
+];
+
 /**
  * Whether the call needs the choice of its operation. A people search with
- * no query, the bare @, returns the item's own people, such as its assignee
- * and commenters (the plugin contract asks no more of it): reading the
- * backlog covers that. Only a typed query looks the organisation up.
+ * no query, the bare @ or the assignee list before a name is typed, returns
+ * the item's own people, such as its assignee and commenters (the plugin
+ * contract asks no more of it): reading the backlog covers that. Only a typed
+ * query looks the organisation up.
  */
 function needsItsChoice(operation: string, request: unknown) {
-  if (operation !== "searchItemPeople" || request === undefined) return true;
+  if (!PEOPLE_SEARCHES.includes(operation) || request === undefined) {
+    return true;
+  }
   const query = (request as { query?: unknown } | null)?.query;
   return typeof query !== "string" || query.trim() !== "";
 }

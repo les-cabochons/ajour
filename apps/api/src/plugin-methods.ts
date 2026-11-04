@@ -12,6 +12,7 @@ export type PluginMethod =
   | "syncConnection"
   | "listSettleStates"
   | "writeSettle"
+  | "searchAssignees"
   | "readDescription"
   | "writeDescription"
   | CodeHostOperation
@@ -49,6 +50,7 @@ const PLUGIN_METHOD_ARGUMENTS: Record<PluginMethod, ArgumentNames> = {
   syncConnection: ["connection", "workItems", "syncOptions"],
   listSettleStates: CONNECTION_AND_REQUEST,
   writeSettle: CONNECTION_AND_REQUEST,
+  searchAssignees: CONNECTION_AND_REQUEST,
   readDescription: CONNECTION_AND_REQUEST,
   writeDescription: CONNECTION_AND_REQUEST,
   ...connectionOperations(codeHostOperations),

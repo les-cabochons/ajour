@@ -55,6 +55,8 @@ import {
   backlogSettleStatesResultSchema,
   backlogSettleWriteRequestSchema,
   backlogSettleWriteResultSchema,
+  backlogSearchAssigneesRequestSchema,
+  backlogSearchAssigneesResultSchema,
   backlogReadDescriptionRequestSchema,
   backlogReadDescriptionResultSchema,
   backlogWriteDescriptionRequestSchema,
@@ -70,6 +72,8 @@ import {
   type BacklogSettleStatesResult,
   type BacklogSettleWriteRequest,
   type BacklogSettleWriteResult,
+  type BacklogSearchAssigneesRequest,
+  type BacklogSearchAssigneesResult,
   type BacklogReadDescriptionRequest,
   type BacklogReadDescriptionResult,
   type BacklogWriteDescriptionRequest,
@@ -243,6 +247,7 @@ export const PLUGIN_OPERATION_EVENTS = {
   syncConnection: "backlog.sync",
   listSettleStates: "source_state.list",
   writeSettle: "backlog.write_source",
+  searchAssignees: "assignee.search",
   readDescription: "description.read",
   writeDescription: "description.write",
   ...CODE_HOST_EVENTS,
@@ -269,6 +274,7 @@ export function capabilityOfMethod(
     method === "syncConnection" ||
     method === "listSettleStates" ||
     method === "writeSettle" ||
+    method === "searchAssignees" ||
     method === "readDescription" ||
     method === "writeDescription" ||
     method in backlogCommentOperations
@@ -319,6 +325,11 @@ function requireFeature(
 const requireSettle = requireFeature(
   (manifest) => manifest.capabilities.connector?.settle,
   "does not support settling backlog items",
+);
+
+const requireAssign = requireFeature(
+  (manifest) => manifest.capabilities.connector?.assign,
+  "does not support assignees",
 );
 
 function comparePlugins(left: PluginManifest, right: PluginManifest) {
@@ -871,6 +882,25 @@ export class PluginManager {
       backlogSettleWriteResultSchema,
       admit,
       requireSettle,
+    );
+  }
+
+  async searchAssignees(
+    pluginId: string,
+    connection: PluginInvocationConnection,
+    request: BacklogSearchAssigneesRequest,
+    admit?: PluginAdmission,
+  ): Promise<BacklogSearchAssigneesResult> {
+    return await this.invokePlugin(
+      pluginId,
+      "searchAssignees",
+      {
+        connection: pluginInvocationConnectionSchema.parse(connection),
+        request: backlogSearchAssigneesRequestSchema.parse(request),
+      },
+      backlogSearchAssigneesResultSchema,
+      admit,
+      requireAssign,
     );
   }
 

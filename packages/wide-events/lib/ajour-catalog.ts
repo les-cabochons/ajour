@@ -847,9 +847,9 @@ export const catalog = defineCatalog({
       },
     },
     /**
-     * A settle's state or priority, written to the source after the Undo
-     * window. The renderer's job starts its own trace and joins the settle
-     * that caused it by the settle ID (#310).
+     * A settle's state, priority or assignee, written to the source after the
+     * Undo window. The renderer's job starts its own trace and joins the
+     * settle that caused it by the settle ID (#310).
      */
     "backlog.write_source": {
       kinds: ["job", "request", "plugin_operation"],
@@ -861,6 +861,8 @@ export const catalog = defineCatalog({
         source_write: {
           state_sent: operational<boolean>(),
           priority_sent: operational<boolean>(),
+          /** Whether the write assigns or unassigns the item. Never who. */
+          assignee_sent: operational<boolean>(),
           /** In the renderer: from the end of the Undo window until the send. */
           delay_ms: operational<number>(),
           /** In the renderer: `deferred` waits for the Undo window, `superseded` for a newer write. */
@@ -886,6 +888,20 @@ export const catalog = defineCatalog({
         description: {
           length: operational<number>(),
           allowed_loss_count: operational<number>(),
+        },
+      },
+    },
+    /** The people a settle can assign an item to. Never their names. */
+    "assignee.search": {
+      kinds: ["command", "request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: {
+        ...requestFields,
+        ...pluginOperationFields,
+        assignee: {
+          /** Whether a name was typed, which may search the organisation. */
+          queried: operational<boolean>(),
+          result_count: operational<number>(),
         },
       },
     },

@@ -569,7 +569,11 @@ describe("route events", () => {
     expect(writes).toEqual([
       expect.objectContaining({
         outcome: "ok",
-        source_write: { state_sent: true, priority_sent: false },
+        source_write: {
+          state_sent: true,
+          priority_sent: false,
+          assignee_sent: false,
+        },
       }),
       expect.objectContaining({
         outcome: "error",
