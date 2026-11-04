@@ -8,7 +8,7 @@ import React, {
 import {
   RiAddLine as Plus,
   RiCheckLine as Check,
-  RiPlayLine as Play,
+  RiPlayFill as Play,
   RiStopFill as Stop,
 } from "@remixicon/react";
 import {
@@ -121,6 +121,21 @@ function isEntryDragBlockedTarget(target: EventTarget | null) {
         ),
       )
     : false;
+}
+
+/**
+ * Whether a row has a note and a task, as attributes its CSS reads: the row's
+ * layout depends on them, and an attribute costs nothing when a row is added,
+ * where a `:has()` rule would make the browser recheck the list.
+ */
+function entryMainShape(
+  taskName: string | undefined,
+  note: string | undefined,
+) {
+  return {
+    "data-note": note ? "" : undefined,
+    "data-no-task": taskName ? undefined : "",
+  };
 }
 
 /** The one-line body of a row: dot, project, task and note. Also the drag preview. */
@@ -734,7 +749,10 @@ export function TimerPanel({
                     />
                   }
                 >
-                  <td className="time-entry-main">
+                  <td
+                    className="time-entry-main"
+                    {...entryMainShape(summary.taskName, entry.note)}
+                  >
                     <EntryMain {...summary} note={entry.note} />
                   </td>
                   <td className="time-entry-trailing">
@@ -748,7 +766,8 @@ export function TimerPanel({
                             <Button
                               variant="ghost"
                               size="icon-sm"
-                              className="text-muted-foreground"
+                              // The running row's Stop is the one strong action in the list.
+                              className="text-foreground"
                               onClick={(event) => {
                                 event.stopPropagation();
                                 entryActions.runAction(rowTarget, "stop");
@@ -850,7 +869,13 @@ export function TimerPanel({
                 : getSharedTableDragOverlayTransform(entryDragState),
           }}
         >
-          <div className="time-entry-main">
+          <div
+            className="time-entry-main"
+            {...entryMainShape(
+              describeEntry(draggedEntry).taskName,
+              draggedEntry.note,
+            )}
+          >
             <EntryMain
               {...describeEntry(draggedEntry)}
               note={draggedEntry.note}

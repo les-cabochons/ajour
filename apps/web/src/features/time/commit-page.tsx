@@ -1,13 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  RiArrowLeftLine as ArrowLeft,
   RiArrowRightSLine as ChevronIcon,
   RiCheckLine as Check,
   RiErrorWarningLine as Warning,
   RiFileCopyLine as Copy,
-  RiLockLine as Lock,
   RiLockUnlockLine as Unlock,
-  RiTimeLine as Ahead,
 } from "@remixicon/react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { DisabledReason } from "@/components/disabled-reason";
@@ -75,6 +72,7 @@ import {
   CommitChangeStat,
   formatShortDay,
 } from "@/features/time/commit-changes";
+import { formatWeekRange } from "@/features/time/time-page-header";
 import { WeekLockChip } from "@/features/time/week-lock";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import {
@@ -106,13 +104,6 @@ function dateAtNoon(localDate: string) {
 function formatLongDay(localDate: string) {
   return new Intl.DateTimeFormat("en-US", {
     weekday: "long",
-    month: "short",
-    day: "numeric",
-  }).format(dateAtNoon(localDate));
-}
-
-function formatMonthDay(localDate: string) {
-  return new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
   }).format(dateAtNoon(localDate));
@@ -160,6 +151,60 @@ function warningKey(warning: SubmitWarning) {
 /** A warning's duration: the mono Value, in the list's muted tone. */
 function WarningDuration({ ms }: { ms: number }) {
   return <Value tone="muted">{formatClockDuration(ms)}</Value>;
+}
+
+function lowerFirst(text: string) {
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
+function countUnderTargetDays(warnings: SubmitWarning[]) {
+  return warnings.filter((warning) => warning.kind === "day-under-target")
+    .length;
+}
+
+/**
+ * Two or more days under target share one line, "3 days under target: 6:00
+ * short", that opens the day-by-day amounts, so the summary leads with one
+ * warning instead of a stack of alike ones. One day keeps its own line.
+ */
+function UnderTargetDays({ warnings }: { warnings: SubmitWarning[] }) {
+  const [open, setOpen] = useState(false);
+  const days = warnings.filter(
+    (warning) => warning.kind === "day-under-target",
+  );
+  if (days.length < 2) return null;
+  const shortMs = days.reduce(
+    (sum, day) => sum + Math.max(0, day.targetMs - day.loggedMs),
+    0,
+  );
+  return (
+    <li className="submit-warning-group">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls="commit-under-target-days"
+        className="submit-warning-toggle"
+        onClick={() => setOpen(!open)}
+      >
+        <Warning aria-hidden />
+        <span>
+          {days.length} days under target: <WarningDuration ms={shortMs} />{" "}
+          short
+        </span>
+        <ChevronIcon
+          aria-hidden="true"
+          className={cn("submit-warning-chevron", open && "rotate-90")}
+        />
+      </button>
+      {open ? (
+        <ul id="commit-under-target-days" className="submit-warning-days">
+          {days.map((day) => (
+            <li key={warningKey(day)}>{formatWarning(day)}</li>
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  );
 }
 
 function formatWarning(warning: SubmitWarning) {
@@ -252,7 +297,7 @@ function CopyValue({
 }
 
 /**
- * One line: the project and task as one copy button ("Project / Task", copied
+ * One line: the project and task as one copy button ("Project · Task", copied
  * as "Project Task" for the timesheet's search box), then the hours and the
  * comments. `names` comes from `describeLineNames`.
  */
@@ -330,9 +375,13 @@ export function CommitPage({
   const weekDates = useMemo(() => getIsoWeekDates(date), [date]);
   // Agents read the unchecked changes under the same Monday key.
   const weekOf = weekDates[0]!;
+  const runningThisWeek = state.timers.some((timer) =>
+    weekDates.includes(timer.localDate),
+  );
   const [groupBy, setGroupBy] = useState<SubmitGroupBy>("day-task");
   // Saved per device, so a folded list stays folded on the next visit.
   const changesOpen = useCommitChangesSection() === "expanded";
+  const [linesOpen, setLinesOpen] = useState(true);
   // Undefined until loaded, so a saved plugin choice waits instead of
   // showing Ajour's names first.
   const [plugins, setPlugins] = useState<PropertyPlugins>();
@@ -395,6 +444,10 @@ export function CommitPage({
         weekDates,
       }),
     [groupBy, projects, weekDates, weekEntries],
+  );
+  const lineCount = sections.reduce(
+    (count, section) => count + section.lines.length,
+    0,
   );
   const projectMap = useMemo(
     () => new Map(projects.map((project) => [project._id, project])),
@@ -499,31 +552,108 @@ export function CommitPage({
     });
   }
 
-  const title = `Commit week of ${formatMonthDay(weekDates[0]!)} to ${formatMonthDay(weekDates[6]!)}`;
+  const daysAhead = summary.warnings.find(
+    (warning) => warning.kind === "days-ahead",
+  );
+  const title = `Commit week of ${formatWeekRange(weekDates)}`;
 
   return (
     <div className="commit-page">
-      <PageHeader title={title}>
-        <TooltipButton
-          label={`Back to ${returnView === "week" ? "Week" : "Day"}`}
-          render={
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="order-first -ml-1 text-muted-foreground"
-              onClick={goBack}
-            />
-          }
-        >
-          <ArrowLeft />
-        </TooltipButton>
-      </PageHeader>
+      {/* The week's actions are page actions, after the title, so they stay
+          in view however long the week (council round 5). */}
+      <PageHeader
+        // Back the way detail pages go: the view it came from, as a crumb
+        // (council round 21).
+        breadcrumb={[
+          {
+            label: returnView === "week" ? "Week" : "Day",
+            to: "/time/$date",
+            params: { date },
+            onClick: (event) => {
+              event.preventDefault();
+              goBack();
+            },
+          },
+          { label: title, heading: true },
+        ]}
+        actions={
+          <div
+            role="group"
+            aria-label="Commit actions"
+            className="flex items-center gap-2 empty:hidden"
+          >
+            {lockedWeek ? (
+              <Button variant="outline" onClick={reopen}>
+                <Unlock data-icon="inline-start" />
+                Reopen week
+              </Button>
+            ) : (
+              <>
+                <AgentTaskButtons
+                  weekOf={weekOf}
+                  placement="commit-week"
+                  onStartingChange={setAgentStarting}
+                />
+                {/* What each action does is its tooltip, not prose above the
+                    list (council round 11). */}
+                {changes.length > 0 ? (
+                  <TooltipButton
+                    label="Records the checked changes as sent"
+                    aria-label="Mark as committed"
+                    render={
+                      <Button
+                        disabled={checkedIds.length === 0}
+                        onClick={markCommitted}
+                      />
+                    }
+                  >
+                    Mark as committed
+                  </TooltipButton>
+                ) : null}
+                {submitTasks === "present" ? (
+                  <AgentTaskButtons
+                    weekOf={weekOf}
+                    placement="submit-week"
+                    disabledReason={submitReason}
+                    // Primary once nothing is left to commit, like Submit week.
+                    primary={changes.length === 0}
+                    onStartingChange={setAgentStarting}
+                  />
+                ) : null}
+                <DisabledReason label="Submit week" reason={manualSubmitReason}>
+                  <TooltipButton
+                    label="Locks the week once it is in your timesheet"
+                    aria-label="Submit week"
+                    render={
+                      <Button
+                        // Keep manual submission available; the agent is
+                        // primary when it provides the ready week's next step.
+                        variant={
+                          changes.length > 0 || submitTasks === "present"
+                            ? "outline"
+                            : "default"
+                        }
+                        disabled={manualSubmitReason !== undefined}
+                        onClick={requestSubmit}
+                      />
+                    }
+                  >
+                    {/* No padlock: the button locks the week, it is not locked
+                        (council round 30). */}
+                    Submit week
+                  </TooltipButton>
+                </DisabledReason>
+              </>
+            )}
+          </div>
+        }
+      />
 
       <section aria-label="Week summary" className="submit-summary">
         <div className="submit-summary-total">
           <Value size="figure">{formatClockDuration(summary.totalMs)}</Value>
           <span className="text-sm text-muted-foreground">
-            of {formatClockDuration(summary.targetMs)} this week
+            logged of {formatClockDuration(summary.targetMs)} target
           </span>
         </div>
         <div
@@ -536,37 +666,53 @@ export function CommitPage({
         >
           <div style={{ width: `${progress}%` }} />
         </div>
-        {summary.warnings.length > 0 ? (
+        {summary.warnings.length > 0 || runningThisWeek ? (
           <ul className="submit-warnings">
-            {summary.warnings.map((warning) => (
-              <li
-                key={warningKey(warning)}
-                className={cn(warning.kind === "days-ahead" && "is-calm")}
-              >
-                {warning.kind === "days-ahead" ? (
-                  <Ahead aria-hidden />
-                ) : (
+            <UnderTargetDays warnings={summary.warnings} />
+            {summary.warnings
+              .filter(
+                (warning) =>
+                  warning.kind !== "days-ahead" &&
+                  (warning.kind !== "day-under-target" ||
+                    countUnderTargetDays(summary.warnings) < 2),
+              )
+              .map((warning) => (
+                <li key={warningKey(warning)}>
                   <Warning aria-hidden />
-                )}
-                <span>{formatWarning(warning)}</span>
-                {warning.kind === "waiting-task" ? (
-                  <Link
-                    to="/projects/$projectId"
-                    params={{ projectId: warning.projectId }}
-                    search={
-                      {
-                        action: "edit",
-                        target: warning.taskId,
-                        parent: warning.projectId,
-                      } as never
-                    }
-                    className="submit-warning-action"
-                  >
-                    Edit task
-                  </Link>
-                ) : null}
+                  <span>{formatWarning(warning)}</span>
+                  {warning.kind === "waiting-task" ? (
+                    <Link
+                      to="/projects/$projectId"
+                      params={{ projectId: warning.projectId }}
+                      search={
+                        {
+                          action: "edit",
+                          target: warning.taskId,
+                          parent: warning.projectId,
+                        } as never
+                      }
+                      className="submit-warning-action"
+                    >
+                      Edit task
+                    </Link>
+                  ) : null}
+                </li>
+              ))}
+            {/* Information, not warnings: no icon (council round 5). The
+                Time view counts the running entry; this page counts what is
+                saved, so say so (round 4). */}
+            {daysAhead ? (
+              <li className="is-calm">
+                <span>{formatWarning(daysAhead)}</span>
               </li>
-            ))}
+            ) : null}
+            {runningThisWeek ? (
+              <li className="is-calm">
+                <span>
+                  The running entry isn&apos;t counted until it stops.
+                </span>
+              </li>
+            ) : null}
           </ul>
         ) : null}
         {lockedWeek ? (
@@ -611,6 +757,20 @@ export function CommitPage({
             Changes
           </button>
         </SectionHeading>
+        {!lockedWeek && manualSubmitReason ? (
+          // What Submit week waits for, without a hover (council round 6).
+          <p className="commit-actions-caption">
+            {/* Every prerequisite in one sentence, so the sequence shows
+                before it starts (council round 19). */}
+            {manualSubmitReason === "Commit your changes first"
+              ? runningThisWeek
+                ? "Commit your changes and stop the running entry before submitting."
+                : "Commit changes before submitting."
+              : manualSubmitReason === "Stop the running entry first"
+                ? "Stop the running entry before submitting."
+                : `Submit week waits: ${lowerFirst(manualSubmitReason)}${/[.!?]$/.test(manualSubmitReason) ? "" : "."}`}
+          </p>
+        ) : null}
         {changesOpen ? (
           <div id="commit-changes-content">
             <CommitChangeList
@@ -633,74 +793,41 @@ export function CommitPage({
         ) : null}
       </section>
 
-      <div
-        role="group"
-        aria-label="Commit actions"
-        className="flex flex-wrap items-center gap-2 empty:hidden"
-      >
-        {lockedWeek ? (
-          <Button variant="outline" onClick={reopen}>
-            <Unlock data-icon="inline-start" />
-            Reopen week
-          </Button>
-        ) : (
-          <>
-            <AgentTaskButtons
-              weekOf={weekOf}
-              placement="commit-week"
-              onStartingChange={setAgentStarting}
-            />
-            {changes.length > 0 ? (
-              <Button
-                disabled={checkedIds.length === 0}
-                onClick={markCommitted}
-              >
-                Mark as committed
-              </Button>
-            ) : null}
-            {submitTasks === "present" ? (
-              <AgentTaskButtons
-                weekOf={weekOf}
-                placement="submit-week"
-                disabledReason={submitReason}
-                // Primary once nothing is left to commit, like Submit week.
-                primary={changes.length === 0}
-                onStartingChange={setAgentStarting}
-              />
-            ) : null}
-            <DisabledReason label="Submit week" reason={manualSubmitReason}>
-              <Button
-                // Keep manual submission available; the agent is primary
-                // when it provides the ready week's next step.
-                variant={
-                  changes.length > 0 || submitTasks === "present"
-                    ? "outline"
-                    : "default"
-                }
-                disabled={manualSubmitReason !== undefined}
-                onClick={requestSubmit}
-              >
-                <Lock data-icon="inline-start" />
-                Submit week
-              </Button>
-            </DisabledReason>
-          </>
-        )}
-      </div>
-
       <section
         aria-labelledby="commit-lines-heading"
         className="flex flex-col gap-3"
       >
-        <SectionHeading id="commit-lines-heading">Lines</SectionHeading>
-        {weekEntries.length === 0 ? (
+        {/* A disclosure with a count, like Changes (council round 11). */}
+        <SectionHeading
+          id="commit-lines-heading"
+          trailing={
+            linesOpen && weekEntries.length > 0
+              ? `${lineCount} ${lineCount === 1 ? "line" : "lines"}`
+              : undefined
+          }
+        >
+          <button
+            type="button"
+            aria-expanded={linesOpen}
+            aria-controls="commit-lines-content"
+            className="-ml-1 flex items-center gap-1 text-left hover:text-foreground"
+            onClick={() => setLinesOpen(!linesOpen)}
+          >
+            <ChevronIcon
+              aria-hidden="true"
+              className={cn("size-4", linesOpen && "rotate-90")}
+            />
+            Lines
+          </button>
+        </SectionHeading>
+        {!linesOpen ? null : weekEntries.length === 0 ? (
           <Empty align="start" className="px-0">
             <EmptyHeader>
               <EmptyTitle>No entries this week.</EmptyTitle>
             </EmptyHeader>
           </Empty>
         ) : (
-          <>
+          <div id="commit-lines-content" className="flex flex-col gap-3">
             <div className="submit-toolbar">
               <div className="flex items-center gap-2">
                 <span
@@ -759,6 +886,11 @@ export function CommitPage({
                   </ToggleGroup>
                 </div>
               ) : null}
+              {/* Says the clipboard format before it is pasted elsewhere
+                  (council round 12). */}
+              <span className="submit-toolbar-label ml-auto">
+                Click a value to copy it. Hours copy as decimals.
+              </span>
             </div>
 
             <div>
@@ -800,7 +932,7 @@ export function CommitPage({
                 </section>
               ))}
             </div>
-          </>
+          </div>
         )}
       </section>
 

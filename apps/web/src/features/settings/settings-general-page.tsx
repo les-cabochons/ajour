@@ -19,11 +19,15 @@ import {
 } from "@/lib/sidebar-layout";
 import type { ThemeMode, WeeklyCapacityTargets } from "@/domain/local-state";
 import {
+  formatClockDuration,
   formatDurationHoursInput,
   parseHoursInput,
 } from "@/domain/time/duration";
-import { getPaceTolerancePercent } from "@/domain/time/week-pace";
-import { cn } from "@/lib/utils";
+import {
+  computePaceRange,
+  getPaceTolerancePercent,
+} from "@/domain/time/week-pace";
+import { cn, getIsoWeekDates, todayIsoDate } from "@/lib/utils";
 import { useUserPreferences } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import { getThemeModeLabel, useResolvedTheme } from "@/lib/use-theme";
@@ -31,22 +35,18 @@ import { getThemeModeLabel, useResolvedTheme } from "@/lib/use-theme";
 const THEME_OPTIONS: Array<{
   value: ThemeMode;
   icon: typeof Sun;
-  description: string;
 }> = [
   {
     value: "system",
     icon: Monitor,
-    description: "Follows your operating system preference",
   },
   {
     value: "light",
     icon: Sun,
-    description: "Always use light appearance",
   },
   {
     value: "dark",
     icon: Moon,
-    description: "Always use dark appearance",
   },
 ];
 
@@ -107,18 +107,25 @@ export function SettingsGeneralPage() {
   const sidebarLayout = useSidebarLayout();
   const preferences = useUserPreferences();
   const resolvedTheme = useResolvedTheme();
+  const today = todayIsoDate();
+  const paceRange = computePaceRange({
+    weekDates: getIsoWeekDates(today),
+    today,
+    capacityTargets: preferences.weeklyCapacityTargets,
+    tolerancePercent: getPaceTolerancePercent(preferences),
+  });
   const handleThemeChange = (mode: ThemeMode) => {
     localStore.setUserPreferences({ themeMode: mode });
   };
 
   return (
-    <div className="settings-sections">
+    // Labels and controls within one 672px measure (council round 6).
+    <div className="settings-sections settings-measure">
       <section className="settings-section">
+        {/* The heading and the control say it all: no introduction, and a
+            description only where it adds the resolved mode (council round
+            10). */}
         <h2 className="settings-section-title">Appearance</h2>
-        <p className="settings-section-desc">
-          Customize how the app looks. Choose between light and dark modes, or
-          let it follow your system settings.
-        </p>
 
         <AppPanel>
           <SettingRow
@@ -126,9 +133,7 @@ export function SettingsGeneralPage() {
             description={
               preferences.themeMode === "system"
                 ? `Currently using ${resolvedTheme} mode based on system preference.`
-                : THEME_OPTIONS.find(
-                    (option) => option.value === preferences.themeMode,
-                  )?.description
+                : undefined
             }
           >
             <ToggleGroup
@@ -179,7 +184,7 @@ export function SettingsGeneralPage() {
           </SettingRow>
           <SettingRow
             label="Density"
-            description="Comfortable rows show the project and remaining estimate. Compact rows are one line, in a narrower sidebar."
+            description="Three lines, or one line in a narrower sidebar."
           >
             <ToggleGroup
               aria-label="Sidebar density"
@@ -206,7 +211,7 @@ export function SettingsGeneralPage() {
         </p>
 
         <AppPanel>
-          <div className="grid grid-cols-2 gap-3 pb-3 desktop:grid-cols-4 desktop:xl:grid-cols-7">
+          <div className="grid grid-cols-2 gap-3 pb-3 desktop:max-w-2xl desktop:grid-cols-4 desktop:xl:grid-cols-7">
             {CAPACITY_DAYS.map((day) => (
               <CapacityInput
                 key={day.key}
@@ -226,7 +231,7 @@ export function SettingsGeneralPage() {
           <SettingRow
             label="Over-capacity warning"
             labelFor="warn-over-capacity"
-            description="Show a compact warning on a day more than 50% over its target, or a week over its target."
+            description="Warn when a day exceeds 150% of its target or a week exceeds its target."
           >
             <Switch
               id="warn-over-capacity"
@@ -241,7 +246,7 @@ export function SettingsGeneralPage() {
           <SettingRow
             label="Hide non-working days"
             labelFor="hide-non-working-days"
-            description="Hide days with 0 hours of capacity in the Time day strip and Week layouts. Logged time still counts in weekly totals."
+            description="Hide zero-capacity days in Time. Their logged hours still count in weekly totals."
           >
             <Switch
               id="hide-non-working-days"
@@ -254,7 +259,7 @@ export function SettingsGeneralPage() {
           <SettingRow
             label="Under-target submit warning"
             labelFor="warn-under-capacity"
-            description="Ask before Submit week locks a week that is behind its targets."
+            description="Ask for confirmation before submitting a week below target."
           >
             <Switch
               id="warn-under-capacity"
@@ -269,28 +274,55 @@ export function SettingsGeneralPage() {
           <SettingRow
             label="Pace tolerance"
             labelFor="pace-tolerance"
-            description="How far, in percent, the week may run ahead of or behind its targets before Submit week or an agent asks you. Going over the week's target always asks."
+            description="Ask before submitting when the time logged is this far from the targets through today. Going over the week's target always asks."
           >
-            <Input
-              id="pace-tolerance"
-              type="number"
-              min={0}
-              max={100}
-              step={5}
-              className="w-20"
-              value={getPaceTolerancePercent(preferences)}
-              onChange={(event) => {
-                const value = Number(event.target.value);
-                if (Number.isFinite(value)) {
-                  localStore.setUserPreferences({
-                    paceTolerancePercent: Math.min(
-                      100,
-                      Math.max(0, Math.round(value)),
-                    ),
-                  });
-                }
-              }}
-            />
+            {/* The unit sits in the field, so the value reads alone
+                (council round 12); the range it allows today sits under it,
+                from the user's own targets (council round 21). */}
+            <div className="flex flex-col items-end gap-1">
+              <div className="relative w-20">
+                <Input
+                  id="pace-tolerance"
+                  aria-describedby={
+                    paceRange.targetMs ? "pace-range" : undefined
+                  }
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={5}
+                  className="w-20 pr-6"
+                  value={getPaceTolerancePercent(preferences)}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    if (Number.isFinite(value)) {
+                      localStore.setUserPreferences({
+                        paceTolerancePercent: Math.min(
+                          100,
+                          Math.max(0, Math.round(value)),
+                        ),
+                      });
+                    }
+                  }}
+                />
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-xs text-muted-foreground"
+                >
+                  %
+                </span>
+              </div>
+              {paceRange.targetMs ? (
+                <p
+                  id="pace-range"
+                  // Names the period, so the range never reads as today's
+                  // hours alone (council round 22).
+                  className="max-w-36 text-right text-xs text-[var(--text-secondary)] tabular-nums"
+                >
+                  Week through today: {formatClockDuration(paceRange.lowMs)}–
+                  {formatClockDuration(paceRange.highMs)}
+                </p>
+              ) : null}
+            </div>
           </SettingRow>
         </AppPanel>
       </section>

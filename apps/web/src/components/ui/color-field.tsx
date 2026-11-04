@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,12 +38,15 @@ export function ColorField({
   onChange,
   label = "Color",
   className,
+  trailing,
 }: {
   id?: string;
   value: string;
   onChange: (value: string) => void;
   label?: string;
   className?: string;
+  /** Drawn after the value, such as a picker chevron. */
+  trailing?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -73,6 +77,7 @@ export function ColorField({
           style={{ background: value }}
         />
         <span className="font-mono text-xs">{value}</span>
+        {trailing}
       </PopoverTrigger>
       <PopoverContent
         align="start"

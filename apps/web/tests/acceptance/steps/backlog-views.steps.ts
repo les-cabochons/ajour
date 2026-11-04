@@ -123,6 +123,53 @@ Then(
 When("I narrow the Backlog window", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
 });
+// Narrow rows have no "…", as Day rows have none: long press opens the menu
+// (council round 23).
+Then(
+  "the {string} row shows no actions button",
+  async ({ page }, title: string) => {
+    const row = page.getByRole("listitem").filter({ hasText: title });
+    await expect(row.locator(".backlog-item-start")).toBeVisible();
+    await expect(
+      row.getByRole("button", { name: `Actions for ${title}` }),
+    ).toBeHidden();
+  },
+);
+When(
+  "I long press the {string} row on a touch screen",
+  async ({ page }, title: string) => {
+    const row = page.getByRole("listitem").filter({ hasText: title });
+    const box = await row.locator(".backlog-item-title").boundingBox();
+    if (!box) throw new Error(`The ${title} row is not rendered`);
+    // Playwright has no long press, so the step sends raw touch events.
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Emulation.setTouchEmulationEnabled", {
+      enabled: true,
+      maxTouchPoints: 1,
+    });
+    const point = { x: box.x + 8, y: box.y + box.height / 2 };
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [point],
+    });
+    // Base UI opens the menu after 500ms of holding still.
+    await expect(page.getByRole("menu")).toBeVisible();
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+  },
+);
+Then("the Backlog item's action menu is open", async ({ page }) => {
+  const menu = page.getByRole("menu");
+  await expect(menu).toBeVisible();
+  await expect(
+    menu.getByRole("menuitem", { name: /^Start entry/ }),
+  ).toBeVisible();
+  // Releasing the long press neither opens the item nor starts a drag.
+  await expect(page).toHaveURL(/\/backlog$/);
+  await expect(page.locator(".backlog-move-preview")).toHaveCount(0);
+});
 When("I widen the Backlog window", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
 });
@@ -181,13 +228,13 @@ Then(
     const row = otherSidebarRow(page);
     const stateLine = row.getByText(state, { exact: true });
     await expect(stateLine).toBeVisible();
-    // The state tells rows apart, so it reads in the secondary color.
-    const secondary = await row.evaluate(() =>
+    // The third line is faint, as in T3 Code's thread list (council round 5).
+    const tertiary = await row.evaluate(() =>
       getComputedStyle(document.documentElement)
-        .getPropertyValue("--text-secondary")
+        .getPropertyValue("--text-tertiary")
         .trim(),
     );
-    await expect(stateLine).toHaveCSS("color", secondary);
+    await expect(stateLine).toHaveCSS("color", tertiary);
   },
 );
 When("I press S on the other item on the Backlog page", async ({ page }) => {
@@ -248,11 +295,13 @@ function subitemSidebarRow(page: Page) {
     .locator('[data-backlog-item-id="child"]');
 }
 Then(
-  "the subitem's sidebar row does not show its parent's title",
+  "the subitem's sidebar row names its parent on its faint line",
   async ({ page }) => {
     const row = subitemSidebarRow(page);
     await expect(row).toContainText("Backlog subitem");
-    await expect(row).not.toContainText("Backlog parent");
+    // The parent's name, not a bare arrow, says what the link opens
+    // (council round 12).
+    await expect(row).toContainText("Backlog parent");
   },
 );
 When("I open the parent from the subitem's sidebar arrow", async ({ page }) => {
@@ -677,10 +726,10 @@ async function inspectBacklogStart(
           .getByRole("button", { name: "Open page", exact: true })
           .click();
       }
-      // The item page's actions sit in the top bar, beside its breadcrumb.
+      // The item page's actions sit beside its title.
       // It has no "…" menu, so its Start entry or Stop button is the check.
       await expect(
-        page.locator(".ajour-page-header-slot").getByRole("button", {
+        page.getByRole("group", { name: "Item actions" }).getByRole("button", {
           name: running ? "Stop" : "Start entry",
           exact: true,
         }),
@@ -2189,7 +2238,7 @@ When(
 When(
   "I write {string} as its description on its page",
   async ({ page }, note: string) => {
-    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    await openDescriptionEditor(page);
     const textarea = page.getByRole("textbox", {
       name: "Description",
       exact: true,
@@ -2255,9 +2304,9 @@ Then(
   },
 );
 Then(
-  "the item page's top bar has Start entry, Snooze and Settle and no New entry button",
+  "the item page's actions have Start entry, Snooze and Settle and no New entry button",
   async ({ page }) => {
-    const bar = page.locator(".ajour-page-header-slot");
+    const bar = page.getByRole("group", { name: "Item actions" });
     for (const name of ["Start entry", "Snooze", "Settle"]) {
       await expect(
         bar.getByRole("button", { name, exact: true }),
@@ -2270,7 +2319,7 @@ Then(
 );
 When("I open the other ways to log time", async ({ page }) => {
   await page
-    .locator(".ajour-page-header-slot")
+    .getByRole("group", { name: "Item actions" })
     .getByRole("button", { name: "Other ways to log time" })
     .click();
 });
@@ -2300,7 +2349,7 @@ Then("a new time entry opens", async ({ page }) => {
 When(
   "I write {string} as its description and press Mod+Enter",
   async ({ page }, description: string) => {
-    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    await openDescriptionEditor(page);
     await page
       .getByRole("textbox", { name: "Description", exact: true })
       .fill(description);
@@ -2359,7 +2408,7 @@ When(
       .fill("9");
     await page.keyboard.press("Escape");
 
-    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    await openDescriptionEditor(page);
     await page
       .getByRole("textbox", { name: "Description", exact: true })
       .fill("Cancelled description");
@@ -2409,7 +2458,7 @@ Then(
   async ({ page }) => {
     await expect(
       page
-        .locator(".ajour-page-header-slot")
+        .getByRole("group", { name: "Item actions" })
         .getByRole("button", { name: "Restore", exact: true }),
     ).toBeVisible();
     const { workItems } = await readBacklogState(page);
@@ -2428,14 +2477,16 @@ function sideCard(page: Page, name: "Subitems" | "Time entries") {
   };
 }
 Then(
-  "the Subitems and Time entries cards are closed on their summary",
+  "the short Subitems list shows open and Time entries is closed on its summary",
   async ({ page }) => {
+    // One to three subitems show open until the user chooses (council
+    // round 13).
     const subitems = sideCard(page, "Subitems");
-    await expect(subitems.toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(subitems.toggle).toHaveAttribute("aria-expanded", "true");
     await expect(subitems.toggle).toContainText("0 of 1 done");
     await expect(
       subitems.card.getByRole("link", { name: "Backlog subitem" }),
-    ).toHaveCount(0);
+    ).toBeVisible();
     const timeEntries = sideCard(page, "Time entries");
     await expect(timeEntries.toggle).toHaveAttribute("aria-expanded", "false");
     await expect(timeEntries.card).toContainText("No time logged yet.");
@@ -2445,10 +2496,9 @@ When("I press Escape in the subitem name field", async ({ page }) => {
   await page.getByRole("textbox", { name: "New subitem name" }).press("Escape");
 });
 Then(
-  "the Subitems card is closed on {string} and the page has the focus",
+  "the Subitems card shows {string} and the page has the focus",
   async ({ page }, progress: string) => {
     const subitems = sideCard(page, "Subitems");
-    await expect(subitems.toggle).toHaveAttribute("aria-expanded", "false");
     await expect(subitems.toggle).toContainText(progress);
     await expect(page.locator(".backlog-item-page")).toBeFocused();
     // Adding opened the card for the name field only; nothing was saved.
@@ -2501,18 +2551,33 @@ Then("the Subitems card is open", async ({ page }) => {
 When("I open the Subitems card", async ({ page }) => {
   await sideCard(page, "Subitems").toggle.click();
 });
+When("I close the Subitems card", async ({ page }) => {
+  const { toggle } = sideCard(page, "Subitems");
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+});
+Given("I closed the Subitems card on an earlier visit", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "ajour.backlog-item-cards",
+      JSON.stringify({ subitemsOpen: false, timeEntriesOpen: false }),
+    );
+  });
+});
 When("I reload the item page", async ({ page }) => {
   await page.reload();
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 });
 Then(
-  "the Subitems card is still open and Time entries is still closed",
+  "the Subitems card is still closed and Time entries is still closed",
   async ({ page }) => {
+    // The user's choice outlasts the short-list default.
     const subitems = sideCard(page, "Subitems");
-    await expect(subitems.toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(subitems.toggle).toHaveAttribute("aria-expanded", "false");
     await expect(
       subitems.card.getByRole("link", { name: "Folded subitem" }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     await expect(sideCard(page, "Time entries").toggle).toHaveAttribute(
       "aria-expanded",
       "false",
@@ -2522,7 +2587,7 @@ Then(
 When("I set When missing to Keep on its properties card", async ({ page }) => {
   await page
     .locator(".backlog-item-properties-card")
-    .getByRole("button", { name: "When missing from sync: Archive" })
+    .getByRole("button", { name: "Missing from sync: Archive automatically" })
     .click();
   await page.getByRole("menuitemradio", { name: "Keep" }).click();
 });
@@ -2537,7 +2602,7 @@ async function readKeepWhenMissing(page: Page) {
 Then("the Backlog parent is kept when missing from sync", async ({ page }) => {
   await expect.poll(() => readKeepWhenMissing(page)).toBe(true);
   await expect(
-    page.getByRole("button", { name: "When missing from sync: Keep" }),
+    page.getByRole("button", { name: "Missing from sync: Keep in backlog" }),
   ).toBeVisible();
 });
 When("I undo the When missing change", async ({ page }) => {
@@ -2551,16 +2616,30 @@ Then(
   async ({ page }) => {
     await expect.poll(() => readKeepWhenMissing(page)).toBe(false);
     await expect(
-      page.getByRole("button", { name: "When missing from sync: Archive" }),
+      page.getByRole("button", {
+        name: "Missing from sync: Archive automatically",
+      }),
     ).toBeVisible();
   },
 );
 
+/**
+ * Opens the item page's description editor: Edit beside the heading, or Add
+ * description in place of an empty description.
+ */
+async function openDescriptionEditor(page: Page) {
+  await page
+    .getByRole("button", { name: /^(Edit|Add description)$/ })
+    .first()
+    .click();
+}
+
 /** The title and project chip boxes of a Backlog list row. */
 async function backlogRowBoxes(page: Page, title: string, project: string) {
-  const row = page
-    .locator(".backlog-list-row")
-    .filter({ has: page.getByText(title, { exact: true }) });
+  const row = page.locator(".backlog-list-row").filter({
+    // The title, not a subitem's parent link of the same name.
+    has: page.locator(".backlog-item-title").getByText(title, { exact: true }),
+  });
   const chip = row.locator(".backlog-item-project");
   await expect(chip).toHaveText(project);
   const titleBox = await row.locator(".backlog-item-title").boundingBox();
@@ -2578,7 +2657,9 @@ Then(
       expect(boxes.chip.y).toBeGreaterThanOrEqual(
         boxes.title.y + boxes.title.height - 1,
       );
-      expect(Math.abs(boxes.chip.x - boxes.title.x)).toBeLessThan(2);
+      // Line 2 starts under the title; the priority may come first.
+      expect(boxes.chip.x).toBeGreaterThanOrEqual(boxes.title.x - 1);
+      expect(boxes.chip.x).toBeLessThan(boxes.title.x + 40);
     }).toPass();
   },
 );
@@ -2607,9 +2688,12 @@ When("the Backlog shows the source state", async ({ page }) => {
 Then(
   "the {string} row shows {string} on its second line",
   async ({ page }, title: string, text: string) => {
-    const row = page
-      .locator(".backlog-list-row")
-      .filter({ has: page.getByText(title, { exact: true }) });
+    const row = page.locator(".backlog-list-row").filter({
+      // The title, not a subitem's parent link of the same name.
+      has: page
+        .locator(".backlog-item-title")
+        .getByText(title, { exact: true }),
+    });
     const titleBox = await row.locator(".backlog-item-title").boundingBox();
     const textBox = await row.getByText(text, { exact: true }).boundingBox();
     if (!titleBox || !textBox) throw new Error(`${text} is not shown`);

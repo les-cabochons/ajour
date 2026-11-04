@@ -996,7 +996,7 @@ When(
   "I settle it in Waiting with the comment {string}",
   async ({ page }, text: string) => {
     await page
-      .locator(".ajour-page-header-slot")
+      .getByRole("group", { name: "Item actions" })
       .getByRole("button", { name: "Settle", exact: true })
       .click();
     await pickWaiting(page);
@@ -1161,7 +1161,7 @@ Then(
 
 When("I unsettle it from its page header", async ({ page }) => {
   await page
-    .locator(".ajour-page-header-slot")
+    .getByRole("group", { name: "Item actions" })
     .getByRole("button", { name: "Unsettle", exact: true })
     .click();
 });

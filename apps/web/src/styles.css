@@ -202,6 +202,9 @@
     --control-line-height: 1.45;
     --app-sidebar-width: 272px;
     --app-workspace-max-width: 1440px;
+    /* One left edge per page: the top bar title, list rows and page content
+       all start this far from the content's edge (council round 7). */
+    --page-gutter: 1.5rem;
     --app-workspace-half-width: 720px;
     /* Half the sidebar plus half the capped workspace: 136px + 720px. */
     --app-centered-workspace-right-offset: calc(
@@ -224,8 +227,12 @@
   :root.dark {
     color-scheme: dark;
     --background: oklch(0.17 0.004 285);
-    --foreground: oklch(0.9 0.003 285);
-    --card: oklch(0.205 0.004 285);
+    /* Titles near white, so tone as well as weight carries hierarchy in
+       dark (council round 9). */
+    --foreground: oklch(0.95 0.003 285);
+    /* Page 0.17, sidebar and side cards 0.205, cards 0.225: clear steps, as
+       in Linear and T3 Code (council round 7). */
+    --card: oklch(0.225 0.004 285);
     --card-foreground: var(--foreground);
     --popover: oklch(0.215 0.004 285);
     --popover-foreground: var(--foreground);
@@ -243,7 +250,7 @@
     --destructive: oklch(0.7 0.19 22);
     --warning: oklch(0.78 0.15 70);
     --success: oklch(0.72 0.17 150);
-    --border: oklch(1 0 0 / 9%);
+    --border: oklch(1 0 0 / 11%);
     --border-row: oklch(1 0 0 / 6.5%);
     --input: var(--surface-lowest);
     --ring: oklch(0.64 0.17 285);
@@ -253,7 +260,7 @@
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.195 0.004 285);
+    --sidebar: oklch(0.205 0.004 285);
     --sidebar-foreground: var(--foreground);
     --sidebar-primary: var(--primary);
     --sidebar-primary-foreground: var(--primary-foreground);
@@ -268,11 +275,14 @@
     --surface-high: oklch(0.25 0.004 285);
     --surface-highest: oklch(0.29 0.004 285);
     --text-secondary: var(--muted-foreground);
+    /* One step brighter, so ids and parent links read as Linear's do
+       (council round 25). */
     --text-tertiary: oklch(0.56 0.008 285);
     --hover-bg: oklch(1 0 0 / 6%);
     --highlight-bg: oklch(1 0 0 / 4%);
     --field-bg: var(--surface-lowest);
-    --field-border: oklch(1 0 0 / 12%);
+    /* Fields read as editable at rest (council round 9). */
+    --field-border: oklch(1 0 0 / 18%);
     --app-sidebar-bg: var(--sidebar);
     --app-sidebar-border: var(--border);
     --app-sidebar-active-bg: oklch(1 0 0 / 9%);
@@ -541,6 +551,9 @@
     gap: 0.5rem;
     min-width: 0;
     height: 100%;
+    /* With the bar's own 8px, every title, mounted or fallback, starts at
+       the page gutter. */
+    padding-left: calc(var(--page-gutter) - 0.5rem);
   }
 
   /* Windows: a hairline between the menus and the page title. */
@@ -673,6 +686,11 @@
     min-width: 0;
   }
 
+  h1.ajour-page-breadcrumb-current {
+    margin: 0;
+    font: inherit;
+  }
+
   .ajour-page-breadcrumb-link {
     border-radius: var(--radius-sm);
     color: var(--text-secondary);
@@ -772,8 +790,9 @@
     border: 0;
     border-radius: 4px;
     background: transparent;
-    color: var(--text-secondary);
-    font-size: 12px;
+    /* The narrow view's page title: the day it shows. */
+    color: var(--text);
+    font-size: var(--text-base);
     font-weight: 600;
     line-height: 1;
     cursor: pointer;
@@ -786,6 +805,16 @@
   .ajour-titlebar-date-trigger[data-popup-open] {
     background: var(--hover-bg);
     color: var(--text);
+  }
+
+  /* The narrow titlebar's page name, the size and weight of its date. */
+  .ajour-titlebar-section {
+    padding: 0 0.25rem;
+    color: var(--text);
+    font-size: var(--text-base);
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
   }
 
   .ajour-titlebar-date-trigger:focus-visible {
@@ -860,8 +889,8 @@
     border-radius: 4px;
     background: transparent;
     color: var(--text-secondary);
-    font-size: 12px;
-    font-weight: 600;
+    font-size: var(--text-xs);
+    font-weight: 500;
     transition:
       background-color 140ms var(--ease),
       color 140ms var(--ease),
@@ -1506,6 +1535,11 @@
     color: var(--text);
   }
 
+  /* While an entry runs, Stop is the titlebar's strongest control. */
+  .quick-timer-group-button-stop {
+    color: var(--text);
+  }
+
   .quick-timer-group-button-play:hover {
     background: var(--success-bg);
     color: var(--success);
@@ -2058,8 +2092,10 @@
   /* The floating navigation toggle at the bottom left. The page reserves
      space under its content for it, and the toasts sit above it. */
   :root {
+    /* 44px touch targets in a 54px bar (council round 14). */
+    --narrow-nav-height: 3.375rem;
     --narrow-nav-clearance: calc(
-      2.5rem + 1.75rem + env(safe-area-inset-bottom, 0px)
+      var(--narrow-nav-height) + 1.75rem + env(safe-area-inset-bottom, 0px)
     );
   }
 
@@ -2068,25 +2104,25 @@
     left: max(1rem, env(safe-area-inset-left, 0px));
     bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
     z-index: 40;
-    height: 2.5rem;
-    padding: 4px;
+    height: var(--narrow-nav-height);
+    padding: 5px;
     background: var(--popover);
     box-shadow: var(--shadow-popup);
   }
 
   /* The agent indicator shares the toggle's row, at the bottom right,
-     centered on the toggle's 2.5rem height. */
+     centered on the toggle's height. */
   .ajour-agent-indicator {
     right: max(1rem, env(safe-area-inset-right, 0px));
     bottom: calc(
       1rem + env(safe-area-inset-bottom, 0px) +
-        (2.5rem - var(--control-height)) / 2
+        (var(--narrow-nav-height) - var(--control-height)) / 2
     );
   }
 
   .ajour-narrow-switcher-item {
-    height: 30px;
-    min-width: 32px;
+    height: 44px;
+    min-width: 44px;
   }
 
   .app-content-scroll-area [data-slot="scroll-area-viewport"] > div {
@@ -2183,4 +2219,11 @@
 .color-field-option:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+}
+
+/* The narrow view's gutter: DESKTOP_MIN_WIDTH in lib/breakpoints.ts. */
+@media (width < 768px) {
+  :root {
+    --page-gutter: 0.75rem;
+  }
 }

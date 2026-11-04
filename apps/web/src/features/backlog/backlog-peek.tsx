@@ -1,10 +1,11 @@
+import { getCompletedEstimateShare } from "@/domain/backlog/work-item-estimates";
 import { BacklogRefresh } from "./backlog-refresh";
 import {
   RiCloseLine,
   RiExpandDiagonalLine,
   RiExternalLinkLine,
   RiPencilLine,
-  RiPlayLine,
+  RiPlayFill,
   RiStopLine,
 } from "@remixicon/react";
 import { useEffect, useMemo } from "react";
@@ -95,10 +96,7 @@ export function BacklogPeek({
   const children = getDirectChildWorkItems(item, state.workItems);
   const reference = parseWorkItemReference(item.sourceId) ?? item.sourceId;
   const notice = getVisitNotice(item, now, returnNotice);
-  const progress =
-    item.originalEstimateHours && item.completedEstimateHours !== undefined
-      ? Math.min(1, item.completedEstimateHours / item.originalEstimateHours)
-      : 0;
+  const progress = getCompletedEstimateShare(item);
   return (
     <div className="backlog-peek" aria-label={`Peek ${item.title}`}>
       <div className="flex h-7 items-center justify-between gap-2">
@@ -190,7 +188,7 @@ export function BacklogPeek({
               if (!startAction?.disabledReason) onAction("start-entry");
             }}
           >
-            <RiPlayLine data-icon="inline-start" />
+            <RiPlayFill data-icon="inline-start" />
             Start entry
           </TooltipButton>
         ) : null}
@@ -214,7 +212,7 @@ export function BacklogPeek({
         <div
           className="backlog-item-progress"
           role="progressbar"
-          aria-label="Completed over original estimate"
+          aria-label="Completed of the original estimate"
           aria-valuenow={Math.round(progress * 100)}
           aria-valuemin={0}
           aria-valuemax={100}

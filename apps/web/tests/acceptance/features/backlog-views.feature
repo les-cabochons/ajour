@@ -14,9 +14,16 @@ Feature: Backlog list and board views
     And every Backlog row keeps its contents inside the row
     When I widen the Backlog window
     Then the "Backlog parent" row shows "Example project" beside its title
+    And every Backlog row keeps its contents inside the row
     When I narrow the Backlog window
     And the Backlog parent is settled and running, with a source state and a long project name
     Then every Backlog row keeps its contents inside the row
+
+  Scenario: Long press a narrow Backlog row for its actions
+    When I narrow the Backlog window
+    Then the "Other backlog item" row shows no actions button
+    When I long press the "Other backlog item" row on a touch screen
+    Then the Backlog item's action menu is open
 
   Scenario: Keep the board preference while using a narrow list
     When I choose the Backlog board
@@ -78,7 +85,7 @@ Feature: Backlog list and board views
       | Board  |
 
   Scenario: Open a subitem's parent from its comfortable sidebar row
-    Then the subitem's sidebar row does not show its parent's title
+    Then the subitem's sidebar row names its parent on its faint line
     When I open the parent from the subitem's sidebar arrow
     Then the Backlog parent page is open
 
@@ -1226,7 +1233,7 @@ Feature: Backlog list and board views
 
   Scenario: Start entry on the item page offers New entry… in its menu
     When I open the Backlog parent page
-    Then the item page's top bar has Start entry, Snooze and Settle and no New entry button
+    Then the item page's actions have Start entry, Snooze and Settle and no New entry button
     When I open the other ways to log time
     Then the menu says Start entry starts the clock and New entry… logs time without it
     When I choose New entry… in that menu
@@ -1234,13 +1241,13 @@ Feature: Backlog list and board views
 
   Scenario: Fold the Subitems and Time entries cards on the item page
     When I open the Backlog parent page
-    Then the Subitems and Time entries cards are closed on their summary
+    Then the short Subitems list shows open and Time entries is closed on its summary
     When I add the subitem "Folded subitem" on its page
     And I press Escape in the subitem name field
-    Then the Subitems card is closed on "0 of 2 done" and the page has the focus
-    When I open the Subitems card
+    Then the Subitems card shows "0 of 2 done" and the page has the focus
+    When I close the Subitems card
     And I reload the item page
-    Then the Subitems card is still open and Time entries is still closed
+    Then the Subitems card is still closed and Time entries is still closed
 
   Scenario: Fold the Subitems card from its title while adding a subitem
     When I open the Backlog parent page
@@ -1248,6 +1255,7 @@ Feature: Backlog list and board views
     Then the Subitems card stays closed, even after a reload
 
   Scenario: Open the Subitems card with Enter after a right-click on its title
+    Given I closed the Subitems card on an earlier visit
     When I open the Backlog parent page
     And I press Add subitem, right-click the Subitems title and press Enter
     Then the Subitems card is open

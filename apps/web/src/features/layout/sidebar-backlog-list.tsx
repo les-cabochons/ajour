@@ -10,6 +10,8 @@ import {
   type PointerEvent,
   type ReactNode,
 } from "react";
+import { getWorkflowStateFills } from "@/domain/backlog/workflow-state-fill";
+import { stateDotStyle } from "@/features/backlog/state-dot";
 import { hasWorkItemSyncIssue } from "@/domain/local-state";
 import { SyncConflictButton } from "@/features/backlog/sync-conflicts";
 import { useNavigate, useRouter } from "@tanstack/react-router";
@@ -17,8 +19,8 @@ import {
   RiArrowDownSLine as ChevronDown,
   RiArrowGoBackLine as UndoIcon,
   RiCheckLine as SettleIcon,
-  RiCornerLeftUpLine as ParentIcon,
-  RiPlayLine as PlayIcon,
+  RiCornerDownRightLine as ParentIcon,
+  RiPlayFill as PlayIcon,
   RiPushpinLine as PinIcon,
   RiStopLine as StopIcon,
   RiTimeLine as SnoozeIcon,
@@ -574,6 +576,8 @@ interface ItemRowProps {
   subitemCount: number;
   project?: LocalProject;
   workflowState?: LocalWorkflowState;
+  /** How full the state's mark is drawn, from `getWorkflowStateFills`. */
+  workflowStateFill?: number;
   isActive: boolean;
   isRunning: boolean;
   isReturned: boolean;
@@ -633,15 +637,18 @@ function ParentLink({
   rows: RowApi;
   revealed: boolean;
 }) {
+  // The parent's name, not a bare arrow, so the mark says what it links to
+  // (council round 12).
   const className =
-    "ml-auto flex size-4 shrink-0 items-center justify-center rounded-sm";
-  const icon = <ParentIcon className="size-3" />;
+    "flex min-w-0 items-center gap-1 rounded-sm text-[var(--text-tertiary)]";
+  const icon = (
+    <>
+      <ParentIcon aria-hidden className="size-3 shrink-0" />
+      <span className="min-w-0 truncate">{parent.title}</span>
+    </>
+  );
   if (!revealed) {
-    return (
-      <span aria-hidden className={className}>
-        {icon}
-      </span>
-    );
+    return <span className={className}>{icon}</span>;
   }
   return (
     <TooltipButton
@@ -702,8 +709,10 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
         />
       }
     >
+      {/* 12 / 14 / 12, the title clearly first, as in T3 Code's thread list
+          (council round 5). */}
       <span className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="flex h-5 items-center gap-1.5 text-sm text-muted-foreground">
+        <span className="flex h-5 items-center gap-1.5 text-xs text-muted-foreground">
           {project ? (
             <ProjectIcon
               icon={project.icon}
@@ -735,36 +744,36 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
               workItem={workItem}
               actions={actions}
               rows={rows}
-              showStart={false}
               showSettle
               buttonClassName="size-5"
               className="hidden group-focus-within:flex group-hover:flex"
             />
           ) : null}
         </span>
-        {/*
-          The padding clears Start entry, which sits over the end of this line
-          on hover. It stays when the row is at rest, so hovering never
-          re-truncates the title.
-        */}
+        {/* The title runs to the row's edge, as in T3 Code's thread list:
+            the hover actions sit on the project line, never over it. */}
         <span
           data-row-title
           className={cn(
-            "truncate pr-7 text-base leading-5",
+            "truncate text-base leading-5 font-medium",
             props.isReturned && "font-semibold",
           )}
         >
           {workItem.title}
         </span>
         {/* Kept empty without a state, so every row is the same height. */}
-        <span className="flex h-4 items-center gap-1.5 text-xs text-[var(--text-secondary)]">
+        <span className="flex h-4 items-center gap-1.5 text-xs text-[var(--text-tertiary)]">
           {workflowState ? (
             <>
               <span
                 className="backlog-state-dot size-2.5"
-                style={{ color: workflowState.color }}
+                style={stateDotStyle(
+                  workflowState.color,
+                  props.workflowStateFill,
+                )}
               />
-              <span className="min-w-0 truncate">{workflowState.name}</span>
+              {/* The state keeps its width; the parent's name gives way. */}
+              <span className="shrink-0">{workflowState.name}</span>
             </>
           ) : null}
           {parent ? (
@@ -772,19 +781,6 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
           ) : null}
         </span>
       </span>
-      {/*
-        Logging time is the main job, so Start gets its own place: centered at
-        the row's end, level with the title, so the project line's Snooze and
-        Settle still reach the edge.
-      */}
-      {reveal.active ? (
-        <span
-          className="absolute top-1/2 right-2.5 hidden -translate-y-1/2 group-focus-within:flex group-hover:flex"
-          onClick={(event) => event.stopPropagation()}
-        >
-          <StartButton workItem={workItem} actions={actions} rows={rows} />
-        </span>
-      ) : null}
     </ObjectContextMenu>
   );
 });
@@ -1228,6 +1224,10 @@ export function SidebarBacklogList({
     () => new Map(state.workflowStates.map((status) => [status._id, status])),
     [state.workflowStates],
   );
+  const workflowStateFills = useMemo(
+    () => getWorkflowStateFills(state.workflowStates),
+    [state.workflowStates],
+  );
 
   const parentOf = (workItem: LocalWorkItem) => {
     const key = getWorkItemParentKey(workItem);
@@ -1242,6 +1242,9 @@ export function SidebarBacklogList({
       : undefined,
     workflowState: workItem.workflowStateId
       ? workflowStateById.get(workItem.workflowStateId)
+      : undefined,
+    workflowStateFill: workItem.workflowStateId
+      ? workflowStateFills.get(workItem.workflowStateId)
       : undefined,
     isActive: activeItemId === workItem._id,
     isRunning: runningWorkItemId === workItem._id,

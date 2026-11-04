@@ -1,4 +1,11 @@
 import { useBacklogRefreshOnOpen } from "./use-backlog-refresh-on-open";
+import {
+  isUnmappedRising,
+  readUnmappedSeen,
+  writeUnmappedSeen,
+} from "@/lib/backlog-unmapped-seen";
+import { getWorkflowStateFills } from "@/domain/backlog/workflow-state-fill";
+import { stateDotStyle } from "@/features/backlog/state-dot";
 import { BacklogRefresh } from "./backlog-refresh";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { setOpenDraftGuard } from "@/lib/open-draft";
@@ -546,6 +553,54 @@ export function BacklogPage() {
           `${i.source}:${i.sourceConnectionId}:${i.sourceProjectName}:${i.sourceStatusKey}`,
       ),
   ).size;
+  // The count at the last visit, read once: amber only when it rose since.
+  const [unmappedSeen] = useState(readUnmappedSeen);
+  useEffect(() => {
+    writeUnmappedSeen(unmapped);
+  }, [unmapped]);
+  const stateFills = useMemo(
+    () => getWorkflowStateFills(state.workflowStates),
+    [state.workflowStates],
+  );
+  const syncStatus = (
+    <BacklogRefresh
+      compact={narrow}
+      hasSyncedItems={state.workItems.some((item) => item.source !== "manual")}
+    />
+  );
+  const unmappedRising = isUnmappedRising(unmapped, unmappedSeen);
+  const unmappedLink =
+    unmapped > 0 ? (
+      <Link
+        to="/settings/workflow"
+        className={cn("backlog-unmapped", unmappedRising && "is-rising")}
+        aria-label={`${unmapped} unmapped source ${unmapped === 1 ? "state" : "states"}`}
+        onClick={async (event) => {
+          if (
+            event.defaultPrevented ||
+            event.button !== 0 ||
+            event.ctrlKey ||
+            event.metaKey ||
+            event.shiftKey ||
+            event.altKey
+          )
+            return;
+          event.preventDefault();
+          if (await leaveDraft()) void navigate({ to: "/settings/workflow" });
+        }}
+      >
+        {/* A calm line carries no icon; the warning shows only while the
+            count rises (council round 28). */}
+        {unmappedRising ? <RiErrorWarningLine aria-hidden /> : null}
+        <span>
+          {unmapped} unmapped
+          <span className="backlog-unmapped-words">
+            {" "}
+            source {unmapped === 1 ? "state" : "states"}
+          </span>
+        </span>
+      </Link>
+    ) : null;
   const dragged = state.workItems.find((i) => i._id === drag.drag?.itemId);
   return (
     <div
@@ -555,49 +610,48 @@ export function BacklogPage() {
       )}
     >
       <div className="backlog-page-main backlog-workspace-main">
-        <PageHeader
-          actions={
-            <>
-              {!narrow && <BacklogLayoutToggle view={view} />}
-              <BacklogDisplay
-                view={view}
-                ordering={state.backlogSortMode}
-                narrow={narrow}
-              />
-            </>
-          }
-        />
-        <div className="backlog-workspace-filterbar">
-          <BacklogFilters state={state} view={view} />
-          <BacklogRefresh
-            hasSyncedItems={state.workItems.some(
-              (item) => item.source !== "manual",
-            )}
+        {/* Desktop: Filter, the sync status and the unmapped-states link sit
+            in the top bar with the page's other actions, and the filter row
+            shows only while filters are on (council round 10). The narrow
+            view has no top-bar slot: Display joins Filter in one toolbar row
+            over a status line. */}
+        {narrow ? null : (
+          <PageHeader
+            title="Backlog"
+            actions={
+              <>
+                {syncStatus}
+                {unmappedLink}
+                <BacklogFilters state={state} view={view} part="button" />
+                <BacklogLayoutToggle view={view} />
+                <BacklogDisplay
+                  view={view}
+                  ordering={state.backlogSortMode}
+                  narrow={narrow}
+                />
+              </>
+            }
           />
-          {unmapped > 0 && (
-            <Link
-              to="/settings/workflow"
-              className="backlog-unmapped"
-              onClick={async (event) => {
-                if (
-                  event.defaultPrevented ||
-                  event.button !== 0 ||
-                  event.ctrlKey ||
-                  event.metaKey ||
-                  event.shiftKey ||
-                  event.altKey
-                )
-                  return;
-                event.preventDefault();
-                if (await leaveDraft())
-                  void navigate({ to: "/settings/workflow" });
-              }}
-            >
-              <RiErrorWarningLine aria-hidden />
-              {unmapped} unmapped source {unmapped === 1 ? "state" : "states"}
-            </Link>
-          )}
-        </div>
+        )}
+        {narrow ? (
+          <div className="backlog-workspace-filterbar">
+            <BacklogFilters state={state} view={view} />
+            <BacklogDisplay
+              view={view}
+              ordering={state.backlogSortMode}
+              narrow={narrow}
+              className="backlog-narrow-display"
+            />
+            <div className="backlog-workspace-status">
+              {syncStatus}
+              {unmappedLink}
+            </div>
+          </div>
+        ) : view.filters.length > 0 ? (
+          <div className="backlog-workspace-filterbar">
+            <BacklogFilters state={state} view={view} part="chips" />
+          </div>
+        ) : null}
         <div
           className={cn("backlog-workspace-scroll", board && "is-board")}
           data-focus-scope
@@ -678,7 +732,10 @@ export function BacklogPage() {
                             {group.kind === "state" && (
                               <span
                                 className="backlog-state-dot"
-                                style={{ color: group.color }}
+                                style={stateDotStyle(
+                                  group.color,
+                                  stateFills.get(group.workflowStateId ?? ""),
+                                )}
                               />
                             )}
                             {group.kind === "priority" && (

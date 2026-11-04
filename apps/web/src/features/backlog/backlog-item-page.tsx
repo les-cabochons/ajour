@@ -1,13 +1,15 @@
+import { getCompletedEstimateShare } from "@/domain/backlog/work-item-estimates";
 import { BacklogRefresh } from "./backlog-refresh";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
+  RiCornerDownRightLine,
   RiAddLine as AddIcon,
   RiArchiveLine as ArchiveIcon,
   RiArrowGoBackLine as UnsettleIcon,
   RiCheckboxCircleLine as SettleIcon,
   RiExternalLinkLine as ExternalIcon,
-  RiPlayLine as PlayIcon,
+  RiPlayFill as PlayIcon,
   RiStopLine as StopIcon,
   RiTimeLine as SnoozeIcon,
 } from "@remixicon/react";
@@ -20,7 +22,6 @@ import {
 import { ObjectActionItems } from "@/components/object-actions-menu";
 import { SplitButton } from "@/components/split-button";
 import { Button } from "@/components/ui/button";
-import { Chip } from "@/components/ui/chip";
 import {
   Empty,
   EmptyDescription,
@@ -85,6 +86,7 @@ import {
 import {
   updateBacklogItemCards,
   useBacklogItemCards,
+  resolveSubitemsOpen,
 } from "@/lib/backlog-item-cards";
 
 /**
@@ -270,10 +272,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
       ? parseWorkItemReference(item.sourceId)
       : item.sourceId;
   const loggedMs = entries.reduce((sum, entry) => sum + entry.durationMs, 0);
-  const progress =
-    item.originalEstimateHours && item.completedEstimateHours !== undefined
-      ? Math.min(1, item.completedEstimateHours / item.originalEstimateHours)
-      : 0;
+  const progress = getCompletedEstimateShare(item);
   const notice = getVisitNotice(item, now, returnNotice);
 
   /**
@@ -424,25 +423,9 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
             })
           }
         >
-          <PageHeader
-            breadcrumb={breadcrumb}
-            backLink={backLink}
-            actions={
-              <>
-                {headerButtons}
-                {!readOnly && (item.status === "settled" || isSnoozed) ? (
-                  <Button
-                    variant="ghost"
-                    onClick={(event) => openNewEntry(event.currentTarget)}
-                  >
-                    <AddIcon data-icon="inline-start" /> New entry
-                  </Button>
-                ) : null}
-              </>
-            }
-          />
+          <PageHeader breadcrumb={breadcrumb} backLink={backLink} />
 
-          <header className="flex min-w-0 items-start gap-3">
+          <header className="backlog-item-page-header">
             <WorkItemIcon
               icon={resolveWorkItemIcon(item, iconData)}
               className="mt-1.5"
@@ -460,13 +443,15 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                 }}
               />
               <div className="backlog-item-page-meta">
+                {/* Plain text: the breadcrumb and the properties already name
+                    the project, and a chip here only tagged (council round 9). */}
                 {item.sourceWorkItemType ? (
-                  <Chip>{item.sourceWorkItemType}</Chip>
-                ) : null}
-                {project ? (
-                  <Chip color={project.color}>
-                    {getLocalProjectDisplayName(project)}
-                  </Chip>
+                  <>
+                    <span>{item.sourceWorkItemType}</span>
+                    <span aria-hidden className="text-[var(--text-tertiary)]">
+                      ·
+                    </span>
+                  </>
                 ) : null}
                 {reference ? (
                   item.sourceUrl ? (
@@ -491,18 +476,6 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                 ) : (
                   <span>Manual item</span>
                 )}
-                {item.source !== "manual" &&
-                item.sourceConnectionId &&
-                item.sourceId ? (
-                  <BacklogRefresh
-                    source={{
-                      pluginId: item.source,
-                      connectionId: item.sourceConnectionId,
-                      sourceId: item.sourceId,
-                      syncedAt: item.sourceSyncedAt,
-                    }}
-                  />
-                ) : null}
                 {parent ? (
                   <Link
                     to="/backlog/$itemId"
@@ -510,10 +483,31 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                     search={{ from }}
                     className="truncate"
                   >
-                    ↳ {parent.title}
+                    <RiCornerDownRightLine
+                      aria-hidden
+                      className="mr-0.5 inline size-3 align-[-2px]"
+                    />
+                    {parent.title}
                   </Link>
                 ) : null}
               </div>
+            </div>
+            {/* The item's actions sit beside its title, the content they act
+                on, as on every page that edits in place (council round 3). */}
+            <div
+              role="group"
+              aria-label="Item actions"
+              className="backlog-item-page-actions"
+            >
+              {headerButtons}
+              {!readOnly && (item.status === "settled" || isSnoozed) ? (
+                <Button
+                  variant="ghost"
+                  onClick={(event) => openNewEntry(event.currentTarget)}
+                >
+                  <AddIcon data-icon="inline-start" /> New entry
+                </Button>
+              ) : null}
             </div>
           </header>
 
@@ -521,48 +515,72 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
             <p className="text-xs text-muted-foreground">{notice}</p>
           ) : null}
 
-          <div className="flex flex-col gap-2.5">
-            <FigureRow>
-              {ESTIMATE_FIGURES.map((figure) => (
-                <EstimateFigure
-                  key={figure.key}
-                  item={item}
-                  field={figure.key}
-                  label={figure.label}
-                  conflict={Boolean(item.estimateSync?.[figure.key]?.conflict)}
-                  readOnly={readOnly}
-                />
-              ))}
-              <Figure label="Logged in Ajour">
-                {formatClockDuration(loggedMs)}
-              </Figure>
-            </FigureRow>
-            <div
-              className="backlog-item-progress"
-              role="progressbar"
-              aria-label="Completed over original estimate"
-              aria-valuenow={Math.round(progress * 100)}
-              aria-valuemin={0}
-              aria-valuemax={100}
-            >
-              <div style={{ width: `${progress * 100}%` }} />
-            </div>
-          </div>
-
           <div className="backlog-item-page-columns">
             {/* The key resets the description editor and the comment drafts
                 when another item opens. It sits on the column, not on each
                 child: siblings sharing a key leave the old item's description
                 on the page. */}
-            <div key={item._id} className="flex min-w-0 flex-col">
-              <DescriptionSection item={item} readOnly={readOnly} />
-              {commentSource ? (
-                <BacklogItemComments
-                  itemId={item._id}
-                  source={commentSource}
-                  prepareOpenNext={prepareOpenNext}
-                />
-              ) : null}
+            <div key={item._id} className="flex min-w-0 flex-col gap-6">
+              {/* The figures open the main column, so the side cards start
+                  level with them (council round 7). */}
+              {/* The estimates and their bar form one group; logged time, a
+                  clock and not part of the bar, sits beside it behind a
+                  hairline (council rounds 11 and 12). */}
+              <FigureRow className="items-end">
+                <div className="flex w-fit max-w-full flex-col gap-2.5">
+                  {/* Remaining leads, first and the page's one 28px
+                      number: it is what the dock shows as "43m left"
+                      (council rounds 14 and 23). */}
+                  {/* Values share a baseline, as on the project page. */}
+                  <FigureRow className="items-end">
+                    {ESTIMATE_FIGURES.map((figure) => (
+                      <EstimateFigure
+                        key={figure.key}
+                        item={item}
+                        field={figure.key}
+                        label={figure.label}
+                        size={
+                          figure.key === "remainingEstimateHours"
+                            ? "figure"
+                            : undefined
+                        }
+                        conflict={Boolean(
+                          item.estimateSync?.[figure.key]?.conflict,
+                        )}
+                        readOnly={readOnly}
+                      />
+                    ))}
+                  </FigureRow>
+                  <div
+                    className="backlog-item-progress"
+                    role="progressbar"
+                    aria-label="Completed of the original estimate"
+                    aria-valuenow={Math.round(progress * 100)}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                  >
+                    <div style={{ width: `${progress * 100}%` }} />
+                  </div>
+                </div>
+                {/* Lifted by the estimates' bar and its gap, so its value
+                    shares their baseline. */}
+                <Figure
+                  label="Logged in Ajour"
+                  className="mb-[13px] border-l border-border pl-8"
+                >
+                  {formatClockDuration(loggedMs)}
+                </Figure>
+              </FigureRow>
+              <div className="flex min-w-0 flex-col">
+                <DescriptionSection item={item} readOnly={readOnly} />
+                {commentSource ? (
+                  <BacklogItemComments
+                    itemId={item._id}
+                    source={commentSource}
+                    prepareOpenNext={prepareOpenNext}
+                  />
+                ) : null}
+              </div>
             </div>
             <div className="backlog-item-side-cards">
               <section
@@ -570,12 +588,30 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                 aria-label="Properties"
               >
                 <BacklogItemProperties item={item} state={state}>
+                  {/* The refresh sits with the source it refreshes (council
+                      round 16). */}
                   <PropertyRow label="Source">
-                    {item.source === "manual"
-                      ? "Ajour"
-                      : (item.sourceProjectName ??
-                        item.sourceConnectionLabel ??
-                        "–")}
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate">
+                        {item.source === "manual"
+                          ? "Ajour"
+                          : (item.sourceProjectName ??
+                            item.sourceConnectionLabel ??
+                            "–")}
+                      </span>
+                      {item.source !== "manual" &&
+                      item.sourceConnectionId &&
+                      item.sourceId ? (
+                        <BacklogRefresh
+                          source={{
+                            pluginId: item.source,
+                            connectionId: item.sourceConnectionId,
+                            sourceId: item.sourceId,
+                            syncedAt: item.sourceSyncedAt,
+                          }}
+                        />
+                      ) : null}
+                    </span>
                   </PropertyRow>
                 </BacklogItemProperties>
                 {archiveAction && !archiveAction.disabledReason ? (
@@ -591,9 +627,13 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                 <SubitemsCard
                   parent={item}
                   subitems={subitems}
+                  workflowStates={state.workflowStates}
                   iconData={iconData}
                   from={from}
-                  open={cards.subitemsOpen}
+                  open={resolveSubitemsOpen(
+                    cards.subitemsOpen,
+                    subitems.length,
+                  )}
                   onOpenChange={(subitemsOpen) =>
                     updateBacklogItemCards({ subitemsOpen })
                   }

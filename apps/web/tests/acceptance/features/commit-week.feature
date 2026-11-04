@@ -64,13 +64,13 @@ Feature: Commit the week
     Given I have a committed week of entries
     And the Workday (agent) plugin adds project properties
     When I open the Commit page for the week of 2026-10-05
-    Then Monday's "Development" line shows "Client Atlas / Development"
+    Then Monday's "Development" line shows "Client Atlas · Development"
     When I show line names from "Workday"
-    Then Monday's "Development" line shows "CA004 Tech & Design / Development"
+    Then Monday's "Development" line shows "CA004 Tech & Design · Development"
     When I copy the project and task of Monday's "Development" line
     Then the clipboard holds "CA004 Tech & Design Development"
     When I open the Commit page for the week of 2026-10-05
-    Then Monday's "Development" line shows "CA004 Tech & Design / Development"
+    Then Monday's "Development" line shows "CA004 Tech & Design · Development"
 
   Scenario: Leave local time and Not known yet tasks out of the commit
     Given I have a committed week of entries

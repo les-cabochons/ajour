@@ -68,7 +68,8 @@ export function DescriptionText({ body }: { body: string }) {
   }
 
   return (
-    <div onClick={onLinkClick} onAuxClick={onLinkClick}>
+    // Prose keeps a reading measure while the page fills its column.
+    <div className="max-w-prose" onClick={onLinkClick} onAuxClick={onLinkClick}>
       <Markdown>{body}</Markdown>
       {dialog}
     </div>

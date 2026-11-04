@@ -4,6 +4,7 @@ import {
   type LocalTimer,
   type LocalWorkItem,
 } from "@/domain/local-state";
+import { formatCompactDuration } from "@/domain/time/duration";
 
 const HOUR_MS = 3_600_000;
 
@@ -121,11 +122,10 @@ export function getRunningEntryTrayState(
   };
 }
 
-/** "1.1h left" or "0.4h over", from `RunningEntrySummary.remainingMs`. */
+/** "1h05 left" or "25m over", from `RunningEntrySummary.remainingMs`. */
 export function formatRemainingEstimate(remainingMs: number) {
-  const hours = Math.abs(remainingMs) / HOUR_MS;
-  const value = Number.isInteger(hours) ? hours : Number(hours.toFixed(1));
-  return remainingMs >= 0 ? `${value}h left` : `${value}h over`;
+  const value = formatCompactDuration(Math.abs(remainingMs));
+  return remainingMs >= 0 ? `${value} left` : `${value} over`;
 }
 
 /** Elapsed time with seconds, such as "1:24:07" or "0:04:52". */

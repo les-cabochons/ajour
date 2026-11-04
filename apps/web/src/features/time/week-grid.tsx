@@ -717,6 +717,13 @@ export function WeekGrid({
                 data-grid-cell=""
                 data-focus-column={dayIndex}
                 aria-label={`${row.taskName}, ${dayLabel}, ${valueLabel}`}
+                // "×2" is a count, and the cell opens a list: say so on hover
+                // without a tooltip component per cell (council round 17).
+                title={
+                  model.count > 1
+                    ? `${model.count} entries. Click to review.`
+                    : undefined
+                }
                 onClick={(event) => handleCellClick(model, event.detail)}
                 onKeyDown={(event) => {
                   handleCellKeyDown(model, event);
@@ -757,7 +764,7 @@ export function WeekGrid({
           <TableHeader>
             <TableRow>
               <TableHead className="weekly-grid-task-column">
-                Project / task
+                Project · task
               </TableHead>
               {projection.days.map((day) => (
                 <TableHead
@@ -881,6 +888,8 @@ export function WeekGrid({
                   <DisabledReason label="Add row" reason={lockReason}>
                     <Button
                       variant="ghost"
+                      // Regular weight, like "+ New entry" and "+ New task".
+                      className="font-normal text-muted-foreground"
                       disabled={lockReason !== undefined}
                       onClick={() => setIsAddingRow(true)}
                     >
@@ -904,7 +913,7 @@ export function WeekGrid({
                     day.totalMs === 0 && "is-zero",
                   )}
                 >
-                  {formatClockDuration(day.totalMs)}
+                  {day.totalMs === 0 ? "–" : formatClockDuration(day.totalMs)}
                 </TableCell>
               ))}
               <TableCell className="weekly-grid-total-cell">

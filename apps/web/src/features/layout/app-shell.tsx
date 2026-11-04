@@ -12,7 +12,7 @@ import {
   RiAddLine as Plus,
   RiArrowGoBackLine as ReturnIcon,
   RiArrowRightSLine as ChevronRight,
-  RiPlayLine as Play,
+  RiPlayFill as Play,
   RiStopFill as Stop,
 } from "@remixicon/react";
 import { PageTitle } from "@/components/page-header";
@@ -123,6 +123,18 @@ function getTimeRouteDate(pathname: string) {
 }
 
 /** The top bar's title while the page has not mounted its own `PageHeader`. */
+/** The narrow titlebar's page name outside Time. */
+const SECTION_TITLES: Record<
+  NonNullable<ReturnType<typeof getAppSection>>,
+  string
+> = {
+  time: "Time",
+  backlog: "Backlog",
+  "pull-requests": "Pull requests",
+  projects: "Projects",
+  settings: "Settings",
+};
+
 function DefaultPageHeader({
   pathname,
   selectedTimeDate,
@@ -363,12 +375,10 @@ type TitlebarEditor = "new" | null;
 function GlobalTimerBar({
   date,
   showsFloatingDock,
-  floatingDockWidth,
 }: {
   date: string;
   showsFloatingDock: boolean;
   /** Fits the floating dock inside the left column, as in Settings. */
-  floatingDockWidth?: number;
 }) {
   const state = useLocalState();
   const projects = useLocalProjects();
@@ -460,24 +470,13 @@ function GlobalTimerBar({
       )}
       {currentTimer && showsFloatingDock && !isNarrowView
         ? createPortal(
-            <FloatingTimerDock
-              className="ajour-floating-dock-desktop"
-              style={
-                floatingDockWidth
-                  ? { left: 8, width: floatingDockWidth - 16, maxWidth: "none" }
-                  : undefined
-              }
-            />,
+            <FloatingTimerDock className="ajour-floating-dock-desktop" />,
             document.body,
           )
         : null}
       {!currentTimer && showsFloatingDock && !isNarrowView
         ? createPortal(
-            <FloatingStartDock
-              className="ajour-floating-dock-desktop"
-              // In Settings it sits inside the left column, like the running dock.
-              style={floatingDockWidth ? { left: 8 } : undefined}
-            />,
+            <FloatingStartDock className="ajour-floating-dock-desktop" />,
             document.body,
           )
         : null}
@@ -496,7 +495,8 @@ function GlobalTimerBar({
           </TooltipButton>
           {currentTimer ? (
             <TooltipButton
-              className="quick-timer-group-button"
+              // Stop is the strongest control while an entry runs.
+              className="quick-timer-group-button quick-timer-group-button-stop"
               onClick={() => localStore.saveTimer(currentTimer._id)}
               label="Stop"
               shortcut="entry.stop-or-start"
@@ -701,19 +701,29 @@ export function AppShell() {
                   />
                 )}
                 <AppMenuBar />
-                <TimeDatePicker
-                  date={selectedTimeDate}
-                  onSelectDate={(nextDate) => {
-                    setSelectedTimeDate(nextDate);
-                    if (isTimeActive) {
-                      void navigate({
-                        to: "/time/$date",
-                        params: { date: nextDate },
-                      });
-                    }
-                  }}
-                />
-                {selectedTimeDate !== todayIsoDate() ? (
+                {/* The narrow titlebar names the page: the day on Time, the
+                    section elsewhere (council round 6). It is hidden on
+                    desktop, where the page header does this. */}
+                {isNarrowView && !isTimeActive ? (
+                  <span className="ajour-titlebar-section">
+                    {section ? SECTION_TITLES[section] : null}
+                  </span>
+                ) : (
+                  <TimeDatePicker
+                    date={selectedTimeDate}
+                    onSelectDate={(nextDate) => {
+                      setSelectedTimeDate(nextDate);
+                      if (isTimeActive) {
+                        void navigate({
+                          to: "/time/$date",
+                          params: { date: nextDate },
+                        });
+                      }
+                    }}
+                  />
+                )}
+                {selectedTimeDate !== todayIsoDate() &&
+                !(isNarrowView && !isTimeActive) ? (
                   <TooltipButton
                     className={cn(
                       "ajour-nav-return-today",
@@ -746,11 +756,10 @@ export function AppShell() {
 
               <GlobalTimerBar
                 date={selectedTimeDate}
-                floatingDockWidth={
-                  showsSettingsSidebar ? leftColumnWidth : undefined
-                }
+                // Settings shows the sidebar's own timer card under Back to
+                // app (council round 25); only a hidden sidebar floats it.
                 showsFloatingDock={
-                  showsSettingsSidebar || appSidebar.state === "hidden"
+                  !showsSettingsSidebar && appSidebar.state === "hidden"
                 }
               />
             </div>

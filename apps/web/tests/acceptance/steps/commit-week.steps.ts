@@ -112,7 +112,7 @@ Given("I have a committed week of entries", async ({ page }) => {
 
 Then("the Commit page says everything is committed", async ({ page }) => {
   await expect(
-    page.getByRole("heading", { name: "Commit week of Oct 5 to Oct 11" }),
+    page.getByRole("heading", { name: "Commit week of October 5–11" }),
   ).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText("Everything is committed.")).toBeVisible();
   await expect(

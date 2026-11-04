@@ -8,6 +8,11 @@ import { RiRefreshLine, RiErrorWarningLine } from "@remixicon/react";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   connectionSyncWarning,
   syncAge,
 } from "@/domain/backlog/sync-freshness";
@@ -23,12 +28,27 @@ import {
 import { useNow } from "@/lib/use-now";
 
 /** One isolated readout, shared by the backlog, item page and peek. */
+/** Short, whole labels for the narrow view's one toolbar row. */
+const COMPACT_WARNINGS: Record<string, string> = {
+  "Connection unavailable": "No connection",
+  "Scheduled sync off": "Sync off",
+};
+
+// A paused sync stays a warning: a rejected token pauses it too.
+const CALM_SYNC_STATES = new Set([
+  "Connection unavailable",
+  "Scheduled sync off",
+]);
+
 export function BacklogRefresh({
   source,
   hasSyncedItems = false,
+  compact = false,
 }: {
   source?: BacklogRefreshSource;
   hasSyncedItems?: boolean;
+  /** The narrow view: a warning shows alone; the tooltip keeps the age. */
+  compact?: boolean;
 }) {
   const overview = useSyncExternalStore(
     subscribePluginsOverview,
@@ -111,6 +131,9 @@ export function BacklogRefresh({
     rows.length && rows.every((row) => row.lastSuccessAt)
       ? Math.min(...rows.map((row) => row.lastSuccessAt!))
       : undefined;
+  // A condition the user set up or chose, no connection or scheduled sync
+  // off, is quiet status. A failed, paused or overdue sync is a warning.
+  const alarming = warning !== undefined && !CALM_SYNC_STATES.has(warning);
   const age = `Last sync ${syncAge(lastSuccessAt, now)}`;
   const label = source ? "Refresh item" : "Refresh backlog";
   const detail = [
@@ -130,33 +153,72 @@ export function BacklogRefresh({
     running ||
     (!apiError && !rows.some((row) => row.enabled && !row.connection.paused));
 
+  const quiet = !running && !alarming;
+  const noConnection = !apiError && !rows.length;
+  const statusText = running
+    ? "Syncing…"
+    : warning
+      ? `${warning} · ${age.toLowerCase()}`
+      : age;
   return (
     <div className="backlog-refresh" aria-busy={running}>
-      {warning && !running ? (
+      {alarming && !running ? (
         <RiErrorWarningLine className="backlog-refresh-warning" aria-hidden />
       ) : null}
-      <span role="status" aria-live="polite">
-        {running
-          ? "Syncing…"
-          : warning
-            ? `${warning} · ${age.toLowerCase()}`
-            : age}
-      </span>
-      <TooltipButton
-        label={`${label}\n${detail}`}
-        aria-label={label}
-        render={<Button variant="ghost" size="icon-xs" disabled={disabled} />}
-        tooltipClassName="whitespace-pre-line"
-        aria-description={detail}
-        onClick={() => {
-          if (!disabled) void refreshBacklog({ source });
-        }}
-      >
-        <RiRefreshLine
-          className={running ? "backlog-refresh-spin" : undefined}
-          aria-hidden
-        />
-      </TooltipButton>
+      {/* At rest the status is quiet: its text is for screen readers and
+          the refresh tooltip, and shows only while syncing or when a sync
+          failed, paused or is overdue (council round 14). */}
+      {quiet ? (
+        <span role="status" aria-live="polite" className="sr-only">
+          {statusText}
+        </span>
+      ) : compact ? (
+        // The narrow view: a short, whole label, and a tap shows the full
+        // explanation even while Refresh is disabled (council round 12).
+        <Popover>
+          <PopoverTrigger
+            className="backlog-refresh-compact"
+            aria-label={`Sync status: ${statusText}`}
+          >
+            <span role="status" aria-live="polite">
+              {running
+                ? "Syncing…"
+                : (warning && COMPACT_WARNINGS[warning]) || warning || age}
+            </span>
+          </PopoverTrigger>
+          <PopoverContent
+            align="end"
+            className="w-72 text-xs whitespace-pre-line"
+          >
+            {`${statusText}
+${detail}`}
+          </PopoverContent>
+        </Popover>
+      ) : (
+        <span role="status" aria-live="polite">
+          {statusText}
+        </span>
+      )}
+      {/* With no connection there is nothing to refresh: no dead glyph, as
+          Backlog hides its plugin parts without the app API (council round
+          25). The status above stays for screen readers. */}
+      {noConnection ? null : (
+        <TooltipButton
+          label={`${label}\n${detail}`}
+          aria-label={label}
+          render={<Button variant="ghost" size="icon-xs" disabled={disabled} />}
+          tooltipClassName="whitespace-pre-line"
+          aria-description={detail}
+          onClick={() => {
+            if (!disabled) void refreshBacklog({ source });
+          }}
+        >
+          <RiRefreshLine
+            className={running ? "backlog-refresh-spin" : undefined}
+            aria-hidden
+          />
+        </TooltipButton>
+      )}
     </div>
   );
 }

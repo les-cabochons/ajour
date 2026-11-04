@@ -1,4 +1,15 @@
-import { RiPlayLine, RiStopFill, RiTimeLine } from "@remixicon/react";
+import {
+  RiCornerDownRightLine,
+  RiPlayFill,
+  RiStopFill,
+  RiCheckboxCircleLine,
+  RiTimeLine,
+} from "@remixicon/react";
+import { getWorkflowStateFills } from "@/domain/backlog/workflow-state-fill";
+import { stateDotStyle } from "@/features/backlog/state-dot";
+import { formatHours } from "@/features/backlog/backlog-estimates";
+import { PickerChevron } from "@/components/picker-chevron";
+import { RunningDot } from "@/components/running-dot";
 import { SyncConflictButton } from "@/features/backlog/sync-conflicts";
 import { openModifiedSourceClick } from "@/lib/source-navigation";
 import type { KeyboardEvent, PointerEvent } from "react";
@@ -88,6 +99,7 @@ export function patchBacklogItemWithUndo(
     },
   );
 }
+
 export function BacklogStatePicker({
   item,
   state,
@@ -105,15 +117,20 @@ export function BacklogStatePicker({
   const workflow = state.workflowStates.find(
     (s) => s._id === item.workflowStateId,
   );
+  const fills = getWorkflowStateFills(state.workflowStates);
   const dot = (
-    <span className="backlog-state-dot" style={{ color: workflow?.color }} />
+    <span
+      className="backlog-state-dot"
+      style={stateDotStyle(workflow?.color, fills.get(workflow?._id ?? ""))}
+    />
   );
   if (!live) {
     return (
       <Button
         variant="ghost"
 
-        className={full ? "justify-start" : "size-6 p-0"}
+        data-leading="state"
+        className={full ? "property-picker justify-start" : "size-6 p-0"}
         aria-label={`Change state of ${item.title}`}
         aria-haspopup="menu"
         tabIndex={-1}
@@ -121,6 +138,7 @@ export function BacklogStatePicker({
       >
         {dot}
         {full && (workflow?.name ?? "No state")}
+        {full && <PickerChevron />}
       </Button>
     );
   }
@@ -131,8 +149,8 @@ export function BacklogStatePicker({
         render={
           <Button
             variant="ghost"
-
-            className={full ? "justify-start" : "size-6 p-0"}
+            data-leading="state"
+            className={full ? "property-picker justify-start" : "size-6 p-0"}
             aria-label={`Change state of ${item.title}`}
           />
         }
@@ -140,6 +158,7 @@ export function BacklogStatePicker({
       >
         {dot}
         {full && (workflow?.name ?? "No state")}
+        {full && <PickerChevron />}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
         <DropdownMenuItem
@@ -158,7 +177,10 @@ export function BacklogStatePicker({
                 void moveBacklogItemWithUndo(item, s._id);
             }}
           >
-            <span className="backlog-state-dot" style={{ color: s.color }} />
+            <span
+              className="backlog-state-dot"
+              style={stateDotStyle(s.color, fills.get(s._id))}
+            />
             {s.name}
           </DropdownMenuItem>
         ))}
@@ -186,7 +208,8 @@ export function BacklogPriorityPicker({
       <Button
         variant="ghost"
 
-        className={full ? "justify-start" : "size-6 p-0"}
+        data-leading="priority"
+        className={full ? "property-picker justify-start" : "size-6 p-0"}
         aria-label={`Change priority of ${item.title}`}
         aria-haspopup="menu"
         tabIndex={-1}
@@ -194,6 +217,7 @@ export function BacklogPriorityPicker({
       >
         <PriorityIcon priority={item.priority} decorative />
         {full && getPriorityLevelName(item.priority)}
+        {full && <PickerChevron />}
       </Button>
     );
   }
@@ -204,12 +228,12 @@ export function BacklogPriorityPicker({
         render={
           <Button
             variant="ghost"
-
+            data-leading={hidden ? undefined : "priority"}
             className={
               hidden
                 ? "backlog-hidden-picker"
                 : full
-                  ? "justify-start"
+                  ? "property-picker justify-start"
                   : "size-6 p-0"
             }
             tabIndex={hidden ? -1 : undefined}
@@ -221,6 +245,7 @@ export function BacklogPriorityPicker({
       >
         <PriorityIcon priority={item.priority} decorative />
         {full && getPriorityLevelName(item.priority)}
+        {full && <PickerChevron />}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
         {[{ level: undefined, name: "No priority" }, ...PRIORITY_LEVELS].map(
@@ -323,7 +348,8 @@ export function BacklogItemSurface({
   // The running item's button is Stop, like its action set.
   const startAction = running ? "stop-entry" : "start-entry";
   // Stop is the filled square everywhere, as in the dock and the top bar.
-  const StartIcon = running ? RiStopFill : RiPlayLine;
+  // A filled play, as present as Stop (council round 9).
+  const StartIcon = running ? RiStopFill : RiPlayFill;
   const startDisabledReason = actions.find(
     (action) => action.id === startAction,
   )?.disabledReason;
@@ -347,8 +373,9 @@ export function BacklogItemSurface({
   const markers = (
     <>
       {running && (
+        // The one running mark, as on Day rows and in the sidebar.
         <span className="backlog-item-marker is-running">
-          <RiPlayLine className="size-3" />
+          <RunningDot />
           Running
         </span>
       )}
@@ -361,17 +388,21 @@ export function BacklogItemSurface({
               : undefined
           }
         >
+          {/* Icon plus word, like Running and Snoozed (council round 21). */}
+          <RiCheckboxCircleLine className="size-3" aria-hidden />
           Settled
           {board && item.settledAt
             ? ` · ${new Date(item.settledAt).toLocaleDateString()}`
             : ""}
         </span>
       )}
+      {/* Named, like Running and Settled, so no mark needs decoding
+          (council round 11). */}
       {isBacklogItemSnoozed(item, now) && (
-        <RiTimeLine
-          className="size-3.5 text-muted-foreground"
-          aria-label="Snoozed"
-        />
+        <span className="backlog-item-marker">
+          <RiTimeLine className="size-3" aria-hidden />
+          Snoozed
+        </span>
       )}
       {hasWorkItemSyncIssue(item) && <SyncConflictButton item={item} />}
     </>
@@ -381,8 +412,10 @@ export function BacklogItemSurface({
       className="backlog-subitem-progress"
       title={`${progress.closed} of ${progress.total} subitems closed`}
     >
+      {/* Words, not a mark to learn: "1/2 done", like Snoozed and Settled
+          (council rounds 19 and 25). */}
       <span>
-        {progress.closed}/{progress.total}
+        {progress.closed}/{progress.total} done
       </span>
       {board && (
         <span className="backlog-progress-track">
@@ -406,6 +439,11 @@ export function BacklogItemSurface({
           // Names the focused object for S and the command palette.
           data-backlog-item-id={item._id}
           data-focus-column={column}
+          // A subitem row in the narrow view drops the project's name for
+          // its parent's when both cannot fit (council round 18).
+          data-subitem={parent ? "" : undefined}
+          // An archived row's marks dim with its title (council round 21).
+          data-archived={item.status === "archived" ? "" : undefined}
           className={cn(
             board ? "backlog-board-card" : "backlog-list-row",
             onPointerDown && "touch-none",
@@ -437,7 +475,9 @@ export function BacklogItemSurface({
       <div
         className="backlog-item-leading"
         data-no-priority={view.properties.priority && !board ? undefined : ""}
-        data-no-id={view.properties.id ? undefined : ""}
+        // A list row's id follows its title, so the leading icons stay fixed
+        // whether or not an item has one (council round 5).
+        data-no-id={board && view.properties.id ? undefined : ""}
       >
         {view.properties.priority && !board && (
           <BacklogPriorityPicker
@@ -470,17 +510,15 @@ export function BacklogItemSurface({
               </>
             )}
           </span>
-        ) : (
-          view.properties.id && (
-            <span className="backlog-item-id">{reference ?? ""}</span>
-          )
-        )}
+        ) : null}
         <BacklogStatePicker
           item={item}
           state={state}
           beforeChange={beforeChange}
           live={live}
         />
+        {/* The project's own icon, or a source's task icon: with many
+            projects it tells them apart at a glance. */}
         {!board && <WorkItemIcon icon={resolveWorkItemIcon(item, icons)} />}
       </div>
       <div className="backlog-item-content">
@@ -492,9 +530,18 @@ export function BacklogItemSurface({
         >
           {item.title}
         </span>
+        {!board && view.properties.id && reference ? (
+          <span className="backlog-item-id">{reference}</span>
+        ) : null}
         {parent && (
           <span className="backlog-item-parent" title={parent.title}>
-            ↳ {parent.title}
+            {/* The sidebar's drawn parent mark, not a text arrow (council
+                round 26). */}
+            <RiCornerDownRightLine
+              aria-hidden
+              className="mr-0.5 inline size-3 align-[-2px]"
+            />
+            {parent.title}
           </span>
         )}
         {!board && progressLabel}
@@ -523,10 +570,12 @@ export function BacklogItemSurface({
             {getLocalProjectDisplayName(project)}
           </Chip>
         )}
+        {/* Nothing left reads as nothing, as an empty cell does. */}
         {view.properties.estimate &&
-          item.remainingEstimateHours !== undefined && (
+          item.remainingEstimateHours !== undefined &&
+          item.remainingEstimateHours > 0 && (
             <span className="backlog-item-estimate">
-              {item.remainingEstimateHours}h
+              {formatHours(item.remainingEstimateHours)}
             </span>
           )}
         <div className="backlog-item-actions">
@@ -545,7 +594,11 @@ export function BacklogItemSurface({
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    className="text-muted-foreground aria-disabled:opacity-50"
+                    className={cn(
+                      "backlog-item-start aria-disabled:opacity-50",
+                      // The running item's Stop is the one strong action in the list.
+                      running ? "text-foreground" : "text-muted-foreground",
+                    )}
                   />
                 }
                 onClick={(e) => {
@@ -559,7 +612,11 @@ export function BacklogItemSurface({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="text-muted-foreground aria-disabled:opacity-50"
+                className={cn(
+                  "backlog-item-start aria-disabled:opacity-50",
+                  // The running item's Stop is the one strong action in the list.
+                  running ? "text-foreground" : "text-muted-foreground",
+                )}
                 aria-label={startLabel}
                 aria-description={startDisabledReason}
                 aria-disabled={Boolean(startDisabledReason)}

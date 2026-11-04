@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   RiAddLine as Plus,
   RiDownloadLine as Download,
   RiFileTransferLine as FileTransfer,
@@ -46,7 +51,10 @@ import {
   normalizeProjectTaskBudgetMs,
   type ProjectTaskConsumedTone,
 } from "@/domain/projects/task-budget";
-import { getProjectTaskBillableValueLabel } from "@/features/projects/project-task-options";
+import {
+  getProjectTaskBillableValueLabel,
+  isProjectTaskBillable,
+} from "@/features/projects/project-task-options";
 import {
   getLocalProjectDisplayName,
   type LocalProject,
@@ -913,7 +921,15 @@ function ProjectDetail({
       <span className="project-budget">
         <BudgetBar ratio={Math.max(0, consumedMs) / budgetMs} />
         <Value className={cn("project-task-consumed", tone)}>
-          {formatSignedClock(consumedMs)} / {formatClockDuration(budgetMs)}
+          {formatSignedClock(consumedMs)}
+          {/* The hours logged lead; the budget follows, quieter (council
+              round 21). */}
+          <span className="project-budget-of">
+            {" "}
+            {/* "a of b", as "1 of 2 done" and "logged of 40:00 target"
+                read; " / " is the breadcrumb's (council round 26). */}
+            of {formatClockDuration(budgetMs)}
+          </span>
         </Value>
       </span>
     );
@@ -1000,8 +1016,12 @@ function ProjectDetail({
             plugins={taskPropertyPlugins}
             projectLocalOnly={project.localOnly}
           />
+          {/* The shortcut chord, by the name it starts (council round 19). */}
           {task.pinnedSlot ? <PinnedSlotBadge slot={task.pinnedSlot} /> : null}
-          <Chip>{getProjectTaskBillableValueLabel(task)}</Chip>
+          {/* Billable is the default: only the exception carries a chip. */}
+          {isProjectTaskBillable(task) ? null : (
+            <Chip>{getProjectTaskBillableValueLabel(task)}</Chip>
+          )}
           {task.status === "archived" ? <Chip>Archived</Chip> : null}
         </td>
         <td className="project-task-trailing">
@@ -1048,7 +1068,26 @@ function ProjectDetail({
         }}
       />
 
+      {/* The top bar names the page, as the item page's breadcrumb does
+          (council round 5). */}
       <PageHeader
+        breadcrumb={
+          isNarrowView
+            ? undefined
+            : [
+                { label: "Projects", to: "/projects", onClick: onLeave },
+                {
+                  label: getLocalProjectDisplayName(project),
+                  icon: (
+                    <ProjectIcon
+                      icon={project.icon}
+                      color={project.color}
+                      className="size-3.5"
+                    />
+                  ),
+                },
+              ]
+        }
         backLink={
           isNarrowView
             ? undefined
@@ -1072,43 +1111,6 @@ function ProjectDetail({
         {isArchived ? <Chip>Archived</Chip> : null}
       </ObjectContextMenu>
 
-      <FigureRow>
-        <Figure label="This week">{formatClockDuration(weekMs)}</Figure>
-        <Figure label="All time">
-          {formatClockDuration(metrics.durationMs)}
-        </Figure>
-        {budget.budgetMs > 0 ? (
-          <>
-            <Figure label="Budget">
-              {formatClockDuration(budget.budgetMs)}
-            </Figure>
-            <Figure label="Used">
-              <span
-                className={cn(
-                  "project-task-consumed",
-                  budgetTone(budget.consumedMs / budget.budgetMs),
-                )}
-              >
-                {formatClockDuration(budget.consumedMs)}
-              </span>
-            </Figure>
-            <Figure label="Remaining">
-              {formatClockDuration(
-                Math.max(0, budget.budgetMs - budget.consumedMs),
-              )}
-            </Figure>
-          </>
-        ) : (
-          <Figure label="Active tasks">{summary.active}</Figure>
-        )}
-      </FigureRow>
-      {budget.budgetMs > 0 ? (
-        <BudgetBar
-          ratio={budget.consumedMs / budget.budgetMs}
-          className="project-progress-wide"
-        />
-      ) : null}
-
       {isArchived ? (
         <MessagePanel>
           This project is archived. You can consult it here, but project and
@@ -1122,167 +1124,255 @@ function ProjectDetail({
       ) : null}
 
       <div className="project-detail-columns">
-        <Tabs
-          value={tab}
-          onValueChange={(value) => setTab(value as "tasks" | "entries")}
-          className="project-tabs"
-        >
-          <TabsList
-            variant="line"
-            className="h-auto w-full justify-start gap-4 rounded-none border-b border-border bg-transparent p-0"
-          >
-            <TabsTrigger value="tasks" className="flex-none px-0">
-              Tasks <Value tone="muted">{project.tasks.length}</Value>
-            </TabsTrigger>
-            <TabsTrigger value="entries" className="flex-none px-0">
-              Time entries <Value tone="muted">{entries.length}</Value>
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="tasks" className="project-tab-panel">
-            <div className="project-task-toolbar">
-              <SectionHeading>Tasks</SectionHeading>
-              <div
-                className="toggle-group project-task-filter-tabs"
-                role="tablist"
-                aria-label="Filter project tasks"
-              >
-                {taskFilters.map((filter) => {
-                  const isActive = taskFilter === filter.value;
-                  return (
-                    <button
-                      key={filter.value}
-                      type="button"
-                      role="tab"
-                      aria-selected={isActive}
+        {/* The figures open the main column, so the Properties card starts
+            level with them, as on the backlog item page (council round 7). */}
+        <div className="flex min-w-0 flex-col gap-4">
+          {/* "This week" is the page's one 28px figure; the budget figures
+              form a group with their bar under them only (council round
+              11). */}
+          <FigureRow className="items-end">
+            {/* Lifted by the budget bar and its gap, so every value shares
+                one baseline. */}
+            <Figure
+              label="This week"
+              size="figure"
+              className={budget.budgetMs > 0 ? "mb-[13px]" : undefined}
+            >
+              {formatClockDuration(weekMs)}
+            </Figure>
+            <Figure
+              label="All time"
+              className={budget.budgetMs > 0 ? "mb-[13px]" : undefined}
+            >
+              {formatClockDuration(metrics.durationMs)}
+            </Figure>
+            {budget.budgetMs > 0 ? (
+              <div className="flex flex-col gap-2.5">
+                <FigureRow>
+                  {/* Named for what they count, so "Budget used" never reads
+                      as All time (council round 4). Part, part, whole: the
+                      bar fills with the first, Budget used (council round
+                      25). */}
+                  <Figure label="Budget used">
+                    <span
                       className={cn(
-                        "toggle-item",
-                        isActive && "toggle-item-active",
+                        // Plain like the other figures; amber and red only warn.
+                        "project-figure-consumed",
+                        budgetTone(budget.consumedMs / budget.budgetMs),
                       )}
-                      onClick={() => setTaskFilter(filter.value)}
                     >
-                      <span>{filter.label}</span>
-                      <span className="project-task-filter-count">
-                        {filter.count}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {visibleTasks.length === 0 ? (
-              <Empty align="start" className="project-task-empty">
-                <EmptyHeader>
-                  <EmptyTitle>
-                    {isArchivedTaskFilter
-                      ? "No archived tasks"
-                      : "No active tasks"}
-                  </EmptyTitle>
-                  <EmptyDescription>
-                    {isArchivedTaskFilter
-                      ? "Archived tasks will appear here."
-                      : isArchived
-                        ? "This archived project has no active tasks."
-                        : "Create a task, or import tasks from Excel."}
-                  </EmptyDescription>
-                </EmptyHeader>
-                {!isArchived && !isArchivedTaskFilter ? (
-                  <EmptyContent>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={isImporting}
-                      onClick={openImportPicker}
-                    >
-                      <Download data-icon="inline-start" />
-                      Import tasks…
-                    </Button>
-                  </EmptyContent>
-                ) : null}
-              </Empty>
-            ) : (
-              <table
-                className={cn(
-                  "project-task-table",
-                  taskDragState && "is-task-dragging",
-                )}
-              >
-                <tbody data-focus-scope>
-                  {visibleTasks.map(renderTaskRow)}
-                </tbody>
-              </table>
-            )}
-            {!isArchived && !isArchivedTaskFilter ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="mt-1 w-fit text-muted-foreground"
-                onClick={onNewTask}
-              >
-                <Plus data-icon="inline-start" />
-                New task
-              </Button>
-            ) : null}
-          </TabsContent>
-
-          <TabsContent value="entries" className="project-tab-panel">
-            {entryDays.length === 0 ? (
-              <Empty align="start" className="project-task-empty">
-                <EmptyHeader>
-                  <EmptyTitle>No time logged yet</EmptyTitle>
-                  <EmptyDescription>
-                    Entries on this project's tasks show here by day.
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            ) : (
-              entryDays.map((day) => (
-                <div key={day.localDate}>
-                  <SectionHeading
-                    trailing={
-                      <Value>
-                        {formatClockDuration(
-                          day.entries.reduce(
-                            (sum, entry) => sum + entry.durationMs,
-                            0,
-                          ),
-                        )}
-                      </Value>
+                      {formatClockDuration(budget.consumedMs)}
+                    </span>
+                  </Figure>
+                  <Figure label="Budget left">
+                    {formatClockDuration(
+                      Math.max(0, budget.budgetMs - budget.consumedMs),
+                    )}
+                  </Figure>
+                  <Figure
+                    label={
+                      // The caption that explained the group is its label's
+                      // tooltip (council round 16).
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <span
+                              tabIndex={0}
+                              className="cursor-help underline decoration-dotted underline-offset-2"
+                            />
+                          }
+                        >
+                          Task budgets
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Budget figures count the active tasks that have a
+                          budget.
+                        </TooltipContent>
+                      </Tooltip>
                     }
                   >
-                    {formatEntryDay(day.localDate)}
-                  </SectionHeading>
-                  <div className="project-entry-rows">
-                    {day.entries.map((entry) => {
-                      const task = project.tasks.find(
-                        (candidate) => candidate._id === entry.taskId,
-                      );
+                    {formatClockDuration(budget.budgetMs)}
+                  </Figure>
+                </FigureRow>
+                <BudgetBar
+                  ratio={budget.consumedMs / budget.budgetMs}
+                  className="project-progress-wide"
+                />
+              </div>
+            ) : (
+              <Figure label="Active tasks">{summary.active}</Figure>
+            )}
+          </FigureRow>
+
+          <Tabs
+            value={tab}
+            onValueChange={(value) => setTab(value as "tasks" | "entries")}
+            className="project-tabs"
+          >
+            <TabsList
+              variant="line"
+              className="h-auto w-full justify-start gap-4 rounded-none border-b border-border bg-transparent p-0"
+            >
+              <TabsTrigger value="tasks" className="flex-none px-0">
+                Tasks <Value tone="muted">{project.tasks.length}</Value>
+              </TabsTrigger>
+              <TabsTrigger value="entries" className="flex-none px-0">
+                Time entries <Value tone="muted">{entries.length}</Value>
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="tasks" className="project-tab-panel">
+              {/* The filter sits on the tab row, at its right: the tab already
+                names the list (council round 5). */}
+              {/* With nothing archived there is nothing to filter: the tab
+                  line keeps one selector (council round 30). */}
+              {summary.archived > 0 || isArchivedTaskFilter ? (
+                <div className="project-task-toolbar">
+                  <div
+                    className="toggle-group project-task-filter-tabs"
+                    role="tablist"
+                    aria-label="Filter project tasks"
+                  >
+                    {taskFilters.map((filter) => {
+                      const isActive = taskFilter === filter.value;
                       return (
-                        <Link
-                          key={entry._id}
-                          to="/time/$date"
-                          params={{ date: entry.localDate }}
-                          className="project-entry-row"
-                          onClick={onLeave}
+                        <button
+                          key={filter.value}
+                          type="button"
+                          role="tab"
+                          aria-selected={isActive}
+                          className={cn(
+                            "toggle-item",
+                            isActive && "toggle-item-active",
+                          )}
+                          onClick={() => setTaskFilter(filter.value)}
                         >
-                          <span className="project-entry-task">
-                            {task?.name ?? "No task"}
+                          <span>{filter.label}</span>
+                          <span className="project-task-filter-count">
+                            {filter.count}
                           </span>
-                          <span className="project-entry-note">
-                            {entry.note ?? ""}
-                          </span>
-                          <Value>{formatClockDuration(entry.durationMs)}</Value>
-                        </Link>
+                        </button>
                       );
                     })}
                   </div>
                 </div>
-              ))
-            )}
-          </TabsContent>
-        </Tabs>
+              ) : null}
+
+              {visibleTasks.length === 0 ? (
+                <Empty align="start" className="project-task-empty">
+                  <EmptyHeader>
+                    <EmptyTitle>
+                      {isArchivedTaskFilter
+                        ? "No archived tasks"
+                        : "No active tasks"}
+                    </EmptyTitle>
+                    <EmptyDescription>
+                      {isArchivedTaskFilter
+                        ? "Archived tasks will appear here."
+                        : isArchived
+                          ? "This archived project has no active tasks."
+                          : "Create a task, or import tasks from Excel."}
+                    </EmptyDescription>
+                  </EmptyHeader>
+                  {!isArchived && !isArchivedTaskFilter ? (
+                    <EmptyContent>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={isImporting}
+                        onClick={openImportPicker}
+                      >
+                        <Download data-icon="inline-start" />
+                        Import tasks…
+                      </Button>
+                    </EmptyContent>
+                  ) : null}
+                </Empty>
+              ) : (
+                <table
+                  className={cn(
+                    "project-task-table",
+                    taskDragState && "is-task-dragging",
+                  )}
+                >
+                  <tbody data-focus-scope>
+                    {visibleTasks.map(renderTaskRow)}
+                  </tbody>
+                </table>
+              )}
+              {!isArchived && !isArchivedTaskFilter ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="mt-1 w-fit text-muted-foreground"
+                  onClick={onNewTask}
+                >
+                  <Plus data-icon="inline-start" />
+                  New task
+                </Button>
+              ) : null}
+            </TabsContent>
+
+            <TabsContent value="entries" className="project-tab-panel">
+              {entryDays.length === 0 ? (
+                <Empty align="start" className="project-task-empty">
+                  <EmptyHeader>
+                    <EmptyTitle>No time logged yet</EmptyTitle>
+                    <EmptyDescription>
+                      Entries on this project's tasks show here by day.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              ) : (
+                entryDays.map((day) => (
+                  <div key={day.localDate}>
+                    <SectionHeading
+                      trailing={
+                        <Value>
+                          {formatClockDuration(
+                            day.entries.reduce(
+                              (sum, entry) => sum + entry.durationMs,
+                              0,
+                            ),
+                          )}
+                        </Value>
+                      }
+                    >
+                      {formatEntryDay(day.localDate)}
+                    </SectionHeading>
+                    <div className="project-entry-rows">
+                      {day.entries.map((entry) => {
+                        const task = project.tasks.find(
+                          (candidate) => candidate._id === entry.taskId,
+                        );
+                        return (
+                          <Link
+                            key={entry._id}
+                            to="/time/$date"
+                            params={{ date: entry.localDate }}
+                            className="project-entry-row"
+                            onClick={onLeave}
+                          >
+                            <span className="project-entry-task">
+                              {task?.name ?? "No task"}
+                            </span>
+                            <span className="project-entry-note">
+                              {entry.note ?? ""}
+                            </span>
+                            <Value>
+                              {formatClockDuration(entry.durationMs)}
+                            </Value>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))
+              )}
+            </TabsContent>
+          </Tabs>
+        </div>
         <ProjectPropertiesCard
           project={project}
           isImporting={isImporting}

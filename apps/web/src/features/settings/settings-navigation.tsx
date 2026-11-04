@@ -27,6 +27,7 @@ import {
   SidebarMenuItem,
 } from "@/components/custom-sidebar";
 import { Button } from "@/components/ui/button";
+import { TimerDock } from "@/features/layout/timer-dock";
 import { Sidebar } from "@/components/ui/sidebar";
 import { useCalendarSources } from "@/lib/calendar-suggestions";
 import { useCodeHostConnections } from "@/lib/code-host-connections";
@@ -200,6 +201,13 @@ export function SettingsNavigation({
           Back to app
         </Button>
       </SidebarHeader>
+      {/* The app sidebar's timer card, so Settings shows the one form of the
+          timer (council round 25). */}
+      {/* 16px from Back to app and from the first group (council round
+          26). */}
+      <div className="-mb-3 pt-2">
+        <TimerDock />
+      </div>
       <SidebarContent>
         {groups.map((group) => (
           <SidebarGroup key={group.label}>

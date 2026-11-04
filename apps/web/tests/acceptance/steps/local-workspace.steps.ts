@@ -624,6 +624,18 @@ Then("the window title shows the running entry", async ({ page }) => {
   await expect(page).toHaveTitle(/^● 0:00 · Untitled entry — Ajour$/);
 });
 
+// Settings shows the sidebar's own timer card, not the floating dock
+// (council round 25).
+Then("Settings shows the running entry under Back to app", async ({ page }) => {
+  const settings = page.getByRole("navigation", {
+    name: "Settings sections",
+  });
+  await expect(
+    settings.getByRole("region", { name: "Running entry" }),
+  ).toBeVisible();
+  await expect(page.locator(".ajour-floating-dock-desktop")).toHaveCount(0);
+});
+
 Then("the running entry floats at the bottom left", async ({ page }) => {
   const dock = page.locator(".ajour-floating-dock-desktop");
   await expect(dock).toContainText("Untitled entry");
@@ -631,8 +643,7 @@ Then("the running entry floats at the bottom left", async ({ page }) => {
     dock.boundingBox(),
     page.evaluate(() => ({ height: window.innerHeight })),
   ]);
-  // 16px from the edge, or 8px inside the Settings column.
-  expect([8, 16]).toContain(box?.x);
+  expect(box?.x).toBe(16);
   expect((box?.y ?? 0) + (box?.height ?? 0)).toBe(viewport.height - 16);
 });
 
@@ -951,7 +962,10 @@ When(
       .getByRole("button", { name: new RegExp(`^${key}(,|$)`) })
       .click();
     await expect(picker).toBeHidden();
-    await expect(taskRow(page, task).locator("kbd")).toHaveText(key);
+    // The keycap prints the chord that starts the task (council round 19).
+    await expect(taskRow(page, task).locator("kbd")).toHaveText(
+      new RegExp("^(⇧|Shift\\+)" + key + "$"),
+    );
   },
 );
 
@@ -1639,8 +1653,11 @@ Then("the Backlog workspace fills the available page", async ({ page }) => {
   await page.setViewportSize({ width: 2200, height: 900 });
   const content = await page.locator(".app-content-shell").boundingBox();
   const workspace = await page.locator(".backlog-workspace").boundingBox();
+  // The filter row shows only while filters are on: the list's first group
+  // header spans the page instead.
   const header = await page
-    .locator(".backlog-workspace-filterbar")
+    .locator(".backlog-group-header")
+    .first()
     .boundingBox();
   expect(workspace).not.toBeNull();
   expect(workspace?.x).toBe(content?.x);
@@ -1659,9 +1676,8 @@ Then("the Backlog list fits a narrow window", async ({ page }) => {
   expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(
     page.viewportSize()!.width,
   );
-  await expect(
-    row.getByRole("button", { name: "Actions for Backlog switch item" }),
-  ).toBeVisible();
+  // The row starts at once; its menu opens on a long press (council round 23).
+  await expect(row.locator(".backlog-item-start")).toBeVisible();
 });
 
 Then(
@@ -2618,7 +2634,7 @@ Then("the entry editor opens in a full-width dialog", async ({ page }) => {
 
 Then("the Commit page lists the week's entries", async ({ page }) => {
   await expect(
-    page.getByRole("heading", { name: "Commit week of Oct 5 to Oct 11" }),
+    page.getByRole("heading", { name: "Commit week of October 5–11" }),
   ).toBeVisible({ timeout: 15_000 });
   // None of the fixture's entries was ever committed.
   await expect(
@@ -2764,7 +2780,8 @@ Then(
     const viewport = page.viewportSize()!;
     expect(box.x).toBeLessThan(viewport.width / 4);
     expect(box.y + box.height).toBeGreaterThan(viewport.height - 40);
-    expect(box.width).toBeLessThan(viewport.width / 2);
+    // Every item is labelled, and it still leaves the agent indicator room.
+    expect(box.x + box.width).toBeLessThan(viewport.width - 64);
   },
 );
 
@@ -2782,8 +2799,10 @@ Then(
     await expect(navigation.getByRole("link", { name: "Backlog" })).toHaveText(
       "Backlog",
     );
-    // The inactive section shows only its icon.
-    await expect(navigation.getByRole("link", { name: "Time" })).toHaveText("");
+    // Every section shows its name, the inactive ones too.
+    await expect(navigation.getByRole("link", { name: "Time" })).toHaveText(
+      "Time",
+    );
   },
 );
 
@@ -3426,11 +3445,11 @@ async function entryLineBoxes(page: Page, note: string) {
 }
 
 Then(
-  "the {string} entry shows its note on a second line under its task",
+  "the {string} entry shows its note on the first line over its task",
   async ({ page }, note: string) => {
     const boxes = await entryLineBoxes(page, note);
-    expect(boxes.note.y).toBeGreaterThanOrEqual(
-      boxes.task.y + boxes.task.height - 1,
+    expect(boxes.task.y).toBeGreaterThanOrEqual(
+      boxes.note.y + boxes.note.height - 1,
     );
   },
 );
@@ -3470,14 +3489,12 @@ Given(
   },
 );
 
-Then("the long note runs on under the duration", async ({ page }) => {
+Then("the long note stops before the duration", async ({ page }) => {
   const row = page.getByRole("row", { name: /API pagination/ });
   const note = await row.locator(".time-entry-note").boundingBox();
   const trailing = await row.locator(".time-entry-trailing").boundingBox();
-  const rowBox = await row.boundingBox();
-  if (!note || !trailing || !rowBox) throw new Error("The row is not rendered");
-  expect(note.x + note.width).toBeGreaterThan(trailing.x);
-  expect(note.x + note.width).toBeLessThanOrEqual(rowBox.x + rowBox.width);
+  if (!note || !trailing) throw new Error("The row is not rendered");
+  expect(note.x + note.width).toBeLessThanOrEqual(trailing.x + 1);
 });
 
 Then(

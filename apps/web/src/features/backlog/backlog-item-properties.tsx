@@ -22,6 +22,7 @@ import {
   BacklogStatePicker,
   patchBacklogItemWithUndo,
 } from "@/features/backlog/backlog-item-surface";
+import { PickerChevron } from "@/components/picker-chevron";
 import {
   changeSourceStateWithUndo,
   getOtherSourceStates,
@@ -161,7 +162,7 @@ export function BacklogItemProperties({
         </PropertyRow>
         {children}
         {item.source !== "manual" ? (
-          <PropertyRow label="When missing">
+          <PropertyRow label="Missing from sync">
             <MissingFromSyncPicker item={item} />
           </PropertyRow>
         ) : null}
@@ -185,25 +186,29 @@ export function BacklogItemProperties({
  */
 function MissingFromSyncPicker({ item }: { item: LocalWorkItem }) {
   const keep = item.keepWhenMissingFromSync ?? false;
-  const label = keep ? "Keep" : "Archive";
+  // Says what happens, so it never reads as the Archive command below it.
+  const label = keep ? "Keep in backlog" : "Archive automatically";
+  // The value column is narrow: the short form shows, the menu says it all.
+  const shown = keep ? "Keep" : "Auto-archive";
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
           <Button
             variant="ghost"
-            className="justify-start"
+            className="property-picker min-w-0 justify-start"
             // An archived item is read-only until Restore.
             disabled={item.status === "archived"}
-            aria-label={`When missing from sync: ${label}`}
+            aria-label={`Missing from sync: ${label}`}
           />
         }
       >
-        {label}
+        <span className="min-w-0 truncate">{shown}</span>
+        <PickerChevron />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
         <DropdownMenuGroup>
-          <DropdownMenuLabel>When missing from sync</DropdownMenuLabel>
+          <DropdownMenuLabel>Missing from sync</DropdownMenuLabel>
           <DropdownMenuRadioGroup
             value={keep ? "keep" : "archive"}
             onValueChange={(value) => {
@@ -219,10 +224,10 @@ function MissingFromSyncPicker({ item }: { item: LocalWorkItem }) {
             }}
           >
             <DropdownMenuRadioItem value="archive" closeOnClick>
-              Archive
+              Archive automatically
             </DropdownMenuRadioItem>
             <DropdownMenuRadioItem value="keep" closeOnClick>
-              Keep
+              Keep in backlog
             </DropdownMenuRadioItem>
           </DropdownMenuRadioGroup>
         </DropdownMenuGroup>

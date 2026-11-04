@@ -1,17 +1,27 @@
+import { formatCompactDuration } from "@/domain/time/duration";
 import type { LocalWorkItemEstimateFieldKey } from "@/domain/local-state";
 
-/** The estimate figures shown on the backlog item page and in the peek. */
+/**
+ * The estimate figures shown on the backlog item page and in the peek:
+ * Remaining first, the item page's lead number (product owner, council round
+ * 23), then Completed, the spent part the bar under them fills with, then
+ * Original, its whole (council rounds 25 and 28).
+ */
 export const ESTIMATE_FIGURES: {
   key: LocalWorkItemEstimateFieldKey;
   label: string;
 }[] = [
-  { key: "originalEstimateHours", label: "Original" },
   { key: "remainingEstimateHours", label: "Remaining" },
   { key: "completedEstimateHours", label: "Completed" },
+  { key: "originalEstimateHours", label: "Original" },
 ];
 
-/** Hours as "4h" or "2.5h", or "–" when there is no estimate. */
+/**
+ * Hours as "4h", "2h30" or "45m", the one estimate format, or "–" when there is
+ * no estimate. Logged time is a clock ("2:30"); an estimate never is.
+ */
 export function formatHours(hours?: number) {
   if (hours === undefined) return "–";
-  return `${Number.isInteger(hours) ? hours : hours.toFixed(1)}h`;
+  if (hours === 0) return "0h";
+  return formatCompactDuration(hours * 3_600_000);
 }

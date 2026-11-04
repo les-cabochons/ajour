@@ -614,7 +614,7 @@ export function WeeklyTimeView({
         <div className="flex items-center gap-3">
           {weekLock ? <WeekLockChip /> : null}
           <CapacityValue
-            microLabel="Week total"
+            microLabel="Week"
             capacityMs={projection.capacityMs}
             totalMs={projection.totalMs}
             label="Week capacity"

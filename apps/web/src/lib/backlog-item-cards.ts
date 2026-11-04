@@ -3,27 +3,40 @@ import { useSyncExternalStore } from "react";
 /**
  * Which of the item page's folding cards are open, per device. Like the
  * sidebar layout, it lives outside the local app state so it is never
- * exported. Both cards start closed, on their summary line.
+ * exported. Time entries starts closed on its summary line. Subitems stays
+ * unchosen until the user opens or closes it: a short list then shows open
+ * (`resolveSubitemsOpen`, council round 13).
  */
 export interface BacklogItemCards {
-  subitemsOpen: boolean;
+  subitemsOpen: boolean | undefined;
   timeEntriesOpen: boolean;
+}
+
+/** Subitems open while the user has not chosen and the list is 1 to 3 long. */
+export function resolveSubitemsOpen(
+  saved: boolean | undefined,
+  subitemCount: number,
+) {
+  return saved ?? (subitemCount >= 1 && subitemCount <= 3);
 }
 
 export const BACKLOG_ITEM_CARDS_STORAGE_KEY = "ajour.backlog-item-cards";
 
 const DEFAULT_CARDS: BacklogItemCards = {
-  subitemsOpen: false,
+  subitemsOpen: undefined,
   timeEntriesOpen: false,
 };
 
-/** Unknown or broken values fall back to closed, card by card. */
+/** Unknown or broken values fall back to the defaults, card by card. */
 export function parseBacklogItemCards(value: string | null): BacklogItemCards {
   try {
     const parsed: unknown = value ? JSON.parse(value) : null;
     if (!parsed || typeof parsed !== "object") return DEFAULT_CARDS;
     return {
-      subitemsOpen: "subitemsOpen" in parsed && parsed.subitemsOpen === true,
+      subitemsOpen:
+        "subitemsOpen" in parsed && typeof parsed.subitemsOpen === "boolean"
+          ? parsed.subitemsOpen
+          : undefined,
       timeEntriesOpen:
         "timeEntriesOpen" in parsed && parsed.timeEntriesOpen === true,
     };

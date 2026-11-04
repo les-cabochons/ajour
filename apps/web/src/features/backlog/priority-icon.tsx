@@ -5,7 +5,7 @@ import {
 import { cn } from "@/lib/utils";
 
 /**
- * The priority level's icon: three dashes for No priority, an orange square
+ * The priority level's icon: three dashes for No priority, an amber square
  * with "!" for Urgent, and signal bars for High, Medium and Low. It is labelled
  * with the level's name unless `decorative`.
  */
@@ -25,6 +25,7 @@ export function PriorityIcon({
   if (!priority) {
     return (
       <svg
+        data-priority="none"
         viewBox="0 0 14 14"
         className={cn("size-4 shrink-0 text-muted-foreground", className)}
         {...a11y}
@@ -49,7 +50,7 @@ export function PriorityIcon({
     return (
       <svg
         viewBox="0 0 14 14"
-        className={cn("size-4 shrink-0 text-orange-600", className)}
+        className={cn("size-4 shrink-0 text-[var(--warning)]", className)}
         {...a11y}
       >
         <rect x="1" y="1" width="12" height="12" rx="3" fill="currentColor" />
@@ -59,7 +60,7 @@ export function PriorityIcon({
           width="1.5"
           height="4.5"
           rx="0.75"
-          fill="white"
+          fill="var(--background)"
         />
         <rect
           x="6.25"
@@ -67,7 +68,7 @@ export function PriorityIcon({
           width="1.5"
           height="1.5"
           rx="0.75"
-          fill="white"
+          fill="var(--background)"
         />
       </svg>
     );
@@ -77,19 +78,26 @@ export function PriorityIcon({
   return (
     <svg
       viewBox="0 0 14 14"
-      className={cn("size-4 shrink-0 text-foreground", className)}
+      // Muted ink: the row's title, not its priority, is the darkest thing
+      // on it. Urgent keeps its amber square (council round 9).
+      className={cn("size-4 shrink-0 text-muted-foreground", className)}
       {...a11y}
     >
       {[0, 1, 2].map((bar) => (
         <rect
           key={bar}
           x={1.5 + bar * 4}
-          y={9 - bar * 3}
+          // 5, 8 and 11 tall, so even Low's one bar reads as a step
+          // (council round 22).
+          y={7 - bar * 3}
           width="3"
-          height={3 + bar * 3}
+          height={5 + bar * 3}
           rx="0.75"
-          fill="currentColor"
-          opacity={bar < filledBars ? 0.9 : 0.3}
+          // The unfilled bars keep the frame visible, as in Linear, so every
+          // level reads as one glyph (council round 19), in tertiary ink so
+          // the filled count reads at a glance (council round 26).
+          fill={bar < filledBars ? "currentColor" : "var(--text-tertiary)"}
+          opacity={bar < filledBars ? 1 : 0.6}
         />
       ))}
     </svg>

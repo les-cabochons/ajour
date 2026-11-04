@@ -215,6 +215,21 @@ export function applyLoggedTimeToWorkItems(
   });
 }
 
+/**
+ * The share of the original estimate completed, 0 to 1: the bar under an
+ * item's figures. A figure bar always fills with the spent part, as the
+ * project's budget bar does (council round 28). Empty without both
+ * estimates.
+ */
+export function getCompletedEstimateShare(values: WorkItemEstimateValues) {
+  const { originalEstimateHours, completedEstimateHours } = values;
+  if (!originalEstimateHours || completedEstimateHours === undefined) return 0;
+  return Math.min(
+    1,
+    Math.max(0, completedEstimateHours / originalEstimateHours),
+  );
+}
+
 export function getWorkItemEstimateSummary(values: WorkItemEstimateValues) {
   if (!hasVisibleEstimateValue(values)) {
     return null;

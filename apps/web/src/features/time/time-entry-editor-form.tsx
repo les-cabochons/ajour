@@ -9,7 +9,7 @@ import {
 } from "react";
 import {
   RiCloseLine as X,
-  RiPlayLine as Play,
+  RiPlayFill as Play,
   RiSaveLine as Save,
   RiStopLine as Stop,
 } from "@remixicon/react";

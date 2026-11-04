@@ -136,6 +136,7 @@ it("warns about overdue and paused automatic sync even if another capability syn
   cachePluginsOverview(data);
   await renderRoutes({ routes: { "/": () => <BacklogRefresh /> } });
   expect(screen.getByText(/Sync overdue/)).toBeTruthy();
+  expect(document.querySelector(".backlog-refresh-warning")).not.toBeNull();
   const paused = structuredClone(data);
   paused.connectionGroups[0]!.connections[0]!.paused = {
     reason: "secret_rejected",
@@ -145,6 +146,7 @@ it("warns about overdue and paused automatic sync even if another capability syn
     cachePluginsOverview(paused);
   });
   expect(screen.getByText(/Sync paused/)).toBeTruthy();
+  expect(document.querySelector(".backlog-refresh-warning")).not.toBeNull();
   expect(
     (
       screen.getByRole("button", {
@@ -152,6 +154,26 @@ it("warns about overdue and paused automatic sync even if another capability syn
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
+});
+
+it("keeps a condition the user chose quiet: scheduled sync off or no connection", async () => {
+  const data = overview();
+  data.connectionGroups[0]!.connections[0]!.autoSync = false;
+  cachePluginsOverview(data);
+  await renderRoutes({
+    routes: { "/": () => <BacklogRefresh hasSyncedItems /> },
+  });
+  expect(screen.getByText(/Scheduled sync off/)).toBeTruthy();
+  expect(document.querySelector(".backlog-refresh-warning")).toBeNull();
+  const none = structuredClone(data);
+  none.connectionGroups = [];
+  act(() => {
+    cachePluginsOverview(none);
+  });
+  expect(screen.getByText(/Connection unavailable/)).toBeTruthy();
+  expect(document.querySelector(".backlog-refresh-warning")).toBeNull();
+  // Nothing to refresh: no disabled glyph (council round 25).
+  expect(screen.queryByRole("button", { name: "Refresh backlog" })).toBeNull();
 });
 
 it("does not mark an item fresh when a connection sync did not return that item", async () => {

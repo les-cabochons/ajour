@@ -150,10 +150,10 @@ describe("summarizeRunningEntry", () => {
 });
 
 describe("running entry formats", () => {
-  it("formats the remaining estimate in hours", () => {
-    expect(formatRemainingEstimate(1.1 * HOUR_MS)).toBe("1.1h left");
+  it("formats the remaining estimate like every other estimate", () => {
+    expect(formatRemainingEstimate(1.1 * HOUR_MS)).toBe("1h06 left");
     expect(formatRemainingEstimate(2 * HOUR_MS)).toBe("2h left");
-    expect(formatRemainingEstimate(-0.4 * HOUR_MS)).toBe("0.4h over");
+    expect(formatRemainingEstimate(-0.4 * HOUR_MS)).toBe("24m over");
   });
 
   it("formats elapsed time with seconds", () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  computePaceRange,
   computeWeekPace,
   getDayTargetMs,
   needsPaceConfirmation,
@@ -132,6 +133,50 @@ describe("needsPaceConfirmation", () => {
       expect(needsPaceConfirmation(status, warn)).toBe(asks);
     },
   );
+});
+
+describe("computePaceRange", () => {
+  const range = (today: string, tolerancePercent = 20) =>
+    computePaceRange({
+      weekDates: WEEK,
+      today,
+      capacityTargets: TARGETS,
+      tolerancePercent,
+    });
+
+  it("spans the tolerance around the targets through today", () => {
+    expect(range("2026-10-14")).toEqual({
+      expectedMs: 22.5 * HOUR,
+      lowMs: 18 * HOUR,
+      highMs: 27 * HOUR,
+      targetMs: 37.5 * HOUR,
+    });
+  });
+
+  it("never reaches past the week's target, which always asks", () => {
+    expect(range("2026-10-16")).toEqual({
+      expectedMs: 37.5 * HOUR,
+      lowMs: 30 * HOUR,
+      highMs: 37.5 * HOUR,
+      targetMs: 37.5 * HOUR,
+    });
+  });
+
+  it("agrees with computeWeekPace at its edges", () => {
+    const { lowMs, highMs } = range("2026-10-14", 10);
+    const status = (ms: number) =>
+      computeWeekPace({
+        weekDates: WEEK,
+        today: "2026-10-14",
+        capacityTargets: TARGETS,
+        loggedMs: ms,
+        tolerancePercent: 10,
+      }).status;
+    expect(status(lowMs)).toBe("on-pace");
+    expect(status(highMs)).toBe("on-pace");
+    expect(status(lowMs - 60_000)).toBe("under");
+    expect(status(highMs + 60_000)).toBe("over");
+  });
 });
 
 describe("getDayTargetMs", () => {

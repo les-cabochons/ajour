@@ -27,7 +27,7 @@ Font weights: 400 for text, 500 for labels, buttons and row titles, 600 for page
 
 ## Controls
 
-- `--control-height: 28px` for buttons, toggles, segmented controls and icon buttons.
+- `--control-height: 28px` for buttons, toggles, segmented controls and icon buttons. The narrow view's touch controls are the exception: the floating navigation has 44px targets in a `--narrow-nav-height` (54px) bar, and Day and Backlog rows' commands are 32px (council rounds 14 and 15).
 - `--control-height-lg: 32px` for primary actions and every input, textarea and select.
 - `--control-font-size` is the body size.
 - Button sizes: `xs` 20px, `sm` 24px, default 28px, `lg` 32px; icon buttons `icon-xs` 20px, `icon-sm` 24px, `icon` 28px, `icon-lg` 32px.
@@ -41,19 +41,20 @@ Font weights: 400 for text, 500 for labels, buttons and row titles, 600 for page
 
 ## Color
 
-Semantic variables, light and dark under `:root` and `:root.dark`:
+Semantic variables, light and dark under `:root` and `:root.dark`. Dark text runs a wide ladder, foreground L 0.95, secondary 0.68, tertiary 0.56 (council round 25), with `--border` at white 11%, so tone as well as weight carries hierarchy (council round 9):
 
 - `--background`, `--foreground`, `--card`, `--popover`, `--secondary`, `--muted`, `--muted-foreground`, `--accent`, `--border`, `--input`, `--ring`
 - `--primary`: the one accent, the logo's indigo. Primary buttons, focus rings, links, selected options and the returned pull request badge. Not the active nav row.
 - `--primary-fill`: the accent behind white text, on filled buttons, badges and checked checkboxes. It equals `--primary` in light; in dark it is a deeper indigo, because the bright dark accent would leave white labels under 4.5:1.
-- `--success`: the running indicator, the dock's remaining-estimate bar and an active agent in the agent indicator, and the Added change symbol on the Commit page. Nothing else.
-- `--warning`: amber, with an icon, for days under target, over capacity, unmapped source states, an agent question and a description timelog's missing project or task, and the Updated change symbol.
+- `--success`: the running indicator, the running Day row's 2px edge, the dock's remaining-estimate bar and an active agent in the agent indicator, and the Added change symbol on the Commit page. Nothing else.
+- `--warning`: amber, with an icon, for days under target, over capacity, unmapped source states whose count rose since the last visit, an agent question and a description timelog's missing project or task, the Updated change symbol, and the Urgent priority square, whose "!" is in the page color so it holds in both themes.
 - `--destructive`: destructive actions and failures only, including a failed agent session (a red ring in the agent indicator) and an agent error (a solid red dot), and the Deleted change symbol.
+- `--field-border`: an input's border at rest; in dark, white at 18%, so fields read as editable (council round 9).
 - `--border-row`: the hairline between rows of a list (Time entries, Backlog rows, Commit changes, project tasks and entries). In light it is `--border` at 70%, in dark white at 6.5% against the border's 9%, so a long list does not read as ruled. Group headers, table headers and fields keep `--border`.
 - `--scrollbar-thumb`: the scrollbar thumb, on native scrollers and `ScrollArea`. The track is transparent. The sidebar backlog list shows the thumb only on hover or when focus is inside it.
 - Workflow states and projects carry their own colors.
 
-App-level aliases: `--surface-lowest`, `--surface-tint` (the item page's side cards and the project page's properties card: one small step off the page toward the sidebar, under a hairline border; the sidebar's color in dark), `--surface-low` (the sidebar), `--surface`, `--surface-high`, `--surface-highest`, `--text`, `--text-secondary` (anything a user reads to tell records apart: notes, IDs, parent references, old values), `--text-tertiary` (separators, empty values and counts only), `--hover-bg`, `--highlight-bg`, `--field-bg`, `--field-border`, `--success-bg`, `--warning-bg`, `--danger-muted`, `--indigo-muted`.
+App-level aliases: `--surface-lowest`, `--surface-tint` (the item page's side cards and the project page's properties card: one small step off the page toward the sidebar, under a hairline border; the sidebar's color in dark, where the page is L 0.17, the sidebar and side cards L 0.205 and `--card` L 0.225, clear steps as in Linear and T3 Code), `--surface-low` (the sidebar), `--surface`, `--surface-high`, `--surface-highest`, `--text`, `--text-secondary` (anything a user reads to tell records apart: notes, IDs, parent references, old values), `--text-tertiary` (separators, empty values, counts, and the faint third line of a sidebar backlog row), `--hover-bg`, `--highlight-bg`, `--field-bg`, `--field-border`, `--success-bg`, `--warning-bg`, `--danger-muted`, `--indigo-muted`.
 
 The comment header's reaction and actions buttons use `foreground/10` for hover and `foreground/20` while pressed or while their menu is open. These tints apply in both themes.
 
@@ -71,6 +72,7 @@ The chrome is solid: `--nav-bg` and `--app-sidebar-bg` are opaque, with no blur.
 ## Layout
 
 - `--app-sidebar-width` (272px comfortable, 200px compact, user-resizable), `--app-workspace-max-width: 1440px`.
+- `--page-gutter: 24px` (12px in the narrow view): one left edge per page. The top bar's title or breadcrumb, list rows (Day, Week grid, Backlog), detail pages, Commit and Settings content all start this far from the content's edge (council round 7).
 - `--side-panel-width` (340px default, user-resizable from 300px to 720px and at most half the page, saved per page). `SidePanel` sets it on its parent element.
 - The top bar is 48px. Sidebar backlog rows are 80px in Comfortable and 26px in Compact. Other sidebar rows are 28px. Day-view rows are 40px (52px and two lines in the narrow view). Backlog rows are 36px (52px and two lines in the narrow view).
 

@@ -50,6 +50,40 @@ export function getPaceTolerancePercent(preferences: UserPreferences) {
 
 const toHours = (ms: number) => Math.round((ms / HOUR) * 100) / 100;
 
+interface PaceInput {
+  weekDates: string[];
+  today: string;
+  capacityTargets: WeeklyCapacityTargets;
+  tolerancePercent: number;
+}
+
+/**
+ * The logged time that keeps pace through `today`: the targets of the days so
+ * far, give or take `tolerancePercent`, never past the week's target. Settings
+ * shows it under Pace tolerance, so the percent reads as hours.
+ */
+export function computePaceRange({
+  weekDates,
+  today,
+  capacityTargets,
+  tolerancePercent,
+}: PaceInput) {
+  let targetMs = 0;
+  let expectedMs = 0;
+  weekDates.forEach((date, index) => {
+    const dayTarget = capacityTargets[DAY_KEYS[index]!];
+    targetMs += dayTarget;
+    if (date <= today) expectedMs += dayTarget;
+  });
+  const tolerance = (expectedMs * tolerancePercent) / 100;
+  return {
+    expectedMs,
+    lowMs: Math.max(0, expectedMs - tolerance),
+    highMs: Math.min(targetMs, expectedMs + tolerance),
+    targetMs,
+  };
+}
+
 /**
  * `weekDates` runs Monday to Sunday. Days up to and including `today` count
  * as past, and only days with a target count as workdays, so the expected
@@ -64,31 +98,21 @@ export function computeWeekPace({
   capacityTargets,
   loggedMs,
   tolerancePercent,
-}: {
-  weekDates: string[];
-  today: string;
-  capacityTargets: WeeklyCapacityTargets;
-  loggedMs: number;
-  tolerancePercent: number;
-}): WeekPace {
-  let targetMs = 0;
-  let expectedMs = 0;
-  weekDates.forEach((date, index) => {
-    const dayTarget = capacityTargets[DAY_KEYS[index]!];
-    targetMs += dayTarget;
-    if (date <= today) expectedMs += dayTarget;
+}: PaceInput & { loggedMs: number }): WeekPace {
+  const { expectedMs, lowMs, highMs, targetMs } = computePaceRange({
+    weekDates,
+    today,
+    capacityTargets,
+    tolerancePercent,
   });
-  const tolerance = (expectedMs * tolerancePercent) / 100;
   const status: WeekPaceStatus =
     targetMs === 0
       ? "on-pace"
-      : loggedMs > targetMs
+      : loggedMs > highMs
         ? "over"
-        : loggedMs > expectedMs + tolerance
-          ? "over"
-          : loggedMs < expectedMs - tolerance
-            ? "under"
-            : "on-pace";
+        : loggedMs < lowMs
+          ? "under"
+          : "on-pace";
   return {
     loggedHours: toHours(loggedMs),
     targetHours: toHours(targetMs),

@@ -11,7 +11,7 @@ const { When, Then } = createBdd();
 
 const headerButton = (page: Page, name: string) =>
   page
-    .locator(".ajour-page-header-slot")
+    .getByRole("group", { name: "Item actions" })
     .getByRole("button", { name, exact: true });
 
 const sidebar = (page: Page) =>

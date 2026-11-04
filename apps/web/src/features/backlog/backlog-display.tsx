@@ -86,14 +86,16 @@ export function BacklogDisplay({
   view,
   ordering,
   narrow,
+  className,
 }: {
   view: BacklogViewPreferences;
   ordering: BacklogSortMode;
   narrow: boolean;
+  className?: string;
 }) {
   return (
     <Popover>
-      <PopoverTrigger render={<Button variant="ghost" />}>
+      <PopoverTrigger render={<Button variant="ghost" className={className} />}>
         <RiEqualizerLine className="size-4" />
         Display
       </PopoverTrigger>
@@ -367,47 +369,58 @@ function FilterValueList({
  * removes every value of the field. Values stay open while the user picks, so
  * several values and fields add up in one visit.
  */
+/**
+ * The Filter button and the chips of the filters on. `part` splits them: the
+ * desktop top bar holds the button and the filter row the chips.
+ */
 export function BacklogFilters({
   state,
   view,
+  part = "all",
 }: {
   state: LocalAppState;
   view: BacklogViewPreferences;
+  part?: "all" | "button" | "chips";
 }) {
   const [field, setField] = useState<BacklogFilterField | null>(null);
-  const fields = [...new Set(view.filters.map((filter) => filter.field))];
+  const fields =
+    part === "button"
+      ? []
+      : [...new Set(view.filters.map((filter) => filter.field))];
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <Popover onOpenChange={(open) => !open && setField(null)}>
-        <PopoverTrigger render={<Button variant="ghost" />}>
-          <RiFilter3Line className="size-4" />
-          Filter
-        </PopoverTrigger>
-        <PopoverContent
-          align="start"
-          className="w-64 gap-0 overflow-hidden p-0"
-          aria-label="Add backlog filter"
-        >
-          {field ? (
-            <>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="m-1 self-start text-muted-foreground"
-                onClick={() => setField(null)}
-              >
-                <RiArrowLeftLine data-icon="inline-start" />
-                {FIELDS[field]}
-              </Button>
-              <FilterValueList state={state} view={view} field={field} />
-            </>
-          ) : (
-            <Command className="rounded-none bg-transparent p-0">
-              <CommandInput autoFocus placeholder="Filter by..." />
-              <CommandList className="max-h-[min(18rem,45vh)] p-1">
-                <CommandEmpty>No fields</CommandEmpty>
-                {(Object.entries(FIELDS) as [BacklogFilterField, string][]).map(
-                  ([value, label]) => (
+      {part === "chips" ? null : (
+        <Popover onOpenChange={(open) => !open && setField(null)}>
+          <PopoverTrigger render={<Button variant="ghost" />}>
+            <RiFilter3Line className="size-4" />
+            Filter
+          </PopoverTrigger>
+          <PopoverContent
+            align="start"
+            className="w-64 gap-0 overflow-hidden p-0"
+            aria-label="Add backlog filter"
+          >
+            {field ? (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="m-1 self-start text-muted-foreground"
+                  onClick={() => setField(null)}
+                >
+                  <RiArrowLeftLine data-icon="inline-start" />
+                  {FIELDS[field]}
+                </Button>
+                <FilterValueList state={state} view={view} field={field} />
+              </>
+            ) : (
+              <Command className="rounded-none bg-transparent p-0">
+                <CommandInput autoFocus placeholder="Filter by..." />
+                <CommandList className="max-h-[min(18rem,45vh)] p-1">
+                  <CommandEmpty>No fields</CommandEmpty>
+                  {(
+                    Object.entries(FIELDS) as [BacklogFilterField, string][]
+                  ).map(([value, label]) => (
                     <CommandItem
                       key={value}
                       value={value}
@@ -416,13 +429,13 @@ export function BacklogFilters({
                     >
                       {label}
                     </CommandItem>
-                  ),
-                )}
-              </CommandList>
-            </Command>
-          )}
-        </PopoverContent>
-      </Popover>
+                  ))}
+                </CommandList>
+              </Command>
+            )}
+          </PopoverContent>
+        </Popover>
+      )}
       {fields.map((chipField) => {
         const options = getBacklogFilterOptions(state, chipField);
         const values = view.filters

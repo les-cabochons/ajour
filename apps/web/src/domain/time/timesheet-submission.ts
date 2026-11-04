@@ -361,7 +361,7 @@ export function getLineCommitTaskName(
 }
 
 /**
- * What a line's project and task button shows ("Project / Task") and copies
+ * What a line's project and task button shows ("Project · Task") and copies
  * ("Project Task"), with the project and task named by `source`: a plugin
  * names the task by its task property when the task is mapped to another
  * one, such as 07 Run. A missing project or task leaves only the other one;
@@ -397,7 +397,7 @@ export function describeLineNames(
     Boolean(part),
   );
   return parts.length > 0
-    ? { shown: parts.join(" / "), copied: parts.join(" ") }
+    ? { shown: parts.join(" · "), copied: parts.join(" ") }
     : undefined;
 }
 
