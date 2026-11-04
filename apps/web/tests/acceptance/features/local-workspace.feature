@@ -33,7 +33,7 @@ Feature: Open the local time workspace
     Then the timer dock opens the running entry
     And the window title shows the running entry
     When I open Settings from the desktop sidebar
-    Then the running entry floats at the bottom left
+    Then Settings shows the running entry under Back to app
     When I go back to the app from Settings
     And I hide the app sidebar with its button
     Then the running entry floats at the bottom left

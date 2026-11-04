@@ -215,6 +215,20 @@ export function applyLoggedTimeToWorkItems(
   });
 }
 
+/**
+ * The share of the original estimate still remaining, 0 to 1: the bar under
+ * an item's figures, which fills with its lead figure, Remaining (council
+ * round 25). Empty without both estimates.
+ */
+export function getRemainingEstimateShare(values: WorkItemEstimateValues) {
+  const { originalEstimateHours, remainingEstimateHours } = values;
+  if (!originalEstimateHours || remainingEstimateHours === undefined) return 0;
+  return Math.min(
+    1,
+    Math.max(0, remainingEstimateHours / originalEstimateHours),
+  );
+}
+
 export function getWorkItemEstimateSummary(values: WorkItemEstimateValues) {
   if (!hasVisibleEstimateValue(values)) {
     return null;

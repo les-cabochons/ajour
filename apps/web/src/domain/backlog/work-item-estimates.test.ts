@@ -5,6 +5,7 @@ import {
   createImportedEstimateSyncState,
   getWorkItemEstimateBadgeLabel,
   getWorkItemEstimateSummary,
+  getRemainingEstimateShare,
 } from "./work-item-estimates";
 
 describe("applyLoggedTimeToEstimateValues", () => {
@@ -231,5 +232,30 @@ describe("getWorkItemEstimateBadgeLabel", () => {
         completedEstimateHours: 0,
       }),
     ).toBe("00:00");
+  });
+});
+
+describe("getRemainingEstimateShare", () => {
+  it("is the remaining estimate over the original", () => {
+    expect(
+      getRemainingEstimateShare({
+        originalEstimateHours: 8,
+        remainingEstimateHours: 5,
+      }),
+    ).toBe(0.625);
+  });
+
+  it("stays within the bar when remaining outgrows the original", () => {
+    expect(
+      getRemainingEstimateShare({
+        originalEstimateHours: 2,
+        remainingEstimateHours: 3,
+      }),
+    ).toBe(1);
+  });
+
+  it("is empty without an original or a remaining estimate", () => {
+    expect(getRemainingEstimateShare({ remainingEstimateHours: 3 })).toBe(0);
+    expect(getRemainingEstimateShare({ originalEstimateHours: 3 })).toBe(0);
   });
 });

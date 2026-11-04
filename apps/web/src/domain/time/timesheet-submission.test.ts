@@ -249,7 +249,7 @@ describe("line names", () => {
         tasks: [],
       }),
     ).toEqual({
-      shown: "Atlas / 07 Run",
+      shown: "Atlas · 07 Run",
       copied: "Atlas 07 Run",
     });
   });
@@ -261,7 +261,7 @@ describe("line names", () => {
         tasks: [],
       }),
     ).toEqual({
-      shown: "CA004 Tech & Design / 07 Run",
+      shown: "CA004 Tech & Design · 07 Run",
       copied: "CA004 Tech & Design 07 Run",
     });
   });

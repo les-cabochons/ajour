@@ -1,3 +1,4 @@
+import { getRemainingEstimateShare } from "@/domain/backlog/work-item-estimates";
 import { BacklogRefresh } from "./backlog-refresh";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
@@ -270,10 +271,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
       ? parseWorkItemReference(item.sourceId)
       : item.sourceId;
   const loggedMs = entries.reduce((sum, entry) => sum + entry.durationMs, 0);
-  const progress =
-    item.originalEstimateHours && item.completedEstimateHours !== undefined
-      ? Math.min(1, item.completedEstimateHours / item.originalEstimateHours)
-      : 0;
+  const progress = getRemainingEstimateShare(item);
   const notice = getVisitNotice(item, now, returnNotice);
 
   /**
@@ -551,7 +549,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                   <div
                     className="backlog-item-progress"
                     role="progressbar"
-                    aria-label="Completed over original estimate"
+                    aria-label="Remaining of the original estimate"
                     aria-valuenow={Math.round(progress * 100)}
                     aria-valuemin={0}
                     aria-valuemax={100}

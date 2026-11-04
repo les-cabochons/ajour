@@ -1,5 +1,4 @@
 import {
-  RiNodeTree,
   RiPlayFill,
   RiStopFill,
   RiCheckboxCircleLine,
@@ -412,11 +411,10 @@ export function BacklogItemSurface({
       className="backlog-subitem-progress"
       title={`${progress.closed} of ${progress.total} subitems closed`}
     >
-      {/* The Subitems mark, so the fraction reads as subitems done
-          (council round 19). */}
-      <RiNodeTree aria-hidden className="size-3 shrink-0" />
+      {/* Words, not a mark to learn: "1/2 done", like Snoozed and Settled
+          (council rounds 19 and 25). */}
       <span>
-        {progress.closed}/{progress.total}
+        {progress.closed}/{progress.total} done
       </span>
       {board && (
         <span className="backlog-progress-track">

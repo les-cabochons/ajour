@@ -624,6 +624,18 @@ Then("the window title shows the running entry", async ({ page }) => {
   await expect(page).toHaveTitle(/^● 0:00 · Untitled entry — Ajour$/);
 });
 
+// Settings shows the sidebar's own timer card, not the floating dock
+// (council round 25).
+Then("Settings shows the running entry under Back to app", async ({ page }) => {
+  const settings = page.getByRole("navigation", {
+    name: "Settings sections",
+  });
+  await expect(
+    settings.getByRole("region", { name: "Running entry" }),
+  ).toBeVisible();
+  await expect(page.locator(".ajour-floating-dock-desktop")).toHaveCount(0);
+});
+
 Then("the running entry floats at the bottom left", async ({ page }) => {
   const dock = page.locator(".ajour-floating-dock-desktop");
   await expect(dock).toContainText("Untitled entry");
@@ -631,8 +643,7 @@ Then("the running entry floats at the bottom left", async ({ page }) => {
     dock.boundingBox(),
     page.evaluate(() => ({ height: window.innerHeight })),
   ]);
-  // 16px from the edge, or 8px inside the Settings column.
-  expect([8, 16]).toContain(box?.x);
+  expect(box?.x).toBe(16);
   expect((box?.y ?? 0) + (box?.height ?? 0)).toBe(viewport.height - 16);
 });
 

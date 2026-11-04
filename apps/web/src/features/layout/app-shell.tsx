@@ -374,12 +374,10 @@ type TitlebarEditor = "new" | null;
 function GlobalTimerBar({
   date,
   showsFloatingDock,
-  floatingDockWidth,
 }: {
   date: string;
   showsFloatingDock: boolean;
   /** Fits the floating dock inside the left column, as in Settings. */
-  floatingDockWidth?: number;
 }) {
   const state = useLocalState();
   const projects = useLocalProjects();
@@ -471,24 +469,13 @@ function GlobalTimerBar({
       )}
       {currentTimer && showsFloatingDock && !isNarrowView
         ? createPortal(
-            <FloatingTimerDock
-              className="ajour-floating-dock-desktop"
-              style={
-                floatingDockWidth
-                  ? { left: 8, width: floatingDockWidth - 16, maxWidth: "none" }
-                  : undefined
-              }
-            />,
+            <FloatingTimerDock className="ajour-floating-dock-desktop" />,
             document.body,
           )
         : null}
       {!currentTimer && showsFloatingDock && !isNarrowView
         ? createPortal(
-            <FloatingStartDock
-              className="ajour-floating-dock-desktop"
-              // In Settings it sits inside the left column, like the running dock.
-              style={floatingDockWidth ? { left: 8 } : undefined}
-            />,
+            <FloatingStartDock className="ajour-floating-dock-desktop" />,
             document.body,
           )
         : null}
@@ -767,11 +754,10 @@ export function AppShell() {
 
               <GlobalTimerBar
                 date={selectedTimeDate}
-                floatingDockWidth={
-                  showsSettingsSidebar ? leftColumnWidth : undefined
-                }
+                // Settings shows the sidebar's own timer card under Back to
+                // app (council round 25); only a hidden sidebar floats it.
                 showsFloatingDock={
-                  showsSettingsSidebar || appSidebar.state === "hidden"
+                  !showsSettingsSidebar && appSidebar.state === "hidden"
                 }
               />
             </div>

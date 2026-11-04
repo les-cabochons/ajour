@@ -148,7 +148,7 @@ function CommitChangeRow({
   }
   const shown = (after ?? before)!;
   const label = CHANGE_KIND_LABELS[change.kind];
-  const title = `${shown.project} / ${shown.task}, ${shown.day}`;
+  const title = `${shown.project} · ${shown.task}, ${shown.day}`;
   const Icon = CHANGE_KIND_ICONS[change.kind];
   // A Not known yet task has no name to commit as yet, so its change stays
   // out until the user picks one.
@@ -186,8 +186,10 @@ function CommitChangeRow({
       />
       <span className="commit-change-work">
         <ChangeValue before={before?.project} after={after?.project} />
+        {/* " · " joins a project and its task in every row; " / " is the
+            breadcrumb's (council round 25). */}
         <span aria-hidden className="commit-change-sep">
-          /
+          ·
         </span>
         <ChangeValue before={before?.task} after={after?.task} />
         {/* "as", not an arrow: an arrow in this row means a changed value. */}

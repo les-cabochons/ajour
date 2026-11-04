@@ -172,6 +172,8 @@ it("keeps a condition the user chose quiet: scheduled sync off or no connection"
   });
   expect(screen.getByText(/Connection unavailable/)).toBeTruthy();
   expect(document.querySelector(".backlog-refresh-warning")).toBeNull();
+  // Nothing to refresh: no disabled glyph (council round 25).
+  expect(screen.queryByRole("button", { name: "Refresh backlog" })).toBeNull();
 });
 
 it("does not mark an item fresh when a connection sync did not return that item", async () => {

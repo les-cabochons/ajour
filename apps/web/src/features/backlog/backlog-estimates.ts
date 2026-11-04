@@ -2,17 +2,18 @@ import { formatCompactDuration } from "@/domain/time/duration";
 import type { LocalWorkItemEstimateFieldKey } from "@/domain/local-state";
 
 /**
- * The estimate figures shown on the backlog item page and in the peek.
- * Remaining comes first: it is the item page's lead number, and a lead
- * number opens its row (product owner, council round 23).
+ * The estimate figures shown on the backlog item page and in the peek, as
+ * part, part, whole: Remaining first, the item page's lead number (product
+ * owner, council round 23), then Completed, then Original, the whole the bar
+ * under them measures Remaining against (council round 25).
  */
 export const ESTIMATE_FIGURES: {
   key: LocalWorkItemEstimateFieldKey;
   label: string;
 }[] = [
   { key: "remainingEstimateHours", label: "Remaining" },
-  { key: "originalEstimateHours", label: "Original" },
   { key: "completedEstimateHours", label: "Completed" },
+  { key: "originalEstimateHours", label: "Original" },
 ];
 
 /**

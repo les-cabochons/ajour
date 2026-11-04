@@ -764,7 +764,7 @@ export function WeekGrid({
           <TableHeader>
             <TableRow>
               <TableHead className="weekly-grid-task-column">
-                Project / task
+                Project · task
               </TableHead>
               {projection.days.map((day) => (
                 <TableHead

@@ -154,6 +154,7 @@ export function BacklogRefresh({
     (!apiError && !rows.some((row) => row.enabled && !row.connection.paused));
 
   const quiet = !running && !alarming;
+  const noConnection = !apiError && !rows.length;
   const statusText = running
     ? "Syncing…"
     : warning
@@ -198,21 +199,26 @@ ${detail}`}
           {statusText}
         </span>
       )}
-      <TooltipButton
-        label={`${label}\n${detail}`}
-        aria-label={label}
-        render={<Button variant="ghost" size="icon-xs" disabled={disabled} />}
-        tooltipClassName="whitespace-pre-line"
-        aria-description={detail}
-        onClick={() => {
-          if (!disabled) void refreshBacklog({ source });
-        }}
-      >
-        <RiRefreshLine
-          className={running ? "backlog-refresh-spin" : undefined}
-          aria-hidden
-        />
-      </TooltipButton>
+      {/* With no connection there is nothing to refresh: no dead glyph, as
+          Backlog hides its plugin parts without the app API (council round
+          25). The status above stays for screen readers. */}
+      {noConnection ? null : (
+        <TooltipButton
+          label={`${label}\n${detail}`}
+          aria-label={label}
+          render={<Button variant="ghost" size="icon-xs" disabled={disabled} />}
+          tooltipClassName="whitespace-pre-line"
+          aria-description={detail}
+          onClick={() => {
+            if (!disabled) void refreshBacklog({ source });
+          }}
+        >
+          <RiRefreshLine
+            className={running ? "backlog-refresh-spin" : undefined}
+            aria-hidden
+          />
+        </TooltipButton>
+      )}
     </div>
   );
 }

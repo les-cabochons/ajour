@@ -410,7 +410,7 @@ closes the page: the toolbar with Group by and, when a plugin adds project
 properties, a Names `ToggleGroup` (Ajour, then each plugin's section title,
 saved as `commitLinesNameSource` in the user preferences), then the copyable
 lines under day `SectionHeading`s. A line's project, its full name or the
-plugin's name field, and its task are one value shown as "Project / Task" and
+plugin's name field, and its task are one value shown as "Project · Task" and
 copied as "Project Task"; while a saved plugin choice waits for the plugins
 to load, it shows "Loading names…" and copies nothing. Every value copies on click with an always-visible
 icon; hours copy as decimals. Change rules live in

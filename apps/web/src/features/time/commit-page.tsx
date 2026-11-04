@@ -293,7 +293,7 @@ function CopyValue({
 }
 
 /**
- * One line: the project and task as one copy button ("Project / Task", copied
+ * One line: the project and task as one copy button ("Project · Task", copied
  * as "Project Task" for the timesheet's search box), then the hours and the
  * comments. `names` comes from `describeLineNames`.
  */

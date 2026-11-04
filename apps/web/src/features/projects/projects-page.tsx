@@ -1148,7 +1148,25 @@ function ProjectDetail({
               <div className="flex flex-col gap-2.5">
                 <FigureRow>
                   {/* Named for what they count, so "Budget used" never reads
-                      as All time (council round 4). */}
+                      as All time (council round 4). Part, part, whole: the
+                      bar fills with the first, Budget used (council round
+                      25). */}
+                  <Figure label="Budget used">
+                    <span
+                      className={cn(
+                        // Plain like the other figures; amber and red only warn.
+                        "project-figure-consumed",
+                        budgetTone(budget.consumedMs / budget.budgetMs),
+                      )}
+                    >
+                      {formatClockDuration(budget.consumedMs)}
+                    </span>
+                  </Figure>
+                  <Figure label="Budget left">
+                    {formatClockDuration(
+                      Math.max(0, budget.budgetMs - budget.consumedMs),
+                    )}
+                  </Figure>
                   <Figure
                     label={
                       // The caption that explained the group is its label's
@@ -1172,22 +1190,6 @@ function ProjectDetail({
                     }
                   >
                     {formatClockDuration(budget.budgetMs)}
-                  </Figure>
-                  <Figure label="Budget used">
-                    <span
-                      className={cn(
-                        // Plain like the other figures; amber and red only warn.
-                        "project-figure-consumed",
-                        budgetTone(budget.consumedMs / budget.budgetMs),
-                      )}
-                    >
-                      {formatClockDuration(budget.consumedMs)}
-                    </span>
-                  </Figure>
-                  <Figure label="Budget left">
-                    {formatClockDuration(
-                      Math.max(0, budget.budgetMs - budget.consumedMs),
-                    )}
                   </Figure>
                 </FigureRow>
                 <BudgetBar

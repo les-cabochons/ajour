@@ -275,7 +275,9 @@
     --surface-high: oklch(0.25 0.004 285);
     --surface-highest: oklch(0.29 0.004 285);
     --text-secondary: var(--muted-foreground);
-    --text-tertiary: oklch(0.5 0.008 285);
+    /* One step brighter, so ids and parent links read as Linear's do
+       (council round 25). */
+    --text-tertiary: oklch(0.56 0.008 285);
     --hover-bg: oklch(1 0 0 / 6%);
     --highlight-bg: oklch(1 0 0 / 4%);
     --field-bg: var(--surface-lowest);
