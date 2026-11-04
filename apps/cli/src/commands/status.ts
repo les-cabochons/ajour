@@ -2,7 +2,7 @@ import type {
   AgentRunningTimer,
   AgentTimeEntry,
 } from "../../../../packages/shared/agent-tools.ts";
-import type { AjourClient } from "../client.ts";
+import { VERSION_MISMATCH, type AjourClient } from "../client.ts";
 import { localDate, type Context } from "../context.ts";
 import { UnreachableError } from "../errors.ts";
 import { painter, type Paint } from "../format/style.ts";
@@ -124,15 +124,34 @@ async function readSnapshot(
     const current = (await client.call("get_running_timer", {})).running;
     if (current && current.date !== today) running = current;
   }
-  const last = running
-    ? undefined
-    : (await client.call("get_last_saved_entry", {})).entry;
+  const last = running ? undefined : await readLastSaved(client);
   return {
     running,
     today,
     savedTodayMinutes: savedMinutes(listed.entries),
     last: last ? describeLast(last) : undefined,
   };
+}
+
+/**
+ * The idle line's one optional read. An Ajour from before the tool existed
+ * answers it as unknown (the client says the versions differ), and the line
+ * is shown without its "last:" part. Any other failure is the command's.
+ */
+async function readLastSaved(
+  client: AjourClient,
+): Promise<AgentTimeEntry | null | undefined> {
+  try {
+    return (await client.call("get_last_saved_entry", {})).entry;
+  } catch (error) {
+    if (
+      error instanceof UnreachableError &&
+      error.message === VERSION_MISMATCH
+    ) {
+      return undefined;
+    }
+    throw error;
+  }
 }
 
 /**

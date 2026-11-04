@@ -1,5 +1,13 @@
 import { renameSync, writeFileSync } from "node:fs";
-import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -171,7 +179,7 @@ function undoFile(term: Terminal) {
   return path.join(term.home, "state", "ajour", "last-undo");
 }
 
-/** What the CLI keeps in its state folder, claims and temp files included. */
+/** What the CLI keeps in its state folder, temp files included. */
 async function stateFiles(term: Terminal) {
   return (await readdir(path.dirname(undoFile(term)))).sort();
 }
@@ -628,7 +636,7 @@ describe("ajour discard and undo", () => {
     await expect(stat(undoFile(term))).rejects.toThrow();
   });
 
-  it("keeps the token another terminal stored while the undo ran", async () => {
+  it("keeps a newer token another terminal stored while the undo ran", async () => {
     const term = await ajour({
       start_timer: () => ({ running: exportRunning, undoToken: "undo_1" }),
       undo: (input: { undoToken: string }) => {
@@ -647,7 +655,7 @@ describe("ajour discard and undo", () => {
     expect(await stateFiles(term)).toEqual(["last-undo"]);
   });
 
-  it("keeps a newer token when Ajour refuses the claimed one", async () => {
+  it("removes only the matching token when Ajour refuses it", async () => {
     const term = await ajour({
       start_timer: () => ({ running: exportRunning, undoToken: "undo_1" }),
       undo: () => {
@@ -663,7 +671,19 @@ describe("ajour discard and undo", () => {
     expect(await stateFiles(term)).toEqual(["last-undo"]);
   });
 
-  it("puts the token back when Ajour can't be reached, for the next try", async () => {
+  it("removes a stale file holding the refused token", async () => {
+    const term = await ajour({
+      undo: () => ({ refuse: "That change can't be undone any more." }),
+    });
+    await mkdir(path.dirname(undoFile(term)), { recursive: true });
+    await writeFile(undoFile(term), "undo_old\n");
+
+    expect(await run(["undo"], term.io)).toBe(1);
+    expect(term.err()).toBe("refused: That change can't be undone any more.\n");
+    expect(await stateFiles(term)).toEqual([]);
+  });
+
+  it("touches nothing when Ajour can't be reached, so the next undo uses the token", async () => {
     let reachable = false;
     const term = await ajour({
       start_timer: () => ({ running: exportRunning, undoToken: "undo_1" }),
@@ -688,22 +708,6 @@ describe("ajour discard and undo", () => {
     expect(await run(["undo"], term.io)).toBe(0);
     expect(term.err()).toBe("Undid: Started an entry\n");
     expect(await stateFiles(term)).toEqual([]);
-  });
-
-  it("drops the claimed token when a newer one was stored before it could go back", async () => {
-    const term = await ajour({
-      start_timer: () => ({ running: exportRunning, undoToken: "undo_1" }),
-      undo: () => {
-        storeAsAnotherTerminal(term, "undo_2");
-        return { refuse: BRIDGE_UNAVAILABLE_MESSAGE };
-      },
-    });
-    await run(["start"], term.io);
-    term.clear();
-
-    expect(await run(["undo"], term.io)).toBe(3);
-    expect(await readFile(undoFile(term), "utf8")).toBe("undo_2\n");
-    expect(await stateFiles(term)).toEqual(["last-undo"]);
   });
 
   it("refuses a discard with nothing running with the app's reason", async () => {

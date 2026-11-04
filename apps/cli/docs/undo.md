@@ -10,10 +10,11 @@ Ajour would:
 Each change from the terminal keeps its Undo in
 $XDG_STATE_HOME/ajour/last-undo (~/.local/state/ajour/last-undo, or
 %LOCALAPPDATA%\ajour\last-undo on Windows), readable by your user alone.
-ajour undo uses it once, then removes it. A change made from another
+ajour undo reads it, asks Ajour, and once Ajour has answered removes it,
+but only if it still holds the token it used: a change made from another
 terminal while it runs keeps its own Undo for the next ajour undo. When
-Ajour is out of reach, the Undo is kept for another try, unless a newer
-change replaced it.
+Ajour is out of reach, nothing is touched and the Undo is kept for another
+try, as it is if ajour undo is stopped partway.
 
 As in the app, only Ajour's last action can be undone, and only while
 its toast shows: once you or anyone else changes something after it,

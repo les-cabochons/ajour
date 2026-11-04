@@ -723,7 +723,7 @@ The `ajour` command does in a terminal what the window does, through the MCP end
 - `ajour continue [ENTRY]` is Continue, on the entry saved or edited most recently, on any day, by default. Another day's entry starts a new entry today and says "Started a new entry today with Monday's task and note."
 - `ajour edit running` changes the running entry's task, note or counted time, and it keeps running, as Save in its form does. Saved entries are edited in the window for now.
 - `ajour discard` is Discard and says "Discarded 0:04 on 07 Export. Undo with: ajour undo".
-- `ajour undo` presses the Undo of the last change made from the terminal, while its toast shows in the window. With nothing kept it says "Nothing to undo from here." Each terminal's change replaces the kept Undo, and an undo removes only the one it used, so a change made meanwhile from another terminal keeps its own.
+- `ajour undo` presses the Undo of the last change made from the terminal, while its toast shows in the window. With nothing kept it says "Nothing to undo from here." Each terminal's change replaces the kept Undo, and once Ajour answers, an undo removes the kept Undo only if it is still the one it used, so a change made meanwhile from another terminal keeps its own. With Ajour out of reach the Undo stays for another try.
 - A task is named as `PROJECT/TASK`, `TASK`, or a pinned key 1 to 0, matched as task imports match names. PROJECT is the project's code, its name or its full name. An entry is named `running`, `last`, or by the start of its short id. A name that matches nothing or several lists the candidates, and nothing happens.
 - A refusal prints Ajour's own reason after "refused:", word for word, such as "refused: No entry is running.", and changes nothing.
 
