@@ -1,5 +1,4 @@
-const repeatedWhitespacePattern = /\s+/g;
-const combiningMarkPattern = /[\u0300-\u036f]/g;
+import { formatTaskName, normalizeTaskName } from "@ajour/shared/task-names";
 
 export type ProjectTaskImportResult = {
   importedCount: number;
@@ -12,13 +11,6 @@ export type ProjectTaskImportResult = {
   importedNames: string[];
 };
 
-export function formatTaskImportName(value: string): string {
-  return value.trim().replace(repeatedWhitespacePattern, " ");
-}
-
-export function normalizeTaskImportName(value: string): string {
-  return formatTaskImportName(value)
-    .normalize("NFD")
-    .replace(combiningMarkPattern, "")
-    .toLowerCase();
-}
+/** Shared with the terminal: see packages/shared/task-names.ts. */
+export const formatTaskImportName = formatTaskName;
+export const normalizeTaskImportName = normalizeTaskName;

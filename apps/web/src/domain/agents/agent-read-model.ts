@@ -219,6 +219,28 @@ export function findEntriesForAgent(
 }
 
 /**
+ * The saved entry used most recently, on any day: the newest `usedAt`, or
+ * its save when it was never used since. A saved entry the running entry
+ * continues is the running one, so it is left out. What `last` names in the
+ * terminal.
+ */
+export function getLastSavedEntryForAgent(
+  state: LocalAppState,
+): DataToolOutput<"get_last_saved_entry"> {
+  const continued = new Set(state.timers.map((timer) => timer.entryId));
+  let last: LocalTimesheetEntry | undefined;
+  for (const entry of state.timesheetEntries) {
+    if (continued.has(entry._id)) continue;
+    if (!last || lastUsedAt(entry) > lastUsedAt(last)) last = entry;
+  }
+  return { entry: last ? toAgentEntry(state, last) : null };
+}
+
+function lastUsedAt(entry: LocalTimesheetEntry) {
+  return entry.usedAt ?? entry.committedAt;
+}
+
+/**
  * Whether a plugin could map the task to another name: it holds a plugin
  * value that differs from its own name. Without the plugins' fields Ajour
  * cannot tell which value names it, so any such value counts.

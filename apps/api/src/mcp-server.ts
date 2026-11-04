@@ -331,8 +331,9 @@ const TOOL_DESCRIPTIONS: Record<AgentTaskMcpTool | SessionToolName, string> = {
   get_week_lines:
     'The week\'s lines as the Commit page builds them, to copy into the external timesheet: `sections` of `lines`, a section per day, or one without a date with `groupBy` "task". `groupBy` "day-task" (the default) gives a line per task and day, "day" a line per entry, "task" a line per task for the week. Each line has the project\'s full name and code, the name its task commits as, its hours as a number, its comments merged with " | ", and its entry ids. Time the user keeps local is in `notSent`, per task or per Local only project; time on Not known yet tasks is in `waiting`; and the running entry is in `running`, with only the minutes it has not saved yet (`unsavedMinutes`), since a line already holds the saved entry it continues. None of them is in a line. `locked` is true once the week is submitted. `weekOf` is any date in the week.',
   start_timer:
-    "Starts an entry now on a backlog item, or on a project with an optional task. A running entry is saved first, as Switch does in Ajour. Refused when today is in a submitted week.",
-  stop_timer: "Stops and saves the running entry.",
+    "Starts an entry now on a backlog item, or on a project with an optional task; with neither, an empty entry, as S does in Ajour. `countedMinutes` counts on from that time, for a late start. A running entry is saved first, as Switch does in Ajour, and returned in `saved`. Refused when today is in a submitted week.",
+  stop_timer:
+    "Stops and saves the running entry. Returns the saved entry in `entry`.",
   edit_running_entry:
     "Changes the running entry's project, task or note, or corrects its counted minutes. It keeps running.",
   create_entry:
@@ -350,6 +351,8 @@ const TOOL_DESCRIPTIONS: Record<AgentTaskMcpTool | SessionToolName, string> = {
     "Deletes saved entries, 1 to 500, in one action, as Delete does in Ajour. A committed entry then shows as a deleted change. Refuses the whole call, deleting nothing, when an id is the running entry or an entry in a submitted week. Use discard_timer for the running entry.",
   discard_timer:
     "Discards the running entry, as Discard does in Ajour: an entry started from nothing disappears, and a continued entry keeps its saved time and loses only the time since it last started. Returns the discarded minutes.",
+  continue_entry:
+    "Continues a saved entry, as Continue does in Ajour: today's entry resumes with its saved time, and another day's entry is left as it is while a new running entry starts today with its task and note. A running entry is saved first, as Switch does, and returned in `saved`. Refused for the running entry.",
   undo: "Takes back one of your writes, as Undo in its toast does: pass the `undoToken` the write returned. Only the last action can be undone, and only while its toast shows: Ajour refuses once a later action replaced it, or when a record changed since.",
   create_work_item:
     "Adds a manual backlog item, or a subitem with parentWorkItemId.",
@@ -371,6 +374,8 @@ const TOOL_DESCRIPTIONS: Record<AgentTaskMcpTool | SessionToolName, string> = {
   // Reads for the terminal (#532).
   find_entries:
     "Every time entry, on any day, whose `shortId` starts with `idPrefix` (4 to 32 lowercase hex characters), in list_time_entries' shape, and the running entry in `running` when its `shortId` starts with it. A `shortId` is the entry's UUID without dashes, or its whole id when it has none.",
+  get_last_saved_entry:
+    "The saved time entry used most recently, on any day, in list_time_entries' shape: the one saved or edited last. Never the running entry. `entry` is null when nothing is saved.",
   begin_session:
     "Call before any work longer than a minute: a title and your estimate in minutes. Ajour shows it to the user and adds a 25% margin. Send update_session at least every few minutes, extend before the deadline passes, and always call end_session.",
   update_session:

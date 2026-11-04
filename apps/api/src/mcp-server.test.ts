@@ -953,6 +953,104 @@ describe("MCP endpoint", () => {
     );
   });
 
+  it("forwards continue_entry and checks its running entry, the saved one and its Undo token", async () => {
+    const { baseUrl } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl, "Terminal");
+    const calls: BridgeToolCall[] = [];
+    const output = {
+      running: {
+        timerId: "timer_2",
+        shortId: "3f9a2c1e",
+        date: "2026-11-04",
+        countedMinutes: 91,
+        taskName: "07 Export",
+      },
+      saved: {
+        entryId: "timesheet_1",
+        date: "2026-11-04",
+        state: "saved",
+        minutes: 12,
+      },
+      undoToken: "undo_7",
+    };
+    let answer: unknown = output;
+    await openFakeRenderer(baseUrl, (call) => {
+      calls.push(call);
+      return { requestId: call.requestId, ok: true, output: answer };
+    });
+    const agent = await connectAgent(baseUrl, token);
+
+    const { tools } = await agent.listTools();
+    expect(tools.map((tool) => tool.name)).toContain("continue_entry");
+    expect(
+      await agent.callTool({
+        name: "continue_entry",
+        arguments: { entryId: "timesheet_9" },
+      }),
+    ).toMatchObject({ structuredContent: output });
+    expect(calls.at(-1)).toMatchObject({
+      tool: "continue_entry",
+      input: { entryId: "timesheet_9" },
+    });
+
+    answer = { running: output.running };
+    const bad = await agent.callTool({
+      name: "continue_entry",
+      arguments: { entryId: "timesheet_9" },
+    });
+    expect(bad.isError).toBe(true);
+    expect(resultText(bad)).toBe(
+      "Ajour returned continue_entry output that does not match its schema.",
+    );
+  });
+
+  it("forwards get_last_saved_entry and checks its entry", async () => {
+    const { baseUrl } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl, "Terminal");
+    const calls: BridgeToolCall[] = [];
+    const output = {
+      entry: {
+        entryId: "timesheet_1",
+        shortId: "3f9a2c1e",
+        date: "2026-10-20",
+        state: "saved",
+        minutes: 45,
+        savedAt: "2026-11-04T09:00:00.000Z",
+      },
+    };
+    let answer: unknown = output;
+    await openFakeRenderer(baseUrl, (call) => {
+      calls.push(call);
+      return { requestId: call.requestId, ok: true, output: answer };
+    });
+    const agent = await connectAgent(baseUrl, token);
+
+    const { tools } = await agent.listTools();
+    expect(tools.map((tool) => tool.name)).toContain("get_last_saved_entry");
+    expect(
+      await agent.callTool({ name: "get_last_saved_entry", arguments: {} }),
+    ).toMatchObject({ structuredContent: output });
+    expect(calls.at(-1)).toMatchObject({
+      tool: "get_last_saved_entry",
+      input: {},
+    });
+
+    answer = { entry: null };
+    expect(
+      await agent.callTool({ name: "get_last_saved_entry", arguments: {} }),
+    ).toMatchObject({ structuredContent: { entry: null } });
+
+    answer = {};
+    const bad = await agent.callTool({
+      name: "get_last_saved_entry",
+      arguments: {},
+    });
+    expect(bad.isError).toBe(true);
+    expect(resultText(bad)).toBe(
+      "Ajour returned get_last_saved_entry output that does not match its schema.",
+    );
+  });
+
   it("lists the read and write tools and forwards a write with its input", async () => {
     const { baseUrl } = await startTestApi();
     const { token } = await enableMcpWithClient(baseUrl, "Claude Code");
@@ -968,7 +1066,7 @@ describe("MCP endpoint", () => {
     const agent = await connectAgent(baseUrl, token);
 
     const { tools } = await agent.listTools();
-    expect(tools).toHaveLength(37);
+    expect(tools).toHaveLength(39);
     expect(tools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining([
         "start_timer",
@@ -1658,6 +1756,26 @@ describe("an agent task's declared tools", () => {
       expect(names).toContain("delete_entries");
       expect(names).not.toContain("discard_timer");
       expect(names).not.toContain("undo");
+    },
+  );
+
+  it(
+    "lists continue_entry only when an API 4 task declares it",
+    { timeout: 20_000 },
+    async () => {
+      const declared = await runTask(
+        { apiVersion: 4, tools: ["list_projects", "continue_entry"] },
+        [{ method: "tools/list" }],
+      );
+      expect(toolNames(declared.replies[0]!.reply)).toContain("continue_entry");
+
+      const undeclared = await runTask(
+        { apiVersion: 4, tools: ["list_projects", "start_timer"] },
+        [{ method: "tools/list" }],
+      );
+      expect(toolNames(undeclared.replies[0]!.reply)).not.toContain(
+        "continue_entry",
+      );
     },
   );
 

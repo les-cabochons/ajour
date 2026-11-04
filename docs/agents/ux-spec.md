@@ -703,6 +703,30 @@ Decided in [#534](https://github.com/les-cabochons/ajour/issues/534), for the te
 - When the setting can't be saved, an error toast says "The setting was not saved." and the switch shows Ajour's answer when it has one. When Ajour doesn't answer in 5 seconds, to the first read or to the check after a failed save, the switch is off and disabled, and the row says "Ajour didn't answer." with a Retry button. Only an answer from Ajour makes the switch usable again. The first close still hides the window when its notice can't be recorded; the notice then shows again at the next launch.
 - A hidden window that crashes reloads, still hidden. When it keeps crashing, the "Ajour keeps crashing" dialog shows on its own, not attached to the hidden window.
 
+## Agent writes
+
+An agent's write is the user's action, through the same action sets, with the same refusals and the same Undo toast, titled "<Client>: <action>" (spec [#525](https://github.com/les-cabochons/ajour/issues/525)).
+
+- `start_timer` starts on today, as Start entry does. With no backlog item and no project it starts an empty entry, as S does. A running entry is saved first, without a prompt, as a Switch.
+- `continue_entry` does what Continue does: today's entry resumes with its saved time, and another day's entry stays as it is while a new running entry starts today with its task and note. A running entry is saved first, as a Switch. The running entry itself is refused with "Already running", since its menu has Stop where Continue is.
+- `discard_timer` does what Discard does: an entry started from nothing disappears, and a continued entry keeps its saved time and loses the time since it last started. With nothing running it is refused with "Nothing is running".
+- `delete_entries` deletes saved entries in one action with one Undo, as Delete on a selection does. A committed entry leaves its deleted change on the Commit page. The whole call is refused, deleting nothing, when one id is the running entry ("Stop the running entry first") or in a submitted week (the lock's reason).
+- `undo` presses the Undo of the agent's own last write, as its toast would. As in the app, only the last action can be undone, and only while its toast shows: Ajour refuses with "That change can't be undone any more." once a later action replaced it, its toast closed, or another client asks, and with "Can't undo. The entry changed after that action." when the record changed since. Undoing closes the toast.
+
+## Terminal
+
+The `ajour` command does in a terminal what the window does, through the MCP endpoint with its own client token, so every rule above applies to it unchanged (spec [#525](https://github.com/les-cabochons/ajour/issues/525), [#536](https://github.com/les-cabochons/ajour/issues/536)). Its vocabulary is the app's: start, switch, stop, continue, discard, entry, saved; never "timer".
+
+- Every write answers with the entry's row: ● when it runs, its time, project code, task, note, ✓ when Workday holds it as it is, its short id, and its day when it isn't today. Rows printed together line up, and on a terminal they are cut to its width, the note first.
+- `ajour start [TASK]` starts an entry today. With an entry running it prints the saved row, then the new one: a Switch, without a prompt. Without a task it starts an empty entry, as S does, and says "Set its task with: ajour edit running TASK". `-d` counts on from that time, as Hours does before Start.
+- `ajour stop` prints the saved row and today's total against the day's target, such as "Today 6:46 of 8:00".
+- `ajour continue [ENTRY]` is Continue, on the entry saved or edited most recently, on any day, by default. Another day's entry starts a new entry today and says "Started a new entry today with Monday's task and note."
+- `ajour edit running` changes the running entry's task, note or counted time, and it keeps running, as Save in its form does. Saved entries are edited in the window for now.
+- `ajour discard` is Discard and says "Discarded 0:04 on 07 Export. Undo with: ajour undo".
+- `ajour undo` presses the Undo of the last change made from the terminal, while its toast shows in the window. With nothing kept it says "Nothing to undo from here." Each terminal's change replaces the kept Undo, and once Ajour answers, an undo removes the kept Undo only if it is still the one it used, so a change made meanwhile from another terminal keeps its own. With Ajour out of reach the Undo stays for another try.
+- A task is named as `PROJECT/TASK`, `TASK`, or a pinned key 1 to 0, matched as task imports match names. PROJECT is the project's code, its name or its full name. An entry is named `running`, `last`, or by the start of its short id. A name that matches nothing or several lists the candidates, and nothing happens.
+- A refusal prints Ajour's own reason after "refused:", word for word, such as "refused: No entry is running.", and changes nothing.
+
 ## Backlog sidebar
 
 Decided in [Backlog sidebar with settle, snooze and a backlog item page](https://github.com/les-cabochons/ajour/issues/69). The backlog plugin side is [#70](https://github.com/les-cabochons/ajour/issues/70). Delayed writes are recorded in [ADR 0001](../adr/0001-connector-writes-after-undo-window.md).

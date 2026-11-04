@@ -144,6 +144,8 @@ const shortIdPrefixSchema = z
 const terminalReadToolInputSchemas = {
   /** Every entry whose short id starts with `idPrefix`, on any day. */
   find_entries: z.object({ idPrefix: shortIdPrefixSchema }),
+  /** The saved entry used most recently, on any day: what `last` names. */
+  get_last_saved_entry: z.object({}),
 } as const;
 
 /**
@@ -254,11 +256,19 @@ const sourceStateInputSchema = z.string().trim().min(1).max(120);
 
 /** Input schemas of the write tools, by MCP tool name. */
 export const writeToolInputSchemas = {
+  /** Without a workItemId or projectId, an empty entry, as S starts one. */
   start_timer: z.object({
     workItemId: z.string().optional(),
     projectId: z.string().optional(),
     taskId: z.string().optional(),
     note: noteSchema.optional(),
+    /** Counts on from this time, for a late start. */
+    countedMinutes: z
+      .number()
+      .int()
+      .min(0)
+      .max(24 * 60)
+      .optional(),
   }),
   stop_timer: z.object({}),
   edit_running_entry: z.object({
@@ -310,6 +320,11 @@ export const writeToolInputSchemas = {
     entryIds: z.array(z.string().min(1)).min(1).max(500),
   }),
   discard_timer: z.object({}),
+  /**
+   * Continue on a saved entry: today's resumes with its saved time, another
+   * day's starts a new running entry today with its task and note.
+   */
+  continue_entry: z.object({ entryId: z.string().min(1) }),
   /** The `undoToken` a write tool returned. */
   undo: z.object({ undoToken: z.string().min(1) }),
   create_work_item: z.object({
@@ -644,6 +659,8 @@ const readToolOutputSchemas = {
     entries: z.array(agentTimeEntrySchema),
     running: agentRunningTimerSchema.nullable(),
   }),
+  /** Null when no entry is saved, the running one aside. */
+  get_last_saved_entry: z.object({ entry: agentTimeEntrySchema.nullable() }),
 } as const satisfies Record<ReadToolName, z.AnyZodObject>;
 
 /**
@@ -651,10 +668,16 @@ const readToolOutputSchemas = {
  * write's `undoToken`.
  */
 export const writeToolResultSchemas = {
-  start_timer: z.object({ running: agentRunningTimerSchema }),
+  start_timer: z.object({
+    running: agentRunningTimerSchema,
+    /** The entry a Switch saved, when one was running. */
+    saved: agentTimeEntrySchema.optional(),
+  }),
   stop_timer: z.object({
     stopped: z.literal(true),
     countedMinutes: z.number(),
+    /** The saved entry. Absent from an older Ajour. */
+    entry: agentTimeEntrySchema.optional(),
   }),
   edit_running_entry: z.object({ running: agentRunningTimerSchema }),
   create_entry: agentTimeEntrySchema,
@@ -668,6 +691,11 @@ export const writeToolResultSchemas = {
   delete_entries: z.object({ deleted: z.number() }),
   /** The counted minutes the discard dropped. A continued entry keeps its saved time. */
   discard_timer: z.object({ discardedMinutes: z.number() }),
+  continue_entry: z.object({
+    running: agentRunningTimerSchema,
+    /** The entry a Switch saved, when another one was running. */
+    saved: agentTimeEntrySchema.optional(),
+  }),
   /** The undone action, as its Undo toast names it, such as "Deleted 2 entries". */
   undo: z.object({ undone: z.string() }),
   create_work_item: agentWorkItemSchema,
@@ -707,25 +735,29 @@ export type WriteToolResult<Name extends WriteToolName> = z.infer<
   (typeof writeToolResultSchemas)[Name]
 >;
 
-/** Adds the Undo token every write tool returns. */
-function withUndoToken<Schema extends z.AnyZodObject>(schema: Schema) {
-  return schema.extend({
-    /**
-     * Pass it to undo to take the write back while its Undo toast shows.
-     * Null when the write changed nothing Ajour can undo.
-     */
-    undoToken: z.string().nullable(),
-  });
-}
+/** The Undo token every write tool returns. */
+const undoTokenShape = {
+  /**
+   * Pass it to undo to take the write back while its Undo toast shows.
+   * Null when the write changed nothing Ajour can undo.
+   */
+  undoToken: z.string().nullable(),
+};
+
+/**
+ * Typed per tool, so a caller such as the CLI reads each write's own
+ * fields along with its token.
+ */
+type ShapeOf<Schema> = Schema extends z.ZodObject<infer Shape> ? Shape : never;
 
 const writeToolOutputSchemas = Object.fromEntries(
   Object.entries(writeToolResultSchemas).map(([name, schema]) => [
     name,
-    withUndoToken(schema),
+    schema.extend(undoTokenShape),
   ]),
 ) as {
-  [Name in WriteToolName]: ReturnType<
-    typeof withUndoToken<(typeof writeToolResultSchemas)[Name]>
+  [Name in WriteToolName]: z.ZodObject<
+    ShapeOf<(typeof writeToolResultSchemas)[Name]> & typeof undoTokenShape
   >;
 };
 
