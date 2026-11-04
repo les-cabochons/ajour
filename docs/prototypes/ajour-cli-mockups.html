@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ajour CLI mockups</title>
+<style>
+  :root { --background:#0b0c0f; --foreground:#e6e7ea; --muted-foreground:#8b8f98; --primary:#8b93ff; --success:#4ade80; --warning:#f5b94a; --destructive:#f87171; --border:#262932; --code-background:#111318; --secondary:#1b1e26; --secondary-foreground:#c9ccd3; --radius:6px; --font-sans:"Geist Variable",Geist,Inter,system-ui,sans-serif; --font-mono:"Geist Mono Variable","Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace; }
+  @media (prefers-color-scheme: light) { :root { --background:#ffffff; --foreground:#15171c; --muted-foreground:#6b7079; --primary:#4f5bd5; --success:#15803d; --warning:#b45309; --destructive:#b91c1c; --border:#e4e6eb; --code-background:#f4f5f8; --secondary:#eef0f4; --secondary-foreground:#3a3e47; } }
+  html { background: var(--background); color: var(--foreground); }
+  body { max-width: 760px; margin: 0 auto; padding: 24px 16px; }
+  :root { --term-bg: var(--code-background); }
+  body { font-family: var(--font-sans); line-height: 1.5; font-size: 14px; }
+  main { max-width: 100%; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  h2 { font-size: 15px; font-weight: 600; margin: 28px 0 8px; padding-top: 12px; border-top: 1px solid var(--border); }
+  h3 { font-size: 13px; font-weight: 500; margin: 18px 0 6px; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: .04em; }
+  p { margin: 6px 0; }
+  .lede { color: var(--muted-foreground); margin-bottom: 12px; }
+  pre { font-family: var(--font-mono); font-size: 12px; line-height: 1.45; background: var(--term-bg); color: var(--foreground); border-radius: var(--radius); padding: 12px 14px; margin: 8px 0 14px; overflow-x: auto; white-space: pre; font-variant-numeric: tabular-nums; border: 1px solid var(--border); }
+  pre .p { color: var(--muted-foreground); }            /* prompt */
+  pre .c { color: var(--foreground); font-weight: 600; } /* typed command */
+  pre .h { color: var(--primary); font-weight: 600; }    /* header */
+  pre .m { color: var(--muted-foreground); }             /* muted: ids, marks */
+  pre .g { color: var(--success); }                       /* running */
+  pre .w { color: var(--warning); }                       /* warning */
+  pre .d { color: var(--destructive); }                   /* error */
+  pre .b { font-weight: 600; }
+  pre .u { text-decoration: underline; }
+  pre .cm { color: var(--muted-foreground); font-style: italic; } /* comment in shell */
+  .cap { font-size: 12px; color: var(--muted-foreground); margin: -8px 0 14px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; margin: 8px 0 14px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-weight: 500; color: var(--muted-foreground); font-size: 12px; }
+  td code, p code, li code { font-family: var(--font-mono); font-size: 12px; background: var(--code-background); padding: 1px 4px; border-radius: 4px; }
+  ul { padding-left: 18px; margin: 6px 0; }
+  li { margin: 3px 0; }
+  .grid { display: grid; grid-template-columns: 1fr; gap: 0 16px; }
+  @media (min-width: 640px) { .grid-2 { grid-template-columns: 1fr 1fr; } }
+  .rule { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; margin: 8px 0; }
+  .rule b { font-weight: 600; }
+  .step { display: grid; grid-template-columns: 54px 1fr; gap: 8px; margin: 4px 0; }
+  .step .t { font-family: var(--font-mono); font-size: 12px; color: var(--muted-foreground); padding-top: 2px; }
+  .tag { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 4px; background: var(--secondary); color: var(--secondary-foreground); margin-left: 6px; vertical-align: middle; }
+  .toc { font-size: 13px; color: var(--muted-foreground); }
+  .toc a { color: var(--primary); text-decoration: none; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>ajour · a terminal for the running entry</h1>
+<p class="lede">One binary, <code>ajour</code>. Start, stop, fix and read time entries from any shell, with the same rules as the app. Scope for now: the running entry, saved entries and printing days and weeks. Workday is the commit target.</p>
+<p class="toc">
+  <a href="#day">A day with it</a> ·
+  <a href="#surface">Command surface</a> ·
+  <a href="#mock-running">Running entry</a> ·
+  <a href="#mock-entries">Entries</a> ·
+  <a href="#mock-log">Prints</a> ·
+  <a href="#mock-errors">Errors</a> ·
+  <a href="#manual">Manual</a> ·
+  <a href="#rules">Rules</a> ·
+  <a href="#choices">Choices</a>
+</p>
+
+<h2 id="day">A day with it</h2>
+<p>Wednesday 4 November. Acme and Ajour projects, two pinned tasks. Every line below is also mocked in full further down.</p>
+<div class="rule">
+  <div class="step"><span class="t">09:02</span><span><code>ajour start acme/backend -m "Rate limiter retries"</code> · the entry runs on today, as in the app.</span></div>
+  <div class="step"><span class="t">10:30</span><span><code>ajour start 1 -m "Weekly sync"</code> · pinned task 1. The running entry is saved and the new one starts at the same instant: a Switch, no prompt.</span></div>
+  <div class="step"><span class="t">11:15</span><span><code>ajour continue</code> · back on the most recent entry, Rate limiter, which resumes with its 1:28.</span></div>
+  <div class="step"><span class="t">12:00</span><span><code>ajour stop</code> · lunch.</span></div>
+  <div class="step"><span class="t">13:20</span><span><code>ajour start ajr/export -d 0:20 -m "Fix export rounding"</code> · started 20 minutes late, so the entry counts on from 0:20.</span></div>
+  <div class="step"><span class="t">15:00</span><span><code>ajour add ajr/review -d 45m -m "PR #512" --on yesterday</code> · a forgotten entry, saved straight onto Tuesday.</span></div>
+  <div class="step"><span class="t">15:01</span><span><code>ajour edit b7e1d04 -d 1:00</code> · it was an hour, really. Then <code>ajour undo</code> when it wasn't.</span></div>
+  <div class="step"><span class="t">all day</span><span><code>ajour status -s</code> in the tmux status line: <code>● 1:24 Fix export rounding</code>.</span></div>
+  <div class="step"><span class="t">17:40</span><span><code>ajour log</code> · the day, with its total against the 8:00 target. <code>ajour stop</code>.</span></div>
+  <div class="step"><span class="t">Friday</span><span><code>ajour log week --format workday | wl-copy</code> · the week as Workday lines: full project names, commit-as task names, hours with a comma, notes merged.</span></div>
+</div>
+
+<h2 id="surface">Command surface</h2>
+<p>Verbs sit at the top level because they are typed many times a day. Later areas get a namespace (<code>ajour backlog …</code>, <code>ajour pr …</code>). The vocabulary is the app's: nobody sees the word "timer".</p>
+<table>
+<tr><th>Running entry</th><th>Saved entries</th><th>Reading</th><th>Setup</th></tr>
+<tr>
+<td><code>start</code><br><code>stop</code><br><code>discard</code><br><code>continue</code><br><code>status</code></td>
+<td><code>add</code><br><code>edit</code><br><code>move</code><br><code>dup</code><br><code>rm</code><br><code>undo</code></td>
+<td><code>log</code><br><code>projects</code></td>
+<td><code>connect</code><br><code>config</code><br><code>completion</code><br><code>help</code></td>
+</tr>
+</table>
+<p>Composable by default: data on stdout, messages on stderr, <code>--json</code> everywhere, <code>--format tsv|csv</code> on prints, exit codes you can branch on, color only on a TTY and never with <code>NO_COLOR</code>.</p>
+
+<h2 id="mock-running">Mockups · running entry</h2>
+
+<h3>status</h3>
+<pre><span class="p">$ </span><span class="c">ajour status</span>
+<span class="g">●</span> <span class="b">1:24:07</span>  Fix export rounding
+  AJR · 07 Export · since 13:20 · today 6:39 of 8:00
+
+<span class="p">$ </span><span class="c">ajour status</span>            <span class="cm"># nothing running</span>
+<span class="m">○</span> Nothing running · today 5:15 of 8:00 · last: 04 Review, 45m ago
+
+<span class="p">$ </span><span class="c">ajour status -s</span>         <span class="cm"># one line for tmux, starship, waybar</span>
+● 1:24 Fix export rounding
+
+<span class="p">$ </span><span class="c">ajour status -s --idle ""; echo "exit $?"</span>
+exit 0                    <span class="cm"># empty line when idle, so the bar shows nothing</span>
+
+<span class="p">$ </span><span class="c">ajour status --watch</span>    <span class="cm"># redraws each second, q or Ctrl-C to leave</span></pre>
+
+<h3>start</h3>
+<pre><span class="p">$ </span><span class="c">ajour start acme/backend -m "Rate limiter retries"</span>
+<span class="g">●</span>  0:00   ACME  05 Backend    Rate limiter retries          <span class="m">c41ee90</span>
+
+<span class="p">$ </span><span class="c">ajour start 1 -m "Weekly sync"</span>          <span class="cm"># pinned task 1, switches</span>
+   1:28   ACME  05 Backend    Rate limiter retries          <span class="m">c41ee90</span>  <span class="m">saved</span>
+<span class="g">●</span>  0:00   ACME  03 Meetings   Weekly sync                   <span class="m">91c0aa3</span>
+
+<span class="p">$ </span><span class="c">ajour start ajr/export -d 0:20 -m "Fix export rounding"</span>
+<span class="g">●</span>  0:20   AJR   07 Export     Fix export rounding           <span class="m">3f9a2c1</span>
+
+<span class="p">$ </span><span class="c">ajour start</span>                             <span class="cm"># empty entry, like S in the app</span>
+<span class="g">●</span>  0:00   <span class="m">—     —             Untitled entry</span>                <span class="m">7a20b1c</span>
+<span class="m">Set its task with: ajour edit running TASK</span>
+
+<span class="p">$ </span><span class="c">ajour start export</span>                      <span class="cm"># task alone, any project</span>
+<span class="g">●</span>  0:00   AJR   07 Export                                   <span class="m">8c3d0e2</span></pre>
+<p class="cap">The result is the same row the prints use, so eyes learn one shape. Writes print the row on stdout; <code>-q</code> prints nothing.</p>
+
+<h3>stop · discard · continue</h3>
+<pre><span class="p">$ </span><span class="c">ajour stop</span>
+   1:31   AJR   07 Export     Fix export rounding           <span class="m">3f9a2c1</span>  <span class="m">saved</span>
+<span class="m">Today 6:46 of 8:00</span>
+
+<span class="p">$ </span><span class="c">ajour discard</span>
+<span class="m">Discarded 0:04 on 07 Export. Undo with: ajour undo</span>
+
+<span class="p">$ </span><span class="c">ajour continue</span>                           <span class="cm"># most recent entry</span>
+<span class="g">●</span>  1:31   AJR   07 Export     Fix export rounding           <span class="m">3f9a2c1</span>
+
+<span class="p">$ </span><span class="c">ajour continue 0d4f77e</span>                   <span class="cm"># Monday's entry: new entry today</span>
+<span class="g">●</span>  0:00   ACME  05 Backend    Rate limiter retries          <span class="m">e91c4b7</span>
+<span class="m">Started a new entry today with Monday's task and note.</span></pre>
+
+<h3>edit the running entry</h3>
+<pre><span class="p">$ </span><span class="c">ajour edit running ajr/review -m "PR #512, #514"</span>
+<span class="g">●</span>  1:24   AJR   04 Review     PR #512, #514                 <span class="m">3f9a2c1</span>
+
+<span class="p">$ </span><span class="c">ajour edit running -d 1:00</span>               <span class="cm"># correct a late start; counts on from 1:00</span>
+<span class="g">●</span>  1:00   AJR   04 Review     PR #512, #514                 <span class="m">3f9a2c1</span></pre>
+
+<h2 id="mock-entries">Mockups · saved entries</h2>
+<pre><span class="p">$ </span><span class="c">ajour add ajr/review -d 45m -m "PR #512" --on yesterday</span>
+   0:45   AJR   04 Review     PR #512                       <span class="m">b7e1d04</span>  <span class="m">Tue 3 Nov</span>
+
+<span class="p">$ </span><span class="c">ajour edit b7e1d04 -d 1:00</span>
+   1:00   AJR   04 Review     PR #512                       <span class="m">b7e1d04</span>  <span class="m">Tue 3 Nov</span>
+
+<span class="p">$ </span><span class="c">ajour undo</span>
+<span class="m">Undid: edit b7e1d04 (1:00 → 0:45)</span>
+
+<span class="p">$ </span><span class="c">ajour move b7e1d04 --to mon</span>
+   0:45   AJR   04 Review     PR #512                       <span class="m">b7e1d04</span>  <span class="m">Mon 2 Nov</span>
+
+<span class="p">$ </span><span class="c">ajour dup 91c0aa3 --to fri</span>              <span class="cm"># duplicate to another day</span>
+   0:45   ACME  03 Meetings   Weekly sync                   <span class="m">f0a9d12</span>  <span class="m">Fri 6 Nov</span>
+
+<span class="p">$ </span><span class="c">ajour rm f0a9d12 b7e1d04</span>
+<span class="m">Deleted 2 entries. Undo with: ajour undo</span>
+
+<span class="p">$ </span><span class="c">ajour edit 91c0aa3 -m "Weekly sync, moved to 10:30"</span>    <span class="cm"># a committed entry</span>
+   0:45   ACME  03 Meetings   Weekly sync, moved to 10:30   <span class="m">91c0aa3</span>
+<span class="w">Now differs from what Workday holds. It shows as updated on the Commit page.</span></pre>
+<p class="cap">Entry ids are 7 hex characters, as git shows them; any unique prefix works. <code>running</code> and <code>last</code> are named refs. Durations read <code>1:30</code>, <code>1h30</code>, <code>90m</code> or <code>1.5</code>, like the app's Hours field.</p>
+
+<h2 id="mock-log">Mockups · prints</h2>
+
+<h3>a day</h3>
+<pre><span class="p">$ </span><span class="c">ajour log</span>
+<span class="h">Wednesday 4 November 2026</span> <span class="m">· today</span>                  <span class="b">6:39</span> <span class="m">of 8:00</span>  <span class="h">▮▮▮▮▮▮▮</span><span class="m">▯▯▯</span>
+<span class="m">──────────────────────────────────────────────────────────────────────</span>
+<span class="g">●</span>  1:24   AJR   07 Export     Fix export rounding            <span class="m">3f9a2c1</span>
+   2:00   AJR   04 Review     PR #512, #514                  <span class="m">b7e1d04</span>
+   0:45   ACME  03 Meetings   Weekly sync                  <span class="m">✓ 91c0aa3</span>
+   2:30   ACME  05 Backend    Rate limiter retries         <span class="m">✓ 0d4f77e</span>
+
+<span class="m">4 entries · 1 running · 2 committed</span></pre>
+<p class="cap">Columns: state, duration, project code, task, note, committed mark, id. Values sit in their own whitespace-separated columns, so a double-click grabs one and a drag grabs a line. No box drawing inside the table.</p>
+
+<h3>a week</h3>
+<pre><span class="p">$ </span><span class="c">ajour log week</span>
+<span class="h">Week 45</span> <span class="m">· Mon 2 – Sun 8 Nov 2026</span>                 <span class="b">22:09</span> <span class="m">of 40:00</span>  <span class="w">1:51 behind</span>
+<span class="m">──────────────────────────────────────────────────────────────────────</span>
+<span class="h">Mon 2</span>                                              <span class="b">8:00</span> <span class="m">of 8:00</span>
+   3:00   AJR   07 Export     Fix export rounding          <span class="m">✓ 2a9e1f0</span>
+   1:30   AJR   09 Admin      Expenses                     <span class="m">✓ 5c17e08</span>  <span class="m">local</span>
+   3:30   ACME  05 Backend    Rate limiter                 <span class="m">✓ 0d4f77e</span>
+
+<span class="h">Tue 3</span>                                              <span class="b">7:30</span> <span class="m">of 8:00</span>
+   2:15   ACME  03 Meetings   Sprint planning              <span class="m">✓ d8b2a40</span>
+   3:00   ACME  Temp migratn  Schema dry run                 <span class="m">66e03f9</span>  <span class="w">not known yet</span>
+   2:15   AJR   04 Review     PR #510                        <span class="m">1b9cc3d</span>
+
+<span class="h">Wed 4</span> <span class="m">· today</span>                                      <span class="b">6:39</span> <span class="m">of 8:00</span>
+<span class="g">●</span>  1:24   AJR   07 Export     Fix export rounding            <span class="m">3f9a2c1</span>
+   2:00   AJR   04 Review     PR #512, #514                  <span class="m">b7e1d04</span>
+   0:45   ACME  03 Meetings   Weekly sync                  <span class="m">✓ 91c0aa3</span>
+   2:30   ACME  05 Backend    Rate limiter retries         <span class="m">✓ 0d4f77e</span>
+
+<span class="h">Thu 5</span>                                                 <span class="m">—  of 8:00</span>
+<span class="h">Fri 6</span>                                                 <span class="m">—  of 8:00</span>
+
+<span class="m">10 entries · 1 running · 6 committed · 3 to commit</span></pre>
+<p class="cap">Saturday and Sunday show only when they hold time or a target. "behind" compares with the targets of the days up to today, as the Commit page's pace does.</p>
+
+<h3>a few days · totals only · by task</h3>
+<pre><span class="p">$ </span><span class="c">ajour log mon..wed --summary</span>
+<span class="h">Mon 2 – Wed 4 Nov 2026</span>                               <span class="b">22:09</span> <span class="m">of 24:00</span>
+<span class="m">──────────────────────────────────────────────────────────────────────</span>
+<span class="h">Mon 2</span>    8:00  <span class="h">▮▮▮▮▮▮▮▮</span>
+<span class="h">Tue 3</span>    7:30  <span class="h">▮▮▮▮▮▮▮</span><span class="m">▯</span>
+<span class="h">Wed 4</span>    6:39  <span class="h">▮▮▮▮▮▮▮</span><span class="m">▯</span>  <span class="g">● running</span>
+
+<span class="p">$ </span><span class="c">ajour log week --by task</span>
+<span class="h">Week 45</span> <span class="m">· Mon 2 – Sun 8 Nov 2026</span>                 <span class="b">22:09</span> <span class="m">of 40:00</span>
+<span class="m">──────────────────────────────────────────────────────────────────────</span>
+   6:00   ACME  05 Backend          <span class="h">▮▮▮▮▮▮▮▮▮▮▮▮</span>
+   4:24   AJR   07 Export           <span class="h">▮▮▮▮▮▮▮▮▮</span>     <span class="g">● 1:24 running</span>
+   4:15   AJR   04 Review           <span class="h">▮▮▮▮▮▮▮▮</span>
+   3:00   ACME  03 Meetings         <span class="h">▮▮▮▮▮▮</span>
+   3:00   ACME  Temp migration      <span class="h">▮▮▮▮▮▮</span>        <span class="w">not known yet</span>
+   1:30   AJR   09 Admin            <span class="h">▮▮▮</span>           <span class="m">local</span></pre>
+
+<h3>for Workday</h3>
+<pre><span class="p">$ </span><span class="c">ajour log week --format workday</span>
+<span class="h">Week 45 for Workday</span> <span class="m">· Mon 2 – Sun 8 Nov 2026 · by day and task · hours use a comma</span>
+<span class="m">──────────────────────────────────────────────────────────────────────</span>
+<span class="h">Mon 2 Nov</span>
+  Ajour Desktop        07 Export        3,00   Fix export rounding
+  Acme Platform        05 Backend       3,50   Rate limiter
+<span class="h">Tue 3 Nov</span>
+  Acme Platform        03 Meetings      2,25   Sprint planning
+  Ajour Desktop        04 Review        2,25   PR #510
+<span class="h">Wed 4 Nov</span>
+  Ajour Desktop        04 Review        2,00   PR #512, #514
+  Acme Platform        03 Meetings      0,75   Weekly sync, moved to 10:30
+  Acme Platform        05 Backend       2,50   Rate limiter retries
+
+<span class="m">Not sent     1:30 on Ajour Desktop / 09 Admin is local only.</span>
+<span class="w">Waiting      3:00 on Temp migration has no Workday task yet.</span>
+<span class="g">Running      1:24 on 07 Export is not listed. Stop it first.</span>
+
+<span class="p">$ </span><span class="c">ajour log week --format workday --by task</span>      <span class="cm"># one line per task, week total</span>
+  Acme Platform        05 Backend       6,00   Rate limiter | Rate limiter retries
+  Ajour Desktop        04 Review        4,25   PR #510 | PR #512, #514
+  …</pre>
+<p class="cap">Same lines as the Commit page: the project's full name, the task's commit-as name, decimal hours with a comma, notes merged with " | ". Columns are tab-separated under the padding, so a paste into a sheet lands in cells. Later, <code>ajour commit</code> marks them committed.</p>
+
+<h3>for other tools</h3>
+<pre><span class="p">$ </span><span class="c">ajour log week --format tsv | column -t -s $'\t'</span>
+date        state      hours  project  task         note                  id
+2026-11-02  committed  3.00   AJR      07 Export    Fix export rounding   2a9e1f0
+2026-11-02  committed  1.50   AJR      09 Admin     Expenses              5c17e08
+…
+
+<span class="p">$ </span><span class="c">ajour log week --json | jq -r '.entries[] | select(.state=="saved") | .note'</span>
+Schema dry run
+PR #510
+PR #512, #514
+
+<span class="p">$ </span><span class="c">ajour log 2026-W44 --format csv > week44.csv</span>
+
+<span class="p">$ </span><span class="c">ajour log yesterday --json | jq '[.entries[].minutes] | add / 60'</span>
+7.5</pre>
+<p class="cap"><code>--json</code> returns the shapes the MCP tools already return, so one schema serves agents and scripts. Machine formats use a dot decimal and ISO dates; only <code>workday</code> uses the comma.</p>
+
+<h2 id="mock-errors">Mockups · refusals and errors</h2>
+<pre><span class="p">$ </span><span class="c">ajour start review</span>
+<span class="d">error:</span> "review" matches 2 tasks
+  acme/08 Code review
+  ajr/04 Review
+<span class="m">Say which, such as: ajour start ajr/review</span>
+<span class="p">$ </span><span class="c">echo $?</span>
+4
+
+<span class="p">$ </span><span class="c">ajour move 3f9a2c1 --to mon</span>
+<span class="d">refused:</span> Stop the running entry first
+<span class="p">$ </span><span class="c">echo $?</span>
+1
+
+<span class="p">$ </span><span class="c">ajour edit 2a9e1f0 -d 2:00</span>
+<span class="d">refused:</span> Week 44 is submitted. Reopen it in Ajour to change its entries.
+
+<span class="p">$ </span><span class="c">ajour status</span>
+<span class="d">error:</span> Ajour isn't open. Start Ajour, then try again.
+<span class="p">$ </span><span class="c">echo $?</span>
+3
+
+<span class="p">$ </span><span class="c">ajour status</span>
+<span class="d">error:</span> Not connected. Run: ajour connect
+<span class="m">Create a token in Ajour under Settings › MCP, then paste it there.</span>
+
+<span class="p">$ </span><span class="c">ajour add ajr/export -d 25h</span>
+<span class="d">usage:</span> --duration must be 1 minute to 24 hours, got 25h
+<span class="p">$ </span><span class="c">echo $?</span>
+2</pre>
+<table>
+<tr><th>Exit</th><th>Meaning</th><th>Branch on it</th></tr>
+<tr><td><code>0</code></td><td>Done.</td><td></td></tr>
+<tr><td><code>1</code></td><td>Ajour refused the action, with the app's own reason.</td><td><code>ajour stop || true</code></td></tr>
+<tr><td><code>2</code></td><td>Usage: bad flag, value or range.</td><td></td></tr>
+<tr><td><code>3</code></td><td>Ajour is not reachable: app closed, MCP off, token revoked.</td><td>status bars print nothing</td></tr>
+<tr><td><code>4</code></td><td>A reference matched nothing or several things.</td><td>completion avoids it</td></tr>
+</table>
+
+<h2 id="manual">Manual</h2>
+<p><code>ajour --help</code> is the short card. <code>man ajour</code> and <code>ajour help log</code> are the long form, one page per command (<code>ajour-log(1)</code>, <code>ajour-start(1)</code>…), generated from the same source as the web docs.</p>
+
+<h3>ajour --help</h3>
+<pre><span class="b">ajour</span> — record time on project tasks, from the terminal
+
+<span class="h">Usage:</span> ajour [options] &lt;command&gt; [args]
+
+<span class="h">Running entry</span>
+  start [TASK] [-m NOTE] [-d DURATION]   Start an entry today. Switches if one runs.
+  stop                                   Stop and save the running entry.
+  discard                                Throw away the time counted since it started.
+  continue [ENTRY]                       Count more time on an entry (default: the last one).
+  status [-s] [-w]                       What is running, and today's total.
+
+<span class="h">Entries</span>
+  add TASK -d DURATION [-m NOTE] [--on DAY]   Save an entry without running it.
+  edit ENTRY [TASK] [-m NOTE] [-d DURATION]   Change an entry, or the running one.
+  move ENTRY --to DAY                         Move an entry to another day.
+  dup ENTRY [--to DAY]                        Duplicate an entry.
+  rm ENTRY...                                 Delete entries.
+  undo                                        Undo the last change made from here.
+
+<span class="h">Reading</span>
+  log [RANGE] [--format FMT] [--by GROUP] [--summary]   Print entries for a day, days or a week.
+  projects                                              Projects, tasks and pinned keys.
+
+<span class="h">Setup</span>
+  connect                 Pair with the Ajour app on this machine.
+  completion SHELL        Shell completion for bash, zsh or fish.
+  help [COMMAND]          Open the manual.
+
+<span class="h">Options</span>
+  --json             Machine output, same shapes as the MCP tools.
+  --color WHEN       auto (default), always, never. NO_COLOR is honored.
+  -q, --quiet        No output on success.
+  -V, --version
+
+Run 'ajour help &lt;command&gt;' or 'man ajour-&lt;command&gt;' for details.</pre>
+
+<h3>man ajour-log</h3>
+<pre><span class="b">AJOUR-LOG(1)</span>                     Ajour Manual                     <span class="b">AJOUR-LOG(1)</span>
+
+<span class="b">NAME</span>
+       ajour-log - print time entries for a day, several days or a week
+
+<span class="b">SYNOPSIS</span>
+       <span class="b">ajour log</span> [<span class="u">RANGE</span>] [<span class="b">--format</span> <span class="u">FORMAT</span>] [<span class="b">--by</span> <span class="u">GROUP</span>] [<span class="b">--summary</span>]
+                 [<span class="b">--project</span> <span class="u">PROJECT</span>] [<span class="b">--task</span> <span class="u">TASK</span>] [<span class="b">--committed</span>|<span class="b">--uncommitted</span>]
+
+<span class="b">DESCRIPTION</span>
+       Prints the entries of a range of days, one line per entry, under a
+       header with the range's total against its target. Without a RANGE
+       it prints today. A running entry shows with ● and its time so far.
+
+       Each line reads: state, duration, project code, task, note, a ✓
+       when Workday holds the entry as it is, and the entry's id. Ids are
+       what <span class="b">ajour edit</span>, <span class="b">move</span>, <span class="b">dup</span>, <span class="b">rm</span> and <span class="b">continue</span> take.
+
+<span class="b">RANGE</span>
+       <span class="u">today</span>, <span class="u">yesterday</span>
+       <span class="u">mon</span> .. <span class="u">sun</span>         The most recent such day, today included.
+       <span class="u">2026-11-03</span>, <span class="u">11-03</span>  A date. Without a year, this year.
+       <span class="u">DAY..DAY</span>           Both days included, such as <span class="u">mon..wed</span> or <span class="u">10-28..11-03</span>.
+       <span class="u">week</span>, <span class="u">last-week</span>    Monday to Sunday.
+       <span class="u">2026-W45</span>           An ISO week.
+
+<span class="b">OPTIONS</span>
+       <span class="b">--format</span> <span class="u">FORMAT</span>
+              <span class="u">table</span> (default on a terminal), <span class="u">workday</span>, <span class="u">tsv</span> (default in a
+              pipe), <span class="u">csv</span>, <span class="u">json</span>.
+
+              <span class="u">workday</span> prints the Commit page's lines: the project's full
+              name, the task's commit-as name, hours as a decimal with a
+              comma, and the notes merged with " | ". Local only time,
+              Not known yet tasks and the running entry are listed under
+              the lines, not in them.
+
+       <span class="b">--by</span> <span class="u">GROUP</span>
+              <span class="u">day</span> (default), <span class="u">task</span>, or <span class="u">day-task</span>. <span class="u">day-task</span> is the default
+              for <span class="b">--format workday</span>.
+
+       <span class="b">--summary</span>, <span class="b">-s</span>
+              Totals per day only, with a bar against each day's target.
+
+       <span class="b">--project</span> <span class="u">PROJECT</span>, <span class="b">--task</span> <span class="u">TASK</span>
+              Only those entries. Same matching as a TASK argument, see
+              <span class="b">ajour</span>(1).
+
+       <span class="b">--committed</span>, <span class="b">--uncommitted</span>
+              Only entries Workday holds as they are, or only the rest.
+
+<span class="b">EXAMPLES</span>
+       Today, on screen
+              $ ajour log
+
+       Last week for Workday, into the clipboard
+              $ ajour log last-week --format workday | wl-copy
+
+       Hours per task this week, as numbers
+              $ ajour log week --by task --format tsv | cut -f2,4
+
+       Notes of what is not committed yet
+              $ ajour log week --uncommitted --json | jq -r '.entries[].note'
+
+<span class="b">EXIT STATUS</span>
+       0 on success, 2 for a bad RANGE or option, 3 when Ajour is not
+       reachable. See <span class="b">ajour</span>(1) for the full list.
+
+<span class="b">SEE ALSO</span>
+       <span class="b">ajour</span>(1), <span class="b">ajour-start</span>(1), <span class="b">ajour-add</span>(1), <span class="b">ajour-undo</span>(1)
+
+Ajour 0.9                        2026-11-04                     <span class="b">AJOUR-LOG(1)</span></pre>
+
+<h3>man ajour · the shared sections</h3>
+<pre><span class="b">REFERENCES</span>
+       <span class="u">TASK</span>   <span class="u">PROJECT/TASK</span> or <span class="u">TASK</span>. PROJECT matches a code, then a name;
+              TASK a task name. Matching ignores case and accents and
+              accepts a prefix, then any part of the name. Exactly one
+              active task must match, else exit 4 with the candidates.
+              A digit 1 to 0 is the pinned task with that key.
+
+       <span class="u">ENTRY</span>  An id from <span class="b">ajour log</span>, or any unique prefix of it; <span class="u">running</span>
+              for the running entry; <span class="u">last</span> for the entry saved most
+              recently.
+
+       <span class="u">DAY</span>    <span class="u">today</span>, <span class="u">yesterday</span>, <span class="u">mon</span>..<span class="u">sun</span>, <span class="u">2026-11-03</span> or <span class="u">11-03</span>.
+
+       <span class="u">DURATION</span>
+              <span class="u">1:30</span>, <span class="u">1h30</span>, <span class="u">90m</span>, <span class="u">1.5</span> or <span class="u">1,5</span>. Whole minutes, up to 24 hours.
+
+<span class="b">RULES</span>
+       A running entry is always on today. Starting while one runs saves
+       it first and starts the new one at the same instant. The entries
+       of a submitted week are read-only until the week is reopened in
+       Ajour. Every change is the app's own action and shows its Undo
+       toast there; <span class="b">ajour undo</span> presses it.
+
+<span class="b">OUTPUT</span>
+       Data goes to stdout, messages to stderr. On a terminal, prints
+       use a table with color; in a pipe they use tab-separated values
+       with no color. <span class="b">--json</span> prints one object. Durations are h:mm on
+       screen and decimal hours in machine formats.
+
+<span class="b">ENVIRONMENT</span>
+       <span class="b">AJOUR_TOKEN</span>      The client token, instead of the stored one.
+       <span class="b">AJOUR_URL</span>        The app's local address, default http://127.0.0.1:8787.
+       <span class="b">NO_COLOR</span>, <span class="b">CLICOLOR_FORCE</span>
+       <span class="b">AJOUR_CONFIG</span>     The config file, default $XDG_CONFIG_HOME/ajour/config.toml.
+
+<span class="b">FILES</span>
+       ~/.config/ajour/config.toml      url, color, default format, week start.
+       The token lives in the OS keychain, never in the config file.</pre>
+
+<h3>connect · completion</h3>
+<pre><span class="p">$ </span><span class="c">ajour connect</span>
+In Ajour, open Settings › MCP and create a client named "Terminal".
+Paste its token: ••••••••••••••••••••••••
+<span class="g">✓</span> Connected to Ajour 0.9 on http://127.0.0.1:8787 as "Terminal".
+  Token saved in the keychain.
+
+<span class="p">$ </span><span class="c">ajour completion zsh > ~/.zfunc/_ajour</span>
+<span class="p">$ </span><span class="c">ajour start ac</span><span class="m">⇥</span>
+acme/03 Meetings    acme/05 Backend    acme/08 Code review    acme/Temp migration</pre>
+<p class="cap">Completion asks the app for projects and tasks, cached for a minute, so <code>⇥</code> after <code>start</code> or <code>--project</code> lists real names and never lands on exit 4.</p>
+
+<h2 id="rules">Rules that shape it</h2>
+<ul>
+  <li><b>Same rules as the app.</b> The CLI calls the MCP data tools, so a refusal is the app's reason, word for word, and every write has the Undo toast. No lifecycle logic lives in the CLI.</li>
+  <li><b>Vocabulary.</b> Start, Switch, Stop, Continue, Discard, entry, saved, committed, submitted week. No "timer", no "log" as a noun; <code>log</code> is the verb, as in git.</li>
+  <li><b>Nothing leaves the machine.</b> Loopback only, token in the keychain, no telemetry.</li>
+  <li><b>GNU manners.</b> Short and long flags, <code>--</code> ends options, <code>-</code> is stdin where it applies, <code>--help</code> on every command, man pages, exit codes, <code>NO_COLOR</code>, TTY detection.</li>
+  <li><b>One row shape.</b> Writes answer with the row the prints use. Ids stay at the end, muted, so the eye reads duration, task, note.</li>
+  <li><b>Workday format mirrors the Commit page.</b> Day and task grouping, full project names, commit-as task names, comma decimals, notes merged with " | ", local only and Not known yet called out below the lines.</li>
+</ul>
+
+<h2 id="choices">Choices for you</h2>
+<table>
+<tr><th>Question</th><th>Recommended</th><th>Alternative</th></tr>
+<tr><td>Verbs at the top level?</td><td><code>ajour start</code>. Typed many times a day. Later areas get namespaces.</td><td><code>ajour time start</code>, symmetric with <code>ajour backlog …</code> from day one.</td></tr>
+<tr><td>Default format in a pipe</td><td>tsv, so <code>cut</code> and <code>awk</code> work without a flag.</td><td>Same table as the screen, minus color, like <code>ls</code>.</td></tr>
+<tr><td>Print verb</td><td><code>log</code>, with <code>week</code> and <code>today</code> as ranges.</td><td><code>show</code>, or <code>day</code> and <code>week</code> as two commands.</td></tr>
+<tr><td>Entry ids</td><td>7 hex chars from the entry id, git style, any unique prefix.</td><td>Per-day ordinals (<code>ajour edit 2</code>), shorter but shift when entries move.</td></tr>
+<tr><td>Workday decimals</td><td>Comma, as <code>formatDecimalHours</code> already does for pasting.</td><td>Follow the locale; a flag <code>--decimal ,</code>.</td></tr>
+</table>
+
+</main>
+</body>
+</html>
