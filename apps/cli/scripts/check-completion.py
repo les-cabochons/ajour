@@ -9,6 +9,7 @@ import pathlib
 import pty
 import re
 import select
+import struct
 import subprocess
 import tempfile
 import termios
@@ -35,7 +36,8 @@ def read_until(fd, process, needle, timeout=15):
                 raise
             # Newer fish emits OSC title and command markers around output.
             plain = re.sub(rb"\x1b\][^\x07]*\x07", b"", output)
-            plain = re.sub(rb"\x1b\[[0-?]*[ -/]*[@-~]", b"", plain).replace(b"\r", b"")
+            plain = re.sub(rb"\x1b\[[0-?]*[ -/]*[@-~]", b"", plain)
+            plain = re.sub(rb"\x1b[ -/]+[@-~]", b"", plain).replace(b"\r", b"")
             if needle in plain:
                 return
         if process.poll() is not None:
@@ -58,17 +60,19 @@ with tempfile.TemporaryDirectory(prefix="ajour-completion-") as directory:
         "    print('__DONE__')\n")
     helper.chmod(0o700)
     shells = sys.argv[1:] or ["bash", "zsh", "fish"]
-    for shell in shells:
-        if not shutil.which(shell):
-            raise RuntimeError(f"Required shell is unavailable: {shell}")
+    for executable in shells:
+        shell = pathlib.Path(executable).name
+        if not shutil.which(executable):
+            raise RuntimeError(f"Required shell is unavailable: {executable}")
         script = temp / f"completion.{shell}"
         script.write_bytes(subprocess.check_output([
             "node", "--experimental-strip-types", "--no-warnings",
             "apps/cli/src/main.ts", "completion", shell,
-        ], cwd=root))
+        ], cwd=root, timeout=15))
         master, slave = pty.openpty()
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 160, 0, 0))
         env = {**os.environ, "PATH": f"{temp}:{os.environ['PATH']}", "TERM": "xterm", "HOME": directory, "ZDOTDIR": directory}
-        args = {"bash": ["bash", "--norc", "--noprofile", "-i"], "zsh": ["zsh", "-f", "-i"], "fish": ["fish", "--no-config", "-i"]}[shell]
+        args = {"bash": [executable, "--norc", "--noprofile", "-i"], "zsh": [executable, "-f", "-i"], "fish": [executable, "--no-config", "-i"]}[shell]
         process = subprocess.Popen(args, stdin=slave, stdout=slave, stderr=slave, cwd=temp, env=env, preexec_fn=controlling_terminal)
         os.close(slave)
         try:
@@ -93,7 +97,7 @@ with tempfile.TemporaryDirectory(prefix="ajour-completion-") as directory:
                 actual = json.loads((temp / "result").read_text())
                 assert actual == ["start", candidate], (shell, candidate, actual)
                 assert not marker.exists(), (shell, "command substitution executed")
-            print(f"{shell}: literal Tab insertion passed for {len(candidates)} names", flush=True)
+            print(f"{executable}: literal Tab insertion passed for {len(candidates)} names", flush=True)
         finally:
             process.terminate()
             try:

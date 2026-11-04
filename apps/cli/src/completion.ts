@@ -136,7 +136,9 @@ _ajour_complete() {
       .split(" ")
       .map((word) => `'${word}'`)
       .join(" ")}
-    if [[ "\${COMP_WORDS[1]}" =~ ^(start|add|edit)$ ]]; then ajour __complete tasks 2>/dev/null; fi
+    if [[ "\${COMP_WORDS[1]}" == start || "\${COMP_WORDS[1]}" == add || "\${COMP_WORDS[1]}" == edit ]]; then
+      ajour __complete tasks 2>/dev/null
+    fi
   )
 }
 complete -F _ajour_complete ajour

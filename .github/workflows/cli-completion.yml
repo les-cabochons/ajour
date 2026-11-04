@@ -7,11 +7,15 @@ permissions:
   contents: read
 jobs:
   shells:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
       matrix:
+        os: [ubuntu-latest]
         shell: [bash, zsh, fish]
+        include:
+          - os: macos-latest
+            shell: /bin/bash
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,6 +27,23 @@ jobs:
       - run: corepack pnpm install --frozen-lockfile
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
-      - run: sudo apt-get update && sudo apt-get install -y zsh fish
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y zsh fish
       - name: Check literal task insertion after Tab
-        run: python3 apps/cli/scripts/check-completion.py ${{ matrix.shell }}
+        run: corepack pnpm --filter @ajour/cli test -- src/completion-shells.test.ts
+        env:
+          AJOUR_SHELL_TESTS: "1"
+          AJOUR_TEST_SHELL: ${{ matrix.shell }}
+      - name: Check Homebrew bash when available
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          brew_bash="$(brew --prefix)/bin/bash"
+          if [ -x "$brew_bash" ]; then
+            "$brew_bash" --version
+            AJOUR_TEST_SHELL="$brew_bash" corepack pnpm --filter @ajour/cli test -- src/completion-shells.test.ts
+          else
+            echo "Homebrew bash is unavailable; /bin/bash was checked above."
+          fi
+        env:
+          AJOUR_SHELL_TESTS: "1"
