@@ -1,6 +1,7 @@
 import {
   getLocalProjectDisplayName,
   type LocalProject,
+  type LocalProjectTask,
   type LocalTimesheetEntry,
   type WeeklyCapacityTargets,
 } from "@/domain/local-state";
@@ -293,26 +294,59 @@ function pluginProjectName(
   return property?.value.trim() || project.name;
 }
 
+/**
+ * The name a task commits as under the Names choice `namesPluginId`, such as
+ * 07 Run. A selected plugin decides alone, its own name included, even when
+ * it maps no tasks. Other task plugins are asked, first one first, only when
+ * Names is on Ajour or still loading. Local only and Not known yet are not
+ * decided here; `commit-target.ts` owns them.
+ */
+export function resolveCommitTaskName({
+  task,
+  plugins,
+  namesPluginId,
+}: {
+  task: Pick<LocalProjectTask, "name" | "pluginProperties" | "commitAs">;
+  plugins: PropertyPlugins;
+  namesPluginId: string | undefined;
+}): string {
+  const selected =
+    namesPluginId !== undefined &&
+    [...plugins.tasks, ...plugins.projects].some(
+      (candidate) => candidate.pluginId === namesPluginId,
+    );
+  const asked = selected
+    ? plugins.tasks.filter((candidate) => candidate.pluginId === namesPluginId)
+    : plugins.tasks;
+  for (const plugin of asked) {
+    const mapped = getMappedTaskName(task, plugin);
+    if (mapped) return mapped;
+  }
+  return task.name;
+}
+
+function findLineTask(line: SubmitLine, projects: readonly LocalProject[]) {
+  return line.taskId
+    ? projects
+        .find((candidate) => candidate._id === line.projectId)
+        ?.tasks.find((candidate) => candidate._id === line.taskId)
+    : undefined;
+}
+
 /** The name `plugin` maps the line's task to, such as 07 Run, if any. */
 function getLineMappedTaskName(
   line: SubmitLine,
   projects: readonly LocalProject[],
   plugin: TaskPropertyPlugin,
 ) {
-  const task = line.taskId
-    ? projects
-        .find((candidate) => candidate._id === line.projectId)
-        ?.tasks.find((candidate) => candidate._id === line.taskId)
-    : undefined;
+  const task = findLineTask(line, projects);
   return task && getMappedTaskName(task, plugin);
 }
 
 /**
- * The name the line's task commits as, for agents and the terminal. When the
- * Names choice is a task plugin, it is what that plugin names the task, its
- * own name included, as the page shows it. Otherwise, as with Names on
- * Ajour, it is the first active task plugin's mapped name, else its own
- * name. Undefined when the line has no task.
+ * The name the line's task commits as, for agents and the terminal: the
+ * `resolveCommitTaskName` rule applied to the line's task, as the page shows
+ * it. Undefined when the line has no task.
  */
 export function getLineCommitTaskName(
   line: SubmitLine,
@@ -320,14 +354,10 @@ export function getLineCommitTaskName(
   projects: readonly LocalProject[],
   plugins: PropertyPlugins,
 ): string | undefined {
-  const chosen = plugins.tasks.find(
-    (candidate) => candidate.pluginId === source,
-  );
-  for (const plugin of chosen ? [chosen] : plugins.tasks) {
-    const mapped = getLineMappedTaskName(line, projects, plugin);
-    if (mapped) return mapped;
-  }
-  return line.taskName;
+  const task = findLineTask(line, projects);
+  return task
+    ? resolveCommitTaskName({ task, plugins, namesPluginId: source })
+    : line.taskName;
 }
 
 /**

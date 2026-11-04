@@ -15,6 +15,7 @@ import {
   listLineNameSources,
   listSentEntries,
   mergeSubmitComments,
+  resolveCommitTaskName,
   resolveLineNameSource,
   summarizeWeek,
   type SubmitLine,
@@ -510,6 +511,26 @@ describe("line names", () => {
       ).toBe("07 Run");
     });
 
+    it("is the task's own name when the Names choice maps no tasks, whatever a task plugin maps", () => {
+      const projectOnly: ProjectPropertyPlugin = {
+        pluginId: "project-only",
+        capability: {
+          section: "Projects",
+          fields: [{ id: "name", label: "Name", defaultFrom: "fullName" }],
+        },
+      };
+      const plugins = { projects: [projectOnly], tasks: [workdayTask] };
+
+      expect(
+        getLineCommitTaskName(ktLine, "project-only", mapped, plugins),
+      ).toBe("Knowledge transfer");
+      expect(
+        describeLineNames(ktLine, "project-only", mapped, plugins),
+      ).toMatchObject({
+        copied: expect.stringContaining("Knowledge transfer"),
+      });
+    });
+
     it("is the task's own name when no plugin maps it", () => {
       const devLine = { ...line, taskId: "dev", taskName: "Development" };
       expect(
@@ -522,6 +543,71 @@ describe("line names", () => {
         getLineCommitTaskName(ktLine, "ajour", mapped, NO_PROPERTY_PLUGINS),
       ).toBe("Knowledge transfer");
     });
+  });
+});
+
+describe("the name a task commits as", () => {
+  const taskPlugin = (pluginId: string): TaskPropertyPlugin => ({
+    pluginId,
+    capability: {
+      section: pluginId,
+      fields: [{ id: "task", label: "Task", defaultFrom: "name" }],
+    },
+  });
+  const projectOnly: ProjectPropertyPlugin = {
+    pluginId: "project-only",
+    capability: {
+      section: "Projects",
+      fields: [{ id: "name", label: "Name", defaultFrom: "fullName" }],
+    },
+  };
+  const first = taskPlugin("first");
+  const second = taskPlugin("second");
+  const task = {
+    _id: "kt",
+    name: "Knowledge transfer",
+    status: "active" as const,
+    createdAt: 1,
+    pluginProperties: { first: { task: "07 Run" }, second: { task: "KT" } },
+  };
+  const plugins = { projects: [projectOnly], tasks: [first, second] };
+
+  it("is the selected plugin's mapped name, the second plugin's when it is selected", () => {
+    expect(
+      resolveCommitTaskName({ task, plugins, namesPluginId: "first" }),
+    ).toBe("07 Run");
+    expect(
+      resolveCommitTaskName({ task, plugins, namesPluginId: "second" }),
+    ).toBe("KT");
+  });
+
+  it("is the first plugin's mapped name when Names is on Ajour or still loading", () => {
+    expect(
+      resolveCommitTaskName({ task, plugins, namesPluginId: "ajour" }),
+    ).toBe("07 Run");
+    expect(
+      resolveCommitTaskName({ task, plugins, namesPluginId: undefined }),
+    ).toBe("07 Run");
+  });
+
+  it("is the task's own name when the selected plugin keeps it or maps no tasks", () => {
+    const own = { ...task, pluginProperties: { second: { task: "KT" } } };
+    expect(
+      resolveCommitTaskName({ task: own, plugins, namesPluginId: "first" }),
+    ).toBe("Knowledge transfer");
+    expect(
+      resolveCommitTaskName({ task, plugins, namesPluginId: "project-only" }),
+    ).toBe("Knowledge transfer");
+  });
+
+  it("is the task's own name when no plugin maps it", () => {
+    expect(
+      resolveCommitTaskName({
+        task: { ...task, pluginProperties: undefined },
+        plugins,
+        namesPluginId: "ajour",
+      }),
+    ).toBe("Knowledge transfer");
   });
 });
 
