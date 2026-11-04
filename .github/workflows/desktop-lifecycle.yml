@@ -9,6 +9,11 @@ name: Desktop lifecycle
 # Then it opens the window from the tray, finds the saved entry, quits from
 # the tray, and checks that no process the app started outlives the quit.
 #
+# On Windows it also runs `check:cli-command` (#568): the real app installs
+# the ajour command, built in the job with the app's version, from a local
+# fake release, puts it on the runner's user Path, and a fresh PowerShell
+# runs `ajour -V`.
+#
 # Windows and macOS, the systems the desktop app ships on. The `Tests`
 # workflow calls this one for pull requests that can change the desktop app,
 # the local API, the renderer or the packages they share, and its Plugin
@@ -88,10 +93,21 @@ jobs:
           LOG: ${{ runner.temp }}/desktop-lifecycle.log
         run: corepack pnpm --filter @ajour/desktop check:keep-running 2>&1 | tee "$LOG"
 
+      - name: Run the ajour command install check
+        # It reuses the renderer the lifecycle check built, and builds the
+        # CLI archive of the app's version with the release scripts.
+        if: runner.os == 'Windows' && !cancelled()
+        shell: bash
+        env:
+          LOG: ${{ runner.temp }}/cli-command.log
+        run: corepack pnpm --filter @ajour/desktop check:cli-command --skip-build 2>&1 | tee "$LOG"
+
       - name: Upload the check's log
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: desktop-lifecycle-log-${{ runner.os }}
-          path: ${{ runner.temp }}/desktop-lifecycle.log
+          path: |
+            ${{ runner.temp }}/desktop-lifecycle.log
+            ${{ runner.temp }}/cli-command.log
           retention-days: 14
