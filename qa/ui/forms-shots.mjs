@@ -178,6 +178,387 @@ const shots = [
       await page.keyboard.press("ControlOrMeta+k");
     },
   },
+  // Time
+  {
+    name: "time-new-entry-start",
+    seed: { running: false },
+    run: async (page) => {
+      await go(page, "/time/today");
+      await page
+        .getByRole("button", { name: "Create time entry" })
+        .first()
+        .click();
+    },
+  },
+  {
+    name: "time-create-task",
+    run: async (page) => {
+      await go(page, "/time/today");
+      await page
+        .getByRole("button", { name: "Create time entry" })
+        .first()
+        .click();
+      await page
+        .getByRole("button", { name: "Project or task" })
+        .first()
+        .click();
+      await page.getByPlaceholder(/^Search .*\.\.\.$/).fill("Planning");
+      await page
+        .getByRole("option", { name: /^Create task/ })
+        .first()
+        .click();
+    },
+  },
+  {
+    name: "time-day-new-entry",
+    run: async (page) => {
+      await go(page, "/time/today");
+      await page.getByRole("button", { name: "New entry" }).first().click();
+    },
+  },
+  {
+    name: "time-entry-narrow-dialog",
+    viewport: { width: 700, height: 900 },
+    run: async (page) => {
+      await go(page, "/time/today");
+      await page
+        .getByRole("button", { name: "Create time entry" })
+        .first()
+        .click();
+    },
+  },
+  {
+    name: "time-move-entry",
+    run: async (page) => {
+      await go(page, "/time/today");
+      await page.getByText("Standup").first().click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Move to…" }).click();
+    },
+  },
+  {
+    name: "time-date-picker",
+    run: async (page) => {
+      await go(page, "/time/today");
+      await page
+        .getByRole("button", { name: /^Select time entry date/ })
+        .first()
+        .click();
+    },
+  },
+  {
+    name: "week-cell-input",
+    run: async (page) => {
+      await go(page, "/time/today?view=week");
+      await page
+        .getByRole("button", { name: /^Code review, Tuesday/ })
+        .first()
+        .dblclick();
+    },
+  },
+  {
+    name: "week-cell-panel",
+    run: async (page) => {
+      await go(page, "/time/today?view=week");
+      await page
+        .getByRole("button", { name: /^Development, Thursday/ })
+        .first()
+        .click();
+    },
+  },
+  {
+    name: "week-add-row",
+    run: async (page) => {
+      await go(page, "/time/today?view=week");
+      await page.getByRole("button", { name: "Add row" }).first().click();
+    },
+  },
+  {
+    name: "week-delete-row",
+    run: async (page) => {
+      await go(page, "/time/today?view=week");
+      await page
+        .getByRole("button", { name: /^Code review, Tuesday/ })
+        .first()
+        .click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Delete row" }).click();
+    },
+  },
+  {
+    name: "calendar-panel",
+    run: async (page) => {
+      await go(page, "/time/today");
+      await page
+        .getByRole("button", { name: /^Calendar( · \d+)?$/ })
+        .first()
+        .click();
+      await page.waitForTimeout(400);
+      const boxes = page.getByRole("checkbox", { name: /^Add / });
+      // Ticks the first suggestion that has a project.
+      if ((await boxes.count()) > 0) await boxes.first().click();
+    },
+  },
+  {
+    name: "calendar-choose-project",
+    run: async (page) => {
+      await go(page, "/time/today");
+      await page
+        .getByRole("button", { name: "Meeting actions" })
+        .first()
+        .click();
+      await page.getByRole("menuitem", { name: "Choose project…" }).click();
+    },
+  },
+  {
+    name: "commit-page",
+    full: true,
+    run: (page) => go(page, "/time/today/commit"),
+  },
+  {
+    name: "commit-under-pace",
+    run: async (page) => {
+      await go(page, "/time/2026-10-05/commit");
+      await page.getByRole("button", { name: "Submit week" }).click();
+    },
+  },
+  // Backlog
+  {
+    name: "backlog-new-in-group",
+    run: async (page) => {
+      await go(page, "/backlog");
+      await page
+        .getByRole("button", { name: /^New item in / })
+        .first()
+        .click();
+    },
+  },
+  {
+    name: "backlog-edit-item",
+    run: async (page) => {
+      await go(page, "/backlog");
+      await page
+        .locator("[data-work-item-id=w2] .backlog-item-title")
+        .first()
+        .click();
+      await page
+        .getByRole("complementary", { name: "Backlog item peek" })
+        .getByRole("button", { name: "Edit", exact: true })
+        .first()
+        .click();
+    },
+  },
+  {
+    name: "backlog-subitem-dialog",
+    run: async (page) => {
+      await go(page, "/backlog");
+      await page
+        .locator("[data-work-item-id=w2]")
+        .first()
+        .click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Add subitem" }).click();
+    },
+  },
+  {
+    name: "backlog-inline-subitem",
+    run: async (page) => {
+      await go(page, "/backlog/w2");
+      await page.getByRole("button", { name: "Add subitem" }).first().click();
+    },
+  },
+  {
+    name: "backlog-inline-title",
+    run: async (page) => {
+      await go(page, "/backlog/w2");
+      await page.locator("h1").first().click();
+    },
+  },
+  {
+    name: "backlog-inline-estimate",
+    run: async (page) => {
+      await go(page, "/backlog/w2");
+      await page
+        .getByRole("button", { name: /^Edit remaining estimate/ })
+        .first()
+        .click();
+    },
+  },
+  {
+    name: "backlog-inline-description",
+    run: async (page) => {
+      await go(page, "/backlog/w2");
+      await page
+        .getByRole("button", { name: /^(Edit|Add description)$/ })
+        .first()
+        .click();
+    },
+  },
+  {
+    name: "backlog-state-picker",
+    run: async (page) => {
+      await go(page, "/backlog/w2");
+      await page
+        .getByRole("button", { name: /^Change state of / })
+        .first()
+        .click();
+    },
+  },
+  {
+    name: "backlog-comment-composer",
+    run: async (page) => {
+      await go(page, "/backlog/w2");
+      await page.getByRole("button", { name: "Leave a comment…" }).click();
+    },
+  },
+  {
+    name: "backlog-settle-archive",
+    run: async (page) => {
+      await go(page, "/backlog/w1");
+      await page
+        .getByRole("button", { name: "Settle", exact: true })
+        .first()
+        .click({ modifiers: ["Shift"] });
+      await dialog(page).getByRole("combobox").first().click();
+      await page.getByRole("option", { name: "Closed" }).first().click();
+    },
+  },
+  {
+    name: "backlog-settle-subitems",
+    run: async (page) => {
+      await go(page, "/backlog/w2");
+      await page
+        .getByRole("button", { name: "Settle", exact: true })
+        .first()
+        .click({ modifiers: ["Shift"] });
+      await dialog(page)
+        .getByRole("button", { name: "Settle", exact: true })
+        .click();
+    },
+  },
+  {
+    name: "backlog-close-subitems",
+    run: async (page) => {
+      await go(page, "/backlog/w2");
+      await page
+        .getByRole("button", { name: /^Change state of / })
+        .first()
+        .click();
+      await page.getByText("Done", { exact: true }).last().click();
+    },
+  },
+  {
+    name: "backlog-display",
+    run: async (page) => {
+      await go(page, "/backlog");
+      await page.getByRole("button", { name: "Display" }).click();
+    },
+  },
+  {
+    name: "backlog-filter",
+    run: async (page) => {
+      await go(page, "/backlog");
+      await page.getByRole("button", { name: "Filter", exact: true }).click();
+    },
+  },
+  // Projects
+  {
+    name: "project-form-edit",
+    run: async (page) => {
+      await go(page, "/projects");
+      await page
+        .getByText("Atlas platform", { exact: true })
+        .first()
+        .click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Edit" }).first().click();
+    },
+  },
+  {
+    name: "project-form-icon-popover",
+    run: async (page) => {
+      await go(page, "/projects");
+      await page.getByRole("button", { name: "New project" }).click();
+      await page.getByRole("button", { name: /^Project icon:/ }).click();
+    },
+  },
+  {
+    name: "project-inline-full-name",
+    run: async (page) => {
+      await go(page, "/projects/p-atlas");
+      await page
+        .getByRole("button", { name: "Edit full name, Atlas platform" })
+        .click();
+    },
+  },
+  {
+    name: "project-task-new",
+    run: async (page) => {
+      await go(page, "/projects/p-atlas");
+      await page.getByRole("button", { name: "New task", exact: true }).click();
+    },
+  },
+  {
+    name: "project-assign-shortcut",
+    run: async (page) => {
+      await go(page, "/projects/p-atlas");
+      await page
+        .getByText("Development", { exact: true })
+        .first()
+        .click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Assign shortcut…" }).click();
+    },
+  },
+  // Global
+  {
+    name: "shortcuts-overlay",
+    run: async (page) => {
+      await go(page, "/time/today");
+      await page.keyboard.press("?");
+    },
+  },
+  {
+    name: "sidebar-search",
+    run: async (page) => {
+      await go(page, "/time/today");
+      await page.getByRole("button", { name: "Search" }).first().click();
+    },
+  },
+  {
+    name: "sidebar-filter",
+    run: async (page) => {
+      await go(page, "/time/today");
+      await page
+        .getByRole("button", { name: /^Filter and order/ })
+        .first()
+        .click();
+    },
+  },
+  // Settings confirmations and menus
+  {
+    name: "plugin-remove-connection",
+    run: async (page) => {
+      await go(page, "/settings/plugins/github");
+      await page
+        .getByRole("button", { name: /^More actions for / })
+        .first()
+        .click();
+      await page.getByRole("menuitem", { name: "Remove" }).click();
+    },
+  },
+  {
+    name: "plugin-connection-menu",
+    run: async (page) => {
+      await go(page, "/settings/plugins/azure_devops");
+      await page
+        .getByRole("button", { name: /^More actions for / })
+        .first()
+        .click();
+    },
+  },
+  {
+    name: "plugin-uninstall",
+    run: async (page) => {
+      await go(page, "/settings/plugins/azure_devops");
+      await page.getByRole("button", { name: "Uninstall" }).click();
+    },
+  },
 ];
 
 async function isUp() {
@@ -220,7 +601,7 @@ async function ensureServer() {
 }
 
 async function capture(browser, shot, theme) {
-  const viewport = { width: 1440, height: 900 };
+  const viewport = shot.viewport ?? { width: 1440, height: 900 };
   const context = await browser.newContext({
     viewport,
     colorScheme: theme,
