@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   RiAddLine as Plus,
   RiDownloadLine as Download,
   RiFileTransferLine as FileTransfer,
@@ -1003,7 +1008,6 @@ function ProjectDetail({
             plugins={taskPropertyPlugins}
             projectLocalOnly={project.localOnly}
           />
-          {task.pinnedSlot ? <PinnedSlotBadge slot={task.pinnedSlot} /> : null}
           {/* Billable is the default: only the exception carries a chip. */}
           {isProjectTaskBillable(task) ? null : (
             <Chip>{getProjectTaskBillableValueLabel(task)}</Chip>
@@ -1020,6 +1024,11 @@ function ProjectDetail({
                 label={`Actions for ${task.name}`}
               />
             </span>
+            {/* The shortcut sits with the row's values, away from the name
+                and the tab counts, so it reads as a key (council round 16). */}
+            {task.pinnedSlot ? (
+              <PinnedSlotBadge slot={task.pinnedSlot} />
+            ) : null}
             {renderConsumedBadge(task)}
           </span>
         </td>
@@ -1117,10 +1126,19 @@ function ProjectDetail({
               form a group with their bar under them only (council round
               11). */}
           <FigureRow className="items-end">
-            <Figure label="This week" size="figure">
+            {/* Lifted by the budget bar and its gap, so every value shares
+                one baseline. */}
+            <Figure
+              label="This week"
+              size="figure"
+              className={budget.budgetMs > 0 ? "mb-[13px]" : undefined}
+            >
               {formatClockDuration(weekMs)}
             </Figure>
-            <Figure label="All time">
+            <Figure
+              label="All time"
+              className={budget.budgetMs > 0 ? "mb-[13px]" : undefined}
+            >
               {formatClockDuration(metrics.durationMs)}
             </Figure>
             {budget.budgetMs > 0 ? (
@@ -1128,7 +1146,28 @@ function ProjectDetail({
                 <FigureRow>
                   {/* Named for what they count, so "Budget used" never reads
                       as All time (council round 4). */}
-                  <Figure label="Task budgets">
+                  <Figure
+                    label={
+                      // The caption that explained the group is its label's
+                      // tooltip (council round 16).
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <span
+                              tabIndex={0}
+                              className="cursor-help underline decoration-dotted underline-offset-2"
+                            />
+                          }
+                        >
+                          Task budgets
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Budget figures count the active tasks that have a
+                          budget.
+                        </TooltipContent>
+                      </Tooltip>
+                    }
+                  >
                     {formatClockDuration(budget.budgetMs)}
                   </Figure>
                   <Figure label="Budget used">
@@ -1157,11 +1196,7 @@ function ProjectDetail({
               <Figure label="Active tasks">{summary.active}</Figure>
             )}
           </FigureRow>
-          {budget.budgetMs > 0 ? (
-            <p className="text-xs text-[var(--text-secondary)]">
-              Budget figures count the active tasks that have a budget.
-            </p>
-          ) : null}
+
           <Tabs
             value={tab}
             onValueChange={(value) => setTab(value as "tasks" | "entries")}

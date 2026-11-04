@@ -477,18 +477,6 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                 ) : (
                   <span>Manual item</span>
                 )}
-                {item.source !== "manual" &&
-                item.sourceConnectionId &&
-                item.sourceId ? (
-                  <BacklogRefresh
-                    source={{
-                      pluginId: item.source,
-                      connectionId: item.sourceConnectionId,
-                      sourceId: item.sourceId,
-                      syncedAt: item.sourceSyncedAt,
-                    }}
-                  />
-                ) : null}
                 {parent ? (
                   <Link
                     to="/backlog/$itemId"
@@ -535,11 +523,12 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
               {/* The estimates and their bar form one group; logged time, a
                   clock and not part of the bar, sits beside it behind a
                   hairline (council rounds 11 and 12). */}
-              <FigureRow className="items-start">
+              <FigureRow className="items-end">
                 <div className="flex w-fit max-w-full flex-col gap-2.5">
                   {/* Remaining leads, the page's one 28px number: it is
                       what the dock shows as "43m left" (council round 14). */}
-                  <FigureRow className="items-start">
+                  {/* Values share a baseline, as on the project page. */}
+                  <FigureRow className="items-end">
                     {ESTIMATE_FIGURES.map((figure) => (
                       <EstimateFigure
                         key={figure.key}
@@ -569,9 +558,11 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                     <div style={{ width: `${progress * 100}%` }} />
                   </div>
                 </div>
+                {/* Lifted by the estimates' bar and its gap, so its value
+                    shares their baseline. */}
                 <Figure
                   label="Logged in Ajour"
-                  className="border-l border-border pl-8"
+                  className="mb-[13px] border-l border-border pl-8"
                 >
                   {formatClockDuration(loggedMs)}
                 </Figure>
@@ -593,12 +584,30 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                 aria-label="Properties"
               >
                 <BacklogItemProperties item={item} state={state}>
+                  {/* The refresh sits with the source it refreshes (council
+                      round 16). */}
                   <PropertyRow label="Source">
-                    {item.source === "manual"
-                      ? "Ajour"
-                      : (item.sourceProjectName ??
-                        item.sourceConnectionLabel ??
-                        "–")}
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate">
+                        {item.source === "manual"
+                          ? "Ajour"
+                          : (item.sourceProjectName ??
+                            item.sourceConnectionLabel ??
+                            "–")}
+                      </span>
+                      {item.source !== "manual" &&
+                      item.sourceConnectionId &&
+                      item.sourceId ? (
+                        <BacklogRefresh
+                          source={{
+                            pluginId: item.source,
+                            connectionId: item.sourceConnectionId,
+                            sourceId: item.sourceId,
+                            syncedAt: item.sourceSyncedAt,
+                          }}
+                        />
+                      ) : null}
+                    </span>
                   </PropertyRow>
                 </BacklogItemProperties>
                 {archiveAction && !archiveAction.disabledReason ? (

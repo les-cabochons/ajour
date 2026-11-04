@@ -248,12 +248,19 @@
      24px tracks, centered, so they read as one evenly spaced cluster
      (council round 9). The board keeps its own slots. */
   .backlog-list-row .backlog-item-leading {
-    grid-template-columns: repeat(3, 24px);
-    gap: 0.25rem;
+    grid-template-columns: repeat(3, 16px);
+    gap: 0.5rem;
   }
 
   .backlog-list-row .backlog-item-leading[data-no-priority] {
-    grid-template-columns: repeat(2, 24px);
+    grid-template-columns: repeat(2, 16px);
+  }
+
+  /* The priority steps back to 12px, so the state mark leads the cluster
+     and the title starts sooner (council round 16). */
+  .backlog-list-row .backlog-item-leading > [data-leading="priority"] svg {
+    width: 12px;
+    height: 12px;
   }
 
   .backlog-list-row .backlog-item-leading > * {
@@ -1192,7 +1199,7 @@
     display: grid;
     grid-template-columns:
       auto repeat(9, minmax(auto, max-content)) minmax(0, 1fr)
-      36px 68px;
+      36px 36px;
     grid-template-rows: auto auto;
     align-content: center;
     column-gap: 0;
@@ -1237,7 +1244,7 @@
      (council round 8). */
   .backlog-list-row .backlog-item-title {
     grid-row: 1;
-    grid-column: 2 / 14;
+    grid-column: 2 / 13;
     min-width: 0;
   }
 
@@ -1321,10 +1328,22 @@
     pointer-events: auto;
   }
 
-  /* Narrow row commands are 32px touch targets (council round 15). */
+  /* Narrow row commands are 32px touch targets (council round 15), one per
+     line: Start on line 1 beside the title, "…" on line 2 (round 16). */
   .backlog-list-row .backlog-item-actions {
-    width: 68px;
-    gap: 4px;
+    display: contents;
+  }
+
+  .backlog-list-row .backlog-item-actions > .backlog-item-start {
+    grid-row: 1;
+    grid-column: 13;
+    justify-self: end;
+  }
+
+  .backlog-list-row .backlog-item-actions > :not(.backlog-item-start) {
+    grid-row: 2;
+    grid-column: 13;
+    justify-self: end;
   }
 
   .backlog-list-row .backlog-item-actions button {

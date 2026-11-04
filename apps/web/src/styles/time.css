@@ -2200,3 +2200,12 @@
     outline-offset: 1px;
   }
 }
+
+/* A week's checked changes are the norm, not the action: an outlined check,
+   so nine of them do not outweigh Mark as committed (council round 16).
+   Unlayered, so it wins over the checkbox's utility classes. */
+.commit-change [data-slot="checkbox"][data-checked] {
+  border-color: var(--primary);
+  background: transparent;
+  color: var(--primary);
+}
