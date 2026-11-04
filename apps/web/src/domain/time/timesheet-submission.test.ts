@@ -449,6 +449,78 @@ describe("week summary", () => {
     expect(summary.isUnderTarget).toBe(false);
   });
 
+  it("keeps days up to today as warnings and folds later days into one", () => {
+    const summary = summarizeWeek({
+      capacityTargets,
+      weekDates,
+      weekEntries,
+      projects: [],
+      today: "2026-10-07",
+    });
+
+    expect(summary.warnings).toEqual([
+      {
+        kind: "day-under-target",
+        localDate: "2026-10-06",
+        loggedMs: 0,
+        targetMs: 8 * HOUR,
+      },
+      {
+        kind: "day-under-target",
+        localDate: "2026-10-07",
+        loggedMs: 6 * HOUR,
+        targetMs: 8 * HOUR,
+      },
+      {
+        kind: "days-ahead",
+        fromDate: "2026-10-09",
+        toDate: "2026-10-09",
+        remainingMs: 8 * HOUR,
+      },
+      { kind: "missing-task", entryCount: 1 },
+    ]);
+    // The week's own verdict still counts every day.
+    expect(summary.isUnderTarget).toBe(true);
+  });
+
+  it("sums the target left on every later day under its target", () => {
+    const summary = summarizeWeek({
+      capacityTargets,
+      weekDates,
+      weekEntries,
+      projects: [],
+      today: "2026-10-05",
+    });
+
+    expect(
+      summary.warnings.filter((warning) => warning.kind !== "missing-task"),
+    ).toEqual([
+      {
+        kind: "days-ahead",
+        fromDate: "2026-10-06",
+        toDate: "2026-10-09",
+        remainingMs: 18 * HOUR,
+      },
+    ]);
+  });
+
+  it("warns about every day of a week already past", () => {
+    const summary = summarizeWeek({
+      capacityTargets,
+      weekDates,
+      weekEntries,
+      projects: [],
+      today: "2026-10-12",
+    });
+
+    expect(
+      summary.warnings.filter((warning) => warning.kind === "day-under-target"),
+    ).toHaveLength(3);
+    expect(
+      summary.warnings.some((warning) => warning.kind === "days-ahead"),
+    ).toBe(false);
+  });
+
   it("warns about each Not known yet task and totals local time", () => {
     const committing: LocalProject[] = [
       {
