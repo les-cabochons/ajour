@@ -454,6 +454,21 @@ function redactFieldUpdateMessages(
   }));
 }
 
+/**
+ * A plugin with `connector.assign` leaves `assignee` out for an unassigned
+ * item, which Ajour records as null. An item from any other plugin carries
+ * none, so Ajour never takes a guess for the plugin's id (ADR 0017).
+ */
+function withAssignees(
+  plugin: PluginManifest,
+  items: BacklogImportCandidateInput[],
+): BacklogImportCandidateInput[] {
+  const assigns = Boolean(plugin.capabilities.connector?.assign);
+  return items.map(({ assignee, ...item }) =>
+    assigns ? { ...item, assignee: assignee ?? null } : item,
+  );
+}
+
 /** Done items go back as `doneItems` so Ajour archives them, never to review. */
 function splitDoneItems(items: BacklogImportCandidateInput[]) {
   return {
@@ -2705,6 +2720,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           admit,
           payload.sourceId ? { sourceIds: [payload.sourceId] } : undefined,
         );
+        fetched.items = withAssignees(plugin, fetched.items);
         // Older plugins can ignore the optional scope. The host still applies
         // only the requested item and never treats an absent item as fresh.
         if (payload.sourceId) {

@@ -958,7 +958,11 @@ describe("backlog settle routes", () => {
     "});",
     "export async function syncConnection(connection, workItems) {",
     "  return {",
-    "    items: [item('OPEN-1', 'In Progress', false), item('DONE-1', 'Done', true)]",
+    "    items: [",
+    "      { ...item('OPEN-1', 'In Progress', false), assignee: { id: 'ana@acme.test', displayName: 'Ana Silva' } },",
+    "      item('OPEN-2', 'To Do', false),",
+    "      item('DONE-1', 'Done', true),",
+    "    ]",
     "      .map((candidate) => ({ ...candidate, connectionId: connection.id })),",
     "    workItemUpdates: [],",
     "    viewer: { id: 'me', displayName: 'Alex' },",
@@ -1176,6 +1180,37 @@ describe("backlog settle routes", () => {
     });
   });
 
+  it("records an unassigned item as null from a plugin that assigns, and drops assignees from one that doesn't", async () => {
+    const assignees = async (capabilities: {
+      settle: boolean;
+      assign?: boolean;
+    }) => {
+      const { server, connectionId } = await createServer(capabilities);
+      const synced = await dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/plugins/jira/connections/${connectionId}/sync`,
+        body: JSON.stringify({ trigger: "manual", workItems: [] }),
+      });
+      const staged = await dispatchJsonRequest(server, {
+        method: "GET",
+        path: "/api/backlog/imports",
+      });
+      expect(synced.status).toBe(200);
+      return (
+        staged.body as { items: { sourceId: string; assignee?: unknown }[] }
+      ).items.map((item) => [item.sourceId, item.assignee]);
+    };
+
+    await expect(assignees({ settle: true, assign: true })).resolves.toEqual([
+      ["OPEN-1", { id: "ana@acme.test", displayName: "Ana Silva" }],
+      ["OPEN-2", null],
+    ]);
+    await expect(assignees({ settle: true })).resolves.toEqual([
+      ["OPEN-1", undefined],
+      ["OPEN-2", undefined],
+    ]);
+  });
+
   it("returns done items from a sync instead of staging them for review", async () => {
     const { server, connectionId } = await createServer({ settle: true });
 
@@ -1187,7 +1222,7 @@ describe("backlog settle routes", () => {
     expect(synced).toMatchObject({
       status: 200,
       body: {
-        stagedCount: 1,
+        stagedCount: 2,
         doneItems: [
           {
             source: "jira",
@@ -1208,7 +1243,7 @@ describe("backlog settle routes", () => {
       (staged.body as { items: { sourceId: string }[] }).items.map(
         (item) => item.sourceId,
       ),
-    ).toEqual(["OPEN-1"]);
+    ).toEqual(["OPEN-1", "OPEN-2"]);
   });
 
   it("passes on the comment facts a sync reports for settled items", async () => {

@@ -429,6 +429,7 @@ export type BacklogSyncResult = {
     assignedTo?: string | undefined;
     assignee?:
       | { displayName: string; id: string; email?: string | undefined }
+      | null
       | undefined;
     priority?: "urgent" | "high" | "medium" | "low" | undefined;
     parentSourceId?: string | undefined;

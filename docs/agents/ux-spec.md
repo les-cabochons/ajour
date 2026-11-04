@@ -885,7 +885,7 @@ Syncs move synced items between states:
 | What the sync shows                                                     | Result                                         |
 | ----------------------------------------------------------------------- | ---------------------------------------------- |
 | An active or settled item reached a source state mapped to a done state | Archived, in that done state                   |
-| Someone else changed a settled item's state or priority                 | Active, as returned                            |
+| Someone else changed a settled item's state, priority or assignee       | Active, as returned                            |
 | Someone else commented on a settled item after it was settled           | Active, as returned, naming who commented      |
 | An item dropped out of the sync                                         | Archived, as today. It returns if it reappears |
 

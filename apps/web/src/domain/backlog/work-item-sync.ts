@@ -106,6 +106,7 @@ function createSyncedWorkItem(
       workItem.completedEstimateHours,
     ),
     estimateSync: createImportedEstimateSyncState(workItem),
+    ...(workItem.assignee !== undefined ? { assignee: workItem.assignee } : {}),
     keepWhenMissingFromSync: false,
     archivedByMissingSync: false,
     createdAt: workItem.pushedAt,
@@ -264,6 +265,9 @@ function mergeSyncedWorkItem(
       ? nextImportedState.completedEstimateHours
       : existingWorkItem.completedEstimateHours,
     estimateSync,
+    ...(nextImportedState.assignee !== undefined
+      ? { assignee: nextImportedState.assignee }
+      : {}),
     keepWhenMissingFromSync: existingWorkItem.keepWhenMissingFromSync ?? false,
     status: existingWorkItem.archivedByMissingSync
       ? "active"
@@ -281,6 +285,7 @@ function mergeSyncedWorkItem(
           sourceStatusLabel: existingWorkItem.sourceStatusLabel,
           workflowStateId: existingWorkItem.workflowStateId,
           importedWorkflowStateId: existingWorkItem.importedWorkflowStateId,
+          assignee: existingWorkItem.assignee,
         }
       : {}),
     ...(reopened
@@ -307,6 +312,7 @@ function mergeSyncedWorkItem(
           settledWithParentId: undefined,
           settledSourceStatusKey: undefined,
           settledImportedPriority: undefined,
+          settledAssigneeId: undefined,
         }
       : {}),
   };
@@ -426,19 +432,26 @@ function reopenedInSource(
 }
 
 /**
- * A settled item comes back when the source shows a state or priority other
- * than the ones it had when the user settled it.
+ * A settled item comes back when the source shows a state, priority or
+ * assignee other than the ones it had when the user settled it. A settle
+ * that didn't know the assignee, or a plugin that doesn't send one, never
+ * returns the item for it.
  */
 function changedSinceSettled(
   existingWorkItem: LocalWorkItem,
   importedState: LocalWorkItem,
 ) {
+  const reassigned =
+    existingWorkItem.settledAssigneeId !== undefined &&
+    importedState.assignee !== undefined &&
+    (importedState.assignee?.id ?? null) !== existingWorkItem.settledAssigneeId;
   return (
     existingWorkItem.status === "settled" &&
     (importedState.sourceStatusKey !==
       existingWorkItem.settledSourceStatusKey ||
       importedState.importedPriority !==
-        existingWorkItem.settledImportedPriority)
+        existingWorkItem.settledImportedPriority ||
+      reassigned)
   );
 }
 
@@ -553,6 +566,7 @@ export function importSyncedWorkItems(
             settledWithParentId: undefined,
             settledSourceStatusKey: undefined,
             settledImportedPriority: undefined,
+            settledAssigneeId: undefined,
             archivedAt: undefined,
             archivedSourceStatusKey: undefined,
             workflowStateId:
