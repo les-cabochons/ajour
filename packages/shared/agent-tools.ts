@@ -130,6 +130,66 @@ const weekLinesInputSchema = z.object({
   groupBy: weekLinesGroupBySchema.default("day-task"),
 });
 
+// Reads for the terminal (#532): day targets, pinned slots, commit-as names
+// and short entry ids.
+
+/** 4 to 32 lowercase hex characters: the start of an entry's short id. */
+const shortIdPrefixSchema = z
+  .string()
+  .regex(
+    /^[0-9a-f]{4,32}$/,
+    "Use 4 to 32 lowercase hex characters, such as 3f2a9c1.",
+  );
+
+const terminalReadToolInputSchemas = {
+  /** Every entry whose short id starts with `idPrefix`, on any day. */
+  find_entries: z.object({ idPrefix: shortIdPrefixSchema }),
+} as const;
+
+/**
+ * The entry's short id: its UUID without dashes, or its whole id when it has
+ * none. See entry-short-id.ts. Absent from an older Ajour.
+ */
+const shortIdShape = { shortId: z.string().optional() };
+
+/** A day's target from Settings › General, in decimal hours. */
+export const agentDayTargetSchema = z.object({
+  date: z.string(),
+  hours: z.number(),
+});
+
+/**
+ * What a task's time commits as: its own name, another task's (`name`, the
+ * name a plugin maps it to), nothing yet while it is Not known yet, or
+ * nothing ever when it or its project is Local only.
+ */
+export const agentCommitsAsSchema = z.object({
+  kind: z.enum(["own", "task", "not-known-yet", "local-only"]),
+  name: z.string().optional(),
+});
+export type AgentCommitsAs = z.infer<typeof agentCommitsAsSchema>;
+
+export const agentProjectTaskSchema = z.object({
+  taskId: z.string(),
+  name: z.string(),
+  /** The number key 1 to 9 is that slot; 0 is slot 10. Absent when unpinned. */
+  pinnedSlot: z.number().int().min(1).max(10).optional(),
+  commitsAs: agentCommitsAsSchema.optional(),
+});
+
+export const agentProjectSchema = z.object({
+  projectId: z.string(),
+  /** The short name Ajour shows, the same as `displayName`. */
+  name: z.string(),
+  code: z.string().optional(),
+  /** The name the external timesheet knows. */
+  fullName: z.string().optional(),
+  displayName: z.string().optional(),
+  /** Its time never goes to the external timesheet. */
+  localOnly: z.boolean().optional(),
+  tasks: z.array(agentProjectTaskSchema),
+});
+
 /** Input schemas of the read tools, by MCP tool name. */
 export const readToolInputSchemas = {
   get_running_timer: z.object({}),
@@ -158,6 +218,7 @@ export const readToolInputSchemas = {
   }),
   get_week_status: z.object({ weekOf: isoDateSchema }),
   get_week_lines: weekLinesInputSchema,
+  ...terminalReadToolInputSchemas,
 } as const;
 export type ReadToolName = keyof typeof readToolInputSchemas;
 export type ReadToolInput<Name extends ReadToolName> = z.infer<
@@ -314,6 +375,8 @@ const agentProjectRefShape = {
 export const agentRunningTimerSchema = z.object({
   ...agentProjectRefShape,
   timerId: z.string(),
+  /** The continued entry's short id, else the running entry's own. */
+  ...shortIdShape,
   date: z.string(),
   countedMinutes: z.number(),
   /** The same count to the second, for a clock that shows seconds. */
@@ -332,6 +395,7 @@ export type AgentRunningTimer = z.infer<typeof agentRunningTimerSchema>;
 export const agentTimeEntrySchema = z.object({
   ...agentProjectRefShape,
   entryId: z.string(),
+  ...shortIdShape,
   date: z.string(),
   /**
    * Committed when the external timesheet holds the entry as it is now.
@@ -483,17 +547,10 @@ const readToolOutputSchemas = {
   list_time_entries: z.object({
     entries: z.array(agentTimeEntrySchema),
     running: agentRunningTimerSchema.nullable(),
+    /** One per day of the range, oldest first. Absent from an older Ajour. */
+    targets: z.array(agentDayTargetSchema).optional(),
   }),
-  list_projects: z.object({
-    projects: z.array(
-      z.object({
-        projectId: z.string(),
-        name: z.string(),
-        code: z.string().optional(),
-        tasks: z.array(z.object({ taskId: z.string(), name: z.string() })),
-      }),
-    ),
-  }),
+  list_projects: z.object({ projects: z.array(agentProjectSchema) }),
   list_work_items: z.object({ workItems: z.array(agentWorkItemSchema) }),
   get_work_item: agentWorkItemSchema.extend({
     description: z.string().optional(),
@@ -578,6 +635,12 @@ const readToolOutputSchemas = {
     pace: weekPaceSchema,
   }),
   get_week_lines: weekLinesOutputSchema,
+  // Reads for the terminal (#532).
+  /** The running entry is in `running`, when its short id matches. */
+  find_entries: z.object({
+    entries: z.array(agentTimeEntrySchema),
+    running: agentRunningTimerSchema.nullable(),
+  }),
 } as const satisfies Record<ReadToolName, z.AnyZodObject>;
 
 /**

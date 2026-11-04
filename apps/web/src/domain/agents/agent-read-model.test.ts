@@ -3,6 +3,7 @@ import type { DataToolOutput } from "@ajour/shared/agent-tools";
 import type { LocalAppState, LocalTimesheetEntry } from "@/domain/local-state";
 import {
   checkChangeVersionsOrRefuse,
+  findEntriesForAgent,
   getWeekChangesForAgent,
   getWeekLinesForAgent,
   getWeekStatusForAgent,
@@ -11,6 +12,7 @@ import {
   listTimeEntriesForAgent,
   listWorkItemsForAgent,
   readRunningTimer,
+  toAgentEntry,
 } from "@/domain/agents/agent-read-model";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
 import {
@@ -299,6 +301,7 @@ describe("agent read model", () => {
   it("reads the running entry with its counted minutes and seconds", () => {
     expect(readRunningTimer(createState(), NOW + 7_900)).toEqual({
       timerId: "timer-1",
+      shortId: "timer-1",
       date: "2026-10-14",
       countedMinutes: 45,
       countedSeconds: 45 * 60 + 7,
@@ -367,12 +370,17 @@ describe("agent read model", () => {
   });
 
   it("lists only active projects and tasks", () => {
-    expect(listProjectsForAgent(createState())).toEqual({
+    expect(listProjectsForAgent(createState(), NO_PROPERTY_PLUGINS)).toEqual({
       projects: [
         {
           projectId: "project-1",
           name: "Acme",
-          tasks: [{ taskId: "task-1", name: "Build" }],
+          fullName: "Acme",
+          displayName: "Acme",
+          localOnly: false,
+          tasks: [
+            { taskId: "task-1", name: "Build", commitsAs: { kind: "own" } },
+          ],
         },
       ],
     });
@@ -1139,5 +1147,226 @@ describe("the Commit page's lines for agents", () => {
       waiting: { hours: 0, tasks: [] },
       running: null,
     });
+  });
+});
+
+describe("agent reads for the terminal", () => {
+  const ID_A = "timesheet_3f2a9c1e-7b4d-4e8a-9c0b-1d2e3f4a5b6c";
+  const ID_B = "timesheet_3f2a0000-1111-4222-8333-444455556666";
+  const TIMER_ID = "timer_9d8c7b6a-5f4e-4d3c-8b2a-190817263544";
+  const workdayTask = {
+    pluginId: "workday-agent",
+    capability: {
+      section: "Workday",
+      fields: [
+        { id: "task", label: "Workday task", defaultFrom: "name" as const },
+      ],
+    },
+  };
+
+  /** Entries with real ids, years apart, and a running entry with one. */
+  function stateWithUuidIds(): LocalAppState {
+    const state = createState();
+    return {
+      ...state,
+      timers: [{ ...state.timers[0]!, _id: TIMER_ID }],
+      timesheetEntries: [
+        entry({ _id: ID_A, localDate: "2024-03-04" }),
+        entry({ _id: ID_B, localDate: "2026-10-13" }),
+        entry({ _id: "e-legacy" }),
+      ],
+    };
+  }
+
+  it("gives one target per day of the range, from the weekday targets", () => {
+    const state = createState();
+    state.userPreferences.weeklyCapacityTargets = {
+      ...state.userPreferences.weeklyCapacityTargets,
+      monday: 7.5 * HOUR,
+      saturday: 2 * HOUR,
+    };
+
+    expect(
+      listTimeEntriesForAgent(state, { from: WEEK[0]!, to: WEEK[6]! }, NOW)
+        .targets,
+    ).toEqual([
+      { date: "2026-10-12", hours: 7.5 },
+      { date: "2026-10-13", hours: 8 },
+      { date: "2026-10-14", hours: 8 },
+      { date: "2026-10-15", hours: 8 },
+      { date: "2026-10-16", hours: 8 },
+      { date: "2026-10-17", hours: 2 },
+      { date: "2026-10-18", hours: 0 },
+    ]);
+    expect(
+      listTimeEntriesForAgent(
+        state,
+        { from: "2026-10-17", to: "2026-10-19" },
+        NOW,
+      ).targets,
+    ).toEqual([
+      { date: "2026-10-17", hours: 2 },
+      { date: "2026-10-18", hours: 0 },
+      { date: "2026-10-19", hours: 7.5 },
+    ]);
+  });
+
+  it("gives every entry and the running entry a short id", () => {
+    const state = stateWithUuidIds();
+    const result = listTimeEntriesForAgent(
+      state,
+      { from: "2024-03-04", to: "2024-03-04" },
+      NOW,
+    );
+    expect(result.entries.map((item) => item.shortId)).toEqual([
+      "3f2a9c1e7b4d4e8a9c0b1d2e3f4a5b6c",
+    ]);
+    expect(readRunningTimer(state, NOW)?.shortId).toBe(
+      "9d8c7b6a5f4e4d3c8b2a190817263544",
+    );
+    expect(toAgentEntry(state, state.timesheetEntries[2]!).shortId).toBe(
+      "e-legacy",
+    );
+  });
+
+  it("gives a running entry that continues a saved one the saved one's short id", () => {
+    const state = stateWithUuidIds();
+    state.timers[0] = { ...state.timers[0]!, entryId: ID_B };
+    expect(readRunningTimer(state, NOW)?.shortId).toBe(
+      "3f2a0000111142228333444455556666",
+    );
+  });
+
+  it("finds one entry for a unique prefix, on any day", () => {
+    const result = findEntriesForAgent(
+      stateWithUuidIds(),
+      { idPrefix: "3f2a9" },
+      NOW,
+    );
+    expect(result.entries.map((item) => [item.entryId, item.date])).toEqual([
+      [ID_A, "2024-03-04"],
+    ]);
+    expect(result.entries[0]).toMatchObject({
+      shortId: "3f2a9c1e7b4d4e8a9c0b1d2e3f4a5b6c",
+      state: "saved",
+      minutes: 60,
+      projectName: "Acme",
+      taskName: "Build",
+    });
+    expect(result.running).toBeNull();
+  });
+
+  it("finds every entry that shares a prefix, oldest day first, and none for an unknown one", () => {
+    const state = stateWithUuidIds();
+    expect(
+      findEntriesForAgent(state, { idPrefix: "3f2a" }, NOW).entries.map(
+        (item) => item.entryId,
+      ),
+    ).toEqual([ID_A, ID_B]);
+    expect(findEntriesForAgent(state, { idPrefix: "beef" }, NOW)).toEqual({
+      entries: [],
+      running: null,
+    });
+  });
+
+  it("finds the running entry when its short id matches", () => {
+    const result = findEntriesForAgent(
+      stateWithUuidIds(),
+      { idPrefix: "9d8c7b" },
+      NOW,
+    );
+    expect(result.entries).toEqual([]);
+    expect(result.running).toMatchObject({
+      timerId: TIMER_ID,
+      shortId: "9d8c7b6a5f4e4d3c8b2a190817263544",
+    });
+  });
+
+  it("lists each project's full and display names, and whether it is local only", () => {
+    const state = createState();
+    state.projects[0] = {
+      ...state.projects[0]!,
+      name: "Acme Corporation",
+      displayName: "Acme",
+      localOnly: true,
+    };
+    expect(
+      listProjectsForAgent(state, NO_PROPERTY_PLUGINS).projects[0],
+    ).toMatchObject({
+      name: "Acme",
+      fullName: "Acme Corporation",
+      displayName: "Acme",
+      localOnly: true,
+    });
+  });
+
+  it("lists each task's pinned slot and the four kinds of commit-as", () => {
+    const state = createState();
+    const tasks = state.projects[0]!.tasks;
+    state.projects[0]!.tasks = [
+      { ...tasks[0]!, pinnedSlot: "1" },
+      {
+        _id: "task-run",
+        name: "Run",
+        status: "active",
+        createdAt: 1,
+        pinnedSlot: "0",
+        pluginProperties: { "workday-agent": { task: "07 Run" } },
+      },
+      {
+        _id: "task-new",
+        name: "Discovery",
+        status: "active",
+        createdAt: 1,
+        commitAs: "waiting",
+      },
+      {
+        _id: "task-mine",
+        name: "Learning",
+        status: "active",
+        createdAt: 1,
+        commitAs: "local",
+      },
+    ];
+
+    expect(
+      listProjectsForAgent(state, { projects: [], tasks: [workdayTask] })
+        .projects[0]!.tasks,
+    ).toEqual([
+      {
+        taskId: "task-1",
+        name: "Build",
+        pinnedSlot: 1,
+        commitsAs: { kind: "own" },
+      },
+      {
+        taskId: "task-run",
+        name: "Run",
+        pinnedSlot: 10,
+        commitsAs: { kind: "task", name: "07 Run" },
+      },
+      {
+        taskId: "task-new",
+        name: "Discovery",
+        commitsAs: { kind: "not-known-yet" },
+      },
+      {
+        taskId: "task-mine",
+        name: "Learning",
+        commitsAs: { kind: "local-only" },
+      },
+    ]);
+  });
+
+  it("commits every task of a local only project as local only", () => {
+    const state = createState();
+    state.projects[0] = { ...state.projects[0]!, localOnly: true };
+    state.projects[0].tasks[0]!.pluginProperties = {
+      "workday-agent": { task: "07 Run" },
+    };
+    expect(
+      listProjectsForAgent(state, { projects: [], tasks: [workdayTask] })
+        .projects[0]!.tasks[0]!.commitsAs,
+    ).toEqual({ kind: "local-only" });
   });
 });

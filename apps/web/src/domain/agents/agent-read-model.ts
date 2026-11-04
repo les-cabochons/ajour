@@ -1,5 +1,6 @@
 import type {
   AgentChangeValues,
+  AgentCommitsAs,
   AgentRunningTimer,
   AgentTimeEntry,
   AgentWorkItem,
@@ -7,16 +8,25 @@ import type {
   ReadToolInput,
 } from "@ajour/shared/agent-tools";
 import {
+  entryShortId,
+  matchesShortIdPrefix,
+} from "@ajour/shared/entry-short-id";
+import {
   isBacklogItemSnoozed,
   selectSidebarBacklogItems,
 } from "@/domain/backlog/backlog-item-lifecycle";
 import {
   getLocalProjectDisplayName,
+  PINNED_TASK_SLOTS,
   type LocalAppState,
+  type LocalProject,
+  type LocalProjectTask,
   type LocalTimesheetEntry,
   type LocalWorkItem,
 } from "@/domain/local-state";
+import { getCommitTarget } from "@/domain/projects/commit-target";
 import {
+  getMappedTaskName,
   resolvePluginProperties,
   resolveTaskPluginProperties,
   type PropertyPlugins,
@@ -42,6 +52,7 @@ import {
 } from "@/domain/time/timesheet-submission";
 import {
   computeWeekPace,
+  getDayTargetMs,
   getPaceTolerancePercent,
 } from "@/domain/time/week-pace";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
@@ -95,6 +106,7 @@ export function readRunningTimer(
     timer.accumulatedDurationMs + Math.max(0, now - timer.startedAt);
   return {
     timerId: timer._id,
+    shortId: entryShortId(timer.entryId ?? timer._id),
     date: timer.localDate,
     countedMinutes: Math.floor(countedMs / MINUTE),
     countedSeconds: Math.floor(countedMs / 1000),
@@ -113,6 +125,7 @@ export function toAgentEntry(
 ): AgentTimeEntry {
   return {
     entryId: entry._id,
+    shortId: entryShortId(entry._id),
     date: entry.localDate,
     state: state.timers.some((timer) => timer.entryId === entry._id)
       ? "running"
@@ -132,6 +145,22 @@ function dayNumber(isoDate: string) {
   return Date.UTC(year!, month! - 1, day!) / DAY;
 }
 
+/** Each date from `from` to `to`, both included. */
+function datesBetween(from: string, to: string) {
+  const first = dayNumber(from);
+  return Array.from({ length: dayNumber(to) - first + 1 }, (_, index) =>
+    new Date((first + index) * DAY).toISOString().slice(0, 10),
+  );
+}
+
+/** Saved entries in the order the lists give them: oldest day first. */
+function byDayThenSave(left: LocalTimesheetEntry, right: LocalTimesheetEntry) {
+  return (
+    left.localDate.localeCompare(right.localDate) ||
+    left.committedAt - right.committedAt
+  );
+}
+
 export function listTimeEntriesForAgent(
   state: LocalAppState,
   { from, to }: ReadToolInput<"list_time_entries">,
@@ -148,22 +177,70 @@ export function listTimeEntriesForAgent(
   }
 
   const running = readRunningTimer(state, now);
+  const capacityTargets = state.userPreferences.weeklyCapacityTargets;
   return {
     entries: state.timesheetEntries
       .filter((entry) => entry.localDate >= from && entry.localDate <= to)
-      .sort(
-        (left, right) =>
-          left.localDate.localeCompare(right.localDate) ||
-          left.committedAt - right.committedAt,
-      )
+      .sort(byDayThenSave)
       .map((entry) => toAgentEntry(state, entry)),
     running:
       running && running.date >= from && running.date <= to ? running : null,
+    targets: datesBetween(from, to).map((date) => ({
+      date,
+      hours: toHours(getDayTargetMs(capacityTargets, date)),
+    })),
   };
+}
+
+/**
+ * Every saved entry whose short id starts with `idPrefix`, on any day, and
+ * the running entry when its own short id does.
+ */
+export function findEntriesForAgent(
+  state: LocalAppState,
+  { idPrefix }: ReadToolInput<"find_entries">,
+  now: number,
+): DataToolOutput<"find_entries"> {
+  const running = readRunningTimer(state, now);
+  return {
+    entries: state.timesheetEntries
+      .filter((entry) => matchesShortIdPrefix(entry._id, idPrefix))
+      .sort(byDayThenSave)
+      .map((entry) => toAgentEntry(state, entry)),
+    running: running?.shortId?.startsWith(idPrefix) ? running : null,
+  };
+}
+
+/**
+ * What the task's time commits as, from commit-target.ts, with the first
+ * name a task property plugin maps the task to.
+ */
+function describeCommitsAs(
+  project: LocalProject,
+  task: LocalProjectTask,
+  propertyPlugins: PropertyPlugins,
+): AgentCommitsAs {
+  const target = getCommitTarget(project, task);
+  if (target === "local") return { kind: "local-only" };
+  if (target === "waiting") return { kind: "not-known-yet" };
+  const name = propertyPlugins.tasks
+    .map((plugin) => getMappedTaskName(task, plugin))
+    .find((mapped) => mapped !== undefined);
+  return name ? { kind: "task", name } : { kind: "own" };
+}
+
+/** The task's pinned slot as 1 to 10, keyboard order: key 0 is slot 10. */
+function pinnedSlotNumber(task: LocalProjectTask) {
+  const index = task.pinnedSlot
+    ? PINNED_TASK_SLOTS.indexOf(task.pinnedSlot)
+    : -1;
+  return index >= 0 ? { pinnedSlot: index + 1 } : {};
 }
 
 export function listProjectsForAgent(
   state: LocalAppState,
+  /** Active plugins that add task properties. Passed in to keep domain free of `lib/`. */
+  propertyPlugins: PropertyPlugins,
 ): DataToolOutput<"list_projects"> {
   return {
     projects: state.projects
@@ -172,9 +249,17 @@ export function listProjectsForAgent(
         projectId: project._id,
         name: getLocalProjectDisplayName(project),
         ...(project.code ? { code: project.code } : {}),
+        fullName: project.name,
+        displayName: getLocalProjectDisplayName(project),
+        localOnly: project.localOnly === true,
         tasks: project.tasks
           .filter((task) => task.status === "active")
-          .map((task) => ({ taskId: task._id, name: task.name })),
+          .map((task) => ({
+            taskId: task._id,
+            name: task.name,
+            ...pinnedSlotNumber(task),
+            commitsAs: describeCommitsAs(project, task, propertyPlugins),
+          })),
       })),
   };
 }

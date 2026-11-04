@@ -7,6 +7,7 @@ import {
   type ReadToolName,
 } from "@ajour/shared/agent-tools";
 import {
+  findEntriesForAgent,
   getWeekChangesForAgent,
   getWeekLinesForAgent,
   getWeekStatusForAgent,
@@ -95,7 +96,8 @@ const readTools: {
       readToolInputSchemas.list_time_entries.parse(rawInput),
       Date.now(),
     ),
-  list_projects: () => listProjectsForAgent(localStore.snapshot()),
+  list_projects: async () =>
+    listProjectsForAgent(localStore.snapshot(), await loadPropertyPlugins()),
   list_work_items: (rawInput) =>
     listWorkItemsForAgent(
       localStore.snapshot(),
@@ -139,6 +141,13 @@ const readTools: {
       now: Date.now(),
     });
   },
+  // Reads for the terminal (#532).
+  find_entries: (rawInput) =>
+    findEntriesForAgent(
+      localStore.snapshot(),
+      readToolInputSchemas.find_entries.parse(rawInput),
+      Date.now(),
+    ),
 };
 
 function isEntryWriteTool(tool: string): tool is EntryWriteTool {

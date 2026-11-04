@@ -2479,3 +2479,197 @@ describe("an agent's change to a synced description", () => {
     ).toBe("Local notes");
   });
 });
+
+describe("agent reads for the terminal", () => {
+  const workdayTask = {
+    pluginId: "workday-agent",
+    capability: {
+      section: "Workday",
+      fields: [{ id: "task", label: "Workday task", defaultFrom: "name" }],
+    },
+  };
+
+  it("gives a week's seven targets as Settings › General holds them", async () => {
+    const { call, localStore } = await setup();
+    localStore.setUserPreferences({
+      weeklyCapacityTargets: {
+        monday: 8 * 3_600_000,
+        tuesday: 7.5 * 3_600_000,
+        wednesday: 8 * 3_600_000,
+        thursday: 8 * 3_600_000,
+        friday: 4 * 3_600_000,
+        saturday: 0,
+        sunday: 0,
+      },
+    });
+
+    const result = await call("list_time_entries", {
+      from: "2026-10-12",
+      to: "2026-10-18",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      output: {
+        targets: [
+          { date: "2026-10-12", hours: 8 },
+          { date: "2026-10-13", hours: 7.5 },
+          { date: "2026-10-14", hours: 8 },
+          { date: "2026-10-15", hours: 8 },
+          { date: "2026-10-16", hours: 4 },
+          { date: "2026-10-17", hours: 0 },
+          { date: "2026-10-18", hours: 0 },
+        ],
+      },
+    });
+  });
+
+  it("lists pinned slots, full names and each of the four commit-as kinds", async () => {
+    listPropertyPlugins.mockResolvedValue({
+      projects: [],
+      tasks: [workdayTask],
+    });
+    const { call, localStore, project, task } = await setup();
+    localStore.updateProject(project._id, { displayName: "ACM" });
+    localStore.addProjectTask(project._id, { name: "Run" });
+    localStore.addProjectTask(project._id, { name: "Discovery" });
+    localStore.addProjectTask(project._id, { name: "Learning" });
+    const tasks = localStore
+      .snapshot()
+      .projects.find((candidate) => candidate._id === project._id)!.tasks;
+    const id = (name: string) =>
+      tasks.find((candidate) => candidate.name === name)!._id;
+    localStore.updateProjectTask(project._id, task("Build")._id, {
+      pinnedSlot: "1",
+    });
+    localStore.updateProjectTask(project._id, id("Run"), {
+      pinnedSlot: "0",
+      pluginProperties: { "workday-agent": { task: "07 Run" } },
+    });
+    localStore.updateProjectTask(project._id, id("Discovery"), {
+      commitAs: "waiting",
+    });
+    localStore.updateProjectTask(project._id, id("Learning"), {
+      commitAs: "local",
+    });
+
+    const result = await call("list_projects");
+
+    expect(result.ok).toBe(true);
+    const acme = (
+      result as { output: { projects: { projectId: string }[] } }
+    ).output.projects.find((item) => item.projectId === project._id);
+    expect(acme).toEqual({
+      projectId: project._id,
+      name: "ACM",
+      fullName: "Acme",
+      displayName: "ACM",
+      localOnly: false,
+      tasks: [
+        {
+          taskId: task("Build")._id,
+          name: "Build",
+          pinnedSlot: 1,
+          commitsAs: { kind: "own" },
+        },
+        {
+          taskId: id("Run"),
+          name: "Run",
+          pinnedSlot: 10,
+          commitsAs: { kind: "task", name: "07 Run" },
+        },
+        {
+          taskId: id("Discovery"),
+          name: "Discovery",
+          commitsAs: { kind: "not-known-yet" },
+        },
+        {
+          taskId: id("Learning"),
+          name: "Learning",
+          commitsAs: { kind: "local-only" },
+        },
+      ],
+    });
+  });
+
+  it("finds one entry for a unique prefix, several for a shared one, and none for an unknown one", async () => {
+    let next = 0;
+    // Every id Ajour creates here shares the short id prefix 3f2a.
+    vi.spyOn(globalThis.crypto, "randomUUID").mockImplementation(
+      () =>
+        `3f2a${String((next += 1)).padStart(4, "0")}-0000-4000-8000-000000000000` as `${string}-${string}-${string}-${string}-${string}`,
+    );
+    const { call, localStore, project, task } = await setup();
+    for (const localDate of ["2025-01-06", "2026-10-13"]) {
+      localStore.saveManualTimeEntry({
+        localDate,
+        projectId: project._id,
+        taskId: task("Build")._id,
+        durationMs: 30 * 60_000,
+      });
+    }
+    const [older, newer] = localStore.snapshot().timesheetEntries;
+    const shortIdOf = (entryId: string) =>
+      entryId.slice("timesheet_".length).replaceAll("-", "");
+    vi.mocked(globalThis.crypto.randomUUID).mockRestore();
+
+    const unique = await call("find_entries", {
+      idPrefix: shortIdOf(older!._id),
+    });
+    expect(unique).toMatchObject({
+      ok: true,
+      output: {
+        entries: [
+          {
+            entryId: older!._id,
+            shortId: shortIdOf(older!._id),
+            date: "2025-01-06",
+            minutes: 30,
+            taskName: "Build",
+          },
+        ],
+        running: null,
+      },
+    });
+    expect(unique.ok && unique.output).toMatchObject({
+      entries: { length: 1 },
+    });
+
+    const shared = await call("find_entries", { idPrefix: "3f2a" });
+    expect(
+      shared.ok &&
+        (shared.output as { entries: { entryId: string }[] }).entries.map(
+          (item) => item.entryId,
+        ),
+    ).toEqual([older!._id, newer!._id]);
+
+    expect(await call("find_entries", { idPrefix: "beef" })).toMatchObject({
+      ok: true,
+      output: { entries: [], running: null },
+    });
+  });
+
+  it("finds the running entry by its short id", async () => {
+    const { call, project } = await setup();
+    const started = await call("start_timer", { projectId: project._id });
+    const { shortId } = (
+      started as { output: { running: { shortId: string } } }
+    ).output.running;
+
+    expect(
+      await call("find_entries", { idPrefix: shortId.slice(0, 7) }),
+    ).toMatchObject({
+      ok: true,
+      output: { entries: [], running: { shortId } },
+    });
+  });
+
+  it("refuses a prefix under 4 characters", async () => {
+    const { call } = await setup();
+    expect(await call("find_entries", { idPrefix: "3f2" })).toEqual({
+      requestId: "r1",
+      ok: false,
+      error: "idPrefix: Use 4 to 32 lowercase hex characters, such as 3f2a9c1.",
+    });
+  });
+});

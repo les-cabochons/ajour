@@ -117,8 +117,9 @@ describe("an agent's tool call", () => {
         name: "list_projects",
         access: "read",
       }),
-      // The result it posted back.
-      counts: expect.objectContaining({ api_call_count: 1 }),
+      // The plugins overview it reads for commit-as names, and the result
+      // it posted back.
+      counts: expect.objectContaining({ api_call_count: 2 }),
     });
     expect(posted).toMatchObject({
       runtime: "api",

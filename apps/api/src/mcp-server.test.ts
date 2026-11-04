@@ -848,6 +848,111 @@ describe("MCP endpoint", () => {
     await renderer.waitFor("agents", (data) => data.errors.length > 0);
   });
 
+  it("checks the terminal's reads: targets, pinned slots, commit-as and short ids", async () => {
+    const { baseUrl } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl, "Claude Code");
+    const calls: BridgeToolCall[] = [];
+    const projects = {
+      projects: [
+        {
+          projectId: "p1",
+          name: "Acme",
+          fullName: "Acme Corporation",
+          displayName: "Acme",
+          localOnly: false,
+          tasks: [
+            {
+              taskId: "t1",
+              name: "Run",
+              pinnedSlot: 10,
+              commitsAs: { kind: "task", name: "07 Run" },
+            },
+          ],
+        },
+      ],
+    };
+    const found = {
+      entries: [
+        {
+          entryId: "timesheet_3f2a9c1e-7b4d-4e8a-9c0b-1d2e3f4a5b6c",
+          shortId: "3f2a9c1e7b4d4e8a9c0b1d2e3f4a5b6c",
+          date: "2024-03-04",
+          state: "saved",
+          minutes: 30,
+        },
+      ],
+      running: null,
+    };
+    const entries = {
+      entries: [],
+      running: null,
+      targets: [{ date: "2026-10-12", hours: 8 }],
+    };
+    let badProjects = false;
+    await openFakeRenderer(baseUrl, (call) => {
+      calls.push(call);
+      const output =
+        call.tool === "find_entries"
+          ? found
+          : call.tool === "list_time_entries"
+            ? entries
+            : badProjects
+              ? {
+                  projects: [
+                    {
+                      ...projects.projects[0],
+                      tasks: [
+                        {
+                          taskId: "t1",
+                          name: "Run",
+                          commitsAs: { kind: "waiting" },
+                        },
+                      ],
+                    },
+                  ],
+                }
+              : projects;
+      return { requestId: call.requestId, ok: true, output };
+    });
+    const agent = await connectAgent(baseUrl, token);
+
+    const { tools } = await agent.listTools();
+    expect(tools.map((tool) => tool.name)).toContain("find_entries");
+    expect(
+      await agent.callTool({ name: "list_projects", arguments: {} }),
+    ).toMatchObject({ structuredContent: projects });
+    expect(
+      await agent.callTool({
+        name: "list_time_entries",
+        arguments: { from: "2026-10-12", to: "2026-10-12" },
+      }),
+    ).toMatchObject({ structuredContent: entries });
+    expect(
+      await agent.callTool({
+        name: "find_entries",
+        arguments: { idPrefix: "3f2a9c1" },
+      }),
+    ).toMatchObject({ structuredContent: found });
+    expect(calls.at(-1)).toMatchObject({
+      tool: "find_entries",
+      input: { idPrefix: "3f2a9c1" },
+    });
+
+    const short = await agent.callTool({
+      name: "find_entries",
+      arguments: { idPrefix: "3f2" },
+    });
+    expect(short.isError).toBe(true);
+    expect(calls).toHaveLength(3);
+
+    badProjects = true;
+    const bad = await agent.callTool({ name: "list_projects", arguments: {} });
+    expect(bad.isError).toBe(true);
+    expect(resultText(bad)).toBe(
+      "Ajour returned list_projects output that does not match its schema.",
+    );
+  });
+
   it("lists the read and write tools and forwards a write with its input", async () => {
     const { baseUrl } = await startTestApi();
     const { token } = await enableMcpWithClient(baseUrl, "Claude Code");
@@ -863,7 +968,7 @@ describe("MCP endpoint", () => {
     const agent = await connectAgent(baseUrl, token);
 
     const { tools } = await agent.listTools();
-    expect(tools).toHaveLength(36);
+    expect(tools).toHaveLength(37);
     expect(tools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining([
         "start_timer",
@@ -872,6 +977,7 @@ describe("MCP endpoint", () => {
         "undo",
         "get_week_changes",
         "get_week_lines",
+        "find_entries",
         "get_week_status",
         "mark_entries_committed",
         "submit_week",

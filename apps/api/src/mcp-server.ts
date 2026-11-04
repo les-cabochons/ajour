@@ -315,8 +315,9 @@ const TOOL_DESCRIPTIONS: Record<AgentTaskMcpTool | SessionToolName, string> = {
   get_running_timer:
     "The running entry, with its project, task, note and counted minutes. `running` is null when nothing runs.",
   list_time_entries:
-    "Time entries between two dates (inclusive, at most 62 days), each with its state: saved, committed when the external timesheet holds it as it is, or running when the running entry continues it. The running entry itself is in `running`.",
-  list_projects: "Active projects and their active tasks, with their ids.",
+    "Time entries between two dates (inclusive, at most 62 days), each with its state: saved, committed when the external timesheet holds it as it is, or running when the running entry continues it, and its `shortId`. The running entry itself is in `running`. `targets` gives each day's target in hours, from the user's weekday targets.",
+  list_projects:
+    "Active projects and their active tasks, with their ids. Each project has its `fullName`, the name the external timesheet knows, its `displayName` and `localOnly`. Each task has its `pinnedSlot`, 1 to 10 where number key 0 is 10, and `commitsAs`: its own name, another `task` with that `name`, `not-known-yet` or `local-only`.",
   list_work_items:
     "Backlog items. The default `sidebar` filter returns the user's current work list in their order. Filter by workflow state, project or text.",
   get_work_item:
@@ -367,6 +368,9 @@ const TOOL_DESCRIPTIONS: Record<AgentTaskMcpTool | SessionToolName, string> = {
   archive_work_item:
     "Archives a synced item in Ajour and leaves its source unchanged. Settle a manual item instead.",
   restore_work_item: "Restores an archived item.",
+  // Reads for the terminal (#532).
+  find_entries:
+    "Every time entry, on any day, whose `shortId` starts with `idPrefix` (4 to 32 lowercase hex characters), in list_time_entries' shape, and the running entry in `running` when its `shortId` starts with it. A `shortId` is the entry's UUID without dashes, or its whole id when it has none.",
   begin_session:
     "Call before any work longer than a minute: a title and your estimate in minutes. Ajour shows it to the user and adds a 25% margin. Send update_session at least every few minutes, extend before the deadline passes, and always call end_session.",
   update_session:

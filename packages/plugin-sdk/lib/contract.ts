@@ -67,6 +67,7 @@ export type PluginManifest = {
             placement: "commit-week" | "submit-week";
             estimateMinutes: number;
             tools: (
+              | "find_entries"
               | "get_running_timer"
               | "list_time_entries"
               | "list_projects"
