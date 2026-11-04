@@ -7,7 +7,7 @@ import { lstatSync, readlinkSync, readdirSync } from "node:fs";
 const require = createRequire(import.meta.url);
 const { macosPrivilegedCommand } = require("../electron/cli-path.cjs");
 assert.equal(process.platform, "darwin");
-const root = `/Library/ajour-check-${randomUUID()}`;
+const root = `/private/var/ajour-check-${randomUUID()}`;
 const destination = `${root}/local/bin/ajour`;
 const target = `/Users/A "B"/it's\\$home/Ü/bin/ajour`;
 const sudo = (...args) =>
@@ -24,6 +24,17 @@ const exists = (name) => {
 
 try {
   sudo("/bin/mkdir", "-m", "755", root);
+  for (const ancestor of ["/", "/private", "/private/var", root]) {
+    const entry = lstatSync(ancestor);
+    assert.ok(entry.isDirectory() && !entry.isSymbolicLink(), ancestor);
+    assert.equal(entry.uid, 0, `${ancestor} must be root-owned`);
+    assert.equal(
+      entry.mode & 0o022,
+      0,
+      `${ancestor} must not be writable by group or others`,
+    );
+    console.log(`protected integration ancestor: ${ancestor}`);
+  }
   for (const layer of ["shell", "AppleScript"]) {
     const run = (present, observed = "") => {
       const command = macosPrivilegedCommand({
