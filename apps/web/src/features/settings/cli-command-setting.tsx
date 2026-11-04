@@ -115,6 +115,7 @@ export function CliCommandSetting() {
   const installing = starting || state?.status === "installing";
   const development = state?.status === "unsupported";
   const installed = state?.status === "installed";
+  const macos = desktop?.runtime?.platform === "darwin";
   const error = state?.error ?? refused;
 
   function install() {
@@ -148,6 +149,9 @@ export function CliCommandSetting() {
                     ) : state.location ? (
                       <FolderLine folder={state.location} />
                     ) : null}
+                    {macos && state.status === "not-installed" ? (
+                      <Line text="Asks for your password to add it to /usr/local/bin." />
+                    ) : null}
                     {installed && state.newlyInstalled ? (
                       <Line text="Open a new terminal to use it." />
                     ) : null}
@@ -180,7 +184,9 @@ export function CliCommandSetting() {
                 disabled={!state || installing || development}
                 onClick={install}
               >
-                Install
+                {state?.status === "error" && state.version
+                  ? "Retry"
+                  : "Install"}
               </Button>
             </DisabledReason>
           )}

@@ -246,3 +246,98 @@ module.exports = {
   pathWithFolder,
   checkPathRestoration,
 };
+
+/**
+ * Owns only symlinks into this install folder. Launch reconciliation never prompts.
+ * @param {{ fs: Pick<typeof import("node:fs/promises"), "lstat" | "readlink" | "access">,
+ *   exec: (file: string, args: string[], options?: { timeout?: number }) => Promise<unknown> }} options
+ */
+function createMacosCommandLink({ fs, exec }) {
+  const destination = "/usr/local/bin/ajour";
+  const directory = path.posix.dirname(destination);
+  const quote = (value) => "'" + value.replaceAll("'", "'\"'\"'") + "'";
+  const failure = (reason, message) =>
+    Object.assign(new Error(message), { reason });
+  async function inspect(folder) {
+    let entry;
+    try {
+      entry = await fs.lstat(destination);
+    } catch (error) {
+      if (error.code === "ENOENT") return "absent";
+      throw error;
+    }
+    if (!entry.isSymbolicLink()) return "foreign";
+    const target = path.posix.resolve(
+      directory,
+      await fs.readlink(destination),
+    );
+    const relative = path.posix.relative(folder, target);
+    return relative &&
+      relative !== ".." &&
+      !relative.startsWith("../") &&
+      !path.posix.isAbsolute(relative)
+      ? "ours"
+      : "foreign";
+  }
+  async function ensure(folder, present, { interactive = false } = {}) {
+    const current = await inspect(folder);
+    if (current === "foreign") {
+      if (!present) return { added: false };
+      throw failure(
+        "foreign_command",
+        "Another ajour is at /usr/local/bin/ajour. Remove it, then install again.",
+      );
+    }
+    if ((present && current === "ours") || (!present && current === "absent"))
+      return { added: false };
+    const writable = await fs.access(directory, 2).then(
+      () => true,
+      (error) => {
+        if (["ENOENT", "EACCES", "EPERM"].includes(error.code)) return false;
+        throw error;
+      },
+    );
+    if (!writable && !interactive)
+      throw new Error(
+        "Ajour needs your password to repair /usr/local/bin/ajour. Press Retry in Settings.",
+      );
+    /** @type {Array<[string, string[]]>} */
+    const commands = present
+      ? [
+          ["/bin/mkdir", ["-p", directory]],
+          ["/bin/ln", ["-s", path.posix.join(folder, "ajour"), destination]],
+        ]
+      : [["/bin/rm", [destination]]];
+    // Recheck before removing. A foreign replacement is never deliberately removed.
+    if (!present && (await inspect(folder)) !== "ours") return { added: false };
+    if (writable) {
+      for (const [file, args] of commands)
+        await exec(file, args, { timeout: 30_000 });
+    } else {
+      const shell = commands
+        .map(([file, args]) => `${file} ${args.map(quote).join(" ")}`)
+        .join(" && ");
+      // Check again inside the elevated shell, after the user answered the prompt.
+      const guarded = present
+        ? shell
+        : `if [ -L ${quote(destination)} ] && [ "$(/usr/bin/readlink ${quote(destination)})" = ${quote(await fs.readlink(destination))} ]; then ${shell}; fi`;
+      const script = `do shell script ${JSON.stringify(guarded)} with administrator privileges`;
+      try {
+        await exec("/usr/bin/osascript", ["-e", script], { timeout: 120_000 });
+      } catch (error) {
+        if (/(-128|cancel)/i.test(`${error.message} ${error.stderr ?? ""}`))
+          throw failure(
+            "admin_cancelled",
+            "Ajour needs your password to link /usr/local/bin/ajour. Nothing was installed.",
+          );
+        throw error;
+      }
+    }
+    return { added: present };
+  }
+  return {
+    add: (folder, options) => ensure(folder, true, options),
+    remove: (folder, options) => ensure(folder, false, options),
+  };
+}
+module.exports.createMacosCommandLink = createMacosCommandLink;

@@ -564,3 +564,98 @@ describe("literal Windows path comparison", () => {
     },
   );
 });
+
+describe("macOS command link", () => {
+  const { createMacosCommandLink } = require("./electron/cli-path.cjs");
+  function fixture({
+    target = null as string | null,
+    foreignFile = false,
+    writable = true,
+    cancelled = false,
+  } = {}) {
+    const calls: Array<{ file: string; args: string[] }> = [];
+    const fs = {
+      lstat: async () => {
+        if (target === null && !foreignFile)
+          throw Object.assign(new Error(), { code: "ENOENT" });
+        return { isSymbolicLink: () => !foreignFile };
+      },
+      readlink: async () => target,
+      access: async () => {
+        if (!writable) throw Object.assign(new Error(), { code: "EACCES" });
+      },
+    };
+    const exec = async (file: string, args: string[]) => {
+      calls.push({ file, args });
+      if (cancelled) throw new Error("User canceled. (-128)");
+      return { stdout: "" };
+    };
+    return { link: () => createMacosCommandLink({ fs, exec }), calls };
+  }
+  it("creates an absent link directly without a password", async () => {
+    const f = fixture();
+    expect(await f.link().add("/Users/alex/Ajour/bin")).toEqual({
+      added: true,
+    });
+    expect(f.calls.map((call) => call.file)).toEqual(["/bin/mkdir", "/bin/ln"]);
+    expect(f.calls[1]!.args).toEqual([
+      "-s",
+      "/Users/alex/Ajour/bin/ajour",
+      "/usr/local/bin/ajour",
+    ]);
+  });
+  it("leaves an owned link alone", async () => {
+    const f = fixture({ target: "/Users/alex/Ajour/bin/ajour" });
+    expect(await f.link().add("/Users/alex/Ajour/bin")).toEqual({
+      added: false,
+    });
+    expect(f.calls).toEqual([]);
+  });
+  it.each([
+    { foreignFile: true },
+    { target: "/opt/homebrew/bin/ajour" },
+    { target: "/Users/alex/Ajour/bin-other/ajour" },
+  ])("refuses foreign commands %j", async (options) => {
+    const f = fixture(options);
+    await expect(f.link().add("/Users/alex/Ajour/bin")).rejects.toThrow(
+      "Another ajour is at /usr/local/bin/ajour. Remove it, then install again.",
+    );
+    await f.link().remove("/Users/alex/Ajour/bin");
+    expect(f.calls).toEqual([]);
+  });
+  it("quotes shell paths and the AppleScript string independently", async () => {
+    const f = fixture({ writable: false });
+    await f.link().add(`/Users/A "B"/it's\\home/bin`, { interactive: true });
+    expect(f.calls[0]!.file).toBe("/usr/bin/osascript");
+    const script = f.calls[0]!.args[1]!;
+    expect(script).toContain("with administrator privileges");
+    // Decode only the AppleScript string. Shell quoting must survive unchanged.
+    const shell = JSON.parse(
+      script.slice(
+        "do shell script ".length,
+        -" with administrator privileges".length,
+      ),
+    );
+    expect(shell).toBe(
+      `/bin/mkdir '-p' '/usr/local/bin' && /bin/ln '-s' '/Users/A "B"/it'"'"'s\\home/bin/ajour' '/usr/local/bin/ajour'`,
+    );
+  });
+  it("refuses cancellation with the specified message", async () => {
+    const f = fixture({ writable: false, cancelled: true });
+    await expect(
+      f.link().add("/Users/alex/bin", { interactive: true }),
+    ).rejects.toThrow(
+      "Ajour needs your password to link /usr/local/bin/ajour. Nothing was installed.",
+    );
+  });
+  it("does not prompt to clean an orphaned link during reconciliation", async () => {
+    const f = fixture({ target: "/Users/alex/bin/ajour", writable: false });
+    await expect(f.link().remove("/Users/alex/bin")).rejects.toThrow("Retry");
+    expect(f.calls).toEqual([]);
+  });
+  it("never prompts without an explicit action", async () => {
+    const f = fixture({ writable: false });
+    await expect(f.link().add("/Users/alex/bin")).rejects.toThrow("Retry");
+    expect(f.calls).toEqual([]);
+  });
+});

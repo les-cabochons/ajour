@@ -40,6 +40,7 @@ const { createManualRedirectFetch } = require("./manual-redirect-fetch.cjs");
 const {
   createPowerShellRegistry,
   createWindowsUserPath,
+  createMacosCommandLink,
 } = require("./cli-path.cjs");
 const {
   MAC_ICON_SYMBOLS,
@@ -379,27 +380,52 @@ const cliCommand = createCliCommandController({
   releaseOrigin: app.isPackaged
     ? undefined
     : process.env.AJOUR_CLI_RELEASE_ORIGIN,
+  allowAdHocSignature:
+    !app.isPackaged && process.env.AJOUR_CLI_ADHOC_SIGNATURE === "1",
   paths: {
     installDir:
       (!app.isPackaged && process.env.AJOUR_CLI_INSTALL_DIR) ||
-      path.join(
-        process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"),
-        "Ajour",
-        "bin",
-      ),
+      (process.platform === "darwin"
+        ? path.join(
+            os.homedir(),
+            "Library",
+            "Application Support",
+            "Ajour",
+            "bin",
+          )
+        : path.join(
+            process.env.LOCALAPPDATA ||
+              path.join(os.homedir(), "AppData", "Local"),
+            "Ajour",
+            "bin",
+          )),
     recordFile: path.join(app.getPath("userData"), "cli-command.json"),
     // The system's tar by its absolute path: a bare name would search the
     // working folder first.
-    tar: path.win32.join(
-      process.env.SystemRoot || "C:\\Windows",
-      "System32",
-      "tar.exe",
-    ),
+    tar:
+      process.platform === "darwin"
+        ? "/usr/bin/tar"
+        : path.win32.join(
+            process.env.SystemRoot || "C:\\Windows",
+            "System32",
+            "tar.exe",
+          ),
   },
-  link: createWindowsUserPath({
-    registry: createPowerShellRegistry(),
-    events,
-  }),
+  link:
+    process.platform === "darwin"
+      ? createMacosCommandLink({
+          fs: fsPromises,
+          exec: (file, args, options) =>
+            new Promise((resolve, reject) =>
+              execFile(file, args, options, (error, stdout) =>
+                error ? reject(error) : resolve({ stdout }),
+              ),
+            ),
+        })
+      : createWindowsUserPath({
+          registry: createPowerShellRegistry(),
+          events,
+        }),
 });
 cliCommand.onChange((state) => {
   if (mainWindow && !mainWindow.isDestroyed()) {

@@ -403,3 +403,17 @@ describe("the ajour command setting", () => {
     expect(main.unsubscribe).toHaveBeenCalledOnce();
   });
 });
+
+it("shows the macOS password hint before installation", async () => {
+  desktop();
+  window.ajourDesktop = {
+    ...window.ajourDesktop!,
+    runtime: { ...window.ajourDesktop!.runtime!, platform: "darwin" },
+  };
+  render(<CliCommandSetting />);
+  expect(
+    await screen.findByText(
+      "Asks for your password to add it to /usr/local/bin.",
+    ),
+  ).toBeTruthy();
+});

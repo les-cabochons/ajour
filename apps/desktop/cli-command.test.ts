@@ -389,6 +389,7 @@ function controllerWith({
   appVersion = VERSION,
   development = false,
   releaseOrigin,
+  allowAdHocSignature,
 }: {
   github?: ReturnType<typeof fakeGithub>;
   exec?: ReturnType<typeof fakeExec>;
@@ -399,6 +400,7 @@ function controllerWith({
   appVersion?: string;
   development?: boolean;
   releaseOrigin?: string;
+  allowAdHocSignature?: boolean;
 } = {}) {
   const controller = createCliCommandController({
     fetch: github.fetch,
@@ -409,6 +411,7 @@ function controllerWith({
     appVersion,
     development,
     releaseOrigin,
+    allowAdHocSignature,
     paths: { installDir, recordFile, tar: TAR },
     link: link.link,
     now: () => Date.parse("2026-11-04T10:00:00Z"),
@@ -1245,9 +1248,9 @@ describe("where it doesn't install", () => {
     expect(github.requests).toEqual([]);
   });
 
-  it("is unsupported on macOS until it links /usr/local/bin (#569)", async () => {
+  it("is unsupported on Linux", async () => {
     const { controller } = controllerWith({
-      platform: "darwin",
+      platform: "linux",
       arch: "arm64",
     });
 
@@ -1506,4 +1509,194 @@ describe("ownership evidence after an interrupted swap", () => {
     );
     expect((await readdir(installDir)).sort()).toEqual(["share"]);
   });
+});
+
+describe("macOS signature verification", () => {
+  function mac(
+    signatureFails = false,
+    overrides: Parameters<typeof controllerWith>[0] = {},
+  ) {
+    const version = overrides?.appVersion ?? VERSION;
+    const asset = `ajour-${version}-macos-${overrides?.arch ?? "x64"}.tar.gz`;
+    const origin =
+      overrides?.development && overrides.releaseOrigin
+        ? overrides.releaseOrigin
+        : "https://github.com";
+    const archive = goodArchive(version);
+    archive["./ajour"] = archive["./ajour.exe"]!;
+    delete archive["./ajour.exe"];
+    const github = fakeGithub({
+      archive,
+      asset: {
+        name: asset,
+        browser_download_url: `${origin}/les-cabochons/ajour/releases/download/v${version}/${asset}`,
+      },
+    });
+    const base = fakeExec();
+    const exec = {
+      calls: base.calls,
+      exec: async (file: string, args: string[]) => {
+        if (file === "/usr/bin/codesign") {
+          base.calls.push({ file, args });
+          if (signatureFails) throw new Error("wrong team");
+          return { stdout: "" };
+        }
+        return base.exec(file, args);
+      },
+    };
+    return controllerWith({ platform: "darwin", github, exec, ...overrides });
+  }
+  it("verifies the team before executing the binary and installs the macOS archive", async () => {
+    const { controller, exec } = mac();
+    expect(await controller.install()).toMatchObject({
+      status: "installed",
+      location: "/usr/local/bin/ajour",
+    });
+    const signature = exec.calls.findIndex(
+      (call) => call.file === "/usr/bin/codesign",
+    );
+    expect(signature).toBeGreaterThan(-1);
+    expect(exec.calls[signature]!.args).toContain(
+      'anchor apple generic and certificate leaf[subject.OU] = "DDX8GJH69G"',
+    );
+    expect(signature).toBeLessThan(
+      exec.calls.findIndex((call) => call.args[0] === "-V"),
+    );
+  });
+  it.each(["x64", "arm64"])("installs the archive for %s", async (arch) => {
+    expect((await mac(false, { arch }).controller.install()).status).toBe(
+      "installed",
+    );
+  });
+  it.each([false, true])(
+    "relaxes the team requirement only for the unpackaged local check, development=%s",
+    async (development) => {
+      const { controller, exec } = mac(false, {
+        development,
+        releaseOrigin: "http://127.0.0.1:1234",
+        allowAdHocSignature: true,
+      });
+      expect((await controller.install()).status).toBe("installed");
+      const call = exec.calls.find(
+        (call) => call.file === "/usr/bin/codesign",
+      )!;
+      expect(call.args.includes("-R")).toBe(!development);
+      expect(call.args.slice(0, 2)).toEqual(["--verify", "--strict"]);
+    },
+  );
+  it("refuses a failed signature without executing or installing it", async () => {
+    const { controller, exec } = mac(true);
+    expect(await controller.install()).toMatchObject({
+      status: "error",
+      error: "The download isn't signed by Ajour. Nothing was installed.",
+    });
+    expect(exec.calls.some((call) => call.args[0] === "-V")).toBe(false);
+    expect(await filesUnder(installDir)).toEqual([]);
+    expect(existsSync(recordFile)).toBe(false);
+  });
+  it("keeps the previous command when a replacement signature fails", async () => {
+    const previous = "0.0.1-nightly.20261101.280";
+    expect(
+      (await mac(false, { appVersion: previous }).controller.install()).status,
+    ).toBe("installed");
+    const record = await readFile(recordFile, "utf8");
+    const state = await mac(true).controller.install();
+    expect(state).toMatchObject({ status: "error", version: previous });
+    expect(await readFile(recordFile, "utf8")).toBe(record);
+    expect(await readFile(path.join(installDir, "ajour"), "utf8")).toBe(
+      `binary ${previous}`,
+    );
+  });
+  it("cancels the prompt without committing or leaving files", async () => {
+    const link = {
+      add: async () => {
+        throw new Error(
+          "Ajour needs your password to link /usr/local/bin/ajour. Nothing was installed.",
+        );
+      },
+      remove: async () => {},
+    };
+    const { controller } = mac(false, { link: { link } });
+    expect((await controller.install()).error).toContain(
+      "Nothing was installed.",
+    );
+    expect(existsSync(recordFile)).toBe(false);
+    expect(await filesUnder(installDir)).toEqual([]);
+  });
+  it("surfaces a missing link on launch and permits a prompt only on Retry", async () => {
+    expect((await mac().controller.install()).status).toBe("installed");
+    const prompts: boolean[] = [];
+    const link = {
+      add: async (_folder: string, options?: { interactive: boolean }) => {
+        prompts.push(options?.interactive ?? false);
+        if (!options?.interactive) throw new Error("Press Retry in Settings.");
+        return { added: true };
+      },
+      remove: async () => {},
+    };
+    const { controller, github } = mac(false, { link: { link } });
+    expect((await controller.reconcile()).status).toBe("error");
+    expect(prompts).toEqual([false]);
+    expect((await controller.install()).status).toBe("installed");
+    expect(prompts).toEqual([false, true]);
+    expect(github.requests).toEqual([]);
+  });
+  it.each([false, true])(
+    "recovers a macOS install interrupted at every file and link step, previous=%s",
+    async (previous) => {
+      let steps = 0;
+      for (let n = 1; ; n++) {
+        await rm(installDir, { recursive: true, force: true });
+        await rm(path.dirname(recordFile), { recursive: true, force: true });
+        let linked = false;
+        if (previous) {
+          const before = mac(false, {
+            appVersion: "0.0.1-nightly.20261101.280",
+          });
+          expect((await before.controller.install()).status).toBe("installed");
+          linked = true;
+        }
+        const cut = interruption((step) => step.index === n);
+        const baseLink = {
+          add: async () => {
+            const added = !linked;
+            linked = true;
+            return { added };
+          },
+          remove: async () => {
+            linked = false;
+          },
+        };
+        const link = {
+          add: () => cut.gate("link.add", [], baseLink.add),
+          remove: () => cut.gate("link.remove", [], baseLink.remove),
+        };
+        const installing = mac(false, {
+          files: cut.fs,
+          link: { link },
+        }).controller.install();
+        const ended = await Promise.race([
+          installing.then(() => "finished"),
+          cut.cutReached.then(() => "cut"),
+        ]);
+        if (ended === "finished") break;
+        steps++;
+        const next = mac(false, { link: { link: baseLink } }).controller;
+        const state = await next.reconcile();
+        expect(["installed", "not-installed"], `step ${n}`).toContain(
+          state.status,
+        );
+        expect(linked, `step ${n}`).toBe(state.status === "installed");
+        expect(existsSync(recordFile)).toBe(linked);
+        expect(
+          (await readdir(installDir).catch(() => [])).some((name) =>
+            name.startsWith("."),
+          ),
+        ).toBe(false);
+        if (!linked) expect(await filesUnder(installDir)).toEqual([]);
+      }
+      expect(steps).toBeGreaterThan(10);
+    },
+    60_000,
+  );
 });
