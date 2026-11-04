@@ -50,6 +50,18 @@ function run(step, file, args) {
   );
 }
 
+/** The user's keychain search list, as `security list-keychains` prints it. */
+function searchList() {
+  return [
+    ...run("read keychain list", "security", [
+      "list-keychains",
+      "-d",
+      "user",
+    ]).matchAll(/"([^"]+)"/g),
+  ].map((match) => match[1]);
+}
+
+let restoreSearchList;
 try {
   const p12 = path.join(dir, "certificate.p12");
   const source = process.env.CSC_LINK;
@@ -97,6 +109,22 @@ try {
     password,
     keychain,
   ]);
+  // codesign looks up the identity's key and chain through the search
+  // list, even with --keychain: a keychain outside it fails with "The
+  // specified item could not be found in the keychain."
+  const original = searchList();
+  run("add keychain to search list", "security", [
+    "list-keychains",
+    "-d",
+    "user",
+    "-s",
+    keychain,
+    ...original,
+  ]);
+  restoreSearchList = () =>
+    spawnSync("security", ["list-keychains", "-d", "user", "-s", ...original], {
+      stdio: "ignore",
+    });
   const identities = run("find identity", "security", [
     "find-identity",
     "-v",
@@ -166,6 +194,7 @@ try {
         "CLI signing or notarization failed. Check certificate validity and Apple credentials.",
       );
 } finally {
+  restoreSearchList?.();
   spawnSync("security", ["delete-keychain", keychain], { stdio: "ignore" });
   await rm(dir, { recursive: true, force: true });
 }
