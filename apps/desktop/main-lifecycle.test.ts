@@ -1,3 +1,4 @@
+import vm from "node:vm";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
@@ -97,9 +98,7 @@ describe("desktop plugin lifecycle", () => {
     expect(mainSource).toMatch(ipcHandler("ajour:check-for-updates"));
     expect(mainSource).toMatch(ipcHandler("ajour:configure-automatic-updates"));
     expect(mainSource).toContain("createAutomaticUpdateController({");
-    expect(mainSource).toContain(
-      'app.isPackaged && process.platform === "win32"',
-    );
+    expect(mainSource).toContain("macSignedRelease === true");
     expect(mainSource).toContain("automaticUpdatesEnabled,");
     expect(mainSource).toContain("assertActiveDesktopWindow(event");
     expect(mainSource).toContain("currentVersion: app.getVersion()");
@@ -161,4 +160,35 @@ describe("desktop plugin lifecycle", () => {
     expect(windowIndex).toBeGreaterThan(menuIndex);
     expect(source).toContain("developmentBuild: !app.isPackaged");
   });
+});
+
+// Exercise the actual packaged-build gate without starting Electron.
+describe("macOS update installation support", () => {
+  it.each([
+    ["darwin", true, true, true],
+    ["darwin", true, false, false],
+    ["darwin", true, undefined, false],
+    ["darwin", false, true, false],
+    ["win32", true, false, true],
+    ["linux", true, true, false],
+  ])(
+    "platform %s, packaged %s, signed %s permits installation %s",
+    async (platform, packaged, signed, expected) => {
+      const source = await readFile(
+        new URL("./electron/main.cjs", import.meta.url),
+        "utf8",
+      );
+      const gate = source.slice(
+        source.indexOf("const macSignedRelease ="),
+        source.indexOf("const appMenuModel ="),
+      );
+      expect(
+        vm.runInNewContext(`${gate}\nautomaticUpdatesEnabled`, {
+          app: { isPackaged: packaged },
+          process: { platform },
+          require: () => ({ macSignedRelease: signed }),
+        }),
+      ).toBe(expected);
+    },
+  );
 });

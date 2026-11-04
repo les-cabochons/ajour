@@ -122,6 +122,41 @@ describe("desktop electron-builder config", () => {
     });
   });
 
+  it("requires signing and notarization for macOS releases", () => {
+    vi.stubEnv("AJOUR_MAC_RELEASE", "1");
+    for (const name of [
+      "CSC_LINK",
+      "CSC_KEY_PASSWORD",
+      "APPLE_API_KEY",
+      "APPLE_API_KEY_ID",
+      "APPLE_API_ISSUER",
+    ]) {
+      vi.stubEnv(name, "test-credential");
+    }
+    const config = loadBuilderConfig();
+    expect(config.mac.forceCodeSigning).toBe(true);
+    expect(config.mac.hardenedRuntime).toBe(true);
+    expect(config.mac.notarize).toBe(true);
+    expect(config.extraMetadata.macSignedRelease).toBe(true);
+    expect(config.electronFuses.resetAdHocDarwinSignature).toBe(false);
+  });
+
+  it("refuses a macOS release without notarization credentials", () => {
+    vi.stubEnv("AJOUR_MAC_RELEASE", "1");
+    vi.stubEnv("APPLE_API_KEY", "");
+    expect(() => loadBuilderConfig()).toThrow(/credentials/);
+  });
+
+  it("keeps unsigned local builds on manual updates", () => {
+    vi.stubEnv("AJOUR_MAC_RELEASE", "");
+    const config = loadBuilderConfig();
+    expect(config.mac.forceCodeSigning).toBe(false);
+    expect(config.mac.notarize).toBe(false);
+    expect(config.mac.hardenedRuntime).toBe(false);
+    expect(config.extraMetadata.macSignedRelease).toBe(false);
+    expect(config.electronFuses.resetAdHocDarwinSignature).toBe(true);
+  });
+
   it("publishes prereleases on the nightly update channel", () => {
     vi.stubEnv("AJOUR_UPDATE_CHANNEL", "nightly");
 
