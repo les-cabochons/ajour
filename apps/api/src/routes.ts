@@ -576,7 +576,9 @@ export async function serveWithEvent(
   }
   await responseDone(request, response);
   const received = requestBytes();
-  const delivered = response.writableFinished || streaming;
+  // A late end() can set writableFinished after close. Keep the earlier
+  // hang-up: no status or bytes reached that client.
+  const delivered = (!hungUp && response.writableFinished) || streaming;
   const status = response.statusCode;
   // A response whose client left before it reached it, while the body still
   // arrived or the work still ran, delivered no status or bytes.
