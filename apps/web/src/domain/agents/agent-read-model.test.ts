@@ -290,17 +290,51 @@ describe("agent read model", () => {
     expect(after.version).not.toBe(before.version);
   });
 
-  it("reads the running entry with its counted minutes", () => {
-    expect(readRunningTimer(createState(), NOW)).toEqual({
+  it("reads the running entry with its counted minutes and seconds", () => {
+    expect(readRunningTimer(createState(), NOW + 7_900)).toEqual({
       timerId: "timer-1",
       date: "2026-10-14",
       countedMinutes: 45,
+      countedSeconds: 45 * 60 + 7,
+      runningSince: new Date(NOW - 30 * 60_000).toISOString(),
       note: "Review",
       projectId: "project-1",
       projectName: "Acme",
       taskId: "task-1",
       taskName: "Build",
     });
+  });
+
+  it("says when each entry was last saved", () => {
+    const state = createState();
+    state.timesheetEntries[0] = { ...state.timesheetEntries[0]!, usedAt: NOW };
+    const entries = listTimeEntriesForAgent(
+      state,
+      { from: "2026-10-13", to: "2026-10-13" },
+      NOW,
+    ).entries;
+    expect(
+      Object.fromEntries(entries.map((e) => [e.entryId, e.savedAt])),
+    ).toEqual({
+      e1: new Date(NOW).toISOString(),
+      e2: new Date(10).toISOString(),
+    });
+  });
+
+  it("names the project's code when it has one", () => {
+    const state = createState();
+    state.projects[0] = { ...state.projects[0]!, code: "ACME" };
+    expect(readRunningTimer(state, NOW)).toMatchObject({
+      projectName: "Acme",
+      projectCode: "ACME",
+    });
+    expect(
+      listTimeEntriesForAgent(
+        state,
+        { from: "2026-10-13", to: "2026-10-13" },
+        NOW,
+      ).entries[0],
+    ).toMatchObject({ projectCode: "ACME" });
   });
 
   it("lists entries in a range with their state, oldest day first", () => {

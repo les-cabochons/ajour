@@ -12,6 +12,7 @@ Ajour is a local-first time-tracking workspace built as a pnpm monorepo. Keep ar
     - Every other scheme is blocked, including `file:`, `vscode:` and `msteams:`. Such links no longer open, and a malformed URL is blocked, never thrown.
     - `window.open` to the app's own address does nothing.
 - `apps/api`: Optional local API for plugin configuration, backlog sync, plugin workers, and local import flows.
+- `apps/cli`: the `ajour` terminal CLI (spec #525). It reaches the running app only through the MCP endpoint, as an agent client, behind one `AjourClient` interface (`src/client.ts`), so every write follows the app's action sets and Undo; it holds no lifecycle rule. It imports `packages/shared` only. `just cli <args>` runs it from the repo.
 - `packages/shared`: Cross-runtime domain types, validation schemas, normalization, aggregation, rule evaluation, and plugin contracts.
 - `packages/plugin-sdk`: `@ajour/plugin-sdk`, the SDK plugin authors build plugin API 4 plugins with, published separately from the app. It imports nothing from the app or other packages at runtime; its contract types are generated from `packages/shared`.
 - `packages/wide-events`: the wide-event model every runtime emits through: the envelope, the catalog of event names with a privacy class on every field, the emitter, W3C trace context, the error scrubber and the sinks. It runs in the browser and in Node. See `docs/logging-strategy.md`.

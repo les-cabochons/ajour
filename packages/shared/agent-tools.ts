@@ -29,6 +29,15 @@ function isRealCalendarDate(value: string) {
   );
 }
 
+/**
+ * What a data tool answers when no Ajour window holds the bridge, and when the
+ * window did not answer in time. Clients such as the terminal read them as
+ * "Ajour is not reachable", not as a refusal.
+ */
+export const BRIDGE_UNAVAILABLE_MESSAGE =
+  "Open the Ajour window to use this tool.";
+export const BRIDGE_TIMEOUT_MESSAGE = "Ajour did not answer in time.";
+
 /** An agent client as Settings lists it. The token is never part of it. */
 export const mcpClientSchema = z.object({
   id: z.string().min(1),
@@ -285,6 +294,8 @@ export type WriteToolInput<Name extends WriteToolName> = z.infer<
 const agentProjectRefShape = {
   projectId: z.string().optional(),
   projectName: z.string().optional(),
+  /** The project's short code, such as "AJR", when it has one. */
+  projectCode: z.string().optional(),
   taskId: z.string().optional(),
   taskName: z.string().optional(),
 };
@@ -294,6 +305,13 @@ export const agentRunningTimerSchema = z.object({
   timerId: z.string(),
   date: z.string(),
   countedMinutes: z.number(),
+  /** The same count to the second, for a clock that shows seconds. */
+  countedSeconds: z.number().optional(),
+  /**
+   * When the clock last started counting, as an ISO time: the start, or the
+   * last resume, Continue or counted-time correction.
+   */
+  runningSince: z.string().optional(),
   note: z.string().optional(),
   workItemId: z.string().optional(),
   workItemTitle: z.string().optional(),
@@ -310,6 +328,8 @@ export const agentTimeEntrySchema = z.object({
    */
   state: z.enum(["saved", "committed", "running"]),
   minutes: z.number(),
+  /** When Stop or an edit last saved the entry, as an ISO time. */
+  savedAt: z.string().optional(),
   note: z.string().optional(),
   workItemId: z.string().optional(),
 });
