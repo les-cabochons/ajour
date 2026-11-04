@@ -18,6 +18,26 @@ describe("displayWidth", () => {
   });
 });
 
+describe("terminal cells", () => {
+  it("counts wide characters and emoji as two columns", () => {
+    expect(displayWidth("日本語")).toBe(6);
+    expect(displayWidth("회의")).toBe(4);
+    expect(displayWidth("🚀 Launch")).toBe(9);
+    expect(displayWidth("❤️")).toBe(2);
+    expect(displayWidth("👩‍💻")).toBe(2);
+    expect(displayWidth("● ○ · …")).toBe(7);
+  });
+
+  it("cuts wide text without going past the width", () => {
+    expect(truncate("日本語テキスト", 7)).toBe("日本語…");
+    expect(truncate("日本語テキスト", 6)).toBe("日本…");
+    expect(truncate("🚀🚀🚀🚀", 5)).toBe("🚀🚀…");
+    expect(
+      displayWidth(truncate("Ship 🚀 now and 🎉 later", 9)),
+    ).toBeLessThanOrEqual(9);
+  });
+});
+
 describe("truncate", () => {
   it("keeps text that fits", () => {
     expect(truncate("Weekly sync", 11)).toBe("Weekly sync");

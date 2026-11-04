@@ -47,7 +47,11 @@ export const MCP_OFF = "MCP is off. Turn it on in Ajour under Settings › MCP."
 export const TOKEN_REFUSED =
   "Ajour doesn't accept this token. It may have been revoked. Run: ajour connect";
 
-/** Connects on the first call, so a command that fails early never dials. */
+/**
+ * Connects on the first call, so a command that fails early never dials. A
+ * failed connection or call is forgotten, so the next call dials again: a
+ * `--watch` started before Ajour picks it up once it runs.
+ */
 export function mcpClient(options: {
   url: string;
   token: string;
@@ -68,18 +72,28 @@ export function mcpClient(options: {
     }
     return client;
   };
+  const session = () => {
+    const current = (connected ??= connect());
+    return current.catch((error: unknown) => {
+      if (connected === current) connected = undefined;
+      throw error;
+    });
+  };
+  const forget = (client: Client) => {
+    connected = undefined;
+    void client.close().catch(() => undefined);
+  };
   return {
     async check() {
-      connected ??= connect();
-      await connected;
+      await session();
     },
     async call(tool, input) {
-      connected ??= connect();
-      const client = await connected;
+      const client = await session();
       let result;
       try {
         result = await client.callTool({ name: tool, arguments: input });
       } catch (error) {
+        forget(client);
         throw toCliError(error);
       }
       if (result.isError) {

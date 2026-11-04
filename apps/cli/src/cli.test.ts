@@ -733,3 +733,74 @@ describe("ajour as a process", () => {
     expect(shown.stdout).toContain("Fix export rounding");
   });
 });
+
+describe("review round 2", () => {
+  it("starts streaming the entry once Ajour starts, with --short --watch", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "ajour-cli-restart-"));
+    cleanups.push(() => rm(dir, { recursive: true, force: true }));
+    const statePath = path.join(dir, "state.json");
+    const first = await startTestApi({ statePath });
+    const { token } = await enableMcpWithClient(first);
+    const url = first.baseUrl;
+    await first.stop();
+
+    const term = await terminal({
+      env: { AJOUR_URL: url, AJOUR_TOKEN: token },
+    });
+    let clock = NOW;
+    let waits = 0;
+    const io: CliIo = {
+      ...term.io,
+      now: () => clock,
+      async wait(ms) {
+        clock += ms * 10;
+        waits += 1;
+        if (waits === 1) {
+          const second = await startTestApi({
+            port: Number(new URL(url).port),
+            statePath,
+          });
+          cleanups.push(() => second.stop());
+          const fake = await openFakeWindow(
+            second,
+            window({ running, entries: todayEntries }),
+          );
+          cleanups.push(() => fake.close());
+        }
+        return waits < 2;
+      },
+    };
+
+    expect(await run(["status", "-s", "--watch"], io)).toBe(0);
+
+    expect(term.out()).toBe("\n" + "● 1:24 Fix export rounding\n");
+  });
+
+  it("names the last entry saved on an earlier day before today's first", async () => {
+    const { api, token, fake } = await connectedApi({
+      running: null,
+      entries: [
+        {
+          entryId: "e9",
+          date: "2026-11-03",
+          state: "saved",
+          minutes: 90,
+          taskName: "05 Backend",
+          savedAt: new Date(NOW - 21 * 3_600_000).toISOString(),
+        },
+      ],
+    });
+    const term = await terminal({
+      env: { AJOUR_URL: api.baseUrl, AJOUR_TOKEN: token },
+    });
+
+    await run(["status"], term.io);
+
+    expect(term.out()).toBe(
+      "○ Nothing running · today 0:00 · last: 05 Backend, 21h ago\n",
+    );
+    expect(
+      fake.calls.find((call) => call.tool === "list_time_entries")?.input,
+    ).toEqual({ from: "2026-10-29", to: TODAY });
+  });
+});

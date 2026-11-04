@@ -8,7 +8,7 @@ and task, when it started counting, and today's total:
   ● 1:24:07  Fix export rounding
     AJR · 07 Export · since 13:20 · today 6:39
 
-With nothing running, it names the entry saved last:
+With nothing running, it names the entry saved last, within a week:
 
   ○ Nothing running · today 5:15 · last: 04 Review, 45m ago
 

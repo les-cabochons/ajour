@@ -17,6 +17,16 @@ export interface StatusOptions {
   watch: boolean;
 }
 
+/** How many days back the idle line looks for the entry saved last. */
+const RECENT_DAYS = 7;
+
+/** The same local time of day, `days` calendar days earlier. */
+function daysBefore(now: number, days: number): number {
+  const date = new Date(now);
+  date.setDate(date.getDate() - days);
+  return date.getTime();
+}
+
 /** How often `--watch` asks Ajour again. Between asks, the clock ticks here. */
 const WATCH_REFRESH_MS = 10_000;
 
@@ -112,9 +122,11 @@ async function readSnapshot(
   ctx: Context,
   client: AjourClient,
 ): Promise<Snapshot> {
-  const today = localDate(ctx.io.now());
+  const now = ctx.io.now();
+  const today = localDate(now);
+  // A week back, so the idle line can name an entry from an earlier day.
   const listed = await client.call("list_time_entries", {
-    from: today,
+    from: localDate(daysBefore(now, RECENT_DAYS - 1)),
     to: today,
   });
   let running = listed.running;
@@ -125,7 +137,9 @@ async function readSnapshot(
   return {
     running,
     today,
-    savedTodayMinutes: savedMinutes(listed.entries),
+    savedTodayMinutes: savedMinutes(
+      listed.entries.filter((entry) => entry.date === today),
+    ),
     last: lastSaved(listed.entries),
   };
 }

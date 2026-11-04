@@ -28,12 +28,18 @@ interface TestResponse {
   body: any;
 }
 
-/** Starts the API on a free port, with a temporary state file. */
-export async function startTestApi(): Promise<TestApi> {
+/**
+ * Starts the API on a free port, with a temporary state file. With
+ * `statePath` and `port`, a test can stop Ajour and start it again where it
+ * was, with the same clients; the caller then owns that state file.
+ */
+export async function startTestApi(
+  options: { port?: number; statePath?: string } = {},
+): Promise<TestApi> {
   const root = await mkdtemp(path.join(os.tmpdir(), "ajour-mcp-harness-"));
   const server = await startAppApiServer({
-    port: 0,
-    statePath: path.join(root, "state.json"),
+    port: options.port ?? 0,
+    statePath: options.statePath ?? path.join(root, "state.json"),
     installedPluginDirectory: path.join(root, "installed"),
     allowDevelopmentPlugins: false,
     projectDataShapePluginDirectories: [],
