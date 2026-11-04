@@ -83,6 +83,8 @@ For Workday
 
   Columns are the project's full name, the task's Commits as name,
   hours with two decimals and a comma, and notes merged with " | ".
+  The task is always named as it commits to Workday, whatever the
+  Commit page's Names switch shows there.
   On a terminal they are padded and tab-separated. Not sent, Waiting
   and Running explain excluded time below the lines in muted, warning
   and success colors. Running reports only time not already saved.
