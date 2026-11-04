@@ -33,7 +33,9 @@ def read_until(fd, process, needle, timeout=15):
                 if error.errno == errno.EIO:
                     break
                 raise
-            plain = re.sub(rb"\x1b\[[0-?]*[ -/]*[@-~]", b"", output).replace(b"\r", b"")
+            # Newer fish emits OSC title and command markers around output.
+            plain = re.sub(rb"\x1b\][^\x07]*\x07", b"", output)
+            plain = re.sub(rb"\x1b\[[0-?]*[ -/]*[@-~]", b"", plain).replace(b"\r", b"")
             if needle in plain:
                 return
         if process.poll() is not None:
