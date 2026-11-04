@@ -18,7 +18,7 @@ Setup
 Options
   --json             Machine output, the same shapes as Ajour's MCP tools.
   --color WHEN       auto (default), always or never. NO_COLOR is honored.
-  -q, --quiet        No output on success.
+  -q, --quiet        Print nothing when a change succeeds.
   -V, --version      Print the version.
   -h, --help         Show this help, or a command's.
 
