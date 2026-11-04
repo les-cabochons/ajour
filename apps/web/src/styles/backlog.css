@@ -256,6 +256,14 @@
     grid-template-columns: repeat(2, 16px);
   }
 
+  /* No priority shows nothing at rest; its placeholder dashes appear on
+     hover and focus, where the picker can set one (council round 17). */
+  .backlog-list-row:not(:hover, :focus-within)
+    [data-leading="priority"]
+    svg[data-priority="none"] {
+    visibility: hidden;
+  }
+
   /* The priority steps back to 12px, so the state mark leads the cluster
      and the title starts sooner (council round 16). */
   .backlog-list-row .backlog-item-leading > [data-leading="priority"] svg {
@@ -1266,9 +1274,12 @@
     text-overflow: ellipsis;
   }
 
-  /* A subitem names its parent after the project, so a generic title still
-     says where it belongs (council round 13). */
+  /* A subitem names its parent before the project, so a generic title still
+     says where it belongs; the project gives way first (council rounds 13
+     and 17). */
   .backlog-list-row .backlog-item-parent {
+    order: -1;
+    min-width: min(11rem, 100%);
     max-width: 100%;
   }
 

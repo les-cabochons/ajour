@@ -172,7 +172,7 @@ export function SettingsGeneralPage() {
           </SettingRow>
           <SettingRow
             label="Density"
-            description="Comfortable shows three lines. Compact shows one line in a narrower sidebar."
+            description="Three lines, or one line in a narrower sidebar."
           >
             <ToggleGroup
               aria-label="Sidebar density"
@@ -234,7 +234,7 @@ export function SettingsGeneralPage() {
           <SettingRow
             label="Hide non-working days"
             labelFor="hide-non-working-days"
-            description="Hide days with 0 hours of capacity in the Time day strip and Week layouts. Logged time still counts in weekly totals."
+            description="Hide zero-capacity days in Time. Their logged hours still count in weekly totals."
           >
             <Switch
               id="hide-non-working-days"

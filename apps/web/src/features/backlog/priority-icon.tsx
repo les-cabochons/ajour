@@ -25,6 +25,7 @@ export function PriorityIcon({
   if (!priority) {
     return (
       <svg
+        data-priority="none"
         viewBox="0 0 14 14"
         className={cn("size-4 shrink-0 text-muted-foreground", className)}
         {...a11y}

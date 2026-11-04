@@ -717,6 +717,13 @@ export function WeekGrid({
                 data-grid-cell=""
                 data-focus-column={dayIndex}
                 aria-label={`${row.taskName}, ${dayLabel}, ${valueLabel}`}
+                // "×2" is a count, and the cell opens a list: say so on hover
+                // without a tooltip component per cell (council round 17).
+                title={
+                  model.count > 1
+                    ? `${model.count} entries. Click to review.`
+                    : undefined
+                }
                 onClick={(event) => handleCellClick(model, event.detail)}
                 onKeyDown={(event) => {
                   handleCellKeyDown(model, event);
