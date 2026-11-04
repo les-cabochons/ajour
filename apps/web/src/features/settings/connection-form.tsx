@@ -87,6 +87,7 @@ export function PluginConnectionForm({
     <PluginFieldInput
       label={label}
       hideHelp={hideHelp}
+      row
       // A form opened anew starts its secret fields over.
       key={`${form.instance}/${field.id}`}
       field={field}
@@ -134,17 +135,45 @@ export function PluginConnectionForm({
     ) : (
       <fieldset
         key={`${form.instance}/${block.fields[0]!.field.id}`}
-        className="flex flex-col gap-2"
+        className="connection-row"
       >
-        <legend className="mb-2 text-[13px] font-medium text-[var(--text-secondary)]">
+        <legend className="sr-only">{block.legend}</legend>
+        <span aria-hidden className="connection-row-label">
           {block.legend}
-        </legend>
-        <div className="grid grid-cols-2 gap-3 desktop:grid-cols-4">
-          {block.fields.map(({ field, label }) =>
-            renderField(field, { label, hideHelp: true }),
-          )}
+        </span>
+        <div className="connection-row-value">
+          <div className="composer-chips">
+            {block.fields.map(({ field, label }) => (
+              <div
+                key={`${form.instance}/${field.id}`}
+                className="composer-chip composer-estimate"
+              >
+                <label htmlFor={field.id}>{label}</label>
+                <input
+                  id={field.id}
+                  className="composer-estimate-input"
+                  autoComplete="off"
+                  inputMode={field.type === "number" ? "numeric" : undefined}
+                  value={String(form.values[field.id] ?? "")}
+                  onChange={(event) => {
+                    const text = event.target.value;
+                    const next =
+                      field.type === "number"
+                        ? Number.isFinite(Number(text))
+                          ? Number(text)
+                          : 0
+                        : text;
+                    update((current) => ({
+                      ...current,
+                      values: { ...current.values, [field.id]: next },
+                    }));
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">{block.help}</p>
         </div>
-        <p className="text-xs text-muted-foreground">{block.help}</p>
       </fieldset>
     );
   const sections = sectionConnectionBlocks(groupConnectionFields(shownFields));
@@ -169,7 +198,7 @@ export function PluginConnectionForm({
         )}
       </div>
       {/* One column at a reading measure, as Linear's forms are. */}
-      <FieldGroup className="max-w-lg gap-5">
+      <FieldGroup className="connection-rows max-w-xl gap-6">
         {sections.map((section) =>
           sections.length === 1 ? (
             section.blocks.map(renderBlock)
@@ -179,7 +208,7 @@ export function PluginConnectionForm({
             <section
               key={section.title}
               aria-label={section.title}
-              className="flex flex-col gap-5 border-t border-[var(--border-row)] pt-4 first:border-t-0 first:pt-0"
+              className="flex flex-col gap-1 border-t border-[var(--border-row)] pt-4 first:border-t-0 first:pt-0"
             >
               <h4 className="text-sm font-semibold text-foreground">
                 {section.title}

@@ -135,9 +135,9 @@ Feature: Backlog list and board views
 
     Examples:
       | layout | reason         | control |
-      | List   | sync           | click   |
+      | List   | sync           | Space   |
       | List   | expired snooze | Space   |
-      | Board  | expired snooze | click   |
+      | Board  | expired snooze | Space   |
       | Board  | sync           | Space   |
 
   Scenario Outline: Keep archived project assignments without allowing new destinations

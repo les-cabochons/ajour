@@ -137,7 +137,9 @@ async function openEditor(page: Page) {
   await row.hover();
   await row.getByRole("button", { name: `Actions for ${ITEM_TITLE}` }).click();
   await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
-  const editor = page.getByLabel("Backlog item editor");
+  const editor = page.getByRole("dialog", {
+    name: /^(New|Edit) (backlog item|subitem)$/,
+  });
   await editor.getByRole("combobox", { name: "Priority" }).click();
   return editor;
 }

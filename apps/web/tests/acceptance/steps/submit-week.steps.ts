@@ -40,7 +40,7 @@ Then("the Commit page shows the week is not submitted", async ({ page }) => {
 const lockReason = "The week of Oct 5 is submitted. Reopen it to change it.";
 
 Then("the entry editor is read-only", async ({ page }) => {
-  const editor = page.getByRole("complementary", { name: "Time entry editor" });
+  const editor = page.getByRole("dialog", { name: /^(New|Edit) time entry$/ });
   await expect(editor.getByText("Submitted", { exact: true })).toBeVisible();
   await expect(editor.getByText(lockReason)).toBeVisible();
   await expect(editor.getByLabel("Note")).toBeDisabled();

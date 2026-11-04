@@ -183,13 +183,13 @@ Feature: Open the local time workspace
     And I double-click the text of Monday's capacity card
     Then no entry editor is open
 
-  Scenario: The entry panel floats over a narrow Time page and docks on a wide one
+  Scenario: The entry composer floats over the Week at every width
     Given I have a week of saved entries
     When the window is 1280 pixels wide
     And I open the Week Days view
     Then opening Monday's "API" card floats the entry panel over the Week
     When the window is 1800 pixels wide
-    Then the entry panel sits beside the Week and narrows it
+    Then the entry composer still floats and the Week keeps its width
 
   Scenario: Reopen Time in the view I used last
     Given I have a week of saved entries

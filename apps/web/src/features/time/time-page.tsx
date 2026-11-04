@@ -90,11 +90,12 @@ export function TimePage({ date }: { date: string }) {
   );
   // Week needs a desktop width. The narrow view does not offer it: a Week link
   // shows Day with a note and keeps `view=week`, so widening the window shows
-  // Week. A remembered Week shows Day without the note. The narrow view also edits entries in a full-width dialog instead of
-  // the side panel.
+  // Week. A remembered Week shows Day without the note. Entries are edited
+  // in the composer dialog at every width, as Linear's new issue: no side
+  // panel for a form (forms council round 8).
   const isNarrowView = useIsNarrowView();
   const weekAvailable = !isNarrowView;
-  const editsInDialog = isNarrowView;
+  const editsInDialog = true;
   // `view=week` and `view=day` pick a view. A link without `view`, such as the
   // sidebar's Time link, opens the view the user last picked.
   const wantsWeek =
@@ -185,7 +186,7 @@ export function TimePage({ date }: { date: string }) {
     !showsEditor &&
     !showsCellEntries &&
     weekCalendar.hasCalendar &&
-    !editsInDialog;
+    !isNarrowView;
 
   // The view shown on a desktop width becomes the remembered view, whether it
   // came from the toggle, a shortcut or a link. The narrow view always shows
@@ -585,10 +586,18 @@ export function TimePage({ date }: { date: string }) {
       ) : null}
       {editorTarget && editsInDialog ? (
         <TimeEntryModal
+          // Another entry, cell or task is another form.
+          key={editorKey}
+          floating={!isNarrowView}
+          formRef={editorFormRef}
           date={date}
           entryId={editingEntry?._id}
           timerId={editingTimer?._id}
-          initialValues={newEntryValues}
+          initialValues={
+            editorTarget.kind === "create"
+              ? editorTarget.initialValues
+              : newEntryValues
+          }
           initialFields={carriedDraft}
           onFieldsChange={keepEditorDraft}
           onClose={closeEditor}

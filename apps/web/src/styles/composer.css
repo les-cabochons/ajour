@@ -267,3 +267,100 @@
 .composer-chips .composer-color .font-mono {
   display: none;
 }
+
+/* A connection form as settings rows, as Linear's and T3's: the label on the
+   left, the value on the right reading as text, its field drawn only on
+   hover and focus (forms council round 8). */
+.connection-rows .connection-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, 11rem) minmax(0, 1fr);
+  align-items: start;
+  column-gap: 16px;
+  min-height: 32px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.connection-rows .connection-row-label {
+  padding-top: 7px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.connection-rows .connection-row-value {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.connection-rows .connection-row-value .composer-chips {
+  padding-top: 2px;
+}
+
+.connection-rows .inline-field {
+  width: calc(100% + 10px);
+  height: 32px;
+  margin-inline-start: -10px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.connection-rows .inline-field:is(:hover, :focus-visible, [data-popup-open]) {
+  border-color: var(--field-border);
+  background: var(--field-bg);
+}
+
+.connection-rows .inline-field::placeholder {
+  color: var(--text-tertiary);
+}
+
+.connection-rows [data-slot="select-trigger"].inline-field > svg:last-child {
+  opacity: 0;
+}
+
+.connection-rows
+  [data-slot="select-trigger"].inline-field:hover
+  > svg:last-child {
+  opacity: 1;
+}
+
+@media (max-width: 640px) {
+  .connection-rows .connection-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* A toggle chip: off reads muted with the property's icon; on reads in the
+   foreground with a check. */
+.composer-chips .composer-toggle-chip {
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.composer-chips .composer-toggle-chip[data-checked="true"] {
+  color: var(--foreground);
+}
+
+.composer-chips .composer-toggle-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* A floating composer: a card at the top right of the window, with no
+   backdrop and no dock, so the page behind stays live: its rows, keys and
+   menus keep working while a form is open (forms council round 8). */
+[data-slot="dialog-content"].composer-floating {
+  top: 64px;
+  right: 16px;
+  left: auto;
+  width: min(30rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 80px);
+  translate: none;
+  transform: none;
+  box-shadow: var(--shadow-popup);
+  border: 1px solid var(--border);
+}

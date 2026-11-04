@@ -1,7 +1,11 @@
 import { useEffect, useRef, type ElementType, type KeyboardEvent } from "react";
-import { RiCloseLine as X } from "@remixicon/react";
+import {
+  RiCloseLine as X,
+  RiMoneyDollarCircleLine as BillableIcon,
+} from "@remixicon/react";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
+import { ToggleChip } from "@/components/ui/toggle-chip";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { formatDurationHoursInput } from "@/domain/time/duration";
@@ -137,16 +141,14 @@ export function ProjectTaskEditorForm({
           {nameError ? <span className="field-error">{nameError}</span> : null}
         </Field>
         <div className="composer-chips" role="group" aria-label="Properties">
-          <label className="composer-chip composer-estimate composer-toggle">
-            <Checkbox
-              id="project-task-editor-billable"
-              checked={fields.billable}
-              onCheckedChange={(checked) =>
-                onFieldsChange({ billable: checked })
-              }
-            />
-            <span>Billable</span>
-          </label>
+          <ToggleChip
+            id="project-task-editor-billable"
+            checked={fields.billable}
+            onCheckedChange={(billable) => onFieldsChange({ billable })}
+            icon={<BillableIcon aria-hidden className="size-3.5" />}
+          >
+            Billable
+          </ToggleChip>
           <div
             className="composer-chip composer-estimate"
             data-invalid={editor.budgetError ? "true" : undefined}

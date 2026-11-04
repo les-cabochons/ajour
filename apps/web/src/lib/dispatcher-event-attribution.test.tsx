@@ -447,10 +447,10 @@ describe("the backlog item editor", () => {
     ]);
   });
 
-  it("marks a save in the side panel as editor", async () => {
-    expect(await saveNewItem(false)).toBe(false);
+  it("marks a save in the wide page's floating composer as dialog", async () => {
+    expect(await saveNewItem(false)).toBe(true);
     expect(commands("backlog_item.create")).toEqual([
-      { name: "backlog_item.create", trigger: "user", surface: "editor" },
+      { name: "backlog_item.create", trigger: "user", surface: "dialog" },
     ]);
   });
 

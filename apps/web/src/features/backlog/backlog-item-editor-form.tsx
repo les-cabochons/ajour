@@ -12,6 +12,7 @@ import {
 } from "react";
 import {
   RiAlarmWarningLine as AlertTriangle,
+  RiArchiveLine as KeepIcon,
   RiCloseLine as X,
   RiFolderLine as ProjectChipIcon,
   RiLoader5Line as StateIcon,
@@ -24,6 +25,7 @@ import { MarkdownEditor } from "@/components/markdown-editor";
 import { ObjectActionsButton } from "@/components/object-actions-menu";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
+import { ToggleChip } from "@/components/ui/toggle-chip";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Field,
@@ -891,17 +893,17 @@ export function BacklogItemEditorForm({
             <Tooltip>
               <TooltipTrigger
                 render={
-                  <label className="composer-chip composer-estimate composer-toggle" />
+                  <ToggleChip
+                    id={`${idPrefix}-keep`}
+                    checked={fields.keepWhenMissingFromSync}
+                    onCheckedChange={(keepWhenMissingFromSync) =>
+                      updateFields({ keepWhenMissingFromSync })
+                    }
+                    icon={<KeepIcon aria-hidden className="size-3.5" />}
+                  />
                 }
               >
-                <Checkbox
-                  id={`${idPrefix}-keep`}
-                  checked={fields.keepWhenMissingFromSync}
-                  onCheckedChange={(keepWhenMissingFromSync) =>
-                    updateFields({ keepWhenMissingFromSync })
-                  }
-                />
-                <span>Keep when missing</span>
+                Keep when missing
               </TooltipTrigger>
               <TooltipContent>
                 Don't archive this item when it disappears from the synced

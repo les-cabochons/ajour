@@ -52,12 +52,12 @@ Given("I have a parent editor close fixture", async ({ page }) => {
   // The item page edits in place; the editor panel lives on the Backlog page.
   await page.goto("/backlog?action=edit&target=editor-parent");
   await expect(
-    page.getByRole("complementary", { name: "Backlog item editor" }),
+    page.getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ }),
   ).toBeVisible();
 });
 When("I save its editor workflow as Done", async ({ page }) => {
-  const editor = page.getByRole("complementary", {
-    name: "Backlog item editor",
+  const editor = page.getByRole("dialog", {
+    name: /^(New|Edit) (backlog item|subitem)$/,
   });
   await editor
     .getByRole("combobox", { name: "Workflow state", exact: true })
@@ -128,8 +128,8 @@ Then(
       }),
     ).toBeVisible();
     await expect(
-      page.getByRole("complementary", {
-        name: "Backlog item editor",
+      page.getByRole("dialog", {
+        name: /^(New|Edit) (backlog item|subitem)$/,
         includeHidden: true,
       }),
     ).toHaveCount(1);
@@ -165,8 +165,8 @@ When("I cancel the parent editor close prompt", async ({ page }) => {
   await page.keyboard.press("Escape");
 });
 When("I change the parent draft title and description", async ({ page }) => {
-  const editor = page.getByRole("complementary", {
-    name: "Backlog item editor",
+  const editor = page.getByRole("dialog", {
+    name: /^(New|Edit) (backlog item|subitem)$/,
   });
   await editor
     .getByPlaceholder("Item title", { exact: true })
@@ -199,8 +199,8 @@ When(
 Then(
   "the parent editor retains every mixed-field draft without saving it",
   async ({ page }) => {
-    const editor = page.getByRole("complementary", {
-      name: "Backlog item editor",
+    const editor = page.getByRole("dialog", {
+      name: /^(New|Edit) (backlog item|subitem)$/,
     });
     await expect(editor).toBeVisible();
     await expect(
@@ -227,13 +227,13 @@ Then(
 );
 When("I cancel the parent editor draft", async ({ page }) => {
   await page
-    .getByRole("complementary", { name: "Backlog item editor" })
+    .getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ })
     .getByRole("button", { name: "Cancel", exact: true })
     .click();
 });
 Then("the parent title and description remain unchanged", async ({ page }) => {
   await expect(
-    page.getByRole("complementary", { name: "Backlog item editor" }),
+    page.getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ }),
   ).toHaveCount(0);
   const parent = await page.evaluate(() =>
     JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.find(
@@ -250,8 +250,8 @@ Then("the parent title and description remain unchanged", async ({ page }) => {
 Then(
   "the parent editor retains its Done draft and the item remains active",
   async ({ page }) => {
-    const editor = page.getByRole("complementary", {
-      name: "Backlog item editor",
+    const editor = page.getByRole("dialog", {
+      name: /^(New|Edit) (backlog item|subitem)$/,
     });
     await expect(editor).toBeVisible();
     await expect(
@@ -277,7 +277,7 @@ Then(
   "the editor closes after the parent and child reach Done",
   async ({ page }) => {
     await expect(
-      page.getByRole("complementary", { name: "Backlog item editor" }),
+      page.getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ }),
     ).toHaveCount(0);
     await expect
       .poll(() =>
@@ -688,7 +688,7 @@ Then("the floating dock opens the running entry", async ({ page }) => {
 function runningEditor(page: Page) {
   return page
     .getByRole("dialog")
-    .or(page.getByRole("complementary", { name: "Time entry editor" }));
+    .or(page.getByRole("dialog", { name: /^(New|Edit) time entry$/ }));
 }
 
 When("I reload the app", async ({ page }) => {
@@ -711,7 +711,7 @@ When("I press the {string} key", async ({ page }, key: string) => {
 When("I type {string} in the entry note", async ({ page }, text: string) => {
   // Typing key by key sends the keydown events that shortcuts listen for.
   await page
-    .getByRole("complementary", { name: "Time entry editor" })
+    .getByRole("dialog", { name: /^(New|Edit) time entry$/ })
     .getByLabel("Note")
     .pressSequentially(text);
 });
@@ -773,7 +773,7 @@ When(
   "I rename task {string} to {string} and press Escape",
   async ({ page }, task: string, name: string) => {
     await page.getByText(task, { exact: true }).click();
-    const editor = page.getByRole("complementary", { name: "Task editor" });
+    const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
     await editor.getByRole("textbox", { name: "Name" }).fill(name);
     await editor.getByRole("textbox", { name: "Name" }).press("Escape");
     await expect(editor).toBeHidden();
@@ -784,7 +784,7 @@ When(
   "I rename task {string} to {string} and save",
   async ({ page }, task: string, name: string) => {
     await page.getByText(task, { exact: true }).click();
-    const editor = page.getByRole("complementary", { name: "Task editor" });
+    const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
     await editor.getByRole("textbox", { name: "Name" }).fill(name);
     await editor.getByRole("button", { name: SAVE_OR_CREATE }).click();
     await expect(editor).toBeHidden();
@@ -846,7 +846,7 @@ When("I add a task from the New task row", async ({ page }) => {
 });
 
 Then("the task editor opens for a new task", async ({ page }) => {
-  const editor = page.getByRole("complementary", { name: "Task editor" });
+  const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
   await expect(editor.getByText("New task", { exact: true })).toBeVisible();
   await expect(editor.getByRole("textbox", { name: "Name" })).toBeFocused();
 });
@@ -1002,7 +1002,7 @@ When(
   "I set key {string} in the panel of task {string} and save",
   async ({ page }, key: string, task: string) => {
     await page.getByText(task, { exact: true }).click();
-    const editor = page.getByRole("complementary", { name: "Task editor" });
+    const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
     await editor.getByRole("button", { name: /^Shortcut/ }).click();
     await page
       .getByRole("dialog", { name: "Assign shortcut" })
@@ -1084,7 +1084,7 @@ When(
   "I press {string} on the entry editor's Cancel button",
   async ({ page }, key: string) => {
     const cancel = page
-      .getByRole("complementary", { name: "Time entry editor" })
+      .getByRole("dialog", { name: /^(New|Edit) time entry$/ })
       .getByRole("button", { name: "Cancel" });
     await cancel.focus();
     await cancel.press(key);
@@ -1092,9 +1092,7 @@ When(
 );
 
 Then("the entry editor has no project or task", async ({ page }) => {
-  const editor = page.getByRole("complementary", {
-    name: "Time entry editor",
-  });
+  const editor = page.getByRole("dialog", { name: /^(New|Edit) time entry$/ });
   await expect(editor).toBeVisible();
   await expect(
     editor.getByRole("button", { name: "Project or task" }),
@@ -1547,14 +1545,14 @@ Then(
 
 Then("the entry editor is open", async ({ page }) => {
   await expect(
-    page.getByRole("complementary", { name: "Time entry editor" }),
+    page.getByRole("dialog", { name: /^(New|Edit) time entry$/ }),
   ).toBeVisible();
 });
 
 Then("the entry note reads {string}", async ({ page }, text: string) => {
   await expect(
     page
-      .getByRole("complementary", { name: "Time entry editor" })
+      .getByRole("dialog", { name: /^(New|Edit) time entry$/ })
       .getByLabel("Note"),
   ).toHaveValue(text);
   // "?" typed in the note must not open the shortcut overlay.
@@ -1831,7 +1829,11 @@ When('I open a new entry from the idle timer dock "+"', async ({ page }) => {
 
 /** The dialog that the sidebar's "+" opens over the current page. */
 function newBacklogItemDialog(page: Page) {
-  return page.getByRole("dialog", { name: "New backlog item", exact: true });
+  // The sidebar's dialog, not the Backlog page's floating composer of the
+  // same name.
+  return page
+    .getByRole("dialog", { name: "New backlog item", exact: true })
+    .and(page.locator(":not(.composer-floating)"));
 }
 
 /** The "+" beside Search and the project filter, at the top of the sidebar. */
@@ -1849,8 +1851,8 @@ When(
     // On the Backlog page with no editor open, the "+" opens the page's own
     // panel; anywhere else it opens the dialog over the page.
     const dialog = newBacklogItemDialog(page);
-    const panel = page.getByRole("complementary", {
-      name: "Backlog item editor",
+    const panel = page.getByRole("dialog", {
+      name: /^(New|Edit) (backlog item|subitem)$/,
     });
     await dialog.or(panel).first().waitFor();
     const form = (await dialog.isVisible()) ? dialog : panel;
@@ -1870,7 +1872,7 @@ When("I start a new backlog item on the Backlog page", async ({ page }) => {
 Then("the Backlog page's new item editor is still open", async ({ page }) => {
   await expect(
     page
-      .getByRole("complementary", { name: "Backlog item editor" })
+      .getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ })
       .getByRole("textbox", { name: "Item", exact: true }),
   ).toBeVisible();
 });
@@ -1973,7 +1975,7 @@ When("I open the running entry from the timer dock", async ({ page }) => {
 const entryEditors = (page: Page) =>
   page
     .locator('[data-slot="popover-content"]')
-    .or(page.getByRole("complementary", { name: "Time entry editor" }));
+    .or(page.getByRole("dialog", { name: /^(New|Edit) time entry$/ }));
 
 Then("only the new entry's editor is open", async ({ page }) => {
   const editors = entryEditors(page);
@@ -2946,7 +2948,7 @@ Then(
   async ({ page }, note: string) => {
     await expect(
       page
-        .getByRole("complementary", { name: "Time entry editor" })
+        .getByRole("dialog", { name: /^(New|Edit) time entry$/ })
         .getByLabel("Note"),
     ).toHaveValue(note);
   },
@@ -3125,8 +3127,8 @@ When("I double-click {word}'s header", async ({ page }, day: string) => {
 When(
   "I save the new entry with note {string} and hours {string}",
   async ({ page }, note: string, hours: string) => {
-    const editor = page.getByRole("complementary", {
-      name: "Time entry editor",
+    const editor = page.getByRole("dialog", {
+      name: /^(New|Edit) time entry$/,
     });
     await expect(editor).toContainText("New time entry");
     await editor.getByRole("textbox", { name: "Note", exact: true }).fill(note);
@@ -3141,8 +3143,8 @@ When(
 Then(
   "the side panel opens a new entry on {string}",
   async ({ page }, localDate: string) => {
-    const editor = page.getByRole("complementary", {
-      name: "Time entry editor",
+    const editor = page.getByRole("dialog", {
+      name: /^(New|Edit) time entry$/,
     });
     await expect(editor).toContainText("New time entry");
     await expect(page).toHaveURL(
@@ -3187,7 +3189,7 @@ When(
 
 Then("no entry editor is open", async ({ page }) => {
   await expect(
-    page.getByRole("complementary", { name: "Time entry editor" }),
+    page.getByRole("dialog", { name: /^(New|Edit) time entry$/ }),
   ).toHaveCount(0);
   await expect(page).not.toHaveURL(/entry=new/);
 });
@@ -3202,9 +3204,7 @@ Then(
     const week = page.getByRole("region", { name: "Week" });
     const before = await week.boundingBox();
     await daysCard(page, day, text).dblclick();
-    const panel = page.getByRole("complementary", {
-      name: "Time entry editor",
-    });
+    const panel = page.getByRole("dialog", { name: /^(New|Edit) time entry$/ });
     await expect(panel).toBeVisible();
     const after = await week.boundingBox();
     const panelBox = await panel.boundingBox();
@@ -3216,21 +3216,20 @@ Then(
 );
 
 Then(
-  "the entry panel sits beside the Week and narrows it",
+  "the entry composer still floats and the Week keeps its width",
   async ({ page }) => {
+    // No dock: the composer is a card over the page, which keeps its width
+    // and stays live (forms council round 8).
     const week = page.getByRole("region", { name: "Week" });
-    const panel = page.getByRole("complementary", {
-      name: "Time entry editor",
+    const composer = page.getByRole("dialog", {
+      name: /^(New|Edit) time entry$/,
     });
-    await expect
-      .poll(async () => {
-        const weekBox = await week.boundingBox();
-        const panelBox = await panel.boundingBox();
-        return weekBox && panelBox
-          ? panelBox.x - (weekBox.x + weekBox.width)
-          : null;
-      })
-      .toBeGreaterThanOrEqual(0);
+    await expect(composer).toBeVisible();
+    await expect(composer).toHaveClass(/composer-floating/);
+    const weekBox = await week.boundingBox();
+    const composerBox = await composer.boundingBox();
+    expect(weekBox && composerBox).toBeTruthy();
+    expect(weekBox!.x + weekBox!.width).toBeGreaterThan(composerBox!.x);
   },
 );
 

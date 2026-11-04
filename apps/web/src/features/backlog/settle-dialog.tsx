@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import type { BacklogSettleState } from "@ajour/shared";
 import { MarkdownEditor } from "@/components/markdown-editor";
 import { Button } from "@/components/ui/button";
+import { ToggleChip } from "@/components/ui/toggle-chip";
+import { RiNodeTree as SubitemsIcon } from "@remixicon/react";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Tooltip,
@@ -455,21 +457,17 @@ export function SettleDialogHost() {
                 <Tooltip>
                   <TooltipTrigger
                     render={
-                      <label className="composer-chip composer-estimate composer-toggle" />
+                      <ToggleChip
+                        id="settle-subitems"
+                        checked={includeSubitems}
+                        disabled={pending}
+                        onCheckedChange={setIncludeSubitems}
+                        icon={<SubitemsIcon aria-hidden className="size-3.5" />}
+                      />
                     }
                   >
-                    <Checkbox
-                      id="settle-subitems"
-                      checked={includeSubitems}
-                      disabled={pending}
-                      onCheckedChange={(checked) =>
-                        setIncludeSubitems(checked === true)
-                      }
-                    />
-                    <span>
-                      Also settle its {openSubitems.length} open{" "}
-                      {openSubitems.length === 1 ? "subitem" : "subitems"}
-                    </span>
+                    Also settle its {openSubitems.length} open{" "}
+                    {openSubitems.length === 1 ? "subitem" : "subitems"}
                   </TooltipTrigger>
                   <TooltipContent>
                     {openSubitems

@@ -232,12 +232,12 @@ The Day view's inline new row and the titlebar's own create form go away. What a
 
 ### Hosts
 
-| Where                                                                     | Host                                                                                |
-| ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Day and Week views (rows, Days cards, Grid cells, "+ New entry", "+ Add") | Side panel docked on the right. The day or week stays visible.                      |
-| Titlebar "+", on any page                                                 | Popover anchored to the "+". Adding an entry never requires going to the Time page. |
-| New entry… on tasks and backlog items                                     | The same popover, anchored to the row or menu that opened it.                       |
-| Narrow view, everywhere                                                   | Full-width dialog.                                                                  |
+| Where                                                                     | Host                                                                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Day and Week views (rows, Days cards, Grid cells, "+ New entry", "+ Add") | Floating composer: a card at the top right, with no backdrop and no dock (forms council round 8). The page keeps its width and stays live: another row opens in it, keys and menus work, and leaving saves a valid draft first. Only Escape, Cancel or × close it. Focus goes back to where it was. |
+| Titlebar "+", on any page                                                 | Popover anchored to the "+". Adding an entry never requires going to the Time page.                                                                                                                                                                                                                 |
+| New entry… on tasks and backlog items                                     | The same popover, anchored to the row or menu that opened it.                                                                                                                                                                                                                                       |
+| Narrow view, everywhere                                                   | Full-width dialog.                                                                                                                                                                                                                                                                                  |
 
 The form is the same in every host. Only its container changes.
 
@@ -632,12 +632,13 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 
 ### Peek
 
-- Clicking a row or card opens the peek on the right. Space toggles it on the focused row. It follows the clicked item until Escape or × closes it.
+- A click selects a row or card, as in a file explorer (forms council round 8): Cmd or Ctrl+click adds or removes it, Shift+click selects a range in reading order, and Escape clears the selection. A double click, or Enter, opens the item page. Space toggles the peek on the focused row; it follows the focused item until Escape or × closes it. In the narrow view a tap opens the item page.
+- A right-click on a row of a selection of several shows the actions every selected item offers (Settle, Unsettle, Unsnooze, Pin, Unpin, Restore, Archive, Delete), named with the count ("Settle 3 items"), and runs the chosen one on each. Dragging a selected row into another group moves the whole selection there, as one drag moves one item.
 - The peek is a smaller item page. It shows the id with Open page and ×, the title with its type, project and source link, the item page's snoozed, settled, archived or returned notice, Start entry and Edit, the estimate figures, then the properties (state, source state, priority, lifecycle, project, task), the description and the subitems.
 - The peek has no "…" menu. The row's context menu and the item page carry the other actions.
 - Dragging the peek's left edge resizes it, like every side panel: 300px to 720px, at most half the page. Arrow keys on the edge move it by 16px and a double-click resets 340px. Each page keeps its own panel width, per device: Backlog (peek and editor), the backlog item page, Time, Projects and Agents.
 - State, priority, project and task change in place and save at once with Undo, like the pickers on a card.
-- Edit turns the peek into the backlog item editor in the same slot, with its explicit Save. Saving or discarding goes back to the peek.
+- Edit opens the backlog item editor as the floating composer, with its explicit Save; the peek closes behind it. Creating an item, a subitem or a task opens the same floating composer on its page (forms council round 8).
 - Enter, a double-click or Open page opens the backlog item page.
 - The narrow view has no peek: a tap opens the item page.
 
@@ -915,7 +916,7 @@ Decided in [Projects pages under the new conventions](https://github.com/les-cab
 
 - The project list keeps its search field and an "Archived" entry at the bottom. Wide windows show it next to the app sidebar. The narrow view shows it inside Settings.
 - "New project" in the list header and Edit from the project's action set open the project form as a standard dialog: name, display name, code, icon and color. On the project page, these fields change in place instead.
-- Editing a task uses the side panel, with the same Save and Escape rules as entries. It holds name, billable, budget and adjustment, and the pinned slot. The inline task editor that saved on outside click goes away.
+- Editing a task uses the floating composer, with the same Save and Escape rules as entries. It holds name, billable, budget and adjustment, and the pinned slot. The inline task editor that saved on outside click goes away.
 - The project page's properties show what edits: Full name and Code end in a pencil, Color and Icon in a picker chevron, at the value column's edge; an archived project shows none (council round 10).
 - The backlog item page's lead figure is Remaining, at 28px, first, then Completed and Original, and the bar under them fills with Completed over Original, the spent part, as every figure bar does (product owner, council rounds 23, 25 and 28); the bar sits under the three, and every value shares one baseline, Logged in Ajour's too (council rounds 14 and 16). A synced item's refresh control sits in the Source property, beside the source it refreshes (council round 16).
 - With task budgets, the project page's figures read This week, the page's one 28px figure, All time, then Budget used, Budget left and Task budgets as a group with the bar, filled with Budget used, under them only (council rounds 11 and 25), and one secondary line, "Budget figures count the active tasks that have a budget.", so Budget used never reads as All time (council round 4). Budget used reads in the text color like the other figures, amber or red only when it warns. "Budget figures count the active tasks that have a budget." is the Task budgets label's tooltip. A task row with a budget leads with its hours logged and follows with "of 120:00" in secondary ink (council rounds 21 and 26), and a pinned task's keycap shows the chord that starts it, "⇧1" on macOS and "Shift+1" elsewhere, right after the task's name (council rounds 16 and 19). The task list has no heading under its tab; its Active and Archived filter sits on the tab row's right, and a task row shows a chip only for Non-billable, Billable being the default (council round 5).

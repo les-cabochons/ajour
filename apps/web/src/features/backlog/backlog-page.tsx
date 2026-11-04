@@ -1,5 +1,10 @@
 import { useBacklogRefreshOnOpen } from "./use-backlog-refresh-on-open";
 import {
+  EMPTY_ENTRY_SELECTION,
+  selectEntryOnClick,
+  type EntrySelection,
+} from "@/domain/time/entry-selection";
+import {
   useNewBacklogItemPageHost,
   type NewBacklogItemPreset,
 } from "@/features/backlog/new-backlog-item-dialog";
@@ -127,6 +132,12 @@ export function BacklogPage() {
   const navigate = useNavigate();
   const icons = useWorkItemIconData(state.projects);
   const [peekId, setPeekId] = useState<string | null>(null);
+  // The selected rows, as in a file explorer: a click selects one, Cmd or
+  // Ctrl+click adds or removes one, Shift+click selects a range. A double
+  // click opens the item (forms council round 8).
+  const [selection, setSelection] = useState<EntrySelection>(
+    EMPTY_ENTRY_SELECTION,
+  );
   const [editor, setEditor] = useState<EditorRequest | null>(null);
   const [editorSerial, setEditorSerial] = useState(0);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
@@ -161,6 +172,15 @@ export function BacklogPage() {
       keepEmpty: board,
     }),
   }));
+  const shownItemIds = groupsByLane.flatMap(({ lane, groups }) =>
+    collapsed.has(lane.key)
+      ? []
+      : groups.flatMap((group) =>
+          collapsed.has(`${lane.key}/${group.key}`)
+            ? []
+            : group.items.map((item) => item._id),
+        ),
+  );
   const targets = groupsByLane.flatMap(({ lane, groups }) =>
     collapsed.has(lane.key) || !canUseProjectGroup(lane, state)
       ? []
@@ -235,12 +255,58 @@ export function BacklogPage() {
     if (!(await leaveDraft())) return;
     void navigate({ to: "/backlog/$itemId", params: { itemId: item._id } });
   }
-  async function select(item: LocalWorkItem) {
-    if (!drag.clickAllowed() || !(await leaveDraft())) return;
-    closeEditor();
-    if (narrow)
+  async function select(item: LocalWorkItem, event?: React.MouseEvent) {
+    if (!drag.clickAllowed()) return;
+    if (narrow) {
+      if (!(await leaveDraft())) return;
+      closeEditor();
       void navigate({ to: "/backlog/$itemId", params: { itemId: item._id } });
-    else showPeek(item._id);
+      return;
+    }
+    setSelection((current) =>
+      selectEntryOnClick(current, shownItemIds, item._id, {
+        range: Boolean(event?.shiftKey),
+        toggle: Boolean(event?.metaKey || event?.ctrlKey),
+      }),
+    );
+  }
+  /** The actions every selected item offers, run on each of them. */
+  const BULK_ACTION_IDS = new Set<BacklogItemActionId>([
+    "settle",
+    "unsettle",
+    "unsnooze",
+    "pin",
+    "unpin",
+    "restore",
+    "archive",
+    "delete",
+  ]);
+  function selectionMenuFor(item: LocalWorkItem) {
+    if (selection.ids.length < 2 || !selection.ids.includes(item._id))
+      return undefined;
+    const selectedItems = selection.ids
+      .map((id) => state.workItems.find((candidate) => candidate._id === id))
+      .filter((candidate): candidate is LocalWorkItem => Boolean(candidate));
+    const shared = getBacklogSurfaceActions(item, state, now).filter(
+      (candidate) =>
+        BULK_ACTION_IDS.has(candidate.id) &&
+        selectedItems.every((selected) =>
+          getBacklogSurfaceActions(selected, state, now).some(
+            (other) => other.id === candidate.id && !other.disabledReason,
+          ),
+        ),
+    );
+    const count = selectedItems.length;
+    return {
+      actions: shared.map((candidate) => ({
+        ...candidate,
+        label: `${candidate.label.replace(/…$/, "")} ${count} items`,
+      })),
+      onAction: async (id: BacklogItemActionId) => {
+        for (const selected of selectedItems) await action(selected, id);
+        setSelection(EMPTY_ENTRY_SELECTION);
+      },
+    };
   }
   async function action(
     item: LocalWorkItem,
@@ -364,12 +430,49 @@ export function BacklogPage() {
         );
       return;
     }
-    if (group.kind === "state")
+    // Dragging a selected row moves the whole selection into the group.
+    const others =
+      selection.ids.length > 1 && selection.ids.includes(itemId)
+        ? selection.ids
+            .filter((id) => id !== itemId)
+            .map((id) => current.workItems.find((i) => i._id === id))
+            .filter((other): other is LocalWorkItem => Boolean(other))
+        : [];
+    if (group.kind === "state") {
       await withEventAttribution({ surface: "drag" }, () =>
         moveBacklogItemWithUndo(committed, group.workflowStateId, {
           orderedIds,
         }),
       );
+      for (const other of others)
+        await withEventAttribution({ surface: "drag" }, () =>
+          moveBacklogItemWithUndo(other, group.workflowStateId),
+        );
+    }
+    if (group.kind === "priority")
+      for (const other of others)
+        withEventAttribution({ surface: "drag" }, () =>
+          patchBacklogItemWithUndo(
+            other,
+            { priority: group.priority },
+            `Priority changed to ${getPriorityLevelName(group.priority)}`,
+          ),
+        );
+    if (group.kind === "project")
+      for (const other of others)
+        withEventAttribution({ surface: "drag" }, () =>
+          patchBacklogItemWithUndo(
+            other,
+            {
+              projectId: group.projectId,
+              taskId: undefined,
+              ...(isSubtaskWorkItem(other)
+                ? { inheritsParentMapping: false }
+                : {}),
+            },
+            "Project changed",
+          ),
+        );
     if (group.kind === "priority")
       withEventAttribution({ surface: "drag" }, () =>
         patchBacklogItemWithUndo(
@@ -470,6 +573,11 @@ export function BacklogPage() {
       e.nativeEvent.isComposing
     )
       return;
+    if (e.key === "Escape" && selection.ids.length > 0) {
+      e.preventDefault();
+      setSelection(EMPTY_ENTRY_SELECTION);
+      return;
+    }
     const resolved = resolveShortcut(
       ITEM_SHORTCUTS,
       [],
@@ -815,13 +923,17 @@ export function BacklogPage() {
                                 board={board}
                                 column={board ? column : 0}
                                 now={now}
-                                selected={item._id === peekId}
+                                selected={
+                                  item._id === peekId ||
+                                  selection.ids.includes(item._id)
+                                }
+                                selectionMenu={selectionMenuFor(item)}
                                 beforeChange={async () => {
                                   if (!(await leaveDraft())) return false;
                                   closeEditor();
                                   return true;
                                 }}
-                                onSelect={() => select(item)}
+                                onSelect={(event) => void select(item, event)}
                                 onOpen={() => openPage(item)}
                                 onAction={(id) => action(item, id)}
                                 onKeyDown={(e) => itemKeys(item, group, e)}
@@ -860,38 +972,46 @@ export function BacklogPage() {
           ))}
         </div>
       </div>
-      {!narrow && (target || peek) && (
+      {/* The peek reads an item beside the list; editing and creating open
+          the composer dialog at every width, as Linear's new issue: no side
+          panel for a form (forms council round 8). */}
+      {!narrow && !target && peek && (
         <SidePanel
-          contentKey={target ? `editor:${editorSerial}` : `peek:${peekId}`}
+          contentKey={`peek:${peekId}`}
           widthKey="backlog"
           className="backlog-side-panel"
-          aria-label={target ? "Backlog item editor" : "Backlog item peek"}
+          aria-label="Backlog item peek"
         >
-          {target
-            ? editorForm()
-            : peek && (
-                <BacklogPeek
-                  item={peek}
-                  state={state}
-                  now={now}
-                  returnNotice={peekReturnNotice}
-                  onClose={closePeek}
-                  onOpen={() => openPage(peek)}
-                  onAction={(id) => action(peek, id)}
-                  onSelect={select}
-                />
-              )}
+          <BacklogPeek
+            item={peek}
+            state={state}
+            now={now}
+            returnNotice={peekReturnNotice}
+            onClose={closePeek}
+            onOpen={() => openPage(peek)}
+            onAction={(id) => action(peek, id)}
+            onSelect={select}
+          />
         </SidePanel>
       )}
-      {narrow && target && (
+      {target && (
         <Dialog
           open
+          // Floating on a wide window: the list stays live behind it.
+          modal={narrow}
           disablePointerDismissal
           onOpenChange={(open) => {
             if (!open) closeEditor();
           }}
         >
-          <DialogContent className="max-w-xl" showCloseButton={false}>
+          <DialogContent
+            className={cn(
+              "max-w-xl narrow:max-w-[calc(100%-1rem)]",
+              !narrow && "composer-floating",
+            )}
+            overlay={narrow}
+            showCloseButton={false}
+          >
             {editorForm(DialogTitle)}
           </DialogContent>
         </Dialog>

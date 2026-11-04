@@ -2084,7 +2084,7 @@ export function ProjectsPage() {
         onFieldsChange={updateTaskEditorFields}
         onSave={saveTaskEditor}
         onClose={() => setTaskEditor(null)}
-        titleAs={isNarrowView ? DialogTitle : undefined}
+        titleAs={DialogTitle}
       />
     ) : null;
 
@@ -2209,23 +2209,24 @@ export function ProjectsPage() {
         </div>
       ) : null}
 
-      {taskEditorForm && !isNarrowView ? (
-        <SidePanel
-          contentKey={visibleTaskEditor?.taskId ?? "new"}
-          widthKey="projects"
-          className="project-task-side-panel"
-          aria-label="Task editor"
-        >
-          {taskEditorForm}
-        </SidePanel>
-      ) : null}
-      {taskEditorForm && isNarrowView ? (
+      {/* The task composer opens as a dialog at every width: no side
+          panel for a form (forms council round 8). */}
+      {taskEditorForm ? (
         <Dialog
           open
+          // Floating on a wide window: the project stays live behind it.
+          modal={isNarrowView}
           disablePointerDismissal
           onOpenChange={(open) => !open && setTaskEditor(null)}
         >
-          <DialogContent className="max-w-xl" showCloseButton={false}>
+          <DialogContent
+            className={cn(
+              "max-w-xl narrow:max-w-[calc(100%-1rem)]",
+              !isNarrowView && "composer-floating",
+            )}
+            overlay={isNarrowView}
+            showCloseButton={false}
+          >
             {taskEditorForm}
           </DialogContent>
         </Dialog>

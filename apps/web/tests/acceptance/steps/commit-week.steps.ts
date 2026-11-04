@@ -562,7 +562,7 @@ When("I follow Edit task in the warning", async ({ page }) => {
 });
 
 Then("the task editor opens on {string}", async ({ page }, task: string) => {
-  const editor = page.getByRole("complementary", { name: "Task editor" });
+  const editor = page.getByRole("dialog", { name: /^(New|Edit) task$/ });
   await expect(editor.getByRole("textbox", { name: "Name" })).toHaveValue(task);
 });
 

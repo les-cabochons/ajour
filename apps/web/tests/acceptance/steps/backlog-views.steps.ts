@@ -5,6 +5,23 @@ import { createBdd } from "playwright-bdd";
 const SAVE_OR_CREATE = /^(Save|Create (item|subitem|task|entry))$/;
 const { Given, When, Then } = createBdd();
 /** The peek beside the Backlog list. */
+/**
+ * Opens a row's peek: a click selects the row and Space peeks at it, since a
+ * click no longer opens anything (forms council round 8).
+ */
+async function openPeek(page: Page, id: string) {
+  const row = page.locator(`[data-work-item-id="${id}"]`).first();
+  const title = row.locator(".backlog-item-title").first();
+  await title.click();
+  // Space toggles the peek: press it only when the peek shows another item.
+  const peek = page.getByRole("complementary", { name: "Backlog item peek" });
+  const shown =
+    (await peek.isVisible()) &&
+    (await peek.getByText(await title.innerText(), { exact: true }).count()) >
+      0;
+  if (!shown) await row.press("Space");
+}
+
 const peekPanel = (page: Page) =>
   page.getByRole("complementary", { name: "Backlog item peek" });
 Given("I have a backlog view fixture", async ({ page }) => {
@@ -424,9 +441,7 @@ Then("all open Backlog items return", async ({ page }) => {
   ).toHaveCount(3);
 });
 When("I peek at the Backlog parent", async ({ page }) => {
-  await page
-    .locator('[data-work-item-id="parent"] .backlog-item-title')
-    .click();
+  await openPeek(page, "parent");
 });
 When(
   "I reselect the current peek project with {string}",
@@ -533,7 +548,7 @@ Then("the parent peek cannot restart its running entry", async ({ page }) => {
 });
 
 When("I peek at the other Backlog item", async ({ page }) => {
-  await page.locator('[data-work-item-id="other"] .backlog-item-title').click();
+  await openPeek(page, "other");
 });
 Then("the other peek can start an entry", async ({ page }) => {
   await expect(
@@ -739,8 +754,8 @@ async function inspectBacklogStart(
       ).toBeEnabled();
       return;
     } else if (control === "editor") {
-      const editor = page.getByRole("complementary", {
-        name: "Backlog item editor",
+      const editor = page.getByRole("dialog", {
+        name: /^(New|Edit) (backlog item|subitem)$/,
       });
       if ((await editor.count()) === 0) {
         await page
@@ -821,8 +836,8 @@ When("I edit the parent from the peek", async ({ page }) => {
     .click();
 });
 When("I save the parent title as {string}", async ({ page }, title: string) => {
-  const editor = page.getByRole("complementary", {
-    name: "Backlog item editor",
+  const editor = page.getByRole("dialog", {
+    name: /^(New|Edit) (backlog item|subitem)$/,
   });
   await editor.getByRole("textbox", { name: "Item", exact: true }).fill(title);
   await editor.getByRole("button", { name: SAVE_OR_CREATE }).click();
@@ -1016,8 +1031,8 @@ When(
   },
 );
 Then("the new editor uses the active project", async ({ page }) => {
-  const editor = page.getByRole("complementary", {
-    name: "Backlog item editor",
+  const editor = page.getByRole("dialog", {
+    name: /^(New|Edit) (backlog item|subitem)$/,
   });
   await expect(editor).toBeVisible();
   await expect(
@@ -1661,7 +1676,7 @@ Then("the Backlog items allow native touch scrolling", async ({ page }) => {
 });
 
 When("I edit the subitem from its peek", async ({ page }) => {
-  await page.locator('[data-work-item-id="child"] .backlog-item-title').click();
+  await openPeek(page, "child");
   await page
     .getByRole("complementary", { name: "Backlog item peek" })
     .getByRole("button", { name: "Edit", exact: true })
@@ -1671,20 +1686,20 @@ When(
   "I rename the open editor draft to {string}",
   async ({ page }, title: string) => {
     await page
-      .getByRole("complementary", { name: "Backlog item editor" })
+      .getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ })
       .getByRole("textbox", { name: /^(Item|Subitem)$/ })
       .fill(title);
   },
 );
 When("I save the open Backlog editor", async ({ page }) => {
   await page
-    .getByRole("complementary", { name: "Backlog item editor" })
+    .getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ })
     .getByRole("button", { name: SAVE_OR_CREATE })
     .click();
 });
 Then("the Backlog editor is closed", async ({ page }) => {
   await expect(
-    page.getByRole("complementary", { name: "Backlog item editor" }),
+    page.getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ }),
   ).toHaveCount(0);
 });
 Then("the saved subitem title is {string}", async ({ page }, title: string) => {
@@ -1773,8 +1788,8 @@ Then("the parent and its subitem are active again", async ({ page }) => {
 });
 When("I add a Backlog item in In progress", async ({ page }) => {
   await page.getByRole("button", { name: "New item in In progress" }).click();
-  const editor = page.getByRole("complementary", {
-    name: "Backlog item editor",
+  const editor = page.getByRole("dialog", {
+    name: /^(New|Edit) (backlog item|subitem)$/,
   });
   await editor
     .getByRole("textbox", { name: "Item", exact: true })
@@ -1814,8 +1829,8 @@ When("I add a Backlog item from the end of the list", async ({ page }) => {
     .locator(".backlog-workspace-scroll")
     .getByRole("button", { name: "New backlog item", exact: true })
     .click();
-  const editor = page.getByRole("complementary", {
-    name: "Backlog item editor",
+  const editor = page.getByRole("dialog", {
+    name: /^(New|Edit) (backlog item|subitem)$/,
   });
   await editor
     .getByRole("textbox", { name: "Item", exact: true })
@@ -1916,7 +1931,7 @@ Given(
   },
 );
 When("I edit the other item from the Backlog peek", async ({ page }) => {
-  await page.locator('[data-work-item-id="other"] .backlog-item-title').click();
+  await openPeek(page, "other");
   await page
     .getByRole("complementary", { name: "Backlog item peek" })
     .getByRole("button", { name: "Edit", exact: true })
@@ -1990,8 +2005,8 @@ Then(
   "Backlog keeps its unsaved draft in the original page",
   async ({ page }) => {
     await expect(page).toHaveURL(/\/backlog$/);
-    const editor = page.getByRole("complementary", {
-      name: "Backlog item editor",
+    const editor = page.getByRole("dialog", {
+      name: /^(New|Edit) (backlog item|subitem)$/,
     });
     await expect(
       editor.getByRole("textbox", { name: "Item", exact: true }),
@@ -2009,8 +2024,8 @@ Then(
   "Backlog keeps the invalid draft and its validation error",
   async ({ page }) => {
     await expect(page).toHaveURL(/\/backlog$/);
-    const editor = page.getByRole("complementary", {
-      name: "Backlog item editor",
+    const editor = page.getByRole("dialog", {
+      name: /^(New|Edit) (backlog item|subitem)$/,
     });
     await expect(
       editor.getByRole("textbox", { name: "Item", exact: true }),
@@ -2029,8 +2044,8 @@ Then(
 );
 Then("Backlog keeps the pending settings draft", async ({ page }) => {
   await expect(page).toHaveURL(/\/backlog$/);
-  const editor = page.getByRole("complementary", {
-    name: "Backlog item editor",
+  const editor = page.getByRole("dialog", {
+    name: /^(New|Edit) (backlog item|subitem)$/,
   });
   await expect(
     editor.getByRole("textbox", { name: "Item", exact: true }),
@@ -2047,7 +2062,7 @@ When(
   "I choose {string} in the Backlog editor actions",
   async ({ page }, action: string) => {
     await page
-      .getByRole("complementary", { name: "Backlog item editor" })
+      .getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ })
       .getByRole("button", { name: /Actions/ })
       .click();
     await page.getByRole("menuitem", { name: action, exact: true }).click();
@@ -2057,7 +2072,7 @@ Then(
   "the Backlog editor is closed and the other item is archived",
   async ({ page }) => {
     await expect(
-      page.getByRole("complementary", { name: "Backlog item editor" }),
+      page.getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ }),
     ).toHaveCount(0);
     await expect
       .poll(() =>
@@ -2078,8 +2093,8 @@ Then(
   },
 );
 When("I save the other item in To do", async ({ page }) => {
-  const editor = page.getByRole("complementary", {
-    name: "Backlog item editor",
+  const editor = page.getByRole("dialog", {
+    name: /^(New|Edit) (backlog item|subitem)$/,
   });
   await editor
     .getByRole("combobox", { name: "Workflow state", exact: true })
@@ -2092,16 +2107,14 @@ When(
   "I change the editor workflow draft to {string}",
   async ({ page }, name: string) => {
     await page
-      .getByRole("complementary", { name: "Backlog item editor" })
+      .getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ })
       .getByRole("combobox", { name: "Workflow state", exact: true })
       .click();
     await page.getByRole("option", { name, exact: true }).click();
   },
 );
 When("I edit the parent item from the Backlog peek", async ({ page }) => {
-  await page
-    .locator('[data-work-item-id="parent"] .backlog-item-title')
-    .click();
+  await openPeek(page, "parent");
   await page
     .getByRole("complementary", { name: "Backlog item peek" })
     .getByRole("button", { name: "Edit", exact: true })
@@ -2117,7 +2130,7 @@ Then(
   "the parent remains active and its editor stays open",
   async ({ page }) => {
     await expect(
-      page.getByRole("complementary", { name: "Backlog item editor" }),
+      page.getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ }),
     ).toBeVisible();
     await expect(
       page.getByRole("dialog", {
@@ -2294,7 +2307,7 @@ Then(
         .getByRole("button", { name: /^Actions for / }),
     ).toHaveCount(0);
     await expect(
-      page.getByRole("complementary", { name: "Backlog item editor" }),
+      page.getByRole("dialog", { name: /^(New|Edit) (backlog item|subitem)$/ }),
     ).toHaveCount(0);
   },
 );

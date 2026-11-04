@@ -24,6 +24,7 @@ function PluginFieldInput({
   secret,
   hideHelp = false,
   label = field.label,
+  row = false,
 }: {
   field: PluginField;
   value: PluginFieldValue | undefined;
@@ -33,8 +34,76 @@ function PluginFieldInput({
   hideHelp?: boolean;
   /** A shorter label, when a legend above the field says the rest. */
   label?: string;
+  /**
+   * A settings row: the label on the left, the value on the right reading as
+   * text, its field drawn only on hover and focus (forms council round 8).
+   */
+  row?: boolean;
 }) {
   const help = hideHelp ? undefined : field.helpText;
+  if (row && !field.secret) {
+    return (
+      <div className="connection-row">
+        {field.type === "checkbox" ? (
+          <label htmlFor={field.id} className="connection-row-label">
+            {label}
+          </label>
+        ) : (
+          <FieldLabel htmlFor={field.id} className="connection-row-label">
+            {label}
+          </FieldLabel>
+        )}
+        <div className="connection-row-value">
+          {field.type === "checkbox" ? (
+            <Checkbox
+              id={field.id}
+              checked={value === true}
+              onCheckedChange={(checked) => onChange(checked)}
+              className="mt-1.5"
+            />
+          ) : field.type === "select" ? (
+            <OptionSelect
+              id={field.id}
+              size="default"
+              className="inline-field"
+              value={typeof value === "string" ? value : ""}
+              onChange={onChange}
+              options={field.options ?? []}
+            />
+          ) : (
+            <Input
+              id={field.id}
+              className="inline-field"
+              type={field.type === "number" ? "number" : "text"}
+              value={
+                typeof value === "number"
+                  ? String(value)
+                  : typeof value === "boolean"
+                    ? value
+                      ? "true"
+                      : "false"
+                    : (value ?? "")
+              }
+              min={field.min}
+              max={field.max}
+              step={field.step}
+              onChange={(event) => {
+                if (field.type === "number") {
+                  const nextValue = Number(event.target.value);
+                  onChange(Number.isFinite(nextValue) ? nextValue : 0);
+                  return;
+                }
+                onChange(event.target.value);
+              }}
+              placeholder={field.placeholder || "Empty"}
+              autoComplete="off"
+            />
+          )}
+          {help ? <FieldHelp text={help} /> : null}
+        </div>
+      </div>
+    );
+  }
   if (field.secret) {
     return (
       <SecretFieldInput
