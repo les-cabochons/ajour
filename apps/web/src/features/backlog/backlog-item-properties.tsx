@@ -161,7 +161,7 @@ export function BacklogItemProperties({
         </PropertyRow>
         {children}
         {item.source !== "manual" ? (
-          <PropertyRow label="When missing">
+          <PropertyRow label="Missing from sync">
             <MissingFromSyncPicker item={item} />
           </PropertyRow>
         ) : null}
@@ -185,7 +185,8 @@ export function BacklogItemProperties({
  */
 function MissingFromSyncPicker({ item }: { item: LocalWorkItem }) {
   const keep = item.keepWhenMissingFromSync ?? false;
-  const label = keep ? "Keep" : "Archive";
+  // Says what happens, so it never reads as the Archive command below it.
+  const label = keep ? "Keep in backlog" : "Archive automatically";
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -195,7 +196,7 @@ function MissingFromSyncPicker({ item }: { item: LocalWorkItem }) {
             className="justify-start"
             // An archived item is read-only until Restore.
             disabled={item.status === "archived"}
-            aria-label={`When missing from sync: ${label}`}
+            aria-label={`Missing from sync: ${label}`}
           />
         }
       >
@@ -203,7 +204,7 @@ function MissingFromSyncPicker({ item }: { item: LocalWorkItem }) {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
         <DropdownMenuGroup>
-          <DropdownMenuLabel>When missing from sync</DropdownMenuLabel>
+          <DropdownMenuLabel>Missing from sync</DropdownMenuLabel>
           <DropdownMenuRadioGroup
             value={keep ? "keep" : "archive"}
             onValueChange={(value) => {
@@ -219,10 +220,10 @@ function MissingFromSyncPicker({ item }: { item: LocalWorkItem }) {
             }}
           >
             <DropdownMenuRadioItem value="archive" closeOnClick>
-              Archive
+              Archive automatically
             </DropdownMenuRadioItem>
             <DropdownMenuRadioItem value="keep" closeOnClick>
-              Keep
+              Keep in backlog
             </DropdownMenuRadioItem>
           </DropdownMenuRadioGroup>
         </DropdownMenuGroup>

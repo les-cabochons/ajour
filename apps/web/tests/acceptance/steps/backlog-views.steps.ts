@@ -2522,7 +2522,7 @@ Then(
 When("I set When missing to Keep on its properties card", async ({ page }) => {
   await page
     .locator(".backlog-item-properties-card")
-    .getByRole("button", { name: "When missing from sync: Archive" })
+    .getByRole("button", { name: "Missing from sync: Archive automatically" })
     .click();
   await page.getByRole("menuitemradio", { name: "Keep" }).click();
 });
@@ -2537,7 +2537,7 @@ async function readKeepWhenMissing(page: Page) {
 Then("the Backlog parent is kept when missing from sync", async ({ page }) => {
   await expect.poll(() => readKeepWhenMissing(page)).toBe(true);
   await expect(
-    page.getByRole("button", { name: "When missing from sync: Keep" }),
+    page.getByRole("button", { name: "Missing from sync: Keep in backlog" }),
   ).toBeVisible();
 });
 When("I undo the When missing change", async ({ page }) => {
@@ -2551,7 +2551,9 @@ Then(
   async ({ page }) => {
     await expect.poll(() => readKeepWhenMissing(page)).toBe(false);
     await expect(
-      page.getByRole("button", { name: "When missing from sync: Archive" }),
+      page.getByRole("button", {
+        name: "Missing from sync: Archive automatically",
+      }),
     ).toBeVisible();
   },
 );

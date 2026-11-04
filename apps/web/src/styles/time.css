@@ -256,6 +256,59 @@
     font-weight: 500;
   }
 
+  /* Desktop rows share one grid: the row's name leads in a flexible track,
+     the note or, without one, the task; then the project mark and project
+     and the task in fixed 12px secondary tracks (council round 8). The
+     narrow view has its own two-line grid. */
+  @media (width >= 768px) {
+    .time-entry-main {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 12px 7.5rem 8rem;
+      column-gap: 0.5rem;
+    }
+
+    .time-entry-main > * {
+      grid-row: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .time-entry-note {
+      grid-column: 1;
+      margin-left: 0;
+    }
+
+    .time-entry-dot {
+      grid-column: 2;
+    }
+
+    .time-entry-project {
+      grid-column: 3;
+      min-width: 0;
+      font-size: var(--text-xs);
+    }
+
+    .time-entry-task {
+      grid-column: 4;
+      min-width: 0;
+    }
+
+    /* No note: the task is the row's name. */
+    .time-entry-main:not(:has(.time-entry-note)) .time-entry-task {
+      grid-column: 1;
+    }
+
+    /* No note and no task: the project is. */
+    .time-entry-main:not(:has(.time-entry-note)):not(:has(.time-entry-task))
+      .time-entry-project {
+      grid-column: 1;
+      color: var(--text);
+      font-size: var(--text-sm);
+      font-weight: 500;
+    }
+  }
+
   /* With a note, the note leads and the task steps back to the project's
      12px secondary: the note tells entries of one task apart (council round
      6). Without one, the task stays the row's name. */

@@ -546,6 +546,9 @@
     gap: 0.5rem;
     min-width: 0;
     height: 100%;
+    /* With the bar's own 8px, every title, mounted or fallback, starts at
+       the page gutter. */
+    padding-left: calc(var(--page-gutter) - 0.5rem);
   }
 
   /* Windows: a hairline between the menus and the page title. */
@@ -563,8 +566,6 @@
     flex: 1 1 auto;
     align-items: center;
     gap: 0.5rem;
-    /* With the bar's own 8px, the title starts at the page gutter. */
-    padding-left: calc(var(--page-gutter) - 0.5rem);
     min-width: 0;
   }
 
