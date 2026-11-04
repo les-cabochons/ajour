@@ -12,6 +12,16 @@ on:
 permissions:
   contents: read
 
+# One nightly at a time. A run in progress always finishes. Of the pushes that
+# land while it runs, only the newest gets a nightly: GitHub cancels a waiting
+# run when a newer one joins the group. That nightly is built from the newest
+# main, so it holds every skipped commit. In a burst of merges this keeps the
+# macOS runners, which an account runs only a few of at once, free for the
+# pull requests' checks.
+concurrency:
+  group: desktop-nightly-release
+  cancel-in-progress: false
+
 jobs:
   plan:
     name: Plan nightly release
