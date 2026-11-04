@@ -15,12 +15,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
+      # macOS's bash runs in the Tests workflow's `macOS checks` job, which
+      # holds every macOS check of a run on one runner.
       matrix:
         os: [ubuntu-latest]
         shell: [bash, zsh, fish]
-        include:
-          - os: macos-latest
-            shell: /bin/bash
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,23 +31,9 @@ jobs:
       - run: corepack pnpm install --frozen-lockfile
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
-      - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y zsh fish
+      - run: sudo apt-get update && sudo apt-get install -y zsh fish
       - name: Check literal task insertion after Tab
         run: corepack pnpm --filter @ajour/cli exec vitest run src/completion-shells.test.ts
         env:
           AJOUR_SHELL_TESTS: "1"
           AJOUR_TEST_SHELL: ${{ matrix.shell }}
-      - name: Check Homebrew bash when available
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          brew_bash="$(brew --prefix)/bin/bash"
-          if [ -x "$brew_bash" ]; then
-            "$brew_bash" --version
-            AJOUR_TEST_SHELL="$brew_bash" corepack pnpm --filter @ajour/cli exec vitest run src/completion-shells.test.ts
-          else
-            echo "Homebrew bash is unavailable; /bin/bash was checked above."
-          fi
-        env:
-          AJOUR_SHELL_TESTS: "1"

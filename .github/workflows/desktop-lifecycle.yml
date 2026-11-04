@@ -20,14 +20,26 @@ on:
         description: The commit to check. Empty checks the caller's commit.
         type: string
         default: ""
+      macos:
+        description: >-
+          Run on macOS too. The Tests workflow passes false and runs the macOS
+          check in its own `macOS checks` job, which holds every macOS check
+          of a run on one runner.
+        type: boolean
+        default: true
   workflow_dispatch:
+    inputs:
+      macos:
+        description: Run on macOS too
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
 jobs:
   check:
-    name: Desktop lifecycle (${{ matrix.name }})
+    name: Desktop lifecycle (${{ matrix.os == 'macos-latest' && 'macOS' || 'Windows' }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     env:
@@ -37,11 +49,10 @@ jobs:
       # A failure on one system must not hide the result on the other.
       fail-fast: false
       matrix:
-        include:
-          - name: Windows
-            os: windows-latest
-          - name: macOS
-            os: macos-latest
+        os: [windows-latest, macos-latest]
+        # Every caller but the Tests workflow runs it on macOS too.
+        exclude:
+          - os: ${{ inputs.macos == false && 'macos-latest' || 'none' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

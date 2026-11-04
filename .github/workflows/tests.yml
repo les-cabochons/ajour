@@ -3,9 +3,13 @@ name: Tests
 # Runs Ajour's test suites on every pull request and on every push to main.
 # The unit suites (Vitest across the workspace) run on Windows and macOS, the
 # two systems the desktop app ships on. The Playwright acceptance suite runs in
-# Chromium on one of them, in four shards at once. The plugin sandbox check and the desktop lifecycle
-# check run in Electron on both, for pull requests that can change what they
-# check.
+# Chromium on Windows, in four shards at once. The package check, the plugin
+# sandbox check and the desktop lifecycle check run in Electron on both, for
+# pull requests that can change what they check.
+#
+# macOS runners are scarce (an account runs only a few at once) and each job
+# waits for one, so every macOS check runs in one job, `macOS checks`, one
+# after the other. Windows has a runner for each check.
 on:
   push:
     branches:
@@ -32,15 +36,12 @@ jobs:
     name: Unit tests (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    # macOS runs the same suites in `macOS checks`.
     strategy:
-      # A failure on one system must not hide the result on the other.
-      fail-fast: false
       matrix:
         include:
           - name: Windows
             os: windows-latest
-          - name: macOS
-            os: macos-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -59,7 +60,6 @@ jobs:
         run: corepack enable
 
       - name: Install pnpm on Windows
-        if: runner.os == 'Windows'
         run: npm install --global pnpm@10.7.0
 
       - name: Find the pnpm store
@@ -79,8 +79,7 @@ jobs:
         run: corepack pnpm install --frozen-lockfile
 
       - name: Typecheck and check module boundaries
-        # Both are system-independent, so one system runs them.
-        if: runner.os == 'Windows'
+        # Both are system-independent, so only Windows runs them.
         run: corepack pnpm typecheck && corepack pnpm lint:boundaries
 
       - name: Test release planner
@@ -227,10 +226,142 @@ jobs:
             echo "lifecycle=false" >> "$GITHUB_OUTPUT"
           fi
 
-  # Packages an unpacked app on both systems and reads its Electron fuses back,
-  # the way the release workflows do, without publishing or signing. macOS
-  # builds both architectures, because the unsigned binary is re-signed ad hoc
-  # after the fuses are flipped and must still start.
+  # Every macOS check in one job, so a run waits for one macOS runner, not
+  # five. Each check runs only when the change can reach it, decided as for
+  # Windows by `desktop-changes`, and each check runs even when an earlier one
+  # failed, so a failure never hides the result of another check. Each check
+  # uses its own temp user data folder and a free port, and packaging rebuilds
+  # the renderer before it uses it, so the checks don't depend on each other.
+  macos:
+    name: macOS checks
+    needs: desktop-changes
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      # Packaging and the Electron checks need Electron's binary, so do not
+      # skip its download as the workflow-wide setting does.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: ""
+      PACKAGE: ${{ needs.desktop-changes.outputs.package }}
+      SANDBOX: ${{ needs.desktop-changes.outputs.sandbox }}
+      LIFECYCLE: ${{ needs.desktop-changes.outputs.lifecycle }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          check-latest: true
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Find the pnpm store
+        id: pnpm-store
+        shell: bash
+        run: echo "path=$(corepack pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      - name: Install dependencies
+        id: install
+        run: corepack pnpm install --frozen-lockfile
+
+      # Unit tests, as in `unit` on Windows.
+      - name: Test release planner
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: node --test .github/scripts/release-plan.test.mjs
+
+      - name: Run the code standards' consistency checks
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: node --test .github/scripts/code-standards.test.mjs
+
+      - name: Run workspace tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: corepack pnpm test
+
+      # Tab completion in macOS's own bash 3.2. `cli-completion.yml` checks
+      # bash, zsh and fish on Linux.
+      - name: Check literal task insertion after Tab
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: corepack pnpm --filter @ajour/cli exec vitest run src/completion-shells.test.ts
+        env:
+          AJOUR_SHELL_TESTS: "1"
+          AJOUR_TEST_SHELL: /bin/bash
+
+      - name: Check Homebrew bash when available
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        shell: bash
+        run: |
+          brew_bash="$(brew --prefix)/bin/bash"
+          if [ -x "$brew_bash" ]; then
+            "$brew_bash" --version
+            AJOUR_TEST_SHELL="$brew_bash" corepack pnpm --filter @ajour/cli exec vitest run src/completion-shells.test.ts
+          else
+            echo "Homebrew bash is unavailable; /bin/bash was checked above."
+          fi
+        env:
+          AJOUR_SHELL_TESTS: "1"
+
+      # The package check, as in `package` on Windows. macOS builds both
+      # architectures, because the unsigned binary is re-signed ad hoc after
+      # the fuses are flipped and must still start.
+      - name: Package the app and check it
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && env.PACKAGE == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack pnpm --filter @ajour/desktop package
+          (cd apps/desktop && corepack pnpm exec electron-builder --config=electron-builder.config.cjs --mac dir --arm64 --publish=never)
+          corepack pnpm --filter @ajour/desktop exec node scripts/check-bundle-symlinks.cjs
+          corepack pnpm --filter @ajour/desktop exec node scripts/check-fuses.cjs
+          # Run as Node is on, so the binary runs a script without a window.
+          # That shows the flipped, re-signed binary starts.
+          ELECTRON_RUN_AS_NODE=1 apps/desktop/out/make/mac-arm64/Ajour.app/Contents/MacOS/Ajour -e "console.log('node', process.version)"
+
+      # The plugin sandbox check, as in `plugin-sandbox.yml`.
+      - name: Run the plugin sandbox check
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && env.SANDBOX == 'true' }}
+        shell: bash
+        env:
+          LOG: ${{ runner.temp }}/plugin-sandbox.log
+        run: |
+          set -o pipefail
+          corepack pnpm --filter @ajour/desktop check:plugin-sandbox 2>&1 | tee "$LOG"
+
+      # The desktop lifecycle check, as in `desktop-lifecycle.yml`.
+      - name: Run the desktop lifecycle check
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && env.LIFECYCLE == 'true' }}
+        shell: bash
+        env:
+          LOG: ${{ runner.temp }}/desktop-lifecycle.log
+        run: |
+          set -o pipefail
+          corepack pnpm --filter @ajour/desktop check:keep-running 2>&1 | tee "$LOG"
+
+      - name: Upload the checks' logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-check-logs
+          path: |
+            ${{ runner.temp }}/plugin-sandbox.log
+            ${{ runner.temp }}/desktop-lifecycle.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # Packages an unpacked app and reads its Electron fuses back, the way the
+  # release workflows do, without publishing or signing. `macOS checks` does
+  # the same on macOS.
   package:
     name: Package (${{ matrix.name }})
     needs: desktop-changes
@@ -242,13 +373,10 @@ jobs:
       # workflow-wide setting does.
       ELECTRON_SKIP_BINARY_DOWNLOAD: ""
     strategy:
-      fail-fast: false
       matrix:
         include:
           - name: Windows
             os: windows-latest
-          - name: macOS
-            os: macos-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -265,7 +393,6 @@ jobs:
         run: corepack enable
 
       - name: Install pnpm on Windows
-        if: runner.os == 'Windows'
         run: npm install --global pnpm@10.7.0
 
       - name: Install dependencies
@@ -274,47 +401,38 @@ jobs:
       - name: Package an unpacked app
         run: corepack pnpm --filter @ajour/desktop package
 
-      - name: Package the arm64 app
-        if: runner.os == 'macOS'
-        working-directory: apps/desktop
-        run: corepack pnpm exec electron-builder --config=electron-builder.config.cjs --mac dir --arm64 --publish=never
-
-      - name: Check the packaged apps' symbolic links
-        if: runner.os == 'macOS'
-        run: corepack pnpm --filter @ajour/desktop exec node scripts/check-bundle-symlinks.cjs
-
       - name: Check the packaged apps' Electron fuses
         run: corepack pnpm --filter @ajour/desktop exec node scripts/check-fuses.cjs
 
       - name: Start the packaged binary as Node
         # Run as Node is on, so the binary runs a script without a window.
-        # That shows the flipped, re-signed binary starts.
+        # That shows the flipped binary starts.
         shell: bash
         working-directory: apps/desktop/out/make
-        run: |
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            binary="mac-arm64/Ajour.app/Contents/MacOS/Ajour"
-          else
-            binary="win-unpacked/Ajour.exe"
-          fi
-          ELECTRON_RUN_AS_NODE=1 "./$binary" -e "console.log('node', process.version)"
+        run: ELECTRON_RUN_AS_NODE=1 ./win-unpacked/Ajour.exe -e "console.log('node', process.version)"
 
   # The real-Electron suites of seam 3 (#392), the malicious-plugin and the
-  # lifecycle suite, on Windows and macOS, and on Linux as informational.
-  # `plugin-sandbox.yml` holds the job, which the release workflows run too.
+  # lifecycle suite, on Windows, and on Linux as informational.
+  # `plugin-sandbox.yml` holds the job, which the release workflows run too,
+  # on macOS as well. Here `macOS checks` runs it on macOS.
   plugin-sandbox:
     name: Plugin sandbox
     needs: desktop-changes
     if: needs.desktop-changes.outputs.sandbox == 'true'
     uses: ./.github/workflows/plugin-sandbox.yml
+    with:
+      macos: false
 
-  # The real-app check of the window lifecycle (#534) on Windows and macOS.
-  # `desktop-lifecycle.yml` holds the job.
+  # The real-app check of the window lifecycle (#534) on Windows.
+  # `desktop-lifecycle.yml` holds the job. Here `macOS checks` runs it on
+  # macOS.
   desktop-lifecycle:
     name: Desktop lifecycle
     needs: desktop-changes
     if: needs.desktop-changes.outputs.lifecycle == 'true'
     uses: ./.github/workflows/desktop-lifecycle.yml
+    with:
+      macos: false
 
   # The one check to require on pull requests. The sandbox matrix is skipped
   # for a change that cannot reach the plugin host, and a skipped job creates
@@ -322,13 +440,15 @@ jobs:
   # docs-only pull request. This job always runs: it passes when the suite was
   # skipped or passed, and fails when the suite ran and failed or was cancelled.
   # It holds the desktop lifecycle check the same way, so that check needs no
-  # required status of its own.
+  # required status of its own, and `macOS checks`, which runs both checks on
+  # macOS.
   plugin-sandbox-gate:
     name: Plugin sandbox gate
     needs:
       - desktop-changes
       - plugin-sandbox
       - desktop-lifecycle
+      - macos
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -338,8 +458,9 @@ jobs:
           CHANGES: ${{ needs.desktop-changes.result }}
           SANDBOX: ${{ needs.plugin-sandbox.result }}
           LIFECYCLE: ${{ needs.desktop-lifecycle.result }}
+          MACOS: ${{ needs.macos.result }}
         run: |
-          echo "desktop-changes: $CHANGES, plugin-sandbox: $SANDBOX, desktop-lifecycle: $LIFECYCLE"
+          echo "desktop-changes: $CHANGES, plugin-sandbox: $SANDBOX, desktop-lifecycle: $LIFECYCLE, macOS checks: $MACOS"
           if [ "$CHANGES" != "success" ]; then
             echo "The change filter did not finish, so the gate cannot tell." >&2
             exit 1
@@ -358,3 +479,7 @@ jobs:
               exit 1
               ;;
           esac
+          if [ "$MACOS" != "success" ]; then
+            echo "The macOS checks ended as $MACOS." >&2
+            exit 1
+          fi
