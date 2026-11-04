@@ -93,7 +93,10 @@ export function mcpClient(options: {
     return {
       // The SDK types a compatibility result too; Ajour's server sends the
       // current shape, which `call` reads defensively below.
-      serverVersion: client.getServerVersion()?.version,
+      serverVersion:
+        client.getServerVersion()?.version === "unknown"
+          ? undefined
+          : client.getServerVersion()?.version,
       callTool: (params) =>
         client.callTool(params) as ReturnType<ToolSession["callTool"]>,
       close: () => client.close(),
