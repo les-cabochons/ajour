@@ -1,4 +1,4 @@
-import { copyFile, mkdir, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -26,6 +26,9 @@ await writeFile(
 );
 run(process.execPath, ["--experimental-sea-config", config]);
 await copyFile(process.execPath, binary);
+// The copy keeps node's own mode, which is 0777 on some runners' tool
+// caches. Nobody but its owner may write a binary that goes on a PATH.
+if (process.platform !== "win32") await chmod(binary, 0o755);
 if (process.platform === "darwin")
   run("codesign", ["--remove-signature", binary]);
 const require = createRequire(import.meta.url);

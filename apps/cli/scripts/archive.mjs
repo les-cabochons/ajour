@@ -1,4 +1,12 @@
-import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import {
+  cp,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -33,6 +41,11 @@ const binary = path.join(
   stage,
   process.platform === "win32" ? "ajour.exe" : "ajour",
 );
+if (process.platform !== "win32" && (await stat(binary)).mode & 0o022) {
+  throw new Error(
+    `${binary} is writable by group or others. Build it with sea.mjs.`,
+  );
+}
 for (const [shell, filename] of [
   ["bash", "ajour.bash"],
   ["zsh", "_ajour"],
