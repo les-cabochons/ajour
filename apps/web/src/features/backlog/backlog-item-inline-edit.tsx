@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { RiAddLine as AddIcon } from "@remixicon/react";
 import {
   MarkdownEditor,
   preloadMarkdownEditor,
 } from "@/components/markdown-editor";
 import { SectionHeading } from "@/components/section-heading";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Figure } from "@/components/ui/value";
 import { splitDescription } from "@/domain/backlog/description-frontmatter";
@@ -313,6 +315,13 @@ export function DescriptionSection({
     }
     closer.close(() => save(value));
   };
+  const startEditing = () => {
+    closer.reset();
+    clearDescriptionDraftConflict(item._id);
+    setBase(current);
+    setDraft(current);
+    setEditing(true);
+  };
   return (
     <>
       <SectionHeading
@@ -324,19 +333,13 @@ export function DescriptionSection({
                 <SyncConflictButton item={item} />
               </span>
             ) : null}
-            {!editing && editable ? (
+            {!editing && editable && body ? (
               <button
                 type="button"
                 className="backlog-item-subtle-action"
                 onPointerEnter={preloadMarkdownEditor}
                 onFocus={preloadMarkdownEditor}
-                onClick={() => {
-                  closer.reset();
-                  clearDescriptionDraftConflict(item._id);
-                  setBase(current);
-                  setDraft(current);
-                  setEditing(true);
-                }}
+                onClick={startEditing}
               >
                 Edit
               </button>
@@ -383,6 +386,18 @@ export function DescriptionSection({
         </div>
       ) : body ? (
         <DescriptionText body={body} />
+      ) : editable ? (
+        // The action sits where the missing text would be (council round 4).
+        <Button
+          variant="ghost"
+          className="-ml-2 w-fit text-muted-foreground"
+          onPointerEnter={preloadMarkdownEditor}
+          onFocus={preloadMarkdownEditor}
+          onClick={startEditing}
+        >
+          <AddIcon data-icon="inline-start" />
+          Add description
+        </Button>
       ) : (
         <p className="text-sm text-muted-foreground">No description.</p>
       )}

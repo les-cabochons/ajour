@@ -1079,10 +1079,12 @@ function ProjectDetail({
         </Figure>
         {budget.budgetMs > 0 ? (
           <>
-            <Figure label="Budget">
+            {/* Named for what they count, so "Budget used" never reads as
+                All time (council round 4). */}
+            <Figure label="Task budgets">
               {formatClockDuration(budget.budgetMs)}
             </Figure>
-            <Figure label="Used">
+            <Figure label="Budget used">
               <span
                 className={cn(
                   "project-task-consumed",
@@ -1092,7 +1094,7 @@ function ProjectDetail({
                 {formatClockDuration(budget.consumedMs)}
               </span>
             </Figure>
-            <Figure label="Remaining">
+            <Figure label="Budget left">
               {formatClockDuration(
                 Math.max(0, budget.budgetMs - budget.consumedMs),
               )}
@@ -1103,10 +1105,15 @@ function ProjectDetail({
         )}
       </FigureRow>
       {budget.budgetMs > 0 ? (
-        <BudgetBar
-          ratio={budget.consumedMs / budget.budgetMs}
-          className="project-progress-wide"
-        />
+        <>
+          <BudgetBar
+            ratio={budget.consumedMs / budget.budgetMs}
+            className="project-progress-wide"
+          />
+          <p className="-mt-2 text-xs text-[var(--text-secondary)]">
+            Budget figures count the active tasks that have a budget.
+          </p>
+        </>
       ) : null}
 
       {isArchived ? (

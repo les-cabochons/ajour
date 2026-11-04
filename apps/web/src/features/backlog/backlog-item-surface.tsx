@@ -115,6 +115,7 @@ export function BacklogStatePicker({
       <Button
         variant="ghost"
 
+        data-leading="state"
         className={full ? "justify-start" : "size-6 p-0"}
         aria-label={`Change state of ${item.title}`}
         aria-haspopup="menu"
@@ -133,7 +134,7 @@ export function BacklogStatePicker({
         render={
           <Button
             variant="ghost"
-
+            data-leading="state"
             className={full ? "justify-start" : "size-6 p-0"}
             aria-label={`Change state of ${item.title}`}
           />
@@ -188,6 +189,7 @@ export function BacklogPriorityPicker({
       <Button
         variant="ghost"
 
+        data-leading="priority"
         className={full ? "justify-start" : "size-6 p-0"}
         aria-label={`Change priority of ${item.title}`}
         aria-haspopup="menu"
@@ -206,7 +208,7 @@ export function BacklogPriorityPicker({
         render={
           <Button
             variant="ghost"
-
+            data-leading={hidden ? undefined : "priority"}
             className={
               hidden
                 ? "backlog-hidden-picker"

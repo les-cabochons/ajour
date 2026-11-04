@@ -2764,7 +2764,8 @@ Then(
     const viewport = page.viewportSize()!;
     expect(box.x).toBeLessThan(viewport.width / 4);
     expect(box.y + box.height).toBeGreaterThan(viewport.height - 40);
-    expect(box.width).toBeLessThan(viewport.width / 2);
+    // Every item is labelled, and it still leaves the agent indicator room.
+    expect(box.x + box.width).toBeLessThan(viewport.width - 64);
   },
 );
 
@@ -3426,11 +3427,11 @@ async function entryLineBoxes(page: Page, note: string) {
 }
 
 Then(
-  "the {string} entry shows its note on a second line under its task",
+  "the {string} entry shows its note on the first line over its task",
   async ({ page }, note: string) => {
     const boxes = await entryLineBoxes(page, note);
-    expect(boxes.note.y).toBeGreaterThanOrEqual(
-      boxes.task.y + boxes.task.height - 1,
+    expect(boxes.task.y).toBeGreaterThanOrEqual(
+      boxes.note.y + boxes.note.height - 1,
     );
   },
 );
@@ -3470,14 +3471,12 @@ Given(
   },
 );
 
-Then("the long note runs on under the duration", async ({ page }) => {
+Then("the long note stops before the duration", async ({ page }) => {
   const row = page.getByRole("row", { name: /API pagination/ });
   const note = await row.locator(".time-entry-note").boundingBox();
   const trailing = await row.locator(".time-entry-trailing").boundingBox();
-  const rowBox = await row.boundingBox();
-  if (!note || !trailing || !rowBox) throw new Error("The row is not rendered");
-  expect(note.x + note.width).toBeGreaterThan(trailing.x);
-  expect(note.x + note.width).toBeLessThanOrEqual(rowBox.x + rowBox.width);
+  if (!note || !trailing) throw new Error("The row is not rendered");
+  expect(note.x + note.width).toBeLessThanOrEqual(trailing.x + 1);
 });
 
 Then(

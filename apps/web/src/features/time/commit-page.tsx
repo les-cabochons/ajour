@@ -375,6 +375,9 @@ export function CommitPage({
   const weekDates = useMemo(() => getIsoWeekDates(date), [date]);
   // Agents read the unchecked changes under the same Monday key.
   const weekOf = weekDates[0]!;
+  const runningThisWeek = state.timers.some((timer) =>
+    weekDates.includes(timer.localDate),
+  );
   const [groupBy, setGroupBy] = useState<SubmitGroupBy>("day-task");
   // Expanded on every visit, on purpose: the choice is not saved.
   const [changesOpen, setChangesOpen] = useState(true);
@@ -568,7 +571,7 @@ export function CommitPage({
         <div className="submit-summary-total">
           <Value size="figure">{formatClockDuration(summary.totalMs)}</Value>
           <span className="text-sm text-muted-foreground">
-            of {formatClockDuration(summary.targetMs)} this week
+            saved of {formatClockDuration(summary.targetMs)} this week
           </span>
         </div>
         <div
@@ -581,7 +584,7 @@ export function CommitPage({
         >
           <div style={{ width: `${progress}%` }} />
         </div>
-        {summary.warnings.length > 0 ? (
+        {summary.warnings.length > 0 || runningThisWeek ? (
           <ul className="submit-warnings">
             <UnderTargetDays warnings={summary.warnings} />
             {summary.warnings
@@ -619,6 +622,16 @@ export function CommitPage({
                   ) : null}
                 </li>
               ))}
+            {runningThisWeek ? (
+              // The Time view counts the running entry; this page counts what
+              // is saved. Say so, so the two totals reconcile (council round 4).
+              <li className="is-calm">
+                <Ahead aria-hidden />
+                <span>
+                  The running entry isn&apos;t counted until it stops.
+                </span>
+              </li>
+            ) : null}
           </ul>
         ) : null}
         {lockedWeek ? (

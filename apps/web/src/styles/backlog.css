@@ -1146,14 +1146,14 @@
      its source state. The content and properties containers step aside
      (display: contents), so their own children take the row's grid tracks;
      no element is added. Line 2 has one shrinkable slot per possible item
-     (project, subitem count, Running, Settled, Snoozed, a sync conflict,
-     source state). Markers keep their width; the project and the source
+     (priority, a source's task icon, project, subitem count, Running,
+     Settled, Snoozed, a sync conflict, source state). Markers keep their width; the project and the source
      state give way with an ellipsis. The estimate and actions keep fixed
      tracks, so every title truncates at the same edge. */
   .backlog-list-row {
     display: grid;
     grid-template-columns:
-      auto repeat(7, minmax(auto, max-content)) minmax(0, 1fr)
+      auto repeat(9, minmax(auto, max-content)) minmax(0, 1fr)
       36px 52px;
     grid-template-rows: auto auto;
     align-content: center;
@@ -1163,11 +1163,31 @@
     padding: 0 0.75rem;
   }
 
+  /* The leading icons step aside too (council round 4): the state leads
+     both lines, and the priority and a source's task icon open line 2, so
+     the title keeps their width. */
   .backlog-list-row > .backlog-item-leading {
+    display: contents;
+  }
+
+  .backlog-list-row .backlog-item-leading > [data-leading="state"] {
     grid-row: 1 / 3;
     grid-column: 1;
     align-self: center;
     margin-right: 0.375rem;
+  }
+
+  .backlog-list-row .backlog-item-leading > [data-leading="priority"],
+  .backlog-list-row .backlog-item-leading > .backlog-task-source-icon {
+    grid-row: 2;
+    order: -2;
+    width: 16px;
+    height: 16px;
+    margin-right: 0.375rem;
+  }
+
+  .backlog-list-row .backlog-item-leading > .backlog-task-project-icon {
+    display: none;
   }
 
   .backlog-list-row > .backlog-item-content,
@@ -1177,7 +1197,7 @@
 
   .backlog-list-row .backlog-item-title {
     grid-row: 1;
-    grid-column: 2 / 10;
+    grid-column: 2 / 12;
     min-width: 0;
   }
 
@@ -1217,7 +1237,7 @@
 
   .backlog-list-row .backlog-item-estimate {
     grid-row: 1 / 3;
-    grid-column: 10;
+    grid-column: 12;
     align-self: center;
     min-width: 0;
     text-align: right;
@@ -1225,7 +1245,7 @@
 
   .backlog-list-row .backlog-item-actions {
     grid-row: 1 / 3;
-    grid-column: 11;
+    grid-column: 13;
     align-self: center;
   }
 

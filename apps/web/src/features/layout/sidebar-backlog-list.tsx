@@ -735,22 +735,18 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
               workItem={workItem}
               actions={actions}
               rows={rows}
-              showStart={false}
               showSettle
               buttonClassName="size-5"
               className="hidden group-focus-within:flex group-hover:flex"
             />
           ) : null}
         </span>
-        {/*
-          The padding clears Start entry, which sits over the end of this line
-          on hover. It stays when the row is at rest, so hovering never
-          re-truncates the title.
-        */}
+        {/* The title runs to the row's edge, as in T3 Code's thread list:
+            the hover actions sit on the project line, never over it. */}
         <span
           data-row-title
           className={cn(
-            "truncate pr-7 text-base leading-5 font-medium",
+            "truncate text-base leading-5 font-medium",
             props.isReturned && "font-semibold",
           )}
         >
@@ -772,19 +768,6 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
           ) : null}
         </span>
       </span>
-      {/*
-        Logging time is the main job, so Start gets its own place: centered at
-        the row's end, level with the title, so the project line's Snooze and
-        Settle still reach the edge.
-      */}
-      {reveal.active ? (
-        <span
-          className="absolute top-1/2 right-2.5 hidden -translate-y-1/2 group-focus-within:flex group-hover:flex"
-          onClick={(event) => event.stopPropagation()}
-        >
-          <StartButton workItem={workItem} actions={actions} rows={rows} />
-        </span>
-      ) : null}
     </ObjectContextMenu>
   );
 });

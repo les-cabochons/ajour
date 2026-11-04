@@ -1506,7 +1506,9 @@
     .time-entry-note {
     grid-row: 1;
     grid-column: 1 / -1;
-    padding-right: 7.5rem;
+    /* A margin, not padding, so the note's box stops at the duration. */
+    margin-right: 7.5rem;
+    padding-right: 0;
     font-size: var(--text-sm);
     font-weight: 500;
   }
