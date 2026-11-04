@@ -160,11 +160,14 @@ export const agentDayTargetSchema = z.object({
 
 /**
  * What a task's time commits as: its own name, another task's (`name`, the
- * name a plugin maps it to), nothing yet while it is Not known yet, or
- * nothing ever when it or its project is Local only.
+ * name a plugin maps it to under the Commit page's Names choice), nothing
+ * yet while it is Not known yet, or nothing ever when it or its project is
+ * Local only. `unknown`: Ajour could not read its plugins in time, and the
+ * task holds a plugin value that may rename it, so neither its own name nor
+ * a mapped one is certain. Show it as unknown, never as its own name.
  */
 export const agentCommitsAsSchema = z.object({
-  kind: z.enum(["own", "task", "not-known-yet", "local-only"]),
+  kind: z.enum(["own", "task", "not-known-yet", "local-only", "unknown"]),
   name: z.string().optional(),
 });
 export type AgentCommitsAs = z.infer<typeof agentCommitsAsSchema>;
@@ -636,7 +639,7 @@ const readToolOutputSchemas = {
   }),
   get_week_lines: weekLinesOutputSchema,
   // Reads for the terminal (#532).
-  /** The running entry is in `running`, when its short id matches. */
+  /** The running entry is in `running` when its short id or its timer's matches. */
   find_entries: z.object({
     entries: z.array(agentTimeEntrySchema),
     running: agentRunningTimerSchema.nullable(),

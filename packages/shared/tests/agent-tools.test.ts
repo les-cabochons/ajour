@@ -316,6 +316,7 @@ describe("reads for the terminal", () => {
     expect(parse({ commitsAs: { kind: "task", name: "07 Run" } })).toBe(true);
     expect(parse({ commitsAs: { kind: "not-known-yet" } })).toBe(true);
     expect(parse({ commitsAs: { kind: "local-only" } })).toBe(true);
+    expect(parse({ commitsAs: { kind: "unknown" } })).toBe(true);
     expect(parse({ pinnedSlot: 0 })).toBe(false);
     expect(parse({ pinnedSlot: 11 })).toBe(false);
     expect(parse({ commitsAs: { kind: "waiting" } })).toBe(false);

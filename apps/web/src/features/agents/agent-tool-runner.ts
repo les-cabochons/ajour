@@ -36,8 +36,14 @@ import {
   runWorkItemWriteTool,
   type WorkItemWriteTool,
 } from "@/features/agents/agent-work-item-tools";
-import { NO_PROPERTY_PLUGINS } from "@/domain/projects/plugin-properties";
-import { listPropertyPlugins } from "@/lib/plugin-project-properties";
+import {
+  NO_PROPERTY_PLUGINS,
+  type PropertyPlugins,
+} from "@/domain/projects/plugin-properties";
+import {
+  getCachedPropertyPlugins,
+  listPropertyPlugins,
+} from "@/lib/plugin-project-properties";
 import {
   releaseSettleComment,
   sendPendingSourceWrites,
@@ -81,6 +87,36 @@ function loadPropertyPlugins() {
   return listPropertyPlugins().catch(() => NO_PROPERTY_PLUGINS);
 }
 
+/**
+ * How long list_projects waits for the plugins that name tasks: well inside
+ * the bridge's 10-second timeout, since discovery can wait behind a plugin
+ * install while the projects themselves are local.
+ */
+export const PLUGIN_NAMES_DEADLINE_MS = 2_000;
+
+/**
+ * The plugins that name tasks for list_projects, read fresh. On a failure or
+ * past PLUGIN_NAMES_DEADLINE_MS, the ones of the last overview this window
+ * holds; undefined without one, so a task a plugin may rename reads
+ * `unknown` instead of its own name. The fresh read still refreshes that
+ * overview when it ends.
+ */
+async function loadNamingPlugins(): Promise<PropertyPlugins | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => resolve(undefined), PLUGIN_NAMES_DEADLINE_MS);
+  });
+  try {
+    const fresh = await Promise.race([
+      listPropertyPlugins().catch(() => undefined),
+      deadline,
+    ]);
+    return fresh ?? getCachedPropertyPlugins();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Each read tool, typed against its output schema. */
 const readTools: {
   [Name in ReadToolName]: (
@@ -97,7 +133,7 @@ const readTools: {
       Date.now(),
     ),
   list_projects: async () =>
-    listProjectsForAgent(localStore.snapshot(), await loadPropertyPlugins()),
+    listProjectsForAgent(localStore.snapshot(), await loadNamingPlugins()),
   list_work_items: (rawInput) =>
     listWorkItemsForAgent(
       localStore.snapshot(),

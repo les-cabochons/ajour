@@ -1369,4 +1369,165 @@ describe("agent reads for the terminal", () => {
         .projects[0]!.tasks[0]!.commitsAs,
     ).toEqual({ kind: "local-only" });
   });
+
+  it("says a task's commit-as name is unknown when the plugins could not be read", () => {
+    const state = createState();
+    const tasks = state.projects[0]!.tasks;
+    state.projects[0]!.tasks = [
+      tasks[0]!,
+      {
+        _id: "task-run",
+        name: "Run",
+        status: "active",
+        createdAt: 1,
+        pluginProperties: { "workday-agent": { task: "07 Run" } },
+      },
+      {
+        _id: "task-same",
+        name: "Support",
+        status: "active",
+        createdAt: 1,
+        pluginProperties: { "workday-agent": { task: "Support" } },
+      },
+      {
+        _id: "task-new",
+        name: "Discovery",
+        status: "active",
+        createdAt: 1,
+        commitAs: "waiting",
+        pluginProperties: { "workday-agent": { task: "08 Discovery" } },
+      },
+      {
+        _id: "task-mine",
+        name: "Learning",
+        status: "active",
+        createdAt: 1,
+        commitAs: "local",
+      },
+    ];
+
+    expect(
+      listProjectsForAgent(state, undefined).projects[0]!.tasks.map((task) => [
+        task.name,
+        task.commitsAs,
+      ]),
+    ).toEqual([
+      ["Build", { kind: "own" }],
+      ["Run", { kind: "unknown" }],
+      ["Support", { kind: "own" }],
+      ["Discovery", { kind: "not-known-yet" }],
+      ["Learning", { kind: "local-only" }],
+    ]);
+  });
+
+  describe("with two plugins that map one task differently", () => {
+    const jiraTask = {
+      pluginId: "jira-agent",
+      capability: {
+        section: "Jira",
+        fields: [
+          { id: "task", label: "Jira task", defaultFrom: "name" as const },
+        ],
+      },
+    };
+    const plugins: PropertyPlugins = {
+      projects: [],
+      tasks: [workdayTask, jiraTask],
+    };
+
+    function stateWithTwoNames(names?: string) {
+      const state = createState();
+      state.projects[0]!.tasks[0]!.pluginProperties = {
+        "workday-agent": { task: "07 Run" },
+        "jira-agent": { task: "OPS-12 Run" },
+      };
+      state.timesheetEntries = [entry({ _id: "e-1" })];
+      state.timers = [];
+      if (names) state.userPreferences.commitLinesNameSource = names;
+      return state;
+    }
+
+    function namesOf(state: LocalAppState) {
+      const listed = listProjectsForAgent(state, plugins).projects[0]!.tasks[0]!
+        .commitsAs;
+      const line = getWeekLinesForAgent(state, {
+        weekDates: WEEK,
+        groupBy: "task",
+        propertyPlugins: plugins,
+        now: NOW,
+      }).sections[0]!.lines[0]!;
+      return { listed, line: line.taskName };
+    }
+
+    it("names the task as the plugin the Names choice selects, as the Commit page does", () => {
+      expect(namesOf(stateWithTwoNames("jira-agent"))).toEqual({
+        listed: { kind: "task", name: "OPS-12 Run" },
+        line: "OPS-12 Run",
+      });
+    });
+
+    it("asks the first plugin when Names is on Ajour", () => {
+      expect(namesOf(stateWithTwoNames())).toEqual({
+        listed: { kind: "task", name: "07 Run" },
+        line: "07 Run",
+      });
+    });
+
+    it("keeps the task's own name when the selected plugin maps none", () => {
+      const state = stateWithTwoNames("jira-agent");
+      state.projects[0]!.tasks[0]!.pluginProperties = {
+        "workday-agent": { task: "07 Run" },
+      };
+      expect(namesOf(state)).toEqual({
+        listed: { kind: "own" },
+        line: "Build",
+      });
+    });
+  });
+
+  describe("a running entry that continues a saved one", () => {
+    const ID_C = "timesheet_9d8c0000-aaaa-4bbb-8ccc-dddddddddddd";
+
+    function stateContinuingB(): LocalAppState {
+      const state = stateWithUuidIds();
+      state.timers[0] = { ...state.timers[0]!, entryId: ID_B };
+      return state;
+    }
+
+    it("is found by its timer's short id, and shows the saved entry's", () => {
+      const result = findEntriesForAgent(
+        stateContinuingB(),
+        { idPrefix: "9d8c7b" },
+        NOW,
+      );
+      expect(result.entries).toEqual([]);
+      expect(result.running).toMatchObject({
+        timerId: TIMER_ID,
+        shortId: "3f2a0000111142228333444455556666",
+      });
+    });
+
+    it("is found by the saved entry's short id, beside that entry", () => {
+      const result = findEntriesForAgent(
+        stateContinuingB(),
+        { idPrefix: "3f2a00" },
+        NOW,
+      );
+      expect(result.entries.map((item) => item.entryId)).toEqual([ID_B]);
+      expect(result.running).toMatchObject({ timerId: TIMER_ID });
+    });
+
+    it("is found beside an unrelated saved entry that shares the timer's prefix", () => {
+      const state = stateContinuingB();
+      state.timesheetEntries.push(entry({ _id: ID_C }));
+
+      const shared = findEntriesForAgent(state, { idPrefix: "9d8c" }, NOW);
+      expect(shared.entries.map((item) => item.entryId)).toEqual([ID_C]);
+      expect(shared.running).toMatchObject({ timerId: TIMER_ID });
+
+      const onlyC = findEntriesForAgent(state, { idPrefix: "9d8c0" }, NOW);
+      expect(onlyC.entries.map((item) => item.entryId)).toEqual([ID_C]);
+      expect(onlyC.running).toBeNull();
+    });
+  });
 });
