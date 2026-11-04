@@ -802,6 +802,254 @@ describe("agent timer and entry tools", () => {
       "Claude Code: Duplicated an entry",
     );
   });
+
+  it("returns each write's Undo token in its output", async () => {
+    const { call, localStore, project } = await setup();
+
+    const started = await call("start_timer", { projectId: project._id });
+
+    expect(started).toMatchObject({
+      ok: true,
+      output: { undoToken: expect.any(String) },
+    });
+    const { undoToken } = (started as { output: { undoToken: string } }).output;
+    expect(offerUndo.mock.calls.at(-1)![0]).toBe(undoToken);
+    expect(localStore.undo(undoToken)).toBe("restored");
+  });
+});
+
+describe("agent delete, discard and undo tools", () => {
+  // Thursday, October 15, 2026, 3 p.m.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 9, 15, 15));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  /** Saves a 30-minute entry on Acme · Build and returns its id. */
+  function saveEntry(
+    context: Awaited<ReturnType<typeof setup>>,
+    localDate = "2026-10-13",
+  ) {
+    const before = new Set(
+      context.localStore.snapshot().timesheetEntries.map((entry) => entry._id),
+    );
+    context.localStore.saveManualTimeEntry({
+      localDate,
+      projectId: context.project._id,
+      taskId: context.task("Build")._id,
+      durationMs: 30 * 60_000,
+    });
+    return context.localStore
+      .snapshot()
+      .timesheetEntries.find((entry) => !before.has(entry._id))!._id;
+  }
+
+  it("deletes entries in one action, leaves a committed one's tombstone, and undo brings them back", async () => {
+    const context = await setup();
+    const { call, localStore, sink } = context;
+    const saved = saveEntry(context);
+    const committed = saveEntry(context, "2026-10-14");
+    localStore.markTimesheetEntriesCommitted([committed]);
+    sink.events.length = 0;
+
+    const deleted = await call("delete_entries", {
+      entryIds: [saved, committed, saved],
+    });
+
+    expect(deleted).toMatchObject({
+      ok: true,
+      output: { deleted: 2, undoToken: expect.any(String) },
+      activity: { action: "Deleted 2 entries", objectTitle: "2 entries" },
+    });
+    expect(localStore.snapshot().timesheetEntries).toEqual([]);
+    expect(
+      localStore.snapshot().timesheetTombstones.map((item) => item.entryId),
+    ).toEqual([committed]);
+    expect(agentCommands(sink)).toEqual([
+      { name: "time_entry.delete", trigger: "agent", surface: null },
+    ]);
+    const { undoToken } = (deleted as { output: { undoToken: string } }).output;
+    expect(offerUndo.mock.calls.at(-1)).toEqual([
+      undoToken,
+      expect.objectContaining({ title: "Claude Code: Deleted 2 entries" }),
+    ]);
+
+    expect(await call("undo", { undoToken })).toMatchObject({
+      ok: true,
+      output: { undone: "Deleted 2 entries", undoToken: null },
+      activity: { action: "Undid: Deleted 2 entries" },
+    });
+    expect(
+      localStore
+        .snapshot()
+        .timesheetEntries.map((entry) => entry._id)
+        .sort(),
+    ).toEqual([saved, committed].sort());
+    expect(localStore.snapshot().timesheetTombstones).toEqual([]);
+  });
+
+  it("refuses the whole call when one id is the running entry, and deletes nothing", async () => {
+    const context = await setup();
+    const { call, localStore } = context;
+    const other = saveEntry(context);
+    const continued = saveEntry(context, "2026-10-15");
+    localStore.continueTimesheetEntry(continued);
+
+    expect(
+      await call("delete_entries", { entryIds: [other, continued] }),
+    ).toMatchObject({ ok: false, error: "Stop the running entry first" });
+    expect(localStore.snapshot().timesheetEntries).toHaveLength(2);
+
+    // A running entry that started from nothing is refused by its timer id.
+    localStore.saveTimer(localStore.snapshot().timers[0]!._id);
+    localStore.startTimer({ projectId: context.project._id });
+    const timerId = localStore.snapshot().timers[0]!._id;
+    expect(
+      await call("delete_entries", { entryIds: [other, timerId] }),
+    ).toMatchObject({ ok: false, error: "Stop the running entry first" });
+    expect(localStore.snapshot().timesheetEntries).toHaveLength(2);
+    expect(localStore.snapshot().timers).toHaveLength(1);
+  });
+
+  it("refuses an unknown id and an empty list", async () => {
+    const context = await setup();
+    const { call, localStore } = context;
+    const entryId = saveEntry(context);
+
+    expect(
+      await call("delete_entries", { entryIds: [entryId, "timesheet_gone"] }),
+    ).toMatchObject({
+      ok: false,
+      error: "No entry has the id timesheet_gone. Call list_time_entries.",
+    });
+    expect(await call("delete_entries", { entryIds: [] })).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("entryIds"),
+    });
+    expect(localStore.snapshot().timesheetEntries).toHaveLength(1);
+  });
+
+  it("discards a running entry that started from nothing, and undo brings it back", async () => {
+    const { call, localStore, project } = await setup();
+    await call("start_timer", { projectId: project._id });
+    vi.setSystemTime(new Date(2026, 9, 15, 15, 25));
+
+    const discarded = await call("discard_timer");
+
+    expect(discarded).toMatchObject({
+      ok: true,
+      output: { discardedMinutes: 25, undoToken: expect.any(String) },
+      activity: {
+        action: "Discarded the running entry",
+        objectTitle: "Acme",
+      },
+    });
+    expect(localStore.snapshot().timers).toEqual([]);
+    expect(localStore.snapshot().timesheetEntries).toEqual([]);
+    expect(offerUndo.mock.calls.at(-1)![1].title).toBe(
+      "Claude Code: Discarded the running entry",
+    );
+
+    const { undoToken } = (discarded as { output: { undoToken: string } })
+      .output;
+    expect(await call("undo", { undoToken })).toMatchObject({
+      ok: true,
+      output: { undone: "Discarded the running entry" },
+    });
+    expect(localStore.snapshot().timers).toHaveLength(1);
+  });
+
+  it("keeps a continued entry's saved time and drops only the time since it last started", async () => {
+    const context = await setup();
+    const { call, localStore } = context;
+    const entryId = saveEntry(context, "2026-10-15");
+    localStore.continueTimesheetEntry(entryId);
+    vi.setSystemTime(new Date(2026, 9, 15, 15, 20));
+
+    expect(await call("discard_timer")).toMatchObject({
+      ok: true,
+      output: { discardedMinutes: 20 },
+    });
+    expect(localStore.snapshot().timers).toEqual([]);
+    expect(localStore.snapshot().timesheetEntries).toMatchObject([
+      { _id: entryId, durationMs: 30 * 60_000 },
+    ]);
+  });
+
+  it("refuses to discard when nothing runs", async () => {
+    const { call } = await setup();
+    expect(await call("discard_timer")).toMatchObject({
+      ok: false,
+      error: "Nothing is running",
+    });
+  });
+
+  it("refuses an undo a later action replaced, and one whose record changed since", async () => {
+    const context = await setup();
+    const { call, localStore, project, task } = context;
+    const entryId = saveEntry(context);
+
+    const deleted = (await call("delete_entries", {
+      entryIds: [entryId],
+    })) as { output: { undoToken: string } };
+    expect(deleted.output).toMatchObject({ deleted: 1 });
+    await call("create_entry", {
+      date: "2026-10-14",
+      projectId: project._id,
+      minutes: 15,
+    });
+    expect(
+      await call("undo", { undoToken: deleted.output.undoToken }),
+    ).toMatchObject({
+      ok: false,
+      error: "That change can't be undone any more.",
+    });
+    expect(
+      localStore
+        .snapshot()
+        .timesheetEntries.some((entry) => entry._id === entryId),
+    ).toBe(false);
+
+    // The user edits the entry the agent edited, which keeps no Undo.
+    const added = localStore.snapshot().timesheetEntries[0]!;
+    const edited = (await call("edit_entry", {
+      entryId: added._id,
+      minutes: 45,
+    })) as { output: { undoToken: string } };
+    localStore.updateTimesheetEntry(added._id, {
+      projectId: project._id,
+      taskId: task("Build")._id,
+      durationMs: 60 * 60_000,
+    });
+    expect(
+      await call("undo", { undoToken: edited.output.undoToken }),
+    ).toMatchObject({
+      ok: false,
+      error: "Can't undo. The entry changed after that action.",
+    });
+    expect(localStore.snapshot().timesheetEntries[0]!.durationMs).toBe(
+      60 * 60_000,
+    );
+  });
+
+  it("refuses an undo whose toast already closed", async () => {
+    const context = await setup();
+    const { call, localStore } = context;
+    const entryId = saveEntry(context);
+    const deleted = (await call("delete_entries", {
+      entryIds: [entryId],
+    })) as { output: { undoToken: string } };
+
+    localStore.forgetUndo(deleted.output.undoToken);
+
+    expect(
+      await call("undo", { undoToken: deleted.output.undoToken }),
+    ).toMatchObject({
+      ok: false,
+      error: "That change can't be undone any more.",
+    });
+  });
 });
 
 describe("agent tools on submitted weeks", () => {
@@ -964,6 +1212,7 @@ describe("agent tools on submitted weeks", () => {
         { changes: [{ entryId, version: "v:00000000" }] },
       ],
       ["start_timer", { projectId: project._id }],
+      ["delete_entries", { entryIds: [entryId] }],
     ] as const) {
       expect(await call(tool, input), tool).toMatchObject({
         ok: false,
@@ -971,6 +1220,20 @@ describe("agent tools on submitted weeks", () => {
       });
     }
     expect(localStore.snapshot().timers).toEqual([]);
+    // One entry in a submitted week refuses the whole call.
+    const created = (await call("create_entry", {
+      date: "2026-10-20",
+      projectId: project._id,
+      minutes: 30,
+    })) as { output: { entryId: string } };
+    expect(
+      await call("delete_entries", {
+        entryIds: [created.output.entryId, entryId],
+      }),
+    ).toMatchObject({ ok: false, error: reason });
+    expect(
+      localStore.snapshot().timesheetEntries.map((entry) => entry._id),
+    ).toEqual(expect.arrayContaining([entryId, created.output.entryId]));
     // A copy to an open week leaves the submitted entry as it is.
     expect(
       await call("duplicate_entry", { entryId, date: "2026-10-20" }),

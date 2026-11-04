@@ -306,6 +306,7 @@ const AJOUR_INSTRUCTIONS = [
   "Ajour is the user's local time tracker: timers, time entries, projects and tasks, and a backlog.",
   "Use the ids that the list tools return. Durations are in minutes unless a field says hours.",
   "A write refused by Ajour returns an error with the reason. Do not retry it unchanged.",
+  "Each write returns an undoToken. Pass it to undo to take the write back while its Undo toast shows.",
   "A submitted week is read-only: Ajour refuses writes to its entries until the user reopens it.",
 ].join("\n");
 
@@ -342,6 +343,11 @@ const TOOL_DESCRIPTIONS: Record<AgentTaskMcpTool | SessionToolName, string> = {
     "Marks changes as committed once the external timesheet saved them: saves each entry's committed copy, or forgets a deleted entry. Pass each change's entryId and version from get_week_changes. When any change differs from its version, because the user edited, deleted or restored the entry since, Ajour refuses the whole call: call get_week_changes again and apply the current values. A deleted change's ID is accepted once: after its tombstone is cleared, the ID is unknown and the call refuses. Never mark a change you did not apply. Refused on a submitted week.",
   submit_week:
     "Submits the week in Ajour: locks it, so its entries are read-only, for agents too, until the user reopens it. Refuses while a change is not committed or the running entry is in the week, with the reason. Call it last, once the external timesheet holds the week. `weekOf` is any date in the week. Pass the `version` from your last get_week_status call: when the week changed since, Ajour refuses, and you call get_week_status again.",
+  delete_entries:
+    "Deletes saved entries, 1 to 500, in one action, as Delete does in Ajour. A committed entry then shows as a deleted change. Refuses the whole call, deleting nothing, when an id is the running entry or an entry in a submitted week. Use discard_timer for the running entry.",
+  discard_timer:
+    "Discards the running entry, as Discard does in Ajour: an entry started from nothing disappears, and a continued entry keeps its saved time and loses only the time since it last started. Returns the discarded minutes.",
+  undo: "Takes back one of your writes, as Undo in its toast does: pass the `undoToken` the write returned. Only the last action can be undone, and only while its toast shows: Ajour refuses once a later action replaced it, or when a record changed since.",
   create_work_item:
     "Adds a manual backlog item, or a subitem with parentWorkItemId.",
   edit_work_item:

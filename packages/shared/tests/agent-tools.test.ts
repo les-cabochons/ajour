@@ -87,8 +87,9 @@ describe("agent tool contracts", () => {
       dataToolOutputSchemas.submit_week.parse({
         weekOf: "2026-10-12",
         locked: true,
+        undoToken: "undo_1",
       }),
-    ).toEqual({ weekOf: "2026-10-12", locked: true });
+    ).toEqual({ weekOf: "2026-10-12", locked: true, undoToken: "undo_1" });
     expect(
       dataToolOutputSchemas.get_week_status.parse({
         weekOf: "2026-10-12",
@@ -123,6 +124,42 @@ describe("agent tool contracts", () => {
     expect(parse({ changes: [{ entryId: "e1", version: "v:0a1b2c3d" }] })).toBe(
       true,
     );
+  });
+
+  it("deletes 1 to 500 entries, and gives every write its Undo token", () => {
+    const parse = (entryIds: unknown) =>
+      writeToolInputSchemas.delete_entries.safeParse({ entryIds }).success;
+
+    expect(parse([])).toBe(false);
+    expect(parse(["e1"])).toBe(true);
+    expect(parse(Array.from({ length: 500 }, (_, index) => `e${index}`))).toBe(
+      true,
+    );
+    expect(parse(Array.from({ length: 501 }, (_, index) => `e${index}`))).toBe(
+      false,
+    );
+    expect(writeToolInputSchemas.discard_timer.parse({})).toEqual({});
+    expect(
+      writeToolInputSchemas.undo.safeParse({ undoToken: "" }).success,
+    ).toBe(false);
+    for (const tool of Object.keys(writeToolInputSchemas)) {
+      const shape = (
+        dataToolOutputSchemas as Record<
+          string,
+          { shape: Record<string, unknown> }
+        >
+      )[tool]!.shape;
+      expect(shape, tool).toHaveProperty("undoToken");
+    }
+    expect(
+      dataToolOutputSchemas.delete_entries.safeParse({ deleted: 2 }).success,
+    ).toBe(false);
+    expect(
+      dataToolOutputSchemas.undo.parse({
+        undone: "Deleted 2 entries",
+        undoToken: null,
+      }),
+    ).toEqual({ undone: "Deleted 2 entries", undoToken: null });
   });
 
   it("accepts a deleted change with committed values only", () => {

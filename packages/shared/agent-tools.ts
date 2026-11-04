@@ -221,6 +221,13 @@ export const writeToolInputSchemas = {
   }),
   /** `version` is the one get_week_status returned. A different one refuses. */
   submit_week: z.object({ weekOf: isoDateSchema, version: z.string() }),
+  /** Deletes every listed entry in one action, or none of them. */
+  delete_entries: z.object({
+    entryIds: z.array(z.string().min(1)).min(1).max(500),
+  }),
+  discard_timer: z.object({}),
+  /** The `undoToken` a write tool returned. */
+  undo: z.object({ undoToken: z.string().min(1) }),
   create_work_item: z.object({
     title: z.string().trim().min(1).max(500),
     description: z.string().max(10_000).optional(),
@@ -359,11 +366,8 @@ const weekPaceSchema = z.object({
   status: z.enum(["on-pace", "under", "over"]),
 });
 
-/**
- * Output schemas of the read and write tools, by MCP tool name. The API
- * checks each renderer result against its schema before the agent sees it.
- */
-export const dataToolOutputSchemas = {
+/** Output schemas of the read tools, by MCP tool name. */
+const readToolOutputSchemas = {
   get_running_timer: z.object({ running: agentRunningTimerSchema.nullable() }),
   list_time_entries: z.object({
     entries: z.array(agentTimeEntrySchema),
@@ -462,6 +466,13 @@ export const dataToolOutputSchemas = {
     /** Ask the user before submitting a week whose status is not "on-pace". */
     pace: weekPaceSchema,
   }),
+} as const satisfies Record<ReadToolName, z.AnyZodObject>;
+
+/**
+ * What each write tool returns, by MCP tool name, before Ajour adds the
+ * write's `undoToken`.
+ */
+export const writeToolResultSchemas = {
   start_timer: z.object({ running: agentRunningTimerSchema }),
   stop_timer: z.object({
     stopped: z.literal(true),
@@ -475,6 +486,12 @@ export const dataToolOutputSchemas = {
   /** How many of the listed changes Ajour committed. */
   mark_entries_committed: z.object({ committed: z.number() }),
   submit_week: z.object({ weekOf: z.string(), locked: z.literal(true) }),
+  /** How many entries Ajour deleted. */
+  delete_entries: z.object({ deleted: z.number() }),
+  /** The counted minutes the discard dropped. A continued entry keeps its saved time. */
+  discard_timer: z.object({ discardedMinutes: z.number() }),
+  /** The undone action, as its Undo toast names it, such as "Deleted 2 entries". */
+  undo: z.object({ undone: z.string() }),
   create_work_item: agentWorkItemSchema,
   edit_work_item: agentWorkItemSchema.extend({
     /**
@@ -507,6 +524,40 @@ export const dataToolOutputSchemas = {
   unsnooze_work_item: agentWorkItemSchema,
   archive_work_item: agentWorkItemSchema,
   restore_work_item: agentWorkItemSchema,
+} as const satisfies Record<WriteToolName, z.AnyZodObject>;
+export type WriteToolResult<Name extends WriteToolName> = z.infer<
+  (typeof writeToolResultSchemas)[Name]
+>;
+
+/** Adds the Undo token every write tool returns. */
+function withUndoToken<Schema extends z.AnyZodObject>(schema: Schema) {
+  return schema.extend({
+    /**
+     * Pass it to undo to take the write back while its Undo toast shows.
+     * Null when the write changed nothing Ajour can undo.
+     */
+    undoToken: z.string().nullable(),
+  });
+}
+
+const writeToolOutputSchemas = Object.fromEntries(
+  Object.entries(writeToolResultSchemas).map(([name, schema]) => [
+    name,
+    withUndoToken(schema),
+  ]),
+) as {
+  [Name in WriteToolName]: ReturnType<
+    typeof withUndoToken<(typeof writeToolResultSchemas)[Name]>
+  >;
+};
+
+/**
+ * Output schemas of the read and write tools, by MCP tool name. The API
+ * checks each renderer result against its schema before the agent sees it.
+ */
+export const dataToolOutputSchemas = {
+  ...readToolOutputSchemas,
+  ...writeToolOutputSchemas,
 } as const satisfies Record<ReadToolName | WriteToolName, z.AnyZodObject>;
 export type DataToolOutput<Name extends ReadToolName | WriteToolName> = z.infer<
   (typeof dataToolOutputSchemas)[Name]

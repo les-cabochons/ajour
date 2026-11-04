@@ -28,6 +28,7 @@ import {
   type AgentWriteOutcome,
   type EntryWriteTool,
 } from "@/features/agents/agent-write-tools";
+import { rememberAgentWrite, runAgentUndo } from "@/features/agents/agent-undo";
 import {
   WORK_ITEM_WRITE_TOOLS,
   runWorkItemWriteTool,
@@ -136,7 +137,10 @@ function isWorkItemWriteTool(tool: string): tool is WorkItemWriteTool {
   return (WORK_ITEM_WRITE_TOOLS as readonly string[]).includes(tool);
 }
 
-/** Shows the Undo toast with the client's name and builds the result. */
+/**
+ * Shows the Undo toast with the client's name and builds the result, whose
+ * output carries the toast's token for the undo tool.
+ */
 function finishWrite(
   call: BridgeToolCall,
   outcome: AgentWriteOutcome,
@@ -145,6 +149,7 @@ function finishWrite(
   const sourceWriteIds = outcome.sourceWriteIds ?? [];
   const settleComments = outcome.settleComments ?? [];
   unit?.set({ agent_tool: { undo_offered: outcome.undoToken !== null } });
+  rememberAgentWrite(outcome);
   offerUndo(outcome.undoToken, {
     title: `${call.client.name}: ${outcome.action}`,
     subject: outcome.undoSubject,
@@ -162,7 +167,7 @@ function finishWrite(
   return {
     requestId: call.requestId,
     ok: true,
-    output: outcome.output,
+    output: { ...outcome.output, undoToken: outcome.undoToken },
     activity: {
       action: outcome.action,
       objectId: outcome.objectId,
@@ -219,6 +224,9 @@ export async function runAgentToolCall(
         runWorkItemWriteTool(tool, call.input, call.client),
       );
       return asAgent(() => finishWrite(call, outcome, unit));
+    }
+    if (tool === "undo") {
+      return asAgent(() => finishWrite(call, runAgentUndo(call.input), unit));
     }
     if (tool === "post_work_item_comment") {
       return await postCommentForAgent(call, unit);
