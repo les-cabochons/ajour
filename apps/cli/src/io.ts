@@ -18,6 +18,8 @@ export interface CliIo {
   readStdin(): Promise<string>;
   /** Waits, for `status --watch`. Resolves false once the user quits. */
   wait(ms: number): Promise<boolean>;
+  /** Gives the terminal back after `wait`: raw mode off, input paused. */
+  releaseInput(): void;
 }
 
 export interface OutputStream {
@@ -29,6 +31,7 @@ export interface OutputStream {
 
 export function processIo(): CliIo {
   let quit = false;
+  let release: (() => void) | undefined;
   return {
     stdout: {
       write: (text) => void process.stdout.write(text),
@@ -49,31 +52,41 @@ export function processIo(): CliIo {
     readStdin,
     async wait(ms) {
       if (quit) return false;
-      listenForQuit(() => (quit = true));
+      release ??= listenForQuit(() => (quit = true));
       await new Promise((resolve) => setTimeout(resolve, ms));
       return !quit;
+    },
+    releaseInput() {
+      release?.();
+      release = undefined;
     },
   };
 }
 
-let quitListening = false;
-
-/** q or Ctrl-C on a terminal, or SIGINT anywhere, ends `--watch`. */
-function listenForQuit(onQuit: () => void) {
-  if (quitListening) return;
-  quitListening = true;
-  process.once("SIGINT", onQuit);
-  if (!process.stdin.isTTY) return;
-  process.stdin.setRawMode(true);
-  process.stdin.resume();
-  process.stdin.on("data", (chunk: Buffer) => {
+/**
+ * q or Ctrl-C on a terminal, or SIGINT anywhere, ends `--watch`. Returns
+ * what undoes it, which `status` calls however the watch ends.
+ */
+function listenForQuit(onQuit: () => void): () => void {
+  const onSignal = () => onQuit();
+  process.once("SIGINT", onSignal);
+  const input = process.stdin;
+  const onData = (chunk: Buffer) => {
     const key = chunk.toString("utf8");
-    if (key === "q" || key === "\u0003") {
-      process.stdin.setRawMode(false);
-      process.stdin.pause();
-      onQuit();
-    }
-  });
+    if (key === "q" || key === "\u0003") onQuit();
+  };
+  if (input.isTTY) {
+    input.setRawMode(true);
+    input.resume();
+    input.on("data", onData);
+  }
+  return () => {
+    process.off("SIGINT", onSignal);
+    if (!input.isTTY) return;
+    input.off("data", onData);
+    input.setRawMode(false);
+    input.pause();
+  };
 }
 
 async function readStdin(): Promise<string> {

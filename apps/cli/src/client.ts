@@ -13,6 +13,7 @@ import {
   type WriteToolInput,
   type WriteToolName,
 } from "../../../packages/shared/agent-tools.ts";
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { RefusedError, UnreachableError } from "./errors.ts";
 
 export type ToolName = ReadToolName | WriteToolName;
@@ -88,9 +89,11 @@ export function mcpClient(options: {
           ? new UnreachableError(message)
           : new RefusedError(message);
       }
-      return dataToolOutputSchemas[tool].parse(
+      const parsed = dataToolOutputSchemas[tool].safeParse(
         result.structuredContent,
-      ) as DataToolOutput<typeof tool>;
+      );
+      if (!parsed.success) throw new UnreachableError(VERSION_MISMATCH);
+      return parsed.data as DataToolOutput<typeof tool>;
     },
     async close() {
       if (!connected) return;
@@ -115,14 +118,39 @@ function textOf(content: unknown): string {
   return text || "Ajour refused the action.";
 }
 
-/** Turns a transport failure into the sentence the user reads. */
-function toCliError(error: unknown): Error {
+export const VERSION_MISMATCH =
+  "Ajour and ajour don't speak the same version. Update both to the same release.";
+
+/**
+ * Turns a transport or protocol failure into the sentence the user reads.
+ * Every one is "out of reach" (exit 3): only a tool's own error result is a
+ * refusal. The SDK's own message is kept for an unknown failure, but the
+ * token never reaches it: config.ts refuses a token that isn't well formed.
+ */
+export function toCliError(error: unknown): UnreachableError {
+  if (error instanceof UnreachableError) return error;
   if (error instanceof StreamableHTTPError) {
     if (error.code === 404) return new UnreachableError(MCP_OFF);
     if (error.code === 401) return new UnreachableError(TOKEN_REFUSED);
+    return new UnreachableError(
+      `Ajour's MCP endpoint answered ${error.code}. Run: ajour connect`,
+    );
+  }
+  if (error instanceof McpError) {
+    if (error.code === ErrorCode.RequestTimeout) {
+      return new UnreachableError(BRIDGE_TIMEOUT_MESSAGE);
+    }
+    if (
+      error.code === ErrorCode.MethodNotFound ||
+      (error.code === ErrorCode.InvalidParams &&
+        /not found/i.test(error.message))
+    ) {
+      return new UnreachableError(VERSION_MISMATCH);
+    }
   }
   if (isConnectionFailure(error)) return new UnreachableError(NOT_RUNNING);
-  return error instanceof Error ? error : new Error(String(error));
+  const message = error instanceof Error ? error.message : String(error);
+  return new UnreachableError(`Ajour couldn't be reached: ${message}`);
 }
 
 function isConnectionFailure(error: unknown): boolean {

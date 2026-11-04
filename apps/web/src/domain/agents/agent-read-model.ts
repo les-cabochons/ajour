@@ -112,6 +112,7 @@ export function toAgentEntry(
         ? "committed"
         : "saved",
     minutes: Math.round(entry.durationMs / MINUTE),
+    savedAt: new Date(entry.usedAt ?? entry.committedAt).toISOString(),
     ...(entry.note ? { note: entry.note } : {}),
     ...(entry.workItemId ? { workItemId: entry.workItemId } : {}),
     ...describeProjectTask(state, entry.projectId, entry.taskId),

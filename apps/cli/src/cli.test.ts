@@ -1,5 +1,13 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -37,7 +45,12 @@ interface FakeTerminal {
 }
 
 async function terminal(
-  options: { tty?: boolean; env?: Record<string, string>; stdin?: string } = {},
+  options: {
+    tty?: boolean;
+    columns?: number;
+    env?: Record<string, string>;
+    stdin?: string;
+  } = {},
 ): Promise<FakeTerminal> {
   const home = await mkdtemp(path.join(os.tmpdir(), "ajour-cli-home-"));
   cleanups.push(() => rm(home, { recursive: true, force: true }));
@@ -49,7 +62,11 @@ async function terminal(
     out: () => out,
     err: () => err,
     io: {
-      stdout: { write: (text) => void (out += text), isTTY: tty, columns: 100 },
+      stdout: {
+        write: (text) => void (out += text),
+        isTTY: tty,
+        columns: options.columns ?? 100,
+      },
       stderr: { write: (text) => void (err += text), isTTY: tty },
       env: {
         XDG_CONFIG_HOME: path.join(home, "config"),
@@ -62,6 +79,7 @@ async function terminal(
       readSecret: async () => options.stdin ?? "",
       readStdin: async () => options.stdin ?? "",
       wait: async () => false,
+      releaseInput: () => undefined,
     },
   };
 }
@@ -117,7 +135,13 @@ function window(state: WindowState) {
       call.tool === "get_running_timer"
         ? { running: state.running }
         : call.tool === "list_time_entries"
-          ? { entries: state.entries, running: state.running }
+          ? {
+              entries: state.entries,
+              running:
+                state.listedRunning === undefined
+                  ? state.running
+                  : state.listedRunning,
+            }
           : undefined;
     return output
       ? { requestId: call.requestId, ok: true, output }
@@ -133,6 +157,8 @@ function window(state: WindowState) {
 interface WindowState {
   running: AgentRunningTimer | null;
   entries: AgentTimeEntry[];
+  /** What list_time_entries says runs, when it differs from get_running_timer. */
+  listedRunning?: AgentRunningTimer | null;
 }
 
 async function connectedApi(
@@ -429,5 +455,281 @@ describe("the ajour process", () => {
       stdout: "",
       stderr: "error: Not connected to Ajour. Run: ajour connect\n",
     });
+  });
+});
+
+describe("tokens", () => {
+  it("never prints a malformed token, from the environment or the file", async () => {
+    const started = await api();
+    const term = await terminal({
+      env: {
+        AJOUR_URL: started.baseUrl,
+        AJOUR_TOKEN: "ajour_abc\nSECRET-TAIL",
+      },
+    });
+
+    expect(await run(["status"], term.io)).toBe(3);
+    expect(term.err()).toBe(
+      "error: AJOUR_TOKEN isn't a token Ajour created. Run: ajour connect\n",
+    );
+    expect(term.out() + term.err()).not.toContain("SECRET-TAIL");
+
+    const fromFile = await terminal({ env: { AJOUR_URL: started.baseUrl } });
+    await mkdir(path.join(fromFile.home, "config", "ajour"), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(fromFile.home, "config", "ajour", "token"),
+      "ajour_abc SECRET-TAIL\n",
+    );
+    expect(await run(["status"], fromFile.io)).toBe(3);
+    expect(fromFile.err()).toBe(
+      "error: The saved token isn't a token Ajour created. Run: ajour connect\n",
+    );
+  });
+
+  it("refuses to save a malformed token without echoing it", async () => {
+    const { api } = await connectedApi();
+    const term = await terminal({
+      stdin: "ajour_abc\u0007SECRET",
+      env: { AJOUR_URL: api.baseUrl },
+    });
+
+    expect(await run(["connect", "--token-stdin"], term.io)).toBe(2);
+    expect(term.err()).toBe("usage: That isn't a token Ajour created.\n");
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "replaces an existing token file without ever widening its rights",
+    async () => {
+      const { api, token } = await connectedApi();
+      const term = await terminal({
+        stdin: token,
+        env: { AJOUR_URL: api.baseUrl },
+      });
+      const dir = path.join(term.home, "config", "ajour");
+      await mkdir(dir, { recursive: true });
+      await writeFile(path.join(dir, "token"), "ajour_old\n", { mode: 0o644 });
+
+      expect(await run(["connect", "--token-stdin"], term.io)).toBe(0);
+
+      expect((await stat(path.join(dir, "token"))).mode & 0o777).toBe(0o600);
+      expect((await readFile(path.join(dir, "token"), "utf8")).trim()).toBe(
+        token,
+      );
+      expect(await readdir(dir)).toEqual(["token"]);
+    },
+  );
+
+  it("saves a working token with no window, and says to open Ajour", async () => {
+    const started = await api();
+    const { token } = await enableMcpWithClient(started);
+    const term = await terminal({
+      stdin: token,
+      env: { AJOUR_URL: started.baseUrl },
+    });
+
+    expect(await run(["connect", "--token-stdin"], term.io)).toBe(0);
+    expect(term.err()).toContain(
+      "Ajour's window isn't open, so commands can't read your entries yet. Open Ajour to use them.",
+    );
+    const saved = path.join(term.home, "config", "ajour", "token");
+    expect((await readFile(saved, "utf8")).trim()).toBe(token);
+  });
+});
+
+describe("arguments", () => {
+  it("gives exit 2 for a global option missing its value", async () => {
+    const term = await terminal();
+
+    expect(await run(["--color"], term.io)).toBe(2);
+    expect(term.err()).toMatch(/^usage: Option '--color <value>'/);
+  });
+
+  it("refuses arguments a command doesn't take", async () => {
+    const term = await terminal();
+
+    expect(await run(["status", "nonsense"], term.io)).toBe(2);
+    expect(await run(["status", "--", "--bogus"], term.io)).toBe(2);
+    expect(term.err()).toBe(
+      'usage: status takes no arguments, not "nonsense"\n' +
+        'usage: status takes no arguments, not "--bogus"\n',
+    );
+  });
+});
+
+describe("ajour status, more cases", () => {
+  async function terminalFor(state: WindowState, options = {}) {
+    const { api, token } = await connectedApi(state);
+    return terminal({
+      ...options,
+      env: { AJOUR_URL: api.baseUrl, AJOUR_TOKEN: token, NO_COLOR: "1" },
+    });
+  }
+
+  it("counts today from one read, even when the entry stops between reads", async () => {
+    const term = await terminalFor({
+      running: { ...running, countedMinutes: 150, countedSeconds: 9000 },
+      listedRunning: null,
+      entries: [
+        {
+          entryId: "e1",
+          date: TODAY,
+          state: "saved",
+          minutes: 150,
+          taskName: "07 Export",
+        },
+      ],
+    });
+
+    await run(["status"], term.io);
+
+    expect(term.out()).toBe("○ Nothing running · today 2:30\n");
+  });
+
+  it("shows an entry still running from yesterday, without adding it to today", async () => {
+    const term = await terminalFor({
+      running: { ...running, date: "2026-11-03" },
+      listedRunning: null,
+      entries: todayEntries,
+    });
+
+    await run(["status"], term.io);
+
+    expect(term.out()).toContain("started 2026-11-03 · today 5:15");
+  });
+
+  it("names the last saved entry when nothing runs", async () => {
+    const term = await terminalFor({
+      running: null,
+      entries: [
+        {
+          ...todayEntries[0]!,
+          savedAt: new Date(NOW - 45 * 60_000).toISOString(),
+        },
+        {
+          ...todayEntries[1]!,
+          savedAt: new Date(NOW - 3 * 3_600_000).toISOString(),
+        },
+      ],
+    });
+
+    await run(["status"], term.io);
+
+    expect(term.out()).toBe(
+      "○ Nothing running · today 2:45 · last: 04 Review, 45m ago\n",
+    );
+  });
+
+  it("fits each line to the terminal and keeps a note on one line", async () => {
+    const term = await terminalFor(
+      {
+        running: {
+          ...running,
+          note: "Fix export rounding\nfor the Workday file",
+        },
+        entries: todayEntries,
+      },
+      { tty: true, columns: 30 },
+    );
+
+    await run(["status"], term.io);
+
+    expect(term.out()).toBe(
+      "● 1:24:07  Fix export roundi…\n" + "  AJR · 07 Export · since 13…\n",
+    );
+  });
+
+  it("streams one line per second with --short --watch", async () => {
+    const term = await terminalFor({ running, entries: todayEntries });
+    let clock = NOW;
+    let waits = 0;
+    const io: CliIo = {
+      ...term.io,
+      now: () => clock,
+      async wait(ms) {
+        clock += ms;
+        waits += 1;
+        return waits < 3;
+      },
+    };
+
+    expect(await run(["status", "-s", "--watch"], io)).toBe(0);
+
+    expect(term.out()).toBe(
+      "● 1:24 Fix export rounding\n" +
+        "● 1:24 Fix export rounding\n" +
+        "● 1:24 Fix export rounding\n",
+    );
+  });
+
+  it("lets go of the terminal when watching fails", async () => {
+    const started = await api();
+    const { token } = await enableMcpWithClient(started);
+    const fake = await openFakeWindow(
+      started,
+      window({ running, entries: todayEntries }),
+    );
+    const term = await terminal({
+      tty: true,
+      env: { AJOUR_URL: started.baseUrl, AJOUR_TOKEN: token },
+    });
+    let clock = NOW;
+    let released = 0;
+    const io: CliIo = {
+      ...term.io,
+      now: () => clock,
+      async wait(ms) {
+        clock += ms * 10;
+        await fake.close();
+        return true;
+      },
+      releaseInput: () => void (released += 1),
+    };
+
+    expect(await run(["status", "--watch"], io)).toBe(3);
+    expect(released).toBe(1);
+  });
+});
+
+describe("ajour as a process", () => {
+  const main = fileURLToPath(new URL("./main.ts", import.meta.url));
+
+  function ajour(args: string[], env: Record<string, string>, stdin = "") {
+    return new Promise<{ code: number; stdout: string; stderr: string }>(
+      (resolve) => {
+        const child = execFile(
+          process.execPath,
+          ["--experimental-strip-types", "--no-warnings", main, ...args],
+          { env: { ...process.env, AJOUR_TOKEN: "", ...env } },
+          (error, stdout, stderr) =>
+            resolve({
+              code: error ? Number((error as { code?: number }).code ?? 1) : 0,
+              stdout,
+              stderr,
+            }),
+        );
+        child.stdin?.end(stdin);
+      },
+    );
+  }
+
+  it("connects, then reads status with the saved token alone", async () => {
+    const { api, token } = await connectedApi();
+    const home = await mkdtemp(path.join(os.tmpdir(), "ajour-cli-flow-"));
+    cleanups.push(() => rm(home, { recursive: true, force: true }));
+    const env = {
+      AJOUR_URL: api.baseUrl,
+      XDG_CONFIG_HOME: path.join(home, "config"),
+      XDG_STATE_HOME: path.join(home, "state"),
+      NO_COLOR: "1",
+    };
+
+    const connected = await ajour(["connect", "--token-stdin"], env, token);
+    expect(connected.code).toBe(0);
+
+    const shown = await ajour(["status"], env);
+    expect(shown).toMatchObject({ code: 0, stderr: "" });
+    expect(shown.stdout).toContain("Fix export rounding");
   });
 });

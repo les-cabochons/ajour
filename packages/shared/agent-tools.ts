@@ -321,6 +321,8 @@ export const agentTimeEntrySchema = z.object({
    */
   state: z.enum(["saved", "committed", "running"]),
   minutes: z.number(),
+  /** When Stop or an edit last saved the entry, as an ISO time. */
+  savedAt: z.string().optional(),
   note: z.string().optional(),
   workItemId: z.string().optional(),
 });

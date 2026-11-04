@@ -14,6 +14,8 @@ type Values = Record<string, string | boolean | undefined>;
 
 interface Command {
   options: Options;
+  /** How many arguments it takes after its name. */
+  arguments: number;
   run(ctx: Context, values: Values, positionals: string[]): Promise<number>;
 }
 
@@ -28,6 +30,7 @@ const GLOBAL_OPTIONS = {
 const COMMANDS: Record<string, Command> = {
   connect: {
     options: { "token-stdin": { type: "boolean" } },
+    arguments: 0,
     run: (ctx, values) =>
       connect(ctx, { tokenStdin: values["token-stdin"] === true }),
   },
@@ -37,6 +40,7 @@ const COMMANDS: Record<string, Command> = {
       idle: { type: "string" },
       watch: { type: "boolean", short: "w" },
     },
+    arguments: 0,
     run: (ctx, values) =>
       status(ctx, {
         short: values.short === true,
@@ -71,7 +75,15 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
       json: values.json === true,
       quiet: values.quiet === true,
     });
-    return await command.run(ctx, values, positionals.slice(1));
+    const args = positionals.slice(1);
+    if (args.length > command.arguments) {
+      throw new UsageError(
+        command.arguments === 0
+          ? `${name} takes no arguments, not "${args[0]}"`
+          : `${name} takes at most ${command.arguments} arguments`,
+      );
+    }
+    return await command.run(ctx, values, args);
   } catch (error) {
     return report(error, io);
   } finally {
@@ -81,25 +93,35 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
 
 /** The first argument that is not an option, or an option's value. */
 function commandName(argv: readonly string[]): string | undefined {
-  const { tokens } = parseArgs({
-    args: [...argv],
-    options: GLOBAL_OPTIONS,
-    strict: false,
-    allowPositionals: true,
-    tokens: true,
-  });
+  const { tokens } = usage(() =>
+    parseArgs({
+      args: [...argv],
+      options: GLOBAL_OPTIONS,
+      strict: false,
+      allowPositionals: true,
+      tokens: true,
+    }),
+  );
   const first = tokens.find((token) => token.kind === "positional");
   return first?.kind === "positional" ? first.value : undefined;
 }
 
 function parse(argv: readonly string[], options: Options) {
+  return usage(
+    () =>
+      parseArgs({
+        args: [...argv],
+        options: { ...GLOBAL_OPTIONS, ...options },
+        strict: true,
+        allowPositionals: true,
+      }) as { values: Values; positionals: string[] },
+  );
+}
+
+/** Runs a parse, turning Node's parse errors into exit 2. */
+function usage<T>(parse: () => T): T {
   try {
-    return parseArgs({
-      args: [...argv],
-      options: { ...GLOBAL_OPTIONS, ...options },
-      strict: true,
-      allowPositionals: true,
-    }) as { values: Values; positionals: string[] };
+    return parse();
   } catch (error) {
     // Node's message adds a hint about "--" that reads as noise here.
     const message = error instanceof Error ? error.message : String(error);

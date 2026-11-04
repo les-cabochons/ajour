@@ -305,6 +305,22 @@ describe("agent read model", () => {
     });
   });
 
+  it("says when each entry was last saved", () => {
+    const state = createState();
+    state.timesheetEntries[0] = { ...state.timesheetEntries[0]!, usedAt: NOW };
+    const entries = listTimeEntriesForAgent(
+      state,
+      { from: "2026-10-13", to: "2026-10-13" },
+      NOW,
+    ).entries;
+    expect(
+      Object.fromEntries(entries.map((e) => [e.entryId, e.savedAt])),
+    ).toEqual({
+      e1: new Date(NOW).toISOString(),
+      e2: new Date(10).toISOString(),
+    });
+  });
+
   it("names the project's code when it has one", () => {
     const state = createState();
     state.projects[0] = { ...state.projects[0]!, code: "ACME" };
