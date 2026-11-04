@@ -19,18 +19,30 @@ on:
         description: The commit to check. Empty checks the caller's commit.
         type: string
         default: ""
+      macos:
+        description: >-
+          Run on macOS too. The Tests workflow passes false and runs the macOS
+          check in its own `macOS checks` job, which holds every macOS check
+          of a run on one runner.
+        type: boolean
+        default: true
   workflow_dispatch:
+    inputs:
+      macos:
+        description: Run on macOS too
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
 jobs:
   check:
-    name: Plugin sandbox (${{ matrix.name }})
+    name: Plugin sandbox (${{ matrix.os == 'ubuntu-latest' && 'Linux, informational' || matrix.os == 'macos-latest' && 'macOS' || 'Windows' }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     # A Linux failure is reported, never a gate.
-    continue-on-error: ${{ matrix.informational }}
+    continue-on-error: ${{ matrix.os == 'ubuntu-latest' }}
     env:
       # The check runs Electron, so download its binary.
       ELECTRON_SKIP_BINARY_DOWNLOAD: ""
@@ -38,16 +50,10 @@ jobs:
       # A failure on one system must not hide the result on the others.
       fail-fast: false
       matrix:
-        include:
-          - name: Windows
-            os: windows-latest
-            informational: false
-          - name: macOS
-            os: macos-latest
-            informational: false
-          - name: Linux, informational
-            os: ubuntu-latest
-            informational: true
+        os: [windows-latest, macos-latest, ubuntu-latest]
+        # Every caller but the Tests workflow runs it on macOS too.
+        exclude:
+          - os: ${{ inputs.macos == false && 'macos-latest' || 'none' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
