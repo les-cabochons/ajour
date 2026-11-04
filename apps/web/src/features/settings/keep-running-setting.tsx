@@ -1,10 +1,107 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef } from "react";
 import { AppPanel, SettingRow } from "@/components/app-surface";
 import { showErrorToast } from "@/components/ui/toast";
 import { Switch } from "@/components/ui/switch";
 
-/** How long main gets to answer a save before the switch is given back. */
-const SAVE_DEADLINE_MS = 5_000;
+/** How long main gets to answer a read or a save. */
+const DEADLINE_MS = 5_000;
+const DEADLINE_MESSAGE = "Ajour did not answer in time.";
+
+type WindowSettings = { keepRunning: boolean };
+
+/**
+ * The switch is a state machine with one operation in flight at a time.
+ *
+ * - `loading`: the first read from main.
+ * - `idle`: `confirmed` is what main last answered. The only state that takes
+ *   a click.
+ * - `saving`: shows the requested value until main answers.
+ * - `reconciling`: a save failed or timed out, so the setting is read from main
+ *   again. The switch shows `confirmed` meanwhile.
+ *
+ * `confirmed` changes only from an answer main gave.
+ */
+type State =
+  | { phase: "loading"; confirmed: boolean }
+  | { phase: "idle"; confirmed: boolean }
+  | { phase: "saving"; confirmed: boolean; requested: boolean }
+  | { phase: "reconciling"; confirmed: boolean };
+
+type Action =
+  | { type: "save"; requested: boolean }
+  | { type: "answered"; keepRunning: boolean }
+  | { type: "reconcile" }
+  | { type: "unanswered" };
+
+function reducer(state: State, action: Action): State {
+  switch (action.type) {
+    case "save":
+      return state.phase === "idle"
+        ? { ...state, phase: "saving", requested: action.requested }
+        : state;
+    case "answered":
+      return { phase: "idle", confirmed: action.keepRunning };
+    case "reconcile":
+      return { phase: "reconciling", confirmed: state.confirmed };
+    case "unanswered":
+      return { phase: "idle", confirmed: state.confirmed };
+  }
+}
+
+/**
+ * Runs asynchronous operations one at a time, each with a deadline. An answer
+ * that comes after its operation settled, or after `cancel`, is ignored. One
+ * counter is enough because operations are serial.
+ */
+function useSerialOperation() {
+  const current = useRef(0);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const busy = useRef(false);
+
+  const cancel = useCallback(() => {
+    current.current += 1;
+    clearTimeout(timer.current);
+    busy.current = false;
+  }, []);
+
+  /** Returns false, and does nothing, while another operation runs. */
+  const run = useCallback(
+    <T,>(
+      read: () => Promise<T>,
+      onAnswer: (answer: T) => void,
+      onFail: (error: unknown) => void,
+    ): boolean => {
+      if (busy.current) return false;
+      busy.current = true;
+      const id = ++current.current;
+      const settle = (next: () => void) => {
+        if (current.current !== id) return;
+        clearTimeout(timer.current);
+        busy.current = false;
+        current.current += 1;
+        next();
+      };
+      timer.current = setTimeout(
+        () => settle(() => onFail(new Error(DEADLINE_MESSAGE))),
+        DEADLINE_MS,
+      );
+      let request: Promise<T>;
+      try {
+        request = read();
+      } catch (error) {
+        request = Promise.reject(error);
+      }
+      request.then(
+        (answer) => settle(() => onAnswer(answer)),
+        (error: unknown) => settle(() => onFail(error)),
+      );
+      return true;
+    },
+    [],
+  );
+
+  return { run, cancel };
+}
 
 /**
  * Settings › General › "Keep Ajour running when the window closes" (#534).
@@ -14,85 +111,60 @@ const SAVE_DEADLINE_MS = 5_000;
 export function KeepRunningSetting() {
   const desktop = window.ajourDesktop;
   // Main's default until it answers.
-  const [keepRunning, setKeepRunning] = useState(true);
-  const [loaded, setLoaded] = useState(false);
-  // One write at a time, so a failed save rolls back to what main confirmed
-  // and never to a value that was itself still unsaved.
-  const [saving, setSaving] = useState(false);
-  const confirmed = useRef(true);
-  // Counts saves; an answer or a deadline for an older one is ignored.
-  const request = useRef(0);
-  const deadline = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [state, dispatch] = useReducer(reducer, {
+    phase: "loading",
+    confirmed: true,
+  });
+  const { run, cancel } = useSerialOperation();
   const supported = Boolean(
     desktop?.getWindowSettings && desktop.configureWindowSettings,
   );
 
   useEffect(() => {
     if (!supported) return;
-    let current = true;
-    void desktop!.getWindowSettings!().then(
-      (settings) => {
-        if (!current) return;
-        confirmed.current = settings.keepRunning;
-        setKeepRunning(settings.keepRunning);
-        setLoaded(true);
-      },
-      () => {
-        if (current) setLoaded(true);
-      },
+    run(
+      () => desktop!.getWindowSettings!(),
+      (settings) =>
+        dispatch({ type: "answered", keepRunning: settings.keepRunning }),
+      () => dispatch({ type: "unanswered" }),
     );
-    return () => {
-      current = false;
-      request.current += 1;
-      clearTimeout(deadline.current);
-    };
-  }, [desktop, supported]);
+    // Also runs on unmount: timers cleared, late answers ignored.
+    return cancel;
+  }, [desktop, supported, run, cancel]);
 
   if (!supported) return null;
 
   const where =
     desktop?.runtime?.platform === "darwin" ? "the menu bar" : "the tray icon";
 
-  function fail(description: string | undefined) {
-    setKeepRunning(confirmed.current);
-    setSaving(false);
-    showErrorToast({ title: "The setting was not saved.", description });
-  }
-
-  function save(checked: boolean) {
-    const id = ++request.current;
-    setSaving(true);
-    setKeepRunning(checked);
-    deadline.current = setTimeout(() => {
-      if (request.current !== id) return;
-      // Main may still apply it; read what it holds once the switch is back.
-      request.current += 1;
-      const reconciling = request.current;
-      fail("Ajour did not answer in time.");
-      void desktop!.getWindowSettings!().then(
-        (settings) => {
-          if (request.current !== reconciling) return;
-          confirmed.current = settings.keepRunning;
-          setKeepRunning(settings.keepRunning);
-        },
-        () => {},
-      );
-    }, SAVE_DEADLINE_MS);
-    void desktop!.configureWindowSettings!({ keepRunning: checked }).then(
-      (settings) => {
-        if (request.current !== id) return;
-        clearTimeout(deadline.current);
-        confirmed.current = settings.keepRunning;
-        setKeepRunning(settings.keepRunning);
-        setSaving(false);
-      },
-      (error: unknown) => {
-        if (request.current !== id) return;
-        clearTimeout(deadline.current);
-        fail(error instanceof Error ? error.message : undefined);
-      },
+  function reconcile() {
+    dispatch({ type: "reconcile" });
+    run(
+      () => desktop!.getWindowSettings!(),
+      (settings) =>
+        dispatch({ type: "answered", keepRunning: settings.keepRunning }),
+      () => dispatch({ type: "unanswered" }),
     );
   }
+
+  function save(requested: boolean) {
+    const started = run<WindowSettings>(
+      () => desktop!.configureWindowSettings!({ keepRunning: requested }),
+      (settings) =>
+        dispatch({ type: "answered", keepRunning: settings.keepRunning }),
+      (error) => {
+        showErrorToast({
+          title: "The setting was not saved.",
+          description: error instanceof Error ? error.message : undefined,
+        });
+        // Main may still have applied it; read what it holds.
+        reconcile();
+      },
+    );
+    if (started) dispatch({ type: "save", requested });
+  }
+
+  const checked = state.phase === "saving" ? state.requested : state.confirmed;
 
   return (
     <section className="settings-section">
@@ -108,8 +180,10 @@ export function KeepRunningSetting() {
         >
           <Switch
             id="keep-running"
-            checked={keepRunning}
-            disabled={!loaded || saving}
+            checked={checked}
+            disabled={state.phase !== "idle"}
+            // A disabled switch shows the default cursor (ui-rules.md).
+            className="data-disabled:cursor-default"
             onCheckedChange={save}
           />
         </SettingRow>

@@ -5,14 +5,14 @@ import {
   fireEvent,
   render,
   screen,
-  waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installDomShims } from "@/test-support/dom";
 
 /*
- * Settings › General › Desktop app (#534): the switch shows what main saved,
- * and keeps it when main could not save a change.
+ * Settings › General › Desktop app (#534): the switch runs one operation at a
+ * time (loading, idle, saving, reconciling) and shows only what main
+ * answered. It takes a click in `idle` and nowhere else.
  */
 
 const mocks = vi.hoisted(() => ({ error: vi.fn() }));
@@ -25,223 +25,371 @@ vi.mock("@/components/ui/toast", async (importOriginal) => ({
 const { KeepRunningSetting } =
   await import("@/features/settings/keep-running-setting");
 
-function desktop(
-  configureWindowSettings: (settings: {
-    keepRunning: boolean;
-  }) => Promise<{ keepRunning: boolean }>,
-  getWindowSettings: () => Promise<{ keepRunning: boolean }> = async () => ({
-    keepRunning: true,
-  }),
-) {
+type Settings = { keepRunning: boolean };
+
+function deferred() {
+  let resolve!: (settings: Settings) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<Settings>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+/** Pending reads and saves, answered by the test in the order they began. */
+function desktop() {
+  const reads: Array<ReturnType<typeof deferred>> = [];
+  const saves: Array<ReturnType<typeof deferred>> = [];
+  const getWindowSettings = vi.fn(() => {
+    const read = deferred();
+    reads.push(read);
+    return read.promise;
+  });
+  const configureWindowSettings = vi.fn((_settings: Settings) => {
+    const save = deferred();
+    saves.push(save);
+    return save.promise;
+  });
   window.ajourDesktop = {
     getWindowSettings,
     configureWindowSettings,
   } as never;
+  return { reads, saves, getWindowSettings, configureWindowSettings };
 }
 
-async function loadedSwitch() {
+async function elapse(ms: number) {
+  await act(() => vi.advanceTimersByTimeAsync(ms));
+}
+
+function mount() {
   render(<KeepRunningSetting />);
-  const toggle = screen.getByRole("switch", {
+  return screen.getByRole("switch", {
     name: "Keep Ajour running when the window closes",
   });
-  await waitFor(() => expect(toggle.hasAttribute("data-disabled")).toBe(false));
+}
+
+/** Mounts the switch and answers its first read. */
+async function loadedSwitch(
+  main: ReturnType<typeof desktop>,
+  keepRunning = true,
+) {
+  const toggle = mount();
+  await act(async () => main.reads[0]!.resolve({ keepRunning }));
   return toggle;
 }
+
+const disabled = (toggle: HTMLElement) => toggle.hasAttribute("data-disabled");
+const shown = (toggle: HTMLElement) => toggle.getAttribute("aria-checked");
 
 describe("the keep running setting", () => {
   beforeEach(() => {
     installDomShims();
+    vi.useFakeTimers();
     mocks.error.mockClear();
   });
   afterEach(() => {
-    vi.useRealTimers();
     cleanup();
+    vi.useRealTimers();
     delete window.ajourDesktop;
   });
 
-  it("shows the setting main saved", async () => {
-    const configure = vi.fn(async (settings: { keepRunning: boolean }) => ({
-      ...settings,
-    }));
-    desktop(configure);
-    const toggle = await loadedSwitch();
+  it("is absent without the desktop app", () => {
+    render(<KeepRunningSetting />);
+    expect(screen.queryByRole("switch")).toBeNull();
+  });
 
-    fireEvent.click(toggle);
+  it("is disabled while loading and then shows what main holds", async () => {
+    const main = desktop();
+    const toggle = mount();
+    expect(disabled(toggle)).toBe(true);
 
-    await waitFor(() =>
-      expect(toggle.getAttribute("aria-checked")).toBe("false"),
-    );
-    expect(configure).toHaveBeenCalledWith({ keepRunning: false });
+    await act(async () => main.reads[0]!.resolve({ keepRunning: false }));
+
+    expect(disabled(toggle)).toBe(false);
+    expect(shown(toggle)).toBe("false");
+  });
+
+  it("ends idle on the default when the first read fails", async () => {
+    const main = desktop();
+    const toggle = mount();
+
+    await act(async () => main.reads[0]!.reject(new Error("no answer")));
+
+    expect(disabled(toggle)).toBe(false);
+    expect(shown(toggle)).toBe("true");
     expect(mocks.error).not.toHaveBeenCalled();
   });
 
-  // The next launch would read the old value from the file.
-  it("keeps the saved setting and says so when main could not save it", async () => {
-    desktop(async () => {
-      throw new Error("Ajour could not write to its data folder.");
-    });
-    const toggle = await loadedSwitch();
+  it("ends idle on the default when the first read never answers", async () => {
+    const main = desktop();
+    const toggle = mount();
+
+    await elapse(4_900);
+    expect(disabled(toggle)).toBe(true);
+    await elapse(200);
+
+    expect(disabled(toggle)).toBe(false);
+    expect(shown(toggle)).toBe("true");
+    expect(mocks.error).not.toHaveBeenCalled();
+    expect(main.getWindowSettings).toHaveBeenCalledOnce();
+  });
+
+  it("shows the requested value while saving, then main's answer", async () => {
+    const main = desktop();
+    const toggle = await loadedSwitch(main);
 
     fireEvent.click(toggle);
 
-    await waitFor(() => expect(mocks.error).toHaveBeenCalledOnce());
+    expect(main.configureWindowSettings).toHaveBeenCalledWith({
+      keepRunning: false,
+    });
+    expect(shown(toggle)).toBe("false");
+    expect(disabled(toggle)).toBe(true);
+    // No click starts a second operation.
+    fireEvent.click(toggle);
+    expect(main.configureWindowSettings).toHaveBeenCalledOnce();
+
+    await act(async () => main.saves[0]!.resolve({ keepRunning: false }));
+
+    expect(disabled(toggle)).toBe(false);
+    expect(shown(toggle)).toBe("false");
+    expect(mocks.error).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("shows main's answer even when it differs from the request", async () => {
+    const main = desktop();
+    const toggle = await loadedSwitch(main);
+
+    fireEvent.click(toggle);
+    await act(async () => main.saves[0]!.resolve({ keepRunning: true }));
+
+    expect(shown(toggle)).toBe("true");
+    expect(disabled(toggle)).toBe(false);
+  });
+
+  // Main may have stored the value before the save failed.
+  it("reconciles a failed save to the value main holds", async () => {
+    const main = desktop();
+    const toggle = await loadedSwitch(main);
+
+    fireEvent.click(toggle);
+    await act(async () =>
+      main.saves[0]!.reject(
+        new Error("Ajour could not write to its data folder."),
+      ),
+    );
+
+    expect(mocks.error).toHaveBeenCalledOnce();
     expect(mocks.error).toHaveBeenCalledWith({
       title: "The setting was not saved.",
       description: "Ajour could not write to its data folder.",
     });
-    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    // Reconciling shows the last confirmed value and takes no click.
+    expect(shown(toggle)).toBe("true");
+    expect(disabled(toggle)).toBe(true);
+    fireEvent.click(toggle);
+    expect(main.configureWindowSettings).toHaveBeenCalledOnce();
+
+    await act(async () => main.reads[1]!.resolve({ keepRunning: false }));
+
+    expect(shown(toggle)).toBe("false");
+    expect(disabled(toggle)).toBe(false);
+    expect(mocks.error).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("allows one save at a time and enables the switch after it answers", async () => {
-    let answer!: (settings: { keepRunning: boolean }) => void;
-    const configure = vi.fn(
-      () =>
-        new Promise<{ keepRunning: boolean }>((resolve) => {
-          answer = resolve;
-        }),
-    );
-    desktop(configure);
-    const toggle = await loadedSwitch();
+  it("shows the last confirmed value when a failed save changed nothing", async () => {
+    const main = desktop();
+    const toggle = await loadedSwitch(main);
 
     fireEvent.click(toggle);
+    await act(async () => main.saves[0]!.reject(new Error("refused")));
+    await act(async () => main.reads[1]!.resolve({ keepRunning: true }));
 
-    await waitFor(() =>
-      expect(toggle.hasAttribute("data-disabled")).toBe(true),
-    );
-    fireEvent.click(toggle);
-    expect(configure).toHaveBeenCalledOnce();
-
-    answer({ keepRunning: false });
-
-    await waitFor(() =>
-      expect(toggle.hasAttribute("data-disabled")).toBe(false),
-    );
-    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(shown(toggle)).toBe("true");
+    expect(disabled(toggle)).toBe(false);
   });
 
-  // A second click during a save must not capture the first click's unsaved
-  // value as the value to roll back to.
-  it("shows the value main confirmed after two quick toggles both fail", async () => {
-    const failures: Array<(error: Error) => void> = [];
-    const configure = vi.fn(
-      () =>
-        new Promise<{ keepRunning: boolean }>((_, reject) => {
-          failures.push(reject);
-        }),
-    );
-    desktop(configure);
-    const toggle = await loadedSwitch();
+  it("recovers from a save that never answers: toast, reconcile, idle", async () => {
+    const main = desktop();
+    const toggle = await loadedSwitch(main);
 
     fireEvent.click(toggle);
-    fireEvent.click(toggle);
-    failures[0]?.(new Error("Ajour could not write to its data folder."));
-
-    await waitFor(() => expect(mocks.error).toHaveBeenCalledOnce());
-    await waitFor(() =>
-      expect(toggle.hasAttribute("data-disabled")).toBe(false),
-    );
-    fireEvent.click(toggle);
-    failures[1]?.(new Error("Ajour could not write to its data folder."));
-
-    await waitFor(() => expect(mocks.error).toHaveBeenCalledTimes(2));
-    await waitFor(() =>
-      expect(toggle.hasAttribute("data-disabled")).toBe(false),
-    );
-    expect(toggle.getAttribute("aria-checked")).toBe("true");
-  });
-
-  // Main never answering must not leave the switch disabled on a value it
-  // never confirmed.
-  it("gives the switch back after the deadline when main never answers", async () => {
-    const getWindowSettings = vi.fn(async () => ({ keepRunning: true }));
-    desktop(
-      () => new Promise<{ keepRunning: boolean }>(() => {}),
-      getWindowSettings,
-    );
-    const toggle = await loadedSwitch();
-    vi.useFakeTimers();
-
-    fireEvent.click(toggle);
-    expect(toggle.hasAttribute("data-disabled")).toBe(true);
-    expect(toggle.getAttribute("aria-checked")).toBe("false");
-    await act(() => vi.advanceTimersByTimeAsync(4_900));
-    expect(toggle.hasAttribute("data-disabled")).toBe(true);
+    await elapse(4_900);
+    expect(disabled(toggle)).toBe(true);
+    expect(shown(toggle)).toBe("false");
     expect(mocks.error).not.toHaveBeenCalled();
 
-    await act(() => vi.advanceTimersByTimeAsync(200));
+    await elapse(200);
 
     expect(mocks.error).toHaveBeenCalledOnce();
-    expect(mocks.error.mock.calls[0]?.[0]).toMatchObject({
+    expect(mocks.error).toHaveBeenCalledWith({
       title: "The setting was not saved.",
+      description: "Ajour did not answer in time.",
     });
-    expect(toggle.hasAttribute("data-disabled")).toBe(false);
-    expect(toggle.getAttribute("aria-checked")).toBe("true");
-    expect(getWindowSettings).toHaveBeenCalledTimes(2);
+    expect(shown(toggle)).toBe("true");
+    expect(disabled(toggle)).toBe(true);
+    expect(main.getWindowSettings).toHaveBeenCalledTimes(2);
+
+    await act(async () => main.reads[1]!.resolve({ keepRunning: false }));
+
+    expect(shown(toggle)).toBe("false");
+    expect(disabled(toggle)).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("reads the setting from main again after the deadline", async () => {
-    const getWindowSettings = vi
-      .fn<() => Promise<{ keepRunning: boolean }>>()
-      .mockResolvedValueOnce({ keepRunning: true })
-      .mockResolvedValue({ keepRunning: false });
-    desktop(
-      () => new Promise<{ keepRunning: boolean }>(() => {}),
-      getWindowSettings,
-    );
-    const toggle = await loadedSwitch();
-    vi.useFakeTimers();
+  // Round 4: main saved false but answered late. The user must not be able to
+  // start a second save before the re-read confirms false.
+  it("ends on false when main answers a save after the deadline and the re-read confirms it", async () => {
+    const main = desktop();
+    const toggle = await loadedSwitch(main);
 
     fireEvent.click(toggle);
-    await act(() => vi.advanceTimersByTimeAsync(5_000));
+    await elapse(5_000);
+    expect(shown(toggle)).toBe("true");
+    expect(disabled(toggle)).toBe(true);
 
-    expect(toggle.getAttribute("aria-checked")).toBe("false");
-    expect(toggle.hasAttribute("data-disabled")).toBe(false);
-  });
-
-  it("ignores an answer that arrives after the deadline", async () => {
-    let answer!: (settings: { keepRunning: boolean }) => void;
-    desktop(
-      () =>
-        new Promise<{ keepRunning: boolean }>((resolve) => {
-          answer = resolve;
-        }),
-    );
-    const toggle = await loadedSwitch();
-    vi.useFakeTimers();
-
+    // The user clicks while the re-read is pending: nothing starts.
     fireEvent.click(toggle);
-    await act(() => vi.advanceTimersByTimeAsync(5_000));
-    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    expect(main.configureWindowSettings).toHaveBeenCalledOnce();
 
-    await act(async () => {
-      answer({ keepRunning: false });
-    });
+    // The late save answer changes nothing.
+    await act(async () => main.saves[0]!.resolve({ keepRunning: false }));
+    expect(shown(toggle)).toBe("true");
+    expect(disabled(toggle)).toBe(true);
 
-    expect(toggle.getAttribute("aria-checked")).toBe("true");
-    expect(toggle.hasAttribute("data-disabled")).toBe(false);
+    await act(async () => main.reads[1]!.resolve({ keepRunning: false }));
+
+    expect(shown(toggle)).toBe("false");
+    expect(disabled(toggle)).toBe(false);
+    expect(main.configureWindowSettings).toHaveBeenCalledOnce();
     expect(mocks.error).toHaveBeenCalledOnce();
   });
 
-  it("leaves no timer and no update when it unmounts mid-save", async () => {
-    let answer!: (settings: { keepRunning: boolean }) => void;
-    desktop(
-      () =>
-        new Promise<{ keepRunning: boolean }>((resolve) => {
-          answer = resolve;
-        }),
-    );
-    const toggle = await loadedSwitch();
-    vi.useFakeTimers();
+  it("ignores a save that fails after its deadline", async () => {
+    const main = desktop();
+    const toggle = await loadedSwitch(main);
 
     fireEvent.click(toggle);
+    await elapse(5_000);
+    await act(async () => main.saves[0]!.reject(new Error("too late")));
+
+    expect(mocks.error).toHaveBeenCalledOnce();
+    expect(main.getWindowSettings).toHaveBeenCalledTimes(2);
+    expect(disabled(toggle)).toBe(true);
+  });
+
+  it("can save again once the re-read answers", async () => {
+    const main = desktop();
+    const toggle = await loadedSwitch(main);
+
+    fireEvent.click(toggle);
+    await elapse(5_000);
+    await act(async () => main.reads[1]!.resolve({ keepRunning: true }));
+    expect(disabled(toggle)).toBe(false);
+
+    fireEvent.click(toggle);
+
+    expect(main.configureWindowSettings).toHaveBeenCalledTimes(2);
+    expect(shown(toggle)).toBe("false");
+  });
+
+  it("ends idle on the last confirmed value when the re-read never answers", async () => {
+    const main = desktop();
+    const toggle = await loadedSwitch(main);
+
+    fireEvent.click(toggle);
+    await act(async () => main.saves[0]!.reject(new Error("refused")));
+    await elapse(4_900);
+    expect(disabled(toggle)).toBe(true);
+
+    await elapse(200);
+
+    expect(disabled(toggle)).toBe(false);
+    expect(shown(toggle)).toBe("true");
+    // The save's toast only, none for the re-read.
+    expect(mocks.error).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+
+    // An answer after its own deadline is ignored.
+    await act(async () => main.reads[1]!.resolve({ keepRunning: false }));
+    expect(shown(toggle)).toBe("true");
+  });
+
+  it("ends idle on the last confirmed value when the re-read fails", async () => {
+    const main = desktop();
+    const toggle = await loadedSwitch(main, false);
+
+    fireEvent.click(toggle);
+    await act(async () => main.saves[0]!.reject(new Error("refused")));
+    await act(async () => main.reads[1]!.reject(new Error("unreachable")));
+
+    expect(disabled(toggle)).toBe(false);
+    expect(shown(toggle)).toBe("false");
+    expect(mocks.error).toHaveBeenCalledOnce();
+  });
+
+  it("is disabled in every state but idle", async () => {
+    const main = desktop();
+    const states: boolean[] = [];
+    const toggle = mount();
+    states.push(disabled(toggle)); // loading
+    await act(async () => main.reads[0]!.resolve({ keepRunning: true }));
+    expect(disabled(toggle)).toBe(false); // idle
+
+    fireEvent.click(toggle);
+    states.push(disabled(toggle)); // saving
+    await act(async () => main.saves[0]!.reject(new Error("refused")));
+    states.push(disabled(toggle)); // reconciling
+    await act(async () => main.reads[1]!.resolve({ keepRunning: true }));
+    expect(disabled(toggle)).toBe(false); // idle again
+
+    expect(states).toEqual([true, true, true]);
+  });
+
+  it("leaves no timer and no update when it unmounts while loading", async () => {
+    const main = desktop();
+    mount();
     expect(vi.getTimerCount()).toBeGreaterThan(0);
+
     cleanup();
 
     expect(vi.getTimerCount()).toBe(0);
-    await act(async () => {
-      answer({ keepRunning: false });
-    });
-    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    await act(async () => main.reads[0]!.resolve({ keepRunning: false }));
+    await elapse(10_000);
     expect(mocks.error).not.toHaveBeenCalled();
+  });
+
+  it("leaves no timer and no toast when it unmounts mid-save", async () => {
+    const main = desktop();
+    const toggle = await loadedSwitch(main);
+    fireEvent.click(toggle);
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+    cleanup();
+
+    expect(vi.getTimerCount()).toBe(0);
+    await act(async () => main.saves[0]!.reject(new Error("refused")));
+    await elapse(10_000);
+    expect(mocks.error).not.toHaveBeenCalled();
+    expect(main.getWindowSettings).toHaveBeenCalledOnce();
+  });
+
+  it("leaves no timer and no second toast when it unmounts mid-reconcile", async () => {
+    const main = desktop();
+    const toggle = await loadedSwitch(main);
+    fireEvent.click(toggle);
+    await act(async () => main.saves[0]!.reject(new Error("refused")));
+    expect(mocks.error).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+    cleanup();
+
+    expect(vi.getTimerCount()).toBe(0);
+    await act(async () => main.reads[1]!.reject(new Error("unreachable")));
+    await elapse(10_000);
+    expect(mocks.error).toHaveBeenCalledOnce();
   });
 });
