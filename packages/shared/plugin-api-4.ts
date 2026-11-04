@@ -567,6 +567,8 @@ export const pluginApi4CapabilitiesSchema = pluginCapabilitiesObjectSchema
      * moves into the main manifest and runs in the shared runtime.
      */
     projectDataShape: projectDataShapeDefinitionSchema.optional(),
+    // `projectSource` (#504) comes from the shared object: API 3 refuses it,
+    // and its snapshot and sync contract are in `project-source.ts`.
   })
   .superRefine((capabilities, context) => {
     if (capabilities.team !== undefined) {
@@ -581,7 +583,7 @@ export const pluginApi4CapabilitiesSchema = pluginCapabilitiesObjectSchema
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          "A plugin must declare at least one capability: connector, codeHost, calendar, agentTask, projectProperties, taskProperties or projectDataShape.",
+          "A plugin must declare at least one capability: connector, codeHost, calendar, projectSource, agentTask, projectProperties, taskProperties or projectDataShape.",
       });
     }
   });
@@ -743,6 +745,7 @@ function api4RunsCode(capabilities: PluginApi4Capabilities) {
     capabilities.connector !== undefined ||
     capabilities.codeHost !== undefined ||
     capabilities.calendar !== undefined ||
+    capabilities.projectSource !== undefined ||
     capabilities.projectDataShape !== undefined
   );
 }
@@ -774,15 +777,16 @@ export const pluginApi4ManifestSchema = strictObject(
       "A plugin that runs code needs an entrypoint.",
     );
   }
-  const { connector, codeHost, calendar } = manifest.capabilities;
+  const { connector, codeHost, calendar, projectSource } =
+    manifest.capabilities;
   if (
-    (connector || codeHost || calendar) &&
+    (connector || codeHost || calendar || projectSource) &&
     manifest.connectionFields.length === 0
   ) {
     issue(
       context,
       ["connectionFields"],
-      "A backlog, code host or calendar plugin needs connection fields.",
+      "A backlog, code host, calendar or project source plugin needs connection fields.",
     );
   }
   const choiceIds = new Set<string>();

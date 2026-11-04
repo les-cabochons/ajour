@@ -16,3 +16,4 @@ export * from "./plugin-catalog";
 export * from "./code-host";
 export * from "./calendar";
 export * from "./team-sync";
+export * from "./project-source";

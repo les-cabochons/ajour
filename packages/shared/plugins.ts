@@ -7,6 +7,7 @@ import {
   backlogPersonSchema,
 } from "./backlog-comments.ts";
 import { projectDataShapeDefinitionSchema } from "./project-data-shapes.ts";
+import { projectSourceCapabilitySchema } from "./project-source.ts";
 import {
   pluginRuntimeSummarySchema,
   pluginSuspensionSchema,
@@ -126,6 +127,7 @@ export const switchableCapabilitySchema = z.enum([
   "codeHost",
   "calendar",
   "team",
+  "projectSource",
 ]);
 export type SwitchableCapability = z.infer<typeof switchableCapabilitySchema>;
 
@@ -136,6 +138,7 @@ export const switchableCapabilityLabels: Record<SwitchableCapability, string> =
     codeHost: "Pull requests",
     calendar: "Calendar events",
     team: "Projects",
+    projectSource: "Managed projects",
   };
 
 export const pluginFieldSchema = z.object({
@@ -333,6 +336,11 @@ export const pluginCapabilitiesObjectSchema = z.object({
   calendar: z.object({}).optional(),
   /** Keeps a team's shared projects in step. See ADR 0006. */
   team: teamCapabilitySchema.optional(),
+  /**
+   * Brings the user's projects, tasks and budgets from the system that holds
+   * them, read only. Plugin API 4 only: see `project-source.ts`.
+   */
+  projectSource: projectSourceCapabilitySchema.optional(),
   agentTask: z
     .object({ tasks: z.array(agentTaskSchema).min(1).max(10) })
     .optional(),
@@ -373,6 +381,12 @@ export function pluginHasCalendar(manifest: {
 
 export function pluginHasTeam(manifest: { capabilities: PluginCapabilities }) {
   return manifest.capabilities.team !== undefined;
+}
+
+export function pluginHasProjectSource(manifest: {
+  capabilities: PluginCapabilities;
+}) {
+  return manifest.capabilities.projectSource !== undefined;
 }
 
 export function pluginHasAgentTasks(manifest: {
@@ -446,6 +460,13 @@ export const pluginManifestObjectSchema = z.object({
 
 export const pluginManifestSchema = pluginManifestObjectSchema.superRefine(
   (manifest, context) => {
+    if (manifest.capabilities.projectSource !== undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["capabilities", "projectSource"],
+        message: "The projectSource capability needs plugin API 4.",
+      });
+    }
     if (!pluginRunsCode(manifest)) return;
     if (!manifest.entrypoint) {
       context.addIssue({
