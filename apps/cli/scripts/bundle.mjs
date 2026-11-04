@@ -40,6 +40,8 @@ await build({
     },
   ],
   build: {
+    // The package build has already generated dist/man (#557).
+    emptyOutDir: false,
     ssr: true,
     target: "node24",
     minify: false,
