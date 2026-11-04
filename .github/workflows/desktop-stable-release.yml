@@ -294,6 +294,9 @@ jobs:
   upload-cli:
     name: Attach CLI archives
     needs: [plan, release, cli]
+    # One platform failing to build or sign must not hold back the others:
+    # attach what built, while that platform's job keeps the run red.
+    if: ${{ !cancelled() && needs.release.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
