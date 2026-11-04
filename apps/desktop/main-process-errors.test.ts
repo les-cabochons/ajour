@@ -845,6 +845,104 @@ describe("IPC listeners", () => {
   );
 });
 
+describe("keeping Ajour running", () => {
+  function settingsRuntime({
+    save = (_file: string, value: unknown) => value,
+  }: { save?: (file: string, value: unknown) => unknown } = {}) {
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    const ipcMain = Object.assign(new EventEmitter(), {
+      handle: (channel: string, handler: (...args: unknown[]) => unknown) =>
+        handlers.set(channel, handler),
+    });
+    const { events, recorded } = recordingEvents();
+    const tray = { show: vi.fn(), remove: vi.fn() };
+    const context = vm.createContext({
+      events,
+      refusedSender,
+      ipc: createIpcListeners(ipcMain, {
+        events,
+        windowSession: noWindowSession,
+      }),
+      mainWindow: { webContents: "active-window" },
+      windowSettings: { keep_running: true, close_notice_shown: true },
+      windowSettingsPath: "window-settings.json",
+      saveWindowSettings: save,
+      tray,
+    });
+    run(
+      context,
+      "function updateWindowSettings(",
+      'ipc.handle("ajour:get-window-settings"',
+      'ipc.handle("ajour:configure-window-settings"',
+      "function assertActiveDesktopWindow(",
+    );
+    return {
+      context,
+      recorded,
+      tray,
+      configure: (changes: unknown) =>
+        handlers.get("ajour:configure-window-settings")!(
+          { sender: "active-window" },
+          changes,
+        ) as Promise<{ keepRunning: boolean }>,
+      read: () =>
+        handlers.get("ajour:get-window-settings")!({
+          sender: "active-window",
+        }) as Promise<{ keepRunning: boolean }>,
+    };
+  }
+
+  it("saves the setting and removes the tray icon when it is turned off", async () => {
+    const saved: unknown[] = [];
+    const runtime = settingsRuntime({
+      save: (_file, value) => {
+        saved.push(value);
+        return value;
+      },
+    });
+
+    await expect(runtime.configure({ keepRunning: false })).resolves.toEqual({
+      keepRunning: false,
+    });
+
+    expect(saved).toEqual([{ keep_running: false, close_notice_shown: true }]);
+    expect(runtime.tray.remove).toHaveBeenCalledOnce();
+    expect(runtime.recorded.at(-1)).toMatchObject({
+      name: "window.configure",
+      outcome: "ok",
+      keep_running: { enabled_before: true, enabled_after: false },
+    });
+  });
+
+  // The next launch would read the old value from the file.
+  it("refuses a setting it could not save, and keeps the saved one", async () => {
+    const runtime = settingsRuntime({
+      save: () => {
+        throw new Error(
+          "EACCES: permission denied, open 'C:\\Users\\alex\\AppData\\Roaming\\Ajour\\window-settings.json.tmp'",
+        );
+      },
+    });
+
+    await expect(runtime.configure({ keepRunning: false })).rejects.toThrow(
+      "Ajour could not write to its data folder.",
+    );
+
+    await expect(runtime.read()).resolves.toEqual({ keepRunning: true });
+    expect(runtime.tray.remove).not.toHaveBeenCalled();
+    expect(runtime.tray.show).not.toHaveBeenCalled();
+    const configured = runtime.recorded.find(
+      (event) => event.name === "window.configure",
+    );
+    expect(configured).toMatchObject({
+      outcome: "error",
+      keep_running: { enabled_before: true, enabled_after: true },
+      error: { type: "Error" },
+    });
+    expect(configured!.error!.message).not.toContain("alex");
+  });
+});
+
 describe("the main window", () => {
   function windowRuntime({
     loadURL = async (_url: string) => {},
@@ -1096,6 +1194,22 @@ describe("the main window", () => {
 
     expect(runtime.context.quitTrigger).toBe("tray");
     expect(runtime.app.quit).toHaveBeenCalledOnce();
+  });
+
+  // At worst the notice shows again at the next launch.
+  it("hides the window and shows the notice once when its flag can't be saved", async () => {
+    const runtime = windowRuntime();
+    await runtime.createMainWindow();
+    runtime.context.saveWindowSettings = () => {
+      throw new Error("EACCES: permission denied");
+    };
+
+    expect(runtime.close()).toBe(false);
+    runtime.window.show();
+    expect(runtime.close()).toBe(false);
+
+    expect(runtime.window.hide).toHaveBeenCalledTimes(2);
+    expect(runtime.notices).toHaveLength(1);
   });
 
   it("keeps in-app navigation in the window", async () => {

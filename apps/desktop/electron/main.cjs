@@ -322,14 +322,15 @@ const windowSettingsPath = path.join(
   "window-settings.json",
 );
 let windowSettings = loadWindowSettings(windowSettingsPath);
-/** Saves the window settings with `changes`, keeping the rest. */
+/**
+ * Saves the window settings with `changes`, keeping the rest. Throws when the
+ * file can't be written, and keeps the settings as they were.
+ */
 function updateWindowSettings(changes) {
-  windowSettings = { ...windowSettings, ...changes };
-  try {
-    windowSettings = saveWindowSettings(windowSettingsPath, windowSettings);
-  } catch {
-    // Kept for this launch; the next one reads the file again.
-  }
+  windowSettings = saveWindowSettings(windowSettingsPath, {
+    ...windowSettings,
+    ...changes,
+  });
   return windowSettings;
 }
 // Set when Windows asks to end the session: closing the window then quits.
@@ -571,7 +572,17 @@ ipc.handle("ajour:configure-window-settings", (event, changes) => {
     );
   }
   const before = windowSettings.keep_running;
-  updateWindowSettings({ keep_running: changes.keepRunning });
+  try {
+    updateWindowSettings({ keep_running: changes.keepRunning });
+  } catch (error) {
+    // The next launch would read the old value: the switch keeps it.
+    unit?.set({
+      keep_running: { enabled_before: before, enabled_after: before },
+    });
+    throw new Error("Ajour could not write to its data folder.", {
+      cause: error,
+    });
+  }
   unit?.set({
     keep_running: {
       enabled_before: before,
@@ -1597,7 +1608,12 @@ function hideMainWindowOnClose(window, event) {
     window.hide();
   }
   if (!windowSettings.close_notice_shown) {
-    updateWindowSettings({ close_notice_shown: true });
+    try {
+      updateWindowSettings({ close_notice_shown: true });
+    } catch {
+      // Closing still works; the notice shows again at the next launch.
+      windowSettings = { ...windowSettings, close_notice_shown: true };
+    }
     if (Notification.isSupported()) {
       new Notification({
         title: "Ajour",
