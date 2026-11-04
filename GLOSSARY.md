@@ -35,7 +35,7 @@ A project that a project source brought. Its full name, code, client, dates, tas
 _Avoid_: Synced project, imported project, source project (that is a backlog item's project in its source tool)
 
 **Not counted yet**:
-The user's time on a managed project that the project source cannot have yet: entries not committed, stale, or committed after the time the source's hours are from. Ajour computes it and never stores it.
+The user's time on a managed project that the project source cannot have yet: entries not committed, or committed after the time the source's hours are from. For a stale entry, only the difference from its committed copy counts, which can be negative when time moved off the project. Ajour computes it and never stores it.
 _Avoid_: Pending hours, uncommitted (alone), lag, conflict
 
 **Merge into**:
