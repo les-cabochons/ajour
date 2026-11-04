@@ -49,15 +49,18 @@ function Figure({
   label,
   children,
   className,
+  size = "lg",
 }: {
   label: ReactNode;
   children: ReactNode;
   className?: string;
+  /** "figure" is the page's one 28px number. */
+  size?: "lg" | "figure";
 }) {
   return (
     <div className={cn("flex min-w-0 flex-col gap-0.5", className)}>
       <span className="text-xs text-muted-foreground">{label}</span>
-      <Value size="lg">{children}</Value>
+      <Value size={size}>{children}</Value>
     </div>
   );
 }

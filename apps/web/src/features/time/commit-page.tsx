@@ -378,6 +378,7 @@ export function CommitPage({
   const [groupBy, setGroupBy] = useState<SubmitGroupBy>("day-task");
   // Expanded on every visit, on purpose: the choice is not saved.
   const [changesOpen, setChangesOpen] = useState(true);
+  const [linesOpen, setLinesOpen] = useState(true);
   // Undefined until loaded, so a saved plugin choice waits instead of
   // showing Ajour's names first.
   const [plugins, setPlugins] = useState<PropertyPlugins>();
@@ -440,6 +441,10 @@ export function CommitPage({
         weekDates,
       }),
     [groupBy, projects, weekDates, weekEntries],
+  );
+  const lineCount = sections.reduce(
+    (count, section) => count + section.lines.length,
+    0,
   );
   const projectMap = useMemo(
     () => new Map(projects.map((project) => [project._id, project])),
@@ -573,13 +578,20 @@ export function CommitPage({
                   placement="commit-week"
                   onStartingChange={setAgentStarting}
                 />
+                {/* What each action does is its tooltip, not prose above the
+                    list (council round 11). */}
                 {changes.length > 0 ? (
-                  <Button
-                    disabled={checkedIds.length === 0}
-                    onClick={markCommitted}
+                  <TooltipButton
+                    label="Records the checked changes as sent"
+                    render={
+                      <Button
+                        disabled={checkedIds.length === 0}
+                        onClick={markCommitted}
+                      />
+                    }
                   >
                     Mark as committed
-                  </Button>
+                  </TooltipButton>
                 ) : null}
                 {submitTasks === "present" ? (
                   <AgentTaskButtons
@@ -592,20 +604,25 @@ export function CommitPage({
                   />
                 ) : null}
                 <DisabledReason label="Submit week" reason={manualSubmitReason}>
-                  <Button
-                    // Keep manual submission available; the agent is primary
-                    // when it provides the ready week's next step.
-                    variant={
-                      changes.length > 0 || submitTasks === "present"
-                        ? "outline"
-                        : "default"
+                  <TooltipButton
+                    label="Locks the week once it is in your timesheet"
+                    render={
+                      <Button
+                        // Keep manual submission available; the agent is
+                        // primary when it provides the ready week's next step.
+                        variant={
+                          changes.length > 0 || submitTasks === "present"
+                            ? "outline"
+                            : "default"
+                        }
+                        disabled={manualSubmitReason !== undefined}
+                        onClick={requestSubmit}
+                      />
                     }
-                    disabled={manualSubmitReason !== undefined}
-                    onClick={requestSubmit}
                   >
                     <Lock data-icon="inline-start" />
                     Submit week
-                  </Button>
+                  </TooltipButton>
                 </DisabledReason>
               </>
             )}
@@ -631,7 +648,7 @@ export function CommitPage({
         <div className="submit-summary-total">
           <Value size="figure">{formatClockDuration(summary.totalMs)}</Value>
           <span className="text-sm text-muted-foreground">
-            saved of {formatClockDuration(summary.targetMs)} this week
+            logged of {formatClockDuration(summary.targetMs)} target
           </span>
         </div>
         <div
@@ -726,13 +743,6 @@ export function CommitPage({
             Changes
           </button>
         </SectionHeading>
-        {!lockedWeek && changes.length > 0 ? (
-          // The two buttons differ in what they end: say so with the changes.
-          <p className="commit-actions-caption">
-            Mark as committed records checked changes as sent. Submit week locks
-            the week.
-          </p>
-        ) : null}
         {!lockedWeek && manualSubmitReason ? (
           // What Submit week waits for, without a hover (council round 6).
           <p className="commit-actions-caption">
@@ -767,15 +777,37 @@ export function CommitPage({
         aria-labelledby="commit-lines-heading"
         className="flex flex-col gap-3"
       >
-        <SectionHeading id="commit-lines-heading">Lines</SectionHeading>
-        {weekEntries.length === 0 ? (
+        {/* A disclosure with a count, like Changes (council round 11). */}
+        <SectionHeading
+          id="commit-lines-heading"
+          trailing={
+            linesOpen && weekEntries.length > 0
+              ? `${lineCount} ${lineCount === 1 ? "line" : "lines"}`
+              : undefined
+          }
+        >
+          <button
+            type="button"
+            aria-expanded={linesOpen}
+            aria-controls="commit-lines-content"
+            className="-ml-1 flex items-center gap-1 text-left hover:text-foreground"
+            onClick={() => setLinesOpen(!linesOpen)}
+          >
+            <ChevronIcon
+              aria-hidden="true"
+              className={cn("size-4", linesOpen && "rotate-90")}
+            />
+            Lines
+          </button>
+        </SectionHeading>
+        {!linesOpen ? null : weekEntries.length === 0 ? (
           <Empty align="start" className="px-0">
             <EmptyHeader>
               <EmptyTitle>No entries this week.</EmptyTitle>
             </EmptyHeader>
           </Empty>
         ) : (
-          <>
+          <div id="commit-lines-content" className="flex flex-col gap-3">
             <div className="submit-toolbar">
               <div className="flex items-center gap-2">
                 <span
@@ -875,7 +907,7 @@ export function CommitPage({
                 </section>
               ))}
             </div>
-          </>
+          </div>
         )}
       </section>
 

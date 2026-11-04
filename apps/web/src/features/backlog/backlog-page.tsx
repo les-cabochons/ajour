@@ -557,6 +557,7 @@ export function BacklogPage() {
       <Link
         to="/settings/workflow"
         className="backlog-unmapped"
+        aria-label={`${unmapped} unmapped source ${unmapped === 1 ? "state" : "states"}`}
         onClick={async (event) => {
           if (
             event.defaultPrevented ||
@@ -572,7 +573,11 @@ export function BacklogPage() {
         }}
       >
         <RiErrorWarningLine aria-hidden />
-        {unmapped} unmapped source {unmapped === 1 ? "state" : "states"}
+        {unmapped}
+        <span className="backlog-unmapped-words">
+          {" "}
+          unmapped source {unmapped === 1 ? "state" : "states"}
+        </span>
       </Link>
     ) : null;
   const dragged = state.workItems.find((i) => i._id === drag.drag?.itemId);
@@ -614,7 +619,7 @@ export function BacklogPage() {
               view={view}
               ordering={state.backlogSortMode}
               narrow={narrow}
-              className="ml-auto"
+              className="backlog-narrow-display"
             />
             <div className="backlog-workspace-status">
               {syncStatus}

@@ -531,7 +531,8 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
             <div key={item._id} className="flex min-w-0 flex-col gap-6">
               {/* The figures open the main column, so the side cards start
                   level with them (council round 7). */}
-              <div className="flex flex-col gap-2.5">
+              {/* The bar spans the figures it summarizes (council round 11). */}
+              <div className="flex w-fit max-w-full flex-col gap-2.5">
                 <FigureRow>
                   {ESTIMATE_FIGURES.map((figure) => (
                     <EstimateFigure
@@ -545,7 +546,12 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                       readOnly={readOnly}
                     />
                   ))}
-                  <Figure label="Logged in Ajour">
+                  {/* Logged time is a clock, the estimates are not: a rule
+                      sets it apart as another kind of number. */}
+                  <Figure
+                    label="Logged in Ajour"
+                    className="border-l border-border pl-8"
+                  >
                     {formatClockDuration(loggedMs)}
                   </Figure>
                 </FigureRow>

@@ -1113,49 +1113,54 @@ function ProjectDetail({
         {/* The figures open the main column, so the Properties card starts
             level with them, as on the backlog item page (council round 7). */}
         <div className="flex min-w-0 flex-col gap-4">
-          <FigureRow>
-            <Figure label="This week">{formatClockDuration(weekMs)}</Figure>
+          {/* "This week" is the page's one 28px figure; the budget figures
+              form a group with their bar under them only (council round
+              11). */}
+          <FigureRow className="items-end">
+            <Figure label="This week" size="figure">
+              {formatClockDuration(weekMs)}
+            </Figure>
             <Figure label="All time">
               {formatClockDuration(metrics.durationMs)}
             </Figure>
             {budget.budgetMs > 0 ? (
-              <>
-                {/* Named for what they count, so "Budget used" never reads as
-                    All time (council round 4). */}
-                <Figure label="Task budgets">
-                  {formatClockDuration(budget.budgetMs)}
-                </Figure>
-                <Figure label="Budget used">
-                  <span
-                    className={cn(
-                      // Plain like the other figures; amber and red only warn.
-                      "project-figure-consumed",
-                      budgetTone(budget.consumedMs / budget.budgetMs),
+              <div className="flex flex-col gap-2.5">
+                <FigureRow>
+                  {/* Named for what they count, so "Budget used" never reads
+                      as All time (council round 4). */}
+                  <Figure label="Task budgets">
+                    {formatClockDuration(budget.budgetMs)}
+                  </Figure>
+                  <Figure label="Budget used">
+                    <span
+                      className={cn(
+                        // Plain like the other figures; amber and red only warn.
+                        "project-figure-consumed",
+                        budgetTone(budget.consumedMs / budget.budgetMs),
+                      )}
+                    >
+                      {formatClockDuration(budget.consumedMs)}
+                    </span>
+                  </Figure>
+                  <Figure label="Budget left">
+                    {formatClockDuration(
+                      Math.max(0, budget.budgetMs - budget.consumedMs),
                     )}
-                  >
-                    {formatClockDuration(budget.consumedMs)}
-                  </span>
-                </Figure>
-                <Figure label="Budget left">
-                  {formatClockDuration(
-                    Math.max(0, budget.budgetMs - budget.consumedMs),
-                  )}
-                </Figure>
-              </>
+                  </Figure>
+                </FigureRow>
+                <BudgetBar
+                  ratio={budget.consumedMs / budget.budgetMs}
+                  className="project-progress-wide"
+                />
+              </div>
             ) : (
               <Figure label="Active tasks">{summary.active}</Figure>
             )}
           </FigureRow>
           {budget.budgetMs > 0 ? (
-            <>
-              <BudgetBar
-                ratio={budget.consumedMs / budget.budgetMs}
-                className="project-progress-wide"
-              />
-              <p className="-mt-2 text-xs text-[var(--text-secondary)]">
-                Budget figures count the active tasks that have a budget.
-              </p>
-            </>
+            <p className="text-xs text-[var(--text-secondary)]">
+              Budget figures count the active tasks that have a budget.
+            </p>
           ) : null}
           <Tabs
             value={tab}

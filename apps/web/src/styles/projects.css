@@ -170,11 +170,10 @@
   }
 
   /* As wide as the item page's estimate bar, under the figures it explains. */
+  /* Spans the figure group it summarizes, no more. */
   .project-progress-wide {
     display: block;
     width: 100%;
-    max-width: 480px;
-    margin-top: -0.25rem;
   }
 
   /* -- The project ------------------------------------------------- */

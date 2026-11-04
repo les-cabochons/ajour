@@ -1430,6 +1430,19 @@
     color: var(--success);
   }
 
+  /* A line's copy icons show on hover and focus, so the list reads as a
+     reference, not a toolbar; a fresh check stays (council round 11). */
+  @media (pointer: fine) {
+    .submit-line .submit-copy svg:not(.is-copied) {
+      opacity: 0;
+    }
+
+    .submit-line:hover .submit-copy svg,
+    .submit-line:focus-within .submit-copy svg {
+      opacity: 1;
+    }
+  }
+
   .submit-copy-hours {
     font-family: var(--font-mono);
     font-size: var(--text-sm);

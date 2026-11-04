@@ -379,11 +379,13 @@ export function BacklogItemSurface({
             : ""}
         </span>
       )}
+      {/* Named, like Running and Settled, so no mark needs decoding
+          (council round 11). */}
       {isBacklogItemSnoozed(item, now) && (
-        <RiTimeLine
-          className="size-3.5 text-muted-foreground"
-          aria-label="Snoozed"
-        />
+        <span className="backlog-item-marker">
+          <RiTimeLine className="size-3" aria-hidden />
+          Snoozed
+        </span>
       )}
       {hasWorkItemSyncIssue(item) && <SyncConflictButton item={item} />}
     </>
