@@ -25,30 +25,33 @@ interface Registry {
   }): Promise<boolean>;
   broadcast(): Promise<void>;
 }
-/** What an add changed, to put back exactly. */
-type PathChange = unknown;
-
-const { createWindowsUserPath, createPowerShellRegistry } =
-  require("./electron/cli-path.cjs") as {
-    createWindowsUserPath: (options: {
-      registry: Registry;
-      env?: Record<string, string | undefined>;
-    }) => {
-      add(
-        folder: string,
-        hooks?: { beforeWrite?(change: PathChange): Promise<void> },
-      ): Promise<{ added: boolean; change: PathChange }>;
-      revert(change: PathChange): Promise<void>;
-    };
-    createPowerShellRegistry: (options: {
-      run: (
-        file: string,
-        args: string[],
-        env: Record<string, string | undefined>,
-      ) => Promise<string>;
-      env?: Record<string, string | undefined>;
-    }) => Registry;
+const {
+  createWindowsUserPath,
+  createPowerShellRegistry,
+  checkPathRestoration,
+} = require("./electron/cli-path.cjs") as {
+  checkPathRestoration(
+    current: RegistryValue | null,
+    saved: RegistryValue | null,
+    written: string,
+    folder: string,
+  ): RegistryValue | null;
+  createWindowsUserPath: (options: {
+    registry: Registry;
+    env?: Record<string, string | undefined>;
+  }) => {
+    add(folder: string): Promise<{ added: boolean }>;
+    remove(folder: string): Promise<unknown>;
   };
+  createPowerShellRegistry: (options: {
+    run: (
+      file: string,
+      args: string[],
+      env: Record<string, string | undefined>,
+    ) => Promise<string>;
+    env?: Record<string, string | undefined>;
+  }) => Registry;
+};
 
 const FOLDER = "C:\\Users\\alex\\AppData\\Local\\Ajour\\bin";
 const ENV = { LOCALAPPDATA: "C:\\Users\\alex\\AppData\\Local" };
@@ -142,7 +145,7 @@ describe("the Windows user Path", () => {
     expect(fake.current()).toEqual({ value: FOLDER, kind: "ExpandString" });
   });
 
-  it("writes a REG_SZ Path back as REG_EXPAND_SZ", async () => {
+  it("preserves a REG_SZ Path", async () => {
     const fake = fakeRegistry({ value: "C:\\Tools", kind: "String" });
     await createWindowsUserPath({ registry: fake.registry, env: ENV }).add(
       FOLDER,
@@ -150,7 +153,7 @@ describe("the Windows user Path", () => {
 
     expect(fake.current()).toEqual({
       value: `C:\\Tools;${FOLDER}`,
-      kind: "ExpandString",
+      kind: "String",
     });
   });
 
@@ -171,7 +174,6 @@ describe("the Windows user Path", () => {
 
     expect(await userPath.add(FOLDER)).toEqual({
       added: false,
-      change: null,
     });
     expect(fake.writes).toEqual([]);
   });
@@ -225,92 +227,44 @@ describe("the Windows user Path", () => {
   });
 });
 
-describe("putting the Windows user Path back", () => {
-  function userPathOf(fake: ReturnType<typeof fakeRegistry>) {
-    return createWindowsUserPath({ registry: fake.registry, env: ENV });
-  }
-
-  it("restores the exact value and kind an add replaced", async () => {
-    const before: RegistryValue = {
-      value: "C:\\Tools;%USERPROFILE%\\bin;",
+describe("reconciling the Windows user Path", () => {
+  it("removes only the exact folder entry and preserves other programs' changes and the type", async () => {
+    const fake = fakeRegistry({
+      value: `C:\\Tools;${FOLDER};C:\\Other;`,
       kind: "String",
-    };
-    const fake = fakeRegistry(before);
-    const userPath = userPathOf(fake);
-
-    const { change } = await userPath.add(FOLDER);
-    await userPath.revert(change);
-
-    expect(fake.current()).toEqual(before);
-    // Explorer hears of each change.
-    expect(fake.broadcasts).toEqual([1, 2]);
-  });
-
-  it("deletes the Path again when the user had none", async () => {
-    const fake = fakeRegistry({ value: null, kind: null });
-    const userPath = userPathOf(fake);
-
-    await userPath.revert((await userPath.add(FOLDER)).change);
-
-    expect(fake.current()).toEqual({ value: null, kind: null });
-  });
-
-  it("takes out only its entry when another program changed the Path since", async () => {
-    const fake = fakeRegistry({ value: "C:\\Tools", kind: "String" });
-    const userPath = userPathOf(fake);
-    const { change } = await userPath.add(FOLDER);
-    fake.registry.changeTo(`C:\\Tools;${FOLDER};C:\\Other`);
-
-    await userPath.revert(change);
-
+    });
+    await createWindowsUserPath({ registry: fake.registry }).remove(FOLDER);
     expect(fake.current()).toEqual({
-      value: "C:\\Tools;C:\\Other",
-      kind: "ExpandString",
+      value: "C:\\Tools;C:\\Other;",
+      kind: "String",
     });
   });
-
-  it("tells the caller each change before it writes it", async () => {
+  it("treats a failed broadcast as success", async () => {
+    const fake = fakeRegistry(
+      { value: "C:\\Tools", kind: "String" },
+      { failBroadcast: 1 },
+    );
+    const logged: unknown[] = [];
+    await expect(
+      createWindowsUserPath({
+        registry: fake.registry,
+        onBroadcastError: (error) => {
+          logged.push(error);
+        },
+      }).add(FOLDER),
+    ).resolves.toEqual({ added: true });
+    expect(logged).toHaveLength(1);
+    expect(fake.current().value).toBe(`C:\\Tools;${FOLDER}`);
+  });
+  it("does not undo another writer's entry after a rejected conditional write", async () => {
     const fake = fakeRegistry({ value: "C:\\Tools", kind: "String" });
-    const heard: Array<{ change: unknown; writesBefore: number }> = [];
-
-    const { change } = await userPathOf(fake).add(FOLDER, {
-      beforeWrite: async (next: unknown) => {
-        heard.push({ change: next, writesBefore: fake.writes.length });
-      },
-    });
-
-    expect(heard).toEqual([{ change, writesBefore: 0 }]);
-  });
-
-  it("does nothing for an add that changed nothing", async () => {
-    const fake = fakeRegistry({ value: FOLDER, kind: "ExpandString" });
-    const userPath = userPathOf(fake);
-
-    await userPath.revert((await userPath.add(FOLDER)).change);
-
-    expect(fake.writes).toEqual([]);
-  });
-
-  it("puts the Path back, then fails, when the broadcast fails after the write", async () => {
-    const before: RegistryValue = { value: "C:\\Tools", kind: "String" };
-    const fake = fakeRegistry(before, { failBroadcast: 1 });
-
-    await expect(userPathOf(fake).add(FOLDER)).rejects.toThrow(
-      "Add-Type failed.",
-    );
-
-    expect(fake.current()).toEqual(before);
-  });
-
-  it("puts the Path back, then fails, when PowerShell fails after it wrote", async () => {
-    const before: RegistryValue = { value: "C:\\Tools", kind: "ExpandString" };
-    const fake = fakeRegistry(before, { failWrite: 1 });
-
-    await expect(userPathOf(fake).add(FOLDER)).rejects.toThrow(
-      "PowerShell exited with 1.",
-    );
-
-    expect(fake.current()).toEqual(before);
+    fake.registry.write = async () => {
+      fake.registry.changeTo(`C:\\Tools;${FOLDER};C:\\Other`);
+      return false;
+    };
+    const userPath = createWindowsUserPath({ registry: fake.registry });
+    await userPath.add(FOLDER);
+    expect(fake.current().value).toBe(`C:\\Tools;${FOLDER};C:\\Other`);
   });
 });
 
@@ -472,5 +426,30 @@ describe("the PowerShell registry", () => {
     expect(fake.calls[0]!.file).toBe(POWERSHELL);
     expect(fake.calls[0]!.args.join(" ")).toContain("WM_SETTINGCHANGE");
     expect(fake.calls[0]!.args.join(" ")).not.toContain("SetValue");
+  });
+});
+
+describe("the real-app check's leftover PATH backup", () => {
+  const saved: RegistryValue = { value: "C:\\Tools;", kind: "String" };
+  const written = `C:\\Tools;${FOLDER}`;
+  it("restores the exact backup only while the check's write is current", () => {
+    expect(
+      checkPathRestoration(
+        { value: written, kind: "String" },
+        saved,
+        written,
+        FOLDER,
+      ),
+    ).toEqual(saved);
+  });
+  it("keeps entries added since and removes only the check's folder", () => {
+    expect(
+      checkPathRestoration(
+        { value: `${written};D:\\Later;`, kind: "String" },
+        saved,
+        written,
+        FOLDER,
+      ),
+    ).toEqual({ value: "C:\\Tools;D:\\Later;", kind: "String" });
   });
 });

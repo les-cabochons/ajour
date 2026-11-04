@@ -396,7 +396,17 @@ const cliCommand = createCliCommandController({
       "tar.exe",
     ),
   },
-  link: createWindowsUserPath({ registry: createPowerShellRegistry() }),
+  link: createWindowsUserPath({
+    registry: createPowerShellRegistry(),
+    onBroadcastError: (error) =>
+      events
+        .start("cli_command.path_broadcast", {
+          kind: "command",
+          trigger: "system",
+        })
+        .fail(error)
+        .end(),
+  }),
 });
 cliCommand.onChange((state) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -2212,7 +2222,7 @@ if (!hasSingleInstanceLock) {
 
       // An install of the ajour command that a quit or a crash cut short
       // is finished first: rolled back, or kept if it committed.
-      void cliCommand.recover().catch(() => undefined);
+      void cliCommand.reconcile().catch(() => undefined);
 
       void refreshPluginCatalog("launch");
       schedulePluginCatalogRefresh();

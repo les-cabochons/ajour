@@ -1,21 +1,7 @@
 const { execFile } = require("node:child_process");
 const path = require("node:path");
 
-/**
- * Puts the ajour command's folder on the PATH (#568, spec #567). On Windows
- * it is the user `Path` of HKCU\Environment, so no administrator prompt is
- * needed and new terminals see it. macOS links /usr/local/bin/ajour instead
- * (#569).
- *
- * The value is read raw, without expanding its %VARS%, the folder is
- * appended only when absent, and the value is written back as REG_EXPAND_SZ,
- * then WM_SETTINGCHANGE tells Explorer, so a terminal opened from it reads
- * the new Path. An add returns the change it made, and `revert` puts back
- * the exact value and kind it replaced; an add that fails after it wrote
- * puts it back itself. The registry is a seam: tests pass a fake, and Ajour
- * passes `createPowerShellRegistry`.
- */
-
+/** Edits only Ajour's folder entry in the raw user Path, preserving its type. */
 /** How long PowerShell gets to read, or to write and broadcast. */
 const POWERSHELL_TIMEOUT_MS = 30_000;
 /** Reads and writes when another program keeps changing the Path meanwhile. */
@@ -66,14 +52,18 @@ function pathWithoutFolder(raw, folder) {
   return kept.length === entries.length ? null : kept.join(";");
 }
 
+/** The check may restore a snapshot only while its own write is still current. */
+function checkPathRestoration(current, saved, written, folder) {
+  if ((current?.value ?? null) === written) return saved;
+  const value = pathWithoutFolder(current?.value, folder);
+  return value === null ? current : { value, kind: current.kind };
+}
+
 /** The kinds a user Path is written back with. */
 const KINDS = new Set(["ExpandString", "String"]);
 
 /**
  * @typedef {{ value: string | null, kind: string | null }} RegistryValue
- * @typedef {{ folder: string, previous: RegistryValue, written: string }} PathChange
- *   What an add changed: the value and kind it replaced, and what it wrote.
- *   Plain data, so the controller can keep it in its swap journal.
  */
 
 /**
@@ -84,84 +74,38 @@ const KINDS = new Set(["ExpandString", "String"]);
  *     broadcast(): Promise<void>,
  *   },
  *   env?: Record<string, string | undefined>,
+ *   onBroadcastError?: (error: unknown) => void,
  * }} options
  */
-function createWindowsUserPath({ registry, env = process.env }) {
-  /**
-   * Puts back what `change` replaced: the exact value and kind while the
-   * Path is still what the add wrote, or else only takes out the entry, so
-   * what another program added since stays.
-   * @param {PathChange | null} change
-   */
-  async function revert(change) {
-    if (!change) return;
+function createWindowsUserPath({
+  registry,
+  env = process.env,
+  onBroadcastError,
+}) {
+  async function ensure(folder, present) {
     for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt += 1) {
       const current = await registry.read();
-      let target;
-      if (current.value === change.written) {
-        target = change.previous;
-      } else {
-        const without = pathWithoutFolder(current.value, change.folder);
-        if (without === null) return;
-        target = { value: without, kind: current.kind };
-      }
-      const kind =
-        target.value === null
-          ? null
-          : target.kind === "String"
-            ? "String"
-            : "ExpandString";
+      const next = present
+        ? pathWithFolder(current.value, folder, env)
+        : pathWithoutFolder(current.value, folder);
+      if (next === null) return { added: false };
       if (
         await registry.write({
           expected: current.value,
-          value: target.value,
-          kind,
+          value: next,
+          kind: current.kind ?? "ExpandString",
         })
       ) {
-        // The value is back; a failed broadcast leaves only Explorer behind.
-        await registry.broadcast().catch(() => undefined);
-        return;
+        // A successful write remains successful even if Explorer cannot be notified.
+        await registry.broadcast().catch((error) => onBroadcastError?.(error));
+        return { added: present };
       }
     }
-    throw new Error("Your PATH kept changing while Ajour put it back.");
+    throw new Error("Your PATH kept changing while Ajour edited it.");
   }
-
   return {
-    /**
-     * Appends `folder` to the user Path unless it is there. The change it
-     * returns undoes it; a failure after the write undoes it before it
-     * throws. `beforeWrite` hears of each change before it is written, so a
-     * caller can note it where a crash can't lose it.
-     *
-     * @param {string} folder
-     * @param {{ beforeWrite?(change: PathChange): Promise<void> }} [hooks]
-     */
-    async add(folder, { beforeWrite } = {}) {
-      for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt += 1) {
-        const previous = await registry.read();
-        const next = pathWithFolder(previous.value, folder, env);
-        if (next === null) return { added: false, change: null };
-        const change = { folder, previous, written: next };
-        if (beforeWrite) await beforeWrite(change);
-        let written;
-        try {
-          // The write refuses when the Path changed since this read.
-          written = await registry.write({
-            expected: previous.value,
-            value: next,
-            kind: "ExpandString",
-          });
-          if (written) await registry.broadcast();
-        } catch (error) {
-          // PowerShell may have written before it failed.
-          await revert(change).catch(() => undefined);
-          throw error;
-        }
-        if (written) return { added: true, change };
-      }
-      throw new Error("Your PATH kept changing while Ajour edited it.");
-    },
-    revert,
+    add: (folder) => ensure(folder, true),
+    remove: (folder) => ensure(folder, false),
   };
 }
 
@@ -284,4 +228,5 @@ module.exports = {
   createPowerShellRegistry,
   createWindowsUserPath,
   pathWithFolder,
+  checkPathRestoration,
 };

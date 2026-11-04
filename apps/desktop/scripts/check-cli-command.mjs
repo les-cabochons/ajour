@@ -14,18 +14,15 @@
 // 2. presses Install through the bridge, as the Settings row does, and waits
 //    for it to end installed, with the app's version;
 // 3. checks the user Path: the folder appended once, every other entry and
-//    %VAR% as it was, REG_EXPAND_SZ;
+//    %VAR% as it was, the original registry type;
 // 4. runs `ajour -V` in a fresh PowerShell whose Path is read from the
 //    registry, as a new terminal's is;
 // 5. installs again: the Path keeps one entry.
 //
-// The user Path is the real one, HKCU\Environment, so the check reads it
-// first and always writes back exactly what it read, with its kind, and then
-// checks it is byte for byte the same. A developer's machine keeps its Path.
-// Before the app can change it, the check saves it to a backup file in the
-// temp folder; a run cut short (Ctrl+C, a crash, a failed restore) leaves
-// that file, and the next run puts the Path back from it before anything
-// else, while the Path still holds that run's folder.
+// The user Path is real. A backup records the original value and the check's
+// proposed write. Cleanup restores the exact snapshot only if that write is
+// still current. Otherwise it removes only the check folder and preserves
+// concurrent changes. The backup is deleted only after verification.
 //
 //   corepack pnpm --filter @ajour/desktop check:cli-command
 //   corepack pnpm --filter @ajour/desktop check:cli-command --skip-build
@@ -116,7 +113,6 @@ async function powershellRun(script, env = {}, { path: pathValue } = {}) {
   return stdout;
 }
 
-const b64 = (text) => Buffer.from(text, "utf8").toString("base64");
 const fromB64 = (text) => Buffer.from(text, "base64").toString("utf8");
 
 /** The user Path, raw and with its kind, or null when there is none. */
@@ -137,65 +133,80 @@ async function readUserPath() {
     : null;
 }
 
-/** Writes `saved` back, with its kind, or deletes the Path when it had none. */
-async function restoreUserPath(saved) {
-  await powershellRun(
-    [
-      "$ErrorActionPreference = 'Stop';",
-      "$key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment');",
-      "if ($env:CHECK_PATH_KIND -eq '') { $key.DeleteValue('Path', $false) } else {",
-      "$value = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:CHECK_PATH_VALUE.Substring(1)));",
-      "$key.SetValue('Path', $value, [Microsoft.Win32.RegistryValueKind]$env:CHECK_PATH_KIND) };",
-      "$key.Close();",
-      "Add-Type -Namespace AjourCheck -Name Broadcast -MemberDefinition '[DllImport(\"user32.dll\", CharSet = CharSet.Unicode)] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, UIntPtr wParam, string lParam, uint flags, uint timeout, out UIntPtr result);';",
-      "$result = [UIntPtr]::Zero;",
-      "[void][AjourCheck.Broadcast]::SendMessageTimeout([IntPtr]0xffff, 0x1A, [UIntPtr]::Zero, 'Environment', 2, 5000, [ref]$result)",
-    ].join(" "),
-    {
-      CHECK_PATH_KIND: saved ? saved.kind : "",
-      CHECK_PATH_VALUE: saved ? `v${b64(saved.value)}` : "v",
-    },
+const {
+  createPowerShellRegistry,
+  pathWithFolder,
+  checkPathRestoration,
+} = require("../electron/cli-path.cjs");
+const registry = createPowerShellRegistry();
+
+const samePath = (left, right) =>
+  (left?.value ?? null) === (right?.value ?? null) &&
+  (left?.kind ?? null) === (right?.kind ?? null);
+
+/** Restore only the check's own edit, with a fresh conditional registry write. */
+async function restoreBackup({ path: saved, installDir, written }) {
+  const expectedWrite =
+    written ??
+    pathWithFolder(saved?.value, installDir, process.env) ??
+    saved?.value;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const current = await readUserPath();
+    const target = checkPathRestoration(
+      current,
+      saved,
+      expectedWrite,
+      installDir,
+    );
+    if (!samePath(current, target)) {
+      if (
+        !(await registry.write({
+          expected: current?.value ?? null,
+          value: target?.value ?? null,
+          kind: target?.kind ?? null,
+        }))
+      )
+        continue;
+      await registry.broadcast().catch(() => undefined);
+    }
+    if (samePath(await readUserPath(), target)) {
+      await rm(PATH_BACKUP, { force: true });
+      return;
+    }
+  }
+  throw new Error(
+    `The check's PATH edit could not be removed. Backup: ${PATH_BACKUP}`,
   );
 }
 
 /** Saves the user Path and the run's install folder before anything changes. */
 async function saveBackup(saved, installDir) {
   const temporary = `${PATH_BACKUP}.tmp`;
-  await writeFile(temporary, JSON.stringify({ path: saved, installDir }), {
-    encoding: "utf8",
-    mode: 0o600,
-  });
+  await writeFile(
+    temporary,
+    JSON.stringify({
+      path: saved,
+      installDir,
+      written:
+        pathWithFolder(saved?.value, installDir, process.env) ?? saved?.value,
+    }),
+    {
+      encoding: "utf8",
+      mode: 0o600,
+    },
+  );
   await rename(temporary, PATH_BACKUP);
 }
 
 /**
  * Puts back the user Path an earlier run cut short left changed: the exact
- * value and kind it saved, while the Path still holds that run's folder. A
+ * value and kind only while its own write is still current. A
  * Path without it was put back already, or changed by hand since, and is
  * left as it is. Throws when the Path can't be put back, so nothing runs.
  */
 async function restoreLeftoverBackup() {
   if (!existsSync(PATH_BACKUP)) return;
-  const { path: saved, installDir } = JSON.parse(
-    readFileSync(PATH_BACKUP, "utf8"),
-  );
-  const current = await readUserPath();
-  const holdsFolder = entriesOf(current?.value).some(
-    (entry) => entry.toLowerCase() === String(installDir).toLowerCase(),
-  );
-  if (holdsFolder) {
-    process.stdout.write(
-      "     an earlier run left the user Path changed: putting it back\n",
-    );
-    await restoreUserPath(saved);
-    const restored = await readUserPath();
-    if (JSON.stringify(restored) !== JSON.stringify(saved)) {
-      throw new Error(
-        `The user Path from an earlier run couldn't be put back. Its backup is in ${PATH_BACKUP}.`,
-      );
-    }
-  }
-  await rm(PATH_BACKUP, { force: true });
+  await restoreBackup(JSON.parse(readFileSync(PATH_BACKUP, "utf8")));
 }
 
 /** A port nothing listens on, never Ajour's 8787. */
@@ -459,7 +470,7 @@ async function main() {
     );
     expect(
       files.includes("ajour.exe") &&
-        files.some((name) => name.startsWith("completions/")) &&
+        files.some((name) => name.startsWith("share/completions/")) &&
         !files.some((name) => /\.old-|\.staging-/.test(name)),
       "the install folder holds ajour.exe and its completions, and nothing left over",
       files,
@@ -474,10 +485,10 @@ async function main() {
     const after = await readUserPath();
     const expectedEntries = [...entriesOf(before?.value), installDir];
     expect(
-      after?.kind === "ExpandString" &&
+      after?.kind === (before?.kind ?? "ExpandString") &&
         JSON.stringify(entriesOf(after.value)) ===
           JSON.stringify(expectedEntries),
-      "the user Path gains the folder, keeps every other entry unexpanded, and is REG_EXPAND_SZ",
+      "the user Path gains the folder, keeps every other entry unexpanded, and preserves its registry type",
       { kind: after?.kind, added: entriesOf(after?.value).slice(-2) },
     );
 
@@ -540,11 +551,11 @@ async function main() {
     await release.close();
     // Always put the developer's Path back, then prove it.
     try {
-      await restoreUserPath(before);
+      await restoreLeftoverBackup();
       const restored = await readUserPath();
       if (
         expect(
-          JSON.stringify(restored) === JSON.stringify(before),
+          samePath(restored, before),
           "the user Path is restored byte for byte, with its kind",
           { before: before?.kind, after: restored?.kind },
         )

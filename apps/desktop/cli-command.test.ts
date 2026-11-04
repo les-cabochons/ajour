@@ -45,7 +45,7 @@ type CliState = {
 type Controller = {
   state(): Promise<CliState>;
   install(options?: { unit?: unknown }): Promise<CliState>;
-  recover(): Promise<void>;
+  reconcile(): Promise<CliState>;
   stop(timeoutMs?: number): Promise<void>;
   onChange(listener: (state: CliState) => void): () => void;
 };
@@ -61,7 +61,7 @@ type Registry = {
 };
 type UserPath = {
   add(folder: string, hooks?: unknown): Promise<unknown>;
-  revert(change: unknown): Promise<void>;
+  remove(folder: string): Promise<unknown>;
 };
 
 const { createCliCommandController, cliAssetName } =
@@ -431,21 +431,19 @@ async function filesUnder(folder: string): Promise<string[]> {
 
 /** Installs `version` as a previous install would have left it. */
 async function installedBefore(version: string) {
-  await mkdir(path.join(installDir, "man", "man1"), { recursive: true });
-  await writeFile(path.join(installDir, "ajour.exe"), `binary ${version}`);
-  await writeFile(
-    path.join(installDir, "man", "man1", "ajour.1"),
-    "old manual",
-  );
-  await mkdir(path.dirname(recordFile), { recursive: true });
-  const record = {
-    version,
-    binaryPath: path.join(installDir, "ajour.exe"),
-    link: "path",
-    installedAt: "2026-11-01T09:00:00.000Z",
-  };
-  await writeFile(recordFile, JSON.stringify(record));
-  return record;
+  const archive = goodArchive(version);
+  archive["./man/man1/ajour.1"] = "old manual";
+  const asset = `ajour-${version}-windows-x64.zip`;
+  const github = fakeGithub({
+    archive,
+    asset: {
+      name: asset,
+      browser_download_url: `https://github.com/les-cabochons/ajour/releases/download/v${version}/${asset}`,
+    },
+  });
+  const { controller } = controllerWith({ appVersion: version, github });
+  expect((await controller.install()).status).toBe("installed");
+  return JSON.parse(await readFile(recordFile, "utf8"));
 }
 
 describe("the asset of each platform", () => {
@@ -488,20 +486,19 @@ describe("installing the ajour command", () => {
     });
     expect(await filesUnder(installDir)).toEqual([
       "ajour.exe",
-      "completions/ajour.bash",
-      "man/man1/ajour.1",
+      "share/completions/ajour.bash",
+      "share/man/man1/ajour.1",
     ]);
     expect(link.current()).toEqual({
       value: `C:\\Tools;${installDir}`,
-      kind: "ExpandString",
+      kind: "String",
     });
     // The check ran the unpacked binary, before it moved into place.
     const check = exec.calls.find((call) => call.args[0] === "-V")!;
     expect(check.file).not.toBe(path.join(installDir, "ajour.exe"));
-    expect(JSON.parse(await readFile(recordFile, "utf8"))).toEqual({
+    expect(JSON.parse(await readFile(recordFile, "utf8"))).toMatchObject({
       version: VERSION,
       binaryPath: path.join(installDir, "ajour.exe"),
-      link: "path",
       installedAt: "2026-11-04T10:00:00.000Z",
     });
   });
@@ -582,8 +579,8 @@ describe("installing the ajour command", () => {
     );
     expect(await filesUnder(installDir)).toEqual([
       "ajour.exe",
-      "completions/ajour.bash",
-      "man/man1/ajour.1",
+      "share/completions/ajour.bash",
+      "share/man/man1/ajour.1",
     ]);
   });
 
@@ -635,6 +632,7 @@ describe("a refused or failed install", () => {
     const filesBefore = await filesUnder(installDir);
     const { events, recorded } = recordingEvents();
     const { controller, link } = controllerWith(setup);
+    await controller.reconcile();
     const pathBefore = { ...(link as ReturnType<typeof fakeLink>).current() };
 
     const state = await events.run(
@@ -651,14 +649,16 @@ describe("a refused or failed install", () => {
       before ? ["cli-command.json"] : [],
     );
     if (before) {
-      expect(JSON.parse(await readFile(recordFile, "utf8"))).toEqual(before);
+      expect(JSON.parse(await readFile(recordFile, "utf8"))).toMatchObject(
+        before!,
+      );
       expect(await readFile(path.join(installDir, "ajour.exe"), "utf8")).toBe(
         `binary ${previous}`,
       );
       // No staging folder, no old copy left.
-      expect(await readdir(installDir)).toEqual(["ajour.exe", "man"]);
+      expect(await readdir(installDir)).toEqual(["ajour.exe", "share"]);
     } else {
-      expect(existsSync(path.join(root, "Local"))).toBe(false);
+      expect(await filesUnder(installDir)).toEqual([]);
       expect(existsSync(recordFile)).toBe(false);
     }
     const event = recorded.find(
@@ -799,37 +799,35 @@ describe("a refused or failed install", () => {
     });
   });
 
-  it("puts the previous install back when the PATH can't be changed", async () => {
-    const { state, event } = await refused(
-      { link: fakeLink({ fail: true }) },
-      "0.0.1-nightly.20261101.280",
+  it("keeps the commit on PATH failure and Retry reconciles without downloading again", async () => {
+    let fail = true;
+    const base = fakeLink();
+    const link = {
+      link: {
+        ...base.link,
+        add: async (folder: string) => {
+          if (fail) throw new Error("PATH unavailable");
+          return base.link.add(folder);
+        },
+      },
+    };
+    const { controller, github } = controllerWith({ link });
+    expect((await controller.install()).error).toBe("PATH unavailable");
+    expect(JSON.parse(await readFile(recordFile, "utf8")).version).toBe(
+      VERSION,
     );
-
-    expect(state.error).toBe(
-      "Ajour couldn't add ajour to your PATH, so nothing changed.",
-    );
-    expect(event.outcome).toBe("error");
+    const downloads = github.requests.length;
+    fail = false;
+    expect((await controller.install()).status).toBe("installed");
+    expect(github.requests).toHaveLength(downloads);
+    expect(base.current().value).toContain(installDir);
   });
 
-  it("removes what it made when the PATH can't be changed on a first install", async () => {
-    const { state } = await refused({ link: fakeLink({ fail: true }) });
-
-    expect(state).toEqual({
-      status: "error",
-      progress: null,
-      error: "Ajour couldn't add ajour to your PATH, so nothing changed.",
-    });
-  });
-
-  it("puts the Path back when the broadcast fails after the write", async () => {
-    const { state, event } = await refused({
+  it("keeps the install when broadcasting the successful PATH write fails", async () => {
+    const { controller } = controllerWith({
       link: fakeLink({ failBroadcast: true }),
     });
-
-    expect(state.error).toBe(
-      "Ajour couldn't add ajour to your PATH, so nothing changed.",
-    );
-    expect(event.outcome).toBe("error");
+    expect((await controller.install()).status).toBe("installed");
   });
 
   it("takes the folder off the Path when the record can't be written", async () => {
@@ -956,7 +954,7 @@ describe("writing the download", () => {
     expect(state.error).toBe(
       "The ajour download doesn't match its published checksum, so Ajour didn't install it.",
     );
-    expect(existsSync(path.join(root, "Local"))).toBe(false);
+    expect(await filesUnder(installDir)).toEqual([]);
   });
 });
 
@@ -994,7 +992,7 @@ describe("an install cut short", () => {
 
     // The next launch, with every step allowed.
     const next = controllerWith({ link: { link: link.nextLaunch() } });
-    await next.controller.recover();
+    await next.controller.reconcile();
     const state = await next.controller.state();
     const where = `cut at step ${n}${previous ? ", over an earlier install" : ""}`;
 
@@ -1005,8 +1003,8 @@ describe("an install cut short", () => {
     if (state.status === "installed" && state.version === VERSION) {
       expect(await filesUnder(installDir), where).toEqual([
         "ajour.exe",
-        "completions/ajour.bash",
-        "man/man1/ajour.1",
+        "share/completions/ajour.bash",
+        "share/man/man1/ajour.1",
       ]);
       expect(
         await readFile(path.join(installDir, "ajour.exe"), "utf8"),
@@ -1021,13 +1019,16 @@ describe("an install cut short", () => {
       expect(JSON.parse(await readFile(recordFile, "utf8")), where).toEqual(
         before,
       );
-      expect(await readdir(installDir), where).toEqual(["ajour.exe", "man"]);
+      expect(await readdir(installDir), where).toEqual(["ajour.exe", "share"]);
       expect(
         await readFile(path.join(installDir, "ajour.exe"), "utf8"),
         where,
       ).toBe(`binary ${previous}`);
       expect(
-        await readFile(path.join(installDir, "man", "man1", "ajour.1"), "utf8"),
+        await readFile(
+          path.join(installDir, "share", "man", "man1", "ajour.1"),
+          "utf8",
+        ),
         where,
       ).toBe("old manual");
       expect(link.current(), where).toEqual(link.initial);
@@ -1088,8 +1089,10 @@ describe("an install cut short", () => {
     expect(await readFile(path.join(installDir, "ajour.exe"), "utf8")).toBe(
       `binary ${PREVIOUS}`,
     );
-    expect(JSON.parse(await readFile(recordFile, "utf8"))).toEqual(before);
-    expect(await readdir(installDir)).toEqual(["ajour.exe", "man"]);
+    expect(JSON.parse(await readFile(recordFile, "utf8"))).toMatchObject(
+      before!,
+    );
+    expect(await readdir(installDir)).toEqual(["ajour.exe", "share"]);
   });
 });
 
@@ -1149,9 +1152,11 @@ describe("quitting during an install", () => {
     release();
 
     expect((await installing).status).toBe("error");
-    expect(JSON.parse(await readFile(recordFile, "utf8"))).toEqual(before);
-    expect(await readdir(installDir)).toEqual(["ajour.exe", "man"]);
-    expect(link.writes).toEqual([]);
+    expect(JSON.parse(await readFile(recordFile, "utf8"))).toMatchObject(
+      before!,
+    );
+    expect(await readdir(installDir)).toEqual(["ajour.exe", "share"]);
+    expect(link.current().value).toContain(installDir);
   });
 
   it("starts no install once Ajour quits", async () => {
@@ -1240,5 +1245,67 @@ describe("where it doesn't install", () => {
     await controller.install();
 
     expect(github.requests).toEqual([API, DOWNLOAD, ASSET_HOST]);
+  });
+});
+
+describe("reconciliation failures", () => {
+  it("blocks install and retries the same controller after the filesystem is available", async () => {
+    let blocked = true;
+    const files = fsWith({
+      readdir: (async (...args: Parameters<typeof fs.readdir>) => {
+        if (blocked) throw new Error("disk unavailable");
+        return fs.readdir(...args);
+      }) as never,
+    });
+    const { controller, github } = controllerWith({ files });
+    expect((await controller.reconcile()).error).toContain("disk unavailable");
+    expect((await controller.install()).status).toBe("error");
+    expect(github.requests).toEqual([]);
+    blocked = false;
+    expect((await controller.install()).status).toBe("installed");
+  });
+});
+
+describe("reconciliation across later installs", () => {
+  it("skips a locked old executable, keeps a later commit, and cleans it when unlocked", async () => {
+    await installedBefore("0.0.1-nightly.20261101.280");
+    let locked = true;
+    const files = fsWith({
+      rm: (async (file: string, options: Parameters<typeof fs.rm>[1]) => {
+        if (locked && String(file).includes("ajour.exe.old-"))
+          throw Object.assign(new Error("locked"), { code: "EPERM" });
+        return fs.rm(file, options);
+      }) as never,
+    });
+    const { controller } = controllerWith({ files });
+    expect((await controller.install()).status).toBe("installed");
+    expect(
+      (await readdir(installDir)).some((name) =>
+        name.startsWith("ajour.exe.old-"),
+      ),
+    ).toBe(true);
+    expect((await controller.install()).status).toBe("installed");
+    const committed = await readFile(recordFile, "utf8");
+    expect((await controller.reconcile()).version).toBe(VERSION);
+    expect(await readFile(recordFile, "utf8")).toBe(committed);
+    locked = false;
+    expect((await controller.reconcile()).status).toBe("installed");
+    expect(await readdir(installDir)).toEqual(["ajour.exe", "share"]);
+  });
+  it("removes only our PATH entry when an uncommitted install is discarded", async () => {
+    const link = fakeLink({
+      initial: {
+        value: `C:\\Tools;${installDir};C:\\AddedLater;`,
+        kind: "String",
+      },
+    });
+    await mkdir(installDir, { recursive: true });
+    await writeFile(path.join(installDir, "ajour.exe"), "uncommitted");
+    const { controller } = controllerWith({ link });
+    expect((await controller.reconcile()).status).toBe("not-installed");
+    expect(link.current()).toEqual({
+      value: "C:\\Tools;C:\\AddedLater;",
+      kind: "String",
+    });
   });
 });

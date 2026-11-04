@@ -931,6 +931,7 @@ channel to read the event each emits.
 | `catalog.refresh`                    | job                                | main process                                     |
 | `catalog.remove_source`              | command, ipc                       | IPC channel                                      |
 | `cli_command.get_state`              | ipc                                | IPC channel                                      |
+| `cli_command.path_broadcast`         | command                            | main process                                     |
 | `cli_command.install`                | command, ipc                       | IPC channel                                      |
 | `comment.delete`                     | job, request, plugin_operation     | route, plugin method, client call, renderer      |
 | `comment.edit`                       | command, request, plugin_operation | route, plugin method, client call                |

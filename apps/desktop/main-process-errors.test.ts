@@ -1451,7 +1451,7 @@ describe("startup", () => {
     const sweepOrphanedRenderers = vi.fn(async () => ({ ended: 0 }));
     const processRecord = { hold: vi.fn(), release: vi.fn() };
     const tray = { show: vi.fn(), remove: vi.fn() };
-    const cliCommand = { recover: vi.fn(async () => {}) };
+    const cliCommand = { reconcile: vi.fn(async () => {}) };
     const context = vm.createContext({
       addWindowApiToken,
       cliCommand,
@@ -1669,7 +1669,7 @@ describe("startup", () => {
     const runtime = startupRuntime();
     await flush();
 
-    expect(runtime.cliCommand.recover).toHaveBeenCalledOnce();
+    expect(runtime.cliCommand.reconcile).toHaveBeenCalledOnce();
   });
 
   it("sweeps the last session's orphaned plugin renderers once it holds the lock, and only then", async () => {
