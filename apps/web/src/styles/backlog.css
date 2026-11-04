@@ -1018,6 +1018,24 @@
     padding: 0 0.75rem;
   }
 
+  /* Estimate and actions keep fixed tracks, so a row without an estimate
+     truncates its title where the others do. */
+  .backlog-list-row .backlog-item-properties {
+    display: grid;
+    grid-template-columns: 36px 52px;
+    gap: 0.625rem;
+  }
+
+  .backlog-list-row .backlog-item-estimate {
+    grid-column: 1;
+    min-width: 0;
+    text-align: right;
+  }
+
+  .backlog-list-row .backlog-item-actions {
+    grid-column: 2;
+  }
+
   .backlog-item-leading,
   .backlog-item-leading[data-no-id] {
     grid-template-columns: 16px 24px 16px;
