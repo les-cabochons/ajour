@@ -275,6 +275,27 @@ function couldBeMapped(task: LocalProjectTask) {
   );
 }
 
+/** Stored task values tell us whether this week's names need plugin discovery. */
+export function weekNeedsPluginNames(
+  state: LocalAppState,
+  weekDates: string[],
+): boolean {
+  const values = [
+    ...state.timesheetEntries.flatMap((entry) => [
+      entry,
+      ...(entry.commit ? [entry.commit] : []),
+    ]),
+    ...state.timesheetTombstones.map((entry) => entry.commit),
+  ];
+  return values.some((entry) => {
+    if (!weekDates.includes(entry.localDate)) return false;
+    const task = state.projects
+      .find((project) => project._id === entry.projectId)
+      ?.tasks.find((task) => task._id === entry.taskId);
+    return task !== undefined && couldBeMapped(task);
+  });
+}
+
 /**
  * What the task's time commits as. Local only and Not known yet come from
  * commit-target.ts. The name comes from `resolveCommitTaskName` under the
