@@ -573,10 +573,10 @@ export function BacklogPage() {
         }}
       >
         <RiErrorWarningLine aria-hidden />
-        {unmapped}
+        {unmapped} unmapped
         <span className="backlog-unmapped-words">
           {" "}
-          unmapped source {unmapped === 1 ? "state" : "states"}
+          source {unmapped === 1 ? "state" : "states"}
         </span>
       </Link>
     ) : null;

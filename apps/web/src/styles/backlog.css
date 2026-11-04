@@ -1223,10 +1223,17 @@
 
   .backlog-list-row .backlog-item-project,
   .backlog-list-row .backlog-item-project > .truncate,
-  .backlog-list-row > .backlog-item-source-state {
+  .backlog-list-row > .backlog-item-source-state,
+  .backlog-list-row .backlog-item-parent {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  /* A subitem names its parent after the project, so a generic title still
+     says where it belongs (council round 13). */
+  .backlog-list-row .backlog-item-parent {
+    max-width: 100%;
   }
 
   /* The project leads line 2, as a line of text with its dot, not a chip. */
@@ -1276,8 +1283,7 @@
     grid-template-columns: 24px 16px;
   }
 
-  .backlog-item-id,
-  .backlog-item-parent {
+  .backlog-item-id {
     display: none;
   }
 
@@ -1410,7 +1416,8 @@
   padding-left: 0.75rem;
   border-left: 1px solid var(--border);
 }
-.backlog-refresh-compact {
+.backlog-refresh .backlog-refresh-compact {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   border: 0;

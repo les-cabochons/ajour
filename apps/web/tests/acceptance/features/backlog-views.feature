@@ -1234,13 +1234,13 @@ Feature: Backlog list and board views
 
   Scenario: Fold the Subitems and Time entries cards on the item page
     When I open the Backlog parent page
-    Then the Subitems and Time entries cards are closed on their summary
+    Then the short Subitems list shows open and Time entries is closed on its summary
     When I add the subitem "Folded subitem" on its page
     And I press Escape in the subitem name field
-    Then the Subitems card is closed on "0 of 2 done" and the page has the focus
-    When I open the Subitems card
+    Then the Subitems card shows "0 of 2 done" and the page has the focus
+    When I close the Subitems card
     And I reload the item page
-    Then the Subitems card is still open and Time entries is still closed
+    Then the Subitems card is still closed and Time entries is still closed
 
   Scenario: Fold the Subitems card from its title while adding a subitem
     When I open the Backlog parent page
@@ -1248,6 +1248,7 @@ Feature: Backlog list and board views
     Then the Subitems card stays closed, even after a reload
 
   Scenario: Open the Subitems card with Enter after a right-click on its title
+    Given I closed the Subitems card on an earlier visit
     When I open the Backlog parent page
     And I press Add subitem, right-click the Subitems title and press Enter
     Then the Subitems card is open

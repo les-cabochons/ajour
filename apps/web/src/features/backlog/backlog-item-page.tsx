@@ -84,6 +84,7 @@ import {
 import {
   updateBacklogItemCards,
   useBacklogItemCards,
+  resolveSubitemsOpen,
 } from "@/lib/backlog-item-cards";
 
 /**
@@ -608,7 +609,10 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                   subitems={subitems}
                   iconData={iconData}
                   from={from}
-                  open={cards.subitemsOpen}
+                  open={resolveSubitemsOpen(
+                    cards.subitemsOpen,
+                    subitems.length,
+                  )}
                   onOpenChange={(subitemsOpen) =>
                     updateBacklogItemCards({ subitemsOpen })
                   }

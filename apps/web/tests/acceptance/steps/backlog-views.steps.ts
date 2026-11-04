@@ -2430,14 +2430,16 @@ function sideCard(page: Page, name: "Subitems" | "Time entries") {
   };
 }
 Then(
-  "the Subitems and Time entries cards are closed on their summary",
+  "the short Subitems list shows open and Time entries is closed on its summary",
   async ({ page }) => {
+    // One to three subitems show open until the user chooses (council
+    // round 13).
     const subitems = sideCard(page, "Subitems");
-    await expect(subitems.toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(subitems.toggle).toHaveAttribute("aria-expanded", "true");
     await expect(subitems.toggle).toContainText("0 of 1 done");
     await expect(
       subitems.card.getByRole("link", { name: "Backlog subitem" }),
-    ).toHaveCount(0);
+    ).toBeVisible();
     const timeEntries = sideCard(page, "Time entries");
     await expect(timeEntries.toggle).toHaveAttribute("aria-expanded", "false");
     await expect(timeEntries.card).toContainText("No time logged yet.");
@@ -2447,10 +2449,9 @@ When("I press Escape in the subitem name field", async ({ page }) => {
   await page.getByRole("textbox", { name: "New subitem name" }).press("Escape");
 });
 Then(
-  "the Subitems card is closed on {string} and the page has the focus",
+  "the Subitems card shows {string} and the page has the focus",
   async ({ page }, progress: string) => {
     const subitems = sideCard(page, "Subitems");
-    await expect(subitems.toggle).toHaveAttribute("aria-expanded", "false");
     await expect(subitems.toggle).toContainText(progress);
     await expect(page.locator(".backlog-item-page")).toBeFocused();
     // Adding opened the card for the name field only; nothing was saved.
@@ -2503,18 +2504,33 @@ Then("the Subitems card is open", async ({ page }) => {
 When("I open the Subitems card", async ({ page }) => {
   await sideCard(page, "Subitems").toggle.click();
 });
+When("I close the Subitems card", async ({ page }) => {
+  const { toggle } = sideCard(page, "Subitems");
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+});
+Given("I closed the Subitems card on an earlier visit", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "ajour.backlog-item-cards",
+      JSON.stringify({ subitemsOpen: false, timeEntriesOpen: false }),
+    );
+  });
+});
 When("I reload the item page", async ({ page }) => {
   await page.reload();
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 });
 Then(
-  "the Subitems card is still open and Time entries is still closed",
+  "the Subitems card is still closed and Time entries is still closed",
   async ({ page }) => {
+    // The user's choice outlasts the short-list default.
     const subitems = sideCard(page, "Subitems");
-    await expect(subitems.toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(subitems.toggle).toHaveAttribute("aria-expanded", "false");
     await expect(
       subitems.card.getByRole("link", { name: "Folded subitem" }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     await expect(sideCard(page, "Time entries").toggle).toHaveAttribute(
       "aria-expanded",
       "false",
