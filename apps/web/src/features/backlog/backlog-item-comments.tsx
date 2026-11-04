@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  RiArrowDownSLine as OutcomesIcon,
   RiArrowUpSLine as EarlierIcon,
   RiCheckLine as CheckIcon,
   RiEmotionLine as ReactIcon,
@@ -19,7 +18,7 @@ import {
   preloadMarkdownEditor,
 } from "@/components/markdown-editor";
 import { SectionHeading } from "@/components/section-heading";
-import { TooltipButton } from "@/components/tooltip-button";
+import { SplitButton } from "@/components/split-button";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import {
@@ -762,99 +761,72 @@ function CommentComposer({
               </Button>
             ) : null}
             <span className="text-2xs text-muted-foreground">{sendKeys}</span>
-            <span className="flex">
-              <Button
-                size="sm"
-                className="rounded-r-none"
-                disabled={!canSend}
-                onClick={() => run(buttonOutcome, text)}
-              >
-                {/* Every label takes the same cell, so the button keeps the
-                    width of the longest and the footer doesn't shift. */}
-                <span className="grid">
-                  {[...COMMENT_OUTCOMES.map(labelOf), "Sending…"].map(
-                    (label) => {
-                      const shown =
-                        label ===
-                        (sending ? "Sending…" : labelOf(buttonOutcome));
-                      return (
-                        <span
-                          key={label}
-                          aria-hidden={shown ? undefined : true}
-                          className={cn(
-                            "col-start-1 row-start-1",
-                            !shown && "invisible",
-                          )}
-                        >
-                          {label}
-                        </span>
-                      );
-                    },
-                  )}
-                </span>
-              </Button>
-              <DropdownMenu>
-                <TooltipButton
-                  label="Other ways to comment"
-                  side="top"
-                  disabled={!canSend}
-                  render={
-                    <DropdownMenuTrigger
-                      render={
-                        <Button
-                          size="icon-sm"
-                          className="ml-px rounded-l-none"
-                        />
-                      }
+            <SplitButton
+              size="sm"
+              onClick={() => run(buttonOutcome, text)}
+              disabled={!canSend}
+              menuLabel="Other ways to comment"
+              menuDisabled={!canSend}
+              side="top"
+              menuClassName="min-w-56"
+              menu={COMMENT_OUTCOMES.map((outcome) => {
+                const reason = disabledReason(outcome);
+                const keys = commentOutcomeKeys(outcome);
+                return (
+                  <DropdownMenuItem
+                    key={outcome}
+                    disabled={Boolean(reason)}
+                    aria-description={reason}
+                    onClick={() => run(outcome, text)}
+                  >
+                    <CheckIcon
+                      aria-hidden="true"
+                      className={cn(
+                        "text-foreground",
+                        outcome !== buttonOutcome && "invisible",
+                      )}
                     />
-                  }
-                >
-                  <OutcomesIcon />
-                </TooltipButton>
-                <DropdownMenuContent
-                  align="end"
-                  side="top"
-                  className="w-auto min-w-56"
-                >
-                  {COMMENT_OUTCOMES.map((outcome) => {
-                    const reason = disabledReason(outcome);
-                    const keys = commentOutcomeKeys(outcome);
-                    return (
-                      <DropdownMenuItem
-                        key={outcome}
-                        disabled={Boolean(reason)}
-                        aria-description={reason}
-                        onClick={() => run(outcome, text)}
-                      >
-                        <CheckIcon
-                          aria-hidden="true"
-                          className={cn(
-                            "text-foreground",
-                            outcome !== buttonOutcome && "invisible",
-                          )}
-                        />
-                        <span className="flex flex-col">
-                          <span>{labelOf(outcome)}</span>
-                          {reason ? (
-                            <span className="text-xs text-muted-foreground">
-                              {reason}
-                            </span>
-                          ) : null}
+                    <span className="flex flex-col">
+                      <span>{labelOf(outcome)}</span>
+                      {reason ? (
+                        <span className="text-xs text-muted-foreground">
+                          {reason}
                         </span>
-                        {keys ? (
-                          <DropdownMenuShortcut aria-hidden="true">
-                            {formatKeyChord(
-                              { key: "Enter", mod: true, ...keys },
-                              platform,
-                            )}
-                          </DropdownMenuShortcut>
-                        ) : null}
-                      </DropdownMenuItem>
-                    );
-                  })}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </span>
+                      ) : null}
+                    </span>
+                    {keys ? (
+                      <DropdownMenuShortcut aria-hidden="true">
+                        {formatKeyChord(
+                          { key: "Enter", mod: true, ...keys },
+                          platform,
+                        )}
+                      </DropdownMenuShortcut>
+                    ) : null}
+                  </DropdownMenuItem>
+                );
+              })}
+            >
+              {/* Every label takes the same cell, so the button keeps the
+                  width of the longest and the footer doesn't shift. */}
+              <span className="grid">
+                {[...COMMENT_OUTCOMES.map(labelOf), "Sending…"].map((label) => {
+                  const shown =
+                    label === (sending ? "Sending…" : labelOf(buttonOutcome));
+                  return (
+                    <span
+                      key={label}
+                      aria-hidden={shown ? undefined : true}
+                      className={cn(
+                        "col-start-1 row-start-1",
+                        !shown && "invisible",
+                      )}
+                    >
+                      {label}
+                    </span>
+                  );
+                })}
+              </span>
+            </SplitButton>
           </div>
         </div>
       ) : (
