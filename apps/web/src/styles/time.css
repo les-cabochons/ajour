@@ -562,9 +562,10 @@
     cursor: default;
   }
 
-  /* An empty day's 0:00 steps back so logged days stand out. */
+  /* An empty day's "–" steps back to tertiary, so logged days stand out
+     (council round 26). */
   .weekly-capacity-value.is-zero .weekly-capacity-trigger {
-    color: var(--text-secondary);
+    color: var(--text-tertiary);
   }
 
   .weekly-capacity-value.is-summary .weekly-capacity-trigger {

@@ -203,7 +203,11 @@ export function SettingsNavigation({
       </SidebarHeader>
       {/* The app sidebar's timer card, so Settings shows the one form of the
           timer (council round 25). */}
-      <TimerDock />
+      {/* 16px from Back to app and from the first group (council round
+          26). */}
+      <div className="-mb-3 pt-2">
+        <TimerDock />
+      </div>
       <SidebarContent>
         {groups.map((group) => (
           <SidebarGroup key={group.label}>

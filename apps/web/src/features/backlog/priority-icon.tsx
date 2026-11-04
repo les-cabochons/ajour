@@ -93,10 +93,11 @@ export function PriorityIcon({
           width="3"
           height={5 + bar * 3}
           rx="0.75"
-          fill="currentColor"
           // The unfilled bars keep the frame visible, as in Linear, so every
-          // level reads as one glyph (council round 19).
-          opacity={bar < filledBars ? 1 : 0.3}
+          // level reads as one glyph (council round 19), in tertiary ink so
+          // the filled count reads at a glance (council round 26).
+          fill={bar < filledBars ? "currentColor" : "var(--text-tertiary)"}
+          opacity={bar < filledBars ? 1 : 0.6}
         />
       ))}
     </svg>

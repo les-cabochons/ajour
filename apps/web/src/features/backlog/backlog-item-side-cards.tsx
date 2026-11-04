@@ -249,7 +249,11 @@ export function SubitemsCard({
                 <PriorityIcon priority={subitem.priority} />
               ) : null}
               <Value tone="muted" className="w-10 text-right">
-                {formatHours(subitem.remainingEstimateHours)}
+                {/* A done subitem has nothing left: "–", as an empty cell
+                    reads (council round 26). */}
+                {subitem.status === "archived"
+                  ? "–"
+                  : formatHours(subitem.remainingEstimateHours)}
               </Value>
             </Link>
           ))}

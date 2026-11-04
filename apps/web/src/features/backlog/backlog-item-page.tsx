@@ -3,6 +3,7 @@ import { BacklogRefresh } from "./backlog-refresh";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
+  RiCornerDownRightLine,
   RiAddLine as AddIcon,
   RiArchiveLine as ArchiveIcon,
   RiArrowGoBackLine as UnsettleIcon,
@@ -482,7 +483,11 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                     search={{ from }}
                     className="truncate"
                   >
-                    ↳ {parent.title}
+                    <RiCornerDownRightLine
+                      aria-hidden
+                      className="mr-0.5 inline size-3 align-[-2px]"
+                    />
+                    {parent.title}
                   </Link>
                 ) : null}
               </div>

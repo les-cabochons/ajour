@@ -1,4 +1,5 @@
 import {
+  RiCornerDownRightLine,
   RiPlayFill,
   RiStopFill,
   RiCheckboxCircleLine,
@@ -534,7 +535,13 @@ export function BacklogItemSurface({
         ) : null}
         {parent && (
           <span className="backlog-item-parent" title={parent.title}>
-            ↳ {parent.title}
+            {/* The sidebar's drawn parent mark, not a text arrow (council
+                round 26). */}
+            <RiCornerDownRightLine
+              aria-hidden
+              className="mr-0.5 inline size-3 align-[-2px]"
+            />
+            {parent.title}
           </span>
         )}
         {!board && progressLabel}
