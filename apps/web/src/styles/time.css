@@ -1425,6 +1425,18 @@
     content: none;
   }
 
+  /* The drag preview keeps the row's two lines: its duration sits on line 1
+     in a fixed slot, clear of the note running under it. */
+  .time-entry-drag-preview {
+    align-items: flex-start;
+  }
+
+  .time-entry-drag-preview .time-entry-trailing {
+    flex: none;
+    padding-top: 8px;
+    text-align: right;
+  }
+
   /* Continue or Stop and the duration sit on the task's line. */
   .time-entry-trailing {
     width: 7.5rem;
