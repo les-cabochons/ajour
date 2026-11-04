@@ -1,0 +1,22 @@
+Week 45 · Mon 2 – Sun 8 Nov 2026                    22:09 of 40:00  1:51 behind
+───────────────────────────────────────────────────────────────────────────────
+Mon 2                                                              8:00 of 8:00
+   3:00  AJR   07 Export       Fix export rounding    ✓  2a9e1f0
+   1:30  AJR   09 Admin        Expenses               ✓  5c17e08  local
+   3:30  ACME  05 Backend      Rate limiter           ✓  4e0c2b8
+
+Tue 3                                                              7:30 of 8:00
+   2:15  ACME  03 Meetings     Sprint planning        ✓  d8b2a40
+   3:00  ACME  Temp migration  Schema dry run on th…     66e03f9  not known yet
+   2:15  AJR   04 Review       PR #510                   1b9cc3d
+
+Wed 4 · today                                                      6:39 of 8:00
+●  1:24  AJR   07 Export       Fix export rounding       3f9a2c1
+   2:00  AJR   04 Review       PR #512, #514             b7e1d04
+   0:45  ACME  03 Meetings     Weekly sync            ✓  91c0aa3
+   2:30  ACME  05 Backend      Rate limiter retries   ✓  0d4f77e
+
+Thu 5                                                                 — of 8:00
+Fri 6                                                                 — of 8:00
+
+10 entries · 1 running · 6 committed · 3 to commit

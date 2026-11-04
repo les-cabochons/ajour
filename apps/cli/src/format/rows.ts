@@ -28,8 +28,9 @@ export interface Row {
   /** The entry's short id, or its whole id when it has none. */
   id: string;
   date: string;
-  /** A muted word after the row, such as "saved". */
+  /** A word after the row, such as "saved", muted unless `tagRole` says. */
   tag?: string;
+  tagRole?: keyof Paint;
 }
 
 export interface RowOptions {
@@ -37,6 +38,11 @@ export interface RowOptions {
   today: string;
   /** The terminal's width. Without one, as in a pipe, nothing is cut. */
   columns?: number;
+  /**
+   * Whether a row names its day when it isn't today. Prints that group rows
+   * under each day's header leave it out.
+   */
+  dayColumn?: boolean;
 }
 
 export function entryRow(entry: AgentTimeEntry): Row {
@@ -150,10 +156,13 @@ export function formatRows(rows: readonly Row[], options: RowOptions): string {
       { text: row.committed ? "✓" : "", role: "success" },
       { text: ids[index]!, role: "muted" },
       {
-        text: row.date === options.today ? "" : formatDay(row.date),
+        text:
+          options.dayColumn === false || row.date === options.today
+            ? ""
+            : formatDay(row.date),
         role: "muted",
       },
-      { text: row.tag ?? "", role: "muted" },
+      { text: row.tag ?? "", role: row.tagRole ?? "muted" },
     ];
   });
 

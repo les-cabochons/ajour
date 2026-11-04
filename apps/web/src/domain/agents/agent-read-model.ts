@@ -161,6 +161,23 @@ function byDayThenSave(left: LocalTimesheetEntry, right: LocalTimesheetEntry) {
   );
 }
 
+/** Entry classifications include archived projects and tasks, without plugin names. */
+function entryCommitsAs(
+  state: LocalAppState,
+  entry: { projectId?: string; taskId?: string },
+): Pick<AgentCommitsAs, "kind"> {
+  const project = state.projects.find(
+    (project) => project._id === entry.projectId,
+  );
+  const task = project?.tasks.find((task) => task._id === entry.taskId);
+  const target = getCommitTarget(project, task);
+  if (target === "local") return { kind: "local-only" };
+  if (target === "waiting") return { kind: "not-known-yet" };
+  return project && task
+    ? describeCommitsAs(project, task, undefined, undefined)
+    : { kind: "own" };
+}
+
 export function listTimeEntriesForAgent(
   state: LocalAppState,
   { from, to }: ReadToolInput<"list_time_entries">,
@@ -182,9 +199,14 @@ export function listTimeEntriesForAgent(
     entries: state.timesheetEntries
       .filter((entry) => entry.localDate >= from && entry.localDate <= to)
       .sort(byDayThenSave)
-      .map((entry) => toAgentEntry(state, entry)),
+      .map((entry) => ({
+        ...toAgentEntry(state, entry),
+        commitsAs: entryCommitsAs(state, entry),
+      })),
     running:
-      running && running.date >= from && running.date <= to ? running : null,
+      running && running.date >= from && running.date <= to
+        ? { ...running, commitsAs: entryCommitsAs(state, running) }
+        : null,
     targets: datesBetween(from, to).map((date) => ({
       date,
       hours: toHours(getDayTargetMs(capacityTargets, date)),

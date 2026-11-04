@@ -1563,3 +1563,43 @@ describe("agent reads for the terminal", () => {
     });
   });
 });
+
+describe("entry commit classifications", () => {
+  it.each([
+    ["local", "local-only"],
+    ["waiting", "not-known-yet"],
+  ] as const)(
+    "keeps an archived %s task's classification",
+    (commitAs, kind) => {
+      const state = createState();
+      state.projects[0]!.status = "archived";
+      state.projects[0]!.tasks[0]!.status = "archived";
+      state.projects[0]!.tasks[0]!.commitAs = commitAs;
+      const result = listTimeEntriesForAgent(
+        state,
+        { from: WEEK[0]!, to: WEEK[6]! },
+        NOW,
+      );
+      expect(
+        result.entries.find((entry) => entry.entryId === "e1"),
+      ).toMatchObject({ commitsAs: { kind } });
+      expect(result.running).toMatchObject({ commitsAs: { kind } });
+    },
+  );
+
+  it("reports unknown when an archived task may have a plugin name", () => {
+    const state = createState();
+    state.projects[0]!.tasks[0]!.status = "archived";
+    state.projects[0]!.tasks[0]!.pluginProperties = {
+      plugin: { task: "Other name" },
+    };
+    const result = listTimeEntriesForAgent(
+      state,
+      { from: WEEK[0]!, to: WEEK[6]! },
+      NOW,
+    );
+    expect(
+      result.entries.find((entry) => entry.entryId === "e1"),
+    ).toMatchObject({ commitsAs: { kind: "unknown" } });
+  });
+});

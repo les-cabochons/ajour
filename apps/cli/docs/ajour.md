@@ -11,6 +11,11 @@ Running entry
   undo                                          Undo the last change made from here.
   status [-s] [-w]                              What is running, and today's total.
 
+Prints
+  log [RANGE] [-s] [--by task] [--format FORMAT]
+                          A day, several days or a week: a table on a
+                          terminal, tab-separated values in a pipe.
+
 Setup
   connect                 Pair with the Ajour app on this machine.
   help [COMMAND]          Show a command's manual page.
@@ -34,6 +39,11 @@ References
              matches exit 4 with their rows.
   DURATION   1:30, 1h30, 2h, 90m, 1.5 or 1,5. Whole minutes, up to 24
              hours.
+  DAY        today, yesterday, mon to sun (the most recent, today
+             included), 2026-11-03, or 11-03 in this year.
+  RANGE      A DAY, DAY..DAY with both days included, week or last-week
+             (Monday to Sunday), or an ISO week such as 2026-W45. At most
+             62 days.
 
 Rules
   The terminal does what the app does, with the app's rules. A running
@@ -46,7 +56,8 @@ Output
   Writes print the entry's row: ● when it runs, its time, project code,
   task, note, ✓ when Workday holds it as it is, its id, and its day when
   it isn't today. Rows are cut to the terminal's width; in a pipe they
-  are whole and without color. Messages go to stderr.
+  are whole and without color. Messages go to stderr. ajour log prints
+  tab-separated values in a pipe, with ISO dates and decimal hours.
 
 Exit status
   0  Done.

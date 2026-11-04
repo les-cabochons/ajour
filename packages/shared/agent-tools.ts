@@ -392,6 +392,7 @@ const agentProjectRefShape = {
 
 export const agentRunningTimerSchema = z.object({
   ...agentProjectRefShape,
+  commitsAs: agentCommitsAsSchema.pick({ kind: true }).optional(),
   timerId: z.string(),
   /** The continued entry's short id, else the running entry's own. */
   ...shortIdShape,
@@ -412,6 +413,7 @@ export type AgentRunningTimer = z.infer<typeof agentRunningTimerSchema>;
 
 export const agentTimeEntrySchema = z.object({
   ...agentProjectRefShape,
+  commitsAs: agentCommitsAsSchema.pick({ kind: true }).optional(),
   entryId: z.string(),
   ...shortIdShape,
   date: z.string(),

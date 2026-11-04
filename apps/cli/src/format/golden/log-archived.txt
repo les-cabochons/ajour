@@ -1,0 +1,6 @@
+Wednesday 4 November 2026 · today                                  2:00
+───────────────────────────────────────────────────────────────────────
+   1:00  AJR   09 Admin        Archived local    aa11bb2  local
+   1:00  ACME  Temp migration  Archived waiting  bb22cc3  not known yet
+
+2 entries · 1 to commit

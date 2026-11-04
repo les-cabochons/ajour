@@ -137,6 +137,7 @@ function window(state: WindowState) {
         : call.tool === "list_time_entries"
           ? {
               entries: state.entries,
+              ...(state.targets ? { targets: state.targets } : {}),
               running:
                 state.listedRunning === undefined
                   ? state.running
@@ -163,6 +164,8 @@ interface WindowState {
   listedRunning?: AgentRunningTimer | null;
   /** What get_last_saved_entry answers. */
   lastSaved?: AgentTimeEntry | null;
+  /** Each day's target, as list_time_entries returns it. */
+  targets?: { date: string; hours: number }[];
 }
 
 async function connectedApi(
@@ -234,6 +237,28 @@ describe("ajour status", () => {
       "● 1:24:07  Fix export rounding\n" +
         "  AJR · 07 Export · since 13:20 · today 6:39\n",
     );
+  });
+
+  it("shows today's total of its target", async () => {
+    const targets = [
+      { date: "2026-11-03", hours: 8 },
+      { date: TODAY, hours: 7.5 },
+    ];
+    const busy = await connectedTerminal({
+      running,
+      entries: todayEntries,
+      targets,
+    });
+    expect(await run(["status"], busy.io)).toBe(0);
+    expect(busy.out()).toContain(" · today 6:39 of 7:30\n");
+
+    const idle = await connectedTerminal({
+      running: null,
+      entries: todayEntries,
+      targets,
+    });
+    expect(await run(["status"], idle.io)).toBe(0);
+    expect(idle.out()).toBe("○ Nothing running · today 5:15 of 7:30\n");
   });
 
   it("colors it on a terminal", async () => {

@@ -1,0 +1,8 @@
+\e[1;34mWeek 45\e[0m\e[90m · Mon 2 – Sun 8 Nov 2026\e[0m  \e[1m22:09\e[0m\e[90m of 40:00\e[0m  \e[33m1:51 behind\e[0m
+\e[90m─────────────────────────────────────────────────────────────\e[0m
+   6:00  ACME  05 Backend      \e[1;34m▮▮▮▮▮▮▮▮▮▮▮▮\e[0m
+   4:24  AJR   07 Export       \e[1;34m▮▮▮▮▮▮▮▮▮\e[0m     \e[32m● 1:24 running\e[0m
+   4:15  AJR   04 Review       \e[1;34m▮▮▮▮▮▮▮▮▮\e[0m
+   3:00  ACME  03 Meetings     \e[1;34m▮▮▮▮▮▮\e[0m
+   3:00  ACME  Temp migration  \e[1;34m▮▮▮▮▮▮\e[0m        \e[33mnot known yet\e[0m
+   1:30  AJR   09 Admin        \e[1;34m▮▮▮\e[0m           \e[90mlocal\e[0m
