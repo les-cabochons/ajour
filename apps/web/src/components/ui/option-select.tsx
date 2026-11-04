@@ -58,6 +58,7 @@ export function OptionSelect<T extends string>({
   invalid,
   size = "sm",
   iconValue = false,
+  iconLabel = false,
   className,
 }: {
   id?: string;
@@ -71,6 +72,8 @@ export function OptionSelect<T extends string>({
   size?: "sm" | "default";
   /** Shows the chosen option's icon in the trigger instead of its label. */
   iconValue?: boolean;
+  /** Shows the chosen option's icon before its label, as a composer chip does. */
+  iconLabel?: boolean;
   className?: string;
 }) {
   const all = [...(options ?? []), ...(groups ?? []).flatMap((g) => g.options)];
@@ -128,6 +131,13 @@ export function OptionSelect<T extends string>({
           />
           <TooltipContent>{chosen.label}</TooltipContent>
         </Tooltip>
+      ) : iconLabel && chosen ? (
+        trigger(
+          <SelectValue>
+            {chosen.icon}
+            {chosen.label}
+          </SelectValue>,
+        )
       ) : (
         trigger(<SelectValue />)
       )}

@@ -13,8 +13,13 @@ import {
 import {
   RiAlarmWarningLine as AlertTriangle,
   RiCloseLine as X,
+  RiFolderLine as ProjectChipIcon,
+  RiLoader5Line as StateIcon,
   RiRefreshLine as RotateCcw,
 } from "@remixicon/react";
+import { ProjectIcon } from "@/lib/project-icons";
+import { getWorkflowStateFills } from "@/domain/backlog/workflow-state-fill";
+import { stateDotStyle } from "@/features/backlog/state-dot";
 import { MarkdownEditor } from "@/components/markdown-editor";
 import { ObjectActionsButton } from "@/components/object-actions-menu";
 import { TooltipButton } from "@/components/tooltip-button";
@@ -315,9 +320,15 @@ export function BacklogItemEditorForm({
     () =>
       projects.map((project) => ({
         value: project._id,
-        label: project.code
-          ? `[${project.code}] ${getLocalProjectDisplayName(project)}`
-          : getLocalProjectDisplayName(project),
+        // A chip shows the project's mark and name; its code still finds it.
+        label: getLocalProjectDisplayName(project),
+        icon: (
+          <ProjectIcon
+            icon={project.icon}
+            color={project.color}
+            className="size-3.5 shrink-0"
+          />
+        ),
         keywords: [
           project.name,
           getLocalProjectDisplayName(project),
@@ -340,10 +351,23 @@ export function BacklogItemEditorForm({
   const selectedProject = projects.find(
     (project) => project._id === fields.projectId,
   );
-  const statusOptions = useMemo(
-    () => buildWorkflowStateOptions(state.workflowStates),
-    [state.workflowStates],
-  );
+  const statusOptions = useMemo(() => {
+    const fills = getWorkflowStateFills(state.workflowStates);
+    return buildWorkflowStateOptions(state.workflowStates).map((option) => {
+      const workflowState = state.workflowStates.find(
+        (candidate) => candidate._id === option.value,
+      );
+      return {
+        ...option,
+        icon: (
+          <span
+            className="backlog-state-dot"
+            style={stateDotStyle(workflowState?.color, fills.get(option.value))}
+          />
+        ),
+      };
+    });
+  }, [state.workflowStates]);
 
   useImperativeHandle(ref, () => ({
     commitBeforeSwitch: () => commit("switch"),
@@ -593,7 +617,7 @@ export function BacklogItemEditorForm({
           autoComplete="off"
           value={fields[key]}
           onChange={(event) => updateFields({ [key]: event.target.value })}
-          placeholder="0"
+          placeholder="–"
           aria-invalid={Boolean(error)}
         />
         {resetValue !== undefined ? (
@@ -637,7 +661,7 @@ export function BacklogItemEditorForm({
       <header className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 flex-col gap-0.5">
           {/* In a dialog the title takes the dialog's size, as every dialog's does. */}
-          <Title className="text-base font-semibold">
+          <Title className="composer-kicker">
             {getEditorTitle(target, editor.isSubitem)}
           </Title>
           {parent ? (
@@ -742,7 +766,7 @@ export function BacklogItemEditorForm({
               value={fields.description}
               onChange={(description) => updateFields({ description })}
               placeholder="Add description…"
-              minLines={3}
+              minLines={1}
             />
           ) : null}
           {descriptionEditable && currentItem ? (
@@ -785,6 +809,7 @@ export function BacklogItemEditorForm({
               id={`${idPrefix}-priority`}
               label="Priority"
               size="sm"
+              iconLabel
               className="composer-chip"
               value={fields.priority}
               onChange={(priority) => updateFields({ priority })}
@@ -814,6 +839,7 @@ export function BacklogItemEditorForm({
             onChange={(workflowStateId) => updateFields({ workflowStateId })}
             className="composer-chip"
             popoverMinWidth={240}
+            placeholderIcon={<StateIcon aria-hidden className="size-3.5" />}
             placeholder="State"
             clearLabel="No state"
             emptyMessage="No matching workflow states"
@@ -825,61 +851,69 @@ export function BacklogItemEditorForm({
             onChange={changeProject}
             className="composer-chip"
             popoverMinWidth={260}
+            placeholderIcon={
+              <ProjectChipIcon aria-hidden className="size-3.5" />
+            }
             placeholder="Project"
             clearLabel="No project"
             emptyMessage="No matching projects"
             ariaLabel="Project"
           />
-          <SearchableSelect
-            value={fields.taskId}
-            options={taskOptions}
-            onChange={(taskId) => updateFields({ taskId })}
-            className="composer-chip"
-            popoverMinWidth={260}
-            placeholder="Task"
-            clearLabel={fields.projectId ? "No task" : undefined}
-            emptyMessage={
-              fields.projectId ? "No matching tasks" : "Pick a project first"
-            }
-            ariaLabel="Task mapping"
-            disabled={!selectedProject}
-            create={
-              selectedProject
-                ? {
-                    label: (text) =>
-                      describeCreateTaskRow(selectedProject, text),
-                    onCreate: (text) => createTask(selectedProject._id, text),
-                  }
-                : undefined
-            }
-          />
+          {/* The task waits for its project, as Linear hides what can't be
+              set yet. */}
+          {selectedProject ? (
+            <SearchableSelect
+              value={fields.taskId}
+              options={taskOptions}
+              onChange={(taskId) => updateFields({ taskId })}
+              className="composer-chip"
+              popoverMinWidth={260}
+              placeholder="Task"
+              clearLabel={fields.projectId ? "No task" : undefined}
+              emptyMessage={
+                fields.projectId ? "No matching tasks" : "Pick a project first"
+              }
+              ariaLabel="Task mapping"
+              disabled={!selectedProject}
+              create={
+                selectedProject
+                  ? {
+                      label: (text) =>
+                        describeCreateTaskRow(selectedProject, text),
+                      onCreate: (text) => createTask(selectedProject._id, text),
+                    }
+                  : undefined
+              }
+            />
+          ) : null}
           {estimateChips}
+          {editor.isSynced ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <label className="composer-chip composer-estimate composer-toggle" />
+                }
+              >
+                <Checkbox
+                  id={`${idPrefix}-keep`}
+                  checked={fields.keepWhenMissingFromSync}
+                  onCheckedChange={(keepWhenMissingFromSync) =>
+                    updateFields({ keepWhenMissingFromSync })
+                  }
+                />
+                <span>Keep when missing</span>
+              </TooltipTrigger>
+              <TooltipContent>
+                Don't archive this item when it disappears from the synced
+                source list.
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
         </section>
         {validation.priorityError ? (
           <span className="field-error">{validation.priorityError}</span>
         ) : null}
         {estimateErrors}
-
-        {editor.isSynced ? (
-          <Field orientation="horizontal">
-            <Checkbox
-              id={`${idPrefix}-keep`}
-              checked={fields.keepWhenMissingFromSync}
-              onCheckedChange={(keepWhenMissingFromSync) =>
-                updateFields({ keepWhenMissingFromSync })
-              }
-            />
-            <FieldContent>
-              <FieldLabel htmlFor={`${idPrefix}-keep`}>
-                Keep when missing from sync
-              </FieldLabel>
-              <FieldDescription className="text-xs">
-                Do not archive this item when it disappears from the synced
-                source list.
-              </FieldDescription>
-            </FieldContent>
-          </Field>
-        ) : null}
       </FieldGroup>
 
       <footer className="flex flex-wrap justify-end gap-2">

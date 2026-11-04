@@ -74,7 +74,7 @@ export function ProjectFormDialog({
       <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-xl gap-4 overflow-y-auto">
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <DialogHeader className="gap-1">
-            <DialogTitle>
+            <DialogTitle className="composer-kicker">
               {isCreate ? "New project" : "Edit project"}
             </DialogTitle>
           </DialogHeader>
@@ -163,6 +163,7 @@ export function ProjectFormDialog({
                 className="composer-color"
                 value={fields.color}
                 onChange={(color) => update({ color })}
+                trailing={<span>Color</span>}
               />
             </div>
           </FieldGroup>

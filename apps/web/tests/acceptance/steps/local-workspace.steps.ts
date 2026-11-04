@@ -1527,7 +1527,7 @@ When("I select the matching project and task", async ({ page }) => {
 Then("the combined project and task are selected", async ({ page }) => {
   await expect(
     page.getByRole("button", { name: "Project or task" }),
-  ).toContainText("[AAA] aaa xyz · 222 000");
+  ).toContainText("aaa xyz · 222 000");
 });
 
 When("I save one hour to the selected project and task", async ({ page }) => {

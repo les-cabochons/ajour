@@ -433,7 +433,7 @@ Feature: Open the local time workspace
     And I assign key "3" to task "222 000"
     Then key "3" is saved on task "222 000" only
     When I press the "Digit3" key
-    Then a new entry opens for "[AAA] aaa xyz · 222 000"
+    Then a new entry opens for "aaa xyz · 222 000"
     When I press the "Escape" key
     Then the new entry form is closed
     When I press the "Shift+Digit3" key
@@ -560,7 +560,7 @@ Feature: Open the local time workspace
     When I open "More recent tasks" in the task menu
     Then the task menu lists "333 000, 222 000, 111 000, 222 000"
     When I open "111 000" in the task menu
-    Then the picker shows "[AAA] aaa xyz · 111 000"
+    Then the picker shows "aaa xyz · 111 000"
 
   Scenario: See a task's whole name and details in the task menu card
     Given I used four searchable tasks lately, the second of them starred

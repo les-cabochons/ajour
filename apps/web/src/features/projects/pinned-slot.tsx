@@ -178,21 +178,20 @@ export function PinnedSlotField({
 }) {
   const [isOpen, setIsOpen] = useState(false);
 
+  // A chip in the task composer's row: "Shortcut ⇧1", or "Shortcut"
+  // while none is set (forms council round 7).
   return (
-    <Field>
-      <FieldLabel htmlFor="project-task-editor-shortcut">Shortcut</FieldLabel>
-      <Button
+    <>
+      <button
         id="project-task-editor-shortcut"
         type="button"
-        variant="outline"
-
-        className="justify-start gap-2 self-start"
+        className="composer-pill"
         aria-label={slot ? `Shortcut ${slot}, change` : "Shortcut none, assign"}
         onClick={() => setIsOpen(true)}
       >
+        <span className="text-muted-foreground">Shortcut</span>
         {slot ? <PinnedSlotBadge slot={slot} /> : null}
-        {slot ? "Change…" : "Assign shortcut…"}
-      </Button>
+      </button>
       {isOpen ? (
         <PinnedSlotDialog
           taskName={taskName.trim() || "this task"}
@@ -202,6 +201,6 @@ export function PinnedSlotField({
           onClose={() => setIsOpen(false)}
         />
       ) : null}
-    </Field>
+    </>
   );
 }

@@ -8,7 +8,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { isValidLocalDate } from "@/domain/time/local-date";
 import { commentSourceOf } from "@/domain/backlog/comments";
 import { releaseSettleComment } from "@/features/backlog/backlog-source-writes";
@@ -223,25 +222,33 @@ export function SnoozePickerHost() {
             if (customIsValid) choose(customUntil);
           }}
         >
-          {/* The app's own date field and a typed time, never the
-              browser's datetime control. */}
-          <Suspense fallback={<div className="min-w-0 flex-1" />}>
-            <DateField
-              aria-label="Custom date"
-              calendarLabel="Pick the day"
-              className="min-w-0 flex-1"
-              value={customDate}
-              onChange={setCustomDate}
-            />
-          </Suspense>
-          <Input
-            aria-label="Custom time"
-            inputMode="numeric"
-            placeholder="HH:MM"
-            className="w-18 font-mono"
-            value={customTime}
-            onChange={(event) => setCustomTime(event.target.value)}
-          />
+          {/* The custom time as chips, as the composers': the day, then
+              the time typed in place (forms council round 7). */}
+          <div className="composer-chips min-w-0 flex-1">
+            <Suspense fallback={<div className="min-w-0 flex-1" />}>
+              <div className="composer-date">
+                <DateField
+                  aria-label="Custom date"
+                  calendarLabel="Pick the day"
+                  value={customDate}
+                  onChange={setCustomDate}
+                />
+              </div>
+            </Suspense>
+            <div className="composer-chip composer-estimate">
+              <label htmlFor="snooze-custom-time">At</label>
+              <input
+                id="snooze-custom-time"
+                aria-label="Custom time"
+                className="composer-estimate-input"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="09:00"
+                value={customTime}
+                onChange={(event) => setCustomTime(event.target.value)}
+              />
+            </div>
+          </div>
           <DialogFooter className="shrink-0">
             <Button type="submit" variant="outline" disabled={!customIsValid}>
               Snooze

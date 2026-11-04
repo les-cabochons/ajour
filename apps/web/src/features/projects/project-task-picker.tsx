@@ -142,10 +142,12 @@ export function ProjectTaskPicker({
   const selectedTask = selectedProject?.tasks.find(
     (task) => task._id === taskId,
   );
+  // The trigger names the project as people say it; its mark is the icon
+  // before it, and its code stays in the list's rows for search.
   const selectedLabel = selectedProject
     ? selectedTask
-      ? `${getProjectLabel(selectedProject)} · ${selectedTask.name}`
-      : `${getProjectLabel(selectedProject)} · No task`
+      ? `${getLocalProjectDisplayName(selectedProject)} · ${selectedTask.name}`
+      : `${getLocalProjectDisplayName(selectedProject)} · No task`
     : placeholder;
   const browsingProject =
     view.kind === "tasks"

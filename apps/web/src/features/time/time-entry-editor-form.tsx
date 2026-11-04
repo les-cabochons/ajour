@@ -418,7 +418,7 @@ export function TimeEntryEditorForm({
       <div className="flex h-7 items-center justify-between gap-2">
         {/* One title for new and edit, the size every editor's is; the
             record shows under it as one muted line (forms council round 3). */}
-        <Title className="truncate text-base font-semibold">
+        <Title className="composer-kicker truncate">
           {target.kind === "create" ? "New time entry" : "Edit time entry"}
         </Title>
         <div className="flex items-center">
@@ -448,70 +448,20 @@ export function TimeEntryEditorForm({
         </div>
       </div>
 
-      {(() => {
-        const status = runningTimer ? (
+      {/* Only the status sits above the hours: the chips below already
+          name the task and the date (forms council round 7). */}
+      {runningTimer ? (
+        <header className="time-entry-editor-meta">
           <Chip tone="success">Running</Chip>
-        ) : lockReason ? (
+        </header>
+      ) : lockReason ? (
+        <header className="time-entry-editor-meta">
           <WeekLockChip />
-        ) : entry && isTimesheetEntryCommitted(entry) ? (
+        </header>
+      ) : entry && isTimesheetEntryCommitted(entry) ? (
+        <header className="time-entry-editor-meta">
           <Chip>Committed</Chip>
-        ) : null;
-        // A new entry's date shows in its Date row, so the line skips it.
-        const showDate = target.kind !== "create";
-        if (!status && !selectedProject && !selectedTask && !showDate) {
-          return null;
-        }
-        return (
-          <header className="time-entry-editor-meta">
-            {status}
-            {selectedProject ? (
-              <Chip color={selectedProject.color}>
-                {getLocalProjectDisplayName(selectedProject)}
-              </Chip>
-            ) : null}
-            {selectedTask ? (
-              <span className="text-foreground">{selectedTask.name}</span>
-            ) : null}
-            {showDate ? (
-              <span>
-                {formatEntryDate(
-                  runningTimer ? runningTimer.localDate : fields.localDate,
-                )}
-              </span>
-            ) : null}
-          </header>
-        );
-      })()}
-
-      {/* A record's own actions sit at the top; a new entry's Start sits in
-          its footer, beside Create entry (forms council round 6). */}
-      {runningTimer || entry ? (
-        <div className="flex flex-wrap items-center gap-2">
-          {runningTimer ? (
-            <Button
-              type="button"
-              variant="outline"
-              disabled={editor.hasChanges && !editor.canSave}
-              onClick={stop}
-            >
-              <Stop data-icon="inline-start" />
-              Stop
-            </Button>
-          ) : entry ? (
-            <Button
-              type="button"
-              variant="outline"
-              disabled={editor.hasChanges && !editor.canSave}
-              onClick={continueEntry}
-            >
-              <Play data-icon="inline-start" />
-              Continue
-            </Button>
-          ) : null}
-          {startsToday ? (
-            <span className="text-xs text-muted-foreground">Starts today</span>
-          ) : null}
-        </div>
+        </header>
       ) : null}
 
       {/* A disabled fieldset disables every field, picker and calendar button inside. */}
@@ -549,25 +499,48 @@ export function TimeEntryEditorForm({
       </fieldset>
 
       <footer className="flex items-center justify-end gap-2 pt-1">
-        {startsToday && !runningTimer && !entry ? (
-          <span className="mr-auto text-xs text-muted-foreground">
-            Starts today
-          </span>
-        ) : null}
+        {/* The entry's own verb opens the footer, at its start: Stop for the
+            running entry, Continue for a saved one, Start or Switch for a
+            new one (forms council round 7). */}
+        <span className="mr-auto flex items-center gap-2">
+          {runningTimer ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={editor.hasChanges && !editor.canSave}
+              onClick={stop}
+            >
+              <Stop data-icon="inline-start" />
+              Stop
+            </Button>
+          ) : entry ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={editor.hasChanges && !editor.canSave}
+              onClick={continueEntry}
+            >
+              <Play data-icon="inline-start" />
+              Continue
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={editor.durationMs === null}
+              onClick={start}
+            >
+              <Play data-icon="inline-start" />
+              {startVerb}
+            </Button>
+          )}
+          {startsToday ? (
+            <span className="text-xs text-muted-foreground">Starts today</span>
+          ) : null}
+        </span>
         <Button type="button" variant="ghost" onClick={onClose}>
           Cancel
         </Button>
-        {runningTimer || entry ? null : (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={editor.durationMs === null}
-            onClick={start}
-          >
-            <Play data-icon="inline-start" />
-            {startVerb}
-          </Button>
-        )}
         <Button
           type="button"
           disabled={!editor.canSave}

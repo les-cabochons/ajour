@@ -102,7 +102,7 @@ export function ProjectTaskEditorForm({
     >
       <header className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <Title className="text-base font-semibold">
+          <Title className="composer-kicker">
             {editor.isNew ? "New task" : "Edit task"}
           </Title>
           <span className="truncate text-xs text-muted-foreground">
@@ -183,6 +183,12 @@ export function ProjectTaskEditorForm({
               onKeyDown={saveOnEnter}
             />
           </div>
+          <PinnedSlotField
+            taskName={fields.name}
+            taskId={taskId}
+            slot={fields.pinnedSlot}
+            onChange={(pinnedSlot) => onFieldsChange({ pinnedSlot })}
+          />
         </div>
         {editor.budgetError ? (
           <span className="field-error">Budget: {editor.budgetError}</span>
@@ -192,12 +198,6 @@ export function ProjectTaskEditorForm({
             Adjustment: {editor.adjustmentError}
           </span>
         ) : null}
-        <PinnedSlotField
-          taskName={fields.name}
-          taskId={taskId}
-          slot={fields.pinnedSlot}
-          onChange={(pinnedSlot) => onFieldsChange({ pinnedSlot })}
-        />
         <TaskPropertyFields
           plugins={taskPropertyPlugins}
           taskName={fields.name}

@@ -45,39 +45,78 @@
   gap: 6px;
 }
 
-/* Every chip: a quiet pill, 28px, that lights on hover and focus. */
+/* Every chip, whatever control it wraps: a filled pill, 28px, with no
+   border at rest; hover darkens it and draws its edge, focus rings it
+   (forms council round 7). One rule, so every chip reads the same. */
 .composer-chips
-  :is([data-slot="select-trigger"], .searchable-select-input-group),
-.composer-chips .composer-estimate {
+  :is(
+    [data-slot="select-trigger"],
+    .searchable-select-input-group,
+    .composer-estimate,
+    .composer-color,
+    .composer-task-chip,
+    .composer-pill,
+    .composer-date [data-slot="input"]
+  ) {
   height: 28px;
   min-height: 28px;
   width: auto;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: 999px;
-  background: oklch(from var(--foreground) l c h / 3%);
+  background: oklch(from var(--foreground) l c h / 7%);
   box-shadow: none;
+  color: var(--foreground);
   font-size: 12px;
   font-weight: 500;
-  transition:
-    border-color var(--duration, 120ms) ease,
-    background var(--duration, 120ms) ease;
 }
 
 .composer-chips
-  :is([data-slot="select-trigger"], .searchable-select-input-group):hover,
-.composer-chips .composer-estimate:hover {
+  :is(
+    [data-slot="select-trigger"],
+    .searchable-select-input-group,
+    .composer-estimate,
+    .composer-color,
+    .composer-task-chip,
+    .composer-pill,
+    .composer-date [data-slot="input"]
+  ):hover {
   border-color: var(--field-border);
-  background: var(--hover-bg);
+  background: oklch(from var(--foreground) l c h / 10%);
 }
 
 .composer-chips
   :is(
     [data-slot="select-trigger"]:focus-visible,
     .searchable-select-input-group:focus-within,
-    .composer-estimate:focus-within
+    .composer-estimate:focus-within,
+    .composer-color:focus-visible,
+    .composer-task-chip:focus-visible,
+    .composer-pill:focus-visible,
+    .composer-date [data-slot="input"]:focus-visible
   ) {
   border-color: var(--ring);
   box-shadow: 0 0 0 2px oklch(from var(--ring) l c h / 25%);
+}
+
+.composer-chips .composer-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  color: var(--foreground);
+}
+
+.composer-chips .composer-pill [data-placeholder] {
+  color: var(--muted-foreground);
+}
+
+.composer-chips .searchable-select-leading {
+  padding-inline-start: 9px;
+  color: var(--muted-foreground);
+}
+
+.composer-chips .searchable-select-leading + .searchable-select-input {
+  padding-inline-start: 6px;
 }
 
 .composer-chips [data-slot="select-trigger"] {
@@ -163,18 +202,7 @@
 }
 
 .composer-chips .composer-color {
-  height: 28px;
-  min-height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: oklch(from var(--foreground) l c h / 3%);
-  font-size: 12px;
-}
-
-.composer-chips .composer-color:hover {
-  border-color: var(--field-border);
-  background: var(--hover-bg);
 }
 
 /* A chip that holds a checkbox: the whole pill toggles it. */
@@ -213,21 +241,9 @@
 
 /* The task picker and the date as chips. */
 .composer-chips .composer-task-chip {
-  height: 28px;
-  width: auto;
   max-width: 18rem;
   padding: 0 10px;
   gap: 6px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: oklch(from var(--foreground) l c h / 3%);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.composer-chips .composer-task-chip:hover {
-  border-color: var(--field-border);
-  background: var(--hover-bg);
 }
 
 .composer-chips .composer-task-chip > svg:last-child {
@@ -235,15 +251,19 @@
 }
 
 .composer-chips .composer-date [data-slot="input"] {
-  height: 28px;
-  width: calc(10ch + 44px);
+  width: calc(12ch + 44px);
   padding: 0 30px 0 10px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: oklch(from var(--foreground) l c h / 3%);
-  font-size: 12px;
 }
 
-.composer-chips .composer-date [data-slot="input"]:hover {
-  border-color: var(--field-border);
+/* A composer's header names the job quietly, as Linear's "CAB › New issue":
+   the title the user writes is the one heading that reads large. */
+.composer-kicker {
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* The color chip shows its swatch and "Color"; the hex lives in its picker. */
+.composer-chips .composer-color .font-mono {
+  display: none;
 }

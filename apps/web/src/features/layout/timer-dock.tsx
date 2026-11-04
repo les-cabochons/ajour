@@ -57,14 +57,8 @@ export function setRunningEntryEditorOpen(open: boolean) {
  */
 export function startBlankEntry() {
   localStore.startTimer({});
-  // On the Time page the running entry opens in its side panel, as a click
-  // on the dock's entry does there.
-  const timerId = localStore.snapshot().timers[0]?._id;
-  const pageHost = getRunningEntryPageHost();
-  if (pageHost && timerId) {
-    pageHost(timerId);
-    return;
-  }
+  // The dock's popover, on every page: its draft follows the window to the
+  // narrow view's dialog and back.
   setRunningEntryEditorOpen(true);
 }
 

@@ -133,7 +133,7 @@ Then(
       name,
     );
     await expect(dialog.getByRole("combobox", { name: "Project" })).toHaveText(
-      "Pick a project",
+      "Project",
     );
     await expect(
       dialog.getByRole("button", { name: "Create task" }),

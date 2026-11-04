@@ -4,6 +4,11 @@ import { MarkdownEditor } from "@/components/markdown-editor";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -19,6 +24,7 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { OptionSelect } from "@/components/ui/option-select";
+import { PriorityIcon } from "@/features/backlog/priority-icon";
 import {
   getOpenSubitems,
   settleArchivesWorkItem,
@@ -387,12 +393,16 @@ export function SettleDialogHost() {
             void settle();
           }}
         >
-          <Field>
-            <FieldLabel htmlFor="settle-state">State</FieldLabel>
-            <FieldContent>
+          {/* Settle as a composer (forms council round 7): State and
+              Priority as chips, the comment to write in, the subitems as a
+              toggle chip. */}
+          <div className="composer flex flex-col gap-3">
+            <div className="composer-chips" role="group" aria-label="Settle as">
               <OptionSelect
                 id="settle-state"
-                size="default"
+                label="State"
+                size="sm"
+                className="composer-chip"
                 value={stateName}
                 invalid={load.status === "ready" && !stateDraftValid}
                 disabled={load.status !== "ready" || pending}
@@ -418,26 +428,12 @@ export function SettleDialogHost() {
                   })),
                 }))}
               />
-              {load.status === "failed" ? (
-                <FieldError>Couldn't load states: {load.message}</FieldError>
-              ) : load.status === "ready" && !stateDraftValid ? (
-                <FieldError>
-                  This source state is no longer available. Choose another
-                  state.
-                </FieldError>
-              ) : archives ? (
-                <FieldDescription>
-                  This state is done, so the item will be archived.
-                </FieldDescription>
-              ) : null}
-            </FieldContent>
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="settle-priority">Priority</FieldLabel>
-            <FieldContent>
               <OptionSelect
                 id="settle-priority"
-                size="default"
+                label="Priority"
+                size="sm"
+                iconLabel
+                className="composer-chip"
                 disabled={pending}
                 value={priority}
                 onChange={setPriority}
@@ -446,79 +442,98 @@ export function SettleDialogHost() {
                     value: "",
                     label: NO_PRIORITY_NAME,
                     disabled: sourceHasPriority,
+                    icon: <PriorityIcon priority={undefined} decorative />,
                   },
                   ...PRIORITY_LEVELS.map(({ level, name }) => ({
                     value: String(level),
                     label: name,
+                    icon: <PriorityIcon priority={level} decorative />,
                   })),
                 ]}
               />
-              {change === null && stateDraftValid ? (
-                <FieldError>
-                  This plugin cannot clear its source priority. Choose a
-                  priority.
-                </FieldError>
+              {asksSubitems ? (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <label className="composer-chip composer-estimate composer-toggle" />
+                    }
+                  >
+                    <Checkbox
+                      id="settle-subitems"
+                      checked={includeSubitems}
+                      disabled={pending}
+                      onCheckedChange={(checked) =>
+                        setIncludeSubitems(checked === true)
+                      }
+                    />
+                    <span>
+                      Also settle its {openSubitems.length} open{" "}
+                      {openSubitems.length === 1 ? "subitem" : "subitems"}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {openSubitems
+                      .slice(0, 3)
+                      .map((subitem) => subitem.title)
+                      .join(", ")}
+                    {openSubitems.length > 3
+                      ? `, and ${openSubitems.length - 3} more`
+                      : ""}
+                  </TooltipContent>
+                </Tooltip>
               ) : null}
-            </FieldContent>
-          </Field>
-          {commentSource && currentItem ? (
-            <Field>
-              <FieldLabel htmlFor="settle-comment">Comment</FieldLabel>
-              <FieldContent>
-                <MarkdownEditor
-                  id="settle-comment"
-                  aria-label="Comment"
-                  value={comment}
-                  onChange={setComment}
-                  onSubmit={() => void settle()}
-                  placeholder="Optional. Markdown supported."
-                  minLines={2}
-                  mentions={commentMentionSearch(
-                    commentSource,
-                    currentItem._id,
-                  )}
-                />
-                {commentTooLong ? (
-                  <FieldError>
-                    The source takes up to {commentLimit!.toLocaleString()}{" "}
-                    characters.
-                  </FieldError>
-                ) : (
-                  <FieldDescription>
-                    Posted on the item when the Undo toast closes.
-                  </FieldDescription>
-                )}
-              </FieldContent>
-            </Field>
-          ) : null}
-          {asksSubitems ? (
-            <Field orientation="horizontal">
-              <Checkbox
-                id="settle-subitems"
-                checked={includeSubitems}
-                disabled={pending}
-                onCheckedChange={(checked) =>
-                  setIncludeSubitems(checked === true)
-                }
-                className="mt-0.5"
-              />
-              <FieldContent>
-                <FieldLabel htmlFor="settle-subitems">
-                  Also settle its {openSubitems.length} open{" "}
-                  {openSubitems.length === 1 ? "subitem" : "subitems"}
+            </div>
+            {load.status === "failed" ? (
+              <FieldError>Couldn't load states: {load.message}</FieldError>
+            ) : load.status === "ready" && !stateDraftValid ? (
+              <FieldError>
+                This source state is no longer available. Choose another state.
+              </FieldError>
+            ) : archives ? (
+              <FieldDescription>
+                This state is done, so the item will be archived.
+              </FieldDescription>
+            ) : null}
+
+            {change === null && stateDraftValid ? (
+              <FieldError>
+                This plugin cannot clear its source priority. Choose a priority.
+              </FieldError>
+            ) : null}
+            {commentSource && currentItem ? (
+              <Field>
+                <FieldLabel htmlFor="settle-comment" className="sr-only">
+                  Comment
                 </FieldLabel>
-                <FieldDescription className="truncate">
-                  {openSubitems
-                    .slice(0, 3)
-                    .map((subitem) => subitem.title)
-                    .join(", ")}
-                  {openSubitems.length > 3
-                    ? `, and ${openSubitems.length - 3} more`
-                    : ""}
-                </FieldDescription>
-              </FieldContent>
-            </Field>
-          ) : null}
+                <FieldContent>
+                  <MarkdownEditor
+                    id="settle-comment"
+                    aria-label="Comment"
+                    className="composer-body"
+                    value={comment}
+                    onChange={setComment}
+                    onSubmit={() => void settle()}
+                    placeholder="Add a comment…"
+                    minLines={1}
+                    mentions={commentMentionSearch(
+                      commentSource,
+                      currentItem._id,
+                    )}
+                  />
+                  {commentTooLong ? (
+                    <FieldError>
+                      The source takes up to {commentLimit!.toLocaleString()}{" "}
+                      characters.
+                    </FieldError>
+                  ) : (
+                    <FieldDescription>
+                      Posted on the item when the Undo toast closes.
+                    </FieldDescription>
+                  )}
+                </FieldContent>
+              </Field>
+            ) : null}
+          </div>
           <DialogFooter>
             <Button
               type="button"
