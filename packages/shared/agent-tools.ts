@@ -120,6 +120,16 @@ export const bridgeToolResultSchema = z.discriminatedUnion("ok", [
 ]);
 export type BridgeToolResult = z.infer<typeof bridgeToolResultSchema>;
 
+/**
+ * get_week_lines (#533): the Commit page's Workday lines, grouped as its
+ * Group by control groups them. `weekOf` is any date in the week.
+ */
+export const weekLinesGroupBySchema = z.enum(["day-task", "day", "task"]);
+const weekLinesInputSchema = z.object({
+  weekOf: isoDateSchema,
+  groupBy: weekLinesGroupBySchema.default("day-task"),
+});
+
 /** Input schemas of the read tools, by MCP tool name. */
 export const readToolInputSchemas = {
   get_running_timer: z.object({}),
@@ -147,6 +157,7 @@ export const readToolInputSchemas = {
     onlyChecked: z.boolean().default(true),
   }),
   get_week_status: z.object({ weekOf: isoDateSchema }),
+  get_week_lines: weekLinesInputSchema,
 } as const;
 export type ReadToolName = keyof typeof readToolInputSchemas;
 export type ReadToolInput<Name extends ReadToolName> = z.infer<
@@ -386,6 +397,86 @@ const weekPaceSchema = z.object({
   status: z.enum(["on-pace", "under", "over"]),
 });
 
+/**
+ * get_week_lines (#533): the Commit page's lines, in decimal hours rounded
+ * as the page copies them, and the time it keeps out of them beside them.
+ */
+const agentWeekLineSchema = z.object({
+  projectId: z.string().optional(),
+  /** The project's full name, as the external timesheet knows it. */
+  projectName: z.string().optional(),
+  projectCode: z.string().optional(),
+  taskId: z.string().optional(),
+  /** The name the task commits as: a plugin's mapped name, else its own. */
+  taskName: z.string().optional(),
+  hours: z.number(),
+  /** The entries' notes merged with " | ". Empty when there are none. */
+  comments: z.string(),
+  entryIds: z.array(z.string()),
+});
+const weekLinesOutputSchema = z.object({
+  /** The week's Monday. */
+  weekOf: z.string(),
+  groupBy: weekLinesGroupBySchema,
+  /** Submitted: its entries are read-only until the user reopens it. */
+  locked: z.boolean(),
+  /** A section per day with lines, or one without a date when grouping by task. */
+  sections: z.array(
+    z.object({
+      localDate: z.string().optional(),
+      lines: z.array(agentWeekLineSchema),
+    }),
+  ),
+  /**
+   * Local only time, which never goes: per task, or per Local only project
+   * without its tasks. Projects are named as the lines name theirs.
+   */
+  notSent: z.object({
+    hours: z.number(),
+    items: z.array(
+      z.object({
+        projectId: z.string(),
+        projectName: z.string(),
+        projectCode: z.string().optional(),
+        taskId: z.string().optional(),
+        taskName: z.string().optional(),
+        hours: z.number(),
+      }),
+    ),
+  }),
+  /** Time on Not known yet tasks, which waits for what they commit as. */
+  waiting: z.object({
+    hours: z.number(),
+    tasks: z.array(
+      z.object({
+        projectId: z.string(),
+        taskId: z.string(),
+        taskName: z.string(),
+        hours: z.number(),
+      }),
+    ),
+  }),
+  /**
+   * The running entry when it runs in the week, with only the time it has
+   * not saved yet, so the lines and it add up to the week's time once.
+   */
+  running: z
+    .object({
+      ...agentProjectRefShape,
+      timerId: z.string(),
+      date: z.string(),
+      /**
+       * Counted minutes not in any saved entry yet. When it continues
+       * today's saved entry, whose saved time a line holds, only the time
+       * since; never below 0.
+       */
+      unsavedMinutes: z.number(),
+      /** The saved entry it continues, if any. */
+      entryId: z.string().optional(),
+    })
+    .nullable(),
+});
+
 /** Output schemas of the read tools, by MCP tool name. */
 const readToolOutputSchemas = {
   get_running_timer: z.object({ running: agentRunningTimerSchema.nullable() }),
@@ -486,6 +577,7 @@ const readToolOutputSchemas = {
     /** Ask the user before submitting a week whose status is not "on-pace". */
     pace: weekPaceSchema,
   }),
+  get_week_lines: weekLinesOutputSchema,
 } as const satisfies Record<ReadToolName, z.AnyZodObject>;
 
 /**

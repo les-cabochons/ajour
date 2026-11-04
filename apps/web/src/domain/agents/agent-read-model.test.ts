@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type { DataToolOutput } from "@ajour/shared/agent-tools";
 import type { LocalAppState, LocalTimesheetEntry } from "@/domain/local-state";
 import {
   checkChangeVersionsOrRefuse,
   getWeekChangesForAgent,
+  getWeekLinesForAgent,
   getWeekStatusForAgent,
   getWorkItemForAgent,
   listProjectsForAgent,
@@ -15,12 +17,16 @@ import {
   externalEntryId,
   timesheetChangeVersion,
 } from "@/domain/agents/external-id";
-import { NO_PROPERTY_PLUGINS } from "@/domain/projects/plugin-properties";
+import {
+  NO_PROPERTY_PLUGINS,
+  type PropertyPlugins,
+} from "@/domain/projects/plugin-properties";
 import {
   isTimesheetEntryCommitted,
   listWeekChanges,
 } from "@/domain/time/timesheet-commit";
 import { markTimesheetEntriesCommitted } from "@/domain/time/timesheet-entry";
+import type { SubmitGroupBy } from "@/domain/time/timesheet-submission";
 
 const HOUR = 3_600_000;
 const NOW = Date.UTC(2026, 9, 14, 15);
@@ -734,5 +740,404 @@ describe("agent read model", () => {
 
     expect(change.current).not.toHaveProperty("projectProperties");
     expect(change.current).not.toHaveProperty("taskProperties");
+  });
+});
+
+describe("the Commit page's lines for agents", () => {
+  const workdayTask = {
+    pluginId: "workday-agent",
+    capability: {
+      section: "Workday",
+      fields: [
+        { id: "task", label: "Workday task", defaultFrom: "name" as const },
+      ],
+    },
+  };
+  const plugins: PropertyPlugins = { projects: [], tasks: [workdayTask] };
+
+  /**
+   * Acme, whose Build task commits as 07 Run, with a Review task, a Not
+   * known yet Temp task and a Local only Lunch task, and a Local only Home
+   * project. Wednesday holds only local time, and the running entry is on
+   * Wednesday too.
+   */
+  function weekState(): LocalAppState {
+    const state = createState();
+    return {
+      ...state,
+      projects: [
+        {
+          _id: "acme",
+          name: "Acme Corporation",
+          displayName: "Acme",
+          code: "ACME-1",
+          color: "#123456",
+          status: "active",
+          tasks: [
+            {
+              _id: "build",
+              name: "Build",
+              status: "active",
+              createdAt: 1,
+              pluginProperties: { "workday-agent": { task: "07 Run" } },
+            },
+            { _id: "review", name: "Review", status: "active", createdAt: 1 },
+            {
+              _id: "temp",
+              name: "Temp migration",
+              status: "active",
+              createdAt: 1,
+              commitAs: "waiting",
+            },
+            {
+              _id: "lunch",
+              name: "Team lunch",
+              status: "active",
+              createdAt: 1,
+              commitAs: "local",
+            },
+          ],
+        },
+        {
+          _id: "home",
+          name: "Home",
+          color: "#654321",
+          status: "active",
+          localOnly: true,
+          tasks: [
+            { _id: "chores", name: "Chores", status: "active", createdAt: 1 },
+          ],
+        },
+      ],
+      timers: [
+        {
+          _id: "timer-1",
+          startedAt: NOW - 30 * 60_000,
+          localDate: "2026-10-14",
+          projectId: "acme",
+          taskId: "review",
+          accumulatedDurationMs: 15 * 60_000,
+        },
+      ],
+      timesheetEntries: [
+        entry({
+          _id: "a1",
+          localDate: "2026-10-12",
+          projectId: "acme",
+          taskId: "build",
+          note: "Specs",
+          committedAt: 1,
+        }),
+        entry({
+          _id: "a2",
+          localDate: "2026-10-12",
+          projectId: "acme",
+          taskId: "build",
+          note: "Specs",
+          durationMs: HOUR / 2,
+          committedAt: 2,
+        }),
+        entry({
+          _id: "a3",
+          localDate: "2026-10-12",
+          projectId: "acme",
+          taskId: "review",
+          note: "PR 12",
+          durationMs: 45 * 60_000,
+          committedAt: 3,
+        }),
+        entry({
+          _id: "a4",
+          localDate: "2026-10-13",
+          projectId: "acme",
+          taskId: "build",
+          note: "Deploy",
+          durationMs: 2 * HOUR,
+          committedAt: 4,
+        }),
+        entry({
+          _id: "a5",
+          localDate: "2026-10-13",
+          projectId: "acme",
+          taskId: "temp",
+          durationMs: 3 * HOUR,
+          committedAt: 5,
+        }),
+        entry({
+          _id: "a6",
+          localDate: "2026-10-13",
+          projectId: "acme",
+          taskId: "lunch",
+          committedAt: 6,
+        }),
+        entry({
+          _id: "a7",
+          localDate: "2026-10-14",
+          projectId: "home",
+          taskId: "chores",
+          durationMs: HOUR / 2,
+          committedAt: 7,
+        }),
+        entry({ _id: "next-week", localDate: "2026-10-20", projectId: "acme" }),
+      ],
+    } as LocalAppState;
+  }
+
+  const read = (
+    state: LocalAppState,
+    groupBy: SubmitGroupBy,
+    propertyPlugins: PropertyPlugins = plugins,
+  ) =>
+    getWeekLinesForAgent(state, {
+      weekDates: WEEK,
+      groupBy,
+      propertyPlugins,
+      now: NOW,
+    });
+
+  const acme = {
+    projectId: "acme",
+    projectName: "Acme Corporation",
+    projectCode: "ACME-1",
+  };
+
+  it("returns the lines, with the time kept out of them beside them", () => {
+    expect(read(weekState(), "day-task")).toEqual({
+      weekOf: "2026-10-12",
+      groupBy: "day-task",
+      locked: false,
+      sections: [
+        {
+          localDate: "2026-10-12",
+          lines: [
+            {
+              ...acme,
+              taskId: "build",
+              taskName: "07 Run",
+              hours: 1.5,
+              comments: "Specs",
+              entryIds: ["a1", "a2"],
+            },
+            {
+              ...acme,
+              taskId: "review",
+              taskName: "Review",
+              hours: 0.75,
+              comments: "PR 12",
+              entryIds: ["a3"],
+            },
+          ],
+        },
+        {
+          localDate: "2026-10-13",
+          lines: [
+            {
+              ...acme,
+              taskId: "build",
+              taskName: "07 Run",
+              hours: 2,
+              comments: "Deploy",
+              entryIds: ["a4"],
+            },
+          ],
+        },
+      ],
+      notSent: {
+        hours: 1.5,
+        items: [
+          { ...acme, taskId: "lunch", taskName: "Team lunch", hours: 1 },
+          { projectId: "home", projectName: "Home", hours: 0.5 },
+        ],
+      },
+      waiting: {
+        hours: 3,
+        tasks: [
+          {
+            projectId: "acme",
+            taskId: "temp",
+            taskName: "Temp migration",
+            hours: 3,
+          },
+        ],
+      },
+      running: {
+        timerId: "timer-1",
+        date: "2026-10-14",
+        unsavedMinutes: 45,
+        projectId: "acme",
+        projectName: "Acme",
+        projectCode: "ACME-1",
+        taskId: "review",
+        taskName: "Review",
+      },
+    });
+  });
+
+  /**
+   * The fixture's sent entries, worked out by hand: Monday a1 (07 Run, 1:00,
+   * Specs), a2 (07 Run, 0:30, Specs), a3 (Review, 0:45, PR 12); Tuesday a4
+   * (07 Run, 2:00, Deploy).
+   */
+  const run = { ...acme, taskId: "build", taskName: "07 Run" };
+  const review = { ...acme, taskId: "review", taskName: "Review" };
+  it.each<[SubmitGroupBy, DataToolOutput<"get_week_lines">["sections"]]>([
+    [
+      "day-task",
+      [
+        {
+          localDate: "2026-10-12",
+          lines: [
+            { ...run, hours: 1.5, comments: "Specs", entryIds: ["a1", "a2"] },
+            { ...review, hours: 0.75, comments: "PR 12", entryIds: ["a3"] },
+          ],
+        },
+        {
+          localDate: "2026-10-13",
+          lines: [{ ...run, hours: 2, comments: "Deploy", entryIds: ["a4"] }],
+        },
+      ],
+    ],
+    [
+      "day",
+      [
+        {
+          localDate: "2026-10-12",
+          lines: [
+            { ...run, hours: 1, comments: "Specs", entryIds: ["a1"] },
+            { ...run, hours: 0.5, comments: "Specs", entryIds: ["a2"] },
+            { ...review, hours: 0.75, comments: "PR 12", entryIds: ["a3"] },
+          ],
+        },
+        {
+          localDate: "2026-10-13",
+          lines: [{ ...run, hours: 2, comments: "Deploy", entryIds: ["a4"] }],
+        },
+      ],
+    ],
+    [
+      "task",
+      [
+        {
+          lines: [
+            {
+              ...run,
+              hours: 3.5,
+              comments: "Specs | Deploy",
+              entryIds: ["a1", "a2", "a4"],
+            },
+            { ...review, hours: 0.75, comments: "PR 12", entryIds: ["a3"] },
+          ],
+        },
+      ],
+    ],
+  ])(
+    "gives the Commit page's lines when grouping by %s",
+    (groupBy, sections) => {
+      expect(read(weekState(), groupBy).sections).toEqual(sections);
+    },
+  );
+
+  it("reports only the running entry's unsaved time when it continues a saved entry", () => {
+    const state = {
+      ...weekState(),
+      timers: [
+        {
+          _id: "timer-1",
+          startedAt: NOW - 15 * 60_000,
+          localDate: "2026-10-14",
+          projectId: "acme",
+          taskId: "review",
+          accumulatedDurationMs: HOUR,
+          entryId: "today",
+        },
+      ],
+    } as LocalAppState;
+    state.timesheetEntries.push(
+      entry({
+        _id: "today",
+        localDate: "2026-10-14",
+        projectId: "acme",
+        taskId: "review",
+        committedAt: 8,
+      }),
+    );
+
+    const lines = read(state, "day-task");
+    expect(lines.sections.at(-1)).toEqual({
+      localDate: "2026-10-14",
+      lines: [{ ...review, hours: 1, comments: "", entryIds: ["today"] }],
+    });
+    expect(lines.running).toEqual({
+      timerId: "timer-1",
+      date: "2026-10-14",
+      unsavedMinutes: 15,
+      entryId: "today",
+      projectId: "acme",
+      projectName: "Acme",
+      projectCode: "ACME-1",
+      taskId: "review",
+      taskName: "Review",
+    });
+  });
+
+  it("groups the week by task in one section without a date", () => {
+    const { sections } = read(weekState(), "task");
+
+    expect(sections).toHaveLength(1);
+    expect(sections[0]).not.toHaveProperty("localDate");
+    expect(
+      sections[0]!.lines.map((line) => [line.taskName, line.hours]),
+    ).toEqual([
+      ["07 Run", 3.5],
+      ["Review", 0.75],
+    ]);
+  });
+
+  it("keeps local, Not known yet and running time out of every line", () => {
+    for (const groupBy of ["day-task", "day", "task"] as const) {
+      const ids = read(weekState(), groupBy).sections.flatMap((section) =>
+        section.lines.flatMap((line) => line.entryIds),
+      );
+      expect(ids.sort()).toEqual(["a1", "a2", "a3", "a4"]);
+    }
+  });
+
+  it("names a mapped task by its own name without a plugin that maps it", () => {
+    const names = read(
+      weekState(),
+      "task",
+      NO_PROPERTY_PLUGINS,
+    ).sections[0]!.lines.map((line) => line.taskName);
+
+    expect(names).toEqual(["Build", "Review"]);
+  });
+
+  it("reads a submitted week, and says it is", () => {
+    const state = {
+      ...weekState(),
+      lockedWeeks: [{ weekOf: "2026-10-12", lockedAt: 1 }],
+    };
+
+    const lines = read(state, "day-task");
+    expect(lines.locked).toBe(true);
+    expect(lines.sections).toHaveLength(2);
+  });
+
+  it("leaves out a running entry of another week", () => {
+    const state = weekState();
+    state.timers[0]!.localDate = "2026-10-20";
+
+    expect(read(state, "day-task").running).toBeNull();
+  });
+
+  it("returns no sections and zero totals for an empty week", () => {
+    const state = { ...weekState(), timesheetEntries: [], timers: [] };
+
+    expect(read(state, "day")).toMatchObject({
+      sections: [],
+      notSent: { hours: 0, items: [] },
+      waiting: { hours: 0, tasks: [] },
+      running: null,
+    });
   });
 });

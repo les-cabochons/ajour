@@ -1,6 +1,7 @@
 import {
   getLocalProjectDisplayName,
   type LocalProject,
+  type LocalProjectTask,
   type LocalTimesheetEntry,
   type WeeklyCapacityTargets,
 } from "@/domain/local-state";
@@ -11,6 +12,7 @@ import {
   NO_PROPERTY_PLUGINS,
   type ProjectPropertyPlugin,
   type PropertyPlugins,
+  type TaskPropertyPlugin,
 } from "@/domain/projects/plugin-properties";
 
 /**
@@ -200,6 +202,30 @@ export function groupSubmitLines({
   });
 }
 
+/**
+ * The Commit page's lines: the week's sent entries, as `listSentEntries`
+ * keeps them, grouped by `groupSubmitLines`. The page and the agents' week
+ * lines both build them here, so they never disagree.
+ */
+export function buildCommitLines({
+  entries,
+  groupBy,
+  projects,
+  weekDates,
+}: {
+  entries: LocalTimesheetEntry[];
+  groupBy: SubmitGroupBy;
+  projects: LocalProject[];
+  weekDates: string[];
+}): SubmitSection[] {
+  return groupSubmitLines({
+    entries: listSentEntries(entries, projects),
+    groupBy,
+    projects,
+    weekDates,
+  });
+}
+
 /** The Names choice that shows Ajour's own project names. */
 export const AJOUR_LINE_NAME_SOURCE = "ajour";
 
@@ -269,6 +295,72 @@ function pluginProjectName(
 }
 
 /**
+ * The name a task commits as under the Names choice `namesPluginId`, such as
+ * 07 Run. A selected plugin decides alone, its own name included, even when
+ * it maps no tasks. Other task plugins are asked, first one first, only when
+ * Names is on Ajour or still loading. Local only and Not known yet are not
+ * decided here; `commit-target.ts` owns them.
+ */
+export function resolveCommitTaskName({
+  task,
+  plugins,
+  namesPluginId,
+}: {
+  task: Pick<LocalProjectTask, "name" | "pluginProperties" | "commitAs">;
+  plugins: PropertyPlugins;
+  namesPluginId: string | undefined;
+}): string {
+  const selected =
+    namesPluginId !== undefined &&
+    [...plugins.tasks, ...plugins.projects].some(
+      (candidate) => candidate.pluginId === namesPluginId,
+    );
+  const asked = selected
+    ? plugins.tasks.filter((candidate) => candidate.pluginId === namesPluginId)
+    : plugins.tasks;
+  for (const plugin of asked) {
+    const mapped = getMappedTaskName(task, plugin);
+    if (mapped) return mapped;
+  }
+  return task.name;
+}
+
+function findLineTask(line: SubmitLine, projects: readonly LocalProject[]) {
+  return line.taskId
+    ? projects
+        .find((candidate) => candidate._id === line.projectId)
+        ?.tasks.find((candidate) => candidate._id === line.taskId)
+    : undefined;
+}
+
+/** The name `plugin` maps the line's task to, such as 07 Run, if any. */
+function getLineMappedTaskName(
+  line: SubmitLine,
+  projects: readonly LocalProject[],
+  plugin: TaskPropertyPlugin,
+) {
+  const task = findLineTask(line, projects);
+  return task && getMappedTaskName(task, plugin);
+}
+
+/**
+ * The name the line's task commits as, for agents and the terminal: the
+ * `resolveCommitTaskName` rule applied to the line's task, as the page shows
+ * it. Undefined when the line has no task.
+ */
+export function getLineCommitTaskName(
+  line: SubmitLine,
+  source: string | undefined,
+  projects: readonly LocalProject[],
+  plugins: PropertyPlugins,
+): string | undefined {
+  const task = findLineTask(line, projects);
+  return task
+    ? resolveCommitTaskName({ task, plugins, namesPluginId: source })
+    : line.taskName;
+}
+
+/**
  * What a line's project and task button shows ("Project / Task") and copies
  * ("Project Task"), with the project and task named by `source`: a plugin
  * names the task by its task property when the task is mapped to another
@@ -291,19 +383,15 @@ export function describeLineNames(
     (candidate) => candidate.pluginId === source,
   );
   const project =
-    (projectPlugin || taskPlugin) && line.projectId
+    projectPlugin && line.projectId
       ? projects.find((candidate) => candidate._id === line.projectId)
-      : undefined;
-  const task =
-    taskPlugin && line.taskId
-      ? project?.tasks.find((candidate) => candidate._id === line.taskId)
       : undefined;
   const projectName =
     projectPlugin && project
       ? pluginProjectName(project, projectPlugin)
       : line.projectName;
   const taskName =
-    (taskPlugin && task && getMappedTaskName(task, taskPlugin)) ||
+    (taskPlugin && getLineMappedTaskName(line, projects, taskPlugin)) ||
     line.taskName;
   const parts = [projectName, taskName].filter((part): part is string =>
     Boolean(part),
@@ -360,11 +448,38 @@ export interface SubmitSummary {
   targetMs: number;
   isUnderTarget: boolean;
   warnings: SubmitWarning[];
+  /** The week's local time, which never goes to the timesheet tool. */
+  local: SubmitLocalTime;
+}
+
+export interface SubmitLocalTime {
+  durationMs: number;
   /**
-   * The week's local time, which never goes to the timesheet tool, and the
-   * names of its tasks, or of its Local only projects, in list order.
+   * The names of its tasks, or of its Local only projects, in list order,
+   * each once: what the page's "Not sent:" line names.
    */
-  local: { durationMs: number; names: string[] };
+  names: string[];
+  /** Its time per task, or per Local only project, in list order. */
+  items: SubmitLocalItem[];
+}
+
+/**
+ * Local time on one task, or on one Local only project, whose tasks it
+ * leaves out. The project is named by its full name and code, as the lines
+ * name theirs.
+ */
+export interface SubmitLocalItem {
+  projectId: string;
+  projectName: string;
+  projectCode?: string;
+  taskId?: string;
+  taskName?: string;
+  durationMs: number;
+}
+
+/** What the page's "Not sent:" line names. */
+export function formatNotSentNames(local: SubmitLocalTime): string {
+  return local.names.join(", ") || "local time";
 }
 
 /** The week's total against its capacity targets, with its warnings. */
@@ -430,7 +545,8 @@ export function summarizeWeek({
   }
 
   const waiting = new Map<string, SubmitWarning & { kind: "waiting-task" }>();
-  const local = { durationMs: 0, names: [] as string[] };
+  const local: SubmitLocalTime = { durationMs: 0, names: [], items: [] };
+  const localItems = new Map<string, SubmitLocalItem>();
   for (const { entry, target } of targets) {
     if (target === "sent") continue;
     const project = projects.find((item) => item._id === entry.projectId);
@@ -441,6 +557,19 @@ export function summarizeWeek({
         ? getLocalProjectDisplayName(project)
         : task?.name;
       if (name && !local.names.includes(name)) local.names.push(name);
+      if (!project) continue;
+      // A Local only project's time adds up across its tasks.
+      const byTask = project.localOnly ? undefined : task;
+      const key = byTask ? `${project._id}::${byTask._id}` : project._id;
+      const item = localItems.get(key) ?? {
+        projectId: project._id,
+        projectName: project.name,
+        ...(project.code?.trim() ? { projectCode: project.code.trim() } : {}),
+        ...(byTask ? { taskId: byTask._id, taskName: byTask.name } : {}),
+        durationMs: 0,
+      };
+      item.durationMs += entry.durationMs;
+      localItems.set(key, item);
       continue;
     }
     if (!project || !task) continue;
@@ -456,6 +585,7 @@ export function summarizeWeek({
     waiting.set(key, warning);
   }
   warnings.push(...waiting.values());
+  local.items = [...localItems.values()];
 
   return {
     totalMs,

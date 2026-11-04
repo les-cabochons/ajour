@@ -32,6 +32,14 @@ import {
   type TimesheetCommitValues,
 } from "@/domain/time/timesheet-commit";
 import { getLockedWeek } from "@/domain/time/locked-weeks";
+import { toDecimalHours } from "@/domain/time/duration";
+import {
+  buildCommitLines,
+  getLineCommitTaskName,
+  resolveLineNameSource,
+  summarizeWeek,
+  type SubmitGroupBy,
+} from "@/domain/time/timesheet-submission";
 import {
   computeWeekPace,
   getPaceTolerancePercent,
@@ -589,4 +597,126 @@ export function checkWeekStatusVersionOrRefuse(
       "The week changed since you read it. Call get_week_status again.",
     );
   }
+}
+
+/**
+ * get_week_lines (#533): the week's lines as the Commit page builds them,
+ * for the terminal to print as they are. Each line names its project by its
+ * full name and its task by the name it commits as, in decimal hours rounded
+ * as the page copies them. Local time, Not known yet time and the running
+ * entry stay out of the lines, as on the page, and come beside them. A
+ * submitted week reads the same, with `locked`.
+ */
+export function getWeekLinesForAgent(
+  state: LocalAppState,
+  {
+    weekDates,
+    groupBy,
+    propertyPlugins,
+    now,
+  }: {
+    weekDates: string[];
+    groupBy: SubmitGroupBy;
+    /** Active plugins that add project or task properties. Passed in to keep domain free of `lib/`. */
+    propertyPlugins: PropertyPlugins;
+    now: number;
+  },
+): DataToolOutput<"get_week_lines"> {
+  const { projects } = state;
+  const week = new Set(weekDates);
+  const weekEntries = state.timesheetEntries.filter((entry) =>
+    week.has(entry.localDate),
+  );
+  const nameSource = resolveLineNameSource(
+    state.userPreferences.commitLinesNameSource,
+    propertyPlugins,
+  );
+  const sections = buildCommitLines({
+    entries: weekEntries,
+    groupBy,
+    projects,
+    weekDates,
+  }).map((section) => ({
+    ...(section.localDate ? { localDate: section.localDate } : {}),
+    lines: section.lines.map((line) => {
+      const taskName = getLineCommitTaskName(
+        line,
+        nameSource,
+        projects,
+        propertyPlugins,
+      );
+      return {
+        ...(line.projectId ? { projectId: line.projectId } : {}),
+        ...(line.projectName ? { projectName: line.projectName } : {}),
+        ...(line.projectCode ? { projectCode: line.projectCode } : {}),
+        ...(line.taskId ? { taskId: line.taskId } : {}),
+        ...(taskName ? { taskName } : {}),
+        hours: toDecimalHours(line.durationMs),
+        comments: line.comments,
+        entryIds: line.entryIds,
+      };
+    }),
+  }));
+
+  const summary = summarizeWeek({
+    capacityTargets: state.userPreferences.weeklyCapacityTargets,
+    weekDates,
+    weekEntries,
+    projects,
+  });
+  const waitingTasks = summary.warnings.flatMap((warning) =>
+    warning.kind === "waiting-task" ? [warning] : [],
+  );
+  return {
+    weekOf: weekDates[0]!,
+    groupBy,
+    locked: getLockedWeek(state, weekDates[0]!) !== undefined,
+    sections,
+    notSent: {
+      hours: toDecimalHours(summary.local.durationMs),
+      items: summary.local.items.map(({ durationMs, ...item }) => ({
+        ...item,
+        hours: toDecimalHours(durationMs),
+      })),
+    },
+    waiting: {
+      hours: toDecimalHours(
+        waitingTasks.reduce((total, task) => total + task.durationMs, 0),
+      ),
+      tasks: waitingTasks.map((task) => ({
+        projectId: task.projectId,
+        taskId: task.taskId,
+        taskName: task.taskName,
+        hours: toDecimalHours(task.durationMs),
+      })),
+    },
+    running: readUnsavedRunningTime(state, week, now),
+  };
+}
+
+/**
+ * The running entry in the week with the time it has not saved yet: when it
+ * continues a saved entry, that entry's time is already in the lines.
+ */
+function readUnsavedRunningTime(
+  state: LocalAppState,
+  week: ReadonlySet<string>,
+  now: number,
+): DataToolOutput<"get_week_lines">["running"] {
+  const timer = state.timers[0];
+  if (!timer || !week.has(timer.localDate)) return null;
+  const saved = timer.entryId
+    ? state.timesheetEntries.find((entry) => entry._id === timer.entryId)
+    : undefined;
+  const countedMs =
+    timer.accumulatedDurationMs + Math.max(0, now - timer.startedAt);
+  return {
+    timerId: timer._id,
+    date: timer.localDate,
+    unsavedMinutes: Math.floor(
+      Math.max(0, countedMs - (saved?.durationMs ?? 0)) / MINUTE,
+    ),
+    ...(saved ? { entryId: saved._id } : {}),
+    ...describeProjectTask(state, timer.projectId, timer.taskId),
+  };
 }

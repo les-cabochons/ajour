@@ -8,6 +8,7 @@ import {
 } from "@ajour/shared/agent-tools";
 import {
   getWeekChangesForAgent,
+  getWeekLinesForAgent,
   getWeekStatusForAgent,
   getWorkItemForAgent,
   listProjectsForAgent,
@@ -125,6 +126,17 @@ const readTools: {
       weekDates: getWeekDates(input.weekOf),
       today: todayIsoDate(),
       propertyPlugins: await loadPropertyPlugins(),
+    });
+  },
+  // get_week_lines (#533): the Commit page's lines, with its week dates.
+  get_week_lines: async (rawInput) => {
+    const input = readToolInputSchemas.get_week_lines.parse(rawInput);
+    const propertyPlugins = await loadPropertyPlugins();
+    return getWeekLinesForAgent(localStore.snapshot(), {
+      weekDates: getIsoWeekDates(input.weekOf),
+      groupBy: input.groupBy,
+      propertyPlugins,
+      now: Date.now(),
     });
   },
 };

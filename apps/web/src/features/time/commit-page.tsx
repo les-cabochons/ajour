@@ -40,9 +40,9 @@ import {
 } from "@/domain/time/locked-weeks";
 import { listWeekChanges } from "@/domain/time/timesheet-commit";
 import {
+  buildCommitLines,
   describeLineNames,
-  groupSubmitLines,
-  listSentEntries,
+  formatNotSentNames,
   listLineNameSources,
   resolveLineNameSource,
   summarizeWeek,
@@ -388,8 +388,8 @@ export function CommitPage({
   );
   const sections = useMemo(
     () =>
-      groupSubmitLines({
-        entries: listSentEntries(weekEntries, projects),
+      buildCommitLines({
+        entries: weekEntries,
         groupBy,
         projects,
         weekDates,
@@ -625,7 +625,7 @@ export function CommitPage({
             />
             {summary.local.durationMs > 0 ? (
               <p className="commit-local-time">
-                Not sent: {summary.local.names.join(", ") || "local time"}{" "}
+                Not sent: {formatNotSentNames(summary.local)}{" "}
                 <Value>{formatClockDuration(summary.local.durationMs)}</Value>
               </p>
             ) : null}

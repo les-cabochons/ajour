@@ -4,6 +4,7 @@ import {
   formatCompactDuration,
   formatDecimalHours,
   parseHoursInput,
+  toDecimalHours,
 } from "@/domain/time/duration";
 
 describe("parseHoursInput", () => {
@@ -33,6 +34,15 @@ describe("formatDecimalHours", () => {
     expect(formatDecimalHours(5 * 60 * 60_000)).toBe("5,00");
     expect(formatDecimalHours(75 * 60_000)).toBe("1,25");
     expect(formatDecimalHours(20 * 60_000)).toBe("0,33");
+  });
+});
+
+describe("toDecimalHours", () => {
+  it("is the number formatDecimalHours writes, rounded to the minute first", () => {
+    expect(toDecimalHours(5 * 60 * 60_000)).toBe(5);
+    expect(toDecimalHours(20 * 60_000)).toBe(0.33);
+    // 30 minutes 29 seconds is 0:30 on screen, so 0.5, not 0.51.
+    expect(toDecimalHours(30 * 60_000 + 29_000)).toBe(0.5);
   });
 });
 

@@ -7,11 +7,15 @@ import {
   type TaskPropertyPlugin,
 } from "@/domain/projects/plugin-properties";
 import {
+  buildCommitLines,
   describeLineNames,
+  formatNotSentNames,
+  getLineCommitTaskName,
   groupSubmitLines,
   listLineNameSources,
   listSentEntries,
   mergeSubmitComments,
+  resolveCommitTaskName,
   resolveLineNameSource,
   summarizeWeek,
   type SubmitLine,
@@ -170,6 +174,54 @@ describe("submit lines", () => {
       projectName: undefined,
       taskName: undefined,
     });
+  });
+
+  it("builds the Commit page's lines from the sent entries only", () => {
+    const committing: LocalProject[] = [
+      {
+        ...projects[0]!,
+        tasks: [
+          ...projects[0]!.tasks,
+          {
+            _id: "temp",
+            name: "Temp migration",
+            status: "active",
+            createdAt: 1,
+            commitAs: "waiting",
+          },
+          {
+            _id: "lunch",
+            name: "Team lunch",
+            status: "active",
+            createdAt: 1,
+            commitAs: "local",
+          },
+        ],
+      },
+    ];
+    const week = [
+      entry("dev", { localDate: "2026-10-05" }),
+      entry("temp", { localDate: "2026-10-05", taskId: "temp" }),
+      entry("lunch", { localDate: "2026-10-06", taskId: "lunch" }),
+    ];
+
+    const sections = buildCommitLines({
+      entries: week,
+      groupBy: "day",
+      projects: committing,
+      weekDates,
+    });
+    expect(sections).toEqual(
+      groupSubmitLines({
+        entries: listSentEntries(week, committing),
+        groupBy: "day",
+        projects: committing,
+        weekDates,
+      }),
+    );
+    expect(sections.flatMap((section) => section.lines)).toMatchObject([
+      { entryIds: ["dev"] },
+    ]);
   });
 
   it("joins trimmed, non-blank comments with a pipe", () => {
@@ -385,6 +437,178 @@ describe("line names", () => {
       copied: "Atlas Knowledge transfer",
     });
   });
+
+  describe("the name a line's task commits as", () => {
+    const task = (pluginId: string, section: string): TaskPropertyPlugin => ({
+      pluginId,
+      capability: {
+        section,
+        fields: [{ id: "task", label: "Task", defaultFrom: "name" }],
+      },
+    });
+    const workdayTask = task("workday-agent", "Workday");
+    const otherTask = task("other", "Other");
+    const mapped: LocalProject[] = [
+      {
+        ...named[0]!,
+        tasks: [
+          {
+            _id: "kt",
+            name: "Knowledge transfer",
+            status: "active",
+            createdAt: 1,
+            pluginProperties: {
+              "workday-agent": { task: "07 Run" },
+              other: { task: "KT" },
+            },
+          },
+          { _id: "dev", name: "Development", status: "active", createdAt: 1 },
+        ],
+      },
+    ];
+    const ktLine = { ...line, taskId: "kt", taskName: "Knowledge transfer" };
+
+    it("is the name the Names choice's plugin maps the task to", () => {
+      expect(
+        getLineCommitTaskName(ktLine, "other", mapped, {
+          projects: [],
+          tasks: [workdayTask, otherTask],
+        }),
+      ).toBe("KT");
+    });
+
+    it("is the task's own name when the Names choice's plugin keeps it, whatever another plugin maps", () => {
+      const ownInWorkday: LocalProject[] = [
+        {
+          ...named[0]!,
+          tasks: [
+            {
+              _id: "kt",
+              name: "Knowledge transfer",
+              status: "active",
+              createdAt: 1,
+              pluginProperties: { other: { task: "KT" } },
+            },
+          ],
+        },
+      ];
+      const plugins = { projects: [], tasks: [workdayTask, otherTask] };
+
+      expect(
+        getLineCommitTaskName(ktLine, "workday-agent", ownInWorkday, plugins),
+      ).toBe("Knowledge transfer");
+      expect(
+        describeLineNames(ktLine, "workday-agent", ownInWorkday, plugins),
+      ).toMatchObject({ copied: "Atlas Knowledge transfer" });
+    });
+
+    it("is the first plugin's mapped name when the Names choice is Ajour", () => {
+      expect(
+        getLineCommitTaskName(ktLine, "ajour", mapped, {
+          projects: [],
+          tasks: [workdayTask, otherTask],
+        }),
+      ).toBe("07 Run");
+    });
+
+    it("is the task's own name when the Names choice maps no tasks, whatever a task plugin maps", () => {
+      const projectOnly: ProjectPropertyPlugin = {
+        pluginId: "project-only",
+        capability: {
+          section: "Projects",
+          fields: [{ id: "name", label: "Name", defaultFrom: "fullName" }],
+        },
+      };
+      const plugins = { projects: [projectOnly], tasks: [workdayTask] };
+
+      expect(
+        getLineCommitTaskName(ktLine, "project-only", mapped, plugins),
+      ).toBe("Knowledge transfer");
+      expect(
+        describeLineNames(ktLine, "project-only", mapped, plugins),
+      ).toMatchObject({
+        copied: expect.stringContaining("Knowledge transfer"),
+      });
+    });
+
+    it("is the task's own name when no plugin maps it", () => {
+      const devLine = { ...line, taskId: "dev", taskName: "Development" };
+      expect(
+        getLineCommitTaskName(devLine, "ajour", mapped, {
+          projects: [],
+          tasks: [workdayTask],
+        }),
+      ).toBe("Development");
+      expect(
+        getLineCommitTaskName(ktLine, "ajour", mapped, NO_PROPERTY_PLUGINS),
+      ).toBe("Knowledge transfer");
+    });
+  });
+});
+
+describe("the name a task commits as", () => {
+  const taskPlugin = (pluginId: string): TaskPropertyPlugin => ({
+    pluginId,
+    capability: {
+      section: pluginId,
+      fields: [{ id: "task", label: "Task", defaultFrom: "name" }],
+    },
+  });
+  const projectOnly: ProjectPropertyPlugin = {
+    pluginId: "project-only",
+    capability: {
+      section: "Projects",
+      fields: [{ id: "name", label: "Name", defaultFrom: "fullName" }],
+    },
+  };
+  const first = taskPlugin("first");
+  const second = taskPlugin("second");
+  const task = {
+    _id: "kt",
+    name: "Knowledge transfer",
+    status: "active" as const,
+    createdAt: 1,
+    pluginProperties: { first: { task: "07 Run" }, second: { task: "KT" } },
+  };
+  const plugins = { projects: [projectOnly], tasks: [first, second] };
+
+  it("is the selected plugin's mapped name, the second plugin's when it is selected", () => {
+    expect(
+      resolveCommitTaskName({ task, plugins, namesPluginId: "first" }),
+    ).toBe("07 Run");
+    expect(
+      resolveCommitTaskName({ task, plugins, namesPluginId: "second" }),
+    ).toBe("KT");
+  });
+
+  it("is the first plugin's mapped name when Names is on Ajour or still loading", () => {
+    expect(
+      resolveCommitTaskName({ task, plugins, namesPluginId: "ajour" }),
+    ).toBe("07 Run");
+    expect(
+      resolveCommitTaskName({ task, plugins, namesPluginId: undefined }),
+    ).toBe("07 Run");
+  });
+
+  it("is the task's own name when the selected plugin keeps it or maps no tasks", () => {
+    const own = { ...task, pluginProperties: { second: { task: "KT" } } };
+    expect(
+      resolveCommitTaskName({ task: own, plugins, namesPluginId: "first" }),
+    ).toBe("Knowledge transfer");
+    expect(
+      resolveCommitTaskName({ task, plugins, namesPluginId: "project-only" }),
+    ).toBe("Knowledge transfer");
+  });
+
+  it("is the task's own name when no plugin maps it", () => {
+    expect(
+      resolveCommitTaskName({
+        task: { ...task, pluginProperties: undefined },
+        plugins,
+        namesPluginId: "ajour",
+      }),
+    ).toBe("Knowledge transfer");
+  });
 });
 
 describe("week summary", () => {
@@ -593,9 +817,133 @@ describe("week summary", () => {
     expect(summary.local).toEqual({
       durationMs: 2 * HOUR,
       names: ["Team lunch", "Home"],
+      items: [
+        {
+          projectId: "atlas",
+          projectName: "Atlas",
+          taskId: "lunch",
+          taskName: "Team lunch",
+          durationMs: HOUR,
+        },
+        { projectId: "home", projectName: "Home", durationMs: HOUR },
+      ],
     });
     expect(listSentEntries(week, committing).map((item) => item._id)).toEqual([
       "dev",
     ]);
+  });
+
+  it("keeps local time apart per task and per Local only project, and names it once on the page", () => {
+    const lunch = (projectId: string, name: string): LocalProject => ({
+      _id: projectId,
+      name,
+      color: "#000",
+      icon: DEFAULT_PROJECT_ICON,
+      status: "active",
+      tasks: [
+        {
+          _id: "lunch",
+          name: "Lunch",
+          status: "active",
+          createdAt: 1,
+          commitAs: "local",
+        },
+      ],
+    });
+    const lunchProjects: LocalProject[] = [
+      lunch("desktop", "Ajour Desktop"),
+      { ...lunch("web", "Ajour Web"), code: "AJW" },
+      {
+        _id: "lunch-project",
+        name: "Lunch",
+        color: "#000",
+        icon: DEFAULT_PROJECT_ICON,
+        status: "active",
+        localOnly: true,
+        tasks: [
+          { _id: "out", name: "Out", status: "active", createdAt: 1 },
+          { _id: "in", name: "In", status: "active", createdAt: 1 },
+        ],
+      },
+    ];
+    const week = [
+      entry("desktop-lunch", {
+        localDate: "2026-10-05",
+        projectId: "desktop",
+        taskId: "lunch",
+        durationMs: HOUR / 2,
+      }),
+      entry("web-lunch", {
+        localDate: "2026-10-06",
+        projectId: "web",
+        taskId: "lunch",
+      }),
+      entry("lunch-out", {
+        localDate: "2026-10-06",
+        projectId: "lunch-project",
+        taskId: "out",
+        durationMs: HOUR / 4,
+      }),
+      entry("lunch-in", {
+        localDate: "2026-10-07",
+        projectId: "lunch-project",
+        taskId: "in",
+        durationMs: HOUR / 4,
+      }),
+      entry("desktop-lunch-2", {
+        localDate: "2026-10-07",
+        projectId: "desktop",
+        taskId: "lunch",
+        durationMs: HOUR / 2,
+      }),
+    ];
+
+    const { local } = summarizeWeek({
+      capacityTargets,
+      weekDates,
+      weekEntries: week,
+      projects: lunchProjects,
+    });
+
+    expect(local).toEqual({
+      durationMs: 2.5 * HOUR,
+      names: ["Lunch"],
+      items: [
+        {
+          projectId: "desktop",
+          projectName: "Ajour Desktop",
+          taskId: "lunch",
+          taskName: "Lunch",
+          durationMs: HOUR,
+        },
+        {
+          projectId: "web",
+          projectName: "Ajour Web",
+          projectCode: "AJW",
+          taskId: "lunch",
+          taskName: "Lunch",
+          durationMs: HOUR,
+        },
+        {
+          projectId: "lunch-project",
+          projectName: "Lunch",
+          durationMs: HOUR / 2,
+        },
+      ],
+    });
+    expect(formatNotSentNames(local)).toBe("Lunch");
+  });
+
+  it("calls unnamed local time local time on the page", () => {
+    expect(formatNotSentNames({ durationMs: HOUR, names: [], items: [] })).toBe(
+      "local time",
+    );
+    expect(
+      formatNotSentNames({
+        durationMs: 2 * HOUR,
+        names: ["Team lunch", "Home"],
+        items: [],
+      }),
+    ).toBe("Team lunch, Home");
   });
 });
