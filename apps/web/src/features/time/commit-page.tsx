@@ -151,20 +151,42 @@ function warningKey(warning: SubmitWarning) {
   return warning.kind;
 }
 
+/** A warning's duration: the mono Value, in the list's muted tone. */
+function WarningDuration({ ms }: { ms: number }) {
+  return <Value tone="muted">{formatClockDuration(ms)}</Value>;
+}
+
 function formatWarning(warning: SubmitWarning) {
   if (warning.kind === "missing-task") {
     return `${countLabel(warning.entryCount, "entry has", "entries have")} no task`;
   }
   if (warning.kind === "waiting-task") {
-    return `${formatClockDuration(warning.durationMs)} on ${warning.taskName} waits for a task to commit as.`;
+    return (
+      <>
+        <WarningDuration ms={warning.durationMs} /> on {warning.taskName} waits
+        for a task to commit as.
+      </>
+    );
   }
   if (warning.kind === "days-ahead") {
-    const left = `${formatClockDuration(warning.remainingMs)} of target left`;
-    return warning.fromDate === warning.toDate
-      ? `${formatShortDay(warning.fromDate)} is still ahead: ${left}`
-      : `${formatShortDay(warning.fromDate)} – ${formatShortDay(warning.toDate)} are still ahead: ${left}`;
+    const days =
+      warning.fromDate === warning.toDate
+        ? `${formatShortDay(warning.fromDate)} is`
+        : `${formatShortDay(warning.fromDate)} – ${formatShortDay(warning.toDate)} are`;
+    return (
+      <>
+        {days} still ahead: <WarningDuration ms={warning.remainingMs} /> of
+        target left
+      </>
+    );
   }
-  return `${formatShortDay(warning.localDate)} has ${formatClockDuration(warning.loggedMs)} of ${formatClockDuration(warning.targetMs)}`;
+  return (
+    <>
+      {formatShortDay(warning.localDate)} has{" "}
+      <WarningDuration ms={warning.loggedMs} /> of{" "}
+      <WarningDuration ms={warning.targetMs} />
+    </>
+  );
 }
 
 /**
@@ -519,7 +541,7 @@ export function CommitPage({
                 ) : (
                   <Warning aria-hidden />
                 )}
-                {formatWarning(warning)}
+                <span>{formatWarning(warning)}</span>
                 {warning.kind === "waiting-task" ? (
                   <Link
                     to="/projects/$projectId"
