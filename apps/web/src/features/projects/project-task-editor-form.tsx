@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ElementType, type KeyboardEvent } from "react";
-import { RiCloseLine as X, RiSaveLine as Save } from "@remixicon/react";
+import { RiCloseLine as X } from "@remixicon/react";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -212,13 +212,7 @@ export function ProjectTaskEditorForm({
         <Button type="button" variant="ghost" onClick={onClose}>
           Cancel
         </Button>
-        <Button
-          type="button"
-
-          disabled={!editor.canSave}
-          onClick={onSave}
-        >
-          <Save data-icon="inline-start" />
+        <Button type="button" disabled={!editor.canSave} onClick={onSave}>
           Save
         </Button>
       </footer>

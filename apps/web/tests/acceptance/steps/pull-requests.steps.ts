@@ -521,7 +521,12 @@ Then(
   },
 );
 When("I ask to remove the GitHub connection", async ({ page }) => {
-  await page.getByRole("button", { name: "Remove", exact: true }).click();
+  // Remove sits in the connection's actions menu.
+  await page
+    .getByRole("button", { name: /^More actions for / })
+    .first()
+    .click();
+  await page.getByRole("menuitem", { name: "Remove", exact: true }).click();
 });
 Then(
   "the removal confirmation states the saved pull request count",

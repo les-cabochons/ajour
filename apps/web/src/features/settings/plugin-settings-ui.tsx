@@ -8,7 +8,6 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
-import { cn } from "@/lib/utils";
 import type { PluginField, PluginFieldValue } from "@ajour/shared";
 import { SecretFieldInput, type SecretFieldBinding } from "./secret-field";
 
@@ -23,12 +22,19 @@ function PluginFieldInput({
   value,
   onChange,
   secret,
+  hideHelp = false,
+  label = field.label,
 }: {
   field: PluginField;
   value: PluginFieldValue | undefined;
   onChange: (nextValue: PluginFieldValue) => void;
   secret?: SecretFieldBinding;
+  /** Set when the form shows this help once, under a row of fields. */
+  hideHelp?: boolean;
+  /** A shorter label, when a legend above the field says the rest. */
+  label?: string;
 }) {
+  const help = hideHelp ? undefined : field.helpText;
   if (field.secret) {
     return (
       <SecretFieldInput
@@ -48,14 +54,9 @@ function PluginFieldInput({
     );
   }
 
-  const isWideField =
-    field.type === "checkbox" ||
-    field.type === "password" ||
-    Boolean(field.helpText);
-
   if (field.type === "checkbox") {
     return (
-      <Field orientation="horizontal" className="desktop:col-span-2">
+      <Field orientation="horizontal">
         <Checkbox
           id={field.id}
           checked={value === true}
@@ -63,10 +64,8 @@ function PluginFieldInput({
           className="mt-0.5"
         />
         <FieldContent>
-          <FieldTitle>{field.label}</FieldTitle>
-          {field.helpText ? (
-            <FieldDescription>{field.helpText}</FieldDescription>
-          ) : null}
+          <FieldTitle>{label}</FieldTitle>
+          {help ? <FieldDescription>{help}</FieldDescription> : null}
         </FieldContent>
       </Field>
     );
@@ -74,8 +73,8 @@ function PluginFieldInput({
 
   if (field.type === "select") {
     return (
-      <Field className={cn(isWideField && "desktop:col-span-2")}>
-        <FieldLabel htmlFor={field.id}>{field.label}</FieldLabel>
+      <Field>
+        <FieldLabel htmlFor={field.id}>{label}</FieldLabel>
         <FieldContent>
           <OptionSelect
             id={field.id}
@@ -84,17 +83,15 @@ function PluginFieldInput({
             onChange={onChange}
             options={field.options ?? []}
           />
-          {field.helpText ? (
-            <FieldDescription>{field.helpText}</FieldDescription>
-          ) : null}
+          {help ? <FieldDescription>{help}</FieldDescription> : null}
         </FieldContent>
       </Field>
     );
   }
 
   return (
-    <Field className={cn(isWideField && "desktop:col-span-2")}>
-      <FieldLabel htmlFor={field.id}>{field.label}</FieldLabel>
+    <Field>
+      <FieldLabel htmlFor={field.id}>{label}</FieldLabel>
       <FieldContent>
         <Input
           id={field.id}
@@ -129,9 +126,7 @@ function PluginFieldInput({
           placeholder={field.placeholder}
           autoComplete="off"
         />
-        {field.helpText ? (
-          <FieldDescription>{field.helpText}</FieldDescription>
-        ) : null}
+        {help ? <FieldDescription>{help}</FieldDescription> : null}
       </FieldContent>
     </Field>
   );

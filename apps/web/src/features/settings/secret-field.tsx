@@ -90,7 +90,7 @@ export function SecretFieldInput({
   }, [replacing, replaceId]);
 
   return (
-    <Field className="desktop:col-span-2">
+    <Field>
       <FieldLabel htmlFor={showInput ? inputId : undefined}>
         {field.label}
       </FieldLabel>

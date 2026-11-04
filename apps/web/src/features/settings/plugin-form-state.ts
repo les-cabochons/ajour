@@ -362,3 +362,94 @@ export function connectionSaveBlock(
         hint: "Activate this plugin to save a connection.",
       };
 }
+
+/** One block of a connection form: a field, or a row of fields that share a help text. */
+export type ConnectionFormBlock =
+  | { kind: "field"; field: PluginField }
+  | {
+      kind: "row";
+      /** What the row's labels share, such as "Priority values". */
+      legend: string;
+      /** The help the fields share, shown once under the row. */
+      help: string;
+      fields: Array<{ field: PluginField; label: string }>;
+    };
+
+const ROW_FIELD_TYPES = new Set(["text", "number"]);
+
+/** The help after its first sentence: what a field says beyond its own name. */
+function sharedHelpPart(helpText: string | undefined) {
+  const match = helpText?.match(/^[^.]+\.\s+(.+)$/s);
+  return match?.[1]?.trim();
+}
+
+/** The words every label ends with, and what each label adds before them. */
+function splitLabels(labels: string[]) {
+  const words = labels.map((label) => label.trim().split(/\s+/));
+  let shared = 0;
+  while (
+    words.every((label) => label.length > shared + 1) &&
+    words.every(
+      (label) =>
+        label[label.length - 1 - shared]!.toLowerCase() ===
+        words[0]![words[0]!.length - 1 - shared]!.toLowerCase(),
+    )
+  ) {
+    shared += 1;
+  }
+  if (shared === 0) return undefined;
+  const suffix = words[0]!.slice(-shared).join(" ");
+  return {
+    legend: suffix.charAt(0).toUpperCase() + suffix.slice(1),
+    labels: words.map((label) => label.slice(0, -shared).join(" ")),
+  };
+}
+
+/**
+ * Groups the fields of a connection form for display. Two to four short
+ * fields in a row whose labels end alike and whose help says the same after
+ * its first sentence (Urgent, High, Medium and Low priority values) become
+ * one row under a shared legend, with the help shown once. Every other field
+ * stands alone. Manifests stay as they are: this is the host's layout.
+ */
+export function groupConnectionFields(
+  fields: PluginField[],
+): ConnectionFormBlock[] {
+  const blocks: ConnectionFormBlock[] = [];
+  let index = 0;
+  while (index < fields.length) {
+    const first = fields[index]!;
+    const help =
+      ROW_FIELD_TYPES.has(first.type) && !first.secret
+        ? sharedHelpPart(first.helpText)
+        : undefined;
+    let end = index + 1;
+    if (help) {
+      while (
+        end < fields.length &&
+        end - index < 4 &&
+        ROW_FIELD_TYPES.has(fields[end]!.type) &&
+        !fields[end]!.secret &&
+        sharedHelpPart(fields[end]!.helpText) === help
+      ) {
+        end += 1;
+      }
+    }
+    const run = fields.slice(index, end);
+    const split =
+      run.length > 1 ? splitLabels(run.map((f) => f.label)) : undefined;
+    if (help && split) {
+      blocks.push({
+        kind: "row",
+        legend: split.legend,
+        help,
+        fields: run.map((field, i) => ({ field, label: split.labels[i]! })),
+      });
+      index = end;
+    } else {
+      blocks.push({ kind: "field", field: first });
+      index += 1;
+    }
+  }
+  return blocks;
+}

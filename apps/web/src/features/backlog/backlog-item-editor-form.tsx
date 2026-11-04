@@ -13,7 +13,6 @@ import {
   RiAlarmWarningLine as AlertTriangle,
   RiCloseLine as X,
   RiRefreshLine as RotateCcw,
-  RiSaveLine as Save,
 } from "@remixicon/react";
 import { MarkdownEditor } from "@/components/markdown-editor";
 import { ObjectActionsButton } from "@/components/object-actions-menu";
@@ -898,13 +897,7 @@ export function BacklogItemEditorForm({
         <Button type="button" variant="ghost" onClick={onClose}>
           Cancel
         </Button>
-        <Button
-          type="button"
-
-          disabled={!validation.canSave}
-          onClick={save}
-        >
-          <Save data-icon="inline-start" />
+        <Button type="button" disabled={!validation.canSave} onClick={save}>
           Save
         </Button>
       </footer>

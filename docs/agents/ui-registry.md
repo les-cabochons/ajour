@@ -157,25 +157,35 @@ activation settings. Connection creation and editing stay disabled until the
 plugin is available again.
 
 Opening an entry moves to a dedicated detail route, a cardless page of
-sections. Its first section holds the back link, identity-first header,
-status-driven primary action, status badges, any notices (`MessagePanel`),
-and the capability band. Features, Information, Configuration and Uninstall
-plugin follow as `settings-section`s. A plugin with more than one of the
-backlog, code host and calendar capabilities adds a Capabilities section before
-Configuration (`features/settings/plugin-capability-switches.tsx`): a
+sections. Its first section holds the back link, identity-first header with
+the Active switch, then one quiet line of facts ("Version 1.1.0 · 1 connection
+· 4 backlog items"; no Installed or Active badges, which the switch already
+says), and any notices (`MessagePanel`). The working sections come next:
+Capabilities, then Configuration; Access, Features, Information and
+Uninstall plugin follow as `settings-section`s (forms council round 1). A
+plugin with more than one of the backlog, code host and calendar capabilities
+has the Capabilities section (`features/settings/plugin-capability-switches.tsx`): a
 `SettingRow` with a `Switch` for each it declares, Backlog items, Pull requests
 or Calendar events, labelled "Deactivate backlog items for GitHub". The connection form hides the fields of a capability that is off. Features and Information are spaced
 lists with no dividers. Configuration lists connections as plain rows (name,
-connection status chip, sync-mode badge, tenant, then Edit, Sync and Remove
-trailing on desktop and below on narrow widths). The status chip shows Connected,
+connection status chip, sync-mode badge, tenant, then one outline Edit and a
+"More actions for <label>" menu with Sync now, Sync projects, Choose projects
+and Remove, as Vercel's account rows: Remove turns red only in the menu and its
+confirmation). The status chip shows Connected,
 Paused, Error or Unavailable. Error details and manual-sync staged counts remain
 visible; configuration summaries, sync timestamps and readiness copy are omitted.
-The connection form renders
-unframed above them, and empty lists show plain text. Cached catalog artwork
+The connection form takes the place of the row it edits, under "Edit <label>"
+with the row's status chip and note; a new connection's form opens above the
+list, and Add a connection turns outline while a form is open. The form is one
+column at `max-w-lg`; fields the host can group (two to four short fields whose
+labels end alike and whose help says the same after its first sentence, as the
+four priority values) share one row under a legend, with the help once
+(`groupConnectionFields` in `plugin-form-state.ts`). Empty lists show plain
+text. Cached catalog artwork
 is optional: the identity mark supplies a consistent generated default
-thumbnail, and the hero image keeps rounded corners with no border. Without a
-hero, the capability band is a plain line of text ("External service → Plugin
-→ Local backlog") above the feature badges. Never fetch remote images from the
+thumbnail, and the hero image keeps rounded corners with no border. On a plugin
+that is not installed, the capability band is a plain line of text ("External
+service → Plugin → Local backlog") above the feature badges. Never fetch remote images from the
 renderer. Dialogs and `MessagePanel` notices are the only framed surfaces.
 
 ### Plugin Sources

@@ -809,7 +809,8 @@ Then(
     await expect(input).toBeVisible();
     await expect(input).toHaveAttribute("type", "password");
     await expect(input).toHaveValue("");
-    await expect(page.getByText("Edit Azure DevOps connection")).toBeVisible();
+    // The form stands in for the connection's row, under its label.
+    await expect(page.getByRole("heading", { name: /^Edit / })).toBeVisible();
   },
 );
 

@@ -1,8 +1,4 @@
 import { useState, type FormEvent } from "react";
-import {
-  RiFolderAddLine as FolderPlus,
-  RiSaveLine as Save,
-} from "@remixicon/react";
 import { Button } from "@/components/ui/button";
 import { ColorField } from "@/components/ui/color-field";
 import {
@@ -131,15 +127,10 @@ export function ProjectFormDialog({
           </FieldGroup>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button type="button" variant="ghost" onClick={onClose}>
               Cancel
             </Button>
             <Button type="submit" disabled={!values}>
-              {isCreate ? (
-                <FolderPlus data-icon="inline-start" />
-              ) : (
-                <Save data-icon="inline-start" />
-              )}
               {isCreate ? "Create project" : "Save"}
             </Button>
           </DialogFooter>

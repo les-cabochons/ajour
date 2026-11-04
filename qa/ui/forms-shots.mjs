@@ -56,7 +56,7 @@ const dialog = (page) => page.getByRole("dialog").last();
 
 async function editConnection(page, pluginId) {
   await go(page, `/settings/plugins/${pluginId}`);
-  await page.getByRole("button", { name: "Edit" }).first().click();
+  await page.getByRole("button", { name: "Edit", exact: true }).first().click();
   await page.waitForTimeout(300);
 }
 
@@ -96,7 +96,7 @@ const shots = [
     run: async (page) => {
       await go(page, "/settings/plugins/azure_devops");
       await page
-        .getByRole("button", { name: /Add connection|New connection/ })
+        .getByRole("button", { name: /Add a connection|Add connection/ })
         .first()
         .click();
     },
@@ -256,6 +256,14 @@ async function capture(browser, shot, theme) {
   try {
     await shot.run(page);
     await page.mouse.move(viewport.width - 2, viewport.height - 2);
+    // The dev server's router devtools button is not part of the app.
+    await page.evaluate(() => {
+      for (const element of document.querySelectorAll("button, footer, div")) {
+        if (element.textContent?.trim() === "TanStack Router") {
+          (element.closest(".TanStackRouterDevtools") ?? element).remove();
+        }
+      }
+    });
     await page.waitForTimeout(500);
     if (shot.full) {
       // The settings pane scrolls, not the page: grow the window to fit it.
@@ -269,9 +277,7 @@ async function capture(browser, shot, theme) {
           ) {
             tallest = Math.max(
               tallest,
-              element.scrollHeight +
-                element.getBoundingClientRect().top +
-                40,
+              element.scrollHeight + element.getBoundingClientRect().top + 40,
             );
           }
         }

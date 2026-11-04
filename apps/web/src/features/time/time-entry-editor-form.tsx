@@ -10,7 +10,6 @@ import {
 import {
   RiCloseLine as X,
   RiPlayFill as Play,
-  RiSaveLine as Save,
   RiStopLine as Stop,
 } from "@remixicon/react";
 import { ObjectActionsButton } from "@/components/object-actions-menu";
@@ -539,7 +538,7 @@ export function TimeEntryEditorForm({
         />
       </fieldset>
 
-      <footer className="flex items-center justify-end gap-2 border-t pt-3">
+      <footer className="flex items-center justify-end gap-2 pt-1">
         <Button type="button" variant="ghost" onClick={onClose}>
           Cancel
         </Button>
@@ -549,7 +548,6 @@ export function TimeEntryEditorForm({
           title={editor.isTimerMode ? START_OR_ENTER_HOURS_HINT : undefined}
           onClick={save}
         >
-          <Save data-icon="inline-start" />
           Save
         </Button>
       </footer>
