@@ -198,7 +198,10 @@ export function WorkItemIcon({
       <ProjectIcon
         icon={icon.project.icon}
         color={icon.project.color}
-        className={cn("backlog-task-source-icon", className)}
+        className={cn(
+          "backlog-task-source-icon backlog-task-project-icon",
+          className,
+        )}
       />
     );
   }

@@ -1033,28 +1033,97 @@
     padding: 0.25rem 0.75rem;
   }
 
+  /* Two lines (#512): the title, then the project, the item's markers and
+     its source state. The content and properties containers step aside
+     (display: contents), so their own children take the row's grid tracks;
+     no element is added. Line 2 has one shrinkable slot per possible item
+     (project, subitem count, Running, Settled, Snoozed, a sync conflict,
+     source state). Markers keep their width; the project and the source
+     state give way with an ellipsis. The estimate and actions keep fixed
+     tracks, so every title truncates at the same edge. */
   .backlog-list-row {
-    gap: 0.375rem;
-    height: 40px;
+    display: grid;
+    grid-template-columns:
+      auto repeat(7, minmax(auto, max-content)) minmax(0, 1fr)
+      36px 52px;
+    grid-template-rows: auto auto;
+    align-content: center;
+    column-gap: 0;
+    row-gap: 1px;
+    height: 52px;
     padding: 0 0.75rem;
   }
 
-  /* Estimate and actions keep fixed tracks, so a row without an estimate
-     truncates its title where the others do. */
+  .backlog-list-row > .backlog-item-leading {
+    grid-row: 1 / 3;
+    grid-column: 1;
+    align-self: center;
+    margin-right: 0.375rem;
+  }
+
+  .backlog-list-row > .backlog-item-content,
   .backlog-list-row .backlog-item-properties {
-    display: grid;
-    grid-template-columns: 36px 52px;
-    gap: 0.625rem;
+    display: contents;
+  }
+
+  .backlog-list-row .backlog-item-title {
+    grid-row: 1;
+    grid-column: 2 / 10;
+    min-width: 0;
+  }
+
+  .backlog-list-row > .backlog-item-content > :not(.backlog-item-title),
+  .backlog-list-row .backlog-item-project,
+  .backlog-list-row > .backlog-item-source-state {
+    grid-row: 2;
+    margin-right: 0.375rem;
+    font-size: var(--text-xs);
+    white-space: nowrap;
+  }
+
+  .backlog-list-row .backlog-item-project,
+  .backlog-list-row .backlog-item-project > .truncate,
+  .backlog-list-row > .backlog-item-source-state {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* The project leads line 2, as a line of text with its dot, not a chip. */
+  .backlog-list-row .backlog-item-project {
+    order: -1;
+    justify-self: start;
+    /* Its slot, not the chip's desktop 160px, bounds it. */
+    max-width: 100%;
+    height: auto;
+    padding: 0;
+    background: none;
+    color: var(--text-secondary);
+    font-weight: 400;
+  }
+
+  .backlog-list-row > .backlog-item-source-state {
+    max-width: 6rem;
   }
 
   .backlog-list-row .backlog-item-estimate {
-    grid-column: 1;
+    grid-row: 1 / 3;
+    grid-column: 10;
+    align-self: center;
     min-width: 0;
     text-align: right;
   }
 
   .backlog-list-row .backlog-item-actions {
-    grid-column: 2;
+    grid-row: 1 / 3;
+    grid-column: 11;
+    align-self: center;
+  }
+
+  /* The project's dot moved to line 2. A source's own icon stays, since it
+     tells the item's type; its slot stays too, so titles line up. */
+  .backlog-list-row .backlog-item-leading .backlog-task-project-icon {
+    visibility: hidden;
   }
 
   .backlog-item-leading,
@@ -1068,10 +1137,7 @@
   }
 
   .backlog-item-id,
-  .backlog-item-project,
-  .backlog-item-parent,
-  .backlog-list-row .backlog-item-marker,
-  .backlog-list-row .backlog-subitem-progress {
+  .backlog-item-parent {
     display: none;
   }
 

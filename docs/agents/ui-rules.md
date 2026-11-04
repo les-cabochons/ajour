@@ -5,7 +5,7 @@ Ajour is an operational desktop/web app. Build interfaces for scanning, repeated
 ## Product Feel
 
 - Quiet, utilitarian, and work-focused.
-- Dense but organized: 13px body, 28px controls, 28px to 40px rows. The sidebar's Comfortable backlog rows are the exception: 80px, three lines, like T3 Code's thread list. In the narrow view, Day rows are 52px with two lines.
+- Dense but organized: 13px body, 28px controls, 28px to 40px rows. The sidebar's Comfortable backlog rows are the exception: 80px, three lines, like T3 Code's thread list. In the narrow view, Day rows and Backlog list rows are 52px with two lines.
 - One accent color, used for actions and selection, never for decoration.
 - No decorative gradients, blobs, blur, or purely atmospheric visuals.
 - Every page shares the same anatomy: the top bar carries the page title and actions, the content below is cardless. Pages that edit in place, the backlog item page and the project page, keep their actions next to the content they act on instead.

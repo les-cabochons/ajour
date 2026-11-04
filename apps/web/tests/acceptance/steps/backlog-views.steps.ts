@@ -2512,3 +2512,165 @@ Then(
     ).toBeVisible();
   },
 );
+
+/** The title and project chip boxes of a Backlog list row. */
+async function backlogRowBoxes(page: Page, title: string, project: string) {
+  const row = page
+    .locator(".backlog-list-row")
+    .filter({ has: page.getByText(title, { exact: true }) });
+  const chip = row.locator(".backlog-item-project");
+  await expect(chip).toHaveText(project);
+  const titleBox = await row.locator(".backlog-item-title").boundingBox();
+  const chipBox = await chip.boundingBox();
+  if (!titleBox || !chipBox)
+    throw new Error(`The ${title} row is not rendered`);
+  return { title: titleBox, chip: chipBox };
+}
+
+Then(
+  "the {string} row shows {string} under its title",
+  async ({ page }, title: string, project: string) => {
+    await expect(async () => {
+      const boxes = await backlogRowBoxes(page, title, project);
+      expect(boxes.chip.y).toBeGreaterThanOrEqual(
+        boxes.title.y + boxes.title.height - 1,
+      );
+      expect(Math.abs(boxes.chip.x - boxes.title.x)).toBeLessThan(2);
+    }).toPass();
+  },
+);
+
+Then(
+  "the {string} row shows {string} beside its title",
+  async ({ page }, title: string, project: string) => {
+    await expect(async () => {
+      const boxes = await backlogRowBoxes(page, title, project);
+      expect(boxes.chip.x).toBeGreaterThan(boxes.title.x + boxes.title.width);
+    }).toPass();
+  },
+);
+
+When("the Backlog shows the source state", async ({ page }) => {
+  await page.evaluate(() => {
+    const key = "ajour.backlog-view";
+    const view = JSON.parse(localStorage.getItem(key) ?? "{}");
+    view.properties = { ...view.properties, sourceState: true };
+    localStorage.setItem(key, JSON.stringify(view));
+  });
+  await page.reload();
+  await expect(page.locator(".backlog-list-row").first()).toBeVisible();
+});
+
+Then(
+  "the {string} row shows {string} on its second line",
+  async ({ page }, title: string, text: string) => {
+    const row = page
+      .locator(".backlog-list-row")
+      .filter({ has: page.getByText(title, { exact: true }) });
+    const titleBox = await row.locator(".backlog-item-title").boundingBox();
+    const textBox = await row.getByText(text, { exact: true }).boundingBox();
+    if (!titleBox || !textBox) throw new Error(`${text} is not shown`);
+    expect(textBox.y).toBeGreaterThanOrEqual(titleBox.y + titleBox.height - 1);
+  },
+);
+
+Then(
+  "every Backlog row keeps its contents inside the row",
+  async ({ page }) => {
+    await expect(page.locator(".backlog-list-row").first()).toBeVisible();
+    const problems = await page.evaluate(() =>
+      [...document.querySelectorAll(".backlog-list-row")].flatMap((row) => {
+        const box = row.getBoundingClientRect();
+        const outside = [...row.querySelectorAll("*")]
+          .filter((element) => {
+            const inner = element.getBoundingClientRect();
+            return (
+              inner.width > 0 &&
+              inner.height > 0 &&
+              (inner.top < box.top - 0.5 ||
+                inner.bottom > box.bottom + 0.5 ||
+                inner.left < box.left - 0.5 ||
+                inner.right > box.right + 0.5)
+            );
+          })
+          .map((element) => `outside: ${element.className}`);
+        // The row's own grid items must not cover one another.
+        const items = [
+          ...row.querySelectorAll(
+            ":scope > *, :scope > .backlog-item-content > *, :scope > .backlog-item-properties > *",
+          ),
+        ]
+          .filter(
+            (element) =>
+              !element.matches(
+                ".backlog-item-content, .backlog-item-properties",
+              ),
+          )
+          .map((element) => ({
+            name: element.className.toString(),
+            rect: element.getBoundingClientRect(),
+          }))
+          .filter(({ rect }) => rect.width > 0 && rect.height > 0);
+        const covering = items.flatMap((a, index) =>
+          items
+            .slice(index + 1)
+            .filter(
+              (b) =>
+                a.rect.left < b.rect.right - 0.5 &&
+                b.rect.left < a.rect.right - 0.5 &&
+                a.rect.top < b.rect.bottom - 0.5 &&
+                b.rect.top < a.rect.bottom - 0.5,
+            )
+            .map((b) => `overlap: ${a.name} / ${b.name}`),
+        );
+        return [...outside, ...covering];
+      }),
+    );
+    expect(problems).toEqual([]);
+  },
+);
+
+When(
+  "the Backlog parent is settled and running, with a source state and a long project name",
+  async ({ page }) => {
+    await page.evaluate(() => {
+      const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
+      Object.assign(
+        state.workItems.find((item: { _id: string }) => item._id === "parent"),
+        {
+          status: "settled",
+          settledAt: Date.now(),
+          source: "azure_devops",
+          sourceId: "crowded-item",
+          sourceConnectionId: "unmapped-connection",
+          sourceStatusKey: "review",
+          sourceStatusLabel: "Waiting for client review",
+        },
+      );
+      state.projects[0].displayName =
+        "Example project with a very long display name";
+      // A running entry adds the Running mark beside Settled.
+      const today = new Date();
+      state.timers = [
+        {
+          _id: "crowded-timer",
+          startedAt: Date.now() - 60_000,
+          localDate: [
+            today.getFullYear(),
+            String(today.getMonth() + 1).padStart(2, "0"),
+            String(today.getDate()).padStart(2, "0"),
+          ].join("-"),
+          workItemId: "parent",
+          projectId: "p",
+          taskId: "t",
+          accumulatedDurationMs: 0,
+        },
+      ];
+      localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+    });
+    await page.reload();
+    await expect(
+      page.locator('.backlog-list-row[data-work-item-id="parent"]'),
+    ).toBeVisible();
+  },
+);
