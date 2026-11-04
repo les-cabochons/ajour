@@ -23,6 +23,12 @@ import {
 import { useNow } from "@/lib/use-now";
 
 /** One isolated readout, shared by the backlog, item page and peek. */
+// A paused sync stays a warning: a rejected token pauses it too.
+const CALM_SYNC_STATES = new Set([
+  "Connection unavailable",
+  "Scheduled sync off",
+]);
+
 export function BacklogRefresh({
   source,
   hasSyncedItems = false,
@@ -111,6 +117,9 @@ export function BacklogRefresh({
     rows.length && rows.every((row) => row.lastSuccessAt)
       ? Math.min(...rows.map((row) => row.lastSuccessAt!))
       : undefined;
+  // A condition the user set up or chose, no connection or scheduled sync
+  // off, is quiet status. A failed, paused or overdue sync is a warning.
+  const alarming = warning !== undefined && !CALM_SYNC_STATES.has(warning);
   const age = `Last sync ${syncAge(lastSuccessAt, now)}`;
   const label = source ? "Refresh item" : "Refresh backlog";
   const detail = [
@@ -132,7 +141,7 @@ export function BacklogRefresh({
 
   return (
     <div className="backlog-refresh" aria-busy={running}>
-      {warning && !running ? (
+      {alarming && !running ? (
         <RiErrorWarningLine className="backlog-refresh-warning" aria-hidden />
       ) : null}
       <span role="status" aria-live="polite">

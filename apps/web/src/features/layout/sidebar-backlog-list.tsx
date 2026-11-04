@@ -750,7 +750,7 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
         <span
           data-row-title
           className={cn(
-            "truncate pr-7 text-base leading-5",
+            "truncate pr-7 text-base leading-5 font-medium",
             props.isReturned && "font-semibold",
           )}
         >

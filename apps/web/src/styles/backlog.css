@@ -220,6 +220,30 @@
     grid-template-columns: 24px 16px;
   }
 
+  /* No type slot: priority · id · state, as in Linear. */
+  .backlog-item-leading[data-no-type] {
+    grid-template-columns: 16px 64px 24px;
+  }
+
+  .backlog-item-leading[data-no-type][data-no-priority] {
+    grid-template-columns: 64px 24px;
+  }
+
+  .backlog-item-leading[data-no-type][data-no-id] {
+    grid-template-columns: 16px 24px;
+  }
+
+  .backlog-item-leading[data-no-type][data-no-priority][data-no-id] {
+    grid-template-columns: 24px;
+  }
+
+  /* The Project column already names the project. */
+  .backlog-list-row
+    .backlog-item-leading[data-project-column]
+    .backlog-task-project-icon {
+    visibility: hidden;
+  }
+
   .backlog-item-leading > * {
     justify-self: start;
   }
@@ -343,6 +367,29 @@
   .backlog-board-card:has([data-popup-open]) .backlog-item-actions {
     opacity: 1;
     pointer-events: auto;
+  }
+
+  /* Starting time is the main job, so a list row's Start shows at rest, dimmed;
+     its other actions wait for hover or focus. */
+  @media (width >= 768px) {
+    .backlog-list-row .backlog-item-actions {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .backlog-list-row .backlog-item-actions > :not(.backlog-item-start) {
+      visibility: hidden;
+    }
+
+    .backlog-list-row:hover .backlog-item-actions > *,
+    .backlog-list-row:focus-within .backlog-item-actions > *,
+    .backlog-list-row:has([data-popup-open]) .backlog-item-actions > * {
+      visibility: visible;
+    }
+
+    .backlog-list-row:not(:hover, :focus-within) .backlog-item-start {
+      opacity: 0.55;
+    }
   }
 
   .backlog-item-marker {
@@ -1134,6 +1181,16 @@
   .backlog-item-leading[data-no-priority],
   .backlog-item-leading[data-no-priority][data-no-id] {
     grid-template-columns: 24px 16px;
+  }
+
+  .backlog-item-leading[data-no-type],
+  .backlog-item-leading[data-no-type][data-no-id] {
+    grid-template-columns: 16px 24px;
+  }
+
+  .backlog-item-leading[data-no-type][data-no-priority],
+  .backlog-item-leading[data-no-type][data-no-priority][data-no-id] {
+    grid-template-columns: 24px;
   }
 
   .backlog-item-id,

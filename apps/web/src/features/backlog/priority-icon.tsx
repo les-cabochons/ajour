@@ -5,7 +5,7 @@ import {
 import { cn } from "@/lib/utils";
 
 /**
- * The priority level's icon: three dashes for No priority, an orange square
+ * The priority level's icon: three dashes for No priority, an amber square
  * with "!" for Urgent, and signal bars for High, Medium and Low. It is labelled
  * with the level's name unless `decorative`.
  */
@@ -49,7 +49,7 @@ export function PriorityIcon({
     return (
       <svg
         viewBox="0 0 14 14"
-        className={cn("size-4 shrink-0 text-orange-600", className)}
+        className={cn("size-4 shrink-0 text-[var(--warning)]", className)}
         {...a11y}
       >
         <rect x="1" y="1" width="12" height="12" rx="3" fill="currentColor" />
@@ -59,7 +59,7 @@ export function PriorityIcon({
           width="1.5"
           height="4.5"
           rx="0.75"
-          fill="white"
+          fill="var(--background)"
         />
         <rect
           x="6.25"
@@ -67,7 +67,7 @@ export function PriorityIcon({
           width="1.5"
           height="1.5"
           rx="0.75"
-          fill="white"
+          fill="var(--background)"
         />
       </svg>
     );

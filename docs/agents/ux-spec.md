@@ -27,7 +27,7 @@ Decided in [Action model for entries, timers, projects, tasks and work items](ht
 
 9. Exception to rule 2: Mark as not committed is listed on committed entries only. Listed and disabled on every other entry, it would add a line to most menus for a rare repair.
 
-10. Time entry rows and cards (Day rows, Days cards and the Grid cell list) have no "…" button. Right-click and the menu keys open their action set. Day rows show Continue at their end, and the running row shows Stop in the same slot.
+10. Time entry rows and cards (Day rows, Days cards and the Grid cell list) have no "…" button. Right-click and the menu keys open their action set. Day rows show Continue at their end, and the running row shows Stop in the same slot. On desktop it shows at rest, dimmed, and at full strength on hover or focus, since starting time again is the day view's main job (council round 1). The running row also carries a 2px green edge at its start.
 
 11. Exception to rule 1: Cut, Copy and Paste are listed only in the menus of Day rows and Days cards, where entries can be selected. Grid cells and editors do not list them.
 
@@ -167,7 +167,7 @@ Decided in [App shell and collapsible sidebar](https://github.com/les-cabochons/
 
 ### Timer dock
 
-- While an entry runs, the dock shows it: a running dot, its title (the backlog item's, else the note, the task or the project), the time counted with seconds, New entry (+) and Stop. With a remaining estimate, a bar shows how much of it the running time uses, with "1.1h left" or "0.4h over", next to the project code and task.
+- While an entry runs, the dock shows it: a running dot, its title (the backlog item's, else the note, the task or the project), the time counted with seconds, New entry (+) and Stop. With a remaining estimate, a bar shows how much of it the running time uses, with "1h05 left" or "25m over", next to the project code and task.
 - Clicking the dock opens the running entry's editor in a popover. New entry (+) opens a blank entry editor in a popover anchored to it.
 - With nothing running, the dock shows New entry (+), Start (▶) and today's total on one line. Start begins an empty entry and opens its editor; the dock does not suggest a backlog item.
 - N opens the new entry editor from anywhere, anchored to the titlebar's totals off the Time pages. S starts an empty entry.
@@ -331,6 +331,7 @@ Decided in [Adding and changing time in the week view](https://github.com/les-ca
 
 ### Grid
 
+- An empty cell is blank at rest, so the logged cells stand out; its dash shows on hover, focus and selection (council round 1).
 - A click on a cell opens it in the side panel:
   - an empty cell opens a new entry with the row's task and the day filled in,
   - a cell with one entry opens that entry, with an "Add another entry for <day>" button under the form,
@@ -533,6 +534,7 @@ One "Submit week" button, styled the same, sits in the Day and Week headers at e
 - A secret setting never reaches an agent. Starting a task whose prompt uses one fails with "The task's prompt uses the secret setting <label>. Ajour never gives a secret to an agent." (400), and the run does not start.
 - A secret setting never fills a task's week link either, since the user opens the link with a click and its host is the plugin's. A task whose week link uses one has no "Open the week in <plugin>" link on the Commit page, and the week summary says in its place "The week link uses the secret setting <label>. Ajour never puts a secret in a link." A run of that task starts without a link. This holds for every plugin API version.
 - The total and warnings follow the current selection.
+- While changes are listed, one secondary line under the actions says what each does: "Mark as committed records the checked changes as sent. Submit week locks the week once it is in your timesheet." (council round 1).
 - Submitting under the week target still asks for confirmation.
 
 ### Grouping and copying
@@ -592,7 +594,9 @@ Settings > Workflow lists, for each connection and source project, its source st
 ### Layouts
 
 - The page has a list and a board. The header's two-icon toggle and the Display popover switch between them. The narrow view always shows the list and hides the toggle.
-- The list groups rows under sticky group headers. A row is one line: priority, id, state, type, title, a muted "↳ Parent" for a subitem, subitem progress, the running and Settled markers, then project and remaining estimate on the right.
+- The list groups rows under sticky group headers. A row is one line: priority, id, state, type, title, a muted "↳ Parent" for a subitem, subitem progress, the running and Settled markers, then project and remaining estimate on the right. The type slot holds a source's own task icon. With the Project property shown, the row leaves out the project's dot there, since the Project column names it, and when no source has a task icon the slot goes, so the row reads priority, id, state, title (council round 1).
+- Every estimate reads as hours and minutes: "8h", "1h30", "45m", and "0h" for none left, in the list, the sidebar, the item page, the peek and the dock. Logged time is a clock, "1:30". An estimate is never a decimal such as "1.5h" (council round 1).
+- On desktop list rows, Start entry, or Stop on the running item, shows at rest, dimmed; the "…" button still waits for hover or focus (council round 1).
 - The board shows one column per group. A card shows the id, the state and title on up to two lines, "↳ Parent" for a subitem, then priority, type, the Settled marker, subitem progress, project and remaining estimate.
 - Each group and column header has a "+" that opens New backlog item with that state, priority or project set. Done states have none.
 - Subitems are their own rows and cards, in their own state. "Show subitems" hides them. Their parent shows "2/5" subitem progress.
@@ -660,7 +664,7 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 - The form holds title, workflow state, priority, project and task mapping, description, the estimates with their "Reset to subitem total" buttons, and "Keep when missing from sync" for synced items. Its header has the "…" action menu. The Priority select is narrow, so it shows the level's icon (three dashes for No priority); its menu shows each icon with the name.
 - Task mapping, and the Task property of the item page and the peek, end with "Create task "07 Run"" when the typed name matches no active task of the item's project, as in the [Task menu](#create-a-task). Task mapping is a draft: the created task waits for Save, and Undo puts the previous task back in the draft. The Task property saves at once, and one Undo takes back both the task and the item's change.
 - "New backlog item" on the Backlog page opens a blank form. The "+" at the top of the app sidebar opens it in a dialog, on any page. "Add subitem" opens it with the parent set.
-- Start entry stays on hover, in the "…" menu and in the peek. Entries start on today.
+- Start entry shows dimmed at rest on desktop list rows, and stays in the "…" menu and in the peek. Entries start on today.
 
 ## Application updates
 
@@ -966,5 +970,5 @@ Decided in [Consistent dialogs, tooltips, loading and drags](https://github.com/
 - Opening the Backlog page starts a refresh on every visit, even when scheduled sync is off or not yet due. Renders, filter changes and React development checks do not start another refresh. Paused or disabled connections stay paused; an active sync serves the visit instead of starting a duplicate.
 - Both manual and automatic syncs show `Syncing…` with a spinning icon. Refresh stays disabled until the connection's active sync finishes. Reduced motion keeps the icon still.
 - The Backlog uses the oldest successful connection timestamp. A connection never checked prevents the view from claiming a recent sync. Other plugin capabilities cannot advance backlog freshness or postpone its automatic sync.
-- A failed attempt keeps the last successful age visible. Paused sync, scheduled sync turned off, an overdue automatic sync and an unavailable sync service have explicit status text. A sync becomes overdue after its configured interval plus the scheduler's 30-second polling window.
+- A failed attempt keeps the last successful age visible. Paused sync, scheduled sync turned off, an overdue automatic sync and an unavailable sync service have explicit status text. A condition the user set up or chose (no connection, scheduled sync off) is quiet secondary text; a failed, paused or overdue sync, or an unavailable sync service, adds the amber warning icon (council round 1). A paused sync stays a warning, since a rejected token pauses it. A sync becomes overdue after its configured interval plus the scheduler's 30-second polling window.
 - The refresh tooltip names its scope and lists each connection's last successful time and any failure. A single-item refresh does not advance the connection's timestamp. An item's age follows the source snapshot actually applied to that item, never a connection sync that omitted it. Returned done items retain their refreshed age after a reload, including items archived on an earlier sync. Older records with no item timestamp show an unknown age until refreshed.

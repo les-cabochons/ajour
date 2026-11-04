@@ -772,8 +772,9 @@
     border: 0;
     border-radius: 4px;
     background: transparent;
-    color: var(--text-secondary);
-    font-size: 12px;
+    /* The narrow view's page title: the day it shows. */
+    color: var(--text);
+    font-size: var(--text-base);
     font-weight: 600;
     line-height: 1;
     cursor: pointer;

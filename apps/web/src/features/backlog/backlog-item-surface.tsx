@@ -1,4 +1,5 @@
 import { RiPlayLine, RiStopFill, RiTimeLine } from "@remixicon/react";
+import { formatHours } from "@/features/backlog/backlog-estimates";
 import { SyncConflictButton } from "@/features/backlog/sync-conflicts";
 import { openModifiedSourceClick } from "@/lib/source-navigation";
 import type { KeyboardEvent, PointerEvent } from "react";
@@ -52,6 +53,7 @@ import { PriorityIcon } from "@/features/backlog/priority-icon";
 import {
   WorkItemIcon,
   resolveWorkItemIcon,
+  hasPluginTaskIcons,
   useWorkItemIconData,
 } from "@/features/backlog/work-item-icons";
 import { parseWorkItemReference } from "@/features/backlog/work-item-timer-comment";
@@ -319,6 +321,10 @@ export function BacklogItemSurface({
     getDirectChildWorkItems(item, state.workItems),
   );
   const actions = getBacklogSurfaceActions(item, state, now);
+  // The leading type slot holds a source's own task icon. With the Project
+  // column on, a project dot there would say the project twice, so the slot
+  // goes when no source has an icon.
+  const typeColumn = !view.properties.project || hasPluginTaskIcons(icons);
   const running = Boolean(findWorkItemTimer(state.timers, item._id));
   // The running item's button is Stop, like its action set.
   const startAction = running ? "stop-entry" : "start-entry";
@@ -438,6 +444,8 @@ export function BacklogItemSurface({
         className="backlog-item-leading"
         data-no-priority={view.properties.priority && !board ? undefined : ""}
         data-no-id={view.properties.id ? undefined : ""}
+        data-no-type={typeColumn ? undefined : ""}
+        data-project-column={view.properties.project ? "" : undefined}
       >
         {view.properties.priority && !board && (
           <BacklogPriorityPicker
@@ -481,7 +489,9 @@ export function BacklogItemSurface({
           beforeChange={beforeChange}
           live={live}
         />
-        {!board && <WorkItemIcon icon={resolveWorkItemIcon(item, icons)} />}
+        {!board && typeColumn && (
+          <WorkItemIcon icon={resolveWorkItemIcon(item, icons)} />
+        )}
       </div>
       <div className="backlog-item-content">
         <span
@@ -526,7 +536,7 @@ export function BacklogItemSurface({
         {view.properties.estimate &&
           item.remainingEstimateHours !== undefined && (
             <span className="backlog-item-estimate">
-              {item.remainingEstimateHours}h
+              {formatHours(item.remainingEstimateHours)}
             </span>
           )}
         <div className="backlog-item-actions">
@@ -545,7 +555,7 @@ export function BacklogItemSurface({
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    className="text-muted-foreground aria-disabled:opacity-50"
+                    className="backlog-item-start text-muted-foreground aria-disabled:opacity-50"
                   />
                 }
                 onClick={(e) => {
@@ -559,7 +569,7 @@ export function BacklogItemSurface({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="text-muted-foreground aria-disabled:opacity-50"
+                className="backlog-item-start text-muted-foreground aria-disabled:opacity-50"
                 aria-label={startLabel}
                 aria-description={startDisabledReason}
                 aria-disabled={Boolean(startDisabledReason)}

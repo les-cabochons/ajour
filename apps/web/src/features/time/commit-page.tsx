@@ -673,6 +673,13 @@ export function CommitPage({
           </>
         )}
       </div>
+      {!lockedWeek && changes.length > 0 ? (
+        // The two buttons differ in what they end: say so where they sit.
+        <p className="-mt-3 text-xs text-[var(--text-secondary)]">
+          Mark as committed records the checked changes as sent. Submit week
+          locks the week once it is in your timesheet.
+        </p>
+      ) : null}
 
       <section
         aria-labelledby="commit-lines-heading"

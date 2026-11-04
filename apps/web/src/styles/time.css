@@ -293,6 +293,27 @@
     pointer-events: auto;
   }
 
+  /* Continue, or Stop on the running row, shows at rest, dimmed: starting
+     time again is the day view's main job. */
+  @media (width >= 768px) {
+    .time-entry-row .time-entry-actions {
+      opacity: 0.55;
+      pointer-events: auto;
+    }
+
+    .time-entry-row:hover .time-entry-actions,
+    .time-entry-row:focus-within .time-entry-actions,
+    .time-entry-row:has([data-popup-open]) .time-entry-actions {
+      opacity: 1;
+    }
+  }
+
+  /* The running row: a 2px green edge, painted, so nothing moves. */
+  .time-entry-row[data-running-entry] > .time-entry-main {
+    background: linear-gradient(var(--success), var(--success)) left / 2px 100%
+      no-repeat;
+  }
+
   /* Tailwind's preflight makes every svg a block, which would push the
      duration onto its own line. */
   .time-entry-committed {
@@ -680,7 +701,15 @@
     cursor: pointer;
   }
 
+  /* An empty cell is blank at rest, so the logged cells stand out; its dash
+     shows on hover and focus, where typing a duration fills it. */
   .weekly-grid-time-button.is-empty {
+    color: transparent;
+  }
+
+  .weekly-grid-time-button.is-empty:hover,
+  .weekly-grid-time-button.is-empty:focus-visible,
+  .weekly-grid-time-button.is-empty.is-selected {
     color: var(--text-tertiary);
   }
 
@@ -1323,7 +1352,7 @@
   .commit-change-note {
     grid-column: 4 / 6;
     color: var(--text-secondary);
-    font-size: var(--text-xs);
+    font-size: var(--text-sm);
   }
 
   .commit-change-old {
