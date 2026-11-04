@@ -398,14 +398,7 @@ const cliCommand = createCliCommandController({
   },
   link: createWindowsUserPath({
     registry: createPowerShellRegistry(),
-    onBroadcastError: (error) =>
-      events
-        .start("cli_command.path_broadcast", {
-          kind: "command",
-          trigger: "system",
-        })
-        .fail(error)
-        .end(),
+    events,
   }),
 });
 cliCommand.onChange((state) => {

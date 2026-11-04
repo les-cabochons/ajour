@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
+import { recordingEvents } from "./recording-events.ts";
 
 /*
  * The Windows user Path for the ajour command (#568, spec #567). Ajour reads
@@ -42,6 +43,7 @@ const {
   createWindowsUserPath: (options: {
     registry: Registry;
     env?: Record<string, string | undefined>;
+    events?: unknown;
   }) => {
     add(folder: string): Promise<{ added: boolean }>;
     remove(folder: string): Promise<unknown>;
@@ -248,16 +250,13 @@ describe("reconciling the Windows user Path", () => {
       { value: "C:\\Tools", kind: "String" },
       { failBroadcast: 1 },
     );
-    const logged: unknown[] = [];
+    const { events, recorded } = recordingEvents();
     await expect(
-      createWindowsUserPath({
-        registry: fake.registry,
-        onBroadcastError: (error) => {
-          logged.push(error);
-        },
-      }).add(FOLDER),
+      createWindowsUserPath({ registry: fake.registry, events }).add(FOLDER),
     ).resolves.toEqual({ added: true });
-    expect(logged).toHaveLength(1);
+    expect(
+      recorded.filter((event) => event.name === "cli_command.path_broadcast"),
+    ).toMatchObject([{ outcome: "error" }]);
     expect(fake.current().value).toBe(`C:\\Tools;${FOLDER}`);
   });
   it("does not undo another writer's entry after a rejected conditional write", async () => {

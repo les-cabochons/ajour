@@ -82,14 +82,10 @@ const KINDS = new Set(["ExpandString", "String"]);
  *     broadcast(): Promise<void>,
  *   },
  *   env?: Record<string, string | undefined>,
- *   onBroadcastError?: (error: unknown) => void,
+ *   events?: { start(name: string, options: { kind: string, trigger: string }): { fail(error: unknown): { end(): void } } },
  * }} options
  */
-function createWindowsUserPath({
-  registry,
-  env = process.env,
-  onBroadcastError,
-}) {
+function createWindowsUserPath({ registry, env = process.env, events }) {
   async function ensure(folder, present) {
     for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt += 1) {
       const current = await registry.read();
@@ -106,7 +102,15 @@ function createWindowsUserPath({
         })
       ) {
         // A successful write remains successful even if Explorer cannot be notified.
-        await registry.broadcast().catch((error) => onBroadcastError?.(error));
+        await registry.broadcast().catch((error) =>
+          events
+            ?.start("cli_command.path_broadcast", {
+              kind: "job",
+              trigger: "system",
+            })
+            .fail(error)
+            .end(),
+        );
         return { added: present };
       }
     }

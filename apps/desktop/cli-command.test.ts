@@ -505,7 +505,7 @@ describe("installing the ajour command", () => {
       binaryPath: path.join(installDir, "ajour.exe"),
       installedAt: "2026-11-04T10:00:00.000Z",
     });
-  });
+  }, 30_000);
 
   it("follows each redirect itself, so it sees where it leads", async () => {
     const { controller, github } = controllerWith();

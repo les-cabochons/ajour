@@ -1713,6 +1713,13 @@ export const catalog = defineCatalog({
         },
       },
     },
+    /**
+     * Telling running programs the user Path changed, after Ajour wrote it
+     * for the ajour command (#568). A failure leaves the install in place:
+     * new terminals started from Explorer see the Path after the next
+     * sign-in.
+     */
+    "cli_command.path_broadcast": { kinds: ["job"], fields: {} },
     /** Whether closing the window keeps Ajour running (#534). */
     "window.get_settings": {
       kinds: ["ipc"],
