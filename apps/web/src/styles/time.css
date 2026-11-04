@@ -1343,29 +1343,68 @@
     display: none;
   }
 
+  /* Two lines (#511): the task over the project and note, so entries of one
+     task stay apart by their notes. Rows are 52px here, 40px on desktop. */
+  .time-entry-row {
+    height: 52px;
+  }
+
   .time-entry-main {
+    display: grid;
+    grid-template-columns: 12px auto minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-content: center;
+    column-gap: 0.375rem;
+    row-gap: 1px;
+    height: 52px;
     padding-left: 0.75rem;
   }
 
-  .time-entry-note {
-    margin-left: 0;
+  .time-entry-task {
+    grid-row: 1;
+    grid-column: 1 / -1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  /* Narrow rows run on one line, so the columns give way to a separator. */
-  .time-entry-project,
-  .time-entry-task {
+  .time-entry-dot {
+    grid-row: 2;
+    grid-column: 1;
+    align-self: center;
+  }
+
+  .time-entry-project {
+    grid-row: 2;
+    grid-column: 2;
     min-width: 0;
+    font-size: var(--text-xs);
   }
 
   .time-entry-project::after {
     content: "·";
-    margin-left: 0.5rem;
+    margin: 0 0.125rem 0 0.375rem;
     color: var(--text-tertiary);
   }
 
+  /* Without a note, line 2 is the project alone. */
+  .time-entry-main:not(:has(.time-entry-note)) .time-entry-project::after {
+    content: none;
+  }
+
+  .time-entry-note {
+    grid-row: 2;
+    grid-column: 3;
+    margin-left: 0;
+    font-size: var(--text-xs);
+  }
+
+  /* Continue or Stop and the duration sit on the task's line. */
   .time-entry-trailing {
     width: 7.5rem;
+    padding-top: 5px;
     padding-right: 0.75rem;
+    vertical-align: top;
   }
 
   /* Rows always show Continue or Stop in the narrow view. */
