@@ -15,7 +15,9 @@ describe("the example project source", () => {
     expect(
       pluginApi4ManifestSchema.safeParse(exampleProjectSourceManifest).success,
     ).toBe(true);
-    expect(exampleProjectSourceDirectory).toMatch(/packages\/example\/plugin$/);
+    expect(exampleProjectSourceDirectory).toMatch(
+      /packages[\\/]example[\\/]plugin$/,
+    );
   });
 
   it("serves a fixture Ajour's snapshot schema accepts", () => {
