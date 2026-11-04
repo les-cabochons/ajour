@@ -2549,3 +2549,48 @@ Then(
     }).toPass();
   },
 );
+
+When("the Backlog shows the source state", async ({ page }) => {
+  await page.evaluate(() => {
+    const key = "ajour.backlog-view";
+    const view = JSON.parse(localStorage.getItem(key) ?? "{}");
+    view.properties = { ...view.properties, sourceState: true };
+    localStorage.setItem(key, JSON.stringify(view));
+  });
+  await page.reload();
+});
+
+Then(
+  "the {string} row shows {string} on its second line",
+  async ({ page }, title: string, text: string) => {
+    const row = page
+      .locator(".backlog-list-row")
+      .filter({ has: page.getByText(title, { exact: true }) });
+    const titleBox = await row.locator(".backlog-item-title").boundingBox();
+    const textBox = await row.getByText(text, { exact: true }).boundingBox();
+    if (!titleBox || !textBox) throw new Error(`${text} is not shown`);
+    expect(textBox.y).toBeGreaterThanOrEqual(titleBox.y + titleBox.height - 1);
+  },
+);
+
+Then(
+  "every Backlog row keeps its contents inside the row",
+  async ({ page }) => {
+    const overflowing = await page.evaluate(() =>
+      [...document.querySelectorAll(".backlog-list-row")].flatMap((row) => {
+        const box = row.getBoundingClientRect();
+        return [...row.querySelectorAll("*")]
+          .filter((element) => {
+            const inner = element.getBoundingClientRect();
+            return (
+              inner.width > 0 &&
+              inner.height > 0 &&
+              (inner.top < box.top - 0.5 || inner.bottom > box.bottom + 0.5)
+            );
+          })
+          .map((element) => element.className.toString());
+      }),
+    );
+    expect(overflowing).toEqual([]);
+  },
+);

@@ -8,6 +8,10 @@ Feature: Backlog list and board views
   Scenario: Narrow Backlog rows show the project under the title
     When I narrow the Backlog window
     Then the "Backlog parent" row shows "Example project" under its title
+    And the Backlog has an unmapped source state
+    And the Backlog shows the source state
+    Then the "Other backlog item" row shows "Review" on its second line
+    And every Backlog row keeps its contents inside the row
     When I widen the Backlog window
     Then the "Backlog parent" row shows "Example project" beside its title
 
