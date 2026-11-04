@@ -55,7 +55,7 @@ const MAX_RANGE_DAYS = 62;
 
 type AgentProjectRef = Pick<
   AgentTimeEntry,
-  "projectId" | "projectName" | "taskId" | "taskName"
+  "projectId" | "projectName" | "projectCode" | "taskId" | "taskName"
 >;
 
 function describeProjectTask(
@@ -68,6 +68,7 @@ function describeProjectTask(
   return {
     ...(projectId ? { projectId } : {}),
     ...(project ? { projectName: getLocalProjectDisplayName(project) } : {}),
+    ...(project?.code?.trim() ? { projectCode: project.code.trim() } : {}),
     ...(taskId ? { taskId } : {}),
     ...(task ? { taskName: task.name } : {}),
   };
@@ -82,13 +83,14 @@ export function readRunningTimer(
   const workItem = state.workItems.find(
     (item) => item._id === timer.workItemId,
   );
+  const countedMs =
+    timer.accumulatedDurationMs + Math.max(0, now - timer.startedAt);
   return {
     timerId: timer._id,
     date: timer.localDate,
-    countedMinutes: Math.floor(
-      (timer.accumulatedDurationMs + Math.max(0, now - timer.startedAt)) /
-        MINUTE,
-    ),
+    countedMinutes: Math.floor(countedMs / MINUTE),
+    countedSeconds: Math.floor(countedMs / 1000),
+    runningSince: new Date(timer.startedAt).toISOString(),
     ...(timer.note ? { note: timer.note } : {}),
     ...(workItem
       ? { workItemId: workItem._id, workItemTitle: workItem.title }

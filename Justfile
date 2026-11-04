@@ -113,6 +113,12 @@ api-start:
     echo >&2 "[1/1] Starting the API server"
     {{PNPM}} --filter @ajour/api dev
 
+[doc("Runs the ajour terminal CLI, such as: just cli status")]
+[group("app")]
+[positional-arguments]
+cli *args:
+    node --experimental-strip-types --no-warnings apps/cli/src/main.ts "$@"
+
 [doc("Builds all workspace packages")]
 [group("app")]
 build:

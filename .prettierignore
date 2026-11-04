@@ -15,3 +15,6 @@ connectors/*/package/
 
 # Release pipelines are changed only on purpose
 .github/workflows/
+
+# Hand-aligned terminal manual pages: Prettier would reflow their columns
+apps/cli/docs/
