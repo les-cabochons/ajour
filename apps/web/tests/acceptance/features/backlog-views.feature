@@ -18,6 +18,12 @@ Feature: Backlog list and board views
     And the Backlog parent is settled and running, with a source state and a long project name
     Then every Backlog row keeps its contents inside the row
 
+  Scenario: Long press a narrow Backlog row for its actions
+    When I narrow the Backlog window
+    Then the "Other backlog item" row shows no actions button
+    When I long press the "Other backlog item" row on a touch screen
+    Then the Backlog item's action menu is open
+
   Scenario: Keep the board preference while using a narrow list
     When I choose the Backlog board
     Then the Backlog has workflow columns and standalone subitems

@@ -1326,7 +1326,7 @@
 
   .backlog-list-row .backlog-item-estimate {
     grid-row: 1;
-    grid-column: 12;
+    grid-column: 13;
     align-self: center;
     min-width: 0;
     text-align: right;
@@ -1363,26 +1363,25 @@
     pointer-events: auto;
   }
 
-  /* Narrow row commands are 32px touch targets (council round 15), one per
-     line: Start on line 1 beside the title, "…" on line 2 (round 16). */
+  /* Narrow rows end as Day rows do: Start, then the value at the right
+     edge, and no "…": a long press opens the menu and a tap the item, which
+     hold every action (council round 23, product owner). Start is a 32px
+     touch target (council round 15). */
   .backlog-list-row .backlog-item-actions {
     display: contents;
   }
 
   .backlog-list-row .backlog-item-actions > .backlog-item-start {
     grid-row: 1;
-    grid-column: 13;
+    grid-column: 12;
     justify-self: end;
   }
 
   .backlog-list-row .backlog-item-actions > :not(.backlog-item-start) {
-    grid-row: 2;
-    grid-column: 13;
-    justify-self: end;
+    display: none;
   }
 
-  /* 32px wide and half the row tall, so two of them fill the 52px row
-     without leaving it. */
+  /* 32px wide and 26px tall, so line 1 keeps the title's height. */
   .backlog-list-row .backlog-item-actions button {
     width: 32px;
     height: 26px;

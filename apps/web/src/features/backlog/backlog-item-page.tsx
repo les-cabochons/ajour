@@ -525,8 +525,9 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                   hairline (council rounds 11 and 12). */}
               <FigureRow className="items-end">
                 <div className="flex w-fit max-w-full flex-col gap-2.5">
-                  {/* Remaining leads, the page's one 28px number: it is
-                      what the dock shows as "43m left" (council round 14). */}
+                  {/* Remaining leads, first and the page's one 28px
+                      number: it is what the dock shows as "43m left"
+                      (council rounds 14 and 23). */}
                   {/* Values share a baseline, as on the project page. */}
                   <FigureRow className="items-end">
                     {ESTIMATE_FIGURES.map((figure) => (

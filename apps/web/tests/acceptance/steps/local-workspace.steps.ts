@@ -1665,9 +1665,8 @@ Then("the Backlog list fits a narrow window", async ({ page }) => {
   expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(
     page.viewportSize()!.width,
   );
-  await expect(
-    row.getByRole("button", { name: "Actions for Backlog switch item" }),
-  ).toBeVisible();
+  // The row starts at once; its menu opens on a long press (council round 23).
+  await expect(row.locator(".backlog-item-start")).toBeVisible();
 });
 
 Then(

@@ -123,6 +123,53 @@ Then(
 When("I narrow the Backlog window", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
 });
+// Narrow rows have no "…", as Day rows have none: long press opens the menu
+// (council round 23).
+Then(
+  "the {string} row shows no actions button",
+  async ({ page }, title: string) => {
+    const row = page.getByRole("listitem").filter({ hasText: title });
+    await expect(row.locator(".backlog-item-start")).toBeVisible();
+    await expect(
+      row.getByRole("button", { name: `Actions for ${title}` }),
+    ).toBeHidden();
+  },
+);
+When(
+  "I long press the {string} row on a touch screen",
+  async ({ page }, title: string) => {
+    const row = page.getByRole("listitem").filter({ hasText: title });
+    const box = await row.locator(".backlog-item-title").boundingBox();
+    if (!box) throw new Error(`The ${title} row is not rendered`);
+    // Playwright has no long press, so the step sends raw touch events.
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Emulation.setTouchEmulationEnabled", {
+      enabled: true,
+      maxTouchPoints: 1,
+    });
+    const point = { x: box.x + 8, y: box.y + box.height / 2 };
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [point],
+    });
+    // Base UI opens the menu after 500ms of holding still.
+    await expect(page.getByRole("menu")).toBeVisible();
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+  },
+);
+Then("the Backlog item's action menu is open", async ({ page }) => {
+  const menu = page.getByRole("menu");
+  await expect(menu).toBeVisible();
+  await expect(
+    menu.getByRole("menuitem", { name: /^Start entry/ }),
+  ).toBeVisible();
+  // Releasing the long press neither opens the item nor starts a drag.
+  await expect(page).toHaveURL(/\/backlog$/);
+  await expect(page.locator(".backlog-move-preview")).toHaveCount(0);
+});
 When("I widen the Backlog window", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
 });
