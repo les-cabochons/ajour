@@ -12,6 +12,8 @@ import {
   formatLogTable,
   logView,
 } from "../format/log.ts";
+import { formatWorkday } from "../format/workday.ts";
+import { addDays, mondayOf } from "../dates.ts";
 import { parseRange, resolveProject, resolveTask } from "../refs.ts";
 
 export interface LogOptions {
@@ -45,6 +47,11 @@ interface Filter {
 export async function log(ctx: Context, options: LogOptions): Promise<number> {
   const today = localDate(ctx.io.now());
   const range = parseRange(options.range ?? "", today);
+  if (options.format?.trim().toLowerCase() === "workday") {
+    if (ctx.json)
+      throw new UsageError("Use --json or --format workday, not both.");
+    return logWorkday(ctx, options, range);
+  }
   const view = viewOf(options);
   const format = formatOf(
     ctx,
@@ -122,7 +129,7 @@ function formatOf(ctx: Context, typed: string | undefined): Format {
   const format = FORMATS.find((name) => name === typed.trim().toLowerCase());
   if (!format) {
     throw new UsageError(
-      `--format takes table, tsv, csv or json, not "${typed}"`,
+      `--format takes table, workday, tsv, csv or json, not "${typed}"`,
     );
   }
   return format;
@@ -167,4 +174,47 @@ function applyFilter(listed: Listed, filter: Filter): Listed {
     ),
     running,
   };
+}
+
+/** Fetch every week before writing, so a refusal never leaves a partial paste. */
+async function logWorkday(
+  ctx: Context,
+  options: LogOptions,
+  range: { from: string; to: string },
+): Promise<number> {
+  const by = options.by?.trim().toLowerCase() ?? "day-task";
+  if (by !== "day-task" && by !== "day" && by !== "task")
+    throw new UsageError("--by takes day-task, day or task for Workday.");
+  if (
+    options.summary ||
+    options.project !== undefined ||
+    options.task !== undefined ||
+    options.committed ||
+    options.uncommitted
+  )
+    throw new UsageError(
+      "Workday prints the Commit page's lines. Leave out --summary, --project, --task, --committed and --uncommitted.",
+    );
+  const client = await ctx.client();
+  const prints: string[] = [];
+  for (
+    let weekOf = mondayOf(range.from);
+    weekOf <= range.to;
+    weekOf = addDays(weekOf, 7)
+  ) {
+    const from = range.from > weekOf ? range.from : weekOf;
+    const sunday = addDays(weekOf, 6);
+    const to = range.to < sunday ? range.to : sunday;
+    const week = await client.call("get_week_lines", {
+      weekOf,
+      groupBy: by,
+      from,
+      to,
+    });
+    prints.push(
+      formatWorkday(week, { from, to }, ctx.io.stdout.isTTY, ctx.paint),
+    );
+  }
+  ctx.io.stdout.write(prints.join(ctx.io.stdout.isTTY ? "\n" : ""));
+  return 0;
 }

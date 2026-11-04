@@ -1913,3 +1913,32 @@ describe("an agent task's declared tools", () => {
     },
   );
 });
+
+describe("Workday task names unavailable", () => {
+  it("preserves the renderer's plugin-name refusal through MCP", async () => {
+    const { baseUrl, logged } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl);
+    await openFakeRenderer(baseUrl, (call) => ({
+      requestId: call.requestId,
+      ok: false,
+      error: "Ajour couldn't read the plugins' task names. Try again.",
+    }));
+    const agent = await connectAgent(baseUrl, token);
+    const result = await agent.callTool({
+      name: "get_week_lines",
+      arguments: { weekOf: "2026-11-02" },
+    });
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toBe(
+      "Ajour couldn't read the plugins' task names. Try again.",
+    );
+    expect(result.structuredContent).toBeUndefined();
+    expect(logged).toContainEqual(
+      expect.objectContaining({
+        name: "agent_tool.call",
+        outcome: "refused",
+        agent_tool: expect.objectContaining({ name: "get_week_lines" }),
+      }),
+    );
+  });
+});

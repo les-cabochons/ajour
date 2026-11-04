@@ -86,14 +86,14 @@ function loadPropertyPlugins() {
 }
 
 /**
- * How long list_projects waits for the plugins that name tasks: well inside
+ * How long naming reads wait for the plugins that name tasks: well inside
  * the bridge's 10-second timeout, since discovery can wait behind a plugin
  * install while the projects themselves are local.
  */
 export const PLUGIN_NAMES_DEADLINE_MS = 2_000;
 
 /**
- * The plugins that name tasks for list_projects, read fresh. On a failure or
+ * The plugins that name tasks, read fresh. On a failure or
  * past PLUGIN_NAMES_DEADLINE_MS, undefined: a task a plugin may rename reads
  * `unknown` instead of its own name. The window's cached overview is never
  * used here, since it can name a task after a plugin the API has replaced.
@@ -111,6 +111,16 @@ async function loadNamingPlugins(): Promise<PropertyPlugins | undefined> {
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** Commit reads must never substitute own task names after discovery fails. */
+async function requireNamingPlugins(): Promise<PropertyPlugins> {
+  const plugins = await loadNamingPlugins();
+  if (!plugins)
+    throw new AgentToolRefusal(
+      "Ajour couldn't read the plugins' task names. Try again.",
+    );
+  return plugins;
 }
 
 /** Each read tool, typed against its output schema. */
@@ -145,7 +155,7 @@ const readTools: {
   list_work_item_comments: listCommentsForAgent,
   get_week_changes: async (rawInput) => {
     const input = readToolInputSchemas.get_week_changes.parse(rawInput);
-    const propertyPlugins = await loadPropertyPlugins();
+    const propertyPlugins = await requireNamingPlugins();
     const weekDates = getIsoWeekDates(input.weekOf);
     return getWeekChangesForAgent(localStore.snapshot(), {
       weekDates,
@@ -159,16 +169,18 @@ const readTools: {
     return getWeekStatusForAgent(localStore.snapshot(), {
       weekDates: getWeekDates(input.weekOf),
       today: todayIsoDate(),
-      propertyPlugins: await loadPropertyPlugins(),
+      propertyPlugins: await requireNamingPlugins(),
     });
   },
   // get_week_lines (#533): the Commit page's lines, with its week dates.
   get_week_lines: async (rawInput) => {
     const input = readToolInputSchemas.get_week_lines.parse(rawInput);
-    const propertyPlugins = await loadPropertyPlugins();
+    const propertyPlugins = await requireNamingPlugins();
     return getWeekLinesForAgent(localStore.snapshot(), {
       weekDates: getIsoWeekDates(input.weekOf),
       groupBy: input.groupBy,
+      from: input.from,
+      to: input.to,
       propertyPlugins,
       now: Date.now(),
     });

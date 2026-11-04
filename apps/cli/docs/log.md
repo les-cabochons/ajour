@@ -44,7 +44,7 @@ Range
 
 Options
   --format FORMAT    table (the default on a terminal), tsv (the default
-                     in a pipe), csv or json.
+                     in a pipe), workday, csv or json.
   --json             The list_time_entries tool's output, with only the
                      entries the filters keep. The same as --format json.
   -s, --summary      Totals per day only, each with a bar against its
@@ -61,6 +61,40 @@ Options
 
   --summary and --by task default to a plain table in a pipe too.
   They reject an explicit tsv, csv or json format.
+
+For Workday
+  ajour log [RANGE] --format workday [--by day-task|day|task]
+
+  Prints the Commit page's lines. day-task is the default, day keeps
+  individual entries, and task groups each task within each week.
+  Only the requested days count, including when a range crosses weeks.
+  Entry filters and --summary cannot be combined with this format.
+
+    $ ajour log week --format workday
+    Week 45 for Workday · Mon 2 – Sun 8 Nov 2026 · by day and task · hours use a comma
+    ──────────────────────────────────────────────────────────────────────
+    Mon 2 Nov
+      Ajour Desktop        07 Export        3,00   Fix export rounding
+      Acme Platform        05 Backend       3,50   Rate limiter
+
+    Not sent     1:30 on Ajour Desktop / 09 Admin is local only.
+    Waiting      3:00 on Temp migration has no Workday task yet.
+    Running      1:24 on 07 Export is not listed. Stop it first.
+
+  Columns are the project's full name, the task's Commits as name,
+  hours with two decimals and a comma, and notes merged with " | ".
+  On a terminal they are padded and tab-separated. Not sent, Waiting
+  and Running explain excluded time below the lines in muted, warning
+  and success colors. Running reports only time not already saved.
+
+  In a pipe only the four tab-separated values print, without padding,
+  headers, explanations or color, ready for the clipboard:
+
+    $ ajour log last-week --format workday | wl-copy
+    $ ajour log week --format workday --by task | pbcopy
+
+  Ajour refuses when plugin task names fail to load or take more than
+  two seconds. The command exits 1 and prints no partial lines. Try again.
 
 For tools
   tsv and csv print one line per entry under a header row:
@@ -89,5 +123,5 @@ Examples
     $ ajour log week --uncommitted --json | jq -r '.entries[].note'
 
 Exit status
-  0 on success, 2 for a bad RANGE or option, 3 when Ajour is not
+  0 on success, 1 when Ajour refuses, 2 for a bad RANGE or option, 3 when Ajour is not
   reachable, 4 when --project or --task matches nothing or several.

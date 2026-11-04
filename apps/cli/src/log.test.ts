@@ -13,6 +13,7 @@ import {
 } from "../../api/src/test-support/mcp-harness.ts";
 import type { CliIo } from "./io.ts";
 import { run } from "./main.ts";
+import { grouped } from "./test-support/workday-week.ts";
 import { listed, projects } from "./test-support/log-week.ts";
 
 // Wednesday 4 November 2026, 14:44:07 local time: the fixture's today.
@@ -48,7 +49,12 @@ interface Terminal {
 
 /** A connected terminal, a pipe unless `tty`, against the real local API. */
 async function ajour(
-  options: { tty?: boolean; columns?: number; projects?: typeof projects } = {},
+  options: {
+    tty?: boolean;
+    columns?: number;
+    projects?: typeof projects;
+    respond?: (call: BridgeToolCall) => BridgeToolResult;
+  } = {},
 ) {
   const api = await startTestApi();
   cleanups.push(() => api.stop());
@@ -60,7 +66,9 @@ async function ajour(
           ok: true,
           output: { projects: options.projects },
         }
-      : window(call),
+      : options.respond
+        ? options.respond(call)
+        : window(call),
   );
   cleanups.push(() => fake.close());
   const home = await mkdtemp(path.join(os.tmpdir(), "ajour-cli-log-"));
@@ -364,7 +372,7 @@ describe("the log manual", () => {
     const term = await ajour();
     expect(await run(["log", "--help"], term.io)).toBe(0);
     expect(term.out()).toMatch(/^ajour log — /);
-    expect(term.out()).not.toContain("workday");
+    expect(term.out()).toContain("--format workday");
 
     const card = await ajour();
     expect(await run(["--help"], card.io)).toBe(0);
@@ -375,4 +383,146 @@ describe("the log manual", () => {
       expect(card.out()).toContain(line);
     }
   });
+});
+
+describe("Workday through the MCP endpoint", () => {
+  it("requests only the selected days in each touched week before printing task totals", async () => {
+    const term = await ajour({
+      respond: (call) => ({
+        requestId: call.requestId,
+        ok: true,
+        output: {
+          weekOf: (call.input as { weekOf: string }).weekOf,
+          groupBy: "task",
+          locked: false,
+          sections: [
+            {
+              lines: [
+                {
+                  projectName: "Acme Platform",
+                  taskName: "05 Backend",
+                  hours: 1.5,
+                  comments: "Selected days",
+                  entryIds: ["1"],
+                },
+              ],
+            },
+          ],
+          notSent: { hours: 0, items: [] },
+          waiting: { hours: 0, tasks: [] },
+          running: null,
+        },
+      }),
+    });
+    expect(
+      await run(
+        [
+          "log",
+          "2026-11-06..2026-11-10",
+          "--format",
+          "workday",
+          "--by",
+          "task",
+        ],
+        term.io,
+      ),
+    ).toBe(0);
+    expect(term.calls.map((call) => [call.tool, call.input])).toEqual([
+      [
+        "get_week_lines",
+        {
+          weekOf: "2026-11-02",
+          groupBy: "task",
+          from: "2026-11-06",
+          to: "2026-11-08",
+        },
+      ],
+      [
+        "get_week_lines",
+        {
+          weekOf: "2026-11-09",
+          groupBy: "task",
+          from: "2026-11-09",
+          to: "2026-11-10",
+        },
+      ],
+    ]);
+    expect(term.out()).toBe(
+      "Acme Platform\t05 Backend\t1,50\tSelected days\nAcme Platform\t05 Backend\t1,50\tSelected days\n",
+    );
+  });
+  it("prints no partial clipboard output when a later week's plugin names are unavailable", async () => {
+    const term = await ajour({
+      respond: (call) =>
+        (call.input as { weekOf: string }).weekOf === "2026-11-02"
+          ? { requestId: call.requestId, ok: true, output: grouped("day-task") }
+          : {
+              requestId: call.requestId,
+              ok: false,
+              error: "Ajour couldn't read the plugins' task names. Try again.",
+            },
+    });
+    expect(
+      await run(
+        ["log", "2026-11-02..2026-11-10", "--format", "workday"],
+        term.io,
+      ),
+    ).toBe(1);
+    expect(term.out()).toBe("");
+    expect(term.err()).toBe(
+      "refused: Ajour couldn't read the plugins' task names. Try again.\n",
+    );
+  });
+});
+
+for (const by of ["day-task", "day", "task"] as const) {
+  for (const tty of [true, false]) {
+    it(`prints the ${by} mockup through MCP on ${tty ? "TTY" : "pipe"}`, async () => {
+      const term = await ajour({
+        tty,
+        respond: (call) => ({
+          requestId: call.requestId,
+          ok: true,
+          output: grouped(by),
+        }),
+      });
+      expect(
+        await run(
+          [
+            "--color",
+            "never",
+            "log",
+            "week",
+            "--format",
+            "workday",
+            "--by",
+            by,
+          ],
+          term.io,
+        ),
+      ).toBe(0);
+      await expect(term.out()).toMatchFileSnapshot(
+        `format/golden/workday-${by}-${tty ? "tty" : "pipe"}.txt`,
+      );
+      expect(term.calls).toHaveLength(1);
+      expect(term.calls[0]?.tool).toBe("get_week_lines");
+    });
+  }
+}
+
+it("refuses unsupported Workday options before dialing Ajour", async () => {
+  for (const args of [
+    ["--by", "week"],
+    ["--summary"],
+    ["--project", "ACME"],
+    ["--task", "Build"],
+    ["--committed"],
+    ["--uncommitted"],
+    ["--json"],
+  ]) {
+    const term = await ajour();
+    expect(await run(["log", "--format", "workday", ...args], term.io)).toBe(2);
+    expect(term.calls).toHaveLength(0);
+    expect(term.out()).toBe("");
+  }
 });

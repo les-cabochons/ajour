@@ -786,16 +786,24 @@ export function getWeekLinesForAgent(
     groupBy,
     propertyPlugins,
     now,
+    from,
+    to,
   }: {
     weekDates: string[];
     groupBy: SubmitGroupBy;
     /** Active plugins that add project or task properties. Passed in to keep domain free of `lib/`. */
     propertyPlugins: PropertyPlugins;
     now: number;
+    from?: string;
+    to?: string;
   },
 ): DataToolOutput<"get_week_lines"> {
   const { projects } = state;
-  const week = new Set(weekDates);
+  const selectedDates = weekDates.filter(
+    (date) =>
+      (from === undefined || date >= from) && (to === undefined || date <= to),
+  );
+  const week = new Set(selectedDates);
   const weekEntries = state.timesheetEntries.filter((entry) =>
     week.has(entry.localDate),
   );
@@ -807,7 +815,7 @@ export function getWeekLinesForAgent(
     entries: weekEntries,
     groupBy,
     projects,
-    weekDates,
+    weekDates: selectedDates,
   }).map((section) => ({
     ...(section.localDate ? { localDate: section.localDate } : {}),
     lines: section.lines.map((line) => {
@@ -832,7 +840,7 @@ export function getWeekLinesForAgent(
 
   const summary = summarizeWeek({
     capacityTargets: state.userPreferences.weeklyCapacityTargets,
-    weekDates,
+    weekDates: selectedDates,
     weekEntries,
     projects,
   });
