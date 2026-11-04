@@ -115,6 +115,8 @@ export interface PageBreadcrumbItem {
   params?: Record<string, string>;
   /** Runs before navigation; call `preventDefault` to stay. */
   onClick?: MouseEventHandler<HTMLAnchorElement>;
+  /** The last crumb is the page's heading, for a page with no title below. */
+  heading?: boolean;
 }
 
 /** "ajour / Build latest main": every crumb but the last links to its page. */
@@ -146,6 +148,13 @@ function PageBreadcrumb({ items }: { items: PageBreadcrumbItem[] }) {
                 >
                   {label}
                 </Link>
+              ) : isLast && item.heading ? (
+                <h1
+                  aria-current="page"
+                  className="ajour-page-breadcrumb-current"
+                >
+                  {label}
+                </h1>
               ) : (
                 <span
                   aria-current={isLast ? "page" : undefined}

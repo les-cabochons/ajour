@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  RiArrowLeftLine as ArrowLeft,
   RiArrowRightSLine as ChevronIcon,
   RiCheckLine as Check,
   RiErrorWarningLine as Warning,
@@ -559,7 +558,20 @@ export function CommitPage({
       {/* The week's actions are page actions, after the title, so they stay
           in view however long the week (council round 5). */}
       <PageHeader
-        title={title}
+        // Back the way detail pages go: the view it came from, as a crumb
+        // (council round 21).
+        breadcrumb={[
+          {
+            label: returnView === "week" ? "Week" : "Day",
+            to: "/time/$date",
+            params: { date },
+            onClick: (event) => {
+              event.preventDefault();
+              goBack();
+            },
+          },
+          { label: title, heading: true },
+        ]}
         actions={
           <div
             role="group"
@@ -630,21 +642,7 @@ export function CommitPage({
             )}
           </div>
         }
-      >
-        <TooltipButton
-          label={`Back to ${returnView === "week" ? "Week" : "Day"}`}
-          render={
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="order-first -ml-1 text-muted-foreground"
-              onClick={goBack}
-            />
-          }
-        >
-          <ArrowLeft />
-        </TooltipButton>
-      </PageHeader>
+      />
 
       <section aria-label="Week summary" className="submit-summary">
         <div className="submit-summary-total">

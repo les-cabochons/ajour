@@ -2,6 +2,7 @@ import {
   RiNodeTree,
   RiPlayFill,
   RiStopFill,
+  RiCheckboxCircleLine,
   RiTimeLine,
 } from "@remixicon/react";
 import { getWorkflowStateFills } from "@/domain/backlog/workflow-state-fill";
@@ -387,6 +388,8 @@ export function BacklogItemSurface({
               : undefined
           }
         >
+          {/* Icon plus word, like Running and Snoozed (council round 21). */}
+          <RiCheckboxCircleLine className="size-3" aria-hidden />
           Settled
           {board && item.settledAt
             ? ` · ${new Date(item.settledAt).toLocaleDateString()}`
@@ -440,6 +443,8 @@ export function BacklogItemSurface({
           // A subitem row in the narrow view drops the project's name for
           // its parent's when both cannot fit (council round 18).
           data-subitem={parent ? "" : undefined}
+          // An archived row's marks dim with its title (council round 21).
+          data-archived={item.status === "archived" ? "" : undefined}
           className={cn(
             board ? "backlog-board-card" : "backlog-list-row",
             onPointerDown && "touch-none",

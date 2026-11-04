@@ -18,11 +18,15 @@ import {
 } from "@/lib/sidebar-layout";
 import type { ThemeMode, WeeklyCapacityTargets } from "@/domain/local-state";
 import {
+  formatClockDuration,
   formatDurationHoursInput,
   parseHoursInput,
 } from "@/domain/time/duration";
-import { getPaceTolerancePercent } from "@/domain/time/week-pace";
-import { cn } from "@/lib/utils";
+import {
+  computePaceRange,
+  getPaceTolerancePercent,
+} from "@/domain/time/week-pace";
+import { cn, getIsoWeekDates, todayIsoDate } from "@/lib/utils";
 import { useUserPreferences } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import { getThemeModeLabel, useResolvedTheme } from "@/lib/use-theme";
@@ -102,6 +106,13 @@ export function SettingsGeneralPage() {
   const sidebarLayout = useSidebarLayout();
   const preferences = useUserPreferences();
   const resolvedTheme = useResolvedTheme();
+  const today = todayIsoDate();
+  const paceRange = computePaceRange({
+    weekDates: getIsoWeekDates(today),
+    today,
+    capacityTargets: preferences.weeklyCapacityTargets,
+    tolerancePercent: getPaceTolerancePercent(preferences),
+  });
   const handleThemeChange = (mode: ThemeMode) => {
     localStore.setUserPreferences({ themeMode: mode });
   };
@@ -262,37 +273,52 @@ export function SettingsGeneralPage() {
           <SettingRow
             label="Pace tolerance"
             labelFor="pace-tolerance"
-            description="Ask before submitting when the time logged is more than this percentage away from the targets through today. With 24:00 expected and 20%, that is outside 19:12–28:48. Going over the weekly target always asks."
+            description="Ask before submitting when the time logged is this far from the targets through today. Going over the week's target always asks."
           >
             {/* The unit sits in the field, so the value reads alone
-                (council round 12). */}
-            <div className="relative w-20">
-              <Input
-                id="pace-tolerance"
-                type="number"
-                min={0}
-                max={100}
-                step={5}
-                className="w-20 pr-6"
-                value={getPaceTolerancePercent(preferences)}
-                onChange={(event) => {
-                  const value = Number(event.target.value);
-                  if (Number.isFinite(value)) {
-                    localStore.setUserPreferences({
-                      paceTolerancePercent: Math.min(
-                        100,
-                        Math.max(0, Math.round(value)),
-                      ),
-                    });
+                (council round 12); the range it allows today sits under it,
+                from the user's own targets (council round 21). */}
+            <div className="flex flex-col items-end gap-1">
+              <div className="relative w-20">
+                <Input
+                  id="pace-tolerance"
+                  aria-describedby={
+                    paceRange.targetMs ? "pace-range" : undefined
                   }
-                }}
-              />
-              <span
-                aria-hidden
-                className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-xs text-muted-foreground"
-              >
-                %
-              </span>
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={5}
+                  className="w-20 pr-6"
+                  value={getPaceTolerancePercent(preferences)}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    if (Number.isFinite(value)) {
+                      localStore.setUserPreferences({
+                        paceTolerancePercent: Math.min(
+                          100,
+                          Math.max(0, Math.round(value)),
+                        ),
+                      });
+                    }
+                  }}
+                />
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-xs text-muted-foreground"
+                >
+                  %
+                </span>
+              </div>
+              {paceRange.targetMs ? (
+                <p
+                  id="pace-range"
+                  className="text-xs whitespace-nowrap text-[var(--text-secondary)] tabular-nums"
+                >
+                  Today: {formatClockDuration(paceRange.lowMs)}–
+                  {formatClockDuration(paceRange.highMs)}
+                </p>
+              ) : null}
             </div>
           </SettingRow>
         </AppPanel>

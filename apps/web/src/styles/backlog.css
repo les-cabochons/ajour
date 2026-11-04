@@ -188,6 +188,13 @@
 
   /* -- List rows ------------------------------------------------- */
 
+  /* An archived row's marks dim with its title, so they never outweigh it
+     (council round 21). */
+  .backlog-list-row[data-archived] .backlog-item-leading,
+  .backlog-list-row[data-archived] .backlog-item-project {
+    opacity: 0.5;
+  }
+
   .backlog-list-row {
     position: relative;
     display: flex;
@@ -1085,20 +1092,6 @@
     white-space: nowrap;
   }
 
-  /* A subitem's title may take two lines, so it reads without opening it;
-     Time entries keep one line (council round 15). */
-  .backlog-item-row.is-subitem {
-    height: 52px;
-  }
-
-  .backlog-item-row.is-subitem .backlog-item-row-title {
-    display: -webkit-box;
-    line-height: 18px;
-    white-space: normal;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-  }
-
   /* -- Peek ------------------------------------------------------ */
 
   /* The peek is a smaller item page: the same header, figures and sections,
@@ -1286,9 +1279,14 @@
   }
 
   /* On a subitem, the parent's name is the context: the project keeps only
-     its dot. */
+     its dot, which still leads line 2 as on every other row (council
+     round 21). */
   .backlog-list-row[data-subitem] .backlog-item-project > .truncate {
     display: none;
+  }
+
+  .backlog-list-row[data-subitem] .backlog-item-project {
+    order: -2;
   }
 
   /* The project leads line 2, as a line of text with its dot, not a chip. */

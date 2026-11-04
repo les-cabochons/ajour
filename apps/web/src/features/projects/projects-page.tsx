@@ -921,7 +921,13 @@ function ProjectDetail({
       <span className="project-budget">
         <BudgetBar ratio={Math.max(0, consumedMs) / budgetMs} />
         <Value className={cn("project-task-consumed", tone)}>
-          {formatSignedClock(consumedMs)} / {formatClockDuration(budgetMs)}
+          {formatSignedClock(consumedMs)}
+          {/* The hours logged lead; the budget follows, quieter (council
+              round 21). */}
+          <span className="project-task-budget">
+            {" "}
+            / {formatClockDuration(budgetMs)}
+          </span>
         </Value>
       </span>
     );

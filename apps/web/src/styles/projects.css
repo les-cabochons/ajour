@@ -478,6 +478,11 @@
   white-space: nowrap;
 }
 
+/* The budget after the hours logged steps back, whatever their tone. */
+.project-task-consumed .project-task-budget {
+  color: var(--text-secondary);
+}
+
 /* Within budget reads as plain text: green means running only. */
 .project-task-consumed.is-success {
   color: var(--text);
