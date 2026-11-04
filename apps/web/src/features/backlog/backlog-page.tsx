@@ -1,5 +1,9 @@
 import { useBacklogRefreshOnOpen } from "./use-backlog-refresh-on-open";
 import {
+  useNewBacklogItemPageHost,
+  type NewBacklogItemPreset,
+} from "@/features/backlog/new-backlog-item-dialog";
+import {
   isUnmappedRising,
   readUnmappedSeen,
   writeUnmappedSeen,
@@ -421,6 +425,21 @@ export function BacklogPage() {
     if (lane?.kind === "project") preset.projectId = lane.projectId ?? "";
     showEditor({ kind: "create", preset });
   }
+  // The sidebar's "+" opens this page's panel while the page is open.
+  const showEditorRef = useRef(showEditor);
+  showEditorRef.current = showEditor;
+  const editorOpenRef = useRef(false);
+  editorOpenRef.current = editor !== null;
+  useNewBacklogItemPageHost(
+    useCallback(({ projectId }: NewBacklogItemPreset) => {
+      if (editorOpenRef.current) return false;
+      showEditorRef.current({
+        kind: "create",
+        preset: projectId ? { projectId } : {},
+      });
+      return true;
+    }, []),
+  );
   useActionRequest(({ action: requested, target: itemId }) => {
     if (requested === "create") {
       add();

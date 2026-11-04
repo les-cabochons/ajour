@@ -1364,7 +1364,7 @@
   .import-review-group-header {
     display: flex;
     flex-wrap: wrap;
-    align-items: flex-end;
+    align-items: flex-start;
     justify-content: space-between;
     gap: 0.75rem 2rem;
   }

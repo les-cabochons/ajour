@@ -1837,12 +1837,17 @@ When(
   "I create the backlog item {string} from the sidebar header",
   async ({ page }, title: string) => {
     await pressNewBacklogItem(page);
+    // On the Backlog page with no editor open, the "+" opens the page's own
+    // panel; anywhere else it opens the dialog over the page.
     const dialog = newBacklogItemDialog(page);
-    await dialog
-      .getByRole("textbox", { name: "Item", exact: true })
-      .fill(title);
-    await dialog.getByRole("button", { name: SAVE_OR_CREATE }).click();
-    await expect(dialog).toBeHidden();
+    const panel = page.getByRole("complementary", {
+      name: "Backlog item editor",
+    });
+    await dialog.or(panel).first().waitFor();
+    const form = (await dialog.isVisible()) ? dialog : panel;
+    await form.getByRole("textbox", { name: "Item", exact: true }).fill(title);
+    await form.getByRole("button", { name: SAVE_OR_CREATE }).click();
+    await expect(form).toBeHidden();
   },
 );
 

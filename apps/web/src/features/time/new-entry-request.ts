@@ -116,3 +116,26 @@ export function useNewEntryRequests(
     };
   }, [listener]);
 }
+
+let pageListener: ((values?: NewTimeEntryValues) => void) | null = null;
+
+/**
+ * The page that creates entries in its own side panel, the Time page, while
+ * it is open. A new entry asked for anywhere on that page opens there, so one
+ * job has one place (forms council round 4).
+ */
+export function useNewEntryPageHost(
+  listener: (values?: NewTimeEntryValues) => void,
+) {
+  useEffect(() => {
+    pageListener = listener;
+    return () => {
+      if (pageListener === listener) pageListener = null;
+    };
+  }, [listener]);
+}
+
+/** The Time page's new-entry host while it is open, else null. */
+export function getNewEntryPageHost() {
+  return pageListener;
+}

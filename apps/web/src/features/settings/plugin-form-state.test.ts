@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { PluginManifest } from "@ajour/shared";
 import {
   groupConnectionFields,
+  sectionConnectionBlocks,
   arePluginFormValuesEqual,
   areExpiryDraftsEqual,
   areExpiryDraftsValid,
@@ -465,5 +466,54 @@ describe("groupConnectionFields", () => {
       },
     ]);
     expect(blocks.every((block) => block.kind === "field")).toBe(true);
+  });
+});
+
+describe("sectionConnectionBlocks", () => {
+  const field = (
+    id: string,
+    label: string,
+    extra: { secret?: boolean; type?: "text" | "checkbox" | "select" } = {},
+  ) => ({
+    id,
+    label,
+    type: extra.type ?? ("text" as const),
+    secret: extra.secret ?? false,
+    required: false,
+  });
+
+  it("puts where and who first, then what syncs, then the field mapping", () => {
+    const sections = sectionConnectionBlocks(
+      groupConnectionFields([
+        field("label", "Connection label"),
+        field("url", "Site URL"),
+        field("token", "API token", { secret: true }),
+        field("scope", "Import scope", { type: "select" }),
+        field("remaining", "Remaining field"),
+        field("autoSync", "Auto sync to backlog", { type: "checkbox" }),
+      ]),
+    );
+    expect(
+      sections.map((section) => [
+        section.title,
+        section.blocks.map((block) =>
+          block.kind === "field" ? block.field.id : "row",
+        ),
+      ]),
+    ).toEqual([
+      ["Connection", ["label", "url", "token"]],
+      ["Sync", ["scope", "autoSync"]],
+      ["Field mapping", ["remaining"]],
+    ]);
+  });
+
+  it("leaves a form without a secret in one section", () => {
+    const sections = sectionConnectionBlocks(
+      groupConnectionFields([
+        field("label", "Connection label"),
+        field("url", "Calendar address"),
+      ]),
+    );
+    expect(sections.map((section) => section.title)).toEqual(["Sync"]);
   });
 });

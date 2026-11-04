@@ -3,9 +3,8 @@ import { Link, useSearch } from "@tanstack/react-router";
 import {
   RiAlarmWarningLine as AlertTriangle,
   RiArrowRightLine as ArrowRight,
-  RiCheckboxIndeterminateLine as MinusSquare,
-  RiCheckboxMultipleLine as CheckSquare,
   RiCloseLine as X,
+  RiMoreLine as More,
   RiNodeTree as FolderTree,
   RiRefreshLine as RefreshCw,
 } from "@remixicon/react";
@@ -14,6 +13,13 @@ import { AppPanel, MessagePanel } from "@/components/app-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { TooltipButton } from "@/components/tooltip-button";
 import { showToast, showUndoToast } from "@/components/ui/toast";
 import {
   buildImportHierarchy,
@@ -108,6 +114,7 @@ export function SettingsImportReviewPage() {
   const [overview, setOverview] = useState<PluginsOverview | null>(null);
   const [items, setItems] = useState<BacklogImportCandidate[]>([]);
   const [selectedCount, setSelectedCount] = useState(0);
+  const selectableCount = items.filter((item) => item.selectable).length;
   const [isLoading, setIsLoading] = useState(true);
   const [isMutating, setIsMutating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -441,90 +448,70 @@ export function SettingsImportReviewPage() {
         ) : null}
 
         {pluginApiMissing ? null : (
-          <div className="flex flex-col gap-3">
-            <p className="text-[13px] leading-5 text-muted-foreground">
-              <span className="font-medium text-foreground">
-                {overview?.totalPendingImportCount ?? items.length} staged items
-              </span>
-              {" · "}
-              {selectedCount} selected
-              {" · "}
-              {overview?.connectionGroups.reduce(
-                (sum, group) => sum + group.connections.length,
-                0,
-              ) ?? 0}{" "}
-              plugin connections
-            </p>
-
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-
-                disabled={isLoading || isMutating}
-                onClick={() => void refresh()}
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-                Refresh
-              </Button>
-              <Button
-                variant="outline"
-
-                disabled={
-                  isLoading ||
-                  isMutating ||
-                  items.every((item) => !item.selectable)
+          // One toolbar, as Linear's and Vercel's lists: a select-all box with
+          // the counts, then Refresh, Dismiss and the one primary action
+          // (forms council round 4).
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-[13px] text-muted-foreground">
+              <Checkbox
+                aria-label="Select every staged item"
+                checked={
+                  selectableCount > 0 && selectedCount === selectableCount
                 }
-                onClick={() =>
+                indeterminate={
+                  selectedCount > 0 && selectedCount < selectableCount
+                }
+                disabled={isLoading || isMutating || selectableCount === 0}
+                onCheckedChange={(checked) =>
                   void toggleItems(
                     items
                       .filter((item) => item.selectable)
                       .map((item) => item.id),
-                    true,
+                    checked,
                   )
                 }
-              >
-                <CheckSquare className="h-3.5 w-3.5" />
-                Select all
-              </Button>
-              <Button
-                variant="outline"
-
-                disabled={isLoading || isMutating || selectedCount === 0}
-                onClick={() =>
-                  void dismissItems(
-                    items
-                      .filter((item) => item.selectable && item.selected)
-                      .map((item) => item.id),
-                  )
-                }
-              >
-                <X className="h-3.5 w-3.5" />
-                Dismiss selected
-              </Button>
-              <Button
-                variant="outline"
-
-                disabled={isLoading || isMutating || selectedCount === 0}
-                onClick={() =>
-                  void toggleItems(
-                    items
-                      .filter((item) => item.selectable && item.selected)
-                      .map((item) => item.id),
-                    false,
-                  )
-                }
-              >
-                <MinusSquare className="h-3.5 w-3.5" />
-                Clear selection
-              </Button>
-              <Button
-                disabled={isLoading || isMutating || selectedCount === 0}
-                onClick={() => void handleCommitSelected()}
-              >
-                <ArrowRight className="h-3.5 w-3.5" />
-                Sync selected to backlog
-              </Button>
-            </div>
+              />
+              <span>
+                <span className="font-medium text-foreground">
+                  {overview?.totalPendingImportCount ?? items.length} staged
+                </span>
+                {" · "}
+                {selectedCount} selected
+              </span>
+            </label>
+            <span className="flex-1" />
+            <TooltipButton
+              label="Refresh"
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  disabled={isLoading || isMutating}
+                  onClick={() => void refresh()}
+                />
+              }
+            >
+              <RefreshCw />
+            </TooltipButton>
+            <Button
+              variant="ghost"
+              disabled={isLoading || isMutating || selectedCount === 0}
+              onClick={() =>
+                void dismissItems(
+                  items
+                    .filter((item) => item.selectable && item.selected)
+                    .map((item) => item.id),
+                )
+              }
+            >
+              Dismiss selected
+            </Button>
+            <Button
+              disabled={isLoading || isMutating || selectedCount === 0}
+              onClick={() => void handleCommitSelected()}
+            >
+              Sync selected to backlog
+            </Button>
           </div>
         )}
 
@@ -566,50 +553,68 @@ export function SettingsImportReviewPage() {
                   className="import-review-group"
                 >
                   <div className="import-review-group-header">
-                    <div className="import-review-group-title-wrap">
-                      <div className="import-review-group-kicker">
-                        {group.tenantLabel}
-                      </div>
-                      <h3 className="import-review-group-title">
-                        {group.connectionLabel}
-                      </h3>
-                      <div className="import-review-group-meta">
-                        {group.items.length} staged · {selectedIds.length}{" "}
-                        selected
+                    <div className="flex min-w-0 items-start gap-2">
+                      <Checkbox
+                        className="mt-1"
+                        aria-label={`Select every staged item from ${group.connectionLabel}`}
+                        checked={
+                          selectableIds.length > 0 &&
+                          selectedIds.length === selectableIds.length
+                        }
+                        indeterminate={
+                          selectedIds.length > 0 &&
+                          selectedIds.length < selectableIds.length
+                        }
+                        disabled={isMutating || selectableIds.length === 0}
+                        onCheckedChange={(checked) =>
+                          void toggleItems(selectableIds, checked)
+                        }
+                      />
+                      <div className="import-review-group-title-wrap">
+                        <h3 className="import-review-group-title">
+                          {group.connectionLabel}
+                        </h3>
+                        {/* The tenant only when it says more than the label. */}
+                        {group.tenantLabel &&
+                        group.tenantLabel.trim().toLowerCase() !==
+                          group.connectionLabel.trim().toLowerCase() ? (
+                          <div className="import-review-group-kicker">
+                            {group.tenantLabel}
+                          </div>
+                        ) : null}
+                        <div className="import-review-group-meta">
+                          {group.items.length} staged · {selectedIds.length}{" "}
+                          selected
+                        </div>
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        variant="outline"
-
-                        disabled={isMutating || selectableIds.length === 0}
-                        onClick={() => void toggleItems(selectableIds, true)}
-                      >
-                        <CheckSquare className="h-3.5 w-3.5" />
-                        Select connection
-                      </Button>
-                      <Button
-                        variant="outline"
-
-                        disabled={isMutating || group.items.length === 0}
-                        onClick={() =>
-                          void dismissItems(group.items.map((item) => item.id))
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`More actions for ${group.connectionLabel}`}
+                          />
                         }
                       >
-                        <X className="h-3.5 w-3.5" />
-                        Dismiss connection
-                      </Button>
-                      <Button
-                        variant="outline"
-
-                        disabled={isMutating || selectedIds.length === 0}
-                        onClick={() => void toggleItems(selectedIds, false)}
-                      >
-                        <MinusSquare className="h-3.5 w-3.5" />
-                        Clear connection
-                      </Button>
-                    </div>
+                        <More />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="min-w-44">
+                        <DropdownMenuItem
+                          variant="destructive"
+                          disabled={isMutating || group.items.length === 0}
+                          onClick={() =>
+                            void dismissItems(
+                              group.items.map((item) => item.id),
+                            )
+                          }
+                        >
+                          Dismiss all staged
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
 
                   <div className="import-review-list">

@@ -22,7 +22,28 @@ const NO_ACTION = () => {};
  * "+" does. Does nothing until the app shell has mounted the dialog.
  */
 export function requestNewBacklogItem(preset: NewBacklogItemPreset = {}) {
+  if (pageListener?.(preset)) return;
   requestListener?.(preset);
+}
+
+let pageListener: ((preset: NewBacklogItemPreset) => boolean) | null = null;
+
+/**
+ * The Backlog page, while open, creates items in its own side panel; a new
+ * item asked for anywhere on it opens there, so one job has one place
+ * (forms council round 4). The listener says whether it took the request:
+ * while its panel holds an editor, the dialog opens over it instead, so no
+ * draft is dropped. Elsewhere the dialog opens over the page.
+ */
+export function useNewBacklogItemPageHost(
+  listener: (preset: NewBacklogItemPreset) => boolean,
+) {
+  useEffect(() => {
+    pageListener = listener;
+    return () => {
+      if (pageListener === listener) pageListener = null;
+    };
+  }, [listener]);
 }
 
 /**

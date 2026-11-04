@@ -453,3 +453,38 @@ export function groupConnectionFields(
   }
   return blocks;
 }
+
+/** A titled part of a connection form. */
+export interface ConnectionFormSection {
+  title: "Connection" | "Sync" | "Field mapping";
+  blocks: ConnectionFormBlock[];
+}
+
+/** A block that maps the service's own fields: "Remaining field", or a row of values. */
+function isMappingBlock(block: ConnectionFormBlock) {
+  return block.kind === "row" || /\bfield$/i.test(block.field.label.trim());
+}
+
+/**
+ * Splits a connection form into Connection (everything up to its last
+ * secret: where and who), Sync (what comes over and when) and Field
+ * mapping (which of the service's fields mean what). Order inside a section
+ * is the manifest's. A form with no secret, or with only one kind of
+ * field, stays one untitled section.
+ */
+export function sectionConnectionBlocks(
+  blocks: ConnectionFormBlock[],
+): ConnectionFormSection[] {
+  let lastSecret = -1;
+  blocks.forEach((block, index) => {
+    if (block.kind === "field" && block.field.secret) lastSecret = index;
+  });
+  const connection = blocks.slice(0, lastSecret + 1);
+  const rest = blocks.slice(lastSecret + 1);
+  const sections: ConnectionFormSection[] = [
+    { title: "Connection", blocks: connection },
+    { title: "Sync", blocks: rest.filter((block) => !isMappingBlock(block)) },
+    { title: "Field mapping", blocks: rest.filter(isMappingBlock) },
+  ];
+  return sections.filter((section) => section.blocks.length > 0);
+}

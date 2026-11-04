@@ -25,6 +25,8 @@ import {
   type WeekGridCell,
 } from "@/features/time/week-grid";
 import { WeekGridCellPanel } from "@/features/time/week-grid-cell-panel";
+import { useNewEntryPageHost } from "@/features/time/new-entry-request";
+import type { NewTimeEntryValues } from "@/features/time/time-entry-editor-form";
 import { WeeklyTimeView } from "@/features/time/weekly-time-view";
 import { TimerPanel } from "@/features/timer/timer-panel";
 import { TimeEntryModal } from "@/features/timer/time-entry-modal";
@@ -396,6 +398,21 @@ export function TimePage({ date }: { date: string }) {
       openCommitPage(target && isValidLocalDate(target) ? target : undefined);
     }
   });
+
+  // The dock's "+" and New entry… requests open this page's panel too.
+  const openEditorRef = useRef(openEditor);
+  openEditorRef.current = openEditor;
+  useNewEntryPageHost(
+    useCallback(
+      (values?: NewTimeEntryValues) =>
+        openEditorRef.current(
+          values?.projectId && values.taskId
+            ? { task: { projectId: values.projectId, taskId: values.taskId } }
+            : {},
+        ),
+      [],
+    ),
+  );
 
   // These win over the app shell's handlers while the Time page is open.
   useShortcut("entry.new", () => openEditor({}));

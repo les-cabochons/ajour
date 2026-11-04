@@ -59,6 +59,7 @@ import { TimeDatePicker } from "@/features/time/time-date-picker";
 import { TimeEntryEditorPopover } from "@/features/time/time-entry-editor-popover";
 import type { NewTimeEntryValues } from "@/features/time/time-entry-editor-form";
 import {
+  getNewEntryPageHost,
   useNewEntryRequests,
   type NewEntryRequest,
 } from "@/features/time/new-entry-request";
@@ -407,6 +408,13 @@ function GlobalTimerBar({
 
   const openNewEntry = useCallback(
     (values?: NewTimeEntryValues, anchor: HTMLElement | null = null) => {
+      // On the Time page, a new entry opens in its side panel, as its own
+      // New entry does. A note or backlog link only the popover carries.
+      const pageHost = getNewEntryPageHost();
+      if (pageHost && !values?.note && !values?.workItemId) {
+        pageHost(values);
+        return;
+      }
       // One entry editor at a time: the new entry closes the running one.
       setRunningEntryEditorOpen(false);
       setNewEntryValues(values);

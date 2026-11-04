@@ -15,6 +15,8 @@ import {
   areExpiryDraftsValid,
   canSubmitPluginForm,
   groupConnectionFields,
+  sectionConnectionBlocks,
+  type ConnectionFormBlock,
   isPluginFieldShown,
   isPluginFormDirty,
   withAccessChoice,
@@ -126,6 +128,27 @@ export function PluginConnectionForm({
     isPluginFieldShown(plugin, field, form.values, group.inactiveCapabilities),
   );
 
+  const renderBlock = (block: ConnectionFormBlock) =>
+    block.kind === "field" ? (
+      renderField(block.field)
+    ) : (
+      <fieldset
+        key={`${form.instance}/${block.fields[0]!.field.id}`}
+        className="flex flex-col gap-2"
+      >
+        <legend className="mb-2 text-sm font-medium text-foreground">
+          {block.legend}
+        </legend>
+        <div className="grid grid-cols-2 gap-3 desktop:grid-cols-4">
+          {block.fields.map(({ field, label }) =>
+            renderField(field, { label, hideHelp: true }),
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">{block.help}</p>
+      </fieldset>
+    );
+  const sections = sectionConnectionBlocks(groupConnectionFields(shownFields));
+
   return (
     <AppPanel className="connection-form pb-4">
       <div>
@@ -145,24 +168,22 @@ export function PluginConnectionForm({
       </div>
       {/* One column at a reading measure, as Linear's forms are. */}
       <FieldGroup className="max-w-lg gap-5">
-        {groupConnectionFields(shownFields).map((block) =>
-          block.kind === "field" ? (
-            renderField(block.field)
+        {sections.map((section) =>
+          sections.length === 1 ? (
+            section.blocks.map(renderBlock)
           ) : (
-            <fieldset
-              key={`${form.instance}/${block.fields[0]!.field.id}`}
-              className="flex flex-col gap-2"
+            // Titled parts, Connection, Sync and Field mapping, so a long
+            // form scans like Linear's settings (forms council round 4).
+            <section
+              key={section.title}
+              aria-label={section.title}
+              className="flex flex-col gap-5 border-t border-[var(--border-row)] pt-4 first:border-t-0 first:pt-0"
             >
-              <legend className="mb-2 text-sm font-medium text-foreground">
-                {block.legend}
-              </legend>
-              <div className="grid grid-cols-2 gap-3 desktop:grid-cols-4">
-                {block.fields.map(({ field, label }) =>
-                  renderField(field, { label, hideHelp: true }),
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground">{block.help}</p>
-            </fieldset>
+              <h4 className="text-xs font-medium text-[var(--text-secondary)]">
+                {section.title}
+              </h4>
+              {section.blocks.map(renderBlock)}
+            </section>
           ),
         )}
         {pluginHasTeam(plugin) && !editing ? (
