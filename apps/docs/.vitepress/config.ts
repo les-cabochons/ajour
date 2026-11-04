@@ -7,9 +7,22 @@ const guideSidebar: DefaultTheme.SidebarItem[] = [
     items: [
       { text: "Start guide", link: "/start/" },
       { text: "Install Ajour", link: "/start/install" },
-      { text: "Terminal", link: "/start/terminal" },
       { text: "Concepts", link: "/start/concepts" },
       { text: "Keyboard shortcuts", link: "/start/shortcuts" },
+    ],
+  },
+  {
+    text: "Terminal",
+    items: [
+      { text: "The ajour command", link: "/terminal/" },
+      { text: "Install and connect", link: "/terminal/install" },
+      { text: "The running entry", link: "/terminal/running-entry" },
+      { text: "Saved entries", link: "/terminal/entries" },
+      { text: "Read your time", link: "/terminal/log" },
+      { text: "Lines for Workday", link: "/terminal/workday" },
+      { text: "Scripts and pipes", link: "/terminal/scripting" },
+      { text: "Shell setup", link: "/terminal/shell" },
+      { text: "Command reference", link: "/terminal/reference" },
     ],
   },
   {

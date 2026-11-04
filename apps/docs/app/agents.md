@@ -25,6 +25,8 @@ When an agent uses Ajour, it sends what it reads, notes included, to its model p
 
 Create one client per agent, so you can revoke one without the others. **Revoke** cuts a client off at once. Turning **Allow agents** off disconnects every agent.
 
+The [`ajour` command](/terminal/) is a client too. Name its client `Terminal`, and connect it with `ajour connect`.
+
 ## What agents can do
 
 | Kind         | Tools                                                                                                                                                                                                                                                                                                                                          |

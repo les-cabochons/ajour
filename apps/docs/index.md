@@ -34,6 +34,13 @@ Ajour is a time tracker for people who fill a timesheet every week. It keeps you
   { icon: 'command', title: 'Command palette', text: 'Find anything and run any action from the keyboard.', link: '/app/command-palette' },
 ]" />
 
+## Terminal
+
+<DocLinks :items="[
+  { icon: 'terminal', title: 'The ajour command', text: 'Start, stop and fix entries, and print your week, from a terminal.', link: '/terminal/' },
+  { icon: 'code', title: 'Scripts and pipes', text: 'TSV, JSON and exit codes for jq, awk, fzf and your status bar.', link: '/terminal/scripting' },
+]" />
+
 ## Plugins
 
 <DocLinks :items="[

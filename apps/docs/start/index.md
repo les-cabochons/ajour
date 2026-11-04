@@ -57,4 +57,5 @@ See [Commit your week](/time/commit).
 
 - Plan your work in the [Backlog](/backlog/), and start entries from backlog items.
 - Connect [Azure DevOps](/plugins/azure-devops), [Jira](/plugins/jira) or [GitHub](/plugins/github) to bring your work items and pull requests into Ajour.
+- Track time from a terminal with the [`ajour` command](/terminal/).
 - Learn the [keyboard shortcuts](/start/shortcuts). Press <kbd>?</kbd> in the app to see them.
