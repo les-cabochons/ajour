@@ -1226,7 +1226,7 @@ Feature: Backlog list and board views
 
   Scenario: Start entry on the item page offers New entry… in its menu
     When I open the Backlog parent page
-    Then the item page's top bar has Start entry, Snooze and Settle and no New entry button
+    Then the item page's actions have Start entry, Snooze and Settle and no New entry button
     When I open the other ways to log time
     Then the menu says Start entry starts the clock and New entry… logs time without it
     When I choose New entry… in that menu

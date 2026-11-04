@@ -1356,7 +1356,8 @@
   }
 
   .commit-change.is-deleted .commit-change-work,
-  .commit-change.is-deleted .commit-change-hours {
+  .commit-change.is-deleted .commit-change-hours,
+  .commit-change.is-deleted .commit-change-note {
     color: var(--text-secondary);
     text-decoration: line-through;
   }
@@ -1395,6 +1396,31 @@
   .commit-change-old {
     color: var(--text-secondary);
     text-decoration: line-through;
+  }
+
+  /* The note names the work, so it leads at 13px, and the project and task
+     it commits as follow at 12px (council round 3). Without a note, the
+     project and task lead and "No note" follows. */
+  .commit-change:not(.has-no-note) .commit-change-note {
+    grid-row: 1;
+    grid-column: 4;
+  }
+
+  .commit-change:not(.has-no-note) .commit-change-hours {
+    grid-row: 1;
+    grid-column: 5;
+  }
+
+  .commit-change:not(.has-no-note) .commit-change-work {
+    grid-row: 2;
+    grid-column: 4 / 6;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+  }
+
+  .commit-change.has-no-note .commit-change-note {
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
   }
 }
 
@@ -1469,6 +1495,39 @@
   }
 
   .time-entry-note::before {
+    content: "· ";
+    color: var(--text-tertiary);
+  }
+
+  /* An entry with a task and a note leads with the note, which tells entries
+     of one task apart; the project and task follow on line 2 (council
+     round 3). */
+  .time-entry-main:has(.time-entry-task):has(.time-entry-note)
+    .time-entry-note {
+    grid-row: 1;
+    grid-column: 1 / -1;
+    padding-right: 7.5rem;
+    font-size: var(--text-sm);
+    font-weight: 500;
+  }
+
+  .time-entry-main:has(.time-entry-task):has(.time-entry-note)
+    .time-entry-note::before {
+    content: none;
+  }
+
+  .time-entry-main:has(.time-entry-task):has(.time-entry-note)
+    .time-entry-task {
+    grid-row: 2;
+    grid-column: 3;
+    padding-right: 0.75rem;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    font-weight: 400;
+  }
+
+  .time-entry-main:has(.time-entry-task):has(.time-entry-note)
+    .time-entry-task::before {
     content: "· ";
     color: var(--text-tertiary);
   }

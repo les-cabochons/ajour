@@ -131,10 +131,10 @@ Given("I have a writable synced parent Settle fixture", async ({ page }) => {
     await getPluginsOverview();
   });
 });
-/** The item page's Settle button sits in the top bar, beside its breadcrumb. */
+/** The item page's Settle button sits beside its title. */
 async function clickSettleParentSettle(page: Page) {
   await page
-    .locator(".ajour-page-header-slot")
+    .getByRole("group", { name: "Item actions" })
     .getByRole("button", { name: "Settle", exact: true })
     .click();
 }

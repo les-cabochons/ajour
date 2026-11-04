@@ -60,6 +60,8 @@ interface ChangeSide {
   note: string;
 }
 
+const NO_NOTE = "No note";
+
 function describeSide(
   projects: readonly LocalProject[],
   taskPropertyPlugins: readonly TaskPropertyPlugin[],
@@ -84,7 +86,7 @@ function describeSide(
         ]
       : [],
     hours: formatClockDuration(values.durationMs),
-    note: values.note?.trim() || "No note",
+    note: values.note?.trim() || NO_NOTE,
   };
 }
 
@@ -159,6 +161,8 @@ function CommitChangeRow({
         "commit-change",
         `is-${change.kind}`,
         (!checked || waiting) && "is-excluded",
+        // The note names the work, so it leads; without one, the task does.
+        (after?.note ?? before?.note) === NO_NOTE && "has-no-note",
       )}
     >
       {/* A disabled checkbox takes no focus, so the wrapper says why. */}

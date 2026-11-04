@@ -495,7 +495,8 @@ function GlobalTimerBar({
           </TooltipButton>
           {currentTimer ? (
             <TooltipButton
-              className="quick-timer-group-button"
+              // Stop is the strongest control while an entry runs.
+              className="quick-timer-group-button quick-timer-group-button-stop"
               onClick={() => localStore.saveTimer(currentTimer._id)}
               label="Stop"
               shortcut="entry.stop-or-start"

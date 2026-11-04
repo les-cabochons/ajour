@@ -1507,6 +1507,11 @@
     color: var(--text);
   }
 
+  /* While an entry runs, Stop is the titlebar's strongest control. */
+  .quick-timer-group-button-stop {
+    color: var(--text);
+  }
+
   .quick-timer-group-button-play:hover {
     background: var(--success-bg);
     color: var(--success);

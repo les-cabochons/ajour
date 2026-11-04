@@ -424,25 +424,9 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
             })
           }
         >
-          <PageHeader
-            breadcrumb={breadcrumb}
-            backLink={backLink}
-            actions={
-              <>
-                {headerButtons}
-                {!readOnly && (item.status === "settled" || isSnoozed) ? (
-                  <Button
-                    variant="ghost"
-                    onClick={(event) => openNewEntry(event.currentTarget)}
-                  >
-                    <AddIcon data-icon="inline-start" /> New entry
-                  </Button>
-                ) : null}
-              </>
-            }
-          />
+          <PageHeader breadcrumb={breadcrumb} backLink={backLink} />
 
-          <header className="flex min-w-0 items-start gap-3">
+          <header className="backlog-item-page-header">
             <WorkItemIcon
               icon={resolveWorkItemIcon(item, iconData)}
               className="mt-1.5"
@@ -514,6 +498,23 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                   </Link>
                 ) : null}
               </div>
+            </div>
+            {/* The item's actions sit beside its title, the content they act
+                on, as on every page that edits in place (council round 3). */}
+            <div
+              role="group"
+              aria-label="Item actions"
+              className="backlog-item-page-actions"
+            >
+              {headerButtons}
+              {!readOnly && (item.status === "settled" || isSnoozed) ? (
+                <Button
+                  variant="ghost"
+                  onClick={(event) => openNewEntry(event.currentTarget)}
+                >
+                  <AddIcon data-icon="inline-start" /> New entry
+                </Button>
+              ) : null}
             </div>
           </header>
 

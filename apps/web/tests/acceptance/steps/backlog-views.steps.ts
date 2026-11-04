@@ -677,10 +677,10 @@ async function inspectBacklogStart(
           .getByRole("button", { name: "Open page", exact: true })
           .click();
       }
-      // The item page's actions sit in the top bar, beside its breadcrumb.
+      // The item page's actions sit beside its title.
       // It has no "…" menu, so its Start entry or Stop button is the check.
       await expect(
-        page.locator(".ajour-page-header-slot").getByRole("button", {
+        page.getByRole("group", { name: "Item actions" }).getByRole("button", {
           name: running ? "Stop" : "Start entry",
           exact: true,
         }),
@@ -2255,9 +2255,9 @@ Then(
   },
 );
 Then(
-  "the item page's top bar has Start entry, Snooze and Settle and no New entry button",
+  "the item page's actions have Start entry, Snooze and Settle and no New entry button",
   async ({ page }) => {
-    const bar = page.locator(".ajour-page-header-slot");
+    const bar = page.getByRole("group", { name: "Item actions" });
     for (const name of ["Start entry", "Snooze", "Settle"]) {
       await expect(
         bar.getByRole("button", { name, exact: true }),
@@ -2270,7 +2270,7 @@ Then(
 );
 When("I open the other ways to log time", async ({ page }) => {
   await page
-    .locator(".ajour-page-header-slot")
+    .getByRole("group", { name: "Item actions" })
     .getByRole("button", { name: "Other ways to log time" })
     .click();
 });
@@ -2409,7 +2409,7 @@ Then(
   async ({ page }) => {
     await expect(
       page
-        .locator(".ajour-page-header-slot")
+        .getByRole("group", { name: "Item actions" })
         .getByRole("button", { name: "Restore", exact: true }),
     ).toBeVisible();
     const { workItems } = await readBacklogState(page);
