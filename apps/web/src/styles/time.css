@@ -1358,12 +1358,16 @@
     row-gap: 1px;
     height: 52px;
     padding-left: 0.75rem;
+    /* Line 2 runs on under the trailing cell, which only uses line 1. */
+    margin-right: -7.5rem;
   }
 
   .time-entry-task {
     grid-row: 1;
     grid-column: 1 / -1;
     min-width: 0;
+    /* Line 1 stops before Continue or Stop and the duration. */
+    padding-right: 7.5rem;
     overflow: hidden;
     text-overflow: ellipsis;
   }
@@ -1374,29 +1378,51 @@
     align-self: center;
   }
 
+  /* A long project name gives way before the note does. */
   .time-entry-project {
     grid-row: 2;
     grid-column: 2;
     min-width: 0;
+    max-width: 9rem;
+    overflow: hidden;
     font-size: var(--text-xs);
-  }
-
-  .time-entry-project::after {
-    content: "·";
-    margin: 0 0.125rem 0 0.375rem;
-    color: var(--text-tertiary);
-  }
-
-  /* Without a note, line 2 is the project alone. */
-  .time-entry-main:not(:has(.time-entry-note)) .time-entry-project::after {
-    content: none;
+    text-overflow: ellipsis;
   }
 
   .time-entry-note {
     grid-row: 2;
     grid-column: 3;
     margin-left: 0;
+    padding-right: 0.75rem;
     font-size: var(--text-xs);
+  }
+
+  .time-entry-note::before {
+    content: "· ";
+    color: var(--text-tertiary);
+  }
+
+  /* An entry without a task puts its project on line 1 and its note,
+     when it has one, alone on line 2. */
+  .time-entry-main:not(:has(.time-entry-task)) .time-entry-dot,
+  .time-entry-main:not(:has(.time-entry-task)) .time-entry-project {
+    grid-row: 1;
+  }
+
+  .time-entry-main:not(:has(.time-entry-task)) .time-entry-project {
+    max-width: none;
+    padding-right: 7.5rem;
+    color: var(--text);
+    font-size: var(--text-sm);
+    font-weight: 500;
+  }
+
+  .time-entry-main:not(:has(.time-entry-task)) .time-entry-note {
+    grid-column: 1 / -1;
+  }
+
+  .time-entry-main:not(:has(.time-entry-task)) .time-entry-note::before {
+    content: none;
   }
 
   /* Continue or Stop and the duration sit on the task's line. */
