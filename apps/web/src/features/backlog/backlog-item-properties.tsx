@@ -20,9 +20,9 @@ import {
 import {
   BacklogPriorityPicker,
   BacklogStatePicker,
-  PickerChevron,
   patchBacklogItemWithUndo,
 } from "@/features/backlog/backlog-item-surface";
+import { PickerChevron } from "@/components/picker-chevron";
 import {
   changeSourceStateWithUndo,
   getOtherSourceStates,

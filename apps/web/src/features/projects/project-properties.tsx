@@ -54,6 +54,8 @@ import {
 } from "@/lib/team-sync";
 import { PROJECT_ICON_PRESETS, ProjectIcon } from "@/lib/project-icons";
 import { cn } from "@/lib/utils";
+import { PickerChevron } from "@/components/picker-chevron";
+import { RiPencilLine } from "@remixicon/react";
 
 /*
  * The project page edits in place, like the backlog item page: each field
@@ -64,7 +66,7 @@ import { cn } from "@/lib/utils";
 
 /** The color and icon pickers read as values until hovered, aligned with the text rows. */
 const PICKER_CLASS_NAME =
-  "-ml-[calc(0.625rem+1px)] h-(--control-height) border-transparent bg-transparent shadow-none hover:border-(--field-border) hover:bg-(--field-bg)";
+  "-ml-[calc(0.625rem+1px)] h-(--control-height) w-[calc(100%+0.625rem+1px)] justify-start border-transparent bg-transparent shadow-none hover:border-(--field-border) hover:bg-(--field-bg)";
 
 /** Saves one in-place edit with Undo. Invalid or unchanged edits save nothing. */
 function patchProject(
@@ -149,13 +151,22 @@ function InlineText({
         }
         disabled={readOnly}
         className={cn(
-          "-mx-1 min-w-0 truncate px-1 text-left disabled:cursor-default",
+          "-mx-1 flex w-full min-w-0 items-center gap-1 px-1 text-left disabled:cursor-default",
           !value && "text-muted-foreground",
           targetClassName,
         )}
         onClick={open}
       >
-        {value || defaultValue || placeholder}
+        <span className="min-w-0 truncate">
+          {value || defaultValue || placeholder}
+        </span>
+        {/* A pencil says the value edits in place (council round 10). */}
+        {readOnly ? null : (
+          <RiPencilLine
+            aria-hidden
+            className="ml-auto size-3 shrink-0 text-muted-foreground"
+          />
+        )}
       </button>
     );
   }
@@ -407,6 +418,7 @@ export function ProjectPropertiesCard({
             <ColorField
               label="Project color"
               className={PICKER_CLASS_NAME}
+              trailing={<PickerChevron />}
               value={project.color}
               onChange={(color) =>
                 patchProject(
@@ -446,6 +458,7 @@ export function ProjectPropertiesCard({
                   className="size-4"
                 />
                 {iconLabel}
+                <PickerChevron />
               </PopoverTrigger>
               <PopoverContent align="end" className="w-80">
                 <ProjectIconField

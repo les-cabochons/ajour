@@ -1,10 +1,6 @@
-import {
-  RiArrowDownSLine,
-  RiPlayFill,
-  RiStopFill,
-  RiTimeLine,
-} from "@remixicon/react";
+import { RiPlayFill, RiStopFill, RiTimeLine } from "@remixicon/react";
 import { formatHours } from "@/features/backlog/backlog-estimates";
+import { PickerChevron } from "@/components/picker-chevron";
 import { RunningDot } from "@/components/running-dot";
 import { SyncConflictButton } from "@/features/backlog/sync-conflicts";
 import { openModifiedSourceClick } from "@/lib/source-navigation";
@@ -96,18 +92,6 @@ export function patchBacklogItemWithUndo(
   );
 }
 
-/**
- * The chevron of a property picker, as Project and Task have, so every value
- * that opens a menu says so (council round 9).
- */
-export function PickerChevron() {
-  return (
-    <RiArrowDownSLine
-      aria-hidden
-      className="ml-auto size-4 text-muted-foreground"
-    />
-  );
-}
 export function BacklogStatePicker({
   item,
   state,

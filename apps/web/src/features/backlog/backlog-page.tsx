@@ -546,6 +546,35 @@ export function BacklogPage() {
           `${i.source}:${i.sourceConnectionId}:${i.sourceProjectName}:${i.sourceStatusKey}`,
       ),
   ).size;
+  const syncStatus = (
+    <BacklogRefresh
+      compact={narrow}
+      hasSyncedItems={state.workItems.some((item) => item.source !== "manual")}
+    />
+  );
+  const unmappedLink =
+    unmapped > 0 ? (
+      <Link
+        to="/settings/workflow"
+        className="backlog-unmapped"
+        onClick={async (event) => {
+          if (
+            event.defaultPrevented ||
+            event.button !== 0 ||
+            event.ctrlKey ||
+            event.metaKey ||
+            event.shiftKey ||
+            event.altKey
+          )
+            return;
+          event.preventDefault();
+          if (await leaveDraft()) void navigate({ to: "/settings/workflow" });
+        }}
+      >
+        <RiErrorWarningLine aria-hidden />
+        {unmapped} unmapped source {unmapped === 1 ? "state" : "states"}
+      </Link>
+    ) : null;
   const dragged = state.workItems.find((i) => i._id === drag.drag?.itemId);
   return (
     <div
@@ -555,13 +584,19 @@ export function BacklogPage() {
       )}
     >
       <div className="backlog-page-main backlog-workspace-main">
-        {/* The narrow view has no top-bar slot: Display joins Filter in one
-            toolbar row instead of a row of its own. */}
+        {/* Desktop: Filter, the sync status and the unmapped-states link sit
+            in the top bar with the page's other actions, and the filter row
+            shows only while filters are on (council round 10). The narrow
+            view has no top-bar slot: Display joins Filter in one toolbar row
+            over a status line. */}
         {narrow ? null : (
           <PageHeader
             title="Backlog"
             actions={
               <>
+                {syncStatus}
+                {unmappedLink}
+                <BacklogFilters state={state} view={view} part="button" />
                 <BacklogLayoutToggle view={view} />
                 <BacklogDisplay
                   view={view}
@@ -572,48 +607,25 @@ export function BacklogPage() {
             }
           />
         )}
-        <div className="backlog-workspace-filterbar">
-          <BacklogFilters state={state} view={view} />
-          {narrow ? (
+        {narrow ? (
+          <div className="backlog-workspace-filterbar">
+            <BacklogFilters state={state} view={view} />
             <BacklogDisplay
               view={view}
               ordering={state.backlogSortMode}
               narrow={narrow}
               className="ml-auto"
             />
-          ) : null}
-          <div className="backlog-workspace-status">
-            <BacklogRefresh
-              compact={narrow}
-              hasSyncedItems={state.workItems.some(
-                (item) => item.source !== "manual",
-              )}
-            />
-            {unmapped > 0 && (
-              <Link
-                to="/settings/workflow"
-                className="backlog-unmapped"
-                onClick={async (event) => {
-                  if (
-                    event.defaultPrevented ||
-                    event.button !== 0 ||
-                    event.ctrlKey ||
-                    event.metaKey ||
-                    event.shiftKey ||
-                    event.altKey
-                  )
-                    return;
-                  event.preventDefault();
-                  if (await leaveDraft())
-                    void navigate({ to: "/settings/workflow" });
-                }}
-              >
-                <RiErrorWarningLine aria-hidden />
-                {unmapped} unmapped source {unmapped === 1 ? "state" : "states"}
-              </Link>
-            )}
+            <div className="backlog-workspace-status">
+              {syncStatus}
+              {unmappedLink}
+            </div>
           </div>
-        </div>
+        ) : view.filters.length > 0 ? (
+          <div className="backlog-workspace-filterbar">
+            <BacklogFilters state={state} view={view} part="chips" />
+          </div>
+        ) : null}
         <div
           className={cn("backlog-workspace-scroll", board && "is-board")}
           data-focus-scope

@@ -30,22 +30,18 @@ import { getThemeModeLabel, useResolvedTheme } from "@/lib/use-theme";
 const THEME_OPTIONS: Array<{
   value: ThemeMode;
   icon: typeof Sun;
-  description: string;
 }> = [
   {
     value: "system",
     icon: Monitor,
-    description: "Follows your operating system preference",
   },
   {
     value: "light",
     icon: Sun,
-    description: "Always use light appearance",
   },
   {
     value: "dark",
     icon: Moon,
-    description: "Always use dark appearance",
   },
 ];
 
@@ -114,11 +110,10 @@ export function SettingsGeneralPage() {
     // Labels and controls within one 672px measure (council round 6).
     <div className="settings-sections settings-measure">
       <section className="settings-section">
+        {/* The heading and the control say it all: no introduction, and a
+            description only where it adds the resolved mode (council round
+            10). */}
         <h2 className="settings-section-title">Appearance</h2>
-        <p className="settings-section-desc">
-          Customize how the app looks. Choose between light and dark modes, or
-          let it follow your system settings.
-        </p>
 
         <AppPanel>
           <SettingRow
@@ -126,9 +121,7 @@ export function SettingsGeneralPage() {
             description={
               preferences.themeMode === "system"
                 ? `Currently using ${resolvedTheme} mode based on system preference.`
-                : THEME_OPTIONS.find(
-                    (option) => option.value === preferences.themeMode,
-                  )?.description
+                : undefined
             }
           >
             <ToggleGroup
@@ -179,7 +172,7 @@ export function SettingsGeneralPage() {
           </SettingRow>
           <SettingRow
             label="Density"
-            description="Comfortable rows show the project and remaining estimate. Compact rows are one line, in a narrower sidebar."
+            description="Comfortable shows three lines. Compact shows one line in a narrower sidebar."
           >
             <ToggleGroup
               aria-label="Sidebar density"

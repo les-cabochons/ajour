@@ -729,15 +729,16 @@ export function CommitPage({
         {!lockedWeek && changes.length > 0 ? (
           // The two buttons differ in what they end: say so with the changes.
           <p className="commit-actions-caption">
-            Mark as committed records the checked changes as sent. Submit week
-            locks the week once it is in your timesheet.
+            Mark as committed records checked changes as sent. Submit week locks
+            the week.
           </p>
         ) : null}
         {!lockedWeek && manualSubmitReason ? (
           // What Submit week waits for, without a hover (council round 6).
           <p className="commit-actions-caption">
-            Submit week waits: {lowerFirst(manualSubmitReason)}
-            {/[.!?]$/.test(manualSubmitReason) ? "" : "."}
+            {manualSubmitReason === "Commit your changes first"
+              ? "Commit changes before submitting."
+              : `Submit week waits: ${lowerFirst(manualSubmitReason)}${/[.!?]$/.test(manualSubmitReason) ? "" : "."}`}
           </p>
         ) : null}
         {changesOpen ? (

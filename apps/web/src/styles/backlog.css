@@ -273,8 +273,11 @@
     white-space: nowrap;
   }
 
+  /* The parent takes the room the row has, and gives way first when it
+     runs out, so the item's own title keeps its width (council round 10). */
   .backlog-item-parent {
-    max-width: 160px;
+    flex: 0 1000 auto;
+    min-width: 0;
     overflow: hidden;
     color: var(--text-secondary);
     font-size: var(--text-xs);
