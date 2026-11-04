@@ -3409,3 +3409,115 @@ Then(
     await expect(subitems).not.toContainText("Settle rules");
   },
 );
+
+When("I open Monday's Day list in a narrow window", async ({ page }) => {
+  await page.setViewportSize({ width: 420, height: 860 });
+  await page.goto("/time/2026-10-05");
+});
+
+/** The task and note boxes of a Day row, found by its note. */
+async function entryLineBoxes(page: Page, note: string) {
+  const row = page.getByRole("row", { name: new RegExp(note) });
+  await expect(row.locator(".time-entry-note")).toHaveText(note);
+  const task = await row.locator(".time-entry-task").boundingBox();
+  const noteBox = await row.locator(".time-entry-note").boundingBox();
+  if (!task || !noteBox) throw new Error(`The ${note} entry is not rendered`);
+  return { task, note: noteBox };
+}
+
+Then(
+  "the {string} entry shows its note on a second line under its task",
+  async ({ page }, note: string) => {
+    const boxes = await entryLineBoxes(page, note);
+    expect(boxes.note.y).toBeGreaterThanOrEqual(
+      boxes.task.y + boxes.task.height - 1,
+    );
+  },
+);
+
+Then(
+  "the {string} entry shows its task and note on one line",
+  async ({ page }, note: string) => {
+    await expect(async () => {
+      const boxes = await entryLineBoxes(page, note);
+      const middle = (box: { y: number; height: number }) =>
+        box.y + box.height / 2;
+      expect(Math.abs(middle(boxes.note) - middle(boxes.task))).toBeLessThan(4);
+    }).toPass();
+  },
+);
+
+const LONG_NOTE =
+  "API pagination: cursor tokens, the retry path and the timeout budget";
+
+Given(
+  "Monday's {string} entry has a long note and Monday's {string} entry has no task",
+  async ({ page }, longNote: string, taskless: string) => {
+    // Runs after the fixture's own init script, on every load.
+    await page.addInitScript(
+      ({ longNote, taskless, note }) => {
+        const key = "ajour.local-state.v2";
+        const state = JSON.parse(localStorage.getItem(key)!);
+        for (const entry of state.timesheetEntries) {
+          if (entry.localDate !== "2026-10-05") continue;
+          if (entry.note === longNote) entry.note = note;
+          if (entry.note === taskless) entry.taskId = undefined;
+        }
+        localStorage.setItem(key, JSON.stringify(state));
+      },
+      { longNote, taskless, note: LONG_NOTE },
+    );
+  },
+);
+
+Then("the long note runs on under the duration", async ({ page }) => {
+  const row = page.getByRole("row", { name: /API pagination/ });
+  const note = await row.locator(".time-entry-note").boundingBox();
+  const trailing = await row.locator(".time-entry-trailing").boundingBox();
+  const rowBox = await row.boundingBox();
+  if (!note || !trailing || !rowBox) throw new Error("The row is not rendered");
+  expect(note.x + note.width).toBeGreaterThan(trailing.x);
+  expect(note.x + note.width).toBeLessThanOrEqual(rowBox.x + rowBox.width);
+});
+
+Then(
+  "the entry without a task shows its project on the first line",
+  async ({ page }) => {
+    const row = page.getByRole("row", { name: /Login form/ });
+    await expect(row.locator(".time-entry-task")).toHaveCount(0);
+    const project = await row.locator(".time-entry-project").boundingBox();
+    const note = await row.locator(".time-entry-note").boundingBox();
+    if (!project || !note) throw new Error("The row is not rendered");
+    expect(note.y).toBeGreaterThanOrEqual(project.y + project.height - 1);
+  },
+);
+
+When("I start dragging the long-note entry", async ({ page }) => {
+  const row = page.getByRole("row", { name: /API pagination/ });
+  const box = await row.boundingBox();
+  if (!box) throw new Error("The row is not rendered");
+  await page.mouse.move(box.x + 60, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 60, box.y + box.height / 2 + 30, { steps: 6 });
+  await expect(page.locator(".time-entry-drag-preview")).toBeVisible();
+});
+
+Then(
+  "the drag preview's duration stays clear of the note",
+  async ({ page }) => {
+    const preview = page.locator(".time-entry-drag-preview");
+    const duration = await preview
+      .locator(".time-entry-trailing")
+      .boundingBox();
+    const note = await preview.locator(".time-entry-note").boundingBox();
+    if (!duration || !note) throw new Error("The preview is not rendered");
+    const overlaps =
+      duration.x < note.x + note.width &&
+      note.x < duration.x + duration.width &&
+      duration.y < note.y + note.height &&
+      note.y < duration.y + duration.height;
+    expect(overlaps).toBe(false);
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+  },
+);
