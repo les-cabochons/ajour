@@ -148,6 +148,7 @@ async function mainProcess({
       device: { platform: "win32" },
     },
     mainWindow: activeWindow,
+    tray: { remove: () => {} },
     refusedSender,
     ipc: createIpcListeners(
       {

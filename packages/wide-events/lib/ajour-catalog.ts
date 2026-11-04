@@ -1103,6 +1103,7 @@ export const catalog = defineCatalog({
           trigger: operational<
             | "all_windows_closed"
             | "menu"
+            | "tray"
             | "os"
             | "update_install"
             | "recovery_dialog"
@@ -1121,6 +1122,8 @@ export const catalog = defineCatalog({
       fields: {
         second_launch: {
           had_window: operational<boolean>(),
+          /** The window was hidden, closed while Ajour kept running. */
+          shown: operational<boolean>(),
           restored: operational<boolean>(),
           focused: operational<boolean>(),
         },
@@ -1666,6 +1669,36 @@ export const catalog = defineCatalog({
       fields: {
         ipc: ipcFields,
         theme: { value: operational<"system" | "dark" | "light">() },
+      },
+    },
+    /** Whether closing the window keeps Ajour running (#534). */
+    "window.get_settings": {
+      kinds: ["ipc"],
+      reasons: ["foreign_sender"],
+      fields: {
+        ipc: ipcFields,
+        keep_running: { enabled: operational<boolean>() },
+      },
+    },
+    /** Saving whether closing the window keeps Ajour running. */
+    "window.configure": {
+      kinds: ["command", "ipc"],
+      reasons: ["foreign_sender", "invalid_settings"],
+      fields: {
+        ipc: ipcFields,
+        keep_running: {
+          enabled_before: operational<boolean>(),
+          enabled_after: operational<boolean>(),
+        },
+      },
+    },
+    /** The running entry for the tray icon: whether one runs, never its title. */
+    "tray.set_state": {
+      kinds: ["ipc"],
+      reasons: ["foreign_sender"],
+      fields: {
+        ipc: ipcFields,
+        tray: { running: operational<boolean>() },
       },
     },
     "edit.run": {

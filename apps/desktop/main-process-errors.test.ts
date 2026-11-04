@@ -39,6 +39,10 @@ const {
 } = require("./electron/context-menu.cjs");
 const { apiStopOf, triggerOf } = require("./electron/main-events.cjs");
 const { watchWindow } = require("./electron/window-recovery.cjs");
+const {
+  closeActionOf,
+  firstCloseNotice,
+} = require("./electron/keep-running.cjs");
 
 const source = await readFile(
   new URL("./electron/main.cjs", import.meta.url),
@@ -116,6 +120,7 @@ describe("quitting and installing an update", () => {
     const closePluginRenderers = vi.fn(async () => {
       order.push("plugin renderers closed");
     });
+    const tray = { remove: vi.fn(() => order.push("tray removed")) };
     app.quit.mockImplementation(() => order.push("quit"));
     const localLogs = {
       flush: vi.fn(flushLogs),
@@ -140,6 +145,7 @@ describe("quitting and installing an update", () => {
       automaticUpdateController,
       stopInternalAppApi,
       stopWithin,
+      tray,
     });
     run(
       context,
@@ -165,6 +171,7 @@ describe("quitting and installing an update", () => {
       closePluginRenderers,
       localLogs,
       order,
+      tray,
       emit: (name: string) => handlers.get(name)?.({ preventDefault: vi.fn() }),
       quit() {
         const event = { preventDefault: vi.fn() };
@@ -430,6 +437,19 @@ describe("quitting and installing an update", () => {
   });
 
   // The install's event stays open until the app quits for the installer.
+  // Windows leaves a dead tray icon behind until the pointer passes over it.
+  it("takes the tray icon down when the process quits or exits", async () => {
+    const quits = quitRuntime(async () => {});
+    quits.emit("will-quit");
+    expect(quits.tray.remove).toHaveBeenCalledOnce();
+
+    const exits = quitRuntime(hangs);
+    exits.quit();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(exits.app.exit).toHaveBeenCalledWith(0);
+    expect(exits.tray.remove).toHaveBeenCalledOnce();
+  });
+
   it("tells the update controller when the app quits", () => {
     const runtime = quitRuntime(async () => {});
 
@@ -825,10 +845,114 @@ describe("IPC listeners", () => {
   );
 });
 
+describe("keeping Ajour running", () => {
+  function settingsRuntime({
+    save = (_file: string, value: unknown) => value,
+  }: { save?: (file: string, value: unknown) => unknown } = {}) {
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    const ipcMain = Object.assign(new EventEmitter(), {
+      handle: (channel: string, handler: (...args: unknown[]) => unknown) =>
+        handlers.set(channel, handler),
+    });
+    const { events, recorded } = recordingEvents();
+    const tray = { show: vi.fn(), remove: vi.fn() };
+    const context = vm.createContext({
+      events,
+      refusedSender,
+      ipc: createIpcListeners(ipcMain, {
+        events,
+        windowSession: noWindowSession,
+      }),
+      mainWindow: { webContents: "active-window" },
+      windowSettings: { keep_running: true, close_notice_shown: true },
+      windowSettingsPath: "window-settings.json",
+      saveWindowSettings: save,
+      tray,
+    });
+    run(
+      context,
+      "function updateWindowSettings(",
+      'ipc.handle("ajour:get-window-settings"',
+      'ipc.handle("ajour:configure-window-settings"',
+      "function assertActiveDesktopWindow(",
+    );
+    return {
+      context,
+      recorded,
+      tray,
+      configure: (changes: unknown) =>
+        handlers.get("ajour:configure-window-settings")!(
+          { sender: "active-window" },
+          changes,
+        ) as Promise<{ keepRunning: boolean }>,
+      read: () =>
+        handlers.get("ajour:get-window-settings")!({
+          sender: "active-window",
+        }) as Promise<{ keepRunning: boolean }>,
+    };
+  }
+
+  it("saves the setting and removes the tray icon when it is turned off", async () => {
+    const saved: unknown[] = [];
+    const runtime = settingsRuntime({
+      save: (_file, value) => {
+        saved.push(value);
+        return value;
+      },
+    });
+
+    await expect(runtime.configure({ keepRunning: false })).resolves.toEqual({
+      keepRunning: false,
+    });
+
+    expect(saved).toEqual([{ keep_running: false, close_notice_shown: true }]);
+    expect(runtime.tray.remove).toHaveBeenCalledOnce();
+    expect(runtime.recorded.at(-1)).toMatchObject({
+      name: "window.configure",
+      outcome: "ok",
+      keep_running: { enabled_before: true, enabled_after: false },
+    });
+  });
+
+  // The next launch would read the old value from the file.
+  it("refuses a setting it could not save, and keeps the saved one", async () => {
+    const runtime = settingsRuntime({
+      save: () => {
+        throw new Error(
+          "EACCES: permission denied, open 'C:\\Users\\alex\\AppData\\Roaming\\Ajour\\window-settings.json.tmp'",
+        );
+      },
+    });
+
+    await expect(runtime.configure({ keepRunning: false })).rejects.toThrow(
+      "Ajour could not write to its data folder.",
+    );
+
+    await expect(runtime.read()).resolves.toEqual({ keepRunning: true });
+    expect(runtime.tray.remove).not.toHaveBeenCalled();
+    expect(runtime.tray.show).not.toHaveBeenCalled();
+    const configured = runtime.recorded.find(
+      (event) => event.name === "window.configure",
+    );
+    expect(configured).toMatchObject({
+      outcome: "error",
+      keep_running: { enabled_before: true, enabled_after: true },
+      error: { type: "Error" },
+    });
+    expect(configured!.error!.message).not.toContain("alex");
+  });
+});
+
 describe("the main window", () => {
   function windowRuntime({
     loadURL = async (_url: string) => {},
-  }: { loadURL?: (url: string) => Promise<void> } = {}) {
+    windowSettings = { keep_running: true, close_notice_shown: false },
+    platform = "win32",
+  }: {
+    loadURL?: (url: string) => Promise<void>;
+    windowSettings?: { keep_running: boolean; close_notice_shown: boolean };
+    platform?: string;
+  } = {}) {
     const windows: FakeBrowserWindow[] = [];
     class FakeBrowserWindow extends EventEmitter {
       webContents = Object.assign(new EventEmitter(), {
@@ -844,6 +968,23 @@ describe("the main window", () => {
       });
       loadURL = vi.fn(loadURL);
       isDestroyed = () => false;
+      visible = true;
+      fullScreen = false;
+      isVisible = () => this.visible;
+      isMinimized = () => false;
+      isFullScreen = () => this.fullScreen;
+      hide = vi.fn(() => {
+        this.visible = false;
+      });
+      show = vi.fn(() => {
+        this.visible = true;
+      });
+      focus = vi.fn();
+      restore = vi.fn();
+      setFullScreen = vi.fn((value: boolean) => {
+        this.fullScreen = value;
+        if (!value) queueMicrotask(() => this.emit("leave-full-screen"));
+      });
       constructor() {
         super();
         windows.push(this);
@@ -856,9 +997,30 @@ describe("the main window", () => {
     };
     const dialog = { showMessageBox: vi.fn(() => new Promise(() => {})) };
     const { events, recorded } = recordingEvents();
+    const notices: { title: string; body: string }[] = [];
+    class FakeNotification {
+      static isSupported = () => true;
+      constructor(private options: { title: string; body: string }) {}
+      show() {
+        notices.push(this.options);
+      }
+    }
+    const savedSettings: unknown[] = [];
+    const app = { quit: vi.fn() };
     const context = vm.createContext({
       BrowserWindow: FakeBrowserWindow,
-      app: { quit: vi.fn() },
+      app,
+      Notification: FakeNotification,
+      closeActionOf,
+      firstCloseNotice,
+      windowSettings: { ...windowSettings },
+      windowSettingsPath: "window-settings.json",
+      saveWindowSettings: (_file: string, value: unknown) => {
+        savedSettings.push(value);
+        return value;
+      },
+      sessionEnding: false,
+      quitAfterStartupFailure: vi.fn(),
       events,
       quitTrigger: "other",
       gracefulQuitStarted: false,
@@ -871,7 +1033,7 @@ describe("the main window", () => {
       mainWindow: null,
       nativeTheme: { shouldUseDarkColors: false },
       preloadPath: "preload.cjs",
-      process: { platform: "win32" },
+      process: { platform },
       resolveRendererUrl: async () => "app://local/",
       shell,
       showEditContextMenu: vi.fn(),
@@ -884,12 +1046,26 @@ describe("the main window", () => {
       "function startQuit(",
       "let systemQuitRecorded",
       "function recordSessionEnd(",
+      "function updateWindowSettings(",
+      "function runTrayAction(",
+      "function showMainWindow(",
+      "function hideMainWindowOnClose(",
       "async function createMainWindow(",
     );
     return {
       shell,
       dialog,
       recorded,
+      app,
+      context,
+      notices,
+      savedSettings,
+      /** The window's close button: whether the close went ahead. */
+      close() {
+        const event = { preventDefault: vi.fn() };
+        windows[0]!.emit("close", event);
+        return !event.preventDefault.mock.calls.length;
+      },
       createMainWindow: () => context.createMainWindow() as Promise<void>,
       get window() {
         return windows[0]!;
@@ -901,6 +1077,140 @@ describe("the main window", () => {
       },
     };
   }
+
+  it("hides the window on close while Ajour keeps running", async () => {
+    const runtime = windowRuntime();
+    await runtime.createMainWindow();
+
+    expect(runtime.close()).toBe(false);
+
+    expect(runtime.window.hide).toHaveBeenCalledOnce();
+    expect(runtime.app.quit).not.toHaveBeenCalled();
+  });
+
+  it("says once, at the first close, where to quit from", async () => {
+    const runtime = windowRuntime();
+    await runtime.createMainWindow();
+
+    runtime.close();
+    runtime.window.show();
+    runtime.close();
+
+    expect(runtime.notices).toEqual([
+      {
+        title: "Ajour",
+        body: "Ajour is still running. Quit it from the tray icon.",
+      },
+    ]);
+    expect(runtime.savedSettings).toEqual([
+      { keep_running: true, close_notice_shown: true },
+    ]);
+  });
+
+  it("shows no notice when it has shown in an earlier launch", async () => {
+    const runtime = windowRuntime({
+      windowSettings: { keep_running: true, close_notice_shown: true },
+    });
+    await runtime.createMainWindow();
+
+    runtime.close();
+
+    expect(runtime.notices).toEqual([]);
+  });
+
+  it("closes the window when the setting is off", async () => {
+    const runtime = windowRuntime({
+      windowSettings: { keep_running: false, close_notice_shown: false },
+    });
+    await runtime.createMainWindow();
+
+    expect(runtime.close()).toBe(true);
+    expect(runtime.window.hide).not.toHaveBeenCalled();
+    expect(runtime.notices).toEqual([]);
+  });
+
+  it("closes the window while Ajour quits, or when Windows ends the session", async () => {
+    const quitting = windowRuntime();
+    await quitting.createMainWindow();
+    quitting.context.gracefulQuitStarted = true;
+    expect(quitting.close()).toBe(true);
+
+    const ending = windowRuntime();
+    await ending.createMainWindow();
+    ending.window.emit("query-session-end", {});
+    expect(ending.close()).toBe(true);
+  });
+
+  // macOS leaves an empty full screen space when a full screen window hides.
+  it("leaves full screen before it hides the window", async () => {
+    const runtime = windowRuntime({ platform: "darwin" });
+    await runtime.createMainWindow();
+    runtime.window.fullScreen = true;
+
+    runtime.close();
+    expect(runtime.window.hide).not.toHaveBeenCalled();
+    await flush();
+
+    expect(runtime.window.setFullScreen).toHaveBeenCalledWith(false);
+    expect(runtime.window.hide).toHaveBeenCalledOnce();
+    expect(runtime.notices[0]?.body).toBe(
+      "Ajour is still running. Quit it from the menu bar.",
+    );
+  });
+
+  it("opens the hidden window from the tray", async () => {
+    const runtime = windowRuntime();
+    await runtime.createMainWindow();
+    runtime.close();
+
+    runtime.context.runTrayAction("open", null);
+
+    expect(runtime.window.show).toHaveBeenCalledOnce();
+    expect(runtime.window.focus).toHaveBeenCalledOnce();
+  });
+
+  // The window stops the entry with its own command, so Undo works as usual.
+  it("asks the window to stop the entry the tray showed", async () => {
+    const runtime = windowRuntime();
+    await runtime.createMainWindow();
+    const sent: unknown[][] = [];
+    Object.assign(runtime.window.webContents, {
+      send: (...args: unknown[]) => sent.push(args),
+    });
+
+    runtime.context.runTrayAction("stop", { timerId: "timer-1" });
+    runtime.context.runTrayAction("stop", null);
+
+    expect(sent).toEqual([
+      ["ajour:tray-action", { action: "stop", timerId: "timer-1" }],
+    ]);
+  });
+
+  it("names a quit from the tray as the tray's", async () => {
+    const runtime = windowRuntime();
+    await runtime.createMainWindow();
+
+    runtime.context.runTrayAction("quit", null);
+
+    expect(runtime.context.quitTrigger).toBe("tray");
+    expect(runtime.app.quit).toHaveBeenCalledOnce();
+  });
+
+  // At worst the notice shows again at the next launch.
+  it("hides the window and shows the notice once when its flag can't be saved", async () => {
+    const runtime = windowRuntime();
+    await runtime.createMainWindow();
+    runtime.context.saveWindowSettings = () => {
+      throw new Error("EACCES: permission denied");
+    };
+
+    expect(runtime.close()).toBe(false);
+    runtime.window.show();
+    expect(runtime.close()).toBe(false);
+
+    expect(runtime.window.hide).toHaveBeenCalledTimes(2);
+    expect(runtime.notices).toHaveLength(1);
+  });
 
   it("keeps in-app navigation in the window", async () => {
     const runtime = windowRuntime();
@@ -1068,7 +1378,9 @@ describe("startup", () => {
     mainWindow = null as null | Record<string, unknown>,
     loaded = true,
     packaged = true,
+    windowSettings = { keep_running: true, close_notice_shown: false },
   }: {
+    windowSettings?: { keep_running: boolean; close_notice_shown: boolean };
     loaded?: boolean;
     packaged?: boolean;
     createMainWindow?: () => Promise<{ loadMs: number; loadOutcome: string }>;
@@ -1099,6 +1411,7 @@ describe("startup", () => {
     const addWindowApiToken = vi.fn();
     const sweepOrphanedRenderers = vi.fn(async () => ({ ended: 0 }));
     const processRecord = { hold: vi.fn(), release: vi.fn() };
+    const tray = { show: vi.fn(), remove: vi.fn() };
     const context = vm.createContext({
       addWindowApiToken,
       sweepOrphanedRenderers,
@@ -1146,6 +1459,8 @@ describe("startup", () => {
       sendMenuAction: vi.fn(),
       session: { defaultSession },
       windowApiToken: "launch-token",
+      tray,
+      windowSettings,
     });
     run(
       context,
@@ -1171,6 +1486,7 @@ describe("startup", () => {
       context,
       powerMonitor,
       localLogs,
+      tray,
       /** Clicks a menu item of the app menu main.cjs built. */
       clickMenuItem(id: string) {
         menuTemplate
@@ -1347,7 +1663,9 @@ describe("startup", () => {
   it("records a second launch that restored and focused the window", async () => {
     const mainWindow = {
       isMinimized: () => true,
+      isVisible: () => true,
       restore: vi.fn(),
+      show: vi.fn(),
       focus: vi.fn(),
     };
     const runtime = startupRuntime({ mainWindow });
@@ -1358,8 +1676,47 @@ describe("startup", () => {
     expect(runtime.recorded.at(-1)).toMatchObject({
       name: "app.second_launch",
       trigger: "system",
-      second_launch: { had_window: true, restored: true, focused: true },
+      second_launch: {
+        had_window: true,
+        shown: false,
+        restored: true,
+        focused: true,
+      },
     });
+    expect(mainWindow.show).not.toHaveBeenCalled();
+  });
+
+  // Closing the window hid it while Ajour kept running (#534).
+  it("shows a hidden window at a second launch", async () => {
+    const mainWindow = {
+      isMinimized: () => false,
+      isVisible: () => false,
+      restore: vi.fn(),
+      show: vi.fn(),
+      focus: vi.fn(),
+    };
+    const runtime = startupRuntime({ mainWindow });
+    await flush();
+
+    runtime.emit("second-instance");
+
+    expect(mainWindow.show).toHaveBeenCalledOnce();
+    expect(mainWindow.focus).toHaveBeenCalledOnce();
+    expect(runtime.recorded.at(-1)).toMatchObject({
+      name: "app.second_launch",
+      second_launch: { had_window: true, shown: true, restored: false },
+    });
+  });
+
+  it("shows the tray icon once the window opens, while Ajour keeps running", async () => {
+    const keeps = startupRuntime();
+    const quits = startupRuntime({
+      windowSettings: { keep_running: false, close_notice_shown: false },
+    });
+    await flush();
+
+    expect(keeps.tray.show).toHaveBeenCalledOnce();
+    expect(quits.tray.show).not.toHaveBeenCalled();
   });
 
   it("records the version the previous launch ran", async () => {

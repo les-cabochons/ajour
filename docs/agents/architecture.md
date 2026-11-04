@@ -708,6 +708,37 @@ starting the local API or any plugin operation. A second launch should focus
 the existing window and exit so concurrent application versions do not share
 the API port, state file, or installed-plugin directory.
 
+The window owns the local data (localStorage) and answers the MCP data tools
+over the bridge, so closing it must not end it (#534). While "Keep Ajour
+running when the window closes" is on, the default, main turns the window's
+`close` into a hide (`closeActionOf` in `apps/desktop/electron/keep-running.cjs`),
+and the local API, the plugin host and the MCP bridge stay up until Quit. A
+quit, an update install (`gracefulQuitStarted`) or a Windows session end
+(`query-session-end`) lets the close through. A second launch, the Dock and the
+tray show the same window. Main keeps the setting, and whether the first
+close's notice has shown, in `window-settings.json` in user data, since it
+needs them before the window exists; the renderer reads and changes it over
+`ajour:get-window-settings` and `ajour:configure-window-settings`.
+
+The tray icon (`createTrayController`) shows the running entry. The renderer
+sends the entry's timer, title, start and saved time over
+`ajour:set-tray-state` only when they change (`DesktopTrayState` in
+`features/layout/desktop-tray.tsx`, from `getRunningEntryTrayState`); main
+counts the time and moves the tooltip each minute itself, so a hidden page's
+throttled timers never hold it back. The tray's Stop sends
+`ajour:tray-action` with the timer the menu showed, and the renderer runs its
+own `localStore.saveTimer`, never a second stop in main. No event holds the
+title: `tray.set_state` records only whether an entry runs.
+
+`apps/desktop/scripts/check-keep-running.mjs` checks it in the real app on
+Windows and macOS (`.github/workflows/desktop-lifecycle.yml`): an MCP client
+starts and stops an entry while the window is hidden, the window shows it
+when the tray opens it, and the tray's Quit ends every process.
+`apps/desktop/lifecycle-check/main.cjs` starts Ajour's main with the app data
+folder in the check's temp folder. A development build that loads the built
+renderer (`app://local`, no `AJOUR_DESKTOP_RENDERER_URL`) lets that origin call
+the local API, as a release build does.
+
 Release builds flip the Electron fuses decided in #231, through `electronFuses`
 in `apps/desktop/electron-builder.config.cjs`. `NODE_OPTIONS`, `--inspect` and
 the file protocol's extra privileges are off, and the app loads only from

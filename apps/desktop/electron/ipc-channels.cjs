@@ -41,6 +41,14 @@ const IPC_CHANNELS = {
     event: "window.set_theme",
     mode: "message",
   },
+  // Whether closing the window keeps Ajour running (keep-running.cjs).
+  "ajour:get-window-settings": { event: "window.get_settings", mode: "invoke" },
+  "ajour:configure-window-settings": {
+    event: "window.configure",
+    mode: "invoke",
+  },
+  // The running entry for the tray icon, sent when it changes.
+  "ajour:set-tray-state": { event: "tray.set_state", mode: "message" },
   "ajour:check-for-updates": { event: "update.check", mode: "invoke" },
   "ajour:get-update-state": { event: "update.get_state", mode: "invoke" },
   "ajour:update-and-restart": { event: "update.install", mode: "invoke" },

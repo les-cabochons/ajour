@@ -21,6 +21,9 @@ const ANSWERS = {
  * One recovery dialog shows at a time. A newer recovery closes the open one,
  * and an answer from a closed dialog is ignored.
  *
+ * A hidden window, which Ajour keeps loaded after the user closes it, reloads
+ * a crash and stays hidden.
+ *
  * Each load emits `window.load`, each crash `process.gone` and each hang
  * `window.unresponsive`. A unit that leads to a dialog ends with its answer.
  */
@@ -49,7 +52,10 @@ function watchWindow(window, { url, dialog, quit, events, now = Date.now }) {
     const question = { kind, controller: new AbortController() };
     openQuestion = question;
     try {
-      const { response } = await dialog.showMessageBox(window, {
+      // A hidden window, closed while Ajour keeps running, gets a dialog of
+      // its own: a macOS sheet on a hidden window never shows.
+      const parent = window.isVisible?.() === false ? null : window;
+      const { response } = await dialog.showMessageBox(parent, {
         title: "Ajour",
         buttons,
         defaultId: 0,
