@@ -363,6 +363,82 @@ describe("agent read tools", () => {
   });
 });
 
+describe("the Commit page's lines as a read tool", () => {
+  it("returns the week's lines with the name a mapped task commits as, in the output schema", async () => {
+    listPropertyPlugins.mockResolvedValue({
+      projects: [],
+      tasks: [
+        {
+          pluginId: "workday-agent",
+          capability: {
+            section: "Workday",
+            fields: [
+              { id: "task", label: "Workday task", defaultFrom: "name" },
+            ],
+          },
+        },
+      ],
+    });
+    const { call, localStore, project, task } = await setup();
+    const build = task("Build");
+    localStore.updateProjectTask(project._id, build._id, {
+      pluginProperties: { "workday-agent": { task: "07 Run" } },
+    });
+    for (const note of ["Specs", "Specs", "Review"]) {
+      localStore.saveManualTimeEntry({
+        localDate: "2026-10-13",
+        projectId: project._id,
+        taskId: build._id,
+        durationMs: 30 * 60_000,
+        note,
+      });
+    }
+
+    const result = await call("get_week_lines", { weekOf: "2026-10-15" });
+    expect(result).toMatchObject({
+      ok: true,
+      output: {
+        weekOf: "2026-10-12",
+        groupBy: "day-task",
+        locked: false,
+        sections: [
+          {
+            localDate: "2026-10-13",
+            lines: [
+              {
+                projectName: "Acme",
+                taskName: "07 Run",
+                hours: 1.5,
+                comments: "Specs | Review",
+              },
+            ],
+          },
+        ],
+        notSent: { hours: 0, items: [] },
+        waiting: { hours: 0, tasks: [] },
+        running: null,
+      },
+    });
+
+    const byEntry = await call("get_week_lines", {
+      weekOf: "2026-10-12",
+      groupBy: "day",
+    });
+    expect(
+      byEntry.ok &&
+        (byEntry.output as { sections: { lines: unknown[] }[] }).sections[0]!
+          .lines,
+    ).toHaveLength(3);
+  });
+
+  it("refuses a grouping the Commit page does not offer", async () => {
+    const { call } = await setup();
+    expect(
+      await call("get_week_lines", { weekOf: "2026-10-12", groupBy: "week" }),
+    ).toMatchObject({ ok: false, error: expect.stringContaining("groupBy") });
+  });
+});
+
 describe("agent timer and entry tools", () => {
   it("starts an entry on a task, labels the Undo toast and can be undone", async () => {
     const { call, localStore, project, task, sink } = await setup();

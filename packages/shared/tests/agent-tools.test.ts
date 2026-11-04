@@ -162,6 +162,63 @@ describe("agent tool contracts", () => {
     ).toEqual({ undone: "Deleted 2 entries", undoToken: null });
   });
 
+  it("reads a week's lines grouped by day and task unless asked otherwise", () => {
+    expect(
+      readToolInputSchemas.get_week_lines.parse({ weekOf: "2026-10-14" }),
+    ).toEqual({ weekOf: "2026-10-14", groupBy: "day-task" });
+    expect(
+      readToolInputSchemas.get_week_lines.safeParse({
+        weekOf: "2026-10-14",
+        groupBy: "week",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("gives a week's lines in hours, with the time kept out of them beside them", () => {
+    const output = {
+      weekOf: "2026-10-12",
+      groupBy: "task",
+      locked: true,
+      sections: [
+        {
+          lines: [
+            {
+              projectId: "p1",
+              projectName: "Acme Corporation",
+              projectCode: "ACME-1",
+              taskId: "t1",
+              taskName: "07 Run",
+              hours: 1.5,
+              comments: "Specs | Review",
+              entryIds: ["e1", "e2"],
+            },
+            { hours: 0.25, comments: "", entryIds: ["e3"] },
+          ],
+        },
+      ],
+      notSent: { hours: 1, items: [{ name: "Team lunch", hours: 1 }] },
+      waiting: {
+        hours: 3,
+        tasks: [
+          {
+            projectId: "p1",
+            taskId: "t2",
+            taskName: "Temp migration",
+            hours: 3,
+          },
+        ],
+      },
+      running: { timerId: "t", date: "2026-10-14", countedMinutes: 45 },
+    };
+    expect(dataToolOutputSchemas.get_week_lines.parse(output)).toEqual(output);
+    expect(
+      dataToolOutputSchemas.get_week_lines.safeParse({
+        ...output,
+        sections: [{ lines: [{ hours: "1,50", comments: "", entryIds: [] }] }],
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts a deleted change with committed values only", () => {
     expect(
       dataToolOutputSchemas.get_week_changes.parse({

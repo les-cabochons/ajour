@@ -11,6 +11,7 @@ import {
   NO_PROPERTY_PLUGINS,
   type ProjectPropertyPlugin,
   type PropertyPlugins,
+  type TaskPropertyPlugin,
 } from "@/domain/projects/plugin-properties";
 
 /**
@@ -200,6 +201,30 @@ export function groupSubmitLines({
   });
 }
 
+/**
+ * The Commit page's lines: the week's sent entries, as `listSentEntries`
+ * keeps them, grouped by `groupSubmitLines`. The page and the agents' week
+ * lines both build them here, so they never disagree.
+ */
+export function buildCommitLines({
+  entries,
+  groupBy,
+  projects,
+  weekDates,
+}: {
+  entries: LocalTimesheetEntry[];
+  groupBy: SubmitGroupBy;
+  projects: LocalProject[];
+  weekDates: string[];
+}): SubmitSection[] {
+  return groupSubmitLines({
+    entries: listSentEntries(entries, projects),
+    groupBy,
+    projects,
+    weekDates,
+  });
+}
+
 /** The Names choice that shows Ajour's own project names. */
 export const AJOUR_LINE_NAME_SOURCE = "ajour";
 
@@ -268,6 +293,42 @@ function pluginProjectName(
   return property?.value.trim() || project.name;
 }
 
+/** The name `plugin` maps the line's task to, such as 07 Run, if any. */
+function getLineMappedTaskName(
+  line: SubmitLine,
+  projects: readonly LocalProject[],
+  plugin: TaskPropertyPlugin,
+) {
+  const task = line.taskId
+    ? projects
+        .find((candidate) => candidate._id === line.projectId)
+        ?.tasks.find((candidate) => candidate._id === line.taskId)
+    : undefined;
+  return task && getMappedTaskName(task, plugin);
+}
+
+/**
+ * The name the line's task commits as, for agents and the terminal: the
+ * name the Names choice's plugin maps it to, else the first active task
+ * plugin that maps it, else its own name. Undefined when the line has no
+ * task.
+ */
+export function getLineCommitTaskName(
+  line: SubmitLine,
+  source: string | undefined,
+  projects: readonly LocalProject[],
+  plugins: PropertyPlugins,
+): string | undefined {
+  const chosen = plugins.tasks.find(
+    (candidate) => candidate.pluginId === source,
+  );
+  for (const plugin of chosen ? [chosen, ...plugins.tasks] : plugins.tasks) {
+    const mapped = getLineMappedTaskName(line, projects, plugin);
+    if (mapped) return mapped;
+  }
+  return line.taskName;
+}
+
 /**
  * What a line's project and task button shows ("Project / Task") and copies
  * ("Project Task"), with the project and task named by `source`: a plugin
@@ -291,19 +352,15 @@ export function describeLineNames(
     (candidate) => candidate.pluginId === source,
   );
   const project =
-    (projectPlugin || taskPlugin) && line.projectId
+    projectPlugin && line.projectId
       ? projects.find((candidate) => candidate._id === line.projectId)
-      : undefined;
-  const task =
-    taskPlugin && line.taskId
-      ? project?.tasks.find((candidate) => candidate._id === line.taskId)
       : undefined;
   const projectName =
     projectPlugin && project
       ? pluginProjectName(project, projectPlugin)
       : line.projectName;
   const taskName =
-    (taskPlugin && task && getMappedTaskName(task, taskPlugin)) ||
+    (taskPlugin && getLineMappedTaskName(line, projects, taskPlugin)) ||
     line.taskName;
   const parts = [projectName, taskName].filter((part): part is string =>
     Boolean(part),
@@ -361,10 +418,11 @@ export interface SubmitSummary {
   isUnderTarget: boolean;
   warnings: SubmitWarning[];
   /**
-   * The week's local time, which never goes to the timesheet tool, and the
-   * names of its tasks, or of its Local only projects, in list order.
+   * The week's local time, which never goes to the timesheet tool, and its
+   * tasks, or its Local only projects, by name in list order, each with its
+   * time.
    */
-  local: { durationMs: number; names: string[] };
+  local: { durationMs: number; items: { name: string; durationMs: number }[] };
 }
 
 /** The week's total against its capacity targets, with its warnings. */
@@ -430,7 +488,7 @@ export function summarizeWeek({
   }
 
   const waiting = new Map<string, SubmitWarning & { kind: "waiting-task" }>();
-  const local = { durationMs: 0, names: [] as string[] };
+  const local: SubmitSummary["local"] = { durationMs: 0, items: [] };
   for (const { entry, target } of targets) {
     if (target === "sent") continue;
     const project = projects.find((item) => item._id === entry.projectId);
@@ -440,7 +498,10 @@ export function summarizeWeek({
       const name = project?.localOnly
         ? getLocalProjectDisplayName(project)
         : task?.name;
-      if (name && !local.names.includes(name)) local.names.push(name);
+      if (!name) continue;
+      const item = local.items.find((candidate) => candidate.name === name);
+      if (item) item.durationMs += entry.durationMs;
+      else local.items.push({ name, durationMs: entry.durationMs });
       continue;
     }
     if (!project || !task) continue;

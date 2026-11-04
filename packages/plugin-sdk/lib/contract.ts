@@ -75,6 +75,7 @@ export type PluginManifest = {
               | "list_work_item_comments"
               | "get_week_changes"
               | "get_week_status"
+              | "get_week_lines"
               | "start_timer"
               | "stop_timer"
               | "edit_running_entry"

@@ -863,7 +863,7 @@ describe("MCP endpoint", () => {
     const agent = await connectAgent(baseUrl, token);
 
     const { tools } = await agent.listTools();
-    expect(tools).toHaveLength(35);
+    expect(tools).toHaveLength(36);
     expect(tools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining([
         "start_timer",
@@ -871,6 +871,7 @@ describe("MCP endpoint", () => {
         "discard_timer",
         "undo",
         "get_week_changes",
+        "get_week_lines",
         "get_week_status",
         "mark_entries_committed",
         "submit_week",
@@ -1551,6 +1552,26 @@ describe("an agent task's declared tools", () => {
       expect(names).toContain("delete_entries");
       expect(names).not.toContain("discard_timer");
       expect(names).not.toContain("undo");
+    },
+  );
+
+  it(
+    "lists get_week_lines only when an API 4 task declares it",
+    { timeout: 20_000 },
+    async () => {
+      const declared = await runTask(
+        { apiVersion: 4, tools: ["get_week_lines"] },
+        [{ method: "tools/list" }],
+      );
+      const undeclared = await runTask(
+        { apiVersion: 4, tools: ["get_week_changes"] },
+        [{ method: "tools/list" }],
+      );
+
+      expect(toolNames(declared.replies[0]!.reply)).toContain("get_week_lines");
+      expect(toolNames(undeclared.replies[0]!.reply)).not.toContain(
+        "get_week_lines",
+      );
     },
   );
 

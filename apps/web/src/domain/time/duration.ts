@@ -55,14 +55,22 @@ export function formatCompactDuration(durationMs: number): string {
 }
 
 /**
+ * A duration as decimal hours with two places, such as 1.25, rounded to the
+ * minute first so the value matches the clock time shown on screen. The
+ * number `formatDecimalHours` writes, for agent tools.
+ */
+export function toDecimalHours(durationMs: number): number {
+  const { hours, minutes } = getRoundedDurationParts(durationMs);
+  return Number((hours + minutes / 60).toFixed(2));
+}
+
+/**
  * Formats a duration as decimal hours with two places and a decimal comma,
  * such as "5,00" or "1,25", for pasting into Workday, which reads a comma.
- * Rounds to the minute first so the value matches the clock time shown on
- * screen. Agent tools send numbers, not this text.
+ * Agent tools send `toDecimalHours`, the number, not this text.
  */
 export function formatDecimalHours(durationMs: number): string {
-  const { hours, minutes } = getRoundedDurationParts(durationMs);
-  return (hours + minutes / 60).toFixed(2).replace(".", ",");
+  return toDecimalHours(durationMs).toFixed(2).replace(".", ",");
 }
 
 export function formatDurationHoursInput(durationMs: number): string {

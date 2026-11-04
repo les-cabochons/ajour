@@ -7,7 +7,9 @@ import {
   type TaskPropertyPlugin,
 } from "@/domain/projects/plugin-properties";
 import {
+  buildCommitLines,
   describeLineNames,
+  getLineCommitTaskName,
   groupSubmitLines,
   listLineNameSources,
   listSentEntries,
@@ -170,6 +172,54 @@ describe("submit lines", () => {
       projectName: undefined,
       taskName: undefined,
     });
+  });
+
+  it("builds the Commit page's lines from the sent entries only", () => {
+    const committing: LocalProject[] = [
+      {
+        ...projects[0]!,
+        tasks: [
+          ...projects[0]!.tasks,
+          {
+            _id: "temp",
+            name: "Temp migration",
+            status: "active",
+            createdAt: 1,
+            commitAs: "waiting",
+          },
+          {
+            _id: "lunch",
+            name: "Team lunch",
+            status: "active",
+            createdAt: 1,
+            commitAs: "local",
+          },
+        ],
+      },
+    ];
+    const week = [
+      entry("dev", { localDate: "2026-10-05" }),
+      entry("temp", { localDate: "2026-10-05", taskId: "temp" }),
+      entry("lunch", { localDate: "2026-10-06", taskId: "lunch" }),
+    ];
+
+    const sections = buildCommitLines({
+      entries: week,
+      groupBy: "day",
+      projects: committing,
+      weekDates,
+    });
+    expect(sections).toEqual(
+      groupSubmitLines({
+        entries: listSentEntries(week, committing),
+        groupBy: "day",
+        projects: committing,
+        weekDates,
+      }),
+    );
+    expect(sections.flatMap((section) => section.lines)).toMatchObject([
+      { entryIds: ["dev"] },
+    ]);
   });
 
   it("joins trimmed, non-blank comments with a pipe", () => {
@@ -385,6 +435,68 @@ describe("line names", () => {
       copied: "Atlas Knowledge transfer",
     });
   });
+
+  describe("the name a line's task commits as", () => {
+    const task = (pluginId: string, section: string): TaskPropertyPlugin => ({
+      pluginId,
+      capability: {
+        section,
+        fields: [{ id: "task", label: "Task", defaultFrom: "name" }],
+      },
+    });
+    const workdayTask = task("workday-agent", "Workday");
+    const otherTask = task("other", "Other");
+    const mapped: LocalProject[] = [
+      {
+        ...named[0]!,
+        tasks: [
+          {
+            _id: "kt",
+            name: "Knowledge transfer",
+            status: "active",
+            createdAt: 1,
+            pluginProperties: {
+              "workday-agent": { task: "07 Run" },
+              other: { task: "KT" },
+            },
+          },
+          { _id: "dev", name: "Development", status: "active", createdAt: 1 },
+        ],
+      },
+    ];
+    const ktLine = { ...line, taskId: "kt", taskName: "Knowledge transfer" };
+
+    it("is the name the Names choice's plugin maps the task to", () => {
+      expect(
+        getLineCommitTaskName(ktLine, "other", mapped, {
+          projects: [],
+          tasks: [workdayTask, otherTask],
+        }),
+      ).toBe("KT");
+    });
+
+    it("is the first plugin's mapped name when the Names choice is Ajour", () => {
+      expect(
+        getLineCommitTaskName(ktLine, "ajour", mapped, {
+          projects: [],
+          tasks: [workdayTask, otherTask],
+        }),
+      ).toBe("07 Run");
+    });
+
+    it("is the task's own name when no plugin maps it", () => {
+      const devLine = { ...line, taskId: "dev", taskName: "Development" };
+      expect(
+        getLineCommitTaskName(devLine, "ajour", mapped, {
+          projects: [],
+          tasks: [workdayTask],
+        }),
+      ).toBe("Development");
+      expect(
+        getLineCommitTaskName(ktLine, "ajour", mapped, NO_PROPERTY_PLUGINS),
+      ).toBe("Knowledge transfer");
+    });
+  });
 });
 
 describe("week summary", () => {
@@ -592,7 +704,10 @@ describe("week summary", () => {
     ]);
     expect(summary.local).toEqual({
       durationMs: 2 * HOUR,
-      names: ["Team lunch", "Home"],
+      items: [
+        { name: "Team lunch", durationMs: HOUR },
+        { name: "Home", durationMs: HOUR },
+      ],
     });
     expect(listSentEntries(week, committing).map((item) => item._id)).toEqual([
       "dev",
