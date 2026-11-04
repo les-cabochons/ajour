@@ -40,10 +40,7 @@ import {
   NO_PROPERTY_PLUGINS,
   type PropertyPlugins,
 } from "@/domain/projects/plugin-properties";
-import {
-  getCachedPropertyPlugins,
-  listPropertyPlugins,
-} from "@/lib/plugin-project-properties";
+import { listPropertyPlugins } from "@/lib/plugin-project-properties";
 import {
   releaseSettleComment,
   sendPendingSourceWrites,
@@ -96,10 +93,9 @@ export const PLUGIN_NAMES_DEADLINE_MS = 2_000;
 
 /**
  * The plugins that name tasks for list_projects, read fresh. On a failure or
- * past PLUGIN_NAMES_DEADLINE_MS, the ones of the last overview this window
- * holds; undefined without one, so a task a plugin may rename reads
- * `unknown` instead of its own name. The fresh read still refreshes that
- * overview when it ends.
+ * past PLUGIN_NAMES_DEADLINE_MS, undefined: a task a plugin may rename reads
+ * `unknown` instead of its own name. The window's cached overview is never
+ * used here, since it can name a task after a plugin the API has replaced.
  */
 async function loadNamingPlugins(): Promise<PropertyPlugins | undefined> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -107,11 +103,10 @@ async function loadNamingPlugins(): Promise<PropertyPlugins | undefined> {
     timer = setTimeout(() => resolve(undefined), PLUGIN_NAMES_DEADLINE_MS);
   });
   try {
-    const fresh = await Promise.race([
+    return await Promise.race([
       listPropertyPlugins().catch(() => undefined),
       deadline,
     ]);
-    return fresh ?? getCachedPropertyPlugins();
   } finally {
     clearTimeout(timer);
   }

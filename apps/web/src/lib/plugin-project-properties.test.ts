@@ -1,20 +1,16 @@
 import {
-  getCachedPropertyPlugins,
   listProjectPropertyPlugins,
   listPropertyPlugins,
 } from "@/lib/plugin-project-properties";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getPluginsOverview, getCachedPluginsOverview, isPluginApiMissing } =
-  vi.hoisted(() => ({
-    getPluginsOverview: vi.fn(),
-    getCachedPluginsOverview: vi.fn(),
-    isPluginApiMissing: vi.fn(),
-  }));
+const { getPluginsOverview, isPluginApiMissing } = vi.hoisted(() => ({
+  getPluginsOverview: vi.fn(),
+  isPluginApiMissing: vi.fn(),
+}));
 
 vi.mock("@/lib/app-api", () => ({
   getPluginsOverview,
-  getCachedPluginsOverview,
   isPluginApiMissing,
 }));
 
@@ -120,29 +116,5 @@ describe("listProjectPropertyPlugins", () => {
     isPluginApiMissing.mockReturnValue(false);
 
     await expect(listProjectPropertyPlugins()).rejects.toThrow("boom");
-  });
-});
-
-describe("getCachedPropertyPlugins", () => {
-  it("reads the property plugins of the cached overview, without a request", () => {
-    getPluginsOverview.mockReset();
-    getCachedPluginsOverview.mockReturnValue({
-      pluginsEnabled: true,
-      connectionGroups: [
-        group("workday", { taskProperties: taskCapability }),
-        group("disabled", { enabled: false, taskProperties: taskCapability }),
-      ],
-    });
-
-    expect(getCachedPropertyPlugins()).toEqual({
-      projects: [],
-      tasks: [{ pluginId: "workday", capability: taskCapability }],
-    });
-    expect(getPluginsOverview).not.toHaveBeenCalled();
-  });
-
-  it("is undefined before any overview is cached", () => {
-    getCachedPluginsOverview.mockReturnValue(null);
-    expect(getCachedPropertyPlugins()).toBeUndefined();
   });
 });

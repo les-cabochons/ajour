@@ -26,7 +26,6 @@ const {
   readBacklogDescription,
   writeBacklogDescription,
   listPropertyPlugins,
-  getCachedPropertyPlugins,
 } = vi.hoisted(() => ({
   offerUndo: vi.fn(),
   canWriteToSource: vi.fn((_item: { title: string }) => false),
@@ -40,7 +39,6 @@ const {
   readBacklogDescription: vi.fn(),
   writeBacklogDescription: vi.fn(),
   listPropertyPlugins: vi.fn(),
-  getCachedPropertyPlugins: vi.fn(),
 }));
 vi.mock("@/features/feedback/undo-toast", () => ({ offerUndo }));
 vi.mock("@/features/backlog/backlog-source-writes", async (importOriginal) => ({
@@ -65,7 +63,6 @@ vi.mock("@/components/ui/toast", async (importOriginal) => ({
 }));
 vi.mock("@/lib/plugin-project-properties", () => ({
   listPropertyPlugins,
-  getCachedPropertyPlugins,
 }));
 
 const client = { id: "c1", name: "Claude Code" };
@@ -169,7 +166,6 @@ beforeEach(() => {
   vi.resetModules();
   installMockWindow();
   listPropertyPlugins.mockResolvedValue({ projects: [], tasks: [] });
-  getCachedPropertyPlugins.mockReturnValue(undefined);
   offerUndo.mockClear();
   sendPendingSourceWrites.mockClear();
   canWriteToSource.mockReturnValue(false);
@@ -2737,24 +2733,44 @@ describe("agent reads for the terminal", () => {
       }
     });
 
-    it("names tasks from the cached plugins past the deadline", async () => {
-      listPropertyPlugins.mockReturnValue(new Promise(() => undefined));
-      getCachedPropertyPlugins.mockReturnValue({
-        projects: [],
-        tasks: [workdayTask],
-      });
+    it("never names a task from a cached overview when the fresh load is late or fails", async () => {
+      // The window still holds an overview that names Run, as it would after
+      // the API restarted with a replacement package.
       const { call, project } = await setupWithRun();
+      const { cachePluginsOverview } = await import("@/lib/app-api");
+      cachePluginsOverview({
+        pluginsEnabled: true,
+        connectionGroups: [
+          {
+            enabled: true,
+            plugin: {
+              id: "workday-agent",
+              capabilities: { taskProperties: workdayTask.capability },
+            },
+          },
+        ],
+      } as unknown as Parameters<typeof cachePluginsOverview>[0]);
       const { PLUGIN_NAMES_DEADLINE_MS } =
         await import("@/features/agents/agent-tool-runner");
+      const unknownRun = [
+        ["Build", { kind: "own" }],
+        ["Run", { kind: "unknown" }],
+      ];
+
+      listPropertyPlugins.mockRejectedValue(new Error("Plugin host down"));
+      expect(
+        await commitsAsOf(await call("list_projects"), project._id),
+      ).toEqual(unknownRun);
+
+      listPropertyPlugins.mockReturnValue(new Promise(() => undefined));
       vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
       try {
         const pending = call("list_projects");
         await vi.advanceTimersByTimeAsync(PLUGIN_NAMES_DEADLINE_MS);
 
-        expect(await commitsAsOf(await pending, project._id)).toEqual([
-          ["Build", { kind: "own" }],
-          ["Run", { kind: "task", name: "07 Run" }],
-        ]);
+        expect(await commitsAsOf(await pending, project._id)).toEqual(
+          unknownRun,
+        );
       } finally {
         vi.useRealTimers();
       }
