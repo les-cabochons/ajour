@@ -132,6 +132,12 @@ Azure DevOps people search is `vssps.{host}` for `dev.azure.com`, and `{match}.v
 
 Each agent task lists the Ajour MCP `tools` its run may use, and gets only those. Ajour refuses a call to any other tool. A project data shape is the `projectDataShape` capability: `importProjects` reads the imported file's sheets, and the optional datasets of data shape API 1 lay out its export.
 
+### Project sources
+
+A project source brings the user's projects, tasks, assignments and budgets from the system that holds them, read only: Ajour never writes to it. Declare `"projectSource": {}` and export `syncProjects(connection, { cursor })`. Answer `{ snapshot, cursor }`, or `{ unchanged: true }` when nothing changed since the cursor Ajour sent. The cursor is yours, such as an ETag: Ajour keeps the last one per connection and hands it back on the next sync, and sends none on the first.
+
+The snapshot is `ProjectSourceSnapshot`. Nothing in it names a product: `source.label` is what Ajour calls the source, such as in "From Planner", and the project `url`s are where "Open in Planner" goes. `asOf` is when the source's hours are from, so Ajour can tell lag from a conflict. `me.hoursAvailable` says whether `myHours` can be known for the user, and `hoursNote` is your sentence on why not, such as how to link their account. A project has a `code`, by which Ajour links an existing local project without asking, and a `complete` flag, which archives it. A task has a `group`, such as a phase, `assigned`, and the user's `myHours`. A budget's `unit` is hours or money; `remaining` may be negative, and `status` is `ok`, `warning`, `over` or `unknown`. URLs are absolute https addresses. A snapshot holds at most 200 projects and 10,000 tasks.
+
 ### What needs the user's consent again
 
 An update installs inactive, until the user allows it, when it adds a capability, an auth scheme, a host, a derived host or one of its forms, an endpoint, a public host or an MCP tool, changes an agent task's prompt, marks an access choice `always` on, adds an operation to an access choice, or switches to `alwaysReady`. Nothing else does.

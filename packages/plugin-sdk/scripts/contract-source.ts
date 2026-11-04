@@ -40,6 +40,14 @@ import type {
   projectDataShapeImportResponseSchema,
   projectDataShapeSheetSchema,
 } from "../../shared/project-data-shapes.ts";
+import type {
+  projectSourceBudgetSchema,
+  projectSourceProjectSchema,
+  projectSourceSnapshotSchema,
+  projectSourceSyncRequestSchema,
+  projectSourceSyncResultSchema,
+  projectSourceTaskSchema,
+} from "../../shared/project-source.ts";
 
 type Input<Schema extends { _input: unknown }> = Schema["_input"];
 type Output<Schema extends { _output: unknown }> = Schema["_output"];
@@ -123,3 +131,18 @@ export type DataShapeSheet = Output<typeof projectDataShapeSheetSchema>;
 export type DataShapeImportResult = Input<
   typeof projectDataShapeImportResponseSchema
 >;
+
+/** What `syncProjects` receives: the cursor Ajour kept from the last sync, absent on the first. */
+export type ProjectSourceSyncRequest = Output<
+  typeof projectSourceSyncRequestSchema
+>;
+/** What `syncProjects` answers: the snapshot and the next cursor, or that nothing changed. */
+export type ProjectSourceSyncResult = Input<
+  typeof projectSourceSyncResultSchema
+>;
+/** The user's projects, tasks and budgets as the source knows them, as of `asOf`. */
+export type ProjectSourceSnapshot = Input<typeof projectSourceSnapshotSchema>;
+export type ProjectSourceProject = Input<typeof projectSourceProjectSchema>;
+export type ProjectSourceTask = Input<typeof projectSourceTaskSchema>;
+/** A project's budget. The source writes every figure; `remaining` may be negative. */
+export type ProjectSourceBudget = Input<typeof projectSourceBudgetSchema>;

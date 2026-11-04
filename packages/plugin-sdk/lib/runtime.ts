@@ -10,6 +10,8 @@ import type {
   DataShapeSheet,
   PluginConnection,
   PluginHttpMethod,
+  ProjectSourceSyncRequest,
+  ProjectSourceSyncResult,
   ReadDescriptionRequest,
   ReadDescriptionResult,
   SearchAssigneesRequest,
@@ -120,7 +122,9 @@ type OperationHandlers<
  * What a plugin's entrypoint exports: one function per operation it serves.
  * Each receives the connection without its secrets. Unlike plugin API 3,
  * `validateConnection` receives the connection too, so it can call
- * `ajour.http` with its id.
+ * `ajour.http` with its id. `syncProjects` serves the `projectSource`
+ * capability: it answers the user's projects as a snapshot, or that
+ * nothing changed since the cursor it received.
  */
 export type PluginModule = {
   validateConnection?: (
@@ -152,6 +156,10 @@ export type PluginModule = {
     connection: PluginConnection,
     request: WriteDescriptionRequest,
   ) => Awaitable<WriteDescriptionResult>;
+  syncProjects?: (
+    connection: PluginConnection,
+    request: ProjectSourceSyncRequest,
+  ) => Awaitable<ProjectSourceSyncResult>;
 } & OperationHandlers<CodeHostOperations> &
   OperationHandlers<CalendarOperations> &
   OperationHandlers<BacklogCommentOperations>;
