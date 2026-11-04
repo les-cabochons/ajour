@@ -1525,7 +1525,6 @@
     color: var(--text-tertiary);
     font-size: var(--text-2xs);
     font-weight: 500;
-    text-transform: uppercase;
   }
 
   .calendar-suggestion-card {

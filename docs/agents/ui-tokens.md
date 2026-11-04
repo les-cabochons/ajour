@@ -45,10 +45,11 @@ Semantic variables, light and dark under `:root` and `:root.dark`:
 
 - `--background`, `--foreground`, `--card`, `--popover`, `--secondary`, `--muted`, `--muted-foreground`, `--accent`, `--border`, `--input`, `--ring`
 - `--primary`: the one accent, the logo's indigo. Primary buttons, focus rings, links, selected options and the returned pull request badge. Not the active nav row.
+- `--primary-fill`: the accent behind white text, on filled buttons and badges. It equals `--primary` in light; in dark it is a deeper indigo, because the bright dark accent would leave white labels under 4.5:1.
 - `--success`: the running indicator, the dock's remaining-estimate bar and an active agent in the agent indicator, and the Added change symbol on the Commit page. Nothing else.
 - `--warning`: amber, with an icon, for days under target, over capacity, unmapped source states, an agent question and a description timelog's missing project or task, and the Updated change symbol.
 - `--destructive`: destructive actions and failures only, including a failed agent session (a red ring in the agent indicator) and an agent error (a solid red dot), and the Deleted change symbol.
-- `--border-row`: the hairline between rows of a list (Time entries, Backlog rows, Commit changes, project tasks and entries). In light it is `--border` at 70%, so a long list does not read as ruled; in dark it equals `--border`. Group headers, table headers and fields keep `--border`.
+- `--border-row`: the hairline between rows of a list (Time entries, Backlog rows, Commit changes, project tasks and entries). In light it is `--border` at 70%, in dark white at 6.5% against the border's 9%, so a long list does not read as ruled. Group headers, table headers and fields keep `--border`.
 - `--scrollbar-thumb`: the scrollbar thumb, on native scrollers and `ScrollArea`. The track is transparent. The sidebar backlog list shows the thumb only on hover or when focus is inside it.
 - Workflow states and projects carry their own colors.
 

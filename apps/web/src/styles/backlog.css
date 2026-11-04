@@ -874,15 +874,22 @@
     background: var(--highlight-bg);
   }
 
-  /* A quiet text button in a section heading, such as the note's Edit. */
+  /* A quiet button in a section heading, such as the description's Edit:
+     the small (24px) ghost button, so it reads as a control. */
   .backlog-item-subtle-action {
+    display: inline-flex;
+    align-items: center;
+    height: 1.5rem;
+    padding: 0 0.5rem;
+    border-radius: var(--radius-sm);
     color: var(--text-secondary);
     font-size: var(--text-xs);
+    font-weight: 500;
   }
 
   .backlog-item-subtle-action:hover {
+    background: var(--hover-bg);
     color: var(--text);
-    text-decoration: underline;
   }
 
   .backlog-item-progress {

@@ -90,6 +90,8 @@
     /* The one accent: the logo's indigo. Primary actions, focus, links, selection. */
     --primary: oklch(0.52 0.19 285);
     --primary-foreground: oklch(0.99 0 0);
+    /* Behind white text: a filled button or badge. */
+    --primary-fill: var(--primary);
     --secondary: oklch(0.965 0.002 285);
     --secondary-foreground: var(--foreground);
     --muted: oklch(0.965 0.002 285);
@@ -222,13 +224,16 @@
   :root.dark {
     color-scheme: dark;
     --background: oklch(0.17 0.004 285);
-    --foreground: oklch(0.93 0.003 285);
+    --foreground: oklch(0.9 0.003 285);
     --card: oklch(0.205 0.004 285);
     --card-foreground: var(--foreground);
     --popover: oklch(0.215 0.004 285);
     --popover-foreground: var(--foreground);
     --primary: oklch(0.64 0.17 285);
     --primary-foreground: oklch(0.99 0 0);
+    /* The dark accent is bright for links and focus; white labels need a
+       deeper fill to keep 4.5:1. */
+    --primary-fill: oklch(0.54 0.17 285);
     --secondary: oklch(0.245 0.004 285);
     --secondary-foreground: var(--foreground);
     --muted: oklch(0.245 0.004 285);
@@ -239,7 +244,7 @@
     --warning: oklch(0.78 0.15 70);
     --success: oklch(0.72 0.17 150);
     --border: oklch(1 0 0 / 9%);
-    --border-row: var(--border);
+    --border-row: oklch(1 0 0 / 6.5%);
     --input: var(--surface-lowest);
     --ring: oklch(0.64 0.17 285);
     --scrollbar-thumb: oklch(1 0 0 / 12%);
@@ -368,6 +373,7 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  --color-primary-fill: var(--primary-fill);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
