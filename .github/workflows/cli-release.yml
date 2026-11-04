@@ -8,6 +8,11 @@ on:
       - .github/workflows/desktop-*-release.yml
       - pnpm-lock.yaml
   workflow_dispatch:
+    inputs:
+      sign:
+        description: Sign and notarize the binaries with the release credentials
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       ref:
