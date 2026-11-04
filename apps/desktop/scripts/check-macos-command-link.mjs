@@ -95,6 +95,29 @@ try {
     sudo("/bin/rmdir", `${root}/local/bin`, `${root}/local`);
   }
   console.log("macOS privileged command integration passed");
+} catch (error) {
+  for (const location of [
+    "/",
+    "/private",
+    "/private/var",
+    root,
+    `${root}/local`,
+    `${root}/local/bin`,
+    destination,
+  ]) {
+    if (!exists(location)) continue;
+    const entry = lstatSync(location);
+    console.error(
+      JSON.stringify({
+        location,
+        uid: entry.uid,
+        mode: entry.mode.toString(8),
+        link: entry.isSymbolicLink() ? readlinkSync(location) : null,
+      }),
+    );
+  }
+  console.error(JSON.stringify({ expectedTarget: target }));
+  throw error;
 } finally {
   sudo("/bin/rm", "-rf", root);
 }
