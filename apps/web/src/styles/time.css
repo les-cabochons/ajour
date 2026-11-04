@@ -241,19 +241,17 @@
     flex-shrink: 0;
   }
 
+  /* On desktop, project and task start columns: typical names fit their
+     minimum width, so notes line up; a longer name still shows in full. */
   .time-entry-project {
     flex-shrink: 0;
+    min-width: 7.5rem;
     color: var(--text-secondary);
-  }
-
-  .time-entry-project::after {
-    content: "·";
-    margin-left: 0.5rem;
-    color: var(--text-tertiary);
   }
 
   .time-entry-task {
     flex-shrink: 0;
+    min-width: 8rem;
     color: var(--text);
     font-weight: 500;
   }
@@ -1245,7 +1243,7 @@
   .commit-change {
     display: grid;
     /* A fixed date track, so project names line up from one day to the next. */
-    grid-template-columns: 1rem 14px 3rem minmax(0, 1fr) auto;
+    grid-template-columns: 1rem 16px 3rem minmax(0, 1fr) auto;
     align-items: start;
     gap: 0.25rem 0.5rem;
     padding: 0.5rem 0.25rem;
@@ -1259,9 +1257,9 @@
   /* Tailwind's preflight makes every svg a block. */
   .commit-change-symbol {
     display: inline-block;
-    width: 14px;
-    height: 14px;
-    margin-top: 2px;
+    width: 16px;
+    height: 16px;
+    margin-top: 1px;
   }
 
   .commit-change.is-added .commit-change-symbol {
@@ -1333,6 +1331,18 @@
 
   .time-entry-note {
     margin-left: 0;
+  }
+
+  /* Narrow rows run on one line, so the columns give way to a separator. */
+  .time-entry-project,
+  .time-entry-task {
+    min-width: 0;
+  }
+
+  .time-entry-project::after {
+    content: "·";
+    margin-left: 0.5rem;
+    color: var(--text-tertiary);
   }
 
   .time-entry-trailing {

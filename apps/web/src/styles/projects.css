@@ -219,7 +219,8 @@
   /* Tasks and time entries, with the Properties card on the right. */
   .project-detail-columns {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 17rem;
+    /* The backlog item page's side column, so both cards line up. */
+    grid-template-columns: minmax(0, 1fr) 18rem;
     gap: 2.5rem;
   }
 

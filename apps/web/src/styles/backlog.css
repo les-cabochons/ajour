@@ -1115,6 +1115,8 @@
 .backlog-item-page-meta > .backlog-refresh {
   justify-content: flex-start;
   margin-left: 0.5rem;
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--border);
 }
 .backlog-refresh > span[role="status"] {
   text-align: right;
