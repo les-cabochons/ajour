@@ -26,12 +26,17 @@ describe("terminal cells", () => {
     expect(displayWidth("❤\uFE0F")).toBe(2);
     expect(displayWidth("👩\u200D💻")).toBe(2);
     expect(displayWidth("● ○ · …")).toBe(7);
+    expect(displayWidth("1\uFE0F\u20E3")).toBe(2);
+    expect(displayWidth("#\u20E3")).toBe(2);
   });
 
   it("cuts wide text without going past the width", () => {
     expect(truncate("日本語テキスト", 7)).toBe("日本語…");
     expect(truncate("日本語テキスト", 6)).toBe("日本…");
     expect(truncate("🚀🚀🚀🚀", 5)).toBe("🚀🚀…");
+    expect(
+      truncate("1\uFE0F\u20E31\uFE0F\u20E31\uFE0F\u20E31\uFE0F\u20E3", 5),
+    ).toBe("1\uFE0F\u20E31\uFE0F\u20E3…");
     expect(
       displayWidth(truncate("Ship 🚀 now and 🎉 later", 9)),
     ).toBeLessThanOrEqual(9);

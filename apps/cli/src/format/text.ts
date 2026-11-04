@@ -39,6 +39,8 @@ function graphemes(text: string): string[] {
 function cellWidth(grapheme: string): number {
   if (
     EMOJI_PRESENTATION.test(grapheme) ||
+    // A keycap, such as one inside a box: a digit, # or * with the enclosing keycap mark.
+    grapheme.includes("\u20E3") ||
     (PICTOGRAPH.test(grapheme) && grapheme.includes("\uFE0F"))
   ) {
     return 2;

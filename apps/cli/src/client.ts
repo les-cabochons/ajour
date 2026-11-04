@@ -47,17 +47,35 @@ export const MCP_OFF = "MCP is off. Turn it on in Ajour under Settings › MCP."
 export const TOKEN_REFUSED =
   "Ajour doesn't accept this token. It may have been revoked. Run: ajour connect";
 
+/** The part of the MCP SDK's client the CLI uses, so tests can stand in. */
+export interface ToolSession {
+  callTool(params: {
+    name: string;
+    arguments: Record<string, unknown>;
+  }): Promise<{
+    isError?: boolean;
+    content?: unknown;
+    structuredContent?: unknown;
+  }>;
+  close(): Promise<void>;
+}
+
 /**
  * Connects on the first call, so a command that fails early never dials. A
  * failed connection or call is forgotten, so the next call dials again: a
- * `--watch` started before Ajour picks it up once it runs.
+ * `--watch` started before Ajour picks it up once it runs. Only the session
+ * that failed is forgotten: a late failure from an older one never drops a
+ * newer one.
  */
 export function mcpClient(options: {
   url: string;
   token: string;
+  /** Opens a session. Tests pass their own; the default is the MCP SDK's. */
+  open?: () => Promise<ToolSession>;
 }): AjourClient {
-  let connected: Promise<Client> | undefined;
-  const connect = async () => {
+  let connected: Promise<ToolSession> | undefined;
+  const connect = async (): Promise<ToolSession> => {
+    if (options.open) return options.open();
     const client = new Client({ name: "ajour-cli", version: "1.0.0" });
     const transport = new StreamableHTTPClientTransport(
       new URL("/mcp/ajour", options.url),
@@ -70,30 +88,43 @@ export function mcpClient(options: {
     } catch (error) {
       throw toCliError(error);
     }
-    return client;
+    return {
+      // The SDK types a compatibility result too; Ajour's server sends the
+      // current shape, which `call` reads defensively below.
+      callTool: (params) =>
+        client.callTool(params) as ReturnType<ToolSession["callTool"]>,
+      close: () => client.close(),
+    };
   };
-  const session = () => {
+  const forget = (failed: Promise<ToolSession>) => {
+    if (connected === failed) connected = undefined;
+  };
+  const session = async () => {
     const current = (connected ??= connect());
-    return current.catch((error: unknown) => {
-      if (connected === current) connected = undefined;
+    try {
+      return { current, session: await current };
+    } catch (error) {
+      forget(current);
       throw error;
-    });
-  };
-  const forget = (client: Client) => {
-    connected = undefined;
-    void client.close().catch(() => undefined);
+    }
   };
   return {
     async check() {
       await session();
     },
     async call(tool, input) {
-      const client = await session();
+      const { current, session: open } = await session();
       let result;
       try {
-        result = await client.callTool({ name: tool, arguments: input });
+        result = await open.callTool({
+          name: tool,
+          arguments: input as Record<string, unknown>,
+        });
       } catch (error) {
-        forget(client);
+        if (connected === current) {
+          forget(current);
+          void open.close().catch(() => undefined);
+        }
         throw toCliError(error);
       }
       if (result.isError) {
