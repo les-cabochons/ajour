@@ -7,6 +7,7 @@ import {
   type ReadToolName,
 } from "@ajour/shared/agent-tools";
 import {
+  findEntriesForAgent,
   getWeekChangesForAgent,
   getWeekLinesForAgent,
   getWeekStatusForAgent,
@@ -35,7 +36,10 @@ import {
   runWorkItemWriteTool,
   type WorkItemWriteTool,
 } from "@/features/agents/agent-work-item-tools";
-import { NO_PROPERTY_PLUGINS } from "@/domain/projects/plugin-properties";
+import {
+  NO_PROPERTY_PLUGINS,
+  type PropertyPlugins,
+} from "@/domain/projects/plugin-properties";
 import { listPropertyPlugins } from "@/lib/plugin-project-properties";
 import {
   releaseSettleComment,
@@ -80,6 +84,34 @@ function loadPropertyPlugins() {
   return listPropertyPlugins().catch(() => NO_PROPERTY_PLUGINS);
 }
 
+/**
+ * How long list_projects waits for the plugins that name tasks: well inside
+ * the bridge's 10-second timeout, since discovery can wait behind a plugin
+ * install while the projects themselves are local.
+ */
+export const PLUGIN_NAMES_DEADLINE_MS = 2_000;
+
+/**
+ * The plugins that name tasks for list_projects, read fresh. On a failure or
+ * past PLUGIN_NAMES_DEADLINE_MS, undefined: a task a plugin may rename reads
+ * `unknown` instead of its own name. The window's cached overview is never
+ * used here, since it can name a task after a plugin the API has replaced.
+ */
+async function loadNamingPlugins(): Promise<PropertyPlugins | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => resolve(undefined), PLUGIN_NAMES_DEADLINE_MS);
+  });
+  try {
+    return await Promise.race([
+      listPropertyPlugins().catch(() => undefined),
+      deadline,
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Each read tool, typed against its output schema. */
 const readTools: {
   [Name in ReadToolName]: (
@@ -95,7 +127,8 @@ const readTools: {
       readToolInputSchemas.list_time_entries.parse(rawInput),
       Date.now(),
     ),
-  list_projects: () => listProjectsForAgent(localStore.snapshot()),
+  list_projects: async () =>
+    listProjectsForAgent(localStore.snapshot(), await loadNamingPlugins()),
   list_work_items: (rawInput) =>
     listWorkItemsForAgent(
       localStore.snapshot(),
@@ -139,6 +172,13 @@ const readTools: {
       now: Date.now(),
     });
   },
+  // Reads for the terminal (#532).
+  find_entries: (rawInput) =>
+    findEntriesForAgent(
+      localStore.snapshot(),
+      readToolInputSchemas.find_entries.parse(rawInput),
+      Date.now(),
+    ),
 };
 
 function isEntryWriteTool(tool: string): tool is EntryWriteTool {

@@ -61,7 +61,9 @@ vi.mock("@/components/ui/toast", async (importOriginal) => ({
   showUndoToast,
   showErrorToast,
 }));
-vi.mock("@/lib/plugin-project-properties", () => ({ listPropertyPlugins }));
+vi.mock("@/lib/plugin-project-properties", () => ({
+  listPropertyPlugins,
+}));
 
 const client = { id: "c1", name: "Claude Code" };
 
@@ -2477,5 +2479,374 @@ describe("an agent's change to a synced description", () => {
       localStore.snapshot().workItems.find((item) => item._id === workItemId)
         ?.description,
     ).toBe("Local notes");
+  });
+});
+
+describe("agent reads for the terminal", () => {
+  const workdayTask = {
+    pluginId: "workday-agent",
+    capability: {
+      section: "Workday",
+      fields: [{ id: "task", label: "Workday task", defaultFrom: "name" }],
+    },
+  };
+
+  it("gives a week's seven targets as Settings › General holds them", async () => {
+    const { call, localStore } = await setup();
+    localStore.setUserPreferences({
+      weeklyCapacityTargets: {
+        monday: 8 * 3_600_000,
+        tuesday: 7.5 * 3_600_000,
+        wednesday: 8 * 3_600_000,
+        thursday: 8 * 3_600_000,
+        friday: 4 * 3_600_000,
+        saturday: 0,
+        sunday: 0,
+      },
+    });
+
+    const result = await call("list_time_entries", {
+      from: "2026-10-12",
+      to: "2026-10-18",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      output: {
+        targets: [
+          { date: "2026-10-12", hours: 8 },
+          { date: "2026-10-13", hours: 7.5 },
+          { date: "2026-10-14", hours: 8 },
+          { date: "2026-10-15", hours: 8 },
+          { date: "2026-10-16", hours: 4 },
+          { date: "2026-10-17", hours: 0 },
+          { date: "2026-10-18", hours: 0 },
+        ],
+      },
+    });
+  });
+
+  it("lists pinned slots, full names and each of the four commit-as kinds", async () => {
+    listPropertyPlugins.mockResolvedValue({
+      projects: [],
+      tasks: [workdayTask],
+    });
+    const { call, localStore, project, task } = await setup();
+    localStore.updateProject(project._id, { displayName: "ACM" });
+    localStore.addProjectTask(project._id, { name: "Run" });
+    localStore.addProjectTask(project._id, { name: "Discovery" });
+    localStore.addProjectTask(project._id, { name: "Learning" });
+    const tasks = localStore
+      .snapshot()
+      .projects.find((candidate) => candidate._id === project._id)!.tasks;
+    const id = (name: string) =>
+      tasks.find((candidate) => candidate.name === name)!._id;
+    localStore.updateProjectTask(project._id, task("Build")._id, {
+      pinnedSlot: "1",
+    });
+    localStore.updateProjectTask(project._id, id("Run"), {
+      pinnedSlot: "0",
+      pluginProperties: { "workday-agent": { task: "07 Run" } },
+    });
+    localStore.updateProjectTask(project._id, id("Discovery"), {
+      commitAs: "waiting",
+    });
+    localStore.updateProjectTask(project._id, id("Learning"), {
+      commitAs: "local",
+    });
+
+    const result = await call("list_projects");
+
+    expect(result.ok).toBe(true);
+    const acme = (
+      result as { output: { projects: { projectId: string }[] } }
+    ).output.projects.find((item) => item.projectId === project._id);
+    expect(acme).toEqual({
+      projectId: project._id,
+      name: "ACM",
+      fullName: "Acme",
+      displayName: "ACM",
+      localOnly: false,
+      tasks: [
+        {
+          taskId: task("Build")._id,
+          name: "Build",
+          pinnedSlot: 1,
+          commitsAs: { kind: "own" },
+        },
+        {
+          taskId: id("Run"),
+          name: "Run",
+          pinnedSlot: 10,
+          commitsAs: { kind: "task", name: "07 Run" },
+        },
+        {
+          taskId: id("Discovery"),
+          name: "Discovery",
+          commitsAs: { kind: "not-known-yet" },
+        },
+        {
+          taskId: id("Learning"),
+          name: "Learning",
+          commitsAs: { kind: "local-only" },
+        },
+      ],
+    });
+  });
+
+  it("finds one entry for a unique prefix, several for a shared one, and none for an unknown one", async () => {
+    let next = 0;
+    // Every id Ajour creates here shares the short id prefix 3f2a.
+    vi.spyOn(globalThis.crypto, "randomUUID").mockImplementation(
+      () =>
+        `3f2a${String((next += 1)).padStart(4, "0")}-0000-4000-8000-000000000000` as `${string}-${string}-${string}-${string}-${string}`,
+    );
+    const { call, localStore, project, task } = await setup();
+    for (const localDate of ["2025-01-06", "2026-10-13"]) {
+      localStore.saveManualTimeEntry({
+        localDate,
+        projectId: project._id,
+        taskId: task("Build")._id,
+        durationMs: 30 * 60_000,
+      });
+    }
+    const [older, newer] = localStore.snapshot().timesheetEntries;
+    const shortIdOf = (entryId: string) =>
+      entryId.slice("timesheet_".length).replaceAll("-", "");
+    vi.mocked(globalThis.crypto.randomUUID).mockRestore();
+
+    const unique = await call("find_entries", {
+      idPrefix: shortIdOf(older!._id),
+    });
+    expect(unique).toMatchObject({
+      ok: true,
+      output: {
+        entries: [
+          {
+            entryId: older!._id,
+            shortId: shortIdOf(older!._id),
+            date: "2025-01-06",
+            minutes: 30,
+            taskName: "Build",
+          },
+        ],
+        running: null,
+      },
+    });
+    expect(unique.ok && unique.output).toMatchObject({
+      entries: { length: 1 },
+    });
+
+    const shared = await call("find_entries", { idPrefix: "3f2a" });
+    expect(
+      shared.ok &&
+        (shared.output as { entries: { entryId: string }[] }).entries.map(
+          (item) => item.entryId,
+        ),
+    ).toEqual([older!._id, newer!._id]);
+
+    expect(await call("find_entries", { idPrefix: "beef" })).toMatchObject({
+      ok: true,
+      output: { entries: [], running: null },
+    });
+  });
+
+  it("finds the running entry by its short id", async () => {
+    const { call, project } = await setup();
+    const started = await call("start_timer", { projectId: project._id });
+    const { shortId } = (
+      started as { output: { running: { shortId: string } } }
+    ).output.running;
+
+    expect(
+      await call("find_entries", { idPrefix: shortId.slice(0, 7) }),
+    ).toMatchObject({
+      ok: true,
+      output: { entries: [], running: { shortId } },
+    });
+  });
+
+  describe("when the plugins cannot name tasks", () => {
+    /** Acme with Build, and Run, which a Workday value may rename. */
+    async function setupWithRun() {
+      const context = await setup();
+      const { localStore, project } = context;
+      localStore.addProjectTask(project._id, { name: "Run" });
+      const run = localStore
+        .snapshot()
+        .projects.find((candidate) => candidate._id === project._id)!
+        .tasks.find((candidate) => candidate.name === "Run")!;
+      localStore.updateProjectTask(project._id, run._id, {
+        pluginProperties: { "workday-agent": { task: "07 Run" } },
+      });
+      return context;
+    }
+
+    async function commitsAsOf(result: unknown, projectId: string) {
+      const output = (
+        result as {
+          output: {
+            projects: {
+              projectId: string;
+              tasks: { name: string; commitsAs: unknown }[];
+            }[];
+          };
+        }
+      ).output;
+      return output.projects
+        .find((item) => item.projectId === projectId)!
+        .tasks.map((item) => [item.name, item.commitsAs]);
+    }
+
+    it("says a task a plugin may rename commits as unknown when loading them fails", async () => {
+      listPropertyPlugins.mockRejectedValue(new Error("Plugin host down"));
+      const { call, project } = await setupWithRun();
+
+      const result = await call("list_projects");
+
+      expect(result.ok).toBe(true);
+      expect(await commitsAsOf(result, project._id)).toEqual([
+        ["Build", { kind: "own" }],
+        ["Run", { kind: "unknown" }],
+      ]);
+    });
+
+    it("answers with the projects past the deadline when discovery never ends", async () => {
+      listPropertyPlugins.mockReturnValue(new Promise(() => undefined));
+      const { call, project } = await setupWithRun();
+      const { PLUGIN_NAMES_DEADLINE_MS } =
+        await import("@/features/agents/agent-tool-runner");
+      expect(PLUGIN_NAMES_DEADLINE_MS).toBeLessThanOrEqual(3_000);
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        const pending = call("list_projects");
+        await vi.advanceTimersByTimeAsync(PLUGIN_NAMES_DEADLINE_MS);
+        const result = await pending;
+
+        expect(result.ok).toBe(true);
+        expect(await commitsAsOf(result, project._id)).toEqual([
+          ["Build", { kind: "own" }],
+          ["Run", { kind: "unknown" }],
+        ]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("never names a task from a cached overview when the fresh load is late or fails", async () => {
+      // The window still holds an overview that names Run, as it would after
+      // the API restarted with a replacement package.
+      const { call, project } = await setupWithRun();
+      const { cachePluginsOverview } = await import("@/lib/app-api");
+      cachePluginsOverview({
+        pluginsEnabled: true,
+        connectionGroups: [
+          {
+            enabled: true,
+            plugin: {
+              id: "workday-agent",
+              capabilities: { taskProperties: workdayTask.capability },
+            },
+          },
+        ],
+      } as unknown as Parameters<typeof cachePluginsOverview>[0]);
+      const { PLUGIN_NAMES_DEADLINE_MS } =
+        await import("@/features/agents/agent-tool-runner");
+      const unknownRun = [
+        ["Build", { kind: "own" }],
+        ["Run", { kind: "unknown" }],
+      ];
+
+      listPropertyPlugins.mockRejectedValue(new Error("Plugin host down"));
+      expect(
+        await commitsAsOf(await call("list_projects"), project._id),
+      ).toEqual(unknownRun);
+
+      listPropertyPlugins.mockReturnValue(new Promise(() => undefined));
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        const pending = call("list_projects");
+        await vi.advanceTimersByTimeAsync(PLUGIN_NAMES_DEADLINE_MS);
+
+        expect(await commitsAsOf(await pending, project._id)).toEqual(
+          unknownRun,
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  it("names a task as the plugin the Commit page's Names choice selects", async () => {
+    listPropertyPlugins.mockResolvedValue({
+      projects: [],
+      tasks: [
+        workdayTask,
+        {
+          pluginId: "jira-agent",
+          capability: {
+            section: "Jira",
+            fields: [{ id: "task", label: "Jira task", defaultFrom: "name" }],
+          },
+        },
+      ],
+    });
+    const { call, localStore, project, task } = await setup();
+    localStore.updateProjectTask(project._id, task("Build")._id, {
+      pluginProperties: {
+        "workday-agent": { task: "07 Run" },
+        "jira-agent": { task: "OPS-12 Run" },
+      },
+    });
+    localStore.setUserPreferences({ commitLinesNameSource: "jira-agent" });
+
+    const result = (await call("list_projects")) as {
+      output: {
+        projects: { projectId: string; tasks: { commitsAs: unknown }[] }[];
+      };
+    };
+
+    expect(
+      result.output.projects.find((item) => item.projectId === project._id)!
+        .tasks[0]!.commitsAs,
+    ).toEqual({ kind: "task", name: "OPS-12 Run" });
+  });
+
+  it("finds a running entry that continues a saved one by its timer's short id too", async () => {
+    const { call, localStore, project, task } = await setup();
+    const { todayIsoDate } = await import("@/lib/utils");
+    localStore.saveManualTimeEntry({
+      localDate: todayIsoDate(),
+      projectId: project._id,
+      taskId: task("Build")._id,
+      durationMs: 30 * 60_000,
+    });
+    const saved = localStore.snapshot().timesheetEntries[0]!;
+    // Only today's entry resumes, linked to its timer.
+    localStore.continueTimesheetEntry(saved._id);
+    const timer = localStore.snapshot().timers[0]!;
+    expect(timer.entryId).toBe(saved._id);
+    const shortIdOf = (id: string) =>
+      id.slice(id.indexOf("_") + 1).replaceAll("-", "");
+
+    expect(
+      await call("find_entries", {
+        idPrefix: shortIdOf(timer._id).slice(0, 8),
+      }),
+    ).toMatchObject({
+      ok: true,
+      output: {
+        running: { timerId: timer._id, shortId: shortIdOf(saved._id) },
+      },
+    });
+  });
+
+  it("refuses a prefix under 4 characters", async () => {
+    const { call } = await setup();
+    expect(await call("find_entries", { idPrefix: "3f2" })).toEqual({
+      requestId: "r1",
+      ok: false,
+      error: "idPrefix: Use 4 to 32 lowercase hex characters, such as 3f2a9c1.",
+    });
   });
 });

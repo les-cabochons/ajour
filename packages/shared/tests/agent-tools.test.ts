@@ -260,3 +260,69 @@ describe("agent tool contracts", () => {
     ).toHaveLength(1);
   });
 });
+
+describe("reads for the terminal", () => {
+  it("finds entries by 4 to 32 lowercase hex characters only", () => {
+    const parse = (idPrefix: unknown) =>
+      readToolInputSchemas.find_entries.safeParse({ idPrefix }).success;
+
+    expect(parse("3f2")).toBe(false);
+    expect(parse("3f2a")).toBe(true);
+    expect(parse("3f2a9c1e7b4d4e8a9c0b1d2e3f4a5b6c")).toBe(true);
+    expect(parse("3f2a9c1e7b4d4e8a9c0b1d2e3f4a5b6c0")).toBe(false);
+    expect(parse("3F2A")).toBe(false);
+    expect(parse("3f2-")).toBe(false);
+  });
+
+  it("checks day targets, short ids, pinned slots and commit-as names", () => {
+    expect(
+      dataToolOutputSchemas.list_time_entries.parse({
+        entries: [
+          {
+            entryId: "timesheet_1",
+            shortId: "timesheet_1",
+            date: "2026-10-13",
+            state: "saved",
+            minutes: 60,
+          },
+        ],
+        running: null,
+        targets: [{ date: "2026-10-13", hours: 8 }],
+      }).targets,
+    ).toEqual([{ date: "2026-10-13", hours: 8 }]);
+    expect(
+      dataToolOutputSchemas.list_time_entries.safeParse({
+        entries: [],
+        running: null,
+        targets: [{ date: "2026-10-13" }],
+      }).success,
+    ).toBe(false);
+
+    const project = (task: Record<string, unknown>) => ({
+      projects: [
+        {
+          projectId: "p1",
+          name: "Acme",
+          fullName: "Acme Corporation",
+          displayName: "Acme",
+          localOnly: false,
+          tasks: [{ taskId: "t1", name: "Build", ...task }],
+        },
+      ],
+    });
+    const parse = (task: Record<string, unknown>) =>
+      dataToolOutputSchemas.list_projects.safeParse(project(task)).success;
+    expect(parse({ pinnedSlot: 10, commitsAs: { kind: "own" } })).toBe(true);
+    expect(parse({ commitsAs: { kind: "task", name: "07 Run" } })).toBe(true);
+    expect(parse({ commitsAs: { kind: "not-known-yet" } })).toBe(true);
+    expect(parse({ commitsAs: { kind: "local-only" } })).toBe(true);
+    expect(parse({ commitsAs: { kind: "unknown" } })).toBe(true);
+    expect(parse({ pinnedSlot: 0 })).toBe(false);
+    expect(parse({ pinnedSlot: 11 })).toBe(false);
+    expect(parse({ commitsAs: { kind: "waiting" } })).toBe(false);
+
+    expect(
+      dataToolOutputSchemas.find_entries.parse({ entries: [], running: null }),
+    ).toEqual({ entries: [], running: null });
+  });
+});
