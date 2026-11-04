@@ -1197,9 +1197,12 @@ describe("backlog settle routes", () => {
         path: "/api/backlog/imports",
       });
       expect(synced.status).toBe(200);
+      // Staged items come back in no set order.
       return (
         staged.body as { items: { sourceId: string; assignee?: unknown }[] }
-      ).items.map((item) => [item.sourceId, item.assignee]);
+      ).items
+        .map((item) => [item.sourceId, item.assignee] as const)
+        .sort(([left], [right]) => left.localeCompare(right));
     };
 
     await expect(assignees({ settle: true, assign: true })).resolves.toEqual([
@@ -1336,10 +1339,11 @@ describe("backlog settle routes", () => {
       method: "GET",
       path: "/api/backlog/imports",
     });
+    // Staged items come back in no set order.
     expect(
-      (staged.body as { items: { sourceId: string }[] }).items.map(
-        (item) => item.sourceId,
-      ),
+      (staged.body as { items: { sourceId: string }[] }).items
+        .map((item) => item.sourceId)
+        .sort(),
     ).toEqual(["OPEN-1", "OPEN-2"]);
   });
 
