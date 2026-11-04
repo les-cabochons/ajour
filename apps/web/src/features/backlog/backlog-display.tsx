@@ -86,14 +86,16 @@ export function BacklogDisplay({
   view,
   ordering,
   narrow,
+  className,
 }: {
   view: BacklogViewPreferences;
   ordering: BacklogSortMode;
   narrow: boolean;
+  className?: string;
 }) {
   return (
     <Popover>
-      <PopoverTrigger render={<Button variant="ghost" />}>
+      <PopoverTrigger render={<Button variant="ghost" className={className} />}>
         <RiEqualizerLine className="size-4" />
         Display
       </PopoverTrigger>

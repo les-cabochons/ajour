@@ -748,7 +748,8 @@ export function TimerPanel({
                             <Button
                               variant="ghost"
                               size="icon-sm"
-                              className="text-muted-foreground"
+                              // The running row's Stop is the one strong action in the list.
+                              className="text-foreground"
                               onClick={(event) => {
                                 event.stopPropagation();
                                 entryActions.runAction(rowTarget, "stop");

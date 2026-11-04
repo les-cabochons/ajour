@@ -555,7 +555,11 @@ export function BacklogItemSurface({
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    className="backlog-item-start text-muted-foreground aria-disabled:opacity-50"
+                    className={cn(
+                      "backlog-item-start aria-disabled:opacity-50",
+                      // The running item's Stop is the one strong action in the list.
+                      running ? "text-foreground" : "text-muted-foreground",
+                    )}
                   />
                 }
                 onClick={(e) => {
@@ -569,7 +573,11 @@ export function BacklogItemSurface({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="backlog-item-start text-muted-foreground aria-disabled:opacity-50"
+                className={cn(
+                  "backlog-item-start aria-disabled:opacity-50",
+                  // The running item's Stop is the one strong action in the list.
+                  running ? "text-foreground" : "text-muted-foreground",
+                )}
                 aria-label={startLabel}
                 aria-description={startDisabledReason}
                 aria-disabled={Boolean(startDisabledReason)}

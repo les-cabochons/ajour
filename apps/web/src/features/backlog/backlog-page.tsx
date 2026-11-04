@@ -555,48 +555,62 @@ export function BacklogPage() {
       )}
     >
       <div className="backlog-page-main backlog-workspace-main">
-        <PageHeader
-          actions={
-            <>
-              {!narrow && <BacklogLayoutToggle view={view} />}
-              <BacklogDisplay
-                view={view}
-                ordering={state.backlogSortMode}
-                narrow={narrow}
-              />
-            </>
-          }
-        />
+        {/* The narrow view has no top-bar slot: Display joins Filter in one
+            toolbar row instead of a row of its own. */}
+        {narrow ? null : (
+          <PageHeader
+            actions={
+              <>
+                <BacklogLayoutToggle view={view} />
+                <BacklogDisplay
+                  view={view}
+                  ordering={state.backlogSortMode}
+                  narrow={narrow}
+                />
+              </>
+            }
+          />
+        )}
         <div className="backlog-workspace-filterbar">
           <BacklogFilters state={state} view={view} />
-          <BacklogRefresh
-            hasSyncedItems={state.workItems.some(
-              (item) => item.source !== "manual",
+          {narrow ? (
+            <BacklogDisplay
+              view={view}
+              ordering={state.backlogSortMode}
+              narrow={narrow}
+              className="ml-auto"
+            />
+          ) : null}
+          <div className="backlog-workspace-status">
+            <BacklogRefresh
+              hasSyncedItems={state.workItems.some(
+                (item) => item.source !== "manual",
+              )}
+            />
+            {unmapped > 0 && (
+              <Link
+                to="/settings/workflow"
+                className="backlog-unmapped"
+                onClick={async (event) => {
+                  if (
+                    event.defaultPrevented ||
+                    event.button !== 0 ||
+                    event.ctrlKey ||
+                    event.metaKey ||
+                    event.shiftKey ||
+                    event.altKey
+                  )
+                    return;
+                  event.preventDefault();
+                  if (await leaveDraft())
+                    void navigate({ to: "/settings/workflow" });
+                }}
+              >
+                <RiErrorWarningLine aria-hidden />
+                {unmapped} unmapped source {unmapped === 1 ? "state" : "states"}
+              </Link>
             )}
-          />
-          {unmapped > 0 && (
-            <Link
-              to="/settings/workflow"
-              className="backlog-unmapped"
-              onClick={async (event) => {
-                if (
-                  event.defaultPrevented ||
-                  event.button !== 0 ||
-                  event.ctrlKey ||
-                  event.metaKey ||
-                  event.shiftKey ||
-                  event.altKey
-                )
-                  return;
-                event.preventDefault();
-                if (await leaveDraft())
-                  void navigate({ to: "/settings/workflow" });
-              }}
-            >
-              <RiErrorWarningLine aria-hidden />
-              {unmapped} unmapped source {unmapped === 1 ? "state" : "states"}
-            </Link>
-          )}
+          </div>
         </div>
         <div
           className={cn("backlog-workspace-scroll", board && "is-board")}

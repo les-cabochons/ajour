@@ -15,7 +15,11 @@ import { useLocalProjects } from "@/lib/local-hooks";
 import { getPressedDigit } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
-/** The key badge for a pinned task's slot, such as "3", shown next to the task's name. */
+/**
+ * The key badge for a pinned task's slot, such as "3", shown next to the task's
+ * name: a keycap, outlined with a heavier bottom edge and no fill, so it never
+ * reads as a count.
+ */
 export function PinnedSlotBadge({
   slot,
   className,
@@ -26,7 +30,7 @@ export function PinnedSlotBadge({
   return (
     <kbd
       className={cn(
-        "inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-md border border-border bg-muted px-1 font-mono text-[11px] leading-none font-medium text-foreground",
+        "inline-flex h-4.5 min-w-4.5 shrink-0 items-center justify-center rounded-sm border border-b-2 border-border bg-transparent px-1 font-mono text-2xs leading-none font-medium text-[var(--text-secondary)]",
         className,
       )}
       title={`Press ${slot} for a new entry, Shift+${slot} to start`}

@@ -861,8 +861,8 @@
     border-radius: 4px;
     background: transparent;
     color: var(--text-secondary);
-    font-size: 12px;
-    font-weight: 600;
+    font-size: var(--text-xs);
+    font-weight: 500;
     transition:
       background-color 140ms var(--ease),
       color 140ms var(--ease),

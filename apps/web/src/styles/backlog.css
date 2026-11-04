@@ -95,6 +95,11 @@
     border-end-end-radius: inherit;
   }
 
+  /* On desktop the status sits in the filter row as if unwrapped. */
+  .backlog-workspace-status {
+    display: contents;
+  }
+
   .backlog-unmapped {
     display: inline-flex;
     align-items: center;
@@ -369,8 +374,8 @@
     pointer-events: auto;
   }
 
-  /* Starting time is the main job, so a list row's Start shows at rest, dimmed;
-     its other actions wait for hover or focus. */
+  /* Starting time is the main job, so a list row's Start shows at rest; its
+     other actions wait for hover or focus. */
   @media (width >= 768px) {
     .backlog-list-row .backlog-item-actions {
       opacity: 1;
@@ -385,10 +390,6 @@
     .backlog-list-row:focus-within .backlog-item-actions > *,
     .backlog-list-row:has([data-popup-open]) .backlog-item-actions > * {
       visibility: visible;
-    }
-
-    .backlog-list-row:not(:hover, :focus-within) .backlog-item-start {
-      opacity: 0.55;
     }
   }
 
@@ -1076,8 +1077,44 @@
 
 /* The narrow view: DESKTOP_MIN_WIDTH in lib/breakpoints.ts. */
 @media (width < 768px) {
+  /* The toolbar starts right under the titlebar, as the page's first row. */
+  .page-container:has(> .backlog-page-stack) {
+    padding-top: 0;
+  }
+
+  /* One toolbar row, Filter then Display, over a compact status line. */
   .backlog-workspace-filterbar {
     padding: 0.25rem 0.75rem;
+  }
+
+  .backlog-workspace-status {
+    display: flex;
+    flex-basis: 100%;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+    min-height: 20px;
+  }
+
+  .backlog-workspace-status:empty {
+    display: none;
+  }
+
+  .backlog-workspace-status .backlog-refresh {
+    order: 1;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .backlog-workspace-status .backlog-refresh > span[role="status"] {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .backlog-workspace-status .backlog-unmapped {
+    flex-shrink: 0;
   }
 
   /* Two lines (#512): the title, then the project, the item's markers and
@@ -1230,6 +1267,16 @@
 }
 
 @media (width >= 768px) {
+  /* The project on a list row is a dot and a line of text, as in the narrow
+     view, not a filled chip: a fill on every row added a shape per line.
+     Unlayered, so it wins over the chip's utility classes. */
+  .backlog-list-row .backlog-item-project {
+    padding: 0;
+    background: none;
+    color: var(--text-secondary);
+    font-weight: 400;
+  }
+
   .backlog-workspace-filterbar,
   .backlog-list-row,
   .backlog-list-group .backlog-group-header,

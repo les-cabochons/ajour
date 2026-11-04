@@ -7,7 +7,6 @@ import {
   RiTimerLine as Timer,
 } from "@remixicon/react";
 import { buttonVariants } from "@/components/ui/button";
-import { TooltipButton } from "@/components/tooltip-button";
 import { getAppSection } from "@/features/layout/app-section";
 import {
   getNarrowBackLink,
@@ -21,21 +20,18 @@ const sections = [
     to: "/time/$date",
     label: "Time",
     icon: Timer,
-    shortcut: "go.time",
     isActive: (pathname: string) => getAppSection(pathname) === "time",
   },
   {
     to: "/backlog",
     label: "Backlog",
     icon: ListTodo,
-    shortcut: "go.backlog",
     isActive: (pathname: string) => getAppSection(pathname) === "backlog",
   },
   {
     to: "/settings",
     label: "Settings",
     icon: Settings,
-    shortcut: "app.settings",
     // Projects lives inside Settings in the narrow view.
     isActive: isNarrowSettingsSection,
   },
@@ -43,9 +39,9 @@ const sections = [
 
 /**
  * The narrow view's primary navigation: a segmented toggle for Time, Backlog
- * and Settings that floats at the bottom left. The active section shows its
- * label, the others only their icon. After a hairline, Commit week opens the
- * Commit page for the week on screen. It is an action, not a section, so it is
+ * and Settings that floats at the bottom left. Every item shows its icon and
+ * name; the active one is filled. After a hairline, Commit opens the Commit
+ * page for the week on screen. It is an action, not a section, so it is
  * never active.
  */
 export function NarrowSectionSwitcher({
@@ -71,37 +67,25 @@ export function NarrowSectionSwitcher({
           className: "ajour-narrow-switcher-item",
         };
 
-        if (isActive) {
-          return (
-            <Link key={section.to} aria-label={section.label} {...linkProps}>
-              <Icon />
-              <span>{section.label}</span>
-            </Link>
-          );
-        }
-
+        // Every destination shows its name, so none has to be recognized by
+        // its icon alone (council round 2).
         return (
-          <TooltipButton
-            key={section.to}
-            label={section.label}
-            shortcut={section.shortcut}
-            side="top"
-            render={<Link {...linkProps} />}
-          >
-            <Icon />
-          </TooltipButton>
+          <Link key={section.to} {...linkProps}>
+            <Icon aria-hidden />
+            <span>{section.label}</span>
+          </Link>
         );
       })}
       <span className="ajour-narrow-switcher-divider" aria-hidden="true" />
-      <TooltipButton
-        label="Commit"
+      <button
+        type="button"
         aria-label="Commit week"
-        side="top"
         className="ajour-narrow-switcher-item"
         onClick={() => openCommitPage()}
       >
-        <CommitIcon />
-      </TooltipButton>
+        <CommitIcon aria-hidden />
+        <span>Commit</span>
+      </button>
     </nav>
   );
 }

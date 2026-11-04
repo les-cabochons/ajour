@@ -157,6 +157,56 @@ function WarningDuration({ ms }: { ms: number }) {
   return <Value tone="muted">{formatClockDuration(ms)}</Value>;
 }
 
+function countUnderTargetDays(warnings: SubmitWarning[]) {
+  return warnings.filter((warning) => warning.kind === "day-under-target")
+    .length;
+}
+
+/**
+ * Two or more days under target share one line, "3 days under target: 6:00
+ * short", that opens the day-by-day amounts, so the summary leads with one
+ * warning instead of a stack of alike ones. One day keeps its own line.
+ */
+function UnderTargetDays({ warnings }: { warnings: SubmitWarning[] }) {
+  const [open, setOpen] = useState(false);
+  const days = warnings.filter(
+    (warning) => warning.kind === "day-under-target",
+  );
+  if (days.length < 2) return null;
+  const shortMs = days.reduce(
+    (sum, day) => sum + Math.max(0, day.targetMs - day.loggedMs),
+    0,
+  );
+  return (
+    <li className="submit-warning-group">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls="commit-under-target-days"
+        className="submit-warning-toggle"
+        onClick={() => setOpen(!open)}
+      >
+        <Warning aria-hidden />
+        <span>
+          {days.length} days under target: <WarningDuration ms={shortMs} />{" "}
+          short
+        </span>
+        <ChevronIcon
+          aria-hidden="true"
+          className={cn("submit-warning-chevron", open && "rotate-90")}
+        />
+      </button>
+      {open ? (
+        <ul id="commit-under-target-days" className="submit-warning-days">
+          {days.map((day) => (
+            <li key={warningKey(day)}>{formatWarning(day)}</li>
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  );
+}
+
 function formatWarning(warning: SubmitWarning) {
   if (warning.kind === "missing-task") {
     return `${countLabel(warning.entryCount, "entry has", "entries have")} no task`;
@@ -533,35 +583,42 @@ export function CommitPage({
         </div>
         {summary.warnings.length > 0 ? (
           <ul className="submit-warnings">
-            {summary.warnings.map((warning) => (
-              <li
-                key={warningKey(warning)}
-                className={cn(warning.kind === "days-ahead" && "is-calm")}
-              >
-                {warning.kind === "days-ahead" ? (
-                  <Ahead aria-hidden />
-                ) : (
-                  <Warning aria-hidden />
-                )}
-                <span>{formatWarning(warning)}</span>
-                {warning.kind === "waiting-task" ? (
-                  <Link
-                    to="/projects/$projectId"
-                    params={{ projectId: warning.projectId }}
-                    search={
-                      {
-                        action: "edit",
-                        target: warning.taskId,
-                        parent: warning.projectId,
-                      } as never
-                    }
-                    className="submit-warning-action"
-                  >
-                    Edit task
-                  </Link>
-                ) : null}
-              </li>
-            ))}
+            <UnderTargetDays warnings={summary.warnings} />
+            {summary.warnings
+              .filter(
+                (warning) =>
+                  warning.kind !== "day-under-target" ||
+                  countUnderTargetDays(summary.warnings) < 2,
+              )
+              .map((warning) => (
+                <li
+                  key={warningKey(warning)}
+                  className={cn(warning.kind === "days-ahead" && "is-calm")}
+                >
+                  {warning.kind === "days-ahead" ? (
+                    <Ahead aria-hidden />
+                  ) : (
+                    <Warning aria-hidden />
+                  )}
+                  <span>{formatWarning(warning)}</span>
+                  {warning.kind === "waiting-task" ? (
+                    <Link
+                      to="/projects/$projectId"
+                      params={{ projectId: warning.projectId }}
+                      search={
+                        {
+                          action: "edit",
+                          target: warning.taskId,
+                          parent: warning.projectId,
+                        } as never
+                      }
+                      className="submit-warning-action"
+                    >
+                      Edit task
+                    </Link>
+                  ) : null}
+                </li>
+              ))}
           </ul>
         ) : null}
         {lockedWeek ? (
