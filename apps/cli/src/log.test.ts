@@ -301,3 +301,21 @@ describe("ajour log refusals", () => {
     expect(term.err()).toContain('No active project matches "zzz".');
   });
 });
+
+describe("the log manual", () => {
+  it("shows the log page with --help, and the card lists it", async () => {
+    const term = await ajour();
+    expect(await run(["log", "--help"], term.io)).toBe(0);
+    expect(term.out()).toMatch(/^ajour log — /);
+    expect(term.out()).not.toContain("workday");
+
+    const card = await ajour();
+    expect(await run(["--help"], card.io)).toBe(0);
+    for (const line of [
+      "log [RANGE] [-s] [--by task] [--format FORMAT]",
+      "RANGE      ",
+    ]) {
+      expect(card.out()).toContain(line);
+    }
+  });
+});

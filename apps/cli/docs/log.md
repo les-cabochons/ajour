@@ -1,0 +1,90 @@
+ajour log — print time entries for a day, several days or a week
+
+Usage: ajour log [RANGE] [-s] [--by task] [--format FORMAT] [--json]
+                 [--project PROJECT] [--task TASK] [--committed|--uncommitted]
+
+Prints the entries of a range of days, one line per entry, under a header
+with the range's total against its target. Without a RANGE it prints
+today. A running entry shows with ● and its time so far, and counts once.
+
+  Wednesday 4 November 2026 · today   6:39 of 8:00  ▮▮▮▮▮▮▮▮▯▯
+  ────────────────────────────────────────────────────────────
+  ●  1:24  AJR   07 Export    Fix export rounding      3f9a2c1
+     2:00  AJR   04 Review    PR #512, #514            b7e1d04
+     0:45  ACME  03 Meetings  Weekly sync           ✓  91c0aa3
+     2:30  ACME  05 Backend   Rate limiter retries  ✓  0d4f77e
+
+  4 entries · 1 running · 2 committed · 1 to commit
+
+Each line reads: state, duration, project code, task, note, a ✓ when
+Workday holds the entry as it is, and the entry's id. Ids are what
+ajour edit and ajour continue take. A Local only task's entries end with
+"local", and a task with no Workday task yet with "not known yet".
+
+One day's header adds a ten-cell bar against its target. Several days
+group their entries under each day, with the day's total of its target;
+a day without time is one line, and Saturday and Sunday show only with
+time or a target. A week's header adds its pace against the targets of
+its days up to today: "on pace", "1:51 behind" or "0:30 ahead".
+
+Lines are cut to the terminal's width: the note shrinks first, then the
+line ends with "…". Nothing wraps.
+
+Range
+  today, yesterday
+  mon .. sun         The most recent such day, today included.
+  2026-11-03, 11-03  A date. Without a year, this year.
+  DAY..DAY           Both days included, such as mon..wed or 10-28..11-03.
+  week, last-week    Monday to Sunday.
+  2026-W45           An ISO week.
+
+  A range covers at most 62 days.
+
+Options
+  --format FORMAT    table (the default on a terminal), tsv (the default
+                     in a pipe), csv or json.
+  --json             The list_time_entries tool's output, with only the
+                     entries the filters keep. The same as --format json.
+  -s, --summary      Totals per day only, each with a bar against its
+                     target.
+  --by GROUP         day (the default) or task. task prints one line per
+                     task over the range, most time first, with a bar,
+                     marking the running entry's task and the tasks Not
+                     known yet.
+  --project PROJECT  Only that project's entries. Matched as a TASK's
+                     PROJECT part is, see ajour --help.
+  --task TASK        Only that task's entries. Same matching as TASK.
+  --committed        Only the entries Workday holds as they are.
+  --uncommitted      Only the rest, the running entry included.
+
+  --summary and --by task print a table, so they take no other format.
+
+For tools
+  tsv and csv print one line per entry under a header row:
+
+    date  state  hours  project  task  note  id
+
+  Dates are ISO dates, hours are decimal with a dot, such as 1.40 for
+  1:24, and state is saved, committed or running. There is no color and
+  no escape code. In tsv a tab or line break inside a note becomes a
+  space; csv quotes a field that holds a comma, a quote or a line break.
+
+Examples
+  Today, on screen
+    $ ajour log
+
+  This week's hours as numbers
+    $ ajour log week | cut -f3
+
+  Week 44 for a spreadsheet
+    $ ajour log 2026-W44 --format csv > week44.csv
+
+  Hours yesterday
+    $ ajour log yesterday --json | jq '[.entries[].minutes] | add / 60'
+
+  Notes of what is not committed yet
+    $ ajour log week --uncommitted --json | jq -r '.entries[].note'
+
+Exit status
+  0 on success, 2 for a bad RANGE or option, 3 when Ajour is not
+  reachable, 4 when --project or --task matches nothing or several.

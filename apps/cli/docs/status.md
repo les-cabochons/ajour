@@ -3,14 +3,14 @@ ajour status — what is running, and today's total
 Usage: ajour status [-s [--idle TEXT]] [-w] [--json]
 
 Shows the running entry with its time counted to the second, its project
-and task, when it started counting, and today's total:
+and task, when it started counting, and today's total of its target:
 
   ● 1:24:07  Fix export rounding
-    AJR · 07 Export · since 13:20 · today 6:39
+    AJR · 07 Export · since 13:20 · today 6:39 of 8:00
 
 With nothing running, it names the entry saved last, on any day:
 
-  ○ Nothing running · today 5:15 · last: 04 Review, 45m ago
+  ○ Nothing running · today 5:15 of 8:00 · last: 04 Review, 45m ago
 
 Each line is cut to the terminal's width; nothing wraps.
 
