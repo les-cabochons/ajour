@@ -610,6 +610,58 @@ describe("macOS command link", () => {
       expect((await f.fs.lstat()).isSymbolicLink()).toBe(false);
     },
   );
+  it("creates a missing bin without privilege when its parent is writable", async () => {
+    const f = fixture({
+      directoryMissing: true,
+      parentWritable: true,
+      writable: false,
+    });
+    expect(await f.link().add("/Users/alex/bin")).toEqual({ added: true });
+    expect(f.calls.map((call) => call.file)).toEqual([
+      "fs.mkdir",
+      "fs.symlink",
+    ]);
+  });
+  it.each([
+    { directoryMissing: true, parentWritable: false },
+    { directoryUid: 501 },
+    { directoryMode: 0o775 },
+    { directoryMode: 0o757 },
+    { directorySymlink: true },
+  ])(
+    "checks the privileged directory before creating entries: %j",
+    async (options) => {
+      const f = fixture({ writable: false, ...options });
+      const result = f.link().add("/Users/alex/bin", { interactive: true });
+      if (options.directoryMissing) {
+        expect(await result).toEqual({ added: true });
+        const shell = JSON.parse(
+          f.calls[0]!.args[1]!.slice(
+            "do shell script ".length,
+            -" with administrator privileges".length,
+          ),
+        );
+        expect(shell).toContain("/bin/mkdir -m 755 '/usr/local/bin'");
+        expect(shell).not.toContain("mkdir -p");
+        expect(shell).toContain("[ ! -L '/usr/local/bin' ]");
+        expect(shell).toContain("/usr/bin/stat -f '%u %Lp'");
+      } else {
+        await expect(result).rejects.toThrow("Retry");
+        expect(f.current()).toBeNull();
+      }
+    },
+  );
+  it("refuses a user-owned bin appearing while the password prompt is open", async () => {
+    const f = fixture({
+      writable: false,
+      directoryMissing: true,
+      beforeExec: () => f.makeDirectoryUnsafe(),
+    });
+    await expect(
+      f.link().add("/Users/alex/bin", { interactive: true }),
+    ).rejects.toThrow("Retry");
+    expect(f.current()).toBeNull();
+  });
   it("rejects success when the exact link no longer has the intended target", async () => {
     const f = fixture();
     const files = {
@@ -665,7 +717,7 @@ describe("macOS command link", () => {
   });
   it("quotes shell paths and the AppleScript string independently", async () => {
     const f = fixture({ writable: false });
-    await f.link().add(`/Users/A "B"/it's\\home/bin`, { interactive: true });
+    await f.link().add(`/Users/A "B"/it's\\$home/bin`, { interactive: true });
     expect(f.calls[0]!.file).toBe("/usr/bin/osascript");
     const script = f.calls[0]!.args[1]!;
     expect(script).toContain("with administrator privileges");
@@ -677,11 +729,14 @@ describe("macOS command link", () => {
       ),
     );
     expect(f.calls).toHaveLength(1);
+    expect(f.current()).toBe(`/Users/A "B"/it's\\$home/bin/ajour`);
+    expect(shell).toContain("createSymbolicLinkAtPathWithDestinationError");
+    expect(shell).not.toContain("/bin/ln");
     expect(shell).toContain(
-      `[ ! -e '/usr/local/bin/ajour' ] && [ ! -L '/usr/local/bin/ajour' ] && /bin/ln '-s' '-n'`,
+      `[ ! -e '/usr/local/bin/ajour' ] && [ ! -L '/usr/local/bin/ajour' ] && AJOUR_LINK='/usr/local/bin/ajour'`,
     );
     expect(shell).toContain(
-      `'/Users/A "B"/it'"'"'s\\home/bin/ajour' '/usr/local/bin/ajour'`,
+      `AJOUR_TARGET='/Users/A "B"/it'"'"'s\\$home/bin/ajour' /usr/bin/osascript -l JavaScript`,
     );
     expect(shell).toContain(
       `[ -L '/usr/local/bin/ajour' ] && [ "$(/usr/bin/readlink '/usr/local/bin/ajour')" = `,

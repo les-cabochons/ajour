@@ -8,6 +8,11 @@ export function macosLinkFixture({
   foreignFile = false,
   writable = true,
   cancelled = false,
+  directoryMissing = false,
+  parentWritable = false,
+  directoryUid = 0,
+  directoryMode = 0o755,
+  directorySymlink = false,
   beforeCreate = () => {},
   beforeExec = () => {},
   afterRead = () => {},
@@ -35,8 +40,18 @@ export function macosLinkFixture({
         throw Object.assign(new Error("File exists"), { code: "EEXIST" });
       target = source;
     },
-    access: async () => {
-      if (!writable) throw Object.assign(new Error(), { code: "EACCES" });
+    mkdir: async (directory: string) => {
+      calls.push({ file: "fs.mkdir", args: [directory] });
+      directoryMissing = false;
+      writable = true;
+    },
+    access: async (location: string) => {
+      if (location === "/usr/local") {
+        if (parentWritable) return;
+      } else if (directoryMissing) {
+        throw Object.assign(new Error(), { code: "ENOENT" });
+      } else if (writable) return;
+      throw Object.assign(new Error(), { code: "EACCES" });
     },
   };
   const exec = async (file: string, args: string[]) => {
@@ -45,10 +60,17 @@ export function macosLinkFixture({
     if (cancelled) throw new Error("User canceled. (-128)");
     const quote = (value: string) =>
       "'" + value.replaceAll("'", "'\"'\"'") + "'";
-    const create = (source: string, noFollow: boolean, guarded = false) => {
-      beforeCreate();
+    const create = (
+      source: string,
+      noFollow: boolean,
+      guarded = false,
+      exact = false,
+    ) => {
       if (guarded && (target !== null || foreignFile || realDirectory))
         throw new Error("Destination exists");
+      beforeCreate();
+      if (exact && (target !== null || foreignFile || realDirectory))
+        throw new Error("File exists");
       if (realDirectory) {
         escaped.push("/usr/local/bin/ajour/ajour");
         return;
@@ -71,10 +93,31 @@ export function macosLinkFixture({
                 -" with administrator privileges".length,
               ),
             );
+      if (shell.includes("/usr/bin/stat")) {
+        if (directoryMissing) directoryMissing = false;
+        if (
+          directoryUid !== 0 ||
+          (directoryMode & 0o022) !== 0 ||
+          directorySymlink
+        )
+          throw new Error("Unsafe destination directory");
+      }
       if (shell.includes("/bin/rm")) {
         if (target !== null && shell.includes(`= ${quote(target)} ]`))
           target = null;
         else if (shell.includes("else exit 1")) throw new Error("Link changed");
+      }
+      if (shell.includes("createSymbolicLinkAtPathWithDestinationError")) {
+        const match = shell.match(
+          /AJOUR_TARGET=('(?:[^']|'"'"')*') \/usr\/bin\/osascript/,
+        );
+        if (!match) throw new Error("Missing target environment variable");
+        create(
+          match[1]!.slice(1, -1).replaceAll("'\"'\"'", "'"),
+          true,
+          false,
+          true,
+        );
       }
       const ln = shell.match(
         /\/bin\/ln '-s' ('-n' )?(.+?) '\/usr\/local\/bin\/ajour'/,
@@ -95,6 +138,10 @@ export function macosLinkFixture({
     current: () => target,
     fs,
     exec,
+    makeDirectoryUnsafe: () => {
+      directoryMissing = false;
+      directoryUid = 501;
+    },
     replaceWithDirectory: () => {
       target = null;
       realDirectory = true;

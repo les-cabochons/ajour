@@ -250,7 +250,7 @@ module.exports = {
 /**
  * Links into this install folder are owned, but only the committed binary is correct.
  * Repair precedes reconciliation cleanup. Launch reconciliation never prompts.
- * @param {{ fs: Pick<typeof import("node:fs/promises"), "lstat" | "readlink" | "access" | "symlink">,
+ * @param {{ fs: Pick<typeof import("node:fs/promises"), "lstat" | "readlink" | "access" | "mkdir" | "symlink">,
  *   exec: (file: string, args: string[], options?: { timeout?: number }) => Promise<unknown> }} options
  */
 function createMacosCommandLink({ fs, exec }) {
@@ -295,13 +295,33 @@ function createMacosCommandLink({ fs, exec }) {
       (!present && current.kind === "absent")
     )
       return { added: false };
-    const writable = await fs.access(directory, 2).then(
-      () => true,
-      (error) => {
-        if (["ENOENT", "EACCES", "EPERM"].includes(error.code)) return false;
-        throw error;
-      },
-    );
+    const canWrite = async (location) =>
+      fs.access(location, 2).then(
+        () => true,
+        (error) => {
+          if (["EACCES", "EPERM"].includes(error.code)) return false;
+          throw error;
+        },
+      );
+    let writable;
+    try {
+      writable = await canWrite(directory);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      writable = await canWrite(path.posix.dirname(directory)).catch(
+        (error) => {
+          if (error.code === "ENOENT") return false;
+          throw error;
+        },
+      );
+      if (writable) {
+        try {
+          await fs.mkdir(directory, { mode: 0o755 });
+        } catch (error) {
+          if (error.code !== "EEXIST") throw error;
+        }
+      }
+    }
     if (!writable && !interactive)
       throw new Error(
         "Ajour needs your password to repair /usr/local/bin/ajour. Press Retry in Settings.",
@@ -339,15 +359,21 @@ function createMacosCommandLink({ fs, exec }) {
         }
       }
     } else {
-      // This branch is chosen only for a directory the user can't write.
-      // An unprivileged racer therefore can't create the destination between
-      // this guard and ln. Guard, creation and verification run in one privileged shell.
-      const creation = `/bin/mkdir -p ${quote(directory)} && [ ! -e ${quote(destination)} ] && [ ! -L ${quote(destination)} ] && /bin/ln '-s' '-n' ${quote(target)} ${quote(destination)} && [ -L ${quote(destination)} ] && [ "$(/usr/bin/readlink ${quote(destination)})" = ${quote(target)} ]`;
-      const guarded = present
+      // Recheck after the password prompt: permissions and even the directory
+      // may have changed. A real root-owned directory without group/other write
+      // bits prevents an unprivileged racer from creating entries during this
+      // invocation. Exact-destination creation also refuses a directory at ajour.
+      const secureDirectory = `if [ ! -e ${quote(directory)} ] && [ ! -L ${quote(directory)} ]; then /bin/mkdir -m 755 ${quote(directory)} || exit 1; fi; [ ! -L ${quote(directory)} ] && [ -d ${quote(directory)} ] || exit 1; set -- $(/usr/bin/stat -f '%u %Lp' ${quote(directory)}); [ "$#" -eq 2 ] && [ "$1" = 0 ] && [ "$((0$2 & 022))" -eq 0 ] || exit 1`;
+      // Paths are shell environment values, never JavaScript source. Foundation
+      // creates the exact link or fails if anything already occupies that path.
+      const jxa = `ObjC.import("Foundation"); const env = $.NSProcessInfo.processInfo.environment; if (!$.NSFileManager.defaultManager.createSymbolicLinkAtPathWithDestinationError(env.objectForKey("AJOUR_LINK"), env.objectForKey("AJOUR_TARGET"), null)) throw new Error("Link creation failed");`;
+      const creation = `[ ! -e ${quote(destination)} ] && [ ! -L ${quote(destination)} ] && AJOUR_LINK=${quote(destination)} AJOUR_TARGET=${quote(target)} /usr/bin/osascript -l JavaScript -e ${quote(jxa)} && [ -L ${quote(destination)} ] && [ "$(/usr/bin/readlink ${quote(destination)})" = ${quote(target)} ]`;
+      const operation = present
         ? repair
           ? `${removal} && ${creation}`
           : creation
         : removal;
+      const guarded = `${secureDirectory}; ${operation}`;
       const script = `do shell script ${JSON.stringify(guarded)} with administrator privileges`;
       try {
         await exec("/usr/bin/osascript", ["-e", script], { timeout: 120_000 });

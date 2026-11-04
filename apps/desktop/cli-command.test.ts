@@ -1642,6 +1642,46 @@ describe("macOS signature verification", () => {
     expect(prompts).toEqual([false, true]);
     expect(github.requests).toEqual([]);
   });
+  it("keeps a pending install target until its privileged link is removed on Retry", async () => {
+    await mkdir(installDir, { recursive: true });
+    const bytes = Buffer.from("uncommitted command");
+    await writeFile(path.join(installDir, "ajour"), bytes);
+    const marker = ".pending-00000000-0000-0000-0000-000000000001.json";
+    await writeFile(
+      path.join(installDir, marker),
+      JSON.stringify({ digests: { ajour: sha256(bytes) } }),
+    );
+    const folder = "/Users/alex/Ajour/bin";
+    const f = macosLinkFixture({ target: `${folder}/ajour`, writable: false });
+    const adapter = f.link();
+    let removed = false;
+    const files = fsWith({
+      rm: async (...args: Parameters<typeof fs.rm>) => {
+        if (String(args[0]) === path.join(installDir, "ajour"))
+          expect(removed).toBe(true);
+        return fs.rm(...args);
+      },
+    });
+    const link = {
+      add: (_folder: string, options?: unknown) => adapter.add(folder, options),
+      remove: async (_folder: string, options?: unknown) => {
+        const result = await adapter.remove(folder, options);
+        removed = true;
+        return result;
+      },
+    };
+    const { controller } = mac(false, { files, link: { link } });
+    expect(await controller.reconcile()).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("Retry"),
+    });
+    expect(await readFile(path.join(installDir, "ajour"))).toEqual(bytes);
+    expect(existsSync(path.join(installDir, marker))).toBe(true);
+    expect(f.current()).toBe(`${folder}/ajour`);
+    expect((await controller.install()).status).toBe("installed");
+    expect(removed).toBe(true);
+    expect(existsSync(path.join(installDir, marker))).toBe(false);
+  });
   it("keeps old files when a foreign command prevents confirming absence", async () => {
     const old = "ajour.old-00000000-0000-0000-0000-000000000001";
     await mkdir(installDir, { recursive: true });

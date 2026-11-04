@@ -591,6 +591,17 @@ function createCliCommandController({
       await fs.rm(paths.recordFile, { force: true });
       record = null;
     }
+    // Removing a privileged link can require Retry. Keep its pending target
+    // intact until removal succeeds, so launch recovery cannot leave it dangling.
+    let result = { added: false };
+    if (record) result = await link.add(paths.installDir, { interactive });
+    else {
+      const removal = await link.remove(paths.installDir, { interactive });
+      if (removal?.cleanupSafe === false)
+        throw new Error(
+          "Another ajour is at /usr/local/bin/ajour. Remove it, then press Retry in Settings.",
+        );
+    }
     if (!record) {
       // A missing record proves nothing about files in the user's folder.
       // Only a fully written pending marker identifies an uncommitted swap.
@@ -612,15 +623,6 @@ function createCliCommandController({
             await fs.rm(targetOf(name), { recursive: true, force: true });
         }
       }
-    }
-    let result = { added: false };
-    if (record) result = await link.add(paths.installDir, { interactive });
-    else {
-      const removal = await link.remove(paths.installDir, { interactive });
-      if (removal?.cleanupSafe === false)
-        throw new Error(
-          "Another ajour is at /usr/local/bin/ajour. Remove it, then press Retry in Settings.",
-        );
     }
     // Link operations must confirm the committed target or absence before cleanup.
     for (const name of await namesIn(paths.installDir)) {
