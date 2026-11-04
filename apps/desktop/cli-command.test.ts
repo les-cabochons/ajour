@@ -715,6 +715,15 @@ describe("where it doesn't install", () => {
     expect(github.requests).toEqual([]);
   });
 
+  it("is unsupported for a version that was never released", async () => {
+    const { controller, github } = controllerWith({
+      appVersion: "0.1.0-local",
+    });
+
+    expect((await controller.install()).reason).toBe("development_build");
+    expect(github.requests).toEqual([]);
+  });
+
   it("is unsupported on macOS until it links /usr/local/bin (#569)", async () => {
     const { controller } = controllerWith({
       platform: "darwin",

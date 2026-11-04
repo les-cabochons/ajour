@@ -59,8 +59,13 @@ function responseOf(status, url, headers, message) {
     ? /** @type {ReadableStream<Uint8Array>} */ (Readable.toWeb(message))
     : new ReadableStream({ start: (controller) => controller.close() });
   const text = async () => {
+    const reader = body.getReader();
     const chunks = [];
-    for await (const chunk of body) chunks.push(Buffer.from(chunk));
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(Buffer.from(value));
+    }
     return Buffer.concat(chunks).toString("utf8");
   };
   return {

@@ -117,10 +117,11 @@ function createCliCommandController({
   const tag = tagForPackageVersion(appVersion);
   const asset = cliAssetName(platform, arch, appVersion);
   const binary = binaryName(platform);
+  // A version with no release tag was never released: it builds from source.
   const unsupportedReason =
     platform !== "win32"
       ? "unsupported_platform"
-      : development && !localOrigin
+      : (development && !localOrigin) || !tag
         ? "development_build"
         : null;
 

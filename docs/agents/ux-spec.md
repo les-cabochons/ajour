@@ -733,6 +733,22 @@ The `ajour` command does in a terminal what the window does, through the MCP end
 - A task is named as `PROJECT/TASK`, `TASK`, or a pinned key 1 to 0, matched as task imports match names. PROJECT is the project's code, its name or its full name. An entry is named `running`, `last`, or by the start of its short id. A name that matches nothing or several lists the candidates, and nothing happens.
 - A refusal prints Ajour's own reason after "refused:", word for word, such as "refused: No entry is running.", and changes nothing.
 
+### Installing the ajour command
+
+Settings › General › Terminal, after Desktop app, says "Use Ajour from your shell with the ajour command." and has one row, "ajour command" (spec [#567](https://github.com/les-cabochons/ajour/issues/567), built on Windows in [#568](https://github.com/les-cabochons/ajour/issues/568)). Its status line keeps two lines of height in every state, so the page never moves.
+
+| State             | Status line                                                                                                                              | Control                                                |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Not installed     | "Not installed."                                                                                                                         | **Install**                                            |
+| Installing        | "Downloading ajour, 42%", then "Checking ajour…", then "Adding ajour to your PATH…"                                                      | **Install**, disabled from the click                   |
+| Installed         | "ajour 0.0.1-nightly.20261104.294 · C:\Users\…\AppData\Local\Ajour\bin". Right after an install it adds "Open a new terminal to use it." | A "How to use it" link to docs.ajour.day/terminal/     |
+| Install failed    | The reason, in red, under the status line, which keeps the installed version when there is one                                           | **Install**                                            |
+| Development build | "The ajour command installs from released builds. From source, run: just cli"                                                            | **Install**, disabled, with that reason as its tooltip |
+
+- Install takes the release of Ajour's own version, so the command and the app always match. It checks the download against the checksum GitHub publishes for it, and checks that the command prints its version, before anything moves into place. On Windows the folder goes on the user Path, with no administrator prompt; every other entry stays as it was.
+- A failed install changes nothing on disk or on the Path, and says why next to the row, never in a toast. Each refusal has its own sentence: no archive for this system in the release yet ("The v… release has no ajour for Windows x64 yet. Try again in a few minutes."), no checksum, a checksum that doesn't match, a download over 120 MB or longer than GitHub said, a redirect away from HTTPS, a download off Ajour's release page, an archive file that would land outside its folder, an archive without the command, or a command that prints another version or none within 10 seconds.
+- The browser build has no Terminal section. On macOS the section is absent until the /usr/local/bin link ([#569](https://github.com/les-cabochons/ajour/issues/569)).
+
 ## Backlog sidebar
 
 Decided in [Backlog sidebar with settle, snooze and a backlog item page](https://github.com/les-cabochons/ajour/issues/69). The backlog plugin side is [#70](https://github.com/les-cabochons/ajour/issues/70). Delayed writes are recorded in [ADR 0001](../adr/0001-connector-writes-after-undo-window.md).
