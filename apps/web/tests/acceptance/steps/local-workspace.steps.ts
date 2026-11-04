@@ -1639,8 +1639,11 @@ Then("the Backlog workspace fills the available page", async ({ page }) => {
   await page.setViewportSize({ width: 2200, height: 900 });
   const content = await page.locator(".app-content-shell").boundingBox();
   const workspace = await page.locator(".backlog-workspace").boundingBox();
+  // The filter row shows only while filters are on: the list's first group
+  // header spans the page instead.
   const header = await page
-    .locator(".backlog-workspace-filterbar")
+    .locator(".backlog-group-header")
+    .first()
     .boundingBox();
   expect(workspace).not.toBeNull();
   expect(workspace?.x).toBe(content?.x);
