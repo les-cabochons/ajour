@@ -149,7 +149,7 @@ function finishWrite(
   const sourceWriteIds = outcome.sourceWriteIds ?? [];
   const settleComments = outcome.settleComments ?? [];
   unit?.set({ agent_tool: { undo_offered: outcome.undoToken !== null } });
-  rememberAgentWrite(outcome);
+  rememberAgentWrite(outcome, call.client.id);
   offerUndo(outcome.undoToken, {
     title: `${call.client.name}: ${outcome.action}`,
     subject: outcome.undoSubject,
@@ -226,7 +226,9 @@ export async function runAgentToolCall(
       return asAgent(() => finishWrite(call, outcome, unit));
     }
     if (tool === "undo") {
-      return asAgent(() => finishWrite(call, runAgentUndo(call.input), unit));
+      return asAgent(() =>
+        finishWrite(call, runAgentUndo(call.input, call.client.id), unit),
+      );
     }
     if (tool === "post_work_item_comment") {
       return await postCommentForAgent(call, unit);

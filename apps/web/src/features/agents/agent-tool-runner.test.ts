@@ -1050,6 +1050,45 @@ describe("agent delete, discard and undo tools", () => {
       error: "That change can't be undone any more.",
     });
   });
+
+  it("refuses another client's token with the expired sentence, and leaves it to its own client", async () => {
+    const { runAgentToolCall } =
+      await import("@/features/agents/agent-tool-runner");
+    const context = await setup();
+    const { localStore } = context;
+    const entryId = saveEntry(context);
+    const other = { id: "c2", name: "Cursor" };
+    const run = (who: typeof client, tool: string, input: unknown) =>
+      runAgentToolCall({ requestId: "r", tool, input, client: who });
+
+    const deleted = (await run(client, "delete_entries", {
+      entryIds: [entryId],
+    })) as { output: { undoToken: string } };
+    const { undoToken } = deleted.output;
+
+    expect(await run(other, "undo", { undoToken })).toEqual({
+      requestId: "r",
+      ok: false,
+      error: "That change can't be undone any more.",
+    });
+    expect(
+      localStore
+        .snapshot()
+        .timesheetEntries.some((entry) => entry._id === entryId),
+    ).toBe(false);
+
+    // The refusal spent nothing: the client that deleted can still undo.
+    expect(await run(client, "undo", { undoToken })).toMatchObject({
+      ok: true,
+      output: { undone: "Deleted 1 entry" },
+      activity: { action: "Undid: Deleted 1 entry" },
+    });
+    expect(
+      localStore
+        .snapshot()
+        .timesheetEntries.some((entry) => entry._id === entryId),
+    ).toBe(true);
+  });
 });
 
 describe("agent tools on submitted weeks", () => {
