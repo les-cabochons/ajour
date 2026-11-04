@@ -11,8 +11,9 @@ import { installDomShims } from "@/test-support/dom";
 
 /*
  * Settings › General › Desktop app (#534): the switch runs one operation at a
- * time (loading, idle, saving, reconciling) and shows only what main
- * answered. It takes a click in `idle` and nowhere else.
+ * time (loading, idle, saving, reconciling, unavailable) and shows only what
+ * main answered. It takes a click in `idle` and nowhere else. A read that
+ * main does not answer leaves it `unavailable`, with Retry, never `idle`.
  */
 
 const mocks = vi.hoisted(() => ({ error: vi.fn() }));
@@ -110,29 +111,100 @@ describe("the keep running setting", () => {
     expect(shown(toggle)).toBe("false");
   });
 
-  it("ends idle on the default when the first read fails", async () => {
+  it("is unavailable, claiming no value, when the first read fails", async () => {
     const main = desktop();
     const toggle = mount();
 
     await act(async () => main.reads[0]!.reject(new Error("no answer")));
 
-    expect(disabled(toggle)).toBe(false);
-    expect(shown(toggle)).toBe("true");
+    expect(disabled(toggle)).toBe(true);
+    expect(shown(toggle)).toBe("false");
+    expect(screen.getByText("Ajour didn't answer.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    // The row says it; no toast.
     expect(mocks.error).not.toHaveBeenCalled();
   });
 
-  it("ends idle on the default when the first read never answers", async () => {
+  it("gives the unavailable switch its state as an accessible description", async () => {
+    const main = desktop();
+    const toggle = mount();
+
+    await act(async () => main.reads[0]!.reject(new Error("no answer")));
+
+    const described = toggle.getAttribute("aria-describedby");
+    expect(described).toBeTruthy();
+    expect(document.getElementById(described!)?.textContent).toBe(
+      "Ajour didn't answer.",
+    );
+  });
+
+  // Round 5: main holds off and answers late. The switch must not become
+  // enabled on the default `on`.
+  it("is unavailable, never idle, when the first read misses its deadline", async () => {
     const main = desktop();
     const toggle = mount();
 
     await elapse(4_900);
     expect(disabled(toggle)).toBe(true);
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
     await elapse(200);
 
+    expect(disabled(toggle)).toBe(true);
+    expect(shown(toggle)).toBe("false");
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(mocks.error).not.toHaveBeenCalled();
+    expect(main.getWindowSettings).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+
+    // The late answer is ignored; Retry is the way back.
+    await act(async () => main.reads[0]!.resolve({ keepRunning: false }));
+    expect(disabled(toggle)).toBe(true);
+    expect(shown(toggle)).toBe("false");
+  });
+
+  it("Retry reads again and goes idle on main's answer", async () => {
+    const main = desktop();
+    const toggle = mount();
+    await elapse(5_000);
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(main.getWindowSettings).toHaveBeenCalledTimes(2);
+    expect(disabled(toggle)).toBe(true);
+    // A second click while the retry runs starts nothing.
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(main.getWindowSettings).toHaveBeenCalledTimes(2);
+
+    await act(async () => main.reads[1]!.resolve({ keepRunning: false }));
+
+    expect(disabled(toggle)).toBe(false);
+    expect(shown(toggle)).toBe("false");
+    expect(screen.queryByText("Ajour didn't answer.")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(toggle.hasAttribute("aria-describedby")).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("Retry that fails or misses its deadline is unavailable again", async () => {
+    const main = desktop();
+    const toggle = mount();
+    await elapse(5_000);
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await act(async () => main.reads[1]!.reject(new Error("unreachable")));
+    expect(disabled(toggle)).toBe(true);
+    expect(screen.getByText("Ajour didn't answer.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await elapse(5_000);
+    expect(disabled(toggle)).toBe(true);
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(vi.getTimerCount()).toBe(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await act(async () => main.reads[3]!.resolve({ keepRunning: true }));
     expect(disabled(toggle)).toBe(false);
     expect(shown(toggle)).toBe("true");
     expect(mocks.error).not.toHaveBeenCalled();
-    expect(main.getWindowSettings).toHaveBeenCalledOnce();
   });
 
   it("shows the requested value while saving, then main's answer", async () => {
@@ -296,29 +368,44 @@ describe("the keep running setting", () => {
     expect(shown(toggle)).toBe("false");
   });
 
-  it("ends idle on the last confirmed value when the re-read never answers", async () => {
+  // Round 5: the save landed in main, but neither its answer nor the re-read
+  // came. The last confirmed `on` is no longer known to be true.
+  it("is unavailable, never idle on the old value, when the save and the re-read both miss their deadlines", async () => {
     const main = desktop();
     const toggle = await loadedSwitch(main);
 
     fireEvent.click(toggle);
-    await act(async () => main.saves[0]!.reject(new Error("refused")));
+    await elapse(5_000);
+    expect(shown(toggle)).toBe("true");
+    expect(disabled(toggle)).toBe(true);
     await elapse(4_900);
     expect(disabled(toggle)).toBe(true);
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
 
     await elapse(200);
 
-    expect(disabled(toggle)).toBe(false);
-    expect(shown(toggle)).toBe("true");
+    expect(disabled(toggle)).toBe(true);
+    expect(shown(toggle)).toBe("false");
+    expect(screen.getByText("Ajour didn't answer.")).toBeTruthy();
     // The save's toast only, none for the re-read.
     expect(mocks.error).toHaveBeenCalledOnce();
     expect(vi.getTimerCount()).toBe(0);
 
-    // An answer after its own deadline is ignored.
-    await act(async () => main.reads[1]!.resolve({ keepRunning: false }));
-    expect(shown(toggle)).toBe("true");
+    // Late answers are ignored; Retry is the way back.
+    await act(async () => main.saves[0]!.resolve({ keepRunning: false }));
+    await act(async () => main.reads[1]!.resolve({ keepRunning: true }));
+    expect(disabled(toggle)).toBe(true);
+    expect(shown(toggle)).toBe("false");
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await act(async () => main.reads[2]!.resolve({ keepRunning: false }));
+
+    expect(disabled(toggle)).toBe(false);
+    expect(shown(toggle)).toBe("false");
+    expect(mocks.error).toHaveBeenCalledOnce();
   });
 
-  it("ends idle on the last confirmed value when the re-read fails", async () => {
+  it("is unavailable when the re-read fails", async () => {
     const main = desktop();
     const toggle = await loadedSwitch(main, false);
 
@@ -326,9 +413,40 @@ describe("the keep running setting", () => {
     await act(async () => main.saves[0]!.reject(new Error("refused")));
     await act(async () => main.reads[1]!.reject(new Error("unreachable")));
 
-    expect(disabled(toggle)).toBe(false);
-    expect(shown(toggle)).toBe("false");
+    expect(disabled(toggle)).toBe(true);
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     expect(mocks.error).toHaveBeenCalledOnce();
+  });
+
+  it("leaves no timer and no update when it unmounts while unavailable", async () => {
+    const main = desktop();
+    mount();
+    await elapse(5_000);
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+
+    cleanup();
+
+    expect(vi.getTimerCount()).toBe(0);
+    await act(async () => main.reads[0]!.resolve({ keepRunning: false }));
+    await elapse(10_000);
+    expect(mocks.error).not.toHaveBeenCalled();
+    expect(main.getWindowSettings).toHaveBeenCalledOnce();
+  });
+
+  it("leaves no timer and no update when it unmounts during a retry", async () => {
+    const main = desktop();
+    mount();
+    await elapse(5_000);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+    cleanup();
+
+    expect(vi.getTimerCount()).toBe(0);
+    await act(async () => main.reads[1]!.reject(new Error("unreachable")));
+    await elapse(10_000);
+    expect(mocks.error).not.toHaveBeenCalled();
+    expect(main.getWindowSettings).toHaveBeenCalledTimes(2);
   });
 
   it("is disabled in every state but idle", async () => {

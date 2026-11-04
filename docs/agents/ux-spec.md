@@ -699,7 +699,7 @@ Decided in [#534](https://github.com/les-cabochons/ajour/issues/534), for the te
 - Stop in the tray menu stops the entry the menu showed, as the timer dock's Stop does, and does nothing when another entry runs by then. The window shows it stopped when it opens.
 - The first close shows a system notification, once: "Ajour is still running. Quit it from the tray icon." On macOS it says "Quit it from the menu bar."
 - Settings › General › Desktop app › "Keep Ajour running when the window closes" is on by default. Off, closing the window quits Ajour on Windows and Linux, as before, and the tray icon goes. macOS keeps its usual behavior: the window closes and Ajour stays in the Dock. The browser build has no such setting.
-- When the setting can't be saved, the switch goes back to its saved value and an error toast says "The setting was not saved." The first close still hides the window when its notice can't be recorded; the notice then shows again at the next launch.
+- When the setting can't be saved, an error toast says "The setting was not saved." and the switch shows Ajour's answer when it has one. When Ajour doesn't answer in 5 seconds, to the first read or to the check after a failed save, the switch is off and disabled, and the row says "Ajour didn't answer." with a Retry button. Only an answer from Ajour makes the switch usable again. The first close still hides the window when its notice can't be recorded; the notice then shows again at the next launch.
 - A hidden window that crashes reloads, still hidden. When it keeps crashing, the "Ajour keeps crashing" dialog shows on its own, not attached to the hidden window.
 
 ## Backlog sidebar
