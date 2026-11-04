@@ -107,12 +107,16 @@ The state a synced backlog item has in its source tool. Each source state maps t
 _Avoid_: Remote status, source status
 
 **Settle**:
-To record that the user has nothing left to do on a backlog item or pull request for now. A manual backlog item becomes archived. A synced backlog item or a pull request becomes settled. For a synced backlog item, the user can change its state or priority in its source tool at the same time.
+To record that the user has nothing left to do on a backlog item or pull request for now. A manual backlog item becomes archived. A synced backlog item or a pull request becomes settled. For a synced backlog item, the user can change its state, priority or assignee in its source tool at the same time.
 _Avoid_: Complete, close, finish, resolve
 
 **Settled**:
 The state of a synced backlog item or pull request that waits on someone or something else, such as another person, a client's answer, QA, a deployment or a reviewer.
 _Avoid_: Waiting, blocked, on hold (as the Ajour state)
+
+**Assignee**:
+The person a synced backlog item is assigned to in its source tool, or no one. Settling can hand the item to another assignee.
+_Avoid_: Owner, assigned to (as a noun)
 
 **Source project**:
 The project in the source tool that a synced backlog item belongs to. It is separate from an Ajour project.

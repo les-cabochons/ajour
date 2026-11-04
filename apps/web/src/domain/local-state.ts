@@ -623,6 +623,11 @@ export interface LocalPendingSourceWrite {
   state?: string;
   priority?: PriorityLevel;
   /**
+   * The person a settle assigns the item to, or null to unassign it. Only its
+   * id is sent; the name shows in Sync review.
+   */
+  assignee?: BacklogPerson | null;
+  /**
    * When the connection refused the write because editing work items was
    * off. A held write stays, with the item as the user left it, and goes
    * only once the user approves it in Sync review.
@@ -642,6 +647,8 @@ export interface LocalPendingSourceWrite {
     sourceStatusLabel?: string;
     importedPriority?: PriorityLevel;
     priority?: PriorityLevel;
+    /** The item's assignee, put back when a write that assigns fails. */
+    assignee?: BacklogPerson | null;
     /** Set by a move, which a failed write undoes. */
     workflowStateId?: string;
     importedWorkflowStateId?: string;

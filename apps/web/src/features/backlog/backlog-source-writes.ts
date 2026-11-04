@@ -122,6 +122,7 @@ function sendSourceWrite(
         source_write: {
           state_sent: write.state !== undefined,
           priority_sent: write.priority !== undefined,
+          assignee_sent: write.assignee !== undefined,
         },
       });
       const delay = (write.readyAt ?? 0) - Date.now();
@@ -158,6 +159,10 @@ function sendSourceWrite(
           sourceId: workItem.sourceId,
           state: write.state,
           priority: sourcePriorityFromLevel(write.priority),
+          // Only the id goes: the plugin's own, from its sync or search.
+          ...(write.assignee !== undefined
+            ? { assignee: write.assignee?.id ?? null }
+            : {}),
         });
         job.set({ source_write: { result: "sent" } });
         // Its settle comments go next, as child jobs in its trace.

@@ -155,6 +155,23 @@ it("handles a failed current request even when a child acknowledgement advanced 
   expect(mocks.write).toHaveBeenCalledTimes(1);
 });
 
+it("sends only the id of a settle's assignee, and null to unassign", async () => {
+  const { sendPendingSourceWrites } = await import("./backlog-source-writes");
+  const ana = { id: "ana@contoso.com", displayName: "Ana Silva" };
+  item.pendingSourceWrite = { assignee: ana, readyAt: 1000, previous: {} };
+  await sendPendingSourceWrites(["a"]);
+  item = {
+    ...item,
+    pendingSourceWrite: { assignee: null, readyAt: 1000, previous: {} },
+  };
+  await sendPendingSourceWrites(["a"]);
+
+  expect(mocks.write.mock.calls.map(([, , request]) => request)).toEqual([
+    { sourceId: "1", assignee: "ana@contoso.com" },
+    { sourceId: "1", assignee: null },
+  ]);
+});
+
 describe("a write the connection refuses because editing is off", () => {
   it("is held as the user left it, never rolled back, and isn't sent again until released", async () => {
     const { sendPendingSourceWrites, pendingSourceWriteCount } =

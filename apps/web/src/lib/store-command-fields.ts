@@ -392,6 +392,7 @@ export function describeSettle(
       id: workItemId,
       state_changed: change?.state !== undefined,
       priority_changed: change?.priority !== undefined,
+      assignee_changed: change?.assignee !== undefined,
       subitems_included: options?.includeSubitems === true,
       subitem_count: otherItemsChanged(before, after, workItemId),
       settle_id: settled?.settleId,
