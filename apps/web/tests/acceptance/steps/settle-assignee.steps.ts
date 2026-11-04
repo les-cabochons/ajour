@@ -201,7 +201,7 @@ Then("the next source write assigns {string}", async ({ page }, id: string) => {
 
 When("I open Settle on the assignee fixture", async ({ page }) => {
   await page
-    .locator(".ajour-page-header-slot")
+    .getByRole("group", { name: "Item actions" })
     .getByRole("button", { name: "Settle", exact: true })
     .click();
   await expect(settleDialog(page)).toBeVisible();
