@@ -2,7 +2,8 @@ import { memo } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   RiSettings3Line as Settings,
-  RiArrowUpCircleLine as CheckUpdates,
+  RiArrowUpCircleLine as UpdateAvailable,
+  RiRefreshLine as CheckUpdates,
   RiLoader4Line as Loading,
   RiErrorWarningLine as Warning,
 } from "@remixicon/react";
@@ -29,7 +30,9 @@ function SidebarUpdateButton() {
     ? Loading
     : state.status === "error"
       ? Warning
-      : CheckUpdates;
+      : state.status === "available"
+        ? UpdateAvailable
+        : CheckUpdates;
   return (
     <>
       <TooltipButton
