@@ -6,6 +6,9 @@
  * receives what Ajour sends, the schema's output.
  */
 import type {
+  projectSourceSnapshotSchema,
+  projectSourceSyncRequestSchema,
+  projectSourceSyncResultSchema,
   pluginApi4ConnectionSchema,
   pluginApi4FieldSchema,
   pluginApi4ManifestSchema,
@@ -113,4 +116,13 @@ export type DataShapeExportResult = Input<
 export type DataShapeSheet = Output<typeof projectDataShapeSheetSchema>;
 export type DataShapeImportResult = Input<
   typeof projectDataShapeImportResponseSchema
+>;
+
+/** A full read-only snapshot of source-owned projects, tasks and budgets. */
+export type ProjectSourceSnapshot = Input<typeof projectSourceSnapshotSchema>;
+export type ProjectSourceSyncRequest = Output<
+  typeof projectSourceSyncRequestSchema
+>;
+export type ProjectSourceSyncResult = Input<
+  typeof projectSourceSyncResultSchema
 >;

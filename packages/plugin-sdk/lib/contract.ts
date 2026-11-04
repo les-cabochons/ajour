@@ -58,6 +58,7 @@ export type PluginManifest = {
     codeHost?: {} | undefined;
     calendar?: {} | undefined;
     team?: { apiVersion: 1 } | undefined;
+    projectSource?: {} | undefined;
     agentTask?:
       | {
           tasks: {
@@ -116,7 +117,12 @@ export type PluginManifest = {
                   max?: number | undefined;
                   step?: number | undefined;
                   capability?:
-                    "connector" | "codeHost" | "calendar" | "team" | undefined;
+                    | "connector"
+                    | "codeHost"
+                    | "calendar"
+                    | "team"
+                    | "projectSource"
+                    | undefined;
                   passToPlugin?: boolean | undefined;
                 }[]
               | undefined;
@@ -162,7 +168,13 @@ export type PluginManifest = {
         min?: number | undefined;
         max?: number | undefined;
         step?: number | undefined;
-        capability?: "connector" | "codeHost" | "calendar" | "team" | undefined;
+        capability?:
+          | "connector"
+          | "codeHost"
+          | "calendar"
+          | "team"
+          | "projectSource"
+          | undefined;
         passToPlugin?: boolean | undefined;
       }[]
     | undefined;
@@ -246,7 +258,13 @@ export type PluginField = {
   min?: number | undefined;
   max?: number | undefined;
   step?: number | undefined;
-  capability?: "connector" | "codeHost" | "calendar" | "team" | undefined;
+  capability?:
+    | "connector"
+    | "codeHost"
+    | "calendar"
+    | "team"
+    | "projectSource"
+    | undefined;
   passToPlugin?: boolean | undefined;
 };
 
@@ -353,7 +371,9 @@ export type PluginConnection = {
 };
 
 export type ValidationContext = {
-  capabilities: ("connector" | "codeHost" | "calendar" | "team")[];
+  capabilities: (
+    "connector" | "codeHost" | "calendar" | "team" | "projectSource"
+  )[];
 };
 
 export type ValidationResult = {
@@ -1027,3 +1047,83 @@ export type DataShapeImportResult = {
     color?: string | undefined;
   }[];
 };
+
+/** A full read-only snapshot of source-owned projects, tasks and budgets. */
+export type ProjectSourceSnapshot = {
+  projects: {
+    code: string;
+    name: string;
+    remoteId: string;
+    tasks: {
+      name: string;
+      remoteId: string;
+      assigned: boolean;
+      closed: boolean;
+      billable?: boolean | undefined;
+      group?: string | undefined;
+      estimateHours?: number | undefined;
+      myHours?: number | undefined;
+    }[];
+    complete: boolean;
+    url?: string | undefined;
+    client?: string | undefined;
+    startsOn?: string | undefined;
+    endsOn?: string | undefined;
+    budget?:
+      | {
+          unit: "hours" | "money";
+          consumed: number;
+          status?: "unknown" | "ok" | "over" | "warning" | undefined;
+          total?: number | undefined;
+          remaining?: number | undefined;
+        }
+      | undefined;
+  }[];
+  source: { label: string; url?: string | undefined };
+  asOf: string;
+  me?: { hoursAvailable: boolean; hoursNote?: string | undefined } | undefined;
+};
+
+export type ProjectSourceSyncRequest = { cursor?: string | undefined };
+
+export type ProjectSourceSyncResult =
+  | {
+      snapshot: {
+        projects: {
+          code: string;
+          name: string;
+          remoteId: string;
+          tasks: {
+            name: string;
+            remoteId: string;
+            assigned: boolean;
+            closed: boolean;
+            billable?: boolean | undefined;
+            group?: string | undefined;
+            estimateHours?: number | undefined;
+            myHours?: number | undefined;
+          }[];
+          complete: boolean;
+          url?: string | undefined;
+          client?: string | undefined;
+          startsOn?: string | undefined;
+          endsOn?: string | undefined;
+          budget?:
+            | {
+                unit: "hours" | "money";
+                consumed: number;
+                status?: "unknown" | "ok" | "over" | "warning" | undefined;
+                total?: number | undefined;
+                remaining?: number | undefined;
+              }
+            | undefined;
+        }[];
+        source: { label: string; url?: string | undefined };
+        asOf: string;
+        me?:
+          | { hoursAvailable: boolean; hoursNote?: string | undefined }
+          | undefined;
+      };
+      cursor?: string | undefined;
+    }
+  | { unchanged: true };

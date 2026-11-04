@@ -159,6 +159,8 @@ interface StoredConnection {
   configSummary: PluginSummaryValues;
   connectedAt: number;
   lastSyncAt?: number;
+  /** Opaque revision returned only after a validated project snapshot. */
+  projectSourceCursor?: string;
   backlogLastSyncAt?: number;
   backlogLastErrorAt?: number;
   backlogLastErrorTrigger?: "manual" | "auto";
@@ -935,9 +937,14 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
           onPremises,
           access,
           brokerActivity,
+          projectSourceCursor,
           ...connection
         }) => ({
           ...connection,
+          ...(typeof projectSourceCursor === "string" &&
+          projectSourceCursor.length <= 4096
+            ? { projectSourceCursor }
+            : {}),
           ...(onPremises === true ? { onPremises } : {}),
           ...(normalizeAccess(access)
             ? { access: normalizeAccess(access) }
@@ -2108,7 +2115,8 @@ export class AppApiStorage {
   ): Promise<void> {
     // A calendar has no automatic sync of its own to keep, and a team always
     // syncs on the interval.
-    if (added === "calendar" || added === "team") return;
+    if (added === "calendar" || added === "team" || added === "projectSource")
+      return;
     await this.mutate(async (state) => ({
       nextState: {
         ...state,
@@ -2326,6 +2334,7 @@ export class AppApiStorage {
         configSummary: input.configSummary,
         connectedAt: existing?.connectedAt ?? Date.now(),
         lastSyncAt: existing?.lastSyncAt,
+        projectSourceCursor: undefined,
         backlogLastSyncAt: existing?.backlogLastSyncAt,
         backlogLastErrorAt: existing?.backlogLastErrorAt,
         backlogLastErrorTrigger: existing?.backlogLastErrorTrigger,
@@ -2492,6 +2501,7 @@ export class AppApiStorage {
     connectionId: string,
     timestamp: number,
     backlog = false,
+    projectSource?: { cursor?: string },
   ): Promise<StoredConnection> {
     return this.mutate(async (state) => {
       const connection = state.connections.find(
@@ -2505,6 +2515,7 @@ export class AppApiStorage {
       const nextConnection = {
         ...connection,
         lastSyncAt: timestamp,
+        ...(projectSource ? { projectSourceCursor: projectSource.cursor } : {}),
         ...(backlog
           ? {
               backlogLastSyncAt: timestamp,

@@ -988,6 +988,7 @@ channel to read the event each emits.
 | `project.share`                      | command                            | store command                                    |
 | `project.unshare`                    | command                            | store command                                    |
 | `project.update`                     | command                            | store command                                    |
+| `project_source.sync`                | request, plugin_operation          | route, plugin method                             |
 | `pull_request.apply_sync`            | command                            | store command                                    |
 | `pull_request.browse`                | command, request, plugin_operation | route, plugin method                             |
 | `pull_request.change`                | command                            | store command                                    |

@@ -264,3 +264,47 @@ A backlog plugin can also declare a `taskIconDisplayMode` select field. Ajour re
 | `always`   | Always the plugin's icon. The default.                         |
 | `fallback` | The item's project icon, or the plugin's icon with no project. |
 | `never`    | The item's project icon, never the plugin's.                   |
+
+## Project sources on API 4
+
+Declare `"apiVersion": 4` and `"capabilities": { "projectSource": {} }`, with
+an entrypoint and connection fields. This capability reads projects, tasks and
+budgets. API 3 refuses it. Ajour never writes to the source.
+
+Export `syncProjects(connection, { cursor })`. The connection contains no secrets;
+use `ajour.http` and the manifest's network rules to fetch data. The SDK exports
+`ProjectSourceSnapshot`, `ProjectSourceSyncRequest` and `ProjectSourceSyncResult`.
+Return `{ snapshot, cursor? }`, or `{ unchanged: true }` when the last snapshot
+still applies. Ajour stores the opaque cursor per connection only after validating
+the result, and passes it on the next call. An unchanged result keeps the cursor;
+a new snapshot without a cursor clears it. Saving a connection clears its cursor
+so changed settings receive a full snapshot.
+
+The snapshot has this shape. `?` marks an optional field.
+
+```text
+{ source: { label, url? }, asOf,
+  me?: { hoursAvailable, hoursNote? },
+  projects: [{ remoteId, name, code, url?, client?, complete,
+    startsOn?, endsOn?,
+    budget?: { unit: "hours" | "money", total?, consumed, remaining?,
+               status?: "ok" | "warning" | "over" | "unknown" },
+    tasks: [{ remoteId, name, group?, closed, billable?, estimateHours?,
+              assigned, myHours? }] }] }
+```
+
+`asOf` is an ISO 8601 timestamp with a timezone. Dates are real `YYYY-MM-DD`
+calendar dates. Hour values and consumed budgets are finite and nonnegative;
+remaining may be negative. URLs use HTTP or HTTPS. Source IDs belong to their
+connection. `hoursNote` explains why the source cannot supply the user's hours.
+The source owns its label and links, so the host contract names no product.
+
+`POST /api/plugins/:pluginId/connections/:connectionId/sync-projects` accepts `{}`.
+It returns the validated result, 502 for a plugin failure or invalid snapshot,
+404 for an unknown connection or unsupported capability, and 409 while inactive.
+Validation errors include the invalid field's path. No snapshot text or cursor
+is included in operation events.
+
+The deterministic fixture in `packages/example/project-source.ts` runs without
+an external service. Project reconciliation and the managed project UI are
+separate from this transport contract.

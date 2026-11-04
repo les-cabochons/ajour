@@ -9,6 +9,7 @@ import type { TeamPluginMethod } from "../../../packages/shared/team-sync.ts";
 /** Every plugin method the plugin host calls. */
 export type PluginMethod =
   | "validateConnection"
+  | "syncProjects"
   | "syncConnection"
   | "listSettleStates"
   | "writeSettle"
@@ -46,6 +47,7 @@ function connectionOperations<Operation extends string>(contract: {
  */
 const PLUGIN_METHOD_ARGUMENTS: Record<PluginMethod, ArgumentNames> = {
   validateConnection: ["config", "context"],
+  syncProjects: CONNECTION_AND_REQUEST,
   syncConnection: ["connection", "workItems", "syncOptions"],
   listSettleStates: CONNECTION_AND_REQUEST,
   writeSettle: CONNECTION_AND_REQUEST,

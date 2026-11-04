@@ -1,3 +1,4 @@
+import { projectSourceSyncRequestSchema } from "../../../packages/shared/plugin-api-4.ts";
 import {
   createServer,
   type IncomingMessage,
@@ -3048,6 +3049,75 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           connection,
         );
         writeJson(response, 502, { error: credentials.errorMessage(error) });
+      }
+    },
+
+    projectSourceSync: async ({ request, response, params, unit }) => {
+      const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
+      const { connectionId } = params;
+      unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
+      const { plugin, runnable } = await findPlugin(pluginManager, pluginId);
+      if (!plugin || !plugin.capabilities.projectSource) {
+        unit.refuse("not_supported");
+        writeJson(response, 404, {
+          error: "This plugin does not provide projects.",
+        });
+        return;
+      }
+      const inactive = await inactiveCapability(
+        storage,
+        pluginId,
+        "projectSource",
+        runnable,
+        "syncing its projects",
+      );
+      if (inactive) {
+        unit.refuse(inactive.reason);
+        writeJson(response, 409, { error: inactive.message });
+        return;
+      }
+      const connection = await storage.connectionForOperation(
+        pluginId,
+        connectionId,
+        secretManifestOf(plugin),
+      );
+      if (!connection) {
+        unit.refuse("connection_not_found");
+        writeJson(response, 404, { error: "Connection not found." });
+        return;
+      }
+      // The host owns the cursor. Callers cannot advance it past validation.
+      await readRequest(
+        request,
+        projectSourceSyncRequestSchema.omit({ cursor: true }),
+      );
+      const call = admittedCall(plugin, connection.secrets);
+      try {
+        const result = await pluginManager.syncProjects(
+          pluginId,
+          pluginConnection(connection),
+          { cursor: connection.projectSourceCursor },
+          call.admit,
+        );
+        await storage.recordConnectionSyncSuccess(
+          pluginId,
+          connectionId,
+          Date.now(),
+          false,
+          "snapshot" in result ? { cursor: result.cursor } : undefined,
+        );
+        writeJson(response, 200, result);
+      } catch (error) {
+        const credentials = await failedCall(
+          storage,
+          unit,
+          error,
+          call,
+          connection,
+        );
+        const message = credentials.errorMessage(error);
+        await storage.recordConnectionError(pluginId, connectionId, message);
+        writeJson(response, 502, { error: message });
       }
     },
 

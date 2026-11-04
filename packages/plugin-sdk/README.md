@@ -245,3 +245,13 @@ For Ajour's maintainers. The package is built ready for npm but not published ye
 ## License
 
 MIT
+
+## Read-only project sources
+
+Declare `capabilities: { projectSource: {} }` and export
+`syncProjects(connection, { cursor })`, typed by `PluginModule["syncProjects"]`.
+Return `{ snapshot, cursor? }` or `{ unchanged: true }`. The host validates the
+snapshot and persists the opaque cursor per connection. The next call receives
+it; saving connection settings clears it. `ProjectSourceSnapshot` describes the
+source label, timestamp, projects, tasks, assignments and budgets. The capability
+has no write operation and requires API 4.

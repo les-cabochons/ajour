@@ -1,4 +1,6 @@
 import type {
+  ProjectSourceSyncRequest,
+  ProjectSourceSyncResult,
   BacklogCommentOperations,
   BacklogSyncResult,
   BacklogSyncWorkItem,
@@ -121,6 +123,10 @@ type OperationHandlers<
  * `ajour.http` with its id.
  */
 export type PluginModule = {
+  syncProjects?: (
+    connection: PluginConnection,
+    request: ProjectSourceSyncRequest,
+  ) => Awaitable<ProjectSourceSyncResult>;
   validateConnection?: (
     connection: PluginConnection,
     context: ValidationContext,

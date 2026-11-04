@@ -1,3 +1,8 @@
+import {
+  projectSourceSyncRequestSchema,
+  projectSourceSyncResultSchema,
+  type ProjectSourceSyncRequest,
+} from "../../../packages/shared/plugin-api-4.ts";
 import path from "node:path";
 import {
   PluginOperationRefused,
@@ -239,6 +244,7 @@ export type PluginAdmitted = SecretConnectionFields;
 export type { PluginMethod };
 /** The event each plugin method's worker run emits. A new method needs one. */
 export const PLUGIN_OPERATION_EVENTS = {
+  syncProjects: "project_source.sync",
   validateConnection: "connection.save",
   syncConnection: "backlog.sync",
   listSettleStates: "source_state.list",
@@ -259,6 +265,7 @@ const missingCapabilityMessages: Record<SwitchableCapability, string> = {
   connector: "does not sync backlog items",
   codeHost: "does not provide pull requests",
   calendar: "does not provide calendar events",
+  projectSource: "does not provide projects",
   team: "does not sync a team's projects",
 };
 /** The switchable capability a plugin method serves. Validation serves none. */
@@ -278,6 +285,7 @@ export function capabilityOfMethod(
   if (method === "createTeam" || method === "syncTeamProjects") {
     return "team";
   }
+  if (method === "syncProjects") return "projectSource";
   if (method === "validateConnection") return undefined;
   return method in calendarOperations ? "calendar" : "codeHost";
 }
@@ -765,6 +773,26 @@ export class PluginManager {
         (manifest) => manifest.capabilities.connector?.comments,
         "does not provide comments",
       ),
+    );
+  }
+
+  /** Fetches a validated read-only project snapshot through the plugin runtime. */
+  async syncProjects(
+    pluginId: string,
+    connection: PluginInvocationConnection,
+    request: ProjectSourceSyncRequest,
+    admit?: PluginAdmission,
+  ) {
+    return await this.invokePlugin(
+      pluginId,
+      "syncProjects",
+      {
+        connection: pluginInvocationConnectionSchema.parse(connection),
+        request: projectSourceSyncRequestSchema.parse(request),
+      },
+      projectSourceSyncResultSchema,
+      admit,
+      requireCapability("projectSource"),
     );
   }
 

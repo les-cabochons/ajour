@@ -9,7 +9,11 @@ import {
 } from "./plugins.ts";
 import { projectDataShapeDefinitionSchema } from "./project-data-shapes.ts";
 import { PLUGIN_API_4 } from "./plugin-api-4-version.ts";
-import { readToolInputSchemas, writeToolInputSchemas } from "./agent-tools.ts";
+import {
+  isoDateSchema,
+  readToolInputSchemas,
+  writeToolInputSchemas,
+} from "./agent-tools.ts";
 import { getDomain, parse as parseHost } from "tldts";
 import {
   connectionAccessOn,
@@ -581,7 +585,7 @@ export const pluginApi4CapabilitiesSchema = pluginCapabilitiesObjectSchema
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          "A plugin must declare at least one capability: connector, codeHost, calendar, agentTask, projectProperties, taskProperties or projectDataShape.",
+          "A plugin must declare at least one capability: connector, codeHost, calendar, agentTask, projectProperties, taskProperties, projectSource or projectDataShape.",
       });
     }
   });
@@ -743,6 +747,7 @@ function api4RunsCode(capabilities: PluginApi4Capabilities) {
     capabilities.connector !== undefined ||
     capabilities.codeHost !== undefined ||
     capabilities.calendar !== undefined ||
+    capabilities.projectSource !== undefined ||
     capabilities.projectDataShape !== undefined
   );
 }
@@ -774,15 +779,16 @@ export const pluginApi4ManifestSchema = strictObject(
       "A plugin that runs code needs an entrypoint.",
     );
   }
-  const { connector, codeHost, calendar } = manifest.capabilities;
+  const { connector, codeHost, calendar, projectSource } =
+    manifest.capabilities;
   if (
-    (connector || codeHost || calendar) &&
+    (connector || codeHost || calendar || projectSource) &&
     manifest.connectionFields.length === 0
   ) {
     issue(
       context,
       ["connectionFields"],
-      "A backlog, code host or calendar plugin needs connection fields.",
+      "A backlog, code host, calendar or project source plugin needs connection fields.",
     );
   }
   const choiceIds = new Set<string>();
@@ -826,3 +832,84 @@ export const pluginApi4ConnectionSchema = z.object({
   access: z.array(accessChoiceIdSchema).max(10),
 });
 export type PluginApi4Connection = z.infer<typeof pluginApi4ConnectionSchema>;
+
+/** A full, read-only snapshot. Source identifiers are scoped to a connection. */
+const projectSourceIdSchema = z.string().min(1).max(500);
+const projectSourceHoursSchema = z.number().finite().nonnegative();
+const projectSourceUrlSchema = z
+  .string()
+  .url()
+  .max(2000)
+  .refine(
+    (value) => ["http:", "https:"].includes(new URL(value).protocol),
+    "Use an HTTP or HTTPS URL.",
+  );
+export const projectSourceSnapshotSchema = z.object({
+  source: z.object({
+    label: z.string().min(1).max(120),
+    url: projectSourceUrlSchema.optional(),
+  }),
+  asOf: z.string().datetime({ offset: true }),
+  me: z
+    .object({
+      hoursAvailable: z.boolean(),
+      hoursNote: z.string().max(1000).optional(),
+    })
+    .optional(),
+  projects: z
+    .array(
+      z.object({
+        remoteId: projectSourceIdSchema,
+        name: z.string().min(1).max(500),
+        code: z.string().max(200),
+        url: projectSourceUrlSchema.optional(),
+        client: z.string().max(500).optional(),
+        complete: z.boolean(),
+        startsOn: isoDateSchema.optional(),
+        endsOn: isoDateSchema.optional(),
+        budget: z
+          .object({
+            unit: z.enum(["hours", "money"]),
+            total: z.number().finite().nonnegative().optional(),
+            consumed: z.number().finite().nonnegative(),
+            remaining: z.number().finite().optional(),
+            status: z.enum(["ok", "warning", "over", "unknown"]).optional(),
+          })
+          .optional(),
+        tasks: z
+          .array(
+            z.object({
+              remoteId: projectSourceIdSchema,
+              name: z.string().min(1).max(500),
+              group: z.string().max(500).optional(),
+              closed: z.boolean(),
+              billable: z.boolean().optional(),
+              estimateHours: projectSourceHoursSchema.optional(),
+              assigned: z.boolean(),
+              myHours: projectSourceHoursSchema.optional(),
+            }),
+          )
+          .max(10000),
+      }),
+    )
+    .max(10000),
+});
+export type ProjectSourceSnapshot = z.infer<typeof projectSourceSnapshotSchema>;
+export const projectSourceSyncRequestSchema = z
+  .object({ cursor: z.string().max(4096).optional() })
+  .strict();
+export const projectSourceSyncResultSchema = z.union([
+  z
+    .object({
+      snapshot: projectSourceSnapshotSchema,
+      cursor: z.string().max(4096).optional(),
+    })
+    .strict(),
+  z.object({ unchanged: z.literal(true) }).strict(),
+]);
+export type ProjectSourceSyncRequest = z.infer<
+  typeof projectSourceSyncRequestSchema
+>;
+export type ProjectSourceSyncResult = z.infer<
+  typeof projectSourceSyncResultSchema
+>;

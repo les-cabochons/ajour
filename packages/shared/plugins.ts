@@ -126,6 +126,7 @@ export const switchableCapabilitySchema = z.enum([
   "codeHost",
   "calendar",
   "team",
+  "projectSource",
 ]);
 export type SwitchableCapability = z.infer<typeof switchableCapabilitySchema>;
 
@@ -136,6 +137,7 @@ export const switchableCapabilityLabels: Record<SwitchableCapability, string> =
     codeHost: "Pull requests",
     calendar: "Calendar events",
     team: "Projects",
+    projectSource: "Project source",
   };
 
 export const pluginFieldSchema = z.object({
@@ -326,6 +328,8 @@ export const pluginCapabilitiesObjectSchema = z.object({
     .optional(),
   codeHost: z.object({}).optional(),
   calendar: z.object({}).optional(),
+  /** Read-only projects and budgets, on plugin API 4. */
+  projectSource: z.object({}).strict().optional(),
   /** Keeps a team's shared projects in step. See ADR 0006. */
   team: teamCapabilitySchema.optional(),
   agentTask: z
@@ -341,6 +345,7 @@ export const pluginCapabilitiesSchema = pluginCapabilitiesObjectSchema.refine(
     capabilities.codeHost !== undefined ||
     capabilities.calendar !== undefined ||
     capabilities.team !== undefined ||
+    capabilities.projectSource !== undefined ||
     capabilities.agentTask !== undefined ||
     capabilities.projectProperties !== undefined ||
     capabilities.taskProperties !== undefined,
@@ -441,6 +446,13 @@ export const pluginManifestObjectSchema = z.object({
 
 export const pluginManifestSchema = pluginManifestObjectSchema.superRefine(
   (manifest, context) => {
+    if (manifest.capabilities.projectSource !== undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["capabilities", "projectSource"],
+        message: "The projectSource capability requires plugin API 4.",
+      });
+    }
     if (!pluginRunsCode(manifest)) return;
     if (!manifest.entrypoint) {
       context.addIssue({

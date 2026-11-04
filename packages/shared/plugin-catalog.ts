@@ -20,6 +20,7 @@ export const pluginCatalogCapabilitySchema = z.enum([
   "codeHost",
   "calendar",
   "team",
+  "projectSource",
   "agentTask",
   "schema",
 ]);

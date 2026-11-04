@@ -227,6 +227,11 @@ export const ROUTES = {
     path: "/api/backlog-comments/:pluginId/connections/:connectionId/:operation",
     name: { param: "operation", names: COMMENT_EVENTS },
   },
+  projectSourceSync: {
+    method: "POST",
+    path: "/api/plugins/:pluginId/connections/:connectionId/sync-projects",
+    name: "project_source.sync",
+  },
   calendar: {
     method: "POST",
     path: "/api/calendars/:pluginId/connections/:connectionId/:operation",

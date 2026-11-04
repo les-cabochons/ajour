@@ -14,6 +14,7 @@ const capabilityDescriptions: Record<SwitchableCapability, string> = {
   connector: "Sync items into your backlog and write settles back.",
   codeHost: "List the pull requests you wrote or were asked to review.",
   calendar: "Suggest your calendar's meetings as time entries.",
+  projectSource: "Read projects, tasks and budgets from your source.",
   team: "Keep shared projects and tasks in step with your team.",
 };
 

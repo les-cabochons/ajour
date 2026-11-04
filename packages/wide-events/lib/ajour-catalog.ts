@@ -1703,6 +1703,13 @@ export const catalog = defineCatalog({
       },
     },
 
+    /** One read-only project snapshot fetch. No source content or cursor. */
+    "project_source.sync": {
+      kinds: ["request", "plugin_operation"],
+      reasons: pluginRequestReasons,
+      fields: { ...requestFields, ...pluginOperationFields },
+    },
+
     // Calendar.
 
     /**
