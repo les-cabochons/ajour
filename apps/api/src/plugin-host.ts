@@ -881,7 +881,10 @@ export class PluginManager {
       },
       backlogSettleWriteResultSchema,
       admit,
-      requireSettle,
+      (manifest) => {
+        requireSettle(manifest);
+        if (request.assignee !== undefined) requireAssign(manifest);
+      },
     );
   }
 
