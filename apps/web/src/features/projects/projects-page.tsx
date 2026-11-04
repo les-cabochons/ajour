@@ -924,7 +924,7 @@ function ProjectDetail({
           {formatSignedClock(consumedMs)}
           {/* The hours logged lead; the budget follows, quieter (council
               round 21). */}
-          <span className="project-task-budget">
+          <span className="project-budget-of">
             {" "}
             {/* "a of b", as "1 of 2 done" and "logged of 40:00 target"
                 read; " / " is the breadcrumb's (council round 26). */}

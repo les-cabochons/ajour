@@ -479,7 +479,7 @@
 }
 
 /* The budget after the hours logged steps back, whatever their tone. */
-.project-task-consumed .project-task-budget {
+.project-task-consumed .project-budget-of {
   color: var(--text-secondary);
 }
 
