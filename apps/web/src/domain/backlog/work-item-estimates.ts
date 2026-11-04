@@ -216,16 +216,17 @@ export function applyLoggedTimeToWorkItems(
 }
 
 /**
- * The share of the original estimate still remaining, 0 to 1: the bar under
- * an item's figures, which fills with its lead figure, Remaining (council
- * round 25). Empty without both estimates.
+ * The share of the original estimate completed, 0 to 1: the bar under an
+ * item's figures. A figure bar always fills with the spent part, as the
+ * project's budget bar does (council round 28). Empty without both
+ * estimates.
  */
-export function getRemainingEstimateShare(values: WorkItemEstimateValues) {
-  const { originalEstimateHours, remainingEstimateHours } = values;
-  if (!originalEstimateHours || remainingEstimateHours === undefined) return 0;
+export function getCompletedEstimateShare(values: WorkItemEstimateValues) {
+  const { originalEstimateHours, completedEstimateHours } = values;
+  if (!originalEstimateHours || completedEstimateHours === undefined) return 0;
   return Math.min(
     1,
-    Math.max(0, remainingEstimateHours / originalEstimateHours),
+    Math.max(0, completedEstimateHours / originalEstimateHours),
   );
 }
 

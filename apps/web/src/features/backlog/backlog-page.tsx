@@ -568,14 +568,12 @@ export function BacklogPage() {
       hasSyncedItems={state.workItems.some((item) => item.source !== "manual")}
     />
   );
+  const unmappedRising = isUnmappedRising(unmapped, unmappedSeen);
   const unmappedLink =
     unmapped > 0 ? (
       <Link
         to="/settings/workflow"
-        className={cn(
-          "backlog-unmapped",
-          isUnmappedRising(unmapped, unmappedSeen) && "is-rising",
-        )}
+        className={cn("backlog-unmapped", unmappedRising && "is-rising")}
         aria-label={`${unmapped} unmapped source ${unmapped === 1 ? "state" : "states"}`}
         onClick={async (event) => {
           if (
@@ -591,7 +589,9 @@ export function BacklogPage() {
           if (await leaveDraft()) void navigate({ to: "/settings/workflow" });
         }}
       >
-        <RiErrorWarningLine aria-hidden />
+        {/* A calm line carries no icon; the warning shows only while the
+            count rises (council round 28). */}
+        {unmappedRising ? <RiErrorWarningLine aria-hidden /> : null}
         <span>
           {unmapped} unmapped
           <span className="backlog-unmapped-words">

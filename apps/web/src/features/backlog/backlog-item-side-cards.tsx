@@ -3,7 +3,6 @@ import { Link } from "@tanstack/react-router";
 import {
   RiAddLine as AddIcon,
   RiArrowRightSLine as ChevronIcon,
-  RiCheckLine,
 } from "@remixicon/react";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
@@ -12,7 +11,13 @@ import {
   getSubitemHoursLeft,
   getSubitemProgress,
 } from "@/domain/backlog/backlog-view";
-import type { LocalTimesheetEntry, LocalWorkItem } from "@/domain/local-state";
+import type {
+  LocalTimesheetEntry,
+  LocalWorkItem,
+  LocalWorkflowState,
+} from "@/domain/local-state";
+import { getWorkflowStateFills } from "@/domain/backlog/workflow-state-fill";
+import { stateDotStyle } from "@/features/backlog/state-dot";
 import { formatClockDuration } from "@/domain/time/duration";
 import { formatHours } from "@/features/backlog/backlog-estimates";
 import { AddSubitemRow } from "@/features/backlog/backlog-item-inline-edit";
@@ -131,9 +136,30 @@ function FoldingCard({
  * done, and the hours left on the open ones. Adding opens it until the name
  * field closes, without changing the saved open state.
  */
+function SubitemStateMark({
+  subitem,
+  states,
+  fills,
+}: {
+  subitem: LocalWorkItem;
+  states: LocalWorkflowState[];
+  fills: Map<string, number>;
+}) {
+  const workflow = states.find((s) => s._id === subitem.workflowStateId);
+  return (
+    <span
+      role="img"
+      aria-label={workflow?.name ?? "No state"}
+      className="backlog-state-dot"
+      style={stateDotStyle(workflow?.color, fills.get(workflow?._id ?? ""))}
+    />
+  );
+}
+
 export function SubitemsCard({
   parent,
   subitems,
+  workflowStates,
   iconData,
   from,
   open,
@@ -145,6 +171,8 @@ export function SubitemsCard({
 }: {
   parent: LocalWorkItem;
   subitems: LocalWorkItem[];
+  /** The workflow, for each subitem's leading state mark. */
+  workflowStates: LocalWorkflowState[];
   iconData: ReturnType<typeof useWorkItemIconData>;
   /** The page the item page was opened from, which subitem links keep. */
   from: string | undefined;
@@ -157,6 +185,7 @@ export function SubitemsCard({
   onAddingClose: (escaped: boolean) => void;
 }) {
   const progress = getSubitemProgress(subitems);
+  const fills = getWorkflowStateFills(workflowStates);
   const hoursLeft = getSubitemHoursLeft(subitems);
   const empty = <p className="text-xs text-muted-foreground">No subitems.</p>;
 
@@ -227,7 +256,17 @@ export function SubitemsCard({
               search={{ from }}
               className="backlog-item-row is-subitem"
             >
-              <WorkItemIcon icon={resolveWorkItemIcon(subitem, iconData)} />
+              {/* Each row leads with its state mark, as list and sidebar
+                  rows do; the project's own icon shows only when it differs
+                  from the parent's (council round 28). */}
+              <SubitemStateMark
+                subitem={subitem}
+                states={workflowStates}
+                fills={fills}
+              />
+              {subitem.projectId !== parent.projectId ? (
+                <WorkItemIcon icon={resolveWorkItemIcon(subitem, iconData)} />
+              ) : null}
               <span
                 className={cn(
                   "backlog-item-row-title",
@@ -236,16 +275,9 @@ export function SubitemsCard({
               >
                 {subitem.title}
               </span>
-              {/* A done subitem says so with a check, the same test as the
-                  summary's count (council round 14). */}
-              {subitem.status === "archived" ? (
-                <RiCheckLine
-                  role="img"
-                  aria-label="Done"
-                  className="size-3 shrink-0 text-muted-foreground"
-                />
-              ) : null}
-              {subitem.priority !== undefined ? (
+              {/* A done subitem has no working priority. */}
+              {subitem.priority !== undefined &&
+              subitem.status !== "archived" ? (
                 <PriorityIcon priority={subitem.priority} />
               ) : null}
               <Value tone="muted" className="w-10 text-right">

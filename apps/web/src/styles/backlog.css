@@ -350,7 +350,9 @@
   @media (width >= 768px) {
     .backlog-list-row .backlog-item-properties {
       display: grid;
-      grid-template-columns: minmax(0, 160px) 36px 52px;
+      /* Actions, then the estimate at the right edge, as Day rows end with
+         their duration (council round 28). */
+      grid-template-columns: minmax(0, 160px) 52px 36px;
       flex-shrink: 1;
       gap: 0.625rem;
     }
@@ -361,7 +363,7 @@
     }
 
     .backlog-list-row .backlog-item-properties[data-no-project] {
-      grid-template-columns: 36px 52px;
+      grid-template-columns: 52px 36px;
     }
 
     /* The chip's max-w-40 utility outranks this layer; its track, not
@@ -379,13 +381,18 @@
     }
 
     .backlog-list-row .backlog-item-estimate {
-      grid-column: -3;
+      grid-column: -2;
       min-width: 0;
       text-align: right;
     }
 
     .backlog-list-row .backlog-item-actions {
-      grid-column: -2;
+      grid-column: -3;
+    }
+
+    /* Start sits next to the estimate it spends; "…" before it. */
+    .backlog-list-row .backlog-item-actions > .backlog-item-start {
+      order: 1;
     }
   }
 

@@ -1411,6 +1411,13 @@
     outline: none;
   }
 
+  /* A line has one head, its project and task; the comments follow in
+     secondary ink, as the Changes rows' secondary part does (council round
+     28). */
+  .submit-copy.submit-line-comments {
+    color: var(--text-secondary);
+  }
+
   .submit-copy:hover {
     background: var(--hover-bg);
   }

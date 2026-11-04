@@ -5,7 +5,7 @@ import {
   createImportedEstimateSyncState,
   getWorkItemEstimateBadgeLabel,
   getWorkItemEstimateSummary,
-  getRemainingEstimateShare,
+  getCompletedEstimateShare,
 } from "./work-item-estimates";
 
 describe("applyLoggedTimeToEstimateValues", () => {
@@ -235,27 +235,27 @@ describe("getWorkItemEstimateBadgeLabel", () => {
   });
 });
 
-describe("getRemainingEstimateShare", () => {
-  it("is the remaining estimate over the original", () => {
+describe("getCompletedEstimateShare", () => {
+  it("is the completed estimate over the original", () => {
     expect(
-      getRemainingEstimateShare({
+      getCompletedEstimateShare({
         originalEstimateHours: 8,
-        remainingEstimateHours: 5,
+        completedEstimateHours: 3,
       }),
-    ).toBe(0.625);
+    ).toBe(0.375);
   });
 
-  it("stays within the bar when remaining outgrows the original", () => {
+  it("stays within the bar when completed outgrows the original", () => {
     expect(
-      getRemainingEstimateShare({
+      getCompletedEstimateShare({
         originalEstimateHours: 2,
-        remainingEstimateHours: 3,
+        completedEstimateHours: 3,
       }),
     ).toBe(1);
   });
 
-  it("is empty without an original or a remaining estimate", () => {
-    expect(getRemainingEstimateShare({ remainingEstimateHours: 3 })).toBe(0);
-    expect(getRemainingEstimateShare({ originalEstimateHours: 3 })).toBe(0);
+  it("is empty without an original or a completed estimate", () => {
+    expect(getCompletedEstimateShare({ completedEstimateHours: 3 })).toBe(0);
+    expect(getCompletedEstimateShare({ originalEstimateHours: 3 })).toBe(0);
   });
 });
