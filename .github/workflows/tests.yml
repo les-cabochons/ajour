@@ -3,7 +3,7 @@ name: Tests
 # Runs Ajour's test suites on every pull request and on every push to main.
 # The unit suites (Vitest across the workspace) run on Windows and macOS, the
 # two systems the desktop app ships on. The Playwright acceptance suite runs in
-# Chromium on one of them. The plugin sandbox check and the desktop lifecycle
+# Chromium on one of them, in four shards at once. The plugin sandbox check and the desktop lifecycle
 # check run in Electron on both, for pull requests that can change what they
 # check.
 on:
@@ -94,16 +94,21 @@ jobs:
       - name: Run workspace tests
         run: corepack pnpm test
 
+  # The suite is split into four shards that run at once, each on its own
+  # runner with its own web server and local API, so every test still runs
+  # once per commit, the same way as on one runner. One runner took 20 minutes
+  # and held up every run; a shard takes about a quarter of that.
   acceptance:
-    name: Acceptance tests (${{ matrix.name }})
+    name: Acceptance tests (${{ matrix.name }} ${{ matrix.shard }}/4)
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 30
     strategy:
+      # A failing shard must not hide the results of the others.
       fail-fast: false
       matrix:
-        include:
-          - name: Windows
-            os: windows-latest
+        name: [Windows]
+        os: [windows-latest]
+        shard: [1, 2, 3, 4]
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -147,13 +152,13 @@ jobs:
         run: just acceptance-install
 
       - name: Run acceptance tests
-        run: just acceptance-test
+        run: just acceptance-test --shard=${{ matrix.shard }}/4
 
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report-${{ matrix.os }}
+          name: playwright-report-${{ matrix.os }}-shard-${{ matrix.shard }}
           path: |
             apps/web/playwright-report
             apps/web/test-results

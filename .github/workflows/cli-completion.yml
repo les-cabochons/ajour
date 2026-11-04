@@ -5,6 +5,11 @@ on:
     branches: [main]
 permissions:
   contents: read
+# A newer push to the same pull request replaces the run in progress, as in
+# the Tests workflow. Runs on main are never cancelled.
+concurrency:
+  group: cli-completion-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 jobs:
   shells:
     runs-on: ${{ matrix.os }}
