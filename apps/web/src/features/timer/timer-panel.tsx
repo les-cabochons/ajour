@@ -9,7 +9,7 @@ import {
   RiAddLine as Plus,
   RiCheckLine as Check,
   RiPlayLine as Play,
-  RiStopLine as Stop,
+  RiStopFill as Stop,
 } from "@remixicon/react";
 import {
   Empty,

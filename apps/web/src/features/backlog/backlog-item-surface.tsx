@@ -1,4 +1,4 @@
-import { RiPlayLine, RiStopLine, RiTimeLine } from "@remixicon/react";
+import { RiPlayLine, RiStopFill, RiTimeLine } from "@remixicon/react";
 import { SyncConflictButton } from "@/features/backlog/sync-conflicts";
 import { openModifiedSourceClick } from "@/lib/source-navigation";
 import type { KeyboardEvent, PointerEvent } from "react";
@@ -322,7 +322,8 @@ export function BacklogItemSurface({
   const running = Boolean(findWorkItemTimer(state.timers, item._id));
   // The running item's button is Stop, like its action set.
   const startAction = running ? "stop-entry" : "start-entry";
-  const StartIcon = running ? RiStopLine : RiPlayLine;
+  // Stop is the filled square everywhere, as in the dock and the top bar.
+  const StartIcon = running ? RiStopFill : RiPlayLine;
   const startDisabledReason = actions.find(
     (action) => action.id === startAction,
   )?.disabledReason;

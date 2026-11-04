@@ -45,8 +45,8 @@ export function PropertyRow({
 }
 
 /**
- * The actions at the bottom of a properties card, under a rule. Each action
- * is one equal column.
+ * The actions at the bottom of a properties card, under a rule: one row,
+ * left-aligned, the first icon in line with the property labels.
  */
 export function PropertyActions({
   className,
@@ -56,7 +56,7 @@ export function PropertyActions({
     <div
       data-slot="property-actions"
       className={cn(
-        "grid auto-cols-fr grid-flow-col gap-2 border-t pt-3",
+        "flex flex-wrap items-center gap-1 border-t pt-3 [&>*:first-child]:-ml-2",
         className,
       )}
       {...props}
@@ -65,7 +65,7 @@ export function PropertyActions({
 }
 
 /**
- * A borderless action tile: a 16px icon over a small label in the muted
+ * A borderless action: a 16px icon beside a small label in the muted
  * color. Hover only brightens the text, Archive included.
  */
 export function PropertyAction({
@@ -78,7 +78,7 @@ export function PropertyAction({
       type={type}
       data-slot="property-action"
       className={cn(
-        "flex min-h-10 cursor-pointer flex-col items-center justify-center gap-1 rounded-md p-1.5 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+        "flex min-h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-xs font-medium whitespace-nowrap text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
         className,
       )}
       {...props}

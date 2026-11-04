@@ -512,6 +512,19 @@
     vertical-align: middle;
   }
 
+  /* Inside the body, the lattice is the lighter row hairline. The task
+     column, the day-to-total boundary, the header and the footer keep the
+     full border. */
+  .weekly-grid-table-scroll tbody tr {
+    border-color: var(--border-row);
+  }
+
+  .weekly-grid-table-scroll
+    tbody
+    .weekly-grid-time-cell:not(:nth-last-child(2)) {
+    border-right-color: var(--border-row);
+  }
+
   .weekly-grid-table-scroll [data-slot="table-head"]:last-child,
   .weekly-grid-table-scroll [data-slot="table-cell"]:last-child {
     border-right: 0;
@@ -551,7 +564,7 @@
     flex-direction: column;
     align-items: flex-end;
     gap: 0.125rem;
-    padding: 0 0.5rem;
+    padding: 0 1.75rem 0 0.5rem;
     line-height: var(--weekly-grid-heading-line-height);
     white-space: nowrap;
   }
@@ -653,7 +666,11 @@
     outline: none;
   }
 
+  /* Durations end at one edge whether or not a cell holds several entries:
+     the count sits in a reserved slot after it. */
   .weekly-grid-time-button {
+    position: relative;
+    padding-right: 1.75rem;
     cursor: pointer;
   }
 
@@ -675,12 +692,15 @@
   }
 
   .weekly-grid-cell-count {
-    margin-left: 0.25rem;
+    position: absolute;
+    right: 0.5rem;
     color: var(--text-tertiary);
     font-size: var(--text-2xs);
   }
 
+  /* Typing starts where the duration was. */
   .weekly-grid-cell-input {
+    padding-right: 1.75rem;
     background: var(--background);
     box-shadow: inset 0 0 0 2px var(--ring);
   }
@@ -728,7 +748,7 @@
   }
 
   .weekly-grid-table-scroll .weekly-grid-footer-row > .weekly-grid-time-cell {
-    padding-right: 0.5rem !important;
+    padding-right: 1.75rem !important;
   }
 
   /* Grid cell list in the side panel */
