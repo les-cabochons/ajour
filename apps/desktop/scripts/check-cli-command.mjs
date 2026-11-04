@@ -690,7 +690,7 @@ async function macMain() {
     expect(
       refused.status === "error" &&
         refused.error ===
-          "Another ajour is at /usr/local/bin/ajour. Remove it, then install again.",
+          "Another ajour is at /usr/local/bin/ajour. Remove it, then press Retry in Settings.",
       "foreign file is refused",
       refused,
     );
