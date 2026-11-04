@@ -55,6 +55,7 @@ Current deep domain modules demonstrate this boundary:
 - `domain/backlog/description-timelog.ts` owns what a description's timelog does to its item's project and task, on save and when the user asks; `domain/backlog/description-frontmatter.ts` reads the block. The store applies the timelog in every work item command that writes a description.
 - `domain/projects/project-transitions.ts` owns project and task creation, legacy hydration, ordering, edits, and archive state.
 - `domain/projects/team-sync.ts` owns shared projects: which team-owned fields a round sends against each record's last-synced copy, how a result merges per field while keeping local changes, held same-name arrivals, and sharing, linking, unsharing and disconnecting. `domain/projects/team-link.ts` reads stored team links back. See ADR 0006.
+- `domain/projects/source-sync.ts` owns managed projects: how a project source snapshot links projects by code, stages name-only matches for review, links tasks by name, locks the source-owned fields, archives what left the source and restores what came back. It sits next to `team-sync.ts`, not inside it, because a project is managed or shared, never both. See ADR 0016.
 - `domain/time/timesheet-entry.ts` owns manual entry creation, edits, deletion with its tombstone, ordering, marking as committed, the migration of stored submission fields, and the corresponding work-item estimate adjustments.
 - `domain/time/locked-weeks.ts` owns submitted weeks: the one rule `isDateLocked`, Submit week and Reopen week, and `assertNoLockedWeekWrite`, which `writeState` in `lib/local-store.ts` runs before every write, so no command, Undo or agent tool changes a submitted week. A refused write throws `LockedWeekError`. Every state write saves a new `revision` inside the state JSON, in one atomic write, then copies it to the hint key `ajour.local-state.revision`. A window's revision is always the one inside the state it read or wrote. Before each write, Submit, Reopen and Undo included, `writeState` reads only the hint. When the hint is missing or differs, it reloads the state, and refuses the write with `LockedWeekError` or `StaleWindowError` if the revision inside changed. A hint that cannot be written is removed, so other windows reload instead of trusting it. A stale window never erases a lock, and a refused Undo stays available for a retry. Desktop recovery saves through the same check: when storage changed while it ran, it runs once more on the fresh state. Known limit: Two browser tabs of the web build that write within the same moment can still overwrite each other: the check reads the hint, then writes, and the browser gives no lock between tabs. The desktop app has one window, so it is not affected.
 - `domain/time/timesheet-import.ts` owns import normalization, conflict detection, draft review, project/task recovery, and single or batch commit.
@@ -86,9 +87,11 @@ The local API is a boundary for plugin-driven work. Plugin behavior should produ
 
 ADR 0007 and ADR 0010 replace this runtime. Until they ship, this section describes the current one.
 
-Backlog, code host, calendar and team are capabilities of installable
+Backlog, code host, calendar, team and project source are capabilities of installable
 plugins. A plugin declares one or more in its manifest, and its connections
-serve all of them. A connection field may name the capability it configures, so the connection
+serve all of them. A project source (`projectSource`, plugin API 4) is read-only:
+`syncProjects` returns a snapshot of projects, tasks, assignments and budgets, or
+reports it unchanged, and Ajour never writes back (ADR 0016). A connection field may name the capability it configures, so the connection
 form hides it while that capability is off. `validateConnection` receives the
 capabilities that are on as its second argument and checks only their access.
 A calendar is read-only: `listCalendarEvents` returns event facts for a date

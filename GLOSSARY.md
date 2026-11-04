@@ -27,8 +27,20 @@ A project that belongs to exactly one team. Its name, code, status, color, icon,
 _Avoid_: Synced project, remote project, team project (in user-facing text)
 
 **Local project**:
-A project that belongs to no team.
+A project that belongs to no team and no project source.
 _Avoid_: Private project, unshared project
+
+**Managed project**:
+A project that a project source brought. Its full name, code, client, dates, tasks and budget follow the source and are locked; its display name, color, icon, favorites, pins and plugin properties stay personal. A project is managed or shared, never both. See ADR 0016.
+_Avoid_: Synced project, imported project, source project (that is a backlog item's project in its source tool)
+
+**Not counted yet**:
+The user's time on a managed project that the project source cannot have yet: entries not committed, stale, or committed after the time the source's hours are from. Ajour computes it and never stores it.
+_Avoid_: Pending hours, uncommitted (alone), lag, conflict
+
+**Merge into**:
+To move every time entry of a task to another task of the same project, mark the committed ones for re-commit under the new task, and archive the empty task.
+_Avoid_: Combine, deduplicate, link (for tasks)
 
 **Commits as**:
 What a task's time goes to the timesheet tool as: its own name, another task of the project, Not known yet, or Local only.
@@ -211,7 +223,7 @@ _Avoid_: Cancel, delete (for a running entry)
 ### Extensions
 
 **Plugin**:
-An installable extension of Ajour that provides one or more capabilities: backlog, schema, code host, calendar, team or sign-in. When a plugin provides more than one of backlog, code host, calendar and team, the user turns each on and off separately, as Backlog items, Pull requests, Calendar events and Projects.
+An installable extension of Ajour that provides one or more capabilities: backlog, schema, code host, calendar, team, project source or sign-in. When a plugin provides more than one of backlog, code host, calendar, team and project source, the user turns each on and off separately, as Backlog items, Pull requests, Calendar events and Projects.
 _Avoid_: Extension, add-on, integration, connector
 
 **Plugin source**:
@@ -229,6 +241,10 @@ _Avoid_: Integration, instance, account (for a connection)
 **Team**:
 A group of people who share one set of projects and tasks through a team plugin. A workspace can connect to several teams.
 _Avoid_: Backend, server, workspace, organization
+
+**Project source**:
+A plugin capability that provides a read-only snapshot of the user's projects, tasks, assignments and budgets from a system that holds the truth about them. Ajour never writes to it, and names it by the label the plugin gives.
+_Avoid_: The product's name (such as Chronops) in Ajour, project sync, project connector, team (that capability syncs both ways)
 
 **Backlog** (capability):
 A plugin capability that syncs backlog items, with their descriptions, estimates and comments, between Ajour and a source tool such as Azure DevOps, Jira or GitHub issues. Say "backlog capability" wherever the user's backlog could be meant.
