@@ -111,7 +111,8 @@ export function SettingsGeneralPage() {
   };
 
   return (
-    <div className="settings-sections">
+    // Labels and controls within one 672px measure (council round 6).
+    <div className="settings-sections settings-measure">
       <section className="settings-section">
         <h2 className="settings-section-title">Appearance</h2>
         <p className="settings-section-desc">

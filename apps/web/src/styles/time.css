@@ -256,6 +256,19 @@
     font-weight: 500;
   }
 
+  /* With a note, the note leads and the task steps back to the project's
+     12px secondary: the note tells entries of one task apart (council round
+     6). Without one, the task stays the row's name. */
+  .time-entry-main:has(.time-entry-note) .time-entry-task {
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    font-weight: 400;
+  }
+
+  .time-entry-main:has(.time-entry-note) .time-entry-note {
+    font-weight: 500;
+  }
+
   /* The note tells two entries of one task apart, so it reads in the primary
      color, at regular weight under the medium task. */
   .time-entry-note {
@@ -1414,9 +1427,9 @@
      5). The narrow view keeps two lines, below. */
   @media (width >= 768px) {
     .commit-change {
-      grid-template-columns:
-        1rem 16px 3rem minmax(0, 1fr) minmax(0, max-content)
-        auto;
+      /* Shared tracks, so project / task and hours start at one edge on
+         every row (council round 6). */
+      grid-template-columns: 1rem 16px 3rem minmax(0, 1fr) 15rem 6rem;
       align-items: center;
       min-height: 40px;
       padding-block: 0;
@@ -1436,6 +1449,7 @@
 
     .commit-change-work {
       grid-column: 5;
+      min-width: 0;
       flex-wrap: nowrap;
       overflow: hidden;
       color: var(--text-secondary);

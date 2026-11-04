@@ -2618,7 +2618,7 @@ Then("the entry editor opens in a full-width dialog", async ({ page }) => {
 
 Then("the Commit page lists the week's entries", async ({ page }) => {
   await expect(
-    page.getByRole("heading", { name: "Commit week of Oct 5 to Oct 11" }),
+    page.getByRole("heading", { name: "Commit week of October 5–11" }),
   ).toBeVisible({ timeout: 15_000 });
   // None of the fixture's entries was ever committed.
   await expect(

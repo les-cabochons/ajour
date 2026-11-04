@@ -584,6 +584,7 @@ export function BacklogPage() {
           ) : null}
           <div className="backlog-workspace-status">
             <BacklogRefresh
+              compact={narrow}
               hasSyncedItems={state.workItems.some(
                 (item) => item.source !== "manual",
               )}

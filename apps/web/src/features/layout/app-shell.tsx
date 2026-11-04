@@ -122,6 +122,18 @@ function getTimeRouteDate(pathname: string) {
 }
 
 /** The top bar's title while the page has not mounted its own `PageHeader`. */
+/** The narrow titlebar's page name outside Time. */
+const SECTION_TITLES: Record<
+  NonNullable<ReturnType<typeof getAppSection>>,
+  string
+> = {
+  time: "Time",
+  backlog: "Backlog",
+  "pull-requests": "Pull requests",
+  projects: "Projects",
+  settings: "Settings",
+};
+
 function DefaultPageHeader({
   pathname,
   selectedTimeDate,
@@ -700,19 +712,29 @@ export function AppShell() {
                   />
                 )}
                 <AppMenuBar />
-                <TimeDatePicker
-                  date={selectedTimeDate}
-                  onSelectDate={(nextDate) => {
-                    setSelectedTimeDate(nextDate);
-                    if (isTimeActive) {
-                      void navigate({
-                        to: "/time/$date",
-                        params: { date: nextDate },
-                      });
-                    }
-                  }}
-                />
-                {selectedTimeDate !== todayIsoDate() ? (
+                {/* The narrow titlebar names the page: the day on Time, the
+                    section elsewhere (council round 6). It is hidden on
+                    desktop, where the page header does this. */}
+                {isNarrowView && !isTimeActive ? (
+                  <span className="ajour-titlebar-section">
+                    {section ? SECTION_TITLES[section] : null}
+                  </span>
+                ) : (
+                  <TimeDatePicker
+                    date={selectedTimeDate}
+                    onSelectDate={(nextDate) => {
+                      setSelectedTimeDate(nextDate);
+                      if (isTimeActive) {
+                        void navigate({
+                          to: "/time/$date",
+                          params: { date: nextDate },
+                        });
+                      }
+                    }}
+                  />
+                )}
+                {selectedTimeDate !== todayIsoDate() &&
+                !(isNarrowView && !isTimeActive) ? (
                   <TooltipButton
                     className={cn(
                       "ajour-nav-return-today",

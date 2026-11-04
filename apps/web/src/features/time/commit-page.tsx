@@ -150,6 +150,10 @@ function WarningDuration({ ms }: { ms: number }) {
   return <Value tone="muted">{formatClockDuration(ms)}</Value>;
 }
 
+function lowerFirst(text: string) {
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
 function countUnderTargetDays(warnings: SubmitWarning[]) {
   return warnings.filter((warning) => warning.kind === "day-under-target")
     .length;
@@ -727,6 +731,13 @@ export function CommitPage({
           <p className="commit-actions-caption">
             Mark as committed records the checked changes as sent. Submit week
             locks the week once it is in your timesheet.
+          </p>
+        ) : null}
+        {!lockedWeek && manualSubmitReason ? (
+          // What Submit week waits for, without a hover (council round 6).
+          <p className="commit-actions-caption">
+            Submit week waits: {lowerFirst(manualSubmitReason)}
+            {/[.!?]$/.test(manualSubmitReason) ? "" : "."}
           </p>
         ) : null}
         {changesOpen ? (

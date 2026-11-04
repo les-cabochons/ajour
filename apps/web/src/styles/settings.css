@@ -40,6 +40,12 @@
     padding: 1.5rem 2rem;
   }
 
+  /* A settings page of rows keeps its labels and controls close: the eye
+     travels 672px, not the content's width. */
+  .settings-measure {
+    max-width: 42rem;
+  }
+
   .settings-content-shell {
     flex: 1;
     min-width: 0;

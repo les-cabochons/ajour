@@ -32,9 +32,12 @@ const CALM_SYNC_STATES = new Set([
 export function BacklogRefresh({
   source,
   hasSyncedItems = false,
+  compact = false,
 }: {
   source?: BacklogRefreshSource;
   hasSyncedItems?: boolean;
+  /** The narrow view: a warning shows alone; the tooltip keeps the age. */
+  compact?: boolean;
 }) {
   const overview = useSyncExternalStore(
     subscribePluginsOverview,
@@ -148,7 +151,9 @@ export function BacklogRefresh({
         {running
           ? "Syncing…"
           : warning
-            ? `${warning} · ${age.toLowerCase()}`
+            ? compact
+              ? warning
+              : `${warning} · ${age.toLowerCase()}`
             : age}
       </span>
       <TooltipButton

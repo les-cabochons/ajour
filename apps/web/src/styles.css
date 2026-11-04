@@ -789,6 +789,16 @@
     color: var(--text);
   }
 
+  /* The narrow titlebar's page name, the size and weight of its date. */
+  .ajour-titlebar-section {
+    padding: 0 0.25rem;
+    color: var(--text);
+    font-size: var(--text-base);
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
   .ajour-titlebar-date-trigger:focus-visible {
     outline: 1px solid var(--focus-ring);
     outline-offset: 2px;
