@@ -73,7 +73,7 @@ function escapesFolder(name) {
  *   paths: { installDir: string, recordFile: string, tar: string },
  *   link: {
  *     add(folder: string, options?: { interactive: boolean }): Promise<{ added: boolean }>,
- *     remove(folder: string, options?: { interactive: boolean }): Promise<unknown>,
+ *     remove(folder: string, options?: { interactive: boolean }): Promise<{ added: boolean, cleanupSafe?: boolean }>,
  *   },
  *   now?: () => number,
  *   env?: Record<string, string | undefined>,
@@ -615,7 +615,14 @@ function createCliCommandController({
     }
     let result = { added: false };
     if (record) result = await link.add(paths.installDir, { interactive });
-    else await link.remove(paths.installDir, { interactive });
+    else {
+      const removal = await link.remove(paths.installDir, { interactive });
+      if (removal?.cleanupSafe === false)
+        throw new Error(
+          "Another ajour is at /usr/local/bin/ajour. Remove it, then press Retry in Settings.",
+        );
+    }
+    // Link operations must confirm the committed target or absence before cleanup.
     for (const name of await namesIn(paths.installDir)) {
       const old = entries.some((entry) => isOldName(name, entry));
       if (

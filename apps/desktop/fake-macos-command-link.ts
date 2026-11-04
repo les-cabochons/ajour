@@ -14,18 +14,26 @@ export function macosLinkFixture({
 } = {}) {
   const escaped: string[] = [];
   const calls: Array<{ file: string; args: string[] }> = [];
+  let realDirectory = false;
   const fs = {
     lstat: async () => {
-      if (target === null && !foreignFile)
+      if (target === null && !foreignFile && !realDirectory)
         throw Object.assign(new Error(), { code: "ENOENT" });
-      return { isSymbolicLink: () => !foreignFile };
+      return { isSymbolicLink: () => !foreignFile && !realDirectory };
     },
     readlink: async () => {
       const observed = target;
       afterRead();
-      if (observed === null)
+      if (observed === null || realDirectory || foreignFile)
         throw Object.assign(new Error(), { code: "ENOENT" });
       return observed;
+    },
+    symlink: async (source: string, destination: string) => {
+      calls.push({ file: "fs.symlink", args: [source, destination] });
+      beforeCreate();
+      if (target !== null || foreignFile || realDirectory)
+        throw Object.assign(new Error("File exists"), { code: "EEXIST" });
+      target = source;
     },
     access: async () => {
       if (!writable) throw Object.assign(new Error(), { code: "EACCES" });
@@ -37,8 +45,14 @@ export function macosLinkFixture({
     if (cancelled) throw new Error("User canceled. (-128)");
     const quote = (value: string) =>
       "'" + value.replaceAll("'", "'\"'\"'") + "'";
-    const create = (source: string, noFollow: boolean) => {
+    const create = (source: string, noFollow: boolean, guarded = false) => {
       beforeCreate();
+      if (guarded && (target !== null || foreignFile || realDirectory))
+        throw new Error("Destination exists");
+      if (realDirectory) {
+        escaped.push("/usr/local/bin/ajour/ajour");
+        return;
+      }
       if (target !== null || foreignFile) {
         if (noFollow) throw new Error("File exists");
         // Plain BSD ln writes inside a destination directory link.
@@ -60,12 +74,17 @@ export function macosLinkFixture({
       if (shell.includes("/bin/rm")) {
         if (target !== null && shell.includes(`= ${quote(target)} ]`))
           target = null;
+        else if (shell.includes("else exit 1")) throw new Error("Link changed");
       }
       const ln = shell.match(
-        /\/bin\/ln '-s' ('-n' )?(.+) '\/usr\/local\/bin\/ajour'/,
+        /\/bin\/ln '-s' ('-n' )?(.+?) '\/usr\/local\/bin\/ajour'/,
       );
       if (ln)
-        create(ln[2]!.slice(1, -1).replaceAll("'\"'\"'", "'"), Boolean(ln[1]));
+        create(
+          ln[2]!.slice(1, -1).replaceAll("'\"'\"'", "'"),
+          Boolean(ln[1]),
+          shell.includes("[ ! -e ") && shell.includes("[ ! -L "),
+        );
     }
     return { stdout: "" };
   };
@@ -76,6 +95,10 @@ export function macosLinkFixture({
     current: () => target,
     fs,
     exec,
+    replaceWithDirectory: () => {
+      target = null;
+      realDirectory = true;
+    },
     replace: (value: string) => {
       target = value;
     },

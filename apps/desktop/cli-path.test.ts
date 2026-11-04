@@ -573,12 +573,11 @@ describe("macOS command link", () => {
     expect(await f.link().add("/Users/alex/Ajour/bin")).toEqual({
       added: true,
     });
-    expect(f.calls.map((call) => call.file)).toEqual(["/bin/mkdir", "/bin/ln"]);
-    expect(f.calls[1]!.args).toEqual([
-      "-s",
-      "-n",
-      "/Users/alex/Ajour/bin/ajour",
-      "/usr/local/bin/ajour",
+    expect(f.calls).toEqual([
+      {
+        file: "fs.symlink",
+        args: ["/Users/alex/Ajour/bin/ajour", "/usr/local/bin/ajour"],
+      },
     ]);
   });
   it.each([true, false])(
@@ -595,15 +594,35 @@ describe("macOS command link", () => {
       expect(f.current()).toBe("/another/directory");
     },
   );
+  it.each([true, false])(
+    "leaves a real directory empty when it appears after inspection, writable=%s",
+    async (writable) => {
+      const f = fixture({
+        writable,
+        beforeCreate: () => f.replaceWithDirectory(),
+      });
+      await expect(
+        f.link().add("/Users/alex/Ajour/bin", { interactive: true }),
+      ).rejects.toThrow(
+        "Ajour couldn't create /usr/local/bin/ajour. Press Retry in Settings.",
+      );
+      expect(f.escaped).toEqual([]);
+      expect((await f.fs.lstat()).isSymbolicLink()).toBe(false);
+    },
+  );
   it("rejects success when the exact link no longer has the intended target", async () => {
     const f = fixture();
-    const exec = async (file: string, args: string[]) => {
-      const result = await f.exec(file, args);
-      if (file === "/bin/ln") f.replace("/opt/homebrew/bin/ajour");
-      return result;
+    const files = {
+      ...f.fs,
+      symlink: async (...args: Parameters<typeof f.fs.symlink>) => {
+        await f.fs.symlink(...args);
+        f.replace("/opt/homebrew/bin/ajour");
+      },
     };
     await expect(
-      createMacosCommandLink({ fs: f.fs, exec }).add("/Users/alex/Ajour/bin"),
+      createMacosCommandLink({ fs: files, exec: f.exec }).add(
+        "/Users/alex/Ajour/bin",
+      ),
     ).rejects.toThrow(
       "Ajour couldn't verify /usr/local/bin/ajour. Press Retry in Settings.",
     );
@@ -619,7 +638,9 @@ describe("macOS command link", () => {
           if (++reads === 2) f.replace("/opt/homebrew/bin/ajour");
         },
       });
-      await f.link().remove("/Users/alex/Ajour/bin", { interactive: true });
+      await expect(
+        f.link().remove("/Users/alex/Ajour/bin", { interactive: true }),
+      ).rejects.toThrow("changed during reconciliation");
       expect(f.current()).toBe("/opt/homebrew/bin/ajour");
     },
   );
@@ -655,8 +676,15 @@ describe("macOS command link", () => {
         -" with administrator privileges".length,
       ),
     );
-    expect(shell).toBe(
-      `/bin/mkdir '-p' '/usr/local/bin' && /bin/ln '-s' '-n' '/Users/A "B"/it'"'"'s\\home/bin/ajour' '/usr/local/bin/ajour'`,
+    expect(f.calls).toHaveLength(1);
+    expect(shell).toContain(
+      `[ ! -e '/usr/local/bin/ajour' ] && [ ! -L '/usr/local/bin/ajour' ] && /bin/ln '-s' '-n'`,
+    );
+    expect(shell).toContain(
+      `'/Users/A "B"/it'"'"'s\\home/bin/ajour' '/usr/local/bin/ajour'`,
+    );
+    expect(shell).toContain(
+      `[ -L '/usr/local/bin/ajour' ] && [ "$(/usr/bin/readlink '/usr/local/bin/ajour')" = `,
     );
   });
   it("refuses cancellation with the specified message", async () => {

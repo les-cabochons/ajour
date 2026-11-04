@@ -1642,6 +1642,60 @@ describe("macOS signature verification", () => {
     expect(prompts).toEqual([false, true]);
     expect(github.requests).toEqual([]);
   });
+  it("keeps old files when a foreign command prevents confirming absence", async () => {
+    const old = "ajour.old-00000000-0000-0000-0000-000000000001";
+    await mkdir(installDir, { recursive: true });
+    await writeFile(path.join(installDir, old), "old command");
+    const f = macosLinkFixture({ target: "/opt/homebrew/bin/ajour" });
+    const adapter = f.link();
+    const { controller } = mac(false, {
+      link: {
+        link: {
+          add: () => adapter.add("/Users/alex/Ajour/bin"),
+          remove: () => adapter.remove("/Users/alex/Ajour/bin"),
+        },
+      },
+    });
+    expect((await controller.reconcile()).status).toBe("error");
+    expect(await readFile(path.join(installDir, old), "utf8")).toBe(
+      "old command",
+    );
+    expect(f.current()).toBe("/opt/homebrew/bin/ajour");
+  });
+  it.each([true, false])(
+    "keeps both old binaries when removal skips an old-A to old-B race, writable=%s",
+    async (writable) => {
+      const oldA = "ajour.old-00000000-0000-0000-0000-000000000001";
+      const oldB = "ajour.old-00000000-0000-0000-0000-000000000002";
+      await mkdir(installDir, { recursive: true });
+      await writeFile(path.join(installDir, oldA), "old A");
+      await writeFile(path.join(installDir, oldB), "old B");
+      const folder = "/Users/alex/Ajour/bin";
+      const f = macosLinkFixture({
+        target: `${folder}/${oldA}`,
+        writable,
+        beforeExec: () => f.replace(`${folder}/${oldB}`),
+      });
+      const adapter = f.link();
+      const { controller } = mac(false, {
+        link: {
+          link: {
+            add: () => adapter.add(folder),
+            remove: () => adapter.remove(folder, { interactive: true }),
+          },
+        },
+      });
+      const state = await controller.reconcile();
+      expect(state.status).toBe("error");
+      expect(state.error).toBe(
+        "The ajour link changed during reconciliation. Press Retry in Settings.",
+      );
+      expect((await controller.state()).status).toBe("error");
+      expect(f.current()).toBe(`${folder}/${oldB}`);
+      expect(await readFile(path.join(installDir, oldA), "utf8")).toBe("old A");
+      expect(await readFile(path.join(installDir, oldB), "utf8")).toBe("old B");
+    },
+  );
   it.each([true, false])(
     "repairs a stale owned link before cleanup, writable=%s",
     async (writable) => {

@@ -250,7 +250,7 @@ module.exports = {
 /**
  * Links into this install folder are owned, but only the committed binary is correct.
  * Repair precedes reconciliation cleanup. Launch reconciliation never prompts.
- * @param {{ fs: Pick<typeof import("node:fs/promises"), "lstat" | "readlink" | "access">,
+ * @param {{ fs: Pick<typeof import("node:fs/promises"), "lstat" | "readlink" | "access" | "symlink">,
  *   exec: (file: string, args: string[], options?: { timeout?: number }) => Promise<unknown> }} options
  */
 function createMacosCommandLink({ fs, exec }) {
@@ -281,7 +281,7 @@ function createMacosCommandLink({ fs, exec }) {
   async function ensure(folder, present, { interactive = false } = {}) {
     const current = await inspect(folder);
     if (current.kind === "foreign") {
-      if (!present) return { added: false };
+      if (!present) return { added: false, cleanupSafe: false };
       throw failure(
         "foreign_command",
         "Another ajour is at /usr/local/bin/ajour. Remove it, then install again.",
@@ -306,42 +306,47 @@ function createMacosCommandLink({ fs, exec }) {
       throw new Error(
         "Ajour needs your password to repair /usr/local/bin/ajour. Press Retry in Settings.",
       );
-    /** @type {Array<[string, string[]]>} */
-    const commands = present
-      ? [
-          ["/bin/mkdir", ["-p", directory]],
-          [
-            "/bin/ln",
-            ["-s", "-n", path.posix.join(folder, "ajour"), destination],
-          ],
-        ]
-      : [["/bin/rm", [destination]]];
     // Recheck before removing. A foreign replacement is never deliberately removed.
     if (!present || repair) {
       const checked = await inspect(folder);
       if (checked.kind !== "ours" || checked.target !== current.target) {
-        if (!present) return { added: false };
         throw new Error(
-          "The ajour link changed during repair. Press Retry in Settings.",
+          "The ajour link changed during reconciliation. Press Retry in Settings.",
         );
       }
     }
-    const removal = `if [ -L ${quote(destination)} ] && [ "$(/usr/bin/readlink ${quote(destination)})" = ${quote(current.target ?? "")} ]; then /bin/rm ${quote(destination)}; fi`;
+    const removal = `if [ -L ${quote(destination)} ] && [ "$(/usr/bin/readlink ${quote(destination)})" = ${quote(current.target ?? "")} ]; then /bin/rm ${quote(destination)}; else exit 1; fi`;
+    const changed = () =>
+      new Error(
+        "The ajour link changed during reconciliation. Press Retry in Settings.",
+      );
     if (writable) {
-      if (!present || repair)
-        await exec("/bin/sh", ["-c", removal], { timeout: 30_000 });
-      if (present)
-        for (const [file, args] of commands)
-          await exec(file, args, { timeout: 30_000 });
+      if (!present || repair) {
+        try {
+          await exec("/bin/sh", ["-c", removal], { timeout: 30_000 });
+        } catch {
+          throw changed();
+        }
+      }
+      if (present) {
+        try {
+          // symlink(2) fails for every existing destination, including a directory.
+          await fs.symlink(target, destination);
+        } catch {
+          throw new Error(
+            "Ajour couldn't create /usr/local/bin/ajour. Press Retry in Settings.",
+          );
+        }
+      }
     } else {
-      const shell = commands
-        .map(([file, args]) => `${file} ${args.map(quote).join(" ")}`)
-        .join(" && ");
-      // Check again inside the elevated shell, after the user answered the prompt.
+      // This branch is chosen only for a directory the user can't write.
+      // An unprivileged racer therefore can't create the destination between
+      // this guard and ln. Guard, creation and verification run in one privileged shell.
+      const creation = `/bin/mkdir -p ${quote(directory)} && [ ! -e ${quote(destination)} ] && [ ! -L ${quote(destination)} ] && /bin/ln '-s' '-n' ${quote(target)} ${quote(destination)} && [ -L ${quote(destination)} ] && [ "$(/usr/bin/readlink ${quote(destination)})" = ${quote(target)} ]`;
       const guarded = present
         ? repair
-          ? `${removal} && ${shell}`
-          : shell
+          ? `${removal} && ${creation}`
+          : creation
         : removal;
       const script = `do shell script ${JSON.stringify(guarded)} with administrator privileges`;
       try {
@@ -352,9 +357,13 @@ function createMacosCommandLink({ fs, exec }) {
             "admin_cancelled",
             "Ajour needs your password to link /usr/local/bin/ajour. Nothing was installed.",
           );
-        throw error;
+        if (!present) throw changed();
+        throw new Error(
+          "Ajour couldn't create /usr/local/bin/ajour. Press Retry in Settings.",
+        );
       }
     }
+    if (!present && (await inspect(folder)).kind !== "absent") throw changed();
     if (
       present &&
       (await fs.readlink(destination).catch(() => null)) !==

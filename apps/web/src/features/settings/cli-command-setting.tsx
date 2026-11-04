@@ -184,9 +184,7 @@ export function CliCommandSetting() {
                 disabled={!state || installing || development}
                 onClick={install}
               >
-                {state?.status === "error" && state.version
-                  ? "Retry"
-                  : "Install"}
+                {state?.status === "error" ? "Retry" : "Install"}
               </Button>
             </DisabledReason>
           )}
