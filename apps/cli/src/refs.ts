@@ -158,7 +158,7 @@ export function resolveTask(
 }
 
 /**
- * Finds one project from its code or name, matched as a TASK's PROJECT
+ * Finds one project from its code, name or full name, matched as a TASK's PROJECT
  * part is. Throws exit 4 when nothing or more than one project matches.
  */
 export function resolveProject(
@@ -171,6 +171,7 @@ export function resolveProject(
   const matches = bestMatches(projects, normalized, (project) => [
     project.code,
     project.name,
+    project.fullName,
   ]);
   if (matches.length === 1) return matches[0]!;
   if (matches.length === 0) {

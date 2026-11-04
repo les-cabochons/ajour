@@ -397,6 +397,20 @@ describe("PROJECT", () => {
     expect(resolveProject(query, projects).projectId).toBe(projectId);
   });
 
+  it("reads a project by its full name too, as a TASK's PROJECT part does", () => {
+    expect(
+      resolveProject("acme corp", [
+        {
+          projectId: "p-1",
+          name: "ACME",
+          fullName: "Acme Corporation",
+          tasks: [],
+        },
+        { projectId: "p-2", name: "Globex", tasks: [] },
+      ]).projectId,
+    ).toBe("p-1");
+  });
+
   it("exits 4 with the candidates when several projects match", () => {
     expect(() => resolveProject("a", projects)).toThrow(
       expect.objectContaining({
