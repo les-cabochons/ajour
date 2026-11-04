@@ -265,8 +265,9 @@ function mergeSyncedWorkItem(
       ? nextImportedState.completedEstimateHours
       : existingWorkItem.completedEstimateHours,
     estimateSync,
-    ...(nextImportedState.assignee !== undefined
-      ? { assignee: nextImportedState.assignee }
+    assignee: nextImportedState.assignee,
+    ...(nextImportedState.assignee === undefined
+      ? { settledAssigneeId: undefined }
       : {}),
     keepWhenMissingFromSync: existingWorkItem.keepWhenMissingFromSync ?? false,
     status: existingWorkItem.archivedByMissingSync
@@ -286,6 +287,7 @@ function mergeSyncedWorkItem(
           workflowStateId: existingWorkItem.workflowStateId,
           importedWorkflowStateId: existingWorkItem.importedWorkflowStateId,
           assignee: existingWorkItem.assignee,
+          settledAssigneeId: existingWorkItem.settledAssigneeId,
         }
       : {}),
     ...(reopened
@@ -672,6 +674,10 @@ export function archiveDoneSyncedWorkItems(
           ? {
               ...workItem,
               sourceSyncedAt: syncedAt,
+              ...(!pendingMoveItemIds.has(target._id) &&
+              doneItem.assignee !== undefined
+                ? { assignee: doneItem.assignee }
+                : {}),
               ...(doneDescription
                 ? reconcileDescription(workItem, doneDescription, syncedAt)
                 : {}),
@@ -736,7 +742,10 @@ export function archiveDoneSyncedWorkItems(
     if (keepsOpen) {
       nextState =
         target.status === "settled" &&
-        sourceStatusKey !== target.settledSourceStatusKey
+        (sourceStatusKey !== target.settledSourceStatusKey ||
+          (target.settledAssigneeId !== undefined &&
+            doneItem.assignee !== undefined &&
+            (doneItem.assignee?.id ?? null) !== target.settledAssigneeId))
           ? unsettleBacklogItem(withSourceState, target._id)
           : withSourceState;
       if (reopens || nextState !== withSourceState) {

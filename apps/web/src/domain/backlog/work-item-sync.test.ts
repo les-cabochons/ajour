@@ -844,6 +844,54 @@ describe("backlog sync of assignees", () => {
   const sync = (state: LocalAppState, candidate: BacklogImportCandidate) =>
     importSyncedWorkItems(state, [candidate], undefined, factories).state;
 
+  it.each([
+    { id: "ana@contoso.com", displayName: "Ana Silva" },
+    { id: "alex@contoso.com", displayName: "Alex renamed" },
+    null,
+    undefined,
+  ])(
+    "reconciles the assignee of a settled done item mapped to open: %j",
+    (assignee) => {
+      const imported = sync(
+        createState({
+          workflowStates: [
+            { _id: "review", name: "Review", color: "#000000", createdAt: 1 },
+          ],
+          workflowStateMappings: [
+            {
+              source: "azure_devops",
+              connectionId: "connection-1",
+              sourceStatusKey: "closed",
+              workflowStateId: "review",
+            },
+          ],
+        }),
+        createCandidate({ state: "Closed", assignee: alex }),
+      );
+      const settled = settleBacklogItem(imported, "work-item-1", factories);
+      const result = archiveDoneSyncedWorkItems(
+        settled,
+        [
+          {
+            source: "azure_devops",
+            connectionId: "connection-1",
+            sourceId: "source-1",
+            state: "Closed",
+            assignee,
+          },
+        ],
+        factories,
+      ).state.workItems[0];
+      const changed = assignee !== undefined && assignee?.id !== alex.id;
+      expect(result).toMatchObject({
+        status: changed ? "active" : "settled",
+        assignee: assignee === undefined ? alex : assignee,
+        returnedAt: changed ? 500 : undefined,
+        settledAssigneeId: changed ? undefined : alex.id,
+      });
+    },
+  );
+
   it("keeps the assignee the source sends, null when no one has the item, and none when the plugin doesn't say", () => {
     expect(
       sync(createState(), createCandidate({ assignee: ana })).workItems[0]
@@ -857,6 +905,145 @@ describe("backlog sync of assignees", () => {
       sync(createState(), createCandidate()).workItems[0]?.assignee,
     ).toBeUndefined();
   });
+
+  it("clears the old assignee and settle baseline when the plugin drops assign", () => {
+    const settled = settleBacklogItem(
+      sync(createState(), createCandidate({ assignee: alex })),
+      "work-item-1",
+      factories,
+    );
+    const item = sync(settled, createCandidate()).workItems[0];
+    expect(item?.assignee).toBeUndefined();
+    expect(item?.settledAssigneeId).toBeUndefined();
+    expect(item?.status).toBe("settled");
+  });
+
+  it.each([ana, undefined])(
+    "a pending write protects the assignee and its settle baseline from %j",
+    (assignee) => {
+      const settled = settleBacklogItem(
+        sync(createState(), createCandidate({ assignee: alex })),
+        "work-item-1",
+        factories,
+        { priority: 1 },
+      );
+      expect(settled.workItems[0]?.pendingSourceWrite).toBeDefined();
+      expect(
+        sync(settled, createCandidate({ assignee })).workItems[0],
+      ).toMatchObject({
+        status: "settled",
+        assignee: alex,
+        settledAssigneeId: alex.id,
+        returnedAt: undefined,
+      });
+      expect(
+        archiveDoneSyncedWorkItems(
+          settled,
+          [
+            {
+              source: "azure_devops",
+              connectionId: "connection-1",
+              sourceId: "source-1",
+              state: "Closed",
+              assignee,
+            },
+          ],
+          factories,
+        ).state.workItems[0],
+      ).toMatchObject({
+        status: "settled",
+        assignee: alex,
+        settledAssigneeId: alex.id,
+        returnedAt: undefined,
+      });
+    },
+  );
+
+  it("returns the subitems a settle carried when the parent is reassigned", () => {
+    let id = 0;
+    const ids = { ...factories, createId: () => `item-${++id}` };
+    const parent = createCandidate({ assignee: alex });
+    const child = createCandidate({
+      id: "child",
+      sourceId: "child",
+      depth: 1,
+      parentSourceId: "source-1",
+      assignee: ana,
+    });
+    const imported = importSyncedWorkItems(
+      createState(),
+      [parent, child],
+      undefined,
+      ids,
+    ).state;
+    const settled = settleBacklogItem(imported, "item-1", ids, undefined, {
+      includeSubitems: true,
+    });
+    expect(settled.workItems[1]).toMatchObject({
+      status: "settled",
+      settledWithParentId: "item-1",
+    });
+    const returned = importSyncedWorkItems(
+      settled,
+      [{ ...parent, assignee: ana }, child],
+      undefined,
+      ids,
+    ).state;
+    expect(returned.workItems[0]).toMatchObject({
+      status: "active",
+      returnedAt: 500,
+      assignee: ana,
+    });
+    expect(returned.workItems[1]).toMatchObject({
+      status: "active",
+      assignee: ana,
+      settledWithParentId: undefined,
+      settledAssigneeId: undefined,
+    });
+  });
+
+  it("updates the assignee when an item archived as missing reappears", () => {
+    const imported = sync(createState(), createCandidate({ assignee: alex }));
+    const missing = importSyncedWorkItems(
+      imported,
+      [],
+      { archiveMissingFromConnectionId: "connection-1" },
+      factories,
+    ).state;
+    expect(missing.workItems[0]).toMatchObject({
+      status: "archived",
+      archivedByMissingSync: true,
+    });
+    expect(
+      sync(missing, createCandidate({ assignee: ana })).workItems[0],
+    ).toMatchObject({
+      status: "active",
+      assignee: ana,
+      archivedByMissingSync: false,
+    });
+  });
+
+  it.each([alex, null])(
+    "keeps both assignee fields through a JSON reload: %j",
+    (assignee) => {
+      const settled = settleBacklogItem(
+        sync(createState(), createCandidate({ assignee })),
+        "work-item-1",
+        factories,
+      );
+      const reloaded: LocalAppState = JSON.parse(JSON.stringify(settled));
+      expect(reloaded.workItems[0]).toMatchObject({
+        assignee,
+        settledAssigneeId: assignee?.id ?? null,
+      });
+      expect(
+        sync(reloaded, createCandidate({ assignee })).workItems[0]?.status,
+      ).toBe("settled");
+      expect(
+        sync(reloaded, createCandidate({ assignee: ana })).workItems[0],
+      ).toMatchObject({ status: "active", returnedAt: 500 });
+    },
+  );
 
   it("follows the source when someone else reassigns an active item", () => {
     const imported = sync(createState(), createCandidate({ assignee: alex }));

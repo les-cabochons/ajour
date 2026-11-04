@@ -1344,6 +1344,7 @@ export const backlogDoneWorkItemSchema = z.object({
   connectionId: z.string().trim().min(1).max(120),
   sourceId: z.string().trim().min(1).max(400),
   state: z.string().trim().max(120).optional(),
+  assignee: backlogPersonSchema.nullable().optional(),
   /** The item's description, which syncs whether or not the item stays open. */
   description: backlogSyncedDescriptionSchema.optional(),
 });

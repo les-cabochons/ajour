@@ -961,7 +961,8 @@ describe("backlog settle routes", () => {
     "    items: [",
     "      { ...item('OPEN-1', 'In Progress', false), assignee: { id: 'ana@acme.test', displayName: 'Ana Silva' } },",
     "      item('OPEN-2', 'To Do', false),",
-    "      item('DONE-1', 'Done', true),",
+    "      { ...item('DONE-1', 'Done', true), assignee: { id: 'ana@acme.test', displayName: 'Ana Silva' } },",
+    "      item('DONE-2', 'Done', true),",
     "    ]",
     "      .map((candidate) => ({ ...candidate, connectionId: connection.id })),",
     "    workItemUpdates: [],",
@@ -1211,6 +1212,38 @@ describe("backlog settle routes", () => {
     ]);
   });
 
+  it.each([true, false])(
+    "done items carry normalized assignees only with assign=%s",
+    async (assign) => {
+      const { server, connectionId } = await createServer({
+        settle: true,
+        assign,
+      });
+      const synced = await dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/plugins/jira/connections/${connectionId}/sync`,
+        body: JSON.stringify({ trigger: "manual", workItems: [] }),
+      });
+      expect(synced.status).toBe(200);
+      const { doneItems } = synced.body as {
+        doneItems: { sourceId: string; assignee?: unknown }[];
+      };
+      expect(doneItems.map((item) => [item.sourceId, item.assignee])).toEqual([
+        [
+          "DONE-1",
+          assign
+            ? { id: "ana@acme.test", displayName: "Ana Silva" }
+            : undefined,
+        ],
+        ["DONE-2", assign ? null : undefined],
+      ]);
+      if (!assign)
+        expect(
+          doneItems.every((item) => !Object.hasOwn(item, "assignee")),
+        ).toBe(true);
+    },
+  );
+
   it("returns done items from a sync instead of staging them for review", async () => {
     const { server, connectionId } = await createServer({ settle: true });
 
@@ -1230,6 +1263,13 @@ describe("backlog settle routes", () => {
             sourceId: "DONE-1",
             state: "Done",
             description: { text: "About DONE-1" },
+          },
+          {
+            source: "jira",
+            connectionId,
+            sourceId: "DONE-2",
+            state: "Done",
+            description: { text: "About DONE-2" },
           },
         ],
       },
