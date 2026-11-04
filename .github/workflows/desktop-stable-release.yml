@@ -187,7 +187,16 @@ jobs:
           for arch in mac mac-arm64; do
             app="apps/desktop/out/make/$arch/Ajour.app"
             codesign --verify --deep --strict "$app"
-            xcrun stapler validate "$app"
+            # stapler validate asks Apple's ticket service, and a dropped
+            # connection fails it with error 68. Only that error is retried.
+            for attempt in 1 2 3 4 5; do
+              status=0
+              xcrun stapler validate "$app" || status=$?
+              if (( status == 0 )); then break; fi
+              if (( status != 68 || attempt == 5 )); then exit "$status"; fi
+              echo "stapler validate lost its connection; retrying in $(( attempt * 15 )) s." >&2
+              sleep $(( attempt * 15 ))
+            done
           done
 
       - name: Create Windows distributable
