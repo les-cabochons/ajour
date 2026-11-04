@@ -951,7 +951,10 @@ When(
       .getByRole("button", { name: new RegExp(`^${key}(,|$)`) })
       .click();
     await expect(picker).toBeHidden();
-    await expect(taskRow(page, task).locator("kbd")).toHaveText(key);
+    // The keycap prints the chord that starts the task (council round 19).
+    await expect(taskRow(page, task).locator("kbd")).toHaveText(
+      new RegExp("^(⇧|Shift\\+)" + key + "$"),
+    );
   },
 );
 
