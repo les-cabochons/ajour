@@ -295,13 +295,12 @@
     }
 
     /* No note: the task is the row's name. */
-    .time-entry-main:not(:has(.time-entry-note)) .time-entry-task {
+    .time-entry-main:not([data-note]) .time-entry-task {
       grid-column: 1;
     }
 
     /* No note and no task: the project is. */
-    .time-entry-main:not(:has(.time-entry-note)):not(:has(.time-entry-task))
-      .time-entry-project {
+    .time-entry-main:not([data-note])[data-no-task] .time-entry-project {
       grid-column: 1;
       color: var(--text);
       font-size: var(--text-sm);
@@ -312,13 +311,13 @@
   /* With a note, the note leads and the task steps back to the project's
      12px secondary: the note tells entries of one task apart (council round
      6). Without one, the task stays the row's name. */
-  .time-entry-main:has(.time-entry-note) .time-entry-task {
+  .time-entry-main[data-note] .time-entry-task {
     color: var(--text-secondary);
     font-size: var(--text-xs);
     font-weight: 400;
   }
 
-  .time-entry-main:has(.time-entry-note) .time-entry-note {
+  .time-entry-main[data-note] .time-entry-note {
     font-weight: 500;
   }
 
@@ -1668,8 +1667,7 @@
   /* An entry with a task and a note leads with the note, which tells entries
      of one task apart; the project and task follow on line 2 (council
      round 3). */
-  .time-entry-main:has(.time-entry-task):has(.time-entry-note)
-    .time-entry-note {
+  .time-entry-main[data-note]:not([data-no-task]) .time-entry-note {
     grid-row: 1;
     grid-column: 1 / -1;
     /* A margin, not padding, so the note's box stops at the duration. */
@@ -1679,13 +1677,11 @@
     font-weight: 500;
   }
 
-  .time-entry-main:has(.time-entry-task):has(.time-entry-note)
-    .time-entry-note::before {
+  .time-entry-main[data-note]:not([data-no-task]) .time-entry-note::before {
     content: none;
   }
 
-  .time-entry-main:has(.time-entry-task):has(.time-entry-note)
-    .time-entry-task {
+  .time-entry-main[data-note]:not([data-no-task]) .time-entry-task {
     grid-row: 2;
     grid-column: 3;
     padding-right: 0.75rem;
@@ -1694,20 +1690,19 @@
     font-weight: 400;
   }
 
-  .time-entry-main:has(.time-entry-task):has(.time-entry-note)
-    .time-entry-task::before {
+  .time-entry-main[data-note]:not([data-no-task]) .time-entry-task::before {
     content: "· ";
     color: var(--text-tertiary);
   }
 
   /* An entry without a task puts its project on line 1 and its note,
      when it has one, alone on line 2. */
-  .time-entry-main:not(:has(.time-entry-task)) .time-entry-dot,
-  .time-entry-main:not(:has(.time-entry-task)) .time-entry-project {
+  .time-entry-main[data-no-task] .time-entry-dot,
+  .time-entry-main[data-no-task] .time-entry-project {
     grid-row: 1;
   }
 
-  .time-entry-main:not(:has(.time-entry-task)) .time-entry-project {
+  .time-entry-main[data-no-task] .time-entry-project {
     max-width: none;
     padding-right: 7.5rem;
     color: var(--text);
@@ -1715,11 +1710,11 @@
     font-weight: 500;
   }
 
-  .time-entry-main:not(:has(.time-entry-task)) .time-entry-note {
+  .time-entry-main[data-no-task] .time-entry-note {
     grid-column: 1 / -1;
   }
 
-  .time-entry-main:not(:has(.time-entry-task)) .time-entry-note::before {
+  .time-entry-main[data-no-task] .time-entry-note::before {
     content: none;
   }
 
