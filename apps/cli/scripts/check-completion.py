@@ -102,10 +102,27 @@ with tempfile.TemporaryDirectory(prefix="ajour-completion-") as directory:
                 assert not marker.exists(), (shell, "command substitution executed")
             print(f"{executable}: literal Tab insertion passed for {len(candidates)} names", flush=True)
         finally:
-            process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
+            # macOS can block shell exit while unread PTY output remains.
+            # Keep draining through graceful exit and the forced-exit fallback.
+            os.set_blocking(master, False)
+            if process.poll() is None:
+                try:
+                    os.write(master, b"exit\n")
+                except OSError as error:
+                    if error.errno != errno.EIO:
+                        raise
+            for force in (False, True):
+                if force and process.poll() is None:
+                    process.kill()
+                deadline = time.monotonic() + 5
+                while process.poll() is None and time.monotonic() < deadline:
+                    if select.select([master], [], [], 0.1)[0]:
+                        try:
+                            os.read(master, 65536)
+                        except OSError as error:
+                            if error.errno not in (errno.EIO, errno.EAGAIN):
+                                raise
+                if process.poll() is not None:
+                    break
+            process.wait(timeout=1)
             os.close(master)

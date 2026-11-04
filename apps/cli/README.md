@@ -19,7 +19,7 @@ runs it using the same Node executable and terminates it after 900 ms.
 
 The general unit suite skips the real-shell tests. To run them on a POSIX host
 with python3 and the shells installed, use
-`AJOUR_SHELL_TESTS=1 corepack pnpm --filter @ajour/cli test -- src/completion-shells.test.ts`.
+`AJOUR_SHELL_TESTS=1 corepack pnpm --filter @ajour/cli exec vitest run src/completion-shells.test.ts`.
 Set `AJOUR_TEST_SHELL=/bin/bash` to check a specific executable.
 
 The dedicated completion workflow checks bash, zsh and fish on Linux, plus
