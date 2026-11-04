@@ -17,6 +17,12 @@ fallback help, and the `task-candidates.ts` worker beside the CLI modules,
 or compile that worker as a separate Node entry point. The completion helper
 runs it using the same Node executable and terminates it after 900 ms.
 
-`python3 apps/cli/scripts/check-completion.py`, from the repository root, exercises an actual Tab key
-in bash, zsh and fish. CI installs those shells on Linux. The fake helper
-supplies task names; CLI integration tests cover the real API and cache.
+The general unit suite skips the real-shell tests. To run them on a POSIX host
+with python3 and the shells installed, use
+`AJOUR_SHELL_TESTS=1 corepack pnpm --filter @ajour/cli test -- src/completion-shells.test.ts`.
+Set `AJOUR_TEST_SHELL=/bin/bash` to check a specific executable.
+
+The dedicated completion workflow checks bash, zsh and fish on Linux, plus
+macOS system bash 3.2 and Homebrew bash when available. Its PTY driver presses
+Tab and Enter and checks literal argument insertion. The fake helper supplies
+task names; CLI integration tests cover the real API and cache.

@@ -30,7 +30,7 @@ jobs:
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y zsh fish
       - name: Check literal task insertion after Tab
-        run: corepack pnpm --filter @ajour/cli test -- src/completion-shells.test.ts
+        run: corepack pnpm --filter @ajour/cli exec vitest run src/completion-shells.test.ts
         env:
           AJOUR_SHELL_TESTS: "1"
           AJOUR_TEST_SHELL: ${{ matrix.shell }}
@@ -41,7 +41,7 @@ jobs:
           brew_bash="$(brew --prefix)/bin/bash"
           if [ -x "$brew_bash" ]; then
             "$brew_bash" --version
-            AJOUR_TEST_SHELL="$brew_bash" corepack pnpm --filter @ajour/cli test -- src/completion-shells.test.ts
+            AJOUR_TEST_SHELL="$brew_bash" corepack pnpm --filter @ajour/cli exec vitest run src/completion-shells.test.ts
           else
             echo "Homebrew bash is unavailable; /bin/bash was checked above."
           fi

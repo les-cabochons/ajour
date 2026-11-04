@@ -73,9 +73,11 @@ with tempfile.TemporaryDirectory(prefix="ajour-completion-") as directory:
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 160, 0, 0))
         env = {**os.environ, "PATH": f"{temp}:{os.environ['PATH']}", "TERM": "xterm", "HOME": directory, "ZDOTDIR": directory}
         args = {"bash": [executable, "--norc", "--noprofile", "-i"], "zsh": [executable, "-f", "-i"], "fish": [executable, "--no-config", "-i"]}[shell]
+        print(f"{executable}: starting interactive shell", flush=True)
         process = subprocess.Popen(args, stdin=slave, stdout=slave, stderr=slave, cwd=temp, env=env, preexec_fn=controlling_terminal)
         os.close(slave)
         try:
+            print(f"{executable}: sourcing completion", flush=True)
             setup = "autoload -Uz compinit; compinit -u; " if shell == "zsh" else ""
             os.write(master, f"{setup}source '{script}'; echo __READY__\n".encode())
             # Require a separate line so the echoed setup command cannot satisfy it.
@@ -88,6 +90,7 @@ with tempfile.TemporaryDirectory(prefix="ajour-completion-") as directory:
                 "acme/line\nbreakEND",
             ]
             for candidate in candidates:
+                print(f"{executable}: checking {candidate!r}", flush=True)
                 (temp / "candidates").write_bytes((candidate + "\0").encode())
                 prefix = "-ac" if candidate.startswith("-") else "ac"
                 os.write(master, f"ajour start {prefix}\t".encode())

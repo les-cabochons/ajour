@@ -22,7 +22,7 @@ describe.skipIf(!enabled)(
           ],
           { encoding: "utf8", timeout: 120_000 },
         );
-        expect(result.error).toBeUndefined();
+        expect(result.error, result.stdout + result.stderr).toBeUndefined();
         expect(result.status, result.stdout + result.stderr).toBe(0);
       }, 125_000);
     }
