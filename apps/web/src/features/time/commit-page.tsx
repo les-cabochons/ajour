@@ -86,6 +86,7 @@ import { localStore, runStoreCommandWith } from "@/lib/local-store";
 import { listPropertyPlugins } from "@/lib/plugin-project-properties";
 import { ProjectIcon } from "@/lib/project-icons";
 import { cn, getIsoWeekDates, todayIsoDate } from "@/lib/utils";
+import { useTodayIsoDate } from "@/lib/use-now";
 
 const GROUP_BY_OPTIONS: { value: SubmitGroupBy; label: string }[] = [
   { value: "day-task", label: "Day and task" },
@@ -394,7 +395,8 @@ export function CommitPage({
     () => new Map(projects.map((project) => [project._id, project])),
     [projects],
   );
-  const today = todayIsoDate();
+  // Refreshes at local midnight, so a day that arrives moves out of "still ahead".
+  const today = useTodayIsoDate();
   const summary = useMemo(
     () =>
       summarizeWeek({
