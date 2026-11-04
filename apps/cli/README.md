@@ -12,10 +12,11 @@ shared sections. Command `--help` selects SYNOPSIS, OPTIONS and EXAMPLES;
 the root card reads the same synopses. Document global options in `ajour.md`.
 The manual contract test checks pages against the parser in both directions.
 
-Release packaging in #541 must include the pages, the source manual used by
-fallback help, and the `task-candidates.ts` worker beside the CLI modules,
-or compile that worker as a separate Node entry point. The completion helper
-runs it using the same Node executable and terminates it after 900 ms.
+The release bundle embeds every source page through `resources.ts`. Archives
+include the generated pages at `man/man1/`. Live completion runs the hidden
+`__task-candidates` command in a child of the same executable. Development
+invokes `task-candidates.ts` through Node; the SEA binary invokes itself without Node
+flags or source files. The parent terminates the lookup after 900 ms.
 
 The general unit suite skips the real-shell tests. To run them on a POSIX host
 with python3 and the shells installed, use

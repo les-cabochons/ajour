@@ -5,6 +5,7 @@ import { parseArgs, type ParseArgsConfig } from "node:util";
 import { helpCard, readPage, shortHelp } from "./manual.ts";
 import { showManual } from "./manual-reader.ts";
 import { completion, completeTasks } from "./completion.ts";
+import { taskCandidates } from "./task-candidate-lookup.ts";
 import { projects } from "./commands/projects.ts";
 import { connect } from "./commands/connect.ts";
 import { continueEntry } from "./commands/continue.ts";
@@ -24,7 +25,7 @@ import { CliError, EXIT, UsageError } from "./errors.ts";
 import { painter, shouldColor, type ColorMode } from "./format/style.ts";
 import { processIo, type CliIo } from "./io.ts";
 
-import { version, manualPage } from "./resources.ts";
+import { version } from "./resources.ts";
 
 declare const AJOUR_BUNDLED: boolean;
 
@@ -187,6 +188,8 @@ export const COMMANDS: Record<string, Command> = {
 export async function run(argv: readonly string[], io: CliIo): Promise<number> {
   let ctx: Context | undefined;
   try {
+    if (argv[0] === "__task-candidates")
+      return argv.length === 1 ? taskCandidates(io) : 0;
     if (argv[0] === "__complete")
       return argv.length === 2 && argv[1] === "tasks" ? completeTasks(io) : 0;
     const name = commandName(argv);

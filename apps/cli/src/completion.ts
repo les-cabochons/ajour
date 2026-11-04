@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
+import { isSea } from "node:sea";
 import {
   chmod,
   mkdir,
@@ -13,6 +14,8 @@ import {
 import path from "node:path";
 import type { CliIo } from "./io.ts";
 import { UsageError } from "./errors.ts";
+
+declare const AJOUR_BUNDLED: boolean;
 
 export function cachePath(io: CliIo): string {
   const base = io.env.XDG_CACHE_HOME;
@@ -53,11 +56,19 @@ export async function completeTasks(io: CliIo): Promise<number> {
     }
     const { stdout } = await promisify(execFile)(
       process.execPath,
-      [
-        "--experimental-strip-types",
-        "--no-warnings",
-        fileURLToPath(new URL("./task-candidates.ts", import.meta.url)),
-      ],
+      isSea()
+        ? ["__task-candidates"]
+        : [
+            "--experimental-strip-types",
+            "--no-warnings",
+            ...(typeof AJOUR_BUNDLED !== "undefined"
+              ? [process.argv[1]!, "__task-candidates"]
+              : [
+                  fileURLToPath(
+                    new URL("./task-candidates.ts", import.meta.url),
+                  ),
+                ]),
+          ],
       {
         env: { ...io.env, AJOUR_COMPLETION_HOME: io.homedir },
         timeout: 900,

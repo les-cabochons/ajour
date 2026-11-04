@@ -1,6 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { manualPage } from "./resources.ts";
 import { padEnd } from "./format/text.ts";
-import { UsageError } from "./errors.ts";
 
 export interface Page {
   name: string;
@@ -23,16 +22,7 @@ export function parsePage(name: string, source: string): Page {
 }
 
 export async function readPage(name: string): Promise<Page> {
-  if (!/^[a-z-]+$/.test(name))
-    throw new UsageError(`No manual page for "${name}".`);
-  try {
-    return parsePage(
-      name,
-      await readFile(new URL(`../docs/${name}.md`, import.meta.url), "utf8"),
-    );
-  } catch {
-    throw new UsageError(`No manual page for "${name}".`);
-  }
+  return parsePage(name, await manualPage(name));
 }
 
 export function pageText(page: Page): string {
