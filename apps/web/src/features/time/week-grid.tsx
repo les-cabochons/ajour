@@ -901,6 +901,7 @@ export function WeekGrid({
                     "weekly-grid-time-cell",
                     new Date(`${day.localDate}T12:00:00`).getDay() % 6 === 0 &&
                       "is-weekend",
+                    day.totalMs === 0 && "is-zero",
                   )}
                 >
                   {formatClockDuration(day.totalMs)}

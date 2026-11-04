@@ -491,7 +491,7 @@ function GlobalTimerBar({
             label="Create time entry"
             shortcut="entry.new"
           >
-            <Plus className="h-3.5 w-3.5" />
+            <Plus className="size-4" />
           </TooltipButton>
           {currentTimer ? (
             <TooltipButton
@@ -500,7 +500,7 @@ function GlobalTimerBar({
               label="Stop"
               shortcut="entry.stop-or-start"
             >
-              <Stop className="h-3.5 w-3.5" />
+              <Stop className="size-4" />
             </TooltipButton>
           ) : (
             <TooltipButton
@@ -509,7 +509,7 @@ function GlobalTimerBar({
               label="Start"
               shortcut="entry.stop-or-start"
             >
-              <Play className="h-3.5 w-3.5" />
+              <Play className="size-4" />
             </TooltipButton>
           )}
         </div>

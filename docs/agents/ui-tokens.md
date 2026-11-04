@@ -45,13 +45,15 @@ Semantic variables, light and dark under `:root` and `:root.dark`:
 
 - `--background`, `--foreground`, `--card`, `--popover`, `--secondary`, `--muted`, `--muted-foreground`, `--accent`, `--border`, `--input`, `--ring`
 - `--primary`: the one accent, the logo's indigo. Primary buttons, focus rings, links, selected options and the returned pull request badge. Not the active nav row.
+- `--primary-fill`: the accent behind white text, on filled buttons, badges and checked checkboxes. It equals `--primary` in light; in dark it is a deeper indigo, because the bright dark accent would leave white labels under 4.5:1.
 - `--success`: the running indicator, the dock's remaining-estimate bar and an active agent in the agent indicator, and the Added change symbol on the Commit page. Nothing else.
 - `--warning`: amber, with an icon, for days under target, over capacity, unmapped source states, an agent question and a description timelog's missing project or task, and the Updated change symbol.
 - `--destructive`: destructive actions and failures only, including a failed agent session (a red ring in the agent indicator) and an agent error (a solid red dot), and the Deleted change symbol.
+- `--border-row`: the hairline between rows of a list (Time entries, Backlog rows, Commit changes, project tasks and entries). In light it is `--border` at 70%, in dark white at 6.5% against the border's 9%, so a long list does not read as ruled. Group headers, table headers and fields keep `--border`.
 - `--scrollbar-thumb`: the scrollbar thumb, on native scrollers and `ScrollArea`. The track is transparent. The sidebar backlog list shows the thumb only on hover or when focus is inside it.
 - Workflow states and projects carry their own colors.
 
-App-level aliases: `--surface-lowest`, `--surface-tint` (the item page's side cards: one small step off the page toward the sidebar, under a hairline border; the sidebar's color in dark), `--surface-low` (the sidebar), `--surface`, `--surface-high`, `--surface-highest`, `--text`, `--text-secondary`, `--text-tertiary`, `--hover-bg`, `--highlight-bg`, `--field-bg`, `--field-border`, `--success-bg`, `--warning-bg`, `--danger-muted`, `--indigo-muted`.
+App-level aliases: `--surface-lowest`, `--surface-tint` (the item page's side cards and the project page's properties card: one small step off the page toward the sidebar, under a hairline border; the sidebar's color in dark), `--surface-low` (the sidebar), `--surface`, `--surface-high`, `--surface-highest`, `--text`, `--text-secondary` (anything a user reads to tell records apart: notes, IDs, parent references, old values), `--text-tertiary` (separators, empty values and counts only), `--hover-bg`, `--highlight-bg`, `--field-bg`, `--field-border`, `--success-bg`, `--warning-bg`, `--danger-muted`, `--indigo-muted`.
 
 The comment header's reaction and actions buttons use `foreground/10` for hover and `foreground/20` while pressed or while their menu is open. These tints apply in both themes.
 

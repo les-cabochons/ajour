@@ -9,7 +9,7 @@ import {
   RiAddLine as Plus,
   RiCheckLine as Check,
   RiPlayLine as Play,
-  RiStopLine as Stop,
+  RiStopFill as Stop,
 } from "@remixicon/react";
 import {
   Empty,
@@ -756,7 +756,7 @@ export function TimerPanel({
                             />
                           }
                         >
-                          <Stop />
+                          <Stop className="size-4" />
                         </TooltipButton>
                       ) : (
                         <TooltipButton
@@ -779,7 +779,7 @@ export function TimerPanel({
                             />
                           }
                         >
-                          <Play />
+                          <Play className="size-4" />
                         </TooltipButton>
                       )}
                     </span>

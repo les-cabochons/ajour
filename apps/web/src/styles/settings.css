@@ -88,7 +88,7 @@
 
   .settings-section-desc {
     max-width: 62ch;
-    font-size: 13px;
+    font-size: var(--text-sm);
     line-height: 1.5;
     color: var(--text-secondary);
   }
@@ -140,7 +140,7 @@
   }
 
   .settings-row-label {
-    font-size: 14px;
+    font-size: var(--text-sm);
     font-weight: 500;
     line-height: 1.4;
     color: var(--text);
@@ -148,8 +148,8 @@
 
   .settings-row-desc {
     max-width: 62ch;
-    font-size: 13px;
-    line-height: 1.45;
+    font-size: var(--text-xs);
+    line-height: 1.5;
     color: var(--text-secondary);
   }
 

@@ -181,12 +181,13 @@ Then(
     const row = otherSidebarRow(page);
     const stateLine = row.getByText(state, { exact: true });
     await expect(stateLine).toBeVisible();
-    const tertiary = await row.evaluate(() =>
+    // The state tells rows apart, so it reads in the secondary color.
+    const secondary = await row.evaluate(() =>
       getComputedStyle(document.documentElement)
-        .getPropertyValue("--text-tertiary")
+        .getPropertyValue("--text-secondary")
         .trim(),
     );
-    await expect(stateLine).toHaveCSS("color", tertiary);
+    await expect(stateLine).toHaveCSS("color", secondary);
   },
 );
 When("I press S on the other item on the Backlog page", async ({ page }) => {

@@ -39,7 +39,13 @@ export function CapacityValue({
   const utilization =
     capacityMs > 0 ? Math.round((totalMs / capacityMs) * 100) : null;
   return (
-    <div className={cn("weekly-capacity-value", microLabel && "is-summary")}>
+    <div
+      className={cn(
+        "weekly-capacity-value",
+        microLabel && "is-summary",
+        totalMs === 0 && "is-zero",
+      )}
+    >
       {microLabel ? (
         <span className="weekly-capacity-label">{microLabel}</span>
       ) : null}

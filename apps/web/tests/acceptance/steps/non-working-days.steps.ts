@@ -50,13 +50,13 @@ Given(
 async function expectWorkingDayStrip(page: Page) {
   const strip = page.getByRole("tablist", { name: "Days of the week" });
   await expect(strip.getByRole("tab")).toHaveCount(5);
-  await expect(strip.getByRole("tab").filter({ hasText: "WED" })).toHaveCount(
+  await expect(strip.getByRole("tab").filter({ hasText: "Wed" })).toHaveCount(
     0,
   );
-  await expect(strip.getByRole("tab").filter({ hasText: "SUN" })).toHaveCount(
+  await expect(strip.getByRole("tab").filter({ hasText: "Sun" })).toHaveCount(
     0,
   );
-  await expect(strip.getByRole("tab").filter({ hasText: "SAT" })).toBeVisible();
+  await expect(strip.getByRole("tab").filter({ hasText: "Sat" })).toBeVisible();
 }
 
 When(

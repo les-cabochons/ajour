@@ -4,7 +4,7 @@ import { RiArrowRightSLine as ChevronIcon } from "@remixicon/react";
 import { cn } from "@/lib/utils";
 
 /**
- * An object's properties as label and value pairs, 10px apart, with no frame.
+ * An object's properties as label and value pairs, 4px apart, with no frame.
  * Replaces the boxed side panel on detail pages. A value may be a picker.
  */
 export function PropertyList({ className, ...props }: ComponentProps<"dl">) {
@@ -12,7 +12,7 @@ export function PropertyList({ className, ...props }: ComponentProps<"dl">) {
     <dl
       data-slot="property-list"
       className={cn(
-        "grid grid-cols-[minmax(5.5rem,auto)_minmax(0,1fr)] items-center gap-x-3 gap-y-2.5 text-sm",
+        "grid grid-cols-[minmax(5.5rem,auto)_minmax(0,1fr)] items-center gap-x-3 gap-y-1 text-sm",
         className,
       )}
       {...props}
@@ -32,7 +32,10 @@ export function PropertyRow({
   return (
     <>
       <dt
-        className={cn("min-h-7 self-center text-muted-foreground", className)}
+        className={cn(
+          "flex min-h-7 items-center self-center text-muted-foreground",
+          className,
+        )}
       >
         {label}
       </dt>
@@ -42,8 +45,8 @@ export function PropertyRow({
 }
 
 /**
- * The actions at the bottom of a properties card, under a rule. Each action
- * is one equal column.
+ * The actions at the bottom of a properties card, under a rule: one row,
+ * left-aligned, the first icon in line with the property labels.
  */
 export function PropertyActions({
   className,
@@ -53,7 +56,7 @@ export function PropertyActions({
     <div
       data-slot="property-actions"
       className={cn(
-        "grid auto-cols-fr grid-flow-col gap-2 border-t pt-3",
+        "flex flex-wrap items-center gap-1 border-t pt-3 [&>*:first-child]:-ml-2",
         className,
       )}
       {...props}
@@ -62,7 +65,7 @@ export function PropertyActions({
 }
 
 /**
- * A borderless action tile: a 20px icon over a small label in the muted
+ * A borderless action: a 16px icon beside a small label in the muted
  * color. Hover only brightens the text, Archive included.
  */
 export function PropertyAction({
@@ -75,7 +78,7 @@ export function PropertyAction({
       type={type}
       data-slot="property-action"
       className={cn(
-        "flex min-h-14 cursor-pointer flex-col items-center justify-center gap-1.5 rounded-md p-2 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:size-5 [&_svg]:shrink-0",
+        "flex min-h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-xs font-medium whitespace-nowrap text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
         className,
       )}
       {...props}

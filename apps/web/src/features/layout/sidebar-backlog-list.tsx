@@ -757,7 +757,7 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
           {workItem.title}
         </span>
         {/* Kept empty without a state, so every row is the same height. */}
-        <span className="flex h-4 items-center gap-1.5 text-xs text-[var(--text-tertiary)]">
+        <span className="flex h-4 items-center gap-1.5 text-xs text-[var(--text-secondary)]">
           {workflowState ? (
             <>
               <span

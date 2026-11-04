@@ -80,9 +80,7 @@ export function DayStrip({
               day === dropTargetDate && "is-drop-target",
             )}
           >
-            <span className="day-strip-weekday">
-              {formatWeekday(day).toUpperCase()}
-            </span>
+            <span className="day-strip-weekday">{formatWeekday(day)}</span>
             <span className="day-strip-number">{formatDayNumber(day)}</span>
             <Value
               className={cn("day-strip-hours", value === "0:00" && "is-empty")}

@@ -26,7 +26,7 @@ export function PriorityIcon({
     return (
       <svg
         viewBox="0 0 14 14"
-        className={cn("size-3.5 shrink-0 text-muted-foreground", className)}
+        className={cn("size-4 shrink-0 text-muted-foreground", className)}
         {...a11y}
       >
         {[1.5, 5.75, 10].map((x) => (
@@ -49,7 +49,7 @@ export function PriorityIcon({
     return (
       <svg
         viewBox="0 0 14 14"
-        className={cn("size-3.5 shrink-0 text-orange-600", className)}
+        className={cn("size-4 shrink-0 text-orange-600", className)}
         {...a11y}
       >
         <rect x="1" y="1" width="12" height="12" rx="3" fill="currentColor" />
@@ -77,7 +77,7 @@ export function PriorityIcon({
   return (
     <svg
       viewBox="0 0 14 14"
-      className={cn("size-3.5 shrink-0 text-foreground", className)}
+      className={cn("size-4 shrink-0 text-foreground", className)}
       {...a11y}
     >
       {[0, 1, 2].map((bar) => (
@@ -89,7 +89,7 @@ export function PriorityIcon({
           height={3 + bar * 3}
           rx="0.75"
           fill="currentColor"
-          opacity={bar < filledBars ? 0.9 : 0.2}
+          opacity={bar < filledBars ? 0.9 : 0.3}
         />
       ))}
     </svg>

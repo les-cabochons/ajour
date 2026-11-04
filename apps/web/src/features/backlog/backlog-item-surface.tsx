@@ -1,4 +1,4 @@
-import { RiPlayLine, RiStopLine, RiTimeLine } from "@remixicon/react";
+import { RiPlayLine, RiStopFill, RiTimeLine } from "@remixicon/react";
 import { SyncConflictButton } from "@/features/backlog/sync-conflicts";
 import { openModifiedSourceClick } from "@/lib/source-navigation";
 import type { KeyboardEvent, PointerEvent } from "react";
@@ -322,7 +322,8 @@ export function BacklogItemSurface({
   const running = Boolean(findWorkItemTimer(state.timers, item._id));
   // The running item's button is Stop, like its action set.
   const startAction = running ? "stop-entry" : "start-entry";
-  const StartIcon = running ? RiStopLine : RiPlayLine;
+  // Stop is the filled square everywhere, as in the dock and the top bar.
+  const StartIcon = running ? RiStopFill : RiPlayLine;
   const startDisabledReason = actions.find(
     (action) => action.id === startAction,
   )?.disabledReason;
@@ -499,7 +500,10 @@ export function BacklogItemSurface({
         {!board && progressLabel}
         {!board && markers}
       </div>
-      <div className="backlog-item-properties">
+      <div
+        className="backlog-item-properties"
+        data-no-project={view.properties.project ? undefined : ""}
+      >
         {board && view.properties.priority && (
           <BacklogPriorityPicker
             item={item}
@@ -549,7 +553,7 @@ export function BacklogItemSurface({
                   if (!startDisabledReason) onAction(startAction);
                 }}
               >
-                <StartIcon className="size-3.5" />
+                <StartIcon className="size-4" />
               </TooltipButton>
             ) : (
               <Button
@@ -565,7 +569,7 @@ export function BacklogItemSurface({
                   if (!startDisabledReason) onAction(startAction);
                 }}
               >
-                <StartIcon className="size-3.5" />
+                <StartIcon className="size-4" />
               </Button>
             ))}
           <ObjectActionsButton
