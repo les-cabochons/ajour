@@ -14,7 +14,6 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { personInitials } from "@/domain/backlog/comments";
-import { cn } from "@/lib/utils";
 
 /** How long typing pauses before a search, as the @ suggestions wait. */
 const SEARCH_DELAY_MS = 200;
@@ -122,7 +121,7 @@ export function PersonCombobox({
         role="combobox"
         disabled={disabled}
         aria-label={ariaLabel}
-        className="flex h-[var(--control-height-lg)] w-full items-center justify-between gap-1.5 rounded-[var(--field-radius)] border border-[var(--field-border)] bg-[var(--field-bg)] px-2.5 py-1 text-[length:var(--control-font-size)] leading-[var(--control-line-height)] whitespace-nowrap outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex h-[var(--control-height-lg)] w-full items-center justify-between gap-1.5 rounded-[var(--field-radius)] border border-[var(--field-border)] bg-[var(--field-bg)] px-2.5 py-1 text-[length:var(--control-font-size)] leading-[var(--control-line-height)] whitespace-nowrap outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-50"
       >
         {value ? (
           <span className="flex min-w-0 items-center gap-1.5">
@@ -174,9 +173,11 @@ export function PersonCombobox({
                 >
                   <PersonInitials name={person.displayName} />
                   <span className="flex min-w-0 items-baseline gap-1.5">
-                    <span className="shrink-0">{person.displayName}</span>
+                    <span className="min-w-0 shrink truncate">
+                      {person.displayName}
+                    </span>
                     {person.email ? (
-                      <span className="truncate text-xs text-muted-foreground">
+                      <span className="min-w-0 shrink-[100] truncate text-xs text-muted-foreground">
                         {person.email}
                       </span>
                     ) : null}
@@ -187,10 +188,7 @@ export function PersonCombobox({
           </CommandList>
           <p
             role="status"
-            className={cn(
-              "border-t px-3 py-1.5 text-xs text-muted-foreground",
-              !results.searching && (people.length > 0 || !typed) && "sr-only",
-            )}
+            className="h-8 shrink-0 truncate border-t px-3 py-1.5 text-xs text-muted-foreground"
           >
             {results.searching
               ? "Searching…"

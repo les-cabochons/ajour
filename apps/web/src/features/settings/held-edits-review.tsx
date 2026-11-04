@@ -77,7 +77,7 @@ function HeldEditDetail({
           ? `Priority ${getPriorityLevelName(write.priority)}`
           : undefined,
         write?.assignee !== undefined
-          ? `Assignee ${write.assignee?.displayName ?? "none"}`
+          ? `Assignee → ${write.assignee?.displayName ?? "Unassigned"}`
           : undefined,
       ].filter(Boolean);
       return (

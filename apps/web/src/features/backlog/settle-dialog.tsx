@@ -23,7 +23,10 @@ import {
   settleArchivesWorkItem,
   type BacklogSettleChange,
 } from "@/domain/backlog/backlog-item-lifecycle";
-import { assigneeSourceOf } from "@/domain/backlog/assignees";
+import {
+  assigneeSourceOf,
+  type AssigneeSource,
+} from "@/domain/backlog/assignees";
 import { commentSourceOf, itemPeopleMatching } from "@/domain/backlog/comments";
 import { NO_PRIORITY_NAME, PRIORITY_LEVELS } from "@/domain/backlog/priority";
 import type { LocalWorkItem } from "@/domain/local-state";
@@ -248,12 +251,7 @@ type StatesLoad =
  * typed name filters the likely assignees instead of searching the
  * organisation, as the @ suggestions do.
  */
-function assigneeSearch(source: {
-  pluginId: string;
-  connectionId: string;
-  sourceId: string;
-  peopleSearchOff?: true;
-}) {
+function assigneeSearch(source: AssigneeSource) {
   const search = async (query: string) =>
     (
       await searchBacklogAssignees(source.pluginId, source.connectionId, {

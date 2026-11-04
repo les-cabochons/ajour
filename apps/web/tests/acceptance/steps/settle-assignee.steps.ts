@@ -141,6 +141,64 @@ Given("I have a synced item whose plugin doesn't assign", async ({ page }) =>
   assigneeFixture(page, false),
 );
 
+Given(
+  "the assignee fixture refuses the first settle because editing is off",
+  async ({ page }) => {
+    await page.route(
+      "**/connections/fixture/settle",
+      (route) => {
+        writes.get(page)!.push(route.request().postDataJSON());
+        return route.fulfill({
+          status: 403,
+          headers: { "access-control-allow-origin": "*" },
+          json: {
+            error: "Editing work items is off.",
+            reason: "access_off",
+            access: "editWorkItems",
+          },
+        });
+      },
+      { times: 1 },
+    );
+  },
+);
+
+Then("no assignee write occurs while Undo is available", async ({ page }) => {
+  await expect(
+    page.getByRole("button", { name: "Undo", exact: true }),
+  ).toBeVisible();
+  expect(writes.get(page)).toEqual([]);
+});
+
+Then(
+  "Sync review lists the held assignee as {string}",
+  async ({ page }, detail: string) => {
+    await expect
+      .poll(async () => (await storedItem(page))?.pendingSourceWrite?.heldAt)
+      .toBeTruthy();
+    expect(writes.get(page)).toHaveLength(1);
+    await page.goto("/settings/sync-review");
+    const change = page
+      .getByRole("region", { name: "Held changes" })
+      .locator('[data-held-edit="settle"]');
+    await expect(change).toContainText("Fix login redirect");
+    await expect(change.getByText(detail, { exact: true })).toBeVisible();
+  },
+);
+
+When("I send the held assignee change", async ({ page }) => {
+  await page
+    .locator('[data-held-edit="settle"]')
+    .getByRole("button", { name: "Send", exact: true })
+    .click();
+});
+
+Then("the next source write assigns {string}", async ({ page }, id: string) => {
+  const request = { sourceId: "4821", assignee: id === "null" ? null : id };
+  await expect.poll(() => writes.get(page)).toEqual([request, request]);
+  await expect(page.locator('[data-held-edit="settle"]')).toHaveCount(0);
+});
+
 When("I open Settle on the assignee fixture", async ({ page }) => {
   await page
     .locator(".ajour-page-header-slot")
