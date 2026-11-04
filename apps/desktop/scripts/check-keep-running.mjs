@@ -397,6 +397,12 @@ async function main() {
       );
       return JSON.parse(stdout);
     };
+    await electronApp.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0].close();
+    });
+    await waitFor(async () => !(await windowState()).visible, {
+      what: "the window to hide for the CLI",
+    });
     const cliStart = await cli(
       "start",
       "-m",
@@ -408,16 +414,23 @@ async function main() {
       typeof cliStart.running?.timerId === "string",
       "bundled CLI starts a real entry",
     );
-    await page
-      .getByText(/Lifecycle check/)
-      .filter({ hasText: /started/i })
-      .first()
-      .waitFor({ timeout: STEP_TIMEOUT_MS });
     expect(
-      (await page.getByRole("button", { name: "Undo", exact: true }).count()) >
-        0,
-      "the real Undo toast names the Lifecycle check client",
+      !(await windowState()).visible,
+      "CLI start leaves the window hidden",
     );
+    await trayClick("Open Ajour");
+    const undoToast = page
+      .getByText("Lifecycle check: Started an entry", { exact: true })
+      .locator("../..");
+    await undoToast
+      .getByRole("button", { name: "Undo", exact: true })
+      .waitFor({ timeout: STEP_TIMEOUT_MS });
+    expect(true, "the real Undo toast names the Lifecycle check client");
+    await page
+      .getByRole("button", { name: "Edit the running entry", exact: true })
+      .filter({ hasText: "Bundled CLI lifecycle" })
+      .waitFor({ timeout: STEP_TIMEOUT_MS });
+    expect(true, "the dock displays the entry started by the bundled CLI");
     expect(
       (await cli("log")).running?.note === "Bundled CLI lifecycle",
       "CLI log reads the real running entry",
