@@ -141,12 +141,15 @@ export function EstimateFigure({
   label,
   conflict,
   readOnly,
+  size,
 }: {
   item: LocalWorkItem;
   field: LocalWorkItemEstimateFieldKey;
   label: string;
   conflict: boolean;
   readOnly: boolean;
+  /** "figure" makes it the page's one 28px number. */
+  size?: "lg" | "figure";
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   // Set once the field closes, so the blur of the unmounting input after
@@ -183,7 +186,7 @@ export function EstimateFigure({
   }
 
   return (
-    <Figure label={label}>
+    <Figure label={label} size={size}>
       {draft === null ? (
         <button
           type="button"

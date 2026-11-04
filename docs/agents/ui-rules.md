@@ -54,7 +54,7 @@ Ajour is an operational desktop/web app. Build interfaces for scanning, repeated
 - Information lines, such as days still ahead on Commit, carry no icon; an icon there would read as a warning.
 - Green means running. Red means destructive or failed. Amber with an icon means warning, or Urgent priority. A condition the user set up or chose, such as no connection or scheduled sync off, is a quiet secondary status line, not a warning. Change symbols are the one exception, see below. Success results are plain text with a check icon, never a green box.
 - Change symbols on the Commit page carry their kind's color: Added green, Updated amber, Deleted red. Each kind also has its own icon shape.
-- Workflow states and projects use their own colors as dots. Apart from them and the change symbols, nothing else is colored.
+- Workflow states and projects use their own colors as dots. A state's mark also carries its shape: an empty ring for the first open state, a pie that fills with the state's place among the open states (up to three quarters), and a whole disc when done, so state never reads by color alone (council round 14). Apart from them and the change symbols, nothing else is colored.
 
 ## Interaction
 

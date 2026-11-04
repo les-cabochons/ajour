@@ -1,4 +1,6 @@
 import { RiPlayFill, RiStopFill, RiTimeLine } from "@remixicon/react";
+import { getWorkflowStateFills } from "@/domain/backlog/workflow-state-fill";
+import { stateDotStyle } from "@/features/backlog/state-dot";
 import { formatHours } from "@/features/backlog/backlog-estimates";
 import { PickerChevron } from "@/components/picker-chevron";
 import { RunningDot } from "@/components/running-dot";
@@ -109,8 +111,12 @@ export function BacklogStatePicker({
   const workflow = state.workflowStates.find(
     (s) => s._id === item.workflowStateId,
   );
+  const fills = getWorkflowStateFills(state.workflowStates);
   const dot = (
-    <span className="backlog-state-dot" style={{ color: workflow?.color }} />
+    <span
+      className="backlog-state-dot"
+      style={stateDotStyle(workflow?.color, fills.get(workflow?._id ?? ""))}
+    />
   );
   if (!live) {
     return (
@@ -165,7 +171,10 @@ export function BacklogStatePicker({
                 void moveBacklogItemWithUndo(item, s._id);
             }}
           >
-            <span className="backlog-state-dot" style={{ color: s.color }} />
+            <span
+              className="backlog-state-dot"
+              style={stateDotStyle(s.color, fills.get(s._id))}
+            />
             {s.name}
           </DropdownMenuItem>
         ))}

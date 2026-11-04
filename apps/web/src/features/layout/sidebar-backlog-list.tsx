@@ -10,6 +10,8 @@ import {
   type PointerEvent,
   type ReactNode,
 } from "react";
+import { getWorkflowStateFills } from "@/domain/backlog/workflow-state-fill";
+import { stateDotStyle } from "@/features/backlog/state-dot";
 import { hasWorkItemSyncIssue } from "@/domain/local-state";
 import { SyncConflictButton } from "@/features/backlog/sync-conflicts";
 import { useNavigate, useRouter } from "@tanstack/react-router";
@@ -574,6 +576,8 @@ interface ItemRowProps {
   subitemCount: number;
   project?: LocalProject;
   workflowState?: LocalWorkflowState;
+  /** How full the state's mark is drawn, from `getWorkflowStateFills`. */
+  workflowStateFill?: number;
   isActive: boolean;
   isRunning: boolean;
   isReturned: boolean;
@@ -763,7 +767,10 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
             <>
               <span
                 className="backlog-state-dot size-2.5"
-                style={{ color: workflowState.color }}
+                style={stateDotStyle(
+                  workflowState.color,
+                  props.workflowStateFill,
+                )}
               />
               {/* The state keeps its width; the parent's name gives way. */}
               <span className="shrink-0">{workflowState.name}</span>
@@ -1217,6 +1224,10 @@ export function SidebarBacklogList({
     () => new Map(state.workflowStates.map((status) => [status._id, status])),
     [state.workflowStates],
   );
+  const workflowStateFills = useMemo(
+    () => getWorkflowStateFills(state.workflowStates),
+    [state.workflowStates],
+  );
 
   const parentOf = (workItem: LocalWorkItem) => {
     const key = getWorkItemParentKey(workItem);
@@ -1231,6 +1242,9 @@ export function SidebarBacklogList({
       : undefined,
     workflowState: workItem.workflowStateId
       ? workflowStateById.get(workItem.workflowStateId)
+      : undefined,
+    workflowStateFill: workItem.workflowStateId
+      ? workflowStateFills.get(workItem.workflowStateId)
       : undefined,
     isActive: activeItemId === workItem._id,
     isRunning: runningWorkItemId === workItem._id,

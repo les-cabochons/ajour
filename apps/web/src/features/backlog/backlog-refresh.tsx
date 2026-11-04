@@ -153,6 +153,7 @@ export function BacklogRefresh({
     running ||
     (!apiError && !rows.some((row) => row.enabled && !row.connection.paused));
 
+  const quiet = !running && !alarming;
   const statusText = running
     ? "Syncing…"
     : warning
@@ -163,7 +164,14 @@ export function BacklogRefresh({
       {alarming && !running ? (
         <RiErrorWarningLine className="backlog-refresh-warning" aria-hidden />
       ) : null}
-      {compact ? (
+      {/* At rest the status is quiet: its text is for screen readers and
+          the refresh tooltip, and shows only while syncing or when a sync
+          failed, paused or is overdue (council round 14). */}
+      {quiet ? (
+        <span role="status" aria-live="polite" className="sr-only">
+          {statusText}
+        </span>
+      ) : compact ? (
         // The narrow view: a short, whole label, and a tap shows the full
         // explanation even while Refresh is disabled (council round 12).
         <Popover>

@@ -161,13 +161,22 @@
     color: var(--text-secondary);
   }
 
+  /* A state reads by its shape as well as its color: an empty ring, then a
+     pie that fills with the state's place in the workflow, whole when done
+     (council round 14, --state-fill from getWorkflowStateFills). */
   .backlog-state-dot {
     display: inline-block;
     flex: none;
     width: 12px;
     height: 12px;
+    padding: 1.5px;
     border: 1.5px solid currentColor;
     border-radius: 50%;
+    background: conic-gradient(
+        currentColor var(--state-fill, 0%),
+        transparent 0
+      )
+      content-box;
     color: var(--text-tertiary);
   }
 
@@ -1438,8 +1447,8 @@
 /* The refresh control reads as the refresh icon, not a ring. */
 .backlog-refresh button svg,
 .backlog-refresh-warning {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
 }
 .backlog-refresh-warning {
   color: var(--warning);

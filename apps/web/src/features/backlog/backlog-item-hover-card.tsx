@@ -4,6 +4,8 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
+import { getWorkflowStateFills } from "@/domain/backlog/workflow-state-fill";
+import { stateDotStyle } from "@/features/backlog/state-dot";
 import { Link, useRouter } from "@tanstack/react-router";
 import {
   RiCornerLeftUpLine as ParentIcon,
@@ -110,6 +112,7 @@ function BacklogItemSummaryCard({
 }) {
   const router = useRouter();
   const { overview } = useCodeHostConnections();
+  const stateFills = getWorkflowStateFills(state.workflowStates);
   const summary = summarizeBacklogItem(workItem, {
     workItems: state.workItems,
     workflowStates: state.workflowStates,
@@ -190,7 +193,12 @@ function BacklogItemSummaryCard({
                 <span
                   className="backlog-state-dot size-2.5"
                   style={
-                    workflowState ? { color: workflowState.color } : undefined
+                    workflowState
+                      ? stateDotStyle(
+                          workflowState.color,
+                          stateFills.get(workflowState._id),
+                        )
+                      : undefined
                   }
                 />
                 <span

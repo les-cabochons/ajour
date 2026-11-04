@@ -1,4 +1,6 @@
 import { useBacklogRefreshOnOpen } from "./use-backlog-refresh-on-open";
+import { getWorkflowStateFills } from "@/domain/backlog/workflow-state-fill";
+import { stateDotStyle } from "@/features/backlog/state-dot";
 import { BacklogRefresh } from "./backlog-refresh";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { setOpenDraftGuard } from "@/lib/open-draft";
@@ -546,6 +548,10 @@ export function BacklogPage() {
           `${i.source}:${i.sourceConnectionId}:${i.sourceProjectName}:${i.sourceStatusKey}`,
       ),
   ).size;
+  const stateFills = useMemo(
+    () => getWorkflowStateFills(state.workflowStates),
+    [state.workflowStates],
+  );
   const syncStatus = (
     <BacklogRefresh
       compact={narrow}
@@ -573,10 +579,12 @@ export function BacklogPage() {
         }}
       >
         <RiErrorWarningLine aria-hidden />
-        {unmapped} unmapped
-        <span className="backlog-unmapped-words">
-          {" "}
-          source {unmapped === 1 ? "state" : "states"}
+        <span>
+          {unmapped} unmapped
+          <span className="backlog-unmapped-words">
+            {" "}
+            source {unmapped === 1 ? "state" : "states"}
+          </span>
         </span>
       </Link>
     ) : null;
@@ -711,7 +719,10 @@ export function BacklogPage() {
                             {group.kind === "state" && (
                               <span
                                 className="backlog-state-dot"
-                                style={{ color: group.color }}
+                                style={stateDotStyle(
+                                  group.color,
+                                  stateFills.get(group.workflowStateId ?? ""),
+                                )}
                               />
                             )}
                             {group.kind === "priority" && (

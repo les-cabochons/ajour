@@ -537,13 +537,20 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                   hairline (council rounds 11 and 12). */}
               <FigureRow className="items-start">
                 <div className="flex w-fit max-w-full flex-col gap-2.5">
-                  <FigureRow>
+                  {/* Remaining leads, the page's one 28px number: it is
+                      what the dock shows as "43m left" (council round 14). */}
+                  <FigureRow className="items-start">
                     {ESTIMATE_FIGURES.map((figure) => (
                       <EstimateFigure
                         key={figure.key}
                         item={item}
                         field={figure.key}
                         label={figure.label}
+                        size={
+                          figure.key === "remainingEstimateHours"
+                            ? "figure"
+                            : undefined
+                        }
                         conflict={Boolean(
                           item.estimateSync?.[figure.key]?.conflict,
                         )}

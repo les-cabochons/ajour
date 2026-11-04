@@ -81,7 +81,7 @@ Then(
         animation: getComputedStyle(icon).animationName,
       };
     });
-    expect(visual.width).toBe(14);
+    expect(visual.width).toBe(16);
     expect(visual.color).toBe(visual.textColor);
     expect(visual.animation).toBe("backlog-refresh-spin");
   },
