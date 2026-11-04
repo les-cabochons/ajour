@@ -262,6 +262,10 @@ jobs:
         working-directory: apps/desktop
         run: corepack pnpm exec electron-builder --config=electron-builder.config.cjs --mac dir --arm64 --publish=never
 
+      - name: Check the packaged apps' symbolic links
+        if: runner.os == 'macOS'
+        run: corepack pnpm --filter @ajour/desktop exec node scripts/check-bundle-symlinks.cjs
+
       - name: Check the packaged apps' Electron fuses
         run: corepack pnpm --filter @ajour/desktop exec node scripts/check-fuses.cjs
 

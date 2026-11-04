@@ -103,6 +103,10 @@ function copyRuntimePackage(packageName, searchPaths) {
     recursive: true,
     force: true,
     dereference: true,
+    // A package's nested node_modules/.bin holds absolute links to the
+    // checkout, which fail macOS signing. Nothing at runtime runs a .bin
+    // shim: the agent runner reads Playwright's CLI from its package.json.
+    filter: (source) => path.basename(source) !== ".bin",
   });
 
   for (const dependencyName of Object.keys(packageJson.dependencies ?? {})) {
