@@ -353,10 +353,12 @@ const shots = [
     name: "backlog-edit-item",
     run: async (page) => {
       await go(page, "/backlog");
+      // A click selects the row; Space opens its peek.
       await page
         .locator("[data-work-item-id=w2] .backlog-item-title")
         .first()
         .click();
+      await page.keyboard.press("Space");
       await page
         .getByRole("complementary", { name: "Backlog item peek" })
         .getByRole("button", { name: "Edit", exact: true })
@@ -457,6 +459,16 @@ const shots = [
         .first()
         .click();
       await page.getByText("Done", { exact: true }).last().click();
+    },
+  },
+  {
+    name: "backlog-multi-select",
+    run: async (page) => {
+      await go(page, "/backlog");
+      const titles = page.locator(".backlog-workspace .backlog-item-title");
+      await titles.nth(0).click();
+      await titles.nth(2).click({ modifiers: ["Shift"] });
+      await titles.nth(1).click({ button: "right" });
     },
   },
   {

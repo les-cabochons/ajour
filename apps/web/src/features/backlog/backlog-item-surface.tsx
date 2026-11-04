@@ -460,6 +460,11 @@ export function BacklogItemSurface({
             selected && "is-selected",
           )}
           onClick={click}
+          // Shift and Cmd/Ctrl+click extend the selection; the browser must
+          // not select the page's text meanwhile.
+          onMouseDown={(e) => {
+            if (e.shiftKey || e.metaKey || e.ctrlKey) e.preventDefault();
+          }}
           onDoubleClick={(e) => {
             if (
               e.target instanceof Element &&

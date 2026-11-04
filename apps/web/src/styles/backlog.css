@@ -219,9 +219,11 @@
     background: var(--highlight-bg);
   }
 
+  /* Selected rows take the accent's tint, as Linear's do, so a selection
+     of several reads at a glance (forms council round 8). */
   .backlog-list-row.is-selected,
   .backlog-board-card.is-selected {
-    background: var(--hover-bg);
+    background: oklch(from var(--primary) l c h / 14%);
   }
 
   .backlog-list-row:focus-visible,
@@ -557,8 +559,8 @@
   }
 
   .backlog-board-card.is-selected {
-    border-color: var(--border-hover);
-    background: var(--surface-high);
+    border-color: oklch(from var(--primary) l c h / 45%);
+    background: oklch(from var(--primary) l c h / 14%);
   }
 
   .backlog-board-card .backlog-item-leading {
