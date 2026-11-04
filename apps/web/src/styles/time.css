@@ -179,7 +179,7 @@
   /* No text selection, so Shift+click selects a range of rows instead. */
   .time-entry-row {
     height: 40px;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--border-row);
     cursor: pointer;
     outline: none;
     user-select: none;
@@ -1221,11 +1221,12 @@
 
   .commit-change {
     display: grid;
-    grid-template-columns: 1rem 14px max-content minmax(0, 1fr) auto;
+    /* A fixed date track, so project names line up from one day to the next. */
+    grid-template-columns: 1rem 14px 3rem minmax(0, 1fr) auto;
     align-items: start;
     gap: 0.25rem 0.5rem;
     padding: 0.5rem 0.25rem;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--border-row);
   }
 
   .commit-change.is-excluded {

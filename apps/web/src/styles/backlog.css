@@ -175,7 +175,7 @@
     gap: 0.625rem;
     height: 36px;
     padding: 0 1rem;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--border-row);
     font-size: var(--text-sm);
     cursor: pointer;
     outline: none;
@@ -1103,6 +1103,11 @@
   min-width: 0;
   color: var(--text-secondary);
   font-size: var(--text-xs);
+}
+/* Source freshness stays beside the source link it describes. */
+.backlog-item-page-meta > .backlog-refresh {
+  justify-content: flex-start;
+  margin-left: 0.5rem;
 }
 .backlog-refresh > span[role="status"] {
   text-align: right;

@@ -4,7 +4,7 @@ import { RiArrowRightSLine as ChevronIcon } from "@remixicon/react";
 import { cn } from "@/lib/utils";
 
 /**
- * An object's properties as label and value pairs, 10px apart, with no frame.
+ * An object's properties as label and value pairs, 4px apart, with no frame.
  * Replaces the boxed side panel on detail pages. A value may be a picker.
  */
 export function PropertyList({ className, ...props }: ComponentProps<"dl">) {
@@ -12,7 +12,7 @@ export function PropertyList({ className, ...props }: ComponentProps<"dl">) {
     <dl
       data-slot="property-list"
       className={cn(
-        "grid grid-cols-[minmax(5.5rem,auto)_minmax(0,1fr)] items-center gap-x-3 gap-y-2.5 text-sm",
+        "grid grid-cols-[minmax(5.5rem,auto)_minmax(0,1fr)] items-center gap-x-3 gap-y-1 text-sm",
         className,
       )}
       {...props}
