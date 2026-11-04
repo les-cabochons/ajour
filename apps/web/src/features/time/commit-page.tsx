@@ -7,6 +7,7 @@ import {
   RiFileCopyLine as Copy,
   RiLockLine as Lock,
   RiLockUnlockLine as Unlock,
+  RiTimeLine as Ahead,
 } from "@remixicon/react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { DisabledReason } from "@/components/disabled-reason";
@@ -146,6 +147,7 @@ function countLabel(count: number, singular: string, plural: string) {
 function warningKey(warning: SubmitWarning) {
   if (warning.kind === "day-under-target") return warning.localDate;
   if (warning.kind === "waiting-task") return `waiting:${warning.taskId}`;
+  if (warning.kind === "days-ahead") return "days-ahead";
   return warning.kind;
 }
 
@@ -155,6 +157,12 @@ function formatWarning(warning: SubmitWarning) {
   }
   if (warning.kind === "waiting-task") {
     return `${formatClockDuration(warning.durationMs)} on ${warning.taskName} waits for a task to commit as.`;
+  }
+  if (warning.kind === "days-ahead") {
+    const left = `${formatClockDuration(warning.remainingMs)} of target left`;
+    return warning.fromDate === warning.toDate
+      ? `${formatShortDay(warning.fromDate)} is still ahead: ${left}`
+      : `${formatShortDay(warning.fromDate)} – ${formatShortDay(warning.toDate)} are still ahead: ${left}`;
   }
   return `${formatShortDay(warning.localDate)} has ${formatClockDuration(warning.loggedMs)} of ${formatClockDuration(warning.targetMs)}`;
 }
@@ -364,6 +372,7 @@ export function CommitPage({
     () => new Map(projects.map((project) => [project._id, project])),
     [projects],
   );
+  const today = todayIsoDate();
   const summary = useMemo(
     () =>
       summarizeWeek({
@@ -371,12 +380,14 @@ export function CommitPage({
         weekDates,
         weekEntries,
         projects,
+        today,
       }),
     [
       state.userPreferences.weeklyCapacityTargets,
       weekDates,
       weekEntries,
       projects,
+      today,
     ],
   );
   const submitTasks = useAgentTaskPresence("submit-week");
@@ -499,8 +510,15 @@ export function CommitPage({
         {summary.warnings.length > 0 ? (
           <ul className="submit-warnings">
             {summary.warnings.map((warning) => (
-              <li key={warningKey(warning)}>
-                <Warning aria-hidden />
+              <li
+                key={warningKey(warning)}
+                className={cn(warning.kind === "days-ahead" && "is-calm")}
+              >
+                {warning.kind === "days-ahead" ? (
+                  <Ahead aria-hidden />
+                ) : (
+                  <Warning aria-hidden />
+                )}
                 {formatWarning(warning)}
                 {warning.kind === "waiting-task" ? (
                   <Link
