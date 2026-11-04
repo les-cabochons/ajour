@@ -45,7 +45,23 @@ type CliState = {
 type Controller = {
   state(): Promise<CliState>;
   install(options?: { unit?: unknown }): Promise<CliState>;
+  recover(): Promise<void>;
+  stop(timeoutMs?: number): Promise<void>;
   onChange(listener: (state: CliState) => void): () => void;
+};
+type RegistryValue = { value: string | null; kind: string | null };
+type Registry = {
+  read(): Promise<RegistryValue>;
+  write(change: {
+    expected: string | null;
+    value: string | null;
+    kind: string | null;
+  }): Promise<boolean>;
+  broadcast(): Promise<void>;
+};
+type UserPath = {
+  add(folder: string, hooks?: unknown): Promise<unknown>;
+  revert(change: unknown): Promise<void>;
 };
 
 const { createCliCommandController, cliAssetName } =
@@ -59,6 +75,12 @@ const { createCliCommandController, cliAssetName } =
       version: string,
     ) => string | null;
   };
+const { createWindowsUserPath } = require("./electron/cli-path.cjs") as {
+  createWindowsUserPath: (options: {
+    registry: Registry;
+    env?: Record<string, string | undefined>;
+  }) => UserPath;
+};
 
 const VERSION = "0.0.1-nightly.20261104.294";
 const TAG = `v${VERSION}`;
@@ -113,7 +135,12 @@ function fakeGithub({
   archive?: Archive;
   asset?: Record<string, unknown>;
   release?: Record<string, unknown> | null;
-  download?: { redirect?: string; status?: number; extraBytes?: number };
+  download?: {
+    redirect?: string;
+    status?: number;
+    extraBytes?: number;
+    hold?: Promise<void>;
+  };
 } = {}) {
   const bytes = Buffer.from(JSON.stringify(archive));
   const served = Buffer.concat([
@@ -123,7 +150,10 @@ function fakeGithub({
   const requests: string[] = [];
   const inits: Array<{ redirect?: string } | undefined> = [];
   const redirectTo = download.redirect ?? ASSET_HOST;
-  const fetch = async (url: string, init?: { redirect?: string }) => {
+  const fetch = async (
+    url: string,
+    init?: { redirect?: string; signal?: AbortSignal },
+  ) => {
     requests.push(url);
     inits.push(init);
     if (url.includes("/releases/tags/")) {
@@ -151,7 +181,13 @@ function fakeGithub({
     if (url !== redirectTo) {
       return response(302, url, Buffer.alloc(0), { location: redirectTo });
     }
-    return response(download.status ?? 200, url, served);
+    return response(
+      download.status ?? 200,
+      url,
+      served,
+      {},
+      { signal: init?.signal, hold: download.hold },
+    );
   };
   return { fetch, requests, inits, bytes };
 }
@@ -161,23 +197,34 @@ function response(
   url: string,
   body: Buffer,
   headers: Record<string, string> = {},
+  { signal, hold }: { signal?: AbortSignal; hold?: Promise<void> } = {},
 ) {
+  const third = Math.max(1, Math.ceil(body.byteLength / 3));
+  let start = 0;
   return {
     ok: status >= 200 && status < 300,
     status,
     url,
     headers: { get: (name: string) => headers[name.toLowerCase()] ?? null },
     json: async () => JSON.parse(body.toString("utf8")),
-    // Three chunks, so a download reports progress.
+    // Three chunks, so a download reports progress. As Electron's does,
+    // the body fails when the request's signal aborts. `hold` keeps the
+    // second chunk back until it settles.
     body: new ReadableStream<Uint8Array>({
       start(controller) {
-        const third = Math.ceil(body.byteLength / 3);
-        for (let start = 0; start < body.byteLength; start += third) {
-          controller.enqueue(
-            new Uint8Array(body.subarray(start, start + third)),
-          );
+        signal?.addEventListener("abort", () =>
+          controller.error(signal.reason),
+        );
+      },
+      async pull(controller) {
+        if (start > 0 && hold) await hold;
+        if (signal?.aborted) return;
+        if (start >= body.byteLength) {
+          controller.close();
+          return;
         }
-        controller.close();
+        controller.enqueue(new Uint8Array(body.subarray(start, start + third)));
+        start += third;
       },
     }),
   };
@@ -226,24 +273,113 @@ function fakeExec({
   return { exec, calls };
 }
 
-function fakeLink({ fail = false } = {}) {
-  const added: string[] = [];
-  return {
-    added,
-    link: {
-      async add(folder: string) {
-        if (fail) throw new Error("PowerShell exited with 1.");
-        added.push(folder);
-        return { added: true };
-      },
+/** A step that changes a file or the Path, which an interruption can cut. */
+type Gate = <T>(
+  name: string,
+  args: unknown[],
+  run: () => Promise<T>,
+) => Promise<T>;
+
+/**
+ * The real user Path module over a fake registry: the user Path starts as
+ * `initial`, REG_SZ unless given. `fail` throws before writing,
+ * `failBroadcast` after it. `gate` wraps each write and broadcast.
+ */
+function fakeLink({
+  initial = { value: "C:\\Tools", kind: "String" },
+  fail = false,
+  failBroadcast = false,
+  gate,
+}: {
+  initial?: RegistryValue;
+  fail?: boolean;
+  failBroadcast?: boolean;
+  gate?: Gate;
+} = {}) {
+  let current = { ...initial };
+  const writes: RegistryValue[] = [];
+  const registry: Registry = {
+    async read() {
+      return { ...current };
+    },
+    async write({ expected, value, kind }) {
+      if (fail) throw new Error("PowerShell exited with 1.");
+      if (current.value !== expected) return false;
+      current = value === null ? { value: null, kind: null } : { value, kind };
+      writes.push({ ...current });
+      return true;
+    },
+    async broadcast() {
+      if (failBroadcast) throw new Error("Add-Type failed.");
     },
   };
+  const gated: Registry = gate
+    ? {
+        read: registry.read,
+        write: (change) =>
+          gate("registry.write", [change], () => registry.write(change)),
+        broadcast: () =>
+          gate("registry.broadcast", [], () => registry.broadcast()),
+      }
+    : registry;
+  return {
+    link: createWindowsUserPath({ registry: gated, env: {} }),
+    writes,
+    initial,
+    current: () => current,
+    /** The same user Path, as the next launch of Ajour sees it. */
+    nextLaunch: () => createWindowsUserPath({ registry, env: {} }),
+  };
+}
+
+/** `fs` with some of its functions replaced. */
+function fsWith(replaced: Record<string, (...args: never[]) => unknown>) {
+  return { ...fs, ...replaced } as typeof fs;
+}
+
+/**
+ * Cuts the install at the first step `cutHere` picks, as if Ajour quit or
+ * crashed there: that step and everything after it never happen. The steps
+ * are each call that changes a file, and each write and broadcast of the
+ * Path.
+ */
+function interruption(
+  cutHere: (step: { name: string; args: unknown[]; index: number }) => boolean,
+) {
+  let index = 0;
+  let cut = false;
+  let reached!: () => void;
+  const cutReached = new Promise<void>((resolve) => {
+    reached = resolve;
+  });
+  const gate: Gate = (name, args, run) => {
+    if (cut || cutHere({ name, args, index: ++index })) {
+      cut = true;
+      reached();
+      return new Promise<never>(() => {});
+    }
+    return run();
+  };
+  const changing = ["mkdir", "rm", "rename", "writeFile", "open"] as const;
+  const gatedFs = fsWith(
+    Object.fromEntries(
+      changing.map((name) => [
+        name,
+        (...args: unknown[]) =>
+          gate(name, args, () =>
+            (fs[name] as (...a: unknown[]) => Promise<unknown>)(...args),
+          ),
+      ]),
+    ),
+  );
+  return { gate, fs: gatedFs, cutReached, steps: () => index };
 }
 
 function controllerWith({
   github = fakeGithub(),
   exec = fakeExec(),
   link = fakeLink(),
+  files = fs,
   platform = "win32",
   arch = "x64",
   appVersion = VERSION,
@@ -252,7 +388,8 @@ function controllerWith({
 }: {
   github?: ReturnType<typeof fakeGithub>;
   exec?: ReturnType<typeof fakeExec>;
-  link?: ReturnType<typeof fakeLink>;
+  link?: { link: UserPath };
+  files?: typeof fs;
   platform?: string;
   arch?: string;
   appVersion?: string;
@@ -261,7 +398,7 @@ function controllerWith({
 } = {}) {
   const controller = createCliCommandController({
     fetch: github.fetch,
-    fs,
+    fs: files,
     exec: exec.exec,
     platform,
     arch,
@@ -354,7 +491,10 @@ describe("installing the ajour command", () => {
       "completions/ajour.bash",
       "man/man1/ajour.1",
     ]);
-    expect(link.added).toEqual([installDir]);
+    expect(link.current()).toEqual({
+      value: `C:\\Tools;${installDir}`,
+      kind: "ExpandString",
+    });
     // The check ran the unpacked binary, before it moved into place.
     const check = exec.calls.find((call) => call.args[0] === "-V")!;
     expect(check.file).not.toBe(path.join(installDir, "ajour.exe"));
@@ -495,6 +635,7 @@ describe("a refused or failed install", () => {
     const filesBefore = await filesUnder(installDir);
     const { events, recorded } = recordingEvents();
     const { controller, link } = controllerWith(setup);
+    const pathBefore = { ...(link as ReturnType<typeof fakeLink>).current() };
 
     const state = await events.run(
       "cli_command.install",
@@ -503,6 +644,12 @@ describe("a refused or failed install", () => {
     );
 
     expect(await filesUnder(installDir)).toEqual(filesBefore);
+    // The user Path is as it was, value and kind.
+    expect((link as ReturnType<typeof fakeLink>).current()).toEqual(pathBefore);
+    // No record half written.
+    expect(await readdir(path.dirname(recordFile)).catch(() => [])).toEqual(
+      before ? ["cli-command.json"] : [],
+    );
     if (before) {
       expect(JSON.parse(await readFile(recordFile, "utf8"))).toEqual(before);
       expect(await readFile(path.join(installDir, "ajour.exe"), "utf8")).toBe(
@@ -517,7 +664,7 @@ describe("a refused or failed install", () => {
     const event = recorded.find(
       (candidate) => candidate.name === "cli_command.install",
     )!;
-    return { state, event, link };
+    return { state, event, link: link as ReturnType<typeof fakeLink> };
   }
 
   it.each([
@@ -633,7 +780,7 @@ describe("a refused or failed install", () => {
         progress: null,
         error: sentence,
       });
-      expect(link.added).toEqual([]);
+      expect(link.writes).toEqual([]);
       expect(event.outcome).toBe("refused");
       expect(event.outcome_reason).toBe(reason);
     },
@@ -674,6 +821,54 @@ describe("a refused or failed install", () => {
     });
   });
 
+  it("puts the Path back when the broadcast fails after the write", async () => {
+    const { state, event } = await refused({
+      link: fakeLink({ failBroadcast: true }),
+    });
+
+    expect(state.error).toBe(
+      "Ajour couldn't add ajour to your PATH, so nothing changed.",
+    );
+    expect(event.outcome).toBe("error");
+  });
+
+  it("takes the folder off the Path when the record can't be written", async () => {
+    const files = fsWith({
+      writeFile: (async (file: string, ...rest: unknown[]) => {
+        if (String(file).startsWith(recordFile)) {
+          throw Object.assign(new Error("EACCES: permission denied"), {
+            code: "EACCES",
+          });
+        }
+        return (fs.writeFile as (...a: unknown[]) => Promise<void>)(
+          file,
+          ...rest,
+        );
+      }) as never,
+    });
+
+    const { state } = await refused({ files });
+
+    expect(state.status).toBe("error");
+  });
+
+  it("takes the folder off the Path, and the half-written record away, when the record can't be renamed", async () => {
+    const files = fsWith({
+      rename: (async (from: string, to: string) => {
+        if (to === recordFile)
+          throw new Error("EPERM: operation not permitted");
+        return fs.rename(from, to);
+      }) as never,
+    });
+
+    const { state } = await refused({ files }, "0.0.1-nightly.20261101.280");
+
+    expect(state).toMatchObject({
+      status: "error",
+      version: "0.0.1-nightly.20261101.280",
+    });
+  });
+
   it("says GitHub couldn't be reached when the lookup fails", async () => {
     const github = fakeGithub();
     const { controller } = controllerWith({
@@ -698,6 +893,287 @@ describe("a refused or failed install", () => {
 
     const { controller } = controllerWith();
     expect((await controller.install()).status).toBe("installed");
+  });
+});
+
+describe("writing the download", () => {
+  /** `fs` whose files take at most `most(length)` bytes per write. */
+  function shortWrites(
+    most: (length: number) => number,
+    { report }: { report?: (written: number, asked: number) => number } = {},
+  ) {
+    return fsWith({
+      open: (async (...args: unknown[]) => {
+        const handle = await (
+          fs.open as (...a: unknown[]) => Promise<fs.FileHandle>
+        )(...args);
+        if (args[1] !== "w") return handle;
+        return Object.assign(Object.create(handle), {
+          async write(
+            buffer: Uint8Array,
+            offset = 0,
+            length = buffer.byteLength - offset,
+          ) {
+            const { bytesWritten } = await handle.write(
+              buffer,
+              offset,
+              Math.min(length, most(length)),
+            );
+            return {
+              bytesWritten: report
+                ? report(bytesWritten, length)
+                : bytesWritten,
+              buffer,
+            };
+          },
+          close: () => handle.close(),
+        });
+      }) as never,
+    });
+  }
+
+  it("writes each chunk whole when the file takes part of it at a time", async () => {
+    const { controller } = controllerWith({
+      files: shortWrites((length) => Math.max(1, Math.floor(length / 2))),
+    });
+
+    expect((await controller.install()).status).toBe("installed");
+    expect(await readFile(path.join(installDir, "ajour.exe"), "utf8")).toBe(
+      `binary ${VERSION}`,
+    );
+  });
+
+  it("checks the digest of what is on disk, not of what it meant to write", async () => {
+    // The file says it took every byte, but kept half of each chunk.
+    const { controller } = controllerWith({
+      files: shortWrites((length) => Math.max(1, Math.floor(length / 2)), {
+        report: (_written, asked) => asked,
+      }),
+    });
+
+    const state = await controller.install();
+
+    expect(state.error).toBe(
+      "The ajour download doesn't match its published checksum, so Ajour didn't install it.",
+    );
+    expect(existsSync(path.join(root, "Local"))).toBe(false);
+  });
+});
+
+describe("an install cut short", () => {
+  const PREVIOUS = "0.0.1-nightly.20261101.280";
+
+  /** Clears the temp folder, for one more install from scratch. */
+  async function freshRoot() {
+    await rm(root, { recursive: true, force: true });
+    await mkdir(root, { recursive: true });
+  }
+
+  /**
+   * Cuts an install at step `n`, then starts Ajour again: its recovery
+   * must leave either the new install, whole, or what was there before,
+   * whole, on disk, in the record and on the Path. Returns false once the
+   * install has fewer steps than `n`.
+   */
+  async function cutAndRecover(n: number, previous?: string) {
+    await freshRoot();
+    const before = previous ? await installedBefore(previous) : undefined;
+    const cut = interruption((step) => step.index === n);
+    const link = fakeLink({
+      initial: previous
+        ? { value: `C:\\Tools;${installDir}`, kind: "String" }
+        : { value: "C:\\Tools", kind: "String" },
+      gate: cut.gate,
+    });
+    const { controller } = controllerWith({ files: cut.fs, link });
+    const ended = await Promise.race([
+      controller.install().then(() => "finished" as const),
+      cut.cutReached.then(() => "cut" as const),
+    ]);
+    if (ended === "finished") return false;
+
+    // The next launch, with every step allowed.
+    const next = controllerWith({ link: { link: link.nextLaunch() } });
+    await next.controller.recover();
+    const state = await next.controller.state();
+    const where = `cut at step ${n}${previous ? ", over an earlier install" : ""}`;
+
+    expect(
+      await readdir(path.dirname(recordFile)).catch(() => []),
+      where,
+    ).toEqual(state.status === "installed" ? ["cli-command.json"] : []);
+    if (state.status === "installed" && state.version === VERSION) {
+      expect(await filesUnder(installDir), where).toEqual([
+        "ajour.exe",
+        "completions/ajour.bash",
+        "man/man1/ajour.1",
+      ]);
+      expect(
+        await readFile(path.join(installDir, "ajour.exe"), "utf8"),
+        where,
+      ).toBe(`binary ${VERSION}`);
+      expect(link.current().value, where).toContain(installDir);
+    } else if (before) {
+      expect(state, where).toMatchObject({
+        status: "installed",
+        version: previous,
+      });
+      expect(JSON.parse(await readFile(recordFile, "utf8")), where).toEqual(
+        before,
+      );
+      expect(await readdir(installDir), where).toEqual(["ajour.exe", "man"]);
+      expect(
+        await readFile(path.join(installDir, "ajour.exe"), "utf8"),
+        where,
+      ).toBe(`binary ${previous}`);
+      expect(
+        await readFile(path.join(installDir, "man", "man1", "ajour.1"), "utf8"),
+        where,
+      ).toBe("old manual");
+      expect(link.current(), where).toEqual(link.initial);
+    } else {
+      expect(state.status, where).toBe("not-installed");
+      expect(await filesUnder(path.join(root, "Local")), where).toEqual([]);
+      expect(link.current(), where).toEqual(link.initial);
+    }
+    return true;
+  }
+
+  it("recovers a first install cut between any two steps", async () => {
+    let n = 1;
+    while (await cutAndRecover(n)) n += 1;
+    // The download, the swap, the Path and the record: many steps.
+    expect(n).toBeGreaterThan(10);
+  });
+
+  it("recovers an install over an earlier one cut between any two steps", async () => {
+    let n = 1;
+    while (await cutAndRecover(n, PREVIOUS)) n += 1;
+    expect(n).toBeGreaterThan(10);
+  });
+
+  it("keeps the binary an interrupted swap set aside when the next install fails", async () => {
+    const before = await installedBefore(PREVIOUS);
+    // Cut right after ajour.exe moved aside: no ajour.exe is in place.
+    let setAside = false;
+    const cut = interruption((step) => {
+      if (setAside) return true;
+      if (
+        step.name === "rename" &&
+        String(step.args[0]) === path.join(installDir, "ajour.exe")
+      ) {
+        setAside = true;
+      }
+      return false;
+    });
+    const link = fakeLink({ gate: cut.gate });
+    void controllerWith({ files: cut.fs, link }).controller.install();
+    await cut.cutReached;
+    expect(existsSync(path.join(installDir, "ajour.exe"))).toBe(false);
+
+    // The next launch can't reach GitHub.
+    const offline = fakeGithub();
+    const { controller } = controllerWith({
+      github: {
+        ...offline,
+        fetch: async () => {
+          throw new TypeError("fetch failed");
+        },
+      },
+      link: { link: link.nextLaunch() },
+    });
+    const state = await controller.install();
+
+    expect(state).toMatchObject({ status: "error", version: PREVIOUS });
+    expect(await readFile(path.join(installDir, "ajour.exe"), "utf8")).toBe(
+      `binary ${PREVIOUS}`,
+    );
+    expect(JSON.parse(await readFile(recordFile, "utf8"))).toEqual(before);
+    expect(await readdir(installDir)).toEqual(["ajour.exe", "man"]);
+  });
+});
+
+describe("quitting during an install", () => {
+  it("waits for a swap under way to finish", async () => {
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let atPath!: () => void;
+    const reachedPath = new Promise<void>((resolve) => {
+      atPath = resolve;
+    });
+    const link = fakeLink({
+      gate: async (_name, _args, run) => {
+        atPath();
+        await released;
+        return await run();
+      },
+    });
+    const { controller } = controllerWith({ link });
+    const installing = controller.install();
+    await reachedPath;
+
+    let stopped = false;
+    const stopping = controller.stop(5_000).then(() => {
+      stopped = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(stopped).toBe(false);
+
+    release();
+    await stopping;
+    expect((await installing).status).toBe("installed");
+    expect(await readFile(path.join(installDir, "ajour.exe"), "utf8")).toBe(
+      `binary ${VERSION}`,
+    );
+  });
+
+  it("stops a download and leaves what was installed before", async () => {
+    const before = await installedBefore("0.0.1-nightly.20261101.280");
+    let release!: () => void;
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { controller, link } = controllerWith({
+      github: fakeGithub({ download: { hold } }),
+    });
+    const seen: CliState[] = [];
+    controller.onChange((state) => seen.push(state));
+    const installing = controller.install();
+    while (!seen.some((state) => (state.progress ?? 0) > 0)) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    await controller.stop(5_000);
+    release();
+
+    expect((await installing).status).toBe("error");
+    expect(JSON.parse(await readFile(recordFile, "utf8"))).toEqual(before);
+    expect(await readdir(installDir)).toEqual(["ajour.exe", "man"]);
+    expect(link.writes).toEqual([]);
+  });
+
+  it("starts no install once Ajour quits", async () => {
+    const { controller, github } = controllerWith();
+
+    await controller.stop();
+    const state = await controller.install();
+
+    expect(state.status).toBe("not-installed");
+    expect(github.requests).toEqual([]);
+  });
+
+  it("waits no longer than it is given", async () => {
+    const link = fakeLink({ gate: () => new Promise<never>(() => {}) });
+    const { controller } = controllerWith({ link });
+    void controller.install();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const started = Date.now();
+    await controller.stop(30);
+
+    expect(Date.now() - started).toBeLessThan(1_000);
   });
 });
 

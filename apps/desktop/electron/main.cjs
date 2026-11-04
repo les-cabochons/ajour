@@ -2210,6 +2210,10 @@ if (!hasSingleInstanceLock) {
         quitTrigger = "os";
       });
 
+      // An install of the ajour command that a quit or a crash cut short
+      // is finished first: rolled back, or kept if it committed.
+      void cliCommand.recover().catch(() => undefined);
+
       void refreshPluginCatalog("launch");
       schedulePluginCatalogRefresh();
 
@@ -2279,6 +2283,9 @@ if (!hasSingleInstanceLock) {
     const updaterStartedAt = Date.now();
     automaticUpdateController.dispose();
     quit?.set({ quit: { updater_ms: Date.now() - updaterStartedAt } });
+    // An ajour command install stops its download, and a swap under way
+    // finishes or rolls back, within its bound, alongside the API's stop.
+    const cliCommandStopped = cliCommand.stop().catch(() => undefined);
     // A failed stop still quits.
     const stopStartedAt = Date.now();
     void stopInternalAppApiWithinTimeout().then(async (outcome) => {
@@ -2286,6 +2293,7 @@ if (!hasSingleInstanceLock) {
       recordApiStop(quit, outcome, stopStartedAt);
       // The API cancelled their runs as it stopped; their pages close now.
       await closePluginRenderers().catch(() => undefined);
+      await cliCommandStopped;
       endQuit(quit, outcome);
       // Events recorded before the package loaded are lost if the process
       // exits first.

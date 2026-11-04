@@ -98,10 +98,13 @@ describe("quitting and installing an update", () => {
       loaded = true,
       quitTrigger = "other",
       flushLogs = async () => {},
+      cliCommandStop = async () => {},
     }: {
       loaded?: boolean;
       quitTrigger?: string;
       flushLogs?: () => Promise<void>;
+      /** How the ajour command's install settles when Ajour quits. */
+      cliCommandStop?: () => Promise<void>;
     } = {},
   ) {
     const handlers = new Map<string, (event: unknown) => void>();
@@ -121,6 +124,12 @@ describe("quitting and installing an update", () => {
       order.push("plugin renderers closed");
     });
     const tray = { remove: vi.fn(() => order.push("tray removed")) };
+    const cliCommand = {
+      stop: vi.fn(async () => {
+        await cliCommandStop();
+        order.push("ajour command settled");
+      }),
+    };
     app.quit.mockImplementation(() => order.push("quit"));
     const localLogs = {
       flush: vi.fn(flushLogs),
@@ -130,6 +139,7 @@ describe("quitting and installing an update", () => {
     const context = vm.createContext({
       localLogs,
       closePluginRenderers,
+      cliCommand,
       app,
       events,
       quitTrigger,
@@ -169,6 +179,7 @@ describe("quitting and installing an update", () => {
       attach,
       automaticUpdateController,
       closePluginRenderers,
+      cliCommand,
       localLogs,
       order,
       tray,
@@ -209,7 +220,35 @@ describe("quitting and installing an update", () => {
     await flush();
 
     expect(runtime.closePluginRenderers).toHaveBeenCalledOnce();
-    expect(runtime.order).toEqual(["plugin renderers closed", "quit"]);
+    // The ajour command's stop starts with the quit, and here has nothing to wait for.
+    expect(runtime.order).toEqual([
+      "ajour command settled",
+      "plugin renderers closed",
+      "quit",
+    ]);
+  });
+
+  it("lets an ajour command install finish or roll back before it quits", async () => {
+    let settle = () => {};
+    const runtime = quitRuntime(async () => {}, {
+      cliCommandStop: () =>
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+    });
+
+    runtime.quit();
+    await flush();
+    expect(runtime.cliCommand.stop).toHaveBeenCalledOnce();
+    expect(runtime.app.quit).not.toHaveBeenCalled();
+
+    settle();
+    await flush();
+    expect(runtime.order).toEqual([
+      "plugin renderers closed",
+      "ajour command settled",
+      "quit",
+    ]);
   });
 
   it("writes what the local log file holds before it quits", async () => {
@@ -1412,8 +1451,10 @@ describe("startup", () => {
     const sweepOrphanedRenderers = vi.fn(async () => ({ ended: 0 }));
     const processRecord = { hold: vi.fn(), release: vi.fn() };
     const tray = { show: vi.fn(), remove: vi.fn() };
+    const cliCommand = { recover: vi.fn(async () => {}) };
     const context = vm.createContext({
       addWindowApiToken,
+      cliCommand,
       sweepOrphanedRenderers,
       PROCESS_RECORD_FILE: "plugin-renderers.json",
       pluginRendererProcessRecord: () => processRecord,
@@ -1474,6 +1515,7 @@ describe("startup", () => {
     );
     return {
       addWindowApiToken,
+      cliCommand,
       sweepOrphanedRenderers,
       defaultSession,
       app,
@@ -1621,6 +1663,13 @@ describe("startup", () => {
         error: { message: "The GPU process could not start." },
       },
     ]);
+  });
+
+  it("finishes an ajour command install that the last session cut short", async () => {
+    const runtime = startupRuntime();
+    await flush();
+
+    expect(runtime.cliCommand.recover).toHaveBeenCalledOnce();
   });
 
   it("sweeps the last session's orphaned plugin renderers once it holds the lock, and only then", async () => {

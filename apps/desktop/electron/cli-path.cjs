@@ -10,8 +10,10 @@ const path = require("node:path");
  * The value is read raw, without expanding its %VARS%, the folder is
  * appended only when absent, and the value is written back as REG_EXPAND_SZ,
  * then WM_SETTINGCHANGE tells Explorer, so a terminal opened from it reads
- * the new Path. The registry is a seam: tests pass a fake, and Ajour passes
- * `createPowerShellRegistry`.
+ * the new Path. An add returns the change it made, and `revert` puts back
+ * the exact value and kind it replaced; an add that fails after it wrote
+ * puts it back itself. The registry is a seam: tests pass a fake, and Ajour
+ * passes `createPowerShellRegistry`.
  */
 
 /** How long PowerShell gets to read, or to write and broadcast. */
@@ -55,29 +57,111 @@ function pathWithFolder(raw, folder, env) {
 }
 
 /**
+ * The Path without the entry `folder`, exactly as an add wrote it, or null
+ * when it isn't there. Every other entry stays as it was.
+ */
+function pathWithoutFolder(raw, folder) {
+  const entries = (raw ?? "").split(";");
+  const kept = entries.filter((entry) => entry !== folder);
+  return kept.length === entries.length ? null : kept.join(";");
+}
+
+/** The kinds a user Path is written back with. */
+const KINDS = new Set(["ExpandString", "String"]);
+
+/**
+ * @typedef {{ value: string | null, kind: string | null }} RegistryValue
+ * @typedef {{ folder: string, previous: RegistryValue, written: string }} PathChange
+ *   What an add changed: the value and kind it replaced, and what it wrote.
+ *   Plain data, so the controller can keep it in its swap journal.
+ */
+
+/**
  * @param {{
  *   registry: {
- *     read(): Promise<{ value: string | null, kind: string | null }>,
- *     write(change: { expected: string | null, value: string }): Promise<boolean>,
+ *     read(): Promise<RegistryValue>,
+ *     write(change: { expected: string | null, value: string | null, kind: string | null }): Promise<boolean>,
+ *     broadcast(): Promise<void>,
  *   },
  *   env?: Record<string, string | undefined>,
  * }} options
  */
 function createWindowsUserPath({ registry, env = process.env }) {
+  /**
+   * Puts back what `change` replaced: the exact value and kind while the
+   * Path is still what the add wrote, or else only takes out the entry, so
+   * what another program added since stays.
+   * @param {PathChange | null} change
+   */
+  async function revert(change) {
+    if (!change) return;
+    for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt += 1) {
+      const current = await registry.read();
+      let target;
+      if (current.value === change.written) {
+        target = change.previous;
+      } else {
+        const without = pathWithoutFolder(current.value, change.folder);
+        if (without === null) return;
+        target = { value: without, kind: current.kind };
+      }
+      const kind =
+        target.value === null
+          ? null
+          : target.kind === "String"
+            ? "String"
+            : "ExpandString";
+      if (
+        await registry.write({
+          expected: current.value,
+          value: target.value,
+          kind,
+        })
+      ) {
+        // The value is back; a failed broadcast leaves only Explorer behind.
+        await registry.broadcast().catch(() => undefined);
+        return;
+      }
+    }
+    throw new Error("Your PATH kept changing while Ajour put it back.");
+  }
+
   return {
-    /** Appends `folder` to the user Path unless it is there. */
-    async add(folder) {
+    /**
+     * Appends `folder` to the user Path unless it is there. The change it
+     * returns undoes it; a failure after the write undoes it before it
+     * throws. `beforeWrite` hears of each change before it is written, so a
+     * caller can note it where a crash can't lose it.
+     *
+     * @param {string} folder
+     * @param {{ beforeWrite?(change: PathChange): Promise<void> }} [hooks]
+     */
+    async add(folder, { beforeWrite } = {}) {
       for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt += 1) {
-        const { value } = await registry.read();
-        const next = pathWithFolder(value, folder, env);
-        if (next === null) return { added: false };
-        // The write refuses when the Path changed since this read.
-        if (await registry.write({ expected: value, value: next })) {
-          return { added: true };
+        const previous = await registry.read();
+        const next = pathWithFolder(previous.value, folder, env);
+        if (next === null) return { added: false, change: null };
+        const change = { folder, previous, written: next };
+        if (beforeWrite) await beforeWrite(change);
+        let written;
+        try {
+          // The write refuses when the Path changed since this read.
+          written = await registry.write({
+            expected: previous.value,
+            value: next,
+            kind: "ExpandString",
+          });
+          if (written) await registry.broadcast();
+        } catch (error) {
+          // PowerShell may have written before it failed.
+          await revert(change).catch(() => undefined);
+          throw error;
         }
+        if (written) return { added: true, change };
       }
       throw new Error("Your PATH kept changing while Ajour edited it.");
     },
+    revert,
   };
 }
 
@@ -92,7 +176,10 @@ const READ_SCRIPT = [
 
 // The values come from the environment, as "v" and base64 of UTF-8, so
 // nothing of them is ever parsed as script, and an empty value is still set
-// (Windows drops an empty variable). `-cne` compares case-sensitively.
+// (Windows drops an empty variable). "-" is no value: an expected "-" means
+// there was no Path, and a value "-" deletes it. `-cne` compares
+// case-sensitively. The broadcast is a run of its own, so a failure in it is
+// told apart from a failed write.
 const WRITE_SCRIPT = [
   "$ErrorActionPreference = 'Stop';",
   "$decode = { param($text) [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($text.Substring(1))) };",
@@ -100,13 +187,18 @@ const WRITE_SCRIPT = [
   "$current = $key.GetValue('Path', $null, 'DoNotExpandEnvironmentNames');",
   "$expected = if ($env:AJOUR_PATH_EXPECTED -eq '-') { $null } else { & $decode $env:AJOUR_PATH_EXPECTED };",
   "if ($current -cne $expected) { [Console]::Out.Write('changed'); exit 0 };",
-  "$key.SetValue('Path', (& $decode $env:AJOUR_PATH_VALUE), [Microsoft.Win32.RegistryValueKind]::ExpandString);",
+  "if ($env:AJOUR_PATH_VALUE -eq '-') { $key.DeleteValue('Path', $false) }",
+  "else { $key.SetValue('Path', (& $decode $env:AJOUR_PATH_VALUE), [Microsoft.Win32.RegistryValueKind]$env:AJOUR_PATH_KIND) };",
   "$key.Close();",
+  "[Console]::Out.Write('written')",
+].join(" ");
+
+const BROADCAST_SCRIPT = [
+  "$ErrorActionPreference = 'Stop';",
   "$WM_SETTINGCHANGE = 0x1A; $HWND_BROADCAST = [IntPtr]0xffff; $SMTO_ABORTIFHUNG = 2;",
   "Add-Type -Namespace AjourCli -Name Broadcast -MemberDefinition '[DllImport(\"user32.dll\", CharSet = CharSet.Unicode)] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, UIntPtr wParam, string lParam, uint flags, uint timeout, out UIntPtr result);';",
   "$result = [UIntPtr]::Zero;",
-  "[void][AjourCli.Broadcast]::SendMessageTimeout($HWND_BROADCAST, $WM_SETTINGCHANGE, [UIntPtr]::Zero, 'Environment', $SMTO_ABORTIFHUNG, 5000, [ref]$result);",
-  "[Console]::Out.Write('written')",
+  "[void][AjourCli.Broadcast]::SendMessageTimeout($HWND_BROADCAST, $WM_SETTINGCHANGE, [UIntPtr]::Zero, 'Environment', $SMTO_ABORTIFHUNG, 5000, [ref]$result)",
 ].join(" ");
 
 /**
@@ -169,14 +261,21 @@ function createPowerShellRegistry({
         kind: typeof answer.kind === "string" ? answer.kind : null,
       };
     },
-    async write({ expected, value }) {
+    async write({ expected, value, kind }) {
+      if (value !== null && !KINDS.has(kind)) {
+        throw new Error(`Ajour doesn't write a ${kind} Path.`);
+      }
       const answer = await ask(WRITE_SCRIPT, {
         AJOUR_PATH_EXPECTED: expected === null ? "-" : encode(expected),
-        AJOUR_PATH_VALUE: encode(value),
+        AJOUR_PATH_VALUE: value === null ? "-" : encode(value),
+        AJOUR_PATH_KIND: value === null ? "" : kind,
       });
       if (answer.trim() === "written") return true;
       if (answer.trim() === "changed") return false;
       throw new Error("Ajour couldn't change your PATH.");
+    },
+    async broadcast() {
+      await ask(BROADCAST_SCRIPT);
     },
   };
 }

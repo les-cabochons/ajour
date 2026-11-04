@@ -22,6 +22,10 @@
 // The user Path is the real one, HKCU\Environment, so the check reads it
 // first and always writes back exactly what it read, with its kind, and then
 // checks it is byte for byte the same. A developer's machine keeps its Path.
+// Before the app can change it, the check saves it to a backup file in the
+// temp folder; a run cut short (Ctrl+C, a crash, a failed restore) leaves
+// that file, and the next run puts the Path back from it before anything
+// else, while the Path still holds that run's folder.
 //
 //   corepack pnpm --filter @ajour/desktop check:cli-command
 //   corepack pnpm --filter @ajour/desktop check:cli-command --skip-build
@@ -33,7 +37,14 @@
 import { execFile, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
+import {
+  mkdtemp,
+  readdir,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import http from "node:http";
 import { createRequire } from "node:module";
 import net from "node:net";
@@ -70,6 +81,8 @@ const powershell = path.join(
   "powershell.exe",
 );
 const INSTALL_TIMEOUT_MS = 180_000;
+/** The user Path as a run found it, kept until that run put it back. */
+const PATH_BACKUP = path.join(os.tmpdir(), "ajour-check-cli-command-path.json");
 
 const failures = [];
 function expect(condition, message, detail) {
@@ -143,6 +156,46 @@ async function restoreUserPath(saved) {
       CHECK_PATH_VALUE: saved ? `v${b64(saved.value)}` : "v",
     },
   );
+}
+
+/** Saves the user Path and the run's install folder before anything changes. */
+async function saveBackup(saved, installDir) {
+  const temporary = `${PATH_BACKUP}.tmp`;
+  await writeFile(temporary, JSON.stringify({ path: saved, installDir }), {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+  await rename(temporary, PATH_BACKUP);
+}
+
+/**
+ * Puts back the user Path an earlier run cut short left changed: the exact
+ * value and kind it saved, while the Path still holds that run's folder. A
+ * Path without it was put back already, or changed by hand since, and is
+ * left as it is. Throws when the Path can't be put back, so nothing runs.
+ */
+async function restoreLeftoverBackup() {
+  if (!existsSync(PATH_BACKUP)) return;
+  const { path: saved, installDir } = JSON.parse(
+    readFileSync(PATH_BACKUP, "utf8"),
+  );
+  const current = await readUserPath();
+  const holdsFolder = entriesOf(current?.value).some(
+    (entry) => entry.toLowerCase() === String(installDir).toLowerCase(),
+  );
+  if (holdsFolder) {
+    process.stdout.write(
+      "     an earlier run left the user Path changed: putting it back\n",
+    );
+    await restoreUserPath(saved);
+    const restored = await readUserPath();
+    if (JSON.stringify(restored) !== JSON.stringify(saved)) {
+      throw new Error(
+        `The user Path from an earlier run couldn't be put back. Its backup is in ${PATH_BACKUP}.`,
+      );
+    }
+  }
+  await rm(PATH_BACKUP, { force: true });
 }
 
 /** A port nothing listens on, never Ajour's 8787. */
@@ -289,6 +342,9 @@ const entriesOf = (value) =>
   (value ?? "").split(";").filter((entry) => entry.trim() !== "");
 
 async function main() {
+  // Before anything else: a Path an earlier run left changed goes back.
+  await restoreLeftoverBackup();
+
   const skipBuild = process.argv.includes("--skip-build");
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -298,8 +354,9 @@ async function main() {
   const temp = await mkdtemp(path.join(os.tmpdir(), "ajour-cli-command-"));
   const installDir = path.join(temp, "Local", "Ajour", "bin");
 
-  // The real user Path: read before anything can change it.
+  // The real user Path: read and saved before anything can change it.
   const before = await readUserPath();
+  await saveBackup(before, installDir);
   process.stdout.write(
     `     user Path before: ${before ? `${before.kind}, ${before.value.length} characters` : "none"}\n`,
   );
@@ -485,18 +542,22 @@ async function main() {
     try {
       await restoreUserPath(before);
       const restored = await readUserPath();
-      expect(
-        JSON.stringify(restored) === JSON.stringify(before),
-        "the user Path is restored byte for byte, with its kind",
-        { before: before?.kind, after: restored?.kind },
-      );
+      if (
+        expect(
+          JSON.stringify(restored) === JSON.stringify(before),
+          "the user Path is restored byte for byte, with its kind",
+          { before: before?.kind, after: restored?.kind },
+        )
+      ) {
+        await rm(PATH_BACKUP, { force: true });
+      }
     } catch (error) {
       expect(false, `the user Path was restored: ${error.message}`);
-      if (before) {
-        process.stdout.write(
-          `     Restore it by hand: kind ${before.kind}, value (base64) ${b64(before.value)}\n`,
-        );
-      }
+    }
+    if (existsSync(PATH_BACKUP)) {
+      process.stdout.write(
+        `     The user Path is saved in ${PATH_BACKUP}; the next run puts it back first.\n`,
+      );
     }
     if (process.argv.includes("--keep")) {
       process.stdout.write(`     temp folder kept in ${temp}\n`);

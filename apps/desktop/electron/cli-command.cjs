@@ -19,13 +19,20 @@ const { tagForPackageVersion } = require("./update-check.cjs");
  * 3. lists and unpacks it with the system tar, by its absolute path, into a
  *    fresh folder, refusing any entry that would land outside it;
  * 4. checks that the unpacked binary prints `ajour <app version>` for `-V`;
- * 5. moves the files into the install folder, renaming what was there aside;
- * 6. puts the folder on the PATH;
- * 7. writes `cli-command.json` atomically, mode 0600.
+ * 5. writes a swap journal in the install folder, then moves the files into
+ *    the install folder, renaming what was there aside;
+ * 6. puts the folder on the PATH, noting in the journal what it replaces
+ *    before it writes;
+ * 7. writes `cli-command.json` atomically, mode 0600. That is the commit:
+ *    only then are the set-aside files and the journal deleted.
  *
- * Any failure puts back what was installed before and removes what it made.
- * A refusal ends the install's event `refused` with its reason; anything
- * else ends it as an error.
+ * Any failure puts back what was installed before, on disk and on the PATH,
+ * and removes what it made. An install cut short, because Ajour quit or
+ * crashed, is finished the same way on the next launch: `recover()` reads
+ * the journal and rolls the swap back, or, when the record shows it
+ * committed, deletes what it set aside. Quitting stops a download and waits,
+ * within a bound, for a swap under way. A refusal ends the install's event
+ * `refused` with its reason; anything else ends it as an error.
  */
 
 const GITHUB_REPOSITORY = "les-cabochons/ajour";
@@ -38,6 +45,11 @@ const VERSION_CHECK_TIMEOUT_MS = 10_000;
 const TAR_TIMEOUT_MS = 60_000;
 const DIGEST_PATTERN = /^sha256:([0-9a-f]{64})$/;
 const MAX_REDIRECTS = 5;
+/** How long quitting waits for an install to finish or roll back. */
+const STOP_TIMEOUT_MS = 5_000;
+const ID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+const JOURNAL_NAME = new RegExp(`^\\.swap-(${ID})\\.json$`);
+const STAGING_NAME = new RegExp(`^\\.staging-${ID}$`);
 
 const PLATFORM_NAMES = {
   win32: { os: "windows", label: "Windows", extension: "zip" },
@@ -87,7 +99,10 @@ function escapesFolder(name) {
  *   development: boolean,
  *   releaseOrigin?: string,
  *   paths: { installDir: string, recordFile: string, tar: string },
- *   link: { add(folder: string): Promise<{ added: boolean }> },
+ *   link: {
+ *     add(folder: string, hooks?: { beforeWrite?(change: object): Promise<void> }): Promise<{ added: boolean, change: object | null }>,
+ *     revert(change: object | null): Promise<void>,
+ *   },
  *   now?: () => number,
  *   env?: Record<string, string | undefined>,
  * }} options
@@ -131,6 +146,10 @@ function createCliCommandController({
   /** Set after an install in this launch, for "Open a new terminal". */
   let newlyInstalled = false;
   let running = null;
+  /** The recovery of an install cut short, run once per launch. */
+  let recovery = null;
+  /** Aborts a download when Ajour quits; no install starts after. */
+  const quitting = new AbortController();
 
   function emit(state) {
     for (const listener of listeners) {
@@ -142,21 +161,25 @@ function createCliCommandController({
     }
   }
 
-  async function readRecord() {
+  /** The record as written, or null. */
+  async function readRecordFile() {
     try {
       const record = JSON.parse(await fs.readFile(paths.recordFile, "utf8"));
-      if (
-        typeof record?.version !== "string" ||
-        typeof record.binaryPath !== "string"
-      ) {
-        return null;
-      }
-      // The record is trusted only while its binary is there.
-      const found = await fs.stat(record.binaryPath).catch(() => null);
-      return found?.isFile() ? record : null;
+      return typeof record?.version === "string" &&
+        typeof record.binaryPath === "string"
+        ? record
+        : null;
     } catch {
       return null;
     }
+  }
+
+  async function readRecord() {
+    const record = await readRecordFile();
+    if (!record) return null;
+    // The record is trusted only while its binary is there.
+    const found = await fs.stat(record.binaryPath).catch(() => null);
+    return found?.isFile() ? record : null;
   }
 
   /** The installed command, as the row shows it. */
@@ -179,6 +202,7 @@ function createCliCommandController({
         error: null,
       };
     }
+    await recovered();
     const record = await readRecord();
     if (transient) return { ...installedFields(record), ...transient };
     return record
@@ -301,11 +325,19 @@ function createCliCommandController({
     return { url, sha256: digest[1], size };
   }
 
-  /** Streams the download to `file`, hashing it, within the size it was given. */
+  /**
+   * Streams the download to `file`, within the size it was given, then
+   * checks the SHA-256 of what the file holds: the bytes tar will read.
+   */
   async function download({ url, sha256, size }, file) {
     const response = await request(
       url,
-      { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) },
+      {
+        signal: AbortSignal.any([
+          AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+          quitting.signal,
+        ]),
+      },
       "Ajour couldn't download ajour. Check your connection, then try again.",
     );
     if (!response.ok) {
@@ -313,7 +345,6 @@ function createCliCommandController({
         `The ajour download failed (HTTP ${response.status}). Try again later.`,
       );
     }
-    const hash = createHash("sha256");
     const handle = await fs.open(file, "w", 0o600);
     let total = 0;
     // The install starts at 0%.
@@ -330,6 +361,7 @@ function createCliCommandController({
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
+        stopIfQuitting();
         total += value.byteLength;
         if (total > size) {
           await reader.cancel().catch(() => undefined);
@@ -338,8 +370,7 @@ function createCliCommandController({
             "The ajour download is larger than GitHub said, so Ajour stopped it.",
           );
         }
-        hash.update(value);
-        await handle.write(value);
+        await writeWhole(handle, value);
         progress();
       }
     } finally {
@@ -349,12 +380,44 @@ function createCliCommandController({
     if (total !== size) {
       throw new Error("The ajour download ended early. Try again.");
     }
-    if (hash.digest("hex") !== sha256) {
+    if ((await sha256Of(file)) !== sha256) {
       throw refusal(
         "digest_mismatch",
         "The ajour download doesn't match its published checksum, so Ajour didn't install it.",
       );
     }
+  }
+
+  /** Writes all of `bytes`: a write may take only part of them. */
+  async function writeWhole(handle, bytes) {
+    for (let offset = 0; offset < bytes.byteLength;) {
+      const { bytesWritten } = await handle.write(
+        bytes,
+        offset,
+        bytes.byteLength - offset,
+      );
+      if (!(bytesWritten > 0)) {
+        throw new Error("Ajour couldn't save the ajour download.");
+      }
+      offset += bytesWritten;
+    }
+  }
+
+  /** The SHA-256 of what `file` holds, read back from disk. */
+  async function sha256Of(file) {
+    const hash = createHash("sha256");
+    const handle = await fs.open(file, "r");
+    try {
+      const buffer = Buffer.alloc(1024 * 1024);
+      for (;;) {
+        const { bytesRead } = await handle.read(buffer, 0, buffer.byteLength);
+        if (bytesRead === 0) break;
+        hash.update(buffer.subarray(0, bytesRead));
+      }
+    } finally {
+      await handle.close();
+    }
+    return hash.digest("hex");
   }
 
   /** Unpacks `archive` into `folder` with the system tar, refusing escapes. */
@@ -430,73 +493,146 @@ function createCliCommandController({
     }
   }
 
-  /**
-   * Moves each unpacked entry over the installed one. What was there is
-   * renamed aside first, which Windows allows for a running ajour.exe.
-   * Returns the undo, and the cleanup of what was set aside.
-   */
-  async function swapIn(unpacked, id) {
-    const moves = [];
-    const undo = async () => {
-      for (const move of moves.reverse()) {
-        await fs
-          .rm(move.target, { recursive: true, force: true })
-          .catch(() => undefined);
-        if (move.aside)
-          await fs.rename(move.aside, move.target).catch(() => undefined);
-      }
-    };
-    try {
-      for (const name of await fs.readdir(unpacked)) {
-        const target = path.join(paths.installDir, name);
-        const exists = await fs.lstat(target).catch(() => null);
-        const aside = exists ? `${target}.old-${id}` : null;
-        if (aside) await fs.rename(target, aside);
-        moves.push({ target, aside });
-        await fs.rename(path.join(unpacked, name), target);
-      }
-    } catch (error) {
-      await undo();
-      throw error;
+  function stopIfQuitting() {
+    if (quitting.signal.aborted) {
+      throw new Error("Ajour quit before ajour was installed.");
     }
-    const cleanup = async () => {
-      for (const move of moves) {
-        // A running ajour.exe can't be deleted: the next install sweeps it.
-        if (move.aside)
-          await fs
-            .rm(move.aside, { recursive: true, force: true })
-            .catch(() => undefined);
-      }
-    };
-    return { undo, cleanup };
   }
 
-  /** Deletes what an earlier install set aside and couldn't delete then. */
-  async function sweepSetAside() {
-    const names = await fs.readdir(paths.installDir).catch(() => []);
-    for (const name of names) {
-      if (
-        /\.old-[0-9a-f-]{36}$/.test(name) ||
-        /^\.staging-[0-9a-f-]{36}$/.test(name)
-      ) {
-        await fs
-          .rm(path.join(paths.installDir, name), {
-            recursive: true,
-            force: true,
-          })
-          .catch(() => undefined);
-      }
+  const journalFile = (id) => path.join(paths.installDir, `.swap-${id}.json`);
+  const asideOf = (name, id) =>
+    path.join(paths.installDir, `${name}.old-${id}`);
+
+  /** Writes `file` whole or not at all: a temp file, then a rename. */
+  async function writeAtomically(file, text) {
+    const temporary = `${file}.tmp`;
+    try {
+      await fs.writeFile(temporary, text, { encoding: "utf8", mode: 0o600 });
+      await fs.rename(temporary, file);
+    } catch (error) {
+      await fs.rm(temporary, { force: true }).catch(() => undefined);
+      throw error;
     }
+  }
+
+  async function writeJournal(journal) {
+    await writeAtomically(journalFile(journal.id), JSON.stringify(journal));
   }
 
   async function writeRecord(record) {
     await fs.mkdir(path.dirname(paths.recordFile), { recursive: true });
-    const temporary = `${paths.recordFile}.tmp`;
-    await fs.writeFile(temporary, `${JSON.stringify(record, null, 2)}\n`, {
-      encoding: "utf8",
-      mode: 0o600,
-    });
-    await fs.rename(temporary, paths.recordFile);
+    await writeAtomically(
+      paths.recordFile,
+      `${JSON.stringify(record, null, 2)}\n`,
+    );
+  }
+
+  /**
+   * Moves each unpacked entry over the installed one, renaming what was
+   * there aside first, which Windows allows for a running ajour.exe. The
+   * journal lists every entry, and whether it had one to set aside, before
+   * the first rename.
+   */
+  async function swapIn(journal, unpacked) {
+    for (const entry of journal.entries) {
+      const target = path.join(paths.installDir, entry.name);
+      if (entry.aside) await fs.rename(target, asideOf(entry.name, journal.id));
+      await fs.rename(path.join(unpacked, entry.name), target);
+    }
+  }
+
+  /**
+   * Undoes the swap of `journal`, from whatever step it reached: each entry
+   * set aside goes back, each new one goes, the PATH is put back, and what
+   * the install made is removed. Then the journal goes.
+   */
+  async function rollBack(journal) {
+    for (const entry of [...journal.entries].reverse()) {
+      const target = path.join(paths.installDir, entry.name);
+      const aside = asideOf(entry.name, journal.id);
+      const setAside = Boolean(await fs.lstat(aside).catch(() => null));
+      // An entry not yet set aside is still the installed one.
+      if (entry.aside && !setAside) continue;
+      await fs.rm(target, { recursive: true, force: true });
+      if (setAside) await fs.rename(aside, target);
+    }
+    await link.revert(journal.path ?? null);
+    await fs.rm(`${paths.recordFile}.tmp`, { force: true });
+    await removeQuietly(path.join(paths.installDir, `.staging-${journal.id}`));
+    if (journal.madeFolder) await removeQuietly(journal.madeFolder);
+    await fs.rm(journalFile(journal.id), { force: true });
+  }
+
+  /**
+   * Deletes what a committed swap set aside, then its journal. A running
+   * ajour.exe can't be deleted: the journal stays until it can, so the
+   * next launch tries again.
+   */
+  async function finishCommitted(journal) {
+    let left = 0;
+    for (const entry of journal.entries) {
+      if (!entry.aside) continue;
+      await fs
+        .rm(asideOf(entry.name, journal.id), { recursive: true, force: true })
+        .catch(() => {
+          left += 1;
+        });
+    }
+    await removeQuietly(path.join(paths.installDir, `.staging-${journal.id}`));
+    if (left === 0) {
+      await fs.rm(journalFile(journal.id), { force: true }).catch(() => {});
+    }
+  }
+
+  async function removeQuietly(target) {
+    await fs
+      .rm(target, { recursive: true, force: true })
+      .catch(() => undefined);
+  }
+
+  /**
+   * Finishes each install a quit or a crash cut short: one whose record was
+   * written is kept, and any other is rolled back. Only then are staging
+   * folders deleted; nothing set aside is deleted before its install
+   * committed.
+   */
+  async function recoverSwaps() {
+    const names = await fs.readdir(paths.installDir).catch(() => []);
+    for (const name of names) {
+      const id = JOURNAL_NAME.exec(name)?.[1];
+      if (!id) {
+        // A journal's first write that never reached its rename.
+        if (/^\.swap-.*\.json\.tmp$/.test(name)) {
+          await removeQuietly(path.join(paths.installDir, name));
+        }
+        continue;
+      }
+      let journal;
+      try {
+        journal = JSON.parse(
+          await fs.readFile(path.join(paths.installDir, name), "utf8"),
+        );
+      } catch {
+        // Unreadable: leave everything as it is rather than guess.
+        continue;
+      }
+      if (journal?.id !== id || !Array.isArray(journal.entries)) continue;
+      const record = await readRecordFile();
+      const committed =
+        record?.version === journal.version &&
+        record.installedAt === journal.installedAt;
+      await (committed ? finishCommitted(journal) : rollBack(journal));
+    }
+    for (const name of await fs.readdir(paths.installDir).catch(() => [])) {
+      if (STAGING_NAME.test(name)) {
+        await removeQuietly(path.join(paths.installDir, name));
+      }
+    }
+  }
+
+  function recovered() {
+    recovery ??= recoverSwaps().catch(() => undefined);
+    return recovery;
   }
 
   async function runInstall(unit) {
@@ -506,11 +642,14 @@ function createCliCommandController({
     // The topmost folder this install made, removed again if it fails.
     let madeFolder;
     let staging;
-    let swap;
+    /** Set once the swap may have begun: a failure then rolls it back. */
+    let journal;
     try {
       publishInstalling("downloading", 0);
-      await sweepSetAside();
+      await recovered();
+      stopIfQuitting();
       const resolved = await resolveAsset(report);
+      stopIfQuitting();
       madeFolder = await fs.mkdir(paths.installDir, { recursive: true });
       staging = path.join(paths.installDir, `.staging-${id}`);
       await fs.mkdir(staging);
@@ -522,11 +661,37 @@ function createCliCommandController({
       const unpacked = path.join(staging, "unpacked");
       await unpack(archive, unpacked);
       await checkVersion(path.join(unpacked, binary));
+      // From here the swap runs to its end, or rolls back: quitting waits.
+      stopIfQuitting();
 
       publishInstalling("linking");
-      swap = await swapIn(unpacked, id);
+      const entries = [];
+      for (const name of await fs.readdir(unpacked)) {
+        const there = await fs
+          .lstat(path.join(paths.installDir, name))
+          .catch(() => null);
+        entries.push({ name, aside: Boolean(there) });
+      }
+      const pending = {
+        id,
+        version: appVersion,
+        installedAt: new Date(now()).toISOString(),
+        madeFolder: madeFolder ?? null,
+        entries,
+        path: null,
+      };
+      await writeJournal(pending);
+      journal = pending;
+      await swapIn(journal, unpacked);
       try {
-        report.path_added = (await link.add(paths.installDir)).added;
+        const { added } = await link.add(paths.installDir, {
+          // Noted before the write, so a crash after it can still undo it.
+          beforeWrite: async (change) => {
+            journal.path = change;
+            await writeJournal(journal);
+          },
+        });
+        report.path_added = added;
       } catch (error) {
         throw Object.assign(
           new Error(
@@ -539,28 +704,25 @@ function createCliCommandController({
         version: appVersion,
         binaryPath: path.join(paths.installDir, binary),
         link: "path",
-        installedAt: new Date(now()).toISOString(),
+        installedAt: journal.installedAt,
       });
-      await swap.cleanup();
-      swap = undefined;
-      await fs
-        .rm(staging, { recursive: true, force: true })
-        .catch(() => undefined);
+      const committed = journal;
+      journal = undefined;
+      await finishCommitted(committed);
       report.result = "installed";
       newlyInstalled = true;
       transient = null;
     } catch (error) {
-      await swap?.undo();
-      if (staging)
-        await fs
-          .rm(staging, { recursive: true, force: true })
-          .catch(() => undefined);
-      if (madeFolder)
-        await fs
-          .rm(madeFolder, { recursive: true, force: true })
-          .catch(() => undefined);
-      const message =
-        error instanceof Error && error.message
+      if (journal) {
+        // What can't be put back now, the next launch puts back.
+        await rollBack(journal).catch(() => undefined);
+      } else {
+        if (staging) await removeQuietly(staging);
+        if (madeFolder) await removeQuietly(madeFolder);
+      }
+      const message = quitting.signal.aborted
+        ? "Ajour quit before ajour was installed."
+        : error instanceof Error && error.message
           ? error.message
           : "Ajour couldn't install ajour.";
       report.result = error instanceof CliInstallRefusal ? "refused" : "failed";
@@ -592,6 +754,7 @@ function createCliCommandController({
         unit?.refuse(unsupportedReason);
         return settledState();
       }
+      if (quitting.signal.aborted) return settledState();
       if (running) {
         unit?.set({ cli_command: { result: "joined" } });
         return running;
@@ -600,6 +763,34 @@ function createCliCommandController({
         running = null;
       });
       return running;
+    },
+
+    /**
+     * Finishes an install that a quit or a crash cut short. Ajour calls it
+     * at launch; `state()` and `install()` wait for it.
+     */
+    async recover() {
+      if (unsupportedReason) return;
+      await recovered();
+    },
+
+    /**
+     * For quitting: stops a download, starts no new install, and waits for
+     * one under way to finish or roll back, at most `timeoutMs`. A swap cut
+     * at that bound is recovered on the next launch.
+     */
+    async stop(timeoutMs = STOP_TIMEOUT_MS) {
+      quitting.abort();
+      const settling = running ?? recovery;
+      if (!settling) return;
+      let timer;
+      await Promise.race([
+        settling.catch(() => undefined),
+        new Promise((resolve) => {
+          timer = setTimeout(resolve, timeoutMs);
+        }),
+      ]);
+      clearTimeout(timer);
     },
 
     onChange(listener) {

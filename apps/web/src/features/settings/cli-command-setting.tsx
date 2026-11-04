@@ -9,18 +9,60 @@ import { traceCarrier } from "@/lib/wide-events";
 const GUIDE_URL = "https://docs.ajour.day/terminal/";
 const DEVELOPMENT_REASON = "The ajour command installs from released builds.";
 
-/** What the status line says in each state. */
+/** What the status's first line says in each state. */
 function statusLine(state: DesktopCliCommandState) {
   if (state.status === "installing") {
     if (state.phase === "checking") return "Checking ajour…";
     if (state.phase === "linking") return "Adding ajour to your PATH…";
     return `Downloading ajour, ${state.progress ?? 0}%`;
   }
-  if (state.status === "unsupported") {
-    return `${DEVELOPMENT_REASON} From source, run: just cli`;
-  }
-  if (state.version) return `ajour ${state.version} · ${state.location ?? ""}`;
+  if (state.status === "unsupported") return DEVELOPMENT_REASON;
+  if (state.version) return `ajour ${state.version}`;
   return "Not installed.";
+}
+
+const LINE = "block h-4 truncate leading-4";
+
+/**
+ * One line of the row's description: cut with an ellipsis when it is too
+ * long, its whole text in the DOM for assistive technology and in its title.
+ */
+function Line({
+  text,
+  className = "",
+  role,
+}: {
+  text: string;
+  className?: string;
+  role?: "alert";
+}) {
+  return (
+    <span data-line role={role} title={text} className={`${LINE} ${className}`}>
+      {text}
+    </span>
+  );
+}
+
+/**
+ * The install folder in mono, cut in the middle: its start gives way first,
+ * and its last two folders, such as `\Ajour\bin`, always show.
+ */
+function FolderLine({ folder }: { folder: string }) {
+  const cut = Math.max(
+    0,
+    folder.lastIndexOf("\\", folder.lastIndexOf("\\") - 1),
+    folder.lastIndexOf("/", folder.lastIndexOf("/") - 1),
+  );
+  return (
+    <span
+      data-line
+      title={folder}
+      className="flex h-4 min-w-0 overflow-hidden font-mono leading-4 whitespace-nowrap"
+    >
+      <span className="min-w-0 truncate">{folder.slice(0, cut)}</span>
+      <span className="shrink-0">{folder.slice(cut)}</span>
+    </span>
+  );
 }
 
 /**
@@ -94,27 +136,26 @@ export function CliCommandSetting() {
         <SettingRow
           label="ajour command"
           description={
-            // Two lines at most, so a state change never moves the page.
-            <span className="flex min-h-9 flex-col">
-              <span role="status" className="break-words">
+            // Three fixed lines, each cut to fit, so no state, version,
+            // folder or error ever changes the row's height.
+            <span className="flex h-12 min-w-0 flex-col overflow-hidden">
+              <span role="status" className="flex min-w-0 flex-col">
                 {state ? (
                   <>
-                    {statusLine(state)}
+                    <Line text={statusLine(state)} />
+                    {development ? (
+                      <Line text="From source, run: just cli" />
+                    ) : state.location ? (
+                      <FolderLine folder={state.location} />
+                    ) : null}
                     {installed && state.newlyInstalled ? (
-                      <span className="block">
-                        Open a new terminal to use it.
-                      </span>
+                      <Line text="Open a new terminal to use it." />
                     ) : null}
                   </>
                 ) : null}
               </span>
               {error && !installing ? (
-                <span
-                  role="alert"
-                  className="block break-words text-destructive"
-                >
-                  {error}
-                </span>
+                <Line role="alert" text={error} className="text-destructive" />
               ) : null}
             </span>
           }

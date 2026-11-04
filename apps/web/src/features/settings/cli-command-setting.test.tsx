@@ -95,6 +95,11 @@ async function mount() {
 }
 
 const status = () => screen.getByRole("status").textContent;
+/** The status line's lines, as the row shows them. */
+const lines = () =>
+  Array.from(screen.getByRole("status").children).map(
+    (line) => line.textContent,
+  );
 const installButton = () => screen.getByRole("button", { name: /^Install/ });
 
 describe("the ajour command setting", () => {
@@ -179,9 +184,11 @@ describe("the ajour command setting", () => {
     expect(status()).toBe("Adding ajour to your PATH…");
 
     await main.finish({ ...INSTALLED, newlyInstalled: true });
-    expect(status()).toBe(
-      `ajour ${VERSION} · ${FOLDER}Open a new terminal to use it.`,
-    );
+    expect(lines()).toEqual([
+      `ajour ${VERSION}`,
+      FOLDER,
+      "Open a new terminal to use it.",
+    ]);
     const link = screen.getByRole("link", { name: "How to use it" });
     expect(link.getAttribute("href")).toBe("https://docs.ajour.day/terminal/");
     expect(screen.queryByRole("button", { name: /^Install/ })).toBeNull();
@@ -203,7 +210,7 @@ describe("the ajour command setting", () => {
     desktop(INSTALLED);
     await mount();
 
-    expect(status()).toBe(`ajour ${VERSION} · ${FOLDER}`);
+    expect(lines()).toEqual([`ajour ${VERSION}`, FOLDER]);
     expect(screen.getByRole("link", { name: "How to use it" })).toBeTruthy();
   });
 
@@ -235,7 +242,7 @@ describe("the ajour command setting", () => {
     });
     await mount();
 
-    expect(status()).toBe(`ajour ${VERSION} · ${FOLDER}`);
+    expect(lines()).toEqual([`ajour ${VERSION}`, FOLDER]);
     expect(screen.getByRole("alert").textContent).toBe(
       "Ajour couldn't reach GitHub. Check your connection, then try again.",
     );
@@ -276,9 +283,10 @@ describe("the ajour command setting", () => {
     });
     await mount();
 
-    expect(status()).toBe(
-      "The ajour command installs from released builds. From source, run: just cli",
-    );
+    expect(lines()).toEqual([
+      "The ajour command installs from released builds.",
+      "From source, run: just cli",
+    ]);
     const button = screen.getByRole("button", { name: "Install" });
     expect(button.hasAttribute("disabled")).toBe(true);
     // DisabledReason names the control with its reason, and takes focus.
@@ -305,6 +313,85 @@ describe("the ajour command setting", () => {
       main.push(state);
       expect(screen.getByRole("status")).toBe(line);
     }
+  });
+
+  it("keeps the row's height in every state, cutting long lines but keeping their text", async () => {
+    const version = "0.0.1-nightly.20261104.294+build.with.a.long.suffix";
+    const folder =
+      "C:\\Users\\someone-with-a-long-name\\AppData\\Local\\Ajour\\bin";
+    const error = `The downloaded ajour says "${"x".repeat(80)}", not "ajour ${version}", so Ajour didn't install it.`;
+    const main = desktop();
+    await mount();
+    const description = screen.getByRole("status").parentElement!;
+
+    for (const state of [
+      { status: "installing", phase: "downloading", progress: 3, error: null },
+      {
+        status: "installed",
+        version,
+        location: folder,
+        binaryPath: `${folder}\\ajour.exe`,
+        progress: null,
+        error: null,
+        newlyInstalled: true,
+      },
+      {
+        status: "error",
+        version,
+        location: folder,
+        binaryPath: `${folder}\\ajour.exe`,
+        progress: null,
+        error,
+      },
+      {
+        status: "unsupported",
+        reason: "development_build",
+        progress: null,
+        error: null,
+      },
+    ] as DesktopCliCommandState[]) {
+      main.push(state);
+
+      // The same box, of a fixed height, three lines at most.
+      expect(screen.getByRole("status").parentElement).toBe(description);
+      expect(description.className).toMatch(/(^| )h-12( |$)/);
+      expect(description.className).not.toMatch(/min-h-/);
+      expect(description.className).toContain("overflow-hidden");
+      const shown = Array.from(
+        description.querySelectorAll<HTMLElement>("[data-line]"),
+      );
+      expect(shown.length).toBeLessThanOrEqual(3);
+      for (const line of shown) {
+        // One line each, cut with an ellipsis, the whole text in its title.
+        expect(line.className).toContain("h-4");
+        expect(line.className).toMatch(/truncate|overflow-hidden/);
+        expect(line.getAttribute("title")).toBe(line.textContent);
+      }
+    }
+
+    // The error and the path are whole for assistive technology.
+    main.push({
+      status: "error",
+      version,
+      location: folder,
+      binaryPath: `${folder}\\ajour.exe`,
+      progress: null,
+      error,
+    });
+    expect(screen.getByRole("alert").textContent).toBe(error);
+    expect(lines()).toEqual([`ajour ${version}`, folder]);
+  });
+
+  it("cuts the folder in the middle, keeping where it ends", async () => {
+    desktop(INSTALLED);
+    await mount();
+
+    const line = screen.getByTitle(FOLDER);
+    expect(line.className).toContain("font-mono");
+    const [head, tail] = Array.from(line.children);
+    expect(head!.className).toContain("truncate");
+    expect(tail!.textContent).toBe("\\Ajour\\bin");
+    expect(tail!.className).toContain("shrink-0");
   });
 
   it("stops listening when it unmounts", async () => {
