@@ -24,7 +24,7 @@ Ajour is an operational desktop/web app. Build interfaces for scanning, repeated
 ## Components
 
 - Use existing `apps/web/src/components/ui` primitives before creating new primitives.
-- `Chip` is the one metadata treatment: project, type, code, count, "Today". Two tones in practice, neutral and accent; warning, success and danger exist for state.
+- `Chip` is the one metadata treatment: project, type, code, count, "Today". A list that repeats a project on every row, such as Backlog list rows, shows its dot and name as plain secondary text instead, so the list carries no shape per line. Two tones in practice, neutral and accent; warning, success and danger exist for state.
 - `Value` is the one style for every duration, total, count and id: mono, tabular, 12px by default. The titlebar total, row durations and grid cells all use it. No pills around numbers.
 - `Figure` and `FigureRow` replace stat cards. `PropertyList` replaces boxed side panels. `SectionHeading` heads every cardless section.
 - `Empty` is two lines and at most one outline button, left-aligned in a list and centered on an empty page. No icon tiles.
