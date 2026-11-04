@@ -568,6 +568,41 @@ describe("literal Windows path comparison", () => {
 
 describe("macOS command link", () => {
   const { createMacosCommandLink } = require("./electron/cli-path.cjs");
+  it("refuses elevation through a writable parent of a protected bin", async () => {
+    const f = fixture({ writable: false, parentWritable: true });
+    await expect(
+      f.link().add("/Users/alex/bin", { interactive: true }),
+    ).rejects.toThrow("the folder isn't yours, but /usr/local is");
+    expect(f.calls).toEqual([]);
+  });
+  it("uses Node without elevation when both folders are writable", async () => {
+    const f = fixture({ writable: true, parentWritable: true });
+    await f.link().add("/Users/alex/bin", { interactive: true });
+    expect(f.calls.map((call) => call.file)).toEqual(["fs.symlink"]);
+  });
+  it("creates missing local and bin components through one elevation", async () => {
+    const f = fixture({ writable: false, parentMissing: true });
+    await expect(
+      f.link().add("/Users/alex/bin", { interactive: true }),
+    ).resolves.toEqual({ added: true });
+    const script = f.calls[0]!.args[1]!;
+    expect(script).toContain("/bin/mkdir -m 755 '/usr/local'");
+    expect(script.indexOf("/bin/mkdir -m 755 '/usr/local'")).toBeLessThan(
+      script.indexOf("/bin/mkdir -m 755 '/usr/local/bin'"),
+    );
+    expect(script).not.toContain("mkdir -p");
+  });
+  it.each([
+    { ancestorUid: 501 },
+    { ancestorMode: 0o775 },
+    { ancestorSymlink: true },
+  ])("refuses unsafe ancestry before elevation: %j", async (options) => {
+    const f = fixture({ writable: false, ...options });
+    await expect(
+      f.link().add("/Users/alex/bin", { interactive: true }),
+    ).rejects.toThrow("Retry");
+    expect(f.calls).toEqual([]);
+  });
   it("creates an absent link directly without a password", async () => {
     const f = fixture();
     expect(await f.link().add("/Users/alex/Ajour/bin")).toEqual({
@@ -730,7 +765,7 @@ describe("macOS command link", () => {
     );
     expect(f.calls).toHaveLength(1);
     expect(f.current()).toBe(`/Users/A "B"/it's\\$home/bin/ajour`);
-    expect(shell).toContain("createSymbolicLinkAtPathWithDestinationError");
+    expect(shell).toContain("createSymbolicLinkAtPathWithDestinationPathError");
     expect(shell).not.toContain("/bin/ln");
     expect(shell).toContain(
       `[ ! -e '/usr/local/bin/ajour' ] && [ ! -L '/usr/local/bin/ajour' ] && AJOUR_LINK='/usr/local/bin/ajour'`,

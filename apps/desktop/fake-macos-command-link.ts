@@ -10,6 +10,10 @@ export function macosLinkFixture({
   cancelled = false,
   directoryMissing = false,
   parentWritable = false,
+  parentMissing = false,
+  ancestorUid = 0,
+  ancestorMode = 0o755,
+  ancestorSymlink = false,
   directoryUid = 0,
   directoryMode = 0o755,
   directorySymlink = false,
@@ -21,7 +25,22 @@ export function macosLinkFixture({
   const calls: Array<{ file: string; args: string[] }> = [];
   let realDirectory = false;
   const fs = {
-    lstat: async () => {
+    lstat: async (location = "/usr/local/bin/ajour") => {
+      if (location !== "/usr/local/bin/ajour") {
+        const bin = location === "/usr/local/bin";
+        const local = location === "/usr/local";
+        if (
+          (bin && (directoryMissing || parentMissing)) ||
+          (local && parentMissing)
+        )
+          throw Object.assign(new Error(), { code: "ENOENT" });
+        return {
+          uid: bin ? directoryUid : local && parentWritable ? 501 : ancestorUid,
+          mode: bin ? directoryMode : ancestorMode,
+          isDirectory: () => true,
+          isSymbolicLink: () => (bin ? directorySymlink : ancestorSymlink),
+        };
+      }
       if (target === null && !foreignFile && !realDirectory)
         throw Object.assign(new Error(), { code: "ENOENT" });
       return { isSymbolicLink: () => !foreignFile && !realDirectory };
@@ -47,8 +66,9 @@ export function macosLinkFixture({
     },
     access: async (location: string) => {
       if (location === "/usr/local") {
+        if (parentMissing) throw Object.assign(new Error(), { code: "ENOENT" });
         if (parentWritable) return;
-      } else if (directoryMissing) {
+      } else if (directoryMissing || parentMissing) {
         throw Object.assign(new Error(), { code: "ENOENT" });
       } else if (writable) return;
       throw Object.assign(new Error(), { code: "EACCES" });
@@ -107,7 +127,17 @@ export function macosLinkFixture({
           target = null;
         else if (shell.includes("else exit 1")) throw new Error("Link changed");
       }
-      if (shell.includes("createSymbolicLinkAtPathWithDestinationError")) {
+      if (
+        shell.includes(
+          "createSymbolicLinkAtPath:withDestinationPath:error:"
+            .split(":")
+            .filter(Boolean)
+            .map((part, index) =>
+              index === 0 ? part : part[0]!.toUpperCase() + part.slice(1),
+            )
+            .join(""),
+        )
+      ) {
         const match = shell.match(
           /AJOUR_TARGET=('(?:[^']|'"'"')*') \/usr\/bin\/osascript/,
         );

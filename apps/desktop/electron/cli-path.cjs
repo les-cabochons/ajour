@@ -256,7 +256,6 @@ module.exports = {
 function createMacosCommandLink({ fs, exec }) {
   const destination = "/usr/local/bin/ajour";
   const directory = path.posix.dirname(destination);
-  const quote = (value) => "'" + value.replaceAll("'", "'\"'\"'") + "'";
   const failure = (reason, message) =>
     Object.assign(new Error(message), { reason });
   async function inspect(folder) {
@@ -322,6 +321,34 @@ function createMacosCommandLink({ fs, exec }) {
         }
       }
     }
+    if (!writable) {
+      const parentWritable = await canWrite("/usr/local").catch((error) => {
+        if (error.code === "ENOENT") return false;
+        throw error;
+      });
+      if (parentWritable)
+        throw new Error(
+          "Ajour can't add ajour to /usr/local/bin: the folder isn't yours, but /usr/local is. Fix their owners, then try again.",
+        );
+      for (const ancestor of linkAncestors(destination)) {
+        let entry;
+        try {
+          entry = await fs.lstat(ancestor);
+        } catch (error) {
+          if (error.code === "ENOENT") continue;
+          throw error;
+        }
+        if (
+          entry.isSymbolicLink() ||
+          !entry.isDirectory() ||
+          entry.uid !== 0 ||
+          (entry.mode & 0o022) !== 0
+        )
+          throw new Error(
+            "Ajour can't safely change /usr/local/bin/ajour because an ancestor isn't a protected root-owned directory. Fix its owner and permissions, then press Retry in Settings.",
+          );
+      }
+    }
     if (!writable && !interactive)
       throw new Error(
         "Ajour needs your password to repair /usr/local/bin/ajour. Press Retry in Settings.",
@@ -335,7 +362,7 @@ function createMacosCommandLink({ fs, exec }) {
         );
       }
     }
-    const removal = `if [ -L ${quote(destination)} ] && [ "$(/usr/bin/readlink ${quote(destination)})" = ${quote(current.target ?? "")} ]; then /bin/rm ${quote(destination)}; else exit 1; fi`;
+    const removal = guardedRemoval(destination, current.target ?? "");
     const changed = () =>
       new Error(
         "The ajour link changed during reconciliation. Press Retry in Settings.",
@@ -359,22 +386,12 @@ function createMacosCommandLink({ fs, exec }) {
         }
       }
     } else {
-      // Recheck after the password prompt: permissions and even the directory
-      // may have changed. A real root-owned directory without group/other write
-      // bits prevents an unprivileged racer from creating entries during this
-      // invocation. Exact-destination creation also refuses a directory at ajour.
-      const secureDirectory = `if [ ! -e ${quote(directory)} ] && [ ! -L ${quote(directory)} ]; then /bin/mkdir -m 755 ${quote(directory)} || exit 1; fi; [ ! -L ${quote(directory)} ] && [ -d ${quote(directory)} ] || exit 1; set -- $(/usr/bin/stat -f '%u %Lp' ${quote(directory)}); [ "$#" -eq 2 ] && [ "$1" = 0 ] && [ "$((0$2 & 022))" -eq 0 ] || exit 1`;
-      // Paths are shell environment values, never JavaScript source. Foundation
-      // creates the exact link or fails if anything already occupies that path.
-      const jxa = `ObjC.import("Foundation"); const env = $.NSProcessInfo.processInfo.environment; if (!$.NSFileManager.defaultManager.createSymbolicLinkAtPathWithDestinationError(env.objectForKey("AJOUR_LINK"), env.objectForKey("AJOUR_TARGET"), null)) throw new Error("Link creation failed");`;
-      const creation = `[ ! -e ${quote(destination)} ] && [ ! -L ${quote(destination)} ] && AJOUR_LINK=${quote(destination)} AJOUR_TARGET=${quote(target)} /usr/bin/osascript -l JavaScript -e ${quote(jxa)} && [ -L ${quote(destination)} ] && [ "$(/usr/bin/readlink ${quote(destination)})" = ${quote(target)} ]`;
-      const operation = present
-        ? repair
-          ? `${removal} && ${creation}`
-          : creation
-        : removal;
-      const guarded = `${secureDirectory}; ${operation}`;
-      const script = `do shell script ${JSON.stringify(guarded)} with administrator privileges`;
+      const { appleScript: script } = macosPrivilegedCommand({
+        destination,
+        target,
+        present,
+        observed: !present || repair ? current.target : "",
+      });
       try {
         await exec("/usr/bin/osascript", ["-e", script], { timeout: 120_000 });
       } catch (error) {
@@ -406,3 +423,52 @@ function createMacosCommandLink({ fs, exec }) {
   };
 }
 module.exports.createMacosCommandLink = createMacosCommandLink;
+
+const shellQuote = (value) => "'" + value.replaceAll("'", "'\"'\"'") + "'";
+function linkAncestors(destination) {
+  const result = ["/"];
+  for (const part of path.posix.dirname(destination).split("/").filter(Boolean))
+    result.push(path.posix.join(result[result.length - 1], part));
+  return result;
+}
+function guardedRemoval(destination, observed) {
+  const quote = shellQuote;
+  return `if [ -L ${quote(destination)} ] && [ "$(/usr/bin/readlink ${quote(destination)})" = ${quote(observed)} ]; then /bin/rm ${quote(destination)}; else exit 1; fi`;
+}
+/** Same builder for production and the real macOS check. No caller-controlled path reaches it from IPC. */
+function macosPrivilegedCommand({
+  destination,
+  target,
+  present,
+  observed = "",
+}) {
+  const quote = shellQuote;
+  const ancestors = linkAncestors(destination);
+  const verify = (directory) =>
+    `[ ! -L ${quote(directory)} ] && [ -d ${quote(directory)} ] || exit 1; set -- $(/usr/bin/stat -f '%u %Lp' ${quote(directory)}); [ "$#" -eq 2 ] && [ "$1" = 0 ] && [ "$((0$2 & 022))" -eq 0 ] || exit 1`;
+  const guards = ancestors.map(verify).join("; ");
+  // Each mkdir runs only under parents already verified in this invocation.
+  const prepare = ancestors
+    .map((directory, index) => {
+      const parents = ancestors.slice(0, index).map(verify).join("; ");
+      return `${parents ? parents + "; " : ""}if [ ! -e ${quote(directory)} ] && [ ! -L ${quote(directory)} ]; then /bin/mkdir -m 755 ${quote(directory)} || exit 1; fi; ${verify(directory)}`;
+    })
+    .join("; ");
+  const jxa = `ObjC.import("Foundation"); const env = $.NSProcessInfo.processInfo.environment; if (!$.NSFileManager.defaultManager.createSymbolicLinkAtPathWithDestinationPathError(env.objectForKey("AJOUR_LINK"), env.objectForKey("AJOUR_TARGET"), null)) throw new Error("Link creation failed");`;
+  const creation = `[ ! -e ${quote(destination)} ] && [ ! -L ${quote(destination)} ] && AJOUR_LINK=${quote(destination)} AJOUR_TARGET=${quote(target)} /usr/bin/osascript -l JavaScript -e ${quote(jxa)} && [ -L ${quote(destination)} ] && [ "$(/usr/bin/readlink ${quote(destination)})" = ${quote(target)} ]`;
+
+  const removal = guardedRemoval(destination, observed);
+  const operation = present
+    ? observed
+      ? `${guards}; ${removal} && { ${guards}; ${creation}; }`
+      : `${guards}; ${creation}`
+    : `${guards}; ${removal}`;
+  const shell = `${prepare}; ${operation}`;
+  return {
+    shell,
+    appleScript: `do shell script ${JSON.stringify(shell)} with administrator privileges`,
+  };
+}
+// Electron never exports the destination override, including in packaged builds.
+if (!process.versions.electron)
+  module.exports.macosPrivilegedCommand = macosPrivilegedCommand;

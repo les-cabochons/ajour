@@ -85,6 +85,10 @@ jobs:
       - name: Install dependencies
         run: corepack pnpm install --frozen-lockfile
 
+      - name: Check the real macOS privileged command link
+        if: runner.os == 'macOS'
+        run: node apps/desktop/scripts/check-macos-command-link.mjs
+
       - name: Run the desktop lifecycle check
         # Windows and macOS runners have a desktop session, so Electron needs
         # no virtual display.
