@@ -748,9 +748,15 @@ export function CommitPage({
         {!lockedWeek && manualSubmitReason ? (
           // What Submit week waits for, without a hover (council round 6).
           <p className="commit-actions-caption">
+            {/* Every prerequisite in one sentence, so the sequence shows
+                before it starts (council round 19). */}
             {manualSubmitReason === "Commit your changes first"
-              ? "Commit changes before submitting."
-              : `Submit week waits: ${lowerFirst(manualSubmitReason)}${/[.!?]$/.test(manualSubmitReason) ? "" : "."}`}
+              ? runningThisWeek
+                ? "Commit your changes and stop the running entry before submitting."
+                : "Commit changes before submitting."
+              : manualSubmitReason === "Stop the running entry first"
+                ? "Stop the running entry before submitting."
+                : `Submit week waits: ${lowerFirst(manualSubmitReason)}${/[.!?]$/.test(manualSubmitReason) ? "" : "."}`}
           </p>
         ) : null}
         {changesOpen ? (

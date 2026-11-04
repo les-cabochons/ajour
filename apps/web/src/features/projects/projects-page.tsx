@@ -1008,6 +1008,8 @@ function ProjectDetail({
             plugins={taskPropertyPlugins}
             projectLocalOnly={project.localOnly}
           />
+          {/* The shortcut chord, by the name it starts (council round 19). */}
+          {task.pinnedSlot ? <PinnedSlotBadge slot={task.pinnedSlot} /> : null}
           {/* Billable is the default: only the exception carries a chip. */}
           {isProjectTaskBillable(task) ? null : (
             <Chip>{getProjectTaskBillableValueLabel(task)}</Chip>
@@ -1024,11 +1026,6 @@ function ProjectDetail({
                 label={`Actions for ${task.name}`}
               />
             </span>
-            {/* The shortcut sits with the row's values, away from the name
-                and the tab counts, so it reads as a key (council round 16). */}
-            {task.pinnedSlot ? (
-              <PinnedSlotBadge slot={task.pinnedSlot} />
-            ) : null}
             {renderConsumedBadge(task)}
           </span>
         </td>

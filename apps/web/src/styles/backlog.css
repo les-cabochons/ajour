@@ -267,8 +267,9 @@
   /* The priority steps back to 12px, so the state mark leads the cluster
      and the title starts sooner (council round 16). */
   .backlog-list-row .backlog-item-leading > [data-leading="priority"] svg {
-    width: 12px;
-    height: 12px;
+    /* 14px: the glyph's own grid, so its bars land on whole pixels. */
+    width: 14px;
+    height: 14px;
   }
 
   .backlog-list-row .backlog-item-leading > * {
@@ -1250,9 +1251,11 @@
 
   /* The title takes all of line 1; the estimate and actions sit on line 2
      (council round 8). */
+  /* Line 1 says what and how much: title, estimate, Start. Line 2 says
+     where and how it stands (council round 19). */
   .backlog-list-row .backlog-item-title {
     grid-row: 1;
-    grid-column: 2 / 13;
+    grid-column: 2 / 12;
     min-width: 0;
   }
 
@@ -1306,7 +1309,7 @@
   }
 
   .backlog-list-row .backlog-item-estimate {
-    grid-row: 2;
+    grid-row: 1;
     grid-column: 12;
     align-self: center;
     min-width: 0;

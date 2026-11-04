@@ -1,4 +1,9 @@
-import { RiPlayFill, RiStopFill, RiTimeLine } from "@remixicon/react";
+import {
+  RiNodeTree,
+  RiPlayFill,
+  RiStopFill,
+  RiTimeLine,
+} from "@remixicon/react";
 import { getWorkflowStateFills } from "@/domain/backlog/workflow-state-fill";
 import { stateDotStyle } from "@/features/backlog/state-dot";
 import { formatHours } from "@/features/backlog/backlog-estimates";
@@ -404,6 +409,9 @@ export function BacklogItemSurface({
       className="backlog-subitem-progress"
       title={`${progress.closed} of ${progress.total} subitems closed`}
     >
+      {/* The Subitems mark, so the fraction reads as subitems done
+          (council round 19). */}
+      <RiNodeTree aria-hidden className="size-3 shrink-0" />
       <span>
         {progress.closed}/{progress.total}
       </span>

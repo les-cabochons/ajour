@@ -92,7 +92,9 @@ export function PriorityIcon({
           height={3 + bar * 3}
           rx="0.75"
           fill="currentColor"
-          opacity={bar < filledBars ? 0.9 : 0.3}
+          // The unfilled bars keep the frame visible, as in Linear, so every
+          // level reads as one glyph (council round 19).
+          opacity={bar < filledBars ? 1 : 0.45}
         />
       ))}
     </svg>
