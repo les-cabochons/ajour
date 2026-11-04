@@ -233,6 +233,58 @@ function readMinutes(text: string): number | undefined {
   return undefined;
 }
 
+const DAY_NAMES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The UTC time of a YYYY-MM-DD date, or undefined when no such day exists. */
+function calendarTime(year: number, month: number, day: number) {
+  const time = Date.UTC(year, month - 1, day);
+  const date = new Date(time);
+  return date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+    ? time
+    : undefined;
+}
+
+function isoDate(time: number): string {
+  return new Date(time).toISOString().slice(0, 10);
+}
+
+/**
+ * Reads a DAY as a YYYY-MM-DD date, from `today` in the same form: today,
+ * yesterday, mon to sun (the most recent such day, today included),
+ * YYYY-MM-DD, or MM-DD in today's year.
+ */
+export function parseDay(text: string, today: string): string {
+  const typed = text.trim().toLowerCase();
+  const [year, month, day] = today.split("-").map(Number) as [
+    number,
+    number,
+    number,
+  ];
+  const todayTime = Date.UTC(year, month - 1, day);
+  if (typed === "today") return today;
+  if (typed === "yesterday") return isoDate(todayTime - DAY_MS);
+  const weekday = DAY_NAMES.indexOf(typed);
+  if (weekday >= 0) {
+    const back = (new Date(todayTime).getUTCDay() - weekday + 7) % 7;
+    return isoDate(todayTime - back * DAY_MS);
+  }
+  const written = /^(?:(\d{4})-)?(\d{2})-(\d{2})$/.exec(typed);
+  const time =
+    written &&
+    calendarTime(
+      written[1] ? Number(written[1]) : year,
+      Number(written[2]),
+      Number(written[3]),
+    );
+  if (time !== null && time !== undefined) return isoDate(time);
+  throw new UsageError(
+    `"${text}" isn't a day. Use today, yesterday, mon to sun, YYYY-MM-DD or MM-DD.`,
+  );
+}
+
 /** What an ENTRY argument names, before Ajour is asked. */
 export type EntryRef =
   { kind: "running" } | { kind: "last" } | { kind: "prefix"; prefix: string };

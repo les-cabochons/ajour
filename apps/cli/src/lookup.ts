@@ -54,3 +54,11 @@ export async function findEntry(
   const found = await client.call("find_entries", { idPrefix: ref.prefix });
   return pickFoundEntry(ref.prefix, found, today);
 }
+
+/**
+ * The id a write tool takes for a found entry: a saved entry's own, or the
+ * running entry's timer, which Ajour refuses where the window does.
+ */
+export function writeId(found: FoundEntry): string {
+  return found.kind === "entry" ? found.entry.entryId : found.running.timerId;
+}

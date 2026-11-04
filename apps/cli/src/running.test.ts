@@ -1,68 +1,26 @@
 import { renameSync, writeFileSync } from "node:fs";
-import {
-  mkdir,
-  mkdtemp,
-  readdir,
-  readFile,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
-import os from "node:os";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   BRIDGE_UNAVAILABLE_MESSAGE,
   type AgentRunningTimer,
   type AgentTimeEntry,
-  type BridgeToolCall,
-  type BridgeToolResult,
 } from "../../../packages/shared/agent-tools.ts";
-import {
-  enableMcpWithClient,
-  openFakeWindow,
-  startTestApi,
-} from "../../api/src/test-support/mcp-harness.ts";
-import type { CliIo } from "./io.ts";
 import { run } from "./main.ts";
+import {
+  ajour,
+  closeTerminals,
+  hexId,
+  NOW,
+  projects,
+  TODAY,
+  undoFile,
+  writes,
+  type Terminal,
+} from "./test-support/terminal.ts";
 
-// Wednesday 4 November 2026, 14:44:07 local time.
-const NOW = new Date(2026, 10, 4, 14, 44, 7).getTime();
-const TODAY = "2026-11-04";
-const cleanups: (() => Promise<void>)[] = [];
-
-afterEach(async () => {
-  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
-});
-
-/** 32 hex characters starting with `start`, as an entry's short id. */
-function hexId(start: string) {
-  return start.padEnd(32, "0");
-}
-
-const projects = {
-  projects: [
-    {
-      projectId: "p-acme",
-      name: "Acme Platform",
-      code: "ACME",
-      tasks: [
-        { taskId: "t-meet", name: "03 Meetings", pinnedSlot: 1 },
-        { taskId: "t-backend", name: "05 Backend" },
-        { taskId: "t-code-review", name: "08 Code review" },
-      ],
-    },
-    {
-      projectId: "p-ajr",
-      name: "Ajour Desktop",
-      code: "AJR",
-      tasks: [
-        { taskId: "t-review", name: "04 Review" },
-        { taskId: "t-export", name: "07 Export" },
-      ],
-    },
-  ],
-};
+afterEach(closeTerminals);
 
 const exportRunning: AgentRunningTimer = {
   timerId: "timer_1",
@@ -91,93 +49,6 @@ const exportSaved: AgentTimeEntry = {
   taskName: "07 Export",
   note: "Fix export rounding",
 };
-
-type Answer = object | { refuse: string };
-/** Each handler types the input it reads, as the tool's schema says. */
-type Handlers = Partial<Record<string, (input: never) => Answer>>;
-
-/** A fake Ajour window that answers each tool from the test's handlers. */
-function scripted(handlers: Handlers) {
-  return (call: BridgeToolCall): BridgeToolResult => {
-    const handler = handlers[call.tool];
-    if (!handler) {
-      return {
-        requestId: call.requestId,
-        ok: false,
-        error: `No fixture for ${call.tool}.`,
-      };
-    }
-    const answer = handler(call.input as never);
-    return "refuse" in answer
-      ? { requestId: call.requestId, ok: false, error: answer.refuse }
-      : { requestId: call.requestId, ok: true, output: answer };
-  };
-}
-
-interface Terminal {
-  io: CliIo;
-  out(): string;
-  err(): string;
-  /** Clears what was printed, between commands. */
-  clear(): void;
-  calls: BridgeToolCall[];
-  home: string;
-}
-
-/** A connected terminal against the real local API and a scripted window. */
-async function ajour(handlers: Handlers): Promise<Terminal> {
-  const api = await startTestApi();
-  cleanups.push(() => api.stop());
-  const { token } = await enableMcpWithClient(api);
-  const fake = await openFakeWindow(api, scripted(handlers));
-  cleanups.push(() => fake.close());
-  const home = await mkdtemp(path.join(os.tmpdir(), "ajour-cli-running-"));
-  cleanups.push(() => rm(home, { recursive: true, force: true }));
-  let out = "";
-  let err = "";
-  return {
-    home,
-    calls: fake.calls,
-    out: () => out,
-    err: () => err,
-    clear: () => {
-      out = "";
-      err = "";
-    },
-    io: {
-      stdout: {
-        write: (text) => void (out += text),
-        isTTY: false,
-        columns: 120,
-      },
-      stderr: { write: (text) => void (err += text), isTTY: false },
-      env: {
-        AJOUR_URL: api.baseUrl,
-        AJOUR_TOKEN: token,
-        XDG_CONFIG_HOME: path.join(home, "config"),
-        XDG_STATE_HOME: path.join(home, "state"),
-      },
-      platform: process.platform,
-      homedir: home,
-      now: () => NOW,
-      readSecret: async () => "",
-      readStdin: async () => "",
-      wait: async () => false,
-      releaseInput: () => undefined,
-    },
-  };
-}
-
-/** The write tools the CLI called, with their inputs. */
-function writes(term: Terminal) {
-  return term.calls
-    .filter((call) => !/^(list_|get_|find_)/.test(call.tool))
-    .map((call) => ({ tool: call.tool, input: call.input }));
-}
-
-function undoFile(term: Terminal) {
-  return path.join(term.home, "state", "ajour", "last-undo");
-}
 
 /** What the CLI keeps in its state folder, temp files included. */
 async function stateFiles(term: Terminal) {
@@ -572,17 +443,17 @@ describe("ajour edit running", () => {
     ]);
   });
 
-  it("refuses an edit that changes nothing, or an entry other than the running one, with exit 2", async () => {
+  it("refuses an edit that changes nothing, or names no entry, with exit 2", async () => {
     const term = await ajour({});
 
     expect(await run(["edit", "running"], term.io)).toBe(2);
     expect(await run(["edit"], term.io)).toBe(2);
-    expect(await run(["edit", "b7e1d04", "-d", "1:00"], term.io)).toBe(2);
+    expect(await run(["edit", "not-an-id", "-d", "1:00"], term.io)).toBe(2);
 
     expect(term.err()).toBe(
       "usage: Say what to change: a TASK, -m NOTE or -d DURATION.\n" +
         "usage: edit takes an ENTRY, such as: ajour edit running TASK\n" +
-        "usage: Only the running entry can be edited from the terminal yet: ajour edit running\n",
+        'usage: "not-an-id" isn\'t an entry. Use running, last, or 4 or more characters of an id from ajour log.\n',
     );
     expect(term.calls).toEqual([]);
   });

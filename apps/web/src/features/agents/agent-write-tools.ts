@@ -437,15 +437,22 @@ export function runEntryWriteTool(
         tool === "move_entry"
           ? writeToolInputSchemas.move_entry.parse(rawInput)
           : writeToolInputSchemas.duplicate_entry.parse(rawInput);
-      const entry = requireEntry(state, input.entryId);
-      assertAllowed(
-        entryActions(state, entry),
+      const action =
         tool === "move_entry"
           ? "move-to"
           : input.date
             ? "duplicate-to"
-            : "duplicate",
-      );
+            : "duplicate";
+      // A new running entry has only its timer's id: it refuses as the
+      // running entry does in the window.
+      if (state.timers.some((timer) => timer._id === input.entryId)) {
+        assertAllowed(
+          getTimeEntryActions(getTimeEntryActionState({ isRunning: true })),
+          action,
+        );
+      }
+      const entry = requireEntry(state, input.entryId);
+      assertAllowed(entryActions(state, entry), action);
       const values = {
         localDate: input.date ?? entry.localDate,
         projectId: entry.projectId,

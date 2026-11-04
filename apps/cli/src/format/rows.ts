@@ -58,6 +58,15 @@ export function entryRow(entry: AgentTimeEntry): Row {
   };
 }
 
+/**
+ * The row of an entry a move or a copy placed: its day shows even when it
+ * is today, as "today", so the row says where the entry landed.
+ */
+export function placedRow(entry: AgentTimeEntry, today: string): Row {
+  const row = entryRow(entry);
+  return row.date === today ? { ...row, tag: "today" } : row;
+}
+
 export function runningRow(running: AgentRunningTimer): Row {
   return {
     running: true,
