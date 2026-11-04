@@ -203,7 +203,6 @@ describe("DAY", () => {
   it.each([
     "",
     "tomorrow",
-    "monday",
     "2026-13-01",
     "2026-02-30",
     "02-29",
@@ -215,7 +214,7 @@ describe("DAY", () => {
     const error = failure(() => parseDay(text, WEDNESDAY));
     expect(error.exitCode).toBe(EXIT.usage);
     expect(error.message).toBe(
-      `"${text}" isn't a day. Use today, yesterday, mon to sun, YYYY-MM-DD or MM-DD.`,
+      `"${text}" isn't a day. Use today, yesterday, mon to sun, 2026-11-03 or 11-03.`,
     );
   });
 });

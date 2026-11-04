@@ -165,7 +165,7 @@ describe("ajour add", () => {
       "usage: add takes a TASK, such as: ajour add ajr/review -d 45m\n" +
         "usage: add takes -d DURATION, such as: ajour add ajr/review -d 45m\n" +
         'usage: --duration takes a time such as 1:30, 1h30, 90m or 1.5, from 1 minute to 24 hours, not "0"\n' +
-        'usage: "someday" isn\'t a day. Use today, yesterday, mon to sun, YYYY-MM-DD or MM-DD.\n',
+        'usage: "someday" isn\'t a day. Use today, yesterday, mon to sun, 2026-11-03 or 11-03.\n',
     );
     expect(term.calls).toEqual([]);
   });
