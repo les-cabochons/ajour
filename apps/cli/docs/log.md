@@ -1,8 +1,11 @@
-ajour log — print time entries for a day, several days or a week
+NAME
+ajour log - print time entries for a day, several days or a week
 
-Usage: ajour log [RANGE] [-s] [--by task] [--format FORMAT] [--json]
+SYNOPSIS
+ajour log [RANGE] [-s] [--by task] [--format FORMAT] [--json]
                  [--project PROJECT] [--task TASK] [--committed|--uncommitted]
 
+DESCRIPTION
 Prints the entries of a range of days, one line per entry, under a header
 with the range's total against its target. Without a RANGE it prints
 today. A running entry shows with ● and its time so far, and counts once.
@@ -32,7 +35,7 @@ its days up to today: "on pace", "1:51 behind" or "0:30 ahead".
 Lines are cut to the terminal's width: the note shrinks first, then the
 line ends with "…". Nothing wraps.
 
-Range
+RANGE
   today, yesterday
   mon .. sun         The most recent such day, today included.
   2026-11-03, 11-03  A date. Without a year, this year.
@@ -42,11 +45,9 @@ Range
 
   A range covers at most 62 days.
 
-Options
+OPTIONS
   --format FORMAT    table (the default on a terminal), tsv (the default
                      in a pipe), workday, csv or json.
-  --json             The list_time_entries tool's output, with only the
-                     entries the filters keep. The same as --format json.
   -s, --summary      Totals per day only, each with a bar against its
                      target.
   --by GROUP         day (the default) or task. task prints one line per
@@ -62,7 +63,7 @@ Options
   --summary and --by task default to a plain table in a pipe too.
   They reject an explicit tsv, csv or json format.
 
-For Workday
+FOR WORKDAY
   ajour log [RANGE] --format workday [--by day-task|day|task]
 
   Prints the Commit page's lines. day-task is the default, day keeps
@@ -102,7 +103,7 @@ For Workday
   rename it and plugin names fail to load or take more than two seconds.
   The command exits 1 and prints no partial lines. Try again.
 
-For tools
+FOR TOOLS
   tsv and csv print one line per entry under a header row:
 
     date  state  hours  project  task  note  id
@@ -112,7 +113,10 @@ For tools
   no escape code. In tsv a tab or line break inside a note becomes a
   space; csv quotes a field that holds a comma, a quote or a line break.
 
-Examples
+EXAMPLES
+  Last week for Workday
+    $ ajour log last-week --format workday | wl-copy
+
   Today, on screen
     $ ajour log
 
@@ -128,6 +132,6 @@ Examples
   Notes of what is not committed yet
     $ ajour log week --uncommitted --json | jq -r '.entries[].note'
 
-Exit status
+EXIT STATUS
   0 on success, 1 when Ajour refuses, 2 for a bad RANGE or option, 3 when Ajour is not
   reachable, 4 when --project or --task matches nothing or several.

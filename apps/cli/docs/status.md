@@ -1,7 +1,10 @@
-ajour status — what is running, and today's total
+NAME
+ajour status - what is running, and today's total
 
-Usage: ajour status [-s [--idle TEXT]] [-w] [--json]
+SYNOPSIS
+ajour status [-s [--idle TEXT]] [-w] [--json]
 
+DESCRIPTION
 Shows the running entry with its time counted to the second, its project
 and task, when it started counting, and today's total of its target:
 
@@ -14,7 +17,7 @@ With nothing running, it names the entry saved last, on any day:
 
 Each line is cut to the terminal's width; nothing wraps.
 
-Options
+OPTIONS
   -s, --short     One line for a status bar, such as "● 1:24 Fix export
                   rounding". When nothing runs it prints the --idle text, or
                   nothing. It never prints an error: while Ajour is out of
@@ -26,9 +29,8 @@ Options
                   second instead, for bars that read a stream (waybar,
                   polybar's tail), and an empty line while Ajour is out of
                   reach.
-  --json          The get_running_timer tool's output.
 
-Examples
+EXAMPLES
   tmux:      set -g status-right '#(ajour status -s)'
   starship:  [custom.ajour]
              command = "ajour status -s"

@@ -1014,3 +1014,21 @@ Decided in [Consistent dialogs, tooltips, loading and drags](https://github.com/
 - The Backlog uses the oldest successful connection timestamp. A connection never checked prevents the view from claiming a recent sync. Other plugin capabilities cannot advance backlog freshness or postpone its automatic sync.
 - A failed attempt keeps the last successful age visible. Paused sync, scheduled sync turned off, an overdue automatic sync and an unavailable sync service have explicit status text. A sync becomes overdue after its configured interval plus the scheduler's 30-second polling window.
 - The refresh tooltip names its scope and lists each connection's last successful time and any failure. A single-item refresh does not advance the connection's timestamp. An item's age follows the source snapshot actually applied to that item, never a connection sync that omitted it. Returned done items retain their refreshed age after a reload, including items archived on an earlier sync. Older records with no item timestamp show an unknown age until refreshed.
+
+### CLI manual and completion
+
+`ajour --help` shows the grouped command card. `ajour COMMAND --help`
+shows the synopsis, options and examples. `ajour help [COMMAND]` opens
+an installed man page on a terminal, then falls back to `$PAGER`, or
+`less -R` by default. A pipe receives plain text.
+
+`ajour completion bash|zsh|fish` prints a script to source in that shell.
+It completes commands, options, range words, entry words and active
+`PROJECT/TASK` names. Task names are cached privately for one minute in
+`$XDG_CACHE_HOME/ajour`, or `%LOCALAPPDATA%\ajour\cache` on Windows.
+A failed or slow lookup produces no error or candidates.
+
+`ajour projects` lists active tasks with project codes, pinned keys and
+Commits as names. It uses a table on a terminal and TSV in a pipe.
+`--format table|tsv|csv|json` selects output, and `--json` returns the
+unchanged `list_projects` response.

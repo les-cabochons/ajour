@@ -743,19 +743,17 @@ describe("the manual", () => {
     async (name) => {
       const term = await ajour({});
       expect(await run([name, "--help"], term.io)).toBe(0);
-      expect(term.out()).toMatch(new RegExp(`^ajour ${name} — `));
+      expect(term.out()).toMatch(new RegExp(`^NAME\\najour ${name} - `));
     },
   );
 
-  it("lists the commands and the references on the card", async () => {
+  it("lists the commands on the short card", async () => {
     const term = await ajour({});
     expect(await run(["--help"], term.io)).toBe(0);
     for (const line of [
       "start [TASK] [-m NOTE] [-d DURATION]",
       "continue [ENTRY]",
-      "edit running [TASK] [-m NOTE] [-d DURATION]",
-      "References",
-      "4  A reference matched nothing or several things.",
+      "edit ENTRY [TASK] [-m NOTE] [-d DURATION]",
     ]) {
       expect(term.out()).toContain(line);
     }

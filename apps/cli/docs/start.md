@@ -1,7 +1,10 @@
-ajour start — start an entry today
+NAME
+ajour start - start an entry today
 
-Usage: ajour start [TASK] [-m NOTE] [-d DURATION] [--json]
+SYNOPSIS
+ajour start [TASK] [-m NOTE] [-d DURATION] [--json]
 
+DESCRIPTION
 Starts an entry on today, as Start entry does in Ajour, and prints its
 row:
 
@@ -23,18 +26,17 @@ how to name it later:
 TASK is PROJECT/TASK, TASK alone, or a pinned key 1 to 0. See REFERENCES
 in ajour(1).
 
-Options
+OPTIONS
   -m, --note NOTE           The entry's note.
   -d, --duration DURATION   Count on from this time, for a late start,
                             such as 0:20 or 20m.
-  --json                    The start_timer tool's output.
 
-Examples
+EXAMPLES
   ajour start acme/backend -m "Rate limiter retries"
   ajour start 1                    the task pinned to key 1
   ajour start export -d 0:20       started 20 minutes ago
 
-Exit status
+EXIT STATUS
   0 on success, 1 when Ajour refuses, such as on a submitted week, 2 for
   a bad option, 3 when Ajour is out of reach, 4 when TASK matches no
   task or several. The candidates are listed.

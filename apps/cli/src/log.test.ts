@@ -371,15 +371,12 @@ describe("the log manual", () => {
   it("shows the log page with --help, and the card lists it", async () => {
     const term = await ajour();
     expect(await run(["log", "--help"], term.io)).toBe(0);
-    expect(term.out()).toMatch(/^ajour log — /);
+    expect(term.out()).toMatch(/^NAME\najour log - /);
     expect(term.out()).toContain("--format workday");
 
     const card = await ajour();
     expect(await run(["--help"], card.io)).toBe(0);
-    for (const line of [
-      "log [RANGE] [-s] [--by task] [--format FORMAT]",
-      "RANGE      ",
-    ]) {
+    for (const line of ["log [RANGE] [-s] [--by task] [--format FORMAT]"]) {
       expect(card.out()).toContain(line);
     }
   });

@@ -1,7 +1,10 @@
-ajour stop — stop and save the running entry
+NAME
+ajour stop - stop and save the running entry
 
-Usage: ajour stop [--json]
+SYNOPSIS
+ajour stop [--json]
 
+DESCRIPTION
 Stops the running entry, as Stop does in Ajour, prints the saved row,
 then today's total against the day's target:
 
@@ -10,11 +13,13 @@ then today's total against the day's target:
 
 A day without a target shows the total alone.
 
-Options
-  --json   The stop_timer tool's output, with the saved entry.
+OPTIONS
+  Global options are described in ajour(1).
 
-Exit status
+EXIT STATUS
   0 on success, 1 when nothing runs, with Ajour's reason, 3 when Ajour is
   out of reach. Scripts that stop "if anything runs" use:
 
     ajour stop || true
+EXAMPLES
+  ajour stop

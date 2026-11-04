@@ -1,7 +1,10 @@
-ajour continue — count more time on an entry
+NAME
+ajour continue - count more time on an entry
 
-Usage: ajour continue [ENTRY] [--json]
+SYNOPSIS
+ajour continue [ENTRY] [--json]
 
+DESCRIPTION
 Continues an entry, as Continue does in Ajour. Today's entry resumes
 with its saved time:
 
@@ -19,10 +22,12 @@ recently, on any day. An entry that runs is saved first, as in a Switch.
 ENTRY is an id from ajour log or any unique prefix of 4 or more of its
 characters, or last. See REFERENCES in ajour(1).
 
-Options
-  --json   The continue_entry tool's output.
+OPTIONS
+  Global options are described in ajour(1).
 
-Exit status
+EXIT STATUS
   0 on success, 1 when Ajour refuses, such as for the running entry, 2
   for an ENTRY that isn't one, 3 when Ajour is out of reach, 4 when ENTRY
   matches no entry or several. The candidates are listed.
+EXAMPLES
+  ajour continue last

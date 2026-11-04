@@ -2,6 +2,10 @@
 import { realpath } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { parseArgs, type ParseArgsConfig } from "node:util";
+import { helpCard, readPage, shortHelp } from "./manual.ts";
+import { showManual } from "./manual-reader.ts";
+import { completion, completeTasks } from "./completion.ts";
+import { projects } from "./commands/projects.ts";
 import { connect } from "./commands/connect.ts";
 import { continueEntry } from "./commands/continue.ts";
 import { discard } from "./commands/discard.ts";
@@ -34,7 +38,7 @@ interface Command {
   run(ctx: Context, values: Values, positionals: string[]): Promise<number>;
 }
 
-const GLOBAL_OPTIONS = {
+export const GLOBAL_OPTIONS = {
   json: { type: "boolean" },
   color: { type: "string" },
   quiet: { type: "boolean", short: "q" },
@@ -82,8 +86,29 @@ const SAVED_ENTRY_COMMANDS: Record<string, Command> = {
   },
 };
 
-const COMMANDS: Record<string, Command> = {
+export const COMMANDS: Record<string, Command> = {
   ...SAVED_ENTRY_COMMANDS,
+  help: {
+    options: {},
+    arguments: 1,
+    run: async (ctx, _values, [name]) => {
+      await showManual(name ?? "ajour", ctx.io);
+      return 0;
+    },
+  },
+  completion: {
+    options: {},
+    arguments: 1,
+    run: async (ctx, _values, [shell]) => {
+      ctx.io.stdout.write(completion(shell, COMMANDS, GLOBAL_OPTIONS));
+      return 0;
+    },
+  },
+  projects: {
+    options: { format: { type: "string" } },
+    arguments: 0,
+    run: (ctx, values) => projects(ctx, text(values.format)),
+  },
   start: {
     options: ENTRY_OPTIONS,
     arguments: 1,
@@ -162,6 +187,8 @@ const COMMANDS: Record<string, Command> = {
 export async function run(argv: readonly string[], io: CliIo): Promise<number> {
   let ctx: Context | undefined;
   try {
+    if (argv[0] === "__complete")
+      return argv.length === 2 && argv[1] === "tasks" ? completeTasks(io) : 0;
     const name = commandName(argv);
     const command = name === undefined ? undefined : COMMANDS[name];
     if (name !== undefined && name !== "help" && !command) {
@@ -181,9 +208,9 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
       return EXIT.ok;
     }
     if (!command || values.help) {
-      const page =
-        name === "help" ? (positionals[1] ?? "ajour") : (name ?? "ajour");
-      io.stdout.write(await manualPage(page));
+      io.stdout.write(
+        name === undefined ? await helpCard() : shortHelp(await readPage(name)),
+      );
       return EXIT.ok;
     }
     ctx = createContext(io, {

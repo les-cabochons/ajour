@@ -1,7 +1,10 @@
-ajour edit — change an entry
+NAME
+ajour edit - change an entry
 
-Usage: ajour edit ENTRY [TASK] [-m NOTE] [-d DURATION] [--json]
+SYNOPSIS
+ajour edit ENTRY [TASK] [-m NOTE] [-d DURATION] [--json]
 
+DESCRIPTION
 Changes an entry's task, note or time, as its form does in Ajour, and
 prints its row:
 
@@ -25,20 +28,18 @@ ENTRY is running, last, or an id from ajour log or any unique prefix of
 4 or more of its characters. TASK is PROJECT/TASK, TASK alone, or a
 pinned key 1 to 0. See REFERENCES in ajour(1).
 
-Options
+OPTIONS
   -m, --note NOTE           The new note. "" clears it.
   -d, --duration DURATION   The new time, such as 1:00 or 45m; for the
                             running entry, the counted time.
-  --json                    The edit_entry tool's output, or
-                            edit_running_entry's for the running entry.
 
-Examples
+EXAMPLES
   ajour edit b7e1d04 -d 1:00
   ajour edit last acme/meetings -m ""
   ajour edit running ajr/review -m "PR #512, #514"
   ajour edit running -d 1:00
 
-Exit status
+EXIT STATUS
   0 on success, 1 when Ajour refuses, such as on a submitted week or when
   nothing runs, 2 when nothing is to change, 3 when Ajour is out of
   reach, 4 when ENTRY or TASK matches nothing or several. The candidates

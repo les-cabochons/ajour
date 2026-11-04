@@ -719,11 +719,11 @@ describe("the manual for saved entries", () => {
     async (name) => {
       const term = await ajour({});
       expect(await run([name, "--help"], term.io)).toBe(0);
-      expect(term.out()).toMatch(new RegExp(`^ajour ${name} — `));
+      expect(term.out()).toMatch(new RegExp(`^NAME\\najour ${name} - `));
     },
   );
 
-  it("lists the saved-entry commands and DAY on the card", async () => {
+  it("lists the saved-entry commands on the short card", async () => {
     const term = await ajour({});
     expect(await run(["--help"], term.io)).toBe(0);
     for (const line of [
@@ -732,7 +732,6 @@ describe("the manual for saved entries", () => {
       "move ENTRY --to DAY",
       "dup ENTRY [--to DAY]",
       "rm ENTRY...",
-      "DAY        today, yesterday, mon to sun",
     ]) {
       expect(term.out()).toContain(line);
     }
