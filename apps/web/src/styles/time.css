@@ -234,9 +234,10 @@
     white-space: nowrap;
   }
 
+  /* The project mark renders at 60% of this box: a 7px dot. */
   .time-entry-dot {
-    width: 8px;
-    height: 8px;
+    width: 12px;
+    height: 12px;
     flex-shrink: 0;
   }
 
@@ -260,6 +261,8 @@
   /* The note tells two entries of one task apart: secondary, not tertiary. */
   .time-entry-note {
     min-width: 0;
+    /* 16px from the task, so task and note read as two things. */
+    margin-left: 0.5rem;
     overflow: hidden;
     color: var(--text-secondary);
     text-overflow: ellipsis;
@@ -1326,6 +1329,10 @@
 
   .time-entry-main {
     padding-left: 0.75rem;
+  }
+
+  .time-entry-note {
+    margin-left: 0;
   }
 
   .time-entry-trailing {
