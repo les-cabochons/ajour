@@ -9,6 +9,7 @@ it("runs version and help from a lone bundle outside the checkout", async () => 
   try {
     execFileSync(process.execPath, ["scripts/bundle.mjs"], {
       cwd: import.meta.dirname + "/..",
+      env: { ...process.env, RELEASE_TAG: "" },
     });
     const file = path.join(home, "ajour.cjs");
     await copyFile(new URL("../dist/ajour.cjs", import.meta.url), file);

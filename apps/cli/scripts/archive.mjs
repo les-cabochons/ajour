@@ -5,7 +5,7 @@ import path from "node:path";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const version =
-  process.env.RELEASE_TAG?.replace(/^v/, "") ??
+  process.env.RELEASE_TAG?.replace(/^v/, "") ||
   JSON.parse(await readFile(path.join(root, "package.json"), "utf8")).version;
 if (!/^[0-9]+\.[0-9]+\.[0-9]+(?:-[a-zA-Z0-9.-]+)?$/.test(version))
   throw new Error("Invalid release version");

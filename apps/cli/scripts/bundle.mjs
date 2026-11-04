@@ -17,7 +17,7 @@ const pages = Object.fromEntries(
 const manifest = JSON.parse(
   await readFile(path.join(root, "package.json"), "utf8"),
 );
-const version = process.env.RELEASE_TAG?.replace(/^v/, "") ?? manifest.version;
+const version = process.env.RELEASE_TAG?.replace(/^v/, "") || manifest.version;
 await build({
   configFile: false,
   root,
