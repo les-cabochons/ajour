@@ -2512,3 +2512,40 @@ Then(
     ).toBeVisible();
   },
 );
+
+/** The title and project chip boxes of a Backlog list row. */
+async function backlogRowBoxes(page: Page, title: string, project: string) {
+  const row = page
+    .locator(".backlog-list-row")
+    .filter({ has: page.getByText(title, { exact: true }) });
+  const chip = row.locator(".backlog-item-project");
+  await expect(chip).toHaveText(project);
+  const titleBox = await row.locator(".backlog-item-title").boundingBox();
+  const chipBox = await chip.boundingBox();
+  if (!titleBox || !chipBox)
+    throw new Error(`The ${title} row is not rendered`);
+  return { title: titleBox, chip: chipBox };
+}
+
+Then(
+  "the {string} row shows {string} under its title",
+  async ({ page }, title: string, project: string) => {
+    await expect(async () => {
+      const boxes = await backlogRowBoxes(page, title, project);
+      expect(boxes.chip.y).toBeGreaterThanOrEqual(
+        boxes.title.y + boxes.title.height - 1,
+      );
+      expect(Math.abs(boxes.chip.x - boxes.title.x)).toBeLessThan(2);
+    }).toPass();
+  },
+);
+
+Then(
+  "the {string} row shows {string} beside its title",
+  async ({ page }, title: string, project: string) => {
+    await expect(async () => {
+      const boxes = await backlogRowBoxes(page, title, project);
+      expect(boxes.chip.x).toBeGreaterThan(boxes.title.x + boxes.title.width);
+    }).toPass();
+  },
+);
