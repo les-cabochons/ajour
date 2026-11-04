@@ -283,6 +283,22 @@ function readTags() {
   return output ? output.split(/\r?\n/) : [];
 }
 
+/**
+ * Nightly tags reserved under refs/nightly-reservations by runs that have not
+ * published yet, or never will. A reservation is not a tag: GitHub's releases
+ * feed lists every tag, and the desktop updater would pick one whose release
+ * and nightly.yml do not exist yet. `pointsAt` keeps those at one commit.
+ */
+function readNightlyReservations(pointsAt) {
+  const output = git([
+    "for-each-ref",
+    "--format=%(refname:lstrip=2)",
+    ...(pointsAt ? [`--points-at=${pointsAt}`] : []),
+    "refs/nightly-reservations",
+  ]);
+  return output ? output.split(/\r?\n/) : [];
+}
+
 function readPublishedReleaseTags(tags) {
   const publishedTagsPath = process.env.PUBLISHED_RELEASE_TAGS_FILE;
   if (!publishedTagsPath) {
@@ -421,7 +437,10 @@ function run() {
   if (command === "nightly") {
     const date = releaseDate();
     const tagsAtHeadOutput = git(["tag", "--points-at", "HEAD"]);
-    const headTags = tagsAtHeadOutput ? tagsAtHeadOutput.split(/\r?\n/) : [];
+    const headTags = [
+      ...(tagsAtHeadOutput ? tagsAtHeadOutput.split(/\r?\n/) : []),
+      ...readNightlyReservations("HEAD"),
+    ];
     const mergedTagsOutput = git(["tag", "--merged", "HEAD", "--list", "v*"]);
     const mergedTags = mergedTagsOutput ? mergedTagsOutput.split(/\r?\n/) : [];
     const publishedTagSet = new Set(publishedTags);
@@ -430,7 +449,7 @@ function run() {
     );
     const plan = planNightly({
       configuredVersion,
-      tags,
+      tags: [...tags, ...readNightlyReservations()],
       date,
       headTags,
       reachableTags: mergedTags,

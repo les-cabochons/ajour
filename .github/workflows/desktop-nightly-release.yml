@@ -39,12 +39,19 @@ jobs:
       - name: Test release planner
         run: node --test .github/scripts/release-plan.test.mjs
 
+      # The reservation is a ref under refs/nightly-reservations, not a tag.
+      # GitHub's releases feed lists every tag and the desktop updater takes
+      # the newest, so a tag pushed here would send installed apps to a
+      # release without nightly.yml until this run publishes, or for good if
+      # it fails. The release job creates the tag together with the release.
       - name: Reserve the next nightly tag
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_SHA: ${{ github.sha }}
         run: |
+          reservations='+refs/nightly-reservations/*:refs/nightly-reservations/*'
+          git fetch --force origin "$reservations"
           final_output="$GITHUB_OUTPUT"
           candidate_output="$RUNNER_TEMP/nightly-release-output"
           published_tags_file="$RUNNER_TEMP/published-release-tags"
@@ -62,18 +69,25 @@ jobs:
               exit 1
             fi
 
+            reservation="refs/nightly-reservations/$tag"
             if git show-ref --verify --quiet "refs/tags/$tag"; then
-              if [[ "$(git rev-list -n 1 "$tag")" == "$RELEASE_SHA" ]]; then
+              if [[ "$(git rev-list -n 1 "refs/tags/$tag")" == "$RELEASE_SHA" ]]; then
                 cat "$candidate_output" >> "$final_output"
                 exit 0
               fi
-            elif git tag "$tag" "$RELEASE_SHA" && git push origin "refs/tags/$tag"; then
+            elif git show-ref --verify --quiet "$reservation"; then
+              if [[ "$(git rev-parse "$reservation")" == "$RELEASE_SHA" ]]; then
+                cat "$candidate_output" >> "$final_output"
+                exit 0
+              fi
+            elif git update-ref "$reservation" "$RELEASE_SHA" && git push origin "$reservation"; then
               cat "$candidate_output" >> "$final_output"
               exit 0
             fi
 
-            git tag --delete "$tag" 2>/dev/null || true
+            git update-ref -d "$reservation" 2>/dev/null || true
             git fetch --tags --force
+            git fetch --force origin "$reservations"
           done
 
           echo "Unable to reserve a unique nightly tag after 10 attempts." >&2
@@ -222,6 +236,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+          RELEASE_SHA: ${{ github.sha }}
           PREVIOUS_TAG: ${{ needs.plan.outputs.previous_tag }}
         run: |
           mapfile -d '' assets < <(find release-assets -type f -print0)
@@ -240,10 +255,15 @@ jobs:
             exit 0
           fi
 
+          # With assets, gh creates a draft, uploads them, then publishes it,
+          # so the tag and the release appear only once nightly.yml is there.
           gh release create "$RELEASE_TAG" "${assets[@]}" \
             --repo "$GITHUB_REPOSITORY" \
-            --verify-tag \
+            --target "$RELEASE_SHA" \
             --title "Ajour $RELEASE_TAG" \
             --prerelease \
             --latest=false \
             "${notes_args[@]}"
+
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/nightly-reservations/$RELEASE_TAG" \
+            || echo "Could not remove the reservation of $RELEASE_TAG." >&2
