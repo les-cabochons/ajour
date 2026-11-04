@@ -102,6 +102,9 @@ export function seedScript(options = {}) {
   localStorage.setItem("ajour.local-state.revision", "seed");
   if (options.backlogLayout) localStorage.setItem("ajour.backlog-view", JSON.stringify({ layout: options.backlogLayout }));
   if (options.sidebar) localStorage.setItem("ajour.app-sidebar", options.sidebar);
+  // A returning user: the unmapped count is the one seen last visit, so the
+  // Backlog shows it quiet, not as news.
+  localStorage.setItem("ajour.backlog-unmapped-seen", "4");
 })()`;
 }
 

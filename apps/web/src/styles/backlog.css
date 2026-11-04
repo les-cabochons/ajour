@@ -108,9 +108,15 @@
     font-size: var(--text-xs);
   }
 
+  /* Quiet while the count is what it was at the last visit; amber when it
+     rose (council round 15). */
   .backlog-unmapped svg {
     width: 14px;
     height: 14px;
+    color: var(--text-tertiary);
+  }
+
+  .backlog-unmapped.is-rising svg {
     color: var(--warning);
   }
 

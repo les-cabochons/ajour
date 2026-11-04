@@ -1,4 +1,9 @@
 import { useBacklogRefreshOnOpen } from "./use-backlog-refresh-on-open";
+import {
+  isUnmappedRising,
+  readUnmappedSeen,
+  writeUnmappedSeen,
+} from "@/lib/backlog-unmapped-seen";
 import { getWorkflowStateFills } from "@/domain/backlog/workflow-state-fill";
 import { stateDotStyle } from "@/features/backlog/state-dot";
 import { BacklogRefresh } from "./backlog-refresh";
@@ -548,6 +553,11 @@ export function BacklogPage() {
           `${i.source}:${i.sourceConnectionId}:${i.sourceProjectName}:${i.sourceStatusKey}`,
       ),
   ).size;
+  // The count at the last visit, read once: amber only when it rose since.
+  const [unmappedSeen] = useState(readUnmappedSeen);
+  useEffect(() => {
+    writeUnmappedSeen(unmapped);
+  }, [unmapped]);
   const stateFills = useMemo(
     () => getWorkflowStateFills(state.workflowStates),
     [state.workflowStates],
@@ -562,7 +572,10 @@ export function BacklogPage() {
     unmapped > 0 ? (
       <Link
         to="/settings/workflow"
-        className="backlog-unmapped"
+        className={cn(
+          "backlog-unmapped",
+          isUnmappedRising(unmapped, unmappedSeen) && "is-rising",
+        )}
         aria-label={`${unmapped} unmapped source ${unmapped === 1 ? "state" : "states"}`}
         onClick={async (event) => {
           if (
