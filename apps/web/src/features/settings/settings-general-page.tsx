@@ -5,6 +5,7 @@ import {
   RiSunLine as Sun,
 } from "@remixicon/react";
 import { ApplicationUpdatesSettings } from "@/features/settings/application-updates-settings";
+import { KeepRunningSetting } from "@/features/settings/keep-running-setting";
 import { AppPanel, SettingRow } from "@/components/app-surface";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
@@ -325,6 +326,8 @@ export function SettingsGeneralPage() {
           </SettingRow>
         </AppPanel>
       </section>
+
+      <KeepRunningSetting />
 
       <ApplicationUpdatesSettings />
     </div>

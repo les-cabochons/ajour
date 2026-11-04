@@ -7,13 +7,17 @@ import {
   type ReadToolName,
 } from "@ajour/shared/agent-tools";
 import {
+  findEntriesForAgent,
+  getLastSavedEntryForAgent,
   getWeekChangesForAgent,
+  getWeekLinesForAgent,
   getWeekStatusForAgent,
   getWorkItemForAgent,
   listProjectsForAgent,
   listTimeEntriesForAgent,
   listWorkItemsForAgent,
   readRunningTimer,
+  weekNeedsPluginNames,
 } from "@/domain/agents/agent-read-model";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
 import { getWeekDates } from "@/domain/time/local-date";
@@ -28,12 +32,16 @@ import {
   type AgentWriteOutcome,
   type EntryWriteTool,
 } from "@/features/agents/agent-write-tools";
+import { rememberAgentWrite, runAgentUndo } from "@/features/agents/agent-undo";
 import {
   WORK_ITEM_WRITE_TOOLS,
   runWorkItemWriteTool,
   type WorkItemWriteTool,
 } from "@/features/agents/agent-work-item-tools";
-import { NO_PROPERTY_PLUGINS } from "@/domain/projects/plugin-properties";
+import {
+  NO_PROPERTY_PLUGINS,
+  type PropertyPlugins,
+} from "@/domain/projects/plugin-properties";
 import { listPropertyPlugins } from "@/lib/plugin-project-properties";
 import {
   releaseSettleComment,
@@ -78,6 +86,46 @@ function loadPropertyPlugins() {
   return listPropertyPlugins().catch(() => NO_PROPERTY_PLUGINS);
 }
 
+/**
+ * How long naming reads wait for the plugins that name tasks: well inside
+ * the bridge's 10-second timeout, since discovery can wait behind a plugin
+ * install while the projects themselves are local.
+ */
+export const PLUGIN_NAMES_DEADLINE_MS = 2_000;
+
+/**
+ * The plugins that name tasks, read fresh. On a failure or
+ * past PLUGIN_NAMES_DEADLINE_MS, undefined: a task a plugin may rename reads
+ * `unknown` instead of its own name. The window's cached overview is never
+ * used here, since it can name a task after a plugin the API has replaced.
+ */
+async function loadNamingPlugins(): Promise<PropertyPlugins | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => resolve(undefined), PLUGIN_NAMES_DEADLINE_MS);
+  });
+  try {
+    return await Promise.race([
+      listPropertyPlugins().catch(() => undefined),
+      deadline,
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Refuse missing names only when a task in the week could be renamed. */
+async function requireNamingPlugins(
+  weekDates: string[],
+): Promise<PropertyPlugins> {
+  const plugins = await loadNamingPlugins();
+  if (!plugins && weekNeedsPluginNames(localStore.snapshot(), weekDates))
+    throw new AgentToolRefusal(
+      "Ajour couldn't read the plugins' task names. Try again.",
+    );
+  return plugins ?? NO_PROPERTY_PLUGINS;
+}
+
 /** Each read tool, typed against its output schema. */
 const readTools: {
   [Name in ReadToolName]: (
@@ -93,7 +141,8 @@ const readTools: {
       readToolInputSchemas.list_time_entries.parse(rawInput),
       Date.now(),
     ),
-  list_projects: () => listProjectsForAgent(localStore.snapshot()),
+  list_projects: async () =>
+    listProjectsForAgent(localStore.snapshot(), await loadNamingPlugins()),
   list_work_items: (rawInput) =>
     listWorkItemsForAgent(
       localStore.snapshot(),
@@ -109,8 +158,8 @@ const readTools: {
   list_work_item_comments: listCommentsForAgent,
   get_week_changes: async (rawInput) => {
     const input = readToolInputSchemas.get_week_changes.parse(rawInput);
-    const propertyPlugins = await loadPropertyPlugins();
     const weekDates = getIsoWeekDates(input.weekOf);
+    const propertyPlugins = await requireNamingPlugins(weekDates);
     return getWeekChangesForAgent(localStore.snapshot(), {
       weekDates,
       onlyChecked: input.onlyChecked,
@@ -120,11 +169,39 @@ const readTools: {
   },
   get_week_status: async (rawInput) => {
     const input = readToolInputSchemas.get_week_status.parse(rawInput);
+    const weekDates = getWeekDates(input.weekOf);
+    const propertyPlugins = await requireNamingPlugins(weekDates);
     return getWeekStatusForAgent(localStore.snapshot(), {
-      weekDates: getWeekDates(input.weekOf),
+      weekDates,
       today: todayIsoDate(),
-      propertyPlugins: await loadPropertyPlugins(),
+      propertyPlugins,
     });
+  },
+  // get_week_lines (#533): the Commit page's lines, with its week dates.
+  get_week_lines: async (rawInput) => {
+    const input = readToolInputSchemas.get_week_lines.parse(rawInput);
+    const propertyPlugins = await requireNamingPlugins(
+      getIsoWeekDates(input.weekOf),
+    );
+    return getWeekLinesForAgent(localStore.snapshot(), {
+      weekDates: getIsoWeekDates(input.weekOf),
+      groupBy: input.groupBy,
+      from: input.from,
+      to: input.to,
+      propertyPlugins,
+      now: Date.now(),
+    });
+  },
+  // Reads for the terminal (#532).
+  find_entries: (rawInput) =>
+    findEntriesForAgent(
+      localStore.snapshot(),
+      readToolInputSchemas.find_entries.parse(rawInput),
+      Date.now(),
+    ),
+  get_last_saved_entry: (rawInput) => {
+    readToolInputSchemas.get_last_saved_entry.parse(rawInput);
+    return getLastSavedEntryForAgent(localStore.snapshot());
   },
 };
 
@@ -136,7 +213,10 @@ function isWorkItemWriteTool(tool: string): tool is WorkItemWriteTool {
   return (WORK_ITEM_WRITE_TOOLS as readonly string[]).includes(tool);
 }
 
-/** Shows the Undo toast with the client's name and builds the result. */
+/**
+ * Shows the Undo toast with the client's name and builds the result, whose
+ * output carries the toast's token for the undo tool.
+ */
 function finishWrite(
   call: BridgeToolCall,
   outcome: AgentWriteOutcome,
@@ -145,6 +225,7 @@ function finishWrite(
   const sourceWriteIds = outcome.sourceWriteIds ?? [];
   const settleComments = outcome.settleComments ?? [];
   unit?.set({ agent_tool: { undo_offered: outcome.undoToken !== null } });
+  rememberAgentWrite(outcome, call.client.id);
   offerUndo(outcome.undoToken, {
     title: `${call.client.name}: ${outcome.action}`,
     subject: outcome.undoSubject,
@@ -162,7 +243,7 @@ function finishWrite(
   return {
     requestId: call.requestId,
     ok: true,
-    output: outcome.output,
+    output: { ...outcome.output, undoToken: outcome.undoToken },
     activity: {
       action: outcome.action,
       objectId: outcome.objectId,
@@ -219,6 +300,11 @@ export async function runAgentToolCall(
         runWorkItemWriteTool(tool, call.input, call.client),
       );
       return asAgent(() => finishWrite(call, outcome, unit));
+    }
+    if (tool === "undo") {
+      return asAgent(() =>
+        finishWrite(call, runAgentUndo(call.input, call.client.id), unit),
+      );
     }
     if (tool === "post_work_item_comment") {
       return await postCommentForAgent(call, unit);

@@ -1,0 +1,72 @@
+NAME
+ajour - record time on project tasks, from the terminal
+
+SYNOPSIS
+ajour [options] <command> [args]
+
+DESCRIPTION
+Record time on project tasks through the running Ajour app.
+
+OPTIONS
+  --json             Machine output, the MCP tool shapes.
+  --color WHEN       auto, always or never.
+  -q, --quiet        Print nothing on success.
+  -V, --version      Print the version.
+  -h, --help         Show short help.
+
+REFERENCES
+  TASK       PROJECT/TASK or TASK. PROJECT matches a code, a name or a
+             full name; TASK a task name. Matching ignores case and accents, and
+             takes an exact name, then a prefix, then any part of the
+             name. Exactly one active task must match, else exit 4 with
+             the candidates. A digit 1 to 0 is the task pinned to that key.
+  ENTRY      An id from ajour log, or any unique prefix of 4 or more of
+             its characters; running for the running entry; last for the
+             entry saved or edited most recently, on any day. Several
+             matches exit 4 with their rows.
+  DURATION   1:30, 1h30, 2h, 90m, 1.5 or 1,5. Whole minutes, up to 24
+             hours.
+  DAY        today, yesterday, mon to sun (the most recent, today
+             included), 2026-11-03, or 11-03 in this year.
+  RANGE      A DAY, DAY..DAY with both days included, week or last-week
+             (Monday to Sunday), or an ISO week such as 2026-W45. At most
+             62 days.
+
+RULES
+  The terminal does what the app does, with the app's rules. A running
+  entry is always on today. Starting while one runs saves it first and
+  starts the new one at the same instant. Ajour's refusals are printed
+  as they are, after "refused:". Every change shows its Undo toast in
+  Ajour, and ajour undo presses it.
+
+OUTPUT
+  Writes print the entry's row: ● when it runs, its time, project code,
+  task, note, ✓ when Workday holds it as it is, its id, and its day when
+  it isn't today. Rows are cut to the terminal's width; in a pipe they
+  are whole and without color. Messages go to stderr. ajour log prints
+  tab-separated values in a pipe, with ISO dates and decimal hours.
+
+EXIT STATUS
+  0  Done.
+  1  Ajour refused the action, with its own reason.
+  2  A bad command, option or value.
+  3  Ajour is not reachable: not running, MCP off, or the token was revoked.
+  4  A reference matched nothing or several things.
+
+ENVIRONMENT
+  AJOUR_TOKEN        The client token, instead of the saved one.
+  AJOUR_URL          Ajour's local address, http://127.0.0.1:8787 by default.
+  XDG_STATE_HOME     Where the last change's Undo is kept, in ajour/last-undo.
+  XDG_CONFIG_HOME    Where the saved token is kept.
+  XDG_CACHE_HOME     Where task completion is cached for one minute.
+  PAGER              Manual reader on a terminal, less -R by default.
+  NO_COLOR, CLICOLOR_FORCE
+
+Run 'ajour help <command>' for details.
+FILES
+  $XDG_CONFIG_HOME/ajour/token, else ~/.config/ajour/token.
+  Windows: %APPDATA%\ajour\token.
+  $XDG_STATE_HOME/ajour/last-undo, else ~/.local/state/ajour/last-undo.
+  Windows: %LOCALAPPDATA%\ajour\last-undo.
+  $XDG_CACHE_HOME/ajour/tasks.json, else ~/.cache/ajour/tasks.json.
+  Windows: %LOCALAPPDATA%\ajour\cache\tasks.json.

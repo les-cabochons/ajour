@@ -57,3 +57,7 @@ qa/agents/*.out.jsonl
 
 # Claude Code agent worktrees (nested git checkouts, never part of the repo)
 .claude/worktrees/
+
+# CLI release outputs
+apps/cli/dist/
+apps/cli/out/

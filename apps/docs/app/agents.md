@@ -27,15 +27,15 @@ Create one client per agent, so you can revoke one without the others. **Revoke*
 
 ## What agents can do
 
-| Kind         | Tools                                                                                                                                                                     |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Read         | The running entry, time entries, projects, backlog items, the week's changes since its last commit, and whether the week is submitted, with its committed hours and pace. |
-| Time         | Start, stop and edit the running entry. Create, edit, move and duplicate entries. Mark changes as committed, and submit a week.                                           |
-| Backlog      | Create, edit and move items. Settle and unsettle, snooze and unsnooze, archive and restore them. Change a synced description only where you allow it. See below.          |
-| Comments     | Read a synced item's comments, and post one, only where you allow it. See below.                                                                                          |
-| Conversation | Report what they are doing, and ask you a question.                                                                                                                       |
+| Kind         | Tools                                                                                                                                                                                                                                                                                                                                          |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Read         | The running entry, time entries with each day's target, an entry by the start of its short id, projects with their pinned tasks and what each task commits as, backlog items, the week's changes since its last commit, the week's lines as the Commit page builds them, and whether the week is submitted, with its committed hours and pace. |
+| Time         | Start, stop, edit and discard the running entry. Continue an entry. Create, edit, move, duplicate and delete entries. Mark changes as committed, and submit a week.                                                                                                                                                                            |
+| Backlog      | Create, edit and move items. Settle and unsettle, snooze and unsnooze, archive and restore them. Change a synced description only where you allow it. See below.                                                                                                                                                                               |
+| Comments     | Read a synced item's comments, and post one, only where you allow it. See below.                                                                                                                                                                                                                                                               |
+| Conversation | Report what they are doing, and ask you a question.                                                                                                                                                                                                                                                                                            |
 
-Agents cannot delete anything. Their changes go through the same actions as yours, with the same Undo toast.
+Agents can delete time entries and discard the running entry, but nothing else. Their changes go through the same actions as yours, with the same Undo toast. An agent can also press the Undo of its own last change while the toast shows, so it can take back a mistake, or you can ask it to from the terminal.
 
 A submitted week is read-only for agents too: Ajour refuses their writes to it with the reason.
 

@@ -61,7 +61,9 @@ vi.mock("@/components/ui/toast", async (importOriginal) => ({
   showUndoToast,
   showErrorToast,
 }));
-vi.mock("@/lib/plugin-project-properties", () => ({ listPropertyPlugins }));
+vi.mock("@/lib/plugin-project-properties", () => ({
+  listPropertyPlugins,
+}));
 
 const client = { id: "c1", name: "Claude Code" };
 
@@ -360,6 +362,82 @@ describe("agent read tools", () => {
       ok: false,
       error: "Ajour has no tool named delete_everything.",
     });
+  });
+});
+
+describe("the Commit page's lines as a read tool", () => {
+  it("returns the week's lines with the name a mapped task commits as, in the output schema", async () => {
+    listPropertyPlugins.mockResolvedValue({
+      projects: [],
+      tasks: [
+        {
+          pluginId: "workday-agent",
+          capability: {
+            section: "Workday",
+            fields: [
+              { id: "task", label: "Workday task", defaultFrom: "name" },
+            ],
+          },
+        },
+      ],
+    });
+    const { call, localStore, project, task } = await setup();
+    const build = task("Build");
+    localStore.updateProjectTask(project._id, build._id, {
+      pluginProperties: { "workday-agent": { task: "07 Run" } },
+    });
+    for (const note of ["Specs", "Specs", "Review"]) {
+      localStore.saveManualTimeEntry({
+        localDate: "2026-10-13",
+        projectId: project._id,
+        taskId: build._id,
+        durationMs: 30 * 60_000,
+        note,
+      });
+    }
+
+    const result = await call("get_week_lines", { weekOf: "2026-10-15" });
+    expect(result).toMatchObject({
+      ok: true,
+      output: {
+        weekOf: "2026-10-12",
+        groupBy: "day-task",
+        locked: false,
+        sections: [
+          {
+            localDate: "2026-10-13",
+            lines: [
+              {
+                projectName: "Acme",
+                taskName: "07 Run",
+                hours: 1.5,
+                comments: "Specs | Review",
+              },
+            ],
+          },
+        ],
+        notSent: { hours: 0, items: [] },
+        waiting: { hours: 0, tasks: [] },
+        running: null,
+      },
+    });
+
+    const byEntry = await call("get_week_lines", {
+      weekOf: "2026-10-12",
+      groupBy: "day",
+    });
+    expect(
+      byEntry.ok &&
+        (byEntry.output as { sections: { lines: unknown[] }[] }).sections[0]!
+          .lines,
+    ).toHaveLength(3);
+  });
+
+  it("refuses a grouping the Commit page does not offer", async () => {
+    const { call } = await setup();
+    expect(
+      await call("get_week_lines", { weekOf: "2026-10-12", groupBy: "week" }),
+    ).toMatchObject({ ok: false, error: expect.stringContaining("groupBy") });
   });
 });
 
@@ -802,6 +880,521 @@ describe("agent timer and entry tools", () => {
       "Claude Code: Duplicated an entry",
     );
   });
+
+  it("returns each write's Undo token in its output", async () => {
+    const { call, localStore, project } = await setup();
+
+    const started = await call("start_timer", { projectId: project._id });
+
+    expect(started).toMatchObject({
+      ok: true,
+      output: { undoToken: expect.any(String) },
+    });
+    const { undoToken } = (started as { output: { undoToken: string } }).output;
+    expect(offerUndo.mock.calls.at(-1)![0]).toBe(undoToken);
+    expect(localStore.undo(undoToken)).toBe("restored");
+  });
+});
+
+describe("agent delete, discard and undo tools", () => {
+  // Thursday, October 15, 2026, 3 p.m.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 9, 15, 15));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  /** Saves a 30-minute entry on Acme · Build and returns its id. */
+  function saveEntry(
+    context: Awaited<ReturnType<typeof setup>>,
+    localDate = "2026-10-13",
+  ) {
+    const before = new Set(
+      context.localStore.snapshot().timesheetEntries.map((entry) => entry._id),
+    );
+    context.localStore.saveManualTimeEntry({
+      localDate,
+      projectId: context.project._id,
+      taskId: context.task("Build")._id,
+      durationMs: 30 * 60_000,
+    });
+    return context.localStore
+      .snapshot()
+      .timesheetEntries.find((entry) => !before.has(entry._id))!._id;
+  }
+
+  it("deletes entries in one action, leaves a committed one's tombstone, and undo brings them back", async () => {
+    const context = await setup();
+    const { call, localStore, sink } = context;
+    const saved = saveEntry(context);
+    const committed = saveEntry(context, "2026-10-14");
+    localStore.markTimesheetEntriesCommitted([committed]);
+    sink.events.length = 0;
+
+    const deleted = await call("delete_entries", {
+      entryIds: [saved, committed, saved],
+    });
+
+    expect(deleted).toMatchObject({
+      ok: true,
+      output: { deleted: 2, undoToken: expect.any(String) },
+      activity: { action: "Deleted 2 entries", objectTitle: "2 entries" },
+    });
+    expect(localStore.snapshot().timesheetEntries).toEqual([]);
+    expect(
+      localStore.snapshot().timesheetTombstones.map((item) => item.entryId),
+    ).toEqual([committed]);
+    expect(agentCommands(sink)).toEqual([
+      { name: "time_entry.delete", trigger: "agent", surface: null },
+    ]);
+    const { undoToken } = (deleted as { output: { undoToken: string } }).output;
+    expect(offerUndo.mock.calls.at(-1)).toEqual([
+      undoToken,
+      expect.objectContaining({ title: "Claude Code: Deleted 2 entries" }),
+    ]);
+
+    expect(await call("undo", { undoToken })).toMatchObject({
+      ok: true,
+      output: { undone: "Deleted 2 entries", undoToken: null },
+      activity: { action: "Undid: Deleted 2 entries" },
+    });
+    expect(
+      localStore
+        .snapshot()
+        .timesheetEntries.map((entry) => entry._id)
+        .sort(),
+    ).toEqual([saved, committed].sort());
+    expect(localStore.snapshot().timesheetTombstones).toEqual([]);
+  });
+
+  it("refuses the whole call when one id is the running entry, and deletes nothing", async () => {
+    const context = await setup();
+    const { call, localStore } = context;
+    const other = saveEntry(context);
+    const continued = saveEntry(context, "2026-10-15");
+    localStore.continueTimesheetEntry(continued);
+
+    expect(
+      await call("delete_entries", { entryIds: [other, continued] }),
+    ).toMatchObject({ ok: false, error: "Stop the running entry first" });
+    expect(localStore.snapshot().timesheetEntries).toHaveLength(2);
+
+    // A running entry that started from nothing is refused by its timer id.
+    localStore.saveTimer(localStore.snapshot().timers[0]!._id);
+    localStore.startTimer({ projectId: context.project._id });
+    const timerId = localStore.snapshot().timers[0]!._id;
+    expect(
+      await call("delete_entries", { entryIds: [other, timerId] }),
+    ).toMatchObject({ ok: false, error: "Stop the running entry first" });
+    expect(localStore.snapshot().timesheetEntries).toHaveLength(2);
+    expect(localStore.snapshot().timers).toHaveLength(1);
+  });
+
+  it("refuses an unknown id and an empty list", async () => {
+    const context = await setup();
+    const { call, localStore } = context;
+    const entryId = saveEntry(context);
+
+    expect(
+      await call("delete_entries", { entryIds: [entryId, "timesheet_gone"] }),
+    ).toMatchObject({
+      ok: false,
+      error: "No entry has the id timesheet_gone. Call list_time_entries.",
+    });
+    expect(await call("delete_entries", { entryIds: [] })).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("entryIds"),
+    });
+    expect(localStore.snapshot().timesheetEntries).toHaveLength(1);
+  });
+
+  it("discards a running entry that started from nothing, and undo brings it back", async () => {
+    const { call, localStore, project } = await setup();
+    await call("start_timer", { projectId: project._id });
+    vi.setSystemTime(new Date(2026, 9, 15, 15, 25));
+
+    const discarded = await call("discard_timer");
+
+    expect(discarded).toMatchObject({
+      ok: true,
+      output: { discardedMinutes: 25, undoToken: expect.any(String) },
+      activity: {
+        action: "Discarded the running entry",
+        objectTitle: "Acme",
+      },
+    });
+    expect(localStore.snapshot().timers).toEqual([]);
+    expect(localStore.snapshot().timesheetEntries).toEqual([]);
+    expect(offerUndo.mock.calls.at(-1)![1].title).toBe(
+      "Claude Code: Discarded the running entry",
+    );
+
+    const { undoToken } = (discarded as { output: { undoToken: string } })
+      .output;
+    expect(await call("undo", { undoToken })).toMatchObject({
+      ok: true,
+      output: { undone: "Discarded the running entry" },
+    });
+    expect(localStore.snapshot().timers).toHaveLength(1);
+  });
+
+  it("keeps a continued entry's saved time and drops only the time since it last started", async () => {
+    const context = await setup();
+    const { call, localStore } = context;
+    const entryId = saveEntry(context, "2026-10-15");
+    localStore.continueTimesheetEntry(entryId);
+    vi.setSystemTime(new Date(2026, 9, 15, 15, 20));
+
+    expect(await call("discard_timer")).toMatchObject({
+      ok: true,
+      output: { discardedMinutes: 20 },
+    });
+    expect(localStore.snapshot().timers).toEqual([]);
+    expect(localStore.snapshot().timesheetEntries).toMatchObject([
+      { _id: entryId, durationMs: 30 * 60_000 },
+    ]);
+  });
+
+  it("refuses to discard when nothing runs", async () => {
+    const { call } = await setup();
+    expect(await call("discard_timer")).toMatchObject({
+      ok: false,
+      error: "Nothing is running",
+    });
+  });
+
+  it("refuses an undo a later action replaced, and one whose record changed since", async () => {
+    const context = await setup();
+    const { call, localStore, project, task } = context;
+    const entryId = saveEntry(context);
+
+    const deleted = (await call("delete_entries", {
+      entryIds: [entryId],
+    })) as { output: { undoToken: string } };
+    expect(deleted.output).toMatchObject({ deleted: 1 });
+    await call("create_entry", {
+      date: "2026-10-14",
+      projectId: project._id,
+      minutes: 15,
+    });
+    expect(
+      await call("undo", { undoToken: deleted.output.undoToken }),
+    ).toMatchObject({
+      ok: false,
+      error: "That change can't be undone any more.",
+    });
+    expect(
+      localStore
+        .snapshot()
+        .timesheetEntries.some((entry) => entry._id === entryId),
+    ).toBe(false);
+
+    // The user edits the entry the agent edited, which keeps no Undo.
+    const added = localStore.snapshot().timesheetEntries[0]!;
+    const edited = (await call("edit_entry", {
+      entryId: added._id,
+      minutes: 45,
+    })) as { output: { undoToken: string } };
+    localStore.updateTimesheetEntry(added._id, {
+      projectId: project._id,
+      taskId: task("Build")._id,
+      durationMs: 60 * 60_000,
+    });
+    expect(
+      await call("undo", { undoToken: edited.output.undoToken }),
+    ).toMatchObject({
+      ok: false,
+      error: "Can't undo. The entry changed after that action.",
+    });
+    expect(localStore.snapshot().timesheetEntries[0]!.durationMs).toBe(
+      60 * 60_000,
+    );
+  });
+
+  it("refuses an undo whose toast already closed", async () => {
+    const context = await setup();
+    const { call, localStore } = context;
+    const entryId = saveEntry(context);
+    const deleted = (await call("delete_entries", {
+      entryIds: [entryId],
+    })) as { output: { undoToken: string } };
+
+    localStore.forgetUndo(deleted.output.undoToken);
+
+    expect(
+      await call("undo", { undoToken: deleted.output.undoToken }),
+    ).toMatchObject({
+      ok: false,
+      error: "That change can't be undone any more.",
+    });
+  });
+
+  it("refuses another client's token with the expired sentence, and leaves it to its own client", async () => {
+    const { runAgentToolCall } =
+      await import("@/features/agents/agent-tool-runner");
+    const context = await setup();
+    const { localStore } = context;
+    const entryId = saveEntry(context);
+    const other = { id: "c2", name: "Cursor" };
+    const run = (who: typeof client, tool: string, input: unknown) =>
+      runAgentToolCall({ requestId: "r", tool, input, client: who });
+
+    const deleted = (await run(client, "delete_entries", {
+      entryIds: [entryId],
+    })) as { output: { undoToken: string } };
+    const { undoToken } = deleted.output;
+
+    expect(await run(other, "undo", { undoToken })).toEqual({
+      requestId: "r",
+      ok: false,
+      error: "That change can't be undone any more.",
+    });
+    expect(
+      localStore
+        .snapshot()
+        .timesheetEntries.some((entry) => entry._id === entryId),
+    ).toBe(false);
+
+    // The refusal spent nothing: the client that deleted can still undo.
+    expect(await run(client, "undo", { undoToken })).toMatchObject({
+      ok: true,
+      output: { undone: "Deleted 1 entry" },
+      activity: { action: "Undid: Deleted 1 entry" },
+    });
+    expect(
+      localStore
+        .snapshot()
+        .timesheetEntries.some((entry) => entry._id === entryId),
+    ).toBe(true);
+  });
+});
+
+describe("the running entry for the terminal", () => {
+  // Thursday, October 15, 2026, 3 p.m.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 9, 15, 15));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  /** Saves an entry on Acme · Build and returns its id. */
+  function saveEntry(
+    context: Awaited<ReturnType<typeof setup>>,
+    localDate: string,
+    minutes = 30,
+  ) {
+    const before = new Set(
+      context.localStore.snapshot().timesheetEntries.map((entry) => entry._id),
+    );
+    context.localStore.saveManualTimeEntry({
+      localDate,
+      projectId: context.project._id,
+      taskId: context.task("Build")._id,
+      note: "Rate limiter",
+      durationMs: minutes * 60_000,
+    });
+    return context.localStore
+      .snapshot()
+      .timesheetEntries.find((entry) => !before.has(entry._id))!._id;
+  }
+
+  it("continues today's entry with its saved time, offers Undo, and undo stops it", async () => {
+    const context = await setup();
+    const { call, localStore } = context;
+    const entryId = saveEntry(context, "2026-10-15", 88);
+
+    const continued = await call("continue_entry", { entryId });
+
+    const { entryShortId } = await import("@ajour/shared/entry-short-id");
+    expect(continued).toMatchObject({
+      ok: true,
+      output: {
+        running: {
+          shortId: entryShortId(entryId),
+          date: "2026-10-15",
+          countedMinutes: 88,
+          note: "Rate limiter",
+          taskName: "Build",
+        },
+        undoToken: expect.any(String),
+      },
+      activity: { action: "Continued an entry", objectTitle: "Acme · Build" },
+    });
+    expect(
+      (continued as { output: Record<string, unknown> }).output,
+    ).not.toHaveProperty("saved");
+    expect(localStore.snapshot().timers[0]).toMatchObject({ entryId });
+    expect(offerUndo.mock.calls.at(-1)![1].title).toBe(
+      "Claude Code: Continued an entry",
+    );
+
+    const { undoToken } = (continued as { output: { undoToken: string } })
+      .output;
+    expect(await call("undo", { undoToken })).toMatchObject({
+      ok: true,
+      output: { undone: "Continued an entry" },
+    });
+    expect(localStore.snapshot().timers).toEqual([]);
+    expect(localStore.snapshot().timesheetEntries).toMatchObject([
+      { _id: entryId, durationMs: 88 * 60_000 },
+    ]);
+  });
+
+  it("starts a new entry today from another day's entry, which stays as it is", async () => {
+    const context = await setup();
+    const { call, localStore } = context;
+    const monday = saveEntry(context, "2026-10-12", 45);
+
+    const continued = await call("continue_entry", { entryId: monday });
+
+    expect(continued).toMatchObject({
+      ok: true,
+      output: {
+        running: {
+          date: "2026-10-15",
+          countedMinutes: 0,
+          note: "Rate limiter",
+          taskName: "Build",
+        },
+      },
+    });
+    const timer = localStore.snapshot().timers[0]!;
+    expect(timer.entryId).toBeUndefined();
+    expect(localStore.snapshot().timesheetEntries).toMatchObject([
+      { _id: monday, localDate: "2026-10-12", durationMs: 45 * 60_000 },
+    ]);
+  });
+
+  it("saves the running entry first, as Switch does, and returns the saved one", async () => {
+    const context = await setup();
+    const { call, localStore, project } = context;
+    const entryId = saveEntry(context, "2026-10-15");
+    await call("start_timer", { projectId: project._id, note: "Sync" });
+    vi.setSystemTime(new Date(2026, 9, 15, 15, 20));
+
+    const continued = await call("continue_entry", { entryId });
+
+    expect(continued).toMatchObject({
+      ok: true,
+      output: {
+        saved: {
+          state: "saved",
+          minutes: 20,
+          note: "Sync",
+          date: "2026-10-15",
+        },
+        running: { countedMinutes: 30 },
+      },
+    });
+    expect(localStore.snapshot().timers).toHaveLength(1);
+    expect(localStore.snapshot().timesheetEntries).toHaveLength(2);
+  });
+
+  it("refuses the running entry, by its entry or its timer, and an unknown id", async () => {
+    const context = await setup();
+    const { call, localStore, project } = context;
+    const entryId = saveEntry(context, "2026-10-15");
+    localStore.continueTimesheetEntry(entryId);
+
+    expect(await call("continue_entry", { entryId })).toMatchObject({
+      ok: false,
+      error: "Already running",
+    });
+    localStore.saveTimer(localStore.snapshot().timers[0]!._id);
+    await call("start_timer", { projectId: project._id });
+    const timerId = localStore.snapshot().timers[0]!._id;
+    expect(await call("continue_entry", { entryId: timerId })).toMatchObject({
+      ok: false,
+      error: "Already running",
+    });
+    expect(
+      await call("continue_entry", { entryId: "timesheet_gone" }),
+    ).toMatchObject({
+      ok: false,
+      error: "No entry has the id timesheet_gone. Call list_time_entries.",
+    });
+  });
+
+  it("refuses to move or duplicate a new running entry by its timer, as the window does", async () => {
+    const { call, localStore, project } = await setup();
+    await call("start_timer", { projectId: project._id });
+    const timerId = localStore.snapshot().timers[0]!._id;
+
+    for (const [tool, input] of [
+      ["move_entry", { entryId: timerId, date: "2026-10-14" }],
+      ["duplicate_entry", { entryId: timerId }],
+      ["duplicate_entry", { entryId: timerId, date: "2026-10-14" }],
+    ] as const) {
+      expect(await call(tool, input), tool).toMatchObject({
+        ok: false,
+        error: "Stop the running entry first",
+      });
+    }
+    expect(localStore.snapshot().timesheetEntries).toEqual([]);
+  });
+
+  it("starts an empty entry, as S does, counting on from a given time", async () => {
+    const { call, localStore } = await setup();
+
+    const started = await call("start_timer", {
+      note: "Untriaged",
+      countedMinutes: 20,
+    });
+
+    expect(started).toMatchObject({
+      ok: true,
+      output: { running: { countedMinutes: 20, note: "Untriaged" } },
+      activity: { action: "Started an entry", objectTitle: "Untitled entry" },
+    });
+    expect(localStore.snapshot().timers[0]).toMatchObject({
+      accumulatedDurationMs: 20 * 60_000,
+    });
+    expect(localStore.snapshot().timers[0]!.projectId).toBeUndefined();
+    expect(await call("start_timer", { taskId: "t1" })).toMatchObject({
+      ok: false,
+      error: "Pass the task's projectId too.",
+    });
+  });
+
+  it("returns the entry a Switch saved, and the entry Stop saved", async () => {
+    const context = await setup();
+    const { call, project, task } = context;
+    await call("start_timer", { projectId: project._id, note: "First" });
+    vi.setSystemTime(new Date(2026, 9, 15, 15, 30));
+
+    const switched = await call("start_timer", {
+      projectId: project._id,
+      taskId: task("Build")._id,
+    });
+    expect(switched).toMatchObject({
+      ok: true,
+      output: {
+        saved: { state: "saved", minutes: 30, note: "First" },
+        running: { countedMinutes: 0, taskName: "Build" },
+      },
+    });
+    vi.setSystemTime(new Date(2026, 9, 15, 15, 45));
+
+    const stopped = await call("stop_timer");
+    const { entryShortId } = await import("@ajour/shared/entry-short-id");
+    const saved = context.localStore
+      .snapshot()
+      .timesheetEntries.find((entry) => entry.durationMs === 15 * 60_000)!;
+    expect(stopped).toMatchObject({
+      ok: true,
+      output: {
+        stopped: true,
+        countedMinutes: 15,
+        entry: {
+          entryId: saved._id,
+          shortId: entryShortId(saved._id),
+          minutes: 15,
+          taskName: "Build",
+          state: "saved",
+        },
+      },
+    });
+  });
 });
 
 describe("agent tools on submitted weeks", () => {
@@ -964,6 +1557,7 @@ describe("agent tools on submitted weeks", () => {
         { changes: [{ entryId, version: "v:00000000" }] },
       ],
       ["start_timer", { projectId: project._id }],
+      ["delete_entries", { entryIds: [entryId] }],
     ] as const) {
       expect(await call(tool, input), tool).toMatchObject({
         ok: false,
@@ -971,6 +1565,20 @@ describe("agent tools on submitted weeks", () => {
       });
     }
     expect(localStore.snapshot().timers).toEqual([]);
+    // One entry in a submitted week refuses the whole call.
+    const created = (await call("create_entry", {
+      date: "2026-10-20",
+      projectId: project._id,
+      minutes: 30,
+    })) as { output: { entryId: string } };
+    expect(
+      await call("delete_entries", {
+        entryIds: [created.output.entryId, entryId],
+      }),
+    ).toMatchObject({ ok: false, error: reason });
+    expect(
+      localStore.snapshot().timesheetEntries.map((entry) => entry._id),
+    ).toEqual(expect.arrayContaining([entryId, created.output.entryId]));
     // A copy to an open week leaves the submitted entry as it is.
     expect(
       await call("duplicate_entry", { entryId, date: "2026-10-20" }),
@@ -2099,5 +2707,518 @@ describe("an agent's change to a synced description", () => {
       localStore.snapshot().workItems.find((item) => item._id === workItemId)
         ?.description,
     ).toBe("Local notes");
+  });
+});
+
+describe("agent reads for the terminal", () => {
+  const workdayTask = {
+    pluginId: "workday-agent",
+    capability: {
+      section: "Workday",
+      fields: [{ id: "task", label: "Workday task", defaultFrom: "name" }],
+    },
+  };
+
+  it("gives a week's seven targets as Settings › General holds them", async () => {
+    const { call, localStore } = await setup();
+    localStore.setUserPreferences({
+      weeklyCapacityTargets: {
+        monday: 8 * 3_600_000,
+        tuesday: 7.5 * 3_600_000,
+        wednesday: 8 * 3_600_000,
+        thursday: 8 * 3_600_000,
+        friday: 4 * 3_600_000,
+        saturday: 0,
+        sunday: 0,
+      },
+    });
+
+    const result = await call("list_time_entries", {
+      from: "2026-10-12",
+      to: "2026-10-18",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      output: {
+        targets: [
+          { date: "2026-10-12", hours: 8 },
+          { date: "2026-10-13", hours: 7.5 },
+          { date: "2026-10-14", hours: 8 },
+          { date: "2026-10-15", hours: 8 },
+          { date: "2026-10-16", hours: 4 },
+          { date: "2026-10-17", hours: 0 },
+          { date: "2026-10-18", hours: 0 },
+        ],
+      },
+    });
+  });
+
+  it("lists pinned slots, full names and each of the four commit-as kinds", async () => {
+    listPropertyPlugins.mockResolvedValue({
+      projects: [],
+      tasks: [workdayTask],
+    });
+    const { call, localStore, project, task } = await setup();
+    localStore.updateProject(project._id, { displayName: "ACM" });
+    localStore.addProjectTask(project._id, { name: "Run" });
+    localStore.addProjectTask(project._id, { name: "Discovery" });
+    localStore.addProjectTask(project._id, { name: "Learning" });
+    const tasks = localStore
+      .snapshot()
+      .projects.find((candidate) => candidate._id === project._id)!.tasks;
+    const id = (name: string) =>
+      tasks.find((candidate) => candidate.name === name)!._id;
+    localStore.updateProjectTask(project._id, task("Build")._id, {
+      pinnedSlot: "1",
+    });
+    localStore.updateProjectTask(project._id, id("Run"), {
+      pinnedSlot: "0",
+      pluginProperties: { "workday-agent": { task: "07 Run" } },
+    });
+    localStore.updateProjectTask(project._id, id("Discovery"), {
+      commitAs: "waiting",
+    });
+    localStore.updateProjectTask(project._id, id("Learning"), {
+      commitAs: "local",
+    });
+
+    const result = await call("list_projects");
+
+    expect(result.ok).toBe(true);
+    const acme = (
+      result as { output: { projects: { projectId: string }[] } }
+    ).output.projects.find((item) => item.projectId === project._id);
+    expect(acme).toEqual({
+      projectId: project._id,
+      name: "ACM",
+      fullName: "Acme",
+      displayName: "ACM",
+      localOnly: false,
+      tasks: [
+        {
+          taskId: task("Build")._id,
+          name: "Build",
+          pinnedSlot: 1,
+          commitsAs: { kind: "own" },
+        },
+        {
+          taskId: id("Run"),
+          name: "Run",
+          pinnedSlot: 10,
+          commitsAs: { kind: "task", name: "07 Run" },
+        },
+        {
+          taskId: id("Discovery"),
+          name: "Discovery",
+          commitsAs: { kind: "not-known-yet" },
+        },
+        {
+          taskId: id("Learning"),
+          name: "Learning",
+          commitsAs: { kind: "local-only" },
+        },
+      ],
+    });
+  });
+
+  it("finds one entry for a unique prefix, several for a shared one, and none for an unknown one", async () => {
+    let next = 0;
+    // Every id Ajour creates here shares the short id prefix 3f2a.
+    vi.spyOn(globalThis.crypto, "randomUUID").mockImplementation(
+      () =>
+        `3f2a${String((next += 1)).padStart(4, "0")}-0000-4000-8000-000000000000` as `${string}-${string}-${string}-${string}-${string}`,
+    );
+    const { call, localStore, project, task } = await setup();
+    for (const localDate of ["2025-01-06", "2026-10-13"]) {
+      localStore.saveManualTimeEntry({
+        localDate,
+        projectId: project._id,
+        taskId: task("Build")._id,
+        durationMs: 30 * 60_000,
+      });
+    }
+    const [older, newer] = localStore.snapshot().timesheetEntries;
+    const shortIdOf = (entryId: string) =>
+      entryId.slice("timesheet_".length).replaceAll("-", "");
+    vi.mocked(globalThis.crypto.randomUUID).mockRestore();
+
+    const unique = await call("find_entries", {
+      idPrefix: shortIdOf(older!._id),
+    });
+    expect(unique).toMatchObject({
+      ok: true,
+      output: {
+        entries: [
+          {
+            entryId: older!._id,
+            shortId: shortIdOf(older!._id),
+            date: "2025-01-06",
+            minutes: 30,
+            taskName: "Build",
+          },
+        ],
+        running: null,
+      },
+    });
+    expect(unique.ok && unique.output).toMatchObject({
+      entries: { length: 1 },
+    });
+
+    const shared = await call("find_entries", { idPrefix: "3f2a" });
+    expect(
+      shared.ok &&
+        (shared.output as { entries: { entryId: string }[] }).entries.map(
+          (item) => item.entryId,
+        ),
+    ).toEqual([older!._id, newer!._id]);
+
+    expect(await call("find_entries", { idPrefix: "beef" })).toMatchObject({
+      ok: true,
+      output: { entries: [], running: null },
+    });
+  });
+
+  it("gives the saved entry used last, from any day, and not the running one", async () => {
+    const { call, localStore, project, task } = await setup();
+    expect(await call("get_last_saved_entry", {})).toMatchObject({
+      ok: true,
+      output: { entry: null },
+    });
+    localStore.saveManualTimeEntry({
+      localDate: "2025-01-06",
+      projectId: project._id,
+      taskId: task("Build")._id,
+      durationMs: 30 * 60_000,
+    });
+    const [saved] = localStore.snapshot().timesheetEntries;
+    await call("start_timer", { projectId: project._id });
+
+    expect(await call("get_last_saved_entry", {})).toMatchObject({
+      ok: true,
+      output: {
+        entry: {
+          entryId: saved!._id,
+          date: "2025-01-06",
+          state: "saved",
+          taskName: "Build",
+        },
+      },
+    });
+  });
+
+  it("finds the running entry by its short id", async () => {
+    const { call, project } = await setup();
+    const started = await call("start_timer", { projectId: project._id });
+    const { shortId } = (
+      started as { output: { running: { shortId: string } } }
+    ).output.running;
+
+    expect(
+      await call("find_entries", { idPrefix: shortId.slice(0, 7) }),
+    ).toMatchObject({
+      ok: true,
+      output: { entries: [], running: { shortId } },
+    });
+  });
+
+  describe("when the plugins cannot name tasks", () => {
+    /** Acme with Build, and Run, which a Workday value may rename. */
+    async function setupWithRun() {
+      const context = await setup();
+      const { localStore, project } = context;
+      localStore.addProjectTask(project._id, { name: "Run" });
+      const run = localStore
+        .snapshot()
+        .projects.find((candidate) => candidate._id === project._id)!
+        .tasks.find((candidate) => candidate.name === "Run")!;
+      localStore.updateProjectTask(project._id, run._id, {
+        pluginProperties: { "workday-agent": { task: "07 Run" } },
+      });
+      return context;
+    }
+
+    async function commitsAsOf(result: unknown, projectId: string) {
+      const output = (
+        result as {
+          output: {
+            projects: {
+              projectId: string;
+              tasks: { name: string; commitsAs: unknown }[];
+            }[];
+          };
+        }
+      ).output;
+      return output.projects
+        .find((item) => item.projectId === projectId)!
+        .tasks.map((item) => [item.name, item.commitsAs]);
+    }
+
+    it("says a task a plugin may rename commits as unknown when loading them fails", async () => {
+      listPropertyPlugins.mockRejectedValue(new Error("Plugin host down"));
+      const { call, project } = await setupWithRun();
+
+      const result = await call("list_projects");
+
+      expect(result.ok).toBe(true);
+      expect(await commitsAsOf(result, project._id)).toEqual([
+        ["Build", { kind: "own" }],
+        ["Run", { kind: "unknown" }],
+      ]);
+    });
+
+    it("answers with the projects past the deadline when discovery never ends", async () => {
+      listPropertyPlugins.mockReturnValue(new Promise(() => undefined));
+      const { call, project } = await setupWithRun();
+      const { PLUGIN_NAMES_DEADLINE_MS } =
+        await import("@/features/agents/agent-tool-runner");
+      expect(PLUGIN_NAMES_DEADLINE_MS).toBeLessThanOrEqual(3_000);
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        const pending = call("list_projects");
+        await vi.advanceTimersByTimeAsync(PLUGIN_NAMES_DEADLINE_MS);
+        const result = await pending;
+
+        expect(result.ok).toBe(true);
+        expect(await commitsAsOf(result, project._id)).toEqual([
+          ["Build", { kind: "own" }],
+          ["Run", { kind: "unknown" }],
+        ]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("never names a task from a cached overview when the fresh load is late or fails", async () => {
+      // The window still holds an overview that names Run, as it would after
+      // the API restarted with a replacement package.
+      const { call, project } = await setupWithRun();
+      const { cachePluginsOverview } = await import("@/lib/app-api");
+      cachePluginsOverview({
+        pluginsEnabled: true,
+        connectionGroups: [
+          {
+            enabled: true,
+            plugin: {
+              id: "workday-agent",
+              capabilities: { taskProperties: workdayTask.capability },
+            },
+          },
+        ],
+      } as unknown as Parameters<typeof cachePluginsOverview>[0]);
+      const { PLUGIN_NAMES_DEADLINE_MS } =
+        await import("@/features/agents/agent-tool-runner");
+      const unknownRun = [
+        ["Build", { kind: "own" }],
+        ["Run", { kind: "unknown" }],
+      ];
+
+      listPropertyPlugins.mockRejectedValue(new Error("Plugin host down"));
+      expect(
+        await commitsAsOf(await call("list_projects"), project._id),
+      ).toEqual(unknownRun);
+
+      listPropertyPlugins.mockReturnValue(new Promise(() => undefined));
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        const pending = call("list_projects");
+        await vi.advanceTimersByTimeAsync(PLUGIN_NAMES_DEADLINE_MS);
+
+        expect(await commitsAsOf(await pending, project._id)).toEqual(
+          unknownRun,
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  it("names a task as the plugin the Commit page's Names choice selects", async () => {
+    listPropertyPlugins.mockResolvedValue({
+      projects: [],
+      tasks: [
+        workdayTask,
+        {
+          pluginId: "jira-agent",
+          capability: {
+            section: "Jira",
+            fields: [{ id: "task", label: "Jira task", defaultFrom: "name" }],
+          },
+        },
+      ],
+    });
+    const { call, localStore, project, task } = await setup();
+    localStore.updateProjectTask(project._id, task("Build")._id, {
+      pluginProperties: {
+        "workday-agent": { task: "07 Run" },
+        "jira-agent": { task: "OPS-12 Run" },
+      },
+    });
+    localStore.setUserPreferences({ commitLinesNameSource: "jira-agent" });
+
+    const result = (await call("list_projects")) as {
+      output: {
+        projects: { projectId: string; tasks: { commitsAs: unknown }[] }[];
+      };
+    };
+
+    expect(
+      result.output.projects.find((item) => item.projectId === project._id)!
+        .tasks[0]!.commitsAs,
+    ).toEqual({ kind: "task", name: "OPS-12 Run" });
+  });
+
+  it("finds a running entry that continues a saved one by its timer's short id too", async () => {
+    const { call, localStore, project, task } = await setup();
+    const { todayIsoDate } = await import("@/lib/utils");
+    localStore.saveManualTimeEntry({
+      localDate: todayIsoDate(),
+      projectId: project._id,
+      taskId: task("Build")._id,
+      durationMs: 30 * 60_000,
+    });
+    const saved = localStore.snapshot().timesheetEntries[0]!;
+    // Only today's entry resumes, linked to its timer.
+    localStore.continueTimesheetEntry(saved._id);
+    const timer = localStore.snapshot().timers[0]!;
+    expect(timer.entryId).toBe(saved._id);
+    const shortIdOf = (id: string) =>
+      id.slice(id.indexOf("_") + 1).replaceAll("-", "");
+
+    expect(
+      await call("find_entries", {
+        idPrefix: shortIdOf(timer._id).slice(0, 8),
+      }),
+    ).toMatchObject({
+      ok: true,
+      output: {
+        running: { timerId: timer._id, shortId: shortIdOf(saved._id) },
+      },
+    });
+  });
+
+  it("refuses a prefix under 4 characters", async () => {
+    const { call } = await setup();
+    expect(await call("find_entries", { idPrefix: "3f2" })).toEqual({
+      requestId: "r1",
+      ok: false,
+      error: "idPrefix: Use 4 to 32 lowercase hex characters, such as 3f2a9c1.",
+    });
+  });
+});
+
+describe("week reads require plugin task names only for mapped entries", () => {
+  for (const tool of [
+    "get_week_lines",
+    "get_week_changes",
+    "get_week_status",
+  ]) {
+    for (const discovery of ["failed", "late"]) {
+      for (const scenario of [
+        "empty",
+        "own",
+        "empty properties",
+        "same name",
+        "other week",
+        "mapped",
+      ]) {
+        it(`${tool} with ${scenario} entries when discovery is ${discovery}`, async () => {
+          const { call, localStore, project, task } = await setup();
+          if (scenario !== "empty") {
+            localStore.saveManualTimeEntry({
+              localDate:
+                scenario === "other week" ? "2026-10-26" : "2026-11-02",
+              projectId: project._id,
+              taskId: task("Build")._id,
+              durationMs: 60 * 60_000,
+            });
+          }
+          const value =
+            scenario === "empty properties"
+              ? "  "
+              : scenario === "same name"
+                ? "Build"
+                : "07 Build";
+          if (scenario !== "own")
+            localStore.updateProjectTask(project._id, task("Build")._id, {
+              pluginProperties: { "workday-agent": { task: value } },
+            });
+          if (tool === "get_week_status")
+            localStore.markTimesheetEntriesCommitted(
+              localStore.snapshot().timesheetEntries.map((entry) => entry._id),
+            );
+          vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+          try {
+            if (discovery === "failed")
+              listPropertyPlugins.mockRejectedValueOnce(new Error("offline"));
+            else listPropertyPlugins.mockReturnValueOnce(new Promise(() => {}));
+            const pending = call(tool, { weekOf: "2026-11-02" });
+            await vi.advanceTimersByTimeAsync(2_000);
+            const result = await pending;
+            if (scenario === "mapped")
+              expect(result).toMatchObject({
+                ok: false,
+                error:
+                  "Ajour couldn't read the plugins' task names. Try again.",
+              });
+            else {
+              expect(result.ok).toBe(true);
+              if (scenario !== "empty" && scenario !== "other week")
+                expect(JSON.stringify(result)).toContain("Build");
+            }
+          } finally {
+            vi.useRealTimers();
+          }
+        });
+      }
+    }
+  }
+});
+
+it("bounds task totals and exclusions to selected days before grouping", async () => {
+  const { call, localStore, project, task } = await setup();
+  for (const localDate of ["2026-11-02", "2026-11-03"])
+    localStore.saveManualTimeEntry({
+      localDate,
+      projectId: project._id,
+      taskId: task("Build")._id,
+      durationMs: 90 * 60_000,
+      note: localDate,
+    });
+  localStore.addProjectTask(project._id, { name: "Admin" });
+  localStore.addProjectTask(project._id, { name: "Discovery" });
+  const tasks = localStore
+    .snapshot()
+    .projects.find((p) => p._id === project._id)!.tasks;
+  for (const [name, commitAs] of [
+    ["Admin", "local"],
+    ["Discovery", "waiting"],
+  ] as const) {
+    const taskId = tasks.find((t) => t.name === name)!._id;
+    localStore.updateProjectTask(project._id, taskId, { commitAs });
+    for (const localDate of ["2026-11-02", "2026-11-03"])
+      localStore.saveManualTimeEntry({
+        localDate,
+        projectId: project._id,
+        taskId,
+        durationMs: 60 * 60_000,
+      });
+  }
+  expect(
+    await call("get_week_lines", {
+      weekOf: "2026-11-02",
+      from: "2026-11-03",
+      to: "2026-11-03",
+      groupBy: "task",
+    }),
+  ).toMatchObject({
+    ok: true,
+    output: {
+      weekOf: "2026-11-02",
+      sections: [{ lines: [{ hours: 1.5, comments: "2026-11-03" }] }],
+      notSent: { hours: 1, items: [{ taskName: "Admin", hours: 1 }] },
+      waiting: { hours: 1, tasks: [{ taskName: "Discovery", hours: 1 }] },
+      running: null,
+    },
   });
 });

@@ -1,5 +1,6 @@
 import type {
   AgentChangeValues,
+  AgentCommitsAs,
   AgentRunningTimer,
   AgentTimeEntry,
   AgentWorkItem,
@@ -7,15 +8,23 @@ import type {
   ReadToolInput,
 } from "@ajour/shared/agent-tools";
 import {
+  entryShortId,
+  matchesShortIdPrefix,
+} from "@ajour/shared/entry-short-id";
+import {
   isBacklogItemSnoozed,
   selectSidebarBacklogItems,
 } from "@/domain/backlog/backlog-item-lifecycle";
 import {
   getLocalProjectDisplayName,
+  PINNED_TASK_SLOTS,
   type LocalAppState,
+  type LocalProject,
+  type LocalProjectTask,
   type LocalTimesheetEntry,
   type LocalWorkItem,
 } from "@/domain/local-state";
+import { getCommitTarget } from "@/domain/projects/commit-target";
 import {
   resolvePluginProperties,
   resolveTaskPluginProperties,
@@ -32,8 +41,18 @@ import {
   type TimesheetCommitValues,
 } from "@/domain/time/timesheet-commit";
 import { getLockedWeek } from "@/domain/time/locked-weeks";
+import { toDecimalHours } from "@/domain/time/duration";
+import {
+  buildCommitLines,
+  getLineCommitTaskName,
+  resolveCommitTaskName,
+  resolveLineNameSource,
+  summarizeWeek,
+  type SubmitGroupBy,
+} from "@/domain/time/timesheet-submission";
 import {
   computeWeekPace,
+  getDayTargetMs,
   getPaceTolerancePercent,
 } from "@/domain/time/week-pace";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
@@ -55,7 +74,7 @@ const MAX_RANGE_DAYS = 62;
 
 type AgentProjectRef = Pick<
   AgentTimeEntry,
-  "projectId" | "projectName" | "taskId" | "taskName"
+  "projectId" | "projectName" | "projectCode" | "taskId" | "taskName"
 >;
 
 function describeProjectTask(
@@ -68,6 +87,7 @@ function describeProjectTask(
   return {
     ...(projectId ? { projectId } : {}),
     ...(project ? { projectName: getLocalProjectDisplayName(project) } : {}),
+    ...(project?.code?.trim() ? { projectCode: project.code.trim() } : {}),
     ...(taskId ? { taskId } : {}),
     ...(task ? { taskName: task.name } : {}),
   };
@@ -82,13 +102,15 @@ export function readRunningTimer(
   const workItem = state.workItems.find(
     (item) => item._id === timer.workItemId,
   );
+  const countedMs =
+    timer.accumulatedDurationMs + Math.max(0, now - timer.startedAt);
   return {
     timerId: timer._id,
+    shortId: entryShortId(timer.entryId ?? timer._id),
     date: timer.localDate,
-    countedMinutes: Math.floor(
-      (timer.accumulatedDurationMs + Math.max(0, now - timer.startedAt)) /
-        MINUTE,
-    ),
+    countedMinutes: Math.floor(countedMs / MINUTE),
+    countedSeconds: Math.floor(countedMs / 1000),
+    runningSince: new Date(timer.startedAt).toISOString(),
     ...(timer.note ? { note: timer.note } : {}),
     ...(workItem
       ? { workItemId: workItem._id, workItemTitle: workItem.title }
@@ -103,6 +125,7 @@ export function toAgentEntry(
 ): AgentTimeEntry {
   return {
     entryId: entry._id,
+    shortId: entryShortId(entry._id),
     date: entry.localDate,
     state: state.timers.some((timer) => timer.entryId === entry._id)
       ? "running"
@@ -110,6 +133,7 @@ export function toAgentEntry(
         ? "committed"
         : "saved",
     minutes: Math.round(entry.durationMs / MINUTE),
+    savedAt: new Date(entry.usedAt ?? entry.committedAt).toISOString(),
     ...(entry.note ? { note: entry.note } : {}),
     ...(entry.workItemId ? { workItemId: entry.workItemId } : {}),
     ...describeProjectTask(state, entry.projectId, entry.taskId),
@@ -119,6 +143,39 @@ export function toAgentEntry(
 function dayNumber(isoDate: string) {
   const [year, month, day] = isoDate.split("-").map(Number);
   return Date.UTC(year!, month! - 1, day!) / DAY;
+}
+
+/** Each date from `from` to `to`, both included. */
+function datesBetween(from: string, to: string) {
+  const first = dayNumber(from);
+  return Array.from({ length: dayNumber(to) - first + 1 }, (_, index) =>
+    new Date((first + index) * DAY).toISOString().slice(0, 10),
+  );
+}
+
+/** Saved entries in the order the lists give them: oldest day first. */
+function byDayThenSave(left: LocalTimesheetEntry, right: LocalTimesheetEntry) {
+  return (
+    left.localDate.localeCompare(right.localDate) ||
+    left.committedAt - right.committedAt
+  );
+}
+
+/** Entry classifications include archived projects and tasks, without plugin names. */
+function entryCommitsAs(
+  state: LocalAppState,
+  entry: { projectId?: string; taskId?: string },
+): Pick<AgentCommitsAs, "kind"> {
+  const project = state.projects.find(
+    (project) => project._id === entry.projectId,
+  );
+  const task = project?.tasks.find((task) => task._id === entry.taskId);
+  const target = getCommitTarget(project, task);
+  if (target === "local") return { kind: "local-only" };
+  if (target === "waiting") return { kind: "not-known-yet" };
+  return project && task
+    ? describeCommitsAs(project, task, undefined, undefined)
+    : { kind: "own" };
 }
 
 export function listTimeEntriesForAgent(
@@ -137,23 +194,157 @@ export function listTimeEntriesForAgent(
   }
 
   const running = readRunningTimer(state, now);
+  const capacityTargets = state.userPreferences.weeklyCapacityTargets;
   return {
     entries: state.timesheetEntries
       .filter((entry) => entry.localDate >= from && entry.localDate <= to)
-      .sort(
-        (left, right) =>
-          left.localDate.localeCompare(right.localDate) ||
-          left.committedAt - right.committedAt,
-      )
-      .map((entry) => toAgentEntry(state, entry)),
+      .sort(byDayThenSave)
+      .map((entry) => ({
+        ...toAgentEntry(state, entry),
+        commitsAs: entryCommitsAs(state, entry),
+      })),
     running:
-      running && running.date >= from && running.date <= to ? running : null,
+      running && running.date >= from && running.date <= to
+        ? { ...running, commitsAs: entryCommitsAs(state, running) }
+        : null,
+    targets: datesBetween(from, to).map((date) => ({
+      date,
+      hours: toHours(getDayTargetMs(capacityTargets, date)),
+    })),
   };
+}
+
+/**
+ * Every saved entry whose short id starts with `idPrefix`, on any day, and
+ * the running entry when its short id or its timer's does. A running entry
+ * that continues a saved one shows the saved one's short id, but the
+ * response also carries its `timerId`, so either prefix finds it.
+ */
+export function findEntriesForAgent(
+  state: LocalAppState,
+  { idPrefix }: ReadToolInput<"find_entries">,
+  now: number,
+): DataToolOutput<"find_entries"> {
+  const timer = state.timers[0];
+  const runningMatches =
+    timer !== undefined &&
+    [timer.entryId, timer._id].some(
+      (id) => id !== undefined && matchesShortIdPrefix(id, idPrefix),
+    );
+  return {
+    entries: state.timesheetEntries
+      .filter((entry) => matchesShortIdPrefix(entry._id, idPrefix))
+      .sort(byDayThenSave)
+      .map((entry) => toAgentEntry(state, entry)),
+    running: runningMatches ? readRunningTimer(state, now) : null,
+  };
+}
+
+/**
+ * The saved entry used most recently, on any day: the newest `usedAt`, or
+ * its save when it was never used since. A saved entry the running entry
+ * continues is the running one, so it is left out. What `last` names in the
+ * terminal.
+ */
+export function getLastSavedEntryForAgent(
+  state: LocalAppState,
+): DataToolOutput<"get_last_saved_entry"> {
+  const continued = new Set(state.timers.map((timer) => timer.entryId));
+  let last: LocalTimesheetEntry | undefined;
+  for (const entry of state.timesheetEntries) {
+    if (continued.has(entry._id)) continue;
+    if (!last || lastUsedAt(entry) > lastUsedAt(last)) last = entry;
+  }
+  return { entry: last ? toAgentEntry(state, last) : null };
+}
+
+function lastUsedAt(entry: LocalTimesheetEntry) {
+  return entry.usedAt ?? entry.committedAt;
+}
+
+/**
+ * Whether a plugin could map the task to another name: it holds a plugin
+ * value that differs from its own name. Without the plugins' fields Ajour
+ * cannot tell which value names it, so any such value counts.
+ */
+function couldBeMapped(task: LocalProjectTask) {
+  return Object.values(task.pluginProperties ?? {}).some((values) =>
+    Object.values(values).some(
+      (value) => value.trim() !== "" && value !== task.name,
+    ),
+  );
+}
+
+/** Stored task values tell us whether this week's names need plugin discovery. */
+export function weekNeedsPluginNames(
+  state: LocalAppState,
+  weekDates: string[],
+): boolean {
+  const values = [
+    ...state.timesheetEntries.flatMap((entry) => [
+      entry,
+      ...(entry.commit ? [entry.commit] : []),
+    ]),
+    ...state.timesheetTombstones.map((entry) => entry.commit),
+  ];
+  return values.some((entry) => {
+    if (!weekDates.includes(entry.localDate)) return false;
+    const task = state.projects
+      .find((project) => project._id === entry.projectId)
+      ?.tasks.find((task) => task._id === entry.taskId);
+    return task !== undefined && couldBeMapped(task);
+  });
+}
+
+/**
+ * What the task's time commits as. Local only and Not known yet come from
+ * commit-target.ts. The name comes from `resolveCommitTaskName` under the
+ * Commit page's Names choice, so the page, `get_week_lines` and this agree.
+ * Without the plugins (`undefined`), a task a plugin could map reads
+ * `unknown` rather than a guess.
+ */
+function describeCommitsAs(
+  project: LocalProject,
+  task: LocalProjectTask,
+  propertyPlugins: PropertyPlugins | undefined,
+  namesPluginId: string | undefined,
+): AgentCommitsAs {
+  const target = getCommitTarget(project, task);
+  if (target === "local") return { kind: "local-only" };
+  if (target === "waiting") return { kind: "not-known-yet" };
+  if (!propertyPlugins) {
+    return couldBeMapped(task) ? { kind: "unknown" } : { kind: "own" };
+  }
+  const name = resolveCommitTaskName({
+    task,
+    plugins: propertyPlugins,
+    namesPluginId,
+  });
+  return name !== task.name ? { kind: "task", name } : { kind: "own" };
+}
+
+/** The task's pinned slot as 1 to 10, keyboard order: key 0 is slot 10. */
+function pinnedSlotNumber(task: LocalProjectTask) {
+  const index = task.pinnedSlot
+    ? PINNED_TASK_SLOTS.indexOf(task.pinnedSlot)
+    : -1;
+  return index >= 0 ? { pinnedSlot: index + 1 } : {};
 }
 
 export function listProjectsForAgent(
   state: LocalAppState,
+  /**
+   * Active plugins that add project or task properties, or `undefined` when
+   * they could not be read in time. Passed in to keep domain free of `lib/`.
+   */
+  propertyPlugins: PropertyPlugins | undefined,
 ): DataToolOutput<"list_projects"> {
+  const namesPluginId = propertyPlugins
+    ? resolveLineNameSource(
+        state.userPreferences.commitLinesNameSource,
+        propertyPlugins,
+      )
+    : undefined;
   return {
     projects: state.projects
       .filter((project) => project.status === "active")
@@ -161,9 +352,22 @@ export function listProjectsForAgent(
         projectId: project._id,
         name: getLocalProjectDisplayName(project),
         ...(project.code ? { code: project.code } : {}),
+        fullName: project.name,
+        displayName: getLocalProjectDisplayName(project),
+        localOnly: project.localOnly === true,
         tasks: project.tasks
           .filter((task) => task.status === "active")
-          .map((task) => ({ taskId: task._id, name: task.name })),
+          .map((task) => ({
+            taskId: task._id,
+            name: task.name,
+            ...pinnedSlotNumber(task),
+            commitsAs: describeCommitsAs(
+              project,
+              task,
+              propertyPlugins,
+              namesPluginId,
+            ),
+          })),
       })),
   };
 }
@@ -586,4 +790,134 @@ export function checkWeekStatusVersionOrRefuse(
       "The week changed since you read it. Call get_week_status again.",
     );
   }
+}
+
+/**
+ * get_week_lines (#533): the week's lines as the Commit page builds them,
+ * for the terminal to print as they are. Each line names its project by its
+ * full name and its task by the name it commits as, in decimal hours rounded
+ * as the page copies them. Local time, Not known yet time and the running
+ * entry stay out of the lines, as on the page, and come beside them. A
+ * submitted week reads the same, with `locked`.
+ */
+export function getWeekLinesForAgent(
+  state: LocalAppState,
+  {
+    weekDates,
+    groupBy,
+    propertyPlugins,
+    now,
+    from,
+    to,
+  }: {
+    weekDates: string[];
+    groupBy: SubmitGroupBy;
+    /** Active plugins that add project or task properties. Passed in to keep domain free of `lib/`. */
+    propertyPlugins: PropertyPlugins;
+    now: number;
+    from?: string;
+    to?: string;
+  },
+): DataToolOutput<"get_week_lines"> {
+  const { projects } = state;
+  const selectedDates = weekDates.filter(
+    (date) =>
+      (from === undefined || date >= from) && (to === undefined || date <= to),
+  );
+  const week = new Set(selectedDates);
+  const weekEntries = state.timesheetEntries.filter((entry) =>
+    week.has(entry.localDate),
+  );
+  const nameSource = resolveLineNameSource(
+    state.userPreferences.commitLinesNameSource,
+    propertyPlugins,
+  );
+  const sections = buildCommitLines({
+    entries: weekEntries,
+    groupBy,
+    projects,
+    weekDates: selectedDates,
+  }).map((section) => ({
+    ...(section.localDate ? { localDate: section.localDate } : {}),
+    lines: section.lines.map((line) => {
+      const taskName = getLineCommitTaskName(
+        line,
+        nameSource,
+        projects,
+        propertyPlugins,
+      );
+      return {
+        ...(line.projectId ? { projectId: line.projectId } : {}),
+        ...(line.projectName ? { projectName: line.projectName } : {}),
+        ...(line.projectCode ? { projectCode: line.projectCode } : {}),
+        ...(line.taskId ? { taskId: line.taskId } : {}),
+        ...(taskName ? { taskName } : {}),
+        hours: toDecimalHours(line.durationMs),
+        comments: line.comments,
+        entryIds: line.entryIds,
+      };
+    }),
+  }));
+
+  const summary = summarizeWeek({
+    capacityTargets: state.userPreferences.weeklyCapacityTargets,
+    weekDates: selectedDates,
+    weekEntries,
+    projects,
+  });
+  const waitingTasks = summary.warnings.flatMap((warning) =>
+    warning.kind === "waiting-task" ? [warning] : [],
+  );
+  return {
+    weekOf: weekDates[0]!,
+    groupBy,
+    locked: getLockedWeek(state, weekDates[0]!) !== undefined,
+    sections,
+    notSent: {
+      hours: toDecimalHours(summary.local.durationMs),
+      items: summary.local.items.map(({ durationMs, ...item }) => ({
+        ...item,
+        hours: toDecimalHours(durationMs),
+      })),
+    },
+    waiting: {
+      hours: toDecimalHours(
+        waitingTasks.reduce((total, task) => total + task.durationMs, 0),
+      ),
+      tasks: waitingTasks.map((task) => ({
+        projectId: task.projectId,
+        taskId: task.taskId,
+        taskName: task.taskName,
+        hours: toDecimalHours(task.durationMs),
+      })),
+    },
+    running: readUnsavedRunningTime(state, week, now),
+  };
+}
+
+/**
+ * The running entry in the week with the time it has not saved yet: when it
+ * continues a saved entry, that entry's time is already in the lines.
+ */
+function readUnsavedRunningTime(
+  state: LocalAppState,
+  week: ReadonlySet<string>,
+  now: number,
+): DataToolOutput<"get_week_lines">["running"] {
+  const timer = state.timers[0];
+  if (!timer || !week.has(timer.localDate)) return null;
+  const saved = timer.entryId
+    ? state.timesheetEntries.find((entry) => entry._id === timer.entryId)
+    : undefined;
+  const countedMs =
+    timer.accumulatedDurationMs + Math.max(0, now - timer.startedAt);
+  return {
+    timerId: timer._id,
+    date: timer.localDate,
+    unsavedMinutes: Math.floor(
+      Math.max(0, countedMs - (saved?.durationMs ?? 0)) / MINUTE,
+    ),
+    ...(saved ? { entryId: saved._id } : {}),
+    ...describeProjectTask(state, timer.projectId, timer.taskId),
+  };
 }

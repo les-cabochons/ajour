@@ -2,6 +2,7 @@ import type {
   UserPreferences,
   WeeklyCapacityTargets,
 } from "@/domain/local-state";
+import { getWeekDates } from "@/domain/time/local-date";
 
 /**
  * Whether the week's logged time keeps pace with its capacity targets. Submit
@@ -31,6 +32,17 @@ const DAY_KEYS = [
   "saturday",
   "sunday",
 ] as const satisfies readonly (keyof WeeklyCapacityTargets)[];
+
+/**
+ * The target of one day, from its weekday's target in Settings › General.
+ * Pass a valid date.
+ */
+export function getDayTargetMs(
+  capacityTargets: WeeklyCapacityTargets,
+  localDate: string,
+): number {
+  return capacityTargets[DAY_KEYS[getWeekDates(localDate).indexOf(localDate)]!];
+}
 
 export function getPaceTolerancePercent(preferences: UserPreferences) {
   return preferences.paceTolerancePercent ?? DEFAULT_PACE_TOLERANCE_PERCENT;

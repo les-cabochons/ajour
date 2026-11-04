@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   computePaceRange,
   computeWeekPace,
+  getDayTargetMs,
   needsPaceConfirmation,
 } from "@/domain/time/week-pace";
 import type { WeeklyCapacityTargets } from "@/domain/local-state";
@@ -175,5 +176,16 @@ describe("computePaceRange", () => {
     expect(status(highMs)).toBe("on-pace");
     expect(status(lowMs - 60_000)).toBe("under");
     expect(status(highMs + 60_000)).toBe("over");
+  });
+});
+
+describe("getDayTargetMs", () => {
+  it("reads the target of the date's weekday", () => {
+    const targets = { ...TARGETS, monday: 6 * HOUR, sunday: HOUR };
+    expect(getDayTargetMs(targets, "2026-10-12")).toBe(6 * HOUR);
+    expect(getDayTargetMs(targets, "2026-10-14")).toBe(7.5 * HOUR);
+    expect(getDayTargetMs(targets, "2026-10-17")).toBe(0);
+    expect(getDayTargetMs(targets, "2026-10-18")).toBe(HOUR);
+    expect(getDayTargetMs(targets, "2027-01-04")).toBe(6 * HOUR);
   });
 });

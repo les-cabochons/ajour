@@ -7,6 +7,7 @@ import type {
 import {
   formatElapsedDuration,
   formatRemainingEstimate,
+  getRunningEntryTrayState,
   summarizeRunningEntry,
 } from "@/domain/time/running-entry";
 
@@ -160,5 +161,40 @@ describe("running entry formats", () => {
     expect(formatElapsedDuration(HOUR_MS + 24 * 60_000 + 7_000)).toBe(
       "1:24:07",
     );
+  });
+});
+
+describe("getRunningEntryTrayState", () => {
+  it("gives the desktop tray the entry's title and the times it counts from", () => {
+    expect(
+      getRunningEntryTrayState(
+        timer({
+          workItemId: "item-1",
+          startedAt: 1_000,
+          accumulatedDurationMs: 60_000,
+        }),
+        { projects: [project], workItems: [workItem] },
+      ),
+    ).toEqual({
+      timerId: "timer-1",
+      title: "Fix export rounding",
+      startedAt: 1_000,
+      accumulatedMs: 60_000,
+    });
+  });
+
+  it("titles an entry without a backlog item as the dock does", () => {
+    expect(
+      getRunningEntryTrayState(timer({ projectId: "project-1" }), {
+        projects: [project],
+        workItems: [],
+      })?.title,
+    ).toBe("Mercury");
+  });
+
+  it("has nothing when nothing runs", () => {
+    expect(
+      getRunningEntryTrayState(null, { projects: [], workItems: [] }),
+    ).toBeNull();
   });
 });

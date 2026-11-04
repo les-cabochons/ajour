@@ -848,22 +848,234 @@ describe("MCP endpoint", () => {
     await renderer.waitFor("agents", (data) => data.errors.length > 0);
   });
 
+  it("checks the terminal's reads: targets, pinned slots, commit-as and short ids", async () => {
+    const { baseUrl } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl, "Claude Code");
+    const calls: BridgeToolCall[] = [];
+    const projects = {
+      projects: [
+        {
+          projectId: "p1",
+          name: "Acme",
+          fullName: "Acme Corporation",
+          displayName: "Acme",
+          localOnly: false,
+          tasks: [
+            {
+              taskId: "t1",
+              name: "Run",
+              pinnedSlot: 10,
+              commitsAs: { kind: "task", name: "07 Run" },
+            },
+          ],
+        },
+      ],
+    };
+    const found = {
+      entries: [
+        {
+          entryId: "timesheet_3f2a9c1e-7b4d-4e8a-9c0b-1d2e3f4a5b6c",
+          shortId: "3f2a9c1e7b4d4e8a9c0b1d2e3f4a5b6c",
+          date: "2024-03-04",
+          state: "saved",
+          minutes: 30,
+        },
+      ],
+      running: null,
+    };
+    const entries = {
+      entries: [],
+      running: null,
+      targets: [{ date: "2026-10-12", hours: 8 }],
+    };
+    let badProjects = false;
+    await openFakeRenderer(baseUrl, (call) => {
+      calls.push(call);
+      const output =
+        call.tool === "find_entries"
+          ? found
+          : call.tool === "list_time_entries"
+            ? entries
+            : badProjects
+              ? {
+                  projects: [
+                    {
+                      ...projects.projects[0],
+                      tasks: [
+                        {
+                          taskId: "t1",
+                          name: "Run",
+                          commitsAs: { kind: "waiting" },
+                        },
+                      ],
+                    },
+                  ],
+                }
+              : projects;
+      return { requestId: call.requestId, ok: true, output };
+    });
+    const agent = await connectAgent(baseUrl, token);
+
+    const { tools } = await agent.listTools();
+    expect(tools.map((tool) => tool.name)).toContain("find_entries");
+    expect(
+      await agent.callTool({ name: "list_projects", arguments: {} }),
+    ).toMatchObject({ structuredContent: projects });
+    expect(
+      await agent.callTool({
+        name: "list_time_entries",
+        arguments: { from: "2026-10-12", to: "2026-10-12" },
+      }),
+    ).toMatchObject({ structuredContent: entries });
+    expect(
+      await agent.callTool({
+        name: "find_entries",
+        arguments: { idPrefix: "3f2a9c1" },
+      }),
+    ).toMatchObject({ structuredContent: found });
+    expect(calls.at(-1)).toMatchObject({
+      tool: "find_entries",
+      input: { idPrefix: "3f2a9c1" },
+    });
+
+    const short = await agent.callTool({
+      name: "find_entries",
+      arguments: { idPrefix: "3f2" },
+    });
+    expect(short.isError).toBe(true);
+    expect(calls).toHaveLength(3);
+
+    badProjects = true;
+    const bad = await agent.callTool({ name: "list_projects", arguments: {} });
+    expect(bad.isError).toBe(true);
+    expect(resultText(bad)).toBe(
+      "Ajour returned list_projects output that does not match its schema.",
+    );
+  });
+
+  it("forwards continue_entry and checks its running entry, the saved one and its Undo token", async () => {
+    const { baseUrl } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl, "Terminal");
+    const calls: BridgeToolCall[] = [];
+    const output = {
+      running: {
+        timerId: "timer_2",
+        shortId: "3f9a2c1e",
+        date: "2026-11-04",
+        countedMinutes: 91,
+        taskName: "07 Export",
+      },
+      saved: {
+        entryId: "timesheet_1",
+        date: "2026-11-04",
+        state: "saved",
+        minutes: 12,
+      },
+      undoToken: "undo_7",
+    };
+    let answer: unknown = output;
+    await openFakeRenderer(baseUrl, (call) => {
+      calls.push(call);
+      return { requestId: call.requestId, ok: true, output: answer };
+    });
+    const agent = await connectAgent(baseUrl, token);
+
+    const { tools } = await agent.listTools();
+    expect(tools.map((tool) => tool.name)).toContain("continue_entry");
+    expect(
+      await agent.callTool({
+        name: "continue_entry",
+        arguments: { entryId: "timesheet_9" },
+      }),
+    ).toMatchObject({ structuredContent: output });
+    expect(calls.at(-1)).toMatchObject({
+      tool: "continue_entry",
+      input: { entryId: "timesheet_9" },
+    });
+
+    answer = { running: output.running };
+    const bad = await agent.callTool({
+      name: "continue_entry",
+      arguments: { entryId: "timesheet_9" },
+    });
+    expect(bad.isError).toBe(true);
+    expect(resultText(bad)).toBe(
+      "Ajour returned continue_entry output that does not match its schema.",
+    );
+  });
+
+  it("forwards get_last_saved_entry and checks its entry", async () => {
+    const { baseUrl } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl, "Terminal");
+    const calls: BridgeToolCall[] = [];
+    const output = {
+      entry: {
+        entryId: "timesheet_1",
+        shortId: "3f9a2c1e",
+        date: "2026-10-20",
+        state: "saved",
+        minutes: 45,
+        savedAt: "2026-11-04T09:00:00.000Z",
+      },
+    };
+    let answer: unknown = output;
+    await openFakeRenderer(baseUrl, (call) => {
+      calls.push(call);
+      return { requestId: call.requestId, ok: true, output: answer };
+    });
+    const agent = await connectAgent(baseUrl, token);
+
+    const { tools } = await agent.listTools();
+    expect(tools.map((tool) => tool.name)).toContain("get_last_saved_entry");
+    expect(
+      await agent.callTool({ name: "get_last_saved_entry", arguments: {} }),
+    ).toMatchObject({ structuredContent: output });
+    expect(calls.at(-1)).toMatchObject({
+      tool: "get_last_saved_entry",
+      input: {},
+    });
+
+    answer = { entry: null };
+    expect(
+      await agent.callTool({ name: "get_last_saved_entry", arguments: {} }),
+    ).toMatchObject({ structuredContent: { entry: null } });
+
+    answer = {};
+    const bad = await agent.callTool({
+      name: "get_last_saved_entry",
+      arguments: {},
+    });
+    expect(bad.isError).toBe(true);
+    expect(resultText(bad)).toBe(
+      "Ajour returned get_last_saved_entry output that does not match its schema.",
+    );
+  });
+
   it("lists the read and write tools and forwards a write with its input", async () => {
     const { baseUrl } = await startTestApi();
     const { token } = await enableMcpWithClient(baseUrl, "Claude Code");
     const calls: BridgeToolCall[] = [];
     await openFakeRenderer(baseUrl, (call) => {
       calls.push(call);
-      return { requestId: call.requestId, ok: true, output: { committed: 1 } };
+      return {
+        requestId: call.requestId,
+        ok: true,
+        output: { committed: 1, undoToken: "undo_1" },
+      };
     });
     const agent = await connectAgent(baseUrl, token);
 
     const { tools } = await agent.listTools();
-    expect(tools).toHaveLength(32);
+    expect(tools).toHaveLength(39);
     expect(tools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining([
         "start_timer",
+        "delete_entries",
+        "discard_timer",
+        "undo",
         "get_week_changes",
+        "get_week_lines",
+        "find_entries",
         "get_week_status",
         "mark_entries_committed",
         "submit_week",
@@ -875,9 +1087,13 @@ describe("MCP endpoint", () => {
     );
     expect(tools.map((tool) => tool.name)).not.toContain("get_submit_lines");
 
-    await agent.callTool({
-      name: "mark_entries_committed",
-      arguments: { changes: [{ entryId: "e1", version: "v:0a1b2c3d" }] },
+    expect(
+      await agent.callTool({
+        name: "mark_entries_committed",
+        arguments: { changes: [{ entryId: "e1", version: "v:0a1b2c3d" }] },
+      }),
+    ).toMatchObject({
+      structuredContent: { committed: 1, undoToken: "undo_1" },
     });
     expect(calls[0]).toMatchObject({
       tool: "mark_entries_committed",
@@ -1199,6 +1415,7 @@ describe("agent sessions over MCP", () => {
       ok: true,
       output: {
         running: { timerId: "t1", date: "2026-10-14", countedMinutes: 0 },
+        undoToken: "undo_1",
       },
       activity: {
         action: "Started an entry",
@@ -1527,6 +1744,62 @@ describe("an agent task's declared tools", () => {
   );
 
   it(
+    "lists delete, discard and undo only when an API 4 task declares them",
+    { timeout: 20_000 },
+    async () => {
+      const { replies } = await runTask(
+        { apiVersion: 4, tools: ["list_projects", "delete_entries"] },
+        [{ method: "tools/list" }],
+      );
+
+      const names = toolNames(replies[0]!.reply);
+      expect(names).toContain("delete_entries");
+      expect(names).not.toContain("discard_timer");
+      expect(names).not.toContain("undo");
+    },
+  );
+
+  it(
+    "lists continue_entry only when an API 4 task declares it",
+    { timeout: 20_000 },
+    async () => {
+      const declared = await runTask(
+        { apiVersion: 4, tools: ["list_projects", "continue_entry"] },
+        [{ method: "tools/list" }],
+      );
+      expect(toolNames(declared.replies[0]!.reply)).toContain("continue_entry");
+
+      const undeclared = await runTask(
+        { apiVersion: 4, tools: ["list_projects", "start_timer"] },
+        [{ method: "tools/list" }],
+      );
+      expect(toolNames(undeclared.replies[0]!.reply)).not.toContain(
+        "continue_entry",
+      );
+    },
+  );
+
+  it(
+    "lists get_week_lines only when an API 4 task declares it",
+    { timeout: 20_000 },
+    async () => {
+      const declared = await runTask(
+        { apiVersion: 4, tools: ["get_week_lines"] },
+        [{ method: "tools/list" }],
+      );
+      const undeclared = await runTask(
+        { apiVersion: 4, tools: ["get_week_changes"] },
+        [{ method: "tools/list" }],
+      );
+
+      expect(toolNames(declared.replies[0]!.reply)).toContain("get_week_lines");
+      expect(toolNames(undeclared.replies[0]!.reply)).not.toContain(
+        "get_week_lines",
+      );
+    },
+  );
+
+  it(
     "lets the run call a tool its task declares, and refuses any other",
     { timeout: 20_000 },
     async () => {
@@ -1639,4 +1912,33 @@ describe("an agent task's declared tools", () => {
       expect(toolNames(replies[0]!.reply)).toEqual(everyTool);
     },
   );
+});
+
+describe("Workday task names unavailable", () => {
+  it("preserves the renderer's plugin-name refusal through MCP", async () => {
+    const { baseUrl, logged } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl);
+    await openFakeRenderer(baseUrl, (call) => ({
+      requestId: call.requestId,
+      ok: false,
+      error: "Ajour couldn't read the plugins' task names. Try again.",
+    }));
+    const agent = await connectAgent(baseUrl, token);
+    const result = await agent.callTool({
+      name: "get_week_lines",
+      arguments: { weekOf: "2026-11-02" },
+    });
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toBe(
+      "Ajour couldn't read the plugins' task names. Try again.",
+    );
+    expect(result.structuredContent).toBeUndefined();
+    expect(logged).toContainEqual(
+      expect.objectContaining({
+        name: "agent_tool.call",
+        outcome: "refused",
+        agent_tool: expect.objectContaining({ name: "get_week_lines" }),
+      }),
+    );
+  });
 });

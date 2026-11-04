@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { ServerResponse } from "node:http";
-import type {
-  AgentClientRef,
-  BridgeToolResult,
+import {
+  BRIDGE_TIMEOUT_MESSAGE,
+  BRIDGE_UNAVAILABLE_MESSAGE,
+  type AgentClientRef,
+  type BridgeToolResult,
 } from "../../../packages/shared/agent-tools.ts";
 
 /**
@@ -12,9 +14,7 @@ import type {
  * active at a time. A new one, such as after a reload, replaces the old one.
  */
 
-export const BRIDGE_UNAVAILABLE_MESSAGE =
-  "Open the Ajour window to use this tool.";
-export const BRIDGE_TIMEOUT_MESSAGE = "Ajour did not answer in time.";
+export { BRIDGE_TIMEOUT_MESSAGE, BRIDGE_UNAVAILABLE_MESSAGE };
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const KEEP_ALIVE_MS = 25_000;

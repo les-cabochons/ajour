@@ -13,11 +13,13 @@ const {
   nativeImage,
   nativeTheme,
   net,
+  Notification,
   powerMonitor,
   protocol,
   safeStorage,
   session,
   shell,
+  Tray,
   WebContentsView,
 } = require("electron");
 // On its own line so the IPC check in code-standards.md can tell this import
@@ -67,6 +69,13 @@ const {
   selectDevelopmentPluginDirectory,
 } = require("./development-plugin-settings.cjs");
 const { createIpcListeners, refusedSender } = require("./ipc-listeners.cjs");
+const {
+  closeActionOf,
+  createTrayController,
+  firstCloseNotice,
+  loadWindowSettings,
+  saveWindowSettings,
+} = require("./keep-running.cjs");
 const { createLocalLogs } = require("./local-logs.cjs");
 const {
   loadDesktopBootstrapLocalState,
@@ -115,6 +124,12 @@ const stableUserDataPath =
   path.join(app.getPath("appData"), DESKTOP_USER_DATA_DIRNAME);
 if (app.getPath("userData") !== stableUserDataPath) {
   app.setPath("userData", stableUserDataPath);
+}
+
+// Windows shows notifications for the installer's Start menu shortcut, whose
+// app ID is electron-builder's appId.
+if (process.platform === "win32" && app.isPackaged) {
+  app.setAppUserModelId("com.lescabochons.ajour");
 }
 
 // The main process's wide events (docs/logging-strategy.md). Units can start
@@ -298,6 +313,36 @@ function updatePluginCatalogSettings(changes) {
   });
   return pluginCatalogSettings;
 }
+
+// Whether closing the window keeps Ajour running, and whether the first
+// close's notice has shown (keep-running.cjs). Main reads it before the
+// window exists.
+const windowSettingsPath = path.join(
+  app.getPath("userData"),
+  "window-settings.json",
+);
+let windowSettings = loadWindowSettings(windowSettingsPath);
+/**
+ * Saves the window settings with `changes`, keeping the rest. Throws when the
+ * file can't be written, and keeps the settings as they were.
+ */
+function updateWindowSettings(changes) {
+  windowSettings = saveWindowSettings(windowSettingsPath, {
+    ...windowSettings,
+    ...changes,
+  });
+  return windowSettings;
+}
+// Set when Windows asks to end the session: closing the window then quits.
+let sessionEnding = false;
+
+// The tray icon, or menu bar item on macOS, while Ajour keeps running.
+const tray = createTrayController({
+  platform: process.platform,
+  createTray: () => new Tray(trayIcon()),
+  buildMenu: (template) => Menu.buildFromTemplate(template),
+  onAction: runTrayAction,
+});
 
 const pluginCatalogService = createPluginCatalogService({
   cacheDirectory: path.join(app.getPath("userData"), "plugin-catalog"),
@@ -507,6 +552,53 @@ ipc.onMessage("ajour:set-window-chrome-theme", (event, theme) => {
 
   events.current()?.set({ theme: { value: theme } });
   mainWindow.setTitleBarOverlay(getWindowsTitleBarOverlay(theme));
+});
+
+ipc.handle("ajour:get-window-settings", (event) => {
+  assertActiveDesktopWindow(event, "read the window settings");
+  events
+    .current()
+    ?.set({ keep_running: { enabled: windowSettings.keep_running } });
+  return { keepRunning: windowSettings.keep_running };
+});
+
+ipc.handle("ajour:configure-window-settings", (event, changes) => {
+  assertActiveDesktopWindow(event, "change the window settings");
+  const unit = events.current();
+  if (typeof changes?.keepRunning !== "boolean") {
+    unit?.refuse("invalid_settings");
+    throw new Error(
+      "Invalid window settings: keepRunning must be true or false.",
+    );
+  }
+  const before = windowSettings.keep_running;
+  try {
+    updateWindowSettings({ keep_running: changes.keepRunning });
+  } catch (error) {
+    // The next launch would read the old value: the switch keeps it.
+    unit?.set({
+      keep_running: { enabled_before: before, enabled_after: before },
+    });
+    throw new Error("Ajour could not write to its data folder.", {
+      cause: error,
+    });
+  }
+  unit?.set({
+    keep_running: {
+      enabled_before: before,
+      enabled_after: windowSettings.keep_running,
+    },
+  });
+  if (windowSettings.keep_running) tray.show();
+  else tray.remove();
+  return { keepRunning: windowSettings.keep_running };
+});
+
+// The window sends the running entry when it changes; main counts its time.
+ipc.onMessage("ajour:set-tray-state", (event, state) => {
+  assertActiveDesktopWindow(event, "update the tray icon");
+  tray.setState(state);
+  events.current()?.set({ tray: { running: tray.entry() !== null } });
 });
 
 ipc.handle("ajour:check-for-updates", async (event, track) => {
@@ -1366,9 +1458,11 @@ async function ensureInternalAppApiRunning() {
         : resolveDevelopmentPluginDirectories(),
       bundledPluginArchives: [],
       allowDevelopmentPlugins: !app.isPackaged,
-      allowedOrigins: app.isPackaged
-        ? ["app://local"]
-        : ["http://127.0.0.1:5173"],
+      // The window's origin: the built renderer's, or the dev server's.
+      allowedOrigins:
+        app.isPackaged || !process.env.AJOUR_DESKTOP_RENDERER_URL
+          ? ["app://local"]
+          : ["http://127.0.0.1:5173"],
       windowToken: windowApiToken,
       launch: apiLaunchOf(launch),
       eventSink: await mainEventSink,
@@ -1450,6 +1544,85 @@ const INTERNAL_APP_API_STOP_TIMEOUT_MS = 10_000;
  */
 function stopInternalAppApiWithinTimeout() {
   return stopWithin(stopInternalAppApi(), INTERNAL_APP_API_STOP_TIMEOUT_MS);
+}
+
+/** The tray icon's image: Windows reads its sizes from the .ico. */
+function trayIcon() {
+  if (process.platform === "win32") {
+    return path.join(path.dirname(iconPath), "ajour-icon.ico");
+  }
+  return nativeImage
+    .createFromPath(iconPath)
+    .resize({ width: 16, height: 16, quality: "best" });
+}
+
+/**
+ * The tray menu's items. Stop sends the timer the menu showed to the window,
+ * which stops it with its own command and Undo, if it still runs.
+ */
+function runTrayAction(action, entry) {
+  if (action === "open") {
+    showMainWindow();
+  } else if (action === "stop") {
+    if (entry && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("ajour:tray-action", {
+        action: "stop",
+        timerId: entry.timerId,
+      });
+    }
+  } else if (action === "quit") {
+    quitTrigger = "tray";
+    app.quit();
+  }
+}
+
+/**
+ * Shows the window as it was: hidden by a close, minimized, or behind other
+ * windows. Opens a new one when there is none.
+ */
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createMainWindow("activate").catch(quitAfterStartupFailure);
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (!mainWindow.isVisible()) mainWindow.show();
+  mainWindow.focus();
+}
+
+/**
+ * The window's close button, Cmd+W or Ctrl+W: hides the window while Ajour
+ * keeps running, so its data and the local API stay up. A quit, an update
+ * install or the end of the session closes it.
+ */
+function hideMainWindowOnClose(window, event) {
+  const action = closeActionOf({
+    quitting: gracefulQuitStarted || sessionEnding,
+    keepRunning: windowSettings.keep_running,
+  });
+  if (action !== "hide") return;
+  event.preventDefault();
+  if (window.isFullScreen()) {
+    // macOS leaves an empty full screen space when a full screen window hides.
+    window.once("leave-full-screen", () => window.hide());
+    window.setFullScreen(false);
+  } else {
+    window.hide();
+  }
+  if (!windowSettings.close_notice_shown) {
+    try {
+      updateWindowSettings({ close_notice_shown: true });
+    } catch {
+      // Closing still works; the notice shows again at the next launch.
+      windowSettings = { ...windowSettings, close_notice_shown: true };
+    }
+    if (Notification.isSupported()) {
+      new Notification({
+        title: "Ajour",
+        body: firstCloseNotice(process.platform),
+      }).show();
+    }
+  }
 }
 
 /** The app menu's Quit, and the title bar's, which clicks the same item. */
@@ -1795,6 +1968,10 @@ async function createMainWindow(trigger = "launch") {
   });
 
   window.on("session-end", recordSessionEnd);
+  window.on("query-session-end", () => {
+    sessionEnding = true;
+  });
+  window.on("close", (event) => hideMainWindowOnClose(window, event));
 
   window.webContents.on("context-menu", (_event, params) => {
     showEditContextMenu(window, params);
@@ -1873,16 +2050,27 @@ if (!hasSingleInstanceLock) {
     });
     const hadWindow = Boolean(mainWindow);
     let restored = false;
+    let shown = false;
     if (mainWindow) {
       if (mainWindow.isMinimized()) {
         mainWindow.restore();
         restored = true;
       }
+      // Hidden by a close while Ajour kept running.
+      if (!mainWindow.isVisible()) {
+        mainWindow.show();
+        shown = true;
+      }
       mainWindow.focus();
     }
     unit
       .set({
-        second_launch: { had_window: hadWindow, restored, focused: hadWindow },
+        second_launch: {
+          had_window: hadWindow,
+          shown,
+          restored,
+          focused: hadWindow,
+        },
       })
       .end();
   });
@@ -1984,8 +2172,13 @@ if (!hasSingleInstanceLock) {
         }
       }
 
+      // The tray icon shows while closing the window keeps Ajour running.
+      if (windowSettings.keep_running) tray.show();
+
+      // The Dock icon shows the window a close hid, or opens a new one.
       app.on("activate", () => {
-        if (BrowserWindow.getAllWindows().length === 0) {
+        if (mainWindow && !mainWindow.isDestroyed()) showMainWindow();
+        else if (BrowserWindow.getAllWindows().length === 0) {
           createMainWindow("activate").catch(quitAfterStartupFailure);
         }
       });
@@ -2033,8 +2226,10 @@ if (!hasSingleInstanceLock) {
         // threads, so they end with it. Nothing holds close, beforeunload or
         // will-quit, so app.quit would end it too, as it does when an update
         // installs after a timed-out stop.
-        // app.exit skips will-quit: write what the log file still holds.
+        // app.exit skips will-quit: write what the log file still holds,
+        // and take the tray icon down, which Windows would leave behind.
         localLogs.drainSync();
+        tray.remove();
         app.exit(0);
         return;
       }
@@ -2050,6 +2245,7 @@ if (!hasSingleInstanceLock) {
     // ends events after it: the installer's quit ends the update's event here,
     // and the process exits before the batch timer. Write them now.
     localLogs.drainSync();
+    tray.remove();
   });
 
   app.on("window-all-closed", () => {

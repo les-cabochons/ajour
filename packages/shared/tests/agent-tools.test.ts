@@ -87,8 +87,9 @@ describe("agent tool contracts", () => {
       dataToolOutputSchemas.submit_week.parse({
         weekOf: "2026-10-12",
         locked: true,
+        undoToken: "undo_1",
       }),
-    ).toEqual({ weekOf: "2026-10-12", locked: true });
+    ).toEqual({ weekOf: "2026-10-12", locked: true, undoToken: "undo_1" });
     expect(
       dataToolOutputSchemas.get_week_status.parse({
         weekOf: "2026-10-12",
@@ -125,6 +126,123 @@ describe("agent tool contracts", () => {
     );
   });
 
+  it("deletes 1 to 500 entries, and gives every write its Undo token", () => {
+    const parse = (entryIds: unknown) =>
+      writeToolInputSchemas.delete_entries.safeParse({ entryIds }).success;
+
+    expect(parse([])).toBe(false);
+    expect(parse(["e1"])).toBe(true);
+    expect(parse(Array.from({ length: 500 }, (_, index) => `e${index}`))).toBe(
+      true,
+    );
+    expect(parse(Array.from({ length: 501 }, (_, index) => `e${index}`))).toBe(
+      false,
+    );
+    expect(writeToolInputSchemas.discard_timer.parse({})).toEqual({});
+    expect(
+      writeToolInputSchemas.undo.safeParse({ undoToken: "" }).success,
+    ).toBe(false);
+    for (const tool of Object.keys(writeToolInputSchemas)) {
+      const shape = (
+        dataToolOutputSchemas as Record<
+          string,
+          { shape: Record<string, unknown> }
+        >
+      )[tool]!.shape;
+      expect(shape, tool).toHaveProperty("undoToken");
+    }
+    expect(
+      dataToolOutputSchemas.delete_entries.safeParse({ deleted: 2 }).success,
+    ).toBe(false);
+    expect(
+      dataToolOutputSchemas.undo.parse({
+        undone: "Deleted 2 entries",
+        undoToken: null,
+      }),
+    ).toEqual({ undone: "Deleted 2 entries", undoToken: null });
+  });
+
+  it("reads a week's lines grouped by day and task unless asked otherwise", () => {
+    expect(
+      readToolInputSchemas.get_week_lines.parse({ weekOf: "2026-10-14" }),
+    ).toEqual({ weekOf: "2026-10-14", groupBy: "day-task" });
+    expect(
+      readToolInputSchemas.get_week_lines.safeParse({
+        weekOf: "2026-10-14",
+        groupBy: "week",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("gives a week's lines in hours, with the time kept out of them beside them", () => {
+    const output = {
+      weekOf: "2026-10-12",
+      groupBy: "task",
+      locked: true,
+      sections: [
+        {
+          lines: [
+            {
+              projectId: "p1",
+              projectName: "Acme Corporation",
+              projectCode: "ACME-1",
+              taskId: "t1",
+              taskName: "07 Run",
+              hours: 1.5,
+              comments: "Specs | Review",
+              entryIds: ["e1", "e2"],
+            },
+            { hours: 0.25, comments: "", entryIds: ["e3"] },
+          ],
+        },
+      ],
+      notSent: {
+        hours: 1.5,
+        items: [
+          {
+            projectId: "p1",
+            projectName: "Acme Corporation",
+            projectCode: "ACME-1",
+            taskId: "t3",
+            taskName: "Team lunch",
+            hours: 1,
+          },
+          { projectId: "p2", projectName: "Home", hours: 0.5 },
+        ],
+      },
+      waiting: {
+        hours: 3,
+        tasks: [
+          {
+            projectId: "p1",
+            taskId: "t2",
+            taskName: "Temp migration",
+            hours: 3,
+          },
+        ],
+      },
+      running: {
+        timerId: "t",
+        date: "2026-10-14",
+        unsavedMinutes: 15,
+        entryId: "e4",
+      },
+    };
+    expect(dataToolOutputSchemas.get_week_lines.parse(output)).toEqual(output);
+    expect(
+      dataToolOutputSchemas.get_week_lines.safeParse({
+        ...output,
+        sections: [{ lines: [{ hours: "1,50", comments: "", entryIds: [] }] }],
+      }).success,
+    ).toBe(false);
+    expect(
+      dataToolOutputSchemas.get_week_lines.safeParse({
+        ...output,
+        running: { timerId: "t", date: "2026-10-14", countedMinutes: 75 },
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts a deleted change with committed values only", () => {
     expect(
       dataToolOutputSchemas.get_week_changes.parse({
@@ -140,5 +258,71 @@ describe("agent tool contracts", () => {
         ],
       }).changes,
     ).toHaveLength(1);
+  });
+});
+
+describe("reads for the terminal", () => {
+  it("finds entries by 4 to 32 lowercase hex characters only", () => {
+    const parse = (idPrefix: unknown) =>
+      readToolInputSchemas.find_entries.safeParse({ idPrefix }).success;
+
+    expect(parse("3f2")).toBe(false);
+    expect(parse("3f2a")).toBe(true);
+    expect(parse("3f2a9c1e7b4d4e8a9c0b1d2e3f4a5b6c")).toBe(true);
+    expect(parse("3f2a9c1e7b4d4e8a9c0b1d2e3f4a5b6c0")).toBe(false);
+    expect(parse("3F2A")).toBe(false);
+    expect(parse("3f2-")).toBe(false);
+  });
+
+  it("checks day targets, short ids, pinned slots and commit-as names", () => {
+    expect(
+      dataToolOutputSchemas.list_time_entries.parse({
+        entries: [
+          {
+            entryId: "timesheet_1",
+            shortId: "timesheet_1",
+            date: "2026-10-13",
+            state: "saved",
+            minutes: 60,
+          },
+        ],
+        running: null,
+        targets: [{ date: "2026-10-13", hours: 8 }],
+      }).targets,
+    ).toEqual([{ date: "2026-10-13", hours: 8 }]);
+    expect(
+      dataToolOutputSchemas.list_time_entries.safeParse({
+        entries: [],
+        running: null,
+        targets: [{ date: "2026-10-13" }],
+      }).success,
+    ).toBe(false);
+
+    const project = (task: Record<string, unknown>) => ({
+      projects: [
+        {
+          projectId: "p1",
+          name: "Acme",
+          fullName: "Acme Corporation",
+          displayName: "Acme",
+          localOnly: false,
+          tasks: [{ taskId: "t1", name: "Build", ...task }],
+        },
+      ],
+    });
+    const parse = (task: Record<string, unknown>) =>
+      dataToolOutputSchemas.list_projects.safeParse(project(task)).success;
+    expect(parse({ pinnedSlot: 10, commitsAs: { kind: "own" } })).toBe(true);
+    expect(parse({ commitsAs: { kind: "task", name: "07 Run" } })).toBe(true);
+    expect(parse({ commitsAs: { kind: "not-known-yet" } })).toBe(true);
+    expect(parse({ commitsAs: { kind: "local-only" } })).toBe(true);
+    expect(parse({ commitsAs: { kind: "unknown" } })).toBe(true);
+    expect(parse({ pinnedSlot: 0 })).toBe(false);
+    expect(parse({ pinnedSlot: 11 })).toBe(false);
+    expect(parse({ commitsAs: { kind: "waiting" } })).toBe(false);
+
+    expect(
+      dataToolOutputSchemas.find_entries.parse({ entries: [], running: null }),
+    ).toEqual({ entries: [], running: null });
   });
 });

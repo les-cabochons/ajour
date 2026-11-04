@@ -6,6 +6,7 @@ import type {
 } from "@/domain/local-state";
 import { DEFAULT_PROJECT_ICON } from "@/domain/projects/project-icon";
 import {
+  countTimesheetChanges,
   describeTimesheetCommitValues,
   getTimesheetEntryChange,
   isTimesheetEntryCommitted,
@@ -447,5 +448,33 @@ describe("stored tombstones", () => {
 
   it("reads a missing list as empty", () => {
     expect(normalizeTimesheetTombstones(undefined)).toEqual([]);
+  });
+});
+
+describe("counting changes by kind", () => {
+  it("counts each kind, with zero for a kind the week lacks", () => {
+    const changes = listWeekChanges({
+      weekDates: WEEK,
+      entries: [
+        entry({ _id: "mon-added" }),
+        entry({ _id: "tue-added", localDate: "2026-10-06" }),
+        {
+          ...committed(entry({ _id: "wed-updated", localDate: "2026-10-07" })),
+          durationMs: 3 * HOUR,
+        },
+      ],
+      tombstones: [],
+      projects: [],
+    });
+    expect(countTimesheetChanges(changes)).toEqual({
+      added: 2,
+      updated: 1,
+      deleted: 0,
+    });
+    expect(countTimesheetChanges([])).toEqual({
+      added: 0,
+      updated: 0,
+      deleted: 0,
+    });
   });
 });

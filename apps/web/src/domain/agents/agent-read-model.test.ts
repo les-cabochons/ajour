@@ -1,26 +1,35 @@
 import { describe, expect, it } from "vitest";
+import type { DataToolOutput } from "@ajour/shared/agent-tools";
 import type { LocalAppState, LocalTimesheetEntry } from "@/domain/local-state";
 import {
   checkChangeVersionsOrRefuse,
+  findEntriesForAgent,
+  getLastSavedEntryForAgent,
   getWeekChangesForAgent,
+  getWeekLinesForAgent,
   getWeekStatusForAgent,
   getWorkItemForAgent,
   listProjectsForAgent,
   listTimeEntriesForAgent,
   listWorkItemsForAgent,
   readRunningTimer,
+  toAgentEntry,
 } from "@/domain/agents/agent-read-model";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
 import {
   externalEntryId,
   timesheetChangeVersion,
 } from "@/domain/agents/external-id";
-import { NO_PROPERTY_PLUGINS } from "@/domain/projects/plugin-properties";
+import {
+  NO_PROPERTY_PLUGINS,
+  type PropertyPlugins,
+} from "@/domain/projects/plugin-properties";
 import {
   isTimesheetEntryCommitted,
   listWeekChanges,
 } from "@/domain/time/timesheet-commit";
 import { markTimesheetEntriesCommitted } from "@/domain/time/timesheet-entry";
+import type { SubmitGroupBy } from "@/domain/time/timesheet-submission";
 
 const HOUR = 3_600_000;
 const NOW = Date.UTC(2026, 9, 14, 15);
@@ -290,17 +299,52 @@ describe("agent read model", () => {
     expect(after.version).not.toBe(before.version);
   });
 
-  it("reads the running entry with its counted minutes", () => {
-    expect(readRunningTimer(createState(), NOW)).toEqual({
+  it("reads the running entry with its counted minutes and seconds", () => {
+    expect(readRunningTimer(createState(), NOW + 7_900)).toEqual({
       timerId: "timer-1",
+      shortId: "timer-1",
       date: "2026-10-14",
       countedMinutes: 45,
+      countedSeconds: 45 * 60 + 7,
+      runningSince: new Date(NOW - 30 * 60_000).toISOString(),
       note: "Review",
       projectId: "project-1",
       projectName: "Acme",
       taskId: "task-1",
       taskName: "Build",
     });
+  });
+
+  it("says when each entry was last saved", () => {
+    const state = createState();
+    state.timesheetEntries[0] = { ...state.timesheetEntries[0]!, usedAt: NOW };
+    const entries = listTimeEntriesForAgent(
+      state,
+      { from: "2026-10-13", to: "2026-10-13" },
+      NOW,
+    ).entries;
+    expect(
+      Object.fromEntries(entries.map((e) => [e.entryId, e.savedAt])),
+    ).toEqual({
+      e1: new Date(NOW).toISOString(),
+      e2: new Date(10).toISOString(),
+    });
+  });
+
+  it("names the project's code when it has one", () => {
+    const state = createState();
+    state.projects[0] = { ...state.projects[0]!, code: "ACME" };
+    expect(readRunningTimer(state, NOW)).toMatchObject({
+      projectName: "Acme",
+      projectCode: "ACME",
+    });
+    expect(
+      listTimeEntriesForAgent(
+        state,
+        { from: "2026-10-13", to: "2026-10-13" },
+        NOW,
+      ).entries[0],
+    ).toMatchObject({ projectCode: "ACME" });
   });
 
   it("lists entries in a range with their state, oldest day first", () => {
@@ -327,12 +371,17 @@ describe("agent read model", () => {
   });
 
   it("lists only active projects and tasks", () => {
-    expect(listProjectsForAgent(createState())).toEqual({
+    expect(listProjectsForAgent(createState(), NO_PROPERTY_PLUGINS)).toEqual({
       projects: [
         {
           projectId: "project-1",
           name: "Acme",
-          tasks: [{ taskId: "task-1", name: "Build" }],
+          fullName: "Acme",
+          displayName: "Acme",
+          localOnly: false,
+          tasks: [
+            { taskId: "task-1", name: "Build", commitsAs: { kind: "own" } },
+          ],
         },
       ],
     });
@@ -700,5 +749,857 @@ describe("agent read model", () => {
 
     expect(change.current).not.toHaveProperty("projectProperties");
     expect(change.current).not.toHaveProperty("taskProperties");
+  });
+});
+
+describe("the Commit page's lines for agents", () => {
+  const workdayTask = {
+    pluginId: "workday-agent",
+    capability: {
+      section: "Workday",
+      fields: [
+        { id: "task", label: "Workday task", defaultFrom: "name" as const },
+      ],
+    },
+  };
+  const plugins: PropertyPlugins = { projects: [], tasks: [workdayTask] };
+
+  /**
+   * Acme, whose Build task commits as 07 Run, with a Review task, a Not
+   * known yet Temp task and a Local only Lunch task, and a Local only Home
+   * project. Wednesday holds only local time, and the running entry is on
+   * Wednesday too.
+   */
+  function weekState(): LocalAppState {
+    const state = createState();
+    return {
+      ...state,
+      projects: [
+        {
+          _id: "acme",
+          name: "Acme Corporation",
+          displayName: "Acme",
+          code: "ACME-1",
+          color: "#123456",
+          status: "active",
+          tasks: [
+            {
+              _id: "build",
+              name: "Build",
+              status: "active",
+              createdAt: 1,
+              pluginProperties: { "workday-agent": { task: "07 Run" } },
+            },
+            { _id: "review", name: "Review", status: "active", createdAt: 1 },
+            {
+              _id: "temp",
+              name: "Temp migration",
+              status: "active",
+              createdAt: 1,
+              commitAs: "waiting",
+            },
+            {
+              _id: "lunch",
+              name: "Team lunch",
+              status: "active",
+              createdAt: 1,
+              commitAs: "local",
+            },
+          ],
+        },
+        {
+          _id: "home",
+          name: "Home",
+          color: "#654321",
+          status: "active",
+          localOnly: true,
+          tasks: [
+            { _id: "chores", name: "Chores", status: "active", createdAt: 1 },
+          ],
+        },
+      ],
+      timers: [
+        {
+          _id: "timer-1",
+          startedAt: NOW - 30 * 60_000,
+          localDate: "2026-10-14",
+          projectId: "acme",
+          taskId: "review",
+          accumulatedDurationMs: 15 * 60_000,
+        },
+      ],
+      timesheetEntries: [
+        entry({
+          _id: "a1",
+          localDate: "2026-10-12",
+          projectId: "acme",
+          taskId: "build",
+          note: "Specs",
+          committedAt: 1,
+        }),
+        entry({
+          _id: "a2",
+          localDate: "2026-10-12",
+          projectId: "acme",
+          taskId: "build",
+          note: "Specs",
+          durationMs: HOUR / 2,
+          committedAt: 2,
+        }),
+        entry({
+          _id: "a3",
+          localDate: "2026-10-12",
+          projectId: "acme",
+          taskId: "review",
+          note: "PR 12",
+          durationMs: 45 * 60_000,
+          committedAt: 3,
+        }),
+        entry({
+          _id: "a4",
+          localDate: "2026-10-13",
+          projectId: "acme",
+          taskId: "build",
+          note: "Deploy",
+          durationMs: 2 * HOUR,
+          committedAt: 4,
+        }),
+        entry({
+          _id: "a5",
+          localDate: "2026-10-13",
+          projectId: "acme",
+          taskId: "temp",
+          durationMs: 3 * HOUR,
+          committedAt: 5,
+        }),
+        entry({
+          _id: "a6",
+          localDate: "2026-10-13",
+          projectId: "acme",
+          taskId: "lunch",
+          committedAt: 6,
+        }),
+        entry({
+          _id: "a7",
+          localDate: "2026-10-14",
+          projectId: "home",
+          taskId: "chores",
+          durationMs: HOUR / 2,
+          committedAt: 7,
+        }),
+        entry({ _id: "next-week", localDate: "2026-10-20", projectId: "acme" }),
+      ],
+    } as LocalAppState;
+  }
+
+  const read = (
+    state: LocalAppState,
+    groupBy: SubmitGroupBy,
+    propertyPlugins: PropertyPlugins = plugins,
+  ) =>
+    getWeekLinesForAgent(state, {
+      weekDates: WEEK,
+      groupBy,
+      propertyPlugins,
+      now: NOW,
+    });
+
+  const acme = {
+    projectId: "acme",
+    projectName: "Acme Corporation",
+    projectCode: "ACME-1",
+  };
+
+  it("returns the lines, with the time kept out of them beside them", () => {
+    expect(read(weekState(), "day-task")).toEqual({
+      weekOf: "2026-10-12",
+      groupBy: "day-task",
+      locked: false,
+      sections: [
+        {
+          localDate: "2026-10-12",
+          lines: [
+            {
+              ...acme,
+              taskId: "build",
+              taskName: "07 Run",
+              hours: 1.5,
+              comments: "Specs",
+              entryIds: ["a1", "a2"],
+            },
+            {
+              ...acme,
+              taskId: "review",
+              taskName: "Review",
+              hours: 0.75,
+              comments: "PR 12",
+              entryIds: ["a3"],
+            },
+          ],
+        },
+        {
+          localDate: "2026-10-13",
+          lines: [
+            {
+              ...acme,
+              taskId: "build",
+              taskName: "07 Run",
+              hours: 2,
+              comments: "Deploy",
+              entryIds: ["a4"],
+            },
+          ],
+        },
+      ],
+      notSent: {
+        hours: 1.5,
+        items: [
+          { ...acme, taskId: "lunch", taskName: "Team lunch", hours: 1 },
+          { projectId: "home", projectName: "Home", hours: 0.5 },
+        ],
+      },
+      waiting: {
+        hours: 3,
+        tasks: [
+          {
+            projectId: "acme",
+            taskId: "temp",
+            taskName: "Temp migration",
+            hours: 3,
+          },
+        ],
+      },
+      running: {
+        timerId: "timer-1",
+        date: "2026-10-14",
+        unsavedMinutes: 45,
+        projectId: "acme",
+        projectName: "Acme",
+        projectCode: "ACME-1",
+        taskId: "review",
+        taskName: "Review",
+      },
+    });
+  });
+
+  /**
+   * The fixture's sent entries, worked out by hand: Monday a1 (07 Run, 1:00,
+   * Specs), a2 (07 Run, 0:30, Specs), a3 (Review, 0:45, PR 12); Tuesday a4
+   * (07 Run, 2:00, Deploy).
+   */
+  const run = { ...acme, taskId: "build", taskName: "07 Run" };
+  const review = { ...acme, taskId: "review", taskName: "Review" };
+  it.each<[SubmitGroupBy, DataToolOutput<"get_week_lines">["sections"]]>([
+    [
+      "day-task",
+      [
+        {
+          localDate: "2026-10-12",
+          lines: [
+            { ...run, hours: 1.5, comments: "Specs", entryIds: ["a1", "a2"] },
+            { ...review, hours: 0.75, comments: "PR 12", entryIds: ["a3"] },
+          ],
+        },
+        {
+          localDate: "2026-10-13",
+          lines: [{ ...run, hours: 2, comments: "Deploy", entryIds: ["a4"] }],
+        },
+      ],
+    ],
+    [
+      "day",
+      [
+        {
+          localDate: "2026-10-12",
+          lines: [
+            { ...run, hours: 1, comments: "Specs", entryIds: ["a1"] },
+            { ...run, hours: 0.5, comments: "Specs", entryIds: ["a2"] },
+            { ...review, hours: 0.75, comments: "PR 12", entryIds: ["a3"] },
+          ],
+        },
+        {
+          localDate: "2026-10-13",
+          lines: [{ ...run, hours: 2, comments: "Deploy", entryIds: ["a4"] }],
+        },
+      ],
+    ],
+    [
+      "task",
+      [
+        {
+          lines: [
+            {
+              ...run,
+              hours: 3.5,
+              comments: "Specs | Deploy",
+              entryIds: ["a1", "a2", "a4"],
+            },
+            { ...review, hours: 0.75, comments: "PR 12", entryIds: ["a3"] },
+          ],
+        },
+      ],
+    ],
+  ])(
+    "gives the Commit page's lines when grouping by %s",
+    (groupBy, sections) => {
+      expect(read(weekState(), groupBy).sections).toEqual(sections);
+    },
+  );
+
+  it("reports only the running entry's unsaved time when it continues a saved entry", () => {
+    const state = {
+      ...weekState(),
+      timers: [
+        {
+          _id: "timer-1",
+          startedAt: NOW - 15 * 60_000,
+          localDate: "2026-10-14",
+          projectId: "acme",
+          taskId: "review",
+          accumulatedDurationMs: HOUR,
+          entryId: "today",
+        },
+      ],
+    } as LocalAppState;
+    state.timesheetEntries.push(
+      entry({
+        _id: "today",
+        localDate: "2026-10-14",
+        projectId: "acme",
+        taskId: "review",
+        committedAt: 8,
+      }),
+    );
+
+    const lines = read(state, "day-task");
+    expect(lines.sections.at(-1)).toEqual({
+      localDate: "2026-10-14",
+      lines: [{ ...review, hours: 1, comments: "", entryIds: ["today"] }],
+    });
+    expect(lines.running).toEqual({
+      timerId: "timer-1",
+      date: "2026-10-14",
+      unsavedMinutes: 15,
+      entryId: "today",
+      projectId: "acme",
+      projectName: "Acme",
+      projectCode: "ACME-1",
+      taskId: "review",
+      taskName: "Review",
+    });
+  });
+
+  it("groups the week by task in one section without a date", () => {
+    const { sections } = read(weekState(), "task");
+
+    expect(sections).toHaveLength(1);
+    expect(sections[0]).not.toHaveProperty("localDate");
+    expect(
+      sections[0]!.lines.map((line) => [line.taskName, line.hours]),
+    ).toEqual([
+      ["07 Run", 3.5],
+      ["Review", 0.75],
+    ]);
+  });
+
+  it("keeps local, Not known yet and running time out of every line", () => {
+    for (const groupBy of ["day-task", "day", "task"] as const) {
+      const ids = read(weekState(), groupBy).sections.flatMap((section) =>
+        section.lines.flatMap((line) => line.entryIds),
+      );
+      expect(ids.sort()).toEqual(["a1", "a2", "a3", "a4"]);
+    }
+  });
+
+  it("names a mapped task by its own name without a plugin that maps it", () => {
+    const names = read(
+      weekState(),
+      "task",
+      NO_PROPERTY_PLUGINS,
+    ).sections[0]!.lines.map((line) => line.taskName);
+
+    expect(names).toEqual(["Build", "Review"]);
+  });
+
+  it("reads a submitted week, and says it is", () => {
+    const state = {
+      ...weekState(),
+      lockedWeeks: [{ weekOf: "2026-10-12", lockedAt: 1 }],
+    };
+
+    const lines = read(state, "day-task");
+    expect(lines.locked).toBe(true);
+    expect(lines.sections).toHaveLength(2);
+  });
+
+  it("leaves out a running entry of another week", () => {
+    const state = weekState();
+    state.timers[0]!.localDate = "2026-10-20";
+
+    expect(read(state, "day-task").running).toBeNull();
+  });
+
+  it("returns no sections and zero totals for an empty week", () => {
+    const state = { ...weekState(), timesheetEntries: [], timers: [] };
+
+    expect(read(state, "day")).toMatchObject({
+      sections: [],
+      notSent: { hours: 0, items: [] },
+      waiting: { hours: 0, tasks: [] },
+      running: null,
+    });
+  });
+});
+
+describe("agent reads for the terminal", () => {
+  const ID_A = "timesheet_3f2a9c1e-7b4d-4e8a-9c0b-1d2e3f4a5b6c";
+  const ID_B = "timesheet_3f2a0000-1111-4222-8333-444455556666";
+  const TIMER_ID = "timer_9d8c7b6a-5f4e-4d3c-8b2a-190817263544";
+  const workdayTask = {
+    pluginId: "workday-agent",
+    capability: {
+      section: "Workday",
+      fields: [
+        { id: "task", label: "Workday task", defaultFrom: "name" as const },
+      ],
+    },
+  };
+
+  /** Entries with real ids, years apart, and a running entry with one. */
+  function stateWithUuidIds(): LocalAppState {
+    const state = createState();
+    return {
+      ...state,
+      timers: [{ ...state.timers[0]!, _id: TIMER_ID }],
+      timesheetEntries: [
+        entry({ _id: ID_A, localDate: "2024-03-04" }),
+        entry({ _id: ID_B, localDate: "2026-10-13" }),
+        entry({ _id: "e-legacy" }),
+      ],
+    };
+  }
+
+  it("gives one target per day of the range, from the weekday targets", () => {
+    const state = createState();
+    state.userPreferences.weeklyCapacityTargets = {
+      ...state.userPreferences.weeklyCapacityTargets,
+      monday: 7.5 * HOUR,
+      saturday: 2 * HOUR,
+    };
+
+    expect(
+      listTimeEntriesForAgent(state, { from: WEEK[0]!, to: WEEK[6]! }, NOW)
+        .targets,
+    ).toEqual([
+      { date: "2026-10-12", hours: 7.5 },
+      { date: "2026-10-13", hours: 8 },
+      { date: "2026-10-14", hours: 8 },
+      { date: "2026-10-15", hours: 8 },
+      { date: "2026-10-16", hours: 8 },
+      { date: "2026-10-17", hours: 2 },
+      { date: "2026-10-18", hours: 0 },
+    ]);
+    expect(
+      listTimeEntriesForAgent(
+        state,
+        { from: "2026-10-17", to: "2026-10-19" },
+        NOW,
+      ).targets,
+    ).toEqual([
+      { date: "2026-10-17", hours: 2 },
+      { date: "2026-10-18", hours: 0 },
+      { date: "2026-10-19", hours: 7.5 },
+    ]);
+  });
+
+  it("gives every entry and the running entry a short id", () => {
+    const state = stateWithUuidIds();
+    const result = listTimeEntriesForAgent(
+      state,
+      { from: "2024-03-04", to: "2024-03-04" },
+      NOW,
+    );
+    expect(result.entries.map((item) => item.shortId)).toEqual([
+      "3f2a9c1e7b4d4e8a9c0b1d2e3f4a5b6c",
+    ]);
+    expect(readRunningTimer(state, NOW)?.shortId).toBe(
+      "9d8c7b6a5f4e4d3c8b2a190817263544",
+    );
+    expect(toAgentEntry(state, state.timesheetEntries[2]!).shortId).toBe(
+      "e-legacy",
+    );
+  });
+
+  it("gives a running entry that continues a saved one the saved one's short id", () => {
+    const state = stateWithUuidIds();
+    state.timers[0] = { ...state.timers[0]!, entryId: ID_B };
+    expect(readRunningTimer(state, NOW)?.shortId).toBe(
+      "3f2a0000111142228333444455556666",
+    );
+  });
+
+  it("finds one entry for a unique prefix, on any day", () => {
+    const result = findEntriesForAgent(
+      stateWithUuidIds(),
+      { idPrefix: "3f2a9" },
+      NOW,
+    );
+    expect(result.entries.map((item) => [item.entryId, item.date])).toEqual([
+      [ID_A, "2024-03-04"],
+    ]);
+    expect(result.entries[0]).toMatchObject({
+      shortId: "3f2a9c1e7b4d4e8a9c0b1d2e3f4a5b6c",
+      state: "saved",
+      minutes: 60,
+      projectName: "Acme",
+      taskName: "Build",
+    });
+    expect(result.running).toBeNull();
+  });
+
+  it("finds every entry that shares a prefix, oldest day first, and none for an unknown one", () => {
+    const state = stateWithUuidIds();
+    expect(
+      findEntriesForAgent(state, { idPrefix: "3f2a" }, NOW).entries.map(
+        (item) => item.entryId,
+      ),
+    ).toEqual([ID_A, ID_B]);
+    expect(findEntriesForAgent(state, { idPrefix: "beef" }, NOW)).toEqual({
+      entries: [],
+      running: null,
+    });
+  });
+
+  it("gives the saved entry used last, on any day, and never the running one", () => {
+    const state = createState();
+    state.timesheetEntries = [
+      // Saved long ago, and used again an hour ago: the newest.
+      entry({
+        _id: "e-old",
+        localDate: "2024-03-04",
+        committedAt: 10,
+        usedAt: NOW - HOUR,
+      }),
+      entry({ _id: "e-recent", committedAt: NOW - 2 * HOUR }),
+      entry({ _id: "e-running", committedAt: NOW - 60_000 }),
+    ];
+    state.timers[0] = { ...state.timers[0]!, entryId: "e-running" };
+
+    expect(getLastSavedEntryForAgent(state)).toEqual({
+      entry: toAgentEntry(state, state.timesheetEntries[0]!),
+    });
+  });
+
+  it("gives no entry when none is saved but the running one", () => {
+    const state = createState();
+    state.timesheetEntries = [entry({ _id: "e-running" })];
+    state.timers[0] = { ...state.timers[0]!, entryId: "e-running" };
+
+    expect(getLastSavedEntryForAgent(state)).toEqual({ entry: null });
+    expect(
+      getLastSavedEntryForAgent({ ...state, timesheetEntries: [] }),
+    ).toEqual({ entry: null });
+  });
+
+  it("finds the running entry when its short id matches", () => {
+    const result = findEntriesForAgent(
+      stateWithUuidIds(),
+      { idPrefix: "9d8c7b" },
+      NOW,
+    );
+    expect(result.entries).toEqual([]);
+    expect(result.running).toMatchObject({
+      timerId: TIMER_ID,
+      shortId: "9d8c7b6a5f4e4d3c8b2a190817263544",
+    });
+  });
+
+  it("lists each project's full and display names, and whether it is local only", () => {
+    const state = createState();
+    state.projects[0] = {
+      ...state.projects[0]!,
+      name: "Acme Corporation",
+      displayName: "Acme",
+      localOnly: true,
+    };
+    expect(
+      listProjectsForAgent(state, NO_PROPERTY_PLUGINS).projects[0],
+    ).toMatchObject({
+      name: "Acme",
+      fullName: "Acme Corporation",
+      displayName: "Acme",
+      localOnly: true,
+    });
+  });
+
+  it("lists each task's pinned slot and the four kinds of commit-as", () => {
+    const state = createState();
+    const tasks = state.projects[0]!.tasks;
+    state.projects[0]!.tasks = [
+      { ...tasks[0]!, pinnedSlot: "1" },
+      {
+        _id: "task-run",
+        name: "Run",
+        status: "active",
+        createdAt: 1,
+        pinnedSlot: "0",
+        pluginProperties: { "workday-agent": { task: "07 Run" } },
+      },
+      {
+        _id: "task-new",
+        name: "Discovery",
+        status: "active",
+        createdAt: 1,
+        commitAs: "waiting",
+      },
+      {
+        _id: "task-mine",
+        name: "Learning",
+        status: "active",
+        createdAt: 1,
+        commitAs: "local",
+      },
+    ];
+
+    expect(
+      listProjectsForAgent(state, { projects: [], tasks: [workdayTask] })
+        .projects[0]!.tasks,
+    ).toEqual([
+      {
+        taskId: "task-1",
+        name: "Build",
+        pinnedSlot: 1,
+        commitsAs: { kind: "own" },
+      },
+      {
+        taskId: "task-run",
+        name: "Run",
+        pinnedSlot: 10,
+        commitsAs: { kind: "task", name: "07 Run" },
+      },
+      {
+        taskId: "task-new",
+        name: "Discovery",
+        commitsAs: { kind: "not-known-yet" },
+      },
+      {
+        taskId: "task-mine",
+        name: "Learning",
+        commitsAs: { kind: "local-only" },
+      },
+    ]);
+  });
+
+  it("commits every task of a local only project as local only", () => {
+    const state = createState();
+    state.projects[0] = { ...state.projects[0]!, localOnly: true };
+    state.projects[0].tasks[0]!.pluginProperties = {
+      "workday-agent": { task: "07 Run" },
+    };
+    expect(
+      listProjectsForAgent(state, { projects: [], tasks: [workdayTask] })
+        .projects[0]!.tasks[0]!.commitsAs,
+    ).toEqual({ kind: "local-only" });
+  });
+
+  it("says a task's commit-as name is unknown when the plugins could not be read", () => {
+    const state = createState();
+    const tasks = state.projects[0]!.tasks;
+    state.projects[0]!.tasks = [
+      tasks[0]!,
+      {
+        _id: "task-run",
+        name: "Run",
+        status: "active",
+        createdAt: 1,
+        pluginProperties: { "workday-agent": { task: "07 Run" } },
+      },
+      {
+        _id: "task-same",
+        name: "Support",
+        status: "active",
+        createdAt: 1,
+        pluginProperties: { "workday-agent": { task: "Support" } },
+      },
+      {
+        _id: "task-new",
+        name: "Discovery",
+        status: "active",
+        createdAt: 1,
+        commitAs: "waiting",
+        pluginProperties: { "workday-agent": { task: "08 Discovery" } },
+      },
+      {
+        _id: "task-mine",
+        name: "Learning",
+        status: "active",
+        createdAt: 1,
+        commitAs: "local",
+      },
+    ];
+
+    expect(
+      listProjectsForAgent(state, undefined).projects[0]!.tasks.map((task) => [
+        task.name,
+        task.commitsAs,
+      ]),
+    ).toEqual([
+      ["Build", { kind: "own" }],
+      ["Run", { kind: "unknown" }],
+      ["Support", { kind: "own" }],
+      ["Discovery", { kind: "not-known-yet" }],
+      ["Learning", { kind: "local-only" }],
+    ]);
+  });
+
+  describe("with two plugins that map one task differently", () => {
+    const jiraTask = {
+      pluginId: "jira-agent",
+      capability: {
+        section: "Jira",
+        fields: [
+          { id: "task", label: "Jira task", defaultFrom: "name" as const },
+        ],
+      },
+    };
+    const plugins: PropertyPlugins = {
+      projects: [],
+      tasks: [workdayTask, jiraTask],
+    };
+
+    function stateWithTwoNames(names?: string) {
+      const state = createState();
+      state.projects[0]!.tasks[0]!.pluginProperties = {
+        "workday-agent": { task: "07 Run" },
+        "jira-agent": { task: "OPS-12 Run" },
+      };
+      state.timesheetEntries = [entry({ _id: "e-1" })];
+      state.timers = [];
+      if (names) state.userPreferences.commitLinesNameSource = names;
+      return state;
+    }
+
+    function namesOf(state: LocalAppState) {
+      const listed = listProjectsForAgent(state, plugins).projects[0]!.tasks[0]!
+        .commitsAs;
+      const line = getWeekLinesForAgent(state, {
+        weekDates: WEEK,
+        groupBy: "task",
+        propertyPlugins: plugins,
+        now: NOW,
+      }).sections[0]!.lines[0]!;
+      return { listed, line: line.taskName };
+    }
+
+    it("names the task as the plugin the Names choice selects, as the Commit page does", () => {
+      expect(namesOf(stateWithTwoNames("jira-agent"))).toEqual({
+        listed: { kind: "task", name: "OPS-12 Run" },
+        line: "OPS-12 Run",
+      });
+    });
+
+    it("asks the first plugin when Names is on Ajour", () => {
+      expect(namesOf(stateWithTwoNames())).toEqual({
+        listed: { kind: "task", name: "07 Run" },
+        line: "07 Run",
+      });
+    });
+
+    it("keeps the task's own name when the selected plugin maps none", () => {
+      const state = stateWithTwoNames("jira-agent");
+      state.projects[0]!.tasks[0]!.pluginProperties = {
+        "workday-agent": { task: "07 Run" },
+      };
+      expect(namesOf(state)).toEqual({
+        listed: { kind: "own" },
+        line: "Build",
+      });
+    });
+  });
+
+  describe("a running entry that continues a saved one", () => {
+    const ID_C = "timesheet_9d8c0000-aaaa-4bbb-8ccc-dddddddddddd";
+
+    function stateContinuingB(): LocalAppState {
+      const state = stateWithUuidIds();
+      state.timers[0] = { ...state.timers[0]!, entryId: ID_B };
+      return state;
+    }
+
+    it("is found by its timer's short id, and shows the saved entry's", () => {
+      const result = findEntriesForAgent(
+        stateContinuingB(),
+        { idPrefix: "9d8c7b" },
+        NOW,
+      );
+      expect(result.entries).toEqual([]);
+      expect(result.running).toMatchObject({
+        timerId: TIMER_ID,
+        shortId: "3f2a0000111142228333444455556666",
+      });
+    });
+
+    it("is found by the saved entry's short id, beside that entry", () => {
+      const result = findEntriesForAgent(
+        stateContinuingB(),
+        { idPrefix: "3f2a00" },
+        NOW,
+      );
+      expect(result.entries.map((item) => item.entryId)).toEqual([ID_B]);
+      expect(result.running).toMatchObject({ timerId: TIMER_ID });
+    });
+
+    it("is found beside an unrelated saved entry that shares the timer's prefix", () => {
+      const state = stateContinuingB();
+      state.timesheetEntries.push(entry({ _id: ID_C }));
+
+      const shared = findEntriesForAgent(state, { idPrefix: "9d8c" }, NOW);
+      expect(shared.entries.map((item) => item.entryId)).toEqual([ID_C]);
+      expect(shared.running).toMatchObject({ timerId: TIMER_ID });
+
+      const onlyC = findEntriesForAgent(state, { idPrefix: "9d8c0" }, NOW);
+      expect(onlyC.entries.map((item) => item.entryId)).toEqual([ID_C]);
+      expect(onlyC.running).toBeNull();
+    });
+  });
+});
+
+describe("entry commit classifications", () => {
+  it.each([
+    ["local", "local-only"],
+    ["waiting", "not-known-yet"],
+  ] as const)(
+    "keeps an archived %s task's classification",
+    (commitAs, kind) => {
+      const state = createState();
+      state.projects[0]!.status = "archived";
+      state.projects[0]!.tasks[0]!.status = "archived";
+      state.projects[0]!.tasks[0]!.commitAs = commitAs;
+      const result = listTimeEntriesForAgent(
+        state,
+        { from: WEEK[0]!, to: WEEK[6]! },
+        NOW,
+      );
+      expect(
+        result.entries.find((entry) => entry.entryId === "e1"),
+      ).toMatchObject({ commitsAs: { kind } });
+      expect(result.running).toMatchObject({ commitsAs: { kind } });
+    },
+  );
+
+  it("reports unknown when an archived task may have a plugin name", () => {
+    const state = createState();
+    state.projects[0]!.tasks[0]!.status = "archived";
+    state.projects[0]!.tasks[0]!.pluginProperties = {
+      plugin: { task: "Other name" },
+    };
+    const result = listTimeEntriesForAgent(
+      state,
+      { from: WEEK[0]!, to: WEEK[6]! },
+      NOW,
+    );
+    expect(
+      result.entries.find((entry) => entry.entryId === "e1"),
+    ).toMatchObject({ commitsAs: { kind: "unknown" } });
   });
 });

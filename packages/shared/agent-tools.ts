@@ -29,6 +29,15 @@ function isRealCalendarDate(value: string) {
   );
 }
 
+/**
+ * What a data tool answers when no Ajour window holds the bridge, and when the
+ * window did not answer in time. Clients such as the terminal read them as
+ * "Ajour is not reachable", not as a refusal.
+ */
+export const BRIDGE_UNAVAILABLE_MESSAGE =
+  "Open the Ajour window to use this tool.";
+export const BRIDGE_TIMEOUT_MESSAGE = "Ajour did not answer in time.";
+
 /** An agent client as Settings lists it. The token is never part of it. */
 export const mcpClientSchema = z.object({
   id: z.string().min(1),
@@ -111,6 +120,84 @@ export const bridgeToolResultSchema = z.discriminatedUnion("ok", [
 ]);
 export type BridgeToolResult = z.infer<typeof bridgeToolResultSchema>;
 
+/**
+ * get_week_lines (#533): the Commit page's Workday lines, grouped as its
+ * Group by control groups them. `weekOf` is any date in the week.
+ */
+export const weekLinesGroupBySchema = z.enum(["day-task", "day", "task"]);
+const weekLinesInputSchema = z.object({
+  weekOf: isoDateSchema,
+  groupBy: weekLinesGroupBySchema.default("day-task"),
+  /** Optional inclusive bounds within the week, applied before grouping. */
+  from: isoDateSchema.optional(),
+  to: isoDateSchema.optional(),
+});
+
+// Reads for the terminal (#532): day targets, pinned slots, commit-as names
+// and short entry ids.
+
+/** 4 to 32 lowercase hex characters: the start of an entry's short id. */
+const shortIdPrefixSchema = z
+  .string()
+  .regex(
+    /^[0-9a-f]{4,32}$/,
+    "Use 4 to 32 lowercase hex characters, such as 3f2a9c1.",
+  );
+
+const terminalReadToolInputSchemas = {
+  /** Every entry whose short id starts with `idPrefix`, on any day. */
+  find_entries: z.object({ idPrefix: shortIdPrefixSchema }),
+  /** The saved entry used most recently, on any day: what `last` names. */
+  get_last_saved_entry: z.object({}),
+} as const;
+
+/**
+ * The entry's short id: its UUID without dashes, or its whole id when it has
+ * none. See entry-short-id.ts. Absent from an older Ajour.
+ */
+const shortIdShape = { shortId: z.string().optional() };
+
+/** A day's target from Settings › General, in decimal hours. */
+export const agentDayTargetSchema = z.object({
+  date: z.string(),
+  hours: z.number(),
+});
+
+/**
+ * What a task's time commits as: its own name, another task's (`name`, the
+ * name a plugin maps it to under the Commit page's Names choice), nothing
+ * yet while it is Not known yet, or nothing ever when it or its project is
+ * Local only. `unknown`: Ajour could not read its plugins in time, and the
+ * task holds a plugin value that may rename it, so neither its own name nor
+ * a mapped one is certain. Show it as unknown, never as its own name.
+ */
+export const agentCommitsAsSchema = z.object({
+  kind: z.enum(["own", "task", "not-known-yet", "local-only", "unknown"]),
+  name: z.string().optional(),
+});
+export type AgentCommitsAs = z.infer<typeof agentCommitsAsSchema>;
+
+export const agentProjectTaskSchema = z.object({
+  taskId: z.string(),
+  name: z.string(),
+  /** The number key 1 to 9 is that slot; 0 is slot 10. Absent when unpinned. */
+  pinnedSlot: z.number().int().min(1).max(10).optional(),
+  commitsAs: agentCommitsAsSchema.optional(),
+});
+
+export const agentProjectSchema = z.object({
+  projectId: z.string(),
+  /** The short name Ajour shows, the same as `displayName`. */
+  name: z.string(),
+  code: z.string().optional(),
+  /** The name the external timesheet knows. */
+  fullName: z.string().optional(),
+  displayName: z.string().optional(),
+  /** Its time never goes to the external timesheet. */
+  localOnly: z.boolean().optional(),
+  tasks: z.array(agentProjectTaskSchema),
+});
+
 /** Input schemas of the read tools, by MCP tool name. */
 export const readToolInputSchemas = {
   get_running_timer: z.object({}),
@@ -138,6 +225,8 @@ export const readToolInputSchemas = {
     onlyChecked: z.boolean().default(true),
   }),
   get_week_status: z.object({ weekOf: isoDateSchema }),
+  get_week_lines: weekLinesInputSchema,
+  ...terminalReadToolInputSchemas,
 } as const;
 export type ReadToolName = keyof typeof readToolInputSchemas;
 export type ReadToolInput<Name extends ReadToolName> = z.infer<
@@ -170,11 +259,19 @@ const sourceStateInputSchema = z.string().trim().min(1).max(120);
 
 /** Input schemas of the write tools, by MCP tool name. */
 export const writeToolInputSchemas = {
+  /** Without a workItemId or projectId, an empty entry, as S starts one. */
   start_timer: z.object({
     workItemId: z.string().optional(),
     projectId: z.string().optional(),
     taskId: z.string().optional(),
     note: noteSchema.optional(),
+    /** Counts on from this time, for a late start. */
+    countedMinutes: z
+      .number()
+      .int()
+      .min(0)
+      .max(24 * 60)
+      .optional(),
   }),
   stop_timer: z.object({}),
   edit_running_entry: z.object({
@@ -221,6 +318,18 @@ export const writeToolInputSchemas = {
   }),
   /** `version` is the one get_week_status returned. A different one refuses. */
   submit_week: z.object({ weekOf: isoDateSchema, version: z.string() }),
+  /** Deletes every listed entry in one action, or none of them. */
+  delete_entries: z.object({
+    entryIds: z.array(z.string().min(1)).min(1).max(500),
+  }),
+  discard_timer: z.object({}),
+  /**
+   * Continue on a saved entry: today's resumes with its saved time, another
+   * day's starts a new running entry today with its task and note.
+   */
+  continue_entry: z.object({ entryId: z.string().min(1) }),
+  /** The `undoToken` a write tool returned. */
+  undo: z.object({ undoToken: z.string().min(1) }),
   create_work_item: z.object({
     title: z.string().trim().min(1).max(500),
     description: z.string().max(10_000).optional(),
@@ -278,15 +387,27 @@ export type WriteToolInput<Name extends WriteToolName> = z.infer<
 const agentProjectRefShape = {
   projectId: z.string().optional(),
   projectName: z.string().optional(),
+  /** The project's short code, such as "AJR", when it has one. */
+  projectCode: z.string().optional(),
   taskId: z.string().optional(),
   taskName: z.string().optional(),
 };
 
 export const agentRunningTimerSchema = z.object({
   ...agentProjectRefShape,
+  commitsAs: agentCommitsAsSchema.pick({ kind: true }).optional(),
   timerId: z.string(),
+  /** The continued entry's short id, else the running entry's own. */
+  ...shortIdShape,
   date: z.string(),
   countedMinutes: z.number(),
+  /** The same count to the second, for a clock that shows seconds. */
+  countedSeconds: z.number().optional(),
+  /**
+   * When the clock last started counting, as an ISO time: the start, or the
+   * last resume, Continue or counted-time correction.
+   */
+  runningSince: z.string().optional(),
   note: z.string().optional(),
   workItemId: z.string().optional(),
   workItemTitle: z.string().optional(),
@@ -295,7 +416,9 @@ export type AgentRunningTimer = z.infer<typeof agentRunningTimerSchema>;
 
 export const agentTimeEntrySchema = z.object({
   ...agentProjectRefShape,
+  commitsAs: agentCommitsAsSchema.pick({ kind: true }).optional(),
   entryId: z.string(),
+  ...shortIdShape,
   date: z.string(),
   /**
    * Committed when the external timesheet holds the entry as it is now.
@@ -303,6 +426,8 @@ export const agentTimeEntrySchema = z.object({
    */
   state: z.enum(["saved", "committed", "running"]),
   minutes: z.number(),
+  /** When Stop or an edit last saved the entry, as an ISO time. */
+  savedAt: z.string().optional(),
   note: z.string().optional(),
   workItemId: z.string().optional(),
 });
@@ -360,25 +485,95 @@ const weekPaceSchema = z.object({
 });
 
 /**
- * Output schemas of the read and write tools, by MCP tool name. The API
- * checks each renderer result against its schema before the agent sees it.
+ * get_week_lines (#533): the Commit page's lines, in decimal hours rounded
+ * as the page copies them, and the time it keeps out of them beside them.
  */
-export const dataToolOutputSchemas = {
+const agentWeekLineSchema = z.object({
+  projectId: z.string().optional(),
+  /** The project's full name, as the external timesheet knows it. */
+  projectName: z.string().optional(),
+  projectCode: z.string().optional(),
+  taskId: z.string().optional(),
+  /** The name the task commits as: a plugin's mapped name, else its own. */
+  taskName: z.string().optional(),
+  hours: z.number(),
+  /** The entries' notes merged with " | ". Empty when there are none. */
+  comments: z.string(),
+  entryIds: z.array(z.string()),
+});
+const weekLinesOutputSchema = z.object({
+  /** The week's Monday. */
+  weekOf: z.string(),
+  groupBy: weekLinesGroupBySchema,
+  /** Submitted: its entries are read-only until the user reopens it. */
+  locked: z.boolean(),
+  /** A section per day with lines, or one without a date when grouping by task. */
+  sections: z.array(
+    z.object({
+      localDate: z.string().optional(),
+      lines: z.array(agentWeekLineSchema),
+    }),
+  ),
+  /**
+   * Local only time, which never goes: per task, or per Local only project
+   * without its tasks. Projects are named as the lines name theirs.
+   */
+  notSent: z.object({
+    hours: z.number(),
+    items: z.array(
+      z.object({
+        projectId: z.string(),
+        projectName: z.string(),
+        projectCode: z.string().optional(),
+        taskId: z.string().optional(),
+        taskName: z.string().optional(),
+        hours: z.number(),
+      }),
+    ),
+  }),
+  /** Time on Not known yet tasks, which waits for what they commit as. */
+  waiting: z.object({
+    hours: z.number(),
+    tasks: z.array(
+      z.object({
+        projectId: z.string(),
+        taskId: z.string(),
+        taskName: z.string(),
+        hours: z.number(),
+      }),
+    ),
+  }),
+  /**
+   * The running entry when it runs in the week, with only the time it has
+   * not saved yet, so the lines and it add up to the week's time once.
+   */
+  running: z
+    .object({
+      ...agentProjectRefShape,
+      timerId: z.string(),
+      date: z.string(),
+      /**
+       * Counted minutes not in any saved entry yet. When it continues
+       * today's saved entry, whose saved time a line holds, only the time
+       * since; never below 0.
+       */
+      unsavedMinutes: z.number(),
+      /** The saved entry it continues, if any. */
+      entryId: z.string().optional(),
+    })
+    .nullable(),
+});
+
+/** Output schemas of the read tools, by MCP tool name. */
+const readToolOutputSchemas = {
   get_running_timer: z.object({ running: agentRunningTimerSchema.nullable() }),
   list_time_entries: z.object({
     entries: z.array(agentTimeEntrySchema),
     running: agentRunningTimerSchema.nullable(),
+    /** One per day of the range, oldest first. Absent from an older Ajour. */
+    targets: z.array(agentDayTargetSchema).optional(),
   }),
-  list_projects: z.object({
-    projects: z.array(
-      z.object({
-        projectId: z.string(),
-        name: z.string(),
-        code: z.string().optional(),
-        tasks: z.array(z.object({ taskId: z.string(), name: z.string() })),
-      }),
-    ),
-  }),
+  list_projects: z.object({ projects: z.array(agentProjectSchema) }),
   list_work_items: z.object({ workItems: z.array(agentWorkItemSchema) }),
   get_work_item: agentWorkItemSchema.extend({
     description: z.string().optional(),
@@ -462,10 +657,32 @@ export const dataToolOutputSchemas = {
     /** Ask the user before submitting a week whose status is not "on-pace". */
     pace: weekPaceSchema,
   }),
-  start_timer: z.object({ running: agentRunningTimerSchema }),
+  get_week_lines: weekLinesOutputSchema,
+  // Reads for the terminal (#532).
+  /** The running entry is in `running` when its short id or its timer's matches. */
+  find_entries: z.object({
+    entries: z.array(agentTimeEntrySchema),
+    running: agentRunningTimerSchema.nullable(),
+  }),
+  /** Null when no entry is saved, the running one aside. */
+  get_last_saved_entry: z.object({ entry: agentTimeEntrySchema.nullable() }),
+} as const satisfies Record<ReadToolName, z.AnyZodObject>;
+
+/**
+ * What each write tool returns, by MCP tool name, before Ajour adds the
+ * write's `undoToken`.
+ */
+export const writeToolResultSchemas = {
+  start_timer: z.object({
+    running: agentRunningTimerSchema,
+    /** The entry a Switch saved, when one was running. */
+    saved: agentTimeEntrySchema.optional(),
+  }),
   stop_timer: z.object({
     stopped: z.literal(true),
     countedMinutes: z.number(),
+    /** The saved entry. Absent from an older Ajour. */
+    entry: agentTimeEntrySchema.optional(),
   }),
   edit_running_entry: z.object({ running: agentRunningTimerSchema }),
   create_entry: agentTimeEntrySchema,
@@ -475,6 +692,17 @@ export const dataToolOutputSchemas = {
   /** How many of the listed changes Ajour committed. */
   mark_entries_committed: z.object({ committed: z.number() }),
   submit_week: z.object({ weekOf: z.string(), locked: z.literal(true) }),
+  /** How many entries Ajour deleted. */
+  delete_entries: z.object({ deleted: z.number() }),
+  /** The counted minutes the discard dropped. A continued entry keeps its saved time. */
+  discard_timer: z.object({ discardedMinutes: z.number() }),
+  continue_entry: z.object({
+    running: agentRunningTimerSchema,
+    /** The entry a Switch saved, when another one was running. */
+    saved: agentTimeEntrySchema.optional(),
+  }),
+  /** The undone action, as its Undo toast names it, such as "Deleted 2 entries". */
+  undo: z.object({ undone: z.string() }),
   create_work_item: agentWorkItemSchema,
   edit_work_item: agentWorkItemSchema.extend({
     /**
@@ -507,6 +735,44 @@ export const dataToolOutputSchemas = {
   unsnooze_work_item: agentWorkItemSchema,
   archive_work_item: agentWorkItemSchema,
   restore_work_item: agentWorkItemSchema,
+} as const satisfies Record<WriteToolName, z.AnyZodObject>;
+export type WriteToolResult<Name extends WriteToolName> = z.infer<
+  (typeof writeToolResultSchemas)[Name]
+>;
+
+/** The Undo token every write tool returns. */
+const undoTokenShape = {
+  /**
+   * Pass it to undo to take the write back while its Undo toast shows.
+   * Null when the write changed nothing Ajour can undo.
+   */
+  undoToken: z.string().nullable(),
+};
+
+/**
+ * Typed per tool, so a caller such as the CLI reads each write's own
+ * fields along with its token.
+ */
+type ShapeOf<Schema> = Schema extends z.ZodObject<infer Shape> ? Shape : never;
+
+const writeToolOutputSchemas = Object.fromEntries(
+  Object.entries(writeToolResultSchemas).map(([name, schema]) => [
+    name,
+    schema.extend(undoTokenShape),
+  ]),
+) as {
+  [Name in WriteToolName]: z.ZodObject<
+    ShapeOf<(typeof writeToolResultSchemas)[Name]> & typeof undoTokenShape
+  >;
+};
+
+/**
+ * Output schemas of the read and write tools, by MCP tool name. The API
+ * checks each renderer result against its schema before the agent sees it.
+ */
+export const dataToolOutputSchemas = {
+  ...readToolOutputSchemas,
+  ...writeToolOutputSchemas,
 } as const satisfies Record<ReadToolName | WriteToolName, z.AnyZodObject>;
 export type DataToolOutput<Name extends ReadToolName | WriteToolName> = z.infer<
   (typeof dataToolOutputSchemas)[Name]

@@ -17,6 +17,7 @@ import type {
   ThemeMode,
   UpdateTrack,
 } from "@/domain/local-state";
+import type { RunningEntryTrayState } from "@/domain/time/running-entry";
 
 export interface DevelopmentPluginSettings {
   available: boolean;
@@ -107,6 +108,26 @@ export interface TraceCarrier {
   traceparent: string;
 }
 
+/**
+ * The running entry for the desktop tray icon, or nothing running. Main
+ * counts the time from it (`apps/desktop/electron/keep-running.cjs`).
+ */
+export interface DesktopTrayState {
+  entry: RunningEntryTrayState | null;
+}
+
+/** What the tray menu asks the window to do: stop the entry it showed. */
+export interface DesktopTrayAction {
+  action: "stop";
+  timerId: string;
+}
+
+/** Desktop settings main stores, which it needs before the window exists. */
+export interface DesktopWindowSettings {
+  /** Closing the window hides it, and Ajour keeps running until Quit. */
+  keepRunning: boolean;
+}
+
 /** The local log file's settings, state and folder, from the main process (ADR 0014). */
 export type DesktopLogsStatus = LocalLogStatus & { settings: LocalLogSettings };
 
@@ -156,6 +177,19 @@ declare global {
         theme: "dark" | "light",
         trace?: TraceCarrier,
       ) => void;
+      getWindowSettings?: (
+        trace?: TraceCarrier,
+      ) => Promise<DesktopWindowSettings>;
+      configureWindowSettings?: (
+        settings: DesktopWindowSettings,
+        trace?: TraceCarrier,
+      ) => Promise<DesktopWindowSettings>;
+      /** Sends the running entry to the tray icon, one way. */
+      setTrayState?: (state: DesktopTrayState, trace?: TraceCarrier) => void;
+      /** Runs `callback` with each action the tray menu asks for. */
+      onTrayAction?: (
+        callback: (action: DesktopTrayAction) => void,
+      ) => () => void;
       checkForUpdates?: (
         track: UpdateTrack,
         trace?: TraceCarrier,

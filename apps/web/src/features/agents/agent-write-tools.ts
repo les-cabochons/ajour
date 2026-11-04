@@ -1,14 +1,16 @@
 import {
   writeToolInputSchemas,
-  type DataToolOutput,
   type WriteToolName,
+  type WriteToolResult,
 } from "@ajour/shared/agent-tools";
 import {
+  formatEntryCount,
   getBacklogItemActions,
   getProjectActions,
   getTaskActions,
   getTimeEntryActions,
   getTimeEntryActionState,
+  getTimeEntrySelectionActions,
   type BacklogItemActionOptions,
   type ObjectAction,
 } from "@/domain/actions/object-actions";
@@ -47,8 +49,11 @@ import { localStore } from "@/lib/local-store";
 const MINUTE = 60_000;
 
 export interface AgentWriteOutcome {
-  /** The API checks it against the tool's output schema. */
-  output: DataToolOutput<WriteToolName>;
+  /**
+   * The API checks it against the tool's output schema, once the runner
+   * adds `undoToken`.
+   */
+  output: WriteToolResult<WriteToolName>;
   undoToken: string | null;
   /** Past tense, shown in the Undo toast and the activity list. */
   action: string;
@@ -189,6 +194,27 @@ function addedEntry(before: LocalAppState, after: LocalAppState) {
   return after.timesheetEntries.find((entry) => !known.has(entry._id));
 }
 
+/**
+ * The entry that saving `before`'s running entry wrote: the saved entry it
+ * continued, else the new one. Undefined when nothing was running.
+ */
+function savedEntry(before: LocalAppState, after: LocalAppState) {
+  const timer = before.timers[0];
+  if (!timer) return undefined;
+  const entry = timer.entryId
+    ? after.timesheetEntries.find(
+        (candidate) => candidate._id === timer.entryId,
+      )
+    : addedEntry(before, after);
+  return entry && toAgentEntry(after, entry);
+}
+
+/** `{ saved }` when a Switch saved an entry, else nothing. */
+function switchedFrom(before: LocalAppState, after: LocalAppState) {
+  const saved = savedEntry(before, after);
+  return saved ? { saved } : {};
+}
+
 export const ENTRY_WRITE_TOOLS = [
   "start_timer",
   "stop_timer",
@@ -199,6 +225,9 @@ export const ENTRY_WRITE_TOOLS = [
   "duplicate_entry",
   "mark_entries_committed",
   "submit_week",
+  "delete_entries",
+  "discard_timer",
+  "continue_entry",
 ] as const satisfies readonly WriteToolName[];
 export type EntryWriteTool = (typeof ENTRY_WRITE_TOOLS)[number];
 
@@ -256,17 +285,25 @@ export function runEntryWriteTool(
           note: input.note,
         };
         title = target.title;
+      } else if (input.taskId) {
+        throw new AgentToolRefusal("Pass the task's projectId too.");
       } else {
-        throw new AgentToolRefusal(
-          "Pass a workItemId, or a projectId with an optional taskId.",
-        );
+        // An empty entry, as S starts one in the window.
+        draft = { note: input.note };
+        title = "Untitled entry";
+      }
+      if (input.countedMinutes !== undefined) {
+        draft = {
+          ...draft,
+          accumulatedDurationMs: input.countedMinutes * MINUTE,
+        };
       }
       const { undoToken } = localStore.runWithUndo(() =>
         localStore.startTimer(draft),
       );
       const running = requireRunningTimer();
       return {
-        output: { running },
+        output: { running, ...switchedFrom(state, localStore.snapshot()) },
         undoToken,
         action: "Started an entry",
         objectId: running.timerId,
@@ -283,8 +320,13 @@ export function runEntryWriteTool(
       const { undoToken } = localStore.runWithUndo(() =>
         localStore.saveTimer(timer._id),
       );
+      const entry = savedEntry(state, localStore.snapshot());
       return {
-        output: { stopped: true, countedMinutes: running.countedMinutes },
+        output: {
+          stopped: true,
+          countedMinutes: running.countedMinutes,
+          ...(entry ? { entry } : {}),
+        },
         undoToken,
         action: "Stopped the entry",
         objectId: timer._id,
@@ -395,15 +437,22 @@ export function runEntryWriteTool(
         tool === "move_entry"
           ? writeToolInputSchemas.move_entry.parse(rawInput)
           : writeToolInputSchemas.duplicate_entry.parse(rawInput);
-      const entry = requireEntry(state, input.entryId);
-      assertAllowed(
-        entryActions(state, entry),
+      const action =
         tool === "move_entry"
           ? "move-to"
           : input.date
             ? "duplicate-to"
-            : "duplicate",
-      );
+            : "duplicate";
+      // A new running entry has only its timer's id: it refuses as the
+      // running entry does in the window.
+      if (state.timers.some((timer) => timer._id === input.entryId)) {
+        assertAllowed(
+          getTimeEntryActions(getTimeEntryActionState({ isRunning: true })),
+          action,
+        );
+      }
+      const entry = requireEntry(state, input.entryId);
+      assertAllowed(entryActions(state, entry), action);
       const values = {
         localDate: input.date ?? entry.localDate,
         projectId: entry.projectId,
@@ -478,6 +527,96 @@ export function runEntryWriteTool(
         undoSubject: "entry",
       };
     }
+    case "delete_entries": {
+      const input = writeToolInputSchemas.delete_entries.parse(rawInput);
+      const entryIds = [...new Set(input.entryIds)];
+      // Every id is checked before any write, so a refusal deletes nothing.
+      for (const entryId of entryIds) {
+        const isTimer = state.timers.some((timer) => timer._id === entryId);
+        const entry = isTimer ? undefined : requireEntry(state, entryId);
+        const isRunning = isTimer || (entry && isEntryRunning(state, entry));
+        assertAllowed(
+          getTimeEntrySelectionActions({
+            saved: isRunning ? 0 : 1,
+            committed: 0,
+            lockedReason: entry
+              ? getDateLockReason(state, entry.localDate)
+              : undefined,
+          }),
+          "delete",
+        );
+      }
+      const undoToken = localStore.deleteTimesheetEntries(entryIds);
+      const deleted = entryIds.length;
+      const entries = formatEntryCount(deleted);
+      return {
+        output: { deleted },
+        undoToken,
+        action: `Deleted ${entries}`,
+        objectId: entryIds[0]!,
+        objectTitle:
+          deleted === 1
+            ? entryTitle(state, requireEntry(state, entryIds[0]!))
+            : entries,
+        undoSubject: "entry",
+      };
+    }
+
+    case "discard_timer": {
+      writeToolInputSchemas.discard_timer.parse(rawInput);
+      const timer = state.timers[0];
+      if (!timer) throw new AgentToolRefusal("Nothing is running");
+      assertAllowed(
+        getTimeEntryActions(getTimeEntryActionState({ isRunning: true })),
+        "discard",
+      );
+      const running = readRunningTimer(state, now)!;
+      const undoToken = localStore.cancelTimer(timer._id);
+      // A continued entry keeps its saved time: only the rest is dropped.
+      const kept = localStore
+        .snapshot()
+        .timesheetEntries.find((entry) => entry._id === timer.entryId);
+      const keptMinutes = kept ? Math.floor(kept.durationMs / MINUTE) : 0;
+      return {
+        output: {
+          discardedMinutes: Math.max(0, running.countedMinutes - keptMinutes),
+        },
+        undoToken,
+        action: "Discarded the running entry",
+        objectId: timer._id,
+        objectTitle: projectTaskTitle(running) || "Running entry",
+        undoSubject: "entry",
+      };
+    }
+
+    case "continue_entry": {
+      const input = writeToolInputSchemas.continue_entry.parse(rawInput);
+      // Stop takes Continue's slot on the running entry, by its entry or
+      // its timer.
+      if (
+        state.timers.some(
+          (timer) =>
+            timer._id === input.entryId || timer.entryId === input.entryId,
+        )
+      ) {
+        throw new AgentToolRefusal("Already running");
+      }
+      const entry = requireEntry(state, input.entryId);
+      assertAllowed(entryActions(state, entry), "continue");
+      const { undoToken } = localStore.runWithUndo(() =>
+        localStore.continueTimesheetEntry(entry._id),
+      );
+      const running = requireRunningTimer();
+      return {
+        output: { running, ...switchedFrom(state, localStore.snapshot()) },
+        undoToken,
+        action: "Continued an entry",
+        objectId: running.timerId,
+        objectTitle: entryTitle(state, entry),
+        undoSubject: "entry",
+      };
+    }
+
     case "submit_week": {
       const input = writeToolInputSchemas.submit_week.parse(rawInput);
       checkWeekStatusVersionOrRefuse(state, {

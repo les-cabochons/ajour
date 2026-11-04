@@ -67,6 +67,8 @@ export type PluginManifest = {
             placement: "commit-week" | "submit-week";
             estimateMinutes: number;
             tools: (
+              | "find_entries"
+              | "get_last_saved_entry"
               | "get_running_timer"
               | "list_time_entries"
               | "list_projects"
@@ -75,6 +77,7 @@ export type PluginManifest = {
               | "list_work_item_comments"
               | "get_week_changes"
               | "get_week_status"
+              | "get_week_lines"
               | "start_timer"
               | "stop_timer"
               | "edit_running_entry"
@@ -84,6 +87,10 @@ export type PluginManifest = {
               | "duplicate_entry"
               | "mark_entries_committed"
               | "submit_week"
+              | "delete_entries"
+              | "discard_timer"
+              | "continue_entry"
+              | "undo"
               | "create_work_item"
               | "edit_work_item"
               | "move_work_item"

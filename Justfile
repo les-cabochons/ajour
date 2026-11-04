@@ -113,6 +113,12 @@ api-start:
     echo >&2 "[1/1] Starting the API server"
     {{PNPM}} --filter @ajour/api dev
 
+[doc("Runs the ajour terminal CLI, such as: just cli status")]
+[group("app")]
+[positional-arguments]
+cli *args:
+    node --experimental-strip-types --no-warnings apps/cli/src/main.ts "$@"
+
 [doc("Builds all workspace packages")]
 [group("app")]
 build:
@@ -255,3 +261,11 @@ typecheck:
 lint-boundaries:
     echo >&2 "[1/1] Checking package boundaries"
     {{PNPM}} lint:boundaries
+
+[doc("Bundles the standalone terminal CLI")]
+cli-bundle:
+    node apps/cli/scripts/bundle.mjs
+
+[doc("Builds the standalone terminal executable on this host using Node 24")]
+cli-sea: cli-bundle
+    node apps/cli/scripts/sea.mjs

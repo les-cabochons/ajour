@@ -37,9 +37,9 @@ import {
 } from "@/domain/time/locked-weeks";
 import { listWeekChanges } from "@/domain/time/timesheet-commit";
 import {
+  buildCommitLines,
   describeLineNames,
-  groupSubmitLines,
-  listSentEntries,
+  formatNotSentNames,
   listLineNameSources,
   resolveLineNameSource,
   summarizeWeek,
@@ -69,11 +69,16 @@ import {
 import { offerUndo } from "@/features/feedback/undo-toast";
 import {
   CommitChangeList,
+  CommitChangeStat,
   formatShortDay,
 } from "@/features/time/commit-changes";
 import { formatWeekRange } from "@/features/time/time-page-header";
 import { WeekLockChip } from "@/features/time/week-lock";
 import { copyTextToClipboard } from "@/lib/clipboard";
+import {
+  setCommitChangesSection,
+  useCommitChangesSection,
+} from "@/lib/commit-changes-section";
 import {
   resetCheckedChanges,
   setChangesChecked,
@@ -348,12 +353,12 @@ function SubmitLineRow({
 
 /**
  * The Commit page for the week that holds `date`: the changes since the last
- * commit, each with a checkbox, under a heading that collapses them, then the
- * week's lines to copy into the external timesheet. The Names switch picks
- * Ajour's or a plugin's project names for the lines, and is saved in the user
- * preferences. Mark as committed saves the checked changes. Submit week checks
- * the pace, then locks the week; a submitted week shows its lock and Reopen
- * week instead.
+ * commit, each with a checkbox, under a heading that counts them by kind and
+ * collapses them, saved per device, then the week's lines to copy into the
+ * external timesheet. The Names switch picks Ajour's or a plugin's project
+ * names for the lines, and is saved in the user preferences. Mark as committed
+ * saves the checked changes. Submit week checks the pace, then locks the week;
+ * a submitted week shows its lock and Reopen week instead.
  */
 export function CommitPage({
   date,
@@ -374,8 +379,8 @@ export function CommitPage({
     weekDates.includes(timer.localDate),
   );
   const [groupBy, setGroupBy] = useState<SubmitGroupBy>("day-task");
-  // Expanded on every visit, on purpose: the choice is not saved.
-  const [changesOpen, setChangesOpen] = useState(true);
+  // Saved per device, so a folded list stays folded on the next visit.
+  const changesOpen = useCommitChangesSection() === "expanded";
   const [linesOpen, setLinesOpen] = useState(true);
   // Undefined until loaded, so a saved plugin choice waits instead of
   // showing Ajour's names first.
@@ -432,8 +437,8 @@ export function CommitPage({
   );
   const sections = useMemo(
     () =>
-      groupSubmitLines({
-        entries: listSentEntries(weekEntries, projects),
+      buildCommitLines({
+        entries: weekEntries,
         groupBy,
         projects,
         weekDates,
@@ -724,9 +729,16 @@ export function CommitPage({
         <SectionHeading
           id="commit-changes-heading"
           trailing={
-            changesOpen && changes.length > 0
-              ? `${checkedIds.length} of ${changes.length} checked`
-              : undefined
+            changes.length > 0 ? (
+              <span className="flex items-center gap-3">
+                {changesOpen ? (
+                  <span>
+                    {checkedIds.length} of {changes.length} checked
+                  </span>
+                ) : null}
+                <CommitChangeStat changes={changes} />
+              </span>
+            ) : undefined
           }
         >
           <button
@@ -734,7 +746,9 @@ export function CommitPage({
             aria-expanded={changesOpen}
             aria-controls="commit-changes-content"
             className="-ml-1 flex items-center gap-1 text-left hover:text-foreground"
-            onClick={() => setChangesOpen(!changesOpen)}
+            onClick={() =>
+              setCommitChangesSection(changesOpen ? "collapsed" : "expanded")
+            }
           >
             <ChevronIcon
               aria-hidden="true"
@@ -771,7 +785,7 @@ export function CommitPage({
             />
             {summary.local.durationMs > 0 ? (
               <p className="commit-local-time">
-                Not sent: {summary.local.names.join(", ") || "local time"}{" "}
+                Not sent: {formatNotSentNames(summary.local)}{" "}
                 <Value>{formatClockDuration(summary.local.durationMs)}</Value>
               </p>
             ) : null}

@@ -12,10 +12,15 @@ Ajour is a local-first time-tracking workspace built as a pnpm monorepo. Keep ar
     - Every other scheme is blocked, including `file:`, `vscode:` and `msteams:`. Such links no longer open, and a malformed URL is blocked, never thrown.
     - `window.open` to the app's own address does nothing.
 - `apps/api`: Optional local API for plugin configuration, backlog sync, plugin workers, and local import flows.
+- `apps/cli`: the `ajour` terminal CLI (spec #525). It reaches the running app only through the MCP endpoint, as an agent client, behind one `AjourClient` interface (`src/client.ts`), so every write follows the app's action sets and Undo; it holds no lifecycle rule. It imports `packages/shared` only. `src/refs.ts` parses TASK, ENTRY, DURATION, DAY and RANGE and picks from what the read tools list; `src/format/rows.ts` is the one row shape writes and prints share, and `src/format/log.ts` builds `ajour log`'s table, summaries, TSV and CSV from the read tools' output, computing no rule of its own beyond totals and the pace against day targets; each write keeps its `undoToken` in `$XDG_STATE_HOME/ajour/last-undo`, written privately like the token, for `ajour undo`. `just cli <args>` runs it from the repo.
 - `packages/shared`: Cross-runtime domain types, validation schemas, normalization, aggregation, rule evaluation, and plugin contracts.
 - `packages/plugin-sdk`: `@ajour/plugin-sdk`, the SDK plugin authors build plugin API 4 plugins with, published separately from the app. It imports nothing from the app or other packages at runtime; its contract types are generated from `packages/shared`.
 - `packages/wide-events`: the wide-event model every runtime emits through: the envelope, the catalog of event names with a privacy class on every field, the emitter, W3C trace context, the error scrubber and the sinks. It runs in the browser and in Node. See `docs/logging-strategy.md`.
-- MCP: the local API serves an MCP endpoint at `/mcp/ajour` for agents such as Claude Code and Codex. It is off by default, and each agent client has its own token (ADR 0004). The API forwards every data tool to the renderer over `/api/mcp/bridge`, and `features/agents/agent-tool-runner.ts` runs it through the object action sets with Undo. Sessions, questions and the activity list live in API memory (`apps/api/src/agent-sessions.ts`).
+- MCP: the local API serves an MCP endpoint at `/mcp/ajour` for agents such as Claude Code and Codex. It is off by default, and each agent client has its own token (ADR 0004). The API forwards every data tool to the renderer over `/api/mcp/bridge`, and `features/agents/agent-tool-runner.ts` runs it through the object action sets with Undo. Every write tool's output carries the write's `undoToken`, or null. `delete_entries` (1 to 500 ids, through `localStore.deleteTimesheetEntries` in one action) and `discard_timer` (`localStore.cancelTimer` on the running entry) do what Delete and Discard do in the window, and refuse with the action sets' reasons; `undo` presses the Undo of the agent's last write through `localStore.undo` (`features/agents/agent-undo.ts`), as long as no later action replaced it and its toast is open (#531). `continue_entry` (`{ entryId }`) runs `localStore.continueTimesheetEntry` in one undoable action after the entry's action set allows Continue: today's entry resumes with its saved time, another day's starts a new running entry today with its task and note, and the running entry is refused ("Already running"). `start_timer` with no backlog item or project starts an empty entry, as S does, and takes `countedMinutes` for a late start; `start_timer` and `continue_entry` return the entry a Switch saved in `saved`, and `stop_timer` the saved entry in `entry`, so the terminal prints their rows without a second read (#536). `get_week_lines` (`{ weekOf, groupBy }`, `day-task` by default) returns the Commit page's lines from `buildCommitLines` in `domain/time/timesheet-submission.ts`, the same function the page calls: per line the project's full name and code, the name the task commits as (`getLineCommitTaskName`: what the Names choice's task plugin names it, its own name included; with no task plugin chosen, the first that maps it, else its own name), hours as a number rounded as the page copies them (`toDecimalHours`), comments merged with " | " and entry ids. Local time per task or per Local only project (`notSent`), Not known yet time (`waiting`) and the running entry's time not saved yet (`running.unsavedMinutes`, so a continued entry's saved time counts once) come beside the lines, never in them, and `locked` says whether the week is submitted (#533). The reads carry what the terminal prints and resolves (#532): `list_time_entries` gives each saved and running entry an optional `commitsAs: { kind }` classification (`own`, `task`, `not-known-yet`, `local-only` or `unknown`), including archived projects and tasks, from `domain/projects/commit-target.ts`; without plugin names it uses the same `unknown` rule as `list_projects`. Older Ajour versions omit the field. It gives `targets`, each day's target in hours from `weeklyCapacityTargets` (`getDayTargetMs` in `domain/time/week-pace.ts`); `list_projects` gives each project's `fullName`, `displayName` and `localOnly`, and each task's `pinnedSlot` (1 to 10, key 0 is 10) and `commitsAs` (`local-only` and `not-known-yet` from `domain/projects/commit-target.ts`; otherwise `task` with the name `resolveCommitTaskName` gives under the Commit page's Names choice, as `get_week_lines` and the page name it, or `own`). `list_projects` waits at most `PLUGIN_NAMES_DEADLINE_MS` (2 s) for the plugins overview, since discovery can wait behind a plugin install; on a failure or past it, a task holding a plugin value that may rename it reads `unknown`, never its own name and never a name from the window's cached overview, which can be stale; every entry and the running entry carry a `shortId`; and `find_entries` (`{ idPrefix }`, 4 to 32 lowercase hex characters) returns every entry on any day whose short id starts with it, plus the running entry when its short id or its timer's does (a running entry that continues a saved one shows the saved one's short id); and `get_last_saved_entry` (no input) returns in `entry` the saved entry with the newest `usedAt ?? committedAt` on any day, never the running entry, or null, for the terminal's `last` and its idle status line (`getLastSavedEntryForAgent` in `domain/agents/agent-read-model.ts`). The short id is the UUID in the `_id` without dashes, or the whole `_id` when it has none; `packages/shared/entry-short-id.ts` derives it for Ajour and the CLI alike. Sessions, questions and the activity list live in API memory (`apps/api/src/agent-sessions.ts`).
+
+`get_week_lines` accepts optional inclusive `from` and `to` bounds. The renderer filters the week's entries and running time before building sections and exclusion summaries, so partial-week task totals never include days outside the CLI range. The output's `weekOf` and lock state still refer to the week's Monday. The CLI requests every touched week before printing any lines.
+
+`get_week_lines`, `get_week_changes` and `get_week_status` require fresh plugin naming metadata through the same two-second `PLUGIN_NAMES_DEADLINE_MS` deadline as `list_projects`. A failed or overdue load refuses with "Ajour couldn't read the plugins' task names. Try again." rather than substituting own task names. The MCP endpoint preserves the refusal as a tool error, and the CLI exits 1. Optional plugin properties for writes retain their existing loader.
 
 ## Agent runner
 
@@ -55,6 +60,7 @@ Current deep domain modules demonstrate this boundary:
 - `domain/backlog/description-timelog.ts` owns what a description's timelog does to its item's project and task, on save and when the user asks; `domain/backlog/description-frontmatter.ts` reads the block. The store applies the timelog in every work item command that writes a description.
 - `domain/projects/project-transitions.ts` owns project and task creation, legacy hydration, ordering, edits, and archive state.
 - `domain/projects/team-sync.ts` owns shared projects: which team-owned fields a round sends against each record's last-synced copy, how a result merges per field while keeping local changes, held same-name arrivals, and sharing, linking, unsharing and disconnecting. `domain/projects/team-link.ts` reads stored team links back. See ADR 0006.
+- `domain/projects/source-sync.ts` owns managed projects: how a project source snapshot links projects by code, stages name-only matches for review, links tasks by name, locks the source-owned fields, archives what left the source and restores what came back. It sits next to `team-sync.ts`, not inside it, because a project is managed or shared, never both. See ADR 0016.
 - `domain/time/timesheet-entry.ts` owns manual entry creation, edits, deletion with its tombstone, ordering, marking as committed, the migration of stored submission fields, and the corresponding work-item estimate adjustments.
 - `domain/time/locked-weeks.ts` owns submitted weeks: the one rule `isDateLocked`, Submit week and Reopen week, and `assertNoLockedWeekWrite`, which `writeState` in `lib/local-store.ts` runs before every write, so no command, Undo or agent tool changes a submitted week. A refused write throws `LockedWeekError`. Every state write saves a new `revision` inside the state JSON, in one atomic write, then copies it to the hint key `ajour.local-state.revision`. A window's revision is always the one inside the state it read or wrote. Before each write, Submit, Reopen and Undo included, `writeState` reads only the hint. When the hint is missing or differs, it reloads the state, and refuses the write with `LockedWeekError` or `StaleWindowError` if the revision inside changed. A hint that cannot be written is removed, so other windows reload instead of trusting it. A stale window never erases a lock, and a refused Undo stays available for a retry. Desktop recovery saves through the same check: when storage changed while it ran, it runs once more on the fresh state. Known limit: Two browser tabs of the web build that write within the same moment can still overwrite each other: the check reads the hint, then writes, and the browser gives no lock between tabs. The desktop app has one window, so it is not affected.
 - `domain/time/timesheet-import.ts` owns import normalization, conflict detection, draft review, project/task recovery, and single or batch commit.
@@ -86,9 +92,11 @@ The local API is a boundary for plugin-driven work. Plugin behavior should produ
 
 ADR 0007 and ADR 0010 replace this runtime. Until they ship, this section describes the current one.
 
-Backlog, code host, calendar and team are capabilities of installable
+Backlog, code host, calendar, team and project source are capabilities of installable
 plugins. A plugin declares one or more in its manifest, and its connections
-serve all of them. A connection field may name the capability it configures, so the connection
+serve all of them. A project source (`projectSource`, plugin API 4) is read-only:
+`syncProjects` returns a snapshot of projects, tasks, assignments and budgets, or
+reports it unchanged, and Ajour never writes back (ADR 0016). A connection field may name the capability it configures, so the connection
 form hides it while that capability is off. `validateConnection` receives the
 capabilities that are on as its second argument and checks only their access.
 A calendar is read-only: `listCalendarEvents` returns event facts for a date
@@ -707,6 +715,37 @@ starting the local API or any plugin operation. A second launch should focus
 the existing window and exit so concurrent application versions do not share
 the API port, state file, or installed-plugin directory.
 
+The window owns the local data (localStorage) and answers the MCP data tools
+over the bridge, so closing it must not end it (#534). While "Keep Ajour
+running when the window closes" is on, the default, main turns the window's
+`close` into a hide (`closeActionOf` in `apps/desktop/electron/keep-running.cjs`),
+and the local API, the plugin host and the MCP bridge stay up until Quit. A
+quit, an update install (`gracefulQuitStarted`) or a Windows session end
+(`query-session-end`) lets the close through. A second launch, the Dock and the
+tray show the same window. Main keeps the setting, and whether the first
+close's notice has shown, in `window-settings.json` in user data, since it
+needs them before the window exists; the renderer reads and changes it over
+`ajour:get-window-settings` and `ajour:configure-window-settings`.
+
+The tray icon (`createTrayController`) shows the running entry. The renderer
+sends the entry's timer, title, start and saved time over
+`ajour:set-tray-state` only when they change (`DesktopTrayState` in
+`features/layout/desktop-tray.tsx`, from `getRunningEntryTrayState`); main
+counts the time and moves the tooltip each minute itself, so a hidden page's
+throttled timers never hold it back. The tray's Stop sends
+`ajour:tray-action` with the timer the menu showed, and the renderer runs its
+own `localStore.saveTimer`, never a second stop in main. No event holds the
+title: `tray.set_state` records only whether an entry runs.
+
+`apps/desktop/scripts/check-keep-running.mjs` checks it in the real app on
+Windows and macOS (`.github/workflows/desktop-lifecycle.yml`): an MCP client
+starts and stops an entry while the window is hidden, the window shows it
+when the tray opens it, and the tray's Quit ends every process.
+`apps/desktop/lifecycle-check/main.cjs` starts Ajour's main with the app data
+folder in the check's temp folder. A development build that loads the built
+renderer (`app://local`, no `AJOUR_DESKTOP_RENDERER_URL`) lets that origin call
+the local API, as a release build does.
+
 Release builds flip the Electron fuses decided in #231, through `electronFuses`
 in `apps/desktop/electron-builder.config.cjs`. `NODE_OPTIONS`, `--inspect` and
 the file protocol's extra privileges are off, and the app loads only from
@@ -785,3 +824,9 @@ just test
 just typecheck
 just build
 ```
+
+## Terminal distribution
+
+`apps/cli` ships beside the desktop installers as independent Node 24 single executable applications for Windows x64, macOS arm64 and x64, and Linux x64. It never runs through Electron or adds files to the desktop installer. `scripts/bundle.mjs` uses Vite's Node build to embed the CLI version and Markdown pages, bundle shared schemas, zod and the MCP SDK, and emit one CommonJS file. `scripts/sea.mjs` injects it into the host Node binary with postject. `scripts/archive.mjs` includes generated `dist/man` and `dist/completions` when present.
+
+`.github/workflows/cli-release.yml` builds and executes every target on its native runner for PR dry runs and both desktop release workflows. Releases sign Windows with `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD`, and sign and notarize macOS with the desktop's Developer ID and Apple API credentials. PR runs use no signing secrets. The desktop release publish job waits for these archives and downloads them with the installers through `release-package-*`.

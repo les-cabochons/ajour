@@ -37,6 +37,7 @@ import type { AppApiStorage, StoredMcpClient } from "./storage.ts";
  */
 
 export interface McpRequestContext {
+  appVersion?: string;
   storage: AppApiStorage;
   bridge: McpBridge;
   sessions: AgentSessions;
@@ -306,6 +307,7 @@ const AJOUR_INSTRUCTIONS = [
   "Ajour is the user's local time tracker: timers, time entries, projects and tasks, and a backlog.",
   "Use the ids that the list tools return. Durations are in minutes unless a field says hours.",
   "A write refused by Ajour returns an error with the reason. Do not retry it unchanged.",
+  "Each write returns an undoToken. Pass it to undo to take the write back while its Undo toast shows.",
   "A submitted week is read-only: Ajour refuses writes to its entries until the user reopens it.",
 ].join("\n");
 
@@ -314,8 +316,9 @@ const TOOL_DESCRIPTIONS: Record<AgentTaskMcpTool | SessionToolName, string> = {
   get_running_timer:
     "The running entry, with its project, task, note and counted minutes. `running` is null when nothing runs.",
   list_time_entries:
-    "Time entries between two dates (inclusive, at most 62 days), each with its state: saved, committed when the external timesheet holds it as it is, or running when the running entry continues it. The running entry itself is in `running`.",
-  list_projects: "Active projects and their active tasks, with their ids.",
+    "Time entries between two dates (inclusive, at most 62 days), each with its state: saved, committed when the external timesheet holds it as it is, or running when the running entry continues it, and its `shortId`. The running entry itself is in `running`. `targets` gives each day's target in hours, from the user's weekday targets.",
+  list_projects:
+    "Active projects and their active tasks, with their ids. Each project has its `fullName`, the name the external timesheet knows, its `displayName` and `localOnly`. Each task has its `pinnedSlot`, 1 to 10 where number key 0 is 10, and `commitsAs`: its own name, another `task` with that `name`, `not-known-yet` or `local-only`.",
   list_work_items:
     "Backlog items. The default `sidebar` filter returns the user's current work list in their order. Filter by workflow state, project or text.",
   get_work_item:
@@ -326,9 +329,12 @@ const TOOL_DESCRIPTIONS: Record<AgentTaskMcpTool | SessionToolName, string> = {
     "The week's changes since its last commit, one per entry: added, updated or deleted, with the entry's externalId, the change's version, its current values and, for updated and deleted ones, its committed values. `weekOf` is any date in the week. By default only the changes the user left checked on the Commit page. Write the externalId at the end of the external entry's comment, so later runs find the entry. An entry moved to another week shows in both weeks. Time the user keeps local never shows, and neither does time on a task that is Not known yet: the user must choose what that task commits as first.",
   get_week_status:
     "The week's submission status: `locked` once it is submitted, the number of changes not committed yet, the hours the external timesheet holds each day and each committed entry with its externalId and committed values, from Ajour's committed copies, and Ajour's pace check. `weekOf` is any date in the week. When `pace.status` is not \"on-pace\", ask the user before submitting. Pass its `version` to submit_week.",
+  get_week_lines:
+    'The week\'s lines as the Commit page builds them, to copy into the external timesheet: `sections` of `lines`, a section per day, or one without a date with `groupBy` "task". `groupBy` "day-task" (the default) gives a line per task and day, "day" a line per entry, "task" a line per task for the week. Each line has the project\'s full name and code, the name its task commits as, its hours as a number, its comments merged with " | ", and its entry ids. Time the user keeps local is in `notSent`, per task or per Local only project; time on Not known yet tasks is in `waiting`; and the running entry is in `running`, with only the minutes it has not saved yet (`unsavedMinutes`), since a line already holds the saved entry it continues. None of them is in a line. `locked` is true once the week is submitted. `weekOf` is any date in the week.',
   start_timer:
-    "Starts an entry now on a backlog item, or on a project with an optional task. A running entry is saved first, as Switch does in Ajour. Refused when today is in a submitted week.",
-  stop_timer: "Stops and saves the running entry.",
+    "Starts an entry now on a backlog item, or on a project with an optional task; with neither, an empty entry, as S does in Ajour. `countedMinutes` counts on from that time, for a late start. A running entry is saved first, as Switch does in Ajour, and returned in `saved`. Refused when today is in a submitted week.",
+  stop_timer:
+    "Stops and saves the running entry. Returns the saved entry in `entry`.",
   edit_running_entry:
     "Changes the running entry's project, task or note, or corrects its counted minutes. It keeps running.",
   create_entry:
@@ -342,6 +348,13 @@ const TOOL_DESCRIPTIONS: Record<AgentTaskMcpTool | SessionToolName, string> = {
     "Marks changes as committed once the external timesheet saved them: saves each entry's committed copy, or forgets a deleted entry. Pass each change's entryId and version from get_week_changes. When any change differs from its version, because the user edited, deleted or restored the entry since, Ajour refuses the whole call: call get_week_changes again and apply the current values. A deleted change's ID is accepted once: after its tombstone is cleared, the ID is unknown and the call refuses. Never mark a change you did not apply. Refused on a submitted week.",
   submit_week:
     "Submits the week in Ajour: locks it, so its entries are read-only, for agents too, until the user reopens it. Refuses while a change is not committed or the running entry is in the week, with the reason. Call it last, once the external timesheet holds the week. `weekOf` is any date in the week. Pass the `version` from your last get_week_status call: when the week changed since, Ajour refuses, and you call get_week_status again.",
+  delete_entries:
+    "Deletes saved entries, 1 to 500, in one action, as Delete does in Ajour. A committed entry then shows as a deleted change. Refuses the whole call, deleting nothing, when an id is the running entry or an entry in a submitted week. Use discard_timer for the running entry.",
+  discard_timer:
+    "Discards the running entry, as Discard does in Ajour: an entry started from nothing disappears, and a continued entry keeps its saved time and loses only the time since it last started. Returns the discarded minutes.",
+  continue_entry:
+    "Continues a saved entry, as Continue does in Ajour: today's entry resumes with its saved time, and another day's entry is left as it is while a new running entry starts today with its task and note. A running entry is saved first, as Switch does, and returned in `saved`. Refused for the running entry.",
+  undo: "Takes back one of your writes, as Undo in its toast does: pass the `undoToken` the write returned. Only the last action can be undone, and only while its toast shows: Ajour refuses once a later action replaced it, or when a record changed since.",
   create_work_item:
     "Adds a manual backlog item, or a subitem with parentWorkItemId.",
   edit_work_item:
@@ -359,6 +372,11 @@ const TOOL_DESCRIPTIONS: Record<AgentTaskMcpTool | SessionToolName, string> = {
   archive_work_item:
     "Archives a synced item in Ajour and leaves its source unchanged. Settle a manual item instead.",
   restore_work_item: "Restores an archived item.",
+  // Reads for the terminal (#532).
+  find_entries:
+    "Every time entry, on any day, whose `shortId` starts with `idPrefix` (4 to 32 lowercase hex characters), in list_time_entries' shape, and the running entry in `running` when its `shortId` starts with it. A `shortId` is the entry's UUID without dashes, or its whole id when it has none.",
+  get_last_saved_entry:
+    "The saved time entry used most recently, on any day, in list_time_entries' shape: the one saved or edited last. Never the running entry. `entry` is null when nothing is saved.",
   begin_session:
     "Call before any work longer than a minute: a title and your estimate in minutes. Ajour shows it to the user and adds a 25% margin. Send update_session at least every few minutes, extend before the deadline passes, and always call end_session.",
   update_session:
@@ -682,7 +700,7 @@ export async function handleMcpRequest(
   };
   unit.set({ agent: { client_id: client.id } });
   const server = new McpServer(
-    { name: "ajour", version: "1.0.0" },
+    { name: "ajour", version: context.appVersion ?? "unknown" },
     { instructions: AJOUR_INSTRUCTIONS },
   );
   const body =

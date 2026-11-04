@@ -187,7 +187,16 @@ jobs:
           for arch in mac mac-arm64; do
             app="apps/desktop/out/make/$arch/Ajour.app"
             codesign --verify --deep --strict "$app"
-            xcrun stapler validate "$app"
+            # stapler validate asks Apple's ticket service, and a dropped
+            # connection fails it with error 68. Only that error is retried.
+            for attempt in 1 2 3 4 5; do
+              status=0
+              xcrun stapler validate "$app" || status=$?
+              if (( status == 0 )); then break; fi
+              if (( status != 68 || attempt == 5 )); then exit "$status"; fi
+              echo "stapler validate lost its connection; retrying in $(( attempt * 15 )) s." >&2
+              sleep $(( attempt * 15 ))
+            done
           done
 
       - name: Create Windows distributable
@@ -224,6 +233,16 @@ jobs:
     with:
       ref: ${{ needs.plan.outputs.target_sha }}
 
+  cli:
+    name: Package CLI
+    needs: plan
+    uses: ./.github/workflows/cli-release.yml
+    with:
+      ref: ${{ needs.plan.outputs.target_sha }}
+      tag: ${{ needs.plan.outputs.tag }}
+      sign: true
+    secrets: inherit
+
   release:
     name: Publish stable release
     needs:
@@ -237,7 +256,7 @@ jobs:
       - name: Download desktop distributables
         uses: actions/download-artifact@v4
         with:
-          pattern: release-package-*
+          pattern: release-package-@(macos|windows)
           merge-multiple: true
           path: release-assets
 
@@ -271,3 +290,29 @@ jobs:
             --notes "Promoted from $NIGHTLY_TAG." \
             --latest \
             "${notes_args[@]}"
+
+  upload-cli:
+    name: Attach CLI archives
+    needs: [plan, release, cli]
+    # One platform failing to build or sign must not hold back the others:
+    # attach what built, while that platform's job keeps the run red.
+    if: ${{ !cancelled() && needs.release.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download CLI archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-package-cli-*
+          merge-multiple: true
+          path: cli-assets
+      - name: Attach CLI to the published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mapfile -d '' assets < <(find cli-assets -type f -print0)
+          (( ${#assets[@]} > 0 ))
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"

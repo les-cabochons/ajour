@@ -1,0 +1,4 @@
+Acme Platform	05 Backend	6,00	Rate limiter | Rate limiter retries
+Ajour Desktop	04 Review	4,25	PR #510 | PR #512, #514
+Ajour Desktop	07 Export	3,00	Fix export rounding
+Acme Platform	03 Meetings	3,00	Sprint planning | Weekly sync, moved to 10:30
