@@ -144,6 +144,8 @@ const shortIdPrefixSchema = z
 const terminalReadToolInputSchemas = {
   /** Every entry whose short id starts with `idPrefix`, on any day. */
   find_entries: z.object({ idPrefix: shortIdPrefixSchema }),
+  /** The saved entry used most recently, on any day: what `last` names. */
+  get_last_saved_entry: z.object({}),
 } as const;
 
 /**
@@ -657,6 +659,8 @@ const readToolOutputSchemas = {
     entries: z.array(agentTimeEntrySchema),
     running: agentRunningTimerSchema.nullable(),
   }),
+  /** Null when no entry is saved, the running one aside. */
+  get_last_saved_entry: z.object({ entry: agentTimeEntrySchema.nullable() }),
 } as const satisfies Record<ReadToolName, z.AnyZodObject>;
 
 /**

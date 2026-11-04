@@ -1004,6 +1004,53 @@ describe("MCP endpoint", () => {
     );
   });
 
+  it("forwards get_last_saved_entry and checks its entry", async () => {
+    const { baseUrl } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl, "Terminal");
+    const calls: BridgeToolCall[] = [];
+    const output = {
+      entry: {
+        entryId: "timesheet_1",
+        shortId: "3f9a2c1e",
+        date: "2026-10-20",
+        state: "saved",
+        minutes: 45,
+        savedAt: "2026-11-04T09:00:00.000Z",
+      },
+    };
+    let answer: unknown = output;
+    await openFakeRenderer(baseUrl, (call) => {
+      calls.push(call);
+      return { requestId: call.requestId, ok: true, output: answer };
+    });
+    const agent = await connectAgent(baseUrl, token);
+
+    const { tools } = await agent.listTools();
+    expect(tools.map((tool) => tool.name)).toContain("get_last_saved_entry");
+    expect(
+      await agent.callTool({ name: "get_last_saved_entry", arguments: {} }),
+    ).toMatchObject({ structuredContent: output });
+    expect(calls.at(-1)).toMatchObject({
+      tool: "get_last_saved_entry",
+      input: {},
+    });
+
+    answer = { entry: null };
+    expect(
+      await agent.callTool({ name: "get_last_saved_entry", arguments: {} }),
+    ).toMatchObject({ structuredContent: { entry: null } });
+
+    answer = {};
+    const bad = await agent.callTool({
+      name: "get_last_saved_entry",
+      arguments: {},
+    });
+    expect(bad.isError).toBe(true);
+    expect(resultText(bad)).toBe(
+      "Ajour returned get_last_saved_entry output that does not match its schema.",
+    );
+  });
+
   it("lists the read and write tools and forwards a write with its input", async () => {
     const { baseUrl } = await startTestApi();
     const { token } = await enableMcpWithClient(baseUrl, "Claude Code");
@@ -1019,7 +1066,7 @@ describe("MCP endpoint", () => {
     const agent = await connectAgent(baseUrl, token);
 
     const { tools } = await agent.listTools();
-    expect(tools).toHaveLength(38);
+    expect(tools).toHaveLength(39);
     expect(tools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining([
         "start_timer",

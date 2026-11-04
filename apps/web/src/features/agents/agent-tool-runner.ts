@@ -8,6 +8,7 @@ import {
 } from "@ajour/shared/agent-tools";
 import {
   findEntriesForAgent,
+  getLastSavedEntryForAgent,
   getWeekChangesForAgent,
   getWeekLinesForAgent,
   getWeekStatusForAgent,
@@ -179,6 +180,10 @@ const readTools: {
       readToolInputSchemas.find_entries.parse(rawInput),
       Date.now(),
     ),
+  get_last_saved_entry: (rawInput) => {
+    readToolInputSchemas.get_last_saved_entry.parse(rawInput);
+    return getLastSavedEntryForAgent(localStore.snapshot());
+  },
 };
 
 function isEntryWriteTool(tool: string): tool is EntryWriteTool {

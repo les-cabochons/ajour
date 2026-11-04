@@ -4,6 +4,7 @@ import type { LocalAppState, LocalTimesheetEntry } from "@/domain/local-state";
 import {
   checkChangeVersionsOrRefuse,
   findEntriesForAgent,
+  getLastSavedEntryForAgent,
   getWeekChangesForAgent,
   getWeekLinesForAgent,
   getWeekStatusForAgent,
@@ -1267,6 +1268,37 @@ describe("agent reads for the terminal", () => {
       entries: [],
       running: null,
     });
+  });
+
+  it("gives the saved entry used last, on any day, and never the running one", () => {
+    const state = createState();
+    state.timesheetEntries = [
+      // Saved long ago, and used again an hour ago: the newest.
+      entry({
+        _id: "e-old",
+        localDate: "2024-03-04",
+        committedAt: 10,
+        usedAt: NOW - HOUR,
+      }),
+      entry({ _id: "e-recent", committedAt: NOW - 2 * HOUR }),
+      entry({ _id: "e-running", committedAt: NOW - 60_000 }),
+    ];
+    state.timers[0] = { ...state.timers[0]!, entryId: "e-running" };
+
+    expect(getLastSavedEntryForAgent(state)).toEqual({
+      entry: toAgentEntry(state, state.timesheetEntries[0]!),
+    });
+  });
+
+  it("gives no entry when none is saved but the running one", () => {
+    const state = createState();
+    state.timesheetEntries = [entry({ _id: "e-running" })];
+    state.timers[0] = { ...state.timers[0]!, entryId: "e-running" };
+
+    expect(getLastSavedEntryForAgent(state)).toEqual({ entry: null });
+    expect(
+      getLastSavedEntryForAgent({ ...state, timesheetEntries: [] }),
+    ).toEqual({ entry: null });
   });
 
   it("finds the running entry when its short id matches", () => {

@@ -2861,6 +2861,34 @@ describe("agent reads for the terminal", () => {
     });
   });
 
+  it("gives the saved entry used last, from any day, and not the running one", async () => {
+    const { call, localStore, project, task } = await setup();
+    expect(await call("get_last_saved_entry", {})).toMatchObject({
+      ok: true,
+      output: { entry: null },
+    });
+    localStore.saveManualTimeEntry({
+      localDate: "2025-01-06",
+      projectId: project._id,
+      taskId: task("Build")._id,
+      durationMs: 30 * 60_000,
+    });
+    const [saved] = localStore.snapshot().timesheetEntries;
+    await call("start_timer", { projectId: project._id });
+
+    expect(await call("get_last_saved_entry", {})).toMatchObject({
+      ok: true,
+      output: {
+        entry: {
+          entryId: saved!._id,
+          date: "2025-01-06",
+          state: "saved",
+          taskName: "Build",
+        },
+      },
+    });
+  });
+
   it("finds the running entry by its short id", async () => {
     const { call, project } = await setup();
     const started = await call("start_timer", { projectId: project._id });

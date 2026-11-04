@@ -68,6 +68,7 @@ export type PluginManifest = {
             estimateMinutes: number;
             tools: (
               | "find_entries"
+              | "get_last_saved_entry"
               | "get_running_timer"
               | "list_time_entries"
               | "list_projects"

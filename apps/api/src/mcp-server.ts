@@ -374,6 +374,8 @@ const TOOL_DESCRIPTIONS: Record<AgentTaskMcpTool | SessionToolName, string> = {
   // Reads for the terminal (#532).
   find_entries:
     "Every time entry, on any day, whose `shortId` starts with `idPrefix` (4 to 32 lowercase hex characters), in list_time_entries' shape, and the running entry in `running` when its `shortId` starts with it. A `shortId` is the entry's UUID without dashes, or its whole id when it has none.",
+  get_last_saved_entry:
+    "The saved time entry used most recently, on any day, in list_time_entries' shape: the one saved or edited last. Never the running entry. `entry` is null when nothing is saved.",
   begin_session:
     "Call before any work longer than a minute: a title and your estimate in minutes. Ajour shows it to the user and adds a 25% margin. Send update_session at least every few minutes, extend before the deadline passes, and always call end_session.",
   update_session:
