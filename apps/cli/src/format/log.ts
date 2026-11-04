@@ -78,7 +78,8 @@ export function logView(input: {
       ? listed.running
       : null;
   const toRow = (row: Row, from: AgentRunningTimer | AgentTimeEntry) => {
-    const mark = marks.get(taskKeyOf(from)) ?? marks.get(projectKeyOf(from));
+    // A Local only project keeps all its time, whatever its tasks say.
+    const mark = marks.get(projectKeyOf(from)) ?? marks.get(taskKeyOf(from));
     return {
       ...row,
       taskKey: taskKeyOf(from),

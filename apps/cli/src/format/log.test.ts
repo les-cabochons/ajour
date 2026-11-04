@@ -222,3 +222,26 @@ describe("ajour log, the details", () => {
     );
   });
 });
+
+describe("ajour log, local time", () => {
+  it("marks every entry of a Local only project as local", () => {
+    const local = logView({
+      range: parseRange("today", TODAY),
+      today: TODAY,
+      listed: {
+        entries: [entry(TODAY, "aa11bb2", "temp", 60, "Spike")],
+        running: null,
+      },
+      projects: projects.map((project) =>
+        project.projectId === "p-acme"
+          ? { ...project, localOnly: true }
+          : project,
+      ),
+    });
+
+    expect(local.rows[0]).toMatchObject({ mark: "local", tag: "local" });
+    expect(formatLogTable(local, { paint: painter(false) })).toContain(
+      "1 entry\n",
+    );
+  });
+});
