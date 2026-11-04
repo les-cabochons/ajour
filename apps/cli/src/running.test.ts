@@ -1,12 +1,14 @@
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { renameSync, writeFileSync } from "node:fs";
+import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type {
-  AgentRunningTimer,
-  AgentTimeEntry,
-  BridgeToolCall,
-  BridgeToolResult,
+import {
+  BRIDGE_UNAVAILABLE_MESSAGE,
+  type AgentRunningTimer,
+  type AgentTimeEntry,
+  type BridgeToolCall,
+  type BridgeToolResult,
 } from "../../../packages/shared/agent-tools.ts";
 import {
   enableMcpWithClient,
@@ -167,6 +169,21 @@ function writes(term: Terminal) {
 
 function undoFile(term: Terminal) {
   return path.join(term.home, "state", "ajour", "last-undo");
+}
+
+/** What the CLI keeps in its state folder, claims and temp files included. */
+async function stateFiles(term: Terminal) {
+  return (await readdir(path.dirname(undoFile(term)))).sort();
+}
+
+/**
+ * Another terminal's write, landing while this one waits on Ajour: a new
+ * file renamed over last-undo, as rememberUndo writes it.
+ */
+function storeAsAnotherTerminal(term: Terminal, undoToken: string) {
+  const temporary = `${undoFile(term)}.other`;
+  writeFileSync(temporary, `${undoToken}\n`, { mode: 0o600 });
+  renameSync(temporary, undoFile(term));
 }
 
 describe("ajour start", () => {
@@ -357,17 +374,8 @@ describe("ajour stop", () => {
 
 describe("ajour continue", () => {
   it("resumes the entry saved last, today, with its saved time", async () => {
-    const older = {
-      ...exportSaved,
-      entryId: "timesheet_old",
-      shortId: hexId("0d4f77e"),
-      savedAt: new Date(NOW - 3_600_000).toISOString(),
-    };
     const term = await ajour({
-      list_time_entries: () => ({
-        entries: [exportSaved, older],
-        running: null,
-      }),
+      get_last_saved_entry: () => ({ entry: exportSaved }),
       continue_entry: () => ({
         running: { ...exportRunning, countedMinutes: 91 },
         undoToken: "undo_5",
@@ -383,9 +391,45 @@ describe("ajour continue", () => {
     expect(writes(term)).toEqual([
       { tool: "continue_entry", input: { entryId: "timesheet_3f9a2c1" } },
     ]);
-    expect(
-      term.calls.find((call) => call.tool === "list_time_entries")?.input,
-    ).toEqual({ from: "2026-10-29", to: TODAY });
+    expect(term.calls.map((call) => call.tool)).toEqual([
+      "get_last_saved_entry",
+      "continue_entry",
+    ]);
+  });
+
+  it("continues the entry used last however long ago it was saved", async () => {
+    const beforeTheHolidays: AgentTimeEntry = {
+      ...exportSaved,
+      entryId: "timesheet_0d4f77e",
+      shortId: hexId("0d4f77e"),
+      date: "2026-10-09",
+      savedAt: new Date(2026, 9, 9, 17).toISOString(),
+    };
+    const term = await ajour({
+      get_last_saved_entry: () => ({ entry: beforeTheHolidays }),
+      continue_entry: () => ({
+        running: { ...exportRunning, countedMinutes: 0 },
+        undoToken: "undo_5",
+      }),
+    });
+
+    expect(await run(["continue"], term.io)).toBe(0);
+
+    expect(writes(term)).toEqual([
+      { tool: "continue_entry", input: { entryId: "timesheet_0d4f77e" } },
+    ]);
+    expect(term.err()).toBe(
+      "Started a new entry today with Fri 9 Oct's task and note.\n",
+    );
+  });
+
+  it("exits 4 when no entry was ever saved", async () => {
+    const term = await ajour({ get_last_saved_entry: () => ({ entry: null }) });
+
+    expect(await run(["continue"], term.io)).toBe(4);
+
+    expect(term.err()).toBe("error: No entry has been saved yet.\n");
+    expect(writes(term)).toEqual([]);
   });
 
   it("starts a new entry today from another day's entry, and says so", async () => {
@@ -584,6 +628,84 @@ describe("ajour discard and undo", () => {
     await expect(stat(undoFile(term))).rejects.toThrow();
   });
 
+  it("keeps the token another terminal stored while the undo ran", async () => {
+    const term = await ajour({
+      start_timer: () => ({ running: exportRunning, undoToken: "undo_1" }),
+      undo: (input: { undoToken: string }) => {
+        storeAsAnotherTerminal(term, "undo_2");
+        return input.undoToken === "undo_1"
+          ? { undone: "Started an entry", undoToken: null }
+          : { refuse: "Wrong token." };
+      },
+    });
+    await run(["start"], term.io);
+    term.clear();
+
+    expect(await run(["undo"], term.io)).toBe(0);
+    expect(term.err()).toBe("Undid: Started an entry\n");
+    expect(await readFile(undoFile(term), "utf8")).toBe("undo_2\n");
+    expect(await stateFiles(term)).toEqual(["last-undo"]);
+  });
+
+  it("keeps a newer token when Ajour refuses the claimed one", async () => {
+    const term = await ajour({
+      start_timer: () => ({ running: exportRunning, undoToken: "undo_1" }),
+      undo: () => {
+        storeAsAnotherTerminal(term, "undo_2");
+        return { refuse: "That change can't be undone any more." };
+      },
+    });
+    await run(["start"], term.io);
+    term.clear();
+
+    expect(await run(["undo"], term.io)).toBe(1);
+    expect(await readFile(undoFile(term), "utf8")).toBe("undo_2\n");
+    expect(await stateFiles(term)).toEqual(["last-undo"]);
+  });
+
+  it("puts the token back when Ajour can't be reached, for the next try", async () => {
+    let reachable = false;
+    const term = await ajour({
+      start_timer: () => ({ running: exportRunning, undoToken: "undo_1" }),
+      undo: () =>
+        reachable
+          ? { undone: "Started an entry", undoToken: null }
+          : { refuse: BRIDGE_UNAVAILABLE_MESSAGE },
+    });
+    await run(["start"], term.io);
+    term.clear();
+
+    expect(await run(["undo"], term.io)).toBe(3);
+    expect(term.err()).toBe(`error: ${BRIDGE_UNAVAILABLE_MESSAGE}\n`);
+    expect(await readFile(undoFile(term), "utf8")).toBe("undo_1\n");
+    expect(await stateFiles(term)).toEqual(["last-undo"]);
+    if (process.platform !== "win32") {
+      expect((await stat(undoFile(term))).mode & 0o777).toBe(0o600);
+    }
+
+    reachable = true;
+    term.clear();
+    expect(await run(["undo"], term.io)).toBe(0);
+    expect(term.err()).toBe("Undid: Started an entry\n");
+    expect(await stateFiles(term)).toEqual([]);
+  });
+
+  it("drops the claimed token when a newer one was stored before it could go back", async () => {
+    const term = await ajour({
+      start_timer: () => ({ running: exportRunning, undoToken: "undo_1" }),
+      undo: () => {
+        storeAsAnotherTerminal(term, "undo_2");
+        return { refuse: BRIDGE_UNAVAILABLE_MESSAGE };
+      },
+    });
+    await run(["start"], term.io);
+    term.clear();
+
+    expect(await run(["undo"], term.io)).toBe(3);
+    expect(await readFile(undoFile(term), "utf8")).toBe("undo_2\n");
+    expect(await stateFiles(term)).toEqual(["last-undo"]);
+  });
+
   it("refuses a discard with nothing running with the app's reason", async () => {
     const term = await ajour({
       get_running_timer: () => ({ running: null }),
@@ -659,6 +781,7 @@ describe("a day from the terminal", () => {
         running,
         targets: [{ date: TODAY, hours: 8 }],
       }),
+      get_last_saved_entry: () => ({ entry: saved.at(-1) ?? null }),
       continue_entry: (input: { entryId: string }) => {
         const entry = saved.find((item) => item.entryId === input.entryId)!;
         next += 1;

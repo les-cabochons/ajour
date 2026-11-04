@@ -23,15 +23,15 @@ Options
   -h, --help         Show this help, or a command's.
 
 References
-  TASK       PROJECT/TASK or TASK. PROJECT matches a code, then a name;
-             TASK a task name. Matching ignores case and accents, and
+  TASK       PROJECT/TASK or TASK. PROJECT matches a code, a name or a
+             full name; TASK a task name. Matching ignores case and accents, and
              takes an exact name, then a prefix, then any part of the
              name. Exactly one active task must match, else exit 4 with
              the candidates. A digit 1 to 0 is the task pinned to that key.
   ENTRY      An id from ajour log, or any unique prefix of 4 or more of
              its characters; running for the running entry; last for the
-             entry saved most recently in the past week. Several matches
-             exit 4 with their rows.
+             entry saved or edited most recently, on any day. Several
+             matches exit 4 with their rows.
   DURATION   1:30, 1h30, 2h, 90m, 1.5 or 1,5. Whole minutes, up to 24
              hours.
 

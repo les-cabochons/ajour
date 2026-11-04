@@ -142,7 +142,9 @@ function window(state: WindowState) {
                   ? state.running
                   : state.listedRunning,
             }
-          : undefined;
+          : call.tool === "get_last_saved_entry"
+            ? { entry: state.lastSaved ?? null }
+            : undefined;
     return output
       ? { requestId: call.requestId, ok: true, output }
       : {
@@ -159,6 +161,8 @@ interface WindowState {
   entries: AgentTimeEntry[];
   /** What list_time_entries says runs, when it differs from get_running_timer. */
   listedRunning?: AgentRunningTimer | null;
+  /** What get_last_saved_entry answers. */
+  lastSaved?: AgentTimeEntry | null;
 }
 
 async function connectedApi(
@@ -600,18 +604,20 @@ describe("ajour status, more cases", () => {
   });
 
   it("names the last saved entry when nothing runs", async () => {
+    const reviewed = {
+      ...todayEntries[0]!,
+      savedAt: new Date(NOW - 45 * 60_000).toISOString(),
+    };
     const term = await terminalFor({
       running: null,
       entries: [
-        {
-          ...todayEntries[0]!,
-          savedAt: new Date(NOW - 45 * 60_000).toISOString(),
-        },
+        reviewed,
         {
           ...todayEntries[1]!,
           savedAt: new Date(NOW - 3 * 3_600_000).toISOString(),
         },
       ],
+      lastSaved: reviewed,
     });
 
     await run(["status"], term.io);
@@ -776,19 +782,18 @@ describe("review round 2", () => {
     expect(term.out()).toBe("\n" + "● 1:24 Fix export rounding\n");
   });
 
-  it("names the last entry saved on an earlier day before today's first", async () => {
+  it("names the last entry saved on any earlier day, and counts only today", async () => {
     const { api, token, fake } = await connectedApi({
       running: null,
-      entries: [
-        {
-          entryId: "e9",
-          date: "2026-11-03",
-          state: "saved",
-          minutes: 90,
-          taskName: "05 Backend",
-          savedAt: new Date(NOW - 21 * 3_600_000).toISOString(),
-        },
-      ],
+      entries: [],
+      lastSaved: {
+        entryId: "e9",
+        date: "2026-10-09",
+        state: "saved",
+        minutes: 90,
+        taskName: "05 Backend",
+        savedAt: new Date(NOW - 26 * 24 * 3_600_000).toISOString(),
+      },
     });
     const term = await terminal({
       env: { AJOUR_URL: api.baseUrl, AJOUR_TOKEN: token },
@@ -797,10 +802,10 @@ describe("review round 2", () => {
     await run(["status"], term.io);
 
     expect(term.out()).toBe(
-      "○ Nothing running · today 0:00 · last: 05 Backend, 21h ago\n",
+      "○ Nothing running · today 0:00 · last: 05 Backend, 26d ago\n",
     );
     expect(
       fake.calls.find((call) => call.tool === "list_time_entries")?.input,
-    ).toEqual({ from: "2026-10-29", to: TODAY });
+    ).toEqual({ from: TODAY, to: TODAY });
   });
 });

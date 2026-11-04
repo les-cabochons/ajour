@@ -7,8 +7,6 @@ import { localDate, type Context } from "../context.ts";
 import { UnreachableError } from "../errors.ts";
 import { painter, type Paint } from "../format/style.ts";
 import { formatClock, formatClockSeconds, truncate } from "../format/text.ts";
-import { daysBefore } from "../lookup.ts";
-import { LAST_ENTRY_DAYS } from "../refs.ts";
 
 export interface StatusOptions {
   /** One line for a status bar. */
@@ -19,9 +17,6 @@ export interface StatusOptions {
   watch: boolean;
 }
 
-/** How many days back the idle line looks for the entry saved last. */
-const RECENT_DAYS = LAST_ENTRY_DAYS;
-
 /** How often `--watch` asks Ajour again. Between asks, the clock ticks here. */
 const WATCH_REFRESH_MS = 10_000;
 
@@ -30,7 +25,7 @@ interface Snapshot {
   today: string;
   /** Today's saved time, without the part the running entry counts again. */
   savedTodayMinutes: number;
-  /** The entry saved most recently today, for the idle line. */
+  /** The saved entry used last, on any day, for the idle line. */
   last?: { label: string; savedAt: number };
 }
 
@@ -112,6 +107,7 @@ async function shortStatus(
  * Today's entries and the running entry come from one read, so a Stop
  * between two reads can't count an entry twice. Only a running entry from
  * another day, past midnight, needs a second read; it isn't today's time.
+ * The idle line's entry used last, on any day, is one more read.
  */
 async function readSnapshot(
   ctx: Context,
@@ -119,9 +115,8 @@ async function readSnapshot(
 ): Promise<Snapshot> {
   const now = ctx.io.now();
   const today = localDate(now);
-  // A week back, so the idle line can name an entry from an earlier day.
   const listed = await client.call("list_time_entries", {
-    from: localDate(daysBefore(now, RECENT_DAYS - 1)),
+    from: today,
     to: today,
   });
   let running = listed.running;
@@ -129,13 +124,14 @@ async function readSnapshot(
     const current = (await client.call("get_running_timer", {})).running;
     if (current && current.date !== today) running = current;
   }
+  const last = running
+    ? undefined
+    : (await client.call("get_last_saved_entry", {})).entry;
   return {
     running,
     today,
-    savedTodayMinutes: savedMinutes(
-      listed.entries.filter((entry) => entry.date === today),
-    ),
-    last: lastSaved(listed.entries),
+    savedTodayMinutes: savedMinutes(listed.entries),
+    last: last ? describeLast(last) : undefined,
   };
 }
 
@@ -149,18 +145,11 @@ function savedMinutes(entries: readonly AgentTimeEntry[]): number {
     .reduce((total, entry) => total + entry.minutes, 0);
 }
 
-function lastSaved(
-  entries: readonly AgentTimeEntry[],
-): Snapshot["last"] | undefined {
-  let last: Snapshot["last"];
-  for (const entry of entries) {
-    if (entry.state === "running" || !entry.savedAt) continue;
-    const savedAt = Date.parse(entry.savedAt);
-    if (Number.isNaN(savedAt) || (last && last.savedAt >= savedAt)) continue;
-    const label = entry.taskName || entry.projectName || entry.note;
-    if (label) last = { label: oneLine(label), savedAt };
-  }
-  return last;
+function describeLast(entry: AgentTimeEntry): Snapshot["last"] | undefined {
+  const savedAt = entry.savedAt ? Date.parse(entry.savedAt) : Number.NaN;
+  const label = entry.taskName || entry.projectName || entry.note;
+  if (Number.isNaN(savedAt) || !label) return undefined;
+  return { label: oneLine(label), savedAt };
 }
 
 function todayMinutes(snapshot: Snapshot): number {

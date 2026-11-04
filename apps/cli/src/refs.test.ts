@@ -5,7 +5,6 @@ import type {
 } from "../../../packages/shared/agent-tools.ts";
 import { EXIT } from "./errors.ts";
 import {
-  lastSavedEntry,
   parseDuration,
   parseEntryRef,
   pickFoundEntry,
@@ -64,6 +63,40 @@ describe("resolveTask", () => {
     ["pinned key 0, the tenth", "0", "t-export"],
   ])("finds %s", (_name, query, taskId) => {
     expect(resolveTask(query, projects).taskId).toBe(taskId);
+  });
+
+  it("matches PROJECT by its full name as well as its display name", () => {
+    const named: ProjectRef[] = [
+      {
+        projectId: "p-client",
+        name: "Client A",
+        fullName: "Acme Corporation",
+        code: "ACME",
+        tasks: [{ taskId: "t-build", name: "Build" }],
+      },
+      {
+        projectId: "p-other",
+        name: "Other",
+        fullName: "Globex",
+        tasks: [{ taskId: "t-build-2", name: "Build" }],
+      },
+    ];
+    expect(resolveTask("Acme Corporation/Build", named).taskId).toBe("t-build");
+    expect(resolveTask("client a/build", named).taskId).toBe("t-build");
+    expect(resolveTask("acme corp/build", named).taskId).toBe("t-build");
+    expect(resolveTask("glob/build", named).taskId).toBe("t-build-2");
+    // An exact code wins over a full name that only starts with it.
+    expect(
+      resolveTask("acme/build", [
+        ...named,
+        {
+          projectId: "p-acme-labs",
+          name: "Labs",
+          fullName: "Acme Labs",
+          tasks: [{ taskId: "t-build-3", name: "Build" }],
+        },
+      ]).taskId,
+    ).toBe("t-build");
   });
 
   it("prefers a prefix match over a match inside the name", () => {
@@ -167,20 +200,6 @@ describe("ENTRY", () => {
 
   it.each(["3f9", "xyz1", "", "3f9a-2c1"])("refuses %j with exit 2", (text) => {
     expect(failure(() => parseEntryRef(text)).exitCode).toBe(EXIT.usage);
-  });
-
-  it("takes the saved entry with the newest save as last, never the running one", () => {
-    const newest = entry("b7e1d04f", "2026-11-04T09:00:00.000Z");
-    expect(
-      lastSavedEntry([
-        entry("aaaa1111", "2026-11-03T16:00:00.000Z"),
-        newest,
-        entry("cccc2222", "2026-11-04T10:00:00.000Z", { state: "running" }),
-      ]),
-    ).toBe(newest);
-    const none = failure(() => lastSavedEntry([]));
-    expect(none.exitCode).toBe(EXIT.reference);
-    expect(none.message).toBe("No entry was saved in the last 7 days.");
   });
 
   it("picks the one entry a prefix finds, or the running entry", () => {

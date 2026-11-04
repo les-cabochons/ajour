@@ -13,8 +13,8 @@ its task and note:
   ●  0:00  ACME  05 Backend  Rate limiter retries  e91c4b7
   Started a new entry today with Monday's task and note.
 
-Without an ENTRY it continues last: the entry saved most recently in the
-past week. An entry that runs is saved first, as in a Switch.
+Without an ENTRY it continues last: the entry saved or edited most
+recently, on any day. An entry that runs is saved first, as in a Switch.
 
 ENTRY is an id from ajour log or any unique prefix of 4 or more of its
 characters, or last. See REFERENCES in ajour(1).

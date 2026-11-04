@@ -23,6 +23,8 @@ export interface ProjectRef {
   projectId: string;
   /** The project's display name. */
   name: string;
+  /** The name the external timesheet knows. */
+  fullName?: string;
   code?: string;
   tasks: readonly { taskId: string; name: string; pinnedSlot?: number }[];
 }
@@ -74,7 +76,8 @@ function labelOf(project: ProjectRef, taskName: string): string {
 
 /**
  * Finds one active task from `PROJECT/TASK`, `TASK`, or a pinned key 1 to 0.
- * PROJECT matches the code, then the name. Names compare as task imports do:
+ * PROJECT matches the code, the display name or the full name, with the
+ * same tiers. Names compare as task imports do:
  * trimmed, spaces collapsed, case and accents ignored. Throws exit 4 when
  * nothing or more than one task matches.
  */
@@ -114,6 +117,7 @@ export function resolveTask(
       : bestMatches(projects, projectQuery, (project) => [
           project.code,
           project.name,
+          project.fullName,
         ]);
   const tasks = inProjects.flatMap((project) =>
     project.tasks.map((task) => ({ project, task })),
@@ -200,28 +204,6 @@ export function parseEntryRef(text: string): EntryRef {
   throw new UsageError(
     `"${text}" isn't an entry. Use running, last, or 4 or more characters of an id from ajour log.`,
   );
-}
-
-/** How many days back `last` looks. */
-export const LAST_ENTRY_DAYS = 7;
-
-/** The saved entry with the newest save: the one `last` names. */
-export function lastSavedEntry(
-  entries: readonly AgentTimeEntry[],
-): AgentTimeEntry {
-  let last: { entry: AgentTimeEntry; at: number } | undefined;
-  for (const entry of entries) {
-    if (entry.state === "running" || !entry.savedAt) continue;
-    const at = Date.parse(entry.savedAt);
-    if (Number.isNaN(at) || (last && last.at >= at)) continue;
-    last = { entry, at };
-  }
-  if (!last) {
-    throw new ReferenceError(
-      `No entry was saved in the last ${LAST_ENTRY_DAYS} days.`,
-    );
-  }
-  return last.entry;
 }
 
 export type FoundEntry =

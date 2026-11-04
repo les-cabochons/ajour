@@ -1,8 +1,6 @@
 import type { AjourClient } from "./client.ts";
 import { localDate } from "./context.ts";
 import {
-  LAST_ENTRY_DAYS,
-  lastSavedEntry,
   parseEntryRef,
   pickFoundEntry,
   resolveTask,
@@ -33,8 +31,8 @@ export function daysBefore(now: number, days: number): number {
 }
 
 /**
- * The entry `text` names: the running entry, the entry saved last within a
- * week, or the one whose short id starts with it.
+ * The entry `text` names: the running entry, the saved entry used last on
+ * any day, or the one whose short id starts with it.
  */
 export async function findEntry(
   client: AjourClient,
@@ -49,11 +47,9 @@ export async function findEntry(
     return { kind: "running", running };
   }
   if (ref.kind === "last") {
-    const { entries } = await client.call("list_time_entries", {
-      from: localDate(daysBefore(now, LAST_ENTRY_DAYS - 1)),
-      to: today,
-    });
-    return { kind: "entry", entry: lastSavedEntry(entries) };
+    const { entry } = await client.call("get_last_saved_entry", {});
+    if (!entry) throw new ReferenceError("No entry has been saved yet.");
+    return { kind: "entry", entry };
   }
   const found = await client.call("find_entries", { idPrefix: ref.prefix });
   return pickFoundEntry(ref.prefix, found, today);

@@ -1,6 +1,9 @@
 import { randomBytes } from "node:crypto";
+import { constants } from "node:fs";
 import {
   chmod,
+  copyFile,
+  link,
   mkdir,
   readFile,
   rename,
@@ -147,15 +150,71 @@ export async function rememberUndo(
   if (undoToken) await writePrivateFile(undoPath(io), `${undoToken}\n`);
 }
 
-/** The kept Undo token, or undefined when there is none. */
-export async function readUndo(io: CliIo): Promise<string | undefined> {
+/** An Undo token one `ajour undo` took for itself, in its own file. */
+export interface ClaimedUndo {
+  undoToken: string;
+  file: string;
+}
+
+/**
+ * Takes the kept Undo token for one `ajour undo`, or undefined when there is
+ * none. last-undo is renamed to a name of this run's own first, which is
+ * atomic in one folder: two undos never both take it, and a write that lands
+ * meanwhile keeps a new last-undo that this run never removes.
+ */
+export async function claimUndo(io: CliIo): Promise<ClaimedUndo | undefined> {
+  const kept = undoPath(io);
+  const file = path.join(
+    path.dirname(kept),
+    `.last-undo-claimed-${process.pid}-${randomBytes(6).toString("hex")}`,
+  );
   try {
-    return (await readFile(undoPath(io), "utf8")).trim() || undefined;
-  } catch {
-    return undefined;
+    await rename(kept, file);
+  } catch (error) {
+    if (isMissing(error)) return undefined;
+    throw error;
+  }
+  const undoToken = (await readFile(file, "utf8")).trim();
+  if (undoToken) return { undoToken, file };
+  await rm(file, { force: true });
+  return undefined;
+}
+
+/** Throws the claimed token away: used, or refused. */
+export async function forgetClaimedUndo(claim: ClaimedUndo): Promise<void> {
+  await rm(claim.file, { force: true });
+}
+
+/**
+ * Puts a claimed token back as last-undo for a later try, unless a write
+ * stored a newer one meanwhile, which then names Ajour's last action. The
+ * link creates last-undo only where none exists, whole and private, as the
+ * claimed file is.
+ */
+export async function restoreClaimedUndo(
+  io: CliIo,
+  claim: ClaimedUndo,
+): Promise<void> {
+  try {
+    await link(claim.file, undoPath(io));
+  } catch (error) {
+    if (!isAlreadyThere(error)) {
+      // A file system without hard links: copy, still only where none is.
+      await copyFile(claim.file, undoPath(io), constants.COPYFILE_EXCL).catch(
+        (copyError: unknown) => {
+          if (!isAlreadyThere(copyError)) throw copyError;
+        },
+      );
+    }
+  } finally {
+    await rm(claim.file, { force: true });
   }
 }
 
-export async function forgetUndo(io: CliIo): Promise<void> {
-  await rm(undoPath(io), { force: true });
+function isMissing(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
+}
+
+function isAlreadyThere(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | undefined)?.code === "EEXIST";
 }
