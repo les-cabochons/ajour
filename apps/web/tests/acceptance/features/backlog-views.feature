@@ -5,6 +5,12 @@ Feature: Backlog list and board views
     Given I have a backlog view fixture
     When I open the Backlog workspace
 
+  Scenario: Narrow Backlog rows show the project under the title
+    When I narrow the Backlog window
+    Then the "Backlog parent" row shows "Example project" under its title
+    When I widen the Backlog window
+    Then the "Backlog parent" row shows "Example project" beside its title
+
   Scenario: Keep the board preference while using a narrow list
     When I choose the Backlog board
     Then the Backlog has workflow columns and standalone subitems

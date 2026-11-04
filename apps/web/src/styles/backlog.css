@@ -1033,28 +1033,67 @@
     padding: 0.25rem 0.75rem;
   }
 
+  /* Two lines (#512): the title over the project, 52px tall, so items of
+     different projects stay apart. The properties container steps aside
+     (display: contents), so its own chip, estimate and actions take the
+     row's grid tracks; no element is added. The estimate and actions keep
+     fixed tracks, so every title truncates at the same edge. */
   .backlog-list-row {
-    gap: 0.375rem;
-    height: 40px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) 36px 52px;
+    grid-template-rows: auto auto;
+    align-content: center;
+    column-gap: 0.375rem;
+    row-gap: 1px;
+    height: 52px;
     padding: 0 0.75rem;
   }
 
-  /* Estimate and actions keep fixed tracks, so a row without an estimate
-     truncates its title where the others do. */
+  .backlog-list-row > .backlog-item-leading {
+    grid-row: 1 / 3;
+    grid-column: 1;
+    align-self: center;
+  }
+
+  .backlog-list-row > .backlog-item-content {
+    grid-row: 1;
+    grid-column: 2;
+    min-width: 0;
+  }
+
   .backlog-list-row .backlog-item-properties {
-    display: grid;
-    grid-template-columns: 36px 52px;
-    gap: 0.625rem;
+    display: contents;
+  }
+
+  /* The project reads as a line of text under the title, not as a chip. */
+  .backlog-list-row .backlog-item-project {
+    grid-row: 2;
+    grid-column: 2;
+    justify-self: start;
+    height: auto;
+    padding: 0;
+    background: none;
+    color: var(--text-secondary);
+    font-weight: 400;
+  }
+
+  /* The row's leading mark already carries the project's color. */
+  .backlog-list-row .backlog-item-project > span:not(.truncate) {
+    display: none;
   }
 
   .backlog-list-row .backlog-item-estimate {
-    grid-column: 1;
+    grid-row: 1 / 3;
+    grid-column: 3;
+    align-self: center;
     min-width: 0;
     text-align: right;
   }
 
   .backlog-list-row .backlog-item-actions {
-    grid-column: 2;
+    grid-row: 1 / 3;
+    grid-column: 4;
+    align-self: center;
   }
 
   .backlog-item-leading,
@@ -1068,7 +1107,6 @@
   }
 
   .backlog-item-id,
-  .backlog-item-project,
   .backlog-item-parent,
   .backlog-list-row .backlog-item-marker,
   .backlog-list-row .backlog-subitem-progress {
