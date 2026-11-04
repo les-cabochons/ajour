@@ -35,6 +35,7 @@ export interface AjourClient {
    * Needs no Ajour window, unlike the data tools.
    */
   check(): Promise<void>;
+  serverVersion?(): Promise<string | undefined>;
   call<Name extends ToolName>(
     tool: Name,
     input: ToolInput<Name>,
@@ -49,6 +50,7 @@ export const TOKEN_REFUSED =
 
 /** The part of the MCP SDK's client the CLI uses, so tests can stand in. */
 export interface ToolSession {
+  serverVersion?: string;
   callTool(params: {
     name: string;
     arguments: Record<string, unknown>;
@@ -91,6 +93,7 @@ export function mcpClient(options: {
     return {
       // The SDK types a compatibility result too; Ajour's server sends the
       // current shape, which `call` reads defensively below.
+      serverVersion: client.getServerVersion()?.version,
       callTool: (params) =>
         client.callTool(params) as ReturnType<ToolSession["callTool"]>,
       close: () => client.close(),
@@ -109,6 +112,9 @@ export function mcpClient(options: {
     }
   };
   return {
+    async serverVersion() {
+      return (await session()).session.serverVersion;
+    },
     async check() {
       await session();
     },
@@ -163,8 +169,7 @@ function textOf(content: unknown): string {
   return text || "Ajour refused the action.";
 }
 
-export const VERSION_MISMATCH =
-  "Ajour and ajour don't speak the same version. Update both to the same release.";
+export const VERSION_MISMATCH = "Update Ajour to use this command.";
 
 /**
  * Turns a transport or protocol failure into the sentence the user reads.

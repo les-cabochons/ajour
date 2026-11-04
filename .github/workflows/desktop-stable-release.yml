@@ -233,12 +233,23 @@ jobs:
     with:
       ref: ${{ needs.plan.outputs.target_sha }}
 
+  cli:
+    name: Package CLI
+    needs: plan
+    uses: ./.github/workflows/cli-release.yml
+    with:
+      ref: ${{ needs.plan.outputs.target_sha }}
+      tag: ${{ needs.plan.outputs.tag }}
+      sign: true
+    secrets: inherit
+
   release:
     name: Publish stable release
     needs:
       - plan
       - package
       - plugin-sandbox
+      - cli
     runs-on: ubuntu-latest
     permissions:
       contents: write

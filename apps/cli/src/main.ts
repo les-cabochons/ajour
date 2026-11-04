@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFile, realpath } from "node:fs/promises";
+import { realpath } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { parseArgs, type ParseArgsConfig } from "node:util";
 import { connect } from "./commands/connect.ts";
@@ -19,6 +19,10 @@ import { createContext, type Context } from "./context.ts";
 import { CliError, EXIT, UsageError } from "./errors.ts";
 import { painter, shouldColor, type ColorMode } from "./format/style.ts";
 import { processIo, type CliIo } from "./io.ts";
+
+import { version, manualPage } from "./resources.ts";
+
+declare const AJOUR_BUNDLED: boolean;
 
 type Options = NonNullable<ParseArgsConfig["options"]>;
 type Values = Record<string, string | boolean | undefined>;
@@ -166,6 +170,14 @@ export async function run(argv: readonly string[], io: CliIo): Promise<number> {
     const { values, positionals } = parse(argv, command?.options ?? {});
     if (values.version) {
       io.stdout.write(`ajour ${await version()}\n`);
+      ctx = createContext(io, { color: "never", json: false, quiet: true });
+      try {
+        const client = await ctx.client();
+        const server = await client.serverVersion?.();
+        if (server) io.stdout.write(`Ajour ${server}\n`);
+      } catch {
+        /* Version remains available offline. */
+      }
       return EXIT.ok;
     }
     if (!command || values.help) {
@@ -255,27 +267,6 @@ function report(error: unknown, io: CliIo): number {
   return EXIT.refused;
 }
 
-async function version(): Promise<string> {
-  const manifest = JSON.parse(
-    await readFile(new URL("../package.json", import.meta.url), "utf8"),
-  ) as { version: string };
-  return manifest.version;
-}
-
-/** For now the page's Markdown source; the manual ticket renders it. */
-async function manualPage(name: string): Promise<string> {
-  if (!/^[a-z-]+$/.test(name))
-    throw new UsageError(`No manual page for "${name}".`);
-  try {
-    return await readFile(
-      new URL(`../docs/${name}.md`, import.meta.url),
-      "utf8",
-    );
-  } catch {
-    throw new UsageError(`No manual page for "${name}".`);
-  }
-}
-
 async function isEntryPoint(): Promise<boolean> {
   const script = process.argv[1];
   if (!script) return false;
@@ -289,6 +280,8 @@ async function isEntryPoint(): Promise<boolean> {
   }
 }
 
-if (await isEntryPoint()) {
-  process.exitCode = await run(process.argv.slice(2), processIo());
+if (typeof AJOUR_BUNDLED === "undefined") {
+  void isEntryPoint().then(async (entry) => {
+    if (entry) process.exitCode = await run(process.argv.slice(2), processIo());
+  });
 }
