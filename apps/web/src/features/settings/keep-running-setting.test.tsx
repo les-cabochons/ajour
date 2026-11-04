@@ -86,4 +86,62 @@ describe("the keep running setting", () => {
     });
     expect(toggle.getAttribute("aria-checked")).toBe("true");
   });
+
+  it("allows one save at a time and enables the switch after it answers", async () => {
+    let answer!: (settings: { keepRunning: boolean }) => void;
+    const configure = vi.fn(
+      () =>
+        new Promise<{ keepRunning: boolean }>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    desktop(configure);
+    const toggle = await loadedSwitch();
+
+    fireEvent.click(toggle);
+
+    await waitFor(() =>
+      expect(toggle.hasAttribute("data-disabled")).toBe(true),
+    );
+    fireEvent.click(toggle);
+    expect(configure).toHaveBeenCalledOnce();
+
+    answer({ keepRunning: false });
+
+    await waitFor(() =>
+      expect(toggle.hasAttribute("data-disabled")).toBe(false),
+    );
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+  });
+
+  // A second click during a save must not capture the first click's unsaved
+  // value as the value to roll back to.
+  it("shows the value main confirmed after two quick toggles both fail", async () => {
+    const failures: Array<(error: Error) => void> = [];
+    const configure = vi.fn(
+      () =>
+        new Promise<{ keepRunning: boolean }>((_, reject) => {
+          failures.push(reject);
+        }),
+    );
+    desktop(configure);
+    const toggle = await loadedSwitch();
+
+    fireEvent.click(toggle);
+    fireEvent.click(toggle);
+    failures[0]?.(new Error("Ajour could not write to its data folder."));
+
+    await waitFor(() => expect(mocks.error).toHaveBeenCalledOnce());
+    await waitFor(() =>
+      expect(toggle.hasAttribute("data-disabled")).toBe(false),
+    );
+    fireEvent.click(toggle);
+    failures[1]?.(new Error("Ajour could not write to its data folder."));
+
+    await waitFor(() => expect(mocks.error).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(toggle.hasAttribute("data-disabled")).toBe(false),
+    );
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+  });
 });

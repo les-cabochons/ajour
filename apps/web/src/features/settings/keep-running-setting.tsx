@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AppPanel, SettingRow } from "@/components/app-surface";
 import { showErrorToast } from "@/components/ui/toast";
 import { Switch } from "@/components/ui/switch";
@@ -13,6 +13,10 @@ export function KeepRunningSetting() {
   // Main's default until it answers.
   const [keepRunning, setKeepRunning] = useState(true);
   const [loaded, setLoaded] = useState(false);
+  // One write at a time, so a failed save rolls back to what main confirmed
+  // and never to a value that was itself still unsaved.
+  const [saving, setSaving] = useState(false);
+  const confirmed = useRef(true);
   const supported = Boolean(
     desktop?.getWindowSettings && desktop.configureWindowSettings,
   );
@@ -23,6 +27,7 @@ export function KeepRunningSetting() {
     void desktop!.getWindowSettings!().then(
       (settings) => {
         if (!current) return;
+        confirmed.current = settings.keepRunning;
         setKeepRunning(settings.keepRunning);
         setLoaded(true);
       },
@@ -55,16 +60,21 @@ export function KeepRunningSetting() {
           <Switch
             id="keep-running"
             checked={keepRunning}
-            disabled={!loaded}
+            disabled={!loaded || saving}
             onCheckedChange={(checked) => {
-              const before = keepRunning;
+              setSaving(true);
               setKeepRunning(checked);
               void desktop!.configureWindowSettings!({
                 keepRunning: checked,
               }).then(
-                (settings) => setKeepRunning(settings.keepRunning),
+                (settings) => {
+                  confirmed.current = settings.keepRunning;
+                  setKeepRunning(settings.keepRunning);
+                  setSaving(false);
+                },
                 (error: unknown) => {
-                  setKeepRunning(before);
+                  setKeepRunning(confirmed.current);
+                  setSaving(false);
                   showErrorToast({
                     title: "The setting was not saved.",
                     description:
