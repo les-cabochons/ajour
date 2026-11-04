@@ -1211,6 +1211,14 @@ Feature: Backlog list and board views
     And I archive it from its properties card
     Then the Backlog parent is archived and its page offers Restore
 
+  Scenario: Start entry on the item page offers New entry… in its menu
+    When I open the Backlog parent page
+    Then the item page's top bar has Start entry, Snooze and Settle and no New entry button
+    When I open the other ways to log time
+    Then the menu says Start entry starts the clock and New entry… logs time without it
+    When I choose New entry… in that menu
+    Then a new time entry opens
+
   Scenario: Fold the Subitems and Time entries cards on the item page
     When I open the Backlog parent page
     Then the Subitems and Time entries cards are closed on their summary

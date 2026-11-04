@@ -4,6 +4,7 @@ import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
   RiAddLine as AddIcon,
   RiArchiveLine as ArchiveIcon,
+  RiArrowDownSLine as MoreTimeIcon,
   RiArrowGoBackLine as UnsettleIcon,
   RiCheckboxCircleLine as SettleIcon,
   RiExternalLinkLine as ExternalIcon,
@@ -17,7 +18,14 @@ import {
   PropertyActions,
   PropertyRow,
 } from "@/components/property-list";
+import { ObjectActionItems } from "@/components/object-actions-menu";
+import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Chip } from "@/components/ui/chip";
 import {
   Empty,
@@ -117,6 +125,8 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
   }, [itemId]);
   const [editingTitle, setEditingTitle] = useState(false);
   const [addingSubitem, setAddingSubitem] = useState(false);
+  // The split Start entry button, which New entry… anchors its popover to.
+  const splitRef = useRef<HTMLSpanElement>(null);
   const workItem = state.workItems.find((item) => item._id === itemId);
   const commentSource = useCommentSource(workItem);
   const cards = useBacklogItemCards();
@@ -216,6 +226,23 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
     otherSourceStateCount: getOtherSourceStates(item).length,
   });
   const startAction = actions.find((action) => action.id === "start-entry");
+  /** The split Start entry button's menu: what each way of logging time does. */
+  const timeActions = actions
+    .filter(
+      (action) =>
+        action.id === "start-entry" ||
+        action.id === "stop-entry" ||
+        action.id === "new-entry",
+    )
+    .map((action) => ({
+      ...action,
+      hint:
+        action.id === "new-entry"
+          ? "Log time without the clock"
+          : action.id === "stop-entry"
+            ? "Stop the clock on this item"
+            : "Start the clock on this item now",
+    }));
   // Listed only for synced items: Archive leaves the source as it is.
   const archiveAction = actions.find((action) => action.id === "archive");
   const parentKey = getWorkItemParentKey(item);
@@ -333,20 +360,64 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
       </Button>
     ) : (
       <>
-        {startAction ? (
-          <Button
-            onClick={() => runAction("start-entry")}
-            disabled={Boolean(startAction.disabledReason)}
-            title={startAction.disabledReason}
-          >
-            <PlayIcon data-icon="inline-start" /> Start entry
-          </Button>
-        ) : (
-          // Stop takes Start entry's slot while the item's entry runs.
-          <Button variant="outline" onClick={() => runAction("stop-entry")}>
-            <StopIcon data-icon="inline-start" /> Stop
-          </Button>
-        )}
+        {/* Start entry (Stop while the item's entry runs) is split: its arrow
+            offers New entry…, which logs time without the clock (#513). */}
+        <span ref={splitRef} className="flex">
+          {startAction ? (
+            <Button
+              className="rounded-r-none"
+              onClick={() => runAction("start-entry")}
+              disabled={Boolean(startAction.disabledReason)}
+              title={startAction.disabledReason}
+            >
+              <PlayIcon data-icon="inline-start" /> Start entry
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              className="rounded-r-none"
+              onClick={() => runAction("stop-entry")}
+            >
+              <StopIcon data-icon="inline-start" /> Stop
+            </Button>
+          )}
+          <DropdownMenu>
+            <TooltipButton
+              label="Other ways to log time"
+              render={
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      size="icon"
+                      variant={startAction ? "default" : "outline"}
+                      className={
+                        startAction
+                          ? "ml-px rounded-l-none"
+                          : "rounded-l-none border-l-0"
+                      }
+                    />
+                  }
+                />
+              }
+            >
+              <MoreTimeIcon />
+            </TooltipButton>
+            <DropdownMenuContent align="end" className="w-auto min-w-64">
+              <ObjectActionItems
+                surface="button"
+                actions={timeActions}
+                keys={BACKLOG_ITEM_ACTION_KEYS}
+                onAction={(actionId) => {
+                  if (actionId === "new-entry" && splitRef.current) {
+                    openNewEntry(splitRef.current);
+                  } else {
+                    runAction(actionId);
+                  }
+                }}
+              />
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </span>
         <Button variant="ghost" onClick={() => runAction("snooze")}>
           <SnoozeIcon data-icon="inline-start" /> Snooze
         </Button>
@@ -388,7 +459,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
             actions={
               <>
                 {headerButtons}
-                {!readOnly ? (
+                {!readOnly && (item.status === "settled" || isSnoozed) ? (
                   <Button
                     variant="ghost"
                     onClick={(event) => openNewEntry(event.currentTarget)}
