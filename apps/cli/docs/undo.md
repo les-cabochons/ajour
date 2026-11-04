@@ -1,7 +1,10 @@
-ajour undo — undo the last change made from here
+NAME
+ajour undo - undo the last change made from here
 
-Usage: ajour undo [--json]
+SYNOPSIS
+ajour undo [--json]
 
+DESCRIPTION
 Presses the Undo of the last change this terminal made, as its toast in
 Ajour would:
 
@@ -20,9 +23,11 @@ As in the app, only Ajour's last action can be undone, and only while
 its toast shows: once you or anyone else changes something after it,
 Ajour refuses, and the kept Undo is removed.
 
-Options
-  --json   The undo tool's output.
+OPTIONS
+  Global options are described in ajour(1).
 
-Exit status
+EXIT STATUS
   0 on success, 1 when there is nothing to undo from here or Ajour
   refuses, 3 when Ajour is out of reach.
+EXAMPLES
+  ajour undo

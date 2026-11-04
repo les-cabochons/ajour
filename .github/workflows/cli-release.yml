@@ -91,6 +91,8 @@ jobs:
           output="$(apps/cli/out/ajour -V)"
           printf '%s\n' "$output"
           [[ "$output" =~ ^ajour\ [0-9]+\.[0-9]+\.[0-9]+ ]]
+      - name: Verify packaged help and offline completion outside checkout
+        run: node apps/cli/scripts/check-packaged.mjs
       - name: Archive CLI
         env:
           RELEASE_TAG: ${{ inputs.tag }}

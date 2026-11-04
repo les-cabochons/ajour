@@ -645,6 +645,13 @@ export function formatDelimited(
       ids[index]!,
     ]),
   ];
+  return delimitedRows(lines, format);
+}
+
+export function delimitedRows(
+  lines: readonly (readonly string[])[],
+  format: DelimitedFormat,
+): string {
   const cell = format === "tsv" ? tsvCell : csvCell;
   return lines
     .map((line) => `${line.map(cell).join(format === "tsv" ? "\t" : ",")}\n`)

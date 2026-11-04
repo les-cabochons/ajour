@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "node --experimental-strip-types --no-warnings src/main.ts",
-    "build": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json --noEmit && node --experimental-strip-types --no-warnings scripts/build-man.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "bundle": "node scripts/bundle.mjs",
