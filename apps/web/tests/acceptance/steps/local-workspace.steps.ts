@@ -169,7 +169,7 @@ When("I change the parent draft title and description", async ({ page }) => {
     name: "Backlog item editor",
   });
   await editor
-    .getByPlaceholder("What needs doing", { exact: true })
+    .getByPlaceholder("Item title", { exact: true })
     .fill("Unsaved parent title");
   await editor
     .getByRole("textbox", { name: "Description", exact: true })
@@ -204,7 +204,7 @@ Then(
     });
     await expect(editor).toBeVisible();
     await expect(
-      editor.getByPlaceholder("What needs doing", { exact: true }),
+      editor.getByPlaceholder("Item title", { exact: true }),
     ).toHaveValue("Unsaved parent title");
     await expect(
       editor.getByRole("textbox", { name: "Description", exact: true }),
@@ -616,11 +616,13 @@ Then("the timer dock opens the running entry", async ({ page }) => {
     .getByRole("navigation", { name: "Primary navigation" })
     .getByRole("region", { name: "Running entry" });
   await expect(dock).toContainText("Untitled entry");
+  // On the Time page the running entry opens in the side panel.
+  const editor = runningEditor(page);
   await expect(
-    page.getByRole("dialog").getByRole("button", { name: "Stop", exact: true }),
+    editor.getByRole("button", { name: "Stop", exact: true }),
   ).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(editor).toHaveCount(0);
 });
 
 Then("the window title shows the running entry", async ({ page }) => {
@@ -678,9 +680,16 @@ When("I start an empty entry from the floating dock", async ({ page }) => {
 
 Then("the floating dock opens the running entry", async ({ page }) => {
   await expect(
-    page.getByRole("dialog").getByRole("button", { name: "Stop", exact: true }),
+    runningEditor(page).getByRole("button", { name: "Stop", exact: true }),
   ).toBeVisible();
 });
+
+/** The running entry's editor: the dock's popover, or the Time page's panel. */
+function runningEditor(page: Page) {
+  return page
+    .getByRole("dialog")
+    .or(page.getByRole("complementary", { name: "Time entry editor" }));
+}
 
 When("I reload the app", async ({ page }) => {
   await page.reload();
@@ -1889,7 +1898,7 @@ Then(
   "the New backlog item dialog opens over the open entry",
   async ({ page }) => {
     await expect(
-      newBacklogItemDialog(page).getByPlaceholder("What needs doing", {
+      newBacklogItemDialog(page).getByPlaceholder("Item title", {
         exact: true,
       }),
     ).toBeFocused();
@@ -1956,14 +1965,24 @@ When("I open the running entry from the timer dock", async ({ page }) => {
     .click();
 });
 
+/**
+ * Every open entry editor: the dock's popover, or on the Time page its side
+ * panel, where the dock's + and running entry open (forms council rounds 4
+ * and 5).
+ */
+const entryEditors = (page: Page) =>
+  page
+    .locator('[data-slot="popover-content"]')
+    .or(page.getByRole("complementary", { name: "Time entry editor" }));
+
 Then("only the new entry's editor is open", async ({ page }) => {
-  const editors = page.locator('[data-slot="popover-content"]');
+  const editors = entryEditors(page);
   await expect(editors).toHaveCount(1);
   await expect(editors).toContainText("New time entry");
 });
 
 Then("only the running entry's editor is open", async ({ page }) => {
-  const editors = page.locator('[data-slot="popover-content"]');
+  const editors = entryEditors(page);
   await expect(editors).toHaveCount(1);
   await expect(editors).toContainText("Running");
 });

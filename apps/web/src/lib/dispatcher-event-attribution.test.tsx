@@ -376,7 +376,7 @@ describe("a drag", () => {
 describe("the entry editor", () => {
   /** Types 1.5 hours into a new entry and saves it. */
   async function saveNewEntry() {
-    fireEvent.change(await screen.findByPlaceholderText("01:30"), {
+    fireEvent.change(await screen.findByPlaceholderText("0:00"), {
       target: { value: "01:30" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Create entry" }));
@@ -428,7 +428,7 @@ describe("the backlog item editor", () => {
       path: "/backlog?action=create",
     });
     sink.events.length = 0;
-    fireEvent.change(await screen.findByPlaceholderText("What needs doing"), {
+    fireEvent.change(await screen.findByPlaceholderText("Item title"), {
       target: { value: `Created in a ${narrow ? "dialog" : "side panel"}` },
     });
     const inDialog = screen.queryByRole("dialog") !== null;
@@ -457,7 +457,7 @@ describe("the backlog item editor", () => {
   it("marks a save in the sidebar's New backlog item dialog as dialog", async () => {
     render(<NewBacklogItemDialogHost />);
     act(() => requestNewBacklogItem());
-    fireEvent.change(await screen.findByPlaceholderText("What needs doing"), {
+    fireEvent.change(await screen.findByPlaceholderText("Item title"), {
       target: { value: "Created from the sidebar" },
     });
     fireEvent.click(await screen.findByRole("button", { name: "Create item" }));

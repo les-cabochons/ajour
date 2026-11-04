@@ -4,7 +4,6 @@ import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { formatDurationHoursInput } from "@/domain/time/duration";
 import type { LocalProject } from "@/domain/local-state";
 import type { TaskPropertyPlugin } from "@/domain/projects/plugin-properties";
@@ -118,67 +117,81 @@ export function ProjectTaskEditorForm({
         </TooltipButton>
       </header>
 
-      <FieldGroup className="gap-4">
+      {/* A composer, as the backlog editor's: the name to write in, then
+          the task's properties as chips (forms council round 6). */}
+      <FieldGroup className="composer gap-3">
         <Field data-invalid={Boolean(nameError)}>
-          <FieldLabel htmlFor="project-task-editor-name">Name</FieldLabel>
-          <Input
+          <FieldLabel htmlFor="project-task-editor-name" className="sr-only">
+            Name
+          </FieldLabel>
+          <input
             id="project-task-editor-name"
+            className="composer-title"
+            autoComplete="off"
             value={fields.name}
-            placeholder="Development"
+            placeholder="Task name"
             aria-invalid={Boolean(nameError)}
             onChange={(event) => onFieldsChange({ name: event.target.value })}
             onKeyDown={saveOnEnter}
           />
           {nameError ? <span className="field-error">{nameError}</span> : null}
         </Field>
-        <Field orientation="horizontal">
-          <Checkbox
-            id="project-task-editor-billable"
-            checked={fields.billable}
-            onCheckedChange={(checked) => onFieldsChange({ billable: checked })}
-          />
-          <FieldLabel htmlFor="project-task-editor-billable">
-            Billable
-          </FieldLabel>
-        </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field data-invalid={Boolean(editor.budgetError)}>
-            <FieldLabel htmlFor="project-task-editor-budget">Budget</FieldLabel>
-            <Input
+        <div className="composer-chips" role="group" aria-label="Properties">
+          <label className="composer-chip composer-estimate composer-toggle">
+            <Checkbox
+              id="project-task-editor-billable"
+              checked={fields.billable}
+              onCheckedChange={(checked) =>
+                onFieldsChange({ billable: checked })
+              }
+            />
+            <span>Billable</span>
+          </label>
+          <div
+            className="composer-chip composer-estimate"
+            data-invalid={editor.budgetError ? "true" : undefined}
+          >
+            <label htmlFor="project-task-editor-budget">Budget</label>
+            <input
               id="project-task-editor-budget"
-              className="font-mono"
+              className="composer-estimate-input"
+              autoComplete="off"
               value={fields.budget}
-              placeholder="Optional"
+              placeholder="–"
               aria-invalid={Boolean(editor.budgetError)}
               onChange={(event) =>
                 onFieldsChange({ budget: event.target.value })
               }
               onKeyDown={saveOnEnter}
             />
-            {editor.budgetError ? (
-              <span className="field-error">{editor.budgetError}</span>
-            ) : null}
-          </Field>
-          <Field data-invalid={Boolean(editor.adjustmentError)}>
-            <FieldLabel htmlFor="project-task-editor-adjustment">
-              Adjustment
-            </FieldLabel>
-            <Input
+          </div>
+          <div
+            className="composer-chip composer-estimate"
+            data-invalid={editor.adjustmentError ? "true" : undefined}
+          >
+            <label htmlFor="project-task-editor-adjustment">Adjustment</label>
+            <input
               id="project-task-editor-adjustment"
-              className="font-mono"
+              className="composer-estimate-input"
+              autoComplete="off"
               value={fields.adjustment}
-              placeholder="Optional"
+              placeholder="–"
               aria-invalid={Boolean(editor.adjustmentError)}
               onChange={(event) =>
                 onFieldsChange({ adjustment: event.target.value })
               }
               onKeyDown={saveOnEnter}
             />
-            {editor.adjustmentError ? (
-              <span className="field-error">{editor.adjustmentError}</span>
-            ) : null}
-          </Field>
+          </div>
         </div>
+        {editor.budgetError ? (
+          <span className="field-error">Budget: {editor.budgetError}</span>
+        ) : null}
+        {editor.adjustmentError ? (
+          <span className="field-error">
+            Adjustment: {editor.adjustmentError}
+          </span>
+        ) : null}
         <PinnedSlotField
           taskName={fields.name}
           taskId={taskId}

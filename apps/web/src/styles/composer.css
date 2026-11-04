@@ -1,0 +1,249 @@
+/* The composer, as Linear's new issue: a title and a description to write
+   in, with no boxes, then the properties as chips that say their value, or
+   name the property while empty (forms council round 6). Unlayered, so it
+   wins over the controls' own utility classes. */
+
+.composer .composer-title {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.4;
+  outline: none;
+}
+
+.composer .composer-title::placeholder {
+  color: var(--text-tertiary);
+}
+
+.composer .composer-title[aria-invalid="true"]::placeholder {
+  color: var(--destructive);
+}
+
+.composer .composer-body {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.composer .composer-body:focus-within {
+  box-shadow: none;
+}
+
+.composer .composer-body .cm-placeholder {
+  color: var(--text-tertiary);
+}
+
+.composer-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Every chip: a quiet pill, 28px, that lights on hover and focus. */
+.composer-chips
+  :is([data-slot="select-trigger"], .searchable-select-input-group),
+.composer-chips .composer-estimate {
+  height: 28px;
+  min-height: 28px;
+  width: auto;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: oklch(from var(--foreground) l c h / 3%);
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 500;
+  transition:
+    border-color var(--duration, 120ms) ease,
+    background var(--duration, 120ms) ease;
+}
+
+.composer-chips
+  :is([data-slot="select-trigger"], .searchable-select-input-group):hover,
+.composer-chips .composer-estimate:hover {
+  border-color: var(--field-border);
+  background: var(--hover-bg);
+}
+
+.composer-chips
+  :is(
+    [data-slot="select-trigger"]:focus-visible,
+    .searchable-select-input-group:focus-within,
+    .composer-estimate:focus-within
+  ) {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 2px oklch(from var(--ring) l c h / 25%);
+}
+
+.composer-chips [data-slot="select-trigger"] {
+  padding: 0 10px;
+  gap: 6px;
+}
+
+/* No chevrons: a chip opens on a click, as Linear's do. */
+.composer-chips [data-slot="select-trigger"] > svg:last-child,
+.composer-chips .searchable-select-input-group [data-align="inline-end"] {
+  display: none;
+}
+
+.composer-chips .searchable-select {
+  width: auto;
+}
+
+.composer-chips .searchable-select-input {
+  height: 26px;
+  min-width: 3.5ch;
+  max-width: 14rem;
+  padding: 0 10px;
+  field-sizing: content;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.composer-chips .searchable-select-input::placeholder {
+  color: var(--muted-foreground);
+}
+
+.composer-chips .composer-estimate {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px 0 10px;
+  color: var(--muted-foreground);
+}
+
+.composer-chips .composer-estimate[data-invalid="true"] {
+  border-color: var(--destructive);
+}
+
+.composer-chips .composer-estimate-input {
+  width: auto;
+  min-width: 2ch;
+  max-width: 9ch;
+  padding: 0 6px 0 0;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  field-sizing: content;
+  outline: none;
+}
+
+.composer-chips .composer-estimate-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.composer .composer-subtitle {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+  outline: none;
+}
+
+.composer .composer-subtitle::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* The icon tile above a composer's title, tinted like Linear's. */
+.composer .composer-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--hover-bg);
+}
+
+.composer-chips .composer-color {
+  height: 28px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: oklch(from var(--foreground) l c h / 3%);
+  font-size: 12px;
+}
+
+.composer-chips .composer-color:hover {
+  border-color: var(--field-border);
+  background: var(--hover-bg);
+}
+
+/* A chip that holds a checkbox: the whole pill toggles it. */
+.composer-chips .composer-toggle {
+  gap: 6px;
+  padding: 0 10px 0 8px;
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+/* The time entry composer: the hours are its title, in the figures' face. */
+.composer .composer-hours {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+.composer .composer-hours::placeholder {
+  font-family: var(--font-mono);
+}
+
+.composer textarea.composer-note {
+  width: 100%;
+  min-height: 2lh;
+  resize: none;
+  field-sizing: content;
+  color: var(--foreground);
+  font-size: 14px;
+  line-height: 1.5;
+  outline: none;
+}
+
+.composer textarea.composer-note::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* The task picker and the date as chips. */
+.composer-chips .composer-task-chip {
+  height: 28px;
+  width: auto;
+  max-width: 18rem;
+  padding: 0 10px;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: oklch(from var(--foreground) l c h / 3%);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.composer-chips .composer-task-chip:hover {
+  border-color: var(--field-border);
+  background: var(--hover-bg);
+}
+
+.composer-chips .composer-task-chip > svg:last-child {
+  display: none;
+}
+
+.composer-chips .composer-date [data-slot="input"] {
+  height: 28px;
+  width: calc(10ch + 44px);
+  padding: 0 30px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: oklch(from var(--foreground) l c h / 3%);
+  font-size: 12px;
+}
+
+.composer-chips .composer-date [data-slot="input"]:hover {
+  border-color: var(--field-border);
+}

@@ -412,6 +412,8 @@ function GlobalTimerBar({
       // New entry does. A note or backlog link only the popover carries.
       const pageHost = getNewEntryPageHost();
       if (pageHost && !values?.note && !values?.workItemId) {
+        // One entry editor at a time, there too.
+        setRunningEntryEditorOpen(false);
         pageHost(values);
         return;
       }

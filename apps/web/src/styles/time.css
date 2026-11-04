@@ -1803,52 +1803,6 @@
   }
 }
 
-/* The entry editor's property rows read as values, like the backlog peek's:
-   the task picker, Hours and Date show their field only on hover and focus,
-   and an invalid value keeps its red border. Unlayered, so they win over the
-   fields' utility classes. */
-.time-entry-fields dd :is(.time-entry-task-picker, [data-slot="input"]) {
-  height: var(--control-height);
-  padding-inline-start: 0.625rem;
-  border-color: transparent;
-  background: transparent;
-}
-
-.time-entry-fields
-  dd
-  :is(.time-entry-task-picker, [data-slot="input"]):is(
-    :hover,
-    :focus,
-    [data-popup-open]
-  ) {
-  border-color: var(--field-border);
-  background: var(--field-bg);
-}
-
-/* A new entry is a form to fill, not a record to read: its fields show at
-   rest (forms council round 3). */
-.time-entry-editor[data-mode="create"]
-  .time-entry-fields
-  dd
-  :is(.time-entry-task-picker, [data-slot="input"]) {
-  border-color: var(--field-border);
-  background: var(--field-bg);
-}
-
-.time-entry-fields dd [data-slot="input"][aria-invalid="true"] {
-  border-color: var(--destructive);
-}
-
-/* Each field shifts left by its border and padding, so every value's text
-   lines up with the rows' start. Date shifts its wrapper, which holds the
-   calendar button. */
-.time-entry-fields dd > .time-entry-task-picker,
-.time-entry-fields dd > div > [data-slot="input"],
-.time-entry-fields dd > div > .relative {
-  width: calc(100% + 0.625rem + 1px);
-  margin-inline-start: calc(-0.625rem - 1px);
-}
-
 @media (prefers-reduced-motion: reduce) {
   .weekly-time-view,
   .weekly-time-view *,

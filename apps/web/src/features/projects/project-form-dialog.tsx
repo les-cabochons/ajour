@@ -9,7 +9,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import type { LocalProject } from "@/domain/local-state";
 import {
   createProjectFormFields,
@@ -80,84 +79,91 @@ export function ProjectFormDialog({
             </DialogTitle>
           </DialogHeader>
 
-          <FieldGroup className="gap-4">
-            <Field>
-              <FieldLabel htmlFor="project-form-name">Full name</FieldLabel>
-              {/* The icon sits before the name, as in Linear's new project
-                  form; its presets and upload open on demand. */}
-              <div className="flex items-center gap-2">
-                <Popover>
-                  <PopoverTrigger
-                    render={
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        className="shrink-0"
-                        aria-label={`Project icon: ${iconLabel}`}
-                      />
-                    }
-                  >
-                    <ProjectIcon
-                      icon={fields.icon}
-                      color={fields.color}
-                      className="size-4"
-                    />
-                  </PopoverTrigger>
-                  <PopoverContent align="start" className="w-80">
-                    <ProjectIconField
-                      icon={fields.icon}
-                      color={fields.color}
-                      onChange={(icon) => update({ icon })}
-                    />
-                  </PopoverContent>
-                </Popover>
-                <Input
-                  id="project-form-name"
-                  autoFocus
-                  placeholder="Atlas platform redesign"
-                  value={fields.name}
-                  onChange={(event) =>
-                    setFields((current) =>
-                      setProjectFormName(current, event.target.value),
-                    )
-                  }
+          {/* A composer, as Linear's new project: the icon, then the name
+              and short name to write in, then the code and color as chips
+              (forms council round 6). */}
+          <FieldGroup className="composer gap-2">
+            <Popover>
+              <PopoverTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="composer-icon"
+                    aria-label={`Project icon: ${iconLabel}`}
+                  />
+                }
+              >
+                <ProjectIcon
+                  icon={fields.icon}
+                  color={fields.color}
+                  className="size-4"
                 />
-              </div>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-80">
+                <ProjectIconField
+                  icon={fields.icon}
+                  color={fields.color}
+                  onChange={(icon) => update({ icon })}
+                />
+              </PopoverContent>
+            </Popover>
+            <Field>
+              <FieldLabel htmlFor="project-form-name" className="sr-only">
+                Full name
+              </FieldLabel>
+              <input
+                id="project-form-name"
+                className="composer-title"
+                autoFocus
+                autoComplete="off"
+                placeholder="Project name"
+                value={fields.name}
+                onChange={(event) =>
+                  setFields((current) =>
+                    setProjectFormName(current, event.target.value),
+                  )
+                }
+              />
             </Field>
             <Field>
-              <FieldLabel htmlFor="project-form-display-name">
+              <FieldLabel
+                htmlFor="project-form-display-name"
+                className="sr-only"
+              >
                 Display name
               </FieldLabel>
-              <Input
+              <input
                 id="project-form-display-name"
-                placeholder="The short name lists show"
+                className="composer-subtitle"
+                autoComplete="off"
+                placeholder="Add a short name for lists…"
                 value={fields.displayName}
                 onChange={(event) =>
                   update({ displayName: event.target.value })
                 }
               />
             </Field>
-            <div className="grid gap-3 desktop:grid-cols-[1fr_110px]">
-              <Field>
-                <FieldLabel htmlFor="project-form-code">Code</FieldLabel>
-                <Input
+            <div className="composer-chips pt-2">
+              <div className="composer-chip composer-estimate">
+                <label htmlFor="project-form-code">Code</label>
+                <input
                   id="project-form-code"
+                  className="composer-estimate-input"
+                  autoComplete="off"
                   placeholder="ATL"
                   value={fields.code}
                   onChange={(event) => update({ code: event.target.value })}
                 />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="project-form-color">Color</FieldLabel>
-                <ColorField
-                  id="project-form-color"
-                  label="Project color"
-                  className="w-full"
-                  value={fields.color}
-                  onChange={(color) => update({ color })}
-                />
-              </Field>
+              </div>
+              <ColorField
+                id="project-form-color"
+                label="Project color"
+                className="composer-color"
+                value={fields.color}
+                onChange={(color) => update({ color })}
+              />
             </div>
           </FieldGroup>
 

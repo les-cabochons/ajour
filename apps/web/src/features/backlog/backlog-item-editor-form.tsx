@@ -27,8 +27,6 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { PropertyList, PropertyRow } from "@/components/property-list";
 import {
   SearchableSelect,
   type SearchableSelectOption,
@@ -575,6 +573,61 @@ export function BacklogItemEditorForm({
     showErrors || fields.title !== base.title ? validation.titleError : null;
   const sourceMetaLabel = workItem ? getSourceMetaLabel(workItem) : "";
 
+  // Each estimate is a chip with its value typed in place (forms council
+  // round 6): "Original 8", "Remaining 5", "Completed 3".
+  const estimateChips = BACKLOG_ESTIMATE_FIELD_KEYS.map((key) => {
+    const error = validation[ESTIMATE_ERROR_KEYS[key]];
+    const resetValue = editor.estimateResets[key];
+    const label = ESTIMATE_LABELS[key];
+    return (
+      <div
+        key={key}
+        className="composer-chip composer-estimate"
+        data-invalid={error ? "true" : undefined}
+      >
+        <label htmlFor={`${idPrefix}-${key}`}>{label}</label>
+        <input
+          id={`${idPrefix}-${key}`}
+          className="composer-estimate-input"
+          inputMode="decimal"
+          autoComplete="off"
+          value={fields[key]}
+          onChange={(event) => updateFields({ [key]: event.target.value })}
+          placeholder="0"
+          aria-invalid={Boolean(error)}
+        />
+        {resetValue !== undefined ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={`Reset ${label.toLowerCase()} estimate to subitem total, ${resetValue}`}
+                  onClick={() => updateFields({ [key]: resetValue })}
+                />
+              }
+            >
+              <RotateCcw />
+            </TooltipTrigger>
+            <TooltipContent>
+              Reset to subitem total ({resetValue})
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
+      </div>
+    );
+  });
+  const estimateErrors = BACKLOG_ESTIMATE_FIELD_KEYS.map((key) => {
+    const error = validation[ESTIMATE_ERROR_KEYS[key]];
+    return error ? (
+      <span key={key} className="field-error">
+        {ESTIMATE_LABELS[key]}: {error}
+      </span>
+    ) : null;
+  });
+
   return (
     <div
       ref={rootRef}
@@ -647,18 +700,23 @@ export function BacklogItemEditorForm({
         </p>
       ) : null}
 
-      <FieldGroup className="gap-4">
+      {/* A composer, as Linear's: the title and description are text to
+          write in, not boxes, and the properties are chips that say their
+          value (forms council round 6). */}
+      <FieldGroup className="composer gap-3">
         <Field data-invalid={Boolean(titleError)}>
-          <FieldLabel htmlFor={`${idPrefix}-title`}>
+          <FieldLabel htmlFor={`${idPrefix}-title`} className="sr-only">
             {editor.isSubitem ? "Subitem" : "Item"}
           </FieldLabel>
-          <Input
+          <input
             ref={titleInputRef}
             id={`${idPrefix}-title`}
+            className="composer-title"
             value={fields.title}
             onChange={(event) => updateFields({ title: event.target.value })}
             onKeyDown={saveOnEnter}
-            placeholder="What needs doing"
+            placeholder={editor.isSubitem ? "Subitem title" : "Item title"}
+            autoComplete="off"
             aria-invalid={Boolean(titleError)}
           />
           {titleError ? (
@@ -673,17 +731,18 @@ export function BacklogItemEditorForm({
         <Field
           style={{ "--markdown-editor-max-height": "14rem" } as CSSProperties}
         >
-          <FieldLabel htmlFor={`${idPrefix}-description`}>
+          <FieldLabel htmlFor={`${idPrefix}-description`} className="sr-only">
             Description
           </FieldLabel>
           {descriptionEditable ? (
             <MarkdownEditor
               id={`${idPrefix}-description`}
               aria-label="Description"
+              className="composer-body"
               value={fields.description}
               onChange={(description) => updateFields({ description })}
-              placeholder="Markdown supported (optional)"
-              minLines={4}
+              placeholder="Add description…"
+              minLines={3}
             />
           ) : null}
           {descriptionEditable && currentItem ? (
@@ -720,149 +779,86 @@ export function BacklogItemEditorForm({
           )}
         </Field>
 
-        {/* The properties as label-left rows, as the time entry editor
-            shows them: one anatomy for every side panel (forms council
-            round 6). The writing above stays stacked. */}
-        <section aria-label="Properties">
-          <PropertyList>
-            {!editor.isSubitem ? (
-              <PropertyRow
-                label={<label htmlFor={`${idPrefix}-priority`}>Priority</label>}
-              >
-                <OptionSelect
-                  id={`${idPrefix}-priority`}
-                  size="default"
-                  value={fields.priority}
-                  onChange={(priority) => updateFields({ priority })}
-                  invalid={Boolean(validation.priorityError)}
-                  {...withSyncedFirst(
-                    [
-                      {
-                        value: "",
-                        label: NO_PRIORITY_NAME,
-                        disabledReason: noPriorityRefusal,
-                        icon: <PriorityIcon priority={undefined} decorative />,
-                      },
-                      ...PRIORITY_LEVELS.map(({ level, name }) => ({
-                        value: String(level),
-                        label: name,
-                        icon: <PriorityIcon priority={level} decorative />,
-                      })),
-                    ],
-                    editor.priorityReset,
-                    "Other levels",
-                  )}
-                />
-              </PropertyRow>
-            ) : null}
-            <PropertyRow label="Workflow state">
-              <SearchableSelect
-                value={fields.workflowStateId}
-                options={syncedStateFirst(statusOptions, editor.statusReset)}
-                onChange={(workflowStateId) =>
-                  updateFields({ workflowStateId })
-                }
-                placeholder="No state"
-                clearLabel="No state"
-                emptyMessage="No matching workflow states"
-                ariaLabel="Workflow state"
-              />
-            </PropertyRow>
-            <PropertyRow label="Project">
-              <SearchableSelect
-                value={fields.projectId}
-                options={projectOptions}
-                onChange={changeProject}
-                placeholder="No project"
-                clearLabel="No project"
-                emptyMessage="No matching projects"
-                ariaLabel="Project"
-              />
-            </PropertyRow>
-            <PropertyRow label="Task mapping">
-              <SearchableSelect
-                value={fields.taskId}
-                options={taskOptions}
-                onChange={(taskId) => updateFields({ taskId })}
-                placeholder={
-                  fields.projectId ? "Select task" : "Pick a project first"
-                }
-                clearLabel={fields.projectId ? "No task" : undefined}
-                emptyMessage={
-                  fields.projectId
-                    ? "No matching tasks"
-                    : "Pick a project first"
-                }
-                ariaLabel="Task mapping"
-                disabled={!selectedProject}
-                create={
-                  selectedProject
-                    ? {
-                        label: (text) =>
-                          describeCreateTaskRow(selectedProject, text),
-                        onCreate: (text) =>
-                          createTask(selectedProject._id, text),
-                      }
-                    : undefined
-                }
-              />
-            </PropertyRow>
-          </PropertyList>
-          {validation.priorityError ? (
-            <span className="field-error">{validation.priorityError}</span>
+        <section aria-label="Properties" className="composer-chips">
+          {!editor.isSubitem ? (
+            <OptionSelect
+              id={`${idPrefix}-priority`}
+              label="Priority"
+              size="sm"
+              className="composer-chip"
+              value={fields.priority}
+              onChange={(priority) => updateFields({ priority })}
+              invalid={Boolean(validation.priorityError)}
+              {...withSyncedFirst(
+                [
+                  {
+                    value: "",
+                    label: NO_PRIORITY_NAME,
+                    disabledReason: noPriorityRefusal,
+                    icon: <PriorityIcon priority={undefined} decorative />,
+                  },
+                  ...PRIORITY_LEVELS.map(({ level, name }) => ({
+                    value: String(level),
+                    label: name,
+                    icon: <PriorityIcon priority={level} decorative />,
+                  })),
+                ],
+                editor.priorityReset,
+                "Other levels",
+              )}
+            />
           ) : null}
+          <SearchableSelect
+            value={fields.workflowStateId}
+            options={syncedStateFirst(statusOptions, editor.statusReset)}
+            onChange={(workflowStateId) => updateFields({ workflowStateId })}
+            className="composer-chip"
+            popoverMinWidth={240}
+            placeholder="State"
+            clearLabel="No state"
+            emptyMessage="No matching workflow states"
+            ariaLabel="Workflow state"
+          />
+          <SearchableSelect
+            value={fields.projectId}
+            options={projectOptions}
+            onChange={changeProject}
+            className="composer-chip"
+            popoverMinWidth={260}
+            placeholder="Project"
+            clearLabel="No project"
+            emptyMessage="No matching projects"
+            ariaLabel="Project"
+          />
+          <SearchableSelect
+            value={fields.taskId}
+            options={taskOptions}
+            onChange={(taskId) => updateFields({ taskId })}
+            className="composer-chip"
+            popoverMinWidth={260}
+            placeholder="Task"
+            clearLabel={fields.projectId ? "No task" : undefined}
+            emptyMessage={
+              fields.projectId ? "No matching tasks" : "Pick a project first"
+            }
+            ariaLabel="Task mapping"
+            disabled={!selectedProject}
+            create={
+              selectedProject
+                ? {
+                    label: (text) =>
+                      describeCreateTaskRow(selectedProject, text),
+                    onCreate: (text) => createTask(selectedProject._id, text),
+                  }
+                : undefined
+            }
+          />
+          {estimateChips}
         </section>
-
-        <div className="grid grid-cols-3 gap-3">
-          {BACKLOG_ESTIMATE_FIELD_KEYS.map((key) => {
-            const error = validation[ESTIMATE_ERROR_KEYS[key]];
-            const resetValue = editor.estimateResets[key];
-            const label = ESTIMATE_LABELS[key];
-            return (
-              <Field key={key} data-invalid={Boolean(error)}>
-                <FieldLabel htmlFor={`${idPrefix}-${key}`}>{label}</FieldLabel>
-                <div className="relative">
-                  <Input
-                    id={`${idPrefix}-${key}`}
-                    className={cn(
-                      "font-mono",
-                      resetValue !== undefined && "pr-8",
-                    )}
-                    inputMode="decimal"
-                    value={fields[key]}
-                    onChange={(event) =>
-                      updateFields({ [key]: event.target.value })
-                    }
-                    placeholder="0"
-                    aria-invalid={Boolean(error)}
-                  />
-                  {resetValue !== undefined ? (
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon-sm"
-                            className="absolute top-1/2 right-1 -translate-y-1/2"
-                            aria-label={`Reset ${label.toLowerCase()} estimate to subitem total, ${resetValue}`}
-                            onClick={() => updateFields({ [key]: resetValue })}
-                          />
-                        }
-                      >
-                        <RotateCcw />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        Reset to subitem total ({resetValue})
-                      </TooltipContent>
-                    </Tooltip>
-                  ) : null}
-                </div>
-                {error ? <span className="field-error">{error}</span> : null}
-              </Field>
-            );
-          })}
-        </div>
+        {validation.priorityError ? (
+          <span className="field-error">{validation.priorityError}</span>
+        ) : null}
+        {estimateErrors}
 
         {editor.isSynced ? (
           <Field orientation="horizontal">
