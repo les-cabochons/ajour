@@ -27,7 +27,7 @@ Decided in [Action model for entries, timers, projects, tasks and work items](ht
 
 9. Exception to rule 2: Mark as not committed is listed on committed entries only. Listed and disabled on every other entry, it would add a line to most menus for a rare repair.
 
-10. Time entry rows and cards (Day rows, Days cards and the Grid cell list) have no "…" button. Right-click and the menu keys open their action set. Day rows show Continue at their end, and the running row shows Stop in the same slot. On desktop it shows at rest, dimmed, and at full strength on hover or focus, since starting time again is the day view's main job (council round 1). The running row also carries a 2px green edge at its start.
+10. Time entry rows and cards (Day rows, Days cards and the Grid cell list) have no "…" button. Right-click and the menu keys open their action set. Day rows show Continue at their end, and the running row shows Stop in the same slot. On desktop it shows at rest, since starting time again is the day view's main job (council rounds 1 and 2); the running row's Stop is in the primary text color, the strongest action in the list. The running row also carries a 2px green edge at its start.
 
 11. Exception to rule 1: Cut, Copy and Paste are listed only in the menus of Day rows and Days cards, where entries can be selected. Grid cells and editors do not list them.
 
@@ -597,7 +597,7 @@ Settings > Workflow lists, for each connection and source project, its source st
 - On desktop list rows the project is its dot and name in 12px secondary text in a fixed column, as in the narrow view, not a filled chip (council round 2).
 - The list groups rows under sticky group headers. A row is one line: priority, id, state, type, title, a muted "↳ Parent" for a subitem, subitem progress, the running and Settled markers, then project and remaining estimate on the right. The type slot holds a source's own task icon. With the Project property shown, the row leaves out the project's dot there, since the Project column names it, and when no source has a task icon the slot goes, so the row reads priority, id, state, title (council round 1).
 - Every estimate reads as hours and minutes: "8h", "1h30", "45m", and "0h" for none left, in the list, the sidebar, the item page, the peek and the dock. Logged time is a clock, "1:30". An estimate is never a decimal such as "1.5h" (council round 1).
-- On desktop list rows, Start entry, or Stop on the running item, shows at rest, dimmed; the "…" button still waits for hover or focus (council round 1).
+- On desktop list rows, Start entry, or Stop on the running item, shows at rest, the running item's Stop in the primary text color; the "…" button still waits for hover or focus (council rounds 1 and 2).
 - The board shows one column per group. A card shows the id, the state and title on up to two lines, "↳ Parent" for a subitem, then priority, type, the Settled marker, subitem progress, project and remaining estimate.
 - Each group and column header has a "+" that opens New backlog item with that state, priority or project set. Done states have none.
 - Subitems are their own rows and cards, in their own state. "Show subitems" hides them. Their parent shows "2/5" subitem progress.
@@ -665,7 +665,7 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 - The form holds title, workflow state, priority, project and task mapping, description, the estimates with their "Reset to subitem total" buttons, and "Keep when missing from sync" for synced items. Its header has the "…" action menu. The Priority select is narrow, so it shows the level's icon (three dashes for No priority); its menu shows each icon with the name.
 - Task mapping, and the Task property of the item page and the peek, end with "Create task "07 Run"" when the typed name matches no active task of the item's project, as in the [Task menu](#create-a-task). Task mapping is a draft: the created task waits for Save, and Undo puts the previous task back in the draft. The Task property saves at once, and one Undo takes back both the task and the item's change.
 - "New backlog item" on the Backlog page opens a blank form. The "+" at the top of the app sidebar opens it in a dialog, on any page. "Add subitem" opens it with the parent set.
-- Start entry shows dimmed at rest on desktop list rows, and stays in the "…" menu and in the peek. Entries start on today.
+- Start entry shows at rest on desktop list rows, and stays in the "…" menu and in the peek. Entries start on today.
 
 ## Application updates
 
