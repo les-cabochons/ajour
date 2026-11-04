@@ -23,6 +23,8 @@ import type {
   backlogSettleStatesResultSchema,
   backlogSettleWriteRequestSchema,
   backlogSettleWriteResultSchema,
+  backlogSearchAssigneesRequestSchema,
+  backlogSearchAssigneesResultSchema,
   backlogSyncWorkItemSchema,
   backlogWriteDescriptionRequestSchema,
   backlogWriteDescriptionResultSchema,
@@ -80,6 +82,13 @@ export type SettleStatesRequest = Output<
 export type SettleStatesResult = Input<typeof backlogSettleStatesResultSchema>;
 export type SettleWriteRequest = Output<typeof backlogSettleWriteRequestSchema>;
 export type SettleWriteResult = Input<typeof backlogSettleWriteResultSchema>;
+/** Needs `connector.assign`. Ids are your own: the ones `writeSettle` takes. */
+export type SearchAssigneesRequest = Output<
+  typeof backlogSearchAssigneesRequestSchema
+>;
+export type SearchAssigneesResult = Input<
+  typeof backlogSearchAssigneesResultSchema
+>;
 export type ReadDescriptionRequest = Output<
   typeof backlogReadDescriptionRequestSchema
 >;

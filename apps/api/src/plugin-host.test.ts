@@ -1020,6 +1020,57 @@ describe("PluginManager", () => {
     ).rejects.toThrow('Plugin "jira" does not provide pull requests.');
   });
 
+  it.each(["person-private-id", null, undefined])(
+    "requires assign for a settle with assignee %s, including unassign",
+    async (assignee) => {
+      const root = await tempDir();
+      const source =
+        "export async function writeSettle(connection, request) { return { state: request.assignee === null ? 'Unassigned' : 'Waiting' }; }";
+      const directories = await Promise.all(
+        ["assigning", "settling"].map((id) =>
+          createPluginDirectory(root, id, source, {
+            capabilities: {
+              connector: { settle: true, assign: id === "assigning" },
+            },
+          }),
+        ),
+      );
+      const pluginManager = manager({
+        installedPluginDirectory: path.join(root, "installed"),
+        developmentPluginDirectories: directories,
+        allowDevelopmentPlugins: true,
+      });
+      const connection = {
+        id: "connection-1",
+        pluginId: "assigning",
+        label: "Work",
+        tenantLabel: "Acme",
+        autoSync: false,
+        autoSyncIntervalMinutes: 15,
+        connectedAt: 1,
+        config: {},
+      };
+      const request = { sourceId: "ENG-1", state: "Waiting", assignee };
+      await expect(
+        pluginManager.writeSettle("assigning", connection, request),
+      ).resolves.toEqual({
+        state: assignee === null ? "Unassigned" : "Waiting",
+      });
+      const withoutAssign = pluginManager.writeSettle(
+        "settling",
+        { ...connection, pluginId: "settling" },
+        request,
+      );
+      if (assignee === undefined) {
+        await expect(withoutAssign).resolves.toEqual({ state: "Waiting" });
+      } else {
+        await expect(withoutAssign).rejects.toMatchObject({
+          reason: "not_supported",
+        });
+      }
+    },
+  );
+
   it("runs team operations only for plugins that declare a team", async () => {
     const root = await tempDir();
     const source = [

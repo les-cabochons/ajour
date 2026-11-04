@@ -977,11 +977,26 @@ describe("backlog settle routes", () => {
     "}",
     "export async function writeSettle(connection, request) {",
     "  if (request.sourceId === 'FAIL-1') throw new Error('Transition not allowed.');",
-    "  return { state: request.state, priority: request.priority };",
+    "  // The state echoes an assignee, so a test sees what the plugin received.",
+    "  const assigned = request.assignee === undefined ? undefined",
+    "    : request.assignee === null ? 'Unassigned' : 'Assigned to ' + request.assignee;",
+    "  return { state: request.state ?? assigned, priority: request.priority };",
+    "}",
+    "const people = [",
+    "  { id: 'ana@acme.test', displayName: 'Ana Silva', email: 'ana@acme.test' },",
+    "  { id: 'bo@acme.test', displayName: 'Bo Chen' },",
+    "];",
+    "export async function searchAssignees(connection, request) {",
+    "  return { people: people",
+    "    .filter((person) => person.displayName.toLowerCase().includes(request.query.toLowerCase()))",
+    "    .slice(0, request.limit) };",
     "}",
   ].join("\n");
 
-  async function createServer(capabilities?: { settle: boolean }) {
+  async function createServer(capabilities?: {
+    settle: boolean;
+    assign?: boolean;
+  }) {
     const root = await mkdtemp(path.join(os.tmpdir(), "ajour-settle-api-"));
     tempDirs.push(root);
     const pluginDirectory = await createPlugin(
@@ -1072,6 +1087,77 @@ describe("backlog settle routes", () => {
     ).resolves.toEqual({
       status: 502,
       body: { error: "Transition not allowed." },
+    });
+  });
+
+  it("searches the people an item can be assigned to, and writes an assignee with a settle", async () => {
+    const { server, connectionId } = await createServer({
+      settle: true,
+      assign: true,
+    });
+    const assignees = (query: string) =>
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/plugins/jira/connections/${connectionId}/assignees`,
+        body: JSON.stringify({ sourceId: "OPEN-1", query, limit: 20 }),
+      });
+
+    await expect(assignees("")).resolves.toEqual({
+      status: 200,
+      body: {
+        people: [
+          {
+            id: "ana@acme.test",
+            displayName: "Ana Silva",
+            email: "ana@acme.test",
+          },
+          { id: "bo@acme.test", displayName: "Bo Chen" },
+        ],
+      },
+    });
+    await expect(assignees("bo")).resolves.toEqual({
+      status: 200,
+      body: { people: [{ id: "bo@acme.test", displayName: "Bo Chen" }] },
+    });
+
+    const settle = (body: object) =>
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/plugins/jira/connections/${connectionId}/settle`,
+        body: JSON.stringify({ sourceId: "OPEN-1", ...body }),
+      });
+    await expect(settle({ assignee: "ana@acme.test" })).resolves.toEqual({
+      status: 200,
+      body: { state: "Assigned to ana@acme.test" },
+    });
+    await expect(settle({ assignee: null })).resolves.toEqual({
+      status: 200,
+      body: { state: "Unassigned" },
+    });
+  });
+
+  it("refuses assignees through a plugin that doesn't declare them", async () => {
+    const { server, connectionId } = await createServer({ settle: true });
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/plugins/jira/connections/${connectionId}/assignees`,
+        body: JSON.stringify({ sourceId: "OPEN-1", query: "", limit: 20 }),
+      }),
+    ).resolves.toEqual({
+      status: 409,
+      body: { error: "This plugin does not support assignees." },
+    });
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/plugins/jira/connections/${connectionId}/settle`,
+        body: JSON.stringify({ sourceId: "OPEN-1", assignee: "ana@acme.test" }),
+      }),
+    ).resolves.toEqual({
+      status: 409,
+      body: { error: "This plugin does not support assignees." },
     });
   });
 

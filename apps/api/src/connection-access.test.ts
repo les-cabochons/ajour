@@ -28,6 +28,7 @@ const MANIFEST = {
   capabilities: {
     connector: {
       settle: true,
+      assign: true,
       comments: {
         edit: true,
         delete: true,
@@ -124,6 +125,10 @@ export async function setItemCommentReaction(connection, request) {
 }
 export async function searchItemPeople(connection, request) {
   record("searchItemPeople", connection, request);
+  return { people: [] };
+}
+export async function searchAssignees(connection, request) {
+  record("searchAssignees", connection, request);
   return { people: [] };
 }
 export async function syncPullRequests(connection, request) {
@@ -287,6 +292,7 @@ describe("connection access", () => {
         query: "an",
         limit: 5,
       }),
+      post(route(id, "assignees"), { sourceId: "1", query: "an", limit: 5 }),
       post(`/api/code-hosts/azure_devops/connections/${id}/syncPullRequests`, {
         tracked: [],
       }),
@@ -297,9 +303,15 @@ describe("connection access", () => {
       post(comments(id, "listItemComments"), { sourceId: "1", limit: 20 }),
       post(route(id, "sync"), { trigger: "manual", workItems: [] }),
     ]);
-    // A bare @ reads only the item's own people.
+    // A bare @, or the assignee list before a name is typed, reads only the
+    // item's own people.
     reads.push(
       await post(comments(id, "searchItemPeople"), {
+        sourceId: "1",
+        query: "",
+        limit: 5,
+      }),
+      await post(route(id, "assignees"), {
         sourceId: "1",
         query: "",
         limit: 5,
@@ -307,7 +319,7 @@ describe("connection access", () => {
     );
 
     expect(refused.map((answer) => answer.status)).toEqual([
-      403, 403, 403, 403, 403, 403, 403,
+      403, 403, 403, 403, 403, 403, 403, 403,
     ]);
     expect(
       refused.map((answer) => (answer.body as { access: string }).access),
@@ -318,6 +330,7 @@ describe("connection access", () => {
       "editWorkItems",
       "editWorkItems",
       "peopleSearch",
+      "peopleSearch",
       "pullRequests",
     ]);
     expect(refused[0]!.body).toEqual({
@@ -327,7 +340,7 @@ describe("connection access", () => {
       access: "editWorkItems",
     });
     expect(reads.map((answer) => answer.status)).toEqual([
-      200, 200, 200, 200, 200,
+      200, 200, 200, 200, 200, 200,
     ]);
     expect(
       calls()
@@ -337,6 +350,7 @@ describe("connection access", () => {
       "listItemComments",
       "listSettleStates",
       "readDescription",
+      "searchAssignees",
       "searchItemPeople",
       "syncConnection",
     ]);
