@@ -651,14 +651,15 @@
 
   /* -- Item page ------------------------------------------------- */
 
+  /* The page fills the column from the page gutter; prose keeps its own
+     measure (council round 7). */
   .backlog-item-page {
     display: flex;
     width: 100%;
-    max-width: 1100px;
     flex-direction: column;
     gap: 1.25rem;
-    margin: 0 auto;
-    padding: 1.25rem 1.5rem 3rem;
+    margin: 0;
+    padding: 1.25rem var(--page-gutter) 3rem;
     outline: none;
   }
 
@@ -989,7 +990,6 @@
   }
 
   .backlog-item-progress {
-    max-width: 480px;
     height: 3px;
     overflow: hidden;
     border-radius: 2px;
@@ -1293,7 +1293,9 @@
   .backlog-list-group .backlog-group-header,
   .backlog-list-group .backlog-add-row,
   .backlog-swimlane-header {
-    padding-inline: calc(1rem + var(--app-workspace-content-gutter, 0px));
+    padding-inline: calc(
+      var(--page-gutter) + var(--app-workspace-content-gutter, 0px)
+    );
   }
 }
 

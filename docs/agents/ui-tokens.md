@@ -53,7 +53,7 @@ Semantic variables, light and dark under `:root` and `:root.dark`:
 - `--scrollbar-thumb`: the scrollbar thumb, on native scrollers and `ScrollArea`. The track is transparent. The sidebar backlog list shows the thumb only on hover or when focus is inside it.
 - Workflow states and projects carry their own colors.
 
-App-level aliases: `--surface-lowest`, `--surface-tint` (the item page's side cards and the project page's properties card: one small step off the page toward the sidebar, under a hairline border; the sidebar's color in dark), `--surface-low` (the sidebar), `--surface`, `--surface-high`, `--surface-highest`, `--text`, `--text-secondary` (anything a user reads to tell records apart: notes, IDs, parent references, old values), `--text-tertiary` (separators, empty values, counts, and the faint third line of a sidebar backlog row), `--hover-bg`, `--highlight-bg`, `--field-bg`, `--field-border`, `--success-bg`, `--warning-bg`, `--danger-muted`, `--indigo-muted`.
+App-level aliases: `--surface-lowest`, `--surface-tint` (the item page's side cards and the project page's properties card: one small step off the page toward the sidebar, under a hairline border; the sidebar's color in dark, where the page is L 0.17, the sidebar and side cards L 0.205 and `--card` L 0.225, clear steps as in Linear and T3 Code), `--surface-low` (the sidebar), `--surface`, `--surface-high`, `--surface-highest`, `--text`, `--text-secondary` (anything a user reads to tell records apart: notes, IDs, parent references, old values), `--text-tertiary` (separators, empty values, counts, and the faint third line of a sidebar backlog row), `--hover-bg`, `--highlight-bg`, `--field-bg`, `--field-border`, `--success-bg`, `--warning-bg`, `--danger-muted`, `--indigo-muted`.
 
 The comment header's reaction and actions buttons use `foreground/10` for hover and `foreground/20` while pressed or while their menu is open. These tints apply in both themes.
 
@@ -71,6 +71,7 @@ The chrome is solid: `--nav-bg` and `--app-sidebar-bg` are opaque, with no blur.
 ## Layout
 
 - `--app-sidebar-width` (272px comfortable, 200px compact, user-resizable), `--app-workspace-max-width: 1440px`.
+- `--page-gutter: 24px` (12px in the narrow view): one left edge per page. The top bar's title or breadcrumb, list rows (Day, Week grid, Backlog), detail pages, Commit and Settings content all start this far from the content's edge (council round 7).
 - `--side-panel-width` (340px default, user-resizable from 300px to 720px and at most half the page, saved per page). `SidePanel` sets it on its parent element.
 - The top bar is 48px. Sidebar backlog rows are 80px in Comfortable and 26px in Compact. Other sidebar rows are 28px. Day-view rows are 40px (52px and two lines in the narrow view). Backlog rows are 36px (52px and two lines in the narrow view).
 

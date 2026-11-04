@@ -37,7 +37,7 @@
   .settings-content {
     max-width: 960px;
     margin: 0;
-    padding: 1.5rem 2rem;
+    padding: 1.5rem var(--page-gutter);
   }
 
   /* A settings page of rows keeps its labels and controls close: the eye
@@ -277,7 +277,7 @@
     min-width: 0;
     max-width: 960px;
     margin: 0;
-    padding: 1.5rem 2rem;
+    padding: 1.5rem var(--page-gutter);
   }
 }
 

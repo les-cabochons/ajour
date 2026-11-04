@@ -1097,51 +1097,6 @@ function ProjectDetail({
         {isArchived ? <Chip>Archived</Chip> : null}
       </ObjectContextMenu>
 
-      <FigureRow>
-        <Figure label="This week">{formatClockDuration(weekMs)}</Figure>
-        <Figure label="All time">
-          {formatClockDuration(metrics.durationMs)}
-        </Figure>
-        {budget.budgetMs > 0 ? (
-          <>
-            {/* Named for what they count, so "Budget used" never reads as
-                All time (council round 4). */}
-            <Figure label="Task budgets">
-              {formatClockDuration(budget.budgetMs)}
-            </Figure>
-            <Figure label="Budget used">
-              <span
-                className={cn(
-                  // Plain like the other figures; amber and red only warn.
-                  "project-figure-consumed",
-                  budgetTone(budget.consumedMs / budget.budgetMs),
-                )}
-              >
-                {formatClockDuration(budget.consumedMs)}
-              </span>
-            </Figure>
-            <Figure label="Budget left">
-              {formatClockDuration(
-                Math.max(0, budget.budgetMs - budget.consumedMs),
-              )}
-            </Figure>
-          </>
-        ) : (
-          <Figure label="Active tasks">{summary.active}</Figure>
-        )}
-      </FigureRow>
-      {budget.budgetMs > 0 ? (
-        <>
-          <BudgetBar
-            ratio={budget.consumedMs / budget.budgetMs}
-            className="project-progress-wide"
-          />
-          <p className="-mt-2 text-xs text-[var(--text-secondary)]">
-            Budget figures count the active tasks that have a budget.
-          </p>
-        </>
-      ) : null}
-
       {isArchived ? (
         <MessagePanel>
           This project is archived. You can consult it here, but project and
@@ -1155,168 +1110,218 @@ function ProjectDetail({
       ) : null}
 
       <div className="project-detail-columns">
-        <Tabs
-          value={tab}
-          onValueChange={(value) => setTab(value as "tasks" | "entries")}
-          className="project-tabs"
-        >
-          <TabsList
-            variant="line"
-            className="h-auto w-full justify-start gap-4 rounded-none border-b border-border bg-transparent p-0"
-          >
-            <TabsTrigger value="tasks" className="flex-none px-0">
-              Tasks <Value tone="muted">{project.tasks.length}</Value>
-            </TabsTrigger>
-            <TabsTrigger value="entries" className="flex-none px-0">
-              Time entries <Value tone="muted">{entries.length}</Value>
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="tasks" className="project-tab-panel">
-            {/* The filter sits on the tab row, at its right: the tab already
-                names the list (council round 5). */}
-            <div className="project-task-toolbar">
-              <div
-                className="toggle-group project-task-filter-tabs"
-                role="tablist"
-                aria-label="Filter project tasks"
-              >
-                {taskFilters.map((filter) => {
-                  const isActive = taskFilter === filter.value;
-                  return (
-                    <button
-                      key={filter.value}
-                      type="button"
-                      role="tab"
-                      aria-selected={isActive}
-                      className={cn(
-                        "toggle-item",
-                        isActive && "toggle-item-active",
-                      )}
-                      onClick={() => setTaskFilter(filter.value)}
-                    >
-                      <span>{filter.label}</span>
-                      <span className="project-task-filter-count">
-                        {filter.count}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {visibleTasks.length === 0 ? (
-              <Empty align="start" className="project-task-empty">
-                <EmptyHeader>
-                  <EmptyTitle>
-                    {isArchivedTaskFilter
-                      ? "No archived tasks"
-                      : "No active tasks"}
-                  </EmptyTitle>
-                  <EmptyDescription>
-                    {isArchivedTaskFilter
-                      ? "Archived tasks will appear here."
-                      : isArchived
-                        ? "This archived project has no active tasks."
-                        : "Create a task, or import tasks from Excel."}
-                  </EmptyDescription>
-                </EmptyHeader>
-                {!isArchived && !isArchivedTaskFilter ? (
-                  <EmptyContent>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={isImporting}
-                      onClick={openImportPicker}
-                    >
-                      <Download data-icon="inline-start" />
-                      Import tasks…
-                    </Button>
-                  </EmptyContent>
-                ) : null}
-              </Empty>
-            ) : (
-              <table
-                className={cn(
-                  "project-task-table",
-                  taskDragState && "is-task-dragging",
-                )}
-              >
-                <tbody data-focus-scope>
-                  {visibleTasks.map(renderTaskRow)}
-                </tbody>
-              </table>
-            )}
-            {!isArchived && !isArchivedTaskFilter ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="mt-1 w-fit text-muted-foreground"
-                onClick={onNewTask}
-              >
-                <Plus data-icon="inline-start" />
-                New task
-              </Button>
-            ) : null}
-          </TabsContent>
-
-          <TabsContent value="entries" className="project-tab-panel">
-            {entryDays.length === 0 ? (
-              <Empty align="start" className="project-task-empty">
-                <EmptyHeader>
-                  <EmptyTitle>No time logged yet</EmptyTitle>
-                  <EmptyDescription>
-                    Entries on this project's tasks show here by day.
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            ) : (
-              entryDays.map((day) => (
-                <div key={day.localDate}>
-                  <SectionHeading
-                    trailing={
-                      <Value>
-                        {formatClockDuration(
-                          day.entries.reduce(
-                            (sum, entry) => sum + entry.durationMs,
-                            0,
-                          ),
-                        )}
-                      </Value>
-                    }
+        {/* The figures open the main column, so the Properties card starts
+            level with them, as on the backlog item page (council round 7). */}
+        <div className="flex min-w-0 flex-col gap-4">
+          <FigureRow>
+            <Figure label="This week">{formatClockDuration(weekMs)}</Figure>
+            <Figure label="All time">
+              {formatClockDuration(metrics.durationMs)}
+            </Figure>
+            {budget.budgetMs > 0 ? (
+              <>
+                {/* Named for what they count, so "Budget used" never reads as
+                    All time (council round 4). */}
+                <Figure label="Task budgets">
+                  {formatClockDuration(budget.budgetMs)}
+                </Figure>
+                <Figure label="Budget used">
+                  <span
+                    className={cn(
+                      // Plain like the other figures; amber and red only warn.
+                      "project-figure-consumed",
+                      budgetTone(budget.consumedMs / budget.budgetMs),
+                    )}
                   >
-                    {formatEntryDay(day.localDate)}
-                  </SectionHeading>
-                  <div className="project-entry-rows">
-                    {day.entries.map((entry) => {
-                      const task = project.tasks.find(
-                        (candidate) => candidate._id === entry.taskId,
-                      );
-                      return (
-                        <Link
-                          key={entry._id}
-                          to="/time/$date"
-                          params={{ date: entry.localDate }}
-                          className="project-entry-row"
-                          onClick={onLeave}
-                        >
-                          <span className="project-entry-task">
-                            {task?.name ?? "No task"}
-                          </span>
-                          <span className="project-entry-note">
-                            {entry.note ?? ""}
-                          </span>
-                          <Value>{formatClockDuration(entry.durationMs)}</Value>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))
+                    {formatClockDuration(budget.consumedMs)}
+                  </span>
+                </Figure>
+                <Figure label="Budget left">
+                  {formatClockDuration(
+                    Math.max(0, budget.budgetMs - budget.consumedMs),
+                  )}
+                </Figure>
+              </>
+            ) : (
+              <Figure label="Active tasks">{summary.active}</Figure>
             )}
-          </TabsContent>
-        </Tabs>
+          </FigureRow>
+          {budget.budgetMs > 0 ? (
+            <>
+              <BudgetBar
+                ratio={budget.consumedMs / budget.budgetMs}
+                className="project-progress-wide"
+              />
+              <p className="-mt-2 text-xs text-[var(--text-secondary)]">
+                Budget figures count the active tasks that have a budget.
+              </p>
+            </>
+          ) : null}
+          <Tabs
+            value={tab}
+            onValueChange={(value) => setTab(value as "tasks" | "entries")}
+            className="project-tabs"
+          >
+            <TabsList
+              variant="line"
+              className="h-auto w-full justify-start gap-4 rounded-none border-b border-border bg-transparent p-0"
+            >
+              <TabsTrigger value="tasks" className="flex-none px-0">
+                Tasks <Value tone="muted">{project.tasks.length}</Value>
+              </TabsTrigger>
+              <TabsTrigger value="entries" className="flex-none px-0">
+                Time entries <Value tone="muted">{entries.length}</Value>
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="tasks" className="project-tab-panel">
+              {/* The filter sits on the tab row, at its right: the tab already
+                names the list (council round 5). */}
+              <div className="project-task-toolbar">
+                <div
+                  className="toggle-group project-task-filter-tabs"
+                  role="tablist"
+                  aria-label="Filter project tasks"
+                >
+                  {taskFilters.map((filter) => {
+                    const isActive = taskFilter === filter.value;
+                    return (
+                      <button
+                        key={filter.value}
+                        type="button"
+                        role="tab"
+                        aria-selected={isActive}
+                        className={cn(
+                          "toggle-item",
+                          isActive && "toggle-item-active",
+                        )}
+                        onClick={() => setTaskFilter(filter.value)}
+                      >
+                        <span>{filter.label}</span>
+                        <span className="project-task-filter-count">
+                          {filter.count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {visibleTasks.length === 0 ? (
+                <Empty align="start" className="project-task-empty">
+                  <EmptyHeader>
+                    <EmptyTitle>
+                      {isArchivedTaskFilter
+                        ? "No archived tasks"
+                        : "No active tasks"}
+                    </EmptyTitle>
+                    <EmptyDescription>
+                      {isArchivedTaskFilter
+                        ? "Archived tasks will appear here."
+                        : isArchived
+                          ? "This archived project has no active tasks."
+                          : "Create a task, or import tasks from Excel."}
+                    </EmptyDescription>
+                  </EmptyHeader>
+                  {!isArchived && !isArchivedTaskFilter ? (
+                    <EmptyContent>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={isImporting}
+                        onClick={openImportPicker}
+                      >
+                        <Download data-icon="inline-start" />
+                        Import tasks…
+                      </Button>
+                    </EmptyContent>
+                  ) : null}
+                </Empty>
+              ) : (
+                <table
+                  className={cn(
+                    "project-task-table",
+                    taskDragState && "is-task-dragging",
+                  )}
+                >
+                  <tbody data-focus-scope>
+                    {visibleTasks.map(renderTaskRow)}
+                  </tbody>
+                </table>
+              )}
+              {!isArchived && !isArchivedTaskFilter ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="mt-1 w-fit text-muted-foreground"
+                  onClick={onNewTask}
+                >
+                  <Plus data-icon="inline-start" />
+                  New task
+                </Button>
+              ) : null}
+            </TabsContent>
+
+            <TabsContent value="entries" className="project-tab-panel">
+              {entryDays.length === 0 ? (
+                <Empty align="start" className="project-task-empty">
+                  <EmptyHeader>
+                    <EmptyTitle>No time logged yet</EmptyTitle>
+                    <EmptyDescription>
+                      Entries on this project's tasks show here by day.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              ) : (
+                entryDays.map((day) => (
+                  <div key={day.localDate}>
+                    <SectionHeading
+                      trailing={
+                        <Value>
+                          {formatClockDuration(
+                            day.entries.reduce(
+                              (sum, entry) => sum + entry.durationMs,
+                              0,
+                            ),
+                          )}
+                        </Value>
+                      }
+                    >
+                      {formatEntryDay(day.localDate)}
+                    </SectionHeading>
+                    <div className="project-entry-rows">
+                      {day.entries.map((entry) => {
+                        const task = project.tasks.find(
+                          (candidate) => candidate._id === entry.taskId,
+                        );
+                        return (
+                          <Link
+                            key={entry._id}
+                            to="/time/$date"
+                            params={{ date: entry.localDate }}
+                            className="project-entry-row"
+                            onClick={onLeave}
+                          >
+                            <span className="project-entry-task">
+                              {task?.name ?? "No task"}
+                            </span>
+                            <span className="project-entry-note">
+                              {entry.note ?? ""}
+                            </span>
+                            <Value>
+                              {formatClockDuration(entry.durationMs)}
+                            </Value>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))
+              )}
+            </TabsContent>
+          </Tabs>
+        </div>
         <ProjectPropertiesCard
           project={project}
           isImporting={isImporting}

@@ -184,10 +184,9 @@
     flex-direction: column;
     gap: 1rem;
     width: 100%;
-    max-width: 1100px;
-    /* Centered like the backlog item page, so both detail pages share a gutter. */
-    margin: 0 auto;
-    padding: 1.25rem 1.5rem 2rem;
+    /* From the page gutter, like the backlog item page (council round 7). */
+    margin: 0;
+    padding: 1.25rem var(--page-gutter) 2rem;
   }
 
   .project-detail-header {

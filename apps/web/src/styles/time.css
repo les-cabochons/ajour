@@ -230,7 +230,7 @@
     gap: 0.5rem;
     min-width: 0;
     height: 40px;
-    padding: 0 0 0 1rem;
+    padding: 0 0 0 var(--page-gutter);
     white-space: nowrap;
   }
 
@@ -282,7 +282,7 @@
 
   .time-entry-trailing {
     width: 11rem;
-    padding: 0 1rem 0 0.5rem;
+    padding: 0 var(--page-gutter) 0 0.5rem;
     text-align: right;
     white-space: nowrap;
   }
@@ -352,7 +352,7 @@
     gap: 0.5rem;
     width: 100%;
     height: 36px;
-    padding: 0 1rem;
+    padding: 0 var(--page-gutter);
     border: 0;
     background: transparent;
     color: var(--text-secondary);
@@ -474,7 +474,7 @@
     justify-content: space-between;
     gap: 1rem;
     height: 44px;
-    padding: 0 1rem;
+    padding: 0 var(--page-gutter);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
@@ -586,7 +586,7 @@
 
   .weekly-grid-table-scroll .weekly-grid-task-column,
   .weekly-grid-table-scroll .weekly-grid-task-cell {
-    padding-left: 1rem !important;
+    padding-left: var(--page-gutter) !important;
   }
 
   .weekly-grid-day-column {
@@ -1111,14 +1111,22 @@
 
   /* -- Commit ----------------------------------------------------- */
 
+  @media (width >= 768px) {
+    .page-container:has(> .commit-page) {
+      padding-inline: var(--page-gutter);
+    }
+  }
+
+  /* From the page gutter, which the page container gives, not centered,
+     capped at 960px (council round 7). */
   .commit-page {
     display: flex;
     width: 100%;
     max-width: 960px;
     flex-direction: column;
     gap: 1.25rem;
-    margin: 0 auto;
-    padding: 0.25rem 1.5rem 2rem;
+    margin: 0;
+    padding: 0.25rem 0 2rem;
   }
 
   .submit-summary {
@@ -1293,6 +1301,39 @@
     justify-self: start;
     color: var(--text-secondary);
     font-size: var(--text-xs);
+  }
+
+  /* Desktop: one 40px line per line, as the Changes above it: project and
+     task, the comments, then the hours in the Changes' hours track. Each
+     part stays its own copy target (council round 7). */
+  @media (width >= 768px) {
+    .submit-line {
+      grid-template-columns: minmax(0, 20rem) minmax(0, 1fr) 6rem;
+      align-items: center;
+      min-height: 40px;
+      padding-block: 0;
+      border-bottom-color: var(--border-row);
+    }
+
+    .submit-line > * {
+      grid-row: 1;
+    }
+
+    .submit-line-main {
+      grid-column: 1;
+      flex-wrap: nowrap;
+    }
+
+    .submit-line-comments {
+      grid-column: 2;
+      min-width: 0;
+      font-size: var(--text-sm);
+    }
+
+    .submit-line .submit-copy-hours {
+      grid-column: 3;
+      justify-self: end;
+    }
   }
 
   .submit-copy {

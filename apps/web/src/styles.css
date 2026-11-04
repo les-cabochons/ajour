@@ -202,6 +202,9 @@
     --control-line-height: 1.45;
     --app-sidebar-width: 272px;
     --app-workspace-max-width: 1440px;
+    /* One left edge per page: the top bar title, list rows and page content
+       all start this far from the content's edge (council round 7). */
+    --page-gutter: 1.5rem;
     --app-workspace-half-width: 720px;
     /* Half the sidebar plus half the capped workspace: 136px + 720px. */
     --app-centered-workspace-right-offset: calc(
@@ -225,7 +228,9 @@
     color-scheme: dark;
     --background: oklch(0.17 0.004 285);
     --foreground: oklch(0.9 0.003 285);
-    --card: oklch(0.205 0.004 285);
+    /* Page 0.17, sidebar and side cards 0.205, cards 0.225: clear steps, as
+       in Linear and T3 Code (council round 7). */
+    --card: oklch(0.225 0.004 285);
     --card-foreground: var(--foreground);
     --popover: oklch(0.215 0.004 285);
     --popover-foreground: var(--foreground);
@@ -253,7 +258,7 @@
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.195 0.004 285);
+    --sidebar: oklch(0.205 0.004 285);
     --sidebar-foreground: var(--foreground);
     --sidebar-primary: var(--primary);
     --sidebar-primary-foreground: var(--primary-foreground);
@@ -558,6 +563,8 @@
     flex: 1 1 auto;
     align-items: center;
     gap: 0.5rem;
+    /* With the bar's own 8px, the title starts at the page gutter. */
+    padding-left: calc(var(--page-gutter) - 0.5rem);
     min-width: 0;
   }
 
@@ -2199,4 +2206,11 @@
 .color-field-option:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+}
+
+/* The narrow view's gutter: DESKTOP_MIN_WIDTH in lib/breakpoints.ts. */
+@media (width < 768px) {
+  :root {
+    --page-gutter: 0.75rem;
+  }
 }

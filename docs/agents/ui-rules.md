@@ -16,6 +16,7 @@ Ajour is an operational desktop/web app. Build interfaces for scanning, repeated
 - No second title band under the top bar. A page may have one toolbar row (filters, a week strip) at most.
 - Cardless everywhere except dialogs, popovers, the timer dock, the side cards of the backlog item page (properties, Subitems and Time entries) and the properties card of the project page. Stats are a `FigureRow`, object properties a `PropertyList`, lists are bordered rows with no outer frame, and sections are separated by a `SectionHeading` and space.
 - Settings pages: sections 3rem apart under a 16px heading, within a 672px measure on pages of rows such as General, so a label and its control stay close (council round 6); each setting is a `SettingRow` (13px label, 12px description, control trailing) with no border or background between rows.
+- Every page shares one left edge, `--page-gutter`. Detail pages fill their column from it, with the figures opening the main column so the side cards start level with them; prose keeps a reading measure (council round 7).
 - Prefer full-width app surfaces with constrained inner content where needed.
 - Keep fixed-format elements stable with explicit width, height, grid tracks, or aspect ratios. Rows, headers and controls have fixed heights, so a state change never causes layout work.
 - Do not let hover states, badges, loading text, or dynamic labels resize the layout.

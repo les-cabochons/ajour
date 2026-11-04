@@ -522,48 +522,53 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
             <p className="text-xs text-muted-foreground">{notice}</p>
           ) : null}
 
-          <div className="flex flex-col gap-2.5">
-            <FigureRow>
-              {ESTIMATE_FIGURES.map((figure) => (
-                <EstimateFigure
-                  key={figure.key}
-                  item={item}
-                  field={figure.key}
-                  label={figure.label}
-                  conflict={Boolean(item.estimateSync?.[figure.key]?.conflict)}
-                  readOnly={readOnly}
-                />
-              ))}
-              <Figure label="Logged in Ajour">
-                {formatClockDuration(loggedMs)}
-              </Figure>
-            </FigureRow>
-            <div
-              className="backlog-item-progress"
-              role="progressbar"
-              aria-label="Completed over original estimate"
-              aria-valuenow={Math.round(progress * 100)}
-              aria-valuemin={0}
-              aria-valuemax={100}
-            >
-              <div style={{ width: `${progress * 100}%` }} />
-            </div>
-          </div>
-
           <div className="backlog-item-page-columns">
             {/* The key resets the description editor and the comment drafts
                 when another item opens. It sits on the column, not on each
                 child: siblings sharing a key leave the old item's description
                 on the page. */}
-            <div key={item._id} className="flex min-w-0 flex-col">
-              <DescriptionSection item={item} readOnly={readOnly} />
-              {commentSource ? (
-                <BacklogItemComments
-                  itemId={item._id}
-                  source={commentSource}
-                  prepareOpenNext={prepareOpenNext}
-                />
-              ) : null}
+            <div key={item._id} className="flex min-w-0 flex-col gap-6">
+              {/* The figures open the main column, so the side cards start
+                  level with them (council round 7). */}
+              <div className="flex flex-col gap-2.5">
+                <FigureRow>
+                  {ESTIMATE_FIGURES.map((figure) => (
+                    <EstimateFigure
+                      key={figure.key}
+                      item={item}
+                      field={figure.key}
+                      label={figure.label}
+                      conflict={Boolean(
+                        item.estimateSync?.[figure.key]?.conflict,
+                      )}
+                      readOnly={readOnly}
+                    />
+                  ))}
+                  <Figure label="Logged in Ajour">
+                    {formatClockDuration(loggedMs)}
+                  </Figure>
+                </FigureRow>
+                <div
+                  className="backlog-item-progress"
+                  role="progressbar"
+                  aria-label="Completed over original estimate"
+                  aria-valuenow={Math.round(progress * 100)}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                >
+                  <div style={{ width: `${progress * 100}%` }} />
+                </div>
+              </div>
+              <div className="flex min-w-0 flex-col">
+                <DescriptionSection item={item} readOnly={readOnly} />
+                {commentSource ? (
+                  <BacklogItemComments
+                    itemId={item._id}
+                    source={commentSource}
+                    prepareOpenNext={prepareOpenNext}
+                  />
+                ) : null}
+              </div>
             </div>
             <div className="backlog-item-side-cards">
               <section
