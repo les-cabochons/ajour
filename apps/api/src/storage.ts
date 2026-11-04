@@ -2764,12 +2764,14 @@ export class AppApiStorage {
 
         const existing = stagedByKey.get(key);
         if (existing) {
-          stagedByKey.set(key, {
+          const merged = {
             ...existing,
             ...item,
             selected: existing.selectable ? existing.selected : false,
             pushedAt,
-          });
+          };
+          if (!Object.hasOwn(item, "assignee")) delete merged.assignee;
+          stagedByKey.set(key, merged);
           updatedCount += 1;
           continue;
         }

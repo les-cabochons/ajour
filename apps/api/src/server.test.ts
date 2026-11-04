@@ -1035,7 +1035,7 @@ describe("backlog settle routes", () => {
     const connectionId = (
       connectionResponse.body as { connection: { id: string } }
     ).connection.id;
-    return { server, connectionId };
+    return { server, connectionId, root };
   }
 
   it("lists settle states and writes a settle through the plugin", async () => {
@@ -1210,6 +1210,63 @@ describe("backlog settle routes", () => {
       ["OPEN-1", undefined],
       ["OPEN-2", undefined],
     ]);
+  });
+
+  it("removes a staged assignee when the plugin drops assign between syncs", async () => {
+    const { server, connectionId, root } = await createServer({
+      settle: true,
+      assign: true,
+    });
+    const sync = (target: Server) =>
+      dispatchJsonRequest(target, {
+        method: "POST",
+        path: `/api/plugins/jira/connections/${connectionId}/sync`,
+        body: JSON.stringify({ trigger: "manual", workItems: [] }),
+      });
+    const imports = (target: Server) =>
+      dispatchJsonRequest(target, {
+        method: "GET",
+        path: "/api/backlog/imports",
+      });
+    expect((await sync(server)).status).toBe(200);
+    const before = await imports(server);
+    expect(before.status).toBe(200);
+    expect(before.body).toMatchObject({
+      items: expect.arrayContaining([
+        expect.objectContaining({
+          sourceId: "OPEN-1",
+          assignee: { id: "ana@acme.test", displayName: "Ana Silva" },
+        }),
+        expect.objectContaining({ sourceId: "OPEN-2", assignee: null }),
+      ]),
+    });
+    server.emit("close");
+    const pluginDirectory = await createPlugin(
+      path.join(root, "source"),
+      settlePluginSource,
+      "plugin.mjs",
+      { capabilities: { connector: { settle: true } } },
+    );
+    const withoutAssign = createAppApiServer({
+      ...windowServerOptions,
+      vault: new MemorySecretVault(),
+      statePath: path.join(root, "state.json"),
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [pluginDirectory],
+      allowDevelopmentPlugins: true,
+    });
+    servers.push(withoutAssign);
+    expect((await sync(withoutAssign)).status).toBe(200);
+    const after = await imports(withoutAssign);
+    expect(after.status).toBe(200);
+    const { items } = after.body as {
+      items: { sourceId: string; assignee?: unknown }[];
+    };
+    expect(items.map((item) => item.sourceId).sort()).toEqual([
+      "OPEN-1",
+      "OPEN-2",
+    ]);
+    for (const item of items) expect(item).not.toHaveProperty("assignee");
   });
 
   it.each([true, false])(

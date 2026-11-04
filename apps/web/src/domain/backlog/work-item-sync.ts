@@ -674,9 +674,13 @@ export function archiveDoneSyncedWorkItems(
           ? {
               ...workItem,
               sourceSyncedAt: syncedAt,
-              ...(!pendingMoveItemIds.has(target._id) &&
-              doneItem.assignee !== undefined
-                ? { assignee: doneItem.assignee }
+              ...(!pendingMoveItemIds.has(target._id)
+                ? {
+                    assignee: doneItem.assignee,
+                    ...(doneItem.assignee === undefined
+                      ? { settledAssigneeId: undefined }
+                      : {}),
+                  }
                 : {}),
               ...(doneDescription
                 ? reconcileDescription(workItem, doneDescription, syncedAt)

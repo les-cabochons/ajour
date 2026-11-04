@@ -885,12 +885,61 @@ describe("backlog sync of assignees", () => {
       const changed = assignee !== undefined && assignee?.id !== alex.id;
       expect(result).toMatchObject({
         status: changed ? "active" : "settled",
-        assignee: assignee === undefined ? alex : assignee,
+        assignee,
         returnedAt: changed ? 500 : undefined,
-        settledAssigneeId: changed ? undefined : alex.id,
+        settledAssigneeId:
+          changed || assignee === undefined ? undefined : alex.id,
       });
     },
   );
+
+  it("clears a settled done item's assignee and baseline when its plugin drops assign", () => {
+    const imported = sync(
+      createState({
+        workflowStates: [
+          { _id: "review", name: "Review", color: "#000000", createdAt: 1 },
+        ],
+        workflowStateMappings: [
+          {
+            source: "azure_devops",
+            connectionId: "connection-1",
+            sourceStatusKey: "closed",
+            workflowStateId: "review",
+          },
+        ],
+      }),
+      createCandidate({ state: "Closed", assignee: alex }),
+    );
+    const settled = settleBacklogItem(imported, "work-item-1", factories);
+    const withoutAssign = {
+      source: "azure_devops",
+      connectionId: "connection-1",
+      sourceId: "source-1",
+      state: "Closed",
+    };
+    const refreshed = archiveDoneSyncedWorkItems(
+      settled,
+      [withoutAssign],
+      factories,
+    ).state;
+    expect(refreshed.workItems[0]).toMatchObject({
+      assignee: undefined,
+      settledAssigneeId: undefined,
+      status: "settled",
+      workflowStateId: "review",
+      returnedAt: undefined,
+    });
+    const reloaded: LocalAppState = JSON.parse(JSON.stringify(refreshed));
+    const syncedAgain = archiveDoneSyncedWorkItems(
+      reloaded,
+      [withoutAssign],
+      factories,
+    ).state.workItems[0];
+    expect(syncedAgain?.status).toBe("settled");
+    expect(syncedAgain?.returnedAt).toBeUndefined();
+    expect(reloaded.workItems[0]).not.toHaveProperty("assignee");
+    expect(reloaded.workItems[0]).not.toHaveProperty("settledAssigneeId");
+  });
 
   it("keeps the assignee the source sends, null when no one has the item, and none when the plugin doesn't say", () => {
     expect(
