@@ -477,6 +477,11 @@
     cursor: default;
   }
 
+  /* An empty day's 0:00 steps back so logged days stand out. */
+  .weekly-capacity-value.is-zero .weekly-capacity-trigger {
+    color: var(--text-secondary);
+  }
+
   .weekly-capacity-value.is-summary .weekly-capacity-trigger {
     font-size: var(--text-sm);
   }
@@ -745,6 +750,12 @@
   .weekly-grid-footer-row > .weekly-grid-task-cell {
     font-family: var(--font-sans);
     font-size: var(--text-xs);
+    color: var(--text-secondary);
+  }
+
+  .weekly-grid-table-scroll
+    .weekly-grid-footer-row
+    > .weekly-grid-time-cell.is-zero {
     color: var(--text-secondary);
   }
 
@@ -1278,6 +1289,13 @@
   .commit-change.is-deleted .commit-change-hours {
     color: var(--text-secondary);
     text-decoration: line-through;
+  }
+
+  /* The date repeats down the list: quieter than the work it dates. */
+  .commit-change-day {
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    line-height: calc(var(--text-sm) * 1.45);
   }
 
   .commit-change-work {
