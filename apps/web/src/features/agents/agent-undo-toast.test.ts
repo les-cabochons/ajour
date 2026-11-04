@@ -1,28 +1,25 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * The real toast module, offerUndo and runner. Only the toast manager is
- * watched: the app's provider turns its `close` into the toast closing, which
- * a test without React cannot see, so these tests read the manager's events.
+ * The real offerUndo and runner, with the app's toast wrapper watched: each
+ * Undo toast shown and each close of the open one is recorded, then passed
+ * on to the real wrapper.
  */
-type ManagerEvent = { action: string; options: { id: string } };
-const { managerEvents } = vi.hoisted(() => ({
-  managerEvents: [] as ManagerEvent[],
+const { toastCalls } = vi.hoisted(() => ({
+  toastCalls: [] as ("shown" | "closed")[],
 }));
-vi.mock("@base-ui/react/toast", async (importOriginal) => {
+vi.mock("@/components/ui/toast", async (importOriginal) => {
   const original =
-    await importOriginal<typeof import("@base-ui/react/toast")>();
+    await importOriginal<typeof import("@/components/ui/toast")>();
   return {
     ...original,
-    Toast: {
-      ...original.Toast,
-      createToastManager: () => {
-        const manager = original.Toast.createToastManager();
-        manager[" subscribe"]((event) =>
-          managerEvents.push(event as ManagerEvent),
-        );
-        return manager;
-      },
+    showUndoToast: (...args: Parameters<typeof original.showUndoToast>) => {
+      toastCalls.push("shown");
+      return original.showUndoToast(...args);
+    },
+    closeUndoToast: () => {
+      toastCalls.push("closed");
+      return original.closeUndoToast();
     },
   };
 });
@@ -55,13 +52,6 @@ function installMockWindow() {
   });
 }
 
-/** The ids of the toasts the manager was told to add, and of those it was told to close. */
-function toastIds(action: "add" | "close") {
-  return managerEvents
-    .filter((event) => event.action === action)
-    .map((event) => event.options.id);
-}
-
 // The first import of these heavy modules is slow: pay for it before any test
 // starts, as agent-tool-runner.test.ts does. Each test still gets a fresh copy.
 beforeAll(async () => {
@@ -73,7 +63,7 @@ beforeAll(async () => {
 beforeEach(() => {
   vi.resetModules();
   installMockWindow();
-  managerEvents.length = 0;
+  toastCalls.length = 0;
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date(2026, 9, 15, 15));
 });
@@ -106,9 +96,7 @@ describe("the toast of an agent write the undo tool refuses", () => {
       entryId: entry._id,
       minutes: 45,
     })) as { output: { undoToken: string } };
-    const [toastId] = toastIds("add");
-    expect(toastId).toBeDefined();
-    expect(toastIds("close")).toEqual([]);
+    expect(toastCalls).toEqual(["shown"]);
 
     // The user edits the entry again, which keeps no Undo of its own.
     localStore.updateTimesheetEntry(entry._id, {
@@ -122,7 +110,7 @@ describe("the toast of an agent write the undo tool refuses", () => {
       error: "Can't undo. The entry changed after that action.",
     });
 
-    expect(toastIds("close")).toEqual([toastId]);
+    expect(toastCalls).toEqual(["shown", "closed"]);
     // The token is spent: asking again is the expired refusal.
     expect(await run("undo", { undoToken })).toMatchObject({
       ok: false,
