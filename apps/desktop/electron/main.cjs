@@ -1,6 +1,9 @@
+const { execFile } = require("node:child_process");
 const { randomUUID } = require("node:crypto");
 const { existsSync, readdirSync } = require("node:fs");
-const { stat } = require("node:fs/promises");
+const fsPromises = require("node:fs/promises");
+const { stat } = fsPromises;
+const os = require("node:os");
 const http = require("node:http");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
@@ -32,6 +35,12 @@ const {
   getAppMenuModel,
 } = require("./app-menu.cjs");
 const { createAutomaticUpdateController } = require("./automatic-update.cjs");
+const { createCliCommandController } = require("./cli-command.cjs");
+const { createManualRedirectFetch } = require("./manual-redirect-fetch.cjs");
+const {
+  createPowerShellRegistry,
+  createWindowsUserPath,
+} = require("./cli-path.cjs");
 const {
   MAC_ICON_SYMBOLS,
   objectActionIdOf,
@@ -344,6 +353,60 @@ const tray = createTrayController({
   onAction: runTrayAction,
 });
 
+// The ajour command, installed from Settings › General › Terminal (#568).
+// A development build has no release of its own version, so it installs
+// only from a local fake release (AJOUR_CLI_RELEASE_ORIGIN), and into the
+// folder AJOUR_CLI_INSTALL_DIR names: the real-app check's. A packaged build
+// ignores both.
+const cliCommand = createCliCommandController({
+  // It follows each redirect itself, to check where it leads.
+  fetch: createManualRedirectFetch(net),
+  fs: fsPromises,
+  exec: (file, args, options) =>
+    new Promise((resolve, reject) => {
+      execFile(
+        file,
+        args,
+        { windowsHide: true, maxBuffer: 4 * 1024 * 1024, ...options },
+        (error, stdout) =>
+          error ? reject(error) : resolve({ stdout: String(stdout) }),
+      );
+    }),
+  platform: process.platform,
+  arch: process.arch,
+  appVersion: app.getVersion(),
+  development: !app.isPackaged,
+  releaseOrigin: app.isPackaged
+    ? undefined
+    : process.env.AJOUR_CLI_RELEASE_ORIGIN,
+  paths: {
+    installDir:
+      (!app.isPackaged && process.env.AJOUR_CLI_INSTALL_DIR) ||
+      path.join(
+        process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"),
+        "Ajour",
+        "bin",
+      ),
+    recordFile: path.join(app.getPath("userData"), "cli-command.json"),
+    // The system's tar by its absolute path: a bare name would search the
+    // working folder first.
+    tar: path.win32.join(
+      process.env.SystemRoot || "C:\\Windows",
+      "System32",
+      "tar.exe",
+    ),
+  },
+  link: createWindowsUserPath({
+    registry: createPowerShellRegistry(),
+    events,
+  }),
+});
+cliCommand.onChange((state) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("ajour:cli-command-changed", state);
+  }
+});
+
 const pluginCatalogService = createPluginCatalogService({
   cacheDirectory: path.join(app.getPath("userData"), "plugin-catalog"),
   fetchImpl: net.fetch,
@@ -592,6 +655,17 @@ ipc.handle("ajour:configure-window-settings", (event, changes) => {
   if (windowSettings.keep_running) tray.show();
   else tray.remove();
   return { keepRunning: windowSettings.keep_running };
+});
+
+ipc.handle("ajour:get-cli-command", async (event) => {
+  assertActiveDesktopWindow(event, "read the ajour command's state");
+  return await cliCommand.state();
+});
+
+// The renderer passes nothing: main picks the release, the URL and the folder.
+ipc.handle("ajour:install-cli-command", async (event) => {
+  assertActiveDesktopWindow(event, "install the ajour command");
+  return await cliCommand.install({ unit: events.current() });
 });
 
 // The window sends the running entry when it changes; main counts its time.
@@ -2139,6 +2213,10 @@ if (!hasSingleInstanceLock) {
         quitTrigger = "os";
       });
 
+      // An install of the ajour command that a quit or a crash cut short
+      // is finished first: rolled back, or kept if it committed.
+      void cliCommand.reconcile().catch(() => undefined);
+
       void refreshPluginCatalog("launch");
       schedulePluginCatalogRefresh();
 
@@ -2208,6 +2286,9 @@ if (!hasSingleInstanceLock) {
     const updaterStartedAt = Date.now();
     automaticUpdateController.dispose();
     quit?.set({ quit: { updater_ms: Date.now() - updaterStartedAt } });
+    // An ajour command install stops its download, and a swap under way
+    // finishes or rolls back, within its bound, alongside the API's stop.
+    const cliCommandStopped = cliCommand.stop().catch(() => undefined);
     // A failed stop still quits.
     const stopStartedAt = Date.now();
     void stopInternalAppApiWithinTimeout().then(async (outcome) => {
@@ -2215,6 +2296,7 @@ if (!hasSingleInstanceLock) {
       recordApiStop(quit, outcome, stopStartedAt);
       // The API cancelled their runs as it stopped; their pages close now.
       await closePluginRenderers().catch(() => undefined);
+      await cliCommandStopped;
       endQuit(quit, outcome);
       // Events recorded before the package loaded are lost if the process
       // exits first.

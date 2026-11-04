@@ -2,6 +2,18 @@
 
 `ajour` is one file. Node is built into it, so there is nothing else to install. It needs the [Ajour desktop app](/start/install) running on the same machine.
 
+## Install from Ajour
+
+On Windows, Ajour installs the command for you:
+
+1. In Ajour, open **Settings › General**. Under **Terminal**, press **Install** on the **ajour command** row.
+2. Ajour downloads the command of its own version from its release, checks it against the checksum GitHub publishes, and adds `%LOCALAPPDATA%\Ajour\bin` to your user Path. There is no administrator prompt.
+3. Open a new terminal: one opened before doesn't see the new Path. Then [check it](#check-it) and [connect](#connect).
+
+The row then shows the version and its folder, which also holds `man` and `completions` for [Shell setup](/terminal/shell). When an install fails, the row says why, and nothing changes.
+
+On macOS and Linux, install from the archive below for now.
+
 ## Download
 
 Each [release](https://github.com/les-cabochons/ajour/releases) has a CLI archive per platform, beside the app's installers:
@@ -51,7 +63,7 @@ export MANPATH="$HOME/.local/share/ajour/man:$MANPATH"
 
 ## Windows
 
-In PowerShell, extract the archive and add its folder to your user Path:
+[Install from Ajour](#install-from-ajour) does this for you. To do it by hand, extract the archive in PowerShell and add its folder to your user Path:
 
 ```powershell
 Expand-Archive .\ajour-<version>-windows-x64.zip "$HOME\ajour-cli"

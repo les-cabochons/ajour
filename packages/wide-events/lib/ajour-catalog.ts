@@ -1671,6 +1671,55 @@ export const catalog = defineCatalog({
         theme: { value: operational<"system" | "dark" | "light">() },
       },
     },
+    /** The ajour command's state, for Settings › General › Terminal (#568). */
+    "cli_command.get_state": {
+      kinds: ["ipc"],
+      reasons: ["foreign_sender"],
+      fields: { ipc: ipcFields },
+    },
+    /**
+     * Installing the ajour command from Settings (#568): the version, where
+     * it stopped and why. Never a path, which holds the user name.
+     */
+    "cli_command.install": {
+      kinds: ["command", "ipc"],
+      reasons: [
+        "foreign_sender",
+        "development_build",
+        "unsupported_platform",
+        "missing_release",
+        "missing_asset",
+        "missing_digest",
+        "too_large",
+        "url_not_allowed",
+        "redirect_off_https",
+        "digest_mismatch",
+        "escaping_entry",
+        "invalid_archive",
+        "wrong_version",
+      ],
+      fields: {
+        ipc: ipcFields,
+        cli_command: {
+          version: operational(),
+          platform: operational(),
+          arch: operational(),
+          result: operational<"installed" | "refused" | "failed" | "joined">(),
+          /** The asset's size, from GitHub. */
+          download_bytes: operational<number>(),
+          download_ms: operational<number>(),
+          /** False when the folder was on the PATH already. */
+          path_added: operational<boolean>(),
+        },
+      },
+    },
+    /**
+     * Telling running programs the user Path changed, after Ajour wrote it
+     * for the ajour command (#568). A failure leaves the install in place:
+     * new terminals started from Explorer see the Path after the next
+     * sign-in.
+     */
+    "cli_command.path_broadcast": { kinds: ["job"], fields: {} },
     /** Whether closing the window keeps Ajour running (#534). */
     "window.get_settings": {
       kinds: ["ipc"],

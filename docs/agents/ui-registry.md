@@ -256,6 +256,13 @@ Last updated: 2026-10-25
 
 **Held changes in Sync review.** `HeldEditsReview` is the first panel of Sync review, an `AppPanel` named "Held changes": its count as a `settings-subsection-title`, a line saying nothing goes until it is sent, then one group per connection (`data-held-connection`), its name and its count as a muted mono `Value`, and, while the changes can't be sent, a `text-xs` muted line saying why (`data-held-blocker`): the connection was removed (discard them, or add it again), it is paused (a "Fix it" link to the plugin page), or editing is off (a "Turn it on" link). Each change is a row like the estimate issues: the item's title as a link, a muted `Badge` naming the kind (Settle or move, Original estimate, Remaining estimate, Completed, Description, Comment, Comment edit, Comment deleted), the change itself in muted `text-xs` (a comment's Markdown clamped to three lines), and outline Send and Discard trailing. Send is disabled while the connection can't send it. Discard opens an `AlertDialog` that asks with the kind's noun ("Discard this held settle?", "Discard this held comment deletion?") and says what happens to the source's side. A connection's Remove confirms in an `AlertDialog` whenever it holds changes, and says how many are discarded. `?held=<connection>` scrolls its group into view and tints it with `--hover-bg`.
 
+### The ajour command row
+
+Files: `apps/web/src/features/settings/cli-command-setting.tsx`, main's `apps/desktop/electron/cli-command.cjs`
+Last updated: 2026-11-04
+
+One `SettingRow` in its own Terminal section. The description is a fixed `h-12` box of three 16px lines, so no phase, version, folder or error moves the page. The first two, and the "Open a new terminal" hint, are the status with `role="status"`, present in every state so screen readers hear each change; when an install failed, the third line is the reason with `role="alert"` in `text-destructive`. Each line is `truncate`d with its whole text in the DOM and in its `title`. The folder line is mono and cut in the middle: its start truncates and its last two folders stay (`FolderLine`). The control is an outline Button, Install, disabled from the click until main reports, and in a development build wrapped in `DisabledReason`; once installed it is a primary-colored external link instead. The row shows only what main pushes (`onCliCommandChanged`), never a toast. Patterns used: `SettingRow`, `AppPanel`, `Button`, `DisabledReason`; nothing new.
+
 ### Application updates
 
 Files: `apps/web/src/features/settings/application-updates-settings.tsx`, `apps/web/src/features/layout/sidebar-footer.tsx`, `apps/web/src/lib/desktop-updates.ts`

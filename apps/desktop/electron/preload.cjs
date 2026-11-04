@@ -93,6 +93,15 @@ contextBridge.exposeInMainWorld("ajourDesktop", {
     ipcRenderer.on("ajour:tray-action", listener);
     return () => ipcRenderer.removeListener("ajour:tray-action", listener);
   },
+  getCliCommand: (trace) => invoke("ajour:get-cli-command", ...traced(trace)),
+  installCliCommand: (trace) =>
+    invoke("ajour:install-cli-command", ...traced(trace)),
+  onCliCommandChanged: (callback) => {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on("ajour:cli-command-changed", listener);
+    return () =>
+      ipcRenderer.removeListener("ajour:cli-command-changed", listener);
+  },
   checkForUpdates: (track, trace) =>
     invoke("ajour:check-for-updates", track, ...traced(trace)),
   getUpdateState: (trace) => invoke("ajour:get-update-state", ...traced(trace)),

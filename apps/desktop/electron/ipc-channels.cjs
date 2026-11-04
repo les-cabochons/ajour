@@ -47,6 +47,13 @@ const IPC_CHANNELS = {
     event: "window.configure",
     mode: "invoke",
   },
+  // The ajour command (cli-command.cjs, #568). Main pushes each change on
+  // `ajour:cli-command-changed`, which, like every push, needs no entry.
+  "ajour:get-cli-command": { event: "cli_command.get_state", mode: "invoke" },
+  "ajour:install-cli-command": {
+    event: "cli_command.install",
+    mode: "invoke",
+  },
   // The running entry for the tray icon, sent when it changes.
   "ajour:set-tray-state": { event: "tray.set_state", mode: "message" },
   "ajour:check-for-updates": { event: "update.check", mode: "invoke" },
