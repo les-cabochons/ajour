@@ -1138,7 +1138,7 @@
 
   /* Days still ahead are not a problem: a muted clock, no warning color. */
   .submit-warnings li.is-calm svg {
-    color: var(--text-tertiary);
+    color: var(--text-secondary);
   }
 
   .submit-warning-action {
