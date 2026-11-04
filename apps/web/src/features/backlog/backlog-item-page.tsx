@@ -20,7 +20,6 @@ import {
 import { ObjectActionItems } from "@/components/object-actions-menu";
 import { SplitButton } from "@/components/split-button";
 import { Button } from "@/components/ui/button";
-import { Chip } from "@/components/ui/chip";
 import {
   Empty,
   EmptyDescription,
@@ -444,13 +443,15 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                 }}
               />
               <div className="backlog-item-page-meta">
+                {/* Plain text: the breadcrumb and the properties already name
+                    the project, and a chip here only tagged (council round 9). */}
                 {item.sourceWorkItemType ? (
-                  <Chip>{item.sourceWorkItemType}</Chip>
-                ) : null}
-                {project ? (
-                  <Chip color={project.color}>
-                    {getLocalProjectDisplayName(project)}
-                  </Chip>
+                  <>
+                    <span>{item.sourceWorkItemType}</span>
+                    <span aria-hidden className="text-[var(--text-tertiary)]">
+                      ·
+                    </span>
+                  </>
                 ) : null}
                 {reference ? (
                   item.sourceUrl ? (

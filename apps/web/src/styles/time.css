@@ -1174,7 +1174,8 @@
   .commit-page {
     display: flex;
     width: 100%;
-    max-width: 960px;
+    /* Full width, so the hours end where the Day view's durations do
+       (council round 9); the summary keeps its own measure. */
     flex-direction: column;
     gap: 1.25rem;
     margin: 0;

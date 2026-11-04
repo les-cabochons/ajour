@@ -41,7 +41,7 @@ Font weights: 400 for text, 500 for labels, buttons and row titles, 600 for page
 
 ## Color
 
-Semantic variables, light and dark under `:root` and `:root.dark`:
+Semantic variables, light and dark under `:root` and `:root.dark`. Dark text runs a wide ladder, foreground L 0.95, secondary 0.68, tertiary 0.50, with `--border` at white 11%, so tone as well as weight carries hierarchy (council round 9):
 
 - `--background`, `--foreground`, `--card`, `--popover`, `--secondary`, `--muted`, `--muted-foreground`, `--accent`, `--border`, `--input`, `--ring`
 - `--primary`: the one accent, the logo's indigo. Primary buttons, focus rings, links, selected options and the returned pull request badge. Not the active nav row.

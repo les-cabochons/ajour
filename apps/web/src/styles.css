@@ -227,7 +227,9 @@
   :root.dark {
     color-scheme: dark;
     --background: oklch(0.17 0.004 285);
-    --foreground: oklch(0.9 0.003 285);
+    /* Titles near white, so tone as well as weight carries hierarchy in
+       dark (council round 9). */
+    --foreground: oklch(0.95 0.003 285);
     /* Page 0.17, sidebar and side cards 0.205, cards 0.225: clear steps, as
        in Linear and T3 Code (council round 7). */
     --card: oklch(0.225 0.004 285);
@@ -248,7 +250,7 @@
     --destructive: oklch(0.7 0.19 22);
     --warning: oklch(0.78 0.15 70);
     --success: oklch(0.72 0.17 150);
-    --border: oklch(1 0 0 / 9%);
+    --border: oklch(1 0 0 / 11%);
     --border-row: oklch(1 0 0 / 6.5%);
     --input: var(--surface-lowest);
     --ring: oklch(0.64 0.17 285);
@@ -273,7 +275,7 @@
     --surface-high: oklch(0.25 0.004 285);
     --surface-highest: oklch(0.29 0.004 285);
     --text-secondary: var(--muted-foreground);
-    --text-tertiary: oklch(0.56 0.008 285);
+    --text-tertiary: oklch(0.5 0.008 285);
     --hover-bg: oklch(1 0 0 / 6%);
     --highlight-bg: oklch(1 0 0 / 4%);
     --field-bg: var(--surface-lowest);

@@ -229,6 +229,22 @@
     justify-self: start;
   }
 
+  /* A list row's leading glyphs, priority · state · project, sit on equal
+     24px tracks, centered, so they read as one evenly spaced cluster
+     (council round 9). The board keeps its own slots. */
+  .backlog-list-row .backlog-item-leading {
+    grid-template-columns: repeat(3, 24px);
+    gap: 0.25rem;
+  }
+
+  .backlog-list-row .backlog-item-leading[data-no-priority] {
+    grid-template-columns: repeat(2, 24px);
+  }
+
+  .backlog-list-row .backlog-item-leading > * {
+    justify-self: center;
+  }
+
   .backlog-item-id {
     min-width: 0;
     max-width: 100%;

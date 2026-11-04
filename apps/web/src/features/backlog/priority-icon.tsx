@@ -77,7 +77,9 @@ export function PriorityIcon({
   return (
     <svg
       viewBox="0 0 14 14"
-      className={cn("size-4 shrink-0 text-foreground", className)}
+      // Muted ink: the row's title, not its priority, is the darkest thing
+      // on it. Urgent keeps its amber square (council round 9).
+      className={cn("size-4 shrink-0 text-muted-foreground", className)}
       {...a11y}
     >
       {[0, 1, 2].map((bar) => (
