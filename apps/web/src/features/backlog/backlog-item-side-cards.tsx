@@ -225,7 +225,7 @@ export function SubitemsCard({
               to="/backlog/$itemId"
               params={{ itemId: subitem._id }}
               search={{ from }}
-              className="backlog-item-row"
+              className="backlog-item-row is-subitem"
             >
               <WorkItemIcon icon={resolveWorkItemIcon(subitem, iconData)} />
               <span

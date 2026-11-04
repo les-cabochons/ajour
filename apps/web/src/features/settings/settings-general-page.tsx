@@ -219,7 +219,7 @@ export function SettingsGeneralPage() {
           <SettingRow
             label="Over-capacity warning"
             labelFor="warn-over-capacity"
-            description="Show a compact warning on a day more than 50% over its target, or a week over its target."
+            description="Warn when a day exceeds 150% of its target or a week exceeds its target."
           >
             <Switch
               id="warn-over-capacity"
@@ -247,7 +247,7 @@ export function SettingsGeneralPage() {
           <SettingRow
             label="Under-target submit warning"
             labelFor="warn-under-capacity"
-            description="Ask before Submit week locks a week that is behind its targets."
+            description="Ask for confirmation before submitting a week below target."
           >
             <Switch
               id="warn-under-capacity"

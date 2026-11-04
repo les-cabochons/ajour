@@ -1063,6 +1063,20 @@
     white-space: nowrap;
   }
 
+  /* A subitem's title may take two lines, so it reads without opening it;
+     Time entries keep one line (council round 15). */
+  .backlog-item-row.is-subitem {
+    height: 52px;
+  }
+
+  .backlog-item-row.is-subitem .backlog-item-row-title {
+    display: -webkit-box;
+    line-height: 18px;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
   /* -- Peek ------------------------------------------------------ */
 
   /* The peek is a smaller item page: the same header, figures and sections,
@@ -1172,7 +1186,7 @@
     display: grid;
     grid-template-columns:
       auto repeat(9, minmax(auto, max-content)) minmax(0, 1fr)
-      36px 52px;
+      36px 68px;
     grid-template-rows: auto auto;
     align-content: center;
     column-gap: 0;
@@ -1299,6 +1313,18 @@
   .backlog-item-actions {
     opacity: 1;
     pointer-events: auto;
+  }
+
+  /* Narrow row commands are 32px touch targets (council round 15). */
+  .backlog-list-row .backlog-item-actions {
+    width: 68px;
+    gap: 4px;
+  }
+
+  .backlog-list-row .backlog-item-actions button {
+    width: 32px;
+    height: 32px;
+    margin-block: -4px;
   }
 
   .backlog-group-header,

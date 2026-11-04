@@ -1756,10 +1756,18 @@
     vertical-align: top;
   }
 
-  /* Rows always show Continue or Stop in the narrow view. */
+  /* Rows always show Continue or Stop in the narrow view, as a 32px touch
+     target; the negative margin keeps the line where it was (council round
+     15). */
   .time-entry-actions {
     opacity: 1;
     pointer-events: auto;
+  }
+
+  .time-entry-actions button {
+    width: 32px;
+    height: 32px;
+    margin-block: -4px;
   }
 
   .commit-page {
