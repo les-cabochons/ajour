@@ -24,7 +24,7 @@ Writes use the same rules and Undo as the window. If a command says "Update Ajou
 
 ## Completion and manual
 
-With the manual and completion support from #540 installed, load your shell's script:
+On releases that include shell completion, load your shell's script:
 
 ```sh
 # Bash, in ~/.bashrc
@@ -35,7 +35,7 @@ source <(ajour completion zsh)
 ajour completion fish | source
 ```
 
-Archives include the generated `man/` and `completions/` directories when the manual generator is present. Copy the man pages into `~/.local/share/man/man1/` and add `~/.local/share/man` to MANPATH if needed. `ajour --help` works without installing man pages.
+If your archive includes `man/` and `completions/`, you can install those files alongside the binary. Copy the man pages into `~/.local/share/man/man1/` and add `~/.local/share/man` to MANPATH if needed. `ajour --help` works without installing man pages.
 
 ## tmux
 
