@@ -150,16 +150,18 @@ async function writePlugin(root: string, plugin: TestPlugin) {
 
 /**
  * Starts the local API with a development plugin: `jira`, unless `plugin`
- * names another. Its events are recorded, and also go to `eventSink` when
- * given, as desktop main gives it the shared sink. `launch` is the launch it
- * reports, as main hands it over.
+ * names another, and the `morePlugins` beside it. Its events are recorded,
+ * and also go to `eventSink` when given, as desktop main gives it the shared
+ * sink. `launch` is the launch it reports, as main hands it over.
  */
 export async function startLocalApi({
   plugin = JIRA,
+  morePlugins = [],
   eventSink,
   launch,
 }: {
   plugin?: TestPlugin;
+  morePlugins?: TestPlugin[];
   eventSink?: Sink;
   launch?: { id: string; appVersion: string; packaged: boolean };
 } = {}) {
@@ -169,7 +171,9 @@ export async function startLocalApi({
     port: 0,
     statePath: path.join(root, "state.json"),
     installedPluginDirectory: path.join(root, "installed"),
-    developmentPluginDirectories: [await writePlugin(root, plugin)],
+    developmentPluginDirectories: await Promise.all(
+      [plugin, ...morePlugins].map((each) => writePlugin(root, each)),
+    ),
     allowDevelopmentPlugins: true,
     pluginRuntime: new InProcessPluginRuntime(),
     brokerTransport: echoingTransport,

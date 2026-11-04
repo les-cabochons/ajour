@@ -1114,7 +1114,8 @@ Two tests hold the whole app to the model (#311):
   tool and from an agent, and runs time entries, backlog items with their
   descriptions and comments, calendar suggestions, pull requests (a sync,
   then every code host operation, with marked repositories, paths, review
-  and comment bodies), a team (create and sync), a connection with a
+  and comment bodies), a team (create and sync), a project source's
+  snapshot and cursor, a connection with a
   secret, an agent's tool calls and plugin errors through the renderer and
   the real local API. The marker may stay in one place, named in
   `MARKER_ALLOWED_IN`: an error's `message`. ADR 0011 makes it a sensitive
