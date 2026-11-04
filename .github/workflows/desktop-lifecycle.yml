@@ -1,0 +1,95 @@
+name: Desktop lifecycle
+
+# The real-app check of "Ajour without its window" (#534, spec #525),
+# `check:keep-running`. It builds the renderer, starts the real desktop app
+# with a temp user data folder, closes its window, and runs an MCP client's
+# start_timer, get_running_timer and stop_timer against the hidden window.
+# Then it opens the window from the tray, finds the saved entry, quits from
+# the tray, and checks that no process the app started outlives the quit.
+#
+# Windows and macOS, the systems the desktop app ships on. The `Tests`
+# workflow calls this one for pull requests that can change the desktop app,
+# the local API, the renderer or the packages they share, and its Plugin
+# sandbox gate holds the result.
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to check. Empty checks the caller's commit.
+        type: string
+        default: ""
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Desktop lifecycle (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      # The check runs Electron, so download its binary.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: ""
+    strategy:
+      # A failure on one system must not hide the result on the other.
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+          - name: macOS
+            os: macos-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          # Electron 44 runs the app on Node 24. Fetch the newest 24.x patch
+          # rather than the older one cached on the runner.
+          node-version: 24
+          check-latest: true
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install pnpm on Windows
+        if: runner.os == 'Windows'
+        run: npm install --global pnpm@10.7.0
+
+      - name: Find the pnpm store
+        id: pnpm-store
+        shell: bash
+        run: echo "path=$(corepack pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: corepack pnpm install --frozen-lockfile
+
+      - name: Run the desktop lifecycle check
+        # Windows and macOS runners have a desktop session, so Electron needs
+        # no virtual display.
+        shell: bash
+        env:
+          LOG: ${{ runner.temp }}/desktop-lifecycle.log
+        run: corepack pnpm --filter @ajour/desktop check:keep-running 2>&1 | tee "$LOG"
+
+      - name: Upload the check's log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-lifecycle-log-${{ runner.os }}
+          path: ${{ runner.temp }}/desktop-lifecycle.log
+          retention-days: 14

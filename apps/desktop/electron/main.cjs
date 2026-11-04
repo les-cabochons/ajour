@@ -1458,9 +1458,11 @@ async function ensureInternalAppApiRunning() {
         : resolveDevelopmentPluginDirectories(),
       bundledPluginArchives: [],
       allowDevelopmentPlugins: !app.isPackaged,
-      allowedOrigins: app.isPackaged
-        ? ["app://local"]
-        : ["http://127.0.0.1:5173"],
+      // The window's origin: the built renderer's, or the dev server's.
+      allowedOrigins:
+        app.isPackaged || !process.env.AJOUR_DESKTOP_RENDERER_URL
+          ? ["app://local"]
+          : ["http://127.0.0.1:5173"],
       windowToken: windowApiToken,
       launch: apiLaunchOf(launch),
       eventSink: await mainEventSink,

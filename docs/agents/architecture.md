@@ -729,6 +729,15 @@ throttled timers never hold it back. The tray's Stop sends
 own `localStore.saveTimer`, never a second stop in main. No event holds the
 title: `tray.set_state` records only whether an entry runs.
 
+`apps/desktop/scripts/check-keep-running.mjs` checks it in the real app on
+Windows and macOS (`.github/workflows/desktop-lifecycle.yml`): an MCP client
+starts and stops an entry while the window is hidden, the window shows it
+when the tray opens it, and the tray's Quit ends every process.
+`apps/desktop/lifecycle-check/main.cjs` starts Ajour's main with the app data
+folder in the check's temp folder. A development build that loads the built
+renderer (`app://local`, no `AJOUR_DESKTOP_RENDERER_URL`) lets that origin call
+the local API, as a release build does.
+
 Release builds flip the Electron fuses decided in #231, through `electronFuses`
 in `apps/desktop/electron-builder.config.cjs`. `NODE_OPTIONS`, `--inspect` and
 the file protocol's extra privileges are off, and the app loads only from
