@@ -86,6 +86,9 @@ For Workday
   On a terminal they are padded and tab-separated. Not sent, Waiting
   and Running explain excluded time below the lines in muted, warning
   and success colors. Running reports only time not already saved.
+  Fields containing tabs, line breaks or double quotes are quoted with inner
+  quotes doubled in both outputs, and terminal rows with quoted fields skip
+  padding so they paste intact without affecting other rows' alignment.
 
   In a pipe only the four tab-separated values print, without padding,
   headers, explanations or color, ready for the clipboard:
@@ -93,8 +96,9 @@ For Workday
     $ ajour log last-week --format workday | wl-copy
     $ ajour log week --format workday --by task | pbcopy
 
-  Ajour refuses when plugin task names fail to load or take more than
-  two seconds. The command exits 1 and prints no partial lines. Try again.
+  Ajour refuses when a task in the week has stored plugin values that may
+  rename it and plugin names fail to load or take more than two seconds.
+  The command exits 1 and prints no partial lines. Try again.
 
 For tools
   tsv and csv print one line per entry under a header row:

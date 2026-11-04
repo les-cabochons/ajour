@@ -25,7 +25,8 @@ function day(date: string, month = true, year = false): string {
 }
 /** Keep each value in one spreadsheet cell. */
 function cell(value: string | undefined): string {
-  return (value ?? "").replace(/[\t\r\n\x1b]+/g, " ");
+  const text = value ?? "";
+  return /[\t\r\n"]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
 /** Print the Commit page's values without recomputing grouping or rounding. */
@@ -36,13 +37,19 @@ export function formatWorkday(
   paint: Paint,
 ): string {
   const rows = week.sections.flatMap((section) => section.lines);
+  const alignedRows = rows.filter(
+    (line) =>
+      !/[\t\r\n"]/.test(
+        `${line.projectName}${line.taskName}${line.comments ?? ""}`,
+      ),
+  );
   const projectWidth = Math.max(
     0,
-    ...rows.map((line) => displayWidth(cell(line.projectName))),
+    ...alignedRows.map((line) => displayWidth(cell(line.projectName))),
   );
   const taskWidth = Math.max(
     0,
-    ...rows.map((line) => displayWidth(cell(line.taskName))),
+    ...alignedRows.map((line) => displayWidth(cell(line.taskName))),
   );
   const lines: string[] = [];
   if (tty) {
@@ -65,11 +72,12 @@ export function formatWorkday(
     for (const line of section.lines) {
       const project = cell(line.projectName);
       const task = cell(line.taskName);
+      const aligned = tty && alignedRows.includes(line);
       lines.push(
         [
-          tty ? `  ${padEnd(project, projectWidth)}` : project,
-          tty ? padEnd(task, taskWidth) : task,
-          line.hours.toFixed(2).replace(".", ","),
+          aligned ? `  ${padEnd(project, projectWidth)}` : project,
+          aligned ? padEnd(task, taskWidth) : task,
+          cell(line.hours.toFixed(2).replace(".", ",")),
           cell(line.comments),
         ].join("\t"),
       );

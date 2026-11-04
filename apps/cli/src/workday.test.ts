@@ -37,29 +37,73 @@ describe("Workday mockup", () => {
   });
 });
 
-it("keeps spreadsheet values on one line and formats supplied decimal hours", () => {
-  const input = {
-    ...week,
-    sections: [
-      {
-        lines: [
-          {
-            projectName: "Acme\tPlatform",
-            taskName: "Backend\nOps",
-            hours: 1.235,
-            comments: "A\r\nB",
-            entryIds: [],
-          },
-        ],
-      },
-    ],
-  };
-  expect(
-    formatWorkday(
-      input,
-      { from: "2026-11-02", to: "2026-11-08" },
-      false,
-      painter(true),
-    ),
-  ).toBe("Acme Platform\tBackend Ops\t1,24\tA B\n");
+describe("spreadsheet fields", () => {
+  for (const [comments, expected] of [
+    ["First\nSecond | Third", '"First\nSecond | Third"'],
+    ["First\tSecond", '"First\tSecond"'],
+    ['Say "hello"', '"Say ""hello"""'],
+    ["Normal note", "Normal note"],
+  ] as const) {
+    for (const tty of [false, true]) {
+      it(`preserves ${JSON.stringify(comments)} in ${tty ? "TTY" : "pipe"}`, () => {
+        const input = {
+          ...week,
+          sections: [
+            {
+              lines: [
+                {
+                  projectName: "Acme",
+                  taskName: "Build",
+                  hours: 1.235,
+                  comments,
+                  entryIds: [],
+                },
+              ],
+            },
+          ],
+        };
+        const output = formatWorkday(
+          input,
+          { from: "2026-11-02", to: "2026-11-08" },
+          tty,
+          painter(false),
+        );
+        const row = `Acme\tBuild\t1,24\t${expected}\n`;
+        if (tty) expect(output).toContain(row);
+        else expect(output).toBe(row);
+      });
+    }
+  }
+  it("quotes project and task fields without distorting following TTY rows", () => {
+    const input = {
+      ...week,
+      sections: [
+        {
+          lines: [
+            {
+              projectName: "Acme\tPlatform",
+              taskName: "Backend\r\nOps",
+              hours: 1,
+              comments: "A",
+              entryIds: [],
+            },
+            {
+              projectName: "Acme",
+              taskName: "Build",
+              hours: 2,
+              comments: "B",
+              entryIds: [],
+            },
+          ],
+        },
+      ],
+    };
+    const range = { from: "2026-11-02", to: "2026-11-08" };
+    expect(formatWorkday(input, range, false, painter(false))).toBe(
+      '"Acme\tPlatform"\t"Backend\r\nOps"\t1,00\tA\nAcme\tBuild\t2,00\tB\n',
+    );
+    expect(formatWorkday(input, range, true, painter(false))).toContain(
+      '"Acme\tPlatform"\t"Backend\r\nOps"\t1,00\tA\n  Acme\tBuild\t2,00\tB\n',
+    );
+  });
 });
