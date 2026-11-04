@@ -267,9 +267,13 @@
       column-gap: 0.5rem;
     }
 
+    /* Each part hugs its text, so a right-click on selected text lands on
+       the text, which keeps the system's edit menu. */
     .time-entry-main > * {
       grid-row: 1;
+      justify-self: start;
       min-width: 0;
+      max-width: 100%;
       overflow: hidden;
       text-overflow: ellipsis;
     }
