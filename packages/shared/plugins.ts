@@ -1201,11 +1201,12 @@ export const backlogImportCandidateInputSchema = z.object({
   stateDone: z.boolean().optional(),
   assignedTo: z.string().trim().max(240).optional(),
   /**
-   * Who the item is assigned to, from a plugin with `connector.assign`, which
-   * leaves it out for an unassigned item. The id is the plugin's own: the
-   * one its settle write takes.
+   * Who the item is assigned to, from a plugin with `connector.assign`. The
+   * plugin leaves it out, or sends null, for an unassigned item, and Ajour's
+   * API records null; an item from a plugin without `assign` has none. The
+   * id is the plugin's own: the one its settle write takes.
    */
-  assignee: backlogPersonSchema.optional(),
+  assignee: backlogPersonSchema.nullable().optional(),
   priority: backlogPriorityLevelSchema.optional(),
   originalEstimateHours: z.number().finite().nonnegative().optional(),
   remainingEstimateHours: z.number().finite().nonnegative().optional(),
@@ -1343,6 +1344,7 @@ export const backlogDoneWorkItemSchema = z.object({
   connectionId: z.string().trim().min(1).max(120),
   sourceId: z.string().trim().min(1).max(400),
   state: z.string().trim().max(120).optional(),
+  assignee: backlogPersonSchema.nullable().optional(),
   /** The item's description, which syncs whether or not the item stays open. */
   description: backlogSyncedDescriptionSchema.optional(),
 });

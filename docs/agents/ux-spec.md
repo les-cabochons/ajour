@@ -870,7 +870,7 @@ Settle means the user has nothing left to do on the item for now.
 - Settling stops and saves the running entry on the item. Undo restores the entry as it was, still running from its original start.
 - A plugin without the settle capability settles its items locally, with no write.
 - Settling a parent with open subitems asks whether to include them, as in Closing a parent under Backlog. Undo restores them together. Settling a synced subitem writes that subitem through its own source project's mapping.
-- The dialog does not offer an assignee yet. Ajour does not import assignees. See [#71](https://github.com/les-cabochons/ajour/issues/71).
+- The dialog does not offer an assignee yet. See [#71](https://github.com/les-cabochons/ajour/issues/71).
 - Priority changes outside Settle write to the source too, as described under Priority in Backlog. A settle keeps a priority write still waiting, so one write sends both.
 
 ### Unsettle and restore
@@ -885,7 +885,7 @@ Syncs move synced items between states:
 | What the sync shows                                                     | Result                                         |
 | ----------------------------------------------------------------------- | ---------------------------------------------- |
 | An active or settled item reached a source state mapped to a done state | Archived, in that done state                   |
-| Someone else changed a settled item's state or priority                 | Active, as returned                            |
+| Someone else changed a settled item's state, priority or assignee       | Active, as returned                            |
 | Someone else commented on a settled item after it was settled           | Active, as returned, naming who commented      |
 | An item dropped out of the sync                                         | Archived, as today. It returns if it reappears |
 

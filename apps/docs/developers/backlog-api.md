@@ -186,7 +186,7 @@ Ajour sends the write once the Undo toast closes, about 8 seconds after the user
 
 Declare `capabilities.connector.assign` when your tool lets the user reassign an item. The settle dialog then shows an Assignee field, which starts on the item's assignee, and Ajour sends the person the user picks with the settle.
 
-- **Sync.** Return each item's `assignee`: an id, a display name and an email when you know it. Leave it out for an unassigned item. Keep `assignedTo` for older Ajour versions.
+- **Sync.** Return each item's `assignee`: an id, a display name and an email when you know it. Leave it out, or send `null`, for an unassigned item. Keep `assignedTo` for older Ajour versions. Ajour brings a settled item back when a sync shows another assignee than the one it had when it was settled.
 - **`searchAssignees`.** Ajour calls it when the field opens, with an empty `query`: return the people most likely to take the item, such as the people on it and those recently active in its project. It calls it again for each name the user types: search everyone the item can be assigned to. Return at most `limit` people.
 - **`writeSettle`.** `assignee` is an id you returned. Assign the item to that person, or unassign it for `null`.
 
@@ -336,8 +336,8 @@ export interface BacklogImportCandidateInput {
   stateDone?: boolean;
   /** Up to 240 characters. */
   assignedTo?: string;
-  /** With `connector.assign`. Leave it out for an unassigned item. */
-  assignee?: BacklogPerson;
+  /** With `connector.assign`. Leave it out, or `null`, for an unassigned item. */
+  assignee?: BacklogPerson | null;
   priority?: BacklogPriorityLevel;
   /** Hours, 0 or more. */
   originalEstimateHours?: number;
