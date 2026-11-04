@@ -4,7 +4,6 @@ import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
   RiAddLine as AddIcon,
   RiArchiveLine as ArchiveIcon,
-  RiArrowDownSLine as MoreTimeIcon,
   RiArrowGoBackLine as UnsettleIcon,
   RiCheckboxCircleLine as SettleIcon,
   RiExternalLinkLine as ExternalIcon,
@@ -19,13 +18,8 @@ import {
   PropertyRow,
 } from "@/components/property-list";
 import { ObjectActionItems } from "@/components/object-actions-menu";
-import { TooltipButton } from "@/components/tooltip-button";
+import { SplitButton } from "@/components/split-button";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Chip } from "@/components/ui/chip";
 import {
   Empty,
@@ -362,62 +356,39 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
       <>
         {/* Start entry (Stop while the item's entry runs) is split: its arrow
             offers New entry…, which logs time without the clock (#513). */}
-        <span ref={splitRef} className="flex">
+        <SplitButton
+          ref={splitRef}
+          variant={startAction ? "default" : "outline"}
+          onClick={() => runAction(startAction ? "start-entry" : "stop-entry")}
+          disabled={Boolean(startAction?.disabledReason)}
+          title={startAction?.disabledReason}
+          menuLabel="Other ways to log time"
+          menuClassName="min-w-64"
+          menu={
+            <ObjectActionItems
+              surface="button"
+              actions={timeActions}
+              keys={BACKLOG_ITEM_ACTION_KEYS}
+              onAction={(actionId) => {
+                if (actionId === "new-entry" && splitRef.current) {
+                  openNewEntry(splitRef.current);
+                } else {
+                  runAction(actionId);
+                }
+              }}
+            />
+          }
+        >
           {startAction ? (
-            <Button
-              className="rounded-r-none"
-              onClick={() => runAction("start-entry")}
-              disabled={Boolean(startAction.disabledReason)}
-              title={startAction.disabledReason}
-            >
+            <>
               <PlayIcon data-icon="inline-start" /> Start entry
-            </Button>
+            </>
           ) : (
-            <Button
-              variant="outline"
-              className="rounded-r-none"
-              onClick={() => runAction("stop-entry")}
-            >
+            <>
               <StopIcon data-icon="inline-start" /> Stop
-            </Button>
+            </>
           )}
-          <DropdownMenu>
-            <TooltipButton
-              label="Other ways to log time"
-              render={
-                <DropdownMenuTrigger
-                  render={
-                    <Button
-                      size="icon"
-                      variant={startAction ? "default" : "outline"}
-                      className={
-                        startAction
-                          ? "ml-px rounded-l-none"
-                          : "rounded-l-none border-l-0"
-                      }
-                    />
-                  }
-                />
-              }
-            >
-              <MoreTimeIcon />
-            </TooltipButton>
-            <DropdownMenuContent align="end" className="w-auto min-w-64">
-              <ObjectActionItems
-                surface="button"
-                actions={timeActions}
-                keys={BACKLOG_ITEM_ACTION_KEYS}
-                onAction={(actionId) => {
-                  if (actionId === "new-entry" && splitRef.current) {
-                    openNewEntry(splitRef.current);
-                  } else {
-                    runAction(actionId);
-                  }
-                }}
-              />
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </span>
+        </SplitButton>
         <Button variant="ghost" onClick={() => runAction("snooze")}>
           <SnoozeIcon data-icon="inline-start" /> Snooze
         </Button>
