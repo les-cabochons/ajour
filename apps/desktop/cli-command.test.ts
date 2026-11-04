@@ -13,6 +13,7 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { macosLinkFixture } from "./fake-macos-command-link.ts";
 import { recordingEvents } from "./recording-events.ts";
 
 /*
@@ -1641,6 +1642,49 @@ describe("macOS signature verification", () => {
     expect(prompts).toEqual([false, true]);
     expect(github.requests).toEqual([]);
   });
+  it.each([true, false])(
+    "repairs a stale owned link before cleanup, writable=%s",
+    async (writable) => {
+      expect((await mac().controller.install()).status).toBe("installed");
+      const old = "ajour.old-00000000-0000-0000-0000-000000000001";
+      await writeFile(path.join(installDir, old), "previous command");
+      // The external command filesystem is virtual, including its install folder.
+      const folder = "/Users/alex/Ajour/bin";
+      const f = macosLinkFixture({ target: `${folder}/${old}`, writable });
+      const adapter = f.link();
+      const link = {
+        add: (_folder: string, options?: unknown) =>
+          adapter.add(folder, options),
+        remove: () => adapter.remove(folder),
+      };
+      const cleanupTargets: Array<string | null> = [];
+      const files = fsWith({
+        rm: async (...args: Parameters<typeof fs.rm>) => {
+          if (String(args[0]) === path.join(installDir, old))
+            cleanupTargets.push(f.current());
+          return fs.rm(...args);
+        },
+      });
+      const { controller, github } = mac(false, { link: { link }, files });
+      const state = await controller.reconcile();
+      if (writable) {
+        expect(state.status).toBe("installed");
+        expect(f.current()).toBe(`${folder}/ajour`);
+        expect(existsSync(path.join(installDir, old))).toBe(false);
+      } else {
+        expect(state.status).toBe("error");
+        expect(state.error).toContain("Retry");
+        expect(f.calls).toEqual([]);
+        expect(existsSync(path.join(installDir, old))).toBe(true);
+        expect((await controller.state()).status).toBe("error");
+        expect((await controller.install()).status).toBe("installed");
+        expect(f.current()).toBe(`${folder}/ajour`);
+        expect(existsSync(path.join(installDir, old))).toBe(false);
+        expect(github.requests).toEqual([]);
+      }
+      expect(cleanupTargets).toEqual([`${folder}/ajour`]);
+    },
+  );
   it.each([false, true])(
     "recovers a macOS install interrupted at every file and link step, previous=%s",
     async (previous) => {

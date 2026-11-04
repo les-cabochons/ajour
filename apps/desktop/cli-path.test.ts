@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
+import { macosLinkFixture as fixture } from "./fake-macos-command-link.ts";
 import { recordingEvents } from "./recording-events.ts";
 
 /*
@@ -567,31 +568,6 @@ describe("literal Windows path comparison", () => {
 
 describe("macOS command link", () => {
   const { createMacosCommandLink } = require("./electron/cli-path.cjs");
-  function fixture({
-    target = null as string | null,
-    foreignFile = false,
-    writable = true,
-    cancelled = false,
-  } = {}) {
-    const calls: Array<{ file: string; args: string[] }> = [];
-    const fs = {
-      lstat: async () => {
-        if (target === null && !foreignFile)
-          throw Object.assign(new Error(), { code: "ENOENT" });
-        return { isSymbolicLink: () => !foreignFile };
-      },
-      readlink: async () => target,
-      access: async () => {
-        if (!writable) throw Object.assign(new Error(), { code: "EACCES" });
-      },
-    };
-    const exec = async (file: string, args: string[]) => {
-      calls.push({ file, args });
-      if (cancelled) throw new Error("User canceled. (-128)");
-      return { stdout: "" };
-    };
-    return { link: () => createMacosCommandLink({ fs, exec }), calls };
-  }
   it("creates an absent link directly without a password", async () => {
     const f = fixture();
     expect(await f.link().add("/Users/alex/Ajour/bin")).toEqual({
@@ -600,10 +576,53 @@ describe("macOS command link", () => {
     expect(f.calls.map((call) => call.file)).toEqual(["/bin/mkdir", "/bin/ln"]);
     expect(f.calls[1]!.args).toEqual([
       "-s",
+      "-n",
       "/Users/alex/Ajour/bin/ajour",
       "/usr/local/bin/ajour",
     ]);
   });
+  it.each([true, false])(
+    "refuses a directory link that appears before creation, writable=%s",
+    async (writable) => {
+      const f = fixture({
+        writable,
+        beforeCreate: () => f.replace("/another/directory"),
+      });
+      await expect(
+        f.link().add("/Users/alex/Ajour/bin", { interactive: true }),
+      ).rejects.toThrow();
+      expect(f.escaped).toEqual([]);
+      expect(f.current()).toBe("/another/directory");
+    },
+  );
+  it("rejects success when the exact link no longer has the intended target", async () => {
+    const f = fixture();
+    const exec = async (file: string, args: string[]) => {
+      const result = await f.exec(file, args);
+      if (file === "/bin/ln") f.replace("/opt/homebrew/bin/ajour");
+      return result;
+    };
+    await expect(
+      createMacosCommandLink({ fs: f.fs, exec }).add("/Users/alex/Ajour/bin"),
+    ).rejects.toThrow(
+      "Ajour couldn't verify /usr/local/bin/ajour. Press Retry in Settings.",
+    );
+  });
+  it.each([true, false])(
+    "preserves a foreign replacement before removal, writable=%s",
+    async (writable) => {
+      let reads = 0;
+      const f = fixture({
+        target: "/Users/alex/Ajour/bin/ajour",
+        writable,
+        afterRead: () => {
+          if (++reads === 2) f.replace("/opt/homebrew/bin/ajour");
+        },
+      });
+      await f.link().remove("/Users/alex/Ajour/bin", { interactive: true });
+      expect(f.current()).toBe("/opt/homebrew/bin/ajour");
+    },
+  );
   it("leaves an owned link alone", async () => {
     const f = fixture({ target: "/Users/alex/Ajour/bin/ajour" });
     expect(await f.link().add("/Users/alex/Ajour/bin")).toEqual({
@@ -637,7 +656,7 @@ describe("macOS command link", () => {
       ),
     );
     expect(shell).toBe(
-      `/bin/mkdir '-p' '/usr/local/bin' && /bin/ln '-s' '/Users/A "B"/it'"'"'s\\home/bin/ajour' '/usr/local/bin/ajour'`,
+      `/bin/mkdir '-p' '/usr/local/bin' && /bin/ln '-s' '-n' '/Users/A "B"/it'"'"'s\\home/bin/ajour' '/usr/local/bin/ajour'`,
     );
   });
   it("refuses cancellation with the specified message", async () => {
