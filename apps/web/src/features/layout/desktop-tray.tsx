@@ -1,7 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { getRunningEntryTrayState } from "@/domain/time/running-entry";
 import type { DesktopTrayAction } from "@/lib/desktop-bridge";
-import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 
 /**
@@ -16,15 +15,26 @@ export function runTrayAction(action: DesktopTrayAction) {
   if (running) localStore.saveTimer(running._id);
 }
 
+/** What the tray shows, as a string, so it compares by value. */
+function trayMessage() {
+  const state = localStore.snapshot();
+  return JSON.stringify({
+    entry: getRunningEntryTrayState(state.timers[0] ?? null, state),
+  });
+}
+
 /**
  * Keeps the desktop tray icon on the running entry (#534). It sends the
  * entry's title and times when they change, never each second: main counts
  * the time, so a hidden window's slowed timers don't hold the tooltip back.
+ * It re-renders only when that message changes, not on every store write.
  */
 export function DesktopTrayState() {
-  const state = useLocalState();
-  const entry = getRunningEntryTrayState(state.timers[0] ?? null, state);
-  const message = JSON.stringify({ entry });
+  const message = useSyncExternalStore(
+    localStore.subscribe,
+    trayMessage,
+    trayMessage,
+  );
 
   useEffect(() => {
     window.ajourDesktop?.setTrayState?.(JSON.parse(message));
