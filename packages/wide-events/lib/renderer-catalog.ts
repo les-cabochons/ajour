@@ -562,6 +562,8 @@ export const rendererEvents = {
       behavior: operational<"local" | "rule" | "ask">(),
       state_changed: operational<boolean>(),
       priority_changed: operational<boolean>(),
+      /** Whether the settle assigns or unassigns the item. Never who. */
+      assignee_changed: operational<boolean>(),
       subitems_included: operational<boolean>(),
       subitem_count: operational<number>(),
       settle_id: operational(),

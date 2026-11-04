@@ -1,4 +1,4 @@
-import { normalizeSourceStatusKey } from "@ajour/shared";
+import { normalizeSourceStatusKey, type BacklogPerson } from "@ajour/shared";
 import type {
   LocalAppState,
   LocalPendingSourceWrite,
@@ -88,12 +88,13 @@ function moveLifecycleSnapshot(item: LocalWorkItem) {
  */
 function keptMarks(
   pending: LocalPendingSourceWrite | undefined,
-  sets: { state?: boolean; priority?: boolean },
+  sets: { state?: boolean; priority?: boolean; assignee?: boolean },
 ): Pick<LocalPendingSourceWrite, "heldAt" | "priorityInFlight"> {
   if (!pending) return {};
   const carriesHeldValue =
     (pending.state !== undefined && !sets.state) ||
-    (pending.priority !== undefined && !sets.priority);
+    (pending.priority !== undefined && !sets.priority) ||
+    (pending.assignee !== undefined && !sets.assignee);
   return {
     ...(pending.heldAt !== undefined && carriesHeldValue
       ? { heldAt: pending.heldAt }
@@ -142,6 +143,7 @@ function withMoveSourceWrite(
       readyAt: now === undefined ? undefined : now + UNDO_WINDOW_MS,
       state: sourceStatusLabel,
       priority: workItem.pendingSourceWrite?.priority,
+      ...withWrittenAssignee(workItem.pendingSourceWrite?.assignee),
       ...keptMarks(workItem.pendingSourceWrite, { state: true }),
       previous: workItem.pendingSourceWrite?.previous ?? {
         sourceStatusKey: workItem.sourceStatusKey,
@@ -289,7 +291,11 @@ function withPriorityWrite(
       ? { settledImportedPriority: priority }
       : {}),
   };
-  if (writtenPriority === undefined && pending?.state === undefined) {
+  if (
+    writtenPriority === undefined &&
+    pending?.state === undefined &&
+    pending?.assignee === undefined
+  ) {
     return { ...shown, pendingSourceWrite: undefined };
   }
 
@@ -302,6 +308,7 @@ function withPriorityWrite(
       readyAt,
       state: pending?.state,
       priority: writtenPriority,
+      ...withWrittenAssignee(pending?.assignee),
       // A held state stays held: the user approves it in Sync review.
       ...keptMarks(pending, { priority: true }),
       previous: pending?.previous ?? {
@@ -765,6 +772,22 @@ function moveWithoutWrites(
 export interface BacklogSettleChange {
   state?: { name: string; done: boolean };
   priority?: PriorityLevel;
+  /** The person to assign the item to, or null to unassign it. */
+  assignee?: BacklogPerson | null;
+}
+
+/** A write's assignee, when it has one: null unassigns. */
+function withWrittenAssignee(
+  assignee: BacklogPerson | null | undefined,
+): Pick<LocalPendingSourceWrite, "assignee"> {
+  return assignee === undefined ? {} : { assignee };
+}
+
+/** The id a write sends for its assignee, or undefined when it has none. */
+function writtenAssigneeId(write: LocalPendingSourceWrite | undefined) {
+  return write?.assignee === undefined
+    ? undefined
+    : (write.assignee?.id ?? null);
 }
 
 /** Only source state or imported priority changes can end a snooze early. */
@@ -794,6 +817,7 @@ export function sourceChangeSnooze(
 interface SettleSourceChange {
   state?: string;
   priority?: PriorityLevel;
+  assignee?: BacklogPerson | null;
   /** Undefined when the source already has every value. */
   write?: Omit<LocalPendingSourceWrite, "readyAt">;
 }
@@ -822,7 +846,15 @@ function getSourceWrite(
     change.priority !== workItem.importedPriority
       ? change.priority
       : undefined;
-  if (state === undefined && priority === undefined) return undefined;
+  // An item whose assignee isn't known yet writes whoever the user picked.
+  const assignee =
+    change.assignee !== undefined &&
+    (workItem.assignee === undefined ||
+      (workItem.assignee?.id ?? null) !== (change.assignee?.id ?? null))
+      ? change.assignee
+      : undefined;
+  if (state === undefined && priority === undefined && assignee === undefined)
+    return undefined;
 
   const pending = workItem.pendingSourceWrite;
   const writtenState = state ?? pending?.state;
@@ -830,30 +862,44 @@ function getSourceWrite(
     priority === undefined
       ? pending?.priority
       : getWrittenPriority(workItem, priority);
-  if (writtenState === undefined && writtenPriority === undefined) {
+  const writtenAssignee = assignee !== undefined ? assignee : pending?.assignee;
+  if (
+    writtenState === undefined &&
+    writtenPriority === undefined &&
+    writtenAssignee === undefined
+  ) {
     return { state, priority };
   }
 
   if (pending) {
+    // A failed write puts back the assignee the item had before it.
+    const firstAssignee =
+      assignee !== undefined && pending.assignee === undefined
+        ? { assignee: workItem.assignee }
+        : {};
     return {
       state,
       priority,
+      assignee,
       write: {
         state: writtenState,
         priority: writtenPriority,
+        ...withWrittenAssignee(writtenAssignee),
         ...keptMarks(pending, {
           state: state !== undefined,
           priority: priority !== undefined,
+          assignee: assignee !== undefined,
         }),
         // A failed state write puts the item back in the state it left.
         previous:
           state !== undefined && !("workflowStateId" in pending.previous)
             ? {
                 ...pending.previous,
+                ...firstAssignee,
                 workflowStateId: workItem.workflowStateId,
                 importedWorkflowStateId: workItem.importedWorkflowStateId,
               }
-            : pending.previous,
+            : { ...pending.previous, ...firstAssignee },
       },
     };
   }
@@ -861,14 +907,17 @@ function getSourceWrite(
   return {
     state,
     priority,
+    assignee,
     write: {
       state,
       priority: writtenPriority,
+      ...withWrittenAssignee(assignee),
       previous: {
         sourceStatusKey: workItem.sourceStatusKey,
         sourceStatusLabel: workItem.sourceStatusLabel,
         importedPriority: workItem.importedPriority,
         priority: workItem.priority,
+        ...(assignee !== undefined ? { assignee: workItem.assignee } : {}),
         ...(state !== undefined
           ? {
               workflowStateId: workItem.workflowStateId,
@@ -1025,7 +1074,7 @@ export function settleBacklogItem(
  */
 function withSourceWrite(
   workItem: LocalWorkItem,
-  { state, priority }: SettleSourceChange,
+  { state, priority, assignee }: SettleSourceChange,
   sourceWrite: LocalPendingSourceWrite | undefined,
 ): LocalWorkItem {
   const followsImportedPriority =
@@ -1045,10 +1094,14 @@ function withSourceWrite(
           priority: followsImportedPriority ? priority : workItem.priority,
         }
       : {}),
+    ...(assignee !== undefined ? { assignee } : {}),
   };
 }
 
-/** Recovery can advance while the state, priority and Undo deadline stay fixed. */
+/**
+ * Recovery can advance while the state, priority, assignee and Undo deadline
+ * stay fixed.
+ */
 export function hasSameSourceWriteRequest(
   left: LocalPendingSourceWrite | undefined,
   right: LocalPendingSourceWrite | undefined,
@@ -1057,6 +1110,7 @@ export function hasSameSourceWriteRequest(
     Boolean(left) === Boolean(right) &&
     left?.state === right?.state &&
     left?.priority === right?.priority &&
+    writtenAssigneeId(left) === writtenAssigneeId(right) &&
     left?.readyAt === right?.readyAt
   );
 }
@@ -1163,6 +1217,7 @@ export function completeSourceWrite(
           sourceStatusLabel: sent.sourceStatusLabel,
           importedPriority: sent.importedPriority,
           priority: sent.priority,
+          assignee: sent.assignee,
           workflowStateId,
           importedWorkflowStateId: sent.importedWorkflowStateId,
           lifecycle,
@@ -1261,6 +1316,9 @@ export function failSourceWrite(
     sourceStatusLabel: sourceWrite.previous.sourceStatusLabel,
     importedPriority: sourceWrite.previous.importedPriority,
     priority: sourceWrite.previous.priority,
+    ...(sourceWrite.assignee !== undefined
+      ? { assignee: sourceWrite.previous.assignee }
+      : {}),
   }));
   const returned =
     sourceWrite.previous.lifecycle &&

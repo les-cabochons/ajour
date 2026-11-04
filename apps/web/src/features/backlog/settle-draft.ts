@@ -1,5 +1,6 @@
 import {
   normalizeSourceStatusKey,
+  type BacklogPerson,
   type BacklogSettleState,
 } from "@ajour/shared";
 import type { BacklogSettleChange } from "@/domain/backlog/backlog-item-lifecycle";
@@ -9,6 +10,35 @@ import { parsePriorityInput } from "@/features/backlog/backlog-task-editor";
 export interface SettleStateGroup {
   category: string;
   states: BacklogSettleState[];
+}
+
+/**
+ * The Undo toast's title for a settle: what it did besides settling, then
+ * "settled" or "archived", such as "Commented, assigned to Ana Silva and
+ * settled". `assignee` is the new one, null when unassigned, or undefined
+ * when the settle kept it.
+ */
+export function settleToastTitle({
+  archived,
+  commented,
+  assignee,
+}: {
+  archived: boolean;
+  commented: boolean;
+  assignee?: BacklogPerson | null;
+}) {
+  const outcome = archived ? "archived" : "settled";
+  const done = [
+    commented ? "commented" : undefined,
+    assignee === undefined
+      ? undefined
+      : assignee === null
+        ? "unassigned"
+        : `assigned to ${assignee.displayName}`,
+  ].filter((part): part is string => part !== undefined);
+  if (done.length === 0) return `Backlog item ${outcome}`;
+  const title = `${done.join(", ")} and ${outcome}`;
+  return title.charAt(0).toUpperCase() + title.slice(1);
 }
 
 /** Groups states by category, in the order the plugin listed them. */
@@ -65,7 +95,11 @@ export function buildSettleChange(
   current: {
     sourceStatusLabel?: string;
     importedPriority?: PriorityLevel;
+    /** Null when no one has the item; absent when the plugin hasn't said. */
+    assignee?: BacklogPerson | null;
   },
+  /** The picked person, null for Unassigned, or undefined to keep the item's. */
+  assignee?: BacklogPerson | null,
 ): BacklogSettleChange | null {
   if (!isSettleStateDraftValid(states, stateName, current.sourceStatusLabel))
     return null;
@@ -78,8 +112,13 @@ export function buildSettleChange(
   }
 
   const state = findSettleState(states, stateName);
+  const reassigned =
+    assignee !== undefined &&
+    (current.assignee === undefined ||
+      (current.assignee?.id ?? null) !== (assignee?.id ?? null));
   return {
     state: state ? { name: state.name, done: state.done } : undefined,
     priority: level !== current.importedPriority ? level : undefined,
+    ...(reassigned ? { assignee } : {}),
   };
 }

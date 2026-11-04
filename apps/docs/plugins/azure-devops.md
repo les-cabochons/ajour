@@ -1,6 +1,6 @@
 # Azure DevOps
 
-The Azure DevOps plugin syncs your work items into Ajour's backlog, with their comments. It writes estimate and priority changes back, and when you settle or move an item, its new state. It also brings in your pull requests. See [Pull requests](#pull-requests).
+The Azure DevOps plugin syncs your work items into Ajour's backlog, with their comments. It writes estimate and priority changes back, and when you settle or move an item, its new state, and when you settle it, its new assignee. It also brings in your pull requests. See [Pull requests](#pull-requests).
 
 <Shot name="settings-plugin-azure-devops" alt="The Azure DevOps plugin page" />
 
@@ -10,7 +10,7 @@ The Azure DevOps plugin syncs your work items into Ajour's backlog, with their c
 2. In Azure DevOps, create a personal access token. Open **User settings › Personal access tokens › New Token**, and give it the **Work Items** scope:
    - **Read** to sync items and read their comments.
    - **Read & write** to also write estimates, states and priorities, and to post, edit and delete comments and react to them.
-   - To mention anyone in the organization, add **Identity › Read**. Without it, mentions suggest only the people on the item.
+   - To mention anyone in the organization, or assign an item to anyone when you settle it, add **Identity › Read**. Without it, Ajour suggests only the people on the item and recently active in its project.
    - For pull requests, add **Code › Read**, and **Project and Team › Read** for team review requests.
 3. In Ajour, open the plugin, turn it on if it is off, and press **Add a connection**. Fill in the fields below, and press **Add connection**.
 4. Press **Sync**. The items wait in [Sync review](/plugins/sync-review). Pick the ones you want and press **Sync selected to backlog**.
@@ -79,7 +79,7 @@ An item whose value is in no range, or has no priority, gets no priority in Ajou
 ## What it writes
 
 - **Estimates**: when you change an estimate in Ajour, the next sync writes it to the field you mapped. If the estimate also changed in Azure DevOps, Ajour asks you which to keep in [Sync review](/plugins/sync-review).
-- **State and priority**: when you settle an item, Ajour writes the state and priority in one update. When you move an item to another workflow state, it writes the state only, and when you change its priority, the priority only. These writes go after the Undo toast closes, or at once when you save the item editor. See [Settle and snooze](/backlog/settle-and-snooze).
+- **State, priority and assignee**: when you settle an item, Ajour writes the state, priority and assignee in one update. When you move an item to another workflow state, it writes the state only, and when you change its priority, the priority only. These writes go after the Undo toast closes, or at once when you save the item editor. See [Settle and snooze](/backlog/settle-and-snooze).
 - **Comments**: a comment you post or edit goes at once. A delete goes when its Undo toast closes.
 
 Work item URLs must belong to the organization of the connection. The plugin refuses to write elsewhere.
