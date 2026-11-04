@@ -55,6 +55,15 @@ export type TimesheetChange =
 
 export type TimesheetChangeKind = TimesheetChange["kind"];
 
+/** How many of the week's changes are of each kind, for the Changes heading. */
+export function countTimesheetChanges(
+  changes: readonly TimesheetChange[],
+): Record<TimesheetChangeKind, number> {
+  const counts = { added: 0, updated: 0, deleted: 0 };
+  for (const change of changes) counts[change.kind] += 1;
+  return counts;
+}
+
 /** The compared values of an entry or a copy, without anything else. */
 export function toCommitValues(
   values: TimesheetCommitValues,

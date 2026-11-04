@@ -706,6 +706,43 @@ describe("preferences, reloads and boot", () => {
     expect(JSON.stringify(sink.events)).not.toContain("Secret project");
   });
 
+  it("records collapsing and expanding the Commit page's Changes section", async () => {
+    const { sink } = await loadStore();
+    const { setCommitChangesSection } =
+      await import("./commit-changes-section");
+
+    setCommitChangesSection("collapsed");
+    setCommitChangesSection("collapsed");
+    setCommitChangesSection("expanded");
+
+    expect(sink.events).toMatchObject([
+      {
+        name: "preferences.update",
+        kind: "command",
+        outcome: "ok",
+        preferences: {
+          scope: "device",
+          setting: "commit_changes_section",
+          changed_keys: ["state"],
+          values: ["state=collapsed"],
+        },
+      },
+      {
+        name: "preferences.update",
+        outcome: "noop",
+        preferences: { setting: "commit_changes_section", changed_keys: [] },
+      },
+      {
+        name: "preferences.update",
+        outcome: "ok",
+        preferences: {
+          setting: "commit_changes_section",
+          values: ["state=expanded"],
+        },
+      },
+    ]);
+  });
+
   it("emits local_state.reload when another window writes", async () => {
     const { sink, localStore } = await loadStore();
     localStore.subscribe(() => undefined);

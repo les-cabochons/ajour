@@ -47,6 +47,19 @@ Feature: Commit the week
     When I expand the Changes section
     Then the Commit page lists only an "Updated" change for "API"
 
+  Scenario: The Changes section remembers that it was collapsed
+    Given I have a committed week of entries
+    When I delete Monday's "Login form" entry
+    And I change Monday's "API" entry to "2:30" hours
+    And I open the Commit page for the week of 2026-10-05
+    Then the Changes heading counts "1 updated, 1 deleted"
+    When I collapse the Changes section
+    And I open the Commit page for the week of 2026-10-05
+    Then the Commit page shows no change rows
+    And the Changes heading counts "1 updated, 1 deleted"
+    When I expand the Changes section
+    Then the Commit page lists 2 changes
+
   Scenario: Copy a line under its Workday name
     Given I have a committed week of entries
     And the Workday (agent) plugin adds project properties

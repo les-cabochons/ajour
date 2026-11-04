@@ -1278,16 +1278,36 @@
     margin-top: 1px;
   }
 
-  .commit-change.is-added .commit-change-symbol {
+  .is-added > .commit-change-symbol {
     color: var(--success);
   }
 
-  .commit-change.is-updated .commit-change-symbol {
+  .is-updated > .commit-change-symbol {
     color: var(--warning);
   }
 
-  .commit-change.is-deleted .commit-change-symbol {
+  .is-deleted > .commit-change-symbol {
     color: var(--destructive);
+  }
+
+  /* The heading's diff stat: "+ 3  ✎ 2  − 1" in the rows' symbols. */
+  .commit-change-stat {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.625rem;
+  }
+
+  .commit-change-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.125rem;
+    color: var(--text-secondary);
+  }
+
+  .commit-change-count > .commit-change-symbol {
+    width: 12px;
+    height: 12px;
+    margin-top: 0;
   }
 
   .commit-change.is-deleted .commit-change-work,

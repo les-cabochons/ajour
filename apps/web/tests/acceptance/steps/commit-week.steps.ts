@@ -225,6 +225,15 @@ When("I expand the Changes section", async ({ page }) => {
   await expect(changesHeading(page)).toHaveAttribute("aria-expanded", "true");
 });
 
+Then(
+  "the Changes heading counts {string}",
+  async ({ page }, counts: string) => {
+    await expect(page.getByRole("img", { name: counts })).toBeVisible({
+      timeout: 15_000,
+    });
+  },
+);
+
 Then("the Commit page shows no change rows", async ({ page }) => {
   await expect(changesHeading(page)).toHaveAttribute("aria-expanded", "false");
   await expect(changeList(page)).toHaveCount(0);
@@ -562,3 +571,4 @@ Then(
     ).toBeDisabled();
   },
 );
+

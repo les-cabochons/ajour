@@ -17,6 +17,7 @@ import {
   formatClockDuration,
 } from "@/domain/time/duration";
 import {
+  countTimesheetChanges,
   describeTimesheetCommitValues,
   type TimesheetChange,
   type TimesheetChangeKind,
@@ -203,6 +204,35 @@ function CommitChangeRow({
         after={after?.note}
       />
     </li>
+  );
+}
+
+const CHANGE_KINDS: TimesheetChangeKind[] = ["added", "updated", "deleted"];
+
+/**
+ * How many changes of each kind the week has, as a diff stat: the kind's
+ * symbol and color from the rows, then its count. A kind with none is left
+ * out, and nothing shows when there are no changes.
+ */
+export function CommitChangeStat({ changes }: { changes: TimesheetChange[] }) {
+  const counts = countTimesheetChanges(changes);
+  const kinds = CHANGE_KINDS.filter((kind) => counts[kind] > 0);
+  if (kinds.length === 0) return null;
+  const label = kinds
+    .map((kind) => `${counts[kind]} ${CHANGE_KIND_LABELS[kind].toLowerCase()}`)
+    .join(", ");
+  return (
+    <span role="img" aria-label={label} className="commit-change-stat">
+      {kinds.map((kind) => {
+        const Icon = CHANGE_KIND_ICONS[kind];
+        return (
+          <Value key={kind} className={cn("commit-change-count", `is-${kind}`)}>
+            <Icon aria-hidden className="commit-change-symbol" />
+            {counts[kind]}
+          </Value>
+        );
+      })}
+    </span>
   );
 }
 
