@@ -1,6 +1,9 @@
 import { expect, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 
+/** A form's submit button: Save on an edit, Create … on a new record. */
+const SAVE_OR_CREATE = /^(Save|Create (item|subitem|task))$/;
+
 const { Given, When, Then } = createBdd();
 
 function changeList(page: Page) {
@@ -128,7 +131,7 @@ When(
     const row = page.locator(".time-entry-row").filter({ hasText: note });
     await row.dblclick();
     await page.getByRole("textbox", { name: "Hours", exact: true }).fill(hours);
-    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByRole("button", { name: SAVE_OR_CREATE }).click();
     await expect(row).toContainText(hours);
   },
 );

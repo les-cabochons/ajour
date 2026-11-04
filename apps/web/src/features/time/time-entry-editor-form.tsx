@@ -408,17 +408,13 @@ export function TimeEntryEditorForm({
     <div
       ref={rootRef}
       className={cn("time-entry-editor flex flex-col gap-5", className)}
+      data-mode={target.kind}
       onKeyDown={handleKeyDown}
     >
       <div className="flex h-7 items-center justify-between gap-2">
-        <Title
-          className={
-            // A new entry has no record to name yet: its title is the dialog's.
-            target.kind === "create" && !selectedTask
-              ? "truncate text-base font-semibold"
-              : "truncate text-xs font-normal text-muted-foreground"
-          }
-        >
+        {/* One title for new and edit, the size every editor's is; the
+            record shows under it as one muted line (forms council round 3). */}
+        <Title className="truncate text-base font-semibold">
           {target.kind === "create" ? "New time entry" : "Edit time entry"}
         </Title>
         <div className="flex items-center">
@@ -448,37 +444,40 @@ export function TimeEntryEditorForm({
         </div>
       </div>
 
-      <header className="flex min-w-0 flex-col gap-1">
-        {target.kind === "create" && !selectedTask ? null : (
-          <p
-            className={cn(
-              "text-lg leading-6 font-semibold",
-              !selectedTask && "text-muted-foreground",
-            )}
-          >
-            {selectedTask?.name ?? (selectedProject ? "No task" : "No project")}
-          </p>
-        )}
-        <div className="time-entry-editor-meta">
-          {runningTimer ? (
-            <Chip tone="success">Running</Chip>
-          ) : lockReason ? (
-            <WeekLockChip />
-          ) : entry && isTimesheetEntryCommitted(entry) ? (
-            <Chip>Committed</Chip>
-          ) : null}
-          {selectedProject ? (
-            <Chip color={selectedProject.color}>
-              {getLocalProjectDisplayName(selectedProject)}
-            </Chip>
-          ) : null}
-          <span>
-            {formatEntryDate(
-              runningTimer ? runningTimer.localDate : fields.localDate,
-            )}
-          </span>
-        </div>
-      </header>
+      {(() => {
+        const status = runningTimer ? (
+          <Chip tone="success">Running</Chip>
+        ) : lockReason ? (
+          <WeekLockChip />
+        ) : entry && isTimesheetEntryCommitted(entry) ? (
+          <Chip>Committed</Chip>
+        ) : null;
+        // A new entry's date shows in its Date row, so the line skips it.
+        const showDate = target.kind !== "create";
+        if (!status && !selectedProject && !selectedTask && !showDate) {
+          return null;
+        }
+        return (
+          <header className="time-entry-editor-meta">
+            {status}
+            {selectedProject ? (
+              <Chip color={selectedProject.color}>
+                {getLocalProjectDisplayName(selectedProject)}
+              </Chip>
+            ) : null}
+            {selectedTask ? (
+              <span className="text-foreground">{selectedTask.name}</span>
+            ) : null}
+            {showDate ? (
+              <span>
+                {formatEntryDate(
+                  runningTimer ? runningTimer.localDate : fields.localDate,
+                )}
+              </span>
+            ) : null}
+          </header>
+        );
+      })()}
 
       <div className="flex flex-wrap items-center gap-2">
         {runningTimer ? (

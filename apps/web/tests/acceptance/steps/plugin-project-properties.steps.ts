@@ -1,6 +1,9 @@
 import { expect, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 
+/** A form's submit button: Save on an edit, Create … on a new record. */
+const SAVE_OR_CREATE = /^(Save|Create (item|subitem|task))$/;
+
 const { Given, When, Then } = createBdd();
 const cors = { "access-control-allow-origin": "*" };
 
@@ -78,7 +81,7 @@ When(
     await page.getByRole("option", { name: "Another task…" }).click();
     await editor.getByRole("combobox", { name: "Workday task" }).click();
     await page.getByRole("option", { name: workdayTask, exact: true }).click();
-    await editor.getByRole("button", { name: "Save", exact: true }).click();
+    await editor.getByRole("button", { name: SAVE_OR_CREATE }).click();
     await expect(editor).toBeHidden();
   },
 );
@@ -156,7 +159,7 @@ Then(
       editor.getByRole("combobox", { name: "Commits as" }),
     ).toHaveText(choice);
     await expect(
-      editor.getByRole("button", { name: "Save", exact: true }),
+      editor.getByRole("button", { name: SAVE_OR_CREATE }),
     ).toBeDisabled();
   },
 );
@@ -187,7 +190,7 @@ When(
     ).toBeVisible();
     await page.keyboard.press("Enter");
     await expect(picker).toHaveValue(workdayTask);
-    await editor.getByRole("button", { name: "Save", exact: true }).click();
+    await editor.getByRole("button", { name: SAVE_OR_CREATE }).click();
     await expect(editor).toBeHidden();
   },
 );
@@ -210,7 +213,7 @@ When(
     const editor = page.getByRole("complementary", { name: "Task editor" });
     await editor.getByRole("combobox", { name: "Commits as" }).click();
     await page.getByRole("option", { name: choice, exact: true }).click();
-    await editor.getByRole("button", { name: "Save", exact: true }).click();
+    await editor.getByRole("button", { name: SAVE_OR_CREATE }).click();
     await expect(editor).toBeHidden();
   },
 );
@@ -228,7 +231,7 @@ When(
 Then("Save is disabled and says {string}", async ({ page }, error: string) => {
   const editor = page.getByRole("complementary", { name: "Task editor" });
   await expect(
-    editor.getByRole("button", { name: "Save", exact: true }),
+    editor.getByRole("button", { name: SAVE_OR_CREATE }),
   ).toBeDisabled();
   await expect(editor.getByText(error)).toBeVisible();
   await editor.getByRole("button", { name: "Cancel", exact: true }).click();

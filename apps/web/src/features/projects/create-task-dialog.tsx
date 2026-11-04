@@ -212,7 +212,7 @@ function CreateTaskForm({
           ) : null}
         </FieldGroup>
         <DialogFooter className="mt-4">
-          <Button type="button" variant="outline" onClick={onCancel}>
+          <Button type="button" variant="ghost" onClick={onCancel}>
             Cancel
           </Button>
           <Button type="submit" disabled={!project || !trimmed}>

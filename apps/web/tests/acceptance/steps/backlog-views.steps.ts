@@ -1,5 +1,8 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
+
+/** A form's submit button: Save on an edit, Create … on a new record. */
+const SAVE_OR_CREATE = /^(Save|Create (item|subitem|task))$/;
 const { Given, When, Then } = createBdd();
 /** The peek beside the Backlog list. */
 const peekPanel = (page: Page) =>
@@ -822,7 +825,7 @@ When("I save the parent title as {string}", async ({ page }, title: string) => {
     name: "Backlog item editor",
   });
   await editor.getByRole("textbox", { name: "Item", exact: true }).fill(title);
-  await editor.getByRole("button", { name: "Save", exact: true }).click();
+  await editor.getByRole("button", { name: SAVE_OR_CREATE }).click();
 });
 Then("the peek shows {string}", async ({ page }, title: string) => {
   await expect(
@@ -1676,7 +1679,7 @@ When(
 When("I save the open Backlog editor", async ({ page }) => {
   await page
     .getByRole("complementary", { name: "Backlog item editor" })
-    .getByRole("button", { name: "Save", exact: true })
+    .getByRole("button", { name: SAVE_OR_CREATE })
     .click();
 });
 Then("the Backlog editor is closed", async ({ page }) => {
@@ -1776,7 +1779,7 @@ When("I add a Backlog item in In progress", async ({ page }) => {
   await editor
     .getByRole("textbox", { name: "Item", exact: true })
     .fill("New grouped item");
-  await editor.getByRole("button", { name: "Save", exact: true }).click();
+  await editor.getByRole("button", { name: SAVE_OR_CREATE }).click();
 });
 Then("the new Backlog item is in In progress", async ({ page }) => {
   await expect(
@@ -1825,7 +1828,7 @@ When("I add a Backlog item from the end of the list", async ({ page }) => {
   await editor
     .getByRole("textbox", { name: "Item", exact: true })
     .fill("New ungrouped item");
-  await editor.getByRole("button", { name: "Save", exact: true }).click();
+  await editor.getByRole("button", { name: SAVE_OR_CREATE }).click();
 });
 Then("the new Backlog item is in the list", async ({ page }) => {
   await expect(
@@ -2090,7 +2093,7 @@ When("I save the other item in To do", async ({ page }) => {
     .getByRole("combobox", { name: "Workflow state", exact: true })
     .click();
   await page.getByRole("option", { name: "To do", exact: true }).click();
-  await editor.getByRole("button", { name: "Save", exact: true }).click();
+  await editor.getByRole("button", { name: SAVE_OR_CREATE }).click();
 });
 
 When(

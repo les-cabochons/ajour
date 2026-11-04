@@ -2,6 +2,9 @@ import { expect, type Locator, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 import { viewSwitcher } from "../../fixtures/sidebar";
 
+/** A form's submit button: Save on an edit, Create … on a new record. */
+const SAVE_OR_CREATE = /^(Save|Create (item|subitem|task))$/;
+
 const { Given, When, Then } = createBdd();
 
 Given("I have a parent editor close fixture", async ({ page }) => {
@@ -60,7 +63,7 @@ When("I save its editor workflow as Done", async ({ page }) => {
     .getByRole("combobox", { name: "Workflow state", exact: true })
     .click();
   await page.getByRole("option", { name: "Done", exact: true }).click();
-  await editor.getByRole("button", { name: "Save", exact: true }).click();
+  await editor.getByRole("button", { name: SAVE_OR_CREATE }).click();
 });
 Given("the parent has a running entry", async ({ page }) => {
   await page.evaluate(async () => {
@@ -166,7 +169,7 @@ When("I change the parent draft title and description", async ({ page }) => {
     name: "Backlog item editor",
   });
   await editor
-    .getByPlaceholder("Item name", { exact: true })
+    .getByPlaceholder("What needs doing", { exact: true })
     .fill("Unsaved parent title");
   await editor
     .getByRole("textbox", { name: "Description", exact: true })
@@ -201,7 +204,7 @@ Then(
     });
     await expect(editor).toBeVisible();
     await expect(
-      editor.getByPlaceholder("Item name", { exact: true }),
+      editor.getByPlaceholder("What needs doing", { exact: true }),
     ).toHaveValue("Unsaved parent title");
     await expect(
       editor.getByRole("textbox", { name: "Description", exact: true }),
@@ -774,7 +777,7 @@ When(
     await page.getByText(task, { exact: true }).click();
     const editor = page.getByRole("complementary", { name: "Task editor" });
     await editor.getByRole("textbox", { name: "Name" }).fill(name);
-    await editor.getByRole("button", { name: "Save" }).click();
+    await editor.getByRole("button", { name: SAVE_OR_CREATE }).click();
     await expect(editor).toBeHidden();
   },
 );
@@ -998,7 +1001,7 @@ When(
       .click();
     // The panel's draft holds the slot until Save.
     expect(await readPinnedSlots(page)).toEqual([]);
-    await editor.getByRole("button", { name: "Save" }).click();
+    await editor.getByRole("button", { name: SAVE_OR_CREATE }).click();
     await expect(editor).toBeHidden();
   },
 );
@@ -1184,7 +1187,7 @@ When(
   "I change its hours to {string} and save",
   async ({ page }, hours: string) => {
     await page.getByRole("textbox", { name: "Hours" }).fill(hours);
-    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByRole("button", { name: SAVE_OR_CREATE }).click();
   },
 );
 
@@ -1219,7 +1222,7 @@ When(
 
 Then("Save waits for hours or Start", async ({ page }) => {
   await expect(
-    page.getByRole("button", { name: "Save", exact: true }),
+    page.getByRole("button", { name: SAVE_OR_CREATE }),
   ).toBeDisabled();
   await expect(page.getByText("Enter hours, or press Start")).toBeVisible();
   await expect(
@@ -1520,7 +1523,7 @@ Then("the combined project and task are selected", async ({ page }) => {
 
 When("I save one hour to the selected project and task", async ({ page }) => {
   await page.getByRole("textbox", { name: "Hours" }).fill("01:00");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("button", { name: SAVE_OR_CREATE }).click();
 });
 
 Then(
@@ -1838,7 +1841,7 @@ When(
     await dialog
       .getByRole("textbox", { name: "Item", exact: true })
       .fill(title);
-    await dialog.getByRole("button", { name: "Save", exact: true }).click();
+    await dialog.getByRole("button", { name: SAVE_OR_CREATE }).click();
     await expect(dialog).toBeHidden();
   },
 );
@@ -1881,7 +1884,9 @@ Then(
   "the New backlog item dialog opens over the open entry",
   async ({ page }) => {
     await expect(
-      newBacklogItemDialog(page).getByPlaceholder("Item name", { exact: true }),
+      newBacklogItemDialog(page).getByPlaceholder("What needs doing", {
+        exact: true,
+      }),
     ).toBeFocused();
     await expect(page).toHaveURL(/\/time\/2026-10-05\?[^/]*entry=mon-dev-1/);
   },
@@ -2370,7 +2375,7 @@ When(
         .dblclick();
     }
     await page.getByLabel("Note", { exact: true }).fill("Changed note");
-    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByRole("button", { name: SAVE_OR_CREATE }).click();
   },
 );
 
@@ -3104,7 +3109,7 @@ When(
     await editor
       .getByRole("textbox", { name: "Hours", exact: true })
       .fill(hours);
-    await editor.getByRole("button", { name: "Save", exact: true }).click();
+    await editor.getByRole("button", { name: SAVE_OR_CREATE }).click();
     await expect(editor).toHaveCount(0);
   },
 );

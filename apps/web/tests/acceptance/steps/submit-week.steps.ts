@@ -1,6 +1,9 @@
 import { expect, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 
+/** A form's submit button: Save on an edit, Create … on a new record. */
+const SAVE_OR_CREATE = /^(Save|Create (item|subitem|task))$/;
+
 const { When, Then } = createBdd();
 
 function weekSummary(page: Page) {
@@ -42,7 +45,7 @@ Then("the entry editor is read-only", async ({ page }) => {
   await expect(editor.getByText(lockReason)).toBeVisible();
   await expect(editor.getByLabel("Note")).toBeDisabled();
   await expect(
-    editor.getByRole("button", { name: "Save", exact: true }),
+    editor.getByRole("button", { name: SAVE_OR_CREATE }),
   ).toBeDisabled();
 });
 

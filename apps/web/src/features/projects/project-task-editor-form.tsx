@@ -124,7 +124,7 @@ export function ProjectTaskEditorForm({
           <Input
             id="project-task-editor-name"
             value={fields.name}
-            placeholder="Task name"
+            placeholder="Development"
             aria-invalid={Boolean(nameError)}
             onChange={(event) => onFieldsChange({ name: event.target.value })}
             onKeyDown={saveOnEnter}
@@ -213,7 +213,7 @@ export function ProjectTaskEditorForm({
           Cancel
         </Button>
         <Button type="button" disabled={!editor.canSave} onClick={onSave}>
-          Save
+          {editor.isNew ? "Create task" : "Save"}
         </Button>
       </footer>
     </div>

@@ -418,14 +418,14 @@ function PluginsHeader({
       <section className="settings-section">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="text-lg font-semibold text-foreground">Plugins</h1>
-            <p className="settings-section-desc mt-1">
+            <p className="settings-section-desc">
               Discover extensions, download the ones you need, then activate and
               configure them locally.
             </p>
           </div>
           {canInstall ? (
             <Button
+              variant="outline"
               disabled={isMutating || !allowUnsignedInstalls}
               title={
                 allowUnsignedInstalls
@@ -1094,8 +1094,9 @@ export function SettingsPluginsPage({
                 </p>
               </div>
               <Button
-                // While a form is open, its save is the one primary action.
-                variant={groupFormState ? "outline" : "default"}
+                // Opening a form is not finishing one: outline, as every
+                // button that opens a form or adds a row (forms council round 3).
+                variant="outline"
                 disabled={
                   isMutatingPlugin ||
                   overview?.pluginsEnabled === false ||

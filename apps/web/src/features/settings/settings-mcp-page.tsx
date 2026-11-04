@@ -80,7 +80,6 @@ export function SettingsMcpPage() {
   return (
     <div className="settings-sections settings-measure">
       <section className="settings-section">
-        <h2 className="settings-section-title">MCP</h2>
         <p className="settings-section-desc">
           Agents such as Claude Code and Codex can read and change your time
           entries, timers and backlog through MCP. Their model provider receives
@@ -161,7 +160,7 @@ export function SettingsMcpPage() {
                 onChange={(event) => setName(event.target.value)}
               />
             </Field>
-            <Button type="submit" disabled={!name.trim()}>
+            <Button type="submit" variant="outline" disabled={!name.trim()}>
               Add client
             </Button>
           </form>

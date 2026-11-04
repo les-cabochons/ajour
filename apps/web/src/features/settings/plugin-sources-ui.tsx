@@ -168,7 +168,7 @@ function PluginSourceReviewDialog({
           </section>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
             <Button disabled={isMutating} onClick={() => onConfirm(inspection)}>

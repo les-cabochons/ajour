@@ -651,12 +651,62 @@ export function BacklogItemEditorForm({
             value={fields.title}
             onChange={(event) => updateFields({ title: event.target.value })}
             onKeyDown={saveOnEnter}
-            placeholder={editor.isSubitem ? "Subitem name" : "Item name"}
+            placeholder="What needs doing"
             aria-invalid={Boolean(titleError)}
           />
           {titleError ? (
             <span className="field-error">{titleError}</span>
           ) : null}
+        </Field>
+
+        {/* The writing comes first: the name, then its description, then
+            the properties (forms council round 3). */}
+        <Field>
+          <FieldLabel htmlFor={`${idPrefix}-description`}>
+            Description
+          </FieldLabel>
+          {descriptionEditable ? (
+            <MarkdownEditor
+              id={`${idPrefix}-description`}
+              aria-label="Description"
+              value={fields.description}
+              onChange={(description) => updateFields({ description })}
+              placeholder="Markdown supported (optional)"
+              minLines={4}
+            />
+          ) : null}
+          {descriptionEditable && currentItem ? (
+            <>
+              <DescriptionLength
+                text={fields.description}
+                limit={descriptionLimit}
+              />
+              <SourceChangedWarning
+                item={currentItem}
+                latest={latestDescription}
+                typed={fields.description !== base.description}
+              />
+              <DescriptionSaveStatus
+                item={currentItem}
+                access={descriptionAccessState}
+              />
+            </>
+          ) : null}
+          {descriptionEditable ? null : (
+            <div id={`${idPrefix}-description`}>
+              {currentDescription ? (
+                <DescriptionText body={currentDescription} />
+              ) : (
+                <p className="text-sm text-muted-foreground">No description.</p>
+              )}
+              {workItem ? (
+                <SyncedDescriptionNote
+                  item={currentItem ?? workItem}
+                  access={descriptionAccessState}
+                />
+              ) : null}
+            </div>
+          )}
         </Field>
 
         <div
@@ -777,54 +827,6 @@ export function BacklogItemEditorForm({
           />
         </Field>
 
-        <Field>
-          <FieldLabel htmlFor={`${idPrefix}-description`}>
-            Description
-          </FieldLabel>
-          {descriptionEditable ? (
-            <MarkdownEditor
-              id={`${idPrefix}-description`}
-              aria-label="Description"
-              value={fields.description}
-              onChange={(description) => updateFields({ description })}
-              placeholder="Markdown supported (optional)"
-              minLines={4}
-            />
-          ) : null}
-          {descriptionEditable && currentItem ? (
-            <>
-              <DescriptionLength
-                text={fields.description}
-                limit={descriptionLimit}
-              />
-              <SourceChangedWarning
-                item={currentItem}
-                latest={latestDescription}
-                typed={fields.description !== base.description}
-              />
-              <DescriptionSaveStatus
-                item={currentItem}
-                access={descriptionAccessState}
-              />
-            </>
-          ) : null}
-          {descriptionEditable ? null : (
-            <div id={`${idPrefix}-description`}>
-              {currentDescription ? (
-                <DescriptionText body={currentDescription} />
-              ) : (
-                <p className="text-sm text-muted-foreground">No description.</p>
-              )}
-              {workItem ? (
-                <SyncedDescriptionNote
-                  item={currentItem ?? workItem}
-                  access={descriptionAccessState}
-                />
-              ) : null}
-            </div>
-          )}
-        </Field>
-
         <div className="grid grid-cols-3 gap-3">
           {BACKLOG_ESTIMATE_FIELD_KEYS.map((key) => {
             const error = validation[ESTIMATE_ERROR_KEYS[key]];
@@ -903,7 +905,12 @@ export function BacklogItemEditorForm({
           Cancel
         </Button>
         <Button type="button" disabled={!validation.canSave} onClick={save}>
-          Save
+          {/* A new record's button names what it makes (forms council round 3). */}
+          {target.kind === "create"
+            ? editor.isSubitem
+              ? "Create subitem"
+              : "Create item"
+            : "Save"}
         </Button>
       </footer>
     </div>

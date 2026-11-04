@@ -287,7 +287,6 @@ export function SettingsImportReviewPage() {
   return (
     <div className="settings-sections">
       <section className="settings-section">
-        <h2 className="settings-section-title">Sync review</h2>
         <p className="settings-section-desc">
           Review staged backlog imports and resolve description and estimate
           conflicts before the next sync pass. Child items stay one level deep

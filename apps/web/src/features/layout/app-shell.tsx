@@ -172,7 +172,9 @@ function DefaultPageHeader({
           : pathname.startsWith("/pull-requests")
             ? "Pull requests"
             : "Ajour";
-  return <PageTitle as="div">{title}</PageTitle>;
+  // A settings page's name heads it from the top bar; the page restates it
+  // nowhere (forms council round 3).
+  return <PageTitle as={settingsPage ? "h1" : "div"}>{title}</PageTitle>;
 }
 
 /**
@@ -551,6 +553,12 @@ export function AppShell() {
     () => timeRouteDate ?? todayIsoDate(),
   );
   const isNarrowView = useIsNarrowView();
+  const narrowSettingsPage =
+    isNarrowView && isSettingsActive
+      ? getSettingsPages("wide", false, true).find((page) =>
+          pathname.startsWith(page.to),
+        )
+      : undefined;
   // In wide windows Settings fills the left column, so Cmd/Ctrl+B waits.
   const appSidebar = useAppSidebar({
     suspended: isSettingsActive && !isNarrowView,
@@ -705,9 +713,16 @@ export function AppShell() {
                     section elsewhere (council round 6). It is hidden on
                     desktop, where the page header does this. */}
                 {isNarrowView && !isTimeActive ? (
-                  <span className="ajour-titlebar-section">
-                    {section ? SECTION_TITLES[section] : null}
-                  </span>
+                  narrowSettingsPage ? (
+                    // A settings page names itself here, its one heading.
+                    <h1 className="ajour-titlebar-section">
+                      {narrowSettingsPage.label}
+                    </h1>
+                  ) : (
+                    <span className="ajour-titlebar-section">
+                      {section ? SECTION_TITLES[section] : null}
+                    </span>
+                  )
                 ) : (
                   <TimeDatePicker
                     date={selectedTimeDate}

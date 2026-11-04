@@ -115,7 +115,7 @@ export function ProjectFormDialog({
                 <Input
                   id="project-form-name"
                   autoFocus
-                  placeholder="Full name"
+                  placeholder="Atlas platform redesign"
                   value={fields.name}
                   onChange={(event) =>
                     setFields((current) =>
@@ -131,7 +131,7 @@ export function ProjectFormDialog({
               </FieldLabel>
               <Input
                 id="project-form-display-name"
-                placeholder="Display name"
+                placeholder="The short name lists show"
                 value={fields.displayName}
                 onChange={(event) =>
                   update({ displayName: event.target.value })
@@ -143,7 +143,7 @@ export function ProjectFormDialog({
                 <FieldLabel htmlFor="project-form-code">Code</FieldLabel>
                 <Input
                   id="project-form-code"
-                  placeholder="Code"
+                  placeholder="ATL"
                   value={fields.code}
                   onChange={(event) => update({ code: event.target.value })}
                 />

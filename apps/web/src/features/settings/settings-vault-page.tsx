@@ -168,14 +168,12 @@ export function SettingsVaultPage() {
   return (
     <div className="settings-sections settings-measure">
       <section className="settings-section">
-        <h1
+        {/* The top bar names the page; its lead line is where focus returns. */}
+        <p
           id={VAULT_HEADING_ID}
           tabIndex={-1}
-          className="text-lg font-semibold text-foreground outline-none"
+          className="settings-section-desc outline-none"
         >
-          Vault
-        </h1>
-        <p className="settings-section-desc">
           Every secret Ajour holds on this computer, encrypted by the operating
           system. Ajour never shows or copies a saved value, and plugins never
           receive one.

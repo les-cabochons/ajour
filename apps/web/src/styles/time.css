@@ -1825,6 +1825,16 @@
   background: var(--field-bg);
 }
 
+/* A new entry is a form to fill, not a record to read: its fields show at
+   rest (forms council round 3). */
+.time-entry-editor[data-mode="create"]
+  .time-entry-fields
+  dd
+  :is(.time-entry-task-picker, [data-slot="input"]) {
+  border-color: var(--field-border);
+  background: var(--field-bg);
+}
+
 .time-entry-fields dd [data-slot="input"][aria-invalid="true"] {
   border-color: var(--destructive);
 }

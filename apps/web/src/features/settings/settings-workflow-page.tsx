@@ -214,6 +214,7 @@ export function SettingsWorkflowPage() {
               onChange={setNewStatusColor}
             />
             <Button
+              variant="outline"
               onClick={handleAddStatus}
               disabled={newStatusName.trim().length === 0}
             >

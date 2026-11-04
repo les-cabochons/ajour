@@ -99,14 +99,17 @@ export function WorkflowSourceMapping({
       {groups.map((connection) => (
         <section key={connection.key} className="backlog-settings-source-group">
           <div className="backlog-settings-source-header">
-            {connection.tenantLabel ? (
+            <h3 className="backlog-settings-source-title">
+              {connection.connectionLabel}
+            </h3>
+            {/* The tenant, under the label, and only when it says more. */}
+            {connection.tenantLabel &&
+            connection.tenantLabel.trim().toLowerCase() !==
+              connection.connectionLabel.trim().toLowerCase() ? (
               <div className="backlog-settings-source-kicker">
                 {connection.tenantLabel}
               </div>
             ) : null}
-            <h3 className="backlog-settings-source-title">
-              {connection.connectionLabel}
-            </h3>
           </div>
 
           {connection.projects

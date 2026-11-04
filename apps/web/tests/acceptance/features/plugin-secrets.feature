@@ -111,7 +111,7 @@ Feature: Saved secrets show their state
     When I open the Vault at 1280 pixels wide
     And I remove "Jira (not installed)" from the Vault and confirm
     Then the Vault no longer lists "Jira (not installed)"
-    And focus is on the Vault heading
+    And focus is on the Vault page
     And the API was asked to remove the data of "jira"
 
   Scenario: Say when Ajour can't protect credentials, and try again

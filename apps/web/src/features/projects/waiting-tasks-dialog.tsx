@@ -189,7 +189,7 @@ export function WaitingTasksDialogHost() {
           </p>
         ) : null}
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => answer(false)}>
+          <Button type="button" variant="ghost" onClick={() => answer(false)}>
             Cancel
           </Button>
           <Button type="button" disabled={twice} onClick={() => answer(true)}>

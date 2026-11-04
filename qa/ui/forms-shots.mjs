@@ -313,13 +313,6 @@ const shots = [
     full: true,
     run: (page) => go(page, "/time/today/commit"),
   },
-  {
-    name: "commit-under-pace",
-    run: async (page) => {
-      await go(page, "/time/2026-10-05/commit");
-      await page.getByRole("button", { name: "Submit week" }).click();
-    },
-  },
   // Backlog
   {
     name: "backlog-new-in-group",
@@ -459,17 +452,6 @@ const shots = [
     },
   },
   // Projects
-  {
-    name: "project-form-edit",
-    run: async (page) => {
-      await go(page, "/projects");
-      await page
-        .getByText("Atlas platform", { exact: true })
-        .first()
-        .click({ button: "right" });
-      await page.getByRole("menuitem", { name: "Edit" }).first().click();
-    },
-  },
   {
     name: "project-form-icon-popover",
     run: async (page) => {

@@ -1,6 +1,9 @@
 import { expect, type Page, type Route } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 
+/** A form's submit button: Save on an edit, Create … on a new record. */
+const SAVE_OR_CREATE = /^(Save|Create (item|subitem|task))$/;
+
 const { Given, When, Then } = createBdd();
 const apiUrl = "http://127.0.0.1:8787";
 const cors = { "access-control-allow-origin": "*" };
@@ -898,7 +901,7 @@ When("I replace the API key with {string}", async ({ page }, token: string) => {
 });
 
 When("I save the task settings", async ({ page }) => {
-  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("button", { name: SAVE_OR_CREATE }).click();
   await expect.poll(() => mock.agentSaves.length).toBe(1);
 });
 
@@ -953,6 +956,7 @@ Then("focus is on the token input", async ({ page }) => {
   await expect(page.locator("#secret-token")).toBeFocused();
 });
 
-Then("focus is on the Vault heading", async ({ page }) => {
-  await expect(page.getByRole("heading", { name: "Vault" })).toBeFocused();
+Then("focus is on the Vault page", async ({ page }) => {
+  // The page's lead line, under the top bar's title.
+  await expect(page.locator("#vault-heading")).toBeFocused();
 });
