@@ -572,7 +572,12 @@ export function BacklogItemEditorForm({
     >
       <header className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <Title className="text-sm font-semibold">
+          {/* In a dialog the title takes the dialog's size, as every dialog's does. */}
+          <Title
+            className={
+              surface === "dialog" ? undefined : "text-sm font-semibold"
+            }
+          >
             {getEditorTitle(target, editor.isSubitem)}
           </Title>
           {parent ? (

@@ -57,7 +57,7 @@ export function SettingsMcpPage() {
   if (state.kind === "loading") return null;
   if (state.kind !== "ready") {
     return (
-      <div className="settings-sections">
+      <div className="settings-sections settings-measure">
         <p className="settings-section-desc">
           {state.kind === "unavailable"
             ? "MCP needs the Ajour desktop app or the local API."
@@ -78,7 +78,7 @@ export function SettingsMcpPage() {
   };
 
   return (
-    <div className="settings-sections">
+    <div className="settings-sections settings-measure">
       <section className="settings-section">
         <h2 className="settings-section-title">MCP</h2>
         <p className="settings-section-desc">

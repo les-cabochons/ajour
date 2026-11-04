@@ -1150,9 +1150,13 @@ export function SettingsPluginsPage({
                             connection={connection}
                           />
                         </div>
-                        <p className="text-[13px] break-words text-muted-foreground">
-                          {connection.tenantLabel}
-                        </p>
+                        {/* A tenant named like its connection says nothing new. */}
+                        {connection.tenantLabel.trim().toLowerCase() !==
+                        connection.label.trim().toLowerCase() ? (
+                          <p className="text-[13px] break-words text-muted-foreground">
+                            {connection.tenantLabel}
+                          </p>
+                        ) : null}
                         {!connection.autoSync &&
                         pluginHasBacklog(group.plugin) ? (
                           <p className="text-xs text-[var(--text-tertiary)]">
@@ -1581,7 +1585,7 @@ export function SettingsPluginsPage({
 
   if (pluginId) {
     return (
-      <div className="settings-sections">
+      <div className="settings-sections settings-measure">
         {selectedDisplayEntry?.pluginGroup ? (
           renderPluginDetail(
             selectedDisplayEntry.catalog,
@@ -1613,7 +1617,7 @@ export function SettingsPluginsPage({
 
   if (pluginApiMissing) {
     return (
-      <div className="settings-sections">
+      <div className="settings-sections settings-measure">
         <section className="settings-section">
           <h1 className="text-lg font-semibold text-foreground">Plugins</h1>
           {renderMessages()}
@@ -1623,7 +1627,7 @@ export function SettingsPluginsPage({
   }
 
   return (
-    <div className="settings-sections">
+    <div className="settings-sections settings-measure">
       <PluginsHeader
         canInstall={canInstallPlugins}
         isMutating={isMutatingPlugin}

@@ -166,7 +166,7 @@ export function SettingsVaultPage() {
   const notice = vaultNotice(overview?.vault);
 
   return (
-    <div className="settings-sections">
+    <div className="settings-sections settings-measure">
       <section className="settings-section">
         <h1
           id={VAULT_HEADING_ID}

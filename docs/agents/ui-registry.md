@@ -52,6 +52,8 @@ The redesign direction decided on 2026-10-14: Linear's density and structure, Ve
 - Borders and muted backgrounds carry most hierarchy.
 - Shadows are reserved for popovers, dialogs, drag states, and elevated overlays.
 - App settings surfaces use `AppPanel` and `SettingRow` from `apps/web/src/components/app-surface.tsx`; neither draws a border or background. Keep `settings-panel` and `settings-row` class ownership inside that module.
+- Dialogs share one anatomy: `DialogTitle` at 16px semibold with an optional one-line muted description naming what the dialog acts on (never one listing its fields), the body, then a ghost Cancel and the primary, which carries no icon. The overlay is plain black at 40% (60% in dark), never blurred. A new time entry's dialog titles itself "New time entry" at that size until a task names the record. The New project form puts the icon in a square button before Full name, opening the presets and upload in a `Popover`; Snooze's custom time is a `DateField` and a typed HH:MM, never the browser's datetime control (forms council round 2).
+- Settings pages of rows (General, Plugins, Vault, MCP, Agents, Backlog, Calendar) keep `settings-measure`, 672px, so labels and controls stay close; pages of tables (Workflow, Projects, Time entries, Sync review) use the full width.
 - Status, empty, and warning messages use `MessagePanel` from `apps/web/src/components/app-surface.tsx`. Keep `message-panel` class ownership inside that module.
 - Icon/title/body callouts use `SurfaceCallout` from `apps/web/src/components/app-surface.tsx`.
 
@@ -231,7 +233,8 @@ Last updated: 2026-10-25
 
 **Secret field.** `PluginFieldInput` renders `SecretFieldInput` for every field a plugin marks `secret`, whatever its type, in connection forms and in agent task settings. No mask and no saved value: the API sends none, and a form starts every secret empty. Patterns used: `Field`, `Chip`, `Button`, `AlertDialog` and `DateField`; nothing new.
 
-- A new connection shows the password input alone. An existing connection shows a row: the state `Chip` (`describeSecret`), the last use in `text-xs` tertiary, then Replace (outline `sm`) and Remove (ghost `sm`) trailing. A field with no secret shows the "Not set" chip over its input.
+- A new connection shows the password input alone. An existing connection puts the state on the label's line: the label, the state `Chip` (`describeSecret`), the last use in `text-xs` tertiary, then Replace (outline `sm`) and Remove (ghost `sm`) trailing (forms council round 2). A field with no secret shows the "Not set" chip beside its label.
+- Help longer than 120 characters shows its first sentence and a More button that reveals the rest in place (`FieldHelp`, `features/settings/field-help.tsx`); every plugin field uses it. The secret's own line speaks of the controls in view: "Replace pastes a new one, and Remove …" only while a saved secret shows them, else "Ajour keeps it encrypted on this computer and never shows it again."
 - Replace opens an empty `type="password"` input with Cancel beside it, and keeps the chip above. A secret the service refused (Token rejected) opens with Replace open.
 - Remove opens an `AlertDialog` that says what happens to the connection, and acts at once, not with the form's Save.
 - Under it, a `DateField` labelled "<Field> expires on (optional)" and the line "A reminder only. Ajour keeps using it after this date." It shows once the field holds or is given a secret.

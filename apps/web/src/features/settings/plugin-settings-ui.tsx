@@ -1,7 +1,6 @@
 import {
   Field,
   FieldContent,
-  FieldDescription,
   FieldLabel,
   FieldTitle,
 } from "@/components/ui/field";
@@ -9,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
 import type { PluginField, PluginFieldValue } from "@ajour/shared";
+import { FieldHelp } from "./field-help";
 import { SecretFieldInput, type SecretFieldBinding } from "./secret-field";
 
 /**
@@ -65,7 +65,7 @@ function PluginFieldInput({
         />
         <FieldContent>
           <FieldTitle>{label}</FieldTitle>
-          {help ? <FieldDescription>{help}</FieldDescription> : null}
+          {help ? <FieldHelp text={help} /> : null}
         </FieldContent>
       </Field>
     );
@@ -83,7 +83,7 @@ function PluginFieldInput({
             onChange={onChange}
             options={field.options ?? []}
           />
-          {help ? <FieldDescription>{help}</FieldDescription> : null}
+          {help ? <FieldHelp text={help} /> : null}
         </FieldContent>
       </Field>
     );
@@ -126,7 +126,7 @@ function PluginFieldInput({
           placeholder={field.placeholder}
           autoComplete="off"
         />
-        {help ? <FieldDescription>{help}</FieldDescription> : null}
+        {help ? <FieldHelp text={help} /> : null}
       </FieldContent>
     </Field>
   );

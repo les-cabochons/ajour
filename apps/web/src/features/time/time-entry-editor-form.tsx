@@ -411,7 +411,14 @@ export function TimeEntryEditorForm({
       onKeyDown={handleKeyDown}
     >
       <div className="flex h-7 items-center justify-between gap-2">
-        <Title className="truncate text-xs font-normal text-muted-foreground">
+        <Title
+          className={
+            // A new entry has no record to name yet: its title is the dialog's.
+            target.kind === "create" && !selectedTask
+              ? "truncate text-base font-semibold"
+              : "truncate text-xs font-normal text-muted-foreground"
+          }
+        >
           {target.kind === "create" ? "New time entry" : "Edit time entry"}
         </Title>
         <div className="flex items-center">
@@ -442,14 +449,16 @@ export function TimeEntryEditorForm({
       </div>
 
       <header className="flex min-w-0 flex-col gap-1">
-        <p
-          className={cn(
-            "text-lg leading-6 font-semibold",
-            !selectedTask && "text-muted-foreground",
-          )}
-        >
-          {selectedTask?.name ?? (selectedProject ? "No task" : "No project")}
-        </p>
+        {target.kind === "create" && !selectedTask ? null : (
+          <p
+            className={cn(
+              "text-lg leading-6 font-semibold",
+              !selectedTask && "text-muted-foreground",
+            )}
+          >
+            {selectedTask?.name ?? (selectedProject ? "No task" : "No project")}
+          </p>
+        )}
         <div className="time-entry-editor-meta">
           {runningTimer ? (
             <Chip tone="success">Running</Chip>

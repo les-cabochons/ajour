@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
+import { FieldHelp } from "./field-help";
 import { DateField } from "@/components/ui/date-field";
 import {
   Field,
@@ -91,12 +92,13 @@ export function SecretFieldInput({
 
   return (
     <Field>
-      <FieldLabel htmlFor={showInput ? inputId : undefined}>
-        {field.label}
-      </FieldLabel>
-      <FieldContent>
+      {/* The label, the saved state and its actions share one line. */}
+      <div className="flex min-h-7 flex-wrap items-center gap-2">
+        <FieldLabel htmlFor={showInput ? inputId : undefined}>
+          {field.label}
+        </FieldLabel>
         {existing ? (
-          <div className="flex flex-wrap items-center gap-2">
+          <>
             <Chip tone={state.tone} data-secret-state={state.kind}>
               {state.label}
             </Chip>
@@ -135,8 +137,10 @@ export function SecretFieldInput({
                 ) : null}
               </>
             ) : null}
-          </div>
+          </>
         ) : null}
+      </div>
+      <FieldContent>
         {showInput ? (
           <div className="flex gap-2">
             <Input
@@ -169,12 +173,15 @@ export function SecretFieldInput({
         {blocked ? (
           <FieldDescription>{binding.blockedReason}</FieldDescription>
         ) : (
-          <FieldDescription>
-            {field.helpText ? `${field.helpText} ` : ""}
-            {existing
-              ? `Ajour never shows a saved secret. Replace pastes a new one, and Remove ${field.required ? "pauses the connection until one is added" : "deletes it"}.`
-              : "Ajour keeps it encrypted on this computer and never shows it again."}
-          </FieldDescription>
+          // What Ajour does with the secret speaks of the controls in view:
+          // Replace and Remove only once a secret is saved.
+          <FieldHelp
+            text={`${field.helpText ? `${field.helpText} ` : ""}${
+              hasSecret && !replacing
+                ? `Ajour never shows a saved secret. Replace pastes a new one, and Remove ${field.required ? "pauses the connection until one is added" : "deletes it"}.`
+                : "Ajour keeps it encrypted on this computer and never shows it again."
+            }`}
+          />
         )}
         {showExpiry ? (
           <div className="flex max-w-xs flex-col gap-1 pt-2">

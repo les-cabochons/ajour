@@ -102,7 +102,7 @@ export function SettingsCalendarPage() {
   );
 
   return (
-    <div className="settings-sections">
+    <div className="settings-sections settings-measure">
       {sources.length === 0 ? (
         <MessagePanel>
           Turn on a calendar plugin and add a connection in Settings, Plugins to

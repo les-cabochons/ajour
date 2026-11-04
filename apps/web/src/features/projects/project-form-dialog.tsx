@@ -4,7 +4,6 @@ import { ColorField } from "@/components/ui/color-field";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -20,6 +19,12 @@ import {
   type ProjectFormValues,
 } from "@/features/projects/project-form";
 import { ProjectIconField } from "@/features/projects/project-icon-field";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { PROJECT_ICON_PRESETS, ProjectIcon } from "@/lib/project-icons";
 
 /**
  * The project form, opened by "New project" and by Edit in the project's action set.
@@ -53,6 +58,14 @@ export function ProjectFormDialog({
     }
   }
 
+  const iconLabel =
+    fields.icon.kind === "upload"
+      ? "Uploaded favicon"
+      : (PROJECT_ICON_PRESETS.find(
+          (preset) =>
+            fields.icon.kind === "preset" && preset.name === fields.icon.name,
+        )?.label ?? "Preset");
+
   return (
     <Dialog
       open
@@ -65,25 +78,52 @@ export function ProjectFormDialog({
             <DialogTitle>
               {isCreate ? "New project" : "Edit project"}
             </DialogTitle>
-            <DialogDescription>
-              Name, display name, code, icon and color.
-            </DialogDescription>
           </DialogHeader>
 
           <FieldGroup className="gap-4">
             <Field>
               <FieldLabel htmlFor="project-form-name">Full name</FieldLabel>
-              <Input
-                id="project-form-name"
-                autoFocus
-                placeholder="Full name"
-                value={fields.name}
-                onChange={(event) =>
-                  setFields((current) =>
-                    setProjectFormName(current, event.target.value),
-                  )
-                }
-              />
+              {/* The icon sits before the name, as in Linear's new project
+                  form; its presets and upload open on demand. */}
+              <div className="flex items-center gap-2">
+                <Popover>
+                  <PopoverTrigger
+                    render={
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="shrink-0"
+                        aria-label={`Project icon: ${iconLabel}`}
+                      />
+                    }
+                  >
+                    <ProjectIcon
+                      icon={fields.icon}
+                      color={fields.color}
+                      className="size-4"
+                    />
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-80">
+                    <ProjectIconField
+                      icon={fields.icon}
+                      color={fields.color}
+                      onChange={(icon) => update({ icon })}
+                    />
+                  </PopoverContent>
+                </Popover>
+                <Input
+                  id="project-form-name"
+                  autoFocus
+                  placeholder="Full name"
+                  value={fields.name}
+                  onChange={(event) =>
+                    setFields((current) =>
+                      setProjectFormName(current, event.target.value),
+                    )
+                  }
+                />
+              </div>
             </Field>
             <Field>
               <FieldLabel htmlFor="project-form-display-name">
@@ -98,11 +138,6 @@ export function ProjectFormDialog({
                 }
               />
             </Field>
-            <ProjectIconField
-              icon={fields.icon}
-              color={fields.color}
-              onChange={(icon) => update({ icon })}
-            />
             <div className="grid gap-3 desktop:grid-cols-[1fr_110px]">
               <Field>
                 <FieldLabel htmlFor="project-form-code">Code</FieldLabel>
