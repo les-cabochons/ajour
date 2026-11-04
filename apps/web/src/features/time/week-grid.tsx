@@ -881,6 +881,8 @@ export function WeekGrid({
                   <DisabledReason label="Add row" reason={lockReason}>
                     <Button
                       variant="ghost"
+                      // Regular weight, like "+ New entry" and "+ New task".
+                      className="font-normal text-muted-foreground"
                       disabled={lockReason !== undefined}
                       onClick={() => setIsAddingRow(true)}
                     >
@@ -904,7 +906,7 @@ export function WeekGrid({
                     day.totalMs === 0 && "is-zero",
                   )}
                 >
-                  {formatClockDuration(day.totalMs)}
+                  {day.totalMs === 0 ? "–" : formatClockDuration(day.totalMs)}
                 </TableCell>
               ))}
               <TableCell className="weekly-grid-total-cell">

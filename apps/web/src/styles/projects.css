@@ -253,15 +253,18 @@
     margin-top: 0.75rem;
   }
 
+  /* On the tab row's right, level with the tabs. */
+  .project-tabs {
+    position: relative;
+  }
+
   .project-task-toolbar {
+    position: absolute;
+    top: 0;
+    right: 0;
     display: flex;
     align-items: center;
     gap: 0.75rem;
-  }
-
-  .project-task-toolbar > h2 {
-    flex: 1;
-    margin: 0;
   }
 
   .project-task-filter-tabs .toggle-item {
@@ -480,6 +483,14 @@
 /* Within budget reads as plain text: green means running only. */
 .project-task-consumed.is-success {
   color: var(--text);
+}
+
+.project-figure-consumed.is-warning {
+  color: var(--warning);
+}
+
+.project-figure-consumed.is-danger {
+  color: var(--danger);
 }
 
 .project-task-consumed.is-warning {

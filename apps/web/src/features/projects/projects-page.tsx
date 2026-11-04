@@ -46,7 +46,10 @@ import {
   normalizeProjectTaskBudgetMs,
   type ProjectTaskConsumedTone,
 } from "@/domain/projects/task-budget";
-import { getProjectTaskBillableValueLabel } from "@/features/projects/project-task-options";
+import {
+  getProjectTaskBillableValueLabel,
+  isProjectTaskBillable,
+} from "@/features/projects/project-task-options";
 import {
   getLocalProjectDisplayName,
   type LocalProject,
@@ -1001,7 +1004,10 @@ function ProjectDetail({
             projectLocalOnly={project.localOnly}
           />
           {task.pinnedSlot ? <PinnedSlotBadge slot={task.pinnedSlot} /> : null}
-          <Chip>{getProjectTaskBillableValueLabel(task)}</Chip>
+          {/* Billable is the default: only the exception carries a chip. */}
+          {isProjectTaskBillable(task) ? null : (
+            <Chip>{getProjectTaskBillableValueLabel(task)}</Chip>
+          )}
           {task.status === "archived" ? <Chip>Archived</Chip> : null}
         </td>
         <td className="project-task-trailing">
@@ -1048,7 +1054,26 @@ function ProjectDetail({
         }}
       />
 
+      {/* The top bar names the page, as the item page's breadcrumb does
+          (council round 5). */}
       <PageHeader
+        breadcrumb={
+          isNarrowView
+            ? undefined
+            : [
+                { label: "Projects", to: "/projects", onClick: onLeave },
+                {
+                  label: getLocalProjectDisplayName(project),
+                  icon: (
+                    <ProjectIcon
+                      icon={project.icon}
+                      color={project.color}
+                      className="size-3.5"
+                    />
+                  ),
+                },
+              ]
+        }
         backLink={
           isNarrowView
             ? undefined
@@ -1087,7 +1112,8 @@ function ProjectDetail({
             <Figure label="Budget used">
               <span
                 className={cn(
-                  "project-task-consumed",
+                  // Plain like the other figures; amber and red only warn.
+                  "project-figure-consumed",
                   budgetTone(budget.consumedMs / budget.budgetMs),
                 )}
               >
@@ -1147,8 +1173,9 @@ function ProjectDetail({
           </TabsList>
 
           <TabsContent value="tasks" className="project-tab-panel">
+            {/* The filter sits on the tab row, at its right: the tab already
+                names the list (council round 5). */}
             <div className="project-task-toolbar">
-              <SectionHeading>Tasks</SectionHeading>
               <div
                 className="toggle-group project-task-filter-tabs"
                 role="tablist"

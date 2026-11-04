@@ -225,30 +225,6 @@
     grid-template-columns: 24px 16px;
   }
 
-  /* No type slot: priority · id · state, as in Linear. */
-  .backlog-item-leading[data-no-type] {
-    grid-template-columns: 16px 64px 24px;
-  }
-
-  .backlog-item-leading[data-no-type][data-no-priority] {
-    grid-template-columns: 64px 24px;
-  }
-
-  .backlog-item-leading[data-no-type][data-no-id] {
-    grid-template-columns: 16px 24px;
-  }
-
-  .backlog-item-leading[data-no-type][data-no-priority][data-no-id] {
-    grid-template-columns: 24px;
-  }
-
-  /* The Project column already names the project. */
-  .backlog-list-row
-    .backlog-item-leading[data-project-column]
-    .backlog-task-project-icon {
-    visibility: hidden;
-  }
-
   .backlog-item-leading > * {
     justify-self: start;
   }
@@ -1263,16 +1239,6 @@
   .backlog-item-leading[data-no-priority],
   .backlog-item-leading[data-no-priority][data-no-id] {
     grid-template-columns: 24px 16px;
-  }
-
-  .backlog-item-leading[data-no-type],
-  .backlog-item-leading[data-no-type][data-no-id] {
-    grid-template-columns: 16px 24px;
-  }
-
-  .backlog-item-leading[data-no-type][data-no-priority],
-  .backlog-item-leading[data-no-type][data-no-priority][data-no-id] {
-    grid-template-columns: 24px;
   }
 
   .backlog-item-id,

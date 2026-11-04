@@ -702,8 +702,10 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
         />
       }
     >
+      {/* 12 / 14 / 12, the title clearly first, as in T3 Code's thread list
+          (council round 5). */}
       <span className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="flex h-5 items-center gap-1.5 text-sm text-muted-foreground">
+        <span className="flex h-5 items-center gap-1.5 text-xs text-muted-foreground">
           {project ? (
             <ProjectIcon
               icon={project.icon}
@@ -753,7 +755,7 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
           {workItem.title}
         </span>
         {/* Kept empty without a state, so every row is the same height. */}
-        <span className="flex h-4 items-center gap-1.5 text-xs text-[var(--text-secondary)]">
+        <span className="flex h-4 items-center gap-1.5 text-xs text-[var(--text-tertiary)]">
           {workflowState ? (
             <>
               <span

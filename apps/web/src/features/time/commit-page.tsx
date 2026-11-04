@@ -7,7 +7,6 @@ import {
   RiFileCopyLine as Copy,
   RiLockLine as Lock,
   RiLockUnlockLine as Unlock,
-  RiTimeLine as Ahead,
 } from "@remixicon/react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { DisabledReason } from "@/components/disabled-reason";
@@ -74,6 +73,7 @@ import {
   CommitChangeList,
   formatShortDay,
 } from "@/features/time/commit-changes";
+import { formatWeekRange } from "@/features/time/time-page-header";
 import { WeekLockChip } from "@/features/time/week-lock";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import {
@@ -101,13 +101,6 @@ function dateAtNoon(localDate: string) {
 function formatLongDay(localDate: string) {
   return new Intl.DateTimeFormat("en-US", {
     weekday: "long",
-    month: "short",
-    day: "numeric",
-  }).format(dateAtNoon(localDate));
-}
-
-function formatMonthDay(localDate: string) {
-  return new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
   }).format(dateAtNoon(localDate));
@@ -547,11 +540,74 @@ export function CommitPage({
     });
   }
 
-  const title = `Commit week of ${formatMonthDay(weekDates[0]!)} to ${formatMonthDay(weekDates[6]!)}`;
+  const daysAhead = summary.warnings.find(
+    (warning) => warning.kind === "days-ahead",
+  );
+  const title = `Commit week of ${formatWeekRange(weekDates)}`;
 
   return (
     <div className="commit-page">
-      <PageHeader title={title}>
+      {/* The week's actions are page actions, after the title, so they stay
+          in view however long the week (council round 5). */}
+      <PageHeader
+        title={title}
+        actions={
+          <div
+            role="group"
+            aria-label="Commit actions"
+            className="flex items-center gap-2 empty:hidden"
+          >
+            {lockedWeek ? (
+              <Button variant="outline" onClick={reopen}>
+                <Unlock data-icon="inline-start" />
+                Reopen week
+              </Button>
+            ) : (
+              <>
+                <AgentTaskButtons
+                  weekOf={weekOf}
+                  placement="commit-week"
+                  onStartingChange={setAgentStarting}
+                />
+                {changes.length > 0 ? (
+                  <Button
+                    disabled={checkedIds.length === 0}
+                    onClick={markCommitted}
+                  >
+                    Mark as committed
+                  </Button>
+                ) : null}
+                {submitTasks === "present" ? (
+                  <AgentTaskButtons
+                    weekOf={weekOf}
+                    placement="submit-week"
+                    disabledReason={submitReason}
+                    // Primary once nothing is left to commit, like Submit week.
+                    primary={changes.length === 0}
+                    onStartingChange={setAgentStarting}
+                  />
+                ) : null}
+                <DisabledReason label="Submit week" reason={manualSubmitReason}>
+                  <Button
+                    // Keep manual submission available; the agent is primary
+                    // when it provides the ready week's next step.
+                    variant={
+                      changes.length > 0 || submitTasks === "present"
+                        ? "outline"
+                        : "default"
+                    }
+                    disabled={manualSubmitReason !== undefined}
+                    onClick={requestSubmit}
+                  >
+                    <Lock data-icon="inline-start" />
+                    Submit week
+                  </Button>
+                </DisabledReason>
+              </>
+            )}
+          </div>
+        }
+      >
         <TooltipButton
           label={`Back to ${returnView === "week" ? "Week" : "Day"}`}
           render={
@@ -590,19 +646,13 @@ export function CommitPage({
             {summary.warnings
               .filter(
                 (warning) =>
-                  warning.kind !== "day-under-target" ||
-                  countUnderTargetDays(summary.warnings) < 2,
+                  warning.kind !== "days-ahead" &&
+                  (warning.kind !== "day-under-target" ||
+                    countUnderTargetDays(summary.warnings) < 2),
               )
               .map((warning) => (
-                <li
-                  key={warningKey(warning)}
-                  className={cn(warning.kind === "days-ahead" && "is-calm")}
-                >
-                  {warning.kind === "days-ahead" ? (
-                    <Ahead aria-hidden />
-                  ) : (
-                    <Warning aria-hidden />
-                  )}
+                <li key={warningKey(warning)}>
+                  <Warning aria-hidden />
                   <span>{formatWarning(warning)}</span>
                   {warning.kind === "waiting-task" ? (
                     <Link
@@ -622,11 +672,16 @@ export function CommitPage({
                   ) : null}
                 </li>
               ))}
-            {runningThisWeek ? (
-              // The Time view counts the running entry; this page counts what
-              // is saved. Say so, so the two totals reconcile (council round 4).
+            {/* Information, not warnings: no icon (council round 5). The
+                Time view counts the running entry; this page counts what is
+                saved, so say so (round 4). */}
+            {daysAhead ? (
               <li className="is-calm">
-                <Ahead aria-hidden />
+                <span>{formatWarning(daysAhead)}</span>
+              </li>
+            ) : null}
+            {runningThisWeek ? (
+              <li className="is-calm">
                 <span>
                   The running entry isn&apos;t counted until it stops.
                 </span>
@@ -667,6 +722,13 @@ export function CommitPage({
             Changes
           </button>
         </SectionHeading>
+        {!lockedWeek && changes.length > 0 ? (
+          // The two buttons differ in what they end: say so with the changes.
+          <p className="commit-actions-caption">
+            Mark as committed records the checked changes as sent. Submit week
+            locks the week once it is in your timesheet.
+          </p>
+        ) : null}
         {changesOpen ? (
           <div id="commit-changes-content">
             <CommitChangeList
@@ -688,68 +750,6 @@ export function CommitPage({
           </div>
         ) : null}
       </section>
-
-      <div
-        role="group"
-        aria-label="Commit actions"
-        className="flex flex-wrap items-center gap-2 empty:hidden"
-      >
-        {lockedWeek ? (
-          <Button variant="outline" onClick={reopen}>
-            <Unlock data-icon="inline-start" />
-            Reopen week
-          </Button>
-        ) : (
-          <>
-            <AgentTaskButtons
-              weekOf={weekOf}
-              placement="commit-week"
-              onStartingChange={setAgentStarting}
-            />
-            {changes.length > 0 ? (
-              <Button
-                disabled={checkedIds.length === 0}
-                onClick={markCommitted}
-              >
-                Mark as committed
-              </Button>
-            ) : null}
-            {submitTasks === "present" ? (
-              <AgentTaskButtons
-                weekOf={weekOf}
-                placement="submit-week"
-                disabledReason={submitReason}
-                // Primary once nothing is left to commit, like Submit week.
-                primary={changes.length === 0}
-                onStartingChange={setAgentStarting}
-              />
-            ) : null}
-            <DisabledReason label="Submit week" reason={manualSubmitReason}>
-              <Button
-                // Keep manual submission available; the agent is primary
-                // when it provides the ready week's next step.
-                variant={
-                  changes.length > 0 || submitTasks === "present"
-                    ? "outline"
-                    : "default"
-                }
-                disabled={manualSubmitReason !== undefined}
-                onClick={requestSubmit}
-              >
-                <Lock data-icon="inline-start" />
-                Submit week
-              </Button>
-            </DisabledReason>
-          </>
-        )}
-      </div>
-      {!lockedWeek && changes.length > 0 ? (
-        // The two buttons differ in what they end: say so where they sit.
-        <p className="-mt-3 text-xs text-[var(--text-secondary)]">
-          Mark as committed records the checked changes as sent. Submit week
-          locks the week once it is in your timesheet.
-        </p>
-      ) : null}
 
       <section
         aria-labelledby="commit-lines-heading"

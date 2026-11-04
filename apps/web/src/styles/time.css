@@ -1206,6 +1206,17 @@
     gap: 0.25rem;
   }
 
+  /* Information lines carry no icon: their text lines up with the warnings'. */
+  .submit-warnings li.is-calm {
+    padding-left: 1.25rem;
+  }
+
+  .commit-actions-caption {
+    margin: 0 0 0.25rem;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+  }
+
   .submit-warning-action {
     color: var(--primary);
     font-weight: 500;
@@ -1398,29 +1409,76 @@
     text-decoration: line-through;
   }
 
-  /* The note names the work, so it leads at 13px, and the project and task
-     it commits as follow at 12px (council round 3). Without a note, the
-     project and task lead and "No note" follows. */
-  .commit-change:not(.has-no-note) .commit-change-note {
-    grid-row: 1;
-    grid-column: 4;
+  /* Desktop: one 40px line per change, as a Day row: the note, then the
+     project and task it commits as at 12px, then the hours (council round
+     5). The narrow view keeps two lines, below. */
+  @media (width >= 768px) {
+    .commit-change {
+      grid-template-columns:
+        1rem 16px 3rem minmax(0, 1fr) minmax(0, max-content)
+        auto;
+      align-items: center;
+      min-height: 40px;
+      padding-block: 0;
+    }
+
+    .commit-change > * {
+      grid-row: 1;
+    }
+
+    .commit-change-note {
+      grid-column: 4;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .commit-change-work {
+      grid-column: 5;
+      flex-wrap: nowrap;
+      overflow: hidden;
+      color: var(--text-secondary);
+      font-size: var(--text-xs);
+      white-space: nowrap;
+    }
+
+    .commit-change-hours {
+      grid-column: 6;
+      padding-left: 0.75rem;
+      text-align: right;
+    }
+
+    .commit-change.has-no-note .commit-change-note {
+      color: var(--text-secondary);
+    }
   }
 
-  .commit-change:not(.has-no-note) .commit-change-hours {
-    grid-row: 1;
-    grid-column: 5;
-  }
+  /* Narrow: the note leads at 13px, and the project and task it commits as
+     follow at 12px (council round 3). Without a note, the project and task
+     lead and "No note" follows. */
+  @media (width < 768px) {
+    .commit-change:not(.has-no-note) .commit-change-note {
+      grid-row: 1;
+      grid-column: 4;
+    }
 
-  .commit-change:not(.has-no-note) .commit-change-work {
-    grid-row: 2;
-    grid-column: 4 / 6;
-    color: var(--text-secondary);
-    font-size: var(--text-xs);
-  }
+    .commit-change:not(.has-no-note) .commit-change-hours {
+      grid-row: 1;
+      grid-column: 5;
+    }
 
-  .commit-change.has-no-note .commit-change-note {
-    color: var(--text-secondary);
-    font-size: var(--text-xs);
+    .commit-change:not(.has-no-note) .commit-change-work {
+      grid-row: 2;
+      grid-column: 4 / 6;
+      color: var(--text-secondary);
+      font-size: var(--text-xs);
+    }
+
+    .commit-change.has-no-note .commit-change-note {
+      color: var(--text-secondary);
+      font-size: var(--text-xs);
+    }
   }
 }
 

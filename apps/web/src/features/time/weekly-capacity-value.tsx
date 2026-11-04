@@ -51,7 +51,8 @@ export function CapacityValue({
       ) : null}
       <HoverCard>
         <HoverCardTrigger className="weekly-capacity-trigger">
-          {formatClockDuration(totalMs)}
+          {/* An empty day reads "–", as an empty cell does (council round 5). */}
+          {totalMs === 0 ? "–" : formatClockDuration(totalMs)}
         </HoverCardTrigger>
         <HoverCardContent className="w-56" align="end">
           <span className="font-medium">{label}</span>

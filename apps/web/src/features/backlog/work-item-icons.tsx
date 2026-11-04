@@ -111,11 +111,6 @@ export function resolvePluginIconPaint(svg: string, currentColor: string) {
   };
 }
 
-/** Whether any source gives its tasks an icon of their own. */
-export function hasPluginTaskIcons(iconData: WorkItemIconData) {
-  return Object.keys(iconData.pluginIconsBySource).length > 0;
-}
-
 export function resolveWorkItemIcon(
   workItem: LocalWorkItem,
   iconData: WorkItemIconData,

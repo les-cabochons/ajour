@@ -559,6 +559,7 @@ export function BacklogPage() {
             toolbar row instead of a row of its own. */}
         {narrow ? null : (
           <PageHeader
+            title="Backlog"
             actions={
               <>
                 <BacklogLayoutToggle view={view} />

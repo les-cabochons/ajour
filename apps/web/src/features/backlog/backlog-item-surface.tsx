@@ -1,5 +1,6 @@
 import { RiPlayLine, RiStopFill, RiTimeLine } from "@remixicon/react";
 import { formatHours } from "@/features/backlog/backlog-estimates";
+import { RunningDot } from "@/components/running-dot";
 import { SyncConflictButton } from "@/features/backlog/sync-conflicts";
 import { openModifiedSourceClick } from "@/lib/source-navigation";
 import type { KeyboardEvent, PointerEvent } from "react";
@@ -53,7 +54,6 @@ import { PriorityIcon } from "@/features/backlog/priority-icon";
 import {
   WorkItemIcon,
   resolveWorkItemIcon,
-  hasPluginTaskIcons,
   useWorkItemIconData,
 } from "@/features/backlog/work-item-icons";
 import { parseWorkItemReference } from "@/features/backlog/work-item-timer-comment";
@@ -323,10 +323,6 @@ export function BacklogItemSurface({
     getDirectChildWorkItems(item, state.workItems),
   );
   const actions = getBacklogSurfaceActions(item, state, now);
-  // The leading type slot holds a source's own task icon. With the Project
-  // column on, a project dot there would say the project twice, so the slot
-  // goes when no source has an icon.
-  const typeColumn = !view.properties.project || hasPluginTaskIcons(icons);
   const running = Boolean(findWorkItemTimer(state.timers, item._id));
   // The running item's button is Stop, like its action set.
   const startAction = running ? "stop-entry" : "start-entry";
@@ -355,8 +351,9 @@ export function BacklogItemSurface({
   const markers = (
     <>
       {running && (
+        // The one running mark, as on Day rows and in the sidebar.
         <span className="backlog-item-marker is-running">
-          <RiPlayLine className="size-3" />
+          <RunningDot />
           Running
         </span>
       )}
@@ -445,9 +442,9 @@ export function BacklogItemSurface({
       <div
         className="backlog-item-leading"
         data-no-priority={view.properties.priority && !board ? undefined : ""}
-        data-no-id={view.properties.id ? undefined : ""}
-        data-no-type={typeColumn ? undefined : ""}
-        data-project-column={view.properties.project ? "" : undefined}
+        // A list row's id follows its title, so the leading icons stay fixed
+        // whether or not an item has one (council round 5).
+        data-no-id={board && view.properties.id ? undefined : ""}
       >
         {view.properties.priority && !board && (
           <BacklogPriorityPicker
@@ -480,20 +477,16 @@ export function BacklogItemSurface({
               </>
             )}
           </span>
-        ) : (
-          view.properties.id && (
-            <span className="backlog-item-id">{reference ?? ""}</span>
-          )
-        )}
+        ) : null}
         <BacklogStatePicker
           item={item}
           state={state}
           beforeChange={beforeChange}
           live={live}
         />
-        {!board && typeColumn && (
-          <WorkItemIcon icon={resolveWorkItemIcon(item, icons)} />
-        )}
+        {/* The project's own icon, or a source's task icon: with many
+            projects it tells them apart at a glance. */}
+        {!board && <WorkItemIcon icon={resolveWorkItemIcon(item, icons)} />}
       </div>
       <div className="backlog-item-content">
         <span
@@ -504,6 +497,9 @@ export function BacklogItemSurface({
         >
           {item.title}
         </span>
+        {!board && view.properties.id && reference ? (
+          <span className="backlog-item-id">{reference}</span>
+        ) : null}
         {parent && (
           <span className="backlog-item-parent" title={parent.title}>
             ↳ {parent.title}
@@ -535,8 +531,10 @@ export function BacklogItemSurface({
             {getLocalProjectDisplayName(project)}
           </Chip>
         )}
+        {/* Nothing left reads as nothing, as an empty cell does. */}
         {view.properties.estimate &&
-          item.remainingEstimateHours !== undefined && (
+          item.remainingEstimateHours !== undefined &&
+          item.remainingEstimateHours > 0 && (
             <span className="backlog-item-estimate">
               {formatHours(item.remainingEstimateHours)}
             </span>

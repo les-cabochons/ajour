@@ -113,6 +113,8 @@ export interface PageBreadcrumbItem {
   to?: string;
   /** Path params of `to`, such as the project's id. */
   params?: Record<string, string>;
+  /** Runs before navigation; call `preventDefault` to stay. */
+  onClick?: MouseEventHandler<HTMLAnchorElement>;
 }
 
 /** "ajour / Build latest main": every crumb but the last links to its page. */
@@ -139,6 +141,7 @@ function PageBreadcrumb({ items }: { items: PageBreadcrumbItem[] }) {
                 <Link
                   to={item.to}
                   params={item.params as never}
+                  onClick={item.onClick}
                   className="ajour-page-breadcrumb-link"
                 >
                   {label}
