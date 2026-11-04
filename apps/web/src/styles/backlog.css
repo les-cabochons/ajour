@@ -173,9 +173,11 @@
   .backlog-state-dot {
     display: inline-block;
     flex: none;
-    width: 12px;
-    height: 12px;
-    padding: 1.5px;
+    /* 14px with a 9px disc, so a quarter and a half read as shapes
+       (council round 22). */
+    width: 14px;
+    height: 14px;
+    padding: 1px;
     border: 1.5px solid currentColor;
     border-radius: 50%;
     background: conic-gradient(
@@ -1304,6 +1306,22 @@
 
   .backlog-list-row > .backlog-item-source-state {
     max-width: 6rem;
+  }
+
+  /* Line 2 reads as one sentence, as on Day rows: the markers and the
+     source state follow the project after a tertiary " · " (council
+     round 22). */
+  .backlog-list-row .backlog-item-marker::before,
+  .backlog-list-row > .backlog-item-source-state::before {
+    content: "·";
+    margin-right: 0.125rem;
+    color: var(--text-tertiary);
+  }
+
+  /* The subitems fraction stays on the desktop row and the item page;
+     picking the next item does not need it here (council round 22). */
+  .backlog-list-row .backlog-subitem-progress {
+    display: none;
   }
 
   .backlog-list-row .backlog-item-estimate {

@@ -87,14 +87,16 @@ export function PriorityIcon({
         <rect
           key={bar}
           x={1.5 + bar * 4}
-          y={9 - bar * 3}
+          // 5, 8 and 11 tall, so even Low's one bar reads as a step
+          // (council round 22).
+          y={7 - bar * 3}
           width="3"
-          height={3 + bar * 3}
+          height={5 + bar * 3}
           rx="0.75"
           fill="currentColor"
           // The unfilled bars keep the frame visible, as in Linear, so every
           // level reads as one glyph (council round 19).
-          opacity={bar < filledBars ? 1 : 0.45}
+          opacity={bar < filledBars ? 1 : 0.3}
         />
       ))}
     </svg>

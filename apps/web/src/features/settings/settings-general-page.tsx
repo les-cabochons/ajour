@@ -313,9 +313,11 @@ export function SettingsGeneralPage() {
               {paceRange.targetMs ? (
                 <p
                   id="pace-range"
-                  className="text-xs whitespace-nowrap text-[var(--text-secondary)] tabular-nums"
+                  // Names the period, so the range never reads as today's
+                  // hours alone (council round 22).
+                  className="max-w-36 text-right text-xs text-[var(--text-secondary)] tabular-nums"
                 >
-                  Today: {formatClockDuration(paceRange.lowMs)}–
+                  Week through today: {formatClockDuration(paceRange.lowMs)}–
                   {formatClockDuration(paceRange.highMs)}
                 </p>
               ) : null}
