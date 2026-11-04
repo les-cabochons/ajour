@@ -88,6 +88,7 @@ export type PluginManifest = {
               | "submit_week"
               | "delete_entries"
               | "discard_timer"
+              | "continue_entry"
               | "undo"
               | "create_work_item"
               | "edit_work_item"

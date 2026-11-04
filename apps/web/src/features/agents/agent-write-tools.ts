@@ -194,6 +194,27 @@ function addedEntry(before: LocalAppState, after: LocalAppState) {
   return after.timesheetEntries.find((entry) => !known.has(entry._id));
 }
 
+/**
+ * The entry that saving `before`'s running entry wrote: the saved entry it
+ * continued, else the new one. Undefined when nothing was running.
+ */
+function savedEntry(before: LocalAppState, after: LocalAppState) {
+  const timer = before.timers[0];
+  if (!timer) return undefined;
+  const entry = timer.entryId
+    ? after.timesheetEntries.find(
+        (candidate) => candidate._id === timer.entryId,
+      )
+    : addedEntry(before, after);
+  return entry && toAgentEntry(after, entry);
+}
+
+/** `{ saved }` when a Switch saved an entry, else nothing. */
+function switchedFrom(before: LocalAppState, after: LocalAppState) {
+  const saved = savedEntry(before, after);
+  return saved ? { saved } : {};
+}
+
 export const ENTRY_WRITE_TOOLS = [
   "start_timer",
   "stop_timer",
@@ -206,6 +227,7 @@ export const ENTRY_WRITE_TOOLS = [
   "submit_week",
   "delete_entries",
   "discard_timer",
+  "continue_entry",
 ] as const satisfies readonly WriteToolName[];
 export type EntryWriteTool = (typeof ENTRY_WRITE_TOOLS)[number];
 
@@ -263,17 +285,25 @@ export function runEntryWriteTool(
           note: input.note,
         };
         title = target.title;
+      } else if (input.taskId) {
+        throw new AgentToolRefusal("Pass the task's projectId too.");
       } else {
-        throw new AgentToolRefusal(
-          "Pass a workItemId, or a projectId with an optional taskId.",
-        );
+        // An empty entry, as S starts one in the window.
+        draft = { note: input.note };
+        title = "Untitled entry";
+      }
+      if (input.countedMinutes !== undefined) {
+        draft = {
+          ...draft,
+          accumulatedDurationMs: input.countedMinutes * MINUTE,
+        };
       }
       const { undoToken } = localStore.runWithUndo(() =>
         localStore.startTimer(draft),
       );
       const running = requireRunningTimer();
       return {
-        output: { running },
+        output: { running, ...switchedFrom(state, localStore.snapshot()) },
         undoToken,
         action: "Started an entry",
         objectId: running.timerId,
@@ -290,8 +320,13 @@ export function runEntryWriteTool(
       const { undoToken } = localStore.runWithUndo(() =>
         localStore.saveTimer(timer._id),
       );
+      const entry = savedEntry(state, localStore.snapshot());
       return {
-        output: { stopped: true, countedMinutes: running.countedMinutes },
+        output: {
+          stopped: true,
+          countedMinutes: running.countedMinutes,
+          ...(entry ? { entry } : {}),
+        },
         undoToken,
         action: "Stopped the entry",
         objectId: timer._id,
@@ -543,6 +578,34 @@ export function runEntryWriteTool(
         action: "Discarded the running entry",
         objectId: timer._id,
         objectTitle: projectTaskTitle(running) || "Running entry",
+        undoSubject: "entry",
+      };
+    }
+
+    case "continue_entry": {
+      const input = writeToolInputSchemas.continue_entry.parse(rawInput);
+      // Stop takes Continue's slot on the running entry, by its entry or
+      // its timer.
+      if (
+        state.timers.some(
+          (timer) =>
+            timer._id === input.entryId || timer.entryId === input.entryId,
+        )
+      ) {
+        throw new AgentToolRefusal("Already running");
+      }
+      const entry = requireEntry(state, input.entryId);
+      assertAllowed(entryActions(state, entry), "continue");
+      const { undoToken } = localStore.runWithUndo(() =>
+        localStore.continueTimesheetEntry(entry._id),
+      );
+      const running = requireRunningTimer();
+      return {
+        output: { running, ...switchedFrom(state, localStore.snapshot()) },
+        undoToken,
+        action: "Continued an entry",
+        objectId: running.timerId,
+        objectTitle: entryTitle(state, entry),
         undoSubject: "entry",
       };
     }
