@@ -173,8 +173,8 @@ export function PersonCombobox({
                   onSelect={() => pick(person)}
                 >
                   <PersonInitials name={person.displayName} />
-                  <span className="flex min-w-0 flex-col">
-                    <span className="truncate">{person.displayName}</span>
+                  <span className="flex min-w-0 items-baseline gap-1.5">
+                    <span className="shrink-0">{person.displayName}</span>
                     {person.email ? (
                       <span className="truncate text-xs text-muted-foreground">
                         {person.email}
