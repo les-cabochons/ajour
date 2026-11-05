@@ -1,4 +1,6 @@
 import { syncTeamConnection } from "@/lib/team-sync";
+import { syncProjectSourceConnection } from "@/lib/project-source-sync";
+import { askAndReportSourceWaitingQuestions } from "@/features/projects/source-waiting-tasks";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import * as appApi from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
@@ -17,6 +19,8 @@ export function appPluginSettingsDependencies(): PluginSettingsDependencies {
   return {
     ...appApi,
     syncTeamConnection,
+    syncProjectSourceConnection,
+    askSourceWaitingQuestions: askAndReportSourceWaitingQuestions,
     subscribeCatalog: (listener) =>
       window.ajourDesktop?.onPluginCatalogUpdated?.(listener) ?? (() => {}),
     holdPendingEstimates: (connection) =>

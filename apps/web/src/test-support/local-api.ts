@@ -153,15 +153,19 @@ async function writePlugin(root: string, plugin: TestPlugin) {
  * names another, and the `morePlugins` beside it. Its events are recorded,
  * and also go to `eventSink` when given, as desktop main gives it the shared
  * sink. `launch` is the launch it reports, as main hands it over.
+ * `pluginDirectories` adds plugins already on disk, such as the example
+ * project source.
  */
 export async function startLocalApi({
   plugin = JIRA,
   morePlugins = [],
+  pluginDirectories = [],
   eventSink,
   launch,
 }: {
   plugin?: TestPlugin;
   morePlugins?: TestPlugin[];
+  pluginDirectories?: string[];
   eventSink?: Sink;
   launch?: { id: string; appVersion: string; packaged: boolean };
 } = {}) {
@@ -171,9 +175,12 @@ export async function startLocalApi({
     port: 0,
     statePath: path.join(root, "state.json"),
     installedPluginDirectory: path.join(root, "installed"),
-    developmentPluginDirectories: await Promise.all(
-      [plugin, ...morePlugins].map((each) => writePlugin(root, each)),
-    ),
+    developmentPluginDirectories: [
+      ...(await Promise.all(
+        [plugin, ...morePlugins].map((each) => writePlugin(root, each)),
+      )),
+      ...pluginDirectories,
+    ],
     allowDevelopmentPlugins: true,
     pluginRuntime: new InProcessPluginRuntime(),
     brokerTransport: echoingTransport,

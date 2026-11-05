@@ -244,6 +244,8 @@ import {
   normalizeProject,
   reorderProjects as applyReorderProjects,
   reorderProjectTask as applyReorderProjectTask,
+  restoreProject,
+  restoreProjectTask,
   setProjectFavorite as applySetProjectFavorite,
   setProjectTaskFavorite as applySetProjectTaskFavorite,
   setProjectTaskPinnedSlot as applySetProjectTaskPinnedSlot,
@@ -256,6 +258,19 @@ import {
   normalizeTeamConnections,
   normalizeTeamPushHold,
 } from "@/domain/projects/team-link";
+import { normalizeProjectSources } from "@/domain/projects/source-link";
+import {
+  answerSourceWaitingTasks as applyAnswerSourceWaitingTasks,
+  confirmProjectSourceUnchanged,
+  disconnectProjectSource,
+  resolveHeldSourceProject,
+  syncProjectSource,
+  type HeldSourceProjectChoice,
+  type HeldSourceProjectResult,
+  type ProjectSourceConnectionRef,
+  type ProjectSourceSyncResult,
+  type ProjectSourceSyncState,
+} from "@/domain/projects/source-sync";
 import {
   applyTeamSync,
   disconnectTeam,
@@ -268,7 +283,11 @@ import {
   type TeamSyncApplyResult,
   type TeamSyncState,
 } from "@/domain/projects/team-sync";
-import type { TeamProjectChange, TeamSyncResult } from "@ajour/shared";
+import type {
+  ProjectSourceSnapshot,
+  TeamProjectChange,
+  TeamSyncResult,
+} from "@ajour/shared";
 import type { AjourCatalog, FieldsOf } from "@ajour/wide-events/catalog.ts";
 import type {
   BacklogSortMode,
@@ -298,6 +317,7 @@ import {
   getLocalProjectDisplayName,
   getWorkItemEstimateFieldState,
   hasWorkItemEstimateSyncIssue,
+  isProjectTaskInUse,
 } from "@/domain/local-state";
 
 export {
@@ -607,6 +627,7 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
       workflowStateMappings,
       settleRules: normalizeSettleRules(persistedState.settleRules),
       teamConnections: normalizeTeamConnections(persistedState.teamConnections),
+      projectSources: normalizeProjectSources(persistedState.projectSources),
       teamPushHold: normalizeTeamPushHold(
         persistedState.teamPushHold,
         Date.now(),
@@ -1298,6 +1319,25 @@ function writeState(state: LocalAppState) {
   announceStateChange({ local: true });
 }
 
+/** The part of the state the project source sync rules read and write. */
+function sourceSyncStateOf(state: LocalAppState): ProjectSourceSyncState {
+  return {
+    projects: state.projects,
+    projectSources: state.projectSources ?? {},
+  };
+}
+
+function withSourceSyncState(
+  state: LocalAppState,
+  next: ProjectSourceSyncState,
+): LocalAppState {
+  return {
+    ...state,
+    projects: next.projects,
+    projectSources: next.projectSources,
+  };
+}
+
 /** The part of the state the team sync rules read and write. */
 function teamSyncStateOf(state: LocalAppState): TeamSyncState {
   return {
@@ -1805,6 +1845,107 @@ const store = {
         : { state, result: next.result };
     });
   },
+  /**
+   * Applies a project source's snapshot (#505). It is not undoable: an Undo
+   * of an earlier action that touched the same project is then refused as
+   * stale.
+   */
+  applyProjectSourceSync(
+    connection: ProjectSourceConnectionRef,
+    snapshot: ProjectSourceSnapshot,
+    syncedAt: number,
+  ): ProjectSourceSyncResult {
+    return updateStateWithResult<ProjectSourceSyncResult>((state) => {
+      const next = syncProjectSource(
+        sourceSyncStateOf(state),
+        connection,
+        snapshot,
+        { createId, now: Date.now },
+        { syncedAt },
+      );
+      return { state: withSourceSyncState(state, next), result: next.result };
+    });
+  },
+  /**
+   * A project source had nothing new: the connection keeps the local API's
+   * new sync time, so the next sync trusts its cursor.
+   */
+  confirmProjectSourceUnchanged(
+    connection: ProjectSourceConnectionRef,
+    syncedAt: number,
+  ) {
+    updateState((state) => {
+      const before = sourceSyncStateOf(state);
+      const next = confirmProjectSourceUnchanged(
+        before,
+        connection.connectionId,
+        syncedAt,
+      );
+      return next === before ? state : withSourceSyncState(state, next);
+    });
+  },
+  /** The user's answer for a held source project, from Sync review. No Undo. */
+  resolveHeldSourceProject(
+    connection: ProjectSourceConnectionRef,
+    remoteId: string,
+    choice: HeldSourceProjectChoice,
+  ): HeldSourceProjectResult {
+    return updateStateWithResult<HeldSourceProjectResult>((state) => {
+      const next = resolveHeldSourceProject(
+        sourceSyncStateOf(state),
+        connection,
+        remoteId,
+        choice,
+        { createId, now: Date.now },
+      );
+      return next.result.kind === "linked" || next.result.kind === "added"
+        ? { state: withSourceSyncState(state, next), result: next.result }
+        : { state, result: next.result };
+    });
+  },
+  /**
+   * The answers to a project source sync's Not known yet question. Returns
+   * how many waiting tasks became their source task.
+   */
+  answerSourceWaitingTasks(
+    projectId: string,
+    answers: Readonly<Record<string, WaitingTaskAnswer>>,
+  ): number {
+    return updateStateWithResult<number>((state) => {
+      const next = applyAnswerSourceWaitingTasks(
+        state.projects,
+        projectId,
+        answers,
+        (taskId) => isProjectTaskInUse(state, taskId),
+      );
+      return next.projects === state.projects
+        ? { state, result: 0 }
+        : {
+            state: { ...state, projects: next.projects },
+            result: next.matchedCount,
+          };
+    });
+  },
+  /**
+   * A removed project source connection: its managed projects become local
+   * ones, with their entries.
+   */
+  removeConnectionProjectSource(connectionId: string) {
+    return updateState((state) => {
+      if (
+        !state.projectSources?.[connectionId] &&
+        !state.projects.some(
+          (project) => project.source?.connectionId === connectionId,
+        )
+      ) {
+        return state;
+      }
+      return withSourceSyncState(
+        state,
+        disconnectProjectSource(sourceSyncStateOf(state), connectionId),
+      );
+    });
+  },
   /** A removed team connection: its projects become local, with their entries. */
   removeConnectionTeamData(connectionId: string) {
     return updateState((state) => {
@@ -1903,8 +2044,26 @@ const store = {
       }),
     }));
   },
-  unarchiveProject(projectId: string) {
-    this.updateProject(projectId, { status: "active" });
+  /**
+   * Restores a project. Returns why it stayed archived when its project
+   * source archived it, as a sentence for the user, or undefined.
+   */
+  unarchiveProject(projectId: string): string | undefined {
+    return updateStateWithResult<string | undefined>((state) => {
+      const restored = restoreProject(
+        state.projects,
+        projectId,
+        state.projectSources,
+      );
+      if (restored.refusal) {
+        refuseStoreCommand("archived_by_source");
+        return { state, result: restored.refusal };
+      }
+      return {
+        state: { ...state, projects: restored.projects },
+        result: undefined,
+      };
+    });
   },
   addProjectTask(projectId: string, task: LocalProjectTaskDraft) {
     updateState((state) => ({
@@ -2188,17 +2347,28 @@ const store = {
       ),
     }));
   },
-  unarchiveProjectTask(projectId: string, taskId: string) {
-    updateState((state) => ({
-      ...state,
-      projects: setProjectTaskStatus(
+  /**
+   * Restores a task. Returns why it stayed archived when its project source
+   * closed it or left it out, as a sentence for the user, or undefined.
+   */
+  unarchiveProjectTask(projectId: string, taskId: string): string | undefined {
+    return updateStateWithResult<string | undefined>((state) => {
+      const restored = restoreProjectTask(
         state.projects,
         projectId,
         taskId,
-        "active",
+        state.projectSources,
         Date.now,
-      ),
-    }));
+      );
+      if (restored.refusal) {
+        refuseStoreCommand("archived_by_source");
+        return { state, result: restored.refusal };
+      }
+      return {
+        state: { ...state, projects: restored.projects },
+        result: undefined,
+      };
+    });
   },
   addWorkflowState(name: string, color?: string) {
     return updateStateWithResult((state) => {
@@ -3440,6 +3610,42 @@ export const STORE_COMMANDS = {
     resultFields: { team: { result: (result) => result.kind } },
   },
   removeConnectionTeamData: "connection.delete",
+  applyProjectSourceSync: {
+    name: "project_source.apply_sync",
+    trigger: "system",
+    fields: {
+      plugin: { id: ([connection]) => connection.pluginId },
+      connection: { id: ([connection]) => connection.connectionId },
+    },
+  },
+  confirmProjectSourceUnchanged: {
+    name: "project_source.apply_sync",
+    trigger: "system",
+    fields: {
+      plugin: { id: ([connection]) => connection.pluginId },
+      connection: { id: ([connection]) => connection.connectionId },
+    },
+  },
+  resolveHeldSourceProject: {
+    name: "project_source.resolve_held",
+    fields: {
+      plugin: { id: ([connection]) => connection.pluginId },
+      connection: { id: ([connection]) => connection.connectionId },
+      project_source: {
+        choice: ([, , choice]) =>
+          choice.kind === "link" ? "link" : "add_as_new",
+      },
+    },
+    resultFields: { project_source: { result: (result) => result.kind } },
+  },
+  answerSourceWaitingTasks: {
+    name: "project_source.answer_waiting",
+    fields: projectIdFirst,
+    resultFields: {
+      project_source: { matched_count: (matched) => matched },
+    },
+  },
+  removeConnectionProjectSource: "connection.delete",
   removeConnectionPullRequests: "connection.delete",
   createTeam: "team.create",
   addProject: {

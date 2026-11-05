@@ -70,6 +70,7 @@ import {
   isSignedPlugin,
   pluginConnectionFormFields,
   pluginHasBacklog,
+  pluginHasProjectSource,
   pluginHasTeam,
   pluginRunsCode,
   syncsPullRequestsAutomatically,
@@ -95,6 +96,7 @@ import {
   ConnectionStatusNote,
 } from "./connection-status-ui";
 import { HeldArrivalsLine, TeamPickerDialog } from "./team-connection-ui";
+import { HeldSourceProjectsLine } from "./project-source-review";
 import { PluginAgentTasks } from "./agent-task-settings";
 import {
   CatalogAccessSection,
@@ -792,6 +794,18 @@ export function SettingsPluginsPage({
       });
       return;
     }
+    // A new project source brings its projects at once, not at the next tick.
+    if (
+      !formState.editingConnectionId &&
+      saved &&
+      pluginHasProjectSource(activePlugin)
+    ) {
+      await workflow.execute({
+        type: "projectSourceSync",
+        pluginId: formState.pluginId,
+        connectionId: saved.id,
+      });
+    }
     if (formState.editingConnectionId || !pluginHasTeam(activePlugin)) return;
     if (!saved) return;
     const added = saved;
@@ -1179,6 +1193,14 @@ export function SettingsPluginsPage({
                             }
                           />
                         ) : null}
+                        {pluginHasProjectSource(group.plugin) ? (
+                          <HeldSourceProjectsLine
+                            count={
+                              state.projectSources?.[connection.id]?.held
+                                .length ?? 0
+                            }
+                          />
+                        ) : null}
                         <HeldEditsLine
                           count={heldEditCount(
                             heldEdits,
@@ -1274,8 +1296,31 @@ export function SettingsPluginsPage({
                                 </DropdownMenuItem>
                               </>
                             ) : null}
+                            {pluginHasProjectSource(group.plugin) ? (
+                              <DropdownMenuItem
+                                disabled={
+                                  isMutatingPlugin ||
+                                  overview?.pluginsEnabled === false ||
+                                  !isCapabilityActive(group, "projectSource") ||
+                                  Boolean(connection.paused)
+                                }
+                                onClick={() =>
+                                  void workflow.execute({
+                                    type: "projectSourceSync",
+                                    pluginId: group.plugin.id,
+                                    connectionId: connection.id,
+                                  })
+                                }
+                              >
+                                {pluginHasBacklog(group.plugin) ||
+                                pluginHasTeam(group.plugin)
+                                  ? "Sync managed projects"
+                                  : "Sync now"}
+                              </DropdownMenuItem>
+                            ) : null}
                             {pluginHasBacklog(group.plugin) ||
-                            pluginHasTeam(group.plugin) ? (
+                            pluginHasTeam(group.plugin) ||
+                            pluginHasProjectSource(group.plugin) ? (
                               <DropdownMenuSeparator />
                             ) : null}
                             <DropdownMenuItem
@@ -1293,6 +1338,7 @@ export function SettingsPluginsPage({
                                   group.plugin.capabilities.codeHost ||
                                   group.plugin.capabilities.calendar ||
                                   group.plugin.capabilities.team ||
+                                  group.plugin.capabilities.projectSource ||
                                   held > 0
                                 ) {
                                   setRemoving({

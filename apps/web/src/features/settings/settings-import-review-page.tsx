@@ -60,6 +60,7 @@ import {
 } from "@/features/backlog/synced-description";
 import { saveSyncedDescription } from "@/lib/description-save";
 import { HeldEditsReview } from "@/features/settings/held-edits-review";
+import { HeldSourceProjectsReview } from "@/features/settings/project-source-review";
 
 interface ImportConnectionGroup {
   connectionId: string;
@@ -304,6 +305,8 @@ export function SettingsImportReviewPage() {
         </p>
 
         <HeldEditsReview focusedConnectionId={focusedHeldConnectionId} />
+
+        <HeldSourceProjectsReview />
 
         {descriptionConflicts.length > 0 ? (
           <AppPanel>

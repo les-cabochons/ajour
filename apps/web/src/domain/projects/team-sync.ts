@@ -81,7 +81,8 @@ export function findLocalProjectNamed(
   name: string,
 ): LocalProject | undefined {
   return projects.find(
-    (project) => !project.team && sameName(project.name, name),
+    (project) =>
+      !project.team && !project.source && sameName(project.name, name),
   );
 }
 
@@ -728,6 +729,8 @@ export type TeamShareResult =
   | { kind: "shared" }
   | { kind: "missing" }
   | { kind: "alreadyShared" }
+  /** A managed project follows its project source, never a team (ADR 0016). */
+  | { kind: "managed" }
   /** The team already has a shared project of that name here. */
   | { kind: "sameNameShared"; sharedProjectId: string }
   /** A held arrival has that name: link to it with `resolveHeldArrival`. */
@@ -751,6 +754,7 @@ export function shareProject(
   const project = state.projects.find((entry) => entry._id === projectId);
   if (!project) return { ...state, result: { kind: "missing" } };
   if (project.team) return { ...state, result: { kind: "alreadyShared" } };
+  if (project.source) return { ...state, result: { kind: "managed" } };
   if (!state.teamConnections[connectionId]?.cursor) {
     return { ...state, result: { kind: "notSynced" } };
   }
@@ -805,6 +809,7 @@ export type TeamLinkResult =
   | { kind: "linked" }
   | { kind: "missing" }
   | { kind: "alreadyShared" }
+  | { kind: "managed" }
   | { kind: "alreadyLinked"; projectId: string };
 
 /**
@@ -823,6 +828,7 @@ export function linkProject(
   const project = state.projects.find((entry) => entry._id === projectId);
   if (!project) return { ...state, result: { kind: "missing" } };
   if (project.team) return { ...state, result: { kind: "alreadyShared" } };
+  if (project.source) return { ...state, result: { kind: "managed" } };
   const linked = state.projects.find(
     (entry) =>
       entry.team?.connectionId === connectionId &&

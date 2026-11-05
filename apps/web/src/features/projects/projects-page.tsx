@@ -88,6 +88,7 @@ import { useTaskPropertyPlugins } from "@/features/projects/commits-as";
 import { TaskMappingHints } from "@/features/projects/task-property-fields";
 import type { TaskPropertyPlugin } from "@/domain/projects/plugin-properties";
 import { offerUndo } from "@/features/feedback/undo-toast";
+import { showToast } from "@/components/ui/toast";
 import { useActionRequest } from "@/lib/action-request";
 import { FOCUS_ATTRIBUTES } from "@/lib/focused-object";
 import {
@@ -793,7 +794,7 @@ function ProjectDetail({
           });
           return;
         case "restore":
-          localStore.unarchiveProjectTask(project._id, task._id);
+          restoreTask(project._id, task._id);
           return;
       }
     });
@@ -1408,6 +1409,15 @@ function ProjectDetail({
 }
 
 /** Writes a task draft: updates the saved task, or adds the new one to its project. */
+/**
+ * Restores a task, or says why it stays archived: its project source closed
+ * it or left it out.
+ */
+function restoreTask(projectId: string, taskId: string) {
+  const refusal = localStore.unarchiveProjectTask(projectId, taskId);
+  if (refusal) showToast(`Can't restore. ${refusal}`);
+}
+
 function writeProjectTask(
   session: TaskEditorSession,
   values: ProjectTaskValues,
@@ -1830,9 +1840,7 @@ export function ProjectsPage() {
         subject: "project",
       });
     }
-    if (requested.id === "restore") {
-      localStore.unarchiveProjectTask(project._id, task._id);
-    }
+    if (requested.id === "restore") restoreTask(project._id, task._id);
     // The handlers are declared after the early return below, so a request
     // waits until the page renders them.
   }, Boolean(teamState?.team));
@@ -2019,9 +2027,11 @@ export function ProjectsPage() {
             subject: "project",
           });
           return;
-        case "restore":
-          localStore.unarchiveProject(project._id);
+        case "restore": {
+          const refusal = localStore.unarchiveProject(project._id);
+          if (refusal) showToast(`Can't restore. ${refusal}`);
           return;
+        }
       }
     });
   };

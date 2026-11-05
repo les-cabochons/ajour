@@ -290,6 +290,79 @@ describe("store command events", () => {
     ]);
   });
 
+  it("refuses a hand restore of what a project source archived, with the reason for the user", async () => {
+    const source = {
+      pluginId: "planner",
+      connectionId: "c1",
+      remoteId: "P1",
+      syncedAt: 1,
+    };
+    browser.storage.set(
+      STORAGE_KEY,
+      JSON.stringify({
+        projects: [
+          {
+            _id: "done",
+            name: "Done",
+            color: "#123456",
+            icon: { kind: "preset", name: "dot" },
+            status: "archived",
+            archivedBySource: true,
+            source,
+            tasks: [
+              {
+                _id: "closed",
+                name: "Closed",
+                status: "archived",
+                createdAt: 1,
+                archivedBySource: true,
+                source: { remoteId: "T1", assigned: true },
+              },
+            ],
+          },
+        ],
+        projectSources: {
+          c1: {
+            pluginId: "planner",
+            label: "Planner",
+            asOf: "2026-11-01T00:00:00.000Z",
+            syncedAt: 1,
+            held: [],
+          },
+        },
+      }),
+    );
+    const { sink, localStore } = await loadStore();
+
+    expect(localStore.unarchiveProject("done")).toBe(
+      "Planner marks this project complete.",
+    );
+    expect(localStore.unarchiveProjectTask("done", "closed")).toBe(
+      "Planner closed this task.",
+    );
+
+    expect(localStore.snapshot().projects[0]).toMatchObject({
+      status: "archived",
+      tasks: [{ status: "archived" }],
+    });
+    expect(sink.events).toMatchObject([
+      {
+        name: "project.restore",
+        kind: "command",
+        outcome: "refused",
+        outcome_reason: "archived_by_source",
+        project: { id: "done" },
+      },
+      {
+        name: "task.restore",
+        kind: "command",
+        outcome: "refused",
+        outcome_reason: "archived_by_source",
+        task: { id: "closed" },
+      },
+    ]);
+  });
+
   it("records why an Undo was refused: expired, or changed since", async () => {
     const { sink, localStore } = await loadStore();
     const token = localStore.updateProjectWithUndo(

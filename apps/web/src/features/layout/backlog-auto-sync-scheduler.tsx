@@ -12,7 +12,13 @@ import {
   syncBacklogConnection,
   syncCodeHostConnection,
 } from "@/lib/app-api";
+import { localStore } from "@/lib/local-store";
 import { syncTeamConnection } from "@/lib/team-sync";
+import {
+  PROJECT_SOURCE_SYNC_INTERVAL_MS,
+  syncProjectSourceConnection,
+} from "@/lib/project-source-sync";
+import { offerSourceWaitingQuestions } from "@/features/projects/source-waiting-tasks";
 
 const AUTO_SYNC_POLL_INTERVAL_MS = 30_000;
 
@@ -80,6 +86,10 @@ export function BacklogAutoSyncScheduler() {
                 ...(isCapabilityActive(group, "team")
                   ? (["team"] as const)
                   : []),
+                // Managed projects follow their source every 15 minutes.
+                ...(isCapabilityActive(group, "projectSource")
+                  ? (["projectSource"] as const)
+                  : []),
               ];
         const dueConnections = overview.connectionGroups.flatMap((group) =>
           group.connections
@@ -94,14 +104,21 @@ export function BacklogAutoSyncScheduler() {
               connection,
               capabilities: autoCapabilities(group, connection).filter(
                 (capability) => {
+                  // Managed projects keep their own clock: the shared last
+                  // sync time moves with the connection's other syncs too.
                   const last =
                     capability === "connector"
                       ? connection.backlogLastSyncAt
-                      : connection.lastSyncAt;
+                      : capability === "projectSource"
+                        ? localStore.snapshot().projectSources?.[connection.id]
+                            ?.syncedAt
+                        : connection.lastSyncAt;
+                  const interval =
+                    capability === "projectSource"
+                      ? PROJECT_SOURCE_SYNC_INTERVAL_MS
+                      : connection.autoSyncIntervalMinutes * 60_000;
                   return (
-                    (!last ||
-                      now - last >=
-                        connection.autoSyncIntervalMinutes * 60_000) &&
+                    (!last || now - last >= interval) &&
                     (capability !== "connector" ||
                       !getBacklogSyncSnapshot().some(
                         (s) =>
@@ -136,11 +153,24 @@ export function BacklogAutoSyncScheduler() {
                       dueConnection.connection.id,
                       { trigger: "schedule" },
                     )
-                  : syncTeamConnection(
-                      dueConnection.pluginId,
-                      dueConnection.connection.id,
-                      { trigger: "schedule" },
-                    ),
+                  : capability === "projectSource"
+                    ? syncProjectSourceConnection(
+                        dueConnection.pluginId,
+                        dueConnection.connection.id,
+                        { trigger: "schedule" },
+                      ).then((outcome) => {
+                        if (outcome.kind === "applied") {
+                          offerSourceWaitingQuestions(
+                            outcome.label,
+                            outcome.waitingQuestions,
+                          );
+                        }
+                      })
+                    : syncTeamConnection(
+                        dueConnection.pluginId,
+                        dueConnection.connection.id,
+                        { trigger: "schedule" },
+                      ),
           }));
           for (const operation of operations) {
             if (loopState.cancelled) break;

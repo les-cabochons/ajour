@@ -19,6 +19,8 @@ export async function syncProjects(
 
 Return the snapshot and the cursor to send next time, or `{ unchanged: true }` when nothing changed since the cursor you received.
 
+Ajour calls `syncProjects` every 15 minutes while the connection's Managed projects switch is on, when the user adds the connection, and when they press Sync now on it. A call that fails keeps the last snapshot Ajour applied, and the connection shows the error and when it last synced.
+
 The cursor is yours. Ajour never reads it: it keeps the last one per connection and sends it back on the next sync, and sends none on the first sync, after a snapshot that came without one, after the user saves the connection again, after your plugin's version changes, and when Ajour needs the whole snapshot again. An ETag works well: send it as `If-None-Match`, and answer `{ unchanged: true }` on a 304. Never answer `{ unchanged: true }` to a request without a cursor: Ajour refuses it, since it has nothing to compare with.
 
 ### What the snapshot carries
@@ -31,6 +33,14 @@ The cursor is yours. Ajour never reads it: it keeps the last one per connection 
 - **Budget.** The source writes every figure, as of `asOf`. `unit` is `hours` or `money`. `remaining` may be negative; `status` says whether that is `over`.
 
 Ajour checks every snapshot before it applies any of it, and refuses one that leaves out a required field, repeats a remote id, or goes over the bounds, naming the field.
+
+### What Ajour does with it
+
+- A project Ajour already follows matches by `remoteId`. Otherwise a local project with the same `code`, ignoring case, becomes the managed one without a question, and keeps its time entries. A project that only matches a local project's name waits for the user in Sync review, who links it or adds it as new. Any other project is added.
+- Every sync takes the project's `name`, `code`, `client`, dates and budget, and each task's `name`, `billable` and `estimateHours`. The user's display name, color, icon, favorites, pins and plugin properties stay.
+- A task matches by `remoteId`, then by name among the project's tasks the source doesn't know yet.
+- `complete: true` archives the project, and `complete: false` restores it if Ajour archived it for that. A `closed` task is archived the same way. A project or task left out of the snapshot is archived, never deleted, and comes back when it returns. The user can't restore what the source archived, so your snapshot decides when it comes back.
+- A project shared with a team is never linked to a source: a project with its code or name is added beside it.
 
 ## Types
 

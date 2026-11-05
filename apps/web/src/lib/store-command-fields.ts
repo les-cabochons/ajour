@@ -362,6 +362,7 @@ const SHARE_RESULTS = {
   shared: "shared",
   missing: "missing",
   alreadyShared: "already_shared",
+  managed: "managed",
   sameNameShared: "same_name_shared",
   sameNameHeld: "same_name_held",
   notSynced: "not_synced",
@@ -499,6 +500,13 @@ export function describeConnectionDelete(
         ).length -
         after.projects.filter(
           (project) => project.team?.connectionId === connectionId,
+        ).length,
+      managed_project_count:
+        before.projects.filter(
+          (project) => project.source?.connectionId === connectionId,
+        ).length -
+        after.projects.filter(
+          (project) => project.source?.connectionId === connectionId,
         ).length,
     },
   });
