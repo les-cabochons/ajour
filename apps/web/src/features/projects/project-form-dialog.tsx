@@ -1,5 +1,8 @@
-import { useState, type FormEvent } from "react";
-import { RiHashtag as CodeIcon } from "@remixicon/react";
+import { useState, type CSSProperties, type FormEvent } from "react";
+import {
+  RiHashtag as CodeIcon,
+  RiPencilLine as EditIcon,
+} from "@remixicon/react";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -91,46 +94,82 @@ export function ProjectFormDialog({
             </DialogTitle>
           </DialogHeader>
 
-          {/* A composer, as Linear's new project: the name and short name
-              to write in, then the code, color and icon as chips (forms
-              council rounds 6 and 12). */}
+          {/* A composer, as Linear's new project: the icon as an avatar
+              beside the name and short name to write in, then the code and
+              color as chips (forms council rounds 6 and 13). */}
           <FieldGroup className="composer gap-2">
-            <Field>
-              <FieldLabel htmlFor="project-form-name" className="sr-only">
-                Full name
-              </FieldLabel>
-              <input
-                id="project-form-name"
-                className="composer-title"
-                autoFocus
-                autoComplete="off"
-                placeholder="Project name"
-                value={fields.name}
-                onChange={(event) =>
-                  setFields((current) =>
-                    setProjectFormName(current, event.target.value),
-                  )
-                }
-              />
-            </Field>
-            <Field>
-              <FieldLabel
-                htmlFor="project-form-display-name"
-                className="sr-only"
-              >
-                Display name
-              </FieldLabel>
-              <input
-                id="project-form-display-name"
-                className="composer-subtitle"
-                autoComplete="off"
-                placeholder="Add a short name for lists…"
-                value={fields.displayName}
-                onChange={(event) =>
-                  update({ displayName: event.target.value })
-                }
-              />
-            </Field>
+            {/* The icon is the project's avatar, beside its name, tinted
+                in its color, as a workspace logo (forms council round 13). */}
+            <div className="project-form-identity">
+              <Popover>
+                <PopoverTrigger
+                  render={
+                    <button
+                      type="button"
+                      className="project-form-avatar"
+                      style={
+                        { "--project-color": fields.color } as CSSProperties
+                      }
+                      aria-label={`Project icon: ${iconLabel}`}
+                    />
+                  }
+                >
+                  <ProjectIcon
+                    icon={fields.icon}
+                    color={fields.color}
+                    className="size-5"
+                  />
+                  <span aria-hidden className="project-form-avatar-badge">
+                    <EditIcon className="size-2.5" />
+                  </span>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-80">
+                  <ProjectIconField
+                    icon={fields.icon}
+                    color={fields.color}
+                    onChange={(icon) => update({ icon })}
+                  />
+                </PopoverContent>
+              </Popover>
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
+                <Field>
+                  <FieldLabel htmlFor="project-form-name" className="sr-only">
+                    Full name
+                  </FieldLabel>
+                  <input
+                    id="project-form-name"
+                    className="composer-title"
+                    autoFocus
+                    autoComplete="off"
+                    placeholder="Project name"
+                    value={fields.name}
+                    onChange={(event) =>
+                      setFields((current) =>
+                        setProjectFormName(current, event.target.value),
+                      )
+                    }
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel
+                    htmlFor="project-form-display-name"
+                    className="sr-only"
+                  >
+                    Display name
+                  </FieldLabel>
+                  <input
+                    id="project-form-display-name"
+                    className="composer-subtitle"
+                    autoComplete="off"
+                    placeholder="Add a short name for lists…"
+                    value={fields.displayName}
+                    onChange={(event) =>
+                      update({ displayName: event.target.value })
+                    }
+                  />
+                </Field>
+              </div>
+            </div>
             <div className="composer-chips pt-2">
               <div className="composer-chip composer-estimate">
                 <CodeIcon aria-hidden className="size-3.5 shrink-0" />
@@ -152,31 +191,6 @@ export function ProjectFormDialog({
                 onChange={(color) => update({ color })}
                 trailing={<span>Color</span>}
               />
-              <Popover>
-                <PopoverTrigger
-                  render={
-                    <button
-                      type="button"
-                      className="composer-pill"
-                      aria-label={`Project icon: ${iconLabel}`}
-                    />
-                  }
-                >
-                  <ProjectIcon
-                    icon={fields.icon}
-                    color={fields.color}
-                    className="size-3.5"
-                  />
-                  <span>Icon</span>
-                </PopoverTrigger>
-                <PopoverContent align="start" className="w-80">
-                  <ProjectIconField
-                    icon={fields.icon}
-                    color={fields.color}
-                    onChange={(icon) => update({ icon })}
-                  />
-                </PopoverContent>
-              </Popover>
             </div>
           </FieldGroup>
 

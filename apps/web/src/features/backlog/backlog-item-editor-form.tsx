@@ -17,7 +17,7 @@ import {
   RiFolderLine as ProjectChipIcon,
   RiLoader5Line as StateIcon,
   RiRefreshLine as RotateCcw,
-  RiArrowRightUpLine as ShowMoreIcon,
+  RiExpandDiagonalLine as OpenPageIcon,
 } from "@remixicon/react";
 import { ProjectIcon } from "@/lib/project-icons";
 import { getWorkflowStateFills } from "@/domain/backlog/workflow-state-fill";
@@ -27,11 +27,8 @@ import { ObjectActionsButton } from "@/components/object-actions-menu";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { ToggleChip } from "@/components/ui/toggle-chip";
-import { FigureField, FigureFieldRow } from "@/components/ui/figure-field";
-import {
-  ESTIMATE_FIGURES,
-  formatHours,
-} from "@/features/backlog/backlog-estimates";
+import { InlineFigure, InlineFigures } from "@/components/ui/inline-figures";
+import { formatHours } from "@/features/backlog/backlog-estimates";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Field,
@@ -151,6 +148,13 @@ function isLongDescription(text: string) {
   return text.split("\n").length > 6 || text.length > 480;
 }
 
+/** The word after each estimate in the composer's sentence. */
+const ESTIMATE_WORDS: Record<BacklogEstimateFieldKey, string> = {
+  remainingEstimateHours: "remaining",
+  completedEstimateHours: "completed",
+  originalEstimateHours: "estimated",
+};
+
 const ESTIMATE_ERROR_KEYS = {
   originalEstimateHours: "originalEstimateError",
   remainingEstimateHours: "remainingEstimateError",
@@ -223,8 +227,8 @@ export function BacklogItemEditorForm({
   /** Reports every draft change, so a host can carry it to another container. */
   onFieldsChange?: (fields: BacklogTaskEditorFields) => void;
   /**
-   * Opens the item's page. Given, a long description shows its first lines
-   * and "Show more" opens the page (forms council round 12).
+   * Opens the item's page, from the expand button in the header. Given, a
+   * long description shows its first lines (forms council rounds 12 and 13).
    */
   onOpenPage?: () => void;
 }) {
@@ -630,26 +634,31 @@ export function BacklogItemEditorForm({
       descriptionEditable ? base.description : (currentDescription ?? ""),
     );
 
-  // The estimates are figures, as on the item page: Remaining, Completed,
-  // then Original, each typed in place (forms council round 12). A new item
-  // has nothing left or done yet: one "Estimate", which sets the original.
-  const shownEstimateKeys =
+  // The estimates are one sentence under the title, typed in place: "5h
+  // remaining · 3h completed · 8h estimated" (forms council round 13). A
+  // new item has nothing left or done yet: "estimated" alone, the original.
+  const shownEstimateKeys: BacklogEstimateFieldKey[] =
     target.kind === "create"
-      ? (["originalEstimateHours"] as const)
-      : ESTIMATE_FIGURES.map((figure) => figure.key);
+      ? ["originalEstimateHours"]
+      : [
+          "remainingEstimateHours",
+          "completedEstimateHours",
+          "originalEstimateHours",
+        ];
   const estimateFigures = shownEstimateKeys.map((key) => {
     const error = validation[ESTIMATE_ERROR_KEYS[key]];
     const resetValue = editor.estimateResets[key];
-    const label = target.kind === "create" ? "Estimate" : ESTIMATE_LABELS[key];
+    const label = ESTIMATE_LABELS[key];
     return (
-      <FigureField
+      <InlineFigure
         key={key}
         id={`${idPrefix}-${key}`}
-        label={label}
+        label={ESTIMATE_WORDS[key]}
         value={fields[key]}
         onChange={(value) => updateFields({ [key]: value })}
         format={formatEstimateFigure}
         invalid={Boolean(error)}
+        onKeyDown={saveOnEnter}
         trailing={
           resetValue !== undefined ? (
             <Tooltip>
@@ -690,10 +699,21 @@ export function BacklogItemEditorForm({
       className={cn("flex flex-col gap-4", className)}
       onKeyDown={handleKeyDown}
     >
-      <header className="flex items-start justify-between gap-2">
+      {/* Without the kicker, the title sits closer to the ticket line. */}
+      <header
+        className={cn(
+          "flex items-start justify-between gap-2",
+          target.kind === "edit" && "-mb-2",
+        )}
+      >
         <div className="flex min-w-0 flex-col gap-0.5">
           {/* In a dialog the title takes the dialog's size, as every dialog's does. */}
-          <Title className="composer-kicker">
+          {/* An existing item opens on its ticket line, not "Edit backlog
+              item": the title it labels the dialog with stays for assistive
+              tech (forms council round 13). */}
+          <Title
+            className={target.kind === "edit" ? "sr-only" : "composer-kicker"}
+          >
             {getEditorTitle(target, editor.isSubitem)}
           </Title>
           {parent ? (
@@ -719,6 +739,21 @@ export function BacklogItemEditorForm({
           ) : null}
         </div>
         <div className="flex items-center gap-1">
+          {onOpenPage ? (
+            <TooltipButton
+              label="Open as page"
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={onOpenPage}
+                />
+              }
+            >
+              <OpenPageIcon />
+            </TooltipButton>
+          ) : null}
           {workItem ? (
             <ObjectActionsButton
               actions={getBacklogItemActions(workItem, {
@@ -780,12 +815,14 @@ export function BacklogItemEditorForm({
           ) : null}
         </Field>
 
+        <InlineFigures aria-label="Estimates">{estimateFigures}</InlineFigures>
+
         {/* The writing comes first: the name, then its description, then
             the properties (forms council round 3). */}
         {/* A long description scrolls inside its editor, so the properties
             and the buttons stay in reach. With a page to open, it shows its
-            first lines, and "Show more" opens the page (forms council round
-            12); typing in it lifts the cut. */}
+            first lines; the header's expand button opens the page (forms
+            council rounds 12 and 13); typing in it lifts the cut. */}
         <Field
           className="composer-description"
           data-clamped={clampDescription ? "" : undefined}
@@ -840,16 +877,6 @@ export function BacklogItemEditorForm({
               ) : null}
             </div>
           )}
-          {clampDescription ? (
-            <button
-              type="button"
-              className="composer-show-more"
-              onClick={onOpenPage}
-            >
-              Show more
-              <ShowMoreIcon aria-hidden className="size-3.5" />
-            </button>
-          ) : null}
         </Field>
 
         <section aria-label="Properties" className="composer-chips">
@@ -958,9 +985,6 @@ export function BacklogItemEditorForm({
             </Tooltip>
           ) : null}
         </section>
-        <FigureFieldRow aria-label="Estimates" role="group">
-          {estimateFigures}
-        </FigureFieldRow>
         {validation.priorityError ? (
           <span className="field-error">{validation.priorityError}</span>
         ) : null}

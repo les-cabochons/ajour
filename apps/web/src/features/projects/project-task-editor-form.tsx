@@ -6,7 +6,7 @@ import {
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { ToggleChip } from "@/components/ui/toggle-chip";
-import { FigureField, FigureFieldRow } from "@/components/ui/figure-field";
+import { InlineFigure, InlineFigures } from "@/components/ui/inline-figures";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import {
@@ -155,6 +155,28 @@ export function ProjectTaskEditorForm({
           />
           {nameError ? <span className="field-error">{nameError}</span> : null}
         </Field>
+        {/* Budget and adjustment are one sentence under the name, typed in
+            place, as a backlog item's estimates (forms council round 13). */}
+        <InlineFigures aria-label="Budget">
+          <InlineFigure
+            id="project-task-editor-budget"
+            label="budget"
+            value={fields.budget}
+            onChange={(budget) => onFieldsChange({ budget })}
+            format={formatBudgetFigure}
+            invalid={Boolean(editor.budgetError)}
+            onKeyDown={saveOnEnter}
+          />
+          <InlineFigure
+            id="project-task-editor-adjustment"
+            label="adjustment"
+            value={fields.adjustment}
+            onChange={(adjustment) => onFieldsChange({ adjustment })}
+            format={formatBudgetFigure}
+            invalid={Boolean(editor.adjustmentError)}
+            onKeyDown={saveOnEnter}
+          />
+        </InlineFigures>
         <div className="composer-chips" role="group" aria-label="Properties">
           <ToggleChip
             id="project-task-editor-billable"
@@ -171,28 +193,6 @@ export function ProjectTaskEditorForm({
             onChange={(pinnedSlot) => onFieldsChange({ pinnedSlot })}
           />
         </div>
-        {/* Budget and adjustment are figures, as the project page's, typed
-            in place (forms council round 12). */}
-        <FigureFieldRow role="group" aria-label="Budget">
-          <FigureField
-            id="project-task-editor-budget"
-            label="Budget"
-            value={fields.budget}
-            onChange={(budget) => onFieldsChange({ budget })}
-            format={formatBudgetFigure}
-            invalid={Boolean(editor.budgetError)}
-            onKeyDown={saveOnEnter}
-          />
-          <FigureField
-            id="project-task-editor-adjustment"
-            label="Adjustment"
-            value={fields.adjustment}
-            onChange={(adjustment) => onFieldsChange({ adjustment })}
-            format={formatBudgetFigure}
-            invalid={Boolean(editor.adjustmentError)}
-            onKeyDown={saveOnEnter}
-          />
-        </FigureFieldRow>
         {editor.budgetError ? (
           <span className="field-error">Budget: {editor.budgetError}</span>
         ) : null}
