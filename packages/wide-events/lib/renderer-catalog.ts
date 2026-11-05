@@ -480,6 +480,7 @@ export const rendererEvents = {
         | "shared"
         | "missing"
         | "already_shared"
+        | "managed"
         | "same_name_shared"
         | "same_name_held"
         | "not_synced"

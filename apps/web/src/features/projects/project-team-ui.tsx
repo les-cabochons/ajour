@@ -124,7 +124,9 @@ export function ProjectTeamAction({
           ? `${team.teamName} already has a project with this name here. Rename this one to share it.`
           : result.kind === "notSynced"
             ? `Sync ${team.teamName} once in Settings › Plugins first, so Ajour knows the team's projects.`
-            : "Reload the project and try again.",
+            : result.kind === "managed"
+              ? "It follows its project source, so it can't be shared with a team."
+              : "Reload the project and try again.",
     });
   };
 
@@ -168,7 +170,8 @@ export function ProjectTeamAction({
     );
   }
 
-  if (teams.length === 0) return null;
+  // A managed project follows its project source, never a team (ADR 0016).
+  if (teams.length === 0 || project.source) return null;
   if (teams.length === 1) {
     return (
       <PropertyAction disabled={disabled} onClick={() => void share(teams[0]!)}>

@@ -362,6 +362,7 @@ const SHARE_RESULTS = {
   shared: "shared",
   missing: "missing",
   alreadyShared: "already_shared",
+  managed: "managed",
   sameNameShared: "same_name_shared",
   sameNameHeld: "same_name_held",
   notSynced: "not_synced",

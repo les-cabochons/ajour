@@ -18,6 +18,7 @@ import { normalizeTeamConnections } from "@/domain/projects/team-link";
 import {
   applyTeamSync,
   disconnectTeam,
+  findLocalProjectNamed,
   linkProject,
   planTeamSync,
   resolveHeldArrival,
@@ -824,6 +825,33 @@ describe("sharing, linking and leaving a team", () => {
     expect(shareProject(state, CONNECTION, "shared").result).toEqual({
       kind: "alreadyShared",
     });
+  });
+
+  it("refuses to share or link a managed project: it follows its project source", () => {
+    const managed = localProject("managed", {
+      name: "Beta",
+      source: {
+        pluginId: "planner",
+        connectionId: "source-1",
+        remoteId: "BETA",
+        syncedAt: 1,
+      },
+    });
+    const state = stateOf([managed]);
+
+    expect(shareProject(state, CONNECTION, "managed").result).toEqual({
+      kind: "managed",
+    });
+    const linked = linkProject(
+      state,
+      CONNECTION,
+      "managed",
+      teamProject(localProject("sam", { name: "Beta" }), [], "remote-beta"),
+      createFactories(),
+    );
+    expect(linked.result).toEqual({ kind: "managed" });
+    expect(linked.projects).toBe(state.projects);
+    expect(findLocalProjectNamed(state.projects, "Beta")).toBeUndefined();
   });
 
   it("links a local project to a team project: team values, tasks by name", () => {
