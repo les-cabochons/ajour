@@ -68,6 +68,7 @@ import {
   getLocalProjectDisplayName,
   type LocalAppState,
   type LocalProject,
+  type LocalProjectSource,
   type LocalProjectTask,
   type LocalTimesheetEntry,
   type PinnedTaskSlot,
@@ -85,6 +86,8 @@ import {
   PinnedSlotDialog,
 } from "@/features/projects/pinned-slot";
 import { ProjectFormDialog } from "@/features/projects/project-form-dialog";
+import { ProjectBudgetCard } from "@/features/projects/project-budget-card";
+import { sourceTaskConsumed } from "@/domain/projects/project-budget";
 import {
   ProjectPropertiesCard,
   ProjectTitle,
@@ -598,6 +601,8 @@ function ProjectDetail({
   onAssignShortcut,
   onMergeInto,
   entries,
+  budgetEntries,
+  projectSource,
   weekMs,
   taskPropertyPlugins,
 }: {
@@ -608,6 +613,13 @@ function ProjectDetail({
   taskMetrics: Map<string, ProjectMetrics>;
   /** The project's time entries, newest first. */
   entries: LocalTimesheetEntry[];
+  /**
+   * For a managed project, its entries and those whose committed copy is on
+   * it, which the budget card counts.
+   */
+  budgetEntries: readonly LocalTimesheetEntry[];
+  /** A managed project's source record: its label and the user's hours. */
+  projectSource: LocalProjectSource | undefined;
   /** Time logged on the project this week. */
   weekMs: number;
   /** The task open in the side panel, highlighted in the list. */
@@ -960,11 +972,16 @@ function ProjectDetail({
   }
 
   function renderConsumedBadge(task: LocalProjectTask) {
-    const options = {
-      budgetMs: task.budgetMs,
-      trackedMs: taskMetrics.get(task._id)?.durationMs ?? 0,
-      adjustmentMs: task.adjustmentMs,
-    };
+    // A source task reads the source's hours for the user against its
+    // estimate; any other task, the time logged in Ajour.
+    const fromSource = sourceTaskConsumed(task);
+    const options = fromSource
+      ? { budgetMs: fromSource.budgetMs, trackedMs: fromSource.consumedMs }
+      : {
+          budgetMs: task.budgetMs,
+          trackedMs: taskMetrics.get(task._id)?.durationMs ?? 0,
+          adjustmentMs: task.adjustmentMs,
+        };
     const budgetMs = normalizeProjectTaskBudgetMs(task.budgetMs);
     const consumedMs = getProjectTaskTrackedWithAdjustmentMs(options);
     const tone = projectTaskToneClassName[getProjectTaskConsumedTone(options)];
@@ -1105,7 +1122,18 @@ function ProjectDetail({
     );
   }
 
-  const budget = getProjectBudget(project, taskMetrics);
+  // On a managed project the budget card replaces the task budgets: the
+  // source writes the budget, and the card shows it with what Ajour adds.
+  const budget = project.source
+    ? { budgetMs: 0, consumedMs: 0 }
+    : getProjectBudget(project, taskMetrics);
+  const budgetCard = project.source ? (
+    <ProjectBudgetCard
+      project={project}
+      entries={budgetEntries}
+      source={projectSource}
+    />
+  ) : null;
   const [tab, setTab] = useState<"tasks" | "entries">("tasks");
   const entryDays = useMemo(() => {
     const days: { localDate: string; entries: LocalTimesheetEntry[] }[] = [];
@@ -1273,6 +1301,9 @@ function ProjectDetail({
               <Figure label="Active tasks">{summary.active}</Figure>
             )}
           </FigureRow>
+          {/* The narrow view stacks the side cards under the tabs, so the
+              budget card follows the figures there instead. */}
+          {isNarrowView ? budgetCard : null}
 
           <Tabs
             value={tab}
@@ -1462,14 +1493,17 @@ function ProjectDetail({
             </TabsContent>
           </Tabs>
         </div>
-        <ProjectPropertiesCard
-          project={project}
-          sourceLabel={sourceLabel}
-          isImporting={isImporting}
-          onImport={openImportPicker}
-          onArchive={() => onProjectAction(project, "archive")}
-          onRestore={() => onProjectAction(project, "restore")}
-        />
+        <div className="project-side-cards">
+          {isNarrowView ? null : budgetCard}
+          <ProjectPropertiesCard
+            project={project}
+            sourceLabel={sourceLabel}
+            isImporting={isImporting}
+            onImport={openImportPicker}
+            onArchive={() => onProjectAction(project, "archive")}
+            onRestore={() => onProjectAction(project, "restore")}
+          />
+        </div>
       </div>
 
       {draggedTask && taskDragState ? (
@@ -1936,6 +1970,23 @@ export function ProjectsPage() {
     // waits until the page renders them.
   }, Boolean(teamState?.team));
 
+  // A managed project's budget card also counts the entries committed on it
+  // that moved elsewhere since.
+  const managedProjectId = selectedProject?.source
+    ? selectedProject._id
+    : undefined;
+  const budgetEntries = useMemo(
+    () =>
+      managedProjectId
+        ? state.timesheetEntries.filter(
+            (entry) =>
+              entry.projectId === managedProjectId ||
+              entry.commit?.projectId === managedProjectId,
+          )
+        : [],
+    [managedProjectId, state.timesheetEntries],
+  );
+
   if (!teamState?.team) return null;
 
   const closeProjectModal = () => {
@@ -2254,6 +2305,12 @@ export function ProjectsPage() {
               taskMetricsByProject.get(selectedProject._id) ?? new Map()
             }
             entries={selectedEntries}
+            budgetEntries={budgetEntries}
+            projectSource={
+              selectedProject.source
+                ? state.projectSources?.[selectedProject.source.connectionId]
+                : undefined
+            }
             weekMs={weekMsByProject.get(selectedProject._id) ?? 0}
             editingTaskId={visibleTaskEditor?.taskId}
             onProjectAction={runProjectAction}
