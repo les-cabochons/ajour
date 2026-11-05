@@ -180,3 +180,54 @@ Then(
     await expect(page.getByRole("link", { name, exact: true })).toHaveCount(0);
   },
 );
+
+Then("the title says {string}", async ({ page }, mark: string) => {
+  await expect(
+    page.locator(".project-detail-header").getByText(mark, { exact: true }),
+  ).toBeVisible();
+});
+
+Then(
+  "the Full name, Code and Client rows are locked by {string}",
+  async ({ page }, label: string) => {
+    const card = page.getByRole("region", { name: "Properties" });
+    for (const row of ["Full name", "Code", "Client"]) {
+      const value = card.locator("dt", { hasText: row }).locator("+ dd");
+      await expect(
+        value.getByRole("img", { name: `Locked. ${label} sets it.` }),
+      ).toBeVisible();
+      await expect(value.getByRole("button")).toHaveCount(0);
+    }
+    await expect(
+      card.getByRole("button", { name: /^Project color/ }),
+    ).toBeVisible();
+  },
+);
+
+Then(
+  "the link {string} opens {string}",
+  async ({ page }, name: string, url: string) => {
+    const link = page.getByRole("link", { name, exact: true });
+    await expect(link).toHaveAttribute("href", url);
+    await expect(link).toHaveAttribute("target", "_blank");
+  },
+);
+
+Then(
+  "the Projects list marks {string} as from {string}",
+  async ({ page }, name: string, label: string) => {
+    const row = page.locator("tr", {
+      has: page.getByRole("link", { name, exact: true }),
+    });
+    await expect(row.getByRole("img", { name: `From ${label}` })).toBeVisible();
+  },
+);
+
+Then(
+  "only {string} says {string} in the task menu",
+  async ({ page }, task: string, hint: string) => {
+    const rows = page.locator("[cmdk-item][data-task-id]");
+    await expect(rows.filter({ hasText: hint })).toHaveCount(1);
+    await expect(rows.filter({ hasText: hint })).toContainText(task);
+  },
+);
