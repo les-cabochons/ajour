@@ -82,26 +82,47 @@ describe("Windows uninstall CLI cleanup", () => {
         "out/archives",
         `ajour-2.3.4-${osName}-${process.arch}.${suffix}`,
       );
-      const packaged = execFileSync("tar", ["-tf", archive], {
+      const entries = execFileSync("tar", ["-tf", archive], {
         encoding: "utf8",
       })
         .split(/\r?\n/)
         .map((entry) => entry.replace(/^\.\//, ""))
-        .filter((entry) => entry && !entry.endsWith("/"))
-        .map((entry) => (entry === binary ? "ajour.exe" : entry));
-      const docs = installer
-        .split("!macro AjourArchiveDocs ROOT")[1]!
-        .split("!macroend")[0]!;
-      const payload = installer
-        .split("!macro AjourPayload ROOT")[1]!
-        .split("!macroend")[0]!;
-      const deleted = [
-        ...(docs + payload).matchAll(/Delete "\$\{ROOT\}\\([^"]+)"/g),
-      ].map((match) => match[1]!.replaceAll("\\", "/"));
-      expect(deleted.sort()).toEqual(packaged.sort());
+        .filter((entry) => entry && !entry.endsWith("/"));
+      // archive.mjs packs every platform alike but for the binary's name,
+      // so the host's archive also gives the Linux one's (#605).
+      const packaged = (name: string) =>
+        entries.map((entry) => (entry === binary ? name : entry)).sort();
+      const macro = (name: string) =>
+        installer.split(`!macro ${name} ROOT`)[1]!.split("!macroend")[0]!;
+      const deletedBy = (...names: string[]) =>
+        [
+          ...names
+            .map(macro)
+            .join("")
+            .matchAll(/Delete "\$\{ROOT\}\\([^"]+)"/g),
+        ]
+          .map((match) => match[1]!.replaceAll("\\", "/"))
+          .sort();
+      expect(deletedBy("AjourArchiveDocs", "AjourPayload")).toEqual(
+        packaged("ajour.exe"),
+      );
+      // bin\linux: the Linux binary, and the same share tree as bin.
+      expect(deletedBy("AjourArchiveDocs", "AjourLinuxPayload")).toEqual(
+        packaged("ajour"),
+      );
+      expect(macro("AjourLinuxPayload")).toContain(
+        '!insertmacro AjourArchiveDocs "${ROOT}\\share"',
+      );
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+    const archiveScript = await readFile(
+      new URL("../cli/scripts/archive.mjs", import.meta.url),
+      "utf8",
+    );
+    expect(archiveScript).toContain(
+      'process.platform === "win32" ? "ajour.exe" : "ajour"',
+    );
     const controller = await readFile(
       new URL("./electron/cli-command.cjs", import.meta.url),
       "utf8",
@@ -140,6 +161,7 @@ describe("Windows uninstall CLI cleanup", () => {
     for (const folder of [
       "$R2\\Ajour",
       "$8",
+      "$8\\linux",
       "$8\\$R4",
       "$8\\$R4\\unpacked",
       "${ROOT}\\share",
@@ -152,5 +174,31 @@ describe("Windows uninstall CLI cleanup", () => {
       );
     }
     expect(installer).toContain("${IfNot} ${isUpdated}");
+  });
+
+  // The Linux build for WSL (#605). Distros aren't entered: their links stay.
+  it("deletes bin\\linux and the Linux build's leftovers before the bin folder", () => {
+    const cleanup = installer.split("Function un.RemoveAjourCommand")[1]!;
+    const linux = cleanup.indexOf('!insertmacro AjourLinuxPayload "$8\\linux"');
+    expect(linux).toBeGreaterThan(-1);
+    expect(cleanup.indexOf('RMDir "$8\\linux"')).toBeGreaterThan(linux);
+    expect(cleanup.indexOf('RMDir "$8\\linux"')).toBeLessThan(
+      cleanup.indexOf('RMDir "$8"'),
+    );
+    // linux.old-<uuid>, where a swap sets the previous build aside.
+    const aside = cleanup.split('StrCmpS $0 "linux.old-"')[1]!;
+    expect(aside).toBeDefined();
+    const asideBlock = aside.split("Goto nextLeftover")[0]!;
+    expect(asideBlock).toContain("Call un.AjourUuid");
+    expect(asideBlock).toContain('!insertmacro AjourLinuxPayload "$8\\$R4"');
+    // .staging-<uuid>: the Linux archive, and its unpacked build.
+    expect(cleanup).toContain(
+      '!insertmacro AjourLinuxPayload "$8\\$R4\\unpacked"',
+    );
+    const names = installer
+      .split("Function un.AjourArchiveName")[1]!
+      .split("FunctionEnd")[0]!;
+    expect(names).toContain('"-linux-x64.tar.gz"');
+    expect(cleanup).not.toMatch(/wsl/i);
   });
 });
