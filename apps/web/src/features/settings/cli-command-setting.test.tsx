@@ -938,6 +938,90 @@ describe("the WSL command rows", () => {
     expect(mocks.error).not.toHaveBeenCalled();
   });
 
+  const NEXT = "0.0.1-nightly.20261105.313";
+
+  it("Given the Linux build follows the app, added rows show Updating ajour to the version with a disabled control", async () => {
+    desktop({
+      ...INSTALLED,
+      version: NEXT,
+      wsl: {
+        version: VERSION,
+        pending: NEXT,
+        distros: [
+          { name: "Ubuntu", wslVersion: 2, status: "updating", progress: 42 },
+          { name: "Debian", wslVersion: 2, status: "not-added" },
+        ],
+      },
+    });
+    Object.assign(window.ajourDesktop!, {
+      runtime: { platform: "win32" },
+      addCliCommandWsl: vi.fn(),
+      removeCliCommandWsl: vi.fn(),
+    });
+    await mount();
+
+    expect(rowLines()).toEqual([`Updating ajour to ${NEXT}, 42%`]);
+    const control = ubuntuRow().querySelector("button")!;
+    expect(control.disabled).toBe(true);
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Add" }).disabled,
+    ).toBe(true);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(ubuntuRow().querySelector(".h-12")).toBeTruthy();
+  });
+
+  it("Given the Linux build couldn't follow, added rows say so inline, keep the installed version, and Retry follows again", async () => {
+    const main = desktop({
+      ...INSTALLED,
+      version: NEXT,
+      wsl: {
+        version: VERSION,
+        pending: NEXT,
+        distros: [
+          {
+            name: "Ubuntu",
+            wslVersion: 2,
+            status: "error",
+            operation: "follow",
+            error: "An ajour running in WSL is using its files.",
+            added: true,
+          },
+        ],
+      },
+    });
+    const add = vi.fn();
+    const remove = vi.fn();
+    Object.assign(window.ajourDesktop!, {
+      runtime: { platform: "win32" },
+      addCliCommandWsl: add,
+      removeCliCommandWsl: remove,
+    });
+    await mount();
+
+    expect(rowLines()).toEqual([`ajour ${VERSION} · ~/.local/bin/ajour`]);
+    expect(within(ubuntuRow()).getByRole("alert").textContent).toBe(
+      `ajour in WSL couldn't update to ${NEXT}: An ajour running in WSL is using its files. The installed version keeps working.`,
+    );
+    fireEvent.click(within(ubuntuRow()).getByRole("button", { name: "Retry" }));
+
+    expect(main.installCliCommand).toHaveBeenCalledOnce();
+    expect(add).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+    expect(within(ubuntuRow()).queryByRole("alert")).toBeNull();
+    expect(rowLines()).toEqual([`Updating ajour to ${NEXT}, 0%`]);
+    await main.finish({
+      ...INSTALLED,
+      version: NEXT,
+      wsl: {
+        version: NEXT,
+        distros: [{ name: "Ubuntu", wslVersion: 2, status: "added" }],
+      },
+    });
+    expect(rowLines()).toEqual([`ajour ${NEXT} · ~/.local/bin/ajour`]);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(mocks.error).not.toHaveBeenCalled();
+  });
+
   it.each(["darwin", "linux", "win32"])(
     "Given no command on %s, WSL rows stay hidden",
     async (platform) => {

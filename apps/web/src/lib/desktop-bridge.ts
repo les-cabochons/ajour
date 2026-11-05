@@ -163,13 +163,27 @@ export type DesktopCliWslDistro =
   | {
       name: string;
       wslVersion: 2;
+      /**
+       * An added distro while the Linux build follows the app (#606): its
+       * link stays, and finds the new build once it's swapped in.
+       */
+      status: "updating";
+      /** The download's percent, then its last. */
+      progress: number | null;
+    }
+  | {
+      name: string;
+      wslVersion: 2;
       status: "error";
-      /** Why the last Add or Remove failed, as a sentence. */
+      /** Why the last Add, Remove or follow failed, as a sentence. */
       error: string;
       /** In the record: its link still works. */
       added: boolean;
-      /** The operation that failed, which Retry repeats. */
-      operation: "add" | "remove";
+      /**
+       * The operation that failed, which Retry repeats. `follow`: the Linux
+       * build couldn't follow the app (#606), and the installed one works.
+       */
+      operation: "add" | "remove" | "follow";
     };
 
 /**
@@ -179,7 +193,13 @@ export type DesktopCliWslDistro =
  */
 export interface DesktopCliCommandState {
   /** The WSL distros, when there is any to add the command to. */
-  wsl?: { version?: string; distros: DesktopCliWslDistro[] };
+  wsl?: {
+    /** The Linux build's version, which the added distros run. */
+    version?: string;
+    /** The version the Linux build follows to, also after it failed (#606). */
+    pending?: string;
+    distros: DesktopCliWslDistro[];
+  };
   operation?: "remove";
   /** Version being followed, also after a failed update. */
   pending?: string;
