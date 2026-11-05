@@ -1128,11 +1128,35 @@ describe("the privacy canary", () => {
     ).toMatchObject({ name: `Project ${MARKER}`, client: `Client ${MARKER}` });
     // The second sync sends the marked cursor back, and nothing changed.
     expect(await sync()).toEqual({ kind: "unchanged" });
+    // Merge into… (#507): a marked local task and its marked entry move to
+    // the marked source task.
+    const merged = app.localStore
+      .snapshot()
+      .projects.find((project) => project._id === localId)!;
+    const sourceTaskId = merged.tasks.find((task) => task.source)!._id;
+    app.localStore.addProjectTask(localId, { name: `Tasks ${MARKER}` });
+    const localTaskId = app.localStore
+      .snapshot()
+      .projects.find((project) => project._id === localId)!
+      .tasks.find((task) => !task.source)!._id;
+    app.localStore.saveManualTimeEntry({
+      localDate: "2026-10-14",
+      projectId: localId,
+      taskId: localTaskId,
+      note: `Merged ${MARKER}`,
+      durationMs: 1_800_000,
+    });
+    expect(
+      app.localStore.mergeTask(localId, localTaskId, sourceTaskId, {
+        suggestion: "lookalike",
+      }).result,
+    ).toMatchObject({ kind: "merged", movedEntryCount: 1 });
 
     expect(namesSince(from)).toEqual(
       expect.arrayContaining([
         "renderer job project_source.sync",
         "renderer command project_source.resolve_held",
+        "renderer command task.merge",
         "api request project_source.sync",
         "api plugin_operation project_source.sync",
       ]),

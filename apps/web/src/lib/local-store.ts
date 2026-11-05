@@ -255,6 +255,11 @@ import {
   type ProjectTaskPatch,
 } from "@/domain/projects/project-transitions";
 import {
+  mergeTask as applyMergeTask,
+  type TaskMergeResult,
+  type TaskMergeSuggestion,
+} from "@/domain/projects/task-merge";
+import {
   normalizeTeamConnections,
   normalizeTeamPushHold,
 } from "@/domain/projects/team-link";
@@ -2348,6 +2353,29 @@ const store = {
     }));
   },
   /**
+   * Merge into… (#507): moves the task's entries and running entry to
+   * another task of its managed project and archives it. Returns the result,
+   * with why it was refused, and an undo token, null when nothing changed.
+   * `suggestion` names the suggestion the user took, for its event.
+   */
+  mergeTask(
+    projectId: string,
+    fromTaskId: string,
+    intoTaskId: string,
+    _options: { suggestion?: TaskMergeSuggestion["kind"] } = {},
+  ): { result: TaskMergeResult; undoToken: string | null } {
+    return updateStateWithUndoResult((state) => {
+      const merged = applyMergeTask(state, projectId, fromTaskId, intoTaskId, {
+        createId,
+        now: Date.now,
+      });
+      if (merged.result.kind === "refused") {
+        refuseStoreCommand(merged.result.reason);
+      }
+      return merged;
+    });
+  },
+  /**
    * Restores a task. Returns why it stayed archived when its project source
    * closed it or left it out, as a sentence for the user, or undefined.
    */
@@ -3732,6 +3760,32 @@ export const STORE_COMMANDS = {
       project: {
         ...projectIdFirst.project,
         favorite: ([, favorite]) => favorite,
+      },
+    },
+  },
+  mergeTask: {
+    name: "task.merge",
+    fields: {
+      ...taskIdsFirst,
+      task_merge: {
+        into_task_id: ([, , intoTaskId]) => intoTaskId,
+        suggestion: ([, , , options]) => options?.suggestion,
+      },
+    },
+    resultFields: {
+      task_merge: {
+        moved_entry_count: ({ result }) =>
+          result.kind === "merged" ? result.movedEntryCount : undefined,
+        kept_entry_count: ({ result }) =>
+          result.kind === "merged" ? result.keptEntryCount : undefined,
+        stale_entry_count: ({ result }) =>
+          result.kind === "merged" ? result.staleEntryCount : undefined,
+        moved_timer_count: ({ result }) =>
+          result.kind === "merged" ? result.movedTimerCount : undefined,
+        moved_pin: ({ result }) =>
+          result.kind === "merged" ? result.movedPin : undefined,
+        moved_favorite: ({ result }) =>
+          result.kind === "merged" ? result.movedFavorite : undefined,
       },
     },
   },

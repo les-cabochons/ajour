@@ -363,6 +363,115 @@ describe("store command events", () => {
     ]);
   });
 
+  it("merges a task with Undo, and its event holds counts and ids, never names", async () => {
+    browser.storage.set(
+      STORAGE_KEY,
+      JSON.stringify({
+        projects: [
+          {
+            _id: "acme",
+            name: "Acme - Support",
+            color: "#123456",
+            icon: { kind: "preset", name: "dot" },
+            status: "active",
+            source: {
+              pluginId: "planner",
+              connectionId: "c1",
+              remoteId: "P1",
+              syncedAt: 1,
+            },
+            tasks: [
+              {
+                _id: "local",
+                name: "Design review",
+                status: "active",
+                createdAt: 1,
+              },
+              {
+                _id: "source",
+                name: "Design reviews",
+                status: "active",
+                createdAt: 1,
+                source: { remoteId: "T1", assigned: true },
+              },
+              {
+                _id: "lunch",
+                name: "Team lunch",
+                status: "active",
+                createdAt: 1,
+                commitAs: "local",
+              },
+            ],
+          },
+        ],
+        timesheetEntries: [
+          {
+            _id: "e1",
+            localDate: "2026-11-03",
+            projectId: "acme",
+            taskId: "local",
+            label: "Design review",
+            note: "Wireframes",
+            durationMs: 3_600_000,
+            sourceBlockIds: [],
+            committedAt: 1,
+          },
+        ],
+      }),
+    );
+    const { sink, localStore } = await loadStore();
+
+    expect(localStore.mergeTask("acme", "local", "lunch")).toEqual({
+      result: { kind: "refused", reason: "local_only_target" },
+      undoToken: null,
+    });
+    const merged = localStore.mergeTask("acme", "local", "source", {
+      suggestion: "lookalike",
+    });
+
+    expect(merged.result).toMatchObject({ kind: "merged", movedEntryCount: 1 });
+    expect(localStore.snapshot().timesheetEntries[0]).toMatchObject({
+      taskId: "source",
+      label: "Design reviews",
+    });
+    expect(sink.events).toMatchObject([
+      {
+        name: "task.merge",
+        kind: "command",
+        outcome: "refused",
+        outcome_reason: "local_only_target",
+        project: { id: "acme" },
+        task: { id: "local" },
+        task_merge: { into_task_id: "lunch" },
+      },
+      {
+        name: "task.merge",
+        kind: "command",
+        outcome: "ok",
+        project: { id: "acme" },
+        task: { id: "local" },
+        task_merge: {
+          into_task_id: "source",
+          suggestion: "lookalike",
+          moved_entry_count: 1,
+          kept_entry_count: 0,
+          stale_entry_count: 0,
+          moved_timer_count: 0,
+        },
+        store: { undo_offered: true },
+      },
+    ]);
+    expect(JSON.stringify(sink.events)).not.toMatch(
+      /Design|Wireframes|Team lunch/i,
+    );
+
+    expect(localStore.undo(merged.undoToken!)).toBe("restored");
+    expect(localStore.snapshot().timesheetEntries[0]).toMatchObject({
+      taskId: "local",
+    });
+    expect(localStore.snapshot().projects[0]!.tasks[0]!.status).toBe("active");
+  });
+
   it("records why an Undo was refused: expired, or changed since", async () => {
     const { sink, localStore } = await loadStore();
     const token = localStore.updateProjectWithUndo(
