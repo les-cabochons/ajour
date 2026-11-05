@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { placeFloatingComposer } from "@/lib/floating-composer";
 import {
   Tooltip,
   TooltipContent,
@@ -2226,6 +2227,17 @@ export function ProjectsPage() {
             )}
             overlay={isNarrowView}
             showCloseButton={false}
+            // Off the edited task's row, so it stays readable.
+            ref={(popup: HTMLDivElement | null) => {
+              const taskId = visibleTaskEditor?.taskId;
+              if (!isNarrowView && taskId)
+                placeFloatingComposer(
+                  popup,
+                  document.querySelector(
+                    `main [data-task-id="${CSS.escape(taskId)}"]`,
+                  ),
+                );
+            }}
           >
             {taskEditorForm}
           </DialogContent>

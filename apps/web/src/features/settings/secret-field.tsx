@@ -112,7 +112,7 @@ export function SecretFieldInput({
                 id={replaceId}
                 type="button"
                 size="sm"
-                variant="outline"
+                variant="ghost"
                 disabled={blocked || binding.busy}
                 // The name starts with the visible text, so voice control can say it.
                 aria-label={`${replaceText} ${field.label}`}

@@ -115,7 +115,9 @@ export function TimeEntryModal({
         showCloseButton={false}
         // Off the entry's row, so the row stays readable while it is edited.
         ref={(popup: HTMLDivElement | null) => {
-          if (floating) placeFloatingComposer(popup, returnFocusTo);
+          // A new entry has no row: it rests in the same place every time.
+          if (floating && (entry || runningTimer))
+            placeFloatingComposer(popup, returnFocusTo);
         }}
         finalFocus={
           floating
