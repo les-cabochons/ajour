@@ -152,11 +152,7 @@ export const PanelTasks = memo(function PanelTasks({
                   label={running ? "Stop timer" : "Start timer"}
                   onClick={() => track(item, "timer", timer?._id)}
                 >
-                  {running ? (
-                    <RiStopFill className="text-[var(--success)]" />
-                  ) : (
-                    <RiPlayFill />
-                  )}
+                  {running ? <RiStopFill /> : <RiPlayFill />}
                 </TrackButton>
               </div>
             </div>

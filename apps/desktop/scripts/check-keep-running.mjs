@@ -475,6 +475,25 @@ async function main() {
     await panel.screenshot({
       path: path.join(captureDir, "tray-panel-entry.png"),
     });
+    // Dismissing hides the panel; reopening finds the unsaved draft.
+    await page.evaluate(() => window.ajourDesktop.trayPanelCommand("hide"));
+    await waitFor(
+      () =>
+        electronApp.evaluate(
+          ({ BrowserWindow }) =>
+            !BrowserWindow.getAllWindows()
+              .find((window) => window.webContents.getURL() === "about:blank")
+              .isVisible(),
+        ),
+      { what: "the panel to hide" },
+    );
+    await trayClick("Timer panel");
+    await panel.getByLabel("Hours", { exact: true }).waitFor();
+    expect(
+      (await panel.getByLabel("Hours", { exact: true }).inputValue()) ===
+        "0:30",
+      "a dismissed panel keeps its unsaved entry draft",
+    );
     await panel.getByLabel("Hours", { exact: true }).press("Enter");
     await panel.getByRole("searchbox").waitFor();
     expect(

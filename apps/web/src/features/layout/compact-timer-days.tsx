@@ -17,6 +17,7 @@ import {
   getTimerContributionMs,
   getTimerDurationsMs,
 } from "@/lib/timer-totals";
+import { sumSavedDurationsByDate } from "@/domain/time/day-totals";
 import { useRunningClock, useTodayIsoDate } from "@/lib/use-now";
 import { cn, getIsoWeekDates } from "@/lib/utils";
 
@@ -64,11 +65,7 @@ const EntryRowView = memo(function EntryRowView({
           } else localStore.continueTimesheetEntry(row._id);
         }}
       >
-        {running ? (
-          <RiStopFill className="text-[var(--success)]" />
-        ) : (
-          <RiPlayFill />
-        )}
+        {running ? <RiStopFill /> : <RiPlayFill />}
       </TrackButton>
     </li>
   );
@@ -85,6 +82,7 @@ function RunningRow({ row, onEdit }: { row: EntryRow; onEdit: EditEntry }) {
 function PanelWeek({
   date,
   today,
+  week,
   totals,
   timer,
   baseline,
@@ -92,12 +90,12 @@ function PanelWeek({
 }: {
   date: string;
   today: string;
+  week: string[];
   totals: Map<string, number>;
   timer: LocalTimer | null;
   baseline: LocalTimesheetEntry | undefined;
   onSelectDate: (date: string) => void;
 }) {
-  const week = getIsoWeekDates(date);
   const now = useRunningClock(Boolean(timer && week.includes(timer.localDate)));
   const contribution = getTimerContributionMs({
     timer,
@@ -134,15 +132,11 @@ export function PanelDays({
   const today = useTodayIsoDate();
   const [date, setDate] = useState(today);
   const timer = state.timers[0] ?? null;
-  const totals = useMemo(() => {
-    const result = new Map<string, number>();
-    for (const entry of state.timesheetEntries)
-      result.set(
-        entry.localDate,
-        (result.get(entry.localDate) ?? 0) + entry.durationMs,
-      );
-    return result;
-  }, [state.timesheetEntries]);
+  const week = useMemo(() => getIsoWeekDates(date), [date]);
+  const totals = useMemo(
+    () => sumSavedDurationsByDate(state.timesheetEntries, week),
+    [state.timesheetEntries, week],
+  );
   const savedRows = useMemo<EntryRow[]>(
     () =>
       state.timesheetEntries
@@ -191,6 +185,7 @@ export function PanelDays({
       <PanelWeek
         date={date}
         today={today}
+        week={week}
         totals={totals}
         timer={timer}
         baseline={baseline}

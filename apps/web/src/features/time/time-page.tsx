@@ -44,6 +44,7 @@ import {
 import { setOpenDraftGuard } from "@/lib/open-draft";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { useRunningClock } from "@/lib/use-now";
+import { sumSavedDurationsByDate } from "@/domain/time/day-totals";
 import { addDaysIsoDate, cn, getIsoWeekDates, todayIsoDate } from "@/lib/utils";
 
 /**
@@ -631,18 +632,7 @@ function DayTotalsStrip({
   const now = useRunningClock(currentTimer !== null);
 
   const totalsByDate = useMemo(() => {
-    const totals = new Map(weekDates.map((day) => [day, 0]));
-
-    for (const entry of state.timesheetEntries) {
-      if (!totals.has(entry.localDate)) {
-        continue;
-      }
-
-      totals.set(
-        entry.localDate,
-        (totals.get(entry.localDate) ?? 0) + entry.durationMs,
-      );
-    }
+    const totals = sumSavedDurationsByDate(state.timesheetEntries, weekDates);
 
     if (currentTimer && totals.has(currentTimer.localDate)) {
       const { runningDurationMs } = getTimerDurationsMs(currentTimer, now);

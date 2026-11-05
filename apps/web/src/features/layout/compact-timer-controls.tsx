@@ -9,7 +9,6 @@ import type { TimeEntryEditorTarget } from "@/features/time/time-entry-editor-fo
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import { useTodayIsoDate } from "@/lib/use-now";
-import { cn } from "@/lib/utils";
 
 export function TrackButton({
   label,
@@ -51,10 +50,7 @@ export function PanelTimer({
   return (
     <section
       aria-label="Timer"
-      className={cn(
-        "mx-2.5 mt-2.5 rounded-md border bg-background p-2.5",
-        timer && "border-l-2 border-l-[var(--success)]",
-      )}
+      className="mx-2.5 mt-2.5 rounded-md border bg-background p-2.5"
     >
       {timer && summary ? (
         <button

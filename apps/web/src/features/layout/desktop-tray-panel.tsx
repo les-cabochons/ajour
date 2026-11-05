@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { Activity, lazy, Suspense, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "@tanstack/react-router";
 import { PortalContainer } from "@/components/ui/portal-container";
@@ -108,30 +108,34 @@ export function DesktopTrayPanel() {
     if (container && visible) window.ajourDesktop?.trayPanelCommand?.("ready");
   }, [container, visible]);
 
-  if (!container || !visible) return null;
+  if (!container) return null;
   const openApp = () => window.ajourDesktop?.trayPanelCommand?.("open-main");
   return createPortal(
     <PortalContainer value={container.ownerDocument.body}>
-      <Suspense
-        fallback={
-          <div className="p-3 text-xs text-muted-foreground">
-            Loading timer…
-          </div>
-        }
-      >
-        <Panel
-          onDismiss={() => window.ajourDesktop?.trayPanelCommand?.("hide")}
-          onOpenApp={openApp}
-          onOpenTask={(id) => {
-            void navigate({
-              to: "/backlog/$itemId",
-              params: { itemId: id },
-              search: { from: "backlog" },
-            });
-            openApp();
-          }}
-        />
-      </Suspense>
+      {/* Hidden, not unmounted: a dismissed panel keeps its search, view and
+          open editor's draft, and Activity pauses its clocks meanwhile. */}
+      <Activity mode={visible ? "visible" : "hidden"}>
+        <Suspense
+          fallback={
+            <div className="p-3 text-xs text-muted-foreground">
+              Loading timer…
+            </div>
+          }
+        >
+          <Panel
+            onDismiss={() => window.ajourDesktop?.trayPanelCommand?.("hide")}
+            onOpenApp={openApp}
+            onOpenTask={(id) => {
+              void navigate({
+                to: "/backlog/$itemId",
+                params: { itemId: id },
+                search: { from: "backlog" },
+              });
+              openApp();
+            }}
+          />
+        </Suspense>
+      </Activity>
       <Toaster />
     </PortalContainer>,
     container,
