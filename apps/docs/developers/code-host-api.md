@@ -1,6 +1,6 @@
 # Code host API
 
-A code host provides the user's pull requests as facts: who wrote them, who was asked to review, what reviews and comments happened, and when. Ajour decides from these facts which pull requests need the user. The plugin never decides. This page is the reference for plugin API version 3.
+A code host provides the user's pull requests as facts: who wrote them, who was asked to review, what reviews and comments happened, and when. Ajour decides from these facts which pull requests need the user. The plugin never decides. This page is the reference for plugin API version 4.
 
 Declare `"codeHost": {}` in the manifest's [capabilities](/developers/manifest#capabilities), and export `validateConnection`, as for a backlog plugin, and `syncPullRequests`.
 

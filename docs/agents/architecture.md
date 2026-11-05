@@ -11,7 +11,7 @@ Ajour is a local-first time-tracking workspace built as a pnpm monorepo. Keep ar
     - Only `http:`, `https:` and `mailto:` links open in the system browser or mail app.
     - Every other scheme is blocked, including `file:`, `vscode:` and `msteams:`. Such links no longer open, and a malformed URL is blocked, never thrown.
     - `window.open` to the app's own address does nothing.
-- `apps/api`: Optional local API for plugin configuration, backlog sync, plugin workers, and local import flows.
+- `apps/api`: Optional local API for plugin configuration, backlog sync, the plugin runtime port and broker, and local import flows.
 - `apps/cli`: the `ajour` terminal CLI (spec #525). It reaches the running app only through the MCP endpoint, as an agent client, behind one `AjourClient` interface (`src/client.ts`), so every write follows the app's action sets and Undo; it holds no lifecycle rule. It imports `packages/shared` only. `src/refs.ts` parses TASK, ENTRY, DURATION, DAY and RANGE and picks from what the read tools list; `src/format/rows.ts` is the one row shape writes and prints share, and `src/format/log.ts` builds `ajour log`'s table, summaries, TSV and CSV from the read tools' output, computing no rule of its own beyond totals and the pace against day targets; each write keeps its `undoToken` in `$XDG_STATE_HOME/ajour/last-undo`, written privately like the token, for `ajour undo`. `just cli <args>` runs it from the repo.
 - `packages/shared`: Cross-runtime domain types, validation schemas, normalization, aggregation, rule evaluation, and plugin contracts.
 - `packages/plugin-sdk`: `@ajour/plugin-sdk`, the SDK plugin authors build plugin API 4 plugins with, published separately from the app. It imports nothing from the app or other packages at runtime; its contract types are generated from `packages/shared`.
@@ -24,7 +24,7 @@ Ajour is a local-first time-tracking workspace built as a pnpm monorepo. Keep ar
 
 ## Agent runner
 
-The agent runner starts a coding agent CLI for a plugin agent task, such as "Enter in Workday". It lives in the local API (`apps/api/src/agent-runner/`). One run at a time: a second `POST /api/agent-runs` answers 409. Each CLI has an adapter in `apps/api/src/agent-runner/adapters/` (Claude Code, Codex and OpenCode). A run gets its own MCP agent client and agent session. The client's token travels only in the `AJOUR_MCP_TOKEN` environment variable, never in a file or an argument, and Ajour ends the session and revokes the client when the CLI exits. A plugin API 4 task's run client carries the data tools its task declares (`StoredMcpClient.tools`, #396): `mcp-server.ts` lists only those and the session tools, and refuses a call to any other as `tool_not_declared`, whatever the CLI's flags say. API 3 tasks and user-created clients keep every tool. The CLI never gets the window token, another `AJOUR_` variable or a setting marked secret: a secret fills neither the prompt nor the week link: a task whose prompt uses one is refused, and a week link that uses one is left out of the overview (`weekLinkRefusal` says why). Stop, a stall and quitting end the CLI process only; ending every process a run started, and nothing else, is #341. Playwright MCP is bundled as an exact-pinned dependency of `apps/api` and run through the app's own Node (`playwright-mcp.ts`), never through `npx`. Plugins declare tasks with `agentTask` in `plugin.json`. A task is a prompt file and settings, and no plugin code runs. A plugin's tasks share their settings by ID: the local API stores one set of values per plugin and saves them through `POST /api/agents/plugins/:pluginId/settings`. The renderer shows Settings > Agents (`features/settings/settings-agents-page.tsx`), the task settings on the plugin's page (`features/settings/agent-task-settings.tsx`) and the Commit page's `AgentTaskButtons`, one set per placement (`commit-week`, `submit-week`), both reading `lib/agent-runner.ts`. Spec: `docs/specs/2026-10-15-ajour-agent-runner-design.md`. Plugins can add text properties to projects (`projectProperties`) and tasks (`taskProperties`); overrides live on `LocalProject.pluginProperties` and `LocalProjectTask.pluginProperties` in local state, and `get_week_changes` and `get_week_status` send them resolved, with `projectFullName`. A task property that defaults to the task's name maps the task to another one in the plugin's tool, such as a local task committed as a Workday task. `LocalProjectTask.commitAs` (Not known yet or Local only) and `LocalProject.localOnly` keep time out of the commit; every reader asks `domain/projects/commit-target.ts`.
+The agent runner starts a coding agent CLI for a plugin agent task, such as "Enter in Workday". It lives in the local API (`apps/api/src/agent-runner/`). One run at a time: a second `POST /api/agent-runs` answers 409. Each CLI has an adapter in `apps/api/src/agent-runner/adapters/` (Claude Code, Codex and OpenCode). A run gets its own MCP agent client and agent session. The client's token travels only in the `AJOUR_MCP_TOKEN` environment variable, never in a file or an argument, and Ajour ends the session and revokes the client when the CLI exits. A plugin API 4 task's run client carries the data tools its task declares (`StoredMcpClient.tools`, #396): `mcp-server.ts` lists only those and the session tools, and refuses a call to any other as `tool_not_declared`, whatever the CLI's flags say. API 3 tasks stay inactive. User-created clients keep every tool. The CLI never gets the window token, another `AJOUR_` variable or a setting marked secret: a secret fills neither the prompt nor the week link: a task whose prompt uses one is refused, and a week link that uses one is left out of the overview (`weekLinkRefusal` says why). Stop, a stall and quitting end the CLI process only; ending every process a run started, and nothing else, is #341. Playwright MCP is bundled as an exact-pinned dependency of `apps/api` and run through the app's own Node (`playwright-mcp.ts`), never through `npx`. Plugins declare tasks with `agentTask` in `plugin.json`. A task is a prompt file and settings, and no plugin code runs. A plugin's tasks share their settings by ID: the local API stores one set of values per plugin and saves them through `POST /api/agents/plugins/:pluginId/settings`. The renderer shows Settings > Agents (`features/settings/settings-agents-page.tsx`), the task settings on the plugin's page (`features/settings/agent-task-settings.tsx`) and the Commit page's `AgentTaskButtons`, one set per placement (`commit-week`, `submit-week`), both reading `lib/agent-runner.ts`. Spec: `docs/specs/2026-10-15-ajour-agent-runner-design.md`. Plugins can add text properties to projects (`projectProperties`) and tasks (`taskProperties`); overrides live on `LocalProject.pluginProperties` and `LocalProjectTask.pluginProperties` in local state, and `get_week_changes` and `get_week_status` send them resolved, with `projectFullName`. A task property that defaults to the task's name maps the task to another one in the plugin's tool, such as a local task committed as a Workday task. `LocalProjectTask.commitAs` (Not known yet or Local only) and `LocalProject.localOnly` keep time out of the commit; every reader asks `domain/projects/commit-target.ts`.
 
 ## Product Boundary
 
@@ -90,7 +90,7 @@ The local API is a boundary for plugin-driven work. Plugin behavior should produ
 
 ## Plugins
 
-ADR 0007 and ADR 0010 replace this runtime. Until they ship, this section describes the current one.
+Plugins use the API 4 sandbox and credential broker defined by ADR 0007 and ADR 0010.
 
 Backlog, code host, calendar, team and project source are capabilities of installable
 plugins. A plugin declares one or more in its manifest, and its connections
@@ -165,7 +165,7 @@ file:
   stands in for a plugin that isn't installed with `missing: true`. The state
   file also records which fields were `rejected` (the service answered 401:
   `markSecretsRejected`, called when a failed plugin call carries
-  `httpStatus: 401` on its `PluginWorkerFailure`, which an API 3 worker takes
+  `httpStatus: 401` on its `PluginOperationFailure`, which the runtime takes
   from a `status`, `statusCode` or `httpStatus` property of the error it threw;
   the broker will set it from the response; it passes `readAt`, when the
   call read its secrets, and a secret saved after that isn't marked, so a late
@@ -189,9 +189,12 @@ file:
   secret, the rule redaction uses, so a renamed field never stays in plain
   text. The storage runs the same move at runtime, for an update that marks a
   field secret. There is no downgrade.
-- **Use:** `AppApiStorage.connectionForOperation` decrypts a connection's
-  secrets only to build an API 3 worker's connection, and records the use.
-  Until the cut-over (#403) the plugin still sees them in plain text.
+- **Use:** `AppApiStorage.connectionForBroker` decrypts a connection's
+  secrets, for one credential broker request, and records the use. Nothing
+  else decrypts a secret. `connectionForOperation` gives a plugin operation
+  the connection's editable settings and no secret: it only checks that the
+  secrets the connection needs can be read, and pauses it when they can't.
+  No code path hands a secret to plugin code.
 - **Deletion:** removing a connection or uninstalling a plugin deletes its
   entries; deactivating keeps them.
 - **App names and data folders:** development builds take the app name
@@ -213,9 +216,10 @@ the manifest no longer declares counts as secret, except Ajour's own fields,
 and a value with spaces at its ends counts trimmed as well, because the host
 trims the message. All matches are found in the original message, so secrets
 that overlap go whole, and a `[secret]` already there stays as it is. The
-worker host cuts a long error before redaction, an uncaught asynchronous
+plugin runtime cuts a long error before redaction, an uncaught asynchronous
 throw included, and marks the cut with "…", so the start of a secret that the
-cut split becomes `[secret]` too. No response, stored last error or log
+cut split becomes `[secret]` too. An API 4 plugin never receives a secret, so
+this protects against a service that echoes one back. No response, stored last error or log
 carries a plugin's raw error. Redaction follows the secret fields of the
 package the call ran: the plugin host hands each route the manifest it
 admitted the call with. An update that lands while a request waits counts, so
@@ -251,8 +255,7 @@ physically and logically separate from the application. A plugin owns its
 requests and its data mapping: field discovery, and what it reads from and
 writes to its external system. Ajour owns the credentials and the transport
 (ADR 0010): an API 4 plugin never sees a secret and reaches the network only
-through the credential broker below. Until the cut-over (#403), an API 3
-plugin still receives its secrets and sends its own requests. A plugin
+through the credential broker below. A plugin
 must ship a manifest, a runnable entrypoint, its assets, and all required
 runtime dependencies without importing Ajour repository source or other
 application internals.
@@ -278,27 +281,45 @@ Plugin loading depends on the application build:
 - Production plugin archives are distributed separately from the app and
   are not silently installed from bundled repository packages. Uninstall is a
   desktop capability on the same restricted IPC boundary as installation. It
-  stops active workers for that plugin, removes the managed package and its
+  cancels that plugin's running operations, closes its renderer, removes the managed package and its
   saved connections, credentials, staged imports, and backlog source statuses, and
   preserves already imported application-owned backlog items. Development
   directory plugins can be deactivated but never deleted by the app.
 
-The host must not import plugin code into the API or Electron main execution
-context. Each plugin operation runs in a new Node worker thread and exchanges
-validated structured messages with the host. The worker is stateless and is
-terminated after the operation completes. The parent tracks every active
-worker and calls `worker.terminate()` on timeout, cancellation, or application
-shutdown. Worker capacity is reserved before asynchronous discovery, package
-discovery is serialized against installation and removal, and worker result and
-error payloads are bounded. Because workers are threads rather than child
-processes, they cannot outlive the parent application or remain as orphan
-plugin processes.
+The host must not import plugin code into the API or Electron main context.
+Every plugin operation runs in a dedicated module worker inside Ajour's hidden
+host page, under Chromium's OS sandbox. There is no Node worker thread, no
+plugin process and no other runtime. Ajour admits only plugin API 4, in
+development and packaged builds alike (`parsePluginManifest` in
+`plugin-package.ts` has no build-dependent policy). API 3 packages, including
+paused team sync, stay installed and inactive with "This plugin needs an
+update". Their connections and non-secret settings remain, and nothing about
+them is rewritten except the GitHub addresses below. The standalone API passes
+no runtime, runs no plugin and answers "Plugins need the desktop app". The
+catalog installs every kind of plugin, schema packages such as
+`workday-project-data` included; the built-in catalog snapshot lists the six
+official API 4 plugins, ICS among them.
 
+**The upgrade to API 4 rewrites one kind of saved value, once.** State version
+10 (`toVersion10` in `apps/api/src/state-migrations.ts`, #403) rewrites the saved
+`hostUrl` of the connections of the plugin with id `github` when its host is
+`github.com` or `www.github.com`, in any scheme, case, port or path
+(`http://github.com`, `https://www.github.com`, `https://github.com:8443`), to
+`https://github.com`, and a connection summary's `host` with it. API 3 read all
+of those as GitHub.com and sent them to `api.github.com`. API 4's broker keeps
+the scheme and host the user saved, and its manifest schema lets a derived-host
+rule match only the host itself or its subdomains, so these forms could not
+reach it. The step skips a `github` whose recorded origin is a plugin source
+that is not the official one; a file install or an unrecorded origin counts as
+the official plugin. GitHub Enterprise addresses, other plugins and every other
+field, tracked items included, are left as they are. Applying it again changes
+nothing. Other plugins need no rewrite: an Azure DevOps connection saved with a
+project URL keeps working through the manifest's `organization` derived host.
 Both the plugin host and the data-shape host run every operation through one
 runtime port, `apps/api/src/plugin-runtime.ts`: start, settle and terminate,
-for a plugin id and its package directory. The worker lifetime keeps
-admission, quota, timeout, cancellation, wide events and result validation
-around it. The worker-thread runtime runs plugin API 3 packages; tests may run
+for a plugin id and its package directory. The operation lifetime
+(`plugin-operation-lifetime.ts`) keeps admission, quota, timeout, cancellation, wide events and result validation
+around it. There is no Node worker runtime. Tests may run
 plugins in process with a fake, which only tests may import: dependency-cruiser
 keeps the API's own code out of `apps/api/src/test-support/`. The lifetime
 terminates each run with why it ended, `settled`, `timeout` or `cancelled`,
@@ -312,15 +333,15 @@ derived from the shared operation contracts.
 An API 4 plugin reaches the network only through the credential broker,
 `apps/api/src/credential-broker.ts` (#389, decided in #219, #229 and ADR
 0010). The plugin host runs an API 4 operation only on a runtime that says it
-keeps the plugin to the broker (`runsPluginApi4`): the worker thread doesn't.
+keeps the plugin to the broker (`runsPluginApi4`).
 The operation receives its connection without the secrets and with its
 access choices that are on, and its invocation carries a broker for that one
 operation, which the host closes once the operation settles.
 
 **The sandboxed renderer runtime** (#390, decided in #231 and ADR 0007) runs
-API 4 packages in development builds of the desktop app, until the cut-over
-(#403); `startAppApiServer`'s `pluginApi4Runtime` takes it, and
-`SplitPluginRuntime` keeps API 3 packages on worker threads beside it.
+API 4 packages in development and packaged desktop builds.
+`startAppApiServer` receives it through `pluginRuntime`. There is no
+API 3 runtime or fallback to Node workers.
 
 - **The renderer** (`apps/desktop/electron/plugin-renderer-runtime.cjs`): one
   hidden `WebContentsView` per plugin, owned by main and never attached to a
@@ -376,7 +397,7 @@ API 4 packages in development builds of the desktop app, until the cut-over
   every plugin off at launch. So does a renderer whose process, read from
   `app.getAppMetrics()` after Ajour's page loaded and before plugin code
   runs, isn't `sandboxed`, isn't `untrusted` on Windows, or is another
-  plugin's. Every run then settles `runtime_unavailable`, API 3 included,
+  plugin's. Every run then settles `runtime_unavailable`,
   the overview reports `sandbox: { state: "off", reason }` and every plugin
   as off, and there is no override.
 - **Blocked attempts**: a request the session cancelled, a CSP violation the
@@ -407,7 +428,7 @@ API 4 packages in development builds of the desktop app, until the cut-over
   collected, and its page closes with the runs in it.
 - **Limits and the crash budget** live in the API. The lifetime runs at
   most 4 operations of one plugin at once and refuses a fifth as
-  `capacity`; API 3 packages also keep sharing 4 worker threads per host.
+  `capacity`. API 3 packages never run.
   A crash (any `render-process-gone`) or a memory kill reaches the API
   through `PluginRuntimeHost.recordStopped`, a timeout from the lifetime
   itself; `PluginStopBudget` (`apps/api/src/plugin-stop-budget.ts`)
@@ -451,6 +472,25 @@ API 4 packages in development builds of the desktop app, until the cut-over
   skipped. A push to main runs it in the nightly release workflow, and the
   stable release workflow runs it on the promoted commit; neither publishes
   unless it passes on Windows and macOS.
+- The **official-plugin release check** (#403, seam 3) runs the six official
+  plugins in a packaged build. `just plugin-release-package` builds a
+  test-only package of the desktop app
+  (`apps/desktop/plugin-release.config.cjs`, entry
+  `sandbox-check/official-plugins.cjs`, never part of a release), and `just
+plugin-release-check` runs it, with `AJOUR_PLUGINS_CHECKOUT` (a checkout of
+  `ajour-plugins`), `AJOUR_PLUGINS_COMMIT` (default `HEAD`) and
+  `AJOUR_PLUGIN_RELEASE_EXECUTABLE` (the packaged executable). The check packs
+  each plugin folder at that commit, installs it as a user would, and drives
+  it through the real app API, broker and renderer runtime against fixture
+  services reached by virtual host names. It covers Jira, GitHub, Azure
+  DevOps, ICS, the Workday agent and the Workday project data shape, and the
+  cases only Ajour's real broker can prove: an ICS secret address through 1, 2
+  and 3 HTTPS redirects, an unsafe redirect target refused, and neither the
+  address nor a redirect address reaching the plugin, logs or UI; an Azure
+  DevOps connection saved with a project URL; each legacy GitHub address
+  form rewritten once and still syncing; and connections made on API 3 staying
+  installed and inactive with their settings. It runs on Windows today. The
+  macOS package and a CI job for the check are not wired yet.
 
 - **The port** is `CredentialBrokerPort.forOperation(caller)`
   (`apps/api/src/broker-port.ts`), with the plugin id from the runtime,
@@ -613,9 +653,12 @@ origins, in addition to the window token; enabling loose development
 directories must never broaden that allowlist. Plugin manifests and entrypoints must remain regular files within
 their canonical plugin directory without traversing symbolic-link ancestors.
 
-Worker threads isolate plugin JavaScript state, failures, event loops, and
-dependencies, but they are not a security sandbox. Installed plugin code still
-runs with the current user's filesystem and network permissions.
+Plugin code runs in a sandboxed renderer, not in the API or in main, and holds
+no credential (ADR 0007 and 0010). It has no Node, no filesystem and no network
+of its own: its one way out is a call to the broker, which enforces the
+manifest's declared hosts, endpoints and headers and the connection's access
+choices. A worker thread would run with the current user's permissions, so
+Ajour has none.
 
 Plugin activation is local API state. Deactivating an installed plugin keeps
 its package, saved connections, staged imports, and already imported backlog
@@ -643,7 +686,7 @@ connection saved before that field existed keeps following auto sync, which is
 what auto sync meant for its pull requests.
 
 The plugin system also has one persisted master activation gate. Turning it off
-stops plugin workers, cancels active project-data-shape operations, hides
+closes plugin renderers, cancels active project-data-shape operations, hides
 data-shape capabilities from consumers, and makes every installed plugin
 inactive. It does not rewrite individual activation choices, so turning the
 system on restores the user's previous per-plugin configuration. Catalog
@@ -687,19 +730,19 @@ The web app owns file selection, downloads, and format adapters. Excel is the
 current adapter: `lib/workbook-sheets.ts` reads a workbook into sheets for
 import, and `features/settings/settings-projects.ts` writes datasets for
 export. The API validates manifests, requests, datasets, and results, and runs
-each shape operation in a worker or sandboxed renderer that lives for that
-operation only (see below). Deterministic project merge rules
+each shape operation in the plugin's sandboxed renderer, which closes after
+the operation (see below). Deterministic project merge rules
 and persistence remain in the web domain and local store. A file whose shape
 names no project imports only through Import tasks… on a project, into that
 project.
 
-A shape is either a data shape API 1 package, which runs in a worker like a
-plugin API 3 package until the cut-over (#403), or a plugin API 4 package that
-declares the `projectDataShape` capability in its main manifest, with no
-network, no connection fields and Load when needed. The data-shape host starts
-both through the runtime port, so the split runtime sends an API 4 shape to its
-own sandboxed renderer. Development builds admit API 4 shapes; a packaged build
-does not. The dataset contract is the same for both. The data-shape host reads
+A shape is a plugin API 4 package declaring `projectDataShape`, with no network,
+no connection fields and Load when needed. Its dataset contract stays at
+version 1. Legacy data shape API 1 packages stay installed and cannot execute
+("This plugin needs an update"). Both development and packaged builds run
+shapes through the sandboxed renderer runtime, and the catalog installs them
+like any plugin.
+The data-shape host reads
 the same development plugin directories as the plugin host (Settings > Debug,
 `AJOUR_DEV_PLUGIN_DIRS`). A renderer and its storage are keyed by plugin id, so
 a shape that takes the id of a plugin host package from another folder is
@@ -790,6 +833,13 @@ When adding fields to persisted state:
 - add migration/default behavior for missing historical values
 - update tests around serialization or derived behavior when risk is non-trivial
 
+The local API's own state file is versioned the same way: numbered steps in
+`apps/api/src/state-migrations.ts` run once each, in order, and a step that
+can't finish holds the file at the version before it. Version 8 moves secrets
+into the vault, 9 gives every connection read-only access, and 10 rewrites the
+official GitHub plugin's legacy saved addresses for plugin API 4 (see the plugin
+host section).
+
 Desktop bootstrap is recovery input, not an authoritative replica. Apply it once,
 merge projects by stable ID so local references remain valid, normalize the merged
 state before writing it, and preserve the full in-memory result if browser storage
@@ -832,3 +882,40 @@ just build
 `.github/workflows/cli-release.yml` builds and executes every target on its native runner for PR dry runs and both desktop release workflows. Releases sign Windows with `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD`, and sign and notarize macOS with the desktop's Developer ID and Apple API credentials. PR runs use no signing secrets. The desktop release publish job waits for these archives and downloads them with the installers through `release-package-*`.
 
 The desktop app installs the command from Settings › General › Terminal (spec #567; Windows in #568). Main owns it: `apps/desktop/electron/cli-command.cjs` reads the release of the app's own version from the GitHub API, follows each download redirect itself over `net.request` (`manual-redirect-fetch.cjs`, since `net.fetch` hides redirects) and refuses one off HTTPS, checks the SHA-256 against the asset's `digest`, unpacks with the system `tar` by absolute path, checks `ajour -V`, and moves the files into `%LOCALAPPDATA%\Ajour\bin`. `cli-path.cjs` reconciles that exact folder entry in the raw user `Path` in HKCU\Environment through conditional PowerShell writes, preserving REG_SZ or REG_EXPAND_SZ. A failed `WM_SETTINGCHANGE` broadcast is logged and does not undo a successful registry write. The install has no journal. It stages a verified binary and a `share` tree containing manuals and completions, renames the previous files to `.old-<id>`, and atomically writes `cli-command.json` as its commit. The record includes content digests for both entries so an interrupted upgrade cannot mistake new files for the old committed install. `reconcile()` restores files matching those digests, removes an uncommitted first install, makes PATH follow the record, and cleans staging and unlocked old files. Locked old files never authorize a rollback. Reconciliation runs at launch, before installation and on Retry; a failure is shown and blocks installation until a subsequent attempt succeeds. PATH is ensured after the commit; its failure keeps the committed files and Retry reconciles without downloading again. Quitting calls `stop()`, which aborts a download and waits up to 5 s for a swap under way. The download is written whole, looping on `bytesWritten`, and its SHA-256 is read back from disk before tar runs. The renderer passes no path or URL over `ajour:install-cli-command`. Only an unpackaged app honours `AJOUR_CLI_RELEASE_ORIGIN` and `AJOUR_CLI_INSTALL_DIR`, which `apps/desktop/scripts/check-cli-command.mjs` uses to prove it in the real app on Windows CI; it saves the runner's Path to a backup file in the temp folder before anything changes, restores the exact snapshot only while its own write is current, otherwise removes only its folder entry, and deletes the backup after verification.
+
+## The plugin guarantees
+
+- **G1, hard and tested:** no plugin can obtain any credential, its own or
+  another plugin's, by any path. The broker in main holds every credential, a
+  plugin's connection reaches it without secrets, and the renderer has no
+  Node, no network and no storage of its own. A release claims G1 only after
+  the malicious-plugin and lifecycle suites (`check:plugin-sandbox`) and the
+  official-plugin release check pass in a packaged build on Windows and macOS.
+- **G2, best effort:** a plugin can misuse the access it was given. The limits
+  are stated, never claimed as prevented:
+  - A plugin may send what it read to any endpoint its manifest allows. The
+    allowlist, the hosts shown in Access review and the audit events reduce
+    this; they don't stop it.
+  - GitHub's `POST /graphql` is one endpoint with a query language behind it.
+    The allowlist can name the endpoint, not the data a query reads, so a
+    plugin granted GitHub reaches all that its token reaches.
+  - The broker's DNS-rebinding window (ADR 0010): a pinned request connects
+    only to the addresses the broker checked, but one through a system proxy
+    or to an address literal is judged by the address that answered, after
+    the request was sent. A name that rebinds meanwhile is refused only
+    afterwards, and a name only the proxy can resolve is judged by its text.
+    Credentials still attach only to hosts the user configured, so G1 holds.
+  - Code that already runs as the same user stays out of scope. DPAPI and the
+    keychain protect secrets from other users, not from other apps of the same
+    user, and release builds keep the Electron `runAsNode` fuse on (#415), so
+    anyone who can start Ajour's binary can run Node code as Ajour.
+  - Agent tasks run through their declared MCP tools and reviewed prompts; the
+    external coding agent is not a plugin renderer and is not sandboxed by
+    Ajour.
+- **Access review says it truthfully.** All executable plugins, ours included,
+  run in the same sandbox and reach the network only through the broker. So
+  "Ajour enforces it" is true on every plugin page that shows it: it covers the
+  declared network policy, the credential use and the access choices, and says
+  nothing about what a plugin does with data it may read. No page needs a
+  weaker wording for any plugin, because a plugin that isn't built for API 4
+  does not run.

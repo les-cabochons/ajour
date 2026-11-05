@@ -538,7 +538,7 @@ One "Submit week" button, styled the same, sits in the Day and Week headers at e
 - The Changes heading collapses the list, and whether it is expanded or collapsed is saved per device for every week. Its right side counts the changes by kind as a diff stat, "+ 3 ✎ 2 − 1", in the rows' symbols and colors; a kind with none is left out, and the stat shows while the list is collapsed too. While the list is expanded, "5 of 6 checked" sits before the stat.
 - Local time (a Local only task or project) leaves Changes, Lines and the agent's week changes. A muted line under Changes says "Not sent:" with the task names, or the project's for a Local only project, and the total. An updated change moved from a sent task to a local one shows as Deleted, and one moved off a local task as Added. A change on a Not known yet task shows an amber "Not known yet" chip, and its checkbox is disabled and unchecked, with the reason "The task is Not known yet. Choose what it commits as to include this change." Submit week keeps waiting for it as for any uncommitted change. `mark_entries_committed` refuses it with the task's name.
 - On the Commit page, Submit week remains available beside a plugin's submit-week task, including while agent tasks load. It locks the week in Ajour without starting an agent or submitting to the external timesheet. The plugin task stays primary when the week is ready. Both actions retain the uncommitted-change and running-entry guards; manual submission keeps its pace confirmation, Undo and Reopen week. Submit week waits while an agent task starts or runs, with the reason "An agent task is already running.", because the task may submit the week itself.
-- A plugin API 4 agent task runs like an API 3 one: no "can't run yet" reason shows for it any more. Its run sees only the Ajour MCP data tools its plugin declares for it, plus the session tools, and a call to any other is refused with a message that names the tool; the run's activity shows the refusal. API 3 tasks keep every tool until their plugin moves to API 4.
+- An agent task's run sees only the Ajour MCP data tools its plugin declares for it, plus the session tools, and a call to any other is refused with a message that names the tool; the run's activity shows the refusal. A task of an API 3 plugin does not run: its plugin is inactive with "This plugin needs an update".
 - A secret setting never reaches an agent. Starting a task whose prompt uses one fails with "The task's prompt uses the secret setting <label>. Ajour never gives a secret to an agent." (400), and the run does not start.
 - A secret setting never fills a task's week link either, since the user opens the link with a click and its host is the plugin's. A task whose week link uses one has no "Open the week in <plugin>" link on the Commit page, and the week summary says in its place "The week link uses the secret setting <label>. Ajour never puts a secret in a link." A run of that task starts without a link. This holds for every plugin API version.
 - The total and warnings follow the current selection.
@@ -1006,7 +1006,7 @@ Decided in [Access review and credential management for existing plugins](https:
 
 Decided in [Access review and credential management for existing plugins](https://github.com/les-cabochons/ajour/issues/222), variant A of its prototype, built in [#394](https://github.com/les-cabochons/ajour/issues/394).
 
-- **The Access section** sits on each plugin's page before Features, in plain words. It says "What this plugin can reach. Requests it makes through Ajour are limited to what is listed here." Until plugins run in their sandbox (#403), that is all Ajour can promise.
+- **The Access section** sits on each plugin's page before Features, in plain words. It says "What this plugin can reach. Requests it makes through Ajour are limited to what is listed here." That is true for every plugin that runs: each one runs in its own sandbox and reaches the network only through Ajour's broker, which enforces the list. What the plugin does with the data it may read and the endpoints it may call is not limited by the list (G2 below).
   - Each host the plugin reaches: the address a connection saves ("The address in "Site URL"") and each derived host under the name its plugin gives it, with the address it works out. The endpoints of a host, as method and path, sit behind a disclosure ("N endpoints"), each with the access choice that unlocks it.
   - Public hosts, which Ajour reaches without a credential.
   - "Addresses on your own network", for a plugin that lets a connection be marked on-premises, and "Request headers", listing the headers it may set, when it may set any.
@@ -1015,7 +1015,7 @@ Decided in [Access review and credential management for existing plugins](https:
   - The start mode: "Loads when needed" or "Always ready", which keeps the plugin loaded and uses about 30 MB.
   - An installed plugin also says "Last used N minutes ago." (or "Not used yet."), as the Vault page says of a secret. When the broker refused requests for access the plugin doesn't have, such as an endpoint it doesn't list, a warning says "Asked for access it doesn't have, refused. N times, last at 14:32." When its sandbox blocked a way out (#390), another says "Tried to connect directly, blocked. N times, last at 14:32." These come from the broker's records, which are written every 30 seconds.
 - **A catalog plugin** that isn't installed has the same section, saying its addresses, credential, agent tasks and start mode are listed once it is downloaded, because the catalog doesn't carry them, and that it stays inactive until turned on.
-- **A plugin on plugin API 3** says "This plugin was built for an older plugin API, so Ajour can't limit it. Update it to move it onto one that does." and lists what it can do without limits: any address, each connection's saved settings as saved, and every Ajour tool for its agent tasks.
+- **A plugin on plugin API 3** never runs, so it reaches nothing. Its page says "This plugin needs an update", and its Access section lists no addresses. The section's text for such a plugin reads "This plugin was built for an older plugin API, so Ajour doesn't run it. It needs an update."; the update is what lists real access.
 - **Turning a plugin on is the consent.** A download and a first install from a file stay inactive, and so does a reinstall after an uninstall. Ajour records the access the plugin had, and its version, when the user turns it on. A plugin that was on before Ajour recorded consent counts as having been allowed what it reached then, or nothing, if that version couldn't run.
 - **A connection is saved only on a plugin that is on.** Saving validates the connection, which runs the plugin with the credential just typed, so it waits for the user's consent. On an inactive plugin, Add a connection is disabled, with "Activate this plugin to save a connection."; on one held for more access, "Press Allow and activate to save a connection."; and while the plugin system is off, "Enable the plugin system to save a connection." Edit stays available, so a connection can be read, but its form shows the same hint above its buttons and Update connection (or Add connection) is disabled, whether the form was opened from Edit or from Replace on the Vault page. A save that still arrives is refused with "Activate this plugin before saving a connection.", "Allow the new access first." or "Enable the plugin system before saving a connection.", before anything runs, and a refused save holds none of the connection's estimate changes. Saved connections, secrets and settings stay.
 - **A plugin that reaches more than the user allowed is inactive,** whatever its switch says. That holds after an update, after an update Ajour was stopped in the middle of, and for a plugin in a development directory whose manifest changes.
@@ -1080,3 +1080,37 @@ A failed or slow lookup produces no error or candidates.
 Commits as names. It uses a table on a terminal and TSV in a pipe.
 `--format table|tsv|csv|json` selects output, and `--json` returns the
 unchanged `list_projects` response.
+
+## Plugin API 4 cut-over
+
+Desktop runs only API 4 plugins, including schema packages. An installed API 3
+package stays inactive with "This plugin needs an update". Its connections,
+non-secret settings and imported data remain. Team sync stays paused until a
+compatible port exists. The standalone API runs no plugins and reports
+"Plugins need the desktop app". Catalog fallback entries target API 4 and
+include ICS, and the catalog installs schema packages such as Workday project
+data like any other plugin. The source owner publishes the signed catalog with
+the six ports.
+
+The first launch of a build that moves a user to API 4 changes one saved value
+on its own. A GitHub connection saved as `www.github.com`, `http://github.com`
+or another form of GitHub.com becomes `https://github.com`, once, because
+plugin API 4 can't reach GitHub.com from those forms. The connection's label,
+settings and tracked items stay, and no message shows. GitHub Enterprise
+addresses and other plugins' connections are not touched.
+
+Access lists the network policy Ajour enforces for every executable plugin:
+"Ajour enforces it" is true on each plugin page that shows it, because every
+plugin that runs is in the sandbox and reaches the network only through the
+broker. Agent prompts and declared MCP tools are reviewed separately; external
+coding agents do not run in the plugin sandbox.
+
+What is not promised (G2, best effort): a plugin may misuse the data it reads
+and the writes its endpoints and access choices allow, for example by sending
+what it read to an endpoint it may call. GitHub's GraphQL endpoint is one
+allowed endpoint with a query language behind it, so Ajour can't narrow what a
+query reads. A request through a system proxy, or to an address literal, is
+judged by the address that answered after it was sent, so a name that rebinds in
+between is refused only afterwards. Software running as the same user can still
+reach what that user's keychain holds, and the Electron `runAsNode` fuse stays
+on in release builds until the agent runner stops needing it (#415).

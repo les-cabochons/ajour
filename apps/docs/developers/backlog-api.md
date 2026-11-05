@@ -1,6 +1,6 @@
 # Backlog API
 
-A backlog plugin syncs backlog items and their estimates between a tool and Ajour. It can also write a new state, priority and assignee back when the user settles or moves an item, and show an item's comments. This page is the reference for plugin API version 3. The backlog capability is declared under the `connector` key until plugin API 4.
+A backlog plugin syncs backlog items and their estimates between a tool and Ajour. It can also write a new state, priority and assignee back when the user settles or moves an item, and show an item's comments. This page is the reference for plugin API version 4. The backlog capability is declared under the `connector` key.
 
 ## Functions
 
@@ -24,7 +24,7 @@ Export these as named functions from your entry point. Each can be `async`.
 
 ```ts
 export async function validateConnection(
-  config: PluginFieldValues,
+  connection: PluginConnection,
   context: PluginValidationContext,
 ): Promise<PluginValidationResult>;
 
@@ -93,9 +93,9 @@ To fail, throw an `Error`. Its message reaches the user, with secret connection 
 
 ## validateConnection
 
-Ajour calls it with the form's values, without the [reserved fields](/developers/manifest#reserved-fields). Saved secrets the user did not retype are filled in. The second argument, `context`, lists in `capabilities` the capabilities the user has on, such as `["connector"]`, so you check only the access they need. Check the credentials against the tool, then return:
+Ajour calls it with a connection whose `config` holds the form's values, without the [reserved fields](/developers/manifest#reserved-fields) and without any secret: the broker attaches saved and just-typed secrets to your `ajour.http` requests, and you never see them. The second argument, `context`, lists in `capabilities` the capabilities the user has on, such as `["connector"]`, so you check only the access they need. Check the credentials against the tool, then return:
 
-- `normalizedConfig`: the values to store. Ajour stores them without its own [reserved fields](/developers/manifest#reserved-fields), so a field you leave out is lost. Trim strings and fix URLs here. Declare every key you return in the manifest: Ajour treats a key the manifest doesn't declare as secret, and replaces its value with `[secret]` in your errors, messages and summary.
+- `normalizedConfig`: the values to store. Ajour stores them without its own [reserved fields](/developers/manifest#reserved-fields), so a field you leave out is lost. Trim strings and fix URLs here. Declare every key you return in the manifest: Ajour treats a key the manifest doesn't declare as secret, moves it to the vault and doesn't pass it back to you.
 - `connectionSummary`: optional facts shown on the connection's row, such as the account name. Never secrets. Ajour replaces secret connection values in it with `[secret]`, drops an entry whose key holds one, and drops a summary of more than 50 entries.
 
 ## syncConnection
@@ -260,7 +260,7 @@ With `mentions: true`, Ajour suggests people when the user types `@` in a commen
 
 ## Types
 
-Copy this block into your plugin, for example as `src/contract.ts`. It matches plugin API 3.
+This block lists the shapes of the contract. `@ajour/plugin-sdk` ships the same types for plugin API 4, generated from Ajour's schemas, and is the source to import from; where the two differ, the SDK is right. In particular, an API 4 plugin's `PluginConnection` has no secret in `config`.
 
 ```ts
 export type BacklogPriorityLevel = "urgent" | "high" | "medium" | "low";

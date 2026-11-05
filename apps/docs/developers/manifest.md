@@ -10,7 +10,7 @@ For schema plugins, see [Schema API](/developers/schema-api#manifest).
 {
   "id": "jira",
   "version": "1.0.0",
-  "apiVersion": 3,
+  "apiVersion": 4,
   "displayName": "Jira",
   "description": "Sync Jira issues into backlog.",
   "iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\">…</svg>",
@@ -47,7 +47,7 @@ For schema plugins, see [Schema API](/developers/schema-api#manifest).
 | ------------------ | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`               | string | Lowercase letters and digits, separated by single `.`, `_` or `-`. Up to 120 characters. Use the same ID as in your [plugin source](/developers/plugin-source), which allows no dots.                                                                                                                |
 | `version`          | string | Semver: `1.2.3` or `1.2.3-beta.1`.                                                                                                                                                                                                                                                                   |
-| `apiVersion`       | number | Must be `3`, the current plugin API.                                                                                                                                                                                                                                                                 |
+| `apiVersion`       | number | Must be `4`, the current plugin API.                                                                                                                                                                                                                                                                 |
 | `displayName`      | string | 1 to 120 characters.                                                                                                                                                                                                                                                                                 |
 | `description`      | string | Optional. Up to 500 characters.                                                                                                                                                                                                                                                                      |
 | `iconSvg`          | string | Inline SVG markup, up to 20,000 characters.                                                                                                                                                                                                                                                          |
@@ -80,7 +80,7 @@ The `id` is permanent. It names the install folder, and it is the `source` of ev
 | `projectProperties`     | Text properties the plugin adds to every project. No plugin code runs. See [Project properties](#project-properties).                                                                                                                                                                          |
 | `taskProperties`        | Text properties the plugin adds to every task. No plugin code runs. See [Task properties](#task-properties).                                                                                                                                                                                   |
 
-The backlog capability is declared under the `connector` key until plugin API 4.
+The backlog capability is declared under the `connector` key.
 
 Ajour only calls the functions your capabilities declare.
 
@@ -234,10 +234,10 @@ Values are strings, numbers or booleans. Strings are at most 4,000 characters. W
 
 ### Secret fields
 
-A field with `secret: true` is never sent back to the form after it is saved. The form shows dots instead. If the user edits the connection and leaves the field as it is, Ajour keeps the saved value.
+A field with `secret: true` belongs to Ajour. It is never sent back to the form after it is saved: the form shows its state (Saved, Token rejected and so on), with Replace and Remove. If the user edits the connection and leaves the field as it is, Ajour keeps the saved value. Your plugin never receives it, not even its own, and can't return one: the broker attaches it to your requests, as `network.auth` says.
 
-::: warning Secrets are not encrypted
-Ajour stores connection values, secrets included, in a JSON file that only the user can read. It does not encrypt them. Tell users which permissions your plugin needs, so they can give a token no more than that.
+::: warning Secrets sit in the vault
+Ajour keeps secret fields in a vault file encrypted by the operating system, and refuses to save one when the computer can't encrypt. Anything on the same computer that runs as the same user is outside what Ajour guards against. Tell users which permissions your plugin needs, so they can give a token no more than that.
 :::
 
 ### Reserved fields
@@ -265,3 +265,19 @@ A backlog plugin can also declare a `taskIconDisplayMode` select field. Ajour re
 | `always`   | Always the plugin's icon. The default.                         |
 | `fallback` | The item's project icon, or the plugin's icon with no project. |
 | `never`    | The item's project icon, never the plugin's.                   |
+
+## API 4 access declarations
+
+`network` declares the base address, auth scheme, endpoints and request headers.
+`connectionAccess` declares choices that gate operations and endpoints.
+`runtime` declares `start` and the default memory ceiling. Secret fields go
+to Ajour's vault and never reach plugin code. `validateConnection` receives
+the connection with only non-secret `config`, rather than a raw settings map.
+An agent task must declare its `tools`. Team sync is paused on API 3.
+
+### Saved connections upgrade with the plugin
+
+A connection saved on API 3 keeps its label, settings and tracked items when its plugin moves to API 4; the user pastes nothing again, because secrets already sit in the vault. Ajour changes a saved value only where API 4 can't express what API 3 accepted. The one case today is the official GitHub plugin: an address whose host is `github.com` or `www.github.com`, in any scheme, case, port or path, becomes `https://github.com`, once, when Ajour first loads its state at the version that runs only API 4. An API 4 manifest can match a derived host only against the saved host or its subdomains, and the broker keeps the scheme the user saved, so `www.github.com` and `http://github.com` could not reach `api.github.com` otherwise. Plan the same for your plugin: if API 4 can't reach a saved form, tell the Ajour maintainers; the plugin itself can't rewrite a saved address.
+
+See the typed `PluginApi4Manifest` contract in `packages/plugin-sdk` and
+[Runtime](/developers/runtime). G2 remains best effort within allowed access.

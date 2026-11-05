@@ -423,7 +423,7 @@ The local API emits these (#305, #306):
 | one `request` per HTTP request        | `serveWithEvent` in `apps/api/src/routes.ts`, named from `ROUTES`                                                 |
 | `mcp.request`, `agent_tool.call`      | `handleMcpRequest` in `apps/api/src/mcp-server.ts`, on the request's event                                        |
 | `mcp_bridge.connection`               | the bridge route's request, which ends when the stream closes                                                     |
-| one `plugin_operation` per worker run | `PluginWorkerLifetime`, for the plugin host and the schema host                                                   |
+| one `plugin_operation` per worker run | `PluginOperationLifetime`, for the plugin host and the schema host                                                |
 | `plugin.request`                      | `CredentialBroker` in `apps/api/src/credential-broker.ts`, for each request of an API 4 plugin                    |
 | `plugin.suspended`                    | `PluginManager.recordStop` in `apps/api/src/plugin-host.ts`, when a plugin's third stop in 10 minutes suspends it |
 | `api.start`, `api.stop`               | `startAppApiServer` and `stopAppApiServer` in `apps/api/src/server.ts`                                            |

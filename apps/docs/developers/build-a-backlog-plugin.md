@@ -1,5 +1,7 @@
 # Build a backlog plugin
 
+Plugin API 4 runs in the desktop sandbox. See [Runtime](/developers/runtime) for the broker, credential rules and G2 limits. This tutorial is written for plugin API 4: the plugin never sees its token, and reaches GitHub only through `ajour.http`.
+
 This tutorial builds a backlog plugin for GitHub Issues. It syncs the open issues assigned to you into Ajour's backlog, and closes an issue when you settle it in Ajour. It takes about an hour.
 
 You need Node.js 22 or later, pnpm through Corepack, and a clone of the [Ajour repository](https://github.com/les-cabochons/ajour) to run a development build.
@@ -10,7 +12,9 @@ You need Node.js 22 or later, pnpm through Corepack, and a clone of the [Ajour r
 mkdir ajc-github-issues && cd ajc-github-issues
 corepack enable
 pnpm init
-pnpm add -D typescript @types/node vitest tar
+pnpm add -D typescript vitest tar
+# Until the SDK is published, vendor the packed package:
+pnpm add -D file:vendor/ajour-plugin-sdk-0.1.0.tgz
 ```
 
 Set up `package.json`. The scripts match the official plugins, so you can copy their CI later.
@@ -31,7 +35,7 @@ Set up `package.json`. The scripts match the official plugins, so you can copy t
 }
 ```
 
-Add `tsconfig.json`. Ajour loads plain ES modules, so compile to ES2022 and keep `rootDir` and `outDir` apart.
+Add `tsconfig.json`. Ajour loads plain ES modules in a browser-like worker, so compile to ES2022, keep `rootDir` and `outDir` apart and leave Node's types out.
 
 ```json
 {
@@ -44,14 +48,14 @@ Add `tsconfig.json`. Ajour loads plain ES modules, so compile to ES2022 and keep
     "skipLibCheck": true,
     "rootDir": "src",
     "outDir": "dist",
-    "types": ["node"]
+    "types": []
   },
   "include": ["src"]
 }
 ```
 
 ::: warning Bundle your dependencies
-Ajour loads `dist/plugin.js` and whatever it imports from inside the plugin folder. The packaging script archives `plugin.json` and `dist/` only, so a runtime dependency in `node_modules` is missing once installed. Use Node built-ins and `fetch`, or bundle dependencies into `dist/` with a bundler such as esbuild.
+Ajour loads `dist/plugin.js` and whatever it imports from inside the plugin folder. The packaging script archives `plugin.json` and `dist/` only, so a runtime dependency in `node_modules` is missing once installed. Plugin code has no Node built-ins and no `fetch` to the network, so bundle dependencies into `dist/` with a bundler such as esbuild.
 :::
 
 ## 2. Write the manifest
@@ -62,7 +66,7 @@ Create `plugin.json` at the root. It tells Ajour who the plugin is, which API it
 {
   "id": "github_issues",
   "version": "0.1.0",
-  "apiVersion": 3,
+  "apiVersion": 4,
   "displayName": "GitHub Issues",
   "description": "Sync the GitHub issues assigned to you into Ajour's backlog.",
   "iconSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"9\" fill=\"none\" stroke=\"#1f883d\" stroke-width=\"2\"/><circle cx=\"12\" cy=\"12\" r=\"2.5\" fill=\"#1f883d\"/></svg>",
@@ -82,6 +86,13 @@ Create `plugin.json` at the root. It tells Ajour who the plugin is, which API it
       "type": "text",
       "required": true,
       "placeholder": "Acme on GitHub"
+    },
+    {
+      "id": "hostUrl",
+      "label": "GitHub URL",
+      "type": "url",
+      "required": true,
+      "defaultValue": "https://github.com"
     },
     {
       "id": "token",
@@ -105,41 +116,68 @@ Create `plugin.json` at the root. It tells Ajour who the plugin is, which API it
       "min": 1,
       "max": 1440
     }
-  ]
+  ],
+  "network": {
+    "auth": { "scheme": "bearer", "secretField": "token" },
+    "baseAddress": { "field": "hostUrl" },
+    "derivedHosts": [
+      {
+        "id": "rest",
+        "label": "GitHub REST API",
+        "forms": [
+          {
+            "whenHost": "github.com",
+            "host": "api.github.com",
+            "keepBasePath": false
+          },
+          { "host": "{host}", "pathPrefix": "/api/v3", "keepBasePath": false }
+        ],
+        "endpoints": [
+          { "method": "GET", "path": "/user" },
+          { "method": "GET", "path": "/issues" },
+          { "method": "GET", "path": "/repos/*/*/issues/*" },
+          { "method": "PATCH", "path": "/repos/*/*/issues/*" }
+        ]
+      }
+    ],
+    "requestHeaders": ["Accept", "Content-Type", "X-GitHub-Api-Version"]
+  },
+  "runtime": { "start": "whenNeeded" }
 }
 ```
 
 - `id` becomes the `source` of every item the plugin syncs. Never change it after release.
 - `label`, `tenantLabel`, `autoSync` and `autoSyncIntervalMinutes` are reserved fields. Ajour handles them itself. Declare them anyway, so the form shows them with your labels.
-- `secret: true` keeps the token out of the form once saved.
-- The backlog capability is declared under the `connector` key until plugin API 4.
+- `secret: true` puts the token in Ajour's vault. Your code never receives it: the broker attaches it, as `network.auth` says.
+- `network` is everything the plugin may reach. The base address comes from the `hostUrl` field, `rest` is a derived host the broker builds from it (`api.github.com` for GitHub.com), and only the listed methods and paths are sent. The user sees this list in the plugin's Access section before turning it on.
+- The backlog capability is declared under the `connector` key.
 - `settle: true` tells Ajour the plugin can write states back.
 
 See the [Manifest reference](/developers/manifest) for every field.
 
 ## 3. Add the contract types
 
-Ajour has no SDK package. Each plugin keeps a copy of the types it uses, so it never depends on Ajour's code at runtime. Copy the types block from the [Backlog API reference](/developers/backlog-api#types) into `src/contract.ts`.
+Import the types from `@ajour/plugin-sdk`, which also types the `ajour` global. Use `import type` only: the SDK's code is for tests.
 
 ## 4. Validate the connection
 
-`validateConnection` runs when the user saves a connection. Check the credentials, then return the settings to store. Whatever you return in `normalizedConfig` is what Ajour saves, so return every field you need later.
+`validateConnection` runs when the user saves a connection. It receives the connection, with only its non-secret `config`, so it can name the connection to the broker. Check the credentials by making a request, then return the settings to store. Whatever you return in `normalizedConfig` is what Ajour saves, so return every non-secret field you need later. Never return the token: you never had it.
 
 Create `src/plugin.ts`:
 
 ```ts
+import type {} from "@ajour/plugin-sdk/globals";
 import type {
-  PluginFieldValues,
-  BacklogImportCandidateInput,
-  PluginConnection,
-  BacklogPluginSyncResult,
-  BacklogSettleStatesResult,
-  BacklogSettleWriteRequest,
-  BacklogSettleWriteResult,
+  BacklogSyncResult,
   BacklogSyncWorkItem,
-} from "./contract.js";
+  PluginConnection,
+  SettleStatesResult,
+  SettleWriteRequest,
+  SettleWriteResult,
+  ValidationResult,
+} from "@ajour/plugin-sdk";
 
-const API = "https://api.github.com";
+type Item = BacklogSyncResult["items"][number];
 
 interface GitHubIssue {
   url: string;
@@ -152,38 +190,53 @@ interface GitHubIssue {
   pull_request?: unknown;
 }
 
-function readToken(config: PluginFieldValues): string {
-  const token = config.token;
-  if (typeof token !== "string" || token.trim() === "") {
-    throw new Error("Enter a personal access token.");
-  }
-  return token.trim();
-}
+const HEADERS = {
+  Accept: "application/vnd.github+json",
+  "X-GitHub-Api-Version": "2022-11-28",
+};
 
-/** Calls the GitHub REST API, and turns a failure into a message for the user. */
-async function github<T>(token: string, url: string, init: RequestInit = {}) {
-  const response = await fetch(url, {
-    ...init,
+/** Calls GitHub through the broker, and turns a failure into a message for the user. */
+async function github<T>(
+  connection: PluginConnection,
+  request: {
+    method: "GET" | "PATCH";
+    path: string;
+    query?: Record<string, string | number>;
+    body?: unknown;
+  },
+) {
+  const response = await ajour.http({
+    connectionId: connection.id,
+    host: "rest",
+    method: request.method,
+    path: request.path,
+    ...(request.query ? { query: request.query } : {}),
     headers: {
-      accept: "application/vnd.github+json",
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json",
-      "x-github-api-version": "2022-11-28",
+      ...HEADERS,
+      ...(request.body ? { "Content-Type": "application/json" } : {}),
     },
+    ...(request.body ? { body: JSON.stringify(request.body) } : {}),
   });
+  if (response.status === 401) {
+    throw new Error("GitHub refused the token. Replace it in the connection.");
+  }
   if (!response.ok) {
     throw new Error(
       `GitHub request failed (${response.status}): ${await response.text()}`,
     );
   }
-  return (await response.json()) as T;
+  return await response.json<T>();
 }
 
-export async function validateConnection(config: PluginFieldValues) {
-  const token = readToken(config);
-  const user = await github<{ login: string }>(token, `${API}/user`);
+export async function validateConnection(
+  connection: PluginConnection,
+): Promise<ValidationResult> {
+  const user = await github<{ login: string }>(connection, {
+    method: "GET",
+    path: "/user",
+  });
   return {
-    normalizedConfig: { token },
+    normalizedConfig: connection.config,
     // Shown on the connection's row. Never put a secret here.
     connectionSummary: { account: user.login },
   };
@@ -195,19 +248,17 @@ export async function validateConnection(config: PluginFieldValues) {
 `syncConnection` returns the items to show in Ajour. Ajour passes the connection, and the items it already tracks for that connection.
 
 ```ts
-/** Only GitHub issue API URLs, so the token never goes anywhere else. */
-function assertIssueUrl(url: string) {
-  if (
-    !/^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/issues\/\d+$/.test(url)
-  ) {
-    throw new Error(`Not a GitHub issue: ${url}`);
-  }
+/** The path of a GitHub issue's API URL, which the manifest's endpoints list. */
+function issuePath(url: string) {
+  const match =
+    /^https:\/\/api\.github\.com(\/repos\/[^/]+\/[^/]+\/issues\/\d+)$/.exec(
+      url,
+    );
+  if (!match) throw new Error(`Not a GitHub issue: ${url}`);
+  return match[1]!;
 }
 
-function toItem(
-  connection: PluginConnection,
-  issue: GitHubIssue,
-): BacklogImportCandidateInput {
+function toItem(connection: PluginConnection, issue: GitHubIssue): Item {
   const closed = issue.state === "closed";
   return {
     source: "github_issues",
@@ -220,7 +271,7 @@ function toItem(
     sourceUrl: issue.html_url,
     title: issue.title.slice(0, 240),
     note: issue.body ? issue.body.slice(0, 4000) : undefined,
-    projectName: issue.repository_url.split("/repos/")[1].slice(0, 120),
+    projectName: issue.repository_url.split("/repos/")[1]!.slice(0, 120),
     workItemType: "Issue",
     state: closed ? "Closed" : "Open",
     stateCategory: closed ? "Closed" : "Open",
@@ -234,12 +285,12 @@ function toItem(
 export async function syncConnection(
   connection: PluginConnection,
   workItems: BacklogSyncWorkItem[],
-): Promise<BacklogPluginSyncResult> {
-  const token = readToken(connection.config);
-  const open = await github<GitHubIssue[]>(
-    token,
-    `${API}/issues?filter=assigned&state=open&per_page=100`,
-  );
+): Promise<BacklogSyncResult> {
+  const open = await github<GitHubIssue[]>(connection, {
+    method: "GET",
+    path: "/issues",
+    query: { filter: "assigned", state: "open", per_page: 100 },
+  });
   // The issues endpoint also returns pull requests.
   const items = open
     .filter((issue) => !issue.pull_request)
@@ -250,8 +301,10 @@ export async function syncConnection(
   const returned = new Set(items.map((item) => item.sourceId));
   for (const tracked of workItems) {
     if (returned.has(tracked.sourceId)) continue;
-    assertIssueUrl(tracked.sourceId);
-    const issue = await github<GitHubIssue>(token, tracked.sourceId);
+    const issue = await github<GitHubIssue>(connection, {
+      method: "GET",
+      path: issuePath(tracked.sourceId),
+    });
     if (issue.state === "closed") items.push(toItem(connection, issue));
   }
 
@@ -265,13 +318,14 @@ A few rules this code follows, which every backlog plugin should:
 - `sourceId` never changes for an item. Ajour keys everything on it.
 - Done items come back with `stateDone: true`, even when your query no longer returns them. Otherwise Ajour keeps them open.
 - Strings respect Ajour's limits: 240 characters for a title, 120 for a project name, and 4,000 for the `note`, which Ajour takes as the item's description when it first arrives.
+- Requests name a connection and a relative path, never a URL. A path the manifest doesn't list is refused.
 
 ## 6. Write back on settle
 
 With `settle: true`, Ajour calls two more functions. `listSettleStates` fills the settle dialog. `writeSettle` writes the user's choice once the Undo toast closes.
 
 ```ts
-export async function listSettleStates(): Promise<BacklogSettleStatesResult> {
+export async function listSettleStates(): Promise<SettleStatesResult> {
   return {
     states: [
       { name: "Open", category: "Open", done: false },
@@ -282,8 +336,8 @@ export async function listSettleStates(): Promise<BacklogSettleStatesResult> {
 
 export async function writeSettle(
   connection: PluginConnection,
-  request: BacklogSettleWriteRequest,
-): Promise<BacklogSettleWriteResult> {
+  request: SettleWriteRequest,
+): Promise<SettleWriteResult> {
   if (request.priority) {
     throw new Error(
       "GitHub issues have no priority. Keep the priority as it is.",
@@ -291,17 +345,11 @@ export async function writeSettle(
   }
   if (!request.state) return {};
 
-  assertIssueUrl(request.sourceId);
-  const issue = await github<GitHubIssue>(
-    readToken(connection.config),
-    request.sourceId,
-    {
-      method: "PATCH",
-      body: JSON.stringify({
-        state: request.state === "Closed" ? "closed" : "open",
-      }),
-    },
-  );
+  const issue = await github<GitHubIssue>(connection, {
+    method: "PATCH",
+    path: issuePath(request.sourceId),
+    body: { state: request.state === "Closed" ? "closed" : "open" },
+  });
   const closed = issue.state === "closed";
   // The values in GitHub after the write. Ajour stores them.
   return {
@@ -312,7 +360,7 @@ export async function writeSettle(
 }
 ```
 
-The error message reaches the user in a toast, with secret connection values replaced by `[secret]` and cut at 1,000 characters. Write it as an instruction, with the useful part first.
+The error message reaches the user in a toast, with every secret of the connection replaced by `[secret]` and cut at 1,000 characters. Write it as an instruction, with the useful part first.
 
 ## 7. Run it in Ajour
 
@@ -339,61 +387,74 @@ Then:
 3. Press **Sync**. Your issues show in **Settings › Sync review**. Import a few.
 4. Settle one with <kbd>Shift</kbd> <kbd>E</kbd> and pick **Closed**. When the Undo toast closes, the issue closes on GitHub.
 
-Each call loads your plugin in a fresh worker, so a rebuild applies at the next call. Restart Ajour after you change `plugin.json`.
+Each call loads your plugin in a fresh worker inside its sandboxed renderer, so a rebuild applies at the next call. Restart Ajour after you change `plugin.json`.
 
 ## 8. Test it
 
-Test the exported functions directly, with `fetch` stubbed. This is how the official plugins test.
+Test the exported functions directly, with the SDK's `createFakeAjour` standing in for the `ajour` global. It answers `ajour.http` from routes, records every request, and refuses what the broker would refuse, such as a path the manifest doesn't list.
 
 ```ts
 // tests/plugin.test.ts
 import { afterEach, expect, it, vi } from "vitest";
+import type { PluginManifest } from "@ajour/plugin-sdk";
+import { createFakeAjour } from "@ajour/plugin-sdk/testing";
+import manifest from "../plugin.json";
 import { syncConnection } from "../src/plugin.js";
 
 const connection = {
   id: "c1",
   pluginId: "github_issues",
+  access: [],
   label: "Work",
   tenantLabel: "Acme",
   autoSync: false,
   autoSyncIntervalMinutes: 15,
   connectedAt: 1,
-  config: { token: "t" },
+  config: { hostUrl: "https://github.com" },
 };
 
 afterEach(() => vi.unstubAllGlobals());
 
 it("skips pull requests", async () => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn().mockResolvedValueOnce(
-      Response.json([
-        {
-          url: "https://api.github.com/repos/acme/api/issues/1",
-          html_url: "https://github.com/acme/api/issues/1",
-          repository_url: "https://api.github.com/repos/acme/api",
-          number: 1,
-          title: "Bug",
-          body: null,
-          state: "open",
+  const ajour = createFakeAjour({
+    manifest: manifest as PluginManifest,
+    routes: [
+      {
+        method: "GET",
+        host: "rest",
+        path: "/issues",
+        respond: {
+          json: [
+            {
+              url: "https://api.github.com/repos/acme/api/issues/1",
+              html_url: "https://github.com/acme/api/issues/1",
+              repository_url: "https://api.github.com/repos/acme/api",
+              number: 1,
+              title: "Bug",
+              body: null,
+              state: "open",
+            },
+            {
+              url: "https://api.github.com/repos/acme/api/issues/2",
+              html_url: "https://github.com/acme/api/pull/2",
+              repository_url: "https://api.github.com/repos/acme/api",
+              number: 2,
+              title: "PR",
+              body: null,
+              state: "open",
+              pull_request: {},
+            },
+          ],
         },
-        {
-          url: "https://api.github.com/repos/acme/api/issues/2",
-          html_url: "https://github.com/acme/api/pull/2",
-          repository_url: "https://api.github.com/repos/acme/api",
-          number: 2,
-          title: "PR",
-          body: null,
-          state: "open",
-          pull_request: {},
-        },
-      ]),
-    ),
-  );
+      },
+    ],
+  });
+  vi.stubGlobal("ajour", ajour);
 
   const result = await syncConnection(connection, []);
 
   expect(result.items.map((item) => item.externalId)).toEqual(["#1"]);
+  expect(ajour.requests).toMatchObject([{ method: "GET", path: "/issues" }]);
 });
 ```
 
