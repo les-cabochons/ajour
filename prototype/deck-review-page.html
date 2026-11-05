@@ -1,0 +1,1270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deck review page</title>
+<!-- Throwaway prototype for les-cabochons/ajour#598. Never merges. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Ajour light tokens, copied from apps/web/src/styles.css */
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.17 0.006 285);
+  --popover: oklch(1 0 0);
+  --primary: oklch(0.52 0.19 285);
+  --primary-fill: var(--primary);
+  --secondary: oklch(0.965 0.002 285);
+  --muted-foreground: oklch(0.52 0.012 285);
+  --destructive: oklch(0.577 0.245 27.325);
+  --warning: oklch(0.66 0.16 60);
+  --success: oklch(0.6 0.16 150);
+  --border: oklch(0.915 0.004 285);
+  --border-row: color-mix(in srgb, var(--border) 70%, transparent);
+  --ring: oklch(0.62 0.17 285);
+  --sidebar: oklch(0.975 0.002 285);
+  --surface-tint: oklch(0.985 0.002 285);
+  --surface-highest: oklch(0.935 0.003 285);
+  --text-secondary: var(--muted-foreground);
+  --text-tertiary: oklch(0.62 0.01 285);
+  --indigo-muted: color-mix(in srgb, var(--primary) 12%, transparent);
+  --hover-bg: color-mix(in srgb, var(--foreground) 4.5%, transparent);
+  --highlight-bg: color-mix(in srgb, var(--foreground) 3%, transparent);
+  --app-sidebar-active-bg: color-mix(in srgb, var(--foreground) 7%, transparent);
+  --field-border: color-mix(in srgb, var(--border) 84%, var(--foreground) 10%);
+  --shadow-popup: 0 12px 28px color-mix(in srgb, var(--foreground) 10%, transparent), 0 2px 6px color-mix(in srgb, var(--foreground) 6%, transparent);
+  --radius-sm: 4px; --radius-md: 6px; --radius-lg: 8px;
+  --text-2xs: 11px; --text-xs: 12px; --text-sm: 13px; --text-base: 14px; --text-lg: 16px; --text-xl: 20px;
+  --control-height: 28px; --control-height-lg: 32px;
+  --page-gutter: 24px;
+  --side-panel-width: 340px;
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "Cascadia Mono", Menlo, monospace;
+  --diff-add: color-mix(in srgb, var(--success) 9%, transparent);
+  --diff-add-no: color-mix(in srgb, var(--success) 15%, transparent);
+  --diff-del: color-mix(in srgb, var(--destructive) 8%, transparent);
+  --diff-del-no: color-mix(in srgb, var(--destructive) 13%, transparent);
+  --stage-h: 700px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { font-family: var(--font-sans); font-size: var(--text-sm); line-height: 1.45; color: var(--foreground); background: #dcdce3; display: flex; flex-direction: column; font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+button:disabled { cursor: default; opacity: .55; }
+textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+code, .mono { font-family: var(--font-mono); }
+svg { flex: none; }
+
+/* ---------- Prototype chrome (not part of the design) ---------- */
+.proto { flex: none; height: 44px; display: flex; align-items: center; gap: 14px; padding: 0 12px; background: #1c1c21; color: #e6e6ea; font-size: 12px; overflow-x: auto; white-space: nowrap; }
+.proto b { font-weight: 600; color: #fff; }
+.proto .grp { display: flex; align-items: center; gap: 6px; }
+.proto .lab { color: #9a9aa6; }
+.pseg { display: inline-flex; background: #2e2e35; border-radius: 6px; padding: 2px; gap: 2px; }
+.pseg button { height: 24px; padding: 0 10px; border-radius: 4px; color: #b8b8c2; font-weight: 500; }
+.pseg button.on { background: #fff; color: #1c1c21; }
+.proto .notes-btn { margin-left: auto; height: 26px; padding: 0 10px; border-radius: 6px; background: #2e2e35; color: #e6e6ea; }
+.notes { flex: none; max-height: 30vh; overflow: auto; background: #fffbea; border-bottom: 1px solid #eadfae; padding: 10px 16px 12px; font-size: 12px; line-height: 1.5; color: #3a3520; }
+.notes h2 { font-size: 13px; margin: 0 0 6px; }
+.notes .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 4px 24px; }
+.notes dt { font-weight: 600; margin-top: 4px; }
+.notes dd { margin: 0; }
+.stage { flex: 1; min-height: 0; display: flex; justify-content: center; }
+.stage.is-narrow { padding: 10px 0; }
+
+/* ---------- App frame ---------- */
+.frame { position: relative; display: flex; width: 100%; height: 100%; background: var(--background); overflow: hidden; }
+.frame.narrow { width: 420px; flex-direction: column; border-radius: 10px; box-shadow: 0 6px 30px rgb(0 0 0 / 18%); }
+.appnav { width: 200px; flex: none; background: var(--sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 1px; padding: 8px; }
+.dock { height: 36px; display: flex; align-items: center; gap: 6px; padding: 0 4px 0 8px; margin-bottom: 8px; color: var(--text-secondary); }
+.dock .val { margin-left: auto; }
+.navrow { height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border-radius: var(--radius-md); color: var(--text-secondary); font-weight: 500; }
+.navrow.on { background: var(--app-sidebar-active-bg); color: var(--foreground); }
+.navsec { margin: 14px 8px 4px; font-size: var(--text-2xs); font-weight: 500; color: var(--text-secondary); }
+.navpr { height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: var(--radius-md); color: var(--foreground); overflow: hidden; white-space: nowrap; }
+.navpr span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.navpr.on { background: var(--app-sidebar-active-bg); }
+.workspace { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.topbar { height: 48px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 var(--page-gutter); border-bottom: 1px solid var(--border); background: var(--background); }
+.crumbs { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--text-base); color: var(--text-secondary); white-space: nowrap; }
+.crumbs .sep { color: var(--text-tertiary); }
+.crumbs .cur { color: var(--foreground); font-weight: 600; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.crumbs .ttl { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.crumbs a, .crumbs button { color: inherit; text-decoration: none; }
+.crumbs .layer { height: 24px; padding: 0 6px; border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-secondary); display: inline-flex; align-items: center; }
+.crumbs .layer:hover { background: var(--hover-bg); }
+.crumbs .layer.on { background: var(--app-sidebar-active-bg); color: var(--foreground); }
+.tb-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; flex: none; }
+.page { flex: 1; min-height: 0; display: flex; position: relative; }
+.scroll { flex: 1; min-width: 0; overflow: auto; }
+.bottomnav { flex: none; height: 54px; border-top: 1px solid var(--border); display: flex; align-items: center; padding: 0 8px; background: var(--background); }
+.bottomnav .seg { height: 44px; padding: 3px; }
+.bottomnav .seg button { height: 38px; padding: 0 10px; display: inline-flex; align-items: center; gap: 6px; }
+
+/* ---------- Controls ---------- */
+.btn { height: var(--control-height); padding: 0 10px; border-radius: var(--radius-md); display: inline-flex; align-items: center; gap: 6px; font-weight: 500; border: 1px solid var(--border); background: var(--background); white-space: nowrap; }
+.btn:hover:not(:disabled) { background: var(--hover-bg); }
+.btn.primary { background: var(--primary-fill); border-color: transparent; color: #fff; }
+.btn.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--primary-fill) 88%, black); }
+.btn.ghost { border-color: transparent; background: transparent; }
+.btn.danger { color: var(--destructive); }
+.btn.lg { height: var(--control-height-lg); }
+.btn .count { font-family: var(--font-mono); font-size: var(--text-xs); padding: 0 5px; border-radius: 4px; background: rgb(255 255 255 / 22%); }
+.btn:not(.primary) .count { background: var(--secondary); }
+.ibtn { width: 28px; height: 28px; border-radius: var(--radius-md); display: inline-grid; place-items: center; color: var(--text-secondary); flex: none; }
+.ibtn:hover { background: var(--hover-bg); color: var(--foreground); }
+.ibtn.sm { width: 24px; height: 24px; }
+.seg { display: inline-flex; height: 28px; padding: 2px; gap: 2px; border-radius: var(--radius-md); background: var(--secondary); flex: none; }
+.seg button { height: 24px; padding: 0 10px; border-radius: var(--radius-sm); font-weight: 500; color: var(--text-secondary); display: inline-flex; align-items: center; gap: 6px; }
+.seg button.on { background: var(--background); color: var(--foreground); box-shadow: 0 0 0 1px var(--border); }
+.chip { height: 20px; padding: 0 6px; border-radius: var(--radius-sm); font-size: var(--text-xs); font-weight: 500; display: inline-flex; align-items: center; gap: 4px; background: var(--secondary); color: var(--text-secondary); white-space: nowrap; }
+.chip.accent { background: var(--indigo-muted); color: var(--primary); }
+.val { font-family: var(--font-mono); font-size: var(--text-xs); white-space: nowrap; }
+.plus { color: var(--success); }
+.minus { color: var(--destructive); }
+.muted { color: var(--text-secondary); }
+.faint { color: var(--text-tertiary); }
+.xs { font-size: var(--text-xs); }
+.sh { font-size: var(--text-xs); font-weight: 500; color: var(--text-secondary); }
+.link { color: var(--primary); }
+.link:hover { text-decoration: underline; }
+.spacer { flex: 1; }
+.result { display: inline-flex; align-items: center; gap: 4px; font-size: var(--text-xs); color: var(--text-secondary); }
+.avatar { width: 20px; height: 20px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 9px; font-weight: 600; background: var(--surface-highest); color: var(--foreground); flex: none; }
+.avatar.me { background: var(--indigo-muted); color: var(--primary); }
+.cn { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--field-border); display: inline-grid; place-items: center; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--foreground); flex: none; }
+.cn.on { border-color: var(--primary); color: var(--primary); }
+.cn.done { background: var(--foreground); border-color: var(--foreground); color: var(--background); }
+.checkbox { width: 14px; height: 14px; border-radius: 3px; border: 1px solid var(--field-border); display: inline-grid; place-items: center; flex: none; background: var(--background); }
+.checkbox.on { background: var(--primary-fill); border-color: var(--primary-fill); color: #fff; }
+
+/* ---------- Object header ---------- */
+.objhead { padding: 20px var(--page-gutter) 0; }
+.back { font-size: var(--text-xs); color: var(--text-secondary); display: inline-flex; align-items: center; gap: 4px; }
+.objtitle { font-size: var(--text-xl); font-weight: 600; line-height: 1.3; margin: 6px 0 6px; }
+.objtitle .val { font-size: var(--text-xl); font-weight: 400; color: var(--text-tertiary); }
+.meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: var(--text-xs); color: var(--text-secondary); }
+.meta b { color: var(--foreground); font-weight: 500; }
+.branch { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--foreground); background: var(--secondary); padding: 1px 6px; border-radius: var(--radius-sm); }
+.figures { display: flex; flex-wrap: wrap; gap: 12px 32px; margin-top: 16px; }
+.fig .l { font-size: var(--text-xs); color: var(--text-secondary); }
+.fig .v { font-family: var(--font-mono); font-size: var(--text-lg); }
+.proto-note { margin-top: 8px; font-size: var(--text-xs); color: var(--warning); }
+.prose { max-width: 680px; }
+.prose h3 { font-size: var(--text-sm); font-weight: 600; margin: 14px 0 4px; }
+.prose p, .prose ul { margin: 0 0 6px; }
+.prose ul { padding-left: 18px; }
+.prose code { font-size: var(--text-xs); background: var(--secondary); padding: 0 4px; border-radius: var(--radius-sm); }
+.clamp { max-height: 88px; overflow: hidden; -webkit-mask-image: linear-gradient(#000 55%, transparent); mask-image: linear-gradient(#000 55%, transparent); }
+
+/* ---------- Stack ---------- */
+.stackstrip { display: flex; align-items: center; gap: 6px; margin-top: 14px; height: 32px; font-size: var(--text-xs); min-width: 0; }
+.stackstrip .lbl { color: var(--text-secondary); font-weight: 500; display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.lay { height: 24px; max-width: 260px; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: var(--radius-sm); border: 1px solid var(--border); color: var(--text-secondary); white-space: nowrap; overflow: hidden; min-width: 0; }
+.lay .t { overflow: hidden; text-overflow: ellipsis; }
+.lay:hover { background: var(--hover-bg); }
+.lay.on { border-color: var(--primary); color: var(--foreground); background: var(--indigo-muted); }
+.lay.base { border-style: dashed; }
+.stackarrow { color: var(--text-tertiary); flex: none; }
+.stacklist { list-style: none; margin: 0; padding: 0; position: relative; }
+.stacklist li { position: relative; padding-left: 22px; }
+.stacklist li::before { content: ""; position: absolute; left: 6px; top: 0; bottom: 0; width: 1px; background: var(--border); }
+.stacklist li:first-child::before { top: 14px; }
+.stacklist li:last-child::before { bottom: calc(100% - 14px); }
+.stacklist .dot { position: absolute; left: 2px; top: 10px; width: 9px; height: 9px; border-radius: 50%; border: 1px solid var(--field-border); background: var(--background); }
+.stacklist li.on .dot { background: var(--primary); border-color: var(--primary); }
+.stacklist button { display: block; width: 100%; padding: 4px 8px; border-radius: var(--radius-md); min-height: 28px; }
+.stacklist button:hover { background: var(--hover-bg); }
+.stacklist li.on button { background: var(--app-sidebar-active-bg); }
+.stacklist .st { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stacklist .ss { display: block; font-size: var(--text-xs); color: var(--text-secondary); }
+
+/* ---------- Tabs and toolbars ---------- */
+.tabs { display: flex; gap: 18px; padding: 0 var(--page-gutter); border-bottom: 1px solid var(--border); margin-top: 12px; height: 40px; align-items: stretch; }
+.tabs button { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; color: var(--text-secondary); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tabs button.on { color: var(--foreground); border-bottom-color: var(--foreground); }
+.toolbar { position: sticky; top: 0; z-index: 3; height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 var(--page-gutter); background: var(--background); border-bottom: 1px solid var(--border); }
+.source { font-size: var(--text-xs); color: var(--text-secondary); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+/* ---------- Tree (variant A) ---------- */
+.filesgrid { display: grid; grid-template-columns: 272px minmax(0, 1fr); }
+.tree { position: sticky; top: 44px; align-self: start; height: calc(var(--stage-h) - 48px - 44px); overflow: auto; border-right: 1px solid var(--border); padding: 8px 8px 24px 16px; }
+.trow { height: 28px; width: 100%; display: flex; align-items: center; gap: 6px; padding: 0 6px; border-radius: var(--radius-md); white-space: nowrap; min-width: 0; }
+.trow:hover { background: var(--hover-bg); }
+.trow .nm { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.trow.tconcern { font-weight: 500; margin-top: 6px; }
+.trow.file { padding-left: 32px; color: var(--text-secondary); }
+.trow.file .dir { color: var(--text-tertiary); }
+.trow .val { margin-left: auto; }
+.trow .cmt { color: var(--text-tertiary); display: inline-flex; align-items: center; gap: 2px; }
+.difflane { padding: 16px var(--page-gutter) 80px; min-width: 0; }
+
+/* ---------- Concerns and hunks ---------- */
+.concern { margin-bottom: 28px; scroll-margin-top: 52px; }
+.chead { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0 12px; }
+.chead .cn { margin-top: 1px; }
+.ctext { min-width: 0; flex: 1; }
+.ctitle { font-size: var(--text-base); font-weight: 600; }
+.cwhy { font-size: var(--text-xs); color: var(--text-secondary); margin-top: 2px; }
+.cside { display: flex; align-items: center; gap: 6px; flex: none; margin-top: 1px; }
+.kind { margin-left: 6px; vertical-align: 1px; }
+.filehead { display: flex; align-items: center; gap: 8px; padding: 6px 0 8px; font-family: var(--font-mono); font-size: var(--text-xs); scroll-margin-top: 52px; }
+.hunk { border: 1px solid var(--border); border-radius: var(--radius-md); margin-bottom: 10px; overflow: hidden; scroll-margin-top: 56px; background: var(--background); }
+.hhead { height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 10px; background: var(--surface-tint); border-bottom: 1px solid var(--border); font-size: var(--text-xs); min-width: 0; }
+.hpath { font-family: var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.hpath .dir { color: var(--text-tertiary); }
+.hfn { font-family: var(--font-mono); color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.viewed { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 6px; border-radius: var(--radius-sm); color: var(--text-secondary); flex: none; }
+.viewed:hover { background: var(--hover-bg); }
+.hunk.is-viewed .hbody { display: none; }
+.hunk.is-viewed .hhead { border-bottom: 0; }
+.hbody { font-family: var(--font-mono); font-size: var(--text-xs); line-height: 20px; }
+.ln { display: flex; position: relative; }
+.ln .no { flex: none; width: 40px; padding-right: 8px; text-align: right; color: var(--text-tertiary); user-select: none; }
+.ln .no.one { display: none; }
+.ln .sg { flex: none; width: 18px; text-align: center; user-select: none; color: var(--text-tertiary); }
+.ln .code { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; padding-right: 12px; }
+.ln.add { background: var(--diff-add); }
+.ln.add .no { background: var(--diff-add-no); }
+.ln.add .sg { color: var(--success); }
+.ln.del { background: var(--diff-del); }
+.ln.del .no { background: var(--diff-del-no); }
+.ln.del .sg { color: var(--destructive); }
+.addc { position: absolute; left: 62px; top: 1px; width: 18px; height: 18px; border-radius: 4px; background: var(--primary-fill); color: #fff; display: none; place-items: center; font-family: var(--font-sans); font-size: 14px; line-height: 1; }
+.ln:hover .addc, .addc:focus-visible { display: grid; }
+.ln.has-composer { box-shadow: inset 2px 0 var(--primary); }
+
+/* ---------- Threads, drafts, composer ---------- */
+.thread { margin: 6px 12px 8px 98px; border: 1px solid var(--border); border-radius: var(--radius-md); font-family: var(--font-sans); font-size: var(--text-sm); line-height: 1.45; background: var(--background); }
+.thread.draft { border-color: color-mix(in srgb, var(--primary) 35%, var(--border)); }
+.cm { padding: 8px 10px; }
+.cm + .cm { border-top: 1px solid var(--border-row); }
+.cmh { display: flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--text-secondary); }
+.cmh b { color: var(--foreground); font-weight: 500; }
+.cmh .acts { margin-left: auto; display: flex; gap: 2px; }
+.cm p { margin: 4px 0 0 26px; }
+.tfoot { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-top: 1px solid var(--border-row); }
+.composer { margin: 6px 12px 8px 98px; border: 1px solid var(--primary); border-radius: var(--radius-md); padding: 8px; font-family: var(--font-sans); font-size: var(--text-sm); background: var(--background); }
+.composer textarea, .field { width: 100%; min-height: 64px; resize: vertical; border: 1px solid var(--field-border); border-radius: var(--radius-sm); padding: 6px 8px; background: var(--background); line-height: 1.45; }
+.composer textarea { border: 0; padding: 2px 2px; min-height: 52px; outline: none; }
+.crow { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.crow .xs { flex: 1; min-width: 0; }
+
+/* ---------- Draft review bar (variant B) ---------- */
+.draftbar { position: sticky; bottom: 0; z-index: 4; height: 48px; display: flex; align-items: center; gap: 8px; padding: 0 var(--page-gutter); background: var(--background); border-top: 1px solid var(--border); }
+.draftbar .what { font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
+
+/* ---------- Variant B layout ---------- */
+.docgrid { display: grid; grid-template-columns: minmax(0, 880px) 220px; gap: 40px; padding: 0 var(--page-gutter) 40px; justify-content: start; }
+.doc .objhead { padding: 20px 0 0; }
+.rail { position: sticky; top: 20px; align-self: start; padding-top: 24px; }
+.rail .item { width: 100%; display: flex; gap: 8px; align-items: flex-start; padding: 5px 6px; border-radius: var(--radius-md); font-size: var(--text-xs); color: var(--text-secondary); }
+.rail .item:hover { background: var(--hover-bg); }
+.rail .item.on { color: var(--foreground); background: var(--app-sidebar-active-bg); }
+.rail .item .t { flex: 1; min-width: 0; line-height: 1.35; }
+.rail .cn { width: 18px; height: 18px; font-size: 10px; }
+.section { margin-top: 28px; }
+.sectionrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 28px; margin-bottom: 10px; }
+.toc { list-style: none; margin: 0 0 24px; padding: 0; border-top: 1px solid var(--border-row); }
+.toc li button { width: 100%; display: flex; align-items: center; gap: 10px; height: 36px; border-bottom: 1px solid var(--border-row); padding: 0 4px; }
+.toc li button:hover { background: var(--hover-bg); }
+.toc .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.timeline { list-style: none; padding: 0; margin: 0; }
+.timeline > li { display: flex; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border-row); font-size: var(--text-xs); color: var(--text-secondary); align-items: center; }
+.timeline > li b { color: var(--foreground); font-weight: 500; }
+.timeline .thread { margin: 0; flex: 1; }
+.timeline > li.th { display: block; }
+
+/* ---------- Variant C layout ---------- */
+.panes { display: grid; grid-template-columns: 264px minmax(0, 1fr) var(--side-panel-width); flex: 1; min-width: 0; }
+.pane { overflow: auto; min-height: 0; }
+.pane.nav { border-right: 1px solid var(--border); padding: 12px 8px 24px; background: var(--background); }
+.pane.side { border-left: 1px solid var(--border); background: var(--background); display: flex; flex-direction: column; }
+.pane.center { padding: 20px var(--page-gutter) 24px; }
+.navhead { display: flex; align-items: center; gap: 6px; padding: 0 6px; height: 28px; margin-top: 14px; }
+.navhead:first-child { margin-top: 0; }
+.crow2 { width: 100%; min-height: 36px; display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: var(--radius-md); }
+.crow2:hover { background: var(--hover-bg); }
+.crow2.on { background: var(--app-sidebar-active-bg); }
+.crow2 .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.crow2.file .t { font-family: var(--font-mono); font-size: var(--text-xs); font-weight: 400; }
+.navsource { padding: 2px 8px 8px; }
+.ctop .kicker { font-size: var(--text-xs); color: var(--text-secondary); display: flex; align-items: center; gap: 8px; }
+.ctop h2 { font-size: var(--text-xl); font-weight: 600; margin: 4px 0 4px; line-height: 1.3; }
+.ctop .why { color: var(--text-secondary); margin: 0 0 12px; max-width: 680px; }
+.ctop .row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+.pager { display: flex; gap: 8px; margin-top: 16px; }
+.pager button { flex: 1; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 10px; }
+.pager button:hover:not(:disabled) { background: var(--hover-bg); }
+.pager .k { display: block; font-size: var(--text-xs); color: var(--text-secondary); }
+.pager .t { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pager .next { text-align: right; }
+.sidetabs { height: 44px; flex: none; display: flex; gap: 16px; padding: 0 16px; border-bottom: 1px solid var(--border); }
+.sidetabs button { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; color: var(--text-secondary); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.sidetabs button.on { color: var(--foreground); border-bottom-color: var(--foreground); }
+.sidebody { padding: 16px; overflow: auto; flex: 1; }
+.props { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 0 8px; font-size: var(--text-sm); }
+.props dt { color: var(--text-secondary); min-height: 28px; display: flex; align-items: center; font-size: var(--text-xs); }
+.props dd { margin: 0; min-height: 28px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.narrowbar { flex: none; height: 52px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-top: 1px solid var(--border); background: var(--background); }
+
+/* ---------- Submit form ---------- */
+.dlist { list-style: none; margin: 8px 0 12px; padding: 0; border-top: 1px solid var(--border-row); }
+.dlist li { display: flex; gap: 8px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--border-row); }
+.dlist .txt { flex: 1; min-width: 0; font-size: var(--text-sm); }
+.dlist .loc { display: block; }
+.votes { display: grid; gap: 2px; margin: 10px 0 14px; }
+.vote { display: flex; gap: 10px; align-items: flex-start; padding: 6px 8px; border-radius: var(--radius-md); width: 100%; }
+.vote:hover { background: var(--hover-bg); }
+.vote.on { background: var(--indigo-muted); }
+.radio { width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--field-border); margin-top: 3px; flex: none; display: grid; place-items: center; background: var(--background); }
+.vote.on .radio { border-color: var(--primary); }
+.vote.on .radio::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--primary); }
+.vote .d { display: block; font-size: var(--text-xs); color: var(--text-secondary); }
+.formactions { display: flex; align-items: center; gap: 8px; }
+
+/* ---------- Overlays ---------- */
+.scrim { position: absolute; inset: 0; z-index: 50; background: rgb(0 0 0 / 40%); display: grid; place-items: center; padding: 12px; }
+.dialog { width: min(540px, 100%); max-height: calc(100% - 24px); overflow: auto; background: var(--popover); border-radius: var(--radius-lg); box-shadow: var(--shadow-popup); padding: 18px 18px 16px; }
+.dialog h3 { font-size: var(--text-lg); font-weight: 600; margin: 0 0 6px; }
+.dialog p { margin: 0 0 10px; color: var(--text-secondary); }
+.dialog p b { color: var(--foreground); font-weight: 500; }
+.menu { position: absolute; z-index: 60; min-width: 220px; max-width: 320px; background: var(--popover); border-radius: var(--radius-lg); box-shadow: var(--shadow-popup); border: 1px solid var(--border); padding: 4px; }
+.menu button { width: 100%; min-height: 30px; display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: var(--radius-sm); }
+.menu button:hover { background: var(--hover-bg); }
+.menu .sep { height: 1px; background: var(--border); margin: 4px 0; }
+.menu .mh { font-size: var(--text-2xs); color: var(--text-secondary); padding: 6px 8px 2px; font-weight: 500; }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 55; max-height: 78%; background: var(--popover); border-radius: 10px 10px 0 0; box-shadow: var(--shadow-popup); display: flex; flex-direction: column; }
+.sheet .sheethead { height: 44px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--border); font-weight: 600; }
+.sheet .sheetbody { overflow: auto; padding: 8px; flex: 1; }
+.sheetscrim { position: absolute; inset: 0; z-index: 54; background: rgb(0 0 0 / 40%); }
+.toast { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 70; background: var(--foreground); color: var(--background); border-radius: var(--radius-md); padding: 8px 12px; font-size: var(--text-xs); box-shadow: var(--shadow-popup); display: flex; gap: 6px; align-items: center; white-space: nowrap; max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; }
+.narrow .toast { bottom: 120px; }
+
+/* ---------- Narrow view (below 768px in Ajour) ---------- */
+.narrow { --page-gutter: 12px; }
+.narrow .topbar { padding-left: 8px; }
+.narrow .ln .no { display: none; }
+.narrow .ln .no.one { display: block; width: 34px; }
+.narrow .addc { left: 6px; }
+.narrow .thread, .narrow .composer { margin-left: 12px; margin-right: 8px; }
+.narrow .figures { gap: 10px 22px; }
+.narrow .objtitle { font-size: var(--text-xl); }
+.narrow .tabs { gap: 14px; }
+.narrow .difflane { padding-bottom: 40px; }
+.narrow .chead.stick { position: sticky; top: 0; z-index: 3; background: var(--background); border-bottom: 1px solid var(--border); padding: 8px 0; margin-bottom: 10px; }
+.narrow .docgrid { grid-template-columns: minmax(0, 1fr); padding-bottom: 24px; }
+.narrow .rail { display: none; }
+.narrow .pane.center { padding: 16px 12px 24px; }
+.narrow .draftbar .hide-narrow, .narrow .hide-narrow { display: none; }
+.narrow .hfn, .narrow .hpath .dir { display: none; }
+</style>
+</head>
+<body>
+<div class="proto" id="proto"></div>
+<div class="notes" id="notes"></div>
+<div class="stage" id="stage"><div class="frame" id="frame"></div></div>
+
+<script>
+"use strict";
+/* ================= Icons ================= */
+const P = {
+  back: '<path d="M10 3 5 8l5 5"/>',
+  left: '<path d="M10 3 5 8l5 5"/>',
+  right: '<path d="m6 3 5 5-5 5"/>',
+  down: '<path d="m4 6 4 4 4-4"/>',
+  up: '<path d="m4 10 4-4 4 4"/>',
+  ext: '<path d="M9 2.5h4.5V7M13.5 2.5 7.5 8.5M12 10v3.5H2.5V4H6"/>',
+  spark: '<path d="M8 1.8 9.4 6.6 14.2 8 9.4 9.4 8 14.2 6.6 9.4 1.8 8l4.8-1.4z"/>',
+  upload: '<path d="M8 11V2.8M4.5 6.2 8 2.8l3.5 3.4M2.5 13.5h11"/>',
+  more: '<circle cx="3.5" cy="8" r=".9"/><circle cx="8" cy="8" r=".9"/><circle cx="12.5" cy="8" r=".9"/>',
+  check: '<path d="m3 8.5 3 3 7-7"/>',
+  comment: '<path d="M2.5 3h11v7.5h-6l-3 2.5v-2.5h-2z"/>',
+  stack: '<path d="M8 2 14 5 8 8 2 5zM2 8l6 3 6-3M2 11l6 3 6-3"/>',
+  x: '<path d="m4 4 8 8M12 4l-8 8"/>',
+  list: '<path d="M5.5 4h8M5.5 8h8M5.5 12h8M2.5 4h.5M2.5 8h.5M2.5 12h.5"/>',
+  az: '<path d="M2.5 12.5 5 4l2.5 8.5M3.3 10h3.4M9.5 4.5h4l-4 8h4"/>',
+  time: '<circle cx="8" cy="8" r="5.8"/><path d="M8 4.8V8l2.2 1.4"/>',
+  backlog: '<path d="M2.5 3.5h11M2.5 8h11M2.5 12.5h7"/>',
+  deck: '<rect x="2.5" y="4.5" width="11" height="9" rx="1.5"/><path d="M4.5 2.5h7"/>',
+  projects: '<path d="M2.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h4.5a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z"/>',
+  commit: '<circle cx="8" cy="8" r="5.8"/><path d="m5.5 8.2 1.8 1.8 3.4-3.6"/>',
+  settings: '<circle cx="8" cy="8" r="2"/><path d="M8 1.8v2M8 12.2v2M1.8 8h2M12.2 8h2M3.6 3.6 5 5M11 11l1.4 1.4M3.6 12.4 5 11M11 5l1.4-1.4"/>',
+  play: '<path d="M5 3.5v9l7.5-4.5z" fill="currentColor"/>',
+  plus: '<path d="M8 3v10M3 8h10"/>',
+  branch: '<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="5.5" r="1.5"/><path d="M4.5 5v6M11.5 7c0 3-7 2-7 4"/>',
+  panel: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M10 3v10"/>',
+};
+const ic = (n, s = 16) => `<svg width="${s}" height="${s}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n]}</svg>`;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+/* ================= Fake data ================= */
+const FILES = {
+  signer: "src/webhooks/signer.ts", config: "src/config/index.ts", mig: "db/migrations/0042_webhook_deliveries.sql",
+  queue: "src/webhooks/queue.ts", events: "src/invoices/events.ts", service: "src/invoices/service.ts",
+  retry: "src/http/retry.ts", client: "src/http/client.ts", deliver: "src/webhooks/deliver.ts",
+  scopes: "src/auth/scopes.ts", routes: "src/routes/webhooks.ts", rindex: "src/routes/index.ts",
+  tsigner: "tests/webhooks/signer.test.ts", tdeliver: "tests/webhooks/deliver.test.ts",
+};
+const NEW_FILES = new Set(["signer", "mig", "queue", "deliver", "routes", "tsigner", "tdeliver"].map((k) => FILES[k]));
+const HUNKS = {};
+function H(id, fk, o, n, fn, src) {
+  let a = o, b = n, add = 0, del = 0;
+  const lines = src.replace(/^\n/, "").replace(/\n$/, "").split("\n").map((raw) => {
+    const t = raw[0] === "+" || raw[0] === "-" ? raw[0] : " ";
+    const s = raw.slice(1);
+    const l = { t, s, o: null, n: null };
+    if (t === " ") { l.o = a++; l.n = b++; } else if (t === "-") { l.o = a++; del++; } else { l.n = b++; add++; }
+    return l;
+  });
+  const oc = lines.filter((l) => l.t !== "+").length, nc = lines.filter((l) => l.t !== "-").length;
+  HUNKS[id] = { id, file: FILES[fk], fn, lines, add, del, n, header: `@@ -${o},${oc} +${n},${nc} @@` };
+}
+H("h1", "signer", 0, 1, "", `
++import { createHmac, timingSafeEqual } from "node:crypto";
++
++export const SIGNATURE_HEADER = "X-Billing-Signature";
++export const TIMESTAMP_HEADER = "X-Billing-Timestamp";
++
++export interface SignedPayload {
++  body: string;
++  timestamp: number;
++  signature: string;
++}`);
+H("h2", "signer", 0, 12, "WebhookSigner", `
++export class WebhookSigner {
++  constructor(private readonly secret: string) {}
++
++  sign(body: string, now = Date.now()): SignedPayload {
++    const timestamp = Math.floor(now / 1000);
++    const signature = this.digest(\`\${timestamp}.\${body}\`);
++    return { body, timestamp, signature };
++  }`);
+H("h3", "signer", 0, 21, "WebhookSigner.verify", `
++  verify(payload: SignedPayload): boolean {
++    const expected = Buffer.from(this.digest(\`\${payload.timestamp}.\${payload.body}\`));
++    const actual = Buffer.from(payload.signature);
++    return expected.length === actual.length && timingSafeEqual(expected, actual);
++  }
++
++  private digest(input: string): string {
++    return createHmac("sha256", this.secret).update(input).digest("hex");
++  }
++}`);
+H("h4", "config", 14, 14, "AppConfig", `
+ export interface AppConfig {
+   databaseUrl: string;
+   port: number;
++  webhooks: { secret: string; timeoutMs: number; enabled: boolean };
+ }`);
+H("h5", "config", 41, 42, "loadConfig", `
+     port: Number(env.PORT ?? 8080),
++    webhooks: {
++      secret: required(env, "WEBHOOK_SECRET"),
++      timeoutMs: Number(env.WEBHOOK_TIMEOUT_MS ?? 5000),
++      enabled: env.WEBHOOKS_ENABLED !== "false",
++    },
+   };
+ }`);
+H("h6", "mig", 0, 1, "", `
++CREATE TABLE webhook_endpoints (
++  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
++  account_id  uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
++  url         text NOT NULL,
++  secret      text NOT NULL,
++  created_at  timestamptz NOT NULL DEFAULT now()
++);`);
+H("h7", "mig", 0, 9, "webhook_deliveries", `
++CREATE TABLE webhook_deliveries (
++  id           bigserial PRIMARY KEY,
++  endpoint_id  uuid NOT NULL REFERENCES webhook_endpoints(id) ON DELETE CASCADE,
++  event        text NOT NULL,
++  payload      jsonb NOT NULL,
++  attempts     int NOT NULL DEFAULT 0,
++  next_at      timestamptz NOT NULL DEFAULT now()
++);
++CREATE INDEX webhook_deliveries_due ON webhook_deliveries (next_at);`);
+H("h8", "queue", 0, 1, "", `
++import type { Db } from "../db";
++import type { InvoiceEvent } from "../invoices/events";
++
++export interface Delivery {
++  id: number;
++  endpointId: string;
++  event: string;
++  payload: unknown;
++  attempts: number;
++}`);
+H("h9", "queue", 0, 12, "enqueueDelivery", `
++export async function enqueueDelivery(db: Db, event: InvoiceEvent): Promise<number> {
++  const endpoints = await db.webhookEndpoints.forAccount(event.accountId);
++  for (const endpoint of endpoints) {
++    await db.webhookDeliveries.insert({ endpointId: endpoint.id, event: event.type, payload: event });
++  }
++  return endpoints.length;
++}`);
+H("h10", "queue", 0, 20, "takeDue", `
++export async function takeDue(db: Db, limit = 50): Promise<Delivery[]> {
++  return db.webhookDeliveries.lockDue({ now: new Date(), limit });
++}`);
+H("h11", "events", 3, 3, "InvoiceEvent", `
+ export type InvoiceEvent =
+   | { type: "invoice.created"; accountId: string; invoiceId: string }
++  | { type: "invoice.updated"; accountId: string; invoiceId: string; changes: string[] }
+   | { type: "invoice.paid"; accountId: string; invoiceId: string };`);
+H("h12", "events", 18, 19, "invoiceEvents", `
+ export const invoiceEvents = new EventEmitter<{ event: [InvoiceEvent] }>();
++
++export function emitInvoiceEvent(event: InvoiceEvent): void {
++  invoiceEvents.emit("event", event);
++}`);
+H("h13", "service", 1, 1, "", `
+ import type { Db } from "../db";
+-import { invoiceEvents } from "./events";
++import { emitInvoiceEvent } from "./events";
++import { enqueueDelivery } from "../webhooks/queue";`);
+H("h14", "service", 22, 23, "InvoiceService.create", `
+     const invoice = await this.db.invoices.insert(input);
+-    invoiceEvents.emit("event", { type: "invoice.created", accountId: input.accountId, invoiceId: invoice.id });
++    emitInvoiceEvent({ type: "invoice.created", accountId: input.accountId, invoiceId: invoice.id });
+     return invoice;`);
+H("h15", "service", 40, 41, "InvoiceService.update", `
+     const invoice = await this.db.invoices.update(id, patch);
++    const event = { type: "invoice.updated", accountId: invoice.accountId, invoiceId: id, changes: Object.keys(patch) } as const;
++    emitInvoiceEvent(event);
++    if (this.config.webhooks.enabled) await enqueueDelivery(this.db, event);
+     return invoice;`);
+H("h16", "service", 58, 62, "InvoiceService.markPaid", `
+-    invoiceEvents.emit("event", { type: "invoice.paid", accountId: invoice.accountId, invoiceId: id });
++    const event = { type: "invoice.paid", accountId: invoice.accountId, invoiceId: id } as const;
++    emitInvoiceEvent(event);
++    if (this.config.webhooks.enabled) await enqueueDelivery(this.db, event);`);
+H("h17", "retry", 9, 9, "RetryPolicy", `
+ export interface RetryPolicy {
+   attempts: number;
+   baseDelayMs: number;
++  stopOn?: (status: number) => boolean;
+ }`);
+H("h18", "retry", 27, 28, "shouldRetry", `
+ export function shouldRetry(policy: RetryPolicy, status: number, attempt: number): boolean {
++  if (policy.stopOn?.(status)) return false;
+   if (attempt >= policy.attempts) return false;
+   return status === 429 || status >= 500;`);
+H("h19", "client", 30, 31, "HttpClient.send", `
+-  async send(request: Request): Promise<Response> {
++  async send(request: Request, policy: RetryPolicy = this.policy): Promise<Response> {
+     for (let attempt = 1; ; attempt++) {
+       const response = await this.fetch(request);
+-      if (!shouldRetry(this.policy, response.status, attempt)) return response;
++      if (!shouldRetry(policy, response.status, attempt)) return response;`);
+H("h20", "client", 44, 45, "HttpClient.send", `
+-      await sleep(backoff(this.policy, attempt));
++      await sleep(backoff(policy, attempt));
+     }
+   }`);
+H("h21", "deliver", 0, 1, "", `
++import { HttpClient } from "../http/client";
++import type { RetryPolicy } from "../http/retry";
++import { SIGNATURE_HEADER, TIMESTAMP_HEADER, WebhookSigner } from "./signer";
++import { takeDue, type Delivery } from "./queue";`);
+H("h22", "deliver", 0, 6, "WEBHOOK_POLICY", `
++const WEBHOOK_POLICY: RetryPolicy = {
++  attempts: 6,
++  baseDelayMs: 2_000,
++  stopOn: (status) => status === 410,
++};`);
+H("h23", "deliver", 0, 12, "deliver", `
++export async function deliver(http: HttpClient, delivery: Delivery, endpoint: { url: string; secret: string }) {
++  const signed = new WebhookSigner(endpoint.secret).sign(JSON.stringify(delivery.payload));
++  const response = await http.send(
++    new Request(endpoint.url, {
++      method: "POST",
++      body: signed.body,
++      headers: { [SIGNATURE_HEADER]: signed.signature, [TIMESTAMP_HEADER]: String(signed.timestamp) },
++    }),
++    WEBHOOK_POLICY,
++  );
++  return response.ok ? "delivered" : response.status === 410 ? "gone" : "failed";
++}`);
+H("h24", "deliver", 0, 25, "runDeliveryLoop", `
++export async function runDeliveryLoop(deps: DeliveryDeps, signal: AbortSignal) {
++  while (!signal.aborted) {
++    const due = await takeDue(deps.db);
++    await Promise.allSettled(due.map((d) => deliverAndRecord(deps, d)));
++    await sleep(due.length ? 0 : 1_000, signal);
++  }
++}`);
+H("h25", "scopes", 4, 4, "Scope", `
+ export type Scope =
+   | "invoices:read"
+   | "invoices:write"
++  | "webhooks:read"
++  | "webhooks:write"
+   | "accounts:admin";`);
+H("h26", "scopes", 20, 22, "DEFAULT_SCOPES", `
+ export const DEFAULT_SCOPES: Scope[] = [
+   "invoices:read",
++  "webhooks:read",
+ ];`);
+H("h27", "routes", 0, 1, "", `
++import { randomBytes } from "node:crypto";
++import { Router } from "../http/router";
++import { requireScope } from "../auth/scopes";
++
++export const webhooksRouter = new Router();`);
+H("h28", "routes", 0, 7, "POST /webhooks", `
++webhooksRouter.post("/webhooks", requireScope("webhooks:write"), async (req, res) => {
++  const url = new URL(req.body.url);
++  if (url.protocol !== "https:") return res.status(422).json({ error: "Webhook URLs must use https" });
++  const secret = randomBytes(32).toString("hex");
++  const endpoint = await req.db.webhookEndpoints.insert({ accountId: req.account.id, url: url.href, secret });
++  res.status(201).json({ id: endpoint.id, url: endpoint.url, secret });
++});`);
+H("h29", "routes", 0, 15, "GET /webhooks", `
++webhooksRouter.get("/webhooks", requireScope("webhooks:read"), async (req, res) => {
++  const endpoints = await req.db.webhookEndpoints.forAccount(req.account.id);
++  res.json(endpoints.map(({ secret: _secret, ...rest }) => rest));
++});`);
+H("h30", "routes", 0, 20, "DELETE /webhooks/:id", `
++webhooksRouter.delete("/webhooks/:id", requireScope("webhooks:write"), async (req, res) => {
++  await req.db.webhookEndpoints.delete({ id: req.params.id, accountId: req.account.id });
++  res.status(204).end();
++});`);
+H("h31", "rindex", 3, 3, "", `
+ import { invoicesRouter } from "./invoices";
++import { webhooksRouter } from "./webhooks";
+
+ export const routers = [healthRouter, invoicesRouter,
+-  accountsRouter];
++  accountsRouter, webhooksRouter];`);
+H("h32", "service", 70, 74, "InvoiceService.get", `
+-  async get(id: string): Promise<Invoice | null> {
+-    return this.db.invoices.find(id);
++  async get(id: string, accountId: string): Promise<Invoice | null> {
++    return this.db.invoices.find({ id, accountId });
+   }`);
+H("h33", "client", 12, 12, "HttpClient", `
+-  private fetch(request: Request): Promise<Response> {
++  /** @internal Replaced in tests. */
++  fetch(request: Request): Promise<Response> {`);
+H("h34", "tsigner", 0, 1, "", `
++import { describe, expect, it } from "vitest";
++import { WebhookSigner } from "../../src/webhooks/signer";
++
++const signer = new WebhookSigner("test-secret");`);
+H("h35", "tsigner", 0, 6, "verifies its own signature", `
++describe("WebhookSigner", () => {
++  it("verifies its own signature", () => {
++    const payload = signer.sign('{"id":"inv_1"}', 1_700_000_000_000);
++    expect(signer.verify(payload)).toBe(true);
++  });`);
+H("h36", "tsigner", 0, 12, "rejects a changed body", `
++  it("rejects a changed body", () => {
++    const payload = signer.sign('{"id":"inv_1"}');
++    expect(signer.verify({ ...payload, body: '{"id":"inv_2"}' })).toBe(false);
++  });`);
+H("h37", "tsigner", 0, 17, "rejects another secret's signature", `
++  it("rejects another secret's signature", () => {
++    const other = new WebhookSigner("other").sign("{}");
++    expect(signer.verify(other)).toBe(false);
++  });
++});`);
+H("h38", "tdeliver", 0, 1, "", `
++import { describe, expect, it, vi } from "vitest";
++import { HttpClient } from "../../src/http/client";
++import { deliver } from "../../src/webhooks/deliver";`);
+H("h39", "tdeliver", 0, 5, "stops retrying on 410 Gone", `
++it("stops retrying when the endpoint answers 410 Gone", async () => {
++  const http = new HttpClient();
++  http.fetch = vi.fn().mockResolvedValue(new Response(null, { status: 410 }));
++  await expect(deliver(http, delivery, endpoint)).resolves.toBe("gone");
++  expect(http.fetch).toHaveBeenCalledTimes(1);
++});`);
+H("h40", "tdeliver", 0, 12, "retries a 503", `
++it("retries a 503 with the webhook policy", async () => {
++  const http = new HttpClient();
++  http.fetch = vi.fn().mockResolvedValueOnce(new Response(null, { status: 503 })).mockResolvedValue(new Response("ok"));
++  await expect(deliver(http, delivery, endpoint)).resolves.toBe("delivered");
++});`);
+
+const CONCERNS = {
+  c1: { kind: "semantic", hunks: ["h1", "h2", "h3", "h4", "h5"],
+    built: { title: "Add WebhookSigner", why: "Centers on WebhookSigner; touches AppConfig and loadConfig (5 hunks in 2 files). Linked by 6 shared symbols." },
+    agent: { title: "Sign each payload with the endpoint's secret", why: "HMAC-SHA256 over the timestamp and the body. Receivers check it with timingSafeEqual." } },
+  c2: { kind: "semantic", hunks: ["h6", "h7", "h8", "h9", "h10", "h11", "h12", "h13", "h14", "h15", "h16"],
+    built: { title: "Add enqueueDelivery", why: "Centers on enqueueDelivery; touches InvoiceService, InvoiceEvent and webhook_deliveries (11 hunks in 4 files)." },
+    agent: { title: "Queue a delivery whenever an invoice changes", why: "InvoiceService emits the event, and the queue stores one row per endpoint until the loop sends it." } },
+  c3: { kind: "semantic", hunks: ["h17", "h18", "h19", "h20", "h21", "h22", "h23", "h24"],
+    built: { title: "Update HttpClient.send in src/http", why: "Centers on deliver; touches RetryPolicy, shouldRetry and HttpClient.send (8 hunks in 3 files)." },
+    agent: { title: "Retry failed deliveries with the shared policy", why: "deliver reuses the retry policy from the layer below and only adds a stop on 410 Gone." } },
+  c4: { kind: "semantic", hunks: ["h25", "h26", "h27", "h28", "h29", "h30", "h31", "h32"],
+    built: { title: "Add webhooksRouter", why: "Centers on webhooksRouter; touches Scope, routers and InvoiceService.get (8 hunks in 4 files)." },
+    agent: { title: "Let clients register webhook endpoints", why: "Start here: these routes define what an endpoint is, behind the new webhooks scopes." } },
+  c5: { kind: "tests", hunks: ["h33", "h34", "h35", "h36", "h37", "h38", "h39", "h40"],
+    built: { title: "Tests", why: "Test files and test seams that exercise the concerns above (8 hunks in 3 files)." },
+    agent: { title: "Tests for signing and the 410 stop", why: "Covers a changed body, a foreign secret, the 410 stop and a retried 503." } },
+};
+const ORDER = { built: ["c1", "c2", "c3", "c4", "c5"], agent: ["c4", "c2", "c1", "c3", "c5"] };
+const ALL_HUNKS = Object.values(HUNKS);
+const TOTAL_ADD = ALL_HUNKS.reduce((s, h) => s + h.add, 0);
+const TOTAL_DEL = ALL_HUNKS.reduce((s, h) => s + h.del, 0);
+const FILE_LIST = Object.values(FILES).slice().sort();
+
+const STACK = [
+  { n: 479, title: "Extract the HTTP client's retry policy", state: "Approved", branch: "samir/retry-policy", base: "main", files: 4, add: 86, del: 41, concerns: 2 },
+  { n: 482, title: "Send signed invoice webhooks", state: "Active", branch: "samir/invoice-webhooks", base: "samir/retry-policy", files: 14, add: TOTAL_ADD, del: TOTAL_DEL, concerns: 5 },
+  { n: 485, title: "Show webhook deliveries on the admin page", state: "Draft", branch: "samir/delivery-log", base: "samir/invoice-webhooks", files: 9, add: 233, del: 12, concerns: 3 },
+];
+const COMMITS = [
+  ["3e1a9c2", "Add the webhook tables", "2 days ago"],
+  ["7b40d1e", "Sign payloads with WebhookSigner", "2 days ago"],
+  ["c09f5a8", "Queue deliveries on invoice changes", "yesterday"],
+  ["51d2e7b", "Deliver with the shared retry policy", "yesterday"],
+  ["a8f3360", "Add the webhooks routes", "23 hours ago"],
+  ["9f3c2e1", "Test signing and the 410 stop", "9 hours ago"],
+];
+const HOSTS = {
+  github: { name: "GitHub", id: (n) => "#" + n, repo: "northwind/billing-api", short: "billing-api",
+    votes: [["comment", "Comment", "Submit general feedback without approving."], ["approve", "Approve", "Approve these changes."], ["changes", "Request changes", "Changes are needed before this can merge."]] },
+  ado: { name: "Azure DevOps", id: (n) => "!" + n, repo: "Billing / billing-api", short: "billing-api",
+    votes: [["comment", "Comment", "Submit feedback without changing your vote."], ["approve", "Approve", "Approve these changes."], ["suggest", "Approve with suggestions", "Approve, with optional follow-ups."], ["wait", "Wait for author", "Changes are needed before this can merge."], ["reject", "Reject", "These changes should not merge."]] },
+};
+
+/* ================= State ================= */
+const S = {
+  variant: "A", host: "github", width: innerWidth < 768 ? "narrow" : "wide", notes: true,
+  view: "guide", source: "built", consent: false, agentBusy: false, published: null,
+  tab: "files", layer: 1, viewed: new Set(["h1", "h4", "h6", "h7", "h8", "h11"]),
+  drafts: [
+    { id: 1, h: "h3", l: 0, text: "Should verify also reject a timestamp older than five minutes? Otherwise a captured payload can be replayed." },
+    { id: 2, h: "h22", l: 3, text: "A 410 should also disable the endpoint, or the next invoice change queues it again." },
+  ],
+  threads: [{ h: "h9", l: 1, status: "Active", comments: [
+    { who: "Marcus Lee", ini: "ML", when: "9 hours ago", text: "If an endpoint is deleted while deliveries are still queued, do those rows stay forever?" },
+    { who: "Samir Haddad", ini: "SH", when: "7 hours ago", text: "The 0042 cascade drops them with the endpoint. I'll add a test for it." },
+  ] }],
+  nextDraft: 3, composer: null, composerText: "", summary: "", vote: "comment",
+  dialog: null, menu: null, sheet: null, toast: null,
+  concern: 1, file: 0, cPane: "nav", sideTab: "drafts", descOpen: false,
+};
+const host = () => HOSTS[S.host];
+const order = () => ORDER[S.source].map((id) => ({ id, ...CONCERNS[id], ...CONCERNS[id][S.source] }));
+const pr = () => STACK[S.layer];
+const narrow = () => S.width === "narrow";
+const concernOf = (hid) => Object.keys(CONCERNS).find((c) => CONCERNS[c].hunks.includes(hid));
+const viewedIn = (hs) => hs.filter((h) => S.viewed.has(h)).length;
+const lineNo = (h, l) => { const x = HUNKS[h].lines[l]; return x.n ?? x.o; };
+const splitPath = (p) => { const i = p.lastIndexOf("/"); return [p.slice(0, i + 1), p.slice(i + 1)]; };
+const fileHunks = (f) => ALL_HUNKS.filter((h) => h.file === f).sort((a, b) => a.n - b.n);
+const filesOf = (hs) => [...new Set(hs.map((h) => HUNKS[h].file))];
+const sumOf = (hs) => hs.reduce((s, h) => [s[0] + HUNKS[h].add, s[1] + HUNKS[h].del], [0, 0]);
+const plural = (n, w, ws = w + "s") => `${n} ${n === 1 ? w : ws}`;
+
+/* ================= Shared pieces ================= */
+const pm = (a, d) => `<span class="val"><span class="plus">+${a}</span> <span class="minus">−${d}</span></span>`;
+const seg = (act, opts, cur) => `<div class="seg" role="group">${opts.map(([v, label, icon]) => `<button class="${v === cur ? "on" : ""}" data-act="${act}" data-v="${v}" aria-pressed="${v === cur}">${icon ? ic(icon, 14) : ""}${label}</button>`).join("")}</div>`;
+const viewSeg = () => seg("view", [["guide", "Guide", "list"], ["az", "Files A–Z", "az"]], S.view);
+const kindChip = (c) => c.kind === "tests" ? `<span class="chip kind">Tests</span>` : "";
+
+function sourceLine() {
+  if (S.agentBusy) return `<span class="source">${ic("spark", 14)} Claude Code is rewriting the guide…</span>`;
+  const pub = S.host === "ado" && S.published ? ` · <span class="result">${ic("check", 12)} Published for Review Deck at ${S.published}</span>` : "";
+  return S.source === "agent"
+    ? `<span class="source">${ic("spark", 14)} Titles and order by Claude Code · <button class="link" data-act="useBuilt">Use the built guide</button>${pub}</span>`
+    : `<span class="source">Built from the code${pub}</span>`;
+}
+function guideActions(inline) {
+  const ask = S.source === "agent" ? "" : `<button class="btn" data-act="ask" ${S.agentBusy ? "disabled" : ""}>${ic("spark", 14)} Ask an agent</button>`;
+  const pub = S.host === "ado" ? `<button class="btn" data-act="publish">${ic("upload", 14)} Publish guide</button>` : "";
+  if (inline) return ask + pub;
+  return `<button class="ibtn" data-act="menu" data-menu="guide" aria-label="Guide actions">${ic("more")}</button>`;
+}
+function menuItems(id) {
+  if (id === "guide") {
+    const items = [];
+    if (S.source === "agent") items.push(`<button data-act="useBuilt">${ic("list", 14)} Use the built guide</button>`);
+    else items.push(`<button data-act="ask" ${S.agentBusy ? "disabled" : ""}>${ic("spark", 14)} Ask an agent</button>`);
+    if (S.host === "ado") items.push(`<button data-act="publish">${ic("upload", 14)} Publish guide</button>`);
+    items.push(`<div class="sep"></div><button data-act="noop">${ic("ext", 14)} Open in ${host().name}</button>`);
+    return items.join("");
+  }
+  if (id === "stack") {
+    return `<div class="mh">Stack · ${S.layer + 1} of ${STACK.length}</div>` + STACK.slice().reverse().map((p) => {
+      const i = STACK.indexOf(p);
+      return `<button data-act="layer" data-v="${i}">${i === S.layer ? ic("check", 14) : `<span style="width:14px"></span>`}<span class="val">${host().id(p.n)}</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.title)}</span></button>`;
+    }).join("") + `<div class="sep"></div><div class="mh">Base · <span class="mono">main</span></div>`;
+  }
+  return "";
+}
+
+function header({ figures = false, stackStrip = false, backLink = true } = {}) {
+  const p = pr();
+  const meta = `<div class="meta"><span class="chip ${p.state === "Active" ? "accent" : ""}">${p.state}</span><span class="avatar">SH</span><b>Samir Haddad</b> wants to merge <span class="branch">${p.branch}</span> into <span class="branch">${p.base}</span> · opened 2 days ago${figures ? "" : ` · ${plural(p.files, "file")} · ${pm(p.add, p.del)} · ${plural(p.concerns, "concern")}`}</div>`;
+  const figs = figures ? `<div class="figures">
+      <div class="fig"><div class="l">Files</div><div class="v">${p.files}</div></div>
+      <div class="fig"><div class="l">Lines</div><div class="v">${pm(p.add, p.del).replace(/class="val"/, 'class="val" style="font-size:16px"')}</div></div>
+      <div class="fig"><div class="l">Concerns</div><div class="v">${p.concerns}</div></div>
+      <div class="fig"><div class="l">Viewed</div><div class="v">${S.viewed.size} <span class="faint" style="font-size:13px">of ${ALL_HUNKS.length}</span></div></div>
+      <div class="fig"><div class="l">Drafts</div><div class="v">${S.drafts.length}</div></div></div>` : "";
+  const note = S.layer !== 1 ? `<div class="proto-note">Prototype: every layer shows ${host().id(482)}'s diff.</div>` : "";
+  return `<div class="objhead">${backLink ? `<button class="back" data-act="noop">${ic("back", 12)} Back to Deck</button>` : ""}
+    <h1 class="objtitle">${esc(p.title)} <span class="val">${host().id(p.n)}</span></h1>${meta}${figs}${stackStrip ? stackStripHtml() : ""}${note}</div>`;
+}
+function stackStripHtml() {
+  if (narrow()) {
+    const p = pr();
+    return `<div class="stackstrip"><span class="lbl">${ic("stack", 14)} Stack</span>
+      <button class="ibtn sm" data-act="layerStep" data-v="-1" ${S.layer === 0 ? "disabled" : ""} aria-label="Layer below">${ic("down", 14)}</button>
+      <button class="lay on" data-act="menu" data-menu="stack"><span class="val">${S.layer + 1} of ${STACK.length}</span><span class="t">${esc(p.title)}</span>${ic("down", 12)}</button>
+      <button class="ibtn sm" data-act="layerStep" data-v="1" ${S.layer === STACK.length - 1 ? "disabled" : ""} aria-label="Layer above">${ic("up", 14)}</button></div>`;
+  }
+  const lay = STACK.map((p, i) => `<button class="lay ${i === S.layer ? "on" : ""}" data-act="layer" data-v="${i}" title="${esc(p.title)}"><span class="val">${host().id(p.n)}</span><span class="t">${esc(p.title)}</span></button>`);
+  return `<div class="stackstrip"><span class="lbl">${ic("stack", 14)} Stack <span class="val faint">${S.layer + 1} of ${STACK.length}</span></span>
+    <span class="lay base"><span class="val">main</span></span><span class="stackarrow">${ic("right", 12)}</span>${lay.join(`<span class="stackarrow">${ic("right", 12)}</span>`)}</div>`;
+}
+function stackList() {
+  return `<ul class="stacklist">${STACK.slice().reverse().map((p) => {
+    const i = STACK.indexOf(p);
+    return `<li class="${i === S.layer ? "on" : ""}"><span class="dot"></span><button data-act="layer" data-v="${i}"><span class="st">${esc(p.title)}</span><span class="ss"><span class="val">${host().id(p.n)}</span> · ${p.state}</span></button></li>`;
+  }).join("")}<li><span class="dot"></span><button data-act="noop" disabled style="opacity:1"><span class="ss"><span class="val">main</span></span></button></li></ul>`;
+}
+
+/* ----- Diff ----- */
+function commentBlocks(hid, l) {
+  let out = "";
+  S.threads.forEach((t, ti) => {
+    if (t.h !== hid || t.l !== l) return;
+    const replies = S.drafts.filter((d) => d.reply === ti);
+    out += `<div class="thread">${t.comments.map((c) => `<div class="cm"><div class="cmh"><span class="avatar">${c.ini}</span><b>${c.who}</b> ${c.when}</div><p>${esc(c.text)}</p></div>`).join("")}
+      ${replies.map((d) => draftCm(d)).join("")}
+      <div class="tfoot"><button class="btn sm" data-act="reply" data-v="${ti}" data-h="${hid}" data-l="${l}">Reply</button><span class="spacer"></span><span class="chip">${t.status}</span></div></div>`;
+  });
+  S.drafts.filter((d) => d.h === hid && d.l === l && d.reply == null).forEach((d) => { out += `<div class="thread draft">${draftCm(d)}</div>`; });
+  if (S.composer && S.composer.h === hid && S.composer.l === l) {
+    out += `<div class="composer"><textarea id="composer-ta" data-input="composer" placeholder="${S.composer.reply != null ? "Reply" : "Leave a comment"}" aria-label="Comment">${esc(S.composerText)}</textarea>
+      <div class="crow"><span class="xs muted">Kept in your draft review until you submit.</span><button class="btn ghost" data-act="cancelCompose">Cancel</button><button class="btn primary" data-act="saveDraft">Add to draft review</button></div></div>`;
+  }
+  return out;
+}
+const draftCm = (d) => `<div class="cm"><div class="cmh"><span class="avatar me">AT</span><b>You</b><span class="chip accent">Draft</span><span class="acts"><button class="btn sm ghost" data-act="delDraft" data-v="${d.id}">Delete</button></span></div><p>${esc(d.text)}</p></div>`;
+
+function hunkHtml(hid, { path = true } = {}) {
+  const h = HUNKS[hid];
+  const [dir, name] = splitPath(h.file);
+  const v = S.viewed.has(hid);
+  const lines = h.lines.map((l, i) => {
+    const cls = l.t === "+" ? "add" : l.t === "-" ? "del" : "";
+    const comp = S.composer && S.composer.h === hid && S.composer.l === i ? " has-composer" : "";
+    return `<div class="ln ${cls}${comp}"><span class="no">${l.o ?? ""}</span><span class="no">${l.n ?? ""}</span><span class="no one">${l.n ?? l.o}</span><button class="addc" data-act="compose" data-h="${hid}" data-l="${i}" aria-label="Comment on line ${l.n ?? l.o}">+</button><span class="sg">${l.t === " " ? "" : l.t === "-" ? "−" : "+"}</span><span class="code">${esc(l.s) || " "}</span></div>${commentBlocks(hid, i)}`;
+  }).join("");
+  const nT = S.threads.filter((t) => t.h === hid).length + S.drafts.filter((d) => d.h === hid && d.reply == null).length;
+  return `<div class="hunk ${v ? "is-viewed" : ""}" id="hk-${hid}">
+    <div class="hhead">${path ? `<span class="hpath"><span class="dir">${dir}</span>${name}</span>${NEW_FILES.has(h.file) && h.n === 1 ? `<span class="chip">New</span>` : ""}` : ""}
+      <span class="hfn">${h.header}${h.fn ? " " + esc(h.fn) : ""}</span><span class="spacer"></span>
+      ${nT ? `<span class="faint xs" style="display:inline-flex;gap:3px;align-items:center">${ic("comment", 12)}${nT}</span>` : ""}
+      ${pm(h.add, h.del)}
+      <button class="viewed" data-act="viewed" data-v="${hid}" aria-pressed="${v}"><span class="checkbox ${v ? "on" : ""}">${v ? ic("check", 10) : ""}</span>Viewed</button></div>
+    <div class="hbody">${lines}</div></div>`;
+}
+function concernHead(c, i, { sticky = false, steps = false } = {}) {
+  const n = c.hunks.length, vw = viewedIn(c.hunks);
+  return `<div class="chead ${sticky ? "stick" : ""}"><span class="cn ${vw === n ? "done" : ""}">${i + 1}</span>
+    <div class="ctext"><div class="ctitle">${esc(c.title)}${kindChip(c)}</div><div class="cwhy">${esc(c.why)}</div></div>
+    <div class="cside"><span class="val faint">${vw}/${n}</span>${steps ? `<button class="ibtn sm" data-act="stepConcern" data-v="-1" aria-label="Previous concern" ${i === 0 ? "disabled" : ""}>${ic("up", 14)}</button><button class="ibtn sm" data-act="stepConcern" data-v="1" aria-label="Next concern" ${i === 4 ? "disabled" : ""}>${ic("down", 14)}</button>` : ""}</div></div>`;
+}
+function diffStream({ stickyHeads = false } = {}) {
+  if (S.view === "guide") {
+    return order().map((c, i) => `<section class="concern" id="cc-${c.id}" data-concern="${i}">${concernHead(c, i, { sticky: stickyHeads, steps: stickyHeads })}${c.hunks.map((h) => hunkHtml(h)).join("")}</section>`).join("");
+  }
+  return FILE_LIST.map((f) => {
+    const hs = fileHunks(f);
+    const [dir, name] = splitPath(f);
+    return `<section class="concern" id="ff-${f.replace(/\W/g, "_")}"><div class="filehead"><span><span class="faint">${dir}</span>${name}</span>${NEW_FILES.has(f) ? `<span class="chip">New</span>` : ""}<span class="spacer"></span>${pm(hs.reduce((s, h) => s + h.add, 0), hs.reduce((s, h) => s + h.del, 0))}</div>${hs.map((h) => hunkHtml(h.id, { path: false })).join("")}</section>`;
+  }).join("");
+}
+function treeHtml() {
+  if (S.view === "guide") {
+    return order().map((c, i) => {
+      const files = filesOf(c.hunks);
+      return `<button class="trow tconcern" data-act="goto" data-v="cc-${c.id}"><span class="cn ${viewedIn(c.hunks) === c.hunks.length ? "done" : ""}">${i + 1}</span><span class="nm">${esc(c.title)}</span><span class="val faint">${c.hunks.length}</span></button>` +
+        files.map((f) => {
+          const hs = c.hunks.filter((h) => HUNKS[h].file === f);
+          const [, name] = splitPath(f);
+          const cm = S.threads.filter((t) => hs.includes(t.h)).length + S.drafts.filter((d) => hs.includes(d.h)).length;
+          return `<button class="trow file" data-act="goto" data-v="hk-${hs[0]}"><span class="nm">${name}</span>${cm ? `<span class="cmt">${ic("comment", 12)}${cm}</span>` : ""}${pm(...sumOf(hs))}</button>`;
+        }).join("");
+    }).join("");
+  }
+  return FILE_LIST.map((f) => {
+    const [dir, name] = splitPath(f);
+    const hs = fileHunks(f).map((h) => h.id);
+    return `<button class="trow file" style="padding-left:6px" data-act="goto" data-v="ff-${f.replace(/\W/g, "_")}"><span class="nm"><span class="dir">${dir}</span>${name}</span>${pm(...sumOf(hs))}</button>`;
+  }).join("");
+}
+function descriptionHtml() {
+  return `<div class="prose"><h3>Problem</h3><p>Customers poll <code>GET /invoices</code> every minute to learn about changes, and support can't tell them when an invoice was paid.</p>
+  <h3>Change</h3><ul><li><b>Endpoints.</b> Accounts register https endpoints under the new <code>webhooks:write</code> scope.</li>
+  <li><b>Signed payloads.</b> Each delivery carries an HMAC-SHA256 signature and a timestamp.</li>
+  <li><b>Deliveries.</b> An invoice change queues one delivery per endpoint. A loop sends them with ${host().id(479)}'s retry policy and stops on 410 Gone.</li></ul>
+  <h3>Verification</h3><p>New unit tests for signing and the 410 stop. <code>npm test</code> passes.</p></div>`;
+}
+function timelineHtml() {
+  return `<ul class="timeline">
+    <li><span class="avatar">SH</span><span><b>Samir Haddad</b> opened this pull request · 2 days ago</span></li>
+    <li><span class="avatar">SH</span><span><b>Samir Haddad</b> pushed 6 commits · head <span class="val">9f3c2e1</span> · 9 hours ago</span></li>
+    <li class="th"><div class="xs muted" style="margin-bottom:6px;display:flex;gap:6px;align-items:center">${ic("comment", 12)}<button class="link mono" data-act="goto" data-v="hk-h9">${FILES.queue}:${lineNo("h9", 1)}</button></div>${S.threads.map((t, ti) => `<div class="thread" style="margin:0">${t.comments.map((c) => `<div class="cm"><div class="cmh"><span class="avatar">${c.ini}</span><b>${c.who}</b> ${c.when}</div><p>${esc(c.text)}</p></div>`).join("")}<div class="tfoot"><span class="spacer"></span><span class="chip">${t.status}</span></div></div>`).join("")}</li>
+    <li><span class="avatar">ML</span><span><b>Marcus Lee</b> approved ${host().id(479)}, the layer below · 1 day ago</span></li>
+  </ul>`;
+}
+function propsHtml() {
+  return `<dl class="props">
+    <dt>Author</dt><dd><span class="avatar">SH</span> Samir Haddad</dd>
+    <dt>Reviewers</dt><dd><span class="avatar">JR</span> Jordan Rivera <span class="chip">Required</span></dd>
+    <dt></dt><dd><span class="avatar">ML</span> Marcus Lee <span class="faint xs">No vote</span></dd>
+    <dt></dt><dd><span class="avatar me">AT</span> You <span class="faint xs">Reviewing</span></dd>
+    <dt>Checks</dt><dd>${ic("check", 14)} 3 of 3 passed</dd>
+    <dt>Head</dt><dd><span class="val">9f3c2e1</span></dd>
+    <dt>Repository</dt><dd>${host().repo}</dd></dl>`;
+}
+
+/* ----- Submit form ----- */
+function draftLoc(d) { return d.h ? `${HUNKS[d.h].file}:${lineNo(d.h, d.l)}` : "General"; }
+function submitForm({ inDialog }) {
+  const list = S.drafts.length ? `<ul class="dlist">${S.drafts.map((d) => `<li><span class="avatar me">AT</span><span class="txt"><button class="loc val link" data-act="goto" data-v="hk-${d.h}">${draftLoc(d)}</button>${d.reply != null ? `<span class="faint xs">Reply · </span>` : ""}${esc(d.text)}</span><button class="ibtn sm" data-act="delDraft" data-v="${d.id}" aria-label="Delete draft">${ic("x", 14)}</button></li>`).join("")}</ul>`
+    : `<p class="muted xs" style="margin:8px 0 12px">No draft comments. You can still submit a vote with a summary.</p>`;
+  return `${inDialog ? `<h3>Submit review</h3><p>${plural(S.drafts.length, "draft comment")} on ${host().id(pr().n)} go to ${host().name} together.</p>` : `<div class="sh">Draft review · ${plural(S.drafts.length, "comment")}</div>`}
+    ${list}
+    <textarea class="field" data-input="summary" placeholder="Leave a summary (optional)" aria-label="Summary">${esc(S.summary)}</textarea>
+    <div class="votes" role="radiogroup">${host().votes.map(([v, l, d]) => `<button class="vote ${S.vote === v ? "on" : ""}" role="radio" aria-checked="${S.vote === v}" data-act="vote" data-v="${v}"><span class="radio"></span><span><span>${l}</span><span class="d">${d}</span></span></button>`).join("")}</div>
+    <div class="formactions">${S.drafts.length ? `<button class="btn ghost danger" data-act="discard">Discard drafts</button>` : ""}<span class="spacer"></span>${inDialog ? `<button class="btn ghost" data-act="close">Cancel</button>` : ""}<button class="btn primary lg" data-act="submit">Submit review</button></div>`;
+}
+const reviewBtn = (label = "Review") => `<button class="btn primary" data-act="openSubmit">${ic("comment", 14)} ${label}${S.drafts.length ? ` <span class="count">${S.drafts.length}</span>` : ""}</button>`;
+const hostBtn = () => `<button class="ibtn" data-act="noop" aria-label="Open in ${host().name}">${ic("ext")}</button>`;
+
+/* ================= Variant A · Tabs ================= */
+function variantA() {
+  const n = narrow();
+  const crumbs = n
+    ? `<button class="ibtn" data-act="noop" aria-label="Back to Deck">${ic("back")}</button><span class="cur">${host().id(pr().n)}</span>`
+    : `<span>Deck</span><span class="sep">/</span><span>${host().short}</span><span class="sep">/</span><span class="cur">${host().id(pr().n)}</span>`;
+  const actions = `${n ? "" : hostBtn()}${reviewBtn()}`;
+  const tabs = `<div class="tabs" role="tablist">${[["overview", "Overview", ""], ["files", "Files", 14], ["commits", "Commits", 6]].map(([v, l, c]) => `<button role="tab" class="${S.tab === v ? "on" : ""}" data-act="tab" data-v="${v}">${l}${c ? ` <span class="chip">${c}</span>` : ""}</button>`).join("")}</div>`;
+  let body = "";
+  if (S.tab === "overview") {
+    body = `<div style="display:grid;grid-template-columns:${n ? "1fr" : "minmax(0,1fr) 300px"};gap:32px;padding:20px var(--page-gutter) 60px">
+      <div>${descriptionHtml()}<div class="sh" style="margin:24px 0 6px">Activity</div>${timelineHtml()}</div>
+      <div>${propsHtml()}<div class="sh" style="margin:20px 0 6px">Stack</div>${stackList()}
+        <div class="sh" style="margin:20px 0 6px">Guide</div>${order().map((c, i) => `<button class="trow" data-act="gotoFiles" data-v="cc-${c.id}"><span class="cn">${i + 1}</span><span class="nm">${esc(c.title)}</span><span class="val faint" style="margin-left:auto">${c.hunks.length}</span></button>`).join("")}</div></div>`;
+  } else if (S.tab === "commits") {
+    body = `<ul class="toc" style="margin:12px var(--page-gutter)">${COMMITS.slice().reverse().map(([sha, msg, when]) => `<li><button data-act="noop"><span class="val muted">${sha}</span><span class="t">${msg}</span><span class="xs faint">${when}</span></button></li>`).join("")}</ul>`;
+  } else {
+    const bar = `<div class="toolbar">${viewSeg()}${n ? `<button class="btn" data-act="sheet" data-v="contents">${ic("list", 14)} Contents</button><span class="spacer"></span>${guideActions(false)}` : `${S.view === "guide" ? sourceLine() : ""}<span class="spacer"></span>${S.view === "guide" ? guideActions(true) : ""}`}</div>`;
+    body = bar + (n ? `<div class="difflane">${S.view === "guide" ? `<div style="margin-bottom:10px">${sourceLine()}</div>` : ""}${diffStream()}</div>`
+      : `<div class="filesgrid"><nav class="tree" aria-label="Contents">${treeHtml()}</nav><div class="difflane">${diffStream()}</div></div>`);
+  }
+  return { crumbs, actions, body: `<div class="scroll" data-scroll="a">${header({ stackStrip: true, backLink: !n })}${tabs}${body}</div>` };
+}
+
+/* ================= Variant B · Guide document ================= */
+function variantB() {
+  const n = narrow();
+  const p = pr();
+  const crumbs = n
+    ? `<button class="ibtn" data-act="noop" aria-label="Back to Deck">${ic("back")}</button><span class="cur">${host().id(p.n)}</span><button class="lay" data-act="menu" data-menu="stack" style="margin-left:4px">${ic("stack", 12)}<span class="val">${S.layer + 1} of 3</span>${ic("down", 12)}</button>`
+    : `<span>Deck</span><span class="sep">/</span><span>${host().short}</span><span class="sep">/</span><span class="faint xs" style="display:inline-flex;gap:4px;align-items:center">${ic("stack", 14)}</span>${STACK.map((q, i) => `<button class="layer ${i === S.layer ? "on" : ""}" data-act="layer" data-v="${i}" title="${esc(q.title)}">${host().id(q.n)}</button>`).join(`<span class="sep">›</span>`)}`;
+  const actions = n ? "" : hostBtn();
+  const guideRow = `<div class="sectionrow"><span class="sh" style="font-size:13px;color:var(--foreground);font-weight:600">${S.view === "guide" ? "Guide" : "Files"}</span>${S.view === "guide" && !n ? sourceLine() : ""}<span class="spacer"></span>${S.view === "guide" ? guideActions(!n) : ""}${viewSeg()}</div>${S.view === "guide" && n ? `<div style="margin:-4px 0 10px">${sourceLine()}</div>` : ""}`;
+  const toc = S.view === "guide" ? `<ol class="toc">${order().map((c, i) => `<li><button data-act="goto" data-v="cc-${c.id}"><span class="cn ${viewedIn(c.hunks) === c.hunks.length ? "done" : ""}">${i + 1}</span><span class="t">${esc(c.title)}</span><span class="val faint">${viewedIn(c.hunks)}/${c.hunks.length}</span></button></li>`).join("")}</ol>` : "";
+  const rail = `<aside class="rail" aria-label="On this page"><div class="sh" style="margin:0 6px 6px">${S.view === "guide" ? "Guide" : "Files"}</div>${S.view === "guide"
+    ? order().map((c, i) => `<button class="item" data-act="goto" data-v="cc-${c.id}" data-rail="${i}"><span class="cn ${viewedIn(c.hunks) === c.hunks.length ? "done" : ""}">${i + 1}</span><span class="t">${esc(c.title)}</span><span class="val faint">${viewedIn(c.hunks)}/${c.hunks.length}</span></button>`).join("")
+    : FILE_LIST.map((f) => `<button class="item" data-act="goto" data-v="ff-${f.replace(/\W/g, "_")}"><span class="t mono" style="font-size:11px">${splitPath(f)[1]}</span></button>`).join("")}
+    <div class="sh" style="margin:16px 6px 6px">Conversation</div><button class="item" data-act="goto" data-v="conversation"><span class="t">Description and activity</span><span class="val faint">1</span></button></aside>`;
+  const desc = `<div class="section"><div class="sectionrow"><span class="sh">Description</span></div><div class="${S.descOpen ? "" : "clamp"}">${descriptionHtml()}</div><button class="link xs" data-act="descToggle">${S.descOpen ? "Show less" : "Show all"}</button></div>`;
+  const doc = `<div class="doc">${header({ figures: true, backLink: !n })}${desc}
+    <div class="section">${guideRow}${toc}${diffStream({ stickyHeads: n })}</div>
+    <div class="section" id="conversation"><div class="sectionrow"><span class="sh" style="font-size:13px;color:var(--foreground);font-weight:600">Conversation</span></div>${timelineHtml()}
+      <div style="margin-top:12px"><textarea class="field" placeholder="Add a general comment to your draft review" data-input="general" aria-label="General comment"></textarea><div class="crow"><span class="spacer"></span><button class="btn" data-act="saveGeneral">Add to draft review</button></div></div></div></div>`;
+  const bar = S.drafts.length ? `<div class="draftbar"><span class="what">${ic("comment", 14)} Draft review</span><span class="val muted">${plural(S.drafts.length, "comment")}</span>
+    <button class="ibtn sm hide-narrow" data-act="jumpDraft" data-v="-1" aria-label="Previous draft">${ic("up", 14)}</button><button class="ibtn sm hide-narrow" data-act="jumpDraft" data-v="1" aria-label="Next draft">${ic("down", 14)}</button>
+    <span class="spacer"></span><button class="btn ghost hide-narrow" data-act="discard">Discard</button><button class="btn primary" data-act="openSubmit">Submit review…</button></div>` : "";
+  return { crumbs, actions, body: `<div class="scroll" data-scroll="b" id="bscroll"><div class="docgrid">${doc}${n ? "" : rail}</div>${bar}</div>` };
+}
+
+/* ================= Variant C · Focus ================= */
+function variantC() {
+  const n = narrow();
+  const cs = order();
+  const az = S.view === "az";
+  const count = az ? FILE_LIST.length : cs.length;
+  const idx = az ? S.file : S.concern;
+  const p = pr();
+  const navPane = `<div class="navhead"><span class="sh">Stack</span><span class="val faint">${S.layer + 1} of ${STACK.length}</span></div>${stackList()}
+    <div class="navhead" style="margin-top:18px">${viewSeg()}<span class="spacer"></span>${guideActions(false)}</div>
+    ${az ? "" : `<div class="navsource">${sourceLine()}</div>`}
+    ${az ? FILE_LIST.map((f, i) => `<button class="crow2 file ${i === S.file && !(n && S.cPane === "nav") ? "on" : ""}" data-act="pick" data-v="${i}"><span class="t">${splitPath(f)[1]}</span>${pm(...sumOf(fileHunks(f).map((h) => h.id)))}</button>`).join("")
+      : cs.map((c, i) => `<button class="crow2 ${i === S.concern && !(n && S.cPane === "nav") ? "on" : ""}" data-act="pick" data-v="${i}"><span class="cn ${viewedIn(c.hunks) === c.hunks.length ? "done" : ""}">${i + 1}</span><span class="t">${esc(c.title)}</span><span class="val faint">${viewedIn(c.hunks)}/${c.hunks.length}</span></button>`).join("")}`;
+  let center;
+  if (az) {
+    const f = FILE_LIST[S.file]; const hs = fileHunks(f);
+    center = `<div class="ctop"><div class="kicker">File ${S.file + 1} of ${count}${NEW_FILES.has(f) ? ` <span class="chip">New</span>` : ""}</div><h2 class="mono" style="font-size:16px;font-weight:500">${f}</h2>
+      <div class="row">${pm(...sumOf(hs.map((h) => h.id)))}<span class="xs muted">${plural(hs.length, "hunk")}</span></div></div>${hs.map((h) => hunkHtml(h.id, { path: false })).join("")}`;
+  } else {
+    const c = cs[S.concern];
+    const vw = viewedIn(c.hunks);
+    center = `<div class="ctop"><div class="kicker"><span class="cn ${vw === c.hunks.length ? "done" : "on"}">${S.concern + 1}</span>Concern ${S.concern + 1} of ${count}${kindChip(c)}</div>
+      <h2>${esc(c.title)}</h2><p class="why">${esc(c.why)}</p>
+      <div class="row"><span class="xs muted">${plural(c.hunks.length, "hunk")} in ${plural(filesOf(c.hunks).length, "file")}</span>${pm(...sumOf(c.hunks))}<span class="xs muted">${vw} of ${c.hunks.length} viewed</span><span class="spacer"></span><button class="btn sm" data-act="viewAll">Mark all viewed</button></div></div>
+      ${c.hunks.map((h) => hunkHtml(h)).join("")}`;
+  }
+  const label = (i) => az ? splitPath(FILE_LIST[i])[1] : cs[i].title;
+  const pager = `<div class="pager"><button data-act="stepPick" data-v="-1" ${idx === 0 ? "disabled" : ""}><span class="k">Previous · K</span><span class="t">${idx > 0 ? esc(label(idx - 1)) : "—"}</span></button><button class="next" data-act="stepPick" data-v="1" ${idx === count - 1 ? "disabled" : ""}><span class="k">Next · J</span><span class="t">${idx < count - 1 ? esc(label(idx + 1)) : "—"}</span></button></div>`;
+  const sideTabs = `<div class="sidetabs" role="tablist">${[["drafts", "Draft review", S.drafts.length], ["details", "Details", 0], ["threads", "Threads", S.threads.length]].map(([v, l, c]) => `<button role="tab" class="${S.sideTab === v ? "on" : ""}" data-act="sideTab" data-v="${v}">${l}${c ? ` <span class="chip">${c}</span>` : ""}</button>`).join("")}${n ? `<span class="spacer"></span><button class="ibtn" style="align-self:center" data-act="cPane" data-v="concern" aria-label="Close">${ic("x")}</button>` : ""}</div>`;
+  const sideBody = S.sideTab === "drafts" ? submitForm({ inDialog: false })
+    : S.sideTab === "details" ? `<h1 style="font-size:16px;font-weight:600;margin:0 0 6px">${esc(p.title)} <span class="val faint" style="font-size:14px">${host().id(p.n)}</span></h1><div class="meta" style="margin-bottom:12px"><span class="chip accent">${p.state}</span><span class="branch">${p.branch}</span> into <span class="branch">${p.base}</span></div>${propsHtml()}<div class="sh" style="margin:16px 0 4px">Description</div>${descriptionHtml()}`
+    : timelineHtml();
+  const side = `<aside class="pane side" aria-label="Review">${sideTabs}<div class="sidebody">${sideBody}</div></aside>`;
+  const actions = `${n ? "" : hostBtn()}${n && S.cPane !== "side" ? reviewBtn() : ""}`;
+  if (!n) {
+    const crumbs = `<span>Deck</span><span class="sep">/</span><span>${host().short}</span><span class="sep">/</span><span class="cur"><span class="val faint" style="font-size:14px;font-weight:400">${host().id(p.n)}</span> ${esc(p.title)}</span>`;
+    return { crumbs, actions, body: `<div class="panes"><nav class="pane nav" aria-label="Stack and guide">${navPane}</nav><main class="pane center" data-scroll="c" id="cscroll">${center}${pager}</main>${side}</div>` };
+  }
+  if (S.cPane === "nav") {
+    return { crumbs: `<button class="ibtn" data-act="noop" aria-label="Back to Deck">${ic("back")}</button><span class="cur ttl">${host().id(p.n)} ${esc(p.title)}</span>`, actions, body: `<div class="scroll" data-scroll="cn"><div style="padding:12px 8px 24px">${navPane}</div></div>` };
+  }
+  const crumbs = `<button class="ibtn" data-act="cPane" data-v="nav" aria-label="Back to the guide">${ic("back")}</button><span class="cur">${az ? "Files" : "Guide"}</span><span class="val faint">${idx + 1} of ${count}</span>`;
+  const bottom = `<div class="narrowbar"><button class="btn" data-act="stepPick" data-v="-1" ${idx === 0 ? "disabled" : ""}>${ic("left", 14)} Previous</button><span class="spacer"></span><button class="btn" data-act="stepPick" data-v="1" ${idx === count - 1 ? "disabled" : ""}>Next ${ic("right", 14)}</button></div>`;
+  const sheet = S.cPane === "side" ? `<div class="sheetscrim" data-act="cPane" data-v="concern"></div><div class="sheet" style="max-height:92%">${sideTabs}<div class="sidebody">${sideBody}</div></div>` : "";
+  return { crumbs, actions, body: `<div style="flex:1;min-height:0;display:flex;flex-direction:column;width:100%"><main class="scroll pane center" data-scroll="c" id="cscroll">${center}</main>${bottom}</div>${sheet}` };
+}
+
+/* ================= Shell ================= */
+function shell(v) {
+  const n = narrow();
+  const nav = n ? "" : `<aside class="appnav" aria-label="Ajour">
+    <div class="dock">${ic("plus", 14)}${ic("play", 14)}<span class="val">3:42</span></div>
+    ${[["time", "Time"], ["backlog", "Backlog"], ["deck", "Deck"], ["projects", "Projects"], ["commit", "Commit"]].map(([k, l]) => `<div class="navrow ${k === "deck" ? "on" : ""}">${ic(k, 15)}${l}</div>`).join("")}
+    <div class="navsec">Pull requests</div>
+    ${[[485, "Show webhook deliveries on the admin page"], [482, "Send signed invoice webhooks"], [471, "Bump vitest to 3.2"], [466, "Paginate the invoices export"]].map(([num, t]) => `<div class="navpr ${num === STACK[S.layer].n ? "on" : ""}"><span class="val faint">${host().id(num)}</span><span>${t}</span></div>`).join("")}
+  </aside>`;
+  const bottom = n ? `<div class="bottomnav"><div class="seg">${[["time", "Time"], ["backlog", "Backlog"], ["deck", "Deck"], ["settings", "Settings"]].map(([k, l]) => `<button class="${k === "deck" ? "on" : ""}" data-act="noop">${ic(k, 15)}${l}</button>`).join("")}</div></div>` : "";
+  return `${nav}<div class="workspace"><header class="topbar"><nav class="crumbs" aria-label="Breadcrumb">${v.crumbs}</nav><div class="tb-actions">${v.actions}</div></header><div class="page">${v.body}</div>${bottom}</div>${overlays()}`;
+}
+function overlays() {
+  let o = "";
+  if (S.sheet === "contents") o += `<div class="sheetscrim" data-act="close"></div><div class="sheet" role="dialog" aria-label="Contents"><div class="sheethead">Contents<span class="spacer"></span><button class="ibtn" data-act="close" aria-label="Close">${ic("x")}</button></div><div class="sheetbody">${treeHtml()}</div></div>`;
+  if (S.dialog) {
+    let d = "";
+    if (S.dialog === "submit") d = submitForm({ inDialog: true });
+    if (S.dialog === "consent") d = `<h3>Ask an agent about ${host().repo}?</h3>
+      <p>The agent rewrites this guide's titles and reading order. The hunks in each concern stay the same.</p>
+      <p>To do that, Ajour sends this pull request's <b>changed lines and description</b> to <b>Anthropic</b>, through <b>Claude Code</b> on this computer.</p>
+      <p class="xs">Ajour asks once for each repository. Change the agent or turn this off in Settings › Deck.</p>
+      <div class="formactions"><span class="spacer"></span><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary lg" data-act="consentYes">Send to Anthropic</button></div>`;
+    if (S.dialog === "publish") d = `<h3>Publish this guide?</h3>
+      <p>Anyone in <b>Billing</b> who opens ${host().id(pr().n)} in Review Deck at head <span class="val">9f3c2e1</span> sees these ${order().length} concerns, ${S.source === "agent" ? "with Claude Code's titles" : "as built from the code"}. Publishing again replaces it.</p>
+      <div class="formactions"><span class="spacer"></span><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary lg" data-act="publishYes">Publish guide</button></div>`;
+    if (S.dialog === "discard") d = `<h3>Discard ${plural(S.drafts.length, "draft comment")}?</h3><p>They were never sent to ${host().name}, so nothing else changes.</p>
+      <div class="formactions"><span class="spacer"></span><button class="btn ghost" data-act="close">Cancel</button><button class="btn primary lg" style="background:var(--destructive)" data-act="discardYes">Discard</button></div>`;
+    o += `<div class="scrim" data-act="scrim"><div class="dialog" role="dialog" aria-modal="true">${d}</div></div>`;
+  }
+  if (S.menu) o += `<div class="menu" role="menu" style="left:${S.menu.x}px;top:${S.menu.y}px">${menuItems(S.menu.id)}</div>`;
+  if (S.toast) o += `<div class="toast" role="status">${ic("check", 14)}${S.toast}</div>`;
+  return o;
+}
+
+/* ================= Prototype chrome and notes ================= */
+const NOTES = {
+  A: { name: "A · Tabs", pitch: "Closest to Review Deck: one header, then Overview, Files and Commits.", rows: [
+    ["Parts", "Header (title, meta, stack strip), then tabs. Overview holds the description, activity and a side list of reviewers, stack and concerns. Files holds a contents tree and the diff. Commits lists commits."],
+    ["Guide vs Files A–Z", "A toggle in the Files toolbar. The tree and the diff both follow it. A file can sit under two concerns (client.ts, service.ts)."],
+    ["Stack", "One strip under the title, every layer one click away, base on the left. Overview repeats it as a vertical list."],
+    ["Drafts and submit", "Drafts sit under their line with a Draft chip. Review in the top bar shows the count and opens the submit dialog."],
+    ["Ask an agent, Publish guide", "Files toolbar, after the guide's source line. In the narrow view, in the toolbar's “…” menu."],
+    ["Narrow", "The tree moves into a Contents sheet, the stack strip becomes “2 of 3” with up and down. Tabs and Review stay."],
+    ["Trade-off", "Familiar to Review Deck users and keeps prose apart from code. Costs a tab switch to read the description against the diff, and carries the most chrome."],
+    ["Performance", "The Files tab mounts every hunk. A 3,090-hunk pull request needs lazy hunk mounting (Review Deck's LazyMount) and a virtualized tree."]] },
+  B: { name: "B · Guide document", pitch: "One column read top to bottom, like a written guide. No tabs.", rows: [
+    ["Parts", "Header with figures, description (clamped), the guide's contents, each concern as a numbered section, then the conversation. A rail tracks where you are."],
+    ["Guide vs Files A–Z", "A toggle on the Guide heading. A–Z turns the sections into files."],
+    ["Stack", "In the top bar's breadcrumb: #479 › #482 › #485. The narrow view folds it into a “2 of 3” menu."],
+    ["Drafts and submit", "Drafts sit inline. A sticky Draft review bar shows only while drafts exist: count, previous and next draft, Discard, Submit review… (dialog)."],
+    ["Ask an agent, Publish guide", "On the Guide heading, beside the source line. A “…” menu in the narrow view."],
+    ["Narrow", "The rail goes. Each concern's header sticks with up and down to step concerns. The Draft review bar stays."],
+    ["Trade-off", "Reads like the guide it is; the description sits right above the code and nothing hides behind tabs. But it is the longest page, and commits have no home."],
+    ["Performance", "Worst of the three: one document holds every hunk, so it needs windowing by concern. Sticky headers in a long scroller must stay flat (no shadows)."]] },
+  C: { name: "C · Focus", pitch: "Three panes, one concern at a time, review form always open.", rows: [
+    ["Parts", "Navigator (stack, then the guide), one concern in the middle, and a side panel with Draft review, Details and Threads. The title lives in the breadcrumb."],
+    ["Guide vs Files A–Z", "A toggle in the navigator. A–Z shows one file at a time."],
+    ["Stack", "Top of the navigator as a vertical list, the base at the bottom."],
+    ["Drafts and submit", "The side panel's Draft review tab is the submit form, so there is no dialog. J and K page through concerns."],
+    ["Ask an agent, Publish guide", "The navigator's “…” menu, next to the toggle."],
+    ["Narrow", "Panes become screens: navigator, then the concern with Previous and Next, then the review as a sheet from the Review button."],
+    ["Trade-off", "The calmest diff and a steady J/K rhythm. But three panes are a second sidebar, the description is a tab away, and scanning across concerns means paging."],
+    ["Performance", "Cheapest: only the open concern's hunks mount, so the DOM stays bounded on huge pull requests. A 900-hunk catch-all concern would still need windowing."]] },
+};
+function renderChrome() {
+  document.getElementById("proto").innerHTML = `<b>Deck review page · prototype</b>
+    <span class="grp"><span class="lab">Layout</span><span class="pseg">${["A", "B", "C"].map((v) => `<button class="${S.variant === v ? "on" : ""}" data-act="variant" data-v="${v}">${NOTES[v].name}</button>`).join("")}</span></span>
+    <span class="grp"><span class="lab">Host</span><span class="pseg">${[["github", "GitHub"], ["ado", "Azure DevOps"]].map(([v, l]) => `<button class="${S.host === v ? "on" : ""}" data-act="host" data-v="${v}">${l}</button>`).join("")}</span></span>
+    <span class="grp"><span class="lab">Width</span><span class="pseg">${[["wide", "Wide"], ["narrow", "420px"]].map(([v, l]) => `<button class="${S.width === v ? "on" : ""}" data-act="width" data-v="${v}">${l}</button>`).join("")}</span></span>
+    <button class="notes-btn" data-act="notes">${S.notes ? "Hide notes" : "Show notes"}</button>`;
+  const nt = NOTES[S.variant];
+  const el = document.getElementById("notes");
+  el.style.display = S.notes ? "" : "none";
+  el.innerHTML = `<h2>${nt.name}: ${nt.pitch}</h2><dl class="cols">${nt.rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join("")}</dl>
+    <div style="margin-top:6px;color:#7a7150">Clickable: Guide/A–Z, stack layers, Viewed, “+” on a line to add a draft, Reply, Delete, Review/Submit, Ask an agent (consent once per repository), Publish guide on Azure DevOps. Hunks are static.</div>`;
+}
+
+/* ================= Render loop ================= */
+function render() {
+  const frame = document.getElementById("frame");
+  const scrolls = {};
+  frame.querySelectorAll("[data-scroll]").forEach((el) => { scrolls[el.dataset.scroll] = el.scrollTop; });
+  renderChrome();
+  const stage = document.getElementById("stage");
+  stage.classList.toggle("is-narrow", narrow());
+  frame.className = "frame" + (narrow() ? " narrow" : "");
+  const v = { A: variantA, B: variantB, C: variantC }[S.variant]();
+  frame.innerHTML = shell(v);
+  document.documentElement.style.setProperty("--stage-h", frame.clientHeight + "px");
+  frame.querySelectorAll("[data-scroll]").forEach((el) => { if (scrolls[el.dataset.scroll] != null) el.scrollTop = scrolls[el.dataset.scroll]; });
+  const ta = document.getElementById("composer-ta");
+  if (ta && document.activeElement !== ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+  const bs = document.getElementById("bscroll");
+  if (bs) { bs.onscroll = trackRail; trackRail(); }
+}
+function trackRail() {
+  const bs = document.getElementById("bscroll"); if (!bs) return;
+  const top = bs.getBoundingClientRect().top + 80;
+  let cur = 0;
+  bs.querySelectorAll("[data-concern]").forEach((s) => { if (s.getBoundingClientRect().top <= top) cur = +s.dataset.concern; });
+  bs.querySelectorAll("[data-rail]").forEach((b) => b.classList.toggle("on", +b.dataset.rail === cur));
+}
+function scrollToId(id) {
+  requestAnimationFrame(() => {
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ block: "start" });
+  });
+}
+let toastTimer;
+function toast(msg) { S.toast = msg; clearTimeout(toastTimer); toastTimer = setTimeout(() => { S.toast = null; render(); }, 2600); }
+function runAgent() {
+  S.agentBusy = true; S.dialog = null; S.menu = null; render();
+  setTimeout(() => { S.agentBusy = false; S.source = "agent"; S.concern = 0; toast("Claude Code rewrote 5 titles and the reading order"); render(); }, 1400);
+}
+
+/* ================= Actions ================= */
+const ACT = {
+  variant: (v) => { S.variant = v; S.menu = S.sheet = S.dialog = null; S.composer = null; },
+  host: (v) => { S.host = v; },
+  width: (v) => { S.width = v; S.menu = S.sheet = null; },
+  notes: () => { S.notes = !S.notes; },
+  tab: (v) => { S.tab = v; },
+  view: (v) => { S.view = v; S.menu = null; },
+  layer: (v) => { S.layer = +v; S.menu = null; toast(`Opened ${host().id(STACK[S.layer].n)}, layer ${S.layer + 1} of ${STACK.length}`); },
+  layerStep: (v) => { S.layer = Math.max(0, Math.min(STACK.length - 1, S.layer + +v)); },
+  goto: (v) => {
+    S.sheet = null; S.menu = null;
+    if (S.variant === "C") {
+      const hid = v.replace("hk-", "");
+      if (HUNKS[hid]) { S.view = "guide"; S.concern = ORDER[S.source].indexOf(concernOf(hid)); S.cPane = "concern"; S.dialog = null; render(); scrollToId(v); return false; }
+    }
+    if (S.variant === "A" && S.tab !== "files") S.tab = "files";
+    if (v.startsWith("hk-") && S.view === "az") { /* still present in A–Z */ }
+    S.dialog = null; render(); scrollToId(v); return false;
+  },
+  gotoFiles: (v) => { S.tab = "files"; S.view = "guide"; render(); scrollToId(v); return false; },
+  viewed: (v) => { S.viewed.has(v) ? S.viewed.delete(v) : S.viewed.add(v); },
+  viewAll: () => { order()[S.concern].hunks.forEach((h) => S.viewed.add(h)); },
+  compose: (_, el) => { S.composer = { h: el.dataset.h, l: +el.dataset.l }; S.composerText = ""; S.viewed.delete(el.dataset.h); },
+  reply: (v, el) => { S.composer = { h: el.dataset.h, l: +el.dataset.l, reply: +v }; S.composerText = ""; },
+  cancelCompose: () => { S.composer = null; },
+  saveDraft: () => {
+    const text = S.composerText.trim();
+    if (!text) return;
+    S.drafts.push({ id: S.nextDraft++, h: S.composer.h, l: S.composer.l, reply: S.composer.reply, text });
+    S.composer = null; S.composerText = "";
+    toast(`Added to your draft review · ${plural(S.drafts.length, "comment")}`);
+  },
+  saveGeneral: () => {
+    const ta = document.querySelector('[data-input="general"]'); const text = ta && ta.value.trim();
+    if (!text) return;
+    S.drafts.push({ id: S.nextDraft++, h: null, l: null, text }); toast("Added to your draft review");
+  },
+  delDraft: (v) => { S.drafts = S.drafts.filter((d) => d.id !== +v); },
+  openSubmit: () => {
+    if (S.variant === "C") { S.sideTab = "drafts"; if (narrow()) S.cPane = "side"; return; }
+    S.dialog = "submit";
+  },
+  vote: (v) => { S.vote = v; },
+  submit: () => {
+    const n = S.drafts.length; const vote = host().votes.find((x) => x[0] === S.vote)[1];
+    S.drafts = []; S.summary = ""; S.dialog = null; if (S.variant === "C" && narrow()) S.cPane = "concern";
+    toast(`Review submitted to ${host().name} · ${plural(n, "comment")} · ${vote}`);
+  },
+  discard: () => { S.dialog = "discard"; },
+  discardYes: () => { S.drafts = []; S.dialog = null; toast("Draft review discarded"); },
+  ask: () => { S.menu = null; if (!S.consent) { S.dialog = "consent"; return; } runAgent(); return false; },
+  consentYes: () => { S.consent = true; runAgent(); return false; },
+  useBuilt: () => { S.source = "built"; S.menu = null; S.concern = 0; },
+  publish: () => { S.menu = null; S.dialog = "publish"; },
+  publishYes: () => { S.published = "head 9f3c2e1"; S.dialog = null; toast("Guide published for Review Deck readers"); },
+  menu: (_, el) => {
+    const v = el.dataset.menu;
+    if (S.menu && S.menu.id === v) { S.menu = null; return; }
+    const fr = document.getElementById("frame").getBoundingClientRect(); const r = el.getBoundingClientRect();
+    const clamp = (n, w) => Math.max(8, Math.min(n, fr.width - w - 8));
+    const x = v === "guide" ? clamp(r.right - fr.left - 230, 230) : clamp(r.left - fr.left, 320);
+    S.menu = { id: v, x, y: r.bottom - fr.top + 4 };
+  },
+  sheet: (v) => { S.sheet = v; },
+  close: () => { S.dialog = null; S.sheet = null; S.menu = null; },
+  scrim: (_, el, e) => { if (e.target === el) S.dialog = null; else return false; },
+  pick: (v) => { if (S.view === "az") S.file = +v; else S.concern = +v; S.cPane = "concern"; resetCenter(); },
+  stepPick: (v) => { const max = (S.view === "az" ? FILE_LIST.length : 5) - 1; if (S.view === "az") S.file = Math.max(0, Math.min(max, S.file + +v)); else S.concern = Math.max(0, Math.min(max, S.concern + +v)); resetCenter(); },
+  cPane: (v) => { S.cPane = v; },
+  sideTab: (v) => { S.sideTab = v; },
+  stepConcern: (v, el) => {
+    const sec = el.closest("[data-concern]"); const i = +sec.dataset.concern + +v; const c = order()[i];
+    if (c) scrollToId("cc-" + c.id); return false;
+  },
+  jumpDraft: (v) => {
+    const ids = S.drafts.filter((d) => d.h).map((d) => "hk-" + d.h);
+    if (!ids.length) return false;
+    S._dj = ((S._dj ?? -1) + +v + ids.length) % ids.length; scrollToId(ids[S._dj]); return false;
+  },
+  descToggle: () => { S.descOpen = !S.descOpen; },
+  noop: () => false,
+};
+function resetCenter() { const c = document.getElementById("cscroll"); if (c) c.scrollTop = 0; requestAnimationFrame(() => { const c2 = document.getElementById("cscroll"); if (c2) c2.scrollTop = 0; }); }
+
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-act]");
+  if (!t) { if (S.menu && !e.target.closest(".menu")) { S.menu = null; render(); } return; }
+  if (t.disabled) return;
+  const a = t.dataset.act;
+  if (a !== "menu" && S.menu && a !== "scrim") S.menu = null;
+  const r = ACT[a] && ACT[a](t.dataset.v, t, e);
+  if (r !== false) render();
+});
+document.addEventListener("input", (e) => {
+  const k = e.target.dataset.input;
+  if (k === "composer") S.composerText = e.target.value;
+  if (k === "summary") S.summary = e.target.value;
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { if (S.dialog || S.menu || S.sheet) { S.dialog = S.menu = S.sheet = null; } else if (S.composer) S.composer = null; else return; render(); return; }
+  if (e.target.closest("textarea, input")) {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && S.composer) { ACT.saveDraft(); render(); }
+    return;
+  }
+  if (S.variant === "C" && (e.key === "j" || e.key === "k")) { ACT.stepPick(e.key === "j" ? 1 : -1); render(); }
+});
+addEventListener("resize", () => document.documentElement.style.setProperty("--stage-h", document.getElementById("frame").clientHeight + "px"));
+render();
+</script>
+</body>
+</html>
