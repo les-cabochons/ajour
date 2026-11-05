@@ -222,13 +222,16 @@
     gap: 2.5rem;
   }
 
-  /* The properties as a bare rail, like the backlog item page's: no card
-     around them (forms council round 18, the user's call). */
+  /* The page's one card, like the backlog item page's Properties. */
   .project-properties-card {
     display: flex;
     flex-direction: column;
     gap: 0.875rem;
     align-self: start;
+    padding: 0.875rem 1rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface-tint);
   }
 
   /* Text that turns into a field on click: the title and the card's names. */

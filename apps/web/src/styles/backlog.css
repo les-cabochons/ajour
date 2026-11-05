@@ -796,29 +796,28 @@
     gap: 2.5rem;
   }
 
-  /* The column beside the description, from the top: the properties,
-     then the folding Subitems and Time entries. A bare rail, as Linear's,
-     with a hairline between its groups; no card around each (forms council
-     round 18, the user's call). */
+  /* The cards beside the description, from the top: the properties, then
+     the folding Subitems and Time entries cards. */
   .backlog-item-side-cards {
     display: flex;
     flex-direction: column;
-    gap: 0;
+    gap: 0.625rem;
     align-self: start;
     min-width: 0;
   }
 
-  .backlog-item-card + .backlog-item-card {
-    margin-top: 0.75rem;
-    padding-top: 0.5rem;
-    border-top: 1px solid var(--border);
+  /* One small step off the page, with a hairline border. */
+  .backlog-item-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface-tint);
   }
 
   .backlog-item-properties-card {
     display: flex;
     flex-direction: column;
     gap: 0.875rem;
-    padding: 0 0 0.25rem;
+    padding: 0.875rem 1rem 1rem;
   }
 
   .backlog-item-card-header {
@@ -826,7 +825,7 @@
     align-items: center;
     gap: 0.125rem;
     height: 36px;
-    padding: 0;
+    padding: 0 0.375rem;
   }
 
   .backlog-item-card-toggle {
@@ -835,7 +834,7 @@
     gap: 0.25rem;
     width: 100%;
     height: var(--control-height);
-    padding: 0;
+    padding: 0 0.25rem;
     border-radius: var(--radius-sm);
     color: var(--muted-foreground);
     font-size: var(--text-xs);
@@ -858,7 +857,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    padding: 0 0 0.75rem 1.25rem;
+    padding: 0 0.875rem 0.75rem 1.875rem;
     color: var(--muted-foreground);
     font-size: var(--text-xs);
   }
@@ -895,11 +894,11 @@
   .backlog-item-card-body {
     display: flex;
     flex-direction: column;
-    padding: 0 0 0.5rem;
+    padding: 0 0.5rem 0.5rem;
   }
 
   .backlog-item-card-body > p {
-    padding: 0 0 0.25rem 1.25rem;
+    padding: 0 0.375rem 0.25rem 1.375rem;
   }
 
   .backlog-item-card-body .backlog-item-row:last-child {
