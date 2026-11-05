@@ -12,6 +12,7 @@ import {
   syncBacklogConnection,
   syncCodeHostConnection,
 } from "@/lib/app-api";
+import { localStore } from "@/lib/local-store";
 import { syncTeamConnection } from "@/lib/team-sync";
 import {
   PROJECT_SOURCE_SYNC_INTERVAL_MS,
@@ -103,10 +104,15 @@ export function BacklogAutoSyncScheduler() {
               connection,
               capabilities: autoCapabilities(group, connection).filter(
                 (capability) => {
+                  // Managed projects keep their own clock: the shared last
+                  // sync time moves with the connection's other syncs too.
                   const last =
                     capability === "connector"
                       ? connection.backlogLastSyncAt
-                      : connection.lastSyncAt;
+                      : capability === "projectSource"
+                        ? localStore.snapshot().projectSources?.[connection.id]
+                            ?.syncedAt
+                        : connection.lastSyncAt;
                   const interval =
                     capability === "projectSource"
                       ? PROJECT_SOURCE_SYNC_INTERVAL_MS
