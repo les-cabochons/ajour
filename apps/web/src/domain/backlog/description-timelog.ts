@@ -143,7 +143,7 @@ export function getTimelogMismatch(
 
   if (target.kind === "no-project") {
     // Restoring the project also restores the task the timelog names, so a
-    // task its source closed refuses the whole Restore project…
+    // task its source closed refuses the whole Restore projectâ€¦
     const archivedTask =
       target.archived && timelog.task
         ? findProjectTaskByImportName(target.archived, timelog.task)
