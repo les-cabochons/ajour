@@ -168,7 +168,7 @@ jobs:
           "AJOUR_CLI_CHECK_WSL_DISTRO=Ubuntu-24.04" >> $env:GITHUB_ENV
           "AJOUR_CLI_CHECK_LINUX_ARCHIVES=$env:GITHUB_WORKSPACE\apps\cli\out\archives" >> $env:GITHUB_ENV
 
-      - name: Run the ajour command install check${{ runner.os == 'Windows' && ' (WSL 1 path, Add refused, #611)' || '' }}
+      - name: "Run the ajour command install check${{ matrix.os == 'windows-latest' && ' (WSL 1 path, Add refused, #611)' || '' }}"
         # It reuses the renderer the lifecycle check built, and builds the
         # CLI archive of the app's version with the release scripts.
         if: ${{ !cancelled() }}
