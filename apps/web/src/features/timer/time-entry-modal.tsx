@@ -82,13 +82,16 @@ export function TimeEntryModal({
   }, [isMissing, onClose]);
 
   // Placed once, as the card mounts, before it paints: below the Time
-  // page's day strip, and off the edited entry's row. A new entry has no row.
+  // page's day strip, or the Week's day headers, and off the edited entry's
+  // row. A new entry has no row.
   const editsAnEntry = Boolean(entry || runningTimer);
   const placeComposer = useCallback(
     (popup: HTMLDivElement | null) => {
       if (!floating) return;
       placeFloatingComposer(popup, editsAnEntry ? returnFocusTo : null, {
-        restBelow: document.querySelector("main .day-strip"),
+        restBelow: document.querySelector(
+          "main :is(.day-strip, .weekly-grid-table thead, .weekly-days-column-header)",
+        ),
       });
     },
     [floating, editsAnEntry, returnFocusTo],

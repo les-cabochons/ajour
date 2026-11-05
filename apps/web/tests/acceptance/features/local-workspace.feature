@@ -203,6 +203,18 @@ Feature: Open the local time workspace
     And I double-click Monday's first entry while watching its composer
     Then the entry composer opened below that entry without sliding
 
+  Scenario: A new entry's composer opens below the Week Days headers, in place
+    Given I have a week of saved entries
+    When I open the Week Days view
+    And I open a new entry from the timer dock while watching its composer
+    Then the entry composer opened below the Week's day headers without sliding
+
+  Scenario: A new entry's composer opens below the Week Grid headers, in place
+    Given I have a week of saved entries
+    When I open the Week Grid
+    And I open a new entry from the timer dock while watching its composer
+    Then the entry composer opened below the Week's day headers without sliding
+
   Scenario: An open entry composer centers when the window narrows, and floats again when it widens
     Given I have a week of saved entries
     When I open Monday in the Day view

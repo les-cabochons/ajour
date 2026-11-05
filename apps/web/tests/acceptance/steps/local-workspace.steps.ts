@@ -3328,6 +3328,30 @@ When(
 );
 
 When(
+  "I open a new entry from the timer dock while watching its composer",
+  async ({ page }) => {
+    await expect(
+      page.getByRole("region", { name: "Week" }).locator("thead, header"),
+    ).not.toHaveCount(0);
+    await watchComposerFrames(page);
+    await page.getByRole("button", { name: "Create time entry" }).click();
+  },
+);
+
+Then(
+  "the entry composer opened below the Week's day headers without sliding",
+  async ({ page }) => {
+    const header = (await page
+      .getByRole("region", { name: "Week" })
+      .locator(".weekly-grid-table thead, .weekly-days-column-header")
+      .first()
+      .boundingBox())!;
+    const settled = await expectComposerOpenedInPlace(page);
+    expect(settled.y).toBeGreaterThanOrEqual(header.y + header.height);
+  },
+);
+
+When(
   "I double-click Monday's first entry while watching its composer",
   async ({ page }) => {
     const row = page.locator("main [data-entry-id]").first();
