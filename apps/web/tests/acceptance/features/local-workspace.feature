@@ -215,6 +215,12 @@ Feature: Open the local time workspace
     And I open a new entry from the timer dock while watching its composer
     Then the entry composer opened below the Week's day headers without sliding
 
+  Scenario: The new project composer opens below the Projects column headers
+    Given I have projects with searchable tasks
+    When I open the Projects workspace
+    And I open New project while watching its composer
+    Then the project composer opened below the Projects column headers without sliding
+
   Scenario: An open entry composer centers when the window narrows, and floats again when it widens
     Given I have a week of saved entries
     When I open Monday in the Day view
@@ -325,6 +331,16 @@ Feature: Open the local time workspace
     Then the running entry's dialog still has "Standup notes"
     When I widen the app back to a desktop width
     Then the running entry's popover still has "Standup notes"
+
+  Scenario: Keep a new entry's draft across the narrow breakpoint, off the Time page
+    Given I have no saved Ajour workspace
+    When I open the Backlog workspace
+    And I open a new entry from the timer dock "+"
+    And I type "Planning notes" in the new entry's note
+    And I narrow the window to the narrow view
+    Then the new entry's dialog still has "Planning notes"
+    When I widen the app back to a desktop width
+    Then the new entry's popover still has "Planning notes"
 
   Scenario: Open one entry editor at a time
     Given I have no saved Ajour workspace

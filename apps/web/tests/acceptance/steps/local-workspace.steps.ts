@@ -1859,6 +1859,38 @@ Then(
   },
 );
 
+When(
+  "I type {string} in the new entry's note",
+  async ({ page }, note: string) => {
+    await page
+      .getByRole("dialog", { name: "New time entry" })
+      .getByRole("textbox", { name: "Note", exact: true })
+      .fill(note);
+  },
+);
+
+Then(
+  "the new entry's dialog still has {string}",
+  async ({ page }, note: string) => {
+    const dialog = page.getByRole("dialog", { name: "New time entry" });
+    await expect(dialog).toHaveCount(1);
+    await expect(dialog).not.toHaveAttribute("data-slot", "popover-content");
+    await expect(
+      dialog.getByRole("textbox", { name: "Note", exact: true }),
+    ).toHaveValue(note);
+  },
+);
+
+Then(
+  "the new entry's popover still has {string}",
+  async ({ page }, note: string) => {
+    const popover = page.locator('[data-slot="popover-content"]');
+    await expect(
+      popover.getByRole("textbox", { name: "Note", exact: true }),
+    ).toHaveValue(note);
+  },
+);
+
 When('I open a new entry from the timer dock "+"', async ({ page }) => {
   await page.getByRole("button", { name: "Create time entry" }).click();
 });
@@ -3303,8 +3335,11 @@ async function watchComposerFrames(page: Page) {
  * open animation scales it about its center from 95%, so its top edge may
  * start up to 2.5% of its height lower, never higher.
  */
-async function expectComposerOpenedInPlace(page: Page) {
-  const composer = page.getByRole("dialog", { name: /time entry$/ });
+async function expectComposerOpenedInPlace(
+  page: Page,
+  name: RegExp = /time entry$/,
+) {
+  const composer = page.getByRole("dialog", { name });
   await expect(composer).toBeVisible();
   await page.waitForTimeout(1600);
   const frames = await page.evaluate(
@@ -3324,6 +3359,23 @@ When(
   async ({ page }) => {
     await watchComposerFrames(page);
     await page.getByRole("button", { name: "New entry" }).first().click();
+  },
+);
+
+When("I open New project while watching its composer", async ({ page }) => {
+  await expect(page.locator("main .project-list-table thead")).toBeVisible();
+  await watchComposerFrames(page);
+  await page.getByRole("button", { name: "New project" }).first().click();
+});
+
+Then(
+  "the project composer opened below the Projects column headers without sliding",
+  async ({ page }) => {
+    const header = (await page
+      .locator("main .project-list-table thead")
+      .boundingBox())!;
+    const settled = await expectComposerOpenedInPlace(page, /^New project$/);
+    expect(settled.y).toBeGreaterThanOrEqual(header.y + header.height);
   },
 );
 

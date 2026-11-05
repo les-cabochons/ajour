@@ -57,6 +57,7 @@ import {
   NarrowSectionSwitcher,
 } from "@/features/layout/narrow-titlebar";
 import { TimeDatePicker } from "@/features/time/time-date-picker";
+import type { TimeEntryEditorFields } from "@/features/time/time-entry-editor";
 import { TimeEntryEditorPopover } from "@/features/time/time-entry-editor-popover";
 import type { NewTimeEntryValues } from "@/features/time/time-entry-editor-form";
 import {
@@ -369,6 +370,17 @@ type TitlebarEditor = "new" | null;
  * it to the titlebar's totals. New entries default to today; Start starts one
  * at once.
  */
+/**
+ * The titlebar's new entry, as typed so far: it follows the editor from the
+ * popover to the narrow view's dialog and back when the window crosses the
+ * breakpoint, as the running entry's draft does. Opening or closing a new
+ * entry drops it.
+ */
+let newEntryDraft: TimeEntryEditorFields | undefined;
+const keepNewEntryDraft = (fields: TimeEntryEditorFields) => {
+  newEntryDraft = fields;
+};
+
 function GlobalTimerBar({
   date,
   showsFloatingDock,
@@ -422,6 +434,7 @@ function GlobalTimerBar({
       }
       // One entry editor at a time: the new entry closes the running one.
       setRunningEntryEditorOpen(false);
+      newEntryDraft = undefined;
       setNewEntryValues(values);
       setNewEntryAnchor(anchor);
       setEditor("new");
@@ -463,6 +476,7 @@ function GlobalTimerBar({
   }, [runningEditorOpen]);
 
   const handleEditorClose = useCallback(() => {
+    newEntryDraft = undefined;
     setEditor(null);
   }, []);
   const closeRunningEditor = useCallback(
@@ -477,8 +491,10 @@ function GlobalTimerBar({
           target={newEntryTarget}
           open={editor === "new"}
           onOpenChange={(open) => {
-            if (!open) setEditor(null);
+            if (!open) handleEditorClose();
           }}
+          initialFields={newEntryDraft}
+          onFieldsChange={keepNewEntryDraft}
           triggerLabel="Create time entry"
           anchor={newEntryAnchor ?? totalsElement}
         />
@@ -535,6 +551,8 @@ function GlobalTimerBar({
         <TimeEntryModal
           date={today}
           initialValues={newEntryValues}
+          initialFields={newEntryDraft}
+          onFieldsChange={keepNewEntryDraft}
           onClose={handleEditorClose}
         />
       ) : null}

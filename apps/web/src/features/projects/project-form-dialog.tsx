@@ -3,6 +3,7 @@ import {
   RiHashtag as CodeIcon,
   RiPencilLine as EditIcon,
 } from "@remixicon/react";
+import { placeFloatingComposer } from "@/lib/floating-composer";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -94,6 +95,7 @@ export function ProjectFormDialog({
           !narrow && "composer-floating",
         )}
         overlay={narrow}
+        ref={narrow ? undefined : placeProjectComposer}
       >
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <DialogHeader className="sr-only">
@@ -233,4 +235,15 @@ export function ProjectFormDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+/**
+ * Places the floating card before it paints: below the Projects list's
+ * column headers when the list shows, as the entry composer rests below the
+ * Time page's day strip.
+ */
+function placeProjectComposer(popup: HTMLDivElement | null) {
+  placeFloatingComposer(popup, null, {
+    restBelow: document.querySelector("main .project-list-table thead"),
+  });
 }
