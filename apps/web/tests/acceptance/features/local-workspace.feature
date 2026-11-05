@@ -389,7 +389,7 @@ Feature: Open the local time workspace
     Then the running entry's dialog still has "Standup notes"
     When I close the running entry's dialog with Escape
     And I press Stop in the narrow titlebar
-    Then the totals pill shows Today again
+    Then the totals pill shows the day total again
 
   Scenario: Start a task from the command palette
     Given I have projects with searchable tasks

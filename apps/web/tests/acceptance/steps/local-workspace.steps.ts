@@ -2801,8 +2801,11 @@ When("I open the current timer from the totals popover", async ({ page }) => {
   await page.getByRole("button", { name: "Edit the current timer" }).click();
 });
 
-Then("the totals pill shows Today again", async ({ page }) => {
-  await expect(narrowTotalsPill(page)).toContainText("Today");
+// The pill reads the day total alone since #612: the title says Today.
+Then("the totals pill shows the day total again", async ({ page }) => {
+  const pill = narrowTotalsPill(page);
+  await expect(pill).not.toContainText(/\d+:\d{2}:\d{2}/);
+  await expect(pill).toContainText(/\d+:\d{2}/);
 });
 
 function narrowPrimaryNavigation(page: Page) {
