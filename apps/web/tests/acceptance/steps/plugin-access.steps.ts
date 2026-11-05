@@ -281,6 +281,27 @@ Given("an installed Tracker plugin on plugin API 3", async ({ page }) => {
 });
 
 Given(
+  "an installed Tracker plugin on plugin API 4 without agent tasks",
+  async ({ page }) => {
+    const plugin = tracker(4);
+    const { agentTask: _tasks, ...capabilities } = plugin.capabilities;
+    await installMock(
+      page,
+      groupOf(
+        {
+          access: view({
+            capabilities: ["connector"],
+            mcpTools: [],
+            agentPrompts: [],
+          }),
+        },
+        { ...plugin, capabilities },
+      ),
+    );
+  },
+);
+
+Given(
   "an installed Tracker plugin on plugin API 4 that made a request 3 minutes ago",
   async ({ page }) => {
     await installMock(
@@ -540,6 +561,11 @@ Then("the Access section lists these lines", async ({ page }, table: Table) => {
     .allTextContents();
   expect(titles).toEqual(expected);
   await page.screenshot({ path: "test-results/access-section.png" });
+});
+
+Then("the Access section lists no lines", async ({ page }) => {
+  await expect(accessSection(page)).toBeVisible();
+  await expect(accessList(page)).toHaveCount(0);
 });
 
 Then("the Access section says {string}", async ({ page }, text: string) => {

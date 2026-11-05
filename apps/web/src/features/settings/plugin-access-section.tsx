@@ -15,7 +15,7 @@ import { Chip } from "@/components/ui/chip";
 import {
   describeAccess,
   describeBlockedAttempts,
-  describeLegacyAccess,
+  describeAccessIntro,
   describeRefusedRequests,
   FIRST_LIMITED_PLUGIN_API,
   hasListedAccess,
@@ -131,8 +131,8 @@ function AccessList({ items, label }: { items: AccessItem[]; label: string }) {
  * The Access section of an installed plugin's page, before Features: what it
  * reaches, its credential, its agent tasks and its start mode, then the
  * broker's last request and any attempt to connect directly. A plugin built
- * for plugin API 3 lists what it can do without limits, because nothing
- * declares otherwise. An update waiting for consent marks what is new.
+ * for plugin API 3 never runs, so it lists nothing and says it needs an
+ * update. An update waiting for consent marks what is new.
  */
 export function PluginAccessSection({
   group,
@@ -148,7 +148,7 @@ export function PluginAccessSection({
       ? describeAccess(group.access, labels, {
           difference: group.pendingAccess?.difference,
         })
-      : describeLegacyAccess(labels);
+      : [];
   const refused = describeRefusedRequests(group.accessActivity, now);
   const blocked = describeBlockedAttempts(group.accessActivity, now);
 
@@ -158,16 +158,19 @@ export function PluginAccessSection({
         Access
       </h2>
       <p className="settings-section-desc">
-        {listed
-          ? "What this plugin can reach. Ajour runs it in a sandbox where its only way out is a request through Ajour, and limits every request to what is listed here."
-          : "This plugin was built for an older plugin API, so Ajour doesn't run it. It needs an update."}
+        {describeAccessIntro({
+          listed,
+          hasAgentTasks: labels.tasks.length > 0,
+        })}
       </p>
       {listed ? (
-        <p className="text-sm text-muted-foreground" data-access-activity>
-          {describeLastUse(group.accessActivity?.lastRequestAt, now)}.
-        </p>
+        <>
+          <p className="text-sm text-muted-foreground" data-access-activity>
+            {describeLastUse(group.accessActivity?.lastRequestAt, now)}.
+          </p>
+          <AccessList items={items} label="Access" />
+        </>
       ) : null}
-      <AccessList items={items} label="Access" />
       {refused ? (
         <ActivityWarning data-access-refused>{refused}</ActivityWarning>
       ) : null}
