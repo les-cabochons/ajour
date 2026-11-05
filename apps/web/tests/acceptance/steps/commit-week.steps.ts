@@ -289,7 +289,6 @@ function totalsTrigger(page: Page) {
 }
 
 Then("the titlebar totals read {string}", async ({ page }, text: string) => {
-  // The label and the value are separate spans with no text between them.
   await expect
     .poll(async () =>
       (await totalsTrigger(page).locator("span").allInnerTexts()).join(" "),

@@ -220,8 +220,8 @@ function PendingSourceWritesFlush() {
 }
 
 /**
- * The selected day's titlebar pill: "Today" and the day total on today, the
- * day total alone on another day. Its popover has the day and week totals.
+ * The selected day's titlebar pill: the day total alone, since the title
+ * already says when the day is today. Its popover has the day and week totals.
  * With `showsRunningEntry`, as in the narrow view, a running entry replaces
  * the day total on the pill with its own time, and the popover gets a Current
  * timer row that opens the entry's editor.
@@ -288,14 +288,9 @@ function DayTotalsPill({
             </span>
           </>
         ) : (
-          <>
-            {date === todayIsoDate() ? (
-              <span className="ajour-nav-total-label">Today</span>
-            ) : null}
-            <span className="ajour-nav-total-value">
-              {formatClockDuration(dayTotalMs)}
-            </span>
-          </>
+          <span className="ajour-nav-total-value">
+            {formatClockDuration(dayTotalMs)}
+          </span>
         )}
       </PopoverTrigger>
       <PopoverContent
