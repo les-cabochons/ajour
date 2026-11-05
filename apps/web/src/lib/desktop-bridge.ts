@@ -130,23 +130,43 @@ export interface DesktopWindowSettings {
 
 /**
  * One WSL distro under the ajour command (#604). Main lists them on
- * Windows, with the command installed; the renderer passes back only a
- * distro's name.
+ * Windows x64, with the command installed; the renderer passes back only a
+ * distro's name. `wslVersion` is the WSL it runs on, not ajour's version.
  */
-export interface DesktopCliWslDistro {
-  name: string;
-  /** The WSL version it runs on. A WSL 1 distro is `unsupported` (#611). */
-  version: 1 | 2;
-  status:
-    "unsupported" | "not-added" | "adding" | "added" | "removing" | "error";
-  phase?: "downloading" | "checking" | "linking";
-  progress: number | null;
-  error: string | null;
-  /** Why an `unsupported` distro has no Add, and how to convert it. */
-  reason?: string;
-  /** After an Add in this launch: open a new terminal, or fix the PATH. */
-  hint?: string;
-}
+export type DesktopCliWslDistro =
+  | {
+      name: string;
+      wslVersion: 1;
+      /** The Linux ajour can't start in WSL 1 (#611): no Add. */
+      status: "unsupported";
+      /** How to convert it to WSL 2. */
+      reason: string;
+    }
+  | { name: string; wslVersion: 2; status: "not-added" }
+  | {
+      name: string;
+      wslVersion: 2;
+      status: "adding";
+      phase: "downloading" | "checking" | "linking";
+      /** The download's percent while `downloading`. */
+      progress: number | null;
+    }
+  | {
+      name: string;
+      wslVersion: 2;
+      status: "added";
+      /** After an Add in this launch: open a new terminal, or fix the PATH. */
+      hint?: string;
+    }
+  | {
+      name: string;
+      wslVersion: 2;
+      status: "error";
+      /** Why the last Add failed, as a sentence. */
+      error: string;
+      /** Added before that Add: its link still works. */
+      added: boolean;
+    };
 
 /**
  * The ajour command, as main's controller reports it

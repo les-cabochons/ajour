@@ -19,6 +19,16 @@ const TAR_TIMEOUT_MS = 60_000;
 const DIGEST_PATTERN = /^sha256:([0-9a-f]{64})$/;
 const MAX_REDIRECTS = 5;
 
+/**
+ * The local fake release a development build installs from, for tests and
+ * the real-app check, or null: a packaged build always installs from GitHub.
+ */
+function localReleaseOrigin(development, releaseOrigin) {
+  return development && typeof releaseOrigin === "string" && releaseOrigin
+    ? releaseOrigin.replace(/\/+$/, "")
+    : null;
+}
+
 /** An install that stopped on purpose: its event ends `refused`. */
 class CliInstallRefusal extends Error {
   constructor(reason, message) {
@@ -49,8 +59,7 @@ function escapesFolder(name) {
  *   appVersion: string,
  *   label: string,
  *   arch: string,
- *   development?: boolean,
- *   releaseOrigin?: string,
+ *   localOrigin?: string | null,
  *   signal: AbortSignal,
  *   onProgress?: (percent: number) => void,
  * }} options
@@ -65,15 +74,10 @@ function createReleaseAssetPipeline({
   appVersion,
   label,
   arch,
-  development = false,
-  releaseOrigin,
+  localOrigin = null,
   signal,
   onProgress = (_percent) => {},
 }) {
-  const localOrigin =
-    development && typeof releaseOrigin === "string" && releaseOrigin
-      ? releaseOrigin.replace(/\/+$/, "")
-      : null;
   const apiOrigin = localOrigin ?? GITHUB_API_ORIGIN;
   const downloadOrigin = localOrigin ?? GITHUB_ORIGIN;
   const tag = tagForPackageVersion(appVersion);
@@ -329,6 +333,7 @@ function createReleaseAssetPipeline({
 module.exports = {
   CliInstallRefusal,
   createReleaseAssetPipeline,
+  localReleaseOrigin,
   MAX_DOWNLOAD_BYTES,
   refusal,
 };

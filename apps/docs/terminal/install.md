@@ -22,7 +22,7 @@ On Linux, install from the archive below.
 
 Press **Remove** in Settings to take the command off your PATH and delete its install folder. There is no confirmation dialog. The row says "Removing ajour…", then "Not installed." Errors appear inline with **Retry**. Your CLI connection token and Undo state stay on your computer. On macOS, removal may ask for your password. Cancelling leaves everything installed.
 
-Uninstalling Ajour on Windows removes the command too. An app update keeps it. On macOS, dragging Ajour to the Trash leaves the command and its `/usr/local/bin/ajour` link behind. Use Remove before deleting the app. If the command folder is gone and the link dangles, delete the link with `sudo rm /usr/local/bin/ajour`.
+Uninstalling Ajour on Windows removes the command too, but not yet the Linux build for [WSL](#wsl) in `%LOCALAPPDATA%\Ajour\bin\linux` ([#605](https://github.com/les-cabochons/ajour/issues/605)). Press **Remove** before uninstalling to delete both. An app update keeps the command. On macOS, dragging Ajour to the Trash leaves the command and its `/usr/local/bin/ajour` link behind. Use Remove before deleting the app. If the command folder is gone and the link dangles, delete the link with `sudo rm /usr/local/bin/ajour`.
 
 ## Download
 

@@ -1784,7 +1784,7 @@ export const catalog = defineCatalog({
      * ended and why. Never the distro's name or a path.
      */
     "cli_command.wsl_add": {
-      kinds: ["job", "ipc"],
+      kinds: ["ipc"],
       reasons: [
         "foreign_sender",
         "unknown_distro",

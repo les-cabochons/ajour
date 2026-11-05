@@ -222,9 +222,8 @@ export function CliCommandSetting() {
             </DisabledReason>
           )}
         </SettingRow>
-        {desktop?.runtime?.platform === "win32" &&
-        state?.version &&
-        state.status !== "removing"
+        {/* Main reports WSL distros only on Windows x64. */}
+        {state?.version && state.status !== "removing"
           ? state.wsl?.distros.map((distro) => (
               <WslRow
                 key={distro.name}
@@ -240,17 +239,41 @@ export function CliCommandSetting() {
   );
 }
 
-function messageOf(error: unknown) {
-  return error instanceof Error && error.message
-    ? error.message
-    : "Ajour couldn't install the ajour command.";
+function messageOf(
+  error: unknown,
+  fallback = "Ajour couldn't install the ajour command.",
+) {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+/** What a distro row's status line says. */
+function wslStatusLine(
+  distro: DesktopCliWslDistro,
+  {
+    adding,
+    added,
+    version,
+  }: { adding: boolean; added: boolean; version?: string },
+) {
+  if (distro.status === "unsupported") return distro.reason;
+  if (adding) {
+    // Until main reports the Add, it starts as a download does.
+    const phase = distro.status === "adding" ? distro.phase : "downloading";
+    if (phase === "checking") return `Checking ajour in ${distro.name}…`;
+    if (phase === "linking") return "Linking ~/.local/bin/ajour…";
+    const progress = distro.status === "adding" ? distro.progress : null;
+    return `Downloading ajour, ${progress ?? 0}%`;
+  }
+  if (added) return `ajour ${version ?? ""} · ~/.local/bin/ajour`;
+  return "Not added.";
 }
 
 /**
  * One WSL distro under the ajour command (#604): Add, its three phases, the
  * added command with the hint for a new terminal, or the reason an Add
- * failed, inline with Retry. Main serializes Adds, so each row runs alone.
- * A WSL 1 distro has no Add, only how to convert it (#611).
+ * failed, inline with Retry. A failed Add of an added distro keeps it
+ * Added, since its link still works. Main serializes Adds, so each row runs
+ * alone. A WSL 1 distro has no Add, only how to convert it (#611).
  */
 function WslRow({
   distro,
@@ -264,29 +287,26 @@ function WslRow({
   onChange: (state: DesktopCliCommandState) => void;
 }) {
   const [starting, setStarting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  /** Why main rejected the last Add call. */
+  const [rejected, setRejected] = useState<string | null>(null);
   const adding = starting || distro.status === "adding";
+  const added =
+    distro.status === "added" || (distro.status === "error" && distro.added);
   // A Retry hides the reason it retries.
-  const reason = adding ? null : (error ?? distro.error);
-  let line = "Not added.";
-  if (distro.status === "unsupported") line = distro.reason ?? "";
-  if (distro.status === "added")
-    line = `ajour ${version ?? ""} · ~/.local/bin/ajour`;
-  if (adding)
-    line =
-      distro.phase === "checking"
-        ? `Checking ajour in ${distro.name}…`
-        : distro.phase === "linking"
-          ? "Linking ~/.local/bin/ajour…"
-          : `Downloading ajour, ${distro.progress ?? 0}%`;
+  const reason = adding
+    ? null
+    : (rejected ?? (distro.status === "error" ? distro.error : null));
+  const failed = distro.status === "error" || rejected !== null;
   return (
     <SettingRow
       label={distro.name}
       description={
         <span className="flex h-12 min-w-0 flex-col overflow-hidden">
           <span role="status">
-            <Line text={line} />
-            {distro.hint ? <Line text={distro.hint} /> : null}
+            <Line text={wslStatusLine(distro, { adding, added, version })} />
+            {distro.status === "added" && distro.hint ? (
+              <Line text={distro.hint} />
+            ) : null}
           </span>
           {reason ? (
             <Line role="alert" text={reason} className="text-destructive" />
@@ -294,23 +314,28 @@ function WslRow({
         </span>
       }
     >
-      {distro.status !== "added" && distro.status !== "unsupported" ? (
+      {distro.status !== "unsupported" && (!added || failed) ? (
         <Button
           variant="outline"
           disabled={disabled || adding}
           onClick={() => {
             if (!window.ajourDesktop?.addCliCommandWsl || adding) return;
             setStarting(true);
-            setError(null);
+            setRejected(null);
             window.ajourDesktop
               .addCliCommandWsl({ distro: distro.name }, traceCarrier())
               .then(onChange, (failure: unknown) =>
-                setError(messageOf(failure)),
+                setRejected(
+                  messageOf(
+                    failure,
+                    `Ajour couldn't add ajour to ${distro.name}.`,
+                  ),
+                ),
               )
               .finally(() => setStarting(false));
           }}
         >
-          {distro.status === "error" || error ? "Retry" : "Add"}
+          {failed ? "Retry" : "Add"}
         </Button>
       ) : null}
     </SettingRow>

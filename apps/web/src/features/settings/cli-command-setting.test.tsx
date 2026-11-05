@@ -516,10 +516,8 @@ describe("the WSL command rows", () => {
         distros: [
           {
             name: "Ubuntu",
-            version: 2,
+            wslVersion: 2,
             status: "not-added",
-            progress: null,
-            error: null,
           },
         ],
       },
@@ -530,10 +528,8 @@ describe("the WSL command rows", () => {
         distros: [
           {
             name: "Ubuntu",
-            version: 2 as const,
+            wslVersion: 2 as const,
             status: "added" as const,
-            progress: null,
-            error: null,
             hint: "Open a new Ubuntu terminal to use it.",
           },
         ],
@@ -565,11 +561,10 @@ describe("the WSL command rows", () => {
           distros: [
             {
               name: "Ubuntu",
-              version: 2,
+              wslVersion: 2,
               status: "adding",
               phase,
               progress: 42,
-              error: null,
             },
           ],
         },
@@ -592,11 +587,11 @@ describe("the WSL command rows", () => {
         distros: [
           {
             name: "Ubuntu",
-            version: 2,
+            wslVersion: 2,
             status: "error",
-            progress: null,
             error:
               "Another ajour is at ~/.local/bin/ajour in Ubuntu. Remove it, then add again.",
+            added: false,
           },
         ],
       },
@@ -604,8 +599,62 @@ describe("the WSL command rows", () => {
     Object.assign(window.ajourDesktop!, { runtime: { platform: "win32" } });
     await mount();
     expect(screen.getByRole("alert").textContent).toContain("Another ajour");
+    expect(screen.getByText("Not added.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     expect(mocks.error).not.toHaveBeenCalled();
+  });
+
+  it("Given adding an added Ubuntu again failed, its row stays Added with the reason and Retry", async () => {
+    desktop({
+      ...INSTALLED,
+      wsl: {
+        version: VERSION,
+        distros: [
+          {
+            name: "Ubuntu",
+            wslVersion: 2,
+            status: "error",
+            error:
+              "Another ajour is at ~/.local/bin/ajour in Ubuntu. Remove it, then add again.",
+            added: true,
+          },
+        ],
+      },
+    });
+    Object.assign(window.ajourDesktop!, { runtime: { platform: "win32" } });
+    await mount();
+
+    expect(
+      screen
+        .getByText(`ajour ${VERSION} · ~/.local/bin/ajour`)
+        .closest('[role="status"]'),
+    ).toBeTruthy();
+    expect(screen.queryByText("Not added.")).toBeNull();
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Another ajour is at ~/.local/bin/ajour in Ubuntu. Remove it, then add again.",
+    );
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
+  it("Given main rejects Ubuntu's Add without a sentence, the row says Ajour couldn't add ajour to Ubuntu", async () => {
+    desktop({
+      ...INSTALLED,
+      wsl: {
+        distros: [{ name: "Ubuntu", wslVersion: 2, status: "not-added" }],
+      },
+    });
+    Object.assign(window.ajourDesktop!, {
+      runtime: { platform: "win32" },
+      addCliCommandWsl: vi.fn(() => Promise.reject(new Error(""))),
+    });
+    await mount();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    await act(async () => {});
+
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Ajour couldn't add ajour to Ubuntu.",
+    );
   });
 
   it("Given main rejects Ubuntu's Add, its reason shows in Ubuntu's row with Retry, never in a toast", async () => {
@@ -615,10 +664,8 @@ describe("the WSL command rows", () => {
         distros: [
           {
             name: "Ubuntu",
-            version: 2,
+            wslVersion: 2,
             status: "not-added",
-            progress: null,
-            error: null,
           },
         ],
       },
@@ -650,11 +697,11 @@ describe("the WSL command rows", () => {
         distros: [
           {
             name: "Ubuntu",
-            version: 2,
+            wslVersion: 2,
             status: "error",
-            progress: null,
             error:
               "Ajour couldn't run commands in Ubuntu. Check that it starts, then try again.",
+            added: false,
           },
         ],
       },
@@ -680,19 +727,15 @@ describe("the WSL command rows", () => {
         distros: [
           {
             name: "Ubuntu-24.04",
-            version: 1,
+            wslVersion: 1,
             status: "unsupported",
-            progress: null,
-            error: null,
             reason:
               "WSL 1 isn't supported. Convert it with: wsl --set-version Ubuntu-24.04 2",
           },
           {
             name: "Debian",
-            version: 2,
+            wslVersion: 2,
             status: "not-added",
-            progress: null,
-            error: null,
           },
         ],
       },
@@ -726,10 +769,8 @@ describe("the WSL command rows", () => {
           distros: [
             {
               name: "Ubuntu",
-              version: 2,
+              wslVersion: 2,
               status: "not-added",
-              progress: null,
-              error: null,
             },
           ],
         },

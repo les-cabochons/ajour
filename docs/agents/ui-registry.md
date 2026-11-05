@@ -287,9 +287,11 @@ Last updated: 2026-10-25
 ### The ajour command row
 
 Files: `apps/web/src/features/settings/cli-command-setting.tsx`, main's `apps/desktop/electron/cli-command.cjs`
-Last updated: 2026-11-04
+Last updated: 2026-11-05
 
 One `SettingRow` in its own Terminal section. The description is a fixed `h-12` box of three 16px lines, so no phase, version, folder or error moves the page. The first two, and the "Open a new terminal" hint, are the status with `role="status"`, present in every state so screen readers hear each change; when an install failed, the third line is the reason with `role="alert"` in `text-destructive`. Each line is `truncate`d with its whole text in the DOM and in its `title`. The folder line is mono and cut in the middle: its start truncates and its last two folders stay (`FolderLine`). The control is an outline Button, Install, disabled from the click until main reports, and in a development build wrapped in `DisabledReason`; once installed it is a primary-colored external link instead. The row shows only what main pushes (`onCliCommandChanged`), never a toast. Patterns used: `SettingRow`, `AppPanel`, `Button`, `DisabledReason`; nothing new.
+
+On Windows x64, with the command installed, one more `SettingRow` per WSL distro follows in the same `AppPanel` (`WslRow`, #604), labelled with the distro's name. Its description is the same fixed `h-12` box: the status with `role="status"` ("Not added.", a phase while adding, or "ajour <version> · ~/.local/bin/ajour" and its hint), then a failed Add's reason with `role="alert"`. A failed Add of a distro already added keeps the Added line. The control is an outline Button, Add, or Retry after a failure, disabled while the command row or the row itself is busy. An added row has none until Remove (#605), and a WSL 1 row has none: its status line says how to convert it. The rows come only from main's `wsl` state, which main fills only on Windows x64.
 
 ### Application updates
 

@@ -3,6 +3,7 @@ const path = require("node:path");
 const {
   CliInstallRefusal,
   createReleaseAssetPipeline,
+  localReleaseOrigin,
   MAX_DOWNLOAD_BYTES,
   refusal,
 } = require("./cli-release-asset.cjs");
@@ -23,6 +24,8 @@ const STAGING_NAME = new RegExp(`^\\.staging-${ID}$`);
 const PLATFORM_NAMES = {
   win32: { os: "windows", label: "Windows", extension: "zip" },
   darwin: { os: "macos", label: "macOS", extension: "tar.gz" },
+  // Installed only as the Linux build for WSL (#604).
+  linux: { os: "linux", label: "Linux", extension: "tar.gz" },
 };
 
 /** The release asset of `platform` and `arch`, or null where none ships. */
@@ -38,6 +41,8 @@ function binaryName(platform) {
   return platform === "win32" ? "ajour.exe" : "ajour";
 }
 
+/** The install folder's entry that holds the Linux build for WSL. */
+const LINUX_ENTRY = "linux";
 /** How long a command in a WSL distro may take: the first boots WSL's VM. */
 const WSL_TIMEOUT_MS = 60_000;
 /** How long the list of WSL distros stays fresh. */
@@ -91,7 +96,7 @@ function wsl1Sentence(distro) {
  * header, then NAME, STATE and VERSION, with `*` before the default distro.
  * WSL translates the header and STATE, so a row is any line ending in a
  * version; names have no spaces, a translated state may.
- * @returns {{ name: string, state: string, version: 1 | 2 }[]}
+ * @returns {{ name: string, state: string, wslVersion: 1 | 2 }[]}
  */
 function distrosOf(stdout) {
   const bytes = Buffer.isBuffer(stdout)
@@ -108,7 +113,7 @@ function distrosOf(stdout) {
     distros.set(row[1], {
       name: row[1],
       state: row[2],
-      version: row[3] === "1" ? 1 : 2,
+      wslVersion: row[3] === "1" ? 1 : 2,
     });
   }
   return [...distros.values()];
@@ -153,12 +158,7 @@ function createCliCommandController({
   now = Date.now,
   env = process.env,
 }) {
-  // A local fake release, for tests and the real-app check: development
-  // builds only, so a packaged build always installs from GitHub.
-  const localOrigin =
-    development && typeof releaseOrigin === "string" && releaseOrigin
-      ? releaseOrigin.replace(/\/+$/, "")
-      : null;
+  const localOrigin = localReleaseOrigin(development, releaseOrigin);
   const tag = tagForPackageVersion(appVersion);
   const asset = cliAssetName(platform, arch, appVersion);
   const binary = binaryName(platform);
@@ -216,7 +216,7 @@ function createCliCommandController({
     distroRead ??= (async () => {
       try {
         const { stdout } = await exec(wslExe, ["--list", "--verbose"], {
-          timeout: VERSION_CHECK_TIMEOUT_MS,
+          timeout: WSL_TIMEOUT_MS,
           env: { ...env, WSL_UTF8: "1" },
           encoding: "buffer",
         });
@@ -232,35 +232,47 @@ function createCliCommandController({
     await distroRead;
   }
 
+  /**
+   * One distro's row. "Added" is the record's: an Add that fails on a
+   * distro the record holds leaves it added, its link untouched.
+   */
+  function distroRow(record, { name, wslVersion }) {
+    // The Linux ajour can't start in WSL 1 (#611).
+    if (wslVersion === 1)
+      return {
+        name,
+        wslVersion,
+        status: "unsupported",
+        reason: wsl1Sentence(name),
+      };
+    const added = record.wsl?.distros?.includes(name) ?? false;
+    const live = wslStates.get(name);
+    if (live?.status === "adding")
+      return {
+        name,
+        wslVersion,
+        status: "adding",
+        phase: live.phase,
+        progress: live.progress,
+      };
+    if (live?.status === "error")
+      return { name, wslVersion, status: "error", error: live.error, added };
+    if (!added) return { name, wslVersion, status: "not-added" };
+    return {
+      name,
+      wslVersion,
+      status: "added",
+      ...(live?.hint ? { hint: live.hint } : {}),
+    };
+  }
+
   /** The `wsl` part of the state: one row per listed distro. */
   function wslFields(record) {
     if (!wslSupported || !record || !listedDistros.length) return {};
     return {
       wsl: {
         version: record.wsl?.version,
-        distros: listedDistros.map(({ name, version }) => {
-          // The Linux ajour can't start in WSL 1 (#611).
-          if (version === 1)
-            return {
-              name,
-              version,
-              status: "unsupported",
-              progress: null,
-              error: null,
-              reason: wsl1Sentence(name),
-            };
-          const added = record.wsl?.distros?.includes(name) ?? false;
-          const live = wslStates.get(name);
-          if (live?.status) return { name, version, ...live };
-          return {
-            name,
-            version,
-            status: added ? "added" : "not-added",
-            progress: null,
-            error: null,
-            ...(added && live?.hint ? { hint: live.hint } : {}),
-          };
-        }),
+        distros: listedDistros.map((distro) => distroRow(record, distro)),
       },
     };
   }
@@ -363,8 +375,7 @@ function createCliCommandController({
       appVersion,
       label: PLATFORM_NAMES[platform]?.label,
       arch,
-      development,
-      releaseOrigin,
+      localOrigin,
       signal: quitting.signal,
       onProgress: (percent) => publishInstalling("downloading", percent),
     });
@@ -446,6 +457,34 @@ function createCliCommandController({
     }
   }
 
+  /** Releases store man/ and completions/ at the archive root: they go in share/. */
+  async function moveIntoShare(unpacked) {
+    const share = path.join(unpacked, "share");
+    await fs.mkdir(share, { recursive: true });
+    for (const name of ["man", "completions"]) {
+      if (await exists(path.join(unpacked, name)))
+        await fs.rename(path.join(unpacked, name), path.join(share, name));
+    }
+  }
+
+  /**
+   * Marks the swap `id` before it starts, with the digests of what it moves
+   * in: until the record commits them, reconciliation takes them back out.
+   */
+  async function writePendingMarker(id, digests) {
+    await writeAtomically(
+      targetOf(`.pending-${id}.json`),
+      JSON.stringify({ digests }),
+    );
+  }
+
+  /** Moves `from` in as the entry `name`, the one there set aside for reconciliation. */
+  async function swapIn(name, from, id) {
+    if (await exists(targetOf(name)))
+      await fs.rename(targetOf(name), asideOf(name, id));
+    await fs.rename(from, targetOf(name));
+  }
+
   async function writeRecord(record) {
     await fs.mkdir(path.dirname(paths.recordFile), { recursive: true });
     await writeAtomically(
@@ -466,7 +505,7 @@ function createCliCommandController({
   async function reconcileDisk(interactive = false) {
     const names = await namesIn(paths.installDir);
     let record = await readRecordFile();
-    const entries = [binary, "share", "linux"];
+    const entries = [binary, "share", LINUX_ENTRY];
     const ownedDigests = { ...record?.digests, ...record?.wsl?.digests };
     for (const name of entries) {
       const target = targetOf(name);
@@ -502,7 +541,7 @@ function createCliCommandController({
             );
           }
         }
-      } else if (record && name !== "linux") {
+      } else if (record && name !== LINUX_ENTRY) {
         // Compatibility with records from before content digests were recorded.
         if (!(await exists(target)) && old.length)
           await fs.rename(old[0].file, target);
@@ -523,27 +562,27 @@ function createCliCommandController({
           "Another ajour is at /usr/local/bin/ajour. Remove it, then press Retry in Settings.",
         );
     }
-    {
-      // A missing record proves nothing about files in the user's folder.
-      // Only a fully written pending marker identifies an uncommitted swap.
-      for (const marker of names.filter((name) => PENDING_NAME.test(name))) {
-        let pending;
-        try {
-          pending = JSON.parse(await fs.readFile(targetOf(marker), "utf8"));
-        } catch (error) {
-          if (error.code === "ENOENT" || error instanceof SyntaxError) continue;
-          throw error;
-        }
-        for (const name of entries) {
-          if (record && Object.hasOwn(ownedDigests, name)) continue;
-          const expected = pending?.digests?.[name];
-          if (
-            typeof expected === "string" &&
-            /^[0-9a-f]{64}$/.test(expected) &&
-            (await contentDigest(targetOf(name))) === expected
-          )
-            await fs.rm(targetOf(name), { recursive: true, force: true });
-        }
+    // Each entry the record doesn't own is the user's, unless a fully written
+    // pending marker names it with its content: an uncommitted swap's.
+    const uncommitted = record
+      ? entries.filter((name) => !Object.hasOwn(ownedDigests, name))
+      : entries;
+    for (const marker of names.filter((name) => PENDING_NAME.test(name))) {
+      let pending;
+      try {
+        pending = JSON.parse(await fs.readFile(targetOf(marker), "utf8"));
+      } catch (error) {
+        if (error.code === "ENOENT" || error instanceof SyntaxError) continue;
+        throw error;
+      }
+      for (const name of uncommitted) {
+        const expected = pending?.digests?.[name];
+        if (
+          typeof expected === "string" &&
+          /^[0-9a-f]{64}$/.test(expected) &&
+          (await contentDigest(targetOf(name))) === expected
+        )
+          await fs.rm(targetOf(name), { recursive: true, force: true });
       }
     }
     // Link operations must confirm the committed target or absence before cleanup.
@@ -598,7 +637,7 @@ function createCliCommandController({
     if (
       (await exists(targetOf(binary))) ||
       (await exists(targetOf("share"))) ||
-      (await exists(targetOf("linux")))
+      (await exists(targetOf(LINUX_ENTRY)))
     ) {
       throw refusal(
         "foreign_command",
@@ -668,13 +707,7 @@ function createCliCommandController({
       stopIfQuitting();
 
       publishInstalling("linking");
-      // Releases store man/ and completions/ at the archive root.
-      const share = path.join(unpacked, "share");
-      await fs.mkdir(share, { recursive: true });
-      for (const name of ["man", "completions"]) {
-        if (await exists(path.join(unpacked, name)))
-          await fs.rename(path.join(unpacked, name), path.join(share, name));
-      }
+      await moveIntoShare(unpacked);
       const digests = {};
       for (const name of [binary, "share"])
         digests[name] = await contentDigest(path.join(unpacked, name));
@@ -687,16 +720,10 @@ function createCliCommandController({
         await writeRecord(previous);
       }
       await refuseForeignFiles();
-      await writeAtomically(
-        targetOf(`.pending-${id}.json`),
-        JSON.stringify({ digests }),
-      );
+      await writePendingMarker(id, digests);
       swapped = true;
-      for (const name of [binary, "share"]) {
-        if (await exists(targetOf(name)))
-          await fs.rename(targetOf(name), asideOf(name, id));
-        await fs.rename(path.join(unpacked, name), targetOf(name));
-      }
+      for (const name of [binary, "share"])
+        await swapIn(name, path.join(unpacked, name), id);
       if (platform === "darwin")
         linkAdded = (await link.add(paths.installDir, { interactive })).added;
       await writeRecord({
@@ -840,45 +867,40 @@ function createCliCommandController({
    * Until the record commits it, reconciliation takes it back out.
    */
   async function downloadLinux(id, staging, publish) {
-    const linuxAsset = `ajour-${appVersion}-linux-x64.tar.gz`;
+    const linuxAsset = cliAssetName("linux", "x64", appVersion);
     const pipeline = createReleaseAssetPipeline({
       fetch,
       fs,
       exec,
       paths,
       asset: linuxAsset,
-      binary: "ajour",
+      binary: binaryName("linux"),
       appVersion,
-      label: "Linux",
+      label: PLATFORM_NAMES.linux.label,
       arch: "x64",
-      development,
-      releaseOrigin,
+      localOrigin,
       signal: quitting.signal,
       onProgress: (percent) => void publish("downloading", percent),
     });
+    await publish("downloading", 0);
     const resolved = await pipeline.resolveAsset({});
     const archive = path.join(staging, linuxAsset);
     await pipeline.download(resolved, archive);
     await publish("checking");
     const unpacked = path.join(staging, "unpacked");
     await pipeline.unpack(archive, unpacked);
-    // Releases store man/ and completions/ at the archive root.
-    const share = path.join(unpacked, "share");
-    await fs.mkdir(share, { recursive: true });
-    for (const name of ["man", "completions"]) {
-      if (await exists(path.join(unpacked, name)))
-        await fs.rename(path.join(unpacked, name), path.join(share, name));
-    }
-    const digests = { linux: await contentDigest(unpacked) };
+    await moveIntoShare(unpacked);
+    const digests = { [LINUX_ENTRY]: await contentDigest(unpacked) };
     stopIfQuitting();
-    await writeAtomically(
-      targetOf(`.pending-${id}.json`),
-      JSON.stringify({ digests }),
-    );
-    if (await exists(targetOf("linux")))
-      await fs.rename(targetOf("linux"), asideOf("linux", id));
-    await fs.rename(unpacked, targetOf("linux"));
+    await writePendingMarker(id, digests);
+    await swapIn(LINUX_ENTRY, unpacked, id);
     return digests;
+  }
+
+  /** Ends the WSL Add's event `refused`, with `reason`. */
+  function refuseWslAdd(unit, reason) {
+    unit?.refuse(reason);
+    unit?.set({ cli_command: { result: "refused" } });
   }
 
   /**
@@ -893,8 +915,7 @@ function createCliCommandController({
     const listed = () => listedDistros.find(({ name }) => name === distro);
     if (!listed()) await listDistros({ fresh: true });
     if (!listed()) {
-      unit?.refuse("unknown_distro");
-      unit?.set({ cli_command: { result: "refused" } });
+      refuseWslAdd(unit, "unknown_distro");
       throw refusal(
         "unknown_distro",
         "Ajour can't find this distro in WSL's list any more. Reopen Settings to see the current list.",
@@ -902,9 +923,8 @@ function createCliCommandController({
     }
     // The Linux ajour can't start in WSL 1 (#611): nothing is downloaded or
     // run, and the row keeps its sentence. Not thrown: it names the distro.
-    if (listed().version === 1) {
-      unit?.refuse("wsl1_unsupported");
-      unit?.set({ cli_command: { result: "refused" } });
+    if (listed().wslVersion === 1) {
+      refuseWslAdd(unit, "wsl1_unsupported");
       return settledState();
     }
     const id = randomUUID();
@@ -914,7 +934,7 @@ function createCliCommandController({
     /** The link this Add made, and the folders it made for it. */
     let made = null;
     const publish = async (phase, progress = null) => {
-      wslStates.set(distro, { status: "adding", phase, progress, error: null });
+      wslStates.set(distro, { status: "adding", phase, progress });
       emit(await settledState());
     };
     try {
@@ -927,14 +947,13 @@ function createCliCommandController({
           "not_installed",
           "Install the ajour command first, then add it to WSL.",
         );
-      await publish("downloading", 0);
       let digests = record.wsl?.digests;
       // A second distro, or the same one again, reuses this version's build.
       if (record.wsl?.version !== appVersion) {
-        if (!record.wsl && (await exists(targetOf("linux"))))
+        if (!record.wsl && (await exists(targetOf(LINUX_ENTRY))))
           throw refusal(
             "foreign_command",
-            `There's already an ajour in ${targetOf("linux")} that Ajour didn't install. Remove it, then add again.`,
+            `There's already an ajour in ${targetOf(LINUX_ENTRY)} that Ajour didn't install. Remove it, then add again.`,
           );
         staging = targetOf(`.staging-${id}`);
         await fs.mkdir(staging);
@@ -946,7 +965,7 @@ function createCliCommandController({
       const target = (
         await inDistro(distro, "wslpath", [
           "-u",
-          path.join(targetOf("linux"), "ajour"),
+          path.join(targetOf(LINUX_ENTRY), binaryName("linux")),
         ])
       ).trim();
       if (!target.startsWith("/") || /[\n\0]/.test(target))
@@ -962,14 +981,14 @@ function createCliCommandController({
         throw refusal(
           "wrong_version",
           error.timedOut
-            ? "The downloaded ajour didn't print its version within 10 seconds, so Ajour didn't install it."
+            ? "The downloaded ajour didn't print its version within 10 seconds, so Ajour didn't add it."
             : `The downloaded ajour didn't start in ${distro}, so Ajour didn't add it.`,
         );
       }
       if (printed !== `ajour ${appVersion}`)
         throw refusal(
           "wrong_version",
-          `The downloaded ajour says "${printed.slice(0, 80)}", not "ajour ${appVersion}", so Ajour didn't install it.`,
+          `The downloaded ajour says "${printed.slice(0, 80)}", not "ajour ${appVersion}", so Ajour didn't add it.`,
         );
 
       await publish("linking");
@@ -1034,21 +1053,16 @@ function createCliCommandController({
         ? "Ajour quit before ajour was added."
         : error instanceof Error && error.message
           ? error.message
-          : "Ajour couldn't add ajour to WSL.";
-      wslStates.set(distro, {
-        status: "error",
-        progress: null,
-        error: message,
-      });
+          : `Ajour couldn't add ajour to ${distro}.`;
+      wslStates.set(distro, { status: "error", error: message });
       // Never the message: it names the distro, and a path holds the user name.
-      if (error.reason) unit?.refuse(error.reason);
-      else
+      if (error.reason) refuseWslAdd(unit, error.reason);
+      else {
         unit?.fail(new Error("Ajour couldn't add ajour to WSL."), {
           reason: "wsl_add_failed",
         });
-      unit?.set({
-        cli_command: { result: error.reason ? "refused" : "failed" },
-      });
+        unit?.set({ cli_command: { result: "failed" } });
+      }
     } finally {
       // Commits clean up their marker; a failure takes the build back out.
       if (swapped) await reconcileDisk().catch(() => undefined);
