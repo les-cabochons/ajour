@@ -403,13 +403,13 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
     );
   }
 
-  /** The connection's label, for status lines. */
-  function connectionLabel(
+  /** The connection's label, for status lines, or `fallback` without one. */
+  function connectionLabelOr(
     command: {
       pluginId: string;
       connectionId: string;
     },
-    fallback = "Team",
+    fallback: string,
   ) {
     return (
       snapshot.overview?.connectionGroups
@@ -646,7 +646,7 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
           );
           if (!isCurrent()) return false;
           await refreshPlugins();
-          finish(describeTeamSync(connectionLabel(command), outcome));
+          finish(describeTeamSync(connectionLabelOr(command, "Team"), outcome));
           break;
         }
         case "projectSourceSync": {
@@ -659,7 +659,7 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
           await refreshPlugins();
           finish(
             describeProjectSourceSync(
-              connectionLabel(
+              connectionLabelOr(
                 command,
                 outcome.kind === "applied" ? outcome.label : "Managed projects",
               ),
