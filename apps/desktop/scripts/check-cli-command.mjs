@@ -409,7 +409,7 @@ async function checkFollow(electronApp, env, release, version, binary) {
     const printed = (await run(binary, ["-V"])).stdout.trim();
     expect(
       printed === `ajour ${nextVersion}`,
-      "follow retry picks up version B after restart and ajour -V prints B",
+      "follow retry picks up version B without another restart and ajour -V prints B",
       {
         printed,
         state: await page.evaluate(() => window.ajourDesktop.getCliCommand()),
