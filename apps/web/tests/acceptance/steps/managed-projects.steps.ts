@@ -25,7 +25,7 @@ const plugin = {
   ),
 };
 
-/** Synced just now, so the scheduler leaves it to Sync now. */
+/** The connection, last synced just now. */
 function connection() {
   return {
     id: CONNECTION,
@@ -90,6 +90,28 @@ Given(
 
 Given("the example project source is connected", async ({ page }) => {
   snapshots.set(page, structuredClone(fixtureSnapshot));
+  // Synced a moment ago with nothing to bring, so the scheduler, which goes
+  // by the web's own last sync, leaves it to Sync now.
+  await page.addInitScript(
+    ({ connectionId, pluginId }) => {
+      if (sessionStorage.getItem("managed-projects-source")) return;
+      sessionStorage.setItem("managed-projects-source", "true");
+      const state = JSON.parse(
+        localStorage.getItem("ajour.local-state.v2") ?? "{}",
+      );
+      state.projectSources = {
+        [connectionId]: {
+          pluginId,
+          label: "Example planner",
+          asOf: "2026-10-01T00:00:00.000Z",
+          syncedAt: Date.now(),
+          held: [],
+        },
+      };
+      localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+    },
+    { connectionId: CONNECTION, pluginId: plugin.id },
+  );
   await page.route(`${apiUrl}/api/plugins`, (route) =>
     route.fulfill({ json: overview(), headers: cors }),
   );
