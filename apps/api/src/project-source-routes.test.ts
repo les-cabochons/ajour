@@ -25,11 +25,14 @@ import {
 const ICON = "<svg viewBox='0 0 16 16' />";
 
 /** A development plugin that only declares the capability `capabilities` holds. */
-function manifest(capabilities: Record<string, unknown>) {
+function manifest(
+  capabilities: Record<string, unknown>,
+  { version = "4.0.0", apiVersion = 4, id = "planner" } = {},
+) {
   return {
-    id: "planner",
-    version: "4.0.0",
-    apiVersion: 4,
+    id,
+    version,
+    apiVersion,
     displayName: "Planner",
     iconSvg: ICON,
     entrypoint: "plugin.mjs",
@@ -158,12 +161,18 @@ describe("the project source sync route", () => {
     expect(saved.status).toBe(200);
     const connectionId = (saved.body as { connection: { id: string } })
       .connection.id;
-    const sync = (trigger: "manual" | "auto" = "manual") =>
+    const sync = (trigger: "manual" | "auto" = "manual", fresh?: boolean) =>
       dispatchJsonRequest(server, {
         method: "POST",
         path: `/api/plugins/${pluginId}/connections/${connectionId}/sync-projects`,
-        body: JSON.stringify({ trigger }),
+        body: JSON.stringify({ trigger, ...(fresh ? { fresh } : {}) }),
       });
+    /** Rewrites the fixture plugin's manifest, as an update would. */
+    const rewriteManifest = (options: Parameters<typeof manifest>[1]) =>
+      writeFile(
+        path.join(pluginDirectory, "plugin.json"),
+        JSON.stringify(manifest(capabilities, options)),
+      );
     const connectionSummary = async () => {
       const overview = await dispatchJsonRequest(server, {
         method: "GET",
@@ -178,7 +187,17 @@ describe("the project source sync route", () => {
       ).connectionGroups[0]!.connections[0]!;
     };
     const seen = () => fixture.__plannerSeen ?? [];
-    return { server, sink, connectionId, sync, save, connectionSummary, seen };
+    return {
+      server,
+      sink,
+      connectionId,
+      sync,
+      save,
+      connectionSummary,
+      seen,
+      rewriteManifest,
+      root,
+    };
   }
 
   it("answers the snapshot, keeps the cursor and sends it next time", async () => {
@@ -266,6 +285,51 @@ describe("the project source sync route", () => {
     await sync();
 
     expect(seen()).toEqual([{}, {}]);
+  });
+
+  it("reads the whole snapshot when asked fresh, without the cursor it kept", async () => {
+    const { sync, seen } = await setup();
+    fixture.__plannerAnswer = { snapshot, cursor: 'W/"v1"' };
+    await sync();
+
+    expect((await sync("manual", true)).body).toMatchObject({ snapshot });
+    await sync();
+
+    expect(seen()).toEqual([{}, {}, { cursor: 'W/"v1"' }]);
+  });
+
+  it("starts over without the cursor once another plugin version answers", async () => {
+    const { sync, seen, rewriteManifest } = await setup();
+    fixture.__plannerAnswer = { snapshot, cursor: 'W/"v1"' };
+    await sync();
+
+    await rewriteManifest({ version: "4.0.1" });
+    await sync();
+    await sync();
+
+    expect(seen()).toEqual([{}, {}, { cursor: 'W/"v1"' }]);
+  });
+
+  it("refuses an installed plugin built for an older plugin API, with the reason", async () => {
+    const { sync, seen, rewriteManifest, root } = await setup();
+    // The package installed for "planner" is an API 3 one, and the
+    // development folder now holds another plugin.
+    const installed = path.join(root, "installed", "planner");
+    await mkdir(installed, { recursive: true });
+    await writeFile(
+      path.join(installed, "plugin.json"),
+      JSON.stringify(manifest({ connector: {} }, { apiVersion: 3 })),
+    );
+    await writeFile(path.join(installed, "plugin.mjs"), PLUGIN_SOURCE);
+    await rewriteManifest({ id: "other" });
+
+    const response = await sync();
+
+    expect(response).toEqual({
+      status: 409,
+      body: { error: expect.stringContaining("needs an update") },
+    });
+    expect(seen()).toEqual([]);
   });
 
   it("keeps the snapshot a snapshot without a cursor, and sends none next time", async () => {

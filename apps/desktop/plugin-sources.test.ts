@@ -171,6 +171,7 @@ describe("ajour.json", () => {
   );
 
   it.each([
+    ["an unknown key", { homepage: "https://example.com" }, "unknown key"],
     [
       "a path that climbs out",
       { files: [{ path: "../secrets", sha256: "a".repeat(64), size: 1 }] },

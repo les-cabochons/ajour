@@ -199,7 +199,7 @@ apps/desktop/     Electron runtime and desktop packaging
 apps/api/         Optional local API and plugin host
 apps/docs/        User guide and plugin developer documentation
 packages/shared/  Cross-runtime types, validation, and domain logic
-packages/example/ Template for a new deep-module package
+packages/example/ Example project source plugin the tests load
 docs/             Agent context, ADRs, frozen specs, and architecture notes
 qa/               Acceptance support, UI checks, and manual QA routines
 ```

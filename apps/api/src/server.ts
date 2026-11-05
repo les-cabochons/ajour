@@ -3428,7 +3428,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       const pluginId = readInput(() => pluginIdSchema.parse(params.pluginId));
       const { connectionId } = params;
       unit.set({ plugin: { id: pluginId }, connection: { id: connectionId } });
-      const { plugin, runnable } = await findPlugin(pluginManager, pluginId);
+      const { plugin, runnable, unavailableReason } = await findPlugin(
+        pluginManager,
+        pluginId,
+      );
+      if (refuseUnavailablePlugin(response, unit, unavailableReason)) {
+        return;
+      }
       if (!plugin || !pluginHasProjectSource(plugin)) {
         unit.refuse("not_supported");
         writeJson(response, 409, {
@@ -3463,7 +3469,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         request,
         projectSourceSyncRouteRequestSchema,
       );
-      const cursor = connection.projectSourceCursor;
+      // A fresh read, or another plugin version, starts over: the cursor
+      // only vouches for what this version mapped last time.
+      const kept = connection.projectSourceCursor;
+      const cursor =
+        !payload.fresh && kept?.pluginVersion === plugin.version
+          ? kept.value
+          : undefined;
       unit.set({
         project_source_sync: {
           trigger: payload.trigger,
@@ -3502,10 +3514,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             },
           });
         }
+        const nextCursor = "unchanged" in result ? cursor : result.cursor;
         const recorded = await storage.recordProjectSourceSync(
           pluginId,
           connectionId,
-          "unchanged" in result ? cursor : result.cursor,
+          nextCursor
+            ? { value: nextCursor, pluginVersion: plugin.version }
+            : undefined,
           Date.now(),
           savesAtStart,
         );

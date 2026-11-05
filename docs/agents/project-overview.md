@@ -52,7 +52,7 @@ apps/web/        React + Vite product UI
 apps/desktop/    Electron runtime and packaging
 apps/api/        optional local API and plugin host
 packages/shared/ shared domain logic and types
-packages/example/ copy-me template for a new deep-module package
+packages/example/ example project source plugin the tests load
 docs/            project context (docs/agents), ADRs, frozen specs, architecture and strategy docs
 ```
 

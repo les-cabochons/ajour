@@ -164,6 +164,13 @@ describe("the project source snapshot", () => {
       "projects.0.startsOn",
     ],
     [
+      "an end date that does not exist",
+      (s: ProjectSourceSnapshot) => {
+        s.projects[0]!.endsOn = "2026-02-30";
+      },
+      "projects.0.endsOn",
+    ],
+    [
       "an asOf that isn't a date-time",
       (s: ProjectSourceSnapshot) => {
         s.asOf = "yesterday";

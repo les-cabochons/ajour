@@ -4,7 +4,7 @@ A project source brings the user's projects into Ajour from the system that hold
 
 Declare `"projectSource": {}` in the manifest's [capabilities](/developers/manifest#capabilities), and export `validateConnection` and `syncProjects`.
 
-Nothing in the shape names a product. Your plugin supplies the source's label and URLs, and Ajour shows them wherever it names the source: "From Planner" on a managed project, "Open in Planner" in its properties card.
+Nothing in the shape names a product. Your plugin supplies the source's label and URLs, and Ajour shows them wherever it names the source.
 
 ## syncProjects
 
@@ -17,9 +17,9 @@ export async function syncProjects(
 >;
 ```
 
-Ajour calls it on the connection's interval while **Managed projects** is on, and when the user presses **Refresh**. Return the snapshot and the cursor to send next time, or `{ unchanged: true }` when nothing changed since the cursor you received.
+Return the snapshot and the cursor to send next time, or `{ unchanged: true }` when nothing changed since the cursor you received.
 
-The cursor is yours. Ajour never reads it: it keeps the last one per connection and sends it back on the next sync, and sends none on the first sync, after a snapshot that came without one, and after the user saves the connection again. An ETag works well: send it as `If-None-Match`, and answer `{ unchanged: true }` on a 304. Never answer `{ unchanged: true }` to a request without a cursor: Ajour refuses it, since it has nothing to compare with.
+The cursor is yours. Ajour never reads it: it keeps the last one per connection and sends it back on the next sync, and sends none on the first sync, after a snapshot that came without one, after the user saves the connection again, after your plugin's version changes, and when Ajour needs the whole snapshot again. An ETag works well: send it as `If-None-Match`, and answer `{ unchanged: true }` on a 304. Never answer `{ unchanged: true }` to a request without a cursor: Ajour refuses it, since it has nothing to compare with.
 
 ### What the snapshot carries
 

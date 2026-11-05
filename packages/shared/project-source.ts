@@ -50,8 +50,14 @@ const httpsUrlSchema = z
       return false;
     }
   }, "A project source URL is an absolute https address.");
-/** A calendar date, such as 2026-01-31. */
-const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD.");
+/** A calendar date that exists, such as 2026-01-31. */
+const dateSchema = z.string().refine((value) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return (
+    !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
+  );
+}, "Use an existing date, YYYY-MM-DD.");
 const hoursSchema = z.number().finite().nonnegative();
 
 /** The source's own health reading of a budget. */

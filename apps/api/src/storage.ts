@@ -170,9 +170,30 @@ interface StoredConnection {
    * The cursor a project source plugin answered with its last snapshot
    * (#504), opaque to Ajour, sent back on the next sync. Absent until a
    * snapshot came with one, after a snapshot without one, and after the
-   * connection is saved again, so the next sync starts over.
+   * connection is saved again, so the next sync starts over. It keeps the
+   * version of the plugin that gave it: another version starts over too,
+   * since its mapping of the same source may differ.
    */
-  projectSourceCursor?: string;
+  projectSourceCursor?: ProjectSourceCursor;
+}
+
+/** A project source's cursor and the plugin version that answered it. */
+export interface ProjectSourceCursor {
+  value: string;
+  pluginVersion: string;
+}
+
+function normalizeProjectSourceCursor(
+  value: unknown,
+): ProjectSourceCursor | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { value: cursor, pluginVersion } = value as Record<string, unknown>;
+  return typeof cursor === "string" &&
+    cursor &&
+    typeof pluginVersion === "string" &&
+    pluginVersion
+    ? { value: cursor, pluginVersion }
+    : undefined;
 }
 
 /**
@@ -961,8 +982,11 @@ function normalizeState(migrated: StoredStateRecord): AppApiState {
         }) => ({
           ...connection,
           ...(onPremises === true ? { onPremises } : {}),
-          ...(typeof projectSourceCursor === "string" && projectSourceCursor
-            ? { projectSourceCursor }
+          ...(normalizeProjectSourceCursor(projectSourceCursor)
+            ? {
+                projectSourceCursor:
+                  normalizeProjectSourceCursor(projectSourceCursor),
+              }
             : {}),
           ...(normalizeAccess(access)
             ? { access: normalizeAccess(access) }
@@ -2623,7 +2647,7 @@ export class AppApiStorage {
   async recordProjectSourceSync(
     pluginId: string,
     connectionId: string,
-    cursor: string | undefined,
+    cursor: ProjectSourceCursor | undefined,
     timestamp: number,
     savesAtStart: number,
   ): Promise<StoredConnection | undefined> {

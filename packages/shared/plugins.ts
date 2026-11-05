@@ -1503,6 +1503,12 @@ export type BacklogSyncResult = z.infer<typeof backlogSyncResultSchema>;
 /** `POST /api/plugins/:pluginId/connections/:connectionId/sync-projects`. */
 export const projectSourceSyncRouteRequestSchema = z.object({
   trigger: z.enum(["manual", "auto"]).default("manual"),
+  /**
+   * Reads the whole snapshot, without the cursor, such as when the web holds
+   * nothing from the connection yet: an unchanged answer would leave it
+   * empty.
+   */
+  fresh: z.boolean().default(false),
 });
 export type ProjectSourceSyncRouteRequest = z.infer<
   typeof projectSourceSyncRouteRequestSchema
