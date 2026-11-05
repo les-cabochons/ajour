@@ -2,6 +2,7 @@ import {
   isPinnedTaskSlot,
   type LocalProject,
   type LocalProjectDraft,
+  type LocalProjectSource,
   type LocalProjectTask,
   type LocalProjectTaskDraft,
   type PinnedTaskSlot,
@@ -472,6 +473,95 @@ export function setProjectTaskStatus(
         }
       : project,
   );
+}
+
+/** What a hand restore gives: the projects, or why it changed nothing. */
+export interface RestoreResult {
+  projects: LocalProject[];
+  /** Set when the restore is refused, as a sentence for the user. */
+  refusal?: string;
+}
+
+/** What the user calls a project's source, such as "Example planner". */
+function sourceLabelOf(
+  project: LocalProject,
+  projectSources: Readonly<Record<string, LocalProjectSource>> | undefined,
+) {
+  const connectionId = project.source?.connectionId;
+  return (
+    (connectionId ? projectSources?.[connectionId]?.label : undefined) ??
+    "Its source"
+  );
+}
+
+/**
+ * Why the user can't restore this project by hand: its project source
+ * archived it, so the next sync would archive it again (#505).
+ */
+export function getProjectRestoreRefusal(
+  project: LocalProject,
+  projectSources: Readonly<Record<string, LocalProjectSource>> | undefined,
+): string | undefined {
+  if (project.status !== "archived") return undefined;
+  const label = sourceLabelOf(project, projectSources);
+  if (project.archivedBySource) return `${label} marks this project complete.`;
+  if (project.archivedByMissingSync) {
+    return `This project is no longer in ${label}.`;
+  }
+  return undefined;
+}
+
+/** Why the user can't restore this task by hand: its source archived it. */
+export function getTaskRestoreRefusal(
+  project: LocalProject,
+  task: LocalProjectTask,
+  projectSources: Readonly<Record<string, LocalProjectSource>> | undefined,
+): string | undefined {
+  if (task.status !== "archived") return undefined;
+  const label = sourceLabelOf(project, projectSources);
+  if (task.archivedBySource) return `${label} closed this task.`;
+  if (task.archivedByMissingSync) return `This task is no longer in ${label}.`;
+  return undefined;
+}
+
+/**
+ * The user's Restore of an archived project. A project its source archived
+ * stays archived: the source decides when it comes back.
+ */
+export function restoreProject(
+  projects: LocalProject[],
+  projectId: string,
+  projectSources: Readonly<Record<string, LocalProjectSource>> | undefined,
+): RestoreResult {
+  const project = projects.find((candidate) => candidate._id === projectId);
+  const refusal = project
+    ? getProjectRestoreRefusal(project, projectSources)
+    : undefined;
+  if (refusal) return { projects, refusal };
+  return { projects: updateProject(projects, projectId, { status: "active" }) };
+}
+
+/**
+ * The user's Restore of an archived task. A task its source closed or left
+ * out stays archived.
+ */
+export function restoreProjectTask(
+  projects: LocalProject[],
+  projectId: string,
+  taskId: string,
+  projectSources: Readonly<Record<string, LocalProjectSource>> | undefined,
+  now: () => number,
+): RestoreResult {
+  const project = projects.find((candidate) => candidate._id === projectId);
+  const task = project?.tasks.find((candidate) => candidate._id === taskId);
+  const refusal =
+    project && task
+      ? getTaskRestoreRefusal(project, task, projectSources)
+      : undefined;
+  if (refusal) return { projects, refusal };
+  return {
+    projects: setProjectTaskStatus(projects, projectId, taskId, "active", now),
+  };
 }
 
 /**

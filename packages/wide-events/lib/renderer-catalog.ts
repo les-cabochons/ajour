@@ -468,7 +468,10 @@ export const rendererEvents = {
   "project.create": command(changedProject),
   "project.update": command(changedProject),
   "project.archive": command(changedProject),
-  "project.restore": command(changedProject),
+  /** Refused when the project source archived it: the source decides (#505). */
+  "project.restore": command(changedProject, {
+    reasons: ["archived_by_source"],
+  }),
   "project.favorite": command(changedProject),
   "project.reorder": command({ project: { count: operational<number>() } }),
   "project.import": command(projectImport, {
@@ -493,7 +496,8 @@ export const rendererEvents = {
   "task.create": command(changedTask),
   "task.update": command(changedTask),
   "task.archive": command(changedTask),
-  "task.restore": command(changedTask),
+  /** Refused when the project source closed it or left it out (#505). */
+  "task.restore": command(changedTask, { reasons: ["archived_by_source"] }),
   "task.reorder": command(changedTask),
   "task.pin": command(changedTask),
   "task.favorite": command(changedTask),

@@ -3,6 +3,8 @@ import type { ProjectSourceSnapshot } from "@ajour/shared";
 import { fixtureSnapshot } from "../../../../../packages/example/index.ts";
 import type { LocalProject, LocalProjectTask } from "@/domain/local-state";
 import {
+  restoreProject,
+  restoreProjectTask,
   setProjectTaskStatus,
   updateProject,
   type ProjectFactories,
@@ -395,50 +397,24 @@ describe("syncProjectSource", () => {
     expect(globex.archivedBySource).toBeUndefined();
   });
 
-  it("forgets the source's archive once the user changes the status by hand", () => {
+  it("keeps a hand archive of an active managed project through a sync, and lets the user restore it", () => {
     const first = sync(stateWith([]));
-    const globex = projectNamed(first, "Globex - Internal");
-    // Restored by hand, then archived by hand: the user's archive now.
-    const handled = {
-      ...first,
-      projects: updateProject(
-        updateProject(first.projects, globex._id, { status: "active" }),
-        globex._id,
-        { status: "archived" },
-      ),
-    };
-    const closedTask = projectNamed(first, "Acme - Support").tasks.find(
-      (task) => task.source?.remoteId === "1003",
-    )!;
     const acmeId = projectNamed(first, "Acme - Support")._id;
-    handled.projects = setProjectTaskStatus(
-      setProjectTaskStatus(
-        handled.projects,
-        acmeId,
-        closedTask._id,
-        "active",
-        () => 1,
-      ),
-      acmeId,
-      closedTask._id,
-      "archived",
-      () => 1,
-    );
+    const archived = {
+      ...first,
+      projects: updateProject(first.projects, acmeId, { status: "archived" }),
+    };
 
-    const reopened = sync(
-      handled,
-      snapshot((copy) => {
-        copy.projects[1]!.complete = false;
-        copy.projects[0]!.tasks[2]!.closed = false;
-      }),
-    );
+    const next = sync(archived);
 
-    expect(projectNamed(reopened, "Globex - Internal").status).toBe("archived");
+    const acme = next.projects.find((project) => project._id === acmeId)!;
+    expect(acme.status).toBe("archived");
+    expect(acme.archivedBySource).toBeUndefined();
+    const restored = restoreProject(next.projects, acmeId, next.projectSources);
+    expect(restored.refusal).toBeUndefined();
     expect(
-      projectNamed(reopened, "Acme - Support").tasks.find(
-        (task) => task._id === closedTask._id,
-      )?.status,
-    ).toBe("archived");
+      restored.projects.find((project) => project._id === acmeId)?.status,
+    ).toBe("active");
   });
 
   it("links a task without a source by name, so its time stays, and confirms a Not known yet task", () => {
@@ -498,6 +474,110 @@ describe("syncProjectSource", () => {
       created: 0,
       held: 0,
     });
+  });
+});
+
+describe("a hand restore of what the source archived", () => {
+  it("is refused for a project the source marks complete, and names the source", () => {
+    const first = sync(stateWith([]));
+    const globex = projectNamed(first, "Globex - Internal");
+
+    const restored = restoreProject(
+      first.projects,
+      globex._id,
+      first.projectSources,
+    );
+
+    expect(restored).toEqual({
+      projects: first.projects,
+      refusal: "Example planner marks this project complete.",
+    });
+  });
+
+  it("is refused for a project the source no longer has", () => {
+    const first = sync(stateWith([]));
+    const acmeId = projectNamed(first, "Acme - Support")._id;
+    const gone = sync(
+      first,
+      snapshot((copy) => {
+        copy.projects = copy.projects.slice(1);
+      }),
+    );
+
+    expect(restoreProject(gone.projects, acmeId, gone.projectSources)).toEqual({
+      projects: gone.projects,
+      refusal: "This project is no longer in Example planner.",
+    });
+  });
+
+  it("is refused for a task the source closed, or no longer has", () => {
+    const first = sync(stateWith([]));
+    const acmeId = projectNamed(first, "Acme - Support")._id;
+    const gone = sync(
+      first,
+      snapshot((copy) => {
+        copy.projects[0]!.tasks = copy.projects[0]!.tasks.filter(
+          (task) => task.remoteId !== "1002",
+        );
+      }),
+    );
+    const taskOf = (remoteId: string) =>
+      projectNamed(gone, "Acme - Support").tasks.find(
+        (task) => task.source?.remoteId === remoteId,
+      )!;
+
+    expect(
+      restoreProjectTask(
+        gone.projects,
+        acmeId,
+        taskOf("1003")._id,
+        gone.projectSources,
+        () => 1,
+      ),
+    ).toEqual({
+      projects: gone.projects,
+      refusal: "Example planner closed this task.",
+    });
+    expect(
+      restoreProjectTask(
+        gone.projects,
+        acmeId,
+        taskOf("1002")._id,
+        gone.projectSources,
+        () => 1,
+      ),
+    ).toEqual({
+      projects: gone.projects,
+      refusal: "This task is no longer in Example planner.",
+    });
+  });
+
+  it("restores a task the user archived by hand", () => {
+    const first = sync(stateWith([]));
+    const acmeId = projectNamed(first, "Acme - Support")._id;
+    const login = projectNamed(first, "Acme - Support").tasks[0]!;
+    const archived = setProjectTaskStatus(
+      first.projects,
+      acmeId,
+      login._id,
+      "archived",
+      () => 1,
+    );
+
+    const restored = restoreProjectTask(
+      archived,
+      acmeId,
+      login._id,
+      first.projectSources,
+      () => 1,
+    );
+
+    expect(restored.refusal).toBeUndefined();
+    expect(
+      restored.projects
+        .find((project) => project._id === acmeId)!
+        .tasks.find((task) => task._id === login._id)?.status,
+    ).toBe("active");
   });
 });
 

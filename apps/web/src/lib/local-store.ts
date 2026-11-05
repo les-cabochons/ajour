@@ -244,6 +244,8 @@ import {
   normalizeProject,
   reorderProjects as applyReorderProjects,
   reorderProjectTask as applyReorderProjectTask,
+  restoreProject,
+  restoreProjectTask,
   setProjectFavorite as applySetProjectFavorite,
   setProjectTaskFavorite as applySetProjectTaskFavorite,
   setProjectTaskPinnedSlot as applySetProjectTaskPinnedSlot,
@@ -2021,8 +2023,26 @@ const store = {
       }),
     }));
   },
-  unarchiveProject(projectId: string) {
-    this.updateProject(projectId, { status: "active" });
+  /**
+   * Restores a project. Returns why it stayed archived when its project
+   * source archived it, as a sentence for the user, or undefined.
+   */
+  unarchiveProject(projectId: string): string | undefined {
+    return updateStateWithResult<string | undefined>((state) => {
+      const restored = restoreProject(
+        state.projects,
+        projectId,
+        state.projectSources,
+      );
+      if (restored.refusal) {
+        refuseStoreCommand("archived_by_source");
+        return { state, result: restored.refusal };
+      }
+      return {
+        state: { ...state, projects: restored.projects },
+        result: undefined,
+      };
+    });
   },
   addProjectTask(projectId: string, task: LocalProjectTaskDraft) {
     updateState((state) => ({
@@ -2306,17 +2326,28 @@ const store = {
       ),
     }));
   },
-  unarchiveProjectTask(projectId: string, taskId: string) {
-    updateState((state) => ({
-      ...state,
-      projects: setProjectTaskStatus(
+  /**
+   * Restores a task. Returns why it stayed archived when its project source
+   * closed it or left it out, as a sentence for the user, or undefined.
+   */
+  unarchiveProjectTask(projectId: string, taskId: string): string | undefined {
+    return updateStateWithResult<string | undefined>((state) => {
+      const restored = restoreProjectTask(
         state.projects,
         projectId,
         taskId,
-        "active",
+        state.projectSources,
         Date.now,
-      ),
-    }));
+      );
+      if (restored.refusal) {
+        refuseStoreCommand("archived_by_source");
+        return { state, result: restored.refusal };
+      }
+      return {
+        state: { ...state, projects: restored.projects },
+        result: undefined,
+      };
+    });
   },
   addWorkflowState(name: string, color?: string) {
     return updateStateWithResult((state) => {

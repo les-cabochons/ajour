@@ -23,8 +23,10 @@ export type StoreCommandName = {
 export type StoreCommandUnit<Name extends StoreCommandName = StoreCommandName> =
   Unit<AjourCatalog, Name>;
 
-/** Why a store command was refused: a write refusal, or an Undo's reason. */
-export type StoreCommandReason = ReasonOf<AjourCatalog, "undo.restore">;
+/** Why a store command was refused: a write refusal, or a command's own reason. */
+export type StoreCommandReason = {
+  [Name in StoreCommandName]: ReasonOf<AjourCatalog, Name>;
+}[StoreCommandName];
 
 type ArgsOf<Command> = Command extends (...args: infer Args) => unknown
   ? Args
@@ -190,14 +192,24 @@ export function refuseStoreCommand(reason: StoreCommandReason) {
   const unit = storeCommandUnit();
   if (!unit) return;
   refusals.set(unit, reason);
-  (unit as StoreCommandUnit<"undo.restore">).refuse(reason);
+  refuse(unit, reason);
+}
+
+/**
+ * Refuses `unit` for `reason`. Each command declares its own reasons in the
+ * catalog, and the caller names one of the active command's.
+ */
+function refuse(unit: StoreCommandUnit, reason: StoreCommandReason) {
+  (unit as unknown as { refuse(reason: StoreCommandReason): void }).refuse(
+    reason,
+  );
 }
 
 /** Attaches `error` to `unit`, keeping a refusal it already recorded. */
 function attachError(unit: StoreCommandUnit, error: unknown) {
   const refusal = refusals.get(unit);
   unit.fail(error);
-  if (refusal) (unit as StoreCommandUnit<"undo.restore">).refuse(refusal);
+  if (refusal) refuse(unit, refusal);
 }
 
 /**
