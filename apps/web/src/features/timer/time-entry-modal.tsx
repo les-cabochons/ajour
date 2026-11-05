@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { placeFloatingComposer } from "@/lib/floating-composer";
@@ -75,6 +81,19 @@ export function TimeEntryModal({
     if (isMissing) onClose();
   }, [isMissing, onClose]);
 
+  // Placed once, as the card mounts, before it paints: below the Time
+  // page's day strip, and off the edited entry's row. A new entry has no row.
+  const editsAnEntry = Boolean(entry || runningTimer);
+  const placeComposer = useCallback(
+    (popup: HTMLDivElement | null) => {
+      if (!floating) return;
+      placeFloatingComposer(popup, editsAnEntry ? returnFocusTo : null, {
+        restBelow: document.querySelector("main .day-strip"),
+      });
+    },
+    [floating, editsAnEntry, returnFocusTo],
+  );
+
   if (isMissing) {
     return null;
   }
@@ -113,12 +132,7 @@ export function TimeEntryModal({
         )}
         overlay={!floating}
         showCloseButton={false}
-        // Off the entry's row, so the row stays readable while it is edited.
-        ref={(popup: HTMLDivElement | null) => {
-          // A new entry has no row: it rests in the same place every time.
-          if (floating && (entry || runningTimer))
-            placeFloatingComposer(popup, returnFocusTo);
-        }}
+        ref={placeComposer}
         finalFocus={
           floating
             ? () =>
