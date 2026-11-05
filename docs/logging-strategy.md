@@ -37,7 +37,7 @@ user can turn on a local log file (ADR 0014); otherwise they go nowhere.
     unit.
 - **Two kinds of unit always emit their own event**, as a child span of the
   active unit:
-  - a plugin operation, because the worker is its own runtime boundary;
+  - a plugin operation, because the plugin's sandboxed renderer is its own runtime boundary;
   - detached work, which outlives the unit that starts it, such as an agent
     run a request starts, or an agent session a tool call begins.
 - **The active unit** follows the flow. The renderer uses a synchronous scope
@@ -423,7 +423,7 @@ The local API emits these (#305, #306):
 | one `request` per HTTP request        | `serveWithEvent` in `apps/api/src/routes.ts`, named from `ROUTES`                                                 |
 | `mcp.request`, `agent_tool.call`      | `handleMcpRequest` in `apps/api/src/mcp-server.ts`, on the request's event                                        |
 | `mcp_bridge.connection`               | the bridge route's request, which ends when the stream closes                                                     |
-| one `plugin_operation` per worker run | `PluginWorkerLifetime`, for the plugin host and the schema host                                                   |
+| one `plugin_operation` per plugin run | `PluginOperationLifetime`, for the plugin host and the schema host                                                |
 | `plugin.request`                      | `CredentialBroker` in `apps/api/src/credential-broker.ts`, for each request of an API 4 plugin                    |
 | `plugin.suspended`                    | `PluginManager.recordStop` in `apps/api/src/plugin-host.ts`, when a plugin's third stop in 10 minutes suspends it |
 | `api.start`, `api.stop`               | `startAppApiServer` and `stopAppApiServer` in `apps/api/src/server.ts`                                            |
@@ -467,7 +467,7 @@ The local API emits these (#305, #306):
   counts or a connection's field count. A failed plugin call goes through
   `recordPluginFailure`, so the request ends with the same outcome and
   reason as its plugin operation: a refusal or a cancellation with its
-  reason, a `timeout`, a worker failure (`plugin_error`, `exited_early`,
+  reason, a `timeout`, a failure of the run (`plugin_error`, `exited_early`,
   `result_too_large`) with the plugin's message scrubbed of the
   connection's secrets, or `invalid_result` by its type and code. It is
   typed against the catalog, so a route's event that lacks one of these
@@ -503,12 +503,12 @@ The local API emits these (#305, #306):
 
 ### Plugin operations
 
-Each worker run in the plugin host and the schema host emits one
+Each plugin run in the plugin host and the schema host emits one
 `plugin_operation` event, named from the host's table of plugin methods, as
 a child span of the request that started it, with its trigger. It carries
 the plugin's ID, version, source and API version, the connection, the method
 and its capability, the host's other operations at admission, the
-preparation and worker durations, the timeout and the result's size. What
+preparation and run durations, the timeout and the result's size. What
 the method requires of the plugin, such as its capability, is checked inside
 the operation, so a refusal there has its event too. It ends with its own
 reason:
@@ -843,7 +843,7 @@ with the renderer's entries from `renderer-catalog.ts`), the kinds it
 allows, and what emits it:
 
 - a **route** of the local API (`ROUTES`);
-- a **plugin method**, whose worker run is named from the plugin host's or
+- a **plugin method**, whose plugin run is named from the plugin host's or
   the schema host's table;
 - an **IPC channel** of the main process (`IPC_CHANNELS`);
 - a renderer **store command** (`STORE_COMMANDS`);

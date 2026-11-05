@@ -28,10 +28,7 @@ import {
   fillTemplate,
   listTemplateSlots,
 } from "../../../../packages/shared/agent-task-templates.ts";
-import {
-  PLUGIN_API_4,
-  type AgentTaskMcpTool,
-} from "../../../../packages/shared/plugin-api-4.ts";
+import type { AgentTaskMcpTool } from "../../../../packages/shared/plugin-api-4.ts";
 import type { AjourCatalog } from "../../../../packages/wide-events/catalog.ts";
 import {
   errorIdentity,
@@ -103,7 +100,7 @@ interface RunnerPlugins {
       apiVersion: number;
       displayName: string;
       capabilities: {
-        // An API 4 task declares its MCP tools; an API 3 one declares none.
+        // A task declares its MCP tools.
         agentTask?: {
           tasks: (AgentTask & { tools?: readonly AgentTaskMcpTool[] })[];
         };
@@ -212,10 +209,7 @@ interface SessionEnding {
 /** A task as the runner sees it: what Settings shows, and what a run needs. */
 interface RunnerTask {
   status: AgentTaskStatus;
-  /**
-   * The data tools its run's MCP client is limited to. Without it, every
-   * tool, as for an API 3 task.
-   */
+  /** The data tools its run's MCP client is limited to. */
   tools?: readonly AgentTaskMcpTool[];
   /** Its settings marked secret, which never reach the agent. */
   secretSettings: readonly { id: string; label: string }[];
@@ -394,12 +388,9 @@ export class AgentRunner {
               : {}),
             blockers,
           },
-          // An API 4 task's run gets only the tools it declares, and none
-          // if it somehow declares no list. API 3 tasks keep every tool
-          // until they move to API 4 (#402).
-          ...(plugin.apiVersion === PLUGIN_API_4
-            ? { tools: task.tools ?? [] }
-            : {}),
+          // A task's run gets only the tools it declares, and none if it
+          // somehow declares no list.
+          tools: task.tools ?? [],
           secretSettings,
         });
       }

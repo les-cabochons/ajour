@@ -1112,7 +1112,7 @@ describe("state files from earlier versions", () => {
   }
 
   const emptyCurrentState = {
-    version: 9,
+    version: 10,
     connections: [],
     stagedImports: [],
     dismissedImportKeys: [],

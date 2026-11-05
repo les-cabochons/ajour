@@ -1,12 +1,13 @@
 # Schema API
 
+Plugin API 4 runs in the desktop sandbox. See [Runtime](/developers/runtime) for the broker, credential rules and G2 limits.
+
 A schema maps another tool's files to Ajour's projects and tasks, and can map them back. Ajour owns the files: it reads and writes the Excel workbook. On import, the schema gets every worksheet as rows of cells and returns projects. On export, it gets projects and returns rows for the datasets it declares. It never sees a file and never stores anything.
 
-The schema API is version 1, separate from plugin API version 3.
-
-::: warning Not installable yet
-Ajour cannot install packaged schema plugins yet. It loads them only from the `plugins/` folder at the root of an Ajour checkout, in development. The [Workday](/plugins/workday) schema is the only one so far, and it is not released. Expect this page to change when installation lands.
-:::
+The dataset contract is version 1, inside a plugin API 4 package. Desktop
+installs schema packages through the same archive and source flow as other
+plugins. The schema runs in its own sandboxed renderer, without network access
+or connection fields. Legacy data shape API 1 packages cannot execute.
 
 ## Manifest
 
@@ -14,7 +15,7 @@ Ajour cannot install packaged schema plugins yet. It loads them only from the `p
 {
   "id": "acme-projects",
   "version": "1.0.0",
-  "apiVersion": 1,
+  "apiVersion": 4,
   "displayName": "Acme",
   "description": "Map projects and tasks to the Acme layout.",
   "iconSvg": "<svg …>…</svg>",

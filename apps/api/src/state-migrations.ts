@@ -268,6 +268,71 @@ function toVersion9(state: StoredStateRecord): StoredStateRecord {
   };
 }
 
+const GITHUB_COM = "https://github.com";
+
+/**
+ * Whether the saved address is GitHub.com in a form plugin API 3 accepted
+ * and normalized to its HTTPS API but the API 4 manifest cannot express:
+ * `github.com` or `www.github.com`, in any case, scheme, port or path.
+ */
+function isLegacyGitHubComAddress(address: unknown) {
+  if (typeof address !== "string" || address === GITHUB_COM) return false;
+  try {
+    const { hostname } = new URL(address.trim());
+    return hostname === "github.com" || hostname === "www.github.com";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Version 10 is the cut-over to plugin API 4 (#403). API 3 read a saved
+ * GitHub.com address of any of those forms as GitHub.com. API 4's broker
+ * keeps the scheme and host the user saved, and its manifest schema lets a
+ * rule match only the host itself or its subdomains, so `www.github.com`,
+ * `http://github.com` and the rest would no longer reach `api.github.com`.
+ * Each such address of the official GitHub plugin's connections becomes
+ * `https://github.com`, once. A connection keeps everything else, tracked
+ * items included. GitHub Enterprise addresses and other plugins' connections
+ * stay as they are, and so do the connections of a plugin of that id that
+ * came from another plugin source.
+ */
+function toVersion10(state: StoredStateRecord): StoredStateRecord {
+  if (!Array.isArray(state.connections)) return state;
+  const origins =
+    typeof state.pluginOrigins === "object" && state.pluginOrigins !== null
+      ? (state.pluginOrigins as Record<string, unknown>)
+      : {};
+  const origin = origins.github as
+    { kind?: unknown; official?: unknown } | undefined;
+  if (origin?.kind === "source" && origin.official !== true) return state;
+  return {
+    ...state,
+    connections: state.connections.map((connection: unknown) => {
+      const saved = connection as {
+        pluginId?: unknown;
+        config?: { hostUrl?: unknown };
+        configSummary?: { host?: unknown };
+      } | null;
+      if (
+        saved?.pluginId !== "github" ||
+        !isLegacyGitHubComAddress(saved.config?.hostUrl)
+      ) {
+        return connection;
+      }
+      const summary = saved.configSummary;
+      return {
+        ...saved,
+        config: { ...saved.config, hostUrl: GITHUB_COM },
+        ...(typeof summary?.host === "string" &&
+        /^(?:www\.)?github\.com(?::\d+)?$/iu.test(summary.host)
+          ? { configSummary: { ...summary, host: "github.com" } }
+          : {}),
+      };
+    }),
+  };
+}
+
 /** Every step, in order. The last one's version is the current one. */
 export const STATE_MIGRATIONS: readonly StateMigration[] = [
   { version: 2, migrate: toVersion2 },
@@ -284,6 +349,8 @@ export const STATE_MIGRATIONS: readonly StateMigration[] = [
   },
   // Connections read only until the user allows more (#395).
   { version: 9, migrate: toVersion9 },
+  // The official GitHub plugin's saved addresses, for API 4 (#403).
+  { version: 10, migrate: toVersion10 },
 ];
 
 /** The version this build writes. */

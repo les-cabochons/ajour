@@ -202,7 +202,7 @@ describe("an API 4 plugin through the real broker", () => {
       .__fixtureJiraNormalize;
   });
 
-  async function setup() {
+  async function setup(source = PLUGIN_SOURCE) {
     const root = await mkdtemp(path.join(os.tmpdir(), "ajour-api4-sync-"));
     tempDirs.push(root);
     const pluginDirectory = path.join(root, "fixture-jira");
@@ -211,7 +211,7 @@ describe("an API 4 plugin through the real broker", () => {
       path.join(pluginDirectory, "plugin.json"),
       JSON.stringify(MANIFEST),
     );
-    await writeFile(path.join(pluginDirectory, "plugin.mjs"), PLUGIN_SOURCE);
+    await writeFile(path.join(pluginDirectory, "plugin.mjs"), source);
     const service = await startFixtureService();
     services.push(service);
     const sink = createRecordingSink<AjourEvent>();
@@ -280,7 +280,7 @@ describe("an API 4 plugin through the real broker", () => {
       body: JSON.stringify({ trigger: "auto", workItems: [] }),
     });
 
-    expect(synced.status).toBe(200);
+    expect(synced.status, JSON.stringify(synced.body)).toBe(200);
     expect(synced.body).toMatchObject({
       mode: "backlog",
       items: [
@@ -390,6 +390,95 @@ describe("an API 4 plugin through the real broker", () => {
       await new AppApiStorage(statePath).listConnections("fixture-jira"),
     );
     for (const form of tokenForms) expect(stored).not.toContain(form);
+  });
+
+  describe("when the plugin got hold of the token anyway", () => {
+    // Two layers scrub a plugin's words: the broker, from what the service
+    // sends back, and the host, from the connection's secrets, read from the
+    // vault only for the moment of the scrub. This plugin was handed the
+    // token by the test, as if the broker's scrub had been bypassed, and
+    // puts it in its error and in a field message. Only the host's scrub is
+    // left to keep it out.
+    const LEAKING_SOURCE = `
+export async function validateConnection(connection) {
+  return { normalizedConfig: connection.config, connectionSummary: {} };
+}
+export async function syncConnection(connection, workItems) {
+  const token = globalThis.__leakedToken;
+  if (workItems.length > 0) {
+    return { items: [], workItemUpdates: [{
+      localWorkItemId: workItems[0].localWorkItemId,
+      sourceId: workItems[0].sourceId,
+      fields: { remainingEstimateHours: { status: "error", message: "PATCH failed with token " + token } },
+    }] };
+  }
+  throw new Error("Sync failed with token " + token + ".");
+}
+`;
+
+    afterEach(() => {
+      delete (globalThis as { __leakedToken?: unknown }).__leakedToken;
+    });
+
+    async function leakingSetup() {
+      (globalThis as { __leakedToken?: string }).__leakedToken = TOKEN;
+      const fixture = await setup(LEAKING_SOURCE);
+      const saved = await saveConnection(
+        fixture.server,
+        fixture.service.baseUrl,
+      );
+      expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+      const connectionId = (saved.body as { connection: { id: string } })
+        .connection.id;
+      return { ...fixture, connectionId };
+    }
+
+    it("scrubs the token from a failed sync's error, its event and the stored error", async () => {
+      const { server, sink, statePath, connectionId } = await leakingSetup();
+
+      const failed = await dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/plugins/fixture-jira/connections/${connectionId}/sync`,
+        body: JSON.stringify({ trigger: "manual", workItems: [] }),
+      });
+
+      expect(failed.status).toBe(502);
+      const error = (failed.body as { error: string }).error;
+      expect(error).toBe("Sync failed with token [secret].");
+      for (const form of tokenForms) {
+        expect(error).not.toContain(form);
+        expect(JSON.stringify(sink.events)).not.toContain(form);
+      }
+      const stored = JSON.stringify(
+        await new AppApiStorage(statePath).listConnections("fixture-jira"),
+      );
+      expect(stored).toContain("Sync failed with token [secret]");
+      for (const form of tokenForms) expect(stored).not.toContain(form);
+    });
+
+    it("scrubs the token from the message a plugin wrote for a field", async () => {
+      const { server, connectionId } = await leakingSetup();
+
+      const synced = await dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/plugins/fixture-jira/connections/${connectionId}/sync`,
+        body: JSON.stringify({
+          trigger: "manual",
+          workItems: [
+            {
+              localWorkItemId: "local-1",
+              sourceId: "OPEN-1",
+              remainingEstimateHours: 2,
+            },
+          ],
+        }),
+      });
+
+      expect(synced.status, JSON.stringify(synced.body)).toBe(200);
+      const text = JSON.stringify(synced.body);
+      expect(text).toContain("PATCH failed with token [secret]");
+      for (const form of tokenForms) expect(text).not.toContain(form);
+    });
   });
 
   it("refuses a loopback service for a connection not marked on-premises, and records the blocked attempt", async () => {

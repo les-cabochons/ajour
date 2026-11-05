@@ -8,14 +8,12 @@ import { createApiEvents } from "./events.ts";
 import { PluginManager } from "./plugin-host.ts";
 import {
   settledRun,
-  SplitPluginRuntime,
   type PluginInvocation,
   type PluginRun,
   type PluginRunOutcome,
   type PluginRuntime,
   type PluginTerminateReason,
 } from "./plugin-runtime.ts";
-import { WorkerPluginRuntime } from "./plugin-worker-runtime.ts";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
 import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 
@@ -26,6 +24,7 @@ function recordingRuntime() {
   const runtime = new InProcessPluginRuntime();
   const invocations: PluginInvocation[] = [];
   const recording: PluginRuntime = {
+    runsPluginApi4: true,
     start(invocation): PluginRun {
       invocations.push(invocation);
       return runtime.start(invocation);
@@ -68,7 +67,7 @@ describe("plugin runtime port", () => {
       JSON.stringify({
         id: "github",
         version: "1.2.0",
-        apiVersion: 3,
+        apiVersion: 4,
         displayName: "GitHub",
         description: "Test plugin.",
         iconSvg: ICON,
@@ -104,7 +103,7 @@ describe("plugin runtime port", () => {
   it("runs a plugin's operations in process, with the plugin id and its package", async () => {
     const { root, directory } = await createPlugin(
       [
-        "export async function validateConnection(config, context) {",
+        "export async function validateConnection({ config }, context) {",
         "  return { normalizedConfig: config, connectionSummary: { capabilities: context.capabilities.join(',') } };",
         "}",
         "export async function syncPullRequests(connection, request) {",
@@ -122,7 +121,7 @@ describe("plugin runtime port", () => {
         { capabilities: ["codeHost"] },
       ),
     ).resolves.toEqual({
-      normalizedConfig: { token: "token-value" },
+      normalizedConfig: {},
       connectionSummary: { capabilities: "codeHost" },
     });
     await expect(
@@ -131,18 +130,32 @@ describe("plugin runtime port", () => {
       }),
     ).resolves.toMatchObject({ pullRequests: [] });
 
-    expect(invocations).toEqual([
+    expect(invocations.map(({ broker, lifecycle, ...rest }) => rest)).toEqual([
       {
         pluginId: "github",
         packageDirectory: directory,
         entrypoint: "lib/plugin.mjs",
-        apiVersion: 3,
+        apiVersion: 4,
         method: "validateConnection",
-        args: [{ token: "token-value" }, { capabilities: ["codeHost"] }],
+        args: [
+          expect.objectContaining({
+            pluginId: "github",
+            config: {},
+            access: [],
+          }),
+          { capabilities: ["codeHost"] },
+        ],
       },
       expect.objectContaining({
         method: "syncPullRequests",
-        args: [connection, { tracked: [] }],
+        args: [
+          expect.objectContaining({
+            id: connection.id,
+            config: {},
+            access: [],
+          }),
+          { tracked: [] },
+        ],
       }),
     ]);
     expect(manager.activeOperationCount).toBe(0);
@@ -231,10 +244,7 @@ describe("plugin runtime port", () => {
     ]);
   });
 
-  it.each([
-    ["the worker runtime", () => new WorkerPluginRuntime()],
-    ["the in-process runtime", () => new InProcessPluginRuntime()],
-  ])(
+  it.each([["the in-process runtime", () => new InProcessPluginRuntime()]])(
     "%s calls the export with its arguments and reports how it settled",
     async (_, createRuntime) => {
       const { directory } = await createPlugin(
@@ -253,7 +263,7 @@ describe("plugin runtime port", () => {
         pluginId: "github",
         packageDirectory: directory,
         entrypoint: "lib/plugin.mjs",
-        apiVersion: 3,
+        apiVersion: 4,
       };
       const settle = async (method: string, args: unknown[] = []) => {
         const run = runtime.start({ ...invocation, method, args });
@@ -303,7 +313,7 @@ describe("plugin runtime port", () => {
       JSON.stringify({
         id: "workday-project-data",
         version: "1.0.0",
-        apiVersion: 1,
+        apiVersion: 4,
         displayName: "Workday",
         iconSvg: ICON,
         entrypoint: "plugin.mjs",
@@ -444,7 +454,7 @@ describe("the runtime port's endings", () => {
       JSON.stringify({
         id: "github",
         version: "1.0.0",
-        apiVersion: 3,
+        apiVersion: 4,
         displayName: "GitHub",
         description: "Test plugin.",
         iconSvg: ICON,
@@ -529,7 +539,7 @@ describe("the runtime port's endings", () => {
     const { runtime, runs } = scriptedRuntime({
       unavailable: () => "Ajour was started with --no-sandbox.",
     });
-    const split = new SplitPluginRuntime({ api3: runtime, api4: runtime });
+    const split = runtime;
     const { manager, sink } = await setup(split);
 
     await expect(
@@ -545,73 +555,5 @@ describe("the runtime port's endings", () => {
       outcome: "refused",
       outcome_reason: "runtime_unavailable",
     });
-  });
-});
-
-describe("the split runtime", () => {
-  const invocation = {
-    pluginId: "github",
-    packageDirectory: "/plugins/github",
-    entrypoint: "plugin.mjs",
-    method: "syncConnection",
-    args: [],
-  };
-
-  it("runs API 3 packages on one runtime and API 4 packages on the sandboxed one", () => {
-    const api3 = scriptedRuntime();
-    const api4 = scriptedRuntime({ unavailable: () => undefined });
-    const split = new SplitPluginRuntime({
-      api3: { start: api3.runtime.start },
-      api4: api4.runtime,
-    });
-
-    split.start({ ...invocation, apiVersion: 3 });
-    split.start({ ...invocation, apiVersion: 4 });
-
-    expect(split.runsPluginApi4).toBe(true);
-    expect(split.unavailableReason()).toBeUndefined();
-    expect(api3.runs.map((run) => run.invocation.apiVersion)).toEqual([3]);
-    expect(api4.runs.map((run) => run.invocation.apiVersion)).toEqual([4]);
-  });
-
-  it("runs no plugin, API 3 included, while the sandboxed runtime can't", async () => {
-    let reason: string | undefined = "Plugins run only on Windows and macOS.";
-    const api3 = scriptedRuntime();
-    const api4 = scriptedRuntime({ unavailable: () => reason });
-    const split = new SplitPluginRuntime({
-      api3: api3.runtime,
-      api4: api4.runtime,
-    });
-
-    for (const apiVersion of [3, 4]) {
-      await expect(
-        split.start({ ...invocation, apiVersion }).settled,
-      ).resolves.toEqual({
-        ok: false,
-        failure: "runtime_unavailable",
-        reason: "Plugins run only on Windows and macOS.",
-      });
-    }
-    expect(api3.runs.length + api4.runs.length).toBe(0);
-
-    reason = undefined;
-    split.start({ ...invocation, apiVersion: 3 });
-    expect(api3.runs).toHaveLength(1);
-  });
-
-  it("hands the runtimes the API they report blocked attempts to", () => {
-    const attached: unknown[] = [];
-    const host = { recordBlocked: async () => undefined };
-    const split = new SplitPluginRuntime({
-      api3: { start: () => settledRun({ ok: true, result: null }) },
-      api4: {
-        start: () => settledRun({ ok: true, result: null }),
-        attach: (given) => attached.push(given),
-      },
-    });
-
-    split.attach(host);
-
-    expect(attached).toEqual([host]);
   });
 });

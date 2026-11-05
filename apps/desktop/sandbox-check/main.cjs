@@ -291,10 +291,12 @@ async function main() {
     developmentPluginDirectories: [
       path.join(FIXTURES, "fixture-tracker"),
       path.join(FIXTURES, "fixture-escape"),
+      // The plugin host holds the data shape too, and gates it.
+      path.join(FIXTURES, "fixture-shape"),
     ],
     projectDataShapePluginDirectories: [path.join(FIXTURES, "fixture-shape")],
     allowDevelopmentPlugins: true,
-    pluginApi4Runtime: runtime,
+    pluginRuntime: runtime,
     brokerActivityWindowMs: 0,
   });
   const request = (method, url, body) =>

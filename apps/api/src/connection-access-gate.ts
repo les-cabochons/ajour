@@ -20,7 +20,7 @@ import {
 import {
   PluginOperationCancelled,
   PluginOperationRefused,
-} from "./plugin-worker-lifetime.ts";
+} from "./plugin-operation-lifetime.ts";
 
 /** An operation the connection's access doesn't allow, refused or cancelled. */
 export class ConnectionAccessOff extends PluginOperationRefused {

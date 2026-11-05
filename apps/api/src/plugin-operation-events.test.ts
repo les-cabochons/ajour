@@ -1,3 +1,4 @@
+import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 import os from "node:os";
 import path from "node:path";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -6,7 +7,7 @@ import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import { createApiEvents } from "./events.ts";
 import { PluginManager } from "./plugin-host.ts";
-import { PluginOperationRefused } from "./plugin-worker-lifetime.ts";
+import { PluginOperationRefused } from "./plugin-operation-lifetime.ts";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
 
 const ICON = "<svg viewBox='0 0 16 16'><path d='M0 0h16v16H0z' /></svg>";
@@ -35,7 +36,7 @@ async function fixturePlugin(body: string) {
     JSON.stringify({
       id: "jira",
       version: "1.2.3",
-      apiVersion: 3,
+      apiVersion: 4,
       displayName: "Jira",
       description: "Test plugin.",
       iconSvg: ICON,
@@ -69,6 +70,7 @@ async function pluginHost(
   const sink = createRecordingSink<AjourEvent>();
   const events = createApiEvents({ sink, userDataPath: root });
   const host = new PluginManager({
+    runtime: new InProcessPluginRuntime(),
     installedPluginDirectory: path.join(root, "installed"),
     developmentPluginDirectories: [directory],
     allowDevelopmentPlugins: true,
@@ -121,7 +123,7 @@ describe("plugin operation events", () => {
           id: "jira",
           version: "1.2.3",
           source: "development",
-          api_version: 3,
+          api_version: 4,
         },
         connection: { id: "connection-1" },
         worker: {
@@ -326,7 +328,19 @@ describe("plugin operation events", () => {
   });
 
   it("records a worker that exits before it answers", async () => {
-    const { host, logged } = await pluginHost("process.exit(3);");
+    const { host, logged } = await pluginHost("", {
+      runtime: {
+        runsPluginApi4: true,
+        start: () => ({
+          settled: Promise.resolve({
+            ok: false,
+            failure: "exited_early",
+            exitCode: 3,
+          }),
+          terminate: async () => {},
+        }),
+      },
+    });
 
     await expect(host.syncConnection("jira", connection)).rejects.toThrow(
       "exited before returning a result",
@@ -340,7 +354,7 @@ describe("plugin operation events", () => {
     ]);
   });
 
-  it("records a plugin error, scrubbed of the connection's secrets", async () => {
+  it("records a plugin error without giving the plugin its connection's secrets", async () => {
     const { host, logged } = await pluginHost(
       "throw new Error(`Rejected token ${connection.config.token}`);",
     );
@@ -355,7 +369,7 @@ describe("plugin operation events", () => {
         outcome_reason: "plugin_error",
         error: expect.objectContaining({
           type: "Error",
-          message: "Rejected token [secret]",
+          message: "Rejected token undefined",
         }),
       }),
     ]);
@@ -372,7 +386,7 @@ describe("plugin operation events", () => {
       JSON.stringify({
         id: "workday",
         version: "2.0.0",
-        apiVersion: 1,
+        apiVersion: 4,
         displayName: "Workday",
         description: "Test schema.",
         iconSvg: ICON,
@@ -404,6 +418,7 @@ describe("plugin operation events", () => {
     );
     const sink = createRecordingSink<AjourEvent>();
     const host = new ProjectDataShapePluginManager({
+      runtime: new InProcessPluginRuntime(),
       pluginDirectories: [directory],
       events: createApiEvents({ sink, userDataPath: root }),
     });
@@ -439,7 +454,7 @@ async function schemaHost(body: string) {
     JSON.stringify({
       id: "workday",
       version: "2.0.0",
-      apiVersion: 1,
+      apiVersion: 4,
       displayName: "Workday",
       description: "Test schema.",
       iconSvg: ICON,
@@ -471,6 +486,7 @@ async function schemaHost(body: string) {
   );
   const sink = createRecordingSink<AjourEvent>();
   const host = new ProjectDataShapePluginManager({
+    runtime: new InProcessPluginRuntime(),
     pluginDirectories: [directory],
     events: createApiEvents({ sink, userDataPath: root }),
   });

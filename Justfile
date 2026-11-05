@@ -137,6 +137,18 @@ desktop-package:
     echo >&2 "[1/1] Packaging the desktop app for this host"
     {{PNPM}} package:desktop
 
+[doc("Packages the test-only official-plugin release check for this host")]
+[group("qa")]
+plugin-release-package:
+    node apps/desktop/scripts/run-renderer.cjs build
+    node apps/desktop/scripts/prepare-internal-api.cjs
+    {{PNPM}} --filter @ajour/desktop exec electron-builder --config=plugin-release.config.cjs --dir --publish=never
+
+[doc("Runs the packaged six-plugin check with AJOUR_PLUGINS_CHECKOUT, AJOUR_PLUGINS_COMMIT and AJOUR_PLUGIN_RELEASE_EXECUTABLE")]
+[group("qa")]
+plugin-release-check:
+    node apps/desktop/scripts/check-plugin-release.mjs
+
 [doc("Creates the desktop app distributable for this host")]
 [group("app")]
 desktop-make:

@@ -1,3 +1,4 @@
+import { STATE_VERSION } from "./state-migrations.ts";
 import os from "node:os";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
@@ -141,7 +142,7 @@ describe("local API lifecycle events", () => {
           found: true,
           bytes: expect.any(Number),
           version_from: 2,
-          version_to: 9,
+          version_to: STATE_VERSION,
         },
       }),
     ]);
@@ -214,7 +215,10 @@ describe("local API lifecycle events", () => {
     expect(named(events, "storage.load")).toEqual([
       expect.objectContaining({
         outcome: "ok",
-        storage: expect.objectContaining({ found: true, version_to: 9 }),
+        storage: expect.objectContaining({
+          found: true,
+          version_to: STATE_VERSION,
+        }),
       }),
     ]);
   });

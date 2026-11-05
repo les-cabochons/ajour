@@ -6,6 +6,7 @@ import type {
 } from "@ajour/shared";
 import {
   describeAccess,
+  describeAccessIntro,
   describeBlockedAttempts,
   describeRefusedRequests,
   FIRST_LIMITED_PLUGIN_API,
@@ -386,6 +387,31 @@ describe("which plugins list their access", () => {
     expect(hasListedAccess(group(FIRST_LIMITED_PLUGIN_API, true))).toBe(true);
     expect(hasListedAccess(group(FIRST_LIMITED_PLUGIN_API, false))).toBe(false);
     expect(hasListedAccess(group(3, true))).toBe(false);
+  });
+});
+
+describe("what the Access section says first", () => {
+  const LIMIT =
+    "Ajour runs its code in a sandbox where its only way out is a request through Ajour, and limits every request to what is listed here.";
+  const EXCEPTION =
+    "Its agent tasks are the exception: a coding agent outside Ajour carries them out, and the list doesn't limit what that agent does.";
+
+  it("says Ajour limits a plugin's requests to the list", () => {
+    const text = describeAccessIntro({ listed: true, hasAgentTasks: false });
+    expect(text).toBe(`What this plugin can reach. ${LIMIT}`);
+  });
+
+  it("does not say the list limits the agent that carries out an agent task", () => {
+    const text = describeAccessIntro({ listed: true, hasAgentTasks: true });
+    expect(text).toBe(`What this plugin can reach. ${LIMIT} ${EXCEPTION}`);
+  });
+
+  it("says a plugin on an older plugin API needs an update, whatever its tasks", () => {
+    for (const hasAgentTasks of [false, true]) {
+      expect(describeAccessIntro({ listed: false, hasAgentTasks })).toBe(
+        "This plugin was built for an older plugin API, so Ajour doesn't run it. It needs an update.",
+      );
+    }
   });
 });
 

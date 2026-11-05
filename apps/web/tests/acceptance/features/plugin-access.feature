@@ -25,6 +25,18 @@ Feature: Access review on the plugin page
     And the Access section says "Ajour adds it to each request. The plugin never sees it."
     And the Access section says "Gets these Ajour tools: get_week_status."
 
+  Scenario: A plugin with agent tasks says a coding agent outside the sandbox carries them out
+    Given an installed Tracker plugin on plugin API 4
+    When I open the Tracker plugin page
+    Then the Access section says "limits every request to what is listed here"
+    And the Access section says "Its agent tasks are the exception: a coding agent outside Ajour carries them out, and the list doesn't limit what that agent does."
+
+  Scenario: A plugin without agent tasks does not make that exception
+    Given an installed Tracker plugin on plugin API 4 without agent tasks
+    When I open the Tracker plugin page
+    Then the Access section says "limits every request to what is listed here"
+    And the Access section does not say "Its agent tasks are the exception"
+
   Scenario: The endpoints of a host sit behind a disclosure
     Given an installed Tracker plugin on plugin API 4
     When I open the Tracker plugin page
@@ -55,15 +67,13 @@ Feature: Access review on the plugin page
     Then the Access section says "Not used yet."
     And the Access section shows no blocked attempts
 
-  Scenario: A plugin on an older plugin API says Ajour cannot limit it
+  Scenario: A plugin on an older plugin API says it needs an update
     Given an installed Tracker plugin on plugin API 3
     When I open the Tracker plugin page
-    Then the Access section says "This plugin was built for an older plugin API, so Ajour can't limit it. Update it to move it onto one that does."
-    And the Access section lists these lines
-      | line                              |
-      | Any address                       |
-      | Each connection's saved settings  |
-      | Enter the week                    |
+    Then the Access section says "This plugin was built for an older plugin API, so Ajour doesn't run it. It needs an update."
+    And the Access section lists no lines
+    And the Access section does not say "Last used"
+    And the Access section does not say "Its agent tasks are the exception"
 
   Scenario: An update that reaches more waits for the user to allow it
     Given a Tracker update 1.1.0 that reaches more and waits for consent

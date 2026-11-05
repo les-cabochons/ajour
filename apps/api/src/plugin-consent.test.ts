@@ -179,9 +179,7 @@ describe("consent on plugin installs and updates", () => {
       ...(options.events ? { eventSink: options.events } : {}),
       ...windowServerOptions,
       vault: options.vault ?? new MemorySecretVault(),
-      ...(options.inProcess
-        ? { pluginRuntime: new InProcessPluginRuntime() }
-        : {}),
+      pluginRuntime: new InProcessPluginRuntime(),
       statePath: path.join(root, "state.json"),
       installedPluginDirectory: path.join(root, "installed"),
       developmentPluginDirectories: options.developmentPluginDirectories ?? [],

@@ -15,7 +15,7 @@ import { Chip } from "@/components/ui/chip";
 import {
   describeAccess,
   describeBlockedAttempts,
-  describeLegacyAccess,
+  describeAccessIntro,
   describeRefusedRequests,
   FIRST_LIMITED_PLUGIN_API,
   hasListedAccess,
@@ -131,8 +131,8 @@ function AccessList({ items, label }: { items: AccessItem[]; label: string }) {
  * The Access section of an installed plugin's page, before Features: what it
  * reaches, its credential, its agent tasks and its start mode, then the
  * broker's last request and any attempt to connect directly. A plugin built
- * for plugin API 3 lists what it can do without limits, because nothing
- * declares otherwise. An update waiting for consent marks what is new.
+ * for plugin API 3 never runs, so it lists nothing and says it needs an
+ * update. An update waiting for consent marks what is new.
  */
 export function PluginAccessSection({
   group,
@@ -148,7 +148,7 @@ export function PluginAccessSection({
       ? describeAccess(group.access, labels, {
           difference: group.pendingAccess?.difference,
         })
-      : describeLegacyAccess(labels);
+      : [];
   const refused = describeRefusedRequests(group.accessActivity, now);
   const blocked = describeBlockedAttempts(group.accessActivity, now);
 
@@ -158,19 +158,19 @@ export function PluginAccessSection({
         Access
       </h2>
       <p className="settings-section-desc">
-        {/* Only what holds before the cut-over (#403): until plugins run in
-            their sandbox, the broker limits the requests it is asked to
-            send, not every way out. */}
-        {listed
-          ? "What this plugin can reach. Requests it makes through Ajour are limited to what is listed here."
-          : "This plugin was built for an older plugin API, so Ajour can't limit it. Update it to move it onto one that does."}
+        {describeAccessIntro({
+          listed,
+          hasAgentTasks: labels.tasks.length > 0,
+        })}
       </p>
       {listed ? (
-        <p className="text-sm text-muted-foreground" data-access-activity>
-          {describeLastUse(group.accessActivity?.lastRequestAt, now)}.
-        </p>
+        <>
+          <p className="text-sm text-muted-foreground" data-access-activity>
+            {describeLastUse(group.accessActivity?.lastRequestAt, now)}.
+          </p>
+          <AccessList items={items} label="Access" />
+        </>
       ) : null}
-      <AccessList items={items} label="Access" />
       {refused ? (
         <ActivityWarning data-access-refused>{refused}</ActivityWarning>
       ) : null}
@@ -242,7 +242,7 @@ export function CatalogAccessSection({
       <p className="settings-section-desc">
         {pluginApiVersion >= FIRST_LIMITED_PLUGIN_API
           ? "The addresses it reaches, the credential it uses, its agent tasks and how it starts are listed here once you download it."
-          : "This plugin is built for an older plugin API, which Ajour can't limit. Its entry lists no addresses."}
+          : "This plugin is built for an older plugin API, which this version of Ajour doesn't run. Its entry lists no addresses."}
       </p>
       {canDownload ? (
         <p className="text-sm text-muted-foreground">

@@ -29,7 +29,7 @@ function entry(
       keyFingerprint: "3f2a 9c1d 77e0 b4a2",
     },
     status: "available",
-    compatibility: { pluginApiVersion: 3 },
+    compatibility: { pluginApiVersion: 4 },
     capabilities,
     features: ["sample"],
     install: { method: "source" },
@@ -151,7 +151,7 @@ describe("catalogOffersUpdate", () => {
   it("skips a package built for another plugin API", () => {
     expect(
       catalogOffersUpdate(
-        entry(["connector"], { compatibility: { pluginApiVersion: 4 } }),
+        entry(["connector"], { compatibility: { pluginApiVersion: 3 } }),
         { version: "1.0.0" },
       ),
     ).toBe(false);

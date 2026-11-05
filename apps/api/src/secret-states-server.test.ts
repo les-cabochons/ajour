@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
-import { createAppApiServer } from "./server.ts";
+import { createAppApiServer, stopAppApiServer } from "./server.ts";
 import { dispatchJsonRequest } from "./test-support/dispatch-json-request.ts";
 import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
@@ -62,6 +62,7 @@ const service = {
           placement: "commit-week",
           prompt: "prompts/enter-week.md",
           estimateMinutes: 5,
+          tools: [],
           settings: [
             { id: "apiKey", label: "API key", type: "password", secret: true },
             { id: "region", label: "Region", type: "text" },
@@ -71,10 +72,11 @@ const service = {
     },
   },
   source: [
-    "export async function validateConnection(config) {",
+    "export async function validateConnection({ config }) {",
     "  return { normalizedConfig: config, connectionSummary: {} };",
     "}",
     "export async function syncConnection(connection) {",
+    "  if (connection.pluginId === 'service') await ajour.http({connectionId:connection.id,method:'GET',path:'/'});",
     // A test holds the call open by setting this promise, to answer late.
     "  if (globalThis.__serviceGate) await globalThis.__serviceGate;",
     "  const status = Number(connection.config.failWith);",
@@ -114,13 +116,29 @@ async function writePlugin(parent: string, plugin: Fixture) {
     JSON.stringify({
       id: plugin.id,
       version: "1.0.0",
-      apiVersion: 3,
+      apiVersion: 4,
       displayName: plugin.id,
       description: "Test plugin.",
       iconSvg: ICON,
       entrypoint: "plugin.mjs",
       capabilities: plugin.capabilities,
       connectionFields: plugin.connectionFields,
+      ...(plugin.id === "service" &&
+      plugin.connectionFields.some(
+        (field) =>
+          "id" in field &&
+          field.id === "token" &&
+          "secret" in field &&
+          field.secret,
+      )
+        ? {
+            network: {
+              auth: { scheme: "bearer", secretField: "token" },
+              baseAddress: { field: "baseUrl" },
+              endpoints: [{ method: "GET", path: "/" }],
+            },
+          }
+        : {}),
     }),
   );
   await writeFile(
@@ -157,7 +175,7 @@ describe("saved secret states", () => {
   const seen: unknown[] = [];
 
   afterEach(async () => {
-    for (const server of servers.splice(0)) server.emit("close");
+    for (const server of servers.splice(0)) await stopAppApiServer(server);
     await Promise.all(
       tempDirs
         .splice(0)
@@ -191,6 +209,17 @@ describe("saved secret states", () => {
       ...windowServerOptions,
       vault,
       pluginRuntime: new InProcessPluginRuntime(),
+      brokerResolver: {
+        resolve: async () => ({ addresses: ["93.184.216.34"] }),
+      },
+      brokerTransport: {
+        send: async () => ({
+          status: 200,
+          headers: {},
+          body: new TextEncoder().encode("{}"),
+          remoteAddress: "93.184.216.34",
+        }),
+      },
       statePath: path.join(directory, "state.json"),
       installedPluginDirectory: path.join(directory, "installed"),
       developmentPluginDirectories: pluginDirectories,

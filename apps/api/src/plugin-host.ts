@@ -1,10 +1,14 @@
 import path from "node:path";
 import {
   PluginOperationRefused,
-  PluginWorkerLifetime,
+  PluginOperationLifetime,
   type PluginCancelReason,
-} from "./plugin-worker-lifetime.ts";
-import { pluginMethodArguments, type PluginMethod } from "./plugin-methods.ts";
+} from "./plugin-operation-lifetime.ts";
+import {
+  pluginMethodArguments,
+  type PluginMethod,
+  type ProjectDataShapeMethod,
+} from "./plugin-methods.ts";
 import type {
   PluginLifecycle,
   PluginRuntime,
@@ -19,7 +23,7 @@ import {
   type PluginStopCause,
   type PluginSuspension,
 } from "../../../packages/shared/plugin-lifecycle.ts";
-import { WorkerPluginRuntime } from "./plugin-worker-runtime.ts";
+import { DesktopRequiredPluginRuntime } from "./plugin-runtime.ts";
 import {
   CALENDAR_EVENTS,
   CODE_HOST_EVENTS,
@@ -123,7 +127,6 @@ import {
   readPlugin,
   uninstallPluginPackage,
   type InstalledPlugin,
-  type PluginAdmissionPolicy,
   type ResolvedPlugin,
   type UnavailablePlugin,
 } from "./plugin-package.ts";
@@ -134,7 +137,7 @@ interface PluginHostOptions {
   bundledPluginArchives?: string[];
   allowDevelopmentPlugins?: boolean;
   requestTimeoutMs?: number;
-  /** What runs plugin code. A worker thread per operation by default. */
+  /** Desktop supplies the sandboxed renderer runtime. Standalone runs nothing. */
   runtime?: PluginRuntime;
   /**
    * Runs once the operation is registered and before its worker starts, and
@@ -147,7 +150,7 @@ interface PluginHostOptions {
    */
   operationGate?: (
     pluginId: string,
-    method: PluginMethod,
+    method: PluginMethod | ProjectDataShapeMethod,
     reaches: PluginAccessSummary,
     connectionId?: string,
     /** The manifest of the package that runs it. */
@@ -172,6 +175,24 @@ interface PluginHostOptions {
   ) => Promise<{ on: boolean; settings: PluginRuntimeSettings }>;
   /** The crash budget's clock. Tests move it. */
   now?: () => number;
+  /**
+   * The secret values of a saved connection, read from the vault, to scrub
+   * a plugin's error in the operation's event. Called only at that moment,
+   * and the values are dropped after: the plugin and the operation's record
+   * never hold them. The broker scrubs what a service sends back; this is
+   * the host's own layer, for a plugin that has a secret and echoes it.
+   */
+  secretValues?: (
+    pluginId: string,
+    connectionId: string,
+    manifest: PluginManifest,
+  ) => Promise<readonly string[]>;
+  /**
+   * How many operations another host runs from this host's packages, such as
+   * the data shape host's. A package change waits for them as for its own,
+   * so no folder is replaced under a run.
+   */
+  outsideOperations?: () => number;
 }
 
 /** What a suspended plugin's calls fail with, at once. */
@@ -344,14 +365,15 @@ export class PluginManager {
   private readonly developmentPluginDirectories: string[];
   private readonly bundledPluginArchives: string[];
   private readonly allowDevelopmentPlugins: boolean;
-  private readonly admission: PluginAdmissionPolicy;
   private readonly operationGate?: PluginHostOptions["operationGate"];
   private readonly events?: ApiEvents;
-  private readonly workers: PluginWorkerLifetime<PluginMethod>;
+  private readonly workers: PluginOperationLifetime<PluginMethod>;
   private readonly runsPluginApi4: boolean;
   private readonly runtime: PluginRuntime;
   private readonly broker: CredentialBrokerPort;
   private readonly pluginState?: PluginHostOptions["pluginState"];
+  private readonly outsideOperations?: () => number;
+  private readonly secretValues?: PluginHostOptions["secretValues"];
   private readonly stops: PluginStopBudget;
   /** The readiness syncs, one after another. */
   private readinessPromise: Promise<void> = Promise.resolve();
@@ -375,17 +397,18 @@ export class PluginManager {
       (archive) => path.resolve(archive),
     );
     this.allowDevelopmentPlugins = options.allowDevelopmentPlugins ?? false;
-    // Development builds admit plugin API 4 until the cut-over (#403).
-    this.admission = { admitPluginApi4: this.allowDevelopmentPlugins };
     this.operationGate = options.operationGate;
     this.events = options.events;
-    const runtime: PluginRuntime = options.runtime ?? new WorkerPluginRuntime();
+    const runtime: PluginRuntime =
+      options.runtime ?? new DesktopRequiredPluginRuntime();
     this.runtime = runtime;
     this.runsPluginApi4 = runtime.runsPluginApi4 === true;
     this.broker = options.broker ?? NO_BROKER;
     this.pluginState = options.pluginState;
+    this.outsideOperations = options.outsideOperations;
+    this.secretValues = options.secretValues;
     this.stops = new PluginStopBudget(options.now);
-    this.workers = new PluginWorkerLifetime({
+    this.workers = new PluginOperationLifetime({
       name: "Plugin",
       events: options.events,
       eventNames: PLUGIN_OPERATION_EVENTS,
@@ -496,8 +519,7 @@ export class PluginManager {
 
   /**
    * Whether plugins can run in their sandbox on this computer, when the
-   * runtime sandboxes them. Undefined for a runtime that doesn't, such as
-   * the worker threads alone.
+   * runtime sandboxes them. Undefined for a runtime that doesn't say.
    */
   sandboxStatus(): PluginSandboxStatus | undefined {
     if (!this.runtime.unavailableReason) return undefined;
@@ -549,6 +571,39 @@ export class PluginManager {
   }
 
   /**
+   * Whether this host would run `method` of the package now, for the data
+   * shape host, which runs the packages this host holds: it throws the
+   * refusal this host would give, with the reason a call's event records.
+   * The checks are the ones a call passes here: the plugin runs on this
+   * computer, it isn't suspended, no package change is under way, and the
+   * activation gate holds (the plugin system, the plugin's switch, unsigned
+   * plugins, and consent to what the package reaches).
+   */
+  async admitPackageOperation(
+    pluginId: string,
+    method: ProjectDataShapeMethod,
+  ): Promise<void> {
+    this.refuseSuspended(pluginId);
+    const plugin = await this.getPlugin(pluginId);
+    this.refuseRuntimeOff();
+    // Discovery awaited, so shutdown or a package change may have started meanwhile.
+    this.assertCanInvoke();
+    if (!plugin.entrypointPath || !plugin.manifest.entrypoint) {
+      throw new PluginOperationRefused(
+        `Plugin "${pluginId}" runs no code.`,
+        "runs_no_code",
+      );
+    }
+    await this.operationGate?.(
+      pluginId,
+      method,
+      plugin.access.summary,
+      undefined,
+      plugin.manifest,
+    );
+  }
+
+  /**
    * `afterInstall` runs before the package change ends, while operations are
    * still refused, so activation state it saves applies before anything can
    * run the new package.
@@ -561,7 +616,10 @@ export class PluginManager {
     this.assertRunning();
     return await this.runPackageMutation(async () => {
       await this.ensureInitialized();
-      if (this.workers.activeOperationCount > 0) {
+      if (
+        this.workers.activeOperationCount + (this.outsideOperations?.() ?? 0) >
+        0
+      ) {
         // The desktop records the install as `busy` from this code.
         throw Object.assign(
           new Error(
@@ -576,7 +634,6 @@ export class PluginManager {
         archiveFilename,
         installRoot: this.installedPluginDirectory,
         replaceExisting: true,
-        policy: this.admission,
       });
       if (installed.backupLeft) {
         this.events?.current()?.count("plugin_backup_failed");
@@ -946,13 +1003,7 @@ export class PluginManager {
         pluginId,
         method,
         async (record) => {
-          // A plugin that keeps stopping runs nothing until it is turned back on.
-          if (this.stops.suspension(pluginId)) {
-            throw new PluginOperationRefused(
-              suspendedMessage(pluginId),
-              "suspended",
-            );
-          }
+          this.refuseSuspended(pluginId);
           const plugin = await this.getPlugin(pluginId);
           record.plugin({
             version: plugin.manifest.version,
@@ -963,15 +1014,32 @@ export class PluginManager {
             connection?.config,
             params.config as PluginFieldValues | undefined,
           ];
-          record.secrets(connectionSecretValues(plugin.manifest, configs));
-          // A worker thread would hand an API 4 plugin its secrets and the
-          // network. It runs only in a runtime that keeps it to the broker.
-          if (isPluginApi4Manifest(plugin.manifest) && !this.runsPluginApi4) {
+          const connectionId =
+            typeof connection?.id === "string" ? connection.id : undefined;
+          // What the operation was given, and, read when the event is
+          // scrubbed, what the vault holds for the saved connection.
+          const scrubWith = (fields: SecretConnectionFields) => {
+            record.secrets(async () => [
+              ...connectionSecretValues(fields, configs),
+              ...(connectionId
+                ? ((await this.secretValues?.(
+                    pluginId,
+                    connectionId,
+                    plugin.manifest,
+                  )) ?? [])
+                : []),
+            ]);
+          };
+          scrubWith(plugin.manifest);
+          // A plugin runs only in a runtime that keeps it to the broker. The
+          // standalone API has none: its answer is the same as the overview's.
+          if (!this.runsPluginApi4) {
             throw new PluginOperationRefused(
-              `Plugin "${pluginId}" uses plugin API 4, which this version of Ajour can't run yet.`,
+              "Plugins need the desktop app",
               "not_supported",
             );
           }
+          this.refuseRuntimeOff();
           requirement?.(plugin.manifest);
           // Discovery awaited, so shutdown or a package change may have started meanwhile.
           this.assertCanInvoke();
@@ -992,8 +1060,7 @@ export class PluginManager {
           );
           const admitted = await admit?.(plugin.manifest);
           // A field the vault holds stays secret after an update unmarks it.
-          if (admitted)
-            record.secrets(connectionSecretValues(admitted, configs));
+          if (admitted) scrubWith(admitted);
           let args: unknown[];
           let lifecycle: PluginLifecycle | undefined;
           if (isPluginApi4Manifest(plugin.manifest)) {
@@ -1015,15 +1082,11 @@ export class PluginManager {
             );
             broker = prepared.broker;
             args = prepared.args;
-          } else if (connection && "access" in connection) {
-            // Access choices are plugin API 4's.
-            const { access: _access, ...api3Connection } = connection;
-            args = pluginMethodArguments(method, {
-              ...params,
-              connection: api3Connection,
-            });
           } else {
-            args = pluginMethodArguments(method, params);
+            throw new PluginOperationRefused(
+              "This plugin needs an update",
+              "not_supported",
+            );
           }
           return {
             invocation: {
@@ -1179,6 +1242,24 @@ export class PluginManager {
     );
   }
 
+  /** A plugin that keeps stopping runs nothing until it is turned back on. */
+  private refuseSuspended(pluginId: string) {
+    if (this.stops.suspension(pluginId)) {
+      throw new PluginOperationRefused(suspendedMessage(pluginId), "suspended");
+    }
+  }
+
+  /** The runtime may run no plugin on this computer, such as without a sandbox. */
+  private refuseRuntimeOff() {
+    const unavailable = this.runtime.unavailableReason?.();
+    if (unavailable) {
+      throw new PluginOperationRefused(
+        `Plugins are turned off: this computer can't run them in a sandbox. ${unavailable}`,
+        "runtime_unavailable",
+      );
+    }
+  }
+
   private assertCanInvoke() {
     this.assertRunning();
     if (this.mutatingPluginPackage) {
@@ -1213,7 +1294,6 @@ export class PluginManager {
       const unavailable = new Map<string, UnavailablePlugin>();
       const installed = await discoverInstalledPlugins(
         this.installedPluginDirectory,
-        this.admission,
       );
 
       for (const plugin of installed.plugins) {
@@ -1227,13 +1307,15 @@ export class PluginManager {
       }
 
       if (this.allowDevelopmentPlugins) {
+        const developmentIds = new Set<string>();
         for (const directory of this.developmentPluginDirectories) {
           try {
-            const plugin = await readPlugin(
-              directory,
-              "development",
-              this.admission,
-            );
+            const plugin = await readPlugin(directory, "development");
+            if (developmentIds.has(plugin.manifest.id)) {
+              this.events?.current()?.count("invalid_plugin");
+              continue;
+            }
+            developmentIds.add(plugin.manifest.id);
             plugins.set(plugin.manifest.id, plugin);
             unavailable.delete(plugin.manifest.id);
           } catch {
@@ -1266,7 +1348,6 @@ export class PluginManager {
   private async installBundledPlugins() {
     const failedBackups = await reconcilePluginInstallRoot(
       this.installedPluginDirectory,
-      this.admission,
     );
     if (failedBackups > 0) {
       this.events?.current()?.count("plugin_backup_failed", failedBackups);
@@ -1279,7 +1360,6 @@ export class PluginManager {
           archiveFilename: path.basename(archivePath),
           installRoot: this.installedPluginDirectory,
           replaceExisting: false,
-          policy: this.admission,
         });
       } catch {
         this.events?.current()?.count("bundled_plugin_failed");

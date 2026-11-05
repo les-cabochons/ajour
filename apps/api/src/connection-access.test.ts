@@ -1,3 +1,4 @@
+import { STATE_VERSION } from "./state-migrations.ts";
 import os from "node:os";
 import path from "node:path";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -7,6 +8,7 @@ import { dispatchJsonRequest } from "./test-support/dispatch-json-request.ts";
 import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 import { MemorySecretVault } from "./test-support/memory-secret-vault.ts";
 import { windowServerOptions } from "./test-support/window-token.ts";
+import { connectionAccessChoicesOf } from "../../../packages/shared/connection-access.ts";
 
 /*
  * Seam 1 of the spec #381 for connection access (#395): the app API with
@@ -21,7 +23,11 @@ const ICON = "<svg viewBox='0 0 16 16' />";
 const MANIFEST = {
   id: "azure_devops",
   version: "1.1.0",
-  apiVersion: 3,
+  apiVersion: 4,
+  connectionAccess: connectionAccessChoicesOf({
+    id: "azure_devops",
+    apiVersion: 3,
+  }),
   displayName: "Azure DevOps",
   iconSvg: ICON,
   entrypoint: "plugin.mjs",
@@ -70,7 +76,7 @@ const record = (method, connection, request) =>
   calls.push({ method, connectionId: connection.id, organizationUrl: connection.config.organizationUrl, request });
 const FIELDS = ["originalEstimateHours", "remainingEstimateHours", "completedEstimateHours"];
 
-export async function validateConnection(config) {
+export async function validateConnection({ config }) {
   return { normalizedConfig: { ...config, ...(globalThis.__adoNormalize ?? {}) }, connectionSummary: {} };
 }
 export async function syncConnection(connection, workItems) {
@@ -648,7 +654,7 @@ describe("connection access", () => {
       connections: { access?: string[] }[];
     };
 
-    expect(saved.version).toBe(9);
+    expect(saved.version).toBe(STATE_VERSION);
     expect(saved.connections[0]!.access).toEqual([]);
   });
 });

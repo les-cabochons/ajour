@@ -10,7 +10,7 @@ This package provides:
 - the types of the `ajour` global: `ajour.http`, `ajour.publicFetch` and `ajour.log`;
 - `createFakeAjour`, which answers `ajour.http` from fixtures in tests and records every request.
 
-> **Status.** Ajour admits API 4 packages only in development builds until the release that switches every plugin to API 4. Packaged builds still run API 3 plugins. The package isn't on npm yet: see [Publishing](#publishing).
+> **Status.** Ajour runs plugin API 4 only, in every build. An API 3 package stays installed and inactive with "This plugin needs an update". The package isn't on npm yet: see [Publishing](#publishing).
 
 ## Install
 

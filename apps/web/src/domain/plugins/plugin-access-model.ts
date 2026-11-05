@@ -403,49 +403,27 @@ export function describeAccess(
 }
 
 /**
- * The Access section of a plugin built for plugin API 3, which declares no
- * hosts and runs with the access it always had. Only what the user can act
- * on is said: what it can reach, what it receives, and that updating moves
- * it to a plugin API that limits both.
+ * What the Access section says first. A plugin built for plugin API 3 never
+ * runs, so it reaches nothing and the section lists nothing. For one that
+ * runs, Ajour limits every request its code makes to the list, but an agent
+ * task is carried out by a coding agent outside Ajour's sandbox, which the
+ * list does not limit: a plugin with agent tasks says so.
  */
-export function describeLegacyAccess(labels: AccessLabels): AccessItem[] {
-  const item = (
-    id: string,
-    kind: AccessItemKind,
-    title: string,
-    detail: string,
-  ): AccessItem => ({
-    id,
-    kind,
-    title,
-    detail,
-    isNew: false,
-    hasNewEndpoints: false,
-  });
-  return [
-    item(
-      "legacy:network",
-      "network",
-      "Any address",
-      "It can contact any address, not only the ones its connections name.",
-    ),
-    item(
-      "legacy:credential",
-      "credential",
-      "Each connection's saved settings",
-      "It receives them as you saved them, tokens included.",
-    ),
-    ...(labels.tasks.length > 0
-      ? [
-          item(
-            "legacy:agent",
-            "agent",
-            list(labels.tasks.map((task) => task.label)),
-            "Agent tasks that get every Ajour tool.",
-          ),
-        ]
-      : []),
-  ];
+export function describeAccessIntro({
+  listed,
+  hasAgentTasks,
+}: {
+  listed: boolean;
+  hasAgentTasks: boolean;
+}): string {
+  if (!listed) {
+    return "This plugin was built for an older plugin API, so Ajour doesn't run it. It needs an update.";
+  }
+  const base =
+    "What this plugin can reach. Ajour runs its code in a sandbox where its only way out is a request through Ajour, and limits every request to what is listed here.";
+  return hasAgentTasks
+    ? `${base} Its agent tasks are the exception: a coding agent outside Ajour carries them out, and the list doesn't limit what that agent does.`
+    : base;
 }
 
 const clock = new Intl.DateTimeFormat("en-GB", {

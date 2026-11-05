@@ -1,3 +1,4 @@
+import { InProcessPluginRuntime } from "./test-support/in-process-plugin-runtime.ts";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -11,7 +12,6 @@ import {
 } from "node:fs/promises";
 import { create } from "tar";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { TeamProjectChange } from "../../../packages/shared/team-sync.ts";
 import type { AjourEvent } from "../../../packages/wide-events/catalog.ts";
 import { createRecordingSink } from "../../../packages/wide-events/sinks.ts";
 import { createApiEvents } from "./events.ts";
@@ -24,7 +24,7 @@ function pluginManifest(id: string, overrides: Record<string, unknown> = {}) {
   return {
     id,
     version: "1.0.0",
-    apiVersion: 3,
+    apiVersion: 4,
     displayName: id === "jira" ? "Jira" : id,
     description: "Test plugin.",
     iconSvg: ICON,
@@ -117,7 +117,7 @@ function agentTaskPluginFiles(overrides: { prompt?: string } = {}) {
     "plugin.json": JSON.stringify({
       id: "ajp-test",
       version: "1.0.0",
-      apiVersion: 3,
+      apiVersion: 4,
       displayName: "Test tasks",
       iconSvg: "<svg/>",
       capabilities: {
@@ -129,6 +129,7 @@ function agentTaskPluginFiles(overrides: { prompt?: string } = {}) {
               placement: "commit-week",
               prompt: "prompts/enter-week.md",
               estimateMinutes: 5,
+              tools: [],
               settings: [
                 { id: "url", label: "URL", type: "url", required: true },
               ],
@@ -152,7 +153,10 @@ describe("PluginManager", () => {
   }
 
   function manager(options: ConstructorParameters<typeof PluginManager>[0]) {
-    const pluginManager = new PluginManager(options);
+    const pluginManager = new PluginManager({
+      runtime: new InProcessPluginRuntime(),
+      ...options,
+    });
     managers.push(pluginManager);
     return pluginManager;
   }
@@ -194,7 +198,7 @@ describe("PluginManager", () => {
       "jira",
       [
         "import { writeFile } from 'node:fs/promises';",
-        "export async function validateConnection(config) {",
+        "export async function validateConnection({ config }) {",
         "  return { normalizedConfig: config, connectionSummary: {} };",
         "}",
         "export async function postItemComment(connection, request) {",
@@ -252,7 +256,7 @@ describe("PluginManager", () => {
       root,
       "jira",
       [
-        "export async function validateConnection(config) {",
+        "export async function validateConnection({ config }) {",
         "  return { normalizedConfig: config, connectionSummary: { site: config.baseUrl } };",
         "}",
         "export async function syncConnection(connection) {",
@@ -285,7 +289,7 @@ describe("PluginManager", () => {
       expect.objectContaining({
         id: "jira",
         version: "1.0.0",
-        apiVersion: 3,
+        apiVersion: 4,
       }),
     ]);
     await expect(
@@ -370,7 +374,7 @@ describe("PluginManager", () => {
       sourceRoot,
       "jira",
       [
-        "export async function validateConnection(config) {",
+        "export async function validateConnection({ config }) {",
         "  return { normalizedConfig: config, connectionSummary: { installed: true } };",
         "}",
       ].join("\n"),
@@ -454,15 +458,14 @@ describe("PluginManager", () => {
     const installedRoot = path.join(root, "installed");
     const source = "export async function validateConnection() {}";
     await createPluginDirectory(installedRoot, "jira", source, {
-      apiVersion: 2,
+      apiVersion: 3,
     });
     const pluginManager = manager({ installedPluginDirectory: installedRoot });
-    const reason =
-      "Jira 1.0.0 uses plugin API 2, but this version of Ajour needs plugin API 3. Update the plugin to use it again.";
+    const reason = "This plugin needs an update";
 
     await expect(pluginManager.inspectPlugins()).resolves.toMatchObject({
       plugins: [],
-      unavailable: [{ manifest: { id: "jira", apiVersion: 2 }, reason }],
+      unavailable: [{ manifest: { id: "jira", apiVersion: 3 }, reason }],
     });
     await expect(pluginManager.validateConnection("jira", {})).rejects.toThrow(
       reason,
@@ -482,12 +485,12 @@ describe("PluginManager", () => {
 
     expect(update.replaced).toBe(true);
     await expect(pluginManager.inspectPlugins()).resolves.toMatchObject({
-      plugins: [{ id: "jira", apiVersion: 3 }],
+      plugins: [{ id: "jira", apiVersion: 4 }],
       unavailable: [],
     });
   });
 
-  describe("plugin API 4, until the cut-over", () => {
+  describe("plugin API 4", () => {
     async function api4Archive(root: string) {
       const pluginDirectory = await createPluginDirectory(
         path.join(root, "source"),
@@ -525,65 +528,20 @@ describe("PluginManager", () => {
       });
     });
 
-    it("is never run in a worker thread, where it would get the secrets", async () => {
+    it("is admitted by a packaged build", async () => {
       const root = await tempDir();
       const { bytes, archivePath } = await api4Archive(root);
       const pluginManager = manager({
         installedPluginDirectory: path.join(root, "installed"),
-        allowDevelopmentPlugins: true,
+        allowDevelopmentPlugins: false,
       });
       await pluginManager.installPluginArchive(
         bytes,
         path.basename(archivePath),
       );
-
-      await expect(
-        pluginManager.validateConnection("jira", { apiToken: "s3cret" }),
-      ).rejects.toThrow(
-        'Plugin "jira" uses plugin API 4, which this version of Ajour can\'t run yet.',
-      );
-    });
-
-    it("is refused by a packaged build", async () => {
-      const root = await tempDir();
-      const { bytes, archivePath } = await api4Archive(root);
-      const pluginManager = manager({
-        installedPluginDirectory: path.join(root, "installed"),
-        allowDevelopmentPlugins: false,
-      });
-
-      await expect(
-        pluginManager.installPluginArchive(bytes, path.basename(archivePath)),
-      ).rejects.toThrow(
-        "Jira 4.0.0 uses plugin API 4, but this version of Ajour supports plugin API 3. Update Ajour to use this plugin.",
-      );
-      await expect(pluginManager.listPlugins()).resolves.toEqual([]);
-    });
-
-    it("stays installed but unavailable in a packaged build", async () => {
-      const root = await tempDir();
-      const installedRoot = path.join(root, "installed");
-      await createPluginDirectory(
-        installedRoot,
-        "jira",
-        "export async function validateConnection() {}",
-        API_4_MANIFEST,
-      );
-      const pluginManager = manager({
-        installedPluginDirectory: installedRoot,
-        allowDevelopmentPlugins: false,
-      });
-
-      await expect(pluginManager.inspectPlugins()).resolves.toMatchObject({
-        plugins: [],
-        unavailable: [
-          {
-            manifest: { id: "jira", apiVersion: 4 },
-            reason:
-              "Jira 4.0.0 uses plugin API 4, but this version of Ajour supports plugin API 3. Update Ajour to use this plugin.",
-          },
-        ],
-      });
+      expect(await pluginManager.listPlugins()).toMatchObject([
+        { id: "jira", apiVersion: 4 },
+      ]);
     });
 
     it.each([
@@ -604,9 +562,7 @@ describe("PluginManager", () => {
         );
 
         await expect(
-          readPlugin(pluginDirectory, "development", {
-            admitPluginApi4: true,
-          }),
+          readPlugin(pluginDirectory, "development"),
         ).resolves.toMatchObject({
           manifest: { apiVersion: 4 },
           entrypointPath: path.join(pluginDirectory, entrypoint),
@@ -657,7 +613,7 @@ describe("PluginManager", () => {
     const pluginDirectory = await createPluginDirectory(
       path.join(root, "source"),
       "jira",
-      "export async function validateConnection(config) { return { normalizedConfig: config, connectionSummary: {} }; }",
+      "export async function validateConnection({ config }) { return { normalizedConfig: config, connectionSummary: {} }; }",
     );
     const archivePath = path.join(root, "jira-1.0.0.ajour-connector");
     await packagePlugin(pluginDirectory, archivePath);
@@ -687,7 +643,7 @@ describe("PluginManager", () => {
     const pluginDirectory = await createPluginDirectory(
       path.join(root, "source"),
       "jira",
-      "export async function validateConnection() { await new Promise(() => setInterval(() => {}, 1000)); }",
+      "export async function validateConnection() { await new Promise(() => undefined); }",
     );
     const archivePath = path.join(root, "jira-1.0.0.ajour-connector");
     await packagePlugin(pluginDirectory, archivePath);
@@ -725,7 +681,7 @@ describe("PluginManager", () => {
     const pluginDirectory = await createPluginDirectory(
       path.join(root, "source"),
       "jira",
-      "export async function validateConnection() { await new Promise(() => setInterval(() => {}, 1000)); }",
+      "export async function validateConnection() { await new Promise(() => undefined); }",
     );
     const archivePath = path.join(root, "jira-1.0.0.ajour-connector");
     await packagePlugin(pluginDirectory, archivePath);
@@ -763,7 +719,7 @@ describe("PluginManager", () => {
     const pluginDirectory = await createPluginDirectory(
       root,
       "jira",
-      "export async function validateConnection(config) { return { normalizedConfig: config, connectionSummary: {} }; }",
+      "export async function validateConnection({ config }) { return { normalizedConfig: config, connectionSummary: {} }; }",
     );
     const pluginManager = manager({
       installedPluginDirectory: path.join(root, "installed"),
@@ -797,7 +753,7 @@ describe("PluginManager", () => {
     await writeFile(
       path.join(distDirectory, "plugin.js"),
       [
-        "export async function validateConnection(config) {",
+        "export async function validateConnection({ config }) {",
         "  return { normalizedConfig: config, connectionSummary: { runtime: 'esm' } };",
         "}",
       ].join("\n"),
@@ -856,7 +812,7 @@ describe("PluginManager", () => {
       path.join(pluginDirectory, "src", "plugin.ts"),
       [
         "import { summary, type Summary } from './summary.ts';",
-        "export async function validateConnection(config: Record<string, unknown>) {",
+        "export async function validateConnection({ config }: { config: Record<string, unknown> }) {",
         "  const connectionSummary: Summary = summary();",
         "  return { normalizedConfig: config, connectionSummary };",
         "}",
@@ -1070,116 +1026,6 @@ describe("PluginManager", () => {
       }
     },
   );
-
-  it("runs team operations only for plugins that declare a team", async () => {
-    const root = await tempDir();
-    const source = [
-      "export async function createTeam(config, request) {",
-      "  return { values: { teamId: `${config.baseUrl}#${request.name}`, teamSecret: 's3cret' } };",
-      "}",
-      "export async function syncTeamProjects(connection, request) {",
-      "  return {",
-      "    cursor: `after-${request.changes.length}`,",
-      "    projects: [],",
-      "    assigned: request.changes.map((change) => ({ localId: change.localId, remoteId: `r-${change.localId}` })),",
-      "    note: connection.label,",
-      "  };",
-      "}",
-    ].join("\n");
-    const teamDirectory = await createPluginDirectory(root, "team", source, {
-      capabilities: { team: { apiVersion: 1 } },
-    });
-    const pluginDirectory = await createPluginDirectory(root, "jira", source);
-    const pluginManager = manager({
-      installedPluginDirectory: path.join(root, "installed"),
-      developmentPluginDirectories: [teamDirectory, pluginDirectory],
-      allowDevelopmentPlugins: true,
-    });
-    const connection = {
-      id: "connection-1",
-      pluginId: "team",
-      label: "Acme team",
-      tenantLabel: "acme",
-      autoSync: true,
-      autoSyncIntervalMinutes: 15,
-      connectedAt: 1,
-      config: {},
-    };
-    const newProject: TeamProjectChange = {
-      localId: "project-1",
-      name: "Beta",
-      displayName: "Beta",
-      code: null,
-      color: "#4f46e5",
-      icon: { kind: "preset", name: "dot" },
-      status: "active",
-      tasks: [],
-    };
-
-    await expect(
-      pluginManager.createTeam(
-        "team",
-        { baseUrl: "https://team.example" },
-        { name: "Acme" },
-      ),
-    ).resolves.toEqual({
-      values: { teamId: "https://team.example#Acme", teamSecret: "s3cret" },
-    });
-    await expect(
-      pluginManager.syncTeamProjects("team", connection, {
-        changes: [newProject],
-      }),
-    ).resolves.toEqual({
-      cursor: "after-1",
-      projects: [],
-      assigned: [{ localId: "project-1", remoteId: "r-project-1" }],
-      hasMore: false,
-    });
-    await expect(
-      pluginManager.syncTeamProjects("jira", connection, { changes: [] }),
-    ).rejects.toThrow('Plugin "jira" does not sync a team\'s projects.');
-    await expect(
-      pluginManager.createTeam("jira", {}, { name: "Acme" }),
-    ).rejects.toThrow('Plugin "jira" does not sync a team\'s projects.');
-  });
-
-  it("refuses a team result that breaks the contract, such as an icon URL", async () => {
-    const root = await tempDir();
-    const pluginDirectory = await createPluginDirectory(
-      root,
-      "team",
-      [
-        "export async function syncTeamProjects() {",
-        "  return { cursor: 'c', projects: [{ remoteId: 'r1', name: 'Beta', displayName: 'Beta', code: null,",
-        "    color: '#4f46e5', status: 'active', tasks: [],",
-        "    icon: { kind: 'upload', src: 'https://tracker.example/pixel.png' } }] };",
-        "}",
-      ].join("\n"),
-      { capabilities: { team: { apiVersion: 1 } } },
-    );
-    const pluginManager = manager({
-      installedPluginDirectory: path.join(root, "installed"),
-      developmentPluginDirectories: [pluginDirectory],
-      allowDevelopmentPlugins: true,
-    });
-
-    await expect(
-      pluginManager.syncTeamProjects(
-        "team",
-        {
-          id: "connection-1",
-          pluginId: "team",
-          label: "Acme team",
-          tenantLabel: "acme",
-          autoSync: true,
-          autoSyncIntervalMinutes: 15,
-          connectedAt: 1,
-          config: {},
-        },
-        { changes: [] },
-      ),
-    ).rejects.toThrow();
-  });
 
   it("cancels an operation that a turned-off capability catches at its gate", async () => {
     const root = await tempDir();

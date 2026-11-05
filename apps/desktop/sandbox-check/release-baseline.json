@@ -1,0 +1,6 @@
+{
+  "comment": "The release the check upgrades from. Users have the packages that this commit's ajour.json lists at plugin API 3, so the check installs those and then installs the API 4 releases over them. The commit under test cannot say: once its signed ajour.json lists API 4, it lists no API 3 package. When a release replaces the API 3 catalog for good, nothing needs to change; this is the last catalog that still listed API 3. AJOUR_PLUGINS_LEGACY_COMMIT overrides it with another commit or tag of the ajour-plugins checkout.",
+  "legacyCatalogCommit": "166e2dad601fdc2b7586c35a617fac7dbd492ab3",
+  "releaseComment": "The ajour-plugins commit the check runs by default: the first main commit where all six official plugins are on plugin API 4 (the merge of ajour-plugins#9). Replace it with the release tag once the plugin releases are cut. AJOUR_PLUGINS_COMMIT overrides it.",
+  "releaseCommit": "b68732d02bf9ee108a9335c9ccadc0ce231c2255"
+}

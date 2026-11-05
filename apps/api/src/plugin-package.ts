@@ -43,8 +43,9 @@ const MAX_PLUGIN_FILES = 2_000;
 const MAX_PLUGIN_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_PLUGIN_EXTRACTED_BYTES = 100 * 1024 * 1024;
 const ALLOWED_ARCHIVE_ENTRY_TYPES = new Set(["File", "Directory"]);
-// Plugins ship TypeScript as written; Node strips the types when the worker
-// imports the entrypoint, so only erasable syntax runs.
+// Plugins ship TypeScript as written; the desktop app strips the types when
+// it serves the entrypoint to the plugin's renderer, so only erasable syntax
+// runs.
 const ALLOWED_ENTRYPOINT_EXTENSIONS = new Set([
   ".cjs",
   ".js",
@@ -143,7 +144,7 @@ export class IncompatiblePluginError extends Error {
     const pluginName = `${manifest.displayName} ${manifest.version}`;
     super(
       manifest.apiVersion < PLUGIN_API_VERSION
-        ? `${pluginName} uses plugin API ${manifest.apiVersion}, but this version of Ajour needs plugin API ${PLUGIN_API_VERSION}. Update the plugin to use it again.`
+        ? "This plugin needs an update"
         : `${pluginName} uses plugin API ${manifest.apiVersion}, but this version of Ajour supports plugin API ${PLUGIN_API_VERSION}. Update Ajour to use this plugin.`,
     );
     this.name = "IncompatiblePluginError";
@@ -344,30 +345,15 @@ export function resolvePluginEntrypoint(
   return entrypointPath;
 }
 
-/** Which plugin APIs the host admits besides the one it runs. */
-export interface PluginAdmissionPolicy {
-  /**
-   * Development builds admit plugin API 4 packages until the cut-over
-   * (#403). Packaged builds refuse them as built for a newer Ajour.
-   */
-  admitPluginApi4: boolean;
-}
-
-export const PACKAGED_BUILD: PluginAdmissionPolicy = { admitPluginApi4: false };
-
 /**
  * Validates a manifest against the schema of the plugin API it declares. An
- * API 4 manifest must pass every API 4 rule even where it is refused, so a
- * broken one is invalid rather than merely unavailable.
+ * API 4 manifest must pass every API 4 rule. A manifest for an older API
+ * is valid but not runnable: the package stays installed, inactive, with
+ * "This plugin needs an update".
  */
-export function parsePluginManifest(
-  raw: unknown,
-  policy: PluginAdmissionPolicy,
-): PluginManifest {
+export function parsePluginManifest(raw: unknown): PluginManifest {
   if ((raw as { apiVersion?: unknown } | null)?.apiVersion === PLUGIN_API_4) {
-    const manifest = pluginApi4ManifestSchema.parse(raw);
-    if (!policy.admitPluginApi4) throw new IncompatiblePluginError(manifest);
-    return manifest;
+    return pluginApi4ManifestSchema.parse(raw);
   }
   const manifest = pluginManifestSchema.parse(raw);
   if (manifest.apiVersion !== PLUGIN_API_VERSION) {
@@ -379,7 +365,6 @@ export function parsePluginManifest(
 export async function readPlugin(
   directory: string,
   source: ResolvedPlugin["source"],
-  policy: PluginAdmissionPolicy = PACKAGED_BUILD,
 ): Promise<ResolvedPlugin> {
   const pluginDirectory = path.resolve(directory);
   const canonicalPluginDirectory = await realpath(pluginDirectory);
@@ -391,7 +376,7 @@ export async function readPlugin(
     "Plugin manifest",
   );
   const rawManifest = await readFile(manifestPath, "utf8");
-  const manifest = parsePluginManifest(JSON.parse(rawManifest), policy);
+  const manifest = parsePluginManifest(JSON.parse(rawManifest));
 
   let entrypointPath: string | undefined;
   if (manifest.entrypoint) {
@@ -435,10 +420,7 @@ export async function readPlugin(
  * back in `unavailable`. Other invalid directories are skipped, and
  * `invalidCount` counts them, for the caller's event.
  */
-export async function discoverInstalledPlugins(
-  pluginRoot: string,
-  policy: PluginAdmissionPolicy = PACKAGED_BUILD,
-): Promise<{
+export async function discoverInstalledPlugins(pluginRoot: string): Promise<{
   plugins: ResolvedPlugin[];
   unavailable: UnavailablePlugin[];
   invalidCount: number;
@@ -460,11 +442,7 @@ export async function discoverInstalledPlugins(
 
     try {
       plugins.push(
-        await readPlugin(
-          path.join(pluginRoot, entry.name),
-          "installed",
-          policy,
-        ),
+        await readPlugin(path.join(pluginRoot, entry.name), "installed"),
       );
     } catch (error) {
       if (error instanceof IncompatiblePluginError) {
@@ -488,7 +466,6 @@ export async function discoverInstalledPlugins(
  */
 export async function reconcilePluginInstallRoot(
   pluginRoot: string,
-  policy: PluginAdmissionPolicy = PACKAGED_BUILD,
 ): Promise<number> {
   let failedBackups = 0;
   await mkdir(pluginRoot, { recursive: true, mode: 0o700 });
@@ -510,7 +487,7 @@ export async function reconcilePluginInstallRoot(
     }
 
     try {
-      const backupPlugin = await readPlugin(entryPath, "installed", policy);
+      const backupPlugin = await readPlugin(entryPath, "installed");
       const targetDirectory = path.join(pluginRoot, backupPlugin.manifest.id);
       if (await pathExists(targetDirectory)) {
         await rm(entryPath, { recursive: true, force: true });
@@ -529,7 +506,6 @@ export async function installPluginArchive(options: {
   archiveFilename: string;
   installRoot: string;
   replaceExisting?: boolean;
-  policy?: PluginAdmissionPolicy;
 }): Promise<InstalledPlugin> {
   if (
     !options.archiveFilename.toLowerCase().endsWith(PLUGIN_ARCHIVE_EXTENSION)
@@ -575,7 +551,7 @@ export async function installPluginArchive(options: {
           preservePaths: false,
           strict: true,
         });
-        return await readPlugin(payloadDirectory, "installed", options.policy);
+        return await readPlugin(payloadDirectory, "installed");
       },
     );
     const targetDirectory = path.join(
@@ -585,11 +561,7 @@ export async function installPluginArchive(options: {
     const targetExists = await pathExists(targetDirectory);
 
     if (targetExists && options.replaceExisting === false) {
-      const existingPlugin = await readPlugin(
-        targetDirectory,
-        "installed",
-        options.policy,
-      );
+      const existingPlugin = await readPlugin(targetDirectory, "installed");
       return {
         manifest: existingPlugin.manifest,
         directory: existingPlugin.directory,

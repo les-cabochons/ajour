@@ -310,6 +310,15 @@ export type ConnectionWithSecrets = StoredConnection & {
   secretsReadAt: number;
 };
 
+/**
+ * A connection as a plugin operation sees it: without its secrets.
+ * `secretsReadAt` is when the operation checked that the secrets it needs
+ * can be read, for `markSecretsRejected`.
+ */
+export type OperationConnection = StoredConnection & {
+  secretsReadAt: number;
+};
+
 /** A connection field declaration list, for a save that splits secrets out. */
 export interface SecretSaveFields {
   /** The plugin's fields, as its manifest declares them. */
@@ -1427,13 +1436,13 @@ export class AppApiStorage {
   }
 
   /**
-   * The connection a plugin operation runs with: its config with its
-   * secrets, decrypted for this one operation. Null when it doesn't exist.
-   * Throws `ConnectionPausedError` when a secret it needs can't reach the
-   * plugin: the vault can't encrypt or read it, or it hasn't moved into the
-   * vault yet. A connection without secrets always runs.
+   * The connection with its secrets, decrypted for one broker request. Only
+   * the broker calls this: plugin code never receives a secret. Null when it
+   * doesn't exist. Throws `ConnectionPausedError` when a secret it needs
+   * can't be read: the vault can't encrypt or read it, or it hasn't moved
+   * into the vault yet. A connection without secrets always runs.
    */
-  async connectionForOperation(
+  async connectionForBroker(
     pluginId: string,
     connectionId: string,
     manifest: SecretManifest,
@@ -1448,6 +1457,48 @@ export class AppApiStorage {
     if (!read) return null;
     if (read.pause) throw new ConnectionPausedError(read.pause, read.reason);
     return read.connection;
+  }
+
+  /**
+   * The connection a plugin operation runs with: its editable settings and
+   * none of its secrets, which only the broker reads. Null when it doesn't
+   * exist. Throws `ConnectionPausedError` when a secret the connection needs
+   * can't reach the broker, so the operation doesn't start.
+   */
+  async connectionForOperation(
+    pluginId: string,
+    connectionId: string,
+    manifest: SecretManifest,
+  ): Promise<OperationConnection | null> {
+    await this.settleSecrets([manifest], pluginId);
+    const connection = await this.getConnection(pluginId, connectionId);
+    if (!connection) return null;
+    const vault = await this.vaultView();
+    const owner = { pluginId, connectionId };
+    const { pause, reason } = decideSecretPause({
+      needsVault:
+        (connection.secrets?.fields.length ?? 0) > 0 ||
+        connection.secrets?.sealed === true ||
+        holderNeedsMove(connectionHolder(connection), manifest),
+      status: vault.status,
+      unreadable:
+        secretFieldSummaries(owner, connection.secrets, vault).some(
+          (field) => field.state === "unreadable",
+        ) ||
+        sealedSummary(owner, connection.secrets, vault)?.state === "unreadable",
+      notMoved: holderNeedsMove(connectionHolder(connection), manifest),
+      ...secretStatusPause(connection.secrets, manifest),
+    });
+    if (pause) throw new ConnectionPausedError(pause, reason);
+    return {
+      ...connection,
+      secretsReadAt: Date.now(),
+      config: editableFieldValues(
+        redactionFields(manifest.connectionFields, connection.secrets)
+          .connectionFields,
+        connection.config,
+      ),
+    };
   }
 
   /** Deletes the sealed entries a settled pass split, once the state no longer needs them. */

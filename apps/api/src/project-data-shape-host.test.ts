@@ -3,6 +3,7 @@ import path from "node:path";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
+import { PluginOperationRefused } from "./plugin-operation-lifetime.ts";
 import type {
   PluginInvocation,
   PluginRun,
@@ -48,7 +49,7 @@ async function createPlugin(
     JSON.stringify({
       id: "workday-project-data",
       version: "1.0.0",
-      apiVersion: 1,
+      apiVersion: 4,
       displayName: "Workday",
       description: "Test project data shape.",
       iconSvg: ICON,
@@ -139,6 +140,7 @@ describe("ProjectDataShapePluginManager", () => {
       ].join("\n"),
     );
     const manager = new ProjectDataShapePluginManager({
+      runtime: new InProcessPluginRuntime(),
       pluginDirectories: [pluginDirectory],
     });
     managers.push(manager);
@@ -199,6 +201,7 @@ describe("ProjectDataShapePluginManager", () => {
       ].join("\n"),
     );
     const manager = new ProjectDataShapePluginManager({
+      runtime: new InProcessPluginRuntime(),
       pluginDirectories: [pluginDirectory],
     });
     managers.push(manager);
@@ -221,6 +224,7 @@ describe("ProjectDataShapePluginManager", () => {
       null,
     );
     const manager = new ProjectDataShapePluginManager({
+      runtime: new InProcessPluginRuntime(),
       pluginDirectories: [pluginDirectory],
     });
     managers.push(manager);
@@ -244,7 +248,6 @@ describe("ProjectDataShapePluginManager", () => {
     async function manager(
       options: {
         manifest?: Record<string, unknown>;
-        admitPluginApi4?: boolean;
         runtime?: PluginRuntime;
         requestTimeoutMs?: number;
       } = {},
@@ -261,7 +264,6 @@ describe("ProjectDataShapePluginManager", () => {
       );
       const created = new ProjectDataShapePluginManager({
         pluginDirectories: [pluginDirectory],
-        admitPluginApi4: options.admitPluginApi4 ?? true,
         runtime: options.runtime ?? new InProcessPluginRuntime(),
         ...(options.requestTimeoutMs
           ? { requestTimeoutMs: options.requestTimeoutMs }
@@ -365,24 +367,6 @@ describe("ProjectDataShapePluginManager", () => {
       expect(invocations[0]).not.toHaveProperty("broker");
     });
 
-    it("hands an API 1 package to the runtime as API 1", async () => {
-      const { runtime, invocations } = recordingRuntime(
-        new InProcessPluginRuntime(),
-      );
-      const root = await tempDir();
-      const api1 = new ProjectDataShapePluginManager({
-        pluginDirectories: [await createPlugin(root, SHAPE_SOURCE)],
-        admitPluginApi4: true,
-        runtime,
-      });
-      managers.push(api1);
-
-      await api1.exportProjects("workday-project-data", EXPORTED_PROJECTS);
-      expect(invocations.map((invocation) => invocation.apiVersion)).toEqual([
-        1,
-      ]);
-    });
-
     it("keeps checking the dataset contract on its output", async () => {
       const root = await tempDir();
       const pluginDirectory = await createPlugin(
@@ -393,7 +377,6 @@ describe("ProjectDataShapePluginManager", () => {
       );
       const api4 = new ProjectDataShapePluginManager({
         pluginDirectories: [pluginDirectory],
-        admitPluginApi4: true,
         runtime: new InProcessPluginRuntime(),
       });
       managers.push(api4);
@@ -401,17 +384,6 @@ describe("ProjectDataShapePluginManager", () => {
       await expect(
         api4.exportProjects("workday-project-data", []),
       ).rejects.toThrow('contains unknown field "unexpected"');
-    });
-
-    it("is not admitted when the build does not admit plugin API 4", async () => {
-      const api4 = await manager({ admitPluginApi4: false });
-
-      await expect(api4.listPlugins()).resolves.toEqual([]);
-      await expect(
-        api4.exportProjects("workday-project-data", EXPORTED_PROJECTS),
-      ).rejects.toThrow(
-        'Schema plugin "workday-project-data" is not available',
-      );
     });
 
     it("is refused on a runtime that can't keep a plugin from the network", async () => {
@@ -425,9 +397,7 @@ describe("ProjectDataShapePluginManager", () => {
 
       await expect(
         api4.exportProjects("workday-project-data", EXPORTED_PROJECTS),
-      ).rejects.toThrow(
-        'Schema plugin "workday-project-data" uses plugin API 4, which this version of Ajour can\'t run yet.',
-      );
+      ).rejects.toThrow("Plugins need the desktop app");
       expect(api4.activeOperationCount).toBe(0);
     });
 
@@ -464,10 +434,19 @@ describe("ProjectDataShapePluginManager", () => {
       await expect(api4.listPlugins()).resolves.toEqual([]);
     });
 
-    describe("a plugin id the plugin host already holds", () => {
-      async function managerBesidePluginHost(
-        hostFolder: (own: string) => string,
+    describe("beside a plugin host", () => {
+      /** A plugin host that holds `held` and admits what `admit` lets by. */
+      function pluginHost(
+        held: Map<string, string>,
+        admit: (pluginId: string) => void = () => undefined,
       ) {
+        return {
+          packageDirectories: async () => held,
+          admitPackageOperation: async (pluginId: string) => admit(pluginId),
+        };
+      }
+
+      it("reads only the folders the plugin host holds", async () => {
         const root = await tempDir();
         const pluginDirectory = await createPlugin(
           root,
@@ -475,32 +454,45 @@ describe("ProjectDataShapePluginManager", () => {
           undefined,
           API_4_MANIFEST,
         );
-        const created = new ProjectDataShapePluginManager({
+        const shape = new ProjectDataShapePluginManager({
           pluginDirectories: [pluginDirectory],
-          admitPluginApi4: true,
           runtime: new InProcessPluginRuntime(),
-          pluginHostPackages: async () =>
-            new Map([["workday-project-data", hostFolder(pluginDirectory)]]),
+          pluginHost: pluginHost(new Map()),
         });
-        managers.push(created);
-        return created;
-      }
-
-      it("refuses a data shape from another folder, and says why", async () => {
-        const other = await tempDir();
-        const shape = await managerBesidePluginHost(() => other);
+        managers.push(shape);
 
         await expect(shape.listPlugins()).resolves.toEqual([]);
         await expect(
           shape.exportProjects("workday-project-data", EXPORTED_PROJECTS),
         ).rejects.toThrow(
-          'Schema plugin "workday-project-data" shares its id with a plugin from another folder',
+          'Schema plugin "workday-project-data" is not available.',
         );
         expect(shape.activeOperationCount).toBe(0);
       });
 
-      it("keeps a package that is the plugin host's own folder", async () => {
-        const shape = await managerBesidePluginHost((own) => own);
+      it("lists and runs a package the plugin host admits, and neither once it refuses", async () => {
+        const root = await tempDir();
+        const pluginDirectory = await createPlugin(
+          root,
+          SHAPE_SOURCE,
+          undefined,
+          API_4_MANIFEST,
+        );
+        let refusal: string | undefined;
+        const { runtime, invocations } = recordingRuntime(
+          new InProcessPluginRuntime(),
+        );
+        const shape = new ProjectDataShapePluginManager({
+          runtime,
+          pluginHost: pluginHost(
+            new Map([["workday-project-data", pluginDirectory]]),
+            () => {
+              if (refusal)
+                throw new PluginOperationRefused(refusal, "plugin_off");
+            },
+          ),
+        });
+        managers.push(shape);
 
         await expect(shape.listPlugins()).resolves.toEqual([
           expect.objectContaining({ id: "workday-project-data" }),
@@ -508,6 +500,13 @@ describe("ProjectDataShapePluginManager", () => {
         await expect(
           shape.exportProjects("workday-project-data", EXPORTED_PROJECTS),
         ).resolves.toMatchObject({ datasets: [{ id: "projects" }] });
+
+        refusal = "Activate this plugin before running it.";
+        await expect(shape.listPlugins()).resolves.toEqual([]);
+        await expect(
+          shape.importProjects("workday-project-data", IMPORTED_SHEETS),
+        ).rejects.toThrow(refusal);
+        expect(invocations).toHaveLength(1);
       });
     });
 
@@ -529,7 +528,6 @@ describe("ProjectDataShapePluginManager", () => {
       );
       const api4 = new ProjectDataShapePluginManager({
         pluginDirectories: [directory],
-        admitPluginApi4: true,
         runtime: new InProcessPluginRuntime(),
       });
       managers.push(api4);

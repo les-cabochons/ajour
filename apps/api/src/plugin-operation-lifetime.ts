@@ -14,10 +14,9 @@ import {
 } from "./plugin-runtime.ts";
 
 /**
- * At most this many operations of one plugin run at once (#217). Plugin API
- * 3 packages, which run on worker threads, also share this many per host.
- * Each host owns its own lifetime instance, so plugin and data-shape quotas
- * stay separate.
+ * At most this many operations of one plugin run at once (#217). Each host
+ * owns its own lifetime instance, so plugin and data-shape quotas stay
+ * separate.
  */
 const MAX_CONCURRENT_OPERATIONS = 4;
 
@@ -51,7 +50,7 @@ export type PluginCancelReason =
   | "access_off";
 
 /** How a worker failed. `crashed`: the plugin's process ended under it. */
-export type WorkerFailureReason =
+export type OperationFailureReason =
   "timeout" | "result_too_large" | "exited_early" | "crashed" | "plugin_error";
 
 /** The notice that says plugins are off on this computer, then why. */
@@ -98,18 +97,18 @@ export class PluginOperationCancelled extends Error {
 export type PluginFailureReason =
   | PluginRefusalReason
   | PluginCancelReason
-  | WorkerFailureReason
+  | OperationFailureReason
   | "invalid_result";
 
 /** A worker that timed out, exited early, or ended with the plugin's error. */
-export class PluginWorkerFailure extends Error {
-  readonly reason: WorkerFailureReason;
+export class PluginOperationFailure extends Error {
+  readonly reason: OperationFailureReason;
   /** The HTTP status the plugin's error named, if it did. See `PluginRunOutcome`. */
   readonly httpStatus: number | undefined;
 
   constructor(
     message: string,
-    reason: WorkerFailureReason,
+    reason: OperationFailureReason,
     httpStatus?: number,
   ) {
     super(message);
@@ -132,15 +131,17 @@ export interface OperationRecord {
     source: "installed" | "development";
     apiVersion: number;
   }): void;
-  /** The secret values the plugin receives, which its errors may echo. */
-  secrets(values: readonly string[]): void;
+  /**
+   * The secret values an error of the operation may echo. A reader is called
+   * only when the event is scrubbed, so the values are not held while the
+   * operation runs.
+   */
+  secrets(values: readonly string[] | (() => Promise<readonly string[]>)): void;
 }
 
 interface Operation {
   pluginId: string;
   method: string;
-  /** Set once the package's API version is known: an API 3 package shares the host's worker threads. */
-  workerThread?: boolean;
   /** The connection it runs for, if any. */
   connectionId?: string;
   cancelled?: Error;
@@ -149,7 +150,7 @@ interface Operation {
   done: Promise<void>;
 }
 
-interface WorkerLifetimeOptions<TMethod extends string> {
+interface OperationLifetimeOptions<TMethod extends string> {
   name: "Plugin" | "Schema plugin";
   /** What runs each operation's plugin code. */
   runtime: PluginRuntime;
@@ -171,15 +172,15 @@ type OperationUnit = Unit<AjourCatalog, PluginOperationEventName>;
  * the runtime before releasing its slot. Each run emits one `plugin_operation` event,
  * a child span of the unit that started it, with how it ended.
  */
-export class PluginWorkerLifetime<TMethod extends string> {
+export class PluginOperationLifetime<TMethod extends string> {
   private readonly operations = new Set<Operation>();
   private shutdownPromise?: Promise<void>;
   private shuttingDown = false;
 
-  private readonly options: WorkerLifetimeOptions<TMethod>;
+  private readonly options: OperationLifetimeOptions<TMethod>;
   private readonly events: ApiEvents;
 
-  constructor(options: WorkerLifetimeOptions<TMethod>) {
+  constructor(options: OperationLifetimeOptions<TMethod>) {
     this.options = options;
     this.events =
       options.events ?? createApiEvents({ sink: nowhere, userDataPath: "" });
@@ -228,7 +229,16 @@ export class PluginWorkerLifetime<TMethod extends string> {
         timeout_ms: this.options.requestTimeoutMs,
       },
     });
-    let secrets: readonly string[] | undefined;
+    const secretReaders: Array<() => Promise<readonly string[]>> = [];
+    /** The secret values to scrub the event with, read now. Undefined when one can't be read. */
+    const readSecrets = async (): Promise<readonly string[] | undefined> => {
+      try {
+        const all = await Promise.all(secretReaders.map((read) => read()));
+        return all.flat();
+      } catch {
+        return undefined;
+      }
+    };
     const record: OperationRecord = {
       plugin: (facts) => {
         unit.set({
@@ -238,13 +248,13 @@ export class PluginWorkerLifetime<TMethod extends string> {
             api_version: facts.apiVersion,
           },
         });
-        // The version is known: an API 3 package takes its thread now, so
-        // a full host refuses it before it resolves anything more.
-        if (facts.apiVersion < 4 && operation)
-          this.claimWorkerThread(operation);
       },
       secrets: (values) => {
-        secrets = values;
+        // Each call replaces the last.
+        secretReaders.length = 0;
+        secretReaders.push(
+          typeof values === "function" ? values : async () => values,
+        );
       },
     };
     let operation: Operation | undefined;
@@ -278,9 +288,6 @@ export class PluginWorkerLifetime<TMethod extends string> {
           const prepared = await prepare(record);
           if (registered.cancelled) throw registered.cancelled;
           this.assertRunning();
-          if (prepared.invocation.apiVersion < 4) {
-            this.claimWorkerThread(registered);
-          }
           unit.set({ worker: { prepare_ms: Date.now() - admittedAt } });
           return await this.invoke(registered, method, prepared, unit);
         } finally {
@@ -302,13 +309,16 @@ export class PluginWorkerLifetime<TMethod extends string> {
         );
       } else if (error instanceof PluginOperationRefused) {
         unit.refuse(error.reason);
-      } else if (error instanceof PluginWorkerFailure) {
-        unit.fail(error, {
+      } else if (error instanceof PluginOperationFailure) {
+        const secrets = await readSecrets();
+        // A message that can't be scrubbed is dropped, not kept as it is.
+        unit.fail(secrets ? error : withoutContent(error), {
           ...(error.reason === "timeout" ? { outcome: "timeout" } : {}),
           reason: error.reason,
           ...(secrets ? { secrets } : {}),
         });
       } else if (unit.outcome === undefined) {
+        const secrets = await readSecrets();
         unit.fail(withoutContent(error), secrets ? { secrets } : {});
       }
       throw error;
@@ -389,25 +399,6 @@ export class PluginWorkerLifetime<TMethod extends string> {
     return this.shutdownPromise;
   }
 
-  /**
-   * An API 3 package runs on a worker thread, and the host shares a few:
-   * claims one for the operation, or refuses it when they are all taken.
-   * Claiming again changes nothing.
-   */
-  private claimWorkerThread(operation: Operation) {
-    if (operation.workerThread) return;
-    if (
-      this.countOperations((other) => other.workerThread === true) >=
-      MAX_CONCURRENT_OPERATIONS
-    ) {
-      throw new PluginOperationRefused(
-        `Too many ${this.options.name.toLowerCase()} operations are already running.`,
-        "capacity",
-      );
-    }
-    operation.workerThread = true;
-  }
-
   private countOperations(matches: (operation: Operation) => boolean) {
     let count = 0;
     for (const operation of this.operations) if (matches(operation)) count += 1;
@@ -423,11 +414,11 @@ export class PluginWorkerLifetime<TMethod extends string> {
    */
   private pluginFailure(
     message: unknown,
-    reason: WorkerFailureReason = "plugin_error",
+    reason: OperationFailureReason = "plugin_error",
     httpStatus?: number,
   ): Error {
     const text = typeof message === "string" ? message.trim() : "";
-    return new PluginWorkerFailure(
+    return new PluginOperationFailure(
       text
         ? cutPluginErrorMessage(text)
         : `Unknown ${this.options.name.toLowerCase()} error.`,
@@ -459,12 +450,12 @@ export class PluginWorkerLifetime<TMethod extends string> {
           "result_too_large",
         );
       case "exited_early":
-        return new PluginWorkerFailure(
+        return new PluginOperationFailure(
           `${this.options.name} "${operation.pluginId}" exited before returning a result (code ${outcome.exitCode}).`,
           "exited_early",
         );
       case "crashed":
-        return new PluginWorkerFailure(
+        return new PluginOperationFailure(
           `${this.options.name} "${operation.pluginId}" stopped before returning a result: its process ${CRASH_CAUSES[outcome.cause]}.`,
           "crashed",
         );
@@ -475,7 +466,7 @@ export class PluginWorkerLifetime<TMethod extends string> {
         );
       case "terminated":
         // Only the lifetime terminates a run, and it has its error by then.
-        return new PluginWorkerFailure(
+        return new PluginOperationFailure(
           `${this.options.name} "${operation.pluginId}" stopped before returning a result.`,
           "exited_early",
         );
@@ -538,7 +529,7 @@ export class PluginWorkerLifetime<TMethod extends string> {
         if (!finalizationPromise) this.options.onTimeout?.(prepared.invocation);
         void finalize(
           "timeout",
-          new PluginWorkerFailure(
+          new PluginOperationFailure(
             `${this.options.name} "${operation.pluginId}" timed out while handling ${method}.`,
             "timeout",
           ),

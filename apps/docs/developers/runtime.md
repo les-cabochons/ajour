@@ -1,69 +1,72 @@
-# Runtime and limits
+# Runtime
 
-This page explains where a plugin runs, what it can use, and the limits Ajour enforces.
+Ajour runs plugin API 4 only, in development and packaged desktop builds.
+There is no worker-thread runtime and no other: every plugin runs in the
+sandbox below. API 3 packages stay installed and inactive with "This plugin
+needs an update". Their connections and non-secret settings remain. The paused team capability
+has no API 4 port. The standalone API runs no plugin code and reports
+"Plugins need the desktop app".
 
-## Where plugins run
+## Execution and requests
 
-The desktop app runs a local API inside its main process, on `127.0.0.1:8787`. The window talks to it over HTTP. When the API needs your plugin, it starts a Node worker thread, imports your entry point, calls one function, and ends the worker.
+Each plugin has a hidden Electron renderer under Chromium's OS sandbox,
+with its own origin and in-memory partition. Ajour's host page creates a
+dedicated module worker for each operation. Plugin code has no Node,
+filesystem access, direct networking, or access to another plugin's identity.
+The host derives identity from the registered IPC sender.
 
-- **Node version.** The desktop app is built on Electron 44, with Node 24, and the official plugins build and test on Node 24. Target ES2022.
-- **One call per worker.** Module-level variables, caches and timers do not survive the call. Ajour gives you everything you need as arguments.
-- **No background work.** Your plugin runs only when Ajour calls it. Work that outlives the call is lost when the worker ends.
+`validateConnection(connection, context)` receives a connection whose `config`
+contains only non-secret fields. Use `ajour.http` with its connection ID,
+method and relative path. Ajour's broker checks the manifest's hosts,
+endpoints, headers and the connection's access choices, attaches credentials,
+and scrubs secrets from responses. `ajour.publicFetch` is limited to declared
+public hosts. Never use `fetch`, import Node modules or ask for a token value.
 
-## What you can use
+Declare `network`, `connectionAccess` and `runtime` in `plugin.json` where
+applicable. Use `packages/plugin-sdk` for the contract and request fake.
+Agent tasks declare their MCP `tools`; they run no plugin code. A schema
+declares `capabilities.projectDataShape.apiVersion: 1` inside a plugin API 4
+package. That dataset version does not change with the plugin runtime API.
 
-- `fetch`, to call any HTTP API.
-- Node built-ins, such as `Buffer`, `crypto` or `URL`.
-- Any code you bundle into the package.
+## Limits and residual risk
 
-## What you cannot use
+Ajour admits four calls per plugin, with a 30 second timeout and an 8 MiB
+result limit. A renderer defaults to a 256 MB memory ceiling. Three crashes,
+timeouts or memory kills in ten minutes suspend it. Load when needed closes
+the idle renderer after two minutes. Always ready keeps it open. Quit drains
+for five seconds before closing renderers. Unsupported or unsandboxed
+environments fail closed.
 
-| Not available                    | Why                                                                                |
-| -------------------------------- | ---------------------------------------------------------------------------------- |
-| Ajour's data                     | The window owns the workspace. A plugin gets only what each call passes.           |
-| Environment variables            | `process.env` is empty in the worker.                                              |
-| Logs                             | `console` output is discarded. Throw errors with clear messages instead.           |
-| UI                               | Ajour draws every screen. Describe fields in the manifest.                         |
-| Packages outside your folder     | The packaging script archives `plugin.json` and `dist/` only. Bundle dependencies. |
-| Capabilities beyond the manifest | Ajour only calls the functions your capabilities declare.                          |
+Two guarantees stay apart. **G1** is hard and tested: no plugin can obtain a
+credential, its own or another plugin's, by any path. **G2** is best effort: a
+plugin can misuse the access it was given. Endpoint allowlists, connection
+access choices, the Access section and least-privilege tokens reduce that risk.
+They cannot prevent all misuse, and Ajour never claims they do. These are the
+G2 limits:
 
-## Limits
+- A plugin may send what it read to any endpoint its manifest allows.
+- A GraphQL endpoint, such as GitHub's `POST /graphql`, is allowed as a whole.
+  The broker doesn't read queries, so the token's scopes are the limit.
+- The broker pins a direct request to the addresses it checked, but a request
+  through a system proxy, or to an address literal, is judged by the address
+  that answered, after it was sent. A DNS-rebinding window remains there, and
+  credentials still attach only to hosts the user configured. See ADR 0010.
+- Same-user native programs and administrators are outside the plugin
+  sandbox's threat model. The OS keychain protects secrets from other users, not
+  from other apps of the same user, and release builds keep the Electron
+  `runAsNode` fuse on until the agent runner stops needing it, so anyone who can
+  start Ajour's binary can run Node code as Ajour.
 
-| Limit                                 | Value                                                                            |
-| ------------------------------------- | -------------------------------------------------------------------------------- |
-| Time per call                         | 30 seconds, for the whole call, every request included.                          |
-| Calls running at once                 | 4 per host. A fifth fails with "Too many plugin operations are already running." |
-| Result size                           | 8 MiB. Results must be plain data that can be cloned.                            |
-| Memory                                | 128 MB of old-generation heap, 32 MB young generation.                           |
-| Error message                         | 1,000 characters, after secret connection values are replaced with `[secret]`.   |
-| Items Ajour sends to `syncConnection` | 1,000.                                                                           |
-| Package archive                       | 25 MiB, 2,000 entries, 100 MiB once extracted.                                   |
+## Upgrading saved connections
 
-When a call times out, Ajour ends the worker and reports `Plugin "<id>" timed out while handling <function>.` Page through large result sets within the time budget, and prefer one search to many single-item requests.
+A connection saved on API 3 keeps working after its plugin moves to API 4, with
+no action from the user. Ajour changes a saved value only when API 4 can't
+express it. The official GitHub plugin's saved addresses on `github.com` or
+`www.github.com`, in any scheme, case, port or path, become `https://github.com`
+once. See the [manifest reference](/developers/manifest#saved-connections-upgrade-with-the-plugin).
 
-## Security model
-
-Worker threads keep plugins apart from Ajour's code and from each other, but they are not a security sandbox. A plugin runs with the user's permissions: it can read files and reach the network. Ajour's protections are about how plugins get in, not what they do once running:
-
-- Plugins install only through the desktop app, from a file or a plugin source. The local API has no install route.
-- The local API listens on loopback only, and checks the `Host` and `Origin` of every request.
-- Archives cannot hold symlinks, absolute paths or `..` entries.
-- A plugin from a source installs only the files its `ajour.json` lists, at the commit it names, each checked against its SHA-256. A signed source must stay signed with the key the person approved.
-- An unsigned plugin installs only when the person allowed unsigned plugins, after a warning each time, and **Deactivate unsigned plugins** stops every one of them.
-
-As a plugin author:
-
-- Talk only to the tool your plugin is for. Check that URLs built from user input or synced data point at the connection's site before sending credentials.
-- Ask for the smallest token permissions that work, and say which in your README.
-- Never put secrets in `connectionSummary`, error messages or item fields. Ajour shows those in the UI. Ajour replaces secret connection values with `[secret]` in error messages, field sync messages and the connection summary, and treats a `normalizedConfig` key the manifest doesn't declare as secret, but do not rely on it.
-- Mark every credential field `secret: true`. Ajour keeps secret values encrypted by the operating system, decrypts them only to run your plugin, and refuses to save one where it can't encrypt it. It stores the other connection values unencrypted in a file only the user can read.
-
-## API versions
-
-Ajour accepts a plugin only if its `apiVersion` equals Ajour's plugin API version, today `3`. There is no range. Schema plugins have their own version, `1`, checked the same way. When the version changes:
-
-- Installed plugins with another version stay installed but show as unavailable, with the reason. Their connections and items stay.
-- Ajour offers an update once the plugin's source lists a version for the new API.
-- Installing an archive with another version fails.
-
-Watch Ajour's releases, and publish a new version of your plugin when the API version changes.
+G1 release claims require the packaged malicious-plugin and lifecycle suites
+to pass on Windows and macOS. A source inspection or unit run is not that
+evidence. The official source owner releases the signed `ajour.json` and the
+six plugin ports together with Ajour. Do not publish a combination whose
+packages are unavailable.

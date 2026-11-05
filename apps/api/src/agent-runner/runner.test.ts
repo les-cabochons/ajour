@@ -1058,13 +1058,6 @@ describe("AgentRunner", () => {
     ]);
   });
 
-  it("gives a plugin API 3 task's client every tool, as before", async () => {
-    const { runner, clients } = await setup([{ exit: 0 }]);
-    await runner.start(request);
-    await settled(runner);
-    expect(clients).toEqual([{ name: "Enter in Workday run" }]);
-  });
-
   it("logs no agent.run for a start it refuses", async () => {
     const { runner, events } = await setup([], { chrome: false });
     await expect(runner.start(request)).rejects.toMatchObject({ status: 400 });

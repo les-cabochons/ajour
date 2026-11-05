@@ -9,11 +9,7 @@ import {
   PLUGIN_API_4,
   isPluginApi4Manifest,
 } from "../../../packages/shared/plugin-api-4.ts";
-import {
-  PACKAGED_BUILD,
-  parsePluginManifest,
-  type PluginAdmissionPolicy,
-} from "./plugin-package.ts";
+import { parsePluginManifest } from "./plugin-package.ts";
 
 const ALLOWED_ENTRYPOINT_EXTENSIONS = new Set([
   ".cjs",
@@ -27,6 +23,16 @@ export interface ResolvedProjectDataShapePlugin {
   manifest: ProjectDataShapePluginManifest;
   directory: string;
   entrypointPath: string;
+  /** Set by the host that read it: a configured folder is a development one. */
+  source?: "installed" | "development";
+}
+
+/** An API 4 package that declares no project data shape: a plugin of another kind. */
+export class NotAProjectDataShapeError extends Error {
+  constructor(pluginId: string) {
+    super(`Schema plugin "${pluginId}" declares no project data shape.`);
+    this.name = "NotAProjectDataShapeError";
+  }
 }
 
 function isPathInside(parent: string, candidate: string) {
@@ -77,21 +83,15 @@ function dataShapeApi1Manifest(raw: unknown): ProjectDataShapePluginManifest {
  * and no broker, so it may declare no network or connection fields, and it
  * is loaded when needed: nothing of it stays ready between operations.
  */
-function dataShapeOfApi4Package(
-  raw: unknown,
-  policy: PluginAdmissionPolicy,
-): ProjectDataShapePluginManifest {
-  // The plugin host's own check: every API 4 rule applies, and a build that
-  // does not admit API 4 refuses the package.
-  const manifest = parsePluginManifest(raw, policy);
+function dataShapeOfApi4Package(raw: unknown): ProjectDataShapePluginManifest {
+  // The plugin host's own check: every API 4 rule applies.
+  const manifest = parsePluginManifest(raw);
   if (!isPluginApi4Manifest(manifest)) {
     throw new Error("Schema plugin is not a plugin API 4 package.");
   }
   const label = `Schema plugin "${manifest.id}"`;
   const projectDataShape = manifest.capabilities.projectDataShape;
-  if (!projectDataShape) {
-    throw new Error(`${label} declares no project data shape.`);
-  }
+  if (!projectDataShape) throw new NotAProjectDataShapeError(manifest.id);
   if (manifest.network !== undefined) {
     throw new Error(`${label} may not declare network access.`);
   }
@@ -120,7 +120,6 @@ function dataShapeOfApi4Package(
 
 export async function readProjectDataShapePlugin(
   directory: string,
-  policy: PluginAdmissionPolicy = PACKAGED_BUILD,
 ): Promise<ResolvedProjectDataShapePlugin> {
   const pluginDirectory = path.resolve(directory);
   const canonicalPluginDirectory = await realpath(pluginDirectory);
@@ -135,7 +134,7 @@ export async function readProjectDataShapePlugin(
   const raw: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
   const manifest =
     (raw as { apiVersion?: unknown } | null)?.apiVersion === PLUGIN_API_4
-      ? dataShapeOfApi4Package(raw, policy)
+      ? dataShapeOfApi4Package(raw)
       : dataShapeApi1Manifest(raw);
   if (path.isAbsolute(manifest.entrypoint)) {
     throw new Error(

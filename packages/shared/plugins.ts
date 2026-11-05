@@ -17,7 +17,7 @@ import {
   pluginPendingAccessSchema,
 } from "./plugin-access-schemas.ts";
 
-export const PLUGIN_API_VERSION = 3;
+export const PLUGIN_API_VERSION = 4;
 
 /**
  * A backlog plugin's description support. Its sync sends each item's
@@ -890,7 +890,9 @@ export type PluginActivationUpdate = z.infer<
 >;
 
 export const pluginInstallResponseSchema = z.object({
-  plugin: pluginManifestSchema,
+  // The overview's reading of a manifest: a package that declares only a
+  // project data shape, such as workday-project-data, is installable.
+  plugin: pluginOverviewItemSchema,
   replaced: z.boolean(),
   overview: pluginsOverviewSchema,
 });

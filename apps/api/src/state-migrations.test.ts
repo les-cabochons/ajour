@@ -24,7 +24,7 @@ describe("state migrations", () => {
   });
 
   it("runs no step for a file at the current version, or above it", async () => {
-    for (const version of [5, 9]) {
+    for (const version of [5, 10]) {
       await expect(
         runStateMigrations({ version, trail: [] }, version, [
           trail(2),
@@ -74,7 +74,7 @@ describe("state migrations", () => {
   });
 
   it("ends at the current version, the last step's", () => {
-    expect(STATE_VERSION).toBe(9);
+    expect(STATE_VERSION).toBe(10);
     expect(STATE_MIGRATIONS.at(-1)?.version).toBe(STATE_VERSION);
     const versions = STATE_MIGRATIONS.map((step) => step.version);
     expect(versions).toEqual([...versions].sort((a, b) => a - b));
@@ -105,6 +105,96 @@ describe("state migrations", () => {
     expect(await runStateMigrations(migrated, 8, [toVersion9])).toEqual(
       migrated,
     );
+  });
+
+  describe("the GitHub address rewrite at version 10 (#403)", () => {
+    const toVersion10 = STATE_MIGRATIONS.find((step) => step.version === 10)!;
+    const connection = (
+      pluginId: string,
+      hostUrl: unknown,
+      extra: Record<string, unknown> = {},
+    ) => ({
+      id: `${pluginId}_main`,
+      pluginId,
+      label: "Work",
+      config: { hostUrl, include: "acme" },
+      configSummary: { host: "www.github.com", login: "octocat" },
+      ...extra,
+    });
+    const run = (state: Record<string, unknown>) =>
+      runStateMigrations({ version: 9, ...state }, 9, [toVersion10]);
+
+    it.each([
+      "http://github.com",
+      "http://www.github.com",
+      "https://www.github.com",
+      "https://WWW.GITHUB.COM:8443/ignored/path?query=1#fragment",
+      "https://github.com:8443",
+      "HTTP://GitHub.com:80/",
+      "https://GITHUB.COM:443/ignored/path?query=1#fragment",
+    ])(
+      "saves %s as https://github.com, keeping the rest of the connection",
+      async (saved) => {
+        const migrated = await run({
+          connections: [connection("github", saved)],
+        });
+
+        expect(migrated.connections).toEqual([
+          connection("github", "https://github.com", {
+            configSummary: { host: "github.com", login: "octocat" },
+          }),
+        ]);
+      },
+    );
+
+    it("leaves GitHub Enterprise, other plugins, other fields and unreadable values alone", async () => {
+      const connections = [
+        connection("github", "https://github.acme.com"),
+        connection("github", "https://api.github.com"),
+        connection("github", "https://github.com"),
+        connection("github", undefined),
+        connection("github", "not a url"),
+        connection("jira", "http://www.github.com"),
+        { id: "odd" },
+        "odd",
+      ];
+
+      expect((await run({ connections })).connections).toEqual(connections);
+    });
+
+    it("rewrites only the official GitHub plugin, not one from another source", async () => {
+      const connections = [connection("github", "http://github.com")];
+      const origin = (
+        official?: boolean,
+        kind: "source" | "file" = "source",
+      ) => ({
+        kind,
+        signed: official === true,
+        installedAt: "2026-11-01T00:00:00.000Z",
+        ...(official === undefined ? {} : { official }),
+      });
+
+      for (const pluginOrigins of [
+        {},
+        { github: origin(true) },
+        { github: origin(undefined, "file") },
+      ]) {
+        expect(
+          (await run({ connections, pluginOrigins })).connections,
+        ).toMatchObject([{ config: { hostUrl: "https://github.com" } }]);
+      }
+      expect(
+        (await run({ connections, pluginOrigins: { github: origin(false) } }))
+          .connections,
+      ).toEqual(connections);
+    });
+
+    it("is idempotent", async () => {
+      const once = await run({
+        connections: [connection("github", "http://www.github.com")],
+      });
+      expect(await runStateMigrations(once, 9, [toVersion10])).toEqual(once);
+    });
   });
 
   it("tells a file's version by its number from version 5, and by its shape before", () => {

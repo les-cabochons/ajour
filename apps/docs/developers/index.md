@@ -1,5 +1,7 @@
 # Plugin API
 
+Plugin API 4 runs in the desktop sandbox. See [Runtime](/developers/runtime) for the broker, credential rules and G2 limits.
+
 A plugin connects Ajour to another tool. The official plugins, such as Azure DevOps, Jira and GitHub, use the same API that this section documents, so anything they do, your plugin can do too.
 
 ## What a plugin is
@@ -16,36 +18,31 @@ A plugin has one or more capabilities:
 
 | Capability             | What it does                                                                                           | Example                                                                                 | API version |
 | ---------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- | ----------- |
-| **Backlog**            | Syncs backlog items and estimates. Optionally writes states and priorities back, and handles comments. | [Azure DevOps](/plugins/azure-devops), [Jira](/plugins/jira), [GitHub](/plugins/github) | 3           |
-| **Code host**          | Provides the user's pull requests as facts. Ajour decides which need the user.                         | [GitHub](/plugins/github), [Azure DevOps](/plugins/azure-devops)                        | 3           |
-| **Calendar**           | Provides the user's calendar events as facts, for time suggestions. Read-only.                         | [Calendar address (ICS)](/plugins/ics)                                                  | 3           |
+| **Backlog**            | Syncs backlog items and estimates. Optionally writes states and priorities back, and handles comments. | [Azure DevOps](/plugins/azure-devops), [Jira](/plugins/jira), [GitHub](/plugins/github) | 4           |
+| **Code host**          | Provides the user's pull requests as facts. Ajour decides which need the user.                         | [GitHub](/plugins/github), [Azure DevOps](/plugins/azure-devops)                        | 4           |
+| **Calendar**           | Provides the user's calendar events as facts, for time suggestions. Read-only.                         | [Calendar address (ICS)](/plugins/ics)                                                  | 4           |
 | **Team**               | Keeps a team's shared projects in step through a backend.                                              |                                                                                         | 3, team 1   |
-| **Agent tasks**        | Prompts a coding agent runs from the Commit page. No plugin code runs.                                 | [Workday (agent)](/plugins/workday-agent)                                               | 3           |
-| **Project properties** | Text fields the plugin adds to every project. No plugin code runs.                                     | [Workday (agent)](/plugins/workday-agent)                                               | 3           |
-| **Task properties**    | Text fields the plugin adds to every task, such as the task its tool knows it by. No plugin code runs. | [Workday (agent)](/plugins/workday-agent)                                               | 3           |
-| **Schema**             | Maps projects and tasks to and from a file layout.                                                     | [Workday](/plugins/workday)                                                             | 1           |
+| **Agent tasks**        | Prompts a coding agent runs from the Commit page. No plugin code runs.                                 | [Workday (agent)](/plugins/workday-agent)                                               | 4           |
+| **Project properties** | Text fields the plugin adds to every project. No plugin code runs.                                     | [Workday (agent)](/plugins/workday-agent)                                               | 4           |
+| **Task properties**    | Text fields the plugin adds to every task, such as the task its tool knows it by. No plugin code runs. | [Workday (agent)](/plugins/workday-agent)                                               | 4           |
+| **Schema**             | Maps projects and tasks to and from a file layout.                                                     | [Workday](/plugins/workday)                                                             | 4           |
 
-One package can combine capabilities, such as GitHub's backlog and code host, or Workday's agent tasks and project and task properties. A schema is a separate kind of package.
+One package can combine capabilities, such as GitHub's backlog and code host, or Workday's agent tasks and project and task properties. A schema uses `projectDataShape` in a plugin API 4 package, with dataset contract version 1.
 
 ## How it runs
 
-```text
-Ajour window            your data, the UI
-   │  HTTP on 127.0.0.1
-Ajour's local API       connections, staging, validation
-   │  a new worker thread per call
-your plugin             stateless
-   │  fetch
-your tool's API
-```
+Each plugin runs in its own hidden Electron renderer on the user's machine.
+Ajour's host page starts a dedicated module worker per operation. The plugin
+has no Node, direct network or filesystem access. Ajour validates results and
+ends the worker after the call. The host may recycle the renderer at any time.
 
-- Your plugin runs in the desktop app, on the user's machine. There is no Ajour server.
-- Every call runs in a new Node worker thread, which ends when the call returns. Nothing survives between calls.
-- Ajour validates every result against its schema. A result that does not match fails the whole call.
+The credential broker owns authentication and transport. The plugin receives
+only non-secret settings and calls `ajour.http` or `ajour.publicFetch` within
+its declared access. See [Runtime](/developers/runtime) for limits and G2.
 
 ## What a plugin can do
 
-- Call any HTTP API with `fetch`.
+- Request declared endpoints through `ajour.http`, or declared public hosts through `ajour.publicFetch`.
 - Ask the user for settings and secrets, through connection fields that Ajour renders as a form.
 - Bring backlog items into Ajour, with their state, priority, estimates, description and one level of subitems.
 - Sync estimates both ways, with Ajour handling conflicts.
@@ -71,7 +68,7 @@ Plugins are not sandboxed. A plugin can reach the user's files and network like 
 
 ## API versions
 
-Ajour checks a plugin's `apiVersion` exactly. A plugin for API `3` works with Ajour versions that use API `3`, and with no other. Schema plugins have their own API version, `1`. When Ajour changes the API, it shows older plugins as unavailable until they are updated, and keeps their connections and data. Plan to release a new version of your plugin when the API version changes.
+Ajour checks a plugin's `apiVersion` exactly. A plugin for API `4` works with Ajour versions that use API `4`, and with no other. Schema plugins keep their dataset contract at version `1`, inside an API `4` package. When Ajour changes the API, it shows older plugins as unavailable ("This plugin needs an update") until they are updated, and keeps their connections and data. Plan to release a new version of your plugin when the API version changes.
 
 ## Start here
 

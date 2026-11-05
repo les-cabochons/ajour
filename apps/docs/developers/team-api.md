@@ -1,6 +1,12 @@
 # Team API
 
-A team plugin keeps the shared projects of a team in step between its members' workspaces, through a backend the plugin talks to. Ajour sends the fields that changed since the last sync and receives the team's changes since a cursor. Only project and task fields cross: never time entries, notes or tracked time. This page is the reference for plugin API version 3 and team capability version 1.
+Plugin API 4 runs in the desktop sandbox. See [Runtime](/developers/runtime) for the broker, credential rules and G2 limits.
+
+A team plugin keeps the shared projects of a team in step between its members' workspaces, through a backend the plugin talks to. Ajour sends the fields that changed since the last sync and receives the team's changes since a cursor. Only project and task fields cross: never time entries, notes or tracked time. This page is the reference for team capability version 1, which a team plugin built for plugin API 3 declares.
+
+::: warning No team plugin can run now
+Ajour runs plugin API 4 only, and a plugin API 4 manifest that declares `team` is refused until generated secrets ship. A team plugin on plugin API 3, such as Team sync, stays installed with its connections, inactive, and says "This plugin needs an update". Ajour refuses its `createTeam` and `syncTeamProjects` calls. This page describes the contract the plugin would move to API 4 with.
+:::
 
 Declare `"team": { "apiVersion": 1 }` in the manifest's [capabilities](/developers/manifest#capabilities), and export `validateConnection`, `createTeam` and `syncTeamProjects`.
 
