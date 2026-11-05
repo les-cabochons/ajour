@@ -135,6 +135,7 @@ import {
   getSharedTableDropOrder,
   getSharedTableDragOverlayTransform,
   getSharedTableDragRowShift,
+  getCollapsedRowsHeightAbove,
   getSharedTableDragTargetIndex,
   getSharedTableStepOrder,
   setSharedTableDragDocumentState,
@@ -202,6 +203,8 @@ type TaskDragState = {
   minTop: number;
   width: number;
   height: number;
+  /** The height of the suggestion rows the drag hides above this task. */
+  collapsedAboveY: number;
 };
 
 type ProjectDragState = {
@@ -884,6 +887,12 @@ function ProjectDetail({
       const firstRowRect = taskRowRefs.current
         .get(activeTaskIds[0] ?? taskId)
         ?.getBoundingClientRect();
+      // Merge suggestion rows hide during a drag, which moves the rows up.
+      const collapsedAboveY = getCollapsedRowsHeightAbove(
+        row.parentElement?.querySelectorAll("[data-task-merge-suggestion]") ??
+          [],
+        rect.top,
+      );
       setSharedTableDragDocumentState(true, "project-task-drag-active");
       suppressTaskClickUntilRef.current =
         performance.now() + SHARED_TABLE_DRAG_CLICK_SUPPRESSION_MS;
@@ -901,6 +910,7 @@ function ProjectDetail({
         minTop: firstRowRect?.top ?? rect.top,
         width: rect.width,
         height: rect.height,
+        collapsedAboveY,
       };
       taskDragStateRef.current = nextDragState;
       setTaskDragState(nextDragState);
@@ -929,7 +939,7 @@ function ProjectDetail({
           targetIndex: getSharedTableDragTargetIndex(
             activeTaskIds,
             current.taskId,
-            pointer.clientY,
+            pointer.clientY - current.collapsedAboveY,
             taskRowRefs.current,
           ),
         };

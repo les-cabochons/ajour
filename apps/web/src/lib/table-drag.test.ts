@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  getCollapsedRowsHeightAbove,
   createSharedTableDragPointerSession,
   getSharedTableBlockDropIndex,
   getSharedTableBlockDropOrder,
@@ -165,6 +166,20 @@ function dispatchPointer(
   });
   target.dispatchEvent(event);
 }
+
+describe("getCollapsedRowsHeightAbove", () => {
+  const box = (top: number, height: number) => ({
+    getBoundingClientRect: () => ({ top, height }) as DOMRect,
+  });
+
+  it("adds up the rows a drag hides above the dragged row, and none below it", () => {
+    // Two 32px suggestion rows above the dragged row at 200, one below.
+    const hidden = [box(72, 32), box(136, 32), box(264, 32)];
+
+    expect(getCollapsedRowsHeightAbove(hidden, 200)).toBe(64);
+    expect(getCollapsedRowsHeightAbove(hidden, 50)).toBe(0);
+  });
+});
 
 describe("shared table drag geometry", () => {
   it("calculates target indexes from row midpoints", () => {
