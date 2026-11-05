@@ -95,7 +95,7 @@ export const PanelTasks = memo(function PanelTasks({
           >
             <a
               href={`/backlog/${encodeURIComponent(item._id)}`}
-              className="min-w-0 flex-1 rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="min-w-0 flex-1 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label={item.title}
               onClick={(event) => {
                 if (openModifiedSourceClick(event, item.sourceUrl)) return;

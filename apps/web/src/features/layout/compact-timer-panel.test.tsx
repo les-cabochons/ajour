@@ -157,4 +157,36 @@ describe("the compact timer panel", () => {
     ).toBe(true);
     expect(screen.queryByRole("button", { name: /settle|snooze/i })).toBeNull();
   });
+  it("closes the running entry's editor when its timer stops elsewhere", async () => {
+    await renderRoutes({
+      routes: {
+        "/": () => (
+          <TooltipProvider>
+            <CompactTimerPanel
+              onOpenTask={() => {}}
+              onOpenApp={() => {}}
+              onDismiss={() => {}}
+            />
+          </TooltipProvider>
+        ),
+      },
+    });
+    const card = screen.getByRole("region", { name: "Timer" });
+    fireEvent.click(within(card).getByRole("button", { name: "Start timer" }));
+    const timerId = localStore.snapshot().timers[0]!._id;
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    // The tray menu, the CLI or MCP stops it while the editor is open.
+    act(() => {
+      localStore.saveTimer(timerId);
+    });
+    expect(screen.getByRole("searchbox")).toBeTruthy();
+    const idle = screen.getByRole("region", { name: "Timer" });
+    expect(
+      (
+        within(idle).getByRole("button", {
+          name: "Start timer",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+  });
 });

@@ -96,7 +96,7 @@ export function PanelTimer({
         type="button"
         aria-label="Edit the running entry"
         disabled={disabled}
-        className="block w-full rounded-md p-2.5 text-left outline-none hover:bg-foreground/[0.03] focus-visible:ring-1 focus-visible:ring-ring"
+        className="block w-full rounded-md p-2.5 text-left outline-none hover:bg-foreground/[0.03] focus-visible:ring-2 focus-visible:ring-ring"
         onClick={() => onEdit({ kind: "running", timer })}
       >
         <RunningEntryCardBody

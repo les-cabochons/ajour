@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { RiExternalLinkLine, RiSearchLine } from "@remixicon/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,7 @@ import {
   TimeEntryEditorForm,
   type TimeEntryEditorTarget,
 } from "@/features/time/time-entry-editor-form";
+import { localStore } from "@/lib/local-store";
 import { useTodayIsoDate } from "@/lib/use-now";
 
 export function CompactTimerPanel({
@@ -28,7 +29,17 @@ export function CompactTimerPanel({
 }) {
   const [view, setView] = useState("tasks");
   const [query, setQuery] = useState("");
-  const [editor, setEditor] = useState<TimeEntryEditorTarget | null>(null);
+  const [opened, setEditor] = useState<TimeEntryEditorTarget | null>(null);
+  // Stop or Discard from anywhere (the tray menu, the CLI, MCP) closes the
+  // running entry's editor, as on the dock: saving it would edit nothing.
+  const runningId = opened?.kind === "running" ? opened.timer._id : null;
+  const runningGone = useSyncExternalStore(
+    localStore.subscribe,
+    () =>
+      runningId !== null &&
+      !localStore.snapshot().timers.some((timer) => timer._id === runningId),
+  );
+  const editor = runningGone ? null : opened;
   const today = useTodayIsoDate();
   return (
     <div

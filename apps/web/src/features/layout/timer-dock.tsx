@@ -159,7 +159,7 @@ function StopButton({
 }
 
 export const NEW_ENTRY_BUTTON_CLASS =
-  "flex size-7 shrink-0 items-center justify-center rounded-md border text-muted-foreground outline-none hover:bg-foreground/5 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring";
+  "flex size-7 shrink-0 items-center justify-center rounded-md border text-muted-foreground outline-none hover:bg-foreground/5 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
 /** The docks' "+". It opens the new entry editor in a popover anchored to it. */
 function NewEntryButton() {
@@ -209,7 +209,7 @@ function WindowNewEntryButton() {
 
 /** The dock's Start and Stop: the strongest control in the card. */
 export const DOCK_PRIMARY_BUTTON_CLASS =
-  "flex size-7 shrink-0 items-center justify-center rounded-md bg-foreground text-background hover:bg-foreground/85";
+  "flex size-7 shrink-0 items-center justify-center rounded-md bg-foreground text-background outline-none hover:bg-foreground/85 focus-visible:ring-2 focus-visible:ring-ring";
 
 /** Starts an empty entry and opens its editor. */
 function StartButton() {
@@ -329,7 +329,7 @@ export function TimerDock({ inWindow = false }: { inWindow?: boolean }) {
         }
         {...runningEntryDraftProps(timer._id)}
         triggerLabel="Edit the running entry"
-        triggerClassName="block w-full rounded-md p-2.5 text-left outline-none hover:bg-foreground/[0.03] focus-visible:ring-1 focus-visible:ring-ring"
+        triggerClassName="block w-full rounded-md p-2.5 text-left outline-none hover:bg-foreground/[0.03] focus-visible:ring-2 focus-visible:ring-ring"
       >
         <RunningEntryCardBody
           summary={summary}

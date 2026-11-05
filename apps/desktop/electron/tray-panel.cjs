@@ -87,6 +87,13 @@ function createTrayPanelController({
           hide();
         }
       });
+      // Linux's framed window has a close button, and Alt+F4 reaches the
+      // others: closing hides it so its draft survives. Quitting destroys
+      // it, which skips this event.
+      window.on("close", (event) => {
+        event.preventDefault();
+        hide();
+      });
       window.on("closed", () => {
         if (panel === window) panel = null;
         requestedAt = null;

@@ -7,7 +7,10 @@ import {
   summarizeRunningEntry,
   type RunningEntrySummary,
 } from "@/domain/time/running-entry";
-import { placeRunningRow } from "@/domain/time/timesheet-entry";
+import {
+  placeRunningRow,
+  selectSortableDayEntries,
+} from "@/domain/time/timesheet-entry";
 import { TrackButton } from "@/features/layout/compact-timer-controls";
 import { DayStrip } from "@/features/time/day-strip";
 import type { TimeEntryEditorTarget } from "@/features/time/time-entry-editor-form";
@@ -45,7 +48,8 @@ const EntryRowView = memo(function EntryRowView({
       )}
     >
       <button
-        className="min-w-0 flex-1 text-left"
+        type="button"
+        className="min-w-0 flex-1 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
         onClick={() => onEdit(row.target)}
       >
         <span className="block truncate text-sm">{row.summary.title}</span>
@@ -139,19 +143,16 @@ export function PanelDays({
   );
   const savedRows = useMemo<EntryRow[]>(
     () =>
-      state.timesheetEntries
-        .filter((entry) => entry.localDate === date)
-        .sort((a, b) => a.committedAt - b.committedAt)
-        .map((entry) => ({
-          _id: entry._id,
-          duration: entry.durationMs,
-          summary: summarizeRunningEntry(entry, {
-            projects: state.projects,
-            workItems: state.workItems,
-            unsavedDurationMs: 0,
-          }),
-          target: { kind: "edit", entry },
-        })),
+      selectSortableDayEntries(state.timesheetEntries, date).map((entry) => ({
+        _id: entry._id,
+        duration: entry.durationMs,
+        summary: summarizeRunningEntry(entry, {
+          projects: state.projects,
+          workItems: state.workItems,
+          unsavedDurationMs: 0,
+        }),
+        target: { kind: "edit", entry },
+      })),
     [state.timesheetEntries, state.projects, state.workItems, date],
   );
   const baseline = useMemo(

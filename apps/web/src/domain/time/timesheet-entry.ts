@@ -597,20 +597,26 @@ export function markTimesheetEntriesNotCommitted(
 }
 
 /**
- * The ids of a day's saved entries in the order the Day list and the Week's
- * Days cards show them, top first: the lowest `committedAt` first, so a day
- * reads in the order the work happened and a new entry lands at the end.
+ * A day's saved entries in the order the Day list, the Week's Days cards and
+ * the tray panel show them, top first: the lowest `committedAt` first, so a
+ * day reads in the order the work happened and a new entry lands at the end.
  * The entry the running entry resumed keeps its place and sorts like the
  * others. Move up and Move down step through this order.
  */
+export function selectSortableDayEntries<
+  Entry extends Pick<LocalTimesheetEntry, "localDate" | "committedAt">,
+>(entries: readonly Entry[], localDate: string): Entry[] {
+  return entries
+    .filter((entry) => entry.localDate === localDate)
+    .sort((left, right) => left.committedAt - right.committedAt);
+}
+
+/** The ids of `selectSortableDayEntries`, in its order. */
 export function selectSortableDayEntryIds(
   entries: readonly LocalTimesheetEntry[],
   localDate: string,
 ): string[] {
-  return entries
-    .filter((entry) => entry.localDate === localDate)
-    .sort((left, right) => left.committedAt - right.committedAt)
-    .map((entry) => entry._id);
+  return selectSortableDayEntries(entries, localDate).map((entry) => entry._id);
 }
 
 /**

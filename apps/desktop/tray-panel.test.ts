@@ -4,7 +4,7 @@ import { createTrayController } from "./electron/keep-running.cjs";
 
 function setup(platform = "win32") {
   let time = 1000;
-  const listeners = new Map<string, () => void>();
+  const listeners = new Map<string, (event?: unknown) => void>();
   let visible = false;
   const state = { focused: true };
   const window = {
@@ -20,7 +20,8 @@ function setup(platform = "win32") {
     },
     focus: vi.fn(),
     destroy: vi.fn(),
-    on: (name: string, callback: () => void) => listeners.set(name, callback),
+    on: (name: string, callback: (event?: unknown) => void) =>
+      listeners.set(name, callback),
   };
   const request = vi.fn(() => true);
   const visibility = vi.fn();
@@ -134,6 +135,22 @@ describe("the compact tray window", () => {
     expect(s.window.setBounds).not.toHaveBeenCalled();
     s.listeners.get("blur")!();
     expect(s.window.isVisible()).toBe(true);
+  });
+
+  it("hides instead of closing when the user closes the window, so the draft survives", () => {
+    const s = setup("linux");
+    s.controller.toggle();
+    s.controller.attach(s.window);
+    s.controller.ready();
+    const event = { preventDefault: vi.fn() };
+    s.listeners.get("close")!(event);
+    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    expect(s.window.isVisible()).toBe(false);
+    expect(s.visibility).toHaveBeenLastCalledWith(false);
+    s.controller.toggle();
+    expect(s.window.isVisible()).toBe(true);
+    expect(s.request).toHaveBeenCalledTimes(1);
+    expect(s.window.destroy).not.toHaveBeenCalled();
   });
 
   it("brings a Linux window hidden behind others forward instead of hiding it", () => {
