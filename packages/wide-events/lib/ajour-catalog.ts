@@ -1729,11 +1729,17 @@ export const catalog = defineCatalog({
         },
       },
     },
-    /** The installed command follows the app version at launch (#570). */
+    /**
+     * The installed command follows the app version at launch (#570): one
+     * event per build, `ajour.exe` first, then the Linux build for WSL
+     * (#606). Never a distro's name or a path.
+     */
     "cli_command.follow": {
       kinds: ["job"],
       reasons: [
         "follow_failed",
+        /** A running Linux ajour holds its files: the old build stays. */
+        "files_in_use",
         "invalid_signature",
         "development_build",
         "unsupported_platform",
@@ -1750,10 +1756,18 @@ export const catalog = defineCatalog({
       ],
       fields: {
         cli_command: {
+          /**
+           * The build this event follows: the command's own, or the Linux
+           * one that WSL distros link to (#606).
+           */
+          target: operational<"windows" | "macos" | "linux">(),
           version: operational(),
           platform: operational(),
           arch: operational(),
-          result: operational<"installed" | "refused" | "failed" | "joined">(),
+          /** `removed`: no distro it was added to is left, so it went. */
+          result: operational<
+            "installed" | "refused" | "failed" | "joined" | "removed"
+          >(),
           /** The asset's size, from GitHub. */
           download_bytes: operational<number>(),
           download_ms: operational<number>(),

@@ -38,6 +38,8 @@ const require = createRequire(import.meta.url);
 type CliState = {
   wsl?: {
     version?: string;
+    /** The version the Linux build follows to, also after it failed. */
+    pending?: string;
     distros: {
       name: string;
       wslVersion: 1 | 2;
@@ -46,7 +48,7 @@ type CliState = {
       progress?: number | null;
       error?: string;
       added?: boolean;
-      operation?: "add" | "remove";
+      operation?: "add" | "remove" | "follow";
       reason?: string;
       hint?: string;
     }[];
@@ -3561,6 +3563,417 @@ describe("removing the command with WSL distros added", () => {
       wsl_links_left: 1,
     });
     expect(JSON.stringify(event)).not.toContain("Debian");
+  });
+});
+
+/** The version the launch before the update ran, with its Linux build. */
+const OLDER = "0.0.1-nightly.20261103.293";
+/** Where GitHub redirects the Linux build's download. */
+const LINUX_HOST = `${ASSET_HOST}/linux`;
+
+/**
+ * The release of the app's version with both builds, `ajour.exe` and the
+ * Linux one, each behind its own redirect. With `linuxMissing`, the Linux
+ * asset isn't attached until `attach()`; `windows` can leave its own out.
+ */
+function fullRelease({
+  linuxMissing = false,
+  windows = fakeGithub(),
+}: { linuxMissing?: boolean; windows?: ReturnType<typeof fakeGithub> } = {}) {
+  const linux = fakeGithub({
+    archive: linuxArchive(),
+    asset: { name: LINUX_ASSET, browser_download_url: LINUX_DOWNLOAD },
+    download: { redirect: LINUX_HOST },
+  });
+  let attached = !linuxMissing;
+  const requests: string[] = [];
+  const assetsOf = async (fake: typeof linux, url: string) =>
+    ((await (await fake.fetch(url)).json()) as { assets: unknown[] }).assets;
+  const fetch = async (
+    url: string,
+    init?: { redirect?: string; signal?: AbortSignal },
+  ) => {
+    requests.push(url);
+    if (url.includes("/releases/tags/")) {
+      const assets = [
+        ...(await assetsOf(windows, url)),
+        ...(attached ? await assetsOf(linux, url) : []),
+      ];
+      return response(
+        200,
+        url,
+        Buffer.from(JSON.stringify({ tag_name: TAG, assets })),
+      );
+    }
+    return (
+      url === LINUX_DOWNLOAD || url === LINUX_HOST ? linux : windows
+    ).fetch(url, init);
+  };
+  return {
+    fetch,
+    requests,
+    inits: [],
+    bytes: windows.bytes,
+    attach: () => {
+      attached = true;
+    },
+  };
+}
+
+/**
+ * The launch before the update: ajour `OLDER` installed and added to each of
+ * `added` among `distros`. What it ran in WSL is forgotten.
+ */
+async function addedBefore(
+  added: string[],
+  distros: Record<string, Partial<FakeDistro>> = Object.fromEntries(
+    added.map((name) => [name, {}]),
+  ),
+) {
+  await installedBefore(OLDER);
+  const wsl = fakeWsl(distros);
+  const older = controllerWith({
+    exec: wsl,
+    appVersion: OLDER,
+    github: linuxRelease({}, OLDER),
+  }).controller;
+  await older.state();
+  for (const name of added)
+    expect(distroRow(await older.addWsl(name), name)?.status).toBe("added");
+  await older.stop();
+  wsl.lists.length = 0;
+  wsl.entered.length = 0;
+  return wsl;
+}
+
+const fileIn = (...names: string[]) =>
+  readFile(path.join(installDir, ...names), "utf8");
+const lookups = (github: { requests: string[] }) =>
+  github.requests.filter((url) => url.includes("/releases/tags/")).length;
+
+/** Renames of `bin\linux` fail as Windows fails them while a file is open. */
+function busyLinuxFolder() {
+  const lock = { busy: true };
+  const files = fsWith({
+    rename: async (source: string, target: string) => {
+      if (lock.busy && source === linuxFolder())
+        throw Object.assign(
+          new Error("EBUSY: resource busy or locked, rename"),
+          { code: "EBUSY" },
+        );
+      return fs.rename(source, target);
+    },
+  });
+  return { files, lock };
+}
+
+describe("following the app version in WSL", () => {
+  it("updates the Linux build after ajour.exe, checks -V in the first added distro only, and relinks nothing", async () => {
+    const wsl = await addedBefore(["Ubuntu", "Debian"]);
+    const links = structuredClone([...wsl.distros]);
+    const { events, recorded } = recordingEvents();
+    const { controller } = controllerWith({
+      exec: wsl,
+      github: fullRelease(),
+      events,
+    });
+
+    const state = await controller.followAppVersion();
+
+    expect(state).toMatchObject({ status: "installed", version: VERSION });
+    expect(await fileIn("ajour.exe")).toBe(`binary ${VERSION}`);
+    expect(await fileIn("linux", "ajour")).toBe(`binary ${VERSION}`);
+    expect((await recordNow()).wsl).toEqual({
+      version: VERSION,
+      digests: { linux: expect.stringMatching(/^[0-9a-f]{64}$/) },
+      distros: ["Ubuntu", "Debian"],
+    });
+    // Each link still points at bin\linux, which now holds the new build.
+    expect([...wsl.distros]).toEqual(links);
+    expect(
+      wsl.entered.map(({ distro, program, args }) => [
+        distro,
+        program === "wslpath" ? "wslpath" : args.join(" "),
+      ]),
+    ).toEqual([
+      ["Ubuntu", "wslpath"],
+      ["Ubuntu", "-V"],
+    ]);
+    expect(await leftovers()).toEqual([]);
+    const follows = recorded.filter(
+      (event) => event.name === "cli_command.follow",
+    );
+    expect(
+      follows.map((event) => [
+        event.outcome,
+        (event.cli_command as { target?: string }).target,
+      ]),
+    ).toEqual([
+      ["ok", "windows"],
+      ["ok", "linux"],
+    ]);
+    expect(JSON.stringify(follows)).not.toContain("Ubuntu");
+    expect(JSON.stringify(follows)).not.toContain("/mnt/c");
+  });
+
+  it("shows the added distros updating, with the download's progress, while the Linux build follows", async () => {
+    const wsl = await addedBefore(["Ubuntu"], { Ubuntu: {}, Debian: {} });
+    const { controller } = controllerWith({ exec: wsl, github: fullRelease() });
+    const seen: Array<{
+      pending?: string;
+      ubuntu?: NonNullable<CliState["wsl"]>["distros"][number];
+      debian?: string;
+    }> = [];
+    controller.onChange((state) => {
+      if (state.wsl)
+        seen.push({
+          pending: state.wsl.pending,
+          ubuntu: distroRow(state, "Ubuntu"),
+          debian: distroRow(state, "Debian")?.status,
+        });
+    });
+
+    const state = await controller.followAppVersion();
+
+    const updating = seen.filter((row) => row.ubuntu?.status === "updating");
+    expect(updating.length).toBeGreaterThan(0);
+    expect(
+      updating.every(
+        (row) => row.pending === VERSION && row.debian === "not-added",
+      ),
+    ).toBe(true);
+    expect(updating.some((row) => (row.ubuntu?.progress ?? 0) > 0)).toBe(true);
+    expect(state.wsl?.version).toBe(VERSION);
+    expect(state.wsl?.pending).toBeUndefined();
+    expect(distroRow(state, "Ubuntu")).toEqual({
+      name: "Ubuntu",
+      wslVersion: 2,
+      status: "added",
+    });
+  });
+
+  it("keeps the old Linux build when a running ajour holds its files, leaves ajour.exe's follow alone, and retries at the next launch", async () => {
+    const wsl = await addedBefore(["Ubuntu"]);
+    const { files, lock } = busyLinuxFolder();
+    const { events, recorded } = recordingEvents();
+
+    const state = await controllerWith({
+      exec: wsl,
+      github: fullRelease(),
+      files,
+      events,
+    }).controller.followAppVersion();
+
+    expect(state).toMatchObject({
+      status: "installed",
+      version: VERSION,
+      error: null,
+    });
+    expect(state.wsl).toMatchObject({ version: OLDER, pending: VERSION });
+    expect(distroRow(state, "Ubuntu")).toEqual({
+      name: "Ubuntu",
+      wslVersion: 2,
+      status: "error",
+      operation: "follow",
+      added: true,
+      error: "An ajour running in WSL is using its files.",
+    });
+    expect(await fileIn("ajour.exe")).toBe(`binary ${VERSION}`);
+    expect(await fileIn("linux", "ajour")).toBe(`binary ${OLDER}`);
+    expect(await recordNow()).toMatchObject({
+      version: VERSION,
+      wsl: { version: OLDER, distros: ["Ubuntu"] },
+    });
+    expect(await leftovers()).toEqual([]);
+    const linuxFollow = recorded.find(
+      (event) =>
+        event.name === "cli_command.follow" &&
+        (event.cli_command as { target?: string }).target === "linux",
+    );
+    expect([linuxFollow?.outcome, linuxFollow?.outcome_reason]).toEqual([
+      "error",
+      "files_in_use",
+    ]);
+
+    lock.busy = false;
+    const next = await controllerWith({
+      exec: wsl,
+      github: fullRelease(),
+    }).controller.followAppVersion();
+
+    expect(await fileIn("linux", "ajour")).toBe(`binary ${VERSION}`);
+    expect(distroRow(next, "Ubuntu")?.status).toBe("added");
+    expect((await recordNow()).wsl.version).toBe(VERSION);
+  });
+
+  it("keeps the old Linux build, and says why, when the new one prints another version in the distro", async () => {
+    const wsl = await addedBefore(["Ubuntu"]);
+    wsl.distros.get("Ubuntu")!.versionOutput = "ajour 0.0.0";
+    const before = await filesUnder(linuxFolder());
+
+    const state = await controllerWith({
+      exec: wsl,
+      github: fullRelease(),
+    }).controller.followAppVersion();
+
+    expect(distroRow(state, "Ubuntu")).toMatchObject({
+      status: "error",
+      operation: "follow",
+      added: true,
+      error: `The downloaded ajour says "ajour 0.0.0", not "ajour ${VERSION}".`,
+    });
+    expect(await filesUnder(linuxFolder())).toEqual(before);
+    expect(await fileIn("linux", "ajour")).toBe(`binary ${OLDER}`);
+    expect(await fileIn("ajour.exe")).toBe(`binary ${VERSION}`);
+    expect((await recordNow()).wsl.version).toBe(OLDER);
+    expect(await leftovers()).toEqual([]);
+  });
+
+  it("checks -V in the first added distro WSL still lists", async () => {
+    const wsl = await addedBefore(["Ubuntu", "Debian"]);
+    wsl.distros.delete("Ubuntu");
+
+    await controllerWith({
+      exec: wsl,
+      github: fullRelease(),
+    }).controller.followAppVersion();
+
+    expect(new Set(wsl.entered.map(({ distro }) => distro))).toEqual(
+      new Set(["Debian"]),
+    );
+    expect(await fileIn("linux", "ajour")).toBe(`binary ${VERSION}`);
+  });
+
+  it("drops wsl from the record, and bin\\linux with it, when WSL lists no added distro, entering none", async () => {
+    const wsl = await addedBefore(["Ubuntu"], { Ubuntu: {}, Debian: {} });
+    wsl.distros.delete("Ubuntu");
+    const github = fullRelease();
+
+    const state = await controllerWith({
+      exec: wsl,
+      github,
+    }).controller.followAppVersion();
+
+    expect(state).toMatchObject({ status: "installed", version: VERSION });
+    expect((await recordNow()).wsl).toBeUndefined();
+    expect(existsSync(linuxFolder())).toBe(false);
+    expect(wsl.entered).toEqual([]);
+    expect(github.requests).not.toContain(LINUX_DOWNLOAD);
+    expect(distroRow(state, "Debian")?.status).toBe("not-added");
+    expect(await leftovers()).toEqual([]);
+  });
+
+  it("retries a missing Linux asset after five minutes, then hourly, on the follow's timer, without following ajour.exe again", async () => {
+    const wsl = await addedBefore(["Ubuntu"]);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const github = fullRelease({ linuxMissing: true });
+    const { controller } = controllerWith({ exec: wsl, github });
+    try {
+      const first = await controller.followAppVersion();
+      expect(first.version).toBe(VERSION);
+      expect(distroRow(first, "Ubuntu")).toMatchObject({
+        status: "error",
+        operation: "follow",
+      });
+      expect(lookups(github)).toBe(2);
+
+      await vi.advanceTimersByTimeAsync(299_999);
+      expect(lookups(github)).toBe(2);
+      await vi.advanceTimersByTimeAsync(1);
+      // The timer started the retry: this joins it.
+      await controller.followAppVersion();
+      expect(lookups(github)).toBe(3);
+
+      await vi.advanceTimersByTimeAsync(3_599_999);
+      expect(lookups(github)).toBe(3);
+      github.attach();
+      await vi.advanceTimersByTimeAsync(1);
+      const picked = await controller.followAppVersion();
+      expect(lookups(github)).toBe(4);
+      expect(distroRow(picked, "Ubuntu")?.status).toBe("added");
+      expect(await fileIn("linux", "ajour")).toBe(`binary ${VERSION}`);
+      expect(github.requests.filter((url) => url === DOWNLOAD)).toHaveLength(1);
+
+      await vi.advanceTimersByTimeAsync(2 * 3_600_000);
+      expect(lookups(github)).toBe(4);
+    } finally {
+      await controller.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it("retries once for both builds when both assets are missing", async () => {
+    const wsl = await addedBefore(["Ubuntu"]);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const github = fullRelease({
+      linuxMissing: true,
+      windows: fakeGithub({ release: { assets: [] } }),
+    });
+    const { controller } = controllerWith({ exec: wsl, github });
+    try {
+      await controller.followAppVersion();
+      expect(lookups(github)).toBe(2);
+
+      await vi.advanceTimersByTimeAsync(300_000);
+      await controller.followAppVersion();
+      expect(lookups(github)).toBe(4);
+      await vi.advanceTimersByTimeAsync(3_599_999);
+      expect(lookups(github)).toBe(4);
+    } finally {
+      await controller.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it("Retry from Settings follows only the Linux build once ajour.exe is current", async () => {
+    const wsl = await addedBefore(["Ubuntu"]);
+    const { files, lock } = busyLinuxFolder();
+    const github = fullRelease();
+    const { controller } = controllerWith({ exec: wsl, github, files });
+    await controller.followAppVersion();
+    lock.busy = false;
+
+    const state = await controller.install();
+
+    expect(distroRow(state, "Ubuntu")).toEqual({
+      name: "Ubuntu",
+      wslVersion: 2,
+      status: "added",
+    });
+    expect(await fileIn("linux", "ajour")).toBe(`binary ${VERSION}`);
+    expect(github.requests.filter((url) => url === DOWNLOAD)).toHaveLength(1);
+  });
+
+  it("runs nothing in WSL when no distro is added", async () => {
+    await installedBefore(OLDER);
+    const wsl = fakeWsl({ Ubuntu: {} });
+    const github = fullRelease();
+
+    const state = await controllerWith({
+      exec: wsl,
+      github,
+    }).controller.followAppVersion();
+
+    expect(state).toMatchObject({ status: "installed", version: VERSION });
+    expect(wsl.lists).toEqual([]);
+    expect(wsl.entered).toEqual([]);
+    expect(github.requests).not.toContain(LINUX_DOWNLOAD);
+  });
+
+  it("runs nothing in a development build", async () => {
+    const wsl = await addedBefore(["Ubuntu"]);
+    const github = fullRelease();
+
+    await controllerWith({
+      exec: wsl,
+      github,
+      development: true,
+    }).controller.followAppVersion();
+
+    expect(github.requests).toEqual([]);
+    expect(wsl.lists).toEqual([]);
+    expect(wsl.entered).toEqual([]);
+    expect(await fileIn("linux", "ajour")).toBe(`binary ${OLDER}`);
   });
 });
 
