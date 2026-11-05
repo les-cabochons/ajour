@@ -22,6 +22,10 @@ Function un.RemoveAjourCommand
   Push $R1
   ReadEnvStr $8 "LOCALAPPDATA"
   StrCmp $8 "" done
+  ; Refuse a redirected parent as well as a redirected bin folder.
+  System::Call 'kernel32::GetFileAttributesW(w "$8\Ajour") i .r9'
+  IntOp $9 $9 & 0x400
+  StrCmp $9 0 0 done
   StrCpy $8 "$8\Ajour\bin"
   ; A binary with our name is the minimum ownership evidence. Never recurse
   ; outside this fixed folder, and never delete the CLI's connection/Undo data.
