@@ -140,4 +140,29 @@ describe("the compact tray window", () => {
     s.controller.toggle();
     expect(s.window.isVisible()).toBe(true);
   });
+
+  it("fits the popup into a small display work area", () => {
+    const window = {
+      isDestroyed: () => false,
+      setBounds: vi.fn(),
+      show: vi.fn(),
+      focus: vi.fn(),
+      on: vi.fn(),
+    };
+    const controller = createTrayPanelController({
+      platform: "win32",
+      getBounds: () => ({ x: 280, y: 370, width: 20, height: 20 }),
+      getWorkArea: () => ({ x: 0, y: 0, width: 320, height: 400 }),
+      request: () => {},
+      visibility: () => {},
+    });
+    controller.attach(window);
+    controller.ready();
+    expect(window.setBounds).toHaveBeenCalledWith({
+      x: 8,
+      y: 8,
+      width: 304,
+      height: 384,
+    });
+  });
 });

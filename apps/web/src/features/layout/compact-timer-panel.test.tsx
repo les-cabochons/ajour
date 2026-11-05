@@ -126,6 +126,13 @@ describe("the compact timer panel", () => {
     fireEvent.click(within(row).getByRole("button", { name: "Start timer" }));
     expect(localStore.snapshot().timers[0]?.workItemId).toBe(id);
     expect(openTask).not.toHaveBeenCalled();
+    const staleStop = within(row).getByRole("button", { name: "Stop timer" });
+    act(() => {
+      localStore.saveTimer(localStore.snapshot().timers[0]!._id);
+      localStore.startTimer({ workItemId: id });
+      fireEvent.click(staleStop);
+    });
+    expect(localStore.snapshot().timers[0]?.workItemId).toBe(id);
     fireEvent.click(within(row).getByRole("button", { name: "Stop timer" }));
     expect(localStore.snapshot().timers).toHaveLength(0);
     fireEvent.click(within(row).getByRole("button", { name: "Add time" }));

@@ -2159,8 +2159,8 @@ async function createMainWindow(trigger = "launch") {
         overrideBrowserWindowOptions: {
           width: 360,
           height: 680,
-          minWidth: 320,
-          minHeight: 420,
+          minWidth: 0,
+          minHeight: 0,
           show: false,
           frame: process.platform === "linux",
           resizable: process.platform === "linux",

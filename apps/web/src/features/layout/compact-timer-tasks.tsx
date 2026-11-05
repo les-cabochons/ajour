@@ -47,14 +47,19 @@ export const PanelTasks = memo(function PanelTasks({
   }, [state, now, query, layout.projectId]);
   const fills = getWorkflowStateFills(state.workflowStates);
 
-  function track(item: LocalWorkItem, kind: "timer" | "entry") {
+  function track(
+    item: LocalWorkItem,
+    kind: "timer" | "entry",
+    expectedTimerId?: string,
+  ) {
     const current = localStore
       .snapshot()
       .workItems.find((value) => value._id === item._id);
     if (!current) return;
-    const isRunning = Boolean(
-      findWorkItemTimer(localStore.snapshot().timers, current._id),
-    );
+    const active = findWorkItemTimer(localStore.snapshot().timers, current._id);
+    if (kind === "timer" && expectedTimerId && active?._id !== expectedTimerId)
+      return;
+    const isRunning = Boolean(expectedTimerId);
     const action =
       kind === "entry" ? "new-entry" : isRunning ? "stop-entry" : "start-entry";
     const allowed = getBacklogItemActions(current, {
@@ -81,7 +86,8 @@ export const PanelTasks = memo(function PanelTasks({
         const workflow = state.workflowStates.find(
           (value) => value._id === item.workflowStateId,
         );
-        const running = Boolean(findWorkItemTimer(state.timers, item._id));
+        const timer = findWorkItemTimer(state.timers, item._id);
+        const running = Boolean(timer);
         return (
           <li
             key={item._id}
@@ -144,7 +150,7 @@ export const PanelTasks = memo(function PanelTasks({
                 </TrackButton>
                 <TrackButton
                   label={running ? "Stop timer" : "Start timer"}
-                  onClick={() => track(item, "timer")}
+                  onClick={() => track(item, "timer", timer?._id)}
                 >
                   {running ? (
                     <RiStopFill className="text-[var(--success)]" />

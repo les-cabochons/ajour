@@ -409,6 +409,20 @@ async function main() {
     );
     const panel = await panelOpened;
     await panel.getByRole("searchbox", { name: "Search tasks" }).waitFor();
+    const smallPanel = await electronApp.evaluate(({ BrowserWindow }) => {
+      const child = BrowserWindow.getAllWindows().find(
+        (window) => window.webContents.getURL() === "about:blank",
+      );
+      const original = child.getBounds();
+      child.setBounds({ ...original, width: 300, height: 350 });
+      const size = child.getSize();
+      child.setBounds(original);
+      return size;
+    });
+    expect(
+      smallPanel[0] <= 300 && smallPanel[1] <= 350,
+      "native minimums allow a popup constrained to a small work area",
+    );
     expect(
       await panel.evaluate(() => window.ajourDesktop === undefined),
       "the blank child exposes no privileged bridge",
