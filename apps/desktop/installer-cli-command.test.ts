@@ -18,6 +18,9 @@ const installer = await readFile(
   new URL("./installer/cli-command.nsh", import.meta.url),
   "utf8",
 );
+const { binaryName } = (await import(
+  new URL("../cli/scripts/archive.mjs", import.meta.url).href
+)) as { binaryName: (platform: NodeJS.Platform) => string };
 
 describe("Windows uninstall CLI cleanup", () => {
   it("only defines uninstaller functions during the uninstaller build", () => {
@@ -53,7 +56,7 @@ describe("Windows uninstall CLI cleanup", () => {
         { recursive: true },
       );
       await writeFile(path.join(root, "package.json"), '{"version":"2.3.4"}');
-      const binary = process.platform === "win32" ? "ajour.exe" : "ajour";
+      const binary = binaryName(process.platform);
       await copyFile(process.execPath, path.join(root, "out", binary));
       if (process.platform !== "win32")
         await chmod(path.join(root, "out", binary), 0o755);
@@ -88,41 +91,37 @@ describe("Windows uninstall CLI cleanup", () => {
         .split(/\r?\n/)
         .map((entry) => entry.replace(/^\.\//, ""))
         .filter((entry) => entry && !entry.endsWith("/"));
-      // archive.mjs packs every platform alike but for the binary's name,
-      // so the host's archive also gives the Linux one's (#605).
-      const packaged = (name: string) =>
-        entries.map((entry) => (entry === binary ? name : entry)).sort();
-      const macro = (name: string) =>
-        installer.split(`!macro ${name} ROOT`)[1]!.split("!macroend")[0]!;
-      const deletedBy = (...names: string[]) =>
-        [
-          ...names
-            .map(macro)
-            .join("")
-            .matchAll(/Delete "\$\{ROOT\}\\([^"]+)"/g),
-        ]
-          .map((match) => match[1]!.replaceAll("\\", "/"))
+      // A platform's archive is the host's with archive.mjs's name for its
+      // binary, the only entry that differs (#605).
+      const packaged = (platform: NodeJS.Platform) =>
+        entries
+          .map((entry) => (entry === binary ? binaryName(platform) : entry))
           .sort();
-      expect(deletedBy("AjourArchiveDocs", "AjourPayload")).toEqual(
-        packaged("ajour.exe"),
-      );
+      const macro = (name: string) =>
+        installer
+          .split(new RegExp(`!macro ${name} ROOT.*`))[1]!
+          .split("!macroend")[0]!;
+      /** What AjourPayload deletes in `folder`, with the binary it passes. */
+      const deletedIn = (folder: string) => {
+        const binaryIn = installer
+          .split(`!insertmacro AjourPayload "${folder}" "`)[1]!
+          .split('"')[0]!;
+        return [
+          ...(macro("AjourArchiveDocs") + macro("AjourPayload")).matchAll(
+            /Delete "\$\{ROOT\}\\([^"]+)"/g,
+          ),
+        ]
+          .map((match) =>
+            match[1]!.replace("${BINARY}", binaryIn).replaceAll("\\", "/"),
+          )
+          .sort();
+      };
+      expect(deletedIn("$8")).toEqual(packaged("win32"));
       // bin\linux: the Linux binary, and the same share tree as bin.
-      expect(deletedBy("AjourArchiveDocs", "AjourLinuxPayload")).toEqual(
-        packaged("ajour"),
-      );
-      expect(macro("AjourLinuxPayload")).toContain(
-        '!insertmacro AjourArchiveDocs "${ROOT}\\share"',
-      );
+      expect(deletedIn("$8\\linux")).toEqual(packaged("linux"));
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-    const archiveScript = await readFile(
-      new URL("../cli/scripts/archive.mjs", import.meta.url),
-      "utf8",
-    );
-    expect(archiveScript).toContain(
-      'process.platform === "win32" ? "ajour.exe" : "ajour"',
-    );
     const controller = await readFile(
       new URL("./electron/cli-command.cjs", import.meta.url),
       "utf8",
@@ -179,22 +178,27 @@ describe("Windows uninstall CLI cleanup", () => {
   // The Linux build for WSL (#605). Distros aren't entered: their links stay.
   it("deletes bin\\linux and the Linux build's leftovers before the bin folder", () => {
     const cleanup = installer.split("Function un.RemoveAjourCommand")[1]!;
-    const linux = cleanup.indexOf('!insertmacro AjourLinuxPayload "$8\\linux"');
+    const linux = cleanup.indexOf(
+      '!insertmacro AjourPayload "$8\\linux" "ajour"',
+    );
     expect(linux).toBeGreaterThan(-1);
     expect(cleanup.indexOf('RMDir "$8\\linux"')).toBeGreaterThan(linux);
     expect(cleanup.indexOf('RMDir "$8\\linux"')).toBeLessThan(
       cleanup.indexOf('RMDir "$8"'),
     );
     // linux.old-<uuid>, where a swap sets the previous build aside.
-    const aside = cleanup.split('StrCmpS $0 "linux.old-"')[1]!;
-    expect(aside).toBeDefined();
-    const asideBlock = aside.split("Goto nextLeftover")[0]!;
+    const asideBlock = cleanup
+      .split('StrCmpS $0 "linux.old-"')[1]!
+      .split("Goto nextLeftover")[0]!;
     expect(asideBlock).toContain("Call un.AjourUuid");
-    expect(asideBlock).toContain('!insertmacro AjourLinuxPayload "$8\\$R4"');
-    // .staging-<uuid>: the Linux archive, and its unpacked build.
-    expect(cleanup).toContain(
-      '!insertmacro AjourLinuxPayload "$8\\$R4\\unpacked"',
-    );
+    expect(asideBlock).toContain('!insertmacro AjourPayload "$8\\$R4" "ajour"');
+    // .staging-<uuid>: the Linux archive, and its unpacked build, whose
+    // share tree is the Windows build's.
+    const unpacked = cleanup
+      .split('!insertmacro AjourSafeDirectory "$8\\$R4\\unpacked"')[1]!
+      .split('RMDir "$8\\$R4\\unpacked"')[0]!;
+    expect(unpacked).toContain('Delete "$8\\$R4\\unpacked\\ajour"');
+    expect(unpacked.match(/!insertmacro AjourPayload /g)).toHaveLength(1);
     const names = installer
       .split("Function un.AjourArchiveName")[1]!
       .split("FunctionEnd")[0]!;
